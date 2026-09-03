@@ -583,6 +583,16 @@ function campfireRecipe() {
     disc(0, .82, 0, .46, .12, .46, 1, { color: 0x6b665a, segments: 16 }),
   ];
 
+  // Locked-gate puzzle fixtures (see game.js's wireDungeonGates) — simple
+  // functional gizmos, not worth a full authored-furniture JSON.
+  CATALOG.dungeonAperture = [
+    box(0, .08, 0, .34, .16, .34, .8, { color: 0x5a4f42 }),
+    disc(0, .17, 0, .14, .03, .14, .6, { color: 0x1a1714, segments: 12 }),
+  ];
+  CATALOG.dungeonPressurePlate = [
+    disc(0, .04, 0, .42, .08, .42, .9, { color: 0x6b665a, segments: 14 }),
+  ];
+
   window.ProceduralFurniture = {
     buildFurnitureGroup,
     buildPartMesh,

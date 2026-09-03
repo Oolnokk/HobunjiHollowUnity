@@ -187,6 +187,66 @@
     return null;
   }
 
+  // A locked gate (key/aperture and pressure-plate/statue puzzles both use
+  // this) — same "pure-corridor island" reasoning as findChasmOnLeg, but
+  // exclusion-aware (usedTiles, not just roomTileSet) so it can be called
+  // more than once per floor without colliding with an earlier puzzle's own
+  // tiles, and it returns both flanking tiles rather than picking one —
+  // the caller decides which side is the reachable one via a real flood
+  // fill (see floodFillFloor below), not leg-index guessing.
+  function findGateOnLeg(leg, roomTileSet, usedTiles) {
+    let islandStart = -1, islandEnd = -1;
+    for (let i = 0; i < leg.length; i++) {
+      const key = `${leg[i][0]},${leg[i][1]}`;
+      if (roomTileSet.has(key) || usedTiles.has(key)) continue;
+      if (islandStart === -1) islandStart = i;
+      islandEnd = i;
+    }
+    if (islandStart === -1) return null;
+    const islandLen = islandEnd - islandStart + 1;
+    const gateLen = Math.min(2, islandLen);
+    const gateStart = islandStart + Math.floor((islandLen - gateLen) / 2);
+    const beforeIndex = gateStart - 1, afterIndex = gateStart + gateLen;
+    if (beforeIndex < 0 || afterIndex >= leg.length) return null;
+    return { gateTiles: leg.slice(gateStart, gateStart + gateLen), flankA: leg[beforeIndex], flankB: leg[afterIndex] };
+  }
+
+  // Only ever tries edges NOT on the entrance->treasure critical path — a
+  // locked gate blocking the one path to the treasure chest would stack a
+  // fourth mandatory gauntlet on top of the chasm/pit-chamber/brazier
+  // puzzles already on it. Gating an optional side branch instead makes
+  // the key/plate puzzles a genuine (skippable) bonus, the same way the
+  // decoy rune's branch room already works.
+  function findGate(offPathEdges, roomTileSet, usedTiles) {
+    for (const edge of offPathEdges) {
+      for (const leg of edge.legs) {
+        const found = findGateOnLeg(leg, roomTileSet, usedTiles);
+        if (found) return { ...found, edgeRef: edge };
+      }
+    }
+    return null;
+  }
+
+  // Plain 4-directional flood fill over the floor set, treating `blocked`
+  // tiles (a candidate gate's own tiles) as impassable — used to find
+  // which side of a candidate gate the entrance is actually on (robust
+  // against the corridor-leg direction/ordering complexity of a two-leg,
+  // cornered edge) and which rooms are cut off entirely without it.
+  function floodFillFloor(floorSet, blocked, start) {
+    const visited = new Set([`${start[0]},${start[1]}`]);
+    const queue = [start];
+    for (let index = 0; index < queue.length; index++) {
+      const [c, r] = queue[index];
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr, key = `${nc},${nr}`;
+        if (visited.has(key) || !floorSet.has(key) || blocked.has(key)) continue;
+        visited.add(key);
+        queue.push([nc, nr]);
+      }
+    }
+    return visited;
+  }
+
   function roomContainsTile(room, [c, r]) {
     return c >= room.x && c < room.x + room.w && r >= room.y && r < room.y + room.h;
   }
@@ -396,6 +456,70 @@
       addFurniture('stoneBrazierFurniture', brazierRelay.target[0], brazierRelay.target[1], 0, { brazierPairId: pairId, brazierRole: 'target' });
     }
 
+    // ── Locked gates (key/aperture and pressure-plate/statue puzzles) ────
+    // Both gate a room off the critical path (see findGate's own reasoning)
+    // — a genuine bonus side room, never the one path to the treasure
+    // chest. Each needs a matching loose prop (a key or a statue, pending*
+    // below) placed somewhere already-reachable; if no such spot exists,
+    // the whole gate is backed out rather than leaving an unsolvable lock.
+    let keyGateData = null, plateGateData = null;
+    let pendingKeyProp = null, pendingStatueProp = null;
+    const offPathEdges = generated.edges.filter(edge => !pathEdges.includes(edge));
+
+    const keyGateFound = findGate(offPathEdges, generated.roomTileSet, usedTiles);
+    if (keyGateFound) {
+      const gateBlocked = new Set(keyGateFound.gateTiles.map(([c, r]) => `${c},${r}`));
+      const reachable = floodFillFloor(floorSet, gateBlocked, [generated.entranceRoom.cx, generated.entranceRoom.cy]);
+      const approachTile = reachable.has(`${keyGateFound.flankA[0]},${keyGateFound.flankA[1]}`) ? keyGateFound.flankA : keyGateFound.flankB;
+      const vaultRooms = generated.rooms.filter(room => !reachable.has(`${room.cx},${room.cy}`));
+      const keyPool = generated.rooms
+        .filter(room => room !== generated.entranceRoom && !vaultRooms.includes(room))
+        .flatMap(room => placementSafeTiles(floorSet, roomTileList(room)))
+        .filter(([c, r]) => reachable.has(`${c},${r}`) && !usedTiles.has(`${c},${r}`)
+          && !(c === approachTile[0] && r === approachTile[1]));
+      const [keySpot] = pickSeparatedTiles(rng, keyPool, new Set(), 1);
+      if (keySpot && vaultRooms.length) {
+        const gateId = 'dtest_key_gate';
+        for (const [c, r] of keyGateFound.gateTiles) { colliders.push([c, r]); usedTiles.add(`${c},${r}`); }
+        usedTiles.add(`${approachTile[0]},${approachTile[1]}`);
+        usedTiles.add(`${keySpot[0]},${keySpot[1]}`);
+        addFurniture('dungeonApertureFurniture', approachTile[0], approachTile[1], 0, { apertureId: gateId });
+        keyGateData = { gateId, gateTiles: keyGateFound.gateTiles };
+        pendingKeyProp = { col: keySpot[0], row: keySpot[1], apertureId: gateId };
+      }
+    }
+
+    // Only actually excludes the key gate's edge if that gate committed —
+    // if it was geometrically found but backed out (no valid key/vault
+    // spot), its edge is still fair game for the plate gate.
+    const remainingOffPathEdges = offPathEdges.filter(edge => edge !== (keyGateData ? keyGateFound.edgeRef : null));
+    const plateGateFound = findGate(remainingOffPathEdges, generated.roomTileSet, usedTiles);
+    if (plateGateFound) {
+      const gateBlocked = new Set(plateGateFound.gateTiles.map(([c, r]) => `${c},${r}`));
+      const reachable = floodFillFloor(floorSet, gateBlocked, [generated.entranceRoom.cx, generated.entranceRoom.cy]);
+      const approachTile = reachable.has(`${plateGateFound.flankA[0]},${plateGateFound.flankA[1]}`) ? plateGateFound.flankA : plateGateFound.flankB;
+      const vaultRooms = generated.rooms.filter(room => !reachable.has(`${room.cx},${room.cy}`));
+      const approachRoom = generated.rooms.find(room => roomContainsTile(room, approachTile));
+      const platePool = (approachRoom ? placementSafeTiles(floorSet, roomTileList(approachRoom)) : [])
+        .filter(([c, r]) => reachable.has(`${c},${r}`) && !usedTiles.has(`${c},${r}`)
+          && !(c === approachTile[0] && r === approachTile[1]));
+      const [plateSpot] = pickSeparatedTiles(rng, platePool, new Set(), 1);
+      const statuePool = generated.rooms
+        .filter(room => room !== generated.entranceRoom && !vaultRooms.includes(room))
+        .flatMap(room => placementSafeTiles(floorSet, roomTileList(room)))
+        .filter(([c, r]) => reachable.has(`${c},${r}`) && !usedTiles.has(`${c},${r}`)
+          && !(plateSpot && c === plateSpot[0] && r === plateSpot[1]));
+      const [statueSpot] = pickSeparatedTiles(rng, statuePool, new Set(), 1);
+      if (plateSpot && statueSpot && vaultRooms.length) {
+        for (const [c, r] of plateGateFound.gateTiles) { colliders.push([c, r]); usedTiles.add(`${c},${r}`); }
+        usedTiles.add(`${plateSpot[0]},${plateSpot[1]}`);
+        usedTiles.add(`${statueSpot[0]},${statueSpot[1]}`);
+        addFurniture('dungeonPressurePlateFurniture', plateSpot[0], plateSpot[1], 0);
+        plateGateData = { gateTiles: plateGateFound.gateTiles, plateCol: plateSpot[0], plateRow: plateSpot[1] };
+        pendingStatueProp = { col: statueSpot[0], row: statueSpot[1] };
+      }
+    }
+
     // itemKey values here must match DECORATIVE_FURNITURE_DEFS[key].itemKey
     // in game.js exactly (the furniture placement/interactable-lookup keys
     // off f.itemKey, not the recipe/def object key).
@@ -475,6 +599,12 @@
         looseProps.push({ id: `prop_${propId++}`, kind: 'jar', col: c, row: r, name: `${adjective} ${color.name} ${substance}`, colorHex: color.hex });
       }
     });
+    if (pendingKeyProp) {
+      looseProps.push({ id: `prop_${propId++}`, kind: 'key', col: pendingKeyProp.col, row: pendingKeyProp.row, apertureId: pendingKeyProp.apertureId, name: 'Old Iron Key' });
+    }
+    if (pendingStatueProp) {
+      looseProps.push({ id: `prop_${propId++}`, kind: 'statue', col: pendingStatueProp.col, row: pendingStatueProp.row, name: 'Stone Statue' });
+    }
 
     return {
       schema: 'hobunji_building_interior.v1',
@@ -488,6 +618,8 @@
       wallStyle: 'dungeon',
       pitChamber: pitChamberData,
       looseProps,
+      keyGate: keyGateData,
+      plateGate: plateGateData,
     };
   }
 

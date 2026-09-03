@@ -2341,6 +2341,11 @@
         // it's actually lit, which is per-instance runtime state, not
         // something every placed copy should always have.
         stoneBrazier:  { itemKey: 'stoneBrazierFurniture',  icon: '🔥', name: 'Stone Brazier',        price: 0,  fw: 1, fd: 1, color: 0x5c574e, area: 'interior', desc: 'A cold stone brazier, waiting to be lit.', fixture: true },
+        // Locked-gate puzzle fixtures (see wireDungeonGates/BUILDING_FIXTURE_INTERACTABLES.dungeonApertureFurniture below) —
+        // the aperture only actually does anything while the player is
+        // carrying the one matching key prop (see updateLooseProps).
+        dungeonAperture: { itemKey: 'dungeonApertureFurniture', icon: '🔒', name: 'Stone Aperture', price: 0, fw: 1, fd: 1, color: 0x5a4f42, area: 'interior', desc: 'A small keyhole socket carved into the stone.', fixture: true },
+        dungeonPressurePlate: { itemKey: 'dungeonPressurePlateFurniture', icon: '⬜', name: 'Pressure Plate', price: 0, fw: 1, fd: 1, color: 0x6b665a, area: 'interior', desc: 'A weighted stone plate, flush with the floor.', fixture: true },
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
@@ -8647,6 +8652,12 @@
       const LOOSE_PROP_THROW_SPEED_PX = 260;
       const LOOSE_PROP_THROW_UP_SPEED = 3.4;
       const LOOSE_PROP_VOID_Y = -3; // Below even the pit chamber's sublevel (-2) — see updateLooseProps' "fallen into space" respawn.
+      // mapId -> [{ kind: 'key'|'plate', gateTiles, slabMeshes, apertureId?
+      // (key), unlocked? (key), plateCol/plateRow+pressed? (plate) }] — one
+      // entry per locked gate this floor (see dungeon-test.js's keyGate/
+      // plateGate), driven by updateDungeonGates and
+      // unlockDungeonKeyGate/wireDungeonGates below.
+      const _dungeonGates = new Map();
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
       // being purely decorative (e.g. the Alchemy Table, the Bulletin
@@ -8763,6 +8774,22 @@
             },
           };
         },
+        // Only ever does anything while player.carriedProp is the one
+        // matching key (see updateLooseProps/dungeon-test.js's
+        // pendingKeyProp) — f.apertureId comes straight from the
+        // furniture record dungeon-test.js baked on at placement time.
+        dungeonApertureFurniture: (f) => ({
+          getButtons() {
+            if (player.carriedProp?.kind === 'key' && player.carriedProp?.apertureId === f.apertureId) {
+              return [{ icon: '🔑', label: 'Insert Key', action: 'obj_insert_key', style: 'primary', allowed: true }];
+            }
+            return [{ icon: '🔒', label: 'Locked — needs a matching key', action: 'obj_locked_aperture', style: 'secondary', allowed: false }];
+          },
+          onAction(action) {
+            if (action !== 'obj_insert_key') return { ok: false, message: 'It needs a matching key.' };
+            return unlockDungeonKeyGate(f.apertureId);
+          },
+        }),
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
@@ -11911,24 +11938,47 @@
         return group;
       }
 
-      // Builds every placed loose prop (mapData.looseProps — crates and
-      // chemical jars, see dungeon-test.js) into live physics state, driven
-      // every frame by updateLooseProps. Crates reuse the same procedural
-      // crateStack recipe DECORATIVE_FURNITURE_DEFS.crateStack already
-      // renders as ordinary dressing elsewhere — same look, but this
-      // instance is a real pick-up-and-throw object instead of static decor.
+      // A thin shaft + a torus bow — reads as a key silhouette without
+      // needing an authored/imported model, same reasoning as buildJarMesh.
+      function buildKeyMesh() {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshLambertMaterial({ color: 0xd4af37 });
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.26, 8), mat);
+        shaft.rotation.z = Math.PI / 2;
+        shaft.position.set(0.06, 0.14, 0);
+        group.add(shaft);
+        const bow = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.02, 8, 16), mat);
+        bow.position.set(-0.1, 0.14, 0);
+        group.add(bow);
+        const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.02), mat);
+        tooth.position.set(0.17, 0.1, 0);
+        group.add(tooth);
+        return group;
+      }
+
+      // Builds every placed loose prop (mapData.looseProps — crates,
+      // chemical jars, keys, and statues, see dungeon-test.js) into live
+      // physics state, driven every frame by updateLooseProps. Crates and
+      // statues reuse the same procedural crateStack/statue recipes
+      // DECORATIVE_FURNITURE_DEFS already renders as ordinary dressing
+      // elsewhere — same look, but these instances are real pick-up-and-
+      // throw objects instead of static decor.
       function wireDungeonLooseProps(mapId, mapData, bScene) {
         const props = [];
         for (const p of (mapData.looseProps || [])) {
-          const mesh = p.kind === 'jar' ? buildJarMesh(p.colorHex || 0x6a8a4a) : buildFurnitureVisual('crateStack', 0x8a6a3a);
+          const mesh = p.kind === 'jar' ? buildJarMesh(p.colorHex || 0x6a8a4a)
+            : p.kind === 'key' ? buildKeyMesh()
+            : p.kind === 'statue' ? buildFurnitureVisual('statue', 0x8a8578)
+            : buildFurnitureVisual('crateStack', 0x8a6a3a);
           _markOutline(mesh);
           mesh.position.set(p.col + 0.5, 0, p.row + 0.5);
           bScene.add(mesh);
           const x = (p.col + 0.5) * TILE, y = (p.row + 0.5) * TILE;
           props.push({
             id: p.id, kind: p.kind, name: p.name || null, mesh,
+            apertureId: p.apertureId || null,
             x, y, z: 0, vx: 0, vy: 0, vz: 0,
-            bounciness: p.kind === 'jar' ? 0.42 : 0.18,
+            bounciness: p.kind === 'jar' ? 0.42 : p.kind === 'key' ? 0.3 : p.kind === 'statue' ? 0.04 : 0.18,
             originX: x, originY: y, originZ: 0,
           });
         }
@@ -12077,6 +12127,107 @@
           }
         }
         _dungeonLooseProps.delete(mapId);
+      }
+
+      // One flat stone slab per gate tile — a solid wall stub blocking a
+      // locked passage, distinct from the chasm/rune puzzle's dark floor
+      // overlay (that one reads as "a fall hazard you can shoot across";
+      // this one should read as "sealed, needs a key/weight" instead).
+      // mapData.colliders already blocks the tiles at scene-build time
+      // (see the chasm gap's own identical reasoning) — these slabs are
+      // purely the visual half, toggled by setDungeonGateOpen.
+      function buildDungeonGateSlabs(gateTiles, bScene) {
+        const mat = new THREE.MeshLambertMaterial({ color: 0x4a4238 });
+        return gateTiles.map(([c, r]) => {
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.96, INTERIOR_WALL_HEIGHT, 0.96), mat);
+          mesh.position.set(c + 0.5, INTERIOR_WALL_HEIGHT / 2, r + 0.5);
+          bScene.add(mesh);
+          _markOutline(mesh);
+          return mesh;
+        });
+      }
+
+      // Builds live gate state (see _dungeonGates) for mapData.keyGate/
+      // plateGate — called once per scene load, alongside
+      // buildDungeonPitChamber/wireDungeonLooseProps.
+      function wireDungeonGates(mapId, mapData, bScene) {
+        const gates = [];
+        if (mapData.keyGate) {
+          gates.push({
+            kind: 'key', apertureId: mapData.keyGate.gateId, gateTiles: mapData.keyGate.gateTiles,
+            slabMeshes: buildDungeonGateSlabs(mapData.keyGate.gateTiles, bScene), unlocked: false,
+          });
+        }
+        if (mapData.plateGate) {
+          gates.push({
+            kind: 'plate', gateTiles: mapData.plateGate.gateTiles,
+            slabMeshes: buildDungeonGateSlabs(mapData.plateGate.gateTiles, bScene),
+            plateCol: mapData.plateGate.plateCol, plateRow: mapData.plateGate.plateRow, pressed: false,
+          });
+        }
+        _dungeonGates.set(mapId, gates);
+      }
+
+      // Toggles one gate's actual collision (bGrid, via the same live grid
+      // getActiveGrid()/canOccupyAt already reads every frame) and its
+      // slab visibility together, so the two can never drift out of sync.
+      function setDungeonGateOpen(mapId, gate, open) {
+        const info = _buildingScenes.get(mapId);
+        for (const [c, r] of gate.gateTiles) {
+          const tile = info?.grid?.[r]?.[c];
+          if (tile) tile.type = open ? TileType.GRASS : TileType.ROCK;
+        }
+        for (const mesh of gate.slabMeshes) mesh.visible = !open;
+      }
+
+      // Per-frame: only the plate gate needs live driving — open exactly
+      // while a statue (not the one currently carried) is at rest on its
+      // plate tile, closed the instant that weight is gone. The key gate
+      // is a one-way action handled entirely by unlockDungeonKeyGate.
+      function updateDungeonGates(dt) {
+        if (!window.DungeonTest?.floorFromMapId?.(currentArea)) return;
+        const gates = _dungeonGates.get(currentArea);
+        if (!gates) return;
+        const props = _dungeonLooseProps.get(currentArea) || [];
+        for (const gate of gates) {
+          if (gate.kind !== 'plate') continue;
+          const pressed = props.some(p => p.kind === 'statue' && p !== player.carriedProp
+            && Math.floor(p.x / TILE) === gate.plateCol && Math.floor(p.y / TILE) === gate.plateRow
+            && Math.abs(p.vz) < 0.15);
+          if (pressed === gate.pressed) continue;
+          gate.pressed = pressed;
+          setDungeonGateOpen(currentArea, gate, pressed);
+          showToast(pressed ? 'The plate sinks — something shifts open.' : 'The plate rises — it seals shut again.', pressed);
+        }
+      }
+
+      // Called from dungeonApertureFurniture's onAction — consumes the one
+      // matching key prop (player.carriedProp) and permanently opens its gate.
+      function unlockDungeonKeyGate(apertureId) {
+        const gates = _dungeonGates.get(currentArea);
+        const gate = gates?.find(g => g.kind === 'key' && g.apertureId === apertureId);
+        if (!gate) return { ok: false, message: 'Nothing to unlock here.' };
+        if (gate.unlocked) return { ok: false, message: 'Already unlocked.' };
+        gate.unlocked = true;
+        setDungeonGateOpen(currentArea, gate, true);
+        const key = player.carriedProp;
+        player.carriedProp = null;
+        const props = _dungeonLooseProps.get(currentArea);
+        const index = props ? props.indexOf(key) : -1;
+        if (index >= 0) {
+          props.splice(index, 1);
+          key.mesh.parent?.remove(key.mesh);
+          key.mesh.traverse(child => { child.geometry?.dispose?.(); child.material?.dispose?.(); });
+        }
+        return { ok: true, message: 'The gate rumbles open — the key is spent.' };
+      }
+
+      function disposeDungeonGates(mapId) {
+        const gates = _dungeonGates.get(mapId);
+        if (gates) {
+          for (const gate of gates) for (const mesh of gate.slabMeshes) mesh.parent?.remove(mesh);
+        }
+        _dungeonGates.delete(mapId);
       }
 
       // Ghostly, semi-transparent placeholder guardians — reuses the exact
@@ -12240,6 +12391,7 @@
         _dungeonPitChambers.delete(mapId);
         disposeDungeonBraziers(mapId);
         disposeDungeonLooseProps(mapId);
+        disposeDungeonGates(mapId);
         if (currentArea === mapId) { player.falling = false; player.fallVZ = 0; }
       }
 
@@ -12273,6 +12425,7 @@
           _dungeonPitChambers.delete(mapId);
           disposeDungeonBraziers(mapId);
           disposeDungeonLooseProps(mapId);
+          disposeDungeonGates(mapId);
           player.falling = false; player.fallVZ = 0;
         } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
@@ -12550,6 +12703,7 @@
           }
           if (mapData.wallStyle === 'dungeon') buildDungeonPitChamber(mapId, mapData.pitChamber, bScene);
           if (mapData.wallStyle === 'dungeon') wireDungeonLooseProps(mapId, mapData, bScene);
+          if (mapData.wallStyle === 'dungeon') wireDungeonGates(mapId, mapData, bScene);
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -22036,6 +22190,7 @@
         updateDungeonFalling(dt); // Must run before updatePlayerMesh, which reads player.falling/fallSurfaceY this same frame.
         updateDungeonBraziers(dt);
         updateLooseProps(dt);
+        updateDungeonGates(dt);
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
