@@ -1,17 +1,23 @@
 (() => {
   'use strict';
 
-  // Carpenter's shop: sells barn plans (see BARN_TIERS, game.js), house
-  // piece deeds (see HOUSE_PIECE_CATALOG, game.js), and furniture
-  // blueprints (see FURNITURE_BLUEPRINT_CATALOG). Same shape as the General
-  // Store's goods list, just its own three catalogs. Extracted out of
-  // game.js following the same window.<Namespace> + init(deps) pattern as
-  // its sibling shop modules. getBarnTiers()/getHousePieceDeeds() are
-  // getters since _applyLoadedShopStock (game.js) reassigns
-  // BARN_TIERS/HOUSE_PIECE_CATALOG wholesale once
-  // docs/config/shops/shop-stock.json loads.
+  // Carpenter's shop: sells barn plans (see BARN_TIERS, game.js), modular
+  // barn additions (shop-stock carpenterBarnPlans.additions), house piece
+  // deeds (see HOUSE_PIECE_CATALOG, game.js), and furniture blueprints
+  // (see FURNITURE_BLUEPRINT_CATALOG). Same shape as the General Store's
+  // goods list, just its own catalogs. Extracted out of game.js following
+  // the same window.<Namespace> + init(deps) pattern as its sibling shop
+  // modules. getBarnTiers()/getHousePieceDeeds() are getters since
+  // _applyLoadedShopStock (game.js) reassigns BARN_TIERS/
+  // HOUSE_PIECE_CATALOG wholesale once docs/config/shops/shop-stock.json
+  // loads. Barn additions deliberately stay in their own shop-stock pool so
+  // they never leak into the farmhouse deed catalog/editor.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
+
+  function _barnAdditions() {
+    return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions || {};
+  }
 
   function buyBarnPlan(tier) {
     const tierDef = deps.getBarnTiers()[tier];
@@ -21,6 +27,23 @@
     deps.inventory.gold = gold - tierDef.price;
     deps.inventory[tierDef.planItem] = Math.min(9, (deps.inventory[tierDef.planItem] || 0) + 1);
     deps.showToast(`Bought a ${tierDef.label} plan!`, true);
+    renderCarpenterShopPage();
+    deps.buildInventoryGrid();
+    deps.saveMemberWorldData();
+  }
+
+  // Generic configured barn additions. An addition owns only an inventory
+  // plan item here; its feature module decides how/where that plan is placed
+  // and consumed. This keeps the carpenter independent of Incubator logic and
+  // lets future barn rooms use the same stock shape without new shop code.
+  function buyBarnAddition(additionKey) {
+    const def = _barnAdditions()[additionKey];
+    if (!def?.planItem) return;
+    const gold = deps.inventory.gold || 0;
+    if (gold < def.price) { deps.showToast('Not enough gold.', false); return; }
+    deps.inventory.gold = gold - def.price;
+    deps.inventory[def.planItem] = Math.min(9, (deps.inventory[def.planItem] || 0) + 1);
+    deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
@@ -89,6 +112,30 @@
       row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
       list.appendChild(row);
     });
+
+    const additions = Object.entries(_barnAdditions()).filter(([, def]) => window.ConditionRegistry.entryEligible(def, world));
+    if (additions.length) {
+      const additionHdr = document.createElement('div');
+      additionHdr.className = 'shop-section-label';
+      additionHdr.textContent = '🪚 Barn Additions';
+      list.appendChild(additionHdr);
+      additions.forEach(([additionKey, def]) => {
+        const owned = deps.inventory[def.planItem] || 0;
+        const row = document.createElement('div');
+        row.className = 'shop-row';
+        row.innerHTML = `
+          <div class="sh-icon">${deps.esc(def.icon || '🪚')}</div>
+          <div class="sh-info">
+            <div class="sh-name">${deps.esc(def.label)}</div>
+            <div class="sh-desc">${deps.esc(def.desc || 'A modular addition for a barn.')} Owned: ${owned}</div>
+            <div class="sh-price">${def.price}g each</div>
+          </div>
+          <button class="shop-buy-btn" data-barn-addition="${deps.esc(additionKey)}">Buy</button>
+        `;
+        row.querySelector('[data-barn-addition]')?.addEventListener('click', () => buyBarnAddition(additionKey));
+        list.appendChild(row);
+      });
+    }
 
     const deedHdr = document.createElement('div');
     deedHdr.className = 'shop-section-label';
