@@ -23041,6 +23041,19 @@
       }
       function pollControllerInput() {
         if (!gamepadState.focused) return;
+        // A controller-navigable panel (js/controller-ui-nav.js — the pause
+        // menu, NPC dialogue, cooking, the dye panel, ...) owns the gamepad
+        // exclusively while it's open, on its own independent poll loop, so
+        // stand down here rather than double-handling the same button press
+        // as both a UI selection and a gameplay action (e.g. A confirming a
+        // dialogue choice AND triggering runInteractAction() on the world
+        // behind it). Clearing the edge-tracking sets avoids a ghost
+        // "release" firing once this resumes polling after the panel closes.
+        if (window.ControllerUI?.isActive?.()) {
+          gamepadState.previous.clear();
+          gamepadState.activeShift = null;
+          return;
+        }
         const pads = navigator.getGamepads?.() || [];
         const pad = Array.from(pads).find(Boolean);
         if (!pad) {
