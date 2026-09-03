@@ -41,6 +41,8 @@ require(posturePath); // With no THREE/leg runtime in this Node shim, this insta
 const config = global.HobunjiNpcAgeEffectConfig;
 const oldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'teacup_unumanuk', name: 'Eldress Teacup' }); // Verifies exact Old assignment from the shared config.
 const veryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'kaboku_kunji', name: 'Kaboku Kunji' }); // Verifies exact Very Old assignment and stronger posture.
+const leafVeryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'leaf', name: 'Leaf' }); // Leaf shares the authored Very Old treatment.
+const pahuVeryOldEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'pahu', name: 'Pahu' }); // Pahu shares the authored Very Old treatment.
 const unaffectedEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'gorobi_ginju', name: 'Gorobi Ginju' }); // Guards against accidentally aging the normal NPC roster.
 const bogusPlaceholderEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'vul_sigrid', name: 'Vul Sigrid' }); // Prevents the discarded generic-fantasy placeholder from returning.
 const agedProfile = NpcAvatarPreview.buildProfileFromNpcExport({ id: 'father_hunundi_hodu', name: 'Father Hunundi' }); // Verifies shared gameplay profile construction ages body colors selectively.
@@ -52,6 +54,10 @@ assert.equal(oldEffect?.torsoPitchDeg, 4, 'Old carries an independent age-driven
 assert.equal(veryOldEffect?.headDropPx, 22, 'Very Old uses the authored 22 px head drop');
 assert.equal(veryOldEffect?.amount, 100, 'Very Old uses the strongest reference color amount');
 assert.equal(veryOldEffect?.torsoPitchDeg, 9, 'Very Old carries the stronger age-driven torso pitch');
+assert.equal(leafVeryOldEffect?.presetId, 'veryOld', 'Leaf is assigned to the Very Old preset');
+assert.equal(leafVeryOldEffect?.headDropPx, 22, 'Leaf receives the Very Old head drop');
+assert.equal(pahuVeryOldEffect?.presetId, 'veryOld', 'Pahu is assigned to the Very Old preset');
+assert.equal(pahuVeryOldEffect?.headDropPx, 22, 'Pahu receives the Very Old head drop');
 assert.equal(unaffectedEffect, null, 'NPCs outside the exact allowlist remain unaffected');
 assert.equal(bogusPlaceholderEffect, null, 'Vul Sigrid remains rejected as a bogus placeholder');
 assert.equal(tuned.torsoPitchDeg, 12.5, 'tool tuning can override torso pitch without mutating the shared default');
