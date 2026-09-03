@@ -76,6 +76,8 @@ assert.match(toolSource, /ProceduralHandAttachments\.attach/, '3D preview actual
 assert.match(toolSource, /ProceduralLegAnimation\.attach/, '3D preview actually attaches gameplay feet');
 assert.match(toolSource, /standingPosteriorY/, 'torso preview pivots around the gameplay floor-relative posterior');
 assert.match(toolSource, /torsoPitchDeg/, 'visual tool exposes the new animation-composer torso control');
+assert.match(toolSource, /ensurePortraitCosmetics\?\.\(\{assetBase:'\.\.\/\.\.\/assets\/',configBase:'\.\.\/\.\.\/config\/'\}\)/, 'Age Effect Tool initializes the shared portrait cosmetics cache before building NPC profiles');
+assert.match(toolSource, /if\(!profile\)throw new Error\(`Could not build portrait profile/, 'Age Effect Tool reports profile boot/data failures before reading bodyColors');
 
 assert.match(loaderSource, /config\/npc-age-effects\.js\?v=20260903a[\s\S]*npc-age-effects-runtime\.js\?v=20260903a/, 'gameplay loads shared age config before portrait runtime');
 assert.match(loaderSource, /drunk-locomotion\.js\?v=20260812a[\s\S]*npc-age-body-posture\.js\?v=20260903a/, 'age torso layer decorates the animation stack after drunk locomotion');
