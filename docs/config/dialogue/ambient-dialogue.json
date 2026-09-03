@@ -360,6 +360,11 @@
       }
     },
     "drenkirra": {
+      "dialogueLines": [
+        "Krrik-krrik!",
+        "Chrrup!",
+        "Tik-tik-tik!"
+      ],
       "chatter": {
         "intervalMs": 200,
         "volume": 0.235,
@@ -460,6 +465,11 @@
       }
     },
     "grehlr": {
+      "dialogueLines": [
+        "Hrrrmm!",
+        "Mrrup!",
+        "Hrru-hrru!"
+      ],
       "chatter": {
         "intervalMs": 200,
         "volume": 0.31,
@@ -519,6 +529,11 @@
       }
     },
     "gar-wolf": {
+      "dialogueLines": [
+        "Rrrrowf!",
+        "Awrf!",
+        "Snrrf…!"
+      ],
       "chatter": {
         "allowedClips": [
           "sfx_bark-yap.ogg"
@@ -592,6 +607,11 @@
       }
     },
     "dabinggi-hound": {
+      "dialogueLines": [
+        "Hreeeee!!!",
+        "Bzzzarf!!!",
+        "Bzee-bee-beee!!!"
+      ],
       "chatter": {
         "allowedClips": [
           "sfx_bark-cricket.ogg",
@@ -650,7 +670,14 @@
           "sfx_syrinx_yaps.ogg"
         ]
       }
-    }
+    },
+      "uumkaoii": {
+        "dialogueLines": [
+          "Uuummm.",
+          "Kao-kao!",
+          "Mrruu?"
+        ]
+      }
   },
   "crowdLines": {
     "cheer": [

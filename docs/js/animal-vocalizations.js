@@ -136,7 +136,7 @@
   }
 
   function speciesProfileKey(c) {
-    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    const raw = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
     return raw
       .replace(/-wild-den-mother$/, '')
       .replace(/-den-mother$/, '')
@@ -196,6 +196,9 @@
       chatter: mergeKind(PROFILE_DEFAULTS.chatter, common.chatter, species.chatter),
       warning: mergeKind(PROFILE_DEFAULTS.warning, common.warning, species.warning),
       growl: mergeKind(PROFILE_DEFAULTS.growl, common.growl, species.growl),
+      dialogueLines: Array.isArray(species.dialogueLines)
+        ? [...species.dialogueLines]
+        : Array.isArray(common.dialogueLines) ? [...common.dialogueLines] : [],
       // Recording base tuning is deliberately global: the same indexed sound
       // keeps the same base identity no matter which species response uses it.
       clipTuning: { ...(common.clipTuning || {}) },
@@ -320,9 +323,14 @@
     if (!lines.length || !c?.avatarRef?.group || !window.AmbientDialogue?.show) return;
     const line = lines[Math.floor(random() * lines.length)] || '';
     if (!String(line).trim()) return;
+    const chatheadCreatureKind = speciesProfileKey(c); // Used by AnimalChatheadFrame to select the species-authored crop for this speaker.
     window.AmbientDialogue.show(c.avatarRef.group, line, {
       speakerId: c.id,
-      mode: 'overhead',
+      profile: chatheadCreatureKind ? {
+        chatheadCreatureKind,
+        creatureGenotype: c.genotype || null,
+      } : null, // Gives the shared portrait renderer animal species/genetics without pretending the creature is an NPC fighter profile.
+      mode: chatheadCreatureKind ? 'chathead' : 'overhead',
       durationMs: Math.max(500, finite(cfg.textDurationMs, 1600)),
       tone: 'animal',
     });
@@ -379,6 +387,10 @@
     state.nextChatterS = randomRange(chatter.cooldownMinS, chatter.cooldownMaxS);
   }
 
+  function dialogueLinesFor(c) {
+    return (profileFor(c).dialogueLines || []).filter(line => String(line || '').trim());
+  }
+
   function companionDiscovery(c, reason, opts = {}) { return request(c, 'warning', { ...opts, reason }); }
   function threatGrowl(c, reason, opts = {}) { return request(c, 'growl', { ...opts, reason }); }
   function warning(c, reason, opts = {}) { return request(c, 'warning', { ...opts, reason }); }
@@ -423,6 +435,7 @@
     pulseEnvelope,
     scalePulse,
     headNodOffsetDeg,
+    dialogueLinesFor,
     debugSnapshot,
     setAuthoredProfiles,
     profileForDebug: profileFor,
