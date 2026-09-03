@@ -10,6 +10,7 @@
     if (!config) return null;
     window.__attackValuesConfig = config;
     window.Combat?.applyComboConfig?.(config.combo);
+    window.Combat?.applyDeathMarkConfig?.(config.deathMark);
     window.Combat?.applyQuickAttackConfig?.(config.quickAttacks);
     window.Combat?.applyChargedBreakerConfig?.(config.chargedBreaker);
     window.Combat?.applyFlurryConfig?.(config.flurry);
@@ -102,6 +103,7 @@
     ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
     ['js/combat/combat-grehlr-stink.js?v=20260822a', () => !!window.HobunjiGrehlrStink],
     ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
+    ['js/combat/combat-death-mark.js?v=20260903a', () => !!window.HobunjiDeathMark],
     ['js/combat/combat-drenkirra-pellet.js?v=20260827treecover1', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
