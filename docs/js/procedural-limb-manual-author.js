@@ -1,12 +1,12 @@
 // Reusable manual IK handle layer for the Procedural Animation Editor.
-//
-// The host supplies the actual avatar/leg/hand application callbacks. This file
-// owns only author handles, selection, TransformControls, and the transition
-// from "IK is driving" to "pose is frozen so physics may take over".
+// Owns viewport handles, TransformControls, drag history, and release/resume.
+// The host remains authoritative for avatar rendering, limb application, and physics.
 (function (global) {
   'use strict';
 
   if (global.ProceduralLimbManualAuthor) return;
+
+  const HISTORY_LIMIT = 100;
 
   function finitePoint(value) {
     return value && [value.x, value.y, value.z].every(component => Number.isFinite(Number(component)));
@@ -27,7 +27,9 @@
     const camera = host.getCamera?.();
     const renderer = host.getRenderer?.();
     const locomotionRoot = host.getLocomotionRoot?.();
-    if (!scene || !camera || !renderer?.domElement || !locomotionRoot) throw new Error('Manual IK requires scene, camera, renderer, and locomotion root.');
+    if (!scene || !camera || !renderer?.domElement || !locomotionRoot) {
+      throw new Error('Manual IK requires scene, camera, renderer, and locomotion root.');
+    }
 
     const TransformControls = await loadTransformControls(THREE);
     const state = {
@@ -38,10 +40,16 @@
       control: null,
       selectedKey: null,
       pointerHandler: null,
+      keyHandler: null,
       seed: null,
       lastSolve: null,
       cameraLock: null,
       cameraLockFrame: 0,
+      history: [],
+      historyIndex: -1,
+      applyingHistory: false,
+      undoButton: null,
+      redoButton: null,
     };
 
     const raycaster = new THREE.Raycaster();
@@ -107,8 +115,7 @@
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
-        const candidates = Object.values(state.handles).filter(Boolean);
-        const hit = raycaster.intersectObjects(candidates, false)[0]?.object || null;
+        const hit = raycaster.intersectObjects(Object.values(state.handles).filter(Boolean), false)[0]?.object || null;
         if (hit) attachHandle(hit);
       };
       renderer.domElement.addEventListener('pointerdown', state.pointerHandler, true);
@@ -166,6 +173,153 @@
       if (orbit) orbit.enabled = true;
     }
 
+    function snapshot() {
+      const sides = {};
+      for (const side of ['left', 'right']) {
+        sides[side] = {};
+        for (const kind of ['hand', 'elbow', 'foot', 'knee']) {
+          const point = currentHandlePoint(side, kind);
+          sides[side][kind] = point ? { x: point.x, y: point.y, z: point.z } : null;
+        }
+      }
+      return { schema: 'hobunji-manual-limb-ik.v1', releasedToPhysics: state.released, sides };
+    }
+
+    function historyPayload(value) {
+      return JSON.stringify(value?.sides || {});
+    }
+
+    function historyStatus() {
+      return {
+        index: state.historyIndex,
+        length: state.history.length,
+        canUndo: state.active && !state.released && state.historyIndex > 0,
+        canRedo: state.active && !state.released && state.historyIndex >= 0 && state.historyIndex < state.history.length - 1,
+      };
+    }
+
+    function ensureHistoryButtons() {
+      const row = document.getElementById('limbManualStart')?.closest?.('.limbPoseActions')
+        || document.getElementById('limbManualPhysics')?.parentElement
+        || null;
+      if (!row) return;
+      let undoButton = document.getElementById('limbManualUndo');
+      let redoButton = document.getElementById('limbManualRedo');
+      if (!undoButton) {
+        undoButton = document.createElement('button');
+        undoButton.id = 'limbManualUndo';
+        undoButton.type = 'button';
+        undoButton.className = 'secondary';
+        undoButton.textContent = 'Undo';
+        undoButton.title = 'Undo last Manual IK drag (Ctrl/Cmd+Z)';
+        undoButton.addEventListener('click', undo);
+        row.appendChild(undoButton);
+      }
+      if (!redoButton) {
+        redoButton = document.createElement('button');
+        redoButton.id = 'limbManualRedo';
+        redoButton.type = 'button';
+        redoButton.className = 'secondary';
+        redoButton.textContent = 'Redo';
+        redoButton.title = 'Redo Manual IK drag (Ctrl/Cmd+Shift+Z or Ctrl+Y)';
+        redoButton.addEventListener('click', redo);
+        row.appendChild(redoButton);
+      }
+      state.undoButton = undoButton;
+      state.redoButton = redoButton;
+    }
+
+    function notifyHistory() {
+      const status = historyStatus();
+      ensureHistoryButtons();
+      if (state.undoButton) state.undoButton.disabled = !status.canUndo;
+      if (state.redoButton) state.redoButton.disabled = !status.canRedo;
+      host.onHistoryChanged?.(status);
+    }
+
+    function resetHistory() {
+      state.history = [snapshot()];
+      state.historyIndex = 0;
+      notifyHistory();
+    }
+
+    function commitHistory() {
+      if (!state.active || state.released || state.applyingHistory) return false;
+      const next = snapshot();
+      const current = state.history[state.historyIndex] || null;
+      if (current && historyPayload(current) === historyPayload(next)) return false;
+      state.history.splice(state.historyIndex + 1);
+      state.history.push(next);
+      if (state.history.length > HISTORY_LIMIT) state.history.shift();
+      state.historyIndex = state.history.length - 1;
+      notifyHistory();
+      return true;
+    }
+
+    function applyHistorySnapshot(entry) {
+      if (!entry?.sides) return false;
+      state.applyingHistory = true;
+      try {
+        for (const side of ['left', 'right']) {
+          for (const kind of ['hand', 'elbow', 'foot', 'knee']) {
+            const p = entry.sides?.[side]?.[kind];
+            const handle = state.handles[`${side}.${kind}`];
+            if (handle && finitePoint(p)) handle.position.set(Number(p.x), Number(p.y), Number(p.z));
+          }
+        }
+        update();
+      } finally {
+        state.applyingHistory = false;
+      }
+      return true;
+    }
+
+    function undo() {
+      if (!historyStatus().canUndo) return false;
+      state.historyIndex -= 1;
+      const applied = applyHistorySnapshot(state.history[state.historyIndex]);
+      notifyHistory();
+      return applied;
+    }
+
+    function redo() {
+      if (!historyStatus().canRedo) return false;
+      state.historyIndex += 1;
+      const applied = applyHistorySnapshot(state.history[state.historyIndex]);
+      notifyHistory();
+      return applied;
+    }
+
+    function isEditableTarget(target) {
+      if (!target) return false;
+      const tag = String(target.tagName || '').toLowerCase();
+      return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select';
+    }
+
+    function installKeyboardHistory() {
+      if (state.keyHandler) return;
+      state.keyHandler = event => {
+        if (!state.active || state.released || isEditableTarget(event.target)) return;
+        const mod = event.ctrlKey || event.metaKey;
+        if (!mod || event.altKey) return;
+        const key = String(event.key || '').toLowerCase();
+        let handled = false;
+        if (key === 'z' && !event.shiftKey) handled = undo();
+        else if ((key === 'z' && event.shiftKey) || key === 'y') handled = redo();
+        if (handled) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      };
+      document.addEventListener('keydown', state.keyHandler, true);
+    }
+
+    function removeKeyboardHistory() {
+      if (!state.keyHandler) return;
+      document.removeEventListener('keydown', state.keyHandler, true);
+      state.keyHandler = null;
+    }
+
     function buildControls() {
       if (state.control) return;
       state.control = new TransformControls(camera, renderer.domElement);
@@ -175,14 +329,12 @@
       state.control.setSize?.(0.72);
       state.control.addEventListener?.('dragging-changed', event => {
         if (event.value) beginCameraLock();
-        else endCameraLock();
+        else {
+          endCameraLock();
+          commitHistory(); // Exactly one history entry per completed gizmo drag.
+        }
         host.onDraggingChanged?.(Boolean(event.value));
       });
-      // The procedural preview currently uses its own pointer-based camera drag
-      // instead of exposing OrbitControls. That camera handler may receive the
-      // same pointermove as TransformControls. Re-assert the drag-start camera
-      // transform after every gizmo change, with the rAF loop above as a second
-      // guard for hosts whose camera handler runs later in the event chain.
       state.control.addEventListener?.('change', restoreCameraLock);
       scene.add(state.control);
     }
@@ -216,18 +368,6 @@
       return { hand, elbow, foot, knee };
     }
 
-    function snapshot() {
-      const sides = {};
-      for (const side of ['left', 'right']) {
-        sides[side] = {};
-        for (const kind of ['hand', 'elbow', 'foot', 'knee']) {
-          const point = currentHandlePoint(side, kind);
-          sides[side][kind] = point ? { x: point.x, y: point.y, z: point.z } : null;
-        }
-      }
-      return { schema: 'hobunji-manual-limb-ik.v1', releasedToPhysics: state.released, sides };
-    }
-
     function update() {
       if (!state.active || state.released) return null;
       restoreCameraLock();
@@ -259,6 +399,7 @@
         ownership: 'manual handles → IK; physics off',
         selected: state.selectedKey,
         cameraLockedDuringDrag: Boolean(state.cameraLock),
+        history: historyStatus(),
         handles: snapshot(),
       });
       return solves;
@@ -286,8 +427,10 @@
         makeHandle(side, 'knee', seeded.knee, radius);
       }
       installPointerSelection();
+      installKeyboardHistory();
       setHandleVisibility(true);
       update();
+      resetHistory();
       return snapshot();
     }
 
@@ -296,8 +439,14 @@
       endCameraLock();
       state.released = true;
       setHandleVisibility(false);
+      notifyHistory();
       host.onReleaseToPhysics?.(snapshot());
-      host.onDebug?.({ mode: 'manual-ik', ownership: 'released; existing physics may take over', handles: snapshot() });
+      host.onDebug?.({
+        mode: 'manual-ik',
+        ownership: 'released; existing physics may take over',
+        history: historyStatus(),
+        handles: snapshot(),
+      });
       return true;
     }
 
@@ -306,6 +455,7 @@
       state.released = false;
       setHandleVisibility(true);
       update();
+      notifyHistory();
       return true;
     }
 
@@ -314,10 +464,14 @@
       state.released = false;
       endCameraLock();
       removePointerSelection();
+      removeKeyboardHistory();
       destroyControls();
       disposeHandleRoot();
       state.seed = null;
       state.lastSolve = null;
+      state.history = [];
+      state.historyIndex = -1;
+      notifyHistory();
     }
 
     function dispose() {
@@ -328,6 +482,9 @@
       start,
       update,
       snapshot,
+      undo,
+      redo,
+      getHistoryStatus: historyStatus,
       releaseToPhysics,
       resume,
       stop,
