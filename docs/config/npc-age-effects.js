@@ -22,7 +22,7 @@
       color: Object.freeze({ amount: 70, desaturation: 65, brightening: 30 }),
       headDropPx: 10, // Preserve the old 4:9 Old→Very Old proportion against the new 22 px Very Old value: 22×4/9=9.78, rounded to the tool's whole-pixel step.
       torsoPitchDeg: 4, // Added by the animation composer/posture bridge as a persistent forward torso rotation offset.
-      verticalOffsetReductionPct: 10, // Reduces the normal standing modelHeight/2 body lift, preserving species/gender portrait placement inside the avatar.
+      verticalOffsetReductionPct: 1.5, // Subtle age-related loss: reduce only the normal standing modelHeight/2 body lift, preserving species/gender portrait placement.
     }),
     veryOld: Object.freeze({
       id: 'veryOld',
@@ -30,7 +30,7 @@
       color: Object.freeze({ amount: 100, desaturation: 88, brightening: 48 }),
       headDropPx: 22,
       torsoPitchDeg: 9, // Stronger default hunch; intentionally independent from the portrait head-drop slider in the authoring tool.
-      verticalOffsetReductionPct: 20, // Stronger age-related height loss without altering portraitVerticalPlacement or species scale.
+      verticalOffsetReductionPct: 3, // Stronger but still subtle height loss without altering portraitVerticalPlacement or species scale.
     }),
   });
 
