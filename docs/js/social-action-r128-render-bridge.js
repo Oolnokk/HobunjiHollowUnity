@@ -29,6 +29,9 @@
     const nativeRender = typeof renderer.render === 'function' ? renderer.render.bind(renderer) : null;
     if (!nativeRender) return renderer;
     Object.defineProperty(renderer, '__hobunjiR128NativeRender', { value: nativeRender, configurable: true });
+    // Look up the prototype function at call time, not construction time: later
+    // composer/social wrappers can decorate it and every existing renderer
+    // instance immediately sees the new chain.
     renderer.render = function hobunjiR128InstanceRenderDispatch(...renderArgs) {
       state.dispatchCount++;
       const decorated = OriginalRenderer.prototype.render;
