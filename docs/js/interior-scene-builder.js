@@ -292,10 +292,17 @@
       ? new THREE.MeshLambertMaterial({ color: 0x4a463f })
       : wallStyle === 'mine'
       ? new THREE.MeshLambertMaterial({ color: 0x8a8d91 })
+      // Dungeon Test (see game.js's DungeonTest module): real brick walls
+      // (default WallBuilder path, dispatched below) over a flagstone floor
+      // instead of the mine's carved-tunnel gray — same carved_smooth.png
+      // stone texture, a touch darker/greener so it reads as built flagstone
+      // rather than raw tunnel rock.
+      : wallStyle === 'dungeon'
+      ? new THREE.MeshLambertMaterial({ color: 0x6f7566 })
       : wallStyle === 'canvas'
       ? new THREE.MeshLambertMaterial({ color: 0x8a7a5c })
       : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-    if (wallStyle === 'mine') {
+    if (wallStyle === 'mine' || wallStyle === 'dungeon') {
       const base = texturesBasePath || 'assets/'; // Used to resolve the same stone texture from both the game and editor tool paths.
       new THREE.TextureLoader().load(base + 'textures/carved_smooth.png', (tex) => {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;

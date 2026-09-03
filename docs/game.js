@@ -2304,6 +2304,12 @@
         alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
         bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
         mineLadder:    { itemKey: 'mineLadderFurniture',    icon: '🪜', name: 'Mine Ladder',          price: 0,  fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'The mine ladder and its construction plans.', fixture: true },
+        // Dungeon Test-only treasure chest (see synthesizeFloorMapData in
+        // dungeon-test.js and BUILDING_FIXTURE_INTERACTABLES below) — a
+        // distinct itemKey from the ordinary purchasable 'chest' above so
+        // opening one for its one-time loot never touches a player's own
+        // placed storage chests.
+        dungeonChest:  { itemKey: 'dungeonChestFurniture',  icon: '📦', name: 'Ancient Chest',        price: 0,  fw: 1, fd: 1, color: 0x4a3a26, area: 'interior', desc: 'A dust-caked chest, bound in iron.', fixture: true },
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
@@ -2333,7 +2339,7 @@
         'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
-        'feedGrinder', 'trough', 'campfire', 'mineLadder',
+        'feedGrinder', 'trough', 'campfire', 'mineLadder', 'dungeonChest',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -8662,6 +8668,33 @@
           },
         }),
         mineLadderFurniture: () => window.TownMine.makeLadderInteractable(),
+        // Dungeon Test treasure chest — one-time gold + Special Ammo reward,
+        // reusing the same inventory/RangedWeapons APIs the rest of the game
+        // already grants gold and ammo through (see the Sell buttons and
+        // rollSpecialAmmoLoot's corpse-loot callers) rather than inventing a
+        // parallel loot system.
+        dungeonChestFurniture: () => {
+          let opened = false;
+          return {
+            getButtons() {
+              return [opened
+                ? { icon: '📦', label: 'Empty Chest', action: 'obj_dungeon_chest', style: 'secondary', allowed: false }
+                : { icon: '💰', label: 'Open Chest', action: 'obj_dungeon_chest', style: 'primary', allowed: true }];
+            },
+            onAction(action) {
+              if (action !== 'obj_dungeon_chest') return { ok: false, message: 'Unknown action.' };
+              if (opened) return { ok: false, message: 'This chest is already empty.' };
+              opened = true;
+              const gold = 15 + Math.floor(Math.random() * 26);
+              inventory.gold = (inventory.gold || 0) + gold;
+              const ammoGained = window.RangedWeapons?.grantSpecialAmmo?.(1 + Math.floor(Math.random() * 2), false) || 0;
+              buildInventoryGrid(); window.HudUpdate.refreshItemScroll(); refreshActionBar();
+              saveMemberWorldData();
+              const ammoNote = ammoGained ? ` and ${ammoGained} Special Ammo` : '';
+              return { ok: true, message: `The chest creaks open — ${gold}g${ammoNote}!` };
+            },
+          };
+        },
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
@@ -8672,7 +8705,7 @@
       // requires tools/weapons to actually work there, unlike every other
       // building interior (see the combat-update gate in gameLoop and the
       // toolHolder/reticle scene wiring in enterBuilding below).
-      function _isCavernBuildingArea(area) { return typeof area === 'string' && (area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area)); }
+      function _isCavernBuildingArea(area) { return typeof area === 'string' && (area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area) || !!window.DungeonTest?.floorFromMapId?.(area)); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
       // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings, decor,
@@ -11439,6 +11472,7 @@
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
           await window.TownMine?.decorateTownMap?.(townM);
+          await window.DungeonTest?.decorateTownMap?.(townM);
           const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
@@ -11612,6 +11646,29 @@
         _zoneMinedRockPersist.delete(mapId);
       }
 
+      // Same reasoning as discardGeneratedMineFloor above, minus the mine-
+      // specific ore/descent-hole/run-state bookkeeping the Dungeon Test has
+      // no equivalent of — a fresh layout, furniture, and bandits every visit.
+      function discardGeneratedDungeonFloor(mapId) {
+        if (!window.DungeonTest?.floorFromMapId?.(mapId)) return;
+        const info = _buildingScenes.get(mapId);
+        if (info?.scene && currentArea === mapId) {
+          info.scene.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
+        }
+        for (const creature of [...hostileObjects]) {
+          if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
+          hostileObjects.delete(creature);
+          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+          creature.mesh?.parent?.remove(creature.mesh);
+          creature.groundShadow?.parent?.remove(creature.groundShadow);
+        }
+        if (info?.scene) {
+          info.scene.traverse(object => object.geometry?.dispose?.());
+          info.scene.clear();
+        }
+        _buildingScenes.delete(mapId);
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -11625,6 +11682,13 @@
           window.TownMine.recordFloorReached(mapData?.mineFloor);
           loadSource = 'town-mine';
           if (mineLoadingLabel) mineLoadingLabel.style.display = 'none';
+        } else if (window.DungeonTest?.floorFromMapId?.(mapId)) {
+          const dungeonLoadingLabel = document.getElementById('denLoadingLabel'); // Reuses the same "generating…" mobile feedback label as the Den/Mine carve.
+          if (dungeonLoadingLabel) dungeonLoadingLabel.style.display = 'flex';
+          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+          mapData = await window.DungeonTest.synthesizeFloorMapData(mapId);
+          loadSource = 'dungeon-test';
+          if (dungeonLoadingLabel) dungeonLoadingLabel.style.display = 'none';
         } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
           // (see synthesizeCavernMapData) — but that generation is one
@@ -11810,6 +11874,7 @@
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
+            if (furnitureKey === 'dungeonChest') await window.AuthoredFurniture?.load?.('dungeonChest'); // Same reasoning: the Dungeon Test regenerates a fresh scene on every visit, so this can't rely on a later cached load.
             const color = def?.color || 0x888888;
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
@@ -11868,6 +11933,20 @@
               // Highland House interior instead goes through
               // getInteriorInteractableAt, so this only matters here.
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(furnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
+            }
+          }
+          // Dungeon Test enemies — ordinary bandits (window.BanditCombat,
+          // the same system wilderness camps use) scattered through the
+          // generated rooms by dungeon-test.js's synthesizeFloorMapData, so
+          // this experimental map has real combat (melee and ranged alike)
+          // to test against rather than an empty crawl.
+          if (mapData.wallStyle === 'dungeon' && mapData.dungeonEnemySpawns?.length) {
+            const dungeonGangConfig = await window.BanditCombat?.loadGangConfig?.();
+            for (const spawn of mapData.dungeonEnemySpawns) {
+              const bandit = await window.BanditCombat?.makeEntity?.(dungeonGangConfig || {}, spawn.rank, 2, (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
+                zoneId: mapId, scene: bScene, grid: bGrid, cols, rows,
+              });
+              if (bandit) hostileObjects.add(bandit);
             }
           }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
@@ -12247,6 +12326,7 @@
 
       function enterBuilding(mapId, defaultCol, defaultRow) {
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
+        if (window.DungeonTest?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedDungeonFloor(mapId);
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
           : currentArea === 'town' ? townScene : scene;

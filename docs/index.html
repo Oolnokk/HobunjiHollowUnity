@@ -555,6 +555,14 @@
   <script src="js/cavern-sculptor.js?v=20260902cavesafe1"></script>
   <script src="js/cavern-generator.js?v=20260902cavesafe1"></script>
   <script src="js/town-mine.js?v=20260902ore1"></script>
+  <!-- Experimental Dungeon Test — room+corridor BSP generator (window.
+       DungeonGenerator, pure data, no scene-graph calls) plus its
+       game.js-integration module (window.DungeonTest: town entrance
+       placement, per-visit floor synthesis). Must load before game.js,
+       which calls window.DungeonTest.decorateTownMap/synthesizeFloorMapData
+       and checks window.DungeonTest.floorFromMapId. -->
+  <script src="js/dungeon-generator.js?v=20260903a"></script>
+  <script src="js/dungeon-test.js?v=20260903a"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
        (window.ZonePlateauMesa) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls

@@ -559,6 +559,15 @@ function campfireRecipe() {
     box(0, .65, 0, .6, 1.3, .12, .85),
   ];
 
+  // Loading can briefly race the first Dungeon Test scene build, same
+  // reasoning as mineLadder above — a small stand-in box until
+  // dungeonChest.json (authored, config/furniture-authored/dungeonChest.json)
+  // is ready, at which point AuthoredFurniture supplies the real model.
+  CATALOG.dungeonChest = [
+    box(0, .19, 0, .8, .38, .5, .7, { color: 0x4a3a26 }),
+    box(0, .42, 0, .82, .08, .52, .85, { color: 0x5c4830 }),
+  ];
+
   window.ProceduralFurniture = {
     buildFurnitureGroup,
     buildPartMesh,

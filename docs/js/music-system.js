@@ -555,6 +555,8 @@
   function areaBgmTracks(area) {
     const mineTracks = window.TownMine?.bgmTracksForArea?.(area);
     if (Array.isArray(mineTracks)) return mineTracks;
+    const dungeonTracks = window.DungeonTest?.bgmTracksForArea?.(area);
+    if (Array.isArray(dungeonTracks)) return dungeonTracks;
     return window.AudioSystem?.gameAudioConfig().areaBgm?.[area] || [];
   }
 
