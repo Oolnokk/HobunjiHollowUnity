@@ -5,11 +5,11 @@
 (() => {
   'use strict';
 
-  const MASTER_VERSION = 'hobunji-attachment-rig-master-2026-09-03-v1';
+  const MASTER_VERSION = 'hobunji-attachment-rig-master-2026-09-03-v2'; // Used to isolate corrected rig autosaves from the bad v1 shoulder baseline.
   const MASTER_SCHEMA = 'hobunji.attachment-rig-profiles.v10';
-  const V15_28_AUTHOR_WIDTH = 1;
-  const GAME_AVATAR_WIDTH = 0.9;
-  const V15_28_TO_RUNTIME = GAME_AVATAR_WIDTH / V15_28_AUTHOR_WIDTH;
+  const GAME_AVATAR_WIDTH = 0.9; // Used by provenance/diagnostics to document the coordinate space the v9 author actually rendered.
+  const BAD_V1_SHOULDER_SCALE = 0.9; // Used only to recognize and repair shoulders double-scaled by the v1 forensic master.
+  const V9_SHOULDERS_EXPORTED_AT = '2026-08-26T03:30:34.506Z'; // Used by shoulder provenance and diagnostics.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   const deepFreeze = value => {
     if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -53,30 +53,28 @@
   // portraitModelHeight, portraitPlacement, portraitScale, handScale,
   // footScale, armLengthHeightPercentOffset.
   //
-  // Hand-shoulder positions below are the effective runtime coordinates from
-  // the last clearly intentional pre-v9 authoring pass. The authored values
-  // were positioned against a 1.0-wide Animation Author avatar and therefore
-  // retain the documented x0.9 conversion that v9 accidentally removed.
+  // Hand shoulders are the exact v9 Rig Coordinates tuples. V15.36+ already
+  // built the author avatar at gameplay width (0.9), so applying another 0.9
+  // conversion here would double-scale values that were authored in game space.
   const characterRecords = [
-    ['tletingan::male', -17.000000000000004, 24.829594593937666, [-0.1769199293575374,0.3839625600994886,0], [0.2049331894445198,0.3839733966164126,0], [-0.22035187409221962,0.40187088752950145,0], [59.09264957264957,108.5], 0.85,0.645,0.85,0.9,1,6],
-    ['engh-sho::male', -52.49999999999999, 40.46344209891254, [-0.2115295187159422,0.6813045758748404,0], [0.24496324042007375,0.6154566154036403,0], [-0.2603734925663083,0.6300093081930298,0], [53.60656565656566,128.5], 0.95,1.005,0.95,1.15,1.275,0],
-    ['mao-ao::male', -47, 37.31351872723915, [-0.2006533796199832,0.6234902368619534,0], [0.1716052361925984,0.6252801516658442,0], [-0.25278665584887006,0.5809987263275924,0], [62.551070840197696,125.5], null,0.95,1,1.1,1.05,0],
-    ['mao-ao::female', -44.50000000000001, 40.198007305794635, [-0.14923510597360837,0.4721927183587378,0], [0.15939381569084451,0.586039176677057,0], [-0.2150873925353402,0.5822969144889186,0], [76.5545073375262,114.5], 1,0.925,0.8,1,1.025,0],
-    ['kenkari::male', -5.500000000000004, 13.133738099540614, [-0.18055321970300925,0.27150559815116515,0], [0.16037836022425875,0.2502968447358932,0], [-0.16249789773270834,0.3417290762699474,0], [79.65683229813665,77.5], 0.75,0.51,0.75,1,1,0],
-    ['kenkari::female', -4.0000000000000036, 18.49675435046502, [-0.12331214301269552,0.2212216457140902,0], [0.14668133854979512,0.2693689065001323,0], [-0.14908155064979767,0.22510774875276895,0], [87.90841750841751,82.5], 0.75,0.51,0.75,0.925,1,0],
-    ['tletingan::female', -23.00000000000001, 21.62644067848934, [-0.15767922666458786,0.36829341919016667,0], [0.1740569335899959,0.3458417296368014,0], [-0.17393777512411973,0.3439840508446922,0], [67.36241610738254,99.5], 0.85,0.62,0.85,0.925,1.025,5],
-    ['mashtzarr::male', -27.499999999999993, 28.18802021075617, [-0.3150161025604807,0.504441432761613,0], [0.26444586398024755,0.4243271800933899,0], [-0.31331635602706026,0.456509659251688,0], [63.960809102402024,87.5], 1,0.755,1.18,0.925,1.175,0],
-    ['mashtzarr::female', -31.000000000000007, 29.459673223780613, [-0.20671639379279255,0.5521654715130626,0], [0.2749783835332749,0.3584077465404157,0], [-0.2644200627465378,0.33451920992438494,0], [72.13592233009709,97.5], 1,0.79,1.18,0.9,1.125,0],
-    ['engh-sho::female', -49.500000000000014, 41.16182006615896, [-0.1857404318972175,0.5885050529830135,0], [0.18454814805685235,0.44707477138734314,0], [-0.2233355961608095,0.4143859759824706,0], [71.9398595258999,112.5], 0.95,0.975,0.95,1.225,1.325,0],
+    ['tletingan::male', -17.000000000000004, 24.829594593937666, [-0.1769199293575374,0.3839625600994886,0], [0.22770354382724423,0.42663710735156957,0], [-0.2448354156580218,0.4465232083661127,0], [59.09264957264957,108.5], 0.85,0.645,0.85,0.9,1,6],
+    ['engh-sho::male', -52.49999999999999, 40.46344209891254, [-0.2115295187159422,0.6813045758748404,0], [0.2721813782445264,0.6838406837818225,0], [-0.28930388062923146,0.7000103424366998,0], [53.60656565656566,128.5], 0.95,1.005,0.95,1.15,1.275,0],
+    ['mao-ao::male', -47, 37.31351872723915, [-0.2006533796199832,0.6234902368619534,0], [0.19067248465844266,0.6947557240731601,0], [-0.28087406205430004,0.6455541403639915,0], [62.551070840197696,125.5], null,0.95,1,1.1,1.05,0],
+    ['mao-ao::female', -44.50000000000001, 40.198007305794635, [-0.14923510597360837,0.4721927183587378,0], [0.1771042396564939,0.6511546407522855,0], [-0.23898599170593354,0.646996571654354,0], [76.5545073375262,114.5], 1,0.925,0.8,1,1.025,0],
+    ['kenkari::male', -5.500000000000004, 13.133738099540614, [-0.18055321970300925,0.27150559815116515,0], [0.17819817802695415,0.27810760526210354,0], [-0.18055321970300925,0.37969897363327487,0], [79.65683229813665,77.5], 0.75,0.51,0.75,1,1,0],
+    ['kenkari::female', -4.0000000000000036, 18.49675435046502, [-0.12331214301269552,0.2212216457140902,0], [0.1629792650553279,0.29929878500014695,0], [-0.16564616738866406,0.25011972083640993,0], [87.90841750841751,82.5], 0.75,0.51,0.75,0.925,1,0],
+    ['tletingan::female', -23.00000000000001, 21.62644067848934, [-0.15767922666458786,0.36829341919016667,0], [0.19339659287777322,0.38426858848533485,0], [-0.19326419458235525,0.38220450093854685,0], [67.36241610738254,99.5], 0.85,0.62,0.85,0.925,1.025,5],
+    ['mashtzarr::male', -27.499999999999993, 28.18802021075617, [-0.3150161025604807,0.504441432761613,0], [0.2938287377558306,0.471474644548211,0], [-0.3481292844745114,0.5072329547240978,0], [63.960809102402024,87.5], 1,0.755,1.18,0.925,1.175,0],
+    ['mashtzarr::female', -31.000000000000007, 29.459673223780613, [-0.20671639379279255,0.5521654715130626,0], [0.30553153725919435,0.39823082948935073,0], [-0.2938000697183753,0.37168801102709437,0], [72.13592233009709,97.5], 1,0.79,1.18,0.9,1.125,0],
+    ['engh-sho::female', -49.500000000000014, 41.16182006615896, [-0.1857404318972175,0.5885050529830135,0], [0.20505349784094706,0.4967497459859368,0], [-0.24815066240089945,0.46042886220274515,0], [71.9398595258999,112.5], 0.95,0.975,0.95,1.225,1.325,0],
   ];
 
-  // Exact v9 raw shoulder positions are retained only as corruption
-  // fingerprints. If a legacy v9 project is imported, the master guard can
-  // recognize these uncalibrated values and restore the effective x0.9 target.
-  const v9RawHandShoulders = Object.freeze(Object.fromEntries(characterRecords.map(record => {
+  // v1-master shoulder fingerprints are used only by reconcileProfiles() when
+  // importing/migrating a draft that received the erroneous second x0.9 scale.
+  const badV1HandShoulders = Object.freeze(Object.fromEntries(characterRecords.map(record => {
     const key = record[0];
-    const left = record[4].map(value => value / V15_28_TO_RUNTIME);
-    const right = record[5].map(value => value / V15_28_TO_RUNTIME);
+    const left = record[4].map(value => value * BAD_V1_SHOULDER_SCALE);
+    const right = record[5].map(value => value * BAD_V1_SHOULDER_SCALE);
     return [key, { left, right }];
   })));
 
@@ -152,11 +150,12 @@
       },
       shoulderPerchRule,
       handShoulderRule: {
-        source: 'intentional-pre-v9-rig-anchor-gizmo',
-        coordinateSpace: 'game-avatar-local-0.9-base-width', version: 3,
-        authoredPreviewBaseWidth: V15_28_AUTHOR_WIDTH,
+        source: 'rig-anchor-gizmo-v9-exact-supplied',
+        coordinateSpace: 'character-visual-local', version: 4,
+        authoredPreviewBaseWidth: GAME_AVATAR_WIDTH,
         runtimeBaseWidth: GAME_AVATAR_WIDTH,
-        positionScaleApplied: V15_28_TO_RUNTIME,
+        positionScaleApplied: 1,
+        v9ExportedAt: V9_SHOULDERS_EXPORTED_AT,
       },
       anatomy: {
         portraitVerticalPlacementRatio: placement, portraitScale, handScale, footScale,
@@ -196,10 +195,10 @@
 
   const MASTER_PROVENANCE = Object.freeze({
     handShoulder: Object.freeze({
-      source: 'latest clearly intentional pre-v9 character hand-rig authoring, restored to its documented effective runtime coordinate space',
-      authoredCommit: 'd87cd9abfc838f52aee26507049e020f54f927fe',
-      effectiveBaselineRef: '6b020afaec067c15b1955b5c048c348d0d0ef9c3',
-      correction: 'preserve V15.28 1.0 -> 0.9 author-preview-to-game position calibration removed by v9',
+      source: 'exact supplied v9 Rig Coordinates hand-shoulder tuples authored after Animation Author adopted gameplay width 0.9',
+      authoredCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945',
+      exportedAt: V9_SHOULDERS_EXPORTED_AT,
+      correction: 'v2 removes the v1 forensic master extra x0.9 scale; exact v9 values are already runtime-space values',
     }),
     posterior: Object.freeze({
       source: 'floor-relative posterior authoring; calibrated values recovered after v9 serialized the floor field as zero',
@@ -296,7 +295,7 @@
     derivedCoordinates: {
       characterPosterior: { source:'posteriorRule.heightPercentFromFloor', formula:'portraitModelHeight * heightPercentFromFloor / 100', legacyFallback:'handAttachY + portraitModelHeight * heightPercentOffset / 100' },
       characterShoulderPerch: { source:'authored 2026-08-28 rig coordinates', offsetPercent:0 },
-      characterHandShoulders: { source:'intentional pre-v9 authoring', positionScaleApplied:V15_28_TO_RUNTIME, runtimeBaseWidth:GAME_AVATAR_WIDTH },
+      characterHandShoulders: { source:'exact v9 Rig Coordinates export', positionScaleApplied:1, runtimeBaseWidth:GAME_AVATAR_WIDTH, exportedAt:V9_SHOULDERS_EXPORTED_AT },
       creatureSaddle: { source:'approved/v9 authored saddle coordinates' },
       creatureShoulderGrip: { source:'authored 2026-08-28 creature rig coordinates', defaultRuleVersion:5 },
       idleHands: { x:'matching leftHandShoulder/rightHandShoulder anchor X', y:'derived character posterior Y plus procedural idle/walk Y offset', aimTarget:'matching full hand-shoulder anchor transform' },
@@ -323,13 +322,13 @@
   window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = {
     schema: MASTER_SCHEMA, exportedAt: window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META.exportedAt,
     masterConfigVersion: MASTER_VERSION,
-    shoulderAnchorsExportedAt: '2026-08-28T03:24:15.652Z',
+    shoulderAnchorsExportedAt: V9_SHOULDERS_EXPORTED_AT,
     anatomyProfiles: 'pending', authoredCharacterProfiles: 10, suppliedCharacterProfiles: 14,
     sharedCharacterProfiles: 4, exactSuppliedProfiles: 10, authoredCreatureProfiles: 5,
     parrotSharedProfiles: 2, rakakoanTransforms: 'always-aliased-to-kenkari',
     ghoulTransforms: 'always-aliased-to-mao-ao',
-    handShoulderCalibration: 'restored:v15.28-author-width-1.0-to-runtime-width-0.9',
-    anchorPositionScale: V15_28_TO_RUNTIME, posteriorCoordinateSpace: 'floor-relative',
+    handShoulderCalibration: 'v9-exact-post-calibration-no-extra-scale',
+    anchorPositionScale: 1, posteriorCoordinateSpace: 'floor-relative',
     posteriorPixelDependency: 'removed', posteriorFloorValues: 'master-recovered-from-pre-v9-floor-calibration',
     exporterGuard: 'master-reconcile-and-versioned-rig-autosave',
   };
@@ -417,9 +416,9 @@
       const floorPercent = Number(merged.posteriorRule.heightPercentFromFloor);
       if (!Number.isFinite(floorPercent) || Math.abs(floorPercent) <= 1e-12) merged.posteriorRule.heightPercentFromFloor = canonical.posteriorRule.heightPercentFromFloor;
       if (!(Number(merged.anatomy.portraitScale) > 0)) merged.anatomy.portraitScale = canonical.anatomy.portraitScale;
-      const raw = v9RawHandShoulders[key];
-      merged.anchors.leftHandShoulder = reconcileAnchor(merged.anchors.leftHandShoulder, canonical.anchors.leftHandShoulder, raw ? { x:raw.left[0], y:raw.left[1], z:raw.left[2] } : null);
-      merged.anchors.rightHandShoulder = reconcileAnchor(merged.anchors.rightHandShoulder, canonical.anchors.rightHandShoulder, raw ? { x:raw.right[0], y:raw.right[1], z:raw.right[2] } : null);
+      const badV1 = badV1HandShoulders[key];
+      merged.anchors.leftHandShoulder = reconcileAnchor(merged.anchors.leftHandShoulder, canonical.anchors.leftHandShoulder, badV1 ? { x:badV1.left[0], y:badV1.left[1], z:badV1.left[2] } : null);
+      merged.anchors.rightHandShoulder = reconcileAnchor(merged.anchors.rightHandShoulder, canonical.anchors.rightHandShoulder, badV1 ? { x:badV1.right[0], y:badV1.right[1], z:badV1.right[2] } : null);
       const stalePerch = v9StaleShoulderPerches[key];
       merged.anchors.shoulderPerch = reconcileAnchor(merged.anchors.shoulderPerch, canonical.anchors.shoulderPerch, stalePerch ? { x:stalePerch[0], y:stalePerch[1], z:stalePerch[2] } : null);
       output.characters[key] = merged;
@@ -455,14 +454,14 @@
     output.profiles = reconcileProfiles(output.profiles || output.attachmentRigProfiles || {});
     delete output.attachmentRigProfiles;
     output.exportGuard = {
-      version: 1,
-      behavior: 'canonical master baseline + current intentional edits; known v9/default corruption fingerprints are repaired before persistence/export',
+      version: 2,
+      behavior: 'canonical master baseline + current intentional edits; known v1/v9/default corruption fingerprints are repaired before persistence/export',
     };
     return output;
   }
 
   const masterGuard = {
-    version: 1,
+    version: 2,
     masterConfigVersion: MASTER_VERSION,
     legacyStorageKey: 'hobunjiAttachmentRigProfiles.v2',
     storageKey: `hobunjiAttachmentRigProfiles.master.${MASTER_VERSION}`,
@@ -473,18 +472,46 @@
   };
   window.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD = Object.freeze(masterGuard);
 
-  // The historical tool used one origin-wide localStorage key for every
-  // commit-pinned GitHack build. Redirect only Animation Author's rig autosave
-  // to a master-versioned key so a stale v9/historical page cannot silently
-  // replace this master on load. Writes are reconciled before persistence.
+  // Migration sources are checked once before the redirect wrapper is installed.
+  // This preserves a real draft without letting hidden origin-wide state mutate
+  // the committed runtime library outside the editor's normal autosave path.
+  const previousRigStorageKeys = Object.freeze([
+    'hobunjiAttachmentRigProfiles.master.hobunji-attachment-rig-master-2026-09-03-v1',
+    masterGuard.legacyStorageKey,
+  ]); // Used only by migrateRigAutosave() below.
+  const normalizeRigAutosavePayload = value => {
+    if (!value || typeof value !== 'object') return null;
+    if (value.profiles || value.attachmentRigProfiles) return value;
+    if (value.characters && value.creatures) return { schema: MASTER_SCHEMA, profiles: value };
+    return null;
+  };
   const isAnimationAuthor = typeof location !== 'undefined' && /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname || '');
   if (isAnimationAuthor && typeof localStorage !== 'undefined' && typeof Storage !== 'undefined') {
     const proto = Storage.prototype;
-    const marker = '__hobunjiAttachmentRigMasterStorageGuardV1';
+    const marker = '__hobunjiAttachmentRigMasterStorageGuardV2';
     if (!proto[marker]) {
       const originalGetItem = proto.getItem;
       const originalSetItem = proto.setItem;
       const originalRemoveItem = proto.removeItem;
+      let migrationStatus = { migrated: false, sourceKey: null, reason: 'current-v2-autosave-missing' };
+      try {
+        if (originalGetItem.call(localStorage, masterGuard.storageKey)) {
+          migrationStatus = { migrated: false, sourceKey: masterGuard.storageKey, reason: 'current-v2-autosave-present' };
+        } else {
+          for (const sourceKey of previousRigStorageKeys) {
+            const raw = originalGetItem.call(localStorage, sourceKey);
+            if (!raw) continue;
+            const normalized = normalizeRigAutosavePayload(JSON.parse(raw));
+            if (!normalized) continue;
+            originalSetItem.call(localStorage, masterGuard.storageKey, JSON.stringify(reconcileRigExport(normalized)));
+            migrationStatus = { migrated: true, sourceKey, reason: 'reconciled-into-v2-versioned-autosave' };
+            break;
+          }
+        }
+      } catch (error) {
+        migrationStatus = { migrated: false, sourceKey: null, reason: `migration-error:${error?.message || error}` };
+      }
+      window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.autosaveMigration = migrationStatus;
       Object.defineProperty(proto, marker, { value: true, configurable: false });
       proto.getItem = function(key) {
         if (this === localStorage && key === masterGuard.legacyStorageKey) return originalGetItem.call(this, masterGuard.storageKey);
@@ -493,7 +520,10 @@
       proto.setItem = function(key, value) {
         if (this === localStorage && key === masterGuard.legacyStorageKey) {
           let nextValue = String(value);
-          try { nextValue = JSON.stringify(reconcileRigExport(JSON.parse(nextValue))); } catch (_) {}
+          try {
+            const normalized = normalizeRigAutosavePayload(JSON.parse(nextValue));
+            if (normalized) nextValue = JSON.stringify(reconcileRigExport(normalized));
+          } catch (_) {}
           return originalSetItem.call(this, masterGuard.storageKey, nextValue);
         }
         return originalSetItem.call(this, key, value);
@@ -533,7 +563,7 @@
         setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
         window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.lastMasterSafeExportAt = new Date().toISOString();
       }, true);
-      window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.exporterGuard = 'installed';
+      window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.exporterGuard = 'installed-v2';
       return true;
     };
     if (!installExporterGuard()) {
