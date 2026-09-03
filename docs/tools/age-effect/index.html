@@ -34,7 +34,7 @@ select,input[type=number]{width:100%;min-height:40px;border:1px solid rgba(255,2
 </head>
 <body>
 <div class="app">
-<header><h1>Hobunji Age Effect Tool</h1><span class="badge">config-driven</span><span class="badge">static body composer</span><span id="loadBadge" class="badge">loading…</span></header>
+<header><h1>Hobunji Age Effect Tool</h1><span class="badge">config-driven</span><span class="badge">static body hierarchy</span><span id="loadBadge" class="badge">loading…</span></header>
 <div class="layout">
 <aside>
   <div class="card"><h2>Preview character</h2><div class="field"><label>NPC</label><select id="npcSelect"></select></div><div class="field"><label>Preset</label><select id="presetSelect"></select></div><div class="help">Runtime-assigned NPCs come from the real starter database. Presets, bounds, steps, tint slots, and posture composition values come from npc-age-effects.js.</div></div>
@@ -182,7 +182,6 @@ function dispose3d() {
 }
 
 function renderThree() {
-  orbit?.update?.();
   renderer?.render?.(scene, camera);
 }
 
@@ -196,6 +195,7 @@ function initThree() {
   orbit = new THREE.OrbitControls(camera, renderer.domElement);
   orbit.target.set(0, .48, 0);
   orbit.enableDamping = false;
+  orbit.update();
   orbit.addEventListener('change', renderThree);
   stageRoot = new THREE.Group();
   stageRoot.name = 'age_effect_stage';
@@ -336,7 +336,7 @@ async function rebuild() {
     const ageLowerY = Number(postureDebug?.verticalLowerY) || 0;
     const posteriorY = Number(postureDebug?.posteriorY ?? currentFeet?.standingPosteriorY);
 
-    $('stageStatus').innerHTML = `<span class="good">Static composer:</span> ${currentNpc.name} · ${ids.speciesId}/${ids.gender} · age Y ${ageLowerY.toFixed(3)} · posterior ${Number.isFinite(posteriorY) ? posteriorY.toFixed(3) : 'n/a'} · torso ${effect.torsoPitchDeg.toFixed(1)}° · per-frame age work: none`;
+    $('stageStatus').innerHTML = `<span class="good">Static hierarchy:</span> ${currentNpc.name} · ${ids.speciesId}/${ids.gender} · age Y ${ageLowerY.toFixed(3)} · posterior ${Number.isFinite(posteriorY) ? posteriorY.toFixed(3) : 'n/a'} · torso ${effect.torsoPitchDeg.toFixed(1)}° · per-frame age work: none`;
     $('debugText').textContent = JSON.stringify({
       npc: { id: currentNpc.id, name: currentNpc.name },
       effect,
