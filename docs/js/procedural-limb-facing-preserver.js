@@ -1,7 +1,8 @@
 // Procedural Animation Editor Ground / Carry / Manual lazy bootstrap.
 // Keeps optional limb authoring dormant until explicitly opened. It also loads
-// the tiny Fine Hood compatibility adapter eagerly so the editor and in-game
-// avatars share the same no-camera-facing-headwear rule.
+// tiny compatibility adapters eagerly: headwear stays camera-independent and
+// the editor's legacy ExperimentalFeet transforms receive repository-authored
+// foot visuals without introducing a second gait system.
 (() => {
   'use strict';
 
@@ -14,6 +15,7 @@
   const REAL_BUTTON_ID = 'limbPoseQuickBtn';
   const AUTHOR_SCRIPT_ID = 'proceduralLimbPoseAuthorExplicitScript';
   const HEADWEAR_SCRIPT_ID = 'proceduralFineHoodFacingDisableScript';
+  const FOOT_BRIDGE_SCRIPT_ID = 'proceduralEditorFootBridgeScript';
   const MAX_BUTTON_WAIT_FRAMES = 180;
   let activating = false;
 
@@ -32,6 +34,29 @@
     script.defer = true;
     script.onerror = () => console.warn('[Ground / Carry / Manual] Fine Hood camera-facing visibility fix failed to load.');
     document.head.appendChild(script);
+  }
+
+  function loadFootBridge() {
+    const live = window.HobunjiProceduralEditorFootBridge;
+    if (live) return Promise.resolve(live);
+    const existing = document.getElementById(FOOT_BRIDGE_SCRIPT_ID);
+    if (existing) return new Promise(resolve => {
+      if (window.HobunjiProceduralEditorFootBridge) return resolve(window.HobunjiProceduralEditorFootBridge);
+      existing.addEventListener('load', () => resolve(window.HobunjiProceduralEditorFootBridge || null), { once: true });
+      existing.addEventListener('error', () => resolve(null), { once: true });
+    });
+    return new Promise(resolve => {
+      const script = document.createElement('script');
+      script.id = FOOT_BRIDGE_SCRIPT_ID;
+      script.src = new URL('js/procedural-editor-foot-bridge.js?v=20260902e', DOCS_BASE).href;
+      script.defer = true;
+      script.onload = () => resolve(window.HobunjiProceduralEditorFootBridge || null);
+      script.onerror = () => {
+        console.warn('[Ground / Carry / Manual] Repository-authored foot bridge failed to load; legacy editor feet remain available.');
+        resolve(null);
+      };
+      document.head.appendChild(script);
+    });
   }
 
   function status(message, good = true) {
@@ -66,6 +91,7 @@
   }
 
   function activateGroundCarry() {
+    loadFootBridge().then(bridge => bridge?.activateLimbBridge?.());
     if (activating) return;
     const liveAuthor = window.HobunjiProceduralLimbPoseAuthor;
     if (liveAuthor && liveAuthor !== dormantAuthorSentinel) { openRealAuthor(); return; }
@@ -80,7 +106,11 @@
     script.id = AUTHOR_SCRIPT_ID;
     script.src = new URL('js/procedural-limb-pose-author.js?v=20260902d', DOCS_BASE).href;
     script.defer = true;
-    script.onload = () => { bootButton?.remove(); waitForRealAuthor(); };
+    script.onload = () => {
+      bootButton?.remove();
+      window.HobunjiProceduralEditorFootBridge?.activateLimbBridge?.();
+      waitForRealAuthor();
+    };
     script.onerror = () => { script.remove(); restoreBootstrapAfterFailure(); status('Limb pose author failed to load.', false); };
     document.head.appendChild(script);
   }
@@ -104,13 +134,15 @@
   }
 
   window.HobunjiProceduralLimbFacingPreserver = Object.freeze({
-    version: 10,
+    version: 11,
     mode: 'lazy-limb-author-bootstrap',
     activateGroundCarry,
     ensureBootstrapButton,
+    loadFootBridge,
   });
 
   loadHeadwearVisibilityFix();
+  loadFootBridge();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => ensureBootstrapButton(), { once: true });
   else ensureBootstrapButton();
 })();
