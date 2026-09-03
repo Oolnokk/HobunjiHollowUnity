@@ -11472,7 +11472,6 @@
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
           if (!townM) return;
           await window.TownMine?.decorateTownMap?.(townM);
-          await window.DungeonTest?.decorateTownMap?.(townM);
           const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
@@ -20974,12 +20973,17 @@
       });
       const settingDevModeEl = document.getElementById('settingDevMode');
       const settingFlipPngPortraitsRow = document.getElementById('settingFlipPngPortraitsRow'); // Dev-only home for comparing the legacy portrait orientation.
+      const settingDungeonTestRow = document.getElementById('settingDungeonTestRow'); // Dev-only quick entry into the experimental Dungeon Test (no set in-world location yet — see dungeon-test.js).
       const updateDevOnlySettingVisibility = () => {
         if (settingFlipPngPortraitsRow) {
           settingFlipPngPortraitsRow.hidden = !s_devMode;
           settingFlipPngPortraitsRow.style.display = s_devMode ? '' : 'none';
         }
-      }; // Keeps the portrait comparison out of ordinary player settings while preserving the diagnostic.
+        if (settingDungeonTestRow) {
+          settingDungeonTestRow.hidden = !s_devMode;
+          settingDungeonTestRow.style.display = s_devMode ? '' : 'none';
+        }
+      }; // Keeps the portrait comparison (and the Dungeon Test entry) out of ordinary player settings while preserving the diagnostics.
       settingDevModeEl.checked = s_devMode;
       updateDevOnlySettingVisibility();
       settingDevModeEl.addEventListener('change', e => {
@@ -20997,6 +21001,18 @@
         // off (see .fp-shifted), so it also needs an immediate refresh.
         window.DevSpawner?.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
+      });
+      // Dev-only quick entry into the experimental Dungeon Test — no set
+      // in-world location yet (eventually a wilderness find / mine-floor
+      // replacement, see dungeon-test.js), so this is the fast way in while
+      // it's still being tuned. Toggles: warps back out via exitBuilding()
+      // if already inside it, same "press again to return" convenience as
+      // the Test Arena teleport above.
+      document.getElementById('devEnterDungeonTestBtn')?.addEventListener('click', () => {
+        const dungeonMapId = window.DungeonTest?.MAP_ID;
+        if (!dungeonMapId) { showToast('Dungeon Test is not available.', false); return; }
+        if (currentArea === dungeonMapId) exitBuilding();
+        else enterBuilding(dungeonMapId);
       });
       // Wilderness den teleport (Dev Tools + Wildlife panel per-den button)
       // now lives in js/den-nest-system.js — call via

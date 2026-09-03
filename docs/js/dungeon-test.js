@@ -2,32 +2,27 @@
   'use strict';
 
   // Experimental Dungeon Test — a single procedurally-generated room+corridor
-  // floor (see dungeon-generator.js), reachable from town like any other
-  // building interior and playable with a normal character save: real
-  // furniture (docs/config/furniture-authored/*.json, same pipeline every
-  // house uses), real brick/stone walls (InteriorSceneBuilder's default
-  // WallBuilder path — see wallStyle 'dungeon' in interior-scene-builder.js),
-  // real bandit enemies (window.BanditCombat, the same system wilderness
-  // camps use), and the game's already-global ranged/melee combat (unlocked
-  // for this map via game.js's _isCavernBuildingArea). Follows the same
-  // window.<Namespace> + init(deps)-free pure-data-plus-config pattern as
-  // town-mine.js, minus that module's persistent floor/ladder progression —
-  // this is a single test floor, freshly regenerated every visit, with no
-  // save state of its own.
-  const CONFIG_URL = 'config/dungeon-test.json';
+  // floor (see dungeon-generator.js), playable with a normal character save:
+  // real furniture (docs/config/furniture-authored/*.json, same pipeline
+  // every house uses), real brick/stone walls (InteriorSceneBuilder's
+  // default WallBuilder path — see wallStyle 'dungeon' in
+  // interior-scene-builder.js), real bandit enemies (window.BanditCombat,
+  // the same system wilderness camps use), and the game's already-global
+  // ranged/melee combat (unlocked for this map via game.js's
+  // _isCavernBuildingArea). Follows the same window.<Namespace> +
+  // init(deps)-free pure-data pattern as town-mine.js, minus that module's
+  // persistent floor/ladder progression — this is a single test floor,
+  // freshly regenerated every visit, with no save state of its own.
+  //
+  // No set in-world location yet — eventually this will be found out in the
+  // wilderness or roll in as a mine-floor replacement, but that placement
+  // isn't decided. Until then it's reached only via the Dev Mode settings
+  // panel's "Enter Dungeon Test" button (game.js wires
+  // #devEnterDungeonTestBtn straight to enterBuilding(MAP_ID)/exitBuilding())
+  // for fast iteration — no decorateTownMap/entrance-building step here.
   const MAP_ID = 'map_i_dungeon_test';
   const DUNGEON_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg' };
-  let configPromise = null;
   let visitCount = 0;
-
-  function loadConfig() {
-    if (!configPromise) {
-      configPromise = fetch(CONFIG_URL)
-        .then(response => (response.ok ? response.json() : null))
-        .catch(error => { console.error('[dungeon-test] config load failed', error); return null; });
-    }
-    return configPromise;
-  }
 
   function floorFromMapId(mapId) { return mapId === MAP_ID; }
 
@@ -176,46 +171,13 @@
     };
   }
 
-  async function decorateTownMap(mapData) {
-    if (!mapData || mapData.id !== 'map_hobunji_town') return mapData;
-    const config = await loadConfig();
-    if (!config) return mapData;
-    const entrance = config.townEntrance;
-    mapData.buildings ||= [];
-    mapData.transitions ||= [];
-    let entranceBuilding = mapData.buildings.find(building => building.id === entrance.buildingId);
-    if (!entranceBuilding) {
-      entranceBuilding = {
-        id: entrance.buildingId,
-        label: 'Dungeon Test',
-        pieceFile: 'config/pieces/mine_entrance.json',
-        gridX: entrance.gridX,
-        gridZ: entrance.gridZ,
-        footprintW: entrance.footprintW,
-        footprintD: entrance.footprintD,
-        rotationDeg: entrance.rotationDeg,
-        rotation: entrance.rotationDeg,
-        doorEntrance: { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }], psCells: [] },
-      };
-      mapData.buildings.push(entranceBuilding);
-    }
-    entranceBuilding.pieceFile = 'config/pieces/mine_entrance.json';
-    entranceBuilding.doorEntrance = { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }], psCells: [] };
-    if (!mapData.transitions.some(transition => transition.id === 'spot_dungeon_test')) {
-      mapData.transitions.push({ id: 'spot_dungeon_test', label: 'Enter the Dungeon Test', col: entrance.doorCol, row: entrance.doorRow, targetMapId: MAP_ID, targetSpotId: '', buildingId: entrance.buildingId });
-    }
-    return mapData;
-  }
-
   function bgmTracksForArea(mapId) {
     return floorFromMapId(mapId) ? [DUNGEON_BGM_TRACK] : null;
   }
 
   window.DungeonTest = {
-    loadConfig,
     floorFromMapId,
     synthesizeFloorMapData,
-    decorateTownMap,
     bgmTracksForArea,
     MAP_ID,
   };
