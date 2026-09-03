@@ -1,15 +1,16 @@
 // Fine Hood trim visibility follows the normal portrait plane only.
 //
-// npc-avatar-preview-utils may attach a trimless fallback shader for legacy
-// builds. Keep that useful paired texture metadata intact, but force its facing
-// uniform to the full-trim state after any older onBeforeRender callback runs.
-// This removes camera/head-angle visibility changes for the hood trim everywhere
-// the shared PNG-plane avatar builder is used, including bandits.
+// npc-avatar-preview-utils may attach a trimless fallback shader lazily when it
+// renders a Fine Hood. Keep that texture/shader machinery intact, but wrap the
+// final avatar builder after portrait rendering and force the legacy facing
+// uniform to the full-trim state after its own onBeforeRender callback runs.
+// This removes camera/head-angle visibility changes everywhere, including NPCs.
 (function (global) {
   'use strict';
 
+  const preview = global.NpcAvatarPreview;
   const avatarApi = global.PNGPlaneAvatar;
-  if (!avatarApi?.buildSinglePlaneAvatarModel) return;
+  if (!preview?.renderProfileToCanvas || !avatarApi?.buildSinglePlaneAvatarModel) return;
 
   let correctedBuilds = 0;
   let correctedMeshes = 0;
@@ -19,17 +20,12 @@
     let corrected = 0;
     root.traverse?.(object => {
       if (!object?.isMesh || object.userData?.hobunjiFineHoodFacingDisabled) return;
-      const materials = object.material
-        ? (Array.isArray(object.material) ? object.material : [object.material])
-        : [];
+      const materials = object.material ? (Array.isArray(object.material) ? object.material : [object.material]) : [];
       if (!materials.some(material => material?.userData?.hobunjiFineHoodTrimHeadOnFacingUniform)) return;
-
       const previousOnBeforeRender = typeof object.onBeforeRender === 'function' ? object.onBeforeRender : null;
       object.onBeforeRender = function fineHoodAlwaysVisibleBeforeRender(renderer, scene, camera, geometry, material, group) {
         previousOnBeforeRender?.call(this, renderer, scene, camera, geometry, material, group);
-        const currentMaterials = this.material
-          ? (Array.isArray(this.material) ? this.material : [this.material])
-          : [];
+        const currentMaterials = this.material ? (Array.isArray(this.material) ? this.material : [this.material]) : [];
         for (const currentMaterial of currentMaterials) {
           const uniform = currentMaterial?.userData?.hobunjiFineHoodTrimHeadOnFacingUniform;
           if (uniform) uniform.value = 1;
@@ -58,14 +54,27 @@
     return root;
   }
 
-  const currentBuild = avatarApi.buildSinglePlaneAvatarModel;
-  if (!currentBuild.__hobunjiFineHoodFacingDisabledWrapped) {
+  function installBuildCorrection() {
+    const currentBuild = avatarApi.buildSinglePlaneAvatarModel;
+    if (typeof currentBuild !== 'function' || currentBuild.__hobunjiFineHoodFacingDisabledWrapped) return false;
     const wrapped = function buildAvatarWithoutFineHoodFacingGate(...args) {
       return disableFacingGate(currentBuild.apply(this, args));
     };
     wrapped.__hobunjiFineHoodFacingDisabledWrapped = true;
     avatarApi.buildSinglePlaneAvatarModel = wrapped;
+    return true;
   }
+
+  // The Fine Hood shader hook is installed lazily by portrait rendering. Run
+  // our builder wrapper *after* every render so it stays outside that hook and
+  // therefore gets the final say on the facing uniform.
+  const originalRenderProfileToCanvas = preview.renderProfileToCanvas;
+  preview.renderProfileToCanvas = async function renderProfileWithoutFineHoodFacingGate(...args) {
+    const result = await originalRenderProfileToCanvas.apply(this, args);
+    installBuildCorrection();
+    return result;
+  };
+  installBuildCorrection();
 
   global.HobunjiFineHoodTrimHeadFacing = Object.freeze({
     getDebug() {
