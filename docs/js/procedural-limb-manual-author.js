@@ -40,6 +40,8 @@
       pointerHandler: null,
       seed: null,
       lastSolve: null,
+      cameraLock: null,
+      cameraLockFrame: 0,
     };
 
     const raycaster = new THREE.Raycaster();
@@ -118,6 +120,52 @@
       state.pointerHandler = null;
     }
 
+    function captureCameraLock() {
+      if (state.cameraLock) return;
+      state.cameraLock = {
+        position: camera.position.clone(),
+        quaternion: camera.quaternion.clone(),
+        scale: camera.scale?.clone?.() || null,
+        zoom: Number.isFinite(Number(camera.zoom)) ? Number(camera.zoom) : null,
+      };
+    }
+
+    function restoreCameraLock() {
+      const lock = state.cameraLock;
+      if (!lock) return;
+      camera.position.copy(lock.position);
+      camera.quaternion.copy(lock.quaternion);
+      if (lock.scale && camera.scale?.copy) camera.scale.copy(lock.scale);
+      if (lock.zoom != null && camera.zoom !== lock.zoom) {
+        camera.zoom = lock.zoom;
+        camera.updateProjectionMatrix?.();
+      }
+      camera.updateMatrixWorld?.(true);
+    }
+
+    function cameraLockLoop() {
+      state.cameraLockFrame = 0;
+      if (!state.cameraLock) return;
+      restoreCameraLock();
+      state.cameraLockFrame = requestAnimationFrame(cameraLockLoop);
+    }
+
+    function beginCameraLock() {
+      captureCameraLock();
+      const orbit = host.getOrbitControls?.();
+      if (orbit) orbit.enabled = false;
+      if (!state.cameraLockFrame) state.cameraLockFrame = requestAnimationFrame(cameraLockLoop);
+    }
+
+    function endCameraLock() {
+      restoreCameraLock();
+      if (state.cameraLockFrame) cancelAnimationFrame(state.cameraLockFrame);
+      state.cameraLockFrame = 0;
+      state.cameraLock = null;
+      const orbit = host.getOrbitControls?.();
+      if (orbit) orbit.enabled = true;
+    }
+
     function buildControls() {
       if (state.control) return;
       state.control = new TransformControls(camera, renderer.domElement);
@@ -126,14 +174,21 @@
       state.control.setSpace?.('world');
       state.control.setSize?.(0.72);
       state.control.addEventListener?.('dragging-changed', event => {
-        const orbit = host.getOrbitControls?.();
-        if (orbit) orbit.enabled = !event.value;
+        if (event.value) beginCameraLock();
+        else endCameraLock();
         host.onDraggingChanged?.(Boolean(event.value));
       });
+      // The procedural preview currently uses its own pointer-based camera drag
+      // instead of exposing OrbitControls. That camera handler may receive the
+      // same pointermove as TransformControls. Re-assert the drag-start camera
+      // transform after every gizmo change, with the rAF loop above as a second
+      // guard for hosts whose camera handler runs later in the event chain.
+      state.control.addEventListener?.('change', restoreCameraLock);
       scene.add(state.control);
     }
 
     function destroyControls() {
+      endCameraLock();
       state.control?.detach?.();
       state.control?.parent?.remove?.(state.control);
       state.control?.dispose?.();
@@ -175,6 +230,7 @@
 
     function update() {
       if (!state.active || state.released) return null;
+      restoreCameraLock();
       const anchors = host.getCurrentAnchors?.();
       if (!anchors?.shoulders?.left || !anchors?.shoulders?.right || !anchors?.hips?.left || !anchors?.hips?.right) return null;
       const solves = { arms: {}, legs: {} };
@@ -202,6 +258,7 @@
         mode: 'manual-ik',
         ownership: 'manual handles → IK; physics off',
         selected: state.selectedKey,
+        cameraLockedDuringDrag: Boolean(state.cameraLock),
         handles: snapshot(),
       });
       return solves;
@@ -236,6 +293,7 @@
 
     function releaseToPhysics() {
       if (!state.active) return false;
+      endCameraLock();
       state.released = true;
       setHandleVisibility(false);
       host.onReleaseToPhysics?.(snapshot());
@@ -254,6 +312,7 @@
     function stop() {
       state.active = false;
       state.released = false;
+      endCameraLock();
       removePointerSelection();
       destroyControls();
       disposeHandleRoot();
