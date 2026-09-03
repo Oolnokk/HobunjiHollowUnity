@@ -59,6 +59,17 @@
     uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }),
   }); // Authored v10 Small/Medium/Large floor-to-creature-origin distances; 0 means use the automatic half-height terrain baseline.
 
+  // Species-wide dialogue portrait crops exported from Animation Author V15.45.
+  // Coordinates are normalized against the unscaled idle sprite, top-left origin;
+  // runtime size-class/genotype scaling happens after this crop is identified.
+  const creatureChatheadFrames = Object.freeze({
+    grehlr: Object.freeze({ x: 0.12899040207823892, y: 0.38396704728631864, width: 0.24202339114154608, height: 0.3445860779359126, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    'gar-wolf': Object.freeze({ x: 0, y: 0.2575, width: 0.25, height: 0.3575, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    'dabinggi-hound': Object.freeze({ x: 0.05321196485715341, y: 0.2621006265961596, width: 0.17863723264419087, height: 0.350903183334192, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    drenkirra: Object.freeze({ x: 0.1925, y: 0.3575, width: 0.2078, height: 0.305, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    uumkaoii: Object.freeze({ x: 0.009564166583519832, y: 0.2923510947804583, width: 0.4656387672084861, height: 0.47038721094834346, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+  });
+
   const characters = {}; // Runtime character profile map keyed "<species>::<gender>".
   for (const [key, heightPercentOffset, exportedHeightPercentFromFloor, perch, left, right, pixel, portraitModelHeight, placement, portraitScale, handScale, footScale, armLength, derivedHandDefault] of characterRecords) {
     const [species, gender] = key.split('::');
@@ -130,6 +141,7 @@
     }; // Direct PNG-plane X/Y multipliers consumed before world-bounds calculation.
     creatures[kind] = {
       kind,
+      chatheadFrame: { ...creatureChatheadFrames[kind] }, // Canonical crop used by ambient chatheads, animal-looking NPCs, and livestock full dialogue.
       anchors: {
         saddle: identityAnchor(saddle),
         shoulderGrip: identityAnchor(shoulderGrip, -61),
@@ -170,6 +182,12 @@
       coordinateSpace: 'absolute world/gameplay floor-to-creature-origin lift replacing automatic half-height terrain placement',
       runtimeUnit: 'world units',
     }, // Mirrors the Animation Author v10 export contract consumed by CreatureGenetics.creatureGroundOffset().
+    creatureChatheadFrameSemantics: {
+      coordinateSpace: 'sprite-normalized-top-left',
+      sourceFrame: 'idle creature sprite before size-class scaling',
+      use: 'ambient dialogue chatheads, livestock full dialogue, and animal-looking full-dialogue portraits',
+      specialNpcSpecies: { banubu: 'grehlr', hiki_hiki: 'drenkirra' },
+    },
     creatureSizeScaleSemantics: {
       profileField: 'profiles.creatures.<kind>.sizeScales.<small|medium|large>.{x,y}',
       axes: 'png-plane-local-x-y',

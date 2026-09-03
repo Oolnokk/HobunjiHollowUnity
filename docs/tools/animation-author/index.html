@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Hobunji Animation Author V15.41</title>
+<title>Hobunji Animation Author V15.45</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1203,6 +1203,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
 <script src="../../config/attachment-rig-profiles.js"></script>
+<script src="../../js/animal-chathead-frame.js?v=20260901a"></script>
 <script src="../../js/transform-dump-utils.js?v=20260821a"></script>
 
 <script>
@@ -2368,9 +2369,9 @@ function resetKurrayaProfile() {
 
 async function loadTransformControls() {
   if (state.kurraya.transformControls || !state.three.ready) return;
-  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.128.0';
+  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
   const versionMatch = configuredThreeUrl.match(/three@([0-9.]+)/);
-  const version = versionMatch?.[1] || '0.128.0';
+  const version = versionMatch?.[1] || '0.165.0';
   const url = `https://esm.sh/three@${version}/examples/jsm/controls/TransformControls.js?deps=three@${version}`;
   try {
     const module = await import(url);
@@ -4337,8 +4338,8 @@ async function initAnimationWorkspaceScene() {
 
 async function loadAnimationTransformControls() {
   if (animationAuthor.transformControls || !state.three.ready) return;
-  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.128.0';
-  const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.128.0';
+  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
+  const version = configuredThreeUrl.match(/three@([0-9.]+)/)?.[1] || '0.165.0';
   const url = `https://esm.sh/three@${version}/examples/jsm/controls/TransformControls.js?deps=three@${version}`;
   try {
     const module = await import(url);
@@ -7081,6 +7082,7 @@ function normalizedRigProfileLibrary(value = {}) {
         saddle: normalizeTransformSnapshot(profile.anchors?.saddle, 1),
         shoulderGrip: normalizeTransformSnapshot(profile.anchors?.shoulderGrip, 1),
       },
+      chatheadFrame: normalizedAnimalChatheadFrameV1543(profile.chatheadFrame),
     };
   }
   return output;
@@ -13283,6 +13285,316 @@ writeSettings(initialSettings);
 showOverlay('Loading animation author', 'Fetching the repository NPC runtime plus editable body-animation sources.', true);
 log('Versatile animation author initialized from the repository-backed gameplay viewer.');
 setTimeout(() => loadSource(initialSettings), 0);
+// -----------------------------------------------------------------------------
+// V15.45 animal chathead framing.
+//
+// Creature attachment-rig profiles now also own a normalized idle-sprite crop
+// rectangle. It is authored here beside saddle/grip/size/ground coordinates and
+// consumed by ambient dialogue plus the main dialogue portrait renderer. Banubu
+// and Hiki-hiki intentionally reuse Grehlr and Drenkirra species frames.
+// -----------------------------------------------------------------------------
+
+const ANIMAL_CHATHEAD_FRAME_MIN_V1543 = .04; // Used by numeric and pointer authoring so a crop can never collapse to zero area.
+const animalChatheadFrameUiV1543 = {
+  actorId: null,
+  source: null,
+  fit: null,
+  drag: null,
+  previewFrame: null,
+  loadToken: 0,
+}; // Keeps touch framing state and the composed idle sprite available between pointer events without rebuilding creature art.
+
+function normalizedAnimalChatheadFrameV1543(value) {
+  if (!value || typeof value !== 'object') return null;
+  const shared = window.AnimalChatheadFrame?.normalizeFrame?.(value);
+  if (shared) return shared;
+  const finite = (candidate, fallback) => Number.isFinite(Number(candidate)) ? Number(candidate) : fallback;
+  let x = Math.max(0, Math.min(1, finite(value.x, 0)));
+  let y = Math.max(0, Math.min(1, finite(value.y, 0)));
+  let width = Math.max(ANIMAL_CHATHEAD_FRAME_MIN_V1543, Math.min(1, finite(value.width, 1)));
+  let height = Math.max(ANIMAL_CHATHEAD_FRAME_MIN_V1543, Math.min(1, finite(value.height, 1)));
+  if (x + width > 1) width = Math.max(ANIMAL_CHATHEAD_FRAME_MIN_V1543, 1 - x);
+  if (y + height > 1) height = Math.max(ANIMAL_CHATHEAD_FRAME_MIN_V1543, 1 - y);
+  if (width < ANIMAL_CHATHEAD_FRAME_MIN_V1543) { x = Math.max(0, 1 - ANIMAL_CHATHEAD_FRAME_MIN_V1543); width = ANIMAL_CHATHEAD_FRAME_MIN_V1543; }
+  if (height < ANIMAL_CHATHEAD_FRAME_MIN_V1543) { y = Math.max(0, 1 - ANIMAL_CHATHEAD_FRAME_MIN_V1543); height = ANIMAL_CHATHEAD_FRAME_MIN_V1543; }
+  if (x + width > 1) x = Math.max(0, 1 - width);
+  if (y + height > 1) y = Math.max(0, 1 - height);
+  return { x, y, width, height, coordinateSpace: 'sprite-normalized-top-left', version: 1 };
+}
+
+function effectiveAnimalChatheadFrameV1543(actor) {
+  const profile = attachmentRigProfileForActor(actor);
+  const authored = normalizedAnimalChatheadFrameV1543(profile?.chatheadFrame);
+  const automatic = window.AnimalChatheadFrame?.automaticFrameForKind?.(actor?.source?.kind) || null;
+  return { frame: authored || automatic || normalizedAnimalChatheadFrameV1543({ x: .32, y: .12, width: .36, height: .36 }), authored: !!authored };
+}
+
+function animalChatheadFrameFieldsV1543(frame) {
+  const percent = value => (Number(value || 0) * 100).toFixed(2);
+  return `<div class="maaGrid2" style="margin-top:8px">
+    <div class="maaField"><label for="maaAnimalChatheadX">Left (%)</label><input id="maaAnimalChatheadX" data-maa-chathead-field="x" type="number" min="0" max="96" step="0.25" value="${percent(frame.x)}"></div>
+    <div class="maaField"><label for="maaAnimalChatheadY">Top (%)</label><input id="maaAnimalChatheadY" data-maa-chathead-field="y" type="number" min="0" max="96" step="0.25" value="${percent(frame.y)}"></div>
+    <div class="maaField"><label for="maaAnimalChatheadWidth">Width (%)</label><input id="maaAnimalChatheadWidth" data-maa-chathead-field="width" type="number" min="4" max="100" step="0.25" value="${percent(frame.width)}"></div>
+    <div class="maaField"><label for="maaAnimalChatheadHeight">Height (%)</label><input id="maaAnimalChatheadHeight" data-maa-chathead-field="height" type="number" min="4" max="100" step="0.25" value="${percent(frame.height)}"></div>
+  </div>`;
+}
+
+function animalChatheadFrameMarkupV1543(actor) {
+  const resolved = effectiveAnimalChatheadFrameV1543(actor);
+  const inheritedBy = actor.source.kind === 'grehlr' ? 'Banubu also uses this Grehlr frame.'
+    : actor.source.kind === 'drenkirra' ? 'Hiki-hiki also uses this Drenkirra frame.' : '';
+  return `<section class="maaSection" id="maaAnimalChatheadFrameSection">
+    <div class="maaSectionTitle"><b>Dialogue chathead frame</b><span class="maaSmall maaMuted">${resolved.authored ? 'Authored' : 'Head-rig fallback'}</span></div>
+    <div class="maaSmall maaMuted">Drag from one corner of the animal's head to the opposite corner. This crop is species-wide, independent of size class, and is used only for dialogue/chathead rendering — it never changes the world sprite. ${escapeHtml(inheritedBy)}</div>
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-top:10px">
+      <canvas id="maaAnimalChatheadFrameCanvas" width="360" height="240" style="display:block;width:min(100%,360px);max-width:100%;aspect-ratio:3/2;border:1px solid var(--line);border-radius:8px;touch-action:none;background:#111"></canvas>
+      <div style="min-width:112px;flex:0 0 112px">
+        <div class="maaSmall maaMuted" style="margin-bottom:5px">Chathead result</div>
+        <canvas id="maaAnimalChatheadPreviewCanvas" width="160" height="160" style="display:block;width:112px;height:112px;border:1px solid var(--line);border-radius:8px;background:#111"></canvas>
+      </div>
+    </div>
+    ${animalChatheadFrameFieldsV1543(resolved.frame)}
+    <div class="maaRow" style="margin-top:8px">
+      <button id="maaAnimalChatheadUseHeadRig" type="button" class="secondary">Use painted head bounds</button>
+      <button id="maaAnimalChatheadClear" type="button" class="secondary">Clear authored frame</button>
+    </div>
+    <div id="maaAnimalChatheadFrameStatus" class="maaRigStatus" style="margin-top:8px">Loading idle sprite…</div>
+  </section>`;
+}
+
+function setAnimalChatheadFieldInputsV1543(frame) {
+  if (!frame) return;
+  for (const [field, value] of Object.entries({ x: frame.x, y: frame.y, width: frame.width, height: frame.height })) {
+    const input = document.querySelector(`[data-maa-chathead-field="${field}"]`);
+    if (input) input.value = (value * 100).toFixed(2);
+  }
+}
+
+function commitAnimalChatheadFrameV1543(actor, frame, label = 'Adjusted animal dialogue chathead frame') {
+  if (actor?.source?.type !== 'creature') return;
+  const profile = attachmentRigProfileForActor(actor);
+  if (!profile) return;
+  if (frame) profile.chatheadFrame = normalizedAnimalChatheadFrameV1543(frame);
+  else delete profile.chatheadFrame;
+  animalChatheadFrameUiV1543.previewFrame = null;
+  const effective = effectiveAnimalChatheadFrameV1543(actor);
+  setAnimalChatheadFieldInputsV1543(effective.frame);
+  setAnimationRecentChange(`${label} for ${actor.label}.`);
+  scheduleAnimationProjectSave();
+  captureUndoSnapshotV1515({ force: true, label });
+  updateUndoButtonV1515();
+  drawAnimalChatheadFrameV1543(actor);
+}
+
+function checkerAnimalChatheadCanvasV1543(context, width, height) {
+  context.clearRect(0, 0, width, height);
+  const step = 18;
+  for (let y = 0; y < height; y += step) for (let x = 0; x < width; x += step) {
+    context.fillStyle = ((x / step + y / step) & 1) ? '#222a33' : '#151a20';
+    context.fillRect(x, y, step, step);
+  }
+}
+
+async function loadAnimalChatheadSourceV1543(actor) {
+  const token = ++animalChatheadFrameUiV1543.loadToken; // Discards an earlier species image if the user taps to another creature before composition finishes.
+  animalChatheadFrameUiV1543.actorId = actor.id;
+  animalChatheadFrameUiV1543.source = null;
+  try {
+    const source = await window.AnimalChatheadFrame?.sourceCanvasForKind?.(actor.source.kind, { genotype: actor.source.genotype || null, frame: 'idle' });
+    if (token !== animalChatheadFrameUiV1543.loadToken || actor.id !== selectedAnimationActor()?.id) return;
+    animalChatheadFrameUiV1543.source = source || null;
+    await drawAnimalChatheadFrameV1543(actor);
+  } catch (error) {
+    if (token !== animalChatheadFrameUiV1543.loadToken) return;
+    const status = $('maaAnimalChatheadFrameStatus');
+    if (status) status.textContent = `Could not load ${actor.source.kind} idle sprite: ${error.message}`;
+    log(`Animal chathead frame preview failed: ${error.message}`, 'warn');
+  }
+}
+
+async function drawAnimalChatheadFrameV1543(actor) {
+  const canvas = $('maaAnimalChatheadFrameCanvas');
+  const preview = $('maaAnimalChatheadPreviewCanvas');
+  const status = $('maaAnimalChatheadFrameStatus');
+  if (!canvas || !preview || actor?.source?.type !== 'creature') return;
+  const context = canvas.getContext('2d');
+  checkerAnimalChatheadCanvasV1543(context, canvas.width, canvas.height);
+  const source = animalChatheadFrameUiV1543.actorId === actor.id ? animalChatheadFrameUiV1543.source : null;
+  if (!source) {
+    checkerAnimalChatheadCanvasV1543(preview.getContext('2d'), preview.width, preview.height);
+    if (status) status.textContent = 'Loading composed idle sprite…';
+    return;
+  }
+  const sourceWidth = Number(source.width || source.naturalWidth) || 1;
+  const sourceHeight = Number(source.height || source.naturalHeight) || 1;
+  const scale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
+  const fit = {
+    x: (canvas.width - sourceWidth * scale) / 2,
+    y: (canvas.height - sourceHeight * scale) / 2,
+    width: sourceWidth * scale,
+    height: sourceHeight * scale,
+  }; // Maps normalized source coordinates into the touch canvas for both drawing and pointer conversion.
+  animalChatheadFrameUiV1543.fit = fit;
+  context.drawImage(source, fit.x, fit.y, fit.width, fit.height);
+  context.fillStyle = 'rgba(0,0,0,.58)';
+  context.fillRect(fit.x, fit.y, fit.width, fit.height);
+  const effective = effectiveAnimalChatheadFrameV1543(actor);
+  const frame = normalizedAnimalChatheadFrameV1543(animalChatheadFrameUiV1543.previewFrame) || effective.frame;
+  const rx = fit.x + frame.x * fit.width;
+  const ry = fit.y + frame.y * fit.height;
+  const rw = frame.width * fit.width;
+  const rh = frame.height * fit.height;
+  context.save();
+  context.beginPath();
+  context.rect(rx, ry, rw, rh);
+  context.clip();
+  context.drawImage(source, fit.x, fit.y, fit.width, fit.height);
+  context.restore();
+  context.strokeStyle = '#8de7ff';
+  context.lineWidth = 3;
+  context.strokeRect(rx + 1.5, ry + 1.5, Math.max(0, rw - 3), Math.max(0, rh - 3));
+  const handle = 8;
+  context.fillStyle = '#fff';
+  for (const [hx, hy] of [[rx, ry], [rx + rw, ry], [rx, ry + rh], [rx + rw, ry + rh]]) context.fillRect(hx - handle / 2, hy - handle / 2, handle, handle);
+  window.AnimalChatheadFrame?.drawFrameToCanvas?.(source, preview, frame);
+  const mode = effective.authored ? 'authored' : 'automatic head-rig fallback';
+  if (status) status.textContent = `${actor.source.kind} · ${mode} · x ${(frame.x * 100).toFixed(1)}% · y ${(frame.y * 100).toFixed(1)}% · w ${(frame.width * 100).toFixed(1)}% · h ${(frame.height * 100).toFixed(1)}%`;
+  window.__maaAnimalChatheadFrameDebug = {
+    actorId: actor.id,
+    kind: actor.source.kind,
+    authored: effective.authored,
+    frame: { ...frame },
+    sourceSize: { width: sourceWidth, height: sourceHeight },
+    fit: { ...fit },
+  }; // Mobile diagnostics mirror the visible status and make Pixel Probe/scripted checks possible without a console.
+}
+
+function animalChatheadPointerPointV1543(event) {
+  const canvas = $('maaAnimalChatheadFrameCanvas');
+  const fit = animalChatheadFrameUiV1543.fit;
+  if (!canvas || !fit) return null;
+  const bounds = canvas.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return null;
+  const px = (event.clientX - bounds.left) * canvas.width / bounds.width;
+  const py = (event.clientY - bounds.top) * canvas.height / bounds.height;
+  return {
+    x: Math.max(0, Math.min(1, (px - fit.x) / fit.width)),
+    y: Math.max(0, Math.min(1, (py - fit.y) / fit.height)),
+  };
+}
+
+function frameFromAnimalChatheadDragV1543(start, current) {
+  let x = Math.min(start.x, current.x);
+  let y = Math.min(start.y, current.y);
+  let width = Math.abs(current.x - start.x);
+  let height = Math.abs(current.y - start.y);
+  if (width < ANIMAL_CHATHEAD_FRAME_MIN_V1543) {
+    width = ANIMAL_CHATHEAD_FRAME_MIN_V1543;
+    x = current.x < start.x ? start.x - width : start.x;
+  }
+  if (height < ANIMAL_CHATHEAD_FRAME_MIN_V1543) {
+    height = ANIMAL_CHATHEAD_FRAME_MIN_V1543;
+    y = current.y < start.y ? start.y - height : start.y;
+  }
+  return normalizedAnimalChatheadFrameV1543({ x, y, width, height });
+}
+
+function bindAnimalChatheadFrameControlsV1543(actor) {
+  const canvas = $('maaAnimalChatheadFrameCanvas');
+  if (!canvas || actor?.source?.type !== 'creature') return;
+  loadAnimalChatheadSourceV1543(actor);
+
+  for (const input of document.querySelectorAll('[data-maa-chathead-field]')) {
+    input.addEventListener('change', () => {
+      const read = field => Number(document.querySelector(`[data-maa-chathead-field="${field}"]`)?.value) / 100;
+      commitAnimalChatheadFrameV1543(actor, {
+        x: read('x'), y: read('y'), width: read('width'), height: read('height'),
+      }, 'Edited animal chathead frame numerically');
+    });
+  }
+
+  $('maaAnimalChatheadUseHeadRig')?.addEventListener('click', () => {
+    const automatic = window.AnimalChatheadFrame?.automaticFrameForKind?.(actor.source.kind);
+    if (automatic) commitAnimalChatheadFrameV1543(actor, automatic, 'Seeded animal chathead frame from painted head influence');
+    else setStatus(`No painted head rig is available for ${actor.label}.`, 'warn');
+  });
+  $('maaAnimalChatheadClear')?.addEventListener('click', () => commitAnimalChatheadFrameV1543(actor, null, 'Cleared authored animal chathead frame'));
+
+  canvas.addEventListener('pointerdown', event => {
+    const point = animalChatheadPointerPointV1543(event);
+    if (!point) return;
+    event.preventDefault();
+    canvas.setPointerCapture?.(event.pointerId);
+    animalChatheadFrameUiV1543.drag = { pointerId: event.pointerId, start: point, current: point }; // Used until release to preview a new rectangle without polluting undo history on every move.
+    animalChatheadFrameUiV1543.previewFrame = frameFromAnimalChatheadDragV1543(point, point);
+    setAnimalChatheadFieldInputsV1543(animalChatheadFrameUiV1543.previewFrame);
+    drawAnimalChatheadFrameV1543(actor);
+  });
+  canvas.addEventListener('pointermove', event => {
+    const drag = animalChatheadFrameUiV1543.drag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = animalChatheadPointerPointV1543(event);
+    if (!point) return;
+    event.preventDefault();
+    drag.current = point;
+    animalChatheadFrameUiV1543.previewFrame = frameFromAnimalChatheadDragV1543(drag.start, point);
+    setAnimalChatheadFieldInputsV1543(animalChatheadFrameUiV1543.previewFrame);
+    drawAnimalChatheadFrameV1543(actor);
+  });
+  const finishDrag = event => {
+    const drag = animalChatheadFrameUiV1543.drag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const frame = normalizedAnimalChatheadFrameV1543(animalChatheadFrameUiV1543.previewFrame);
+    animalChatheadFrameUiV1543.drag = null;
+    animalChatheadFrameUiV1543.previewFrame = null;
+    if (frame) commitAnimalChatheadFrameV1543(actor, frame, 'Framed animal dialogue chathead');
+  };
+  canvas.addEventListener('pointerup', finishDrag);
+  canvas.addEventListener('pointercancel', event => {
+    if (animalChatheadFrameUiV1543.drag?.pointerId !== event.pointerId) return;
+    animalChatheadFrameUiV1543.drag = null;
+    animalChatheadFrameUiV1543.previewFrame = null;
+    drawAnimalChatheadFrameV1543(actor);
+  });
+}
+
+const baseRenderAttachmentRigInspectorV1543 = renderAttachmentRigInspector;
+renderAttachmentRigInspector = function() {
+  baseRenderAttachmentRigInspectorV1543();
+  const actor = selectedAnimationActor();
+  if (actor?.source?.type !== 'creature' || !$('maaInspector') || $('maaAnimalChatheadFrameSection')) return;
+  const firstSection = $('maaInspector').querySelector('.maaSection');
+  const markup = animalChatheadFrameMarkupV1543(actor);
+  if (firstSection) firstSection.insertAdjacentHTML('afterend', markup);
+  else $('maaInspector').insertAdjacentHTML('beforeend', markup);
+  bindAnimalChatheadFrameControlsV1543(actor);
+};
+
+const baseSerializeAttachmentRigLibraryV1543 = serializeAttachmentRigLibrary;
+serializeAttachmentRigLibrary = function() {
+  const data = baseSerializeAttachmentRigLibraryV1543();
+  data.creatureChatheadFrameSemantics = {
+    coordinateSpace: 'sprite-normalized-top-left',
+    sourceFrame: 'idle creature sprite before size-class scaling',
+    use: 'ambient dialogue chatheads and animal-looking full-dialogue portraits',
+    specialNpcSpecies: { banubu: 'grehlr', hiki_hiki: 'drenkirra' },
+  }; // Documents the optional creature chatheadFrame field for generated rig JSON and downstream tooling.
+  return data;
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1543 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1543();
+  document.title = 'Hobunji Animation Author V15.45';
+  if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.45';
+  return result;
+};
+
+document.title = 'Hobunji Animation Author V15.45';
+if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.45';
+animationAuthor.recentChange = 'V15.45 adds species-authored animal dialogue chathead framing to Rig Coordinates; animal ambient dialogue plus Banubu/Grehlr and Hiki-hiki/Drenkirra full dialogue consume the same crop.';
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.45 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview; animal ambient speech and animal-looking NPC dialogue share the same crop runtime.');
 })();
 </script>
 <script>
