@@ -1,9 +1,9 @@
 (() => {
   'use strict';
 
-  // Funji & Son's General Store: goods + a daily-rotating clothing rack +
-  // immediate player-pack sales. ShippingPanel owns the canonical sale-price
-  // bridge so the store and Shipping Box cannot drift onto different values.
+  // Shared renderer for every shop pool that deliberately targets the
+  // General Store menu surface. Funji's shop keeps clothing + store selling;
+  // specialized shops reuse the same buying UI with their own configured goods.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -11,9 +11,37 @@
     if (!window.ShippingBoxConfig) throw new Error('ShippingBoxConfig must load before GeneralStore Shipping integration');
     return window.ShippingBoxConfig;
   }
-  let generalStoreActiveCategory = 'goods'; // Existing General Store category state; Shipping adds one configured category to it.
 
-  function getGeneralStoreCategoryLabel(category) {
+  const DEFAULT_POOL_ID = 'generalStoreWares'; // Used only as the backwards-compatible fallback shop.
+  let generalStoreActiveCategory = 'goods'; // Existing tab state; reset when moving between different shop pools.
+  let lastRenderedPoolId = null; // Used to avoid carrying Clothing/Sell selection into a goods-only specialist shop.
+
+  function shopStock() {
+    return window.LootRolling?.getShopStock?.() || {};
+  }
+
+  function currentMapId() {
+    return deps?.lootShopWorldState?.()?.maps || '';
+  }
+
+  function activeShopState() {
+    const stock = shopStock();
+    const mapId = currentMapId();
+    const matchesMap = ([, shop]) => shop?.menuId === 'generalStore'
+      && Array.isArray(shop?.dialogueAccess?.businessMaps)
+      && shop.dialogueAccess.businessMaps.includes(mapId);
+    const match = Object.entries(stock).find(matchesMap);
+    const poolId = match?.[0] || DEFAULT_POOL_ID;
+    const shop = match?.[1] || stock[DEFAULT_POOL_ID] || {
+      label: "Funji & Son's General Store",
+      menuId: 'generalStore',
+      goods: deps?.getGeneralStoreCatalog?.() || [],
+    };
+    return { poolId, shop, specialized: poolId !== DEFAULT_POOL_ID };
+  }
+
+  function getGeneralStoreCategoryLabel(category, state = activeShopState()) {
+    if (state.specialized) return 'Goods';
     const store = shippingCfg().store;
     return ({ all: 'All', goods: 'Goods', clothing: 'Clothing', [store.categoryKey]: store.categoryLabel })[category] || 'General Store';
   }
@@ -44,47 +72,88 @@
     }
   }
 
-  function bindGeneralStoreTabs() {
+  function bindGeneralStoreTabs(state = activeShopState()) {
     ensureGeneralStoreSellUi();
+    if (lastRenderedPoolId !== state.poolId) {
+      lastRenderedPoolId = state.poolId;
+      generalStoreActiveCategory = 'goods';
+    }
+
+    const store = shippingCfg().store;
     document.querySelectorAll('.general-store-tab').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.generalStoreCat === generalStoreActiveCategory);
-      btn.onclick = () => {
-        generalStoreActiveCategory = btn.dataset.generalStoreCat || 'goods';
+      const category = btn.dataset.generalStoreCat || 'goods';
+      const allowed = !state.specialized || category === 'goods';
+      btn.hidden = !allowed;
+      if (!allowed && generalStoreActiveCategory === category) generalStoreActiveCategory = 'goods';
+      btn.classList.toggle('active', allowed && category === generalStoreActiveCategory);
+      btn.onclick = allowed ? () => {
+        generalStoreActiveCategory = category;
         renderGeneralStorePage();
-      };
+      } : null;
     });
+
+    const tablist = document.querySelector('#mpGeneralStore .supply-tabs');
+    if (tablist) tablist.setAttribute('aria-label', state.specialized ? `${state.shop.label || 'Shop'} category filters` : 'General store category filters');
+    const sellTab = document.querySelector(`[data-general-store-cat="${store.categoryKey}"]`);
+    if (sellTab && state.specialized) sellTab.hidden = true;
+  }
+
+  function configuredGrants(item) {
+    const grants = { ...(item?.gives || {}) }; // Used for ordinary shop item stacks.
+    if (item?.alchemyRecipeId && window.AlchemySystem?.ensureRecipeItemDef) {
+      const potencyTier = Math.max(0, Number(item.alchemyPotencyTier) || 0); // Used to register the exact authored potion tier.
+      const key = window.AlchemySystem.ensureRecipeItemDef(item.alchemyRecipeId, potencyTier);
+      if (key) grants[key] = (grants[key] || 0) + Math.max(1, Number(item.quantity) || 1);
+    }
+    return grants;
+  }
+
+  function ensureConfiguredGoodsDefs(item) {
+    configuredGrants(item);
+    window.AnimalGrowth?.ensureItemDef?.(deps); // Registers Growth Tonic from the animal-growth module when this shop exposes it.
   }
 
   function buyGeneralStoreItem(item) {
     const gold = deps.inventory.gold || 0;
     if (gold < item.price) { deps.showToast('Not enough gold.', false); return; }
-    deps.inventory.gold = gold - item.price;
-    if (item.gives) {
-      Object.entries(item.gives).forEach(([key, value]) => {
-        deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + value);
-      });
+    const grants = configuredGrants(item);
+    if (!Object.keys(grants).length) {
+      deps.showToast('That shop item has no configured inventory grant.', false);
+      return;
     }
+
+    deps.inventory.gold = gold - item.price;
+    Object.entries(grants).forEach(([key, value]) => {
+      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + Math.max(0, Number(value) || 0));
+    });
     deps.showToast('Bought ' + item.name + '!', true);
     renderGeneralStorePage();
     deps.buildInventoryGrid();
+    deps.refreshActionBar?.();
     deps.saveMemberWorldData();
   }
 
-  function renderGeneralStoreGoods(list) {
+  function goodsForShop(state) {
+    if (!state.specialized) return deps.getGeneralStoreCatalog();
+    return Array.isArray(state.shop.goods) ? state.shop.goods : [];
+  }
+
+  function renderGeneralStoreGoods(list, state = activeShopState()) {
     const world = deps.lootShopWorldState();
-    deps.getGeneralStoreCatalog().filter(item => window.ConditionRegistry.entryEligible(item, world)).forEach(item => {
+    goodsForShop(state).filter(item => window.ConditionRegistry.entryEligible(item, world)).forEach(item => {
+      ensureConfiguredGoodsDefs(item);
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">${item.icon}</div>
         <div class="sh-info">
-          <div class="sh-name">${item.name}</div>
-          <div class="sh-desc">${item.desc}</div>
+          <div class="sh-name">${deps.esc?.(item.name) || item.name}</div>
+          <div class="sh-desc">${deps.esc?.(item.desc) || item.desc}</div>
           <div class="sh-price">${item.price}g each</div>
         </div>
-        <button class="shop-buy-btn" data-key="${item.key}">Buy</button>
+        <button class="shop-buy-btn" type="button">Buy</button>
       `;
-      row.querySelector('[data-key]')?.addEventListener('click', () => buyGeneralStoreItem(item));
+      row.querySelector('.shop-buy-btn')?.addEventListener('click', () => buyGeneralStoreItem(item));
       list.appendChild(row);
     });
   }
@@ -188,21 +257,38 @@
   }
 
   function renderGeneralStorePage() {
-    bindGeneralStoreTabs();
-    const store = shippingCfg().store;
+    const state = activeShopState();
+    bindGeneralStoreTabs(state);
     const sectionTitle = document.getElementById('generalStoreSectionTitle');
-    if (sectionTitle) sectionTitle.textContent = 'Funji & Son\'s General Store — ' + getGeneralStoreCategoryLabel(generalStoreActiveCategory);
+    if (sectionTitle) sectionTitle.textContent = `${state.shop.label || 'Shop'} — ${getGeneralStoreCategoryLabel(generalStoreActiveCategory, state)}`;
     const list = document.getElementById('generalStoreList');
     const goldEl = document.getElementById('gsGoldDisplay');
     if (goldEl) goldEl.innerHTML = `${deps.inventory.gold || 0}<span class="wallet-unit">g</span>`;
     if (!list) return;
     list.innerHTML = '';
-    if (generalStoreActiveCategory === 'goods' || generalStoreActiveCategory === 'all') renderGeneralStoreGoods(list);
+
+    if (state.specialized) {
+      renderGeneralStoreGoods(list, state);
+      return;
+    }
+    if (generalStoreActiveCategory === 'goods' || generalStoreActiveCategory === 'all') renderGeneralStoreGoods(list, state);
     if (generalStoreActiveCategory === 'clothing' || generalStoreActiveCategory === 'all') renderGeneralStoreClothing(list);
-    if (generalStoreActiveCategory === store.categoryKey) renderGeneralStoreSell(list);
+    if (generalStoreActiveCategory === shippingCfg().store.categoryKey) renderGeneralStoreSell(list);
   }
 
-  window.GeneralStore = { init, render: renderGeneralStorePage };
+  function debugSnapshot() {
+    const state = activeShopState();
+    return {
+      mostRecentChange: 'GeneralStore now renders any configured generalStore-menu shop pool for the current business map.',
+      poolId: state.poolId,
+      label: state.shop.label,
+      mapId: currentMapId(),
+      specialized: state.specialized,
+      goods: goodsForShop(state).map(item => ({ key: item.key, name: item.name, price: item.price, alchemyRecipeId: item.alchemyRecipeId || null })),
+    };
+  }
+
+  window.GeneralStore = { init, render: renderGeneralStorePage, debugSnapshot };
 })();
 
 // General Store is already loaded before game.js. Use that stable parser slot
