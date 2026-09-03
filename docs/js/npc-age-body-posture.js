@@ -162,10 +162,12 @@
     return -(modelHeight * finite(composition.standingLiftFraction, 0.5)) * reduction;
   }
 
-  function bodyRootFor(avatarRoot) {
-    return avatarRoot?.userData?.hobunjiAgeBodyRoot
-      || avatarRoot?.userData?.bodyTransformRoot
-      || null;
+  function bodyRootFor(subject) {
+    const direct = subject?.userData?.hobunjiAgeBodyRoot;
+    if (direct?.isObject3D) return direct;
+    const generic = subject?.userData?.bodyTransformRoot;
+    if (generic?.isObject3D) return generic;
+    return subject?.isObject3D && subject?.userData?.hobunjiAgeBodyRootOwner === true ? subject : null;
   }
 
   function applyStaticBodyPosture(avatarRoot, effect, bodyRoot = bodyRootFor(avatarRoot)) {
@@ -240,7 +242,7 @@
         const bodyRoot = new THREEArg.Group();
         bodyRoot.name = `${npcId || avatarGroup.name || 'npc'}_age_posture`;
         bodyRoot.userData = bodyRoot.userData || {};
-        bodyRoot.userData.hobunjiAgeBodyRoot = true;
+        bodyRoot.userData.hobunjiAgeBodyRootOwner = true;
         poseGroup.add(bodyRoot);
         bodyRoot.add(avatarGroup);
         avatarGroup.userData.hobunjiAgeBodyRoot = bodyRoot;
