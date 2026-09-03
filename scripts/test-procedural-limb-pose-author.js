@@ -85,6 +85,11 @@ assert(manual.includes("ownership: 'manual handles → IK; physics off'"), 'debu
 assert(!manual.includes('new THREE.WebGLRenderer'), 'manual IK must reuse the editor renderer');
 assert(!manual.includes('new THREE.Scene'), 'manual IK must reuse the editor scene');
 assert(manual.includes('getScene?.()') && manual.includes('getCamera?.()') && manual.includes('getRenderer?.()'), 'manual helper consumes the shared backdrop renderer API');
+assert(manual.includes('captureCameraLock()'), 'manual gizmo drag must snapshot the preview camera');
+assert(manual.includes("state.control.addEventListener?.('change', restoreCameraLock)"), 'every TransformControls change must immediately restore the drag-start camera transform');
+assert(manual.includes('requestAnimationFrame(cameraLockLoop)'), 'camera lock keeps guarding hosts whose custom camera listener runs later in the pointer event chain');
+assert(manual.includes('cameraLockedDuringDrag'), 'mobile debug exposes whether gizmo camera suppression is active');
+assert(manual.includes('endCameraLock();'), 'camera lock must always release on drag end/stop/physics handoff');
 
 assert(bootstrap.includes('dormantAuthorSentinel'));
 assert(!bootstrap.includes('buildSinglePlaneAvatarModel ='));
