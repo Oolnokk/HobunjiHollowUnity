@@ -202,3 +202,32 @@
 
   window.FarmTroughs = { init, synthesizeBarnInteriorMapData, registerMesh, refreshVisual, troughSlotCount, open, close };
 })();
+
+// Parser-time bootstrap for the standalone Nursery integration. This is the
+// only Nursery-specific code kept in the trough module: lifecycle, UI, building
+// rules, and baby rendering all live in livestock-nursery.js. During ordinary
+// index.html parsing document.write keeps both helper scripts synchronous, so
+// their public wrappers are installed before game.js initializes farm systems.
+(() => {
+  'use strict';
+  if (window.LivestockNursery) return;
+  const nurserySrc = 'js/livestock-nursery.js?v=20260902mainrebuild1';
+  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20260902mainrebuild1';
+
+  if (document.readyState === 'loading') {
+    document.write(`<script src="${nurserySrc}"><\/script>`);
+    document.write(`<script src="${bridgeSrc}"><\/script>`);
+    return;
+  }
+
+  // Dynamic-loader fallback for tools/tests that inject farm-troughs.js after
+  // parsing has already finished; normal gameplay uses the synchronous path.
+  const load = src => new Promise(resolve => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = resolve;
+    document.head.appendChild(script);
+  });
+  load(nurserySrc).then(() => load(bridgeSrc));
+})();
