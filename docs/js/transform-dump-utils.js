@@ -169,3 +169,51 @@
     formatNamedTransformReport,
   });
 })(window);
+
+// Animation Author runs the repository's pinned Three.js build, whose
+// Object3D predates removeFromParent(). The author cleanup code uses that newer
+// convenience method in several wrapper layers. Patch the returned THREE
+// namespace once, at its shared loader boundary, instead of duplicating actor
+// cleanup or changing any authored rig state.
+(function installAnimationAuthorObject3DRemovalCompatibility(global) {
+  'use strict';
+  if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(global.location?.pathname || '')) return;
+  const PATCH_ID = 'animation-author-object3d-remove-from-parent-v1';
+
+  function patchThree(THREE) {
+    const prototype = THREE?.Object3D?.prototype;
+    if (!prototype || typeof prototype.removeFromParent === 'function') return !!prototype;
+    Object.defineProperty(prototype, 'removeFromParent', {
+      configurable: true,
+      writable: true,
+      value: function removeFromParentCompatibility() {
+        if (this.parent && typeof this.parent.remove === 'function') this.parent.remove(this);
+        return this;
+      },
+    });
+    return true;
+  }
+
+  function wrapLoader() {
+    const api = global.PNGPlaneAvatar;
+    const loader = api?.loadThreeModules;
+    if (typeof loader !== 'function') return false;
+    if (loader.__hobunjiObject3DRemovalCompatibility === PATCH_ID) return true;
+    const wrapped = async function loadThreeModulesWithObject3DRemovalCompatibility() {
+      const modules = await loader.apply(this, arguments);
+      patchThree(modules?.THREE);
+      return modules;
+    };
+    wrapped.__hobunjiObject3DRemovalCompatibility = PATCH_ID;
+    api.loadThreeModules = wrapped;
+    global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+    global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorObject3DRemoval = 'removeFromParent compatibility installed at PNGPlaneAvatar.loadThreeModules';
+    return true;
+  }
+
+  if (wrapLoader()) return;
+  let attempts = 0;
+  const timer = global.setInterval(() => {
+    if (wrapLoader() || ++attempts >= 600) global.clearInterval(timer);
+  }, 50);
+})(window);
