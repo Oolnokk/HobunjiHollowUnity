@@ -8628,6 +8628,14 @@
       // using one of those itemKeys gets the interaction wherever the map
       // author (or a duplicate/move in the Interior Editor) places it.
       const _buildingInteractables = new Map();
+      // "mapId,col,row" -> display name (from DECORATIVE_FURNITURE_DEFS/
+      // PROCESSING_FURNITURE_DEFS' own .name), one entry per occupied
+      // footprint tile — populated alongside _buildingInteractables while
+      // walking mapData.furniture. Used only by the "Show Interactable
+      // Names" setting (see refreshActionBar) to label whatever furniture
+      // the player is currently aimed at; furniture with no matching def
+      // (or none at all) just never gets a name label.
+      const _buildingFurnitureNames = new Map();
       // itemKey -> () => { getButtons(), onAction() } factory, for furniture
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
@@ -12209,6 +12217,19 @@
             // so add its configured lamp/candle light explicitly here.
             if (def?.light) {
               bScene.add(makeFurniturePointLight(def.light, bx, by + (def.light.height || 0.6), bz));
+            }
+            // Every named furniture def (see DECORATIVE_FURNITURE_DEFS/
+            // PROCESSING_FURNITURE_DEFS above) gets an entry in
+            // _buildingFurnitureNames regardless of whether it's also
+            // interactive — the "Show Interactable Names" setting reads
+            // this for purely decorative pieces (a lamp, a bookshelf) too.
+            if (def?.name) {
+              const nameFootprint = decorativeFurnitureSize(furnitureKey, f.rotY || 0);
+              for (let rowOffset = 0; rowOffset < nameFootprint.fd; rowOffset++) {
+                for (let colOffset = 0; colOffset < nameFootprint.fw; colOffset++) {
+                  _buildingFurnitureNames.set(mapId + ',' + (f.col + colOffset) + ',' + (f.row + rowOffset), def.name);
+                }
+              }
             }
             // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
             // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
@@ -20920,6 +20941,16 @@
       const INTERACTION_RAY_DEBUG_STORAGE_KEY = 'hobunjiDebugInteractionRay'; // Persists the separate ray visualization toggle.
       let s_showInteractionRaycast = false; // Read by DebugHitboxes.draw() independently of Show Hitboxes.
       try { s_showInteractionRaycast = localStorage.getItem(INTERACTION_RAY_DEBUG_STORAGE_KEY) === '1'; } catch {}
+      // Interactable name labels — reuses the exact aim-label billboard the
+      // bandit combat HUD already shows above a weapon-aimed hostile (see
+      // WorldPopupText.setAimLabel/RangedWeapons.updateBanditAimLabel), but
+      // fires off whatever refreshActionBar already decided is the current
+      // world interaction target instead of a weapon-focused hostile, so it
+      // shares the same short "walked up to it" range as the existing
+      // interaction-prompt list rather than a long weapon-aim distance.
+      const INTERACTABLE_NAME_LABEL_STORAGE_KEY = 'hobunjiShowInteractableNames';
+      let s_showInteractableNames = false;
+      try { s_showInteractableNames = localStorage.getItem(INTERACTABLE_NAME_LABEL_STORAGE_KEY) === '1'; } catch {}
       // Global dev-mode flag — same "flip on once, stays on" persistence as
       // s_showHitboxes above. Currently only gates the +1 Mastery button in
       // each tool's item-info panel (see selectGearTool/selectEquipSlot),
@@ -21269,6 +21300,13 @@
       settingShowInteractionRaycastEl.addEventListener('change', e => {
         s_showInteractionRaycast = e.target.checked;
         try { localStorage.setItem(INTERACTION_RAY_DEBUG_STORAGE_KEY, s_showInteractionRaycast ? '1' : '0'); } catch {}
+      });
+      const settingInteractableNamesEl = document.getElementById('settingInteractableNames');
+      settingInteractableNamesEl.checked = s_showInteractableNames;
+      settingInteractableNamesEl.addEventListener('change', e => {
+        s_showInteractableNames = e.target.checked;
+        try { localStorage.setItem(INTERACTABLE_NAME_LABEL_STORAGE_KEY, s_showInteractableNames ? '1' : '0'); } catch {}
+        if (!s_showInteractableNames) window.WorldPopupText?.clearAimLabel?.();
       });
       const settingDevModeEl = document.getElementById('settingDevMode');
       const settingFlipPngPortraitsRow = document.getElementById('settingFlipPngPortraitsRow'); // Dev-only home for comparing the legacy portrait orientation.
@@ -22590,6 +22628,23 @@
           showInputHints: true,
           isWorldInteraction,
         });
+        // "Show Interactable Names" — reuses the exact same billboard the
+        // bandit combat HUD shows above a weapon-aimed hostile
+        // (WorldPopupText.setAimLabel/clearAimLabel is a single global
+        // slot), so it only ever fires while NOT actively weapon-aiming —
+        // RangedWeapons.updateBanditAimLabel owns the slot the rest of the
+        // time and already clears it the instant aiming stops, so the two
+        // never fight over it.
+        if (s_showInteractableNames) {
+          const weaponAiming = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
+          const name = !weaponAiming && interactionButton && interactionRoot
+            ? (nearbyNpcWalker?.rec?.name
+              || obj?.name
+              || (_isBuildingArea(currentArea) ? _buildingFurnitureNames.get(currentArea + ',' + reticle.col + ',' + reticle.row) : null))
+            : null;
+          if (name) window.WorldPopupText?.setAimLabel?.(interactionRoot, name);
+          else if (!weaponAiming) window.WorldPopupText?.clearAimLabel?.();
+        }
         // Dynamic providers (including the asynchronously loaded consumable
         // bridge) can change the resolved arch without changing tile/item state.
         const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}`).join(',');
