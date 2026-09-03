@@ -58102,6 +58102,7 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
   const THREE = state.three.THREE;
   if (!THREE) return;
   const speciesId = feetSpeciesIdForAvatar(avatar);
+  const gender = feetGenderForAvatar(avatar);
   const handProfile = window.HobunjiHandModelProfiles.modelForSpecies(speciesId);
   if (!handProfile?.glb) return; // No authored hand model for this species family; leave the arm bones without a hand mesh.
   const modules = await loadFootGlbModules(); // Generic GLTFLoader/SkeletonUtils loader despite the name; already used for foot GLBs.
@@ -58113,7 +58114,8 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
 
   const modelHeight = Number(model.userData?.portraitModelHeight) || 0.9;
   const handHeightFraction = Number(window.HobunjiHandModelProfiles.data?.handHeightFraction) || 0.12;
-  const targetHeight = Math.max(0.001, modelHeight * handHeightFraction);
+  const targetHeight = modelHeight * handHeightFraction;
+  const effectiveScale = Number(window.HobunjiHandModelProfiles.effectiveScaleFor?.(speciesId, gender)) || 1; // model.scale (per-GLB import correction) * species/gender scale — the exact factor docs/js/procedural-hand-attachments.js's own buildGlbHand() multiplies on top of its own canonicalFit.
   const sourceIsLeft = handProfile.mirrorX !== false; // Matches docs/js/procedural-hand-attachments.js's own sourceIsLeft convention (authored GLBs default to a left-hand basis).
   const handAttachX = Number(model.userData?.handAttachX);
   const handAttachY = Number(model.userData?.handAttachY);
@@ -58127,25 +58129,28 @@ async function buildExperimentalHandsForAvatar(model, avatar) {
 
   for (const side of ['left', 'right']) {
     const mesh = state.footGlb.skeletonClone ? state.footGlb.skeletonClone(gltf.scene) : gltf.scene.clone(true);
-    const mirrorSign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1); // Mirrors docs/js/procedural-hand-attachments.js's own left/right sign table.
-    mesh.scale.x = mirrorSign;
     mesh.updateMatrixWorld(true);
-    let bounds = new THREE.Box3().setFromObject(mesh);
-    const size = bounds.getSize(new THREE.Vector3());
-    if (size.y > 0.000001) {
-      mesh.scale.multiplyScalar(targetHeight / size.y); // Preserves the mirror sign on X while uniformly resizing to the configured hand-height fraction.
-      mesh.updateMatrixWorld(true);
-      bounds = new THREE.Box3().setFromObject(mesh);
-    }
-    const center = bounds.getCenter(new THREE.Vector3());
-    mesh.position.sub(center); // Centers the mesh on its own local origin so Dance can drive one clean pivot.
-    const wrapper = new THREE.Group(); // Dance sets this wrapper's position/quaternion each frame; the mesh itself stays at its authored "fingers point down" rest orientation inside it.
+    const bounds = new THREE.Box3().setFromObject(mesh);
+    const rawHeight = Math.max(0.000001, bounds.getSize(new THREE.Vector3()).y);
+    // Exactly mirrors docs/js/procedural-hand-attachments.js's own buildGlbHand():
+    // canonicalFit normalizes the raw import to the configured hand-height
+    // fraction, then modelScale/speciesScale (here: effectiveScale) is
+    // layered on top — omitting that second factor is what under/over-sized
+    // hands relative to what the real game actually renders.
+    const canonicalFit = targetHeight / rawHeight;
+    const finalScale = canonicalFit * effectiveScale;
+    const mirrorSign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1); // Matches docs/js/procedural-hand-attachments.js's own left/right sign table.
+    mesh.scale.set(finalScale * mirrorSign, finalScale, finalScale);
+    // Deliberately NOT recentering on the mesh's own bounds: per
+    // procedural-hand-attachments.js's own comment, the GLB's authored 0,0,0
+    // is the grip/wrist origin and must stay the pivot Dance positions.
+    const wrapper = new THREE.Group(); // Dance sets this wrapper's position/quaternion each frame; the mesh itself stays at its authored rest orientation and pivot inside it.
     wrapper.name = `${model.name || 'Avatar'}_${side === 'left' ? 'Left' : 'Right'}Hand`;
     wrapper.add(mesh);
     wrapper.position.set(side === 'left' ? -Math.abs(safeHandAttachX) : Math.abs(safeHandAttachX), safeHandAttachY, 0);
     handsRoot.add(wrapper);
   }
-  log(`Generated ${speciesId} hand markers from ${handProfile.glb}.`);
+  log(`Generated ${speciesId} hand markers from ${handProfile.glb} at effective scale ${effectiveScale.toFixed(3)}.`);
 }
 
 function disposeCurrentThreeModel() {
