@@ -775,6 +775,17 @@
         // the 0..1 position along it, branchSurfaceY is that branch's own
         // height (used instead of terrain-follow while onBranch is set).
         onBranch: null, branchT: 0, branchSurfaceY: 0,
+        // Dungeon verticality (see updateDungeonFalling/DUNGEON_GRAVITY) —
+        // true from the moment the player steps off a retracted pillar (or
+        // any other registered pit tile) until they finish climbing back up
+        // a fall-recovery ladder (a rope-type climb target flagged
+        // endsFall, see climb-system.js). x/y (top-down position/collision)
+        // never change during a fall — only fallSurfaceY, which
+        // updatePlayerMesh reads the same way it already reads
+        // climbSurfaceY during an ordinary climb. Scoped to building
+        // interiors that register pit tiles (currently only the Dungeon
+        // Test) — everywhere else this simply never becomes true.
+        falling: false, fallVZ: 0, fallSurfaceY: 0, fallBottomY: 0,
       };
 
       // All players present in this session — just the local `player` today
@@ -8595,6 +8606,16 @@
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
+      // Dungeon Test pit chambers (see dungeon-test.js's findPitChamber) —
+      // mapId → { sublevelY, pillars: [{col,row,phase,mesh,isUp}], clock }.
+      // Built once per scene load (see the furniture-loop-adjacent wiring
+      // in loadBuildingScene) and driven every frame by
+      // updateDungeonFalling, which is the only thing that ever reads it.
+      const _dungeonPitChambers = new Map();
+      const DUNGEON_GRAVITY = 9; // world-units/s^2 — tuned against sublevelY (~2 units) for a brief, readable drop rather than an instant pop.
+      const DUNGEON_MAX_FALL_SPEED = 8; // world-units/s terminal velocity.
+      const DUNGEON_PILLAR_CYCLE_S = 2.6; // Full up/down cycle length for one pillar's oscillation.
+      const DUNGEON_PILLAR_UP_FRACTION = 0.45; // Pillars spend a bit less than half their cycle "up" — a real hazard, not a coin flip.
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
       // being purely decorative (e.g. the Alchemy Table, the Bulletin
@@ -11651,6 +11672,117 @@
         return group;
       }
 
+      // A real climbable-ladder look (two side rails + rungs) for the pit
+      // chamber's fall-recovery climb — real box geometry, same technique
+      // as buildRopeMesh above, not a placeholder. fromY/toY are world
+      // units (fromY the lower/sublevel end, toY the floor-0 end).
+      function buildLadderMesh(x, z, fromY, toY) {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshLambertMaterial({ color: 0x8a6a45 });
+        const height = Math.max(0.2, toY - fromY);
+        const railOffset = 0.28;
+        for (const side of [-1, 1]) {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, height, 0.06), mat);
+          rail.position.set(x + side * railOffset, fromY + height / 2, z);
+          group.add(rail);
+        }
+        const rungCount = Math.max(2, Math.round(height / 0.35));
+        for (let i = 0; i <= rungCount; i++) {
+          const rung = new THREE.Mesh(new THREE.BoxGeometry(railOffset * 2 + 0.06, 0.05, 0.06), mat);
+          rung.position.set(x, fromY + (height * i) / rungCount, z);
+          group.add(rung);
+        }
+        return group;
+      }
+
+      // Builds one Dungeon Test pit chamber's visuals (sublevel floor
+      // patches, animated pillar meshes, the fall-recovery ladder) and
+      // registers its live state in _dungeonPitChambers for
+      // updateDungeonFalling to drive every frame. chamber is
+      // mapData.pitChamber (see dungeon-test.js's findPitChamber) — a
+      // dungeon without room for one simply has chamber === null, same
+      // graceful-degradation shape as the chasm/rune puzzle.
+      function buildDungeonPitChamber(mapId, chamber, bScene) {
+        if (!chamber) return;
+        const sublevelY = chamber.sublevelY;
+        const stoneMat = InteriorSceneBuilder.buildFloorMaterial(THREE, 'dungeon', 'assets/');
+        const pillarMat = new THREE.MeshLambertMaterial({ color: 0x7a7568 });
+        const pillars = chamber.pillars.map(p => {
+          const floorPatch = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), stoneMat);
+          floorPatch.position.set(p.col + 0.5, sublevelY - 0.05, p.row + 0.5);
+          bScene.add(floorPatch);
+          const pillarMesh = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.2, 0.92), pillarMat);
+          pillarMesh.position.set(p.col + 0.5, sublevelY, p.row + 0.5);
+          bScene.add(pillarMesh);
+          _markOutline(pillarMesh);
+          return { col: p.col, row: p.row, phase: p.phase, mesh: pillarMesh, isUp: false };
+        });
+        for (const [c, r] of [chamber.entryLanding, chamber.exitLanding]) {
+          const floorPatch = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), stoneMat);
+          floorPatch.position.set(c + 0.5, sublevelY - 0.05, r + 0.5);
+          bScene.add(floorPatch);
+        }
+        const ladderCol = chamber.entryLanding[0], ladderRow = chamber.entryLanding[1];
+        const ladder = buildLadderMesh(ladderCol + 0.5, ladderRow + 0.5, sublevelY, 0);
+        _markOutline(ladder);
+        bScene.add(ladder);
+        const ladderKey = `${mapId}_pit_ladder`;
+        window.ClimbSystem?.registerRope(mapId, {
+          id: ladderKey,
+          baseX: (ladderCol + 0.5) * TILE, baseY: (ladderRow + 0.5) * TILE,
+          tipX: (ladderCol + 0.5) * TILE, tipY: (ladderRow + 0.5) * TILE,
+          baseWorldY: sublevelY, tipWorldY: 0,
+          active: false, // Only live while the player is actually down there — see updateDungeonFalling.
+          omniDirectional: true,
+          endsFall: true,
+        });
+        _dungeonPitChambers.set(mapId, { sublevelY, pillars, clock: 0, ladderKey });
+      }
+
+      // Per-frame Dungeon Test verticality: drives the pit chamber's
+      // ambient pillar oscillation and the player's own fall state (see
+      // player.falling/fallVZ/fallSurfaceY). Dungeons are small, enclosed,
+      // single-scene spaces, so real per-frame gravity here costs nothing
+      // the open overworld could ever afford — this never runs at all
+      // outside a Dungeon Test area. x/y (top-down position/collision)
+      // never change during a fall; only the render height does, exactly
+      // like an ordinary climb already works.
+      function updateDungeonFalling(dt) {
+        if (!window.DungeonTest?.floorFromMapId?.(currentArea)) return;
+        const chamber = _dungeonPitChambers.get(currentArea);
+        if (!chamber) return;
+        chamber.clock += dt;
+        const angularSpeed = (Math.PI * 2) / DUNGEON_PILLAR_CYCLE_S;
+        for (const pillar of chamber.pillars) {
+          const t = (Math.sin(chamber.clock * angularSpeed + pillar.phase) + 1) / 2; // 0..1
+          pillar.isUp = t > (1 - DUNGEON_PILLAR_UP_FRACTION);
+          const targetY = pillar.isUp ? 0 : chamber.sublevelY;
+          pillar.mesh.position.y += (targetY - pillar.mesh.position.y) * Math.min(1, dt * 6);
+        }
+        window.ClimbSystem?.setRopeActive(currentArea, chamber.ladderKey, player.falling);
+        if (player.falling) {
+          if (!player.climbing) {
+            player.fallVZ = Math.max(player.fallVZ - DUNGEON_GRAVITY * dt, -DUNGEON_MAX_FALL_SPEED);
+            player.fallSurfaceY += player.fallVZ * dt;
+            if (player.fallSurfaceY <= player.fallBottomY) {
+              player.fallSurfaceY = player.fallBottomY;
+              player.fallVZ = 0;
+            }
+          }
+          return; // Already fallen (or climbing back out) — nothing new to trigger.
+        }
+        if (player.climbing || player.onBranch) return;
+        const col = Math.floor(player.x / TILE), row = Math.floor(player.y / TILE);
+        const pillar = chamber.pillars.find(p => p.col === col && p.row === row);
+        if (pillar && !pillar.isUp) {
+          player.falling = true;
+          player.fallVZ = 0;
+          player.fallSurfaceY = 0;
+          player.fallBottomY = chamber.sublevelY;
+          showToast('The floor gives way beneath you!', false);
+        }
+      }
+
       // Ghostly, semi-transparent placeholder guardians — reuses the exact
       // same Ghoul look/spawn path the Town Mine's floors already rely on
       // (window.BanditCombat.makeEntity with a 'ghoul' appearance
@@ -11808,6 +11940,8 @@
         _buildingScenes.delete(mapId);
         window.ClimbSystem?.resetAreaRopes(mapId);
         window.RangedWeapons?.clearAreaWorldTargets(mapId);
+        _dungeonPitChambers.delete(mapId);
+        if (currentArea === mapId) { player.falling = false; player.fallVZ = 0; }
       }
 
       async function loadBuildingScene(mapId) {
@@ -11836,6 +11970,8 @@
           // below re-registers this visit's real/decoy runes.
           window.ClimbSystem?.resetAreaRopes(mapId);
           window.RangedWeapons?.clearAreaWorldTargets(mapId);
+          _dungeonPitChambers.delete(mapId);
+          player.falling = false; player.fallVZ = 0;
         } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
           // (see synthesizeCavernMapData) — but that generation is one
@@ -11966,8 +12102,19 @@
             bScene.add(cavernMesh);
           } else {
             const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
+            // Pit-chamber pillar tiles (see buildDungeonPitChamber) stay in
+            // mapData.floor — same wall-sealing-avoidance reason as the
+            // chasm gap above — but must NOT get an ordinary floor-level
+            // tile here, or that solid box would sit right on top of the
+            // sublevel and hide the real pit/rising-pillar illusion
+            // entirely. buildDungeonPitChamber supplies its own floor patch
+            // (at the sublevel) and pillar mesh for each of these tiles.
+            const pitHoleTiles = (mapData.wallStyle === 'dungeon' && mapData.pitChamber)
+              ? new Set(mapData.pitChamber.pillars.map(p => `${p.col},${p.row}`))
+              : null;
             // Floor tiles only for defined floor set
             for (const [c, r] of (mapData.floor || [])) {
+              if (pitHoleTiles && pitHoleTiles.has(`${c},${r}`)) continue;
               const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
               fl.position.set(c + 0.5, -0.05, r + 0.5);
               bScene.add(fl);
@@ -12084,6 +12231,7 @@
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(furnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
+          if (mapData.wallStyle === 'dungeon') buildDungeonPitChamber(mapId, mapData.pitChamber, bScene);
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -15005,6 +15153,13 @@
           return;
         }
 
+        if (player.falling) {
+          // Dungeon verticality (see updateDungeonFalling) — x/y stay frozen
+          // while the player is falling, exactly like climbing/onBranch
+          // above; only fallSurfaceY (render height) animates.
+          return;
+        }
+
         if (player.dodging) {
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
@@ -17727,6 +17882,13 @@
       // assuming a flat Y=0 ground plane, or a player standing on an elevated
       // tier renders far below where the camera is looking.
       function _playerGroundY() {
+        // Dungeon verticality (see updateDungeonFalling) — while falling,
+        // the player's real "ground" is the animated fallSurfaceY, not
+        // whatever activeSurfaceYAtWorld would compute for the tile's
+        // normal resting height. Mirrors updatePlayerMesh's own standY
+        // chain so non-shoulder camera modes (which read this instead of
+        // the mesh's own Y) don't desync from where the player actually is.
+        if (player.falling && window.DungeonTest?.floorFromMapId?.(currentArea)) return player.fallSurfaceY;
         return activeSurfaceYAtWorld(player.x / TILE, player.y / TILE);
       }
       function _snapCameraTarget() {
@@ -20373,6 +20535,7 @@
         // flips (see startClimb/updateClimb).
         const standY = player.onBranch ? player.branchSurfaceY
           : player.climbing ? player.climbSurfaceY
+          : (player.falling && window.DungeonTest?.floorFromMapId?.(currentArea)) ? player.fallSurfaceY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
 
         // Riding a mount lifts the rider up so their posterior anchor
@@ -21518,6 +21681,7 @@
         }
 
         // ── Three.js updates ─────────────────────────────────────
+        updateDungeonFalling(dt); // Must run before updatePlayerMesh, which reads player.falling/fallSurfaceY this same frame.
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {

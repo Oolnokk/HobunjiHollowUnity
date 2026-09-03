@@ -27,6 +27,18 @@
   // supernatural threat here is never pre-placed, only ever triggered by the
   // player's own wrong guess.
   //
+  // A second, independent puzzle room (the "pit chamber") sits elsewhere on
+  // the critical path: its whole floor (minus a safe landing tile on each
+  // side) is animated stepping-stone pillars, each rising and sinking on
+  // its own phase offset — a real fall (dungeons are small, enclosed
+  // spaces, so this can afford genuine per-frame Z-axis gravity the open
+  // overworld never could) drops the player onto a lower sublevel the
+  // instant they're standing on a sunk pillar, from which a fall-recovery
+  // ladder (game.js wires this up as an omnidirectional, endsFall-flagged
+  // window.ClimbSystem rope) climbs them back to the entry side to try
+  // again. See findPitChamber below and game.js's pit chamber wiring
+  // (updateDungeonFalling, the sublevel floor patch, the pillar meshes).
+  //
   // No set in-world location yet — eventually this will be found out in the
   // wilderness or roll in as a mine-floor replacement, but that placement
   // isn't decided. Until then it's reached only via the Dev Mode settings
@@ -164,6 +176,61 @@
     return null;
   }
 
+  function roomContainsTile(room, [c, r]) {
+    return c >= room.x && c < room.x + room.w && r >= room.y && r < room.y + room.h;
+  }
+
+  function manhattan([c1, r1], [c2, r2]) {
+    return Math.abs(c1 - c2) + Math.abs(r1 - r2);
+  }
+
+  // Picks the largest path room not already spoken for by the chasm/rune
+  // puzzle (or the entrance/treasure rooms), lays a safe landing tile on
+  // the side facing each of its path neighbors, and turns every other
+  // interior tile into an oscillating pillar. Needs real floor space to be
+  // worth it — a cramped room would leave no meaningful gap between the two
+  // landings — so this can legitimately come back null on a small layout,
+  // same graceful-degradation shape as pickChasm.
+  function findPitChamber(generated, pathRooms, excludedTiles, rng) {
+    const excludedRooms = new Set([generated.entranceRoom, generated.treasureRoom]);
+    for (const tile of excludedTiles) {
+      for (const room of pathRooms) { if (roomContainsTile(room, tile)) excludedRooms.add(room); }
+    }
+    let best = null, bestArea = 0, bestIndex = -1;
+    for (let index = 0; index < pathRooms.length; index++) {
+      const room = pathRooms[index];
+      if (excludedRooms.has(room)) continue;
+      const area = room.w * room.h;
+      if (room.w < 4 || room.h < 4 || area < 16 || area <= bestArea) continue;
+      best = room; bestArea = area; bestIndex = index;
+    }
+    if (!best) return null;
+
+    const prevRoom = pathRooms[bestIndex - 1];
+    const nextRoom = pathRooms[bestIndex + 1];
+    const interior = roomTileList(best);
+    const nearestTo = (targetRoom) => {
+      if (!targetRoom) return interior[0];
+      const target = [targetRoom.cx, targetRoom.cy];
+      return interior.reduce((closest, tile) => manhattan(tile, target) < manhattan(closest, target) ? tile : closest, interior[0]);
+    };
+    const entryLanding = nearestTo(prevRoom);
+    let exitLanding = nearestTo(nextRoom);
+    if (exitLanding[0] === entryLanding[0] && exitLanding[1] === entryLanding[1]) {
+      // Degenerate case (e.g. this room has no "next" neighbor because it's
+      // adjacent to the treasure room itself) — fall back to the tile
+      // farthest from the entry landing so there's still a real crossing.
+      exitLanding = interior.reduce((farthest, tile) => manhattan(tile, entryLanding) > manhattan(farthest, entryLanding) ? tile : farthest, interior[0]);
+    }
+    const landingKeys = new Set([`${entryLanding[0]},${entryLanding[1]}`, `${exitLanding[0]},${exitLanding[1]}`]);
+    const pillars = interior
+      .filter(([c, r]) => !landingKeys.has(`${c},${r}`))
+      .map(([col, row]) => ({ col, row, phase: rng() * Math.PI * 2 }));
+    if (!pillars.length) return null;
+
+    return { room: best, entryLanding, exitLanding, pillars };
+  }
+
   async function synthesizeFloorMapData(mapId) {
     if (!floorFromMapId(mapId)) return null;
     visitCount += 1;
@@ -183,6 +250,7 @@
 
     const usedTiles = new Set(generated.exitTiles.map(([c, r]) => `${c},${r}`));
     let colliders = [];
+    const puzzleTiles = []; // Rooms touching any of these are off-limits to findPitChamber below.
 
     // ── The chasm/rune/rope puzzle (disruption -> solution) ──────────────
     const { pathRooms, pathEdges } = findCriticalPath(generated);
@@ -218,6 +286,7 @@
         ropeBase: chasm.ropeBase,
         ropeTip: chasm.ropeTip,
       });
+      puzzleTiles.push(...chasm.gapTiles, chasm.ropeBase, chasm.ropeTip, realRuneTile);
 
       // The decoy lives off the critical path entirely when a real branch
       // room exists (the "wrong side room" a curious player wanders into),
@@ -231,7 +300,23 @@
       if (decoyTile) {
         usedTiles.add(`${decoyTile[0]},${decoyTile[1]}`);
         addFurniture('dungeonRuneFurniture', decoyTile[0], decoyTile[1], Math.floor(rng() * 4) * 90, { isDecoy: true });
+        puzzleTiles.push(decoyTile);
       }
+    }
+
+    // ── The pit chamber puzzle (independent of the chasm/rune above) ────
+    const pitChamber = findPitChamber(generated, pathRooms, puzzleTiles, rng);
+    let pitChamberData = null;
+    if (pitChamber) {
+      usedTiles.add(`${pitChamber.entryLanding[0]},${pitChamber.entryLanding[1]}`);
+      usedTiles.add(`${pitChamber.exitLanding[0]},${pitChamber.exitLanding[1]}`);
+      for (const pillar of pitChamber.pillars) usedTiles.add(`${pillar.col},${pillar.row}`);
+      pitChamberData = {
+        sublevelY: -2.0,
+        entryLanding: pitChamber.entryLanding,
+        exitLanding: pitChamber.exitLanding,
+        pillars: pitChamber.pillars,
+      };
     }
 
     // itemKey values here must match DECORATIVE_FURNITURE_DEFS[key].itemKey
@@ -297,6 +382,7 @@
       furniture,
       exits: [{ id: 'dungeon_test_exit', label: 'Back to Town', tiles: generated.exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
       wallStyle: 'dungeon',
+      pitChamber: pitChamberData,
     };
   }
 

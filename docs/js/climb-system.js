@@ -91,13 +91,21 @@
       if (!rope.active) continue;
       const dx = rope.baseX - player.x, dy = rope.baseY - player.y;
       const dist = Math.hypot(dx, dy);
-      if (dist > proximityPx || dist < 1 || dist >= bestDist) continue;
-      const towardTipX = rope.tipX - rope.baseX, towardTipY = rope.tipY - rope.baseY;
-      const towardLen = Math.hypot(towardTipX, towardTipY) || 1;
-      // Facing roughly along the rope's own base->tip axis (not just toward
-      // the near anchor point) — otherwise standing beside the rope and
-      // looking down its length off to one side would still trigger it.
-      if ((towardTipX * facingX + towardTipY * facingY) / towardLen < ROPE_CLIMB_FACING_COS) continue;
+      // A purely vertical fall-recovery ladder (see the Dungeon Test's pit
+      // chamber) has no meaningful "facing along it" direction, and the
+      // player can be standing almost exactly on top of its anchor point —
+      // both the facing check and the "not too close" guard below only
+      // make sense for an actual horizontal rope crossing.
+      if (dist > proximityPx || (!rope.omniDirectional && dist < 1) || dist >= bestDist) continue;
+      if (!rope.omniDirectional) {
+        const towardTipX = rope.tipX - rope.baseX, towardTipY = rope.tipY - rope.baseY;
+        const towardLen = Math.hypot(towardTipX, towardTipY) || 1;
+        // Facing roughly along the rope's own base->tip axis (not just
+        // toward the near anchor point) — otherwise standing beside the
+        // rope and looking down its length off to one side would still
+        // trigger it.
+        if ((towardTipX * facingX + towardTipY * facingY) / towardLen < ROPE_CLIMB_FACING_COS) continue;
+      }
       bestDist = dist; best = rope;
     }
     return best ? { type: 'rope', rope: best } : null;
@@ -323,6 +331,7 @@
     deps.setTargetAimAngle(player.angle);
     deps.setLastMoveAngle(player.angle);
     player._climbTargetBranch = null;
+    player._climbEndsFall = false; // Only a rope flagged endsFall (the Dungeon Test's ladder) clears player.falling on completion.
     // -1 so updateClimb's hopIndex-change check always fires for hop 0
     // (the very first stagger) instead of only from hop 1 onward.
     player._climbLastHopIndex = -1;
@@ -362,6 +371,7 @@
     deps.setLastMoveAngle(player.angle);
     player._climbTargetBranch = branch;
     player._climbLastHopIndex = -1;
+    player._climbEndsFall = false;
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
     return true;
@@ -395,6 +405,12 @@
     deps.setTargetAimAngle(player.angle);
     deps.setLastMoveAngle(player.angle);
     player._climbLastHopIndex = -1;
+    // A fall-recovery ladder (rope.endsFall — see the Dungeon Test's pit
+    // chamber) is still an ordinary rope climb as far as updateClimb is
+    // concerned; it just also needs to clear player.falling once the climb
+    // completes, so the player renders back at normal floor height instead
+    // of staying stuck at the sublevel height they climbed away from.
+    player._climbEndsFall = !!rope.endsFall;
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
     return true;
@@ -431,6 +447,7 @@
     player._climbTargetBranch = null;
     player._climbJumpDownAxis = jumpDir;
     player._climbLastHopIndex = -1;
+    player._climbEndsFall = false;
     climbSafetyDebug.lastJumpMode = climb.mode || 'tip';
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
@@ -566,6 +583,11 @@
       player.climbSurfaceY = player.climbSurfaceEndY;
       player.climbHopBounce = 0;
       player.climbing = false;
+      if (player._climbEndsFall) {
+        player._climbEndsFall = false;
+        player.falling = false;
+        player.fallVZ = 0;
+      }
       if (player._climbTargetBranch) {
         const branch = player._climbTargetBranch;
         player._climbTargetBranch = null;
