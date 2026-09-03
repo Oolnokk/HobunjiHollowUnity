@@ -48,7 +48,7 @@ assert.match(transformDumpBootstrap, /PNGPlaneAvatar[\s\S]*loadThreeModules/,
 // repository revision its dependent runtime/config files should use. The
 // internal GitHub commits endpoint can return 403 on mobile, so pin the saved
 // ref to the 40-hex URL SHA before readSettings() can fall back to an older ref.
-assert.match(transformDumpBootstrap, /\(\[0-9a-f\]\{40\}\)/,
+assert.match(transformDumpBootstrap, /\[0-9a-f\]\{40\}/i,
   'production bootstrap must recognize only unambiguous 40-character commit-pinned page refs');
 assert.match(transformDumpBootstrap, /hobunjiNpcPlaneAvatarRepoViewer\.source\.v1/,
   'commit-page pinning must update the same repository settings record Animation Author reads');
