@@ -60544,6 +60544,7 @@ function prepareGameplayBackdropHost() {
     getSelectedNpc() { return state.previewMode === 'npc' && state.selectedNpc ? structuredCloneSafe(state.selectedNpc) : null; },
     getSelectedCreature() { return state.previewMode === 'creature' ? structuredCloneSafe(currentCreatureExport()) : null; },
     getPreviewMode() { return state.previewMode; },
+    log(message, level = 'info', extra = null) { log(message, level, extra); }, // Lets separately-loaded adapters (Dance, Impact tabs) write into this page's own Diagnostics panel instead of only the browser console.
     getScene() { return state.three.scene; },
     getCamera() { return state.three.camera; },
     getRenderer() { return state.three.renderer; },

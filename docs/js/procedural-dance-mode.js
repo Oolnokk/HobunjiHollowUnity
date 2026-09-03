@@ -13,6 +13,16 @@
     status.className = good ? 'pill good' : 'pill warn';
   }
 
+  function editorLog(message, level = 'info', extra = null) {
+    // Writes into the editor's own Diagnostics panel (visible on mobile, and
+    // exactly what gets pasted back for debugging) instead of only the
+    // browser devtools console, which this adapter used to rely on alone.
+    const backdropLog = window.HobunjiGameplayBackdrop?.log;
+    if (backdropLog) { backdropLog(message, level, extra); return; }
+    const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
+    fn(message, extra ?? '');
+  }
+
   function installCanonicalEditorLegBoneToggle() {
     const previousApi = window.ProceduralLegAnimation;
     if (previousApi?.setShowBones && !previousApi.__editorBoneGuideBridge && !previousApi.__editorCanonicalBoneToggle) return;
@@ -68,7 +78,7 @@
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCanonicalCheckbox, { once: true });
     else bindCanonicalCheckbox();
-    console.info('[Dance bones] Dance delegates visibility to the editor canonical LegBonesDebug visualizer.');
+    editorLog('[Dance bones] Dance delegates visibility to the editor canonical LegBonesDebug visualizer.');
   }
 
   function installEditorGeneratedFeetDanceBridge() {
@@ -96,6 +106,37 @@
       if (!position || position.count <= index) return false;
       out.set(position.getX(index), position.getY(index), position.getZ(index));
       return true;
+    }
+
+    let lastDiagnosedRoot; // Undefined until the first refreshBridge() tick; logs once per LegBonesDebug identity change instead of every frame.
+
+    function logLegBonesDiagnostic(canonicalRoot) {
+      if (lastDiagnosedRoot === canonicalRoot) return;
+      lastDiagnosedRoot = canonicalRoot;
+      if (!canonicalRoot) { editorLog('[Dance bones] LegBonesDebug not found in the scene yet.', 'warn'); return; }
+      const Vector3 = canonicalRoot.position?.constructor;
+      const summarize = (side) => {
+        const line = lineForSide(canonicalRoot, side);
+        if (!line || !Vector3) return { side, present: false };
+        const hip = new Vector3(); const knee = new Vector3(); const foot = new Vector3();
+        const hasHip = readLinePoint(line, 0, hip);
+        const hasKnee = readLinePoint(line, 1, knee);
+        const hasFoot = readLinePoint(line, 2, foot);
+        const hipToFootDistance = hasHip && hasFoot ? hip.distanceTo(foot) : null; // A near-zero span means the line has no real leg shape to draw, even if visible.
+        return {
+          side, present: true, hasHip, hasKnee, hasFoot,
+          hipToFootDistance,
+          degenerate: hipToFootDistance != null && hipToFootDistance < 1e-4,
+        };
+      };
+      editorLog('[Dance bones] LegBonesDebug diagnostic', 'info', {
+        exists: true,
+        visible: canonicalRoot.visible,
+        parentVisible: canonicalRoot.parent ? canonicalRoot.parent.visible : null,
+        childCount: canonicalRoot.children?.length ?? 0,
+        left: summarize('left'),
+        right: summarize('right'),
+      });
     }
 
     function findExperimentalFeetRoot(canonicalRoot) {
@@ -242,7 +283,7 @@
         leftFoot: realFeet.left.name || 'left generated foot',
         rightFoot: realFeet.right.name || 'right generated foot',
       };
-      console.info(`[Dance feet] Reusing editor generated fallback feet: ${realFeet.left.name || 'left'} / ${realFeet.right.name || 'right'}.`);
+      editorLog(`[Dance feet] Reusing editor generated fallback feet: ${realFeet.left.name || 'left'} / ${realFeet.right.name || 'right'}.`);
       return true;
     }
 
@@ -251,6 +292,7 @@
       const scene = backdrop?.getScene?.() || null;
       const model = backdrop?.getAvatarModel?.() || null;
       const canonicalRoot = scene?.getObjectByName?.('LegBonesDebug') || null;
+      logLegBonesDiagnostic(canonicalRoot);
       const experimentalRoot = findExperimentalFeetRoot(canonicalRoot);
       const realFeet = findRealFeet(experimentalRoot);
       const stale = activeModel !== model || !shimRoot?.parent || realFeetRoot !== experimentalRoot || legDebugRoot !== canonicalRoot;
@@ -290,7 +332,7 @@
     });
     script.addEventListener('error', () => {
       updateVisibleStatus(`Dance core failed to load: ${script.src}`, false);
-      console.error(`[Dance mode] Failed to load ${script.src}`);
+      editorLog(`[Dance mode] Failed to load ${script.src}`, 'error');
     });
     document.head.appendChild(script);
   }

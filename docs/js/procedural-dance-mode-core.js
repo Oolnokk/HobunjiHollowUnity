@@ -70,6 +70,17 @@
     debug: {},
   };
 
+  function editorLog(message, level = 'info', extra = null) {
+    // Writes into the editor's own Diagnostics panel when available, so lifecycle
+    // events (renderer-hook attach/timeout, enable/disable) are visible without
+    // opening devtools — this is exactly the kind of state that was silently
+    // invisible when the render-hook attach timed out before this was added.
+    const backdropLog = window.HobunjiGameplayBackdrop?.log;
+    if (backdropLog) { backdropLog(message, level, extra); return; }
+    const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
+    fn(message, extra ?? '');
+  }
+
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
   }
@@ -495,6 +506,7 @@
     state.renderer = renderer;
     state.originalRender = originalRender;
     state.renderHookInstalled = true;
+    editorLog('[Dance mode] Renderer hook attached; Dance can now drive the preview.');
     return true;
   }
 
@@ -587,6 +599,7 @@
       } else releaseModel();
       toggle.classList.toggle('active', state.enabled);
       toggle.textContent = state.enabled ? 'Stop dance' : 'Preview dance';
+      editorLog(`[Dance mode] Preview dance toggled ${state.enabled ? 'on' : 'off'}${state.renderHookInstalled ? '' : ' (renderer hook not attached yet — dance will not run)'}.`, state.enabled && !state.renderHookInstalled ? 'warn' : 'info');
     });
     const bones = document.createElement('button'); // Used to expose the existing procedural leg-bone guides for mobile IK inspection.
     bones.type = 'button';
@@ -632,7 +645,10 @@
       }, 250);
       window.setTimeout(() => {
         window.clearInterval(retry);
-        if (!state.renderHookInstalled) updateStatus(performance.now(), 'Dance could not find the editor renderer; reload the editor to retry.');
+        if (!state.renderHookInstalled) {
+          updateStatus(performance.now(), 'Dance could not find the editor renderer; reload the editor to retry.');
+          editorLog('[Dance mode] Gave up attaching the renderer hook after 120s; the preview renderer never became available.', 'error');
+        }
       }, 120000);
     }
   }
