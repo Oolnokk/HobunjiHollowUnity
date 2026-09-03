@@ -181,6 +181,7 @@
       const footQuaternionProxy = {
         clone: () => data.realFoot.quaternion.clone(),
         copy(value) { data.realFoot.quaternion.copy(value); return footQuaternionProxy; },
+        multiply(value) { data.realFoot.quaternion.multiply(value); return footQuaternionProxy; },
       };
 
       data.hip = {
