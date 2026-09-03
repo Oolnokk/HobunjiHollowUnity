@@ -25,6 +25,8 @@
   const DRUNK_WIDE_STEP_WIDTH = 0.30; // Used for drunken outward recovery steps.
   const DRUNK_STEP_DEPTH = 0.18; // Used for drunken forward/backward foot drift during a dance.
   const DRUNK_HESITATION_LIFT = 0.08; // Used for the held-up-foot hesitation borrowed from drunken locomotion.
+  const HIP_ROLL_MAX_DEG = 14; // Used as the full-intensity pelvis tilt that lifts one hip's foot off the ground during a weight shift.
+  const HIP_HALF_WIDTH_FRACTION = 0.16; // Used to estimate half the stance width from avatar plane width when converting hip roll into a foot-lift height.
 
   const STYLE_INTENSITY = Object.freeze({ // Used to preserve the reference preview's authored maximum intensity per dance style.
     'side-step': 1.00,
@@ -262,7 +264,8 @@
     }
 
     const scalePulse = 1 + Math.sin(phase * 0.5) * mappedIntensity * 0.018; // Used to retain the subtle rhythmic PNG-plane pulse from the simpler preview dance pass.
-    return { phase, tangentShift, bounce, bodySway, forwardLean, twirlRotation, footTapYaw, footTapRoll, scalePulse };
+    const hipRoll = alternatingWeight * mappedIntensity * HIP_ROLL_MAX_DEG * DEG; // Used to tilt the pelvis in the same weight-shift phase as bodySway, so the hip that rises and the foot that lifts land on the same beat/side as the visible body lean.
+    return { phase, tangentShift, bounce, bodySway, forwardLean, twirlRotation, footTapYaw, footTapRoll, scalePulse, hipRoll };
   }
 
   function drunkenDanceMotion(THREE, phase, groove01, dt) {
@@ -392,7 +395,9 @@
       if (side === swingSide && supportStrength > 0.01) {
         const eased = smootherstep01(swingProgress); // Used to avoid mechanical linear foot travel.
         targetWorld.lerp(landingWorld, eased);
-        targetWorld.y = leg.contactWorldY + Math.sin(Math.PI * swingProgress) * baseLift + drunkOffset.y;
+        const hipHalfWidth = dimensions.width * HIP_HALF_WIDTH_FRACTION; // Used to convert the pelvis-roll angle into a foot-lift distance for this avatar's size.
+        const hipLift = Math.abs(Math.sin(motion.hipRoll)) * hipHalfWidth; // Applied only to the swinging/rising-hip side, so the leg that visibly lifts is always the same one whose hip just rose — the planted, weight-bearing leg never lifts off its true contact height.
+        targetWorld.y = leg.contactWorldY + Math.sin(Math.PI * swingProgress) * baseLift + drunkOffset.y + hipLift;
       }
 
       let tapYaw = 0; // Used to add the authored fifteen-degree foot-tap yaw only to the current active foot.
