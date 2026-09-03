@@ -109,7 +109,7 @@
 
   function _applySleepingComposite(avatarRef, rec) {
     if (!avatarRef || !rec?.genotype || !window.CreatureGeneticsRender?.composeFrame || typeof THREE === 'undefined') return;
-    window.CreatureGeneticsRender.composeFrame(rec.kind, 'idle', rec.genotype, false).then(canvas => {
+    window.CreatureGeneticsRender.composeFrame(rec.kind, 'idle', rec.genotype, true).then(canvas => {
       if (!canvas || !avatarRef.group?.parent) return;
       const frontTex = new THREE.CanvasTexture(canvas);
       frontTex.colorSpace = THREE.SRGBColorSpace;
