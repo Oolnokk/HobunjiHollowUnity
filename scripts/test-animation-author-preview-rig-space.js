@@ -44,4 +44,15 @@ assert.match(transformDumpBootstrap, /this\.parent && typeof this\.parent\.remov
 assert.match(transformDumpBootstrap, /PNGPlaneAvatar[\s\S]*loadThreeModules/,
   'compatibility must install at the shared PNGPlaneAvatar Three loader boundary before scene creation');
 
-console.log('Animation Author preview rig-space isolation and legacy Object3D cleanup guards passed');
+// A commit-pinned RawGitHack page is already authoritative about which
+// repository revision its dependent runtime/config files should use. The
+// internal GitHub commits endpoint can return 403 on mobile, so pin the saved
+// ref to the 40-hex URL SHA before readSettings() can fall back to an older ref.
+assert.match(transformDumpBootstrap, /\(\[0-9a-f\]\{40\}\)/,
+  'production bootstrap must recognize only unambiguous 40-character commit-pinned page refs');
+assert.match(transformDumpBootstrap, /hobunjiNpcPlaneAvatarRepoViewer\.source\.v1/,
+  'commit-page pinning must update the same repository settings record Animation Author reads');
+assert.match(transformDumpBootstrap, /ref: sha/,
+  'commit-page pinning must make the current page SHA the requested repository ref');
+
+console.log('Animation Author preview isolation, legacy Object3D cleanup, and pinned-ref guards passed');
