@@ -254,6 +254,10 @@
   const BRANCH_JUMP_FACING_COS = 0.7; // ~45 degrees either side of dead-on outward.
   const BRANCH_JUMP_PERP_DOT_MAX = 0.42;
   function getClimbTarget() {
+    // Both hands full of a Dungeon Test loose prop (see game.js's
+    // player.carriedProp/updateLooseProps) rules out climbing anything —
+    // walls, branches, ropes/ladders alike — until it's thrown or set down.
+    if (deps.player.carriedProp) return null;
     // Cliff walls and tree branches are exterior-zone concepts (see
     // getWallClimbTarget's incline-tile requirement and the branch
     // registry), but ropes are area-agnostic — a building interior (e.g.

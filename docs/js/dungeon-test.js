@@ -49,6 +49,17 @@
   const DUNGEON_BGM_TRACK = { url: 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg' };
   let visitCount = 0;
 
+  // Chemical jar naming — plain "<adjective> <color> <substance>" combos
+  // instead of made-up prototype names (see game.js's loose-prop wiring for
+  // how a jar is actually built/thrown/bounced).
+  const JAR_ADJECTIVES = ['Smelly', 'Steaming', 'Bubbling', 'Sickly', 'Murky', 'Glowing', 'Oozing', 'Fizzing', 'Rancid', 'Shimmering', 'Curdled', 'Frothing'];
+  const JAR_COLORS = [
+    { name: 'orange', hex: 0xe07a2e }, { name: 'yellow', hex: 0xd9c62c }, { name: 'purple', hex: 0x7a3fb0 },
+    { name: 'green', hex: 0x4c9a3a }, { name: 'red', hex: 0xb5342c }, { name: 'blue', hex: 0x3465c2 },
+    { name: 'black', hex: 0x2a2622 }, { name: 'pink', hex: 0xd7679a },
+  ];
+  const JAR_SUBSTANCES = ['goo', 'acid', 'liquid', 'sludge', 'paste', 'brew', 'muck', 'slime'];
+
   function floorFromMapId(mapId) { return mapId === MAP_ID; }
 
   function seededRng(seedText) {
@@ -440,6 +451,31 @@
       }
     }
 
+    // ── Loose props (crates + chemical jars) ─────────────────────────────
+    // Real lightweight physics objects (see game.js's updateLooseProps) —
+    // picked up and thrown by hand, not walked-up-and-pressed furniture, so
+    // they're kept in their own list rather than mapData.furniture. Spread
+    // across whatever safe tiles the puzzles above left behind; a tight
+    // layout can legitimately end up with fewer than the requested count.
+    const looseProps = [];
+    let propId = 0;
+    const propPool = generated.rooms
+      .filter(room => room !== generated.entranceRoom)
+      .flatMap(room => placementSafeTiles(floorSet, roomTileList(room)))
+      .filter(([c, r]) => !usedTiles.has(`${c},${r}`));
+    const propSpots = pickSeparatedTiles(rng, propPool, new Set(), 5, 2.2);
+    propSpots.forEach(([c, r], index) => {
+      usedTiles.add(`${c},${r}`);
+      if (index < 3) {
+        looseProps.push({ id: `prop_${propId++}`, kind: 'crate', col: c, row: r });
+      } else {
+        const adjective = JAR_ADJECTIVES[Math.floor(rng() * JAR_ADJECTIVES.length)];
+        const color = JAR_COLORS[Math.floor(rng() * JAR_COLORS.length)];
+        const substance = JAR_SUBSTANCES[Math.floor(rng() * JAR_SUBSTANCES.length)];
+        looseProps.push({ id: `prop_${propId++}`, kind: 'jar', col: c, row: r, name: `${adjective} ${color.name} ${substance}`, colorHex: color.hex });
+      }
+    });
+
     return {
       schema: 'hobunji_building_interior.v1',
       id: mapId,
@@ -451,6 +487,7 @@
       exits: [{ id: 'dungeon_test_exit', label: 'Back to Town', tiles: generated.exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
       wallStyle: 'dungeon',
       pitChamber: pitChamberData,
+      looseProps,
     };
   }
 

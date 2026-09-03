@@ -786,6 +786,12 @@
         // interiors that register pit tiles (currently only the Dungeon
         // Test) — everywhere else this simply never becomes true.
         falling: false, fallVZ: 0, fallSurfaceY: 0, fallBottomY: 0,
+        // Dungeon Test loose props (see updateLooseProps) — the currently
+        // carried prop state object, or null with both hands free. Blocks
+        // drawing a tool/weapon (setActiveTool) and climbing anything
+        // (climb-system.js's getClimbTarget) while set; throwing it (or
+        // leaving the dungeon, which auto-drops it) clears it again.
+        carriedProp: null,
       };
 
       // All players present in this session — just the local `player` today
@@ -8627,6 +8633,20 @@
       // one entry per placed stoneBrazierFurniture instance (see
       // wireDungeonBrazier), driven every frame by updateDungeonBraziers.
       const _dungeonBraziers = new Map();
+      // mapId -> [{ id, kind, name, mesh, x, y, z, vx, vy, vz, bounciness,
+      // originX, originY, originZ }] — one entry per placed loose prop (see
+      // dungeon-test.js's mapData.looseProps), driven every frame by
+      // updateLooseProps. x/y are raw pixels (player.x/y convention); z is
+      // a THREE-unit world height, matching player.fallSurfaceY.
+      const _dungeonLooseProps = new Map();
+      const LOOSE_PROP_RADIUS_PX = 12;
+      const LOOSE_PROP_GRAVITY = 9;
+      const LOOSE_PROP_AIR_DRAG = 0.6;
+      const LOOSE_PROP_GROUND_FRICTION = 5;
+      const LOOSE_PROP_CARRY_DISTANCE_PX = 26;
+      const LOOSE_PROP_THROW_SPEED_PX = 260;
+      const LOOSE_PROP_THROW_UP_SPEED = 3.4;
+      const LOOSE_PROP_VOID_Y = -3; // Below even the pit chamber's sublevel (-2) — see updateLooseProps' "fallen into space" respawn.
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
       // being purely decorative (e.g. the Alchemy Table, the Bulletin
@@ -11875,6 +11895,190 @@
         _dungeonBraziers.delete(mapId);
       }
 
+      // A squat cylinder body + a narrow neck cap — no authored-furniture
+      // JSON for this one on purpose: it's a dynamic gameplay prop with its
+      // own real-time physics state (see updateLooseProps), not placed
+      // decor, so it doesn't go through the furniture editor pipeline the
+      // way DECORATIVE_FURNITURE_DEFS pieces do.
+      function buildJarMesh(colorHex) {
+        const group = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.19, 0.3, 10), new THREE.MeshLambertMaterial({ color: colorHex }));
+        body.position.y = 0.15;
+        group.add(body);
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.08, 10), new THREE.MeshLambertMaterial({ color: 0x3a3a3a }));
+        neck.position.y = 0.34;
+        group.add(neck);
+        return group;
+      }
+
+      // Builds every placed loose prop (mapData.looseProps — crates and
+      // chemical jars, see dungeon-test.js) into live physics state, driven
+      // every frame by updateLooseProps. Crates reuse the same procedural
+      // crateStack recipe DECORATIVE_FURNITURE_DEFS.crateStack already
+      // renders as ordinary dressing elsewhere — same look, but this
+      // instance is a real pick-up-and-throw object instead of static decor.
+      function wireDungeonLooseProps(mapId, mapData, bScene) {
+        const props = [];
+        for (const p of (mapData.looseProps || [])) {
+          const mesh = p.kind === 'jar' ? buildJarMesh(p.colorHex || 0x6a8a4a) : buildFurnitureVisual('crateStack', 0x8a6a3a);
+          _markOutline(mesh);
+          mesh.position.set(p.col + 0.5, 0, p.row + 0.5);
+          bScene.add(mesh);
+          const x = (p.col + 0.5) * TILE, y = (p.row + 0.5) * TILE;
+          props.push({
+            id: p.id, kind: p.kind, name: p.name || null, mesh,
+            x, y, z: 0, vx: 0, vy: 0, vz: 0,
+            bounciness: p.kind === 'jar' ? 0.42 : 0.18,
+            originX: x, originY: y, originZ: 0,
+          });
+        }
+        _dungeonLooseProps.set(mapId, props);
+      }
+
+      // The floor height under one loose-prop tile — null means no real
+      // floor at all there (a chasm gap collider, see the chasm/rune puzzle
+      // — a real hole to fall through), otherwise the same up/down sublevel
+      // height the pit chamber already gives the player (see
+      // updateDungeonFalling) so a thrown prop that lands in the pit
+      // chamber just settles on its lower floor exactly like the player's
+      // own fall does, rather than treating it as a void.
+      function looseFloorInfoAt(mapId, col, row) {
+        const info = _buildingScenes.get(mapId);
+        const tile = info?.grid?.[row]?.[col];
+        if (!tile || tile.type === TileType.ROCK) return null;
+        const chamber = _dungeonPitChambers.get(mapId);
+        if (chamber) {
+          const pillar = chamber.pillars.find(p => p.col === col && p.row === row);
+          if (pillar) return { y: pillar.isUp ? 0 : chamber.sublevelY };
+        }
+        return { y: 0 };
+      }
+
+      function respawnLooseProp(prop) {
+        prop.x = prop.originX; prop.y = prop.originY; prop.z = prop.originZ;
+        prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        showToast(`${looseCapitalized(prop)} clatters back into place.`, false);
+      }
+
+      function looseCapitalized(prop) {
+        const label = prop.name || (prop.kind === 'jar' ? 'jar' : 'crate');
+        return label.charAt(0).toUpperCase() + label.slice(1);
+      }
+
+      // Per-frame Dungeon Test loose-prop physics: gravity, wall-sliding
+      // horizontal movement, ground bounce/friction (per-kind bounciness —
+      // a jar bounces noticeably more than a heavy crate), and a chasm-gap
+      // fall respawning the prop back where it was originally placed. The
+      // currently carried prop (if any) skips all of this and just follows
+      // the player instead.
+      function updateLooseProps(dt) {
+        if (!window.DungeonTest?.floorFromMapId?.(currentArea)) {
+          if (player.carriedProp) player.carriedProp = null; // Left the dungeon still carrying something — it can't come along.
+          return;
+        }
+        const props = _dungeonLooseProps.get(currentArea);
+        if (!props) return;
+        for (const prop of props) {
+          if (prop === player.carriedProp) {
+            const cx = player.x + Math.cos(player.angle) * LOOSE_PROP_CARRY_DISTANCE_PX;
+            const cy = player.y + Math.sin(player.angle) * LOOSE_PROP_CARRY_DISTANCE_PX;
+            const carryFloor = looseFloorInfoAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+            prop.mesh.position.set(cx / TILE, (carryFloor ? carryFloor.y : 0) + 0.5, cy / TILE);
+            prop.mesh.rotation.y = -player.angle;
+            continue;
+          }
+          prop.vz -= LOOSE_PROP_GRAVITY * dt;
+          prop.z += prop.vz * dt;
+          const desiredX = prop.x + prop.vx * dt, desiredY = prop.y + prop.vy * dt;
+          const swept = sweptMove(prop.x, prop.y, desiredX, desiredY, (x, y) => canOccupyAt(x, y, LOOSE_PROP_RADIUS_PX));
+          prop.x = swept.x; prop.y = swept.y;
+          if (swept.blockedX) prop.vx *= -0.3;
+          if (swept.blockedY) prop.vy *= -0.3;
+          const drag = Math.min(1, LOOSE_PROP_AIR_DRAG * dt);
+          prop.vx *= (1 - drag); prop.vy *= (1 - drag);
+
+          // Safety-net "fallen into space" respawn — reachable in practice
+          // by rolling off a pit-chamber sublevel patch onto sublevel-height
+          // open air (that sublevel only has real floor directly under each
+          // pillar — see buildDungeonPitChamber), and a last-resort catch
+          // for anything else that could otherwise leave a prop stuck below
+          // the map with no way back for the player to retrieve it.
+          if (prop.z < LOOSE_PROP_VOID_Y) { respawnLooseProp(prop); continue; }
+          const col = Math.floor(prop.x / TILE), row = Math.floor(prop.y / TILE);
+          const floorInfo = looseFloorInfoAt(currentArea, col, row);
+          if (floorInfo && prop.z <= floorInfo.y) {
+            prop.z = floorInfo.y;
+            if (Math.abs(prop.vz) > 0.4) {
+              prop.vz = -prop.vz * prop.bounciness;
+              prop.vx *= 0.6; prop.vy *= 0.6;
+            } else {
+              prop.vz = 0;
+              const friction = Math.max(0, 1 - LOOSE_PROP_GROUND_FRICTION * dt);
+              prop.vx *= friction; prop.vy *= friction;
+            }
+          }
+          prop.mesh.position.set(prop.x / TILE, prop.z, prop.y / TILE);
+        }
+      }
+
+      // Proximity+facing search, same shape as climb-system.js's rope/branch
+      // targeting — a loose prop is a moving free-floating object, not a
+      // fixed tile, so it doesn't fit the _buildingInteractables tile map.
+      function findNearbyLooseProp() {
+        const props = _dungeonLooseProps.get(currentArea);
+        if (!props) return null;
+        const proximityPx = TILE * 1.15;
+        const facingX = Math.cos(player.angle), facingY = Math.sin(player.angle);
+        let best = null, bestDist = Infinity;
+        for (const prop of props) {
+          if (prop === player.carriedProp) continue;
+          const dx = prop.x - player.x, dy = prop.y - player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > proximityPx || dist >= bestDist) continue;
+          if (dist > 6) {
+            const facingDot = (dx * facingX + dy * facingY) / dist;
+            if (facingDot < 0.4) continue;
+          }
+          bestDist = dist; best = prop;
+        }
+        return best;
+      }
+
+      function pickUpNearbyLooseProp() {
+        if (player.carriedProp) return { ok: false, message: 'Your hands are already full.' };
+        // Re-checked here, not just at the action-bar button's visibility —
+        // a stale queued action from the instant before a weapon was drawn
+        // shouldn't be able to sneak a pickup through.
+        if (heldMode !== 'none') return { ok: false, message: 'Put your weapon away first.' };
+        const prop = findNearbyLooseProp();
+        if (!prop) return { ok: false, message: 'Nothing nearby to pick up.' };
+        player.carriedProp = prop;
+        prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        return { ok: true, message: `Picked up the ${looseCapitalized(prop)}.` };
+      }
+
+      function throwCarriedProp() {
+        const prop = player.carriedProp;
+        if (!prop) return { ok: false, message: 'Not carrying anything.' };
+        player.carriedProp = null;
+        prop.vx = Math.cos(player.angle) * LOOSE_PROP_THROW_SPEED_PX;
+        prop.vy = Math.sin(player.angle) * LOOSE_PROP_THROW_SPEED_PX;
+        prop.vz = LOOSE_PROP_THROW_UP_SPEED;
+        return { ok: true, message: `Threw the ${looseCapitalized(prop)}.` };
+      }
+
+      function disposeDungeonLooseProps(mapId) {
+        const props = _dungeonLooseProps.get(mapId);
+        if (props) {
+          if (player.carriedProp && props.includes(player.carriedProp)) player.carriedProp = null;
+          for (const prop of props) {
+            prop.mesh.parent?.remove(prop.mesh);
+            prop.mesh.traverse(child => { child.geometry?.dispose?.(); child.material?.dispose?.(); });
+          }
+        }
+        _dungeonLooseProps.delete(mapId);
+      }
+
       // Ghostly, semi-transparent placeholder guardians — reuses the exact
       // same Ghoul look/spawn path the Town Mine's floors already rely on
       // (window.BanditCombat.makeEntity with a 'ghoul' appearance
@@ -12035,6 +12239,7 @@
         window.RangedWeapons?.clearAreaFlameZones(mapId);
         _dungeonPitChambers.delete(mapId);
         disposeDungeonBraziers(mapId);
+        disposeDungeonLooseProps(mapId);
         if (currentArea === mapId) { player.falling = false; player.fallVZ = 0; }
       }
 
@@ -12067,6 +12272,7 @@
           window.RangedWeapons?.clearAreaFlameZones(mapId);
           _dungeonPitChambers.delete(mapId);
           disposeDungeonBraziers(mapId);
+          disposeDungeonLooseProps(mapId);
           player.falling = false; player.fallVZ = 0;
         } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
@@ -12343,6 +12549,7 @@
             }
           }
           if (mapData.wallStyle === 'dungeon') buildDungeonPitChamber(mapId, mapData.pitChamber, bScene);
+          if (mapData.wallStyle === 'dungeon') wireDungeonLooseProps(mapId, mapData, bScene);
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -16960,6 +17167,23 @@
           exitInterior();
           lastActionMessage = 'Stepped outside.';
           showToast(lastActionMessage, true);
+          return;
+        }
+        // Dungeon Test loose props — a moving object, not a tile lookup, so
+        // handled here rather than through the generic obj_ dispatch below
+        // (same reasoning as computeActionButtons' own special-case for it).
+        if (activeAction === 'obj_pickup_prop') {
+          const result = pickUpNearbyLooseProp();
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar();
+          return;
+        }
+        if (activeAction === 'obj_throw_prop') {
+          const result = throwCarriedProp();
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar();
           return;
         }
         if (activeAction.startsWith('obj_')) {
@@ -21811,6 +22035,7 @@
         // ── Three.js updates ─────────────────────────────────────
         updateDungeonFalling(dt); // Must run before updatePlayerMesh, which reads player.falling/fallSurfaceY this same frame.
         updateDungeonBraziers(dt);
+        updateLooseProps(dt);
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
@@ -22225,6 +22450,10 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
+        // Can't draw a tool/weapon with both hands full of a Dungeon Test
+        // loose prop — throw it (or set it down) first. See
+        // updateLooseProps/player.carriedProp.
+        if (player.carriedProp) { showToast(`Your hands are full — throw the ${looseCapitalized(player.carriedProp)} first.`, false); return; }
         if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
         heldMode = 'tool';
         activeTool = tool;
@@ -22441,6 +22670,24 @@
               });
             });
             return cavernBtns;
+          }
+          // Dungeon Test loose props (crates/jars, see updateLooseProps) —
+          // a moving free-floating pickup, not a tile-anchored interactable,
+          // so it's checked here rather than through _buildingInteractables.
+          // Carrying one always offers Throw regardless of what's aimed at;
+          // otherwise Pick Up only shows with both hands genuinely free
+          // (heldMode 'item' still counts as "hands full" here on purpose —
+          // carrying a prop one-handed alongside a held item reads oddly).
+          if (window.DungeonTest?.floorFromMapId?.(currentArea)) {
+            if (player.carriedProp) {
+              return [{ icon: '🤾', label: `Throw ${looseCapitalized(player.carriedProp)}`, action: 'obj_throw_prop', style: 'primary', allowed: true, worldInteraction: true }];
+            }
+            if (heldMode === 'none') {
+              const nearbyProp = findNearbyLooseProp();
+              if (nearbyProp) {
+                return [{ icon: '✋', label: `Pick Up ${looseCapitalized(nearbyProp)}`, action: 'obj_pickup_prop', style: 'primary', allowed: true, worldInteraction: true, promptRoot: nearbyProp.mesh }];
+              }
+            }
           }
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
