@@ -10,7 +10,7 @@ const incubator = stock.shops?.carpenterBarnPlans?.additions?.incubator;
 
 assert(incubator, 'incubator must be configured as a carpenter barn addition');
 assert.equal(incubator.planItem, 'barnIncubatorPlan', 'barn addition owns its plan item in shop config');
-assert.equal(incubator.price, 1000, 'default incubator price remains shop-configurable');
+assert.equal(incubator.price, 5000, 'week-scale incubator price remains shop-configurable');
 assert(!stock.shops?.carpenterHouseDeeds?.pieces?.incubator, 'incubator must never leak into farmhouse deed stock');
 
 class FakeButton {
@@ -51,7 +51,7 @@ const document = {
   createElement() { return new FakeNode(); },
 };
 
-const inventory = { gold: 1500 };
+const inventory = { gold: 6000 };
 const toasts = [];
 const window = {
   ConditionRegistry: { entryEligible: () => true },
@@ -81,7 +81,7 @@ assert(incubatorRow.innerHTML.includes(incubator.desc), 'shop row uses the confi
 assert(incubatorRow._button, 'incubator row exposes a buy button');
 
 incubatorRow._button.click();
-assert.equal(inventory.gold, 500, 'buying the default incubator subtracts its configured 1000g price');
+assert.equal(inventory.gold, 1000, 'buying the incubator subtracts its configured 5000g price');
 assert.equal(inventory.barnIncubatorPlan, 1, 'buying the addition grants its configured plan item');
 assert(toasts.some(entry => entry.ok && /Barn Incubator Addition/.test(entry.message)), 'purchase reports success');
 
