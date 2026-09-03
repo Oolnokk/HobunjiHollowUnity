@@ -9,6 +9,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const pngAvatar = read('docs/js/png-plane-avatar.js');
 const author = read('docs/tools/animation-author/index.html');
 const authorFix = read('docs/js/animation-author-preview-grounding-fix.js');
+const transformDumpBootstrap = read('docs/js/transform-dump-utils.js'); // Verifies the production Animation Author actually loads the isolated parity repair.
 const cutsceneDirector = read('docs/tools/cutscene-director/index.html');
 
 assert.match(pngAvatar, /const assemblyY = \(placementRatio - 0\.5\) \* modelHeight/,
@@ -29,5 +30,7 @@ assert.match(authorFix, /y: modelHeight \* \(placementRatio - \(finite\(pixelY\)
   'portrait pixel conversion must cancel the two half-height terms exactly');
 assert.doesNotMatch(authorFix, /placementRatio \+ \.5/,
   'fixed portrait-to-floor conversion must not retain an extra half-height');
+assert.match(transformDumpBootstrap, /animation-author-preview-grounding-fix\.js/,
+  'production Animation Author boot must load the grounding parity repair, not only its standalone test wrapper');
 
 console.log('avatar preview grounding parity regression guards passed');
