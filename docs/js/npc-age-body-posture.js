@@ -20,13 +20,15 @@
   }
 
   function resolveEffect(options) {
+    const profileEffect = options?.profile?.__hobunjiNpcAgeEffect || null; // Preferred source so portrait aging and torso posture always share the exact same already-resolved preset/tuning.
+    if (profileEffect) return profileEffect;
     if (typeof options?.ageEffectProvider === 'function') {
       try {
         const provided = options.ageEffectProvider(); // Allows future dynamic/player aging without changing ProceduralLegAnimation's API again.
         if (provided) return provided;
       } catch (_) {}
     }
-    const npcRecord = options?.npcRecord || options?.ageNpcRecord || null; // Preferred exact record when a caller already has it.
+    const npcRecord = options?.npcRecord || options?.ageNpcRecord || options?.profile?.npcRecord || null; // Preferred exact record when a caller already has it.
     return ageConfig.resolveNpcEffect({
       id: options?.npcId || npcRecord?.id || null,
       name: options?.npcName || npcRecord?.name || options?.name || null,
