@@ -170,6 +170,31 @@
   });
 })(window);
 
+// RawGitHack commit-pinned pages already carry the exact repository SHA in
+// their URL. Seed Animation Author's persisted repository settings from that
+// SHA before its inline app reads localStorage. If GitHub's commits API later
+// returns 403, resolveCommit() then falls back to the same pinned SHA instead
+// of silently mixing this HTML with runtime/config files from an older branch.
+(function pinAnimationAuthorRepositoryRefToPageSha(global) {
+  'use strict';
+  if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(global.location?.pathname || '')) return;
+  const match = (global.location?.pathname || '').match(/^\/([^/]+)\/([^/]+)\/([0-9a-f]{40})\/docs\/tools\/animation-author\/(?:index\.html)?$/i);
+  if (!match) return;
+  const [, owner, repo, sha] = match;
+  const storageKey = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
+  try {
+    const prior = JSON.parse(global.localStorage.getItem(storageKey) || 'null') || {};
+    global.localStorage.setItem(storageKey, JSON.stringify({
+      ...prior,
+      owner,
+      repo,
+      ref: sha,
+      docsRoot: prior.docsRoot || 'docs/',
+      dbPath: prior.dbPath || 'docs/config/npcs/hobunji-starter-npc-database.json',
+    }));
+  } catch (_) {}
+})(window);
+
 // Animation Author runs the repository's pinned Three.js build, whose
 // Object3D predates removeFromParent(). The author cleanup code uses that newer
 // convenience method in several wrapper layers. Patch the returned THREE
