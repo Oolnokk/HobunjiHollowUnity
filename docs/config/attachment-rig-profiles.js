@@ -103,9 +103,19 @@
     ['dabinggi-hound',[0,0.12212625800404886,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],
     ['uumkaoii',[0,0.26595632314682005,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
   ];
-  const v9StaleShoulderGrips = Object.freeze({
-    drenkirra: [0.01,-0.1636307385658067,0.003984738737597559],
-    uumkaoii: [0.01,-0.5363283597840667,-0.012886930890300352],
+  const staleCreatureShoulderGrips = Object.freeze({
+    // V15.24's embedded Drenkirra differs slightly from the later v9 stale export in Z;
+    // both share the same obsolete Y and must converge on the August 28 authored grip.
+    drenkirra: Object.freeze([
+      Object.freeze([0.01,-0.1636307385658067,0.0009131708735385657]),
+      Object.freeze([0.01,-0.1636307385658067,0.003984738737597559]),
+    ]),
+    uumkaoii: Object.freeze([
+      Object.freeze([0.01,-0.5363283597840667,-0.012886930890300352]),
+    ]),
+  });
+  const staleCreatureSizeScales = Object.freeze({
+    drenkirra: Object.freeze({ small: Object.freeze({ x: 1, y: 1 }) }),
   });
 
   const creatureGroundOffsets = Object.freeze({
@@ -331,6 +341,7 @@
     anchorPositionScale: 1, posteriorCoordinateSpace: 'floor-relative',
     posteriorPixelDependency: 'removed', posteriorFloorValues: 'master-recovered-from-pre-v9-floor-calibration',
     exporterGuard: 'master-reconcile-and-versioned-rig-autosave',
+    animationAuthorCreatureSync: { state: 'not-needed-yet', repairs: 0, lastReason: null },
   };
 
   const applyAttachmentRigProfileCorrections = () => {
@@ -396,14 +407,36 @@
 
   function masterCharacter(key) { return masterCharacters[key] || null; }
   function masterCreature(kind) { return masterCreatures[kind] || null; }
-  function reconcileAnchor(candidate, canonical, stalePosition = null) {
+  function normalizeStalePositions(value) {
+    if (!value) return [];
+    if (Array.isArray(value) && Array.isArray(value[0])) return value.map(position => ({ x:position[0], y:position[1], z:position[2] }));
+    if (Array.isArray(value)) return [{ x:value[0], y:value[1], z:value[2] }];
+    return [value];
+  }
+  function reconcileAnchor(candidate, canonical, stalePositions = null) {
     const source = clone(candidate || canonical);
     const sourcePosition = source?.position;
     const canonicalPosition = canonical?.position;
-    if (!validPosition(sourcePosition) || (zeroPosition(sourcePosition) && !zeroPosition(canonicalPosition)) || (stalePosition && samePosition(sourcePosition, stalePosition))) {
+    const matchesKnownStale = normalizeStalePositions(stalePositions).some(position => samePosition(sourcePosition, position));
+    if (!validPosition(sourcePosition) || (zeroPosition(sourcePosition) && !zeroPosition(canonicalPosition)) || matchesKnownStale) {
       return clone(canonical);
     }
     return source;
+  }
+  function repairKnownCreatureSizeScale(kind, merged, canonical) {
+    const staleByClass = staleCreatureSizeScales[kind];
+    if (!staleByClass) return false;
+    let repaired = false;
+    merged.sizeScales ||= clone(canonical.sizeScales || {});
+    merged.sizeScalePercentages ||= clone(canonical.sizeScalePercentages || {});
+    for (const [sizeClass, stale] of Object.entries(staleByClass)) {
+      const current = merged.sizeScales?.[sizeClass];
+      if (!sameNumber(current?.x, stale.x) || !sameNumber(current?.y, stale.y)) continue;
+      merged.sizeScales[sizeClass] = clone(canonical.sizeScales[sizeClass]);
+      if (canonical.sizeScalePercentages?.[sizeClass]) merged.sizeScalePercentages[sizeClass] = clone(canonical.sizeScalePercentages[sizeClass]);
+      repaired = true;
+    }
+    return repaired;
   }
 
   function reconcileProfiles(input = {}) {
@@ -417,10 +450,9 @@
       if (!Number.isFinite(floorPercent) || Math.abs(floorPercent) <= 1e-12) merged.posteriorRule.heightPercentFromFloor = canonical.posteriorRule.heightPercentFromFloor;
       if (!(Number(merged.anatomy.portraitScale) > 0)) merged.anatomy.portraitScale = canonical.anatomy.portraitScale;
       const badV1 = badV1HandShoulders[key];
-      merged.anchors.leftHandShoulder = reconcileAnchor(merged.anchors.leftHandShoulder, canonical.anchors.leftHandShoulder, badV1 ? { x:badV1.left[0], y:badV1.left[1], z:badV1.left[2] } : null);
-      merged.anchors.rightHandShoulder = reconcileAnchor(merged.anchors.rightHandShoulder, canonical.anchors.rightHandShoulder, badV1 ? { x:badV1.right[0], y:badV1.right[1], z:badV1.right[2] } : null);
-      const stalePerch = v9StaleShoulderPerches[key];
-      merged.anchors.shoulderPerch = reconcileAnchor(merged.anchors.shoulderPerch, canonical.anchors.shoulderPerch, stalePerch ? { x:stalePerch[0], y:stalePerch[1], z:stalePerch[2] } : null);
+      merged.anchors.leftHandShoulder = reconcileAnchor(merged.anchors.leftHandShoulder, canonical.anchors.leftHandShoulder, badV1?.left);
+      merged.anchors.rightHandShoulder = reconcileAnchor(merged.anchors.rightHandShoulder, canonical.anchors.rightHandShoulder, badV1?.right);
+      merged.anchors.shoulderPerch = reconcileAnchor(merged.anchors.shoulderPerch, canonical.anchors.shoulderPerch, v9StaleShoulderPerches[key]);
       output.characters[key] = merged;
     }
     for (const [aliasSpecies, sourceSpecies] of Object.entries(characterTransformAliases)) {
@@ -434,9 +466,11 @@
       const canonical = masterCreature(kind);
       const candidate = output.creatures[kind] || {};
       const merged = { ...clone(canonical), ...candidate, anchors: { ...clone(canonical.anchors), ...(candidate.anchors || {}) } };
-      const staleGrip = v9StaleShoulderGrips[kind];
-      merged.anchors.shoulderGrip = reconcileAnchor(merged.anchors.shoulderGrip, canonical.anchors.shoulderGrip, staleGrip ? { x:staleGrip[0], y:staleGrip[1], z:staleGrip[2] } : null);
+      const oldGrip = merged.anchors.shoulderGrip;
+      merged.anchors.shoulderGrip = reconcileAnchor(oldGrip, canonical.anchors.shoulderGrip, staleCreatureShoulderGrips[kind]);
+      if (oldGrip && !samePosition(oldGrip.position, merged.anchors.shoulderGrip.position)) merged.shoulderGripRule = clone(canonical.shoulderGripRule);
       merged.anchors.saddle = reconcileAnchor(merged.anchors.saddle, canonical.anchors.saddle);
+      if (repairKnownCreatureSizeScale(kind, merged, canonical)) merged.sizeScaleRule = clone(canonical.sizeScaleRule);
       output.creatures[kind] = merged;
     }
     output.characterTransformAliases = characterTransformAliases;
@@ -478,7 +512,7 @@
   const previousRigStorageKeys = Object.freeze([
     'hobunjiAttachmentRigProfiles.master.hobunji-attachment-rig-master-2026-09-03-v1',
     masterGuard.legacyStorageKey,
-  ]); // Used only by migrateRigAutosave() below.
+  ]); // Used only by the one-time migration below.
   const normalizeRigAutosavePayload = value => {
     if (!value || typeof value !== 'object') return null;
     if (value.profiles || value.attachmentRigProfiles) return value;
@@ -572,6 +606,85 @@
         if (installExporterGuard() || ++attempts >= 200) clearInterval(timer);
       }, 50);
     }
+
+    // V15.24 still replaces the live creature library with an embedded snapshot,
+    // while V15.37 restores only characters from this shared master. Reuse the
+    // editor's own Import control to migrate only exact stale creature fingerprints
+    // after the user opens/resets/imports Rig Coordinates. This preserves custom
+    // authoring and runs every existing import wrapper/preview refresh path.
+    let creatureSyncQueued = false;
+    const animationAuthorCreatureSyncStatus = window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorCreatureSync;
+    const staleCreatureFields = live => {
+      const stale = [];
+      for (const [kind, positions] of Object.entries(staleCreatureShoulderGrips)) {
+        const position = live?.creatures?.[kind]?.anchors?.shoulderGrip?.position;
+        if (normalizeStalePositions(positions).some(candidate => samePosition(position, candidate))) stale.push(`${kind}.shoulderGrip`);
+      }
+      const drenkirraSmall = live?.creatures?.drenkirra?.sizeScales?.small;
+      const staleSmall = staleCreatureSizeScales.drenkirra.small;
+      if (sameNumber(drenkirraSmall?.x, staleSmall.x) && sameNumber(drenkirraSmall?.y, staleSmall.y)) stale.push('drenkirra.sizeScales.small');
+      return stale;
+    };
+    const attachSyntheticImportFile = (input, file) => {
+      try {
+        if (typeof DataTransfer === 'function') {
+          const transfer = new DataTransfer();
+          transfer.items.add(file);
+          input.files = transfer.files;
+          return true;
+        }
+      } catch (_) {}
+      try {
+        Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+        return true;
+      } catch (_) { return false; }
+    };
+    const repairAnimationAuthorCreatureDefaults = reason => {
+      creatureSyncQueued = false;
+      const api = window.MultiAvatarAnimationAuthor;
+      const input = document.getElementById('maaImportInput');
+      if (!api?.getAttachmentRigProfiles || !input || typeof File !== 'function') return false;
+      const live = api.getAttachmentRigProfiles();
+      const stale = staleCreatureFields(live);
+      if (!stale.length) {
+        animationAuthorCreatureSyncStatus.state = 'clean';
+        animationAuthorCreatureSyncStatus.lastReason = reason;
+        return false;
+      }
+      const repaired = reconcileProfiles(live);
+      const payload = reconcileRigExport({ schema: MASTER_SCHEMA, profiles: repaired });
+      const file = new File([JSON.stringify(payload)], 'hobunji_attachment_rig_master_sync.json', { type: 'application/json' });
+      if (!attachSyntheticImportFile(input, file)) {
+        animationAuthorCreatureSyncStatus.state = 'file-bridge-unavailable';
+        animationAuthorCreatureSyncStatus.lastReason = reason;
+        return false;
+      }
+      animationAuthorCreatureSyncStatus.state = 'repair-dispatched';
+      animationAuthorCreatureSyncStatus.repairs += 1;
+      animationAuthorCreatureSyncStatus.lastReason = `${reason}: ${stale.join(', ')}`;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    };
+    const queueAnimationAuthorCreatureRepair = reason => {
+      if (creatureSyncQueued) return;
+      creatureSyncQueued = true;
+      setTimeout(() => repairAnimationAuthorCreatureDefaults(reason), 0);
+    };
+    document.addEventListener('click', event => {
+      const target = event.target?.closest?.('#maaRigTab, #maaNewBtn');
+      if (!target) return;
+      if (target.id === 'maaRigTab' || (target.id === 'maaNewBtn' && document.body?.dataset?.animationAuthorMode === 'rig')) {
+        queueAnimationAuthorCreatureRepair(target.id === 'maaRigTab' ? 'rig-tab-open' : 'rig-new-reset');
+      }
+    }, true);
+    document.addEventListener('change', event => {
+      if (event.target?.id === 'maaImportInput') queueAnimationAuthorCreatureRepair('rig-import');
+    });
+    window.HobunjiAnimationAuthorRigMasterSync = Object.freeze({
+      repairNow: () => repairAnimationAuthorCreatureDefaults('manual-debug'),
+      staleFields: () => staleCreatureFields(window.MultiAvatarAnimationAuthor?.getAttachmentRigProfiles?.() || {}),
+      getStatus: () => ({ ...animationAuthorCreatureSyncStatus }),
+    });
   }
 
   // Shoulder-pet observation behavior retained from the prior shared config.
