@@ -48,19 +48,19 @@ const bogusPlaceholderEffect = NpcAvatarPreview.resolveAgeEffect({ id: 'vul_sigr
 const agedProfile = NpcAvatarPreview.buildProfileFromNpcExport({ id: 'father_hunundi_hodu', name: 'Father Hunundi' }); // Verifies shared gameplay profile construction ages body colors selectively.
 const tuned = config.effectFromPreset('old', { torsoPitchDeg: 12.5, headDropPx: 7, amount: 55, verticalOffsetReductionPct: 13 }); // Verifies the visual tool can make non-mutating tuned preset copies.
 
-assert.equal(oldEffect?.headDropPx, 10, 'Old uses the proportionally increased 10 px head drop');
+assert.equal(oldEffect?.headDropPx, 10, 'Old uses the authored 10 px head drop');
 assert.equal(oldEffect?.amount, 70, 'Old uses the reference Old color amount');
 assert.equal(oldEffect?.torsoPitchDeg, 4, 'Old carries an independent age-driven torso pitch');
 assert.equal(oldEffect?.verticalOffsetReductionPct, 1.5, 'Old reduces the normal standing lift by 1.5 percent');
-assert.equal(veryOldEffect?.headDropPx, 22, 'Very Old uses the authored 22 px head drop');
+assert.equal(veryOldEffect?.headDropPx, 19, 'Very Old uses the authored 19 px head drop');
 assert.equal(veryOldEffect?.amount, 100, 'Very Old uses the strongest reference color amount');
 assert.equal(veryOldEffect?.torsoPitchDeg, 9, 'Very Old carries the stronger age-driven torso pitch');
 assert.equal(veryOldEffect?.verticalOffsetReductionPct, 3, 'Very Old reduces the normal standing lift by 3 percent');
 assert.equal(leafVeryOldEffect?.presetId, 'veryOld', 'Leaf is assigned to the Very Old preset');
-assert.equal(leafVeryOldEffect?.headDropPx, 22, 'Leaf receives the Very Old head drop');
+assert.equal(leafVeryOldEffect?.headDropPx, 19, 'Leaf receives the Very Old head drop');
 assert.equal(leafVeryOldEffect?.verticalOffsetReductionPct, 3, 'Leaf receives the Very Old standing-height reduction');
 assert.equal(pahuVeryOldEffect?.presetId, 'veryOld', 'Pahu is assigned to the Very Old preset');
-assert.equal(pahuVeryOldEffect?.headDropPx, 22, 'Pahu receives the Very Old head drop');
+assert.equal(pahuVeryOldEffect?.headDropPx, 19, 'Pahu receives the Very Old head drop');
 assert.equal(pahuVeryOldEffect?.verticalOffsetReductionPct, 3, 'Pahu receives the Very Old standing-height reduction');
 assert.equal(unaffectedEffect, null, 'NPCs outside the exact allowlist remain unaffected');
 assert.equal(bogusPlaceholderEffect, null, 'Vul Sigrid remains rejected as a bogus placeholder');
