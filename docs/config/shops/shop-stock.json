@@ -184,7 +184,7 @@
           "label": "Barn Incubator Addition",
           "icon": "🪺",
           "desc": "A modular 3×1 barn room with three maturation slots. Each slot needs an unused trough reserved before a Nursery baby can begin maturing.",
-          "price": 1000,
+          "price": 5000,
           "planItem": "barnIncubatorPlan",
           "additionId": "incubator",
           "conditions": {}
