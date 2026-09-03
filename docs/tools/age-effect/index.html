@@ -35,7 +35,7 @@ select,input[type=number]{width:100%;min-height:40px;border:1px solid rgba(255,2
 <header><h1>Hobunji Age Effect Tool</h1><span class="badge">shared runtime presets</span><span class="badge">attack-editor/game avatar parity</span><span id="loadBadge" class="badge">loading…</span></header>
 <div class="layout">
 <aside>
-  <div class="card"><h2>Preview character</h2><div class="field"><label>NPC</label><select id="npcSelect"></select></div><div class="field"><label>Preset</label><select id="presetSelect"><option value="old">Old</option><option value="veryOld">Very Old</option></select></div><div class="help">The four runtime-assigned NPCs are loaded from the real starter NPC database. Switching preset here is preview-only until you copy the values back to the shared config.</div></div>
+  <div class="card"><h2>Preview character</h2><div class="field"><label>NPC</label><select id="npcSelect"></select></div><div class="field"><label>Preset</label><select id="presetSelect"><option value="old">Old</option><option value="veryOld">Very Old</option></select></div><div class="help">Runtime-assigned NPCs are loaded from the real starter NPC database. Switching preset here is preview-only until you copy the values back to the shared config.</div></div>
   <div class="card"><h2>Color aging</h2>
     <div class="field"><label>Age effect amount (%)</label><div class="rangeRow"><input id="amountRange" type="range" min="0" max="100" step="1"><input id="amountNumber" type="number" min="0" max="100" step="1"></div></div>
     <div class="field"><label>Desaturation rate (%)</label><div class="rangeRow"><input id="desaturationRange" type="range" min="0" max="100" step="1"><input id="desaturationNumber" type="number" min="0" max="100" step="1"></div></div>
@@ -45,7 +45,8 @@ select,input[type=number]{width:100%;min-height:40px;border:1px solid rgba(255,2
   <div class="card"><h2>Posture</h2>
     <div class="field"><label>Portrait head drop (px)</label><div class="rangeRow"><input id="headDropRange" type="range" min="0" max="24" step="1"><input id="headDropNumber" type="number" min="0" max="40" step="1"></div></div>
     <div class="field"><label>Torso pitch offset (degrees)</label><div class="rangeRow"><input id="torsoPitchRange" type="range" min="-30" max="30" step="0.5"><input id="torsoPitchNumber" type="number" min="-45" max="45" step="0.5"></div></div>
-    <div class="help">Torso pitch rotates the body and its one automatically-managed hand rig around the gameplay posterior while the procedural feet remain planted.</div>
+    <div class="field"><label>Standing vertical offset reduction (%)</label><div class="rangeRow"><input id="verticalOffsetReductionRange" type="range" min="0" max="50" step="1"><input id="verticalOffsetReductionNumber" type="number" min="0" max="100" step="1"></div></div>
+    <div class="help">Torso pitch rotates the body/hands around the gameplay posterior. Standing offset reduction lowers the normal modelHeight/2 body lift by this percentage. Species/gender portrait placement stays intact and procedural feet remain planted.</div>
   </div>
   <div class="card"><h2>Actions</h2><div class="buttons"><button id="resetBtn">Reset preset</button><button id="copyBtn" class="secondary">Copy preset JSON</button></div><div id="copyStatus" class="help"></div></div>
 </aside>
@@ -70,6 +71,7 @@ const controls = {
   brightening: ['brighteningRange', 'brighteningNumber'],
   headDropPx: ['headDropRange', 'headDropNumber'],
   torsoPitchDeg: ['torsoPitchRange', 'torsoPitchNumber'],
+  verticalOffsetReductionPct: ['verticalOffsetReductionRange', 'verticalOffsetReductionNumber'],
 };
 let npcs = [];
 let currentNpc = null;
@@ -85,6 +87,7 @@ function effectState() {
     brightening: +$('brighteningNumber').value,
     headDropPx: +$('headDropNumber').value,
     torsoPitchDeg: +$('torsoPitchNumber').value,
+    verticalOffsetReductionPct: +$('verticalOffsetReductionNumber').value,
   });
 }
 
@@ -101,6 +104,7 @@ function resetPreset() {
   setPair('brightening', preset.color.brightening);
   setPair('headDropPx', preset.headDropPx);
   setPair('torsoPitchDeg', preset.torsoPitchDeg);
+  setPair('verticalOffsetReductionPct', preset.verticalOffsetReductionPct);
   scheduleRebuild();
 }
 
@@ -287,9 +291,11 @@ async function rebuild() {
     swatchesFromProfile(profile);
 
     const portraitLiftY = currentAvatar.position.y;
+    const ageLowerY = bodyPivot.position.y - pivotY;
+    const effectivePortraitLiftY = portraitLiftY + ageLowerY;
     const verticalPlacementRatio = Number(currentAvatar.userData.portraitVerticalPlacementRatio);
     const scaleMultiplier = Number(currentAvatar.userData.portraitScaleMultiplier);
-    $('stageStatus').innerHTML = `<span class="good">Live:</span> ${currentNpc.name} · ${ids.speciesId}/${ids.gender} · model ${modelWidth.toFixed(3)}×${modelHeight.toFixed(3)} · portrait lift ${portraitLiftY.toFixed(3)} · posterior ${pivotY.toFixed(3)} · torso ${effect.torsoPitchDeg.toFixed(1)}°`;
+    $('stageStatus').innerHTML = `<span class="good">Live:</span> ${currentNpc.name} · ${ids.speciesId}/${ids.gender} · model ${modelWidth.toFixed(3)}×${modelHeight.toFixed(3)} · standing reduction ${effect.verticalOffsetReductionPct.toFixed(0)}% (${ageLowerY.toFixed(3)}) · effective lift ${effectivePortraitLiftY.toFixed(3)} · posterior ${pivotY.toFixed(3)} · torso ${effect.torsoPitchDeg.toFixed(1)}°`;
     $('debugText').textContent = JSON.stringify({
       npc: { id: currentNpc.id, name: currentNpc.name },
       effect,
@@ -299,6 +305,8 @@ async function rebuild() {
         modelWidth,
         modelHeight,
         portraitLiftY,
+        ageLowerY,
+        effectivePortraitLiftY,
         verticalPlacementRatio: Number.isFinite(verticalPlacementRatio) ? verticalPlacementRatio : null,
         scaleMultiplier: Number.isFinite(scaleMultiplier) ? scaleMultiplier : null,
         handAttachX,
@@ -342,7 +350,7 @@ async function loadNpcs() {
     option.textContent = npc.name || npc.id;
     select.appendChild(option);
   }
-  if (!npcs.length) throw new Error('None of the four age-effect NPCs were found in the starter NPC database.');
+  if (!npcs.length) throw new Error('None of the age-effect NPCs were found in the starter NPC database.');
   select.value = npcs[0].id;
   const assigned = ageConfig.resolveAssignment(npcs[0]);
   $('presetSelect').value = assigned?.preset || 'old';
@@ -364,6 +372,7 @@ $('copyBtn').addEventListener('click', async () => {
     brightening: +$('brighteningNumber').value,
     headDropPx: +$('headDropNumber').value,
     torsoPitchDeg: +$('torsoPitchNumber').value,
+    verticalOffsetReductionPct: +$('verticalOffsetReductionNumber').value,
   }), null, 2);
   try {
     await navigator.clipboard.writeText(json);
