@@ -225,6 +225,27 @@
     oldButton.replaceWith(button);
   }
 
+  function appendStableDebugControl(list) {
+    if (!list || list.querySelector?.('.stable-growth-debug')) return;
+    const toolbar = document.createElement('div');
+    toolbar.className = 'farm-toolbar stable-growth-debug';
+    const debug = document.createElement('button');
+    debug.className = 'settings-small-btn';
+    debug.type = 'button';
+    debug.textContent = 'Debug Growth';
+    debug.addEventListener('click', async () => {
+      const text = JSON.stringify(debugSnapshot(), null, 2);
+      try {
+        await navigator.clipboard.writeText(text);
+        stableDeps()?.showToast?.('Animal growth debug copied.', true);
+      } catch (_) {
+        window.prompt?.('Copy animal growth debug:', text);
+      }
+    });
+    toolbar.appendChild(debug);
+    list.appendChild(toolbar);
+  }
+
   function decorateStablePanel() {
     if (decoratingStable || typeof document === 'undefined') return;
     const list = document.getElementById('stableList');
@@ -241,6 +262,7 @@
       list.innerHTML = '';
       if (!stable.length) {
         list.innerHTML = '<div class="farm-note">Your Stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
+        appendStableDebugControl(list);
         return;
       }
 
@@ -280,6 +302,7 @@
       }
       list.appendChild(babies.section);
       list.appendChild(adults.section);
+      appendStableDebugControl(list);
     } finally {
       decoratingStable = false;
     }
