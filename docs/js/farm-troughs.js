@@ -13,6 +13,7 @@
 
   const LIVESTOCK_SLEEP_SCALE_Y = 0.5; // Used by barn sleepers; matches wild Drenkirra's existing simplistic sleep pose exactly.
   const LIVESTOCK_SLEEP_SYNC_MS = 750; // Used by the low-cost barn-interior sleeper refresh timer.
+  const LIVESTOCK_SLEEP_TROUGH_GAP = 0.35; // Used between the trough's live bounds and the sleeping animal's visible half-width.
   const _meshRegistry = new Map(); // Used to find the live trough group/scene for each barnId,troughIndex.
   const _sleepingLivestock = new Map(); // Used to own/dispose the temporary sleeping avatar for each livestock record.
 
@@ -125,15 +126,24 @@
     }).catch(() => {});
   }
 
-  function _sleepSpotFor(barn, troughIndex) {
+  function _sleepSpotFor(barn, troughIndex, troughEntry, modelWidth, sizeScale) {
     const { cols, troughPositions } = _barnInteriorLayout(barn);
     const troughPos = troughPositions[troughIndex];
     if (!troughPos) return null;
     const inward = troughPos.wall === 'west' ? 1 : -1;
-    const x = troughPos.col + 0.5 + inward * 1.05;
+    const visibleHalfWidth = Math.max(0.2, modelWidth * (Number(sizeScale?.x) || 1) * 0.5); // Used to keep larger/genetically wider livestock from overlapping their trough.
+    let troughHalfWidth = 0.45; // Used only as a safe fallback if live Three.js bounds are unavailable.
+    if (typeof THREE !== 'undefined' && THREE.Box3 && troughEntry?.group) {
+      const bounds = new THREE.Box3().setFromObject(troughEntry.group); // Used to measure the actual authored trough footprint instead of assuming one model size.
+      const boundsSize = new THREE.Vector3(); // Used immediately below to read the trough's inward X half-extent.
+      bounds.getSize(boundsSize);
+      if (Number.isFinite(boundsSize.x) && boundsSize.x > 0) troughHalfWidth = boundsSize.x * 0.5;
+    }
+    const inwardClearance = troughHalfWidth + visibleHalfWidth + LIVESTOCK_SLEEP_TROUGH_GAP; // Used to guarantee an air gap between trough geometry and the sleeper silhouette.
+    const x = troughPos.col + 0.5 + inward * inwardClearance;
     const z = troughPos.row + 0.5;
     const rotationY = troughPos.wall === 'west' ? Math.PI / 2 : -Math.PI / 2;
-    return { x: Math.max(0.75, Math.min(cols - 0.75, x)), z, rotationY };
+    return { x: Math.max(0.75, Math.min(cols - 0.75, x)), z, rotationY, inwardClearance };
   }
 
   function _disposeSleepingLivestock(livestockId, reason = 'removed') {
@@ -147,9 +157,9 @@
 
   function _createSleepingLivestock(rec, barn, troughIndex, troughEntry) {
     if (!rec || !barn || !troughEntry?.group?.parent || !window.PNGPlaneAvatar?.buildAnimalPlaneAvatarModel || typeof THREE === 'undefined') return null;
-    const spot = _sleepSpotFor(barn, troughIndex);
-    if (!spot) return null;
     const { modelWidth, modelHeight, sizeScale, groundLift } = _sleepModelMetrics(rec.kind, rec.genotype);
+    const spot = _sleepSpotFor(barn, troughIndex, troughEntry, modelWidth, sizeScale);
+    if (!spot) return null;
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, _sleepBaseUrl(rec.kind), {
       modelWidth,
       modelHeight,
@@ -158,7 +168,9 @@
       headRig: window.CreatureGeneticsRender?.headRigForKind?.(rec.kind) || undefined,
     });
     const group = avatarRef.group;
-    group.position.set(spot.x, (Number(troughEntry.group.position.y) || 0) + groundLift, spot.z);
+    const floorY = Number(troughEntry.group.position.y) || 0; // Used as the flat synthesized barn floor under this registered trough.
+    const sleepGroundLift = groundLift * LIVESTOCK_SLEEP_SCALE_Y; // Used to mirror the wild-creature placement formula: squashing height must lower the avatar center by the same factor or it visibly floats.
+    group.position.set(spot.x, floorY + sleepGroundLift, spot.z);
     group.rotation.y = spot.rotationY;
     group.userData.barnSleepingLivestockId = rec.id;
     group.userData.barnSleepingLivestockName = rec.name || rec.kind;
@@ -169,9 +181,18 @@
     }
     troughEntry.group.parent.add(group);
     _applySleepingComposite(avatarRef, rec);
-    const sleeper = { livestockId: rec.id, name: rec.name, barnId: barn.id, troughIndex, sceneParent: troughEntry.group.parent, avatarRef };
+    const sleeper = {
+      livestockId: rec.id,
+      name: rec.name,
+      barnId: barn.id,
+      troughIndex,
+      sceneParent: troughEntry.group.parent,
+      avatarRef,
+      sleepGroundLift,
+      troughClearance: spot.inwardClearance,
+    }; // Used by sync/disposal and the mobile-friendly sleeper diagnostics.
     _sleepingLivestock.set(rec.id, sleeper);
-    window.__farmLog?.(`[barn-sleep] ${rec.name || rec.id}: sleeping beside trough ${troughIndex + 1} in ${barn.id}`, 'livestock');
+    window.__farmLog?.(`[barn-sleep] ${rec.name || rec.id}: sleeping beside trough ${troughIndex + 1} in ${barn.id}; y=${group.position.y.toFixed(3)} clearance=${spot.inwardClearance.toFixed(3)}`, 'livestock');
     return sleeper;
   }
 
@@ -251,6 +272,9 @@
       troughIndex: sleeper.troughIndex,
       visible: sleeper.avatarRef?.group?.visible !== false,
       sceneAttached: !!sleeper.avatarRef?.group?.parent,
+      groupY: sleeper.avatarRef?.group?.position?.y ?? null,
+      sleepGroundLift: sleeper.sleepGroundLift ?? null,
+      troughClearance: sleeper.troughClearance ?? null,
     }));
   }
 
