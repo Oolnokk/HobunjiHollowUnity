@@ -82,6 +82,7 @@
     ['js/fine-hood-trim-head-facing.js?v=20260824b', () => !!window.HobunjiFineHoodTrimHeadFacing],
     ['js/front-hat-head-facing.js?v=20260830flip2', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260824a', () => !!window.HobunjiHatXrayHeadFacing],
+    ['js/npc-old-age-effects.js?v=20260903a', () => !!window.HobunjiNpcOldAgeEffects],
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/drunk-locomotion.js?v=20260812a', () => !!window.HobunjiDrunkWalk],
     ['js/crop-sprite-art.js?v=20260814a', () => !!window.HobunjiCropSpriteArt],
