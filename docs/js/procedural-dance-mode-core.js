@@ -473,7 +473,9 @@
     const handAttachY = Number(model.userData?.handAttachY);
     const safeHandAttachX = Number.isFinite(handAttachX) ? handAttachX : -dims.width * 0.28;
     const safeHandAttachY = Number.isFinite(handAttachY) ? handAttachY : dims.height * 0.45;
-    const root = new THREE.Group();
+    const GroupCtor = model?.constructor; // The math-only THREE bridge (currentThree()) only carries Vector3/Quaternion/Euler/MathUtils, not Group — mirrors docs/js/procedural-dance-mode.js's buildShim(), which grabs its own root constructor straight off the live model instance for the same reason.
+    if (!GroupCtor) return null;
+    const root = new GroupCtor();
     root.name = `${model.name || 'Avatar'}${ARM_ROOT_SUFFIX}`;
     model.add(root);
 
