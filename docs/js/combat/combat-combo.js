@@ -61,9 +61,10 @@
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
-  // heavy still marks the combo finisher for streak scaling and other heavy
-  // semantics; the final-step check in onTap explicitly marks it as a power
-  // hit too, so Bruised/Corroded consumption does not depend on that internal
+  // heavy marks the combo finisher for Death Mark application (see
+  // combat-death-mark.js's opts.appliesDeathMark) and other heavy semantics;
+  // the final-step check in onTap explicitly marks it as a power hit too, so
+  // Bruised/Corroded consumption does not depend on that internal
   // classification staying coupled forever.
   // dmgTag below is now UNUSED by onTap (kept only as reference data on
   // each step) — sharp/blunt used to be tagged per combo family (sweeping
@@ -85,10 +86,10 @@
     { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
     // Cleave is the combo's 3rd step and its `heavy` flag — see the `heavy`
     // handling in onTap below — barely outdamages Backhand Swing on its own
-    // (1.35 vs 1.25); its actual payoff scales with comboStreak.multiplier(),
-    // built by landing steps 1-2 first (see combat-combo-streak.js). Keeps
-    // an extra x1.5 knockback bump (2.4) on top of the shared knockback baseline, same as charged breaker/riposte/flurry — knockback isn't
-    // part of the streak scaling, just damage/lunge.
+    // (1.35 vs 1.25); its real payoff is the Death Mark it leaves on
+    // whatever it hits (see combat-death-mark.js), not its own base damage.
+    // Keeps an extra x1.5 knockback bump (2.4) on top of the shared
+    // knockback baseline, same as charged breaker/riposte/flurry.
     { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
@@ -104,10 +105,10 @@
     { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
     { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
     // Long Lunge is the poke combo's 3rd step and its `heavy` flag — barely
-    // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff
-    // scales with comboStreak.multiplier() the same way Cleave's does (see
-    // onTap below). Same extra x1.5 knockback bump as Cleave, also excluded
-    // from the streak scaling.
+    // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff is
+    // the Death Mark it leaves on whatever it hits, the same way Cleave's
+    // does (see combat-death-mark.js). Same extra x1.5 knockback bump as
+    // Cleave.
     { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
@@ -173,12 +174,7 @@
       const returnS = (step.returnS || 0) * timeScale;
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      // Only the combo's heavy finisher (Cleave/Long Lunge) reads the streak
-      // multiplier — steps 1-2 stay at their plain damageMul regardless of
-      // streak, since they're what build the streak in the first place (see
-      // combat-combo-streak.js).
-      const streakMul = step.heavy ? (window.Combat.comboStreak?.multiplier() ?? 1) : 1;
-      const damage = Math.round(baseAbil.damage * step.damageMul * streakMul * (1 + (effects.stats.damageMul || 0)));
+      const damage = Math.round(baseAbil.damage * step.damageMul * (1 + (effects.stats.damageMul || 0)));
       const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = step.halfConeDeg * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0));
@@ -207,7 +203,7 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(deps.TILE * step.lungeMul * LUNGE_SCALE * streakMul * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
 
       busyAction = window.Combat.beginStagedAction({
         windupS,
@@ -227,6 +223,12 @@
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
               tag: dmgType,
               heavy: step.heavy,
+              // Only the combo's heavy finisher (Cleave/Long Lunge) leaves a
+              // Death Mark on whatever it hits — see combat-death-mark.js's
+              // applyDamageWithDeathMark, which reads this flag both to add
+              // the mark and to exempt this hit from consuming any marks
+              // already on the target (so stacks can climb past 1).
+              appliesDeathMark: step.heavy,
               consumeHealthVulnerability: isFinisher,
               afflictionBonuses: effects.afflictions,
             });
@@ -244,7 +246,6 @@
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
           deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
-          window.Combat.comboStreak?.registerHit(hits > 0);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },
         onComplete: () => { busyAction = null; },

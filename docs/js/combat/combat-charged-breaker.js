@@ -23,10 +23,11 @@
   let CHARGE_DRAIN_PER_S = 18;
   let COST_MIN = 16, COST_MAX = 28;
   // Barely stronger than a combo hit on its own (1.05-1.3x, roughly
-  // Forehand Swing to Cleave's own base) — same "heavy attacks are tuned
-  // down, the combo streak is the real payoff" rule as Cleave/Long Lunge
-  // (see combat-combo.js). Scaled further by comboStreak.multiplier() at
-  // release time, below.
+  // Forehand Swing to Cleave's own base) — landing on a target already
+  // carrying a Death Mark (left by the combo's own heavy finisher — see
+  // combat-combo.js/combat-death-mark.js) is the real payoff: it consumes
+  // every stack for a big one-off multiplier, applied automatically inside
+  // combat-death-mark.js's applyDamageWithDeathMark rather than here.
   let DAMAGE_MUL_MIN = 1.05, DAMAGE_MUL_MAX = 1.3;
   // x1.5 on top of the shared knockback baseline — charged breaker is
   // one of the four attacks called out for an extra "even more" bump.
@@ -43,9 +44,8 @@
   // Forward leap on release — see game.js's beginCombatLunge. Matched to the
   // combo's own longest step lunge (Forehand Swing/Short Thrust's 2.0 tiles)
   // rather than a bespoke bigger number, per the same "barely stronger than
-  // a combo attack" baseline as the damage multipliers above; scaled further
-  // by comboStreak.multiplier() at release time, below. LUNGE_HOP_UNITS is a
-  // cosmetic vertical arc peak in world-Y units (not pixels).
+  // a combo attack" baseline as the damage multipliers above. LUNGE_HOP_UNITS
+  // is a cosmetic vertical arc peak in world-Y units (not pixels).
   let LUNGE_TILE_MUL = 2.0;
   let LUNGE_HOP_UNITS = 0.45;
 
@@ -287,12 +287,10 @@
       deps.releaseWeaponSwingHold();
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      // Charged Breaker isn't a combo hit itself (see combat-combo-streak.js
-      // — only the tap combos build/reset the streak), but its own damage
-      // and lunge scale with whatever streak is currently banked, same as
-      // Cleave/Long Lunge.
-      const streakMul = window.Combat.comboStreak?.multiplier() ?? 1;
-      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT) * streakMul * (1 + (effects.stats.damageMul || 0)));
+      // Death Mark's own consumption multiplier (see combat-death-mark.js)
+      // is applied downstream inside ResourceSystem.applyDamage via the
+      // `heavy: true` flag below — not computed here.
+      const damage = Math.round(baseAbil.damage * lerp(DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, chargeT) * (1 + (effects.stats.damageMul || 0)));
       const rangePx = baseAbil.rangePx * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, chargeT) * (1 + (effects.stats.rangeMul || 0));
       const halfConeRad = HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, chargeT) * (1 + (effects.stats.knockbackMul || 0));
@@ -305,7 +303,7 @@
       // Leap forward into the slam itself, timed to the strike phase —
       // stops early the instant a hostile is inside the slam's own hit
       // cone instead of always covering the full lunge distance.
-      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * streakMul * (1 + (effects.stats.lungeMul || 0)), strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
+      deps.beginCombatLunge(deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)), strikeS, LUNGE_HOP_UNITS, { rangePx, halfConeRad });
 
       window.Combat.beginStagedAction({
         windupS: 0,

@@ -22,6 +22,26 @@
     ]
   },
 
+  "deathMark": {
+    "maxStacks": 3,
+    "empowerWindowSeconds": 7,
+    "multiplierByStacksConsumed": [2, 3, 5],
+    "billboard": {
+      "chestHeightRatio": 0.62,
+      "iconWidthTiles": 0.32,
+      "iconHeightTiles": 0.32,
+      "iconOpacity": 0.95,
+      "glowScaleMul": 2.6,
+      "bobAmplitudeTiles": 0.045,
+      "bobSpeedPerSec": 2.1,
+      "stacks": [
+        { "symbol": "assets/hud/scratchbone1.png", "glowColor": "#39a7ff", "glowOpacity": 0.55 },
+        { "symbol": "assets/hud/scratchbone2.png", "glowColor": "#b24bff", "glowOpacity": 0.62 },
+        { "symbol": "assets/hud/scratchbone3.png", "glowColor": "#ffffff", "glowOpacity": 0.85 }
+      ]
+    }
+  },
+
   "quickAttacks": {
     "WINDUP_S": 0.075, "STRIKE_S": 0.105, "COST_BASE": 11, "COST_BONUS": 18, "HOLD_S": 1,
     "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 5.5,
