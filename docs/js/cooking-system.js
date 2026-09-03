@@ -356,8 +356,9 @@
     layer.id = 'hobunjiCookingLayer';
     layer.className = 'hobunji-cooking-layer';
     layer.setAttribute('aria-hidden', 'true');
+    layer.setAttribute('data-ctrl-panel', '');
     layer.innerHTML = `<section class="hobunji-cooking-panel" role="dialog" aria-modal="true" aria-labelledby="hobunjiCookingTitle">
-      <header><div><span class="cooking-kicker">HEARTH COOKING</span><h2 id="hobunjiCookingTitle">Cook a meal</h2></div><button type="button" data-cooking-close aria-label="Close cooking">×</button></header>
+      <header><div><span class="cooking-kicker">HEARTH COOKING</span><h2 id="hobunjiCookingTitle">Cook a meal</h2></div><button type="button" data-cooking-close data-ctrl-cancel aria-label="Close cooking">×</button></header>
       <div class="cooking-layout"><aside><input data-recipe-search type="search" placeholder="Search recipes…" aria-label="Search recipes"><div data-recipe-list class="cooking-recipe-list"></div></aside><main data-recipe-detail></main></div>
       <details class="cooking-diagnostics"><summary>Cooking diagnostics</summary><pre data-cooking-debug></pre></details>
     </section>`;
