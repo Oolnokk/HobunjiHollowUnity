@@ -575,6 +575,14 @@ function campfireRecipe() {
     disc(0, .66, 0, .4, .05, .4, 1, { color: 0x8a5cff, segments: 16 }),
   ];
 
+  // Same reasoning as dungeonChest/dungeonRune above — a small stand-in
+  // pedestal+bowl until stoneBrazier.json is ready (its real fire/smoke
+  // emitters, an exact copy of campfire.json's own, only exist there).
+  CATALOG.stoneBrazier = [
+    box(0, .4, 0, .32, .8, .32, 1, { color: 0x5c574e }),
+    disc(0, .82, 0, .46, .12, .46, 1, { color: 0x6b665a, segments: 16 }),
+  ];
+
   window.ProceduralFurniture = {
     buildFurnitureGroup,
     buildPartMesh,

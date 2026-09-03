@@ -231,6 +231,58 @@
     return { room: best, entryLanding, exitLanding, pillars };
   }
 
+  // Longest contiguous run of walkable, not-already-claimed tiles within an
+  // ordered line of candidate coordinates (one room row or column) — used
+  // by findBrazierRelay to find a straight, unobstructed shooting lane
+  // without needing a general line-of-sight raycast.
+  function longestFloorRun(coords, floorSet, blocked) {
+    let best = [], current = [];
+    for (const coord of coords) {
+      const key = `${coord[0]},${coord[1]}`;
+      if (floorSet.has(key) && !blocked.has(key)) {
+        current.push(coord);
+      } else {
+        if (current.length > best.length) best = current;
+        current = [];
+      }
+    }
+    if (current.length > best.length) best = current;
+    return best;
+  }
+
+  // Picks a path room (not the entrance/treasure room, and not already
+  // claimed by the chasm/pit-chamber puzzles above) with a straight run of
+  // at least 5 contiguous floor tiles along one of its own rows or columns,
+  // and returns two tiles from within that run separated by a real 3-6
+  // tile shooting lane — the relay-lighting puzzle's source (lit) and
+  // target (cold) brazier spots. See wireDungeonBrazier in game.js for how
+  // a projectile actually carries fire from one to the other.
+  function findBrazierRelay(generated, pathRooms, usedTiles, floorSet, rng) {
+    const candidateRooms = pathRooms
+      .filter(room => room !== generated.entranceRoom && room !== generated.treasureRoom
+        && !roomTileList(room).some(([c, r]) => usedTiles.has(`${c},${r}`)))
+      .sort(() => rng() - 0.5);
+    for (const room of candidateRooms) {
+      const rows = []; for (let r = room.y + 1; r < room.y + room.h - 1; r++) rows.push(r);
+      const cols = []; for (let c = room.x + 1; c < room.x + room.w - 1; c++) cols.push(c);
+      const lines = [
+        ...rows.map(row => cols.map(c => [c, row])),
+        ...cols.map(col => rows.map(r => [col, r])),
+      ];
+      for (const line of lines) {
+        const run = longestFloorRun(line, floorSet, usedTiles);
+        if (run.length < 5) continue;
+        const gapLen = Math.min(run.length - 2, 5);
+        const start = Math.floor(rng() * (run.length - gapLen - 1));
+        const source = run[start];
+        const target = run[start + gapLen + 1];
+        const lane = run.slice(start + 1, start + gapLen + 1);
+        return { room, source, target, lane };
+      }
+    }
+    return null;
+  }
+
   async function synthesizeFloorMapData(mapId) {
     if (!floorFromMapId(mapId)) return null;
     visitCount += 1;
@@ -319,6 +371,20 @@
       };
     }
 
+    // ── The brazier relay-lighting puzzle (independent of the above) ────
+    // One brazier starts lit, one starts cold; the only way to light the
+    // cold one is to shoot a projectile through the lit one's flame first
+    // (see game.js's wireDungeonBrazier/RangedWeapons flame-catch wiring).
+    const brazierRelay = findBrazierRelay(generated, pathRooms, usedTiles, floorSet, rng);
+    if (brazierRelay) {
+      const pairId = 'dtest_brazier_relay';
+      usedTiles.add(`${brazierRelay.source[0]},${brazierRelay.source[1]}`);
+      usedTiles.add(`${brazierRelay.target[0]},${brazierRelay.target[1]}`);
+      for (const [c, r] of brazierRelay.lane) usedTiles.add(`${c},${r}`);
+      addFurniture('stoneBrazierFurniture', brazierRelay.source[0], brazierRelay.source[1], 0, { brazierPairId: pairId, brazierRole: 'source' });
+      addFurniture('stoneBrazierFurniture', brazierRelay.target[0], brazierRelay.target[1], 0, { brazierPairId: pairId, brazierRole: 'target' });
+    }
+
     // itemKey values here must match DECORATIVE_FURNITURE_DEFS[key].itemKey
     // in game.js exactly (the furniture placement/interactable-lookup keys
     // off f.itemKey, not the recipe/def object key).
@@ -332,8 +398,10 @@
 
       // A torch in every non-entrance room so the crawl reads clearly —
       // real furniture light (see DECORATIVE_FURNITURE_DEFS.standingLamp's
-      // `light` field), not a bespoke lighting rig.
-      if (!isEntrance) {
+      // `light` field), not a bespoke lighting rig. Skipped for the brazier
+      // relay's own room — its two braziers already light it, and one of
+      // them starts cold on purpose.
+      if (!isEntrance && room !== brazierRelay?.room) {
         const [lampTile] = pickSeparatedTiles(rng, safe, new Set(), 1);
         if (lampTile) {
           addFurniture('standingLampFurniture', lampTile[0], lampTile[1]);

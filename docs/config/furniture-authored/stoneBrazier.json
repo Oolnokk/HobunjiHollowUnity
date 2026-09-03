@@ -1,0 +1,66 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "stoneBrazier",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": { "w": 1, "d": 1 },
+  "parts": [
+    {
+      "id": "brazier_pedestal",
+      "kind": "cylinder",
+      "name": "Brazier Pedestal",
+      "transform": { "x": 0, "y": 0.42, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.16, "sy": 0.84, "sz": 0.16 },
+      "color": "#5c574e",
+      "segments": 10,
+      "taperAxis": "y",
+      "topScaleX": 0.86, "topScaleZ": 0.86, "bottomScaleX": 1.1, "bottomScaleZ": 1.1,
+      "topSkewX": 0, "topSkewZ": 0,
+      "innerScale": 0.78, "basinDepth": 0.2,
+      "liquidContainerId": null, "liquidLevel": 0.5,
+      "wonkiness": 0.02,
+      "materialRole": "stone", "materialTexture": "carved_smooth.png", "materialRotationDeg": 0,
+      "materialCapTexture": null, "materialCapRotationDeg": 0,
+      "materialFillEnabled": true, "materialFillColor": "#4a463d", "materialFillMode": "always",
+      "surfaceOpacity": 1, "substanceColor": "#8b6540", "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null, "textureName": "", "textureTransparent": true, "textureTileSize": 1
+    },
+    {
+      "id": "brazier_bowl",
+      "kind": "disc",
+      "name": "Brazier Bowl",
+      "transform": { "x": 0, "y": 0.85, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.34, "sy": 0.09, "sz": 0.34 },
+      "color": "#6b665a",
+      "segments": 16,
+      "taperAxis": "y",
+      "topScaleX": 1.08, "topScaleZ": 1.08, "bottomScaleX": 0.7, "bottomScaleZ": 0.7,
+      "topSkewX": 0, "topSkewZ": 0,
+      "innerScale": 0.72, "basinDepth": 0.55,
+      "liquidContainerId": null, "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "stone", "materialTexture": "carved_smooth.png", "materialRotationDeg": 0,
+      "materialCapTexture": null, "materialCapRotationDeg": 0,
+      "materialFillEnabled": true, "materialFillColor": "#3a3730", "materialFillMode": "always",
+      "surfaceOpacity": 1, "substanceColor": "#8b6540", "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null, "textureName": "", "textureTransparent": true, "textureTileSize": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "brazier_fire", "name": "Brazier Flames", "type": "fire", "enabled": true,
+      "attachedPartId": "brazier_bowl", "position": { "x": 0, "y": 0.17, "z": 0 }, "rotation": { "x": 0, "y": 0, "z": 0 },
+      "radius": 0.13, "size": 0.19, "rate": 38, "lifetime": 0.72, "speed": 0.7, "spread": 0.3, "gravity": -0.05,
+      "colorA": "#ffd45a", "colorB": "#ff3d12"
+    },
+    {
+      "id": "brazier_smoke", "name": "Brazier Smoke", "type": "smoke", "enabled": true,
+      "attachedPartId": "brazier_bowl", "position": { "x": 0, "y": 0.31, "z": 0 }, "rotation": { "x": 0, "y": 0, "z": 0 },
+      "radius": 0.08, "size": 0.22, "rate": 5, "lifetime": 2.35, "speed": 0.24, "spread": 0.18, "gravity": -0.03,
+      "colorA": "#b8b8b8", "colorB": "#3e4148"
+    }
+  ],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": []
+}

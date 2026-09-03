@@ -904,6 +904,42 @@
   function clearAreaWorldTargets(areaId) {
     worldTargets.delete(areaId);
   }
+
+  // Flame zones — a projectile flying through one just catches fire
+  // (p.onFire = true) and keeps going, unlike a world target above, which
+  // always stops the shot. Built for the Dungeon Test's relay-lighting
+  // brazier puzzle (see game.js's wireDungeonBrazier): fly an arrow through
+  // a lit brazier's flame, then land the now-burning arrow on a cold one to
+  // light it. Same areaId/key registry shape as worldTargets, minus onHit.
+  const flameZones = new Map(); // areaId -> Map(key -> { box: THREE.Box3 })
+  function registerFlameZone(areaId, key, box) {
+    if (!areaId || !key || !box) return;
+    if (!flameZones.has(areaId)) flameZones.set(areaId, new Map());
+    flameZones.get(areaId).set(key, { box });
+  }
+  function unregisterFlameZone(areaId, key) {
+    flameZones.get(areaId)?.delete(key);
+  }
+  function clearAreaFlameZones(areaId) {
+    flameZones.delete(areaId);
+  }
+  // Checked once per projectile per frame, before projectileHit — a flame
+  // zone never stops a shot, so this can't just reuse nearestWorldTargetHit
+  // (which only reports the single nearest candidate and is only consulted
+  // from inside the stop-on-hit branch). Only player-fired shots relay
+  // light (a bandit's arrow has no reason to), and once caught there's
+  // nothing left to check — this frame or any later one.
+  function checkFlamePassThrough(p) {
+    if (p.onFire || p.team !== 'player') return;
+    const zones = flameZones.get(p.areaId);
+    if (!zones || !zones.size) return;
+    const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
+    const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+    const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
+    for (const [, zone] of zones) {
+      if (segmentHitboxInterval(start, end, { box: zone.box }, projectileRadius)) { p.onFire = true; return; }
+    }
+  }
   function nearestWorldTargetHit(start, end, projectileRadius, areaId) {
     const targets = worldTargets.get(areaId);
     if (!targets || !targets.size) return null;
@@ -1050,6 +1086,7 @@
       p.prevX = p.x; p.prevY = p.y; p.prevWorldY = p.worldY;
       const dx = p.vx * dt, dy = p.vy * dt;
       p.x += dx; p.y += dy; p.worldY += p.vyWorld * dt; p.distancePx += Math.hypot(dx, dy);
+      checkFlamePassThrough(p);
       const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
       if (!deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx) || groundedAtGround || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
         disposeProjectile(p);
@@ -1325,6 +1362,7 @@
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     movementDirectionMultiplier,
     registerWorldTarget, unregisterWorldTarget, clearAreaWorldTargets,
+    registerFlameZone, unregisterFlameZone, clearAreaFlameZones,
     equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
     devBumpMastery: itemKey => deps?.devBumpToolMasteryLevel?.(itemKey),
     getLoadoutView: itemKey => ({ itemKey, mastery: rangedMastery(itemKey), loadout: JSON.parse(JSON.stringify(ammoLoadout(itemKey))), unlockedSpecialAmmo: [...(ensureAmmoState()?.unlockedSpecialAmmo || [])], specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX }),

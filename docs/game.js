@@ -2329,6 +2329,12 @@
         // real and decoy runes share this exact same look on purpose —
         // nothing sets them apart until you shoot one.
         dungeonRune:   { itemKey: 'dungeonRuneFurniture',   icon: '🔮', name: 'Carved Rune',          price: 0,  fw: 1, fd: 1, color: 0x6f7566, area: 'interior', desc: 'A softly glowing rune, carved into a stone pedestal.', fixture: true, light: { color: 0x8a5cff, intensity: 0.8, distance: 4, height: 0.7 } },
+        // Relay-lighting puzzle piece (see wireDungeonBrazierPair below) —
+        // deliberately has no static `light` field the way standingLamp/
+        // dungeonRune do, since a brazier's flame/light only exist while
+        // it's actually lit, which is per-instance runtime state, not
+        // something every placed copy should always have.
+        stoneBrazier:  { itemKey: 'stoneBrazierFurniture',  icon: '🔥', name: 'Stone Brazier',        price: 0,  fw: 1, fd: 1, color: 0x5c574e, area: 'interior', desc: 'A cold stone brazier, waiting to be lit.', fixture: true },
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
@@ -2359,6 +2365,7 @@
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
         'feedGrinder', 'trough', 'campfire', 'mineLadder', 'dungeonChest', 'dungeonRune',
+        'stoneBrazier',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -8616,6 +8623,10 @@
       const DUNGEON_MAX_FALL_SPEED = 8; // world-units/s terminal velocity.
       const DUNGEON_PILLAR_CYCLE_S = 2.6; // Full up/down cycle length for one pillar's oscillation.
       const DUNGEON_PILLAR_UP_FRACTION = 0.45; // Pillars spend a bit less than half their cycle "up" — a real hazard, not a coin flip.
+      // mapId -> [{ role, lit, emitterVisuals, light, flameKey, targetKey }] —
+      // one entry per placed stoneBrazierFurniture instance (see
+      // wireDungeonBrazier), driven every frame by updateDungeonBraziers.
+      const _dungeonBraziers = new Map();
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
       // being purely decorative (e.g. the Alchemy Table, the Bulletin
@@ -11791,6 +11802,79 @@
         }
       }
 
+      // Wires one placed stoneBrazierFurniture instance (see
+      // dungeon-test.js's findBrazierRelay — f.brazierRole is 'source'
+      // (starts lit) or 'target' (starts cold)) into the relay-lighting
+      // puzzle: a lit brazier registers a RangedWeapons flame zone a
+      // passing projectile catches fire from without stopping; a cold one
+      // registers an ordinary stop-on-hit world target that only actually
+      // lights when the arrow that hit it was already on fire. model is
+      // the built AuthoredFurniture group (or ProceduralFurniture
+      // placeholder while stoneBrazier.json is still loading) — its own
+      // fire/smoke particle emitters (an exact copy of campfire.json's own,
+      // see stoneBrazier.json) are toggled active/inactive by lit state
+      // rather than always running like the pit chamber's meshes.
+      function wireDungeonBrazier(mapId, f, bx, by, bz, bScene, model) {
+        const key = `${mapId},${f.col},${f.row}`;
+        const data = window.AuthoredFurniture?.peek('stoneBrazier');
+        const emitterVisuals = (data?.particleEmitters || []).map(record => window.AuthoredFurniture.createEmitterVisual(model, record));
+        // Deliberately tall — from near the floor up past the bowl — rather
+        // than a tight box hugging the actual flame's world height
+        // (~by+1.0). A level shot travels at ordinary muzzle height
+        // (~0.55 world-units, see spawnProjectile/ownerElevationY), well
+        // below the bowl itself; this is a readable puzzle trigger, not a
+        // precision combat hitbox, so it should catch an ordinary straight
+        // shot down the lane rather than demand the player arc one up into
+        // the bowl exactly.
+        const flameBox = new THREE.Box3(
+          new THREE.Vector3(bx - 0.32, by + 0.15, bz - 0.32),
+          new THREE.Vector3(bx + 0.32, by + 1.45, bz + 0.32),
+        );
+        const light = new THREE.PointLight(0xff9a3c, 0, 5);
+        light.position.set(bx, by + 1.0, bz);
+        bScene.add(light);
+        const state = {
+          role: f.brazierRole, lit: f.brazierRole === 'source', emitterVisuals, light,
+          flameKey: `brazier_flame_${key}`, targetKey: `brazier_target_${key}`,
+        };
+        light.intensity = state.lit ? 1.1 : 0;
+        if (state.lit) {
+          window.RangedWeapons?.registerFlameZone(mapId, state.flameKey, flameBox);
+        } else {
+          window.RangedWeapons?.registerWorldTarget(mapId, state.targetKey, flameBox, p => {
+            if (state.lit || !p?.onFire) return;
+            state.lit = true;
+            state.light.intensity = 1.1;
+            window.RangedWeapons?.unregisterWorldTarget(mapId, state.targetKey);
+            window.RangedWeapons?.registerFlameZone(mapId, state.flameKey, flameBox);
+            showToast('The brazier catches — flames leap to life!', true);
+          });
+        }
+        if (!_dungeonBraziers.has(mapId)) _dungeonBraziers.set(mapId, []);
+        _dungeonBraziers.get(mapId).push(state);
+      }
+
+      function updateDungeonBraziers(dt) {
+        if (!window.DungeonTest?.floorFromMapId?.(currentArea)) return;
+        const braziers = _dungeonBraziers.get(currentArea);
+        if (!braziers) return;
+        for (const state of braziers) {
+          for (const visual of state.emitterVisuals) visual?.update?.(dt, state.lit);
+          state.light.intensity += ((state.lit ? 1.1 : 0) - state.light.intensity) * Math.min(1, dt * 6);
+        }
+      }
+
+      function disposeDungeonBraziers(mapId) {
+        const braziers = _dungeonBraziers.get(mapId);
+        if (braziers) {
+          for (const state of braziers) {
+            state.emitterVisuals.forEach(visual => visual?.dispose?.());
+            state.light.parent?.remove(state.light);
+          }
+        }
+        _dungeonBraziers.delete(mapId);
+      }
+
       // Ghostly, semi-transparent placeholder guardians — reuses the exact
       // same Ghoul look/spawn path the Town Mine's floors already rely on
       // (window.BanditCombat.makeEntity with a 'ghoul' appearance
@@ -11948,7 +12032,9 @@
         _buildingScenes.delete(mapId);
         window.ClimbSystem?.resetAreaRopes(mapId);
         window.RangedWeapons?.clearAreaWorldTargets(mapId);
+        window.RangedWeapons?.clearAreaFlameZones(mapId);
         _dungeonPitChambers.delete(mapId);
+        disposeDungeonBraziers(mapId);
         if (currentArea === mapId) { player.falling = false; player.fallVZ = 0; }
       }
 
@@ -11978,7 +12064,9 @@
           // below re-registers this visit's real/decoy runes.
           window.ClimbSystem?.resetAreaRopes(mapId);
           window.RangedWeapons?.clearAreaWorldTargets(mapId);
+          window.RangedWeapons?.clearAreaFlameZones(mapId);
           _dungeonPitChambers.delete(mapId);
+          disposeDungeonBraziers(mapId);
           player.falling = false; player.fallVZ = 0;
         } else if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
@@ -12178,6 +12266,7 @@
             if (furnitureKey === 'mineLadder') await window.AuthoredFurniture?.load?.('mineLadder'); // Used to guarantee the supplied ladder is ready on the safe room's first visit, not merely on later cached visits.
             if (furnitureKey === 'dungeonChest') await window.AuthoredFurniture?.load?.('dungeonChest'); // Same reasoning: the Dungeon Test regenerates a fresh scene on every visit, so this can't rely on a later cached load.
             if (furnitureKey === 'dungeonRune') await window.AuthoredFurniture?.load?.('dungeonRune'); // Same reasoning as dungeonChest above.
+            if (furnitureKey === 'stoneBrazier') await window.AuthoredFurniture?.load?.('stoneBrazier'); // Same reasoning as dungeonChest/dungeonRune above.
             const color = def?.color || 0x888888;
             const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
@@ -12201,6 +12290,7 @@
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
               }
               if (furnitureKey === 'dungeonRune') wireDungeonRune(mapId, f, bx, by, bz, bScene, bGrid, cols, rows);
+              if (furnitureKey === 'stoneBrazier') wireDungeonBrazier(mapId, f, bx, by, bz, bScene, model);
             } else {
               // Fallback: no procedural recipe found for this furniture key
               window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
@@ -21720,6 +21810,7 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updateDungeonFalling(dt); // Must run before updatePlayerMesh, which reads player.falling/fallSurfaceY this same frame.
+        updateDungeonBraziers(dt);
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
