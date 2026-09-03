@@ -31,4 +31,17 @@ assert.match(wrapper, /animation-author-preview-rig-space-fix\.js/,
 assert.doesNotMatch(transformDumpBootstrap, /animation-author-preview-rig-space-fix\.js/,
   'production shared transform utility must not inject the experimental rig-space repair');
 
-console.log('Animation Author preview rig-space isolation guards passed');
+// The Animation Author's configured Three.js build predates Object3D's newer
+// removeFromParent() helper, while the stacked actor cleanup wrappers call it.
+// Install the standard equivalent at the shared Three-module loader boundary
+// so clear/remove cannot fail halfway through restoring or replacing actors.
+assert.match(author, /actor\.root\.removeFromParent\(\)/,
+  'regression fixture must retain the cleanup call that needs legacy-Three compatibility');
+assert.match(transformDumpBootstrap, /Object3D\?\.prototype/,
+  'Animation Author compatibility must patch the exact Object3D prototype returned by its Three loader');
+assert.match(transformDumpBootstrap, /this\.parent && typeof this\.parent\.remove === 'function'/,
+  'removeFromParent compatibility must delegate to the existing parent.remove child-detach primitive');
+assert.match(transformDumpBootstrap, /PNGPlaneAvatar[\s\S]*loadThreeModules/,
+  'compatibility must install at the shared PNGPlaneAvatar Three loader boundary before scene creation');
+
+console.log('Animation Author preview rig-space isolation and legacy Object3D cleanup guards passed');
