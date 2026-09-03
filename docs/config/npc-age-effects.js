@@ -1,8 +1,60 @@
-// Shared authored NPC aging presets consumed by gameplay and the visual Age Effect tool.
+// Shared authored NPC aging configuration consumed by gameplay and the visual Age Effect tool.
 (function (global) {
   'use strict';
 
-  const SCHEMA = 'hobunji.npc-age-effects.v1'; // Used by exports/tests so future preset migrations can be explicit.
+  const SCHEMA = 'hobunji.npc-age-effects.v2';
+
+  const CONTROLS = Object.freeze({
+    amount: Object.freeze({ min: 0, max: 100, step: 1, rangeMin: 0, rangeMax: 100 }),
+    desaturation: Object.freeze({ min: 0, max: 100, step: 1, rangeMin: 0, rangeMax: 100 }),
+    brightening: Object.freeze({ min: 0, max: 100, step: 1, rangeMin: 0, rangeMax: 100 }),
+    headDropPx: Object.freeze({ min: 0, max: 40, step: 1, rangeMin: 0, rangeMax: 24 }),
+    torsoPitchDeg: Object.freeze({ min: -45, max: 45, step: 0.5, rangeMin: -30, rangeMax: 30 }),
+    verticalOffsetReductionPct: Object.freeze({ min: 0, max: 100, step: 0.5, rangeMin: 0, rangeMax: 50 }),
+  });
+
+  const RENDERING = Object.freeze({
+    biologicalColorSlots: Object.freeze(['A', 'B', 'C']),
+    preserveExactColors: Object.freeze(['#000000']),
+    headContributionMaskGain: 5,
+  });
+
+  const COMPOSITION = Object.freeze({
+    bodyChannel: 'age-posture',
+    bodyPriority: 90,
+    standingLiftFraction: 0.5,
+    percentScale: 100,
+    neckCounterPitchMultiplier: -1,
+    posteriorFallbackHeightPercent: -18,
+  });
+
+  const PRESETS = Object.freeze({
+    old: Object.freeze({
+      id: 'old',
+      label: 'Old',
+      color: Object.freeze({ amount: 70, desaturation: 65, brightening: 30 }),
+      headDropPx: 10,
+      torsoPitchDeg: 4,
+      verticalOffsetReductionPct: 1.5,
+    }),
+    veryOld: Object.freeze({
+      id: 'veryOld',
+      label: 'Very Old',
+      color: Object.freeze({ amount: 100, desaturation: 88, brightening: 48 }),
+      headDropPx: 22,
+      torsoPitchDeg: 9,
+      verticalOffsetReductionPct: 3,
+    }),
+  });
+
+  const ASSIGNMENTS = Object.freeze([
+    Object.freeze({ ids: Object.freeze(['teacup_unumanuk']), names: Object.freeze(['Eldress Teacup', 'Teacup Unumanuk']), preset: 'old' }),
+    Object.freeze({ ids: Object.freeze(['father_hunundi_hodu']), names: Object.freeze(['Father Hunundi', 'Father Hunundi Hodu']), preset: 'old' }),
+    Object.freeze({ ids: Object.freeze(['kinami_kunji']), names: Object.freeze(['Kinami Kunji']), preset: 'veryOld' }),
+    Object.freeze({ ids: Object.freeze(['kaboku_kunji']), names: Object.freeze(['Kaboku Kunji']), preset: 'veryOld' }),
+    Object.freeze({ ids: Object.freeze(['leaf']), names: Object.freeze(['Leaf']), preset: 'veryOld' }),
+    Object.freeze({ ids: Object.freeze(['pahu']), names: Object.freeze(['Pahu']), preset: 'veryOld' }),
+  ]);
 
   function normalizeNpcKey(value) {
     return String(value || '')
@@ -15,61 +67,35 @@
       .replace(/^_+|_+$/g, '');
   }
 
-  const PRESETS = Object.freeze({ // Runtime defaults edited visually by docs/tools/age-effect/.
-    old: Object.freeze({
-      id: 'old',
-      label: 'Old',
-      color: Object.freeze({ amount: 70, desaturation: 65, brightening: 30 }),
-      headDropPx: 10,
-      torsoPitchDeg: 4, // Added by the animation composer/posture bridge as a persistent forward torso rotation offset.
-      verticalOffsetReductionPct: 1.5, // Subtle age-related loss: reduce only the normal standing modelHeight/2 body lift, preserving species/gender portrait placement.
-    }),
-    veryOld: Object.freeze({
-      id: 'veryOld',
-      label: 'Very Old',
-      color: Object.freeze({ amount: 100, desaturation: 88, brightening: 48 }),
-      headDropPx: 22,
-      torsoPitchDeg: 9, // Stronger default hunch; intentionally independent from the portrait head-drop slider in the authoring tool.
-      verticalOffsetReductionPct: 3, // Stronger but still subtle height loss without altering portraitVerticalPlacement or species scale.
-    }),
-  });
-
-  const ASSIGNMENTS = Object.freeze([ // Exact allowlist; no inferred/generic fantasy NPC names belong here.
-    Object.freeze({ ids: Object.freeze(['teacup_unumanuk']), names: Object.freeze(['Eldress Teacup', 'Teacup Unumanuk']), preset: 'old' }),
-    Object.freeze({ ids: Object.freeze(['father_hunundi_hodu']), names: Object.freeze(['Father Hunundi', 'Father Hunundi Hodu']), preset: 'old' }),
-    Object.freeze({ ids: Object.freeze(['kinami_kunji']), names: Object.freeze(['Kinami Kunji']), preset: 'veryOld' }),
-    Object.freeze({ ids: Object.freeze(['kaboku_kunji']), names: Object.freeze(['Kaboku Kunji']), preset: 'veryOld' }),
-    Object.freeze({ ids: Object.freeze(['leaf']), names: Object.freeze(['Leaf']), preset: 'veryOld' }),
-    Object.freeze({ ids: Object.freeze(['pahu']), names: Object.freeze(['Pahu']), preset: 'veryOld' }),
-  ]);
-
   function finite(value, fallback) {
     const number = Number(value);
     return Number.isFinite(number) ? number : fallback;
   }
 
-  function clamp(value, min, max, fallback) {
-    return Math.max(min, Math.min(max, finite(value, fallback)));
+  function clampControl(key, value, fallback = 0) {
+    const spec = CONTROLS[key];
+    if (!spec) return finite(value, fallback);
+    return Math.max(spec.min, Math.min(spec.max, finite(value, fallback)));
   }
 
   function effectFromPreset(presetId, overrides = null) {
-    const preset = PRESETS[presetId] || PRESETS.old; // Used by the tool for temporary tuned copies without mutating runtime defaults.
+    const preset = PRESETS[presetId] || PRESETS.old;
     const colorOverrides = overrides?.color || overrides || {};
     return Object.freeze({
       presetId: preset.id,
       presetLabel: preset.label,
-      amount: clamp(colorOverrides.amount, 0, 100, preset.color.amount),
-      desaturation: clamp(colorOverrides.desaturation, 0, 100, preset.color.desaturation),
-      brightening: clamp(colorOverrides.brightening, 0, 100, preset.color.brightening),
-      headDropPx: clamp(overrides?.headDropPx, 0, 40, preset.headDropPx),
-      torsoPitchDeg: clamp(overrides?.torsoPitchDeg, -45, 45, preset.torsoPitchDeg),
-      verticalOffsetReductionPct: clamp(overrides?.verticalOffsetReductionPct, 0, 100, preset.verticalOffsetReductionPct),
+      amount: clampControl('amount', colorOverrides.amount, preset.color.amount),
+      desaturation: clampControl('desaturation', colorOverrides.desaturation, preset.color.desaturation),
+      brightening: clampControl('brightening', colorOverrides.brightening, preset.color.brightening),
+      headDropPx: clampControl('headDropPx', overrides?.headDropPx, preset.headDropPx),
+      torsoPitchDeg: clampControl('torsoPitchDeg', overrides?.torsoPitchDeg, preset.torsoPitchDeg),
+      verticalOffsetReductionPct: clampControl('verticalOffsetReductionPct', overrides?.verticalOffsetReductionPct, preset.verticalOffsetReductionPct),
     });
   }
 
   function resolveAssignment(npc) {
-    const idKey = normalizeNpcKey(npc?.id); // Matched exactly so similarly named NPCs never inherit age treatment accidentally.
-    const nameKey = normalizeNpcKey(npc?.name); // Fallback keeps older/reference records without IDs usable.
+    const idKey = normalizeNpcKey(npc?.id);
+    const nameKey = normalizeNpcKey(npc?.name);
     return ASSIGNMENTS.find(assignment => {
       const idMatch = idKey && assignment.ids.some(id => normalizeNpcKey(id) === idKey);
       const nameMatch = nameKey && assignment.names.some(name => normalizeNpcKey(name) === nameKey);
@@ -78,7 +104,7 @@
   }
 
   function resolveNpcEffect(npc, overrides = null) {
-    const assignment = resolveAssignment(npc); // Determines the authored age band before optional tool-only overrides are applied.
+    const assignment = resolveAssignment(npc);
     if (!assignment) return null;
     const effect = effectFromPreset(assignment.preset, overrides);
     return Object.freeze({
@@ -89,7 +115,7 @@
   }
 
   function exportPreset(presetId, overrides = null) {
-    const effect = effectFromPreset(presetId, overrides); // Serialized by the visual tool for copy/paste back into this config.
+    const effect = effectFromPreset(presetId, overrides);
     return {
       schema: SCHEMA,
       preset: effect.presetId,
@@ -107,9 +133,13 @@
 
   global.HobunjiNpcAgeEffectConfig = Object.freeze({
     schema: SCHEMA,
+    controls: CONTROLS,
+    rendering: RENDERING,
+    composition: COMPOSITION,
     presets: PRESETS,
     assignments: ASSIGNMENTS,
     normalizeNpcKey,
+    clampControl,
     effectFromPreset,
     resolveAssignment,
     resolveNpcEffect,
