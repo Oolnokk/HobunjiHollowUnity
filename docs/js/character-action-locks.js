@@ -108,7 +108,7 @@
   const chathead = new URL('animal-chathead-frame.js?v=20260902modular1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
   const social = new URL('social-action-wheel.js?v=20260903social1', base).href;
-  const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social4', base).href;
+  const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const socialDanceRuntime = new URL('social-action-dance-runtime.js?v=20260903social4', base).href;
   document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${social}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${socialDanceRuntime}"><\/script>`);
 })();
