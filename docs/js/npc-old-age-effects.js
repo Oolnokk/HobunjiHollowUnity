@@ -13,10 +13,9 @@
     old: Object.freeze({ id: 'old', label: 'Old', posturePixels: 4, colorPreset: 'old' }),
     veryOld: Object.freeze({ id: 'very-old', label: 'Very Old', posturePixels: 9, colorPreset: 'ancient' }),
   });
-  const ASSIGNMENTS = Object.freeze([ // Hard allowlist: only these five authored NPCs receive old-age effects.
+  const ASSIGNMENTS = Object.freeze([ // Hard allowlist: only these four authored NPCs receive old-age effects.
     Object.freeze({ ids: Object.freeze(['teacup_unumanuk']), names: Object.freeze(['Eldress Teacup', 'Teacup Unumanuk']), band: 'old' }),
     Object.freeze({ ids: Object.freeze(['father_hunundi_hodu']), names: Object.freeze(['Father Hunundi', 'Father Hunundi Hodu']), band: 'old' }),
-    Object.freeze({ ids: Object.freeze(['vul_sigrid']), names: Object.freeze(['Vul Sigrid']), band: 'old' }),
     Object.freeze({ ids: Object.freeze(['kinami_kunji']), names: Object.freeze(['Kinami Kunji']), band: 'veryOld' }),
     Object.freeze({ ids: Object.freeze(['kaboku_kunji']), names: Object.freeze(['Kaboku Kunji']), band: 'veryOld' }),
   ]);
@@ -342,7 +341,7 @@
   };
 
   api.renderProfileToCanvas = async function renderProfileToCanvasWithOldAge(canvas, profile, renderOptions = {}) {
-    const effect = profile?.__hobunjiNpcOldAgeEffect || null; // Profile metadata installed only for the five exact allowlisted NPCs.
+    const effect = profile?.__hobunjiNpcOldAgeEffect || null; // Profile metadata installed only for the four exact allowlisted NPCs.
     if (!effect) return originalRenderProfile(canvas, profile, renderOptions);
     const renderNowMs = Date.now(); // Single animation sample time shared by full/body split renders to prevent breathing drift artifacts.
     const composer = frozenBreathingComposer(renderOptions, renderNowMs); // Optional frozen breathing adapter used for all layers in this render.
