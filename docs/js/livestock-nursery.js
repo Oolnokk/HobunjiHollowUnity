@@ -10,8 +10,8 @@
   const NURSERY_MAP_ID = 'map_i_barn_' + NURSERY_ID;
   const NURSERY_TIER = 'nursery';
   const NURSERY_VISIBLE_LIMIT = 12;
-  const BABY_SCALE = 0.25;
-  const BABY_SPEED_MULTIPLIER = 1.5;
+  const BABY_SCALE = 0.3125;
+  const BABY_SPEED_MULTIPLIER = 1.125;
   const OUTDOOR_SENTINEL_BARN = '__livestock_outdoors__';
   const TURN_MIN_SEC = 0.12;
   const TURN_MAX_SEC = 0.42;
@@ -859,7 +859,7 @@
   function debugSnapshot() {
     const nursery = (buildingDeps?.getFarmBuildings?.() || []).find(isNurseryBuilding) || null;
     return {
-      mostRecentChange: 'Rebuilt Nursery against decoupled main; rigged hyper babies use shared active-scene and yaw+pitch head tracking.',
+      mostRecentChange: 'Nursery babies are 25% larger and 25% slower than the previous swarm tuning.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
       babies: babies().map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),
