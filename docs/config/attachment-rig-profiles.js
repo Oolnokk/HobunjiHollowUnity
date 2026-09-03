@@ -47,15 +47,6 @@
     female: 'fightersprites/special_cases/head-behind_ghoul_f.png',
   };
 
-  // Tuple fields:
-  // key, legacyPosteriorOffset, floorPosteriorPercent, shoulderPerch,
-  // leftHandShoulder, rightHandShoulder, shoulderPerchSourcePixel,
-  // portraitModelHeight, portraitPlacement, portraitScale, handScale,
-  // footScale, armLengthHeightPercentOffset.
-  //
-  // Hand shoulders are the exact v9 Rig Coordinates tuples. V15.36+ already
-  // built the author avatar at gameplay width (0.9), so applying another 0.9
-  // conversion here would double-scale values that were authored in game space.
   const characterRecords = [
     ['tletingan::male', -17.000000000000004, 24.829594593937666, [-0.1769199293575374,0.3839625600994886,0], [0.22770354382724423,0.42663710735156957,0], [-0.2448354156580218,0.4465232083661127,0], [59.09264957264957,108.5], 0.85,0.645,0.85,0.9,1,6],
     ['engh-sho::male', -52.49999999999999, 40.46344209891254, [-0.2115295187159422,0.6813045758748404,0], [0.2721813782445264,0.6838406837818225,0], [-0.28930388062923146,0.7000103424366998,0], [53.60656565656566,128.5], 0.95,1.005,0.95,1.15,1.275,0],
@@ -69,17 +60,12 @@
     ['engh-sho::female', -49.500000000000014, 41.16182006615896, [-0.1857404318972175,0.5885050529830135,0], [0.20505349784094706,0.4967497459859368,0], [-0.24815066240089945,0.46042886220274515,0], [71.9398595258999,112.5], 0.95,0.975,0.95,1.225,1.325,0],
   ];
 
-  // v1-master shoulder fingerprints are used only by reconcileProfiles() when
-  // importing/migrating a draft that received the erroneous second x0.9 scale.
   const badV1HandShoulders = Object.freeze(Object.fromEntries(characterRecords.map(record => {
     const key = record[0];
     const left = record[4].map(value => value * BAD_V1_SHOULDER_SCALE);
     const right = record[5].map(value => value * BAD_V1_SHOULDER_SCALE);
     return [key, { left, right }];
   })));
-
-  // Shoulder-perch fingerprints from the v9 bulk export. They are not master
-  // values: the August 28 intentional perch pass below supersedes them.
   const v9StaleShoulderPerches = Object.freeze({
     'tletingan::male': [-0.1843306031478747,0.40261734325974574,0],
     'engh-sho::male': [-0.2312125102618596,0.7572702600778939,0],
@@ -93,9 +79,6 @@
     'engh-sho::female': [-0.18678622648700421,0.69825,0],
   });
 
-  // Tuple fields: kind, saddle, saddle source, saddle offset, saddle pixel,
-  // midline radius, latest intentional shoulderGrip, size scales, optional
-  // grehlr scale-default version.
   const creatureRecords = [
     ['drenkirra',[0,0.09289353489875796,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.11914729549653388,-0.001096892109713506],[[4,4],[2,2],[0.9,0.9]],null],
     ['grehlr',[0,0.12393333333333335,0],'highest-opaque-pixel-along-idle-sprite-midline',-5,[1499.5,843.5],0,[0.01,-0.3719770036140037,0],[[1,1],[0.5,0.5],[0.2,0.2]],2],
@@ -104,20 +87,13 @@
     ['uumkaoii',[0,0.26595632314682005,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
   ];
   const staleCreatureShoulderGrips = Object.freeze({
-    // V15.24's embedded Drenkirra differs slightly from the later v9 stale export in Z;
-    // both share the same obsolete Y and must converge on the August 28 authored grip.
     drenkirra: Object.freeze([
       Object.freeze([0.01,-0.1636307385658067,0.0009131708735385657]),
       Object.freeze([0.01,-0.1636307385658067,0.003984738737597559]),
     ]),
-    uumkaoii: Object.freeze([
-      Object.freeze([0.01,-0.5363283597840667,-0.012886930890300352]),
-    ]),
+    uumkaoii: Object.freeze([Object.freeze([0.01,-0.5363283597840667,-0.012886930890300352])]),
   });
-  const staleCreatureSizeScales = Object.freeze({
-    drenkirra: Object.freeze({ small: Object.freeze({ x: 1, y: 1 }) }),
-  });
-
+  const staleCreatureSizeScales = Object.freeze({ drenkirra: Object.freeze({ small: Object.freeze({ x: 1, y: 1 }) }) });
   const creatureGroundOffsets = Object.freeze({
     drenkirra: Object.freeze({ large: 0.79, medium: 0.40, small: 0.17 }),
     grehlr: Object.freeze({ large: 0.50, medium: 0.26, small: 0.10 }),
@@ -160,17 +136,11 @@
       },
       shoulderPerchRule,
       handShoulderRule: {
-        source: 'rig-anchor-gizmo-v9-exact-supplied',
-        coordinateSpace: 'character-visual-local', version: 4,
-        authoredPreviewBaseWidth: GAME_AVATAR_WIDTH,
-        runtimeBaseWidth: GAME_AVATAR_WIDTH,
-        positionScaleApplied: 1,
-        v9ExportedAt: V9_SHOULDERS_EXPORTED_AT,
+        source: 'rig-anchor-gizmo-v9-exact-supplied', coordinateSpace: 'character-visual-local', version: 4,
+        authoredPreviewBaseWidth: GAME_AVATAR_WIDTH, runtimeBaseWidth: GAME_AVATAR_WIDTH,
+        positionScaleApplied: 1, v9ExportedAt: V9_SHOULDERS_EXPORTED_AT,
       },
-      anatomy: {
-        portraitVerticalPlacementRatio: placement, portraitScale, handScale, footScale,
-        armLengthHeightPercentOffset: armLength, version: 2,
-      },
+      anatomy: { portraitVerticalPlacementRatio: placement, portraitScale, handScale, footScale, armLengthHeightPercentOffset: armLength, version: 2 },
       characterAttachZDefaultVersion: 1,
     };
   }
@@ -181,9 +151,7 @@
       ? { source: saddleSource, heightPercentOffset: saddleOffset, defaultRuleVersion: 3, sourcePixel: { x: saddlePixel[0], y: saddlePixel[1] }, midlineSearchRadiusPx, authoredDefaultVersion: 6, authoredFixed: true, recalculateOnPreview: false }
       : { source: saddleSource, defaultRuleVersion: 3, authoredDefaultVersion: 6, authoredFixed: true, recalculateOnPreview: false };
     const sizeScales = {
-      large: { x: scales[0][0], y: scales[0][1] },
-      medium: { x: scales[1][0], y: scales[1][1] },
-      small: { x: scales[2][0], y: scales[2][1] },
+      large: { x: scales[0][0], y: scales[0][1] }, medium: { x: scales[1][0], y: scales[1][1] }, small: { x: scales[2][0], y: scales[2][1] },
     };
     masterCreatures[kind] = {
       kind, chatheadFrame: { ...creatureChatheadFrames[kind] },
@@ -192,8 +160,7 @@
       shoulderGripRule: { source: 'authored-2026-08-28-attachpointsv1', coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
       sizeScales, groundOffsets: { ...(creatureGroundOffsets[kind] || { large:0, medium:0, small:0 }) },
       sizeScaleRule: { version:1, axes:'png-plane-local-x-y', zScale:1, applicationOrder:'before-outer-prism-and-world-bounds', authoredDefaultVersion:6, authoredFixed:true },
-      shoulderGripRotationDefaultVersion: 2,
-      creatureShoulderGripDefaultVersion: 5,
+      shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 5,
       sizeScalePercentages: {
         large: { x: sizeScales.large.x * 100, y: sizeScales.large.y * 100 },
         medium: { x: sizeScales.medium.x * 100, y: sizeScales.medium.y * 100 },
@@ -204,46 +171,16 @@
   }
 
   const MASTER_PROVENANCE = Object.freeze({
-    handShoulder: Object.freeze({
-      source: 'exact supplied v9 Rig Coordinates hand-shoulder tuples authored after Animation Author adopted gameplay width 0.9',
-      authoredCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945',
-      exportedAt: V9_SHOULDERS_EXPORTED_AT,
-      correction: 'v2 removes the v1 forensic master extra x0.9 scale; exact v9 values are already runtime-space values',
-    }),
-    posterior: Object.freeze({
-      source: 'floor-relative posterior authoring; calibrated values recovered after v9 serialized the floor field as zero',
-      coordinateChangeCommit: 'ec3594dd8db7350349e2ab7b179317bcd2a826f9',
-      recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b',
-    }),
-    portraitScale: Object.freeze({
-      source: 'latest authored species/gender anatomy portraitScale values, made authoritative for preview/runtime',
-      authorityCommit: '79057667a678bde6d62c1ce929a354c18cd40f73',
-    }),
-    shoulderPerch: Object.freeze({
-      source: 'supplied 2026-08-28 rig export retained by the avatar-regression recovery pass',
-      recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b',
-      authoredAt: '2026-08-28T03:24:15.652Z',
-    }),
-    shoulderGrip: Object.freeze({
-      source: 'supplied 2026-08-28 creature rig export retained by the avatar-regression recovery pass',
-      recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b',
-      authoredAt: '2026-08-28T03:24:15.652Z',
-    }),
-    saddle: Object.freeze({
-      source: 'last clearly intentional approved/v9 saddle coordinates; no later pass intentionally reauthored saddles',
-      baselineCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945',
-    }),
+    handShoulder: Object.freeze({ source: 'exact supplied v9 Rig Coordinates hand-shoulder tuples authored after Animation Author adopted gameplay width 0.9', authoredCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945', exportedAt: V9_SHOULDERS_EXPORTED_AT, correction: 'v2 removes the v1 forensic master extra x0.9 scale; exact v9 values are already runtime-space values' }),
+    posterior: Object.freeze({ source: 'floor-relative posterior authoring; calibrated values recovered after v9 serialized the floor field as zero', coordinateChangeCommit: 'ec3594dd8db7350349e2ab7b179317bcd2a826f9', recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b' }),
+    portraitScale: Object.freeze({ source: 'latest authored species/gender anatomy portraitScale values, made authoritative for preview/runtime', authorityCommit: '79057667a678bde6d62c1ce929a354c18cd40f73' }),
+    shoulderPerch: Object.freeze({ source: 'supplied 2026-08-28 rig export retained by the avatar-regression recovery pass', recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b', authoredAt: '2026-08-28T03:24:15.652Z' }),
+    shoulderGrip: Object.freeze({ source: 'supplied 2026-08-28 creature rig export retained by the avatar-regression recovery pass', recoveryCommit: 'f0a176ec7e90802d3a6107b04aa4125621c44b5b', authoredAt: '2026-08-28T03:24:15.652Z' }),
+    saddle: Object.freeze({ source: 'last clearly intentional approved/v9 saddle coordinates; no later pass intentionally reauthored saddles', baselineCommit: 'bbd8c0ed2934b8f76e0e85986cd191ab548f9945' }),
   });
 
   const masterProfiles = { characters: clone(masterCharacters), creatures: clone(masterCreatures) };
-  const master = {
-    version: MASTER_VERSION,
-    schema: MASTER_SCHEMA,
-    assembledAt: '2026-09-03',
-    provenance: MASTER_PROVENANCE,
-    transformSpeciesAliases: characterTransformAliases,
-    profiles: masterProfiles,
-  };
+  const master = { version: MASTER_VERSION, schema: MASTER_SCHEMA, assembledAt: '2026-09-03', provenance: MASTER_PROVENANCE, transformSpeciesAliases: characterTransformAliases, profiles: masterProfiles };
   window.HOBUNJI_ATTACHMENT_RIG_MASTER = deepFreeze(master);
 
   function runtimeProfilesFromMaster() {
@@ -258,37 +195,19 @@
     }
     const creatureShoulderGripDefaults = Object.fromEntries(Object.entries(creatures).map(([kind, profile]) => [kind, { ...profile.anchors.shoulderGrip.position }]));
     return {
-      characters, creatures, characterTransformAliases,
-      masterConfigVersion: MASTER_VERSION,
-      defaultRuleVersion: 3,
-      posteriorFloorRuleVersion: 5,
-      shoulderPerchDefaultRuleVersion: 4,
-      creatureShoulderGripDefaults,
-      creatureShoulderGripDefaultRuleVersion: 5,
-      creatureGroundOffsetSemantics: {
-        profileField: 'profiles.creatures.<kind>.groundOffsets.<small|medium|large>',
-        coordinateSpace: 'absolute world/gameplay floor-to-creature-origin lift replacing automatic half-height terrain placement',
-        runtimeUnit: 'world units',
-      },
-      creatureChatheadFrameSemantics: {
-        coordinateSpace: 'sprite-normalized-top-left', sourceFrame: 'idle creature sprite before size-class scaling',
-        use: 'ambient dialogue chatheads, livestock full dialogue, and animal-looking full-dialogue portraits',
-        specialNpcSpecies: { banubu: 'grehlr', hiki_hiki: 'drenkirra' },
-      },
-      creatureSizeScaleSemantics: {
-        profileField: 'profiles.creatures.<kind>.sizeScales.<small|medium|large>.{x,y}',
-        axes: 'png-plane-local-x-y', zScale: 1,
-        applicationOrder: 'direct rendered animal mesh local X/Y; rig-anchor positions share an anchor-only scale root; before world bounds',
-        runtimeUnit: 'multiplier', displayUnit: 'percent', conversion: 'multiplier = percent / 100',
-      },
+      characters, creatures, characterTransformAliases, masterConfigVersion: MASTER_VERSION,
+      defaultRuleVersion: 3, posteriorFloorRuleVersion: 5, shoulderPerchDefaultRuleVersion: 4,
+      creatureShoulderGripDefaults, creatureShoulderGripDefaultRuleVersion: 5,
+      creatureGroundOffsetSemantics: { profileField: 'profiles.creatures.<kind>.groundOffsets.<small|medium|large>', coordinateSpace: 'absolute world/gameplay floor-to-creature-origin lift replacing automatic half-height terrain placement', runtimeUnit: 'world units' },
+      creatureChatheadFrameSemantics: { coordinateSpace: 'sprite-normalized-top-left', sourceFrame: 'idle creature sprite before size-class scaling', use: 'ambient dialogue chatheads, livestock full dialogue, and animal-looking full-dialogue portraits', specialNpcSpecies: { banubu: 'grehlr', hiki_hiki: 'drenkirra' } },
+      creatureSizeScaleSemantics: { profileField: 'profiles.creatures.<kind>.sizeScales.<small|medium|large>.{x,y}', axes: 'png-plane-local-x-y', zScale: 1, applicationOrder: 'direct rendered animal mesh local X/Y; rig-anchor positions share an anchor-only scale root; before world bounds', runtimeUnit: 'multiplier', displayUnit: 'percent', conversion: 'multiplier = percent / 100' },
       characterAttachPointDefaultZ: 0,
       characterSpeciesSource: 'avatarEditor.rawExport/profile/npc appearance only; NPC info-form species excluded',
       characterShoulderPerchVerticalPlacement: 'PNGPlaneAvatar.avatarPlacementRatioFor(appearance)',
       anatomySemantics: {
         profileField: 'character.anatomy', portraitYOffsetFormula: '(portraitVerticalPlacementRatio - 0.5) * 100',
         portraitScale: 'portraitScale is an independent species/gender multiplier; legacy species-only numbers remain supported',
-        scales: 'handScale and footScale are independent species/gender multipliers',
-        armLength: 'positive armLengthHeightPercentOffset moves unowned fallback hands downward by portraitModelHeight * percent / 100',
+        scales: 'handScale and footScale are independent species/gender multipliers', armLength: 'positive armLengthHeightPercentOffset moves unowned fallback hands downward by portraitModelHeight * percent / 100',
         aliases: 'Rakakoan resolves to Kenkari and Ghoul resolves to Mao-ao; alias species own no independent transform values.',
       },
     };
@@ -296,26 +215,18 @@
 
   window.HOBUNJI_ATTACHMENT_RIG_PROFILES = runtimeProfilesFromMaster();
   window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META = Object.freeze({
-    schema: MASTER_SCHEMA,
-    exportedAt: '2026-09-03T00:00:00.000Z',
-    masterConfigVersion: MASTER_VERSION,
+    schema: MASTER_SCHEMA, exportedAt: '2026-09-03T00:00:00.000Z', masterConfigVersion: MASTER_VERSION,
     coordinateSpace: 'Characters: floor-relative 0.9-wide runtime avatar space. Creature coordinates: unscaled idle-sprite local space.',
-    transformSpeciesAliases: characterTransformAliases,
-    fieldProvenance: MASTER_PROVENANCE,
+    transformSpeciesAliases: characterTransformAliases, fieldProvenance: MASTER_PROVENANCE,
     derivedCoordinates: {
       characterPosterior: { source:'posteriorRule.heightPercentFromFloor', formula:'portraitModelHeight * heightPercentFromFloor / 100', legacyFallback:'handAttachY + portraitModelHeight * heightPercentOffset / 100' },
       characterShoulderPerch: { source:'authored 2026-08-28 rig coordinates', offsetPercent:0 },
       characterHandShoulders: { source:'exact v9 Rig Coordinates export', positionScaleApplied:1, runtimeBaseWidth:GAME_AVATAR_WIDTH, exportedAt:V9_SHOULDERS_EXPORTED_AT },
-      creatureSaddle: { source:'approved/v9 authored saddle coordinates' },
-      creatureShoulderGrip: { source:'authored 2026-08-28 creature rig coordinates', defaultRuleVersion:5 },
+      creatureSaddle: { source:'approved/v9 authored saddle coordinates' }, creatureShoulderGrip: { source:'authored 2026-08-28 creature rig coordinates', defaultRuleVersion:5 },
       idleHands: { x:'matching leftHandShoulder/rightHandShoulder anchor X', y:'derived character posterior Y plus procedural idle/walk Y offset', aimTarget:'matching full hand-shoulder anchor transform' },
     },
-    attachmentSemantics: {
-      mount: { carrierAnchor:'creature.saddle', riderAnchor:'character.posterior', keyedObject:'intermediateParent' },
-      shoulderPet: { carrierAnchor:'character.shoulderPerch', riderAnchor:'creature.shoulderGrip', keyedObject:'intermediateParent' },
-    },
+    attachmentSemantics: { mount: { carrierAnchor:'creature.saddle', riderAnchor:'character.posterior', keyedObject:'intermediateParent' }, shoulderPet: { carrierAnchor:'character.shoulderPerch', riderAnchor:'creature.shoulderGrip', keyedObject:'intermediateParent' } },
   });
-
   window.HOBUNJI_ATTACHMENT_RIG_MATH = Object.freeze({
     characterPosteriorY(posteriorRule, modelHeight, legacyHandAttachY) {
       const height = Number(modelHeight);
@@ -324,24 +235,16 @@
       if (Number.isFinite(floorPercent)) return safeHeight * floorPercent / 100;
       const legacyOffset = Number(posteriorRule?.heightPercentOffset);
       const legacyBase = Number(legacyHandAttachY);
-      return (Number.isFinite(legacyBase) ? legacyBase : safeHeight / 2)
-        + safeHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100;
+      return (Number.isFinite(legacyBase) ? legacyBase : safeHeight / 2) + safeHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100;
     },
   });
-
   window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS = {
-    schema: MASTER_SCHEMA, exportedAt: window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META.exportedAt,
-    masterConfigVersion: MASTER_VERSION,
-    shoulderAnchorsExportedAt: V9_SHOULDERS_EXPORTED_AT,
-    anatomyProfiles: 'pending', authoredCharacterProfiles: 10, suppliedCharacterProfiles: 14,
-    sharedCharacterProfiles: 4, exactSuppliedProfiles: 10, authoredCreatureProfiles: 5,
-    parrotSharedProfiles: 2, rakakoanTransforms: 'always-aliased-to-kenkari',
-    ghoulTransforms: 'always-aliased-to-mao-ao',
-    handShoulderCalibration: 'v9-exact-post-calibration-no-extra-scale',
-    anchorPositionScale: 1, posteriorCoordinateSpace: 'floor-relative',
-    posteriorPixelDependency: 'removed', posteriorFloorValues: 'master-recovered-from-pre-v9-floor-calibration',
-    exporterGuard: 'master-reconcile-and-versioned-rig-autosave',
-    animationAuthorCreatureSync: { state: 'not-needed-yet', repairs: 0, lastReason: null },
+    schema: MASTER_SCHEMA, exportedAt: window.HOBUNJI_ATTACHMENT_RIG_EXPORT_META.exportedAt, masterConfigVersion: MASTER_VERSION,
+    shoulderAnchorsExportedAt: V9_SHOULDERS_EXPORTED_AT, anatomyProfiles: 'pending', authoredCharacterProfiles: 10, suppliedCharacterProfiles: 14,
+    sharedCharacterProfiles: 4, exactSuppliedProfiles: 10, authoredCreatureProfiles: 5, parrotSharedProfiles: 2,
+    rakakoanTransforms: 'always-aliased-to-kenkari', ghoulTransforms: 'always-aliased-to-mao-ao', handShoulderCalibration: 'v9-exact-post-calibration-no-extra-scale',
+    anchorPositionScale: 1, posteriorCoordinateSpace: 'floor-relative', posteriorPixelDependency: 'removed', posteriorFloorValues: 'master-recovered-from-pre-v9-floor-calibration',
+    exporterGuard: 'master-reconcile-and-versioned-rig-autosave', animationAuthorCreatureSync: { state: 'not-needed-yet', repairs: 0, lastReason: null },
   };
 
   const applyAttachmentRigProfileCorrections = () => {
@@ -374,9 +277,7 @@
       }
       if (Number.isFinite(portraitScale) && portraitScale > 0) {
         const legacyScale = Number(pngAvatarConfig.portraitScaleBySpecies[species]);
-        const scaleProfile = typeof pngAvatarConfig.portraitScaleBySpecies[species] === 'object'
-          ? pngAvatarConfig.portraitScaleBySpecies[species]
-          : { default: Number.isFinite(legacyScale) && legacyScale > 0 ? legacyScale : 1 };
+        const scaleProfile = typeof pngAvatarConfig.portraitScaleBySpecies[species] === 'object' ? pngAvatarConfig.portraitScaleBySpecies[species] : { default: Number.isFinite(legacyScale) && legacyScale > 0 ? legacyScale : 1 };
         scaleProfile[gender] = portraitScale;
         pngAvatarConfig.portraitScaleBySpecies[species] = scaleProfile;
       }
@@ -418,9 +319,7 @@
     const sourcePosition = source?.position;
     const canonicalPosition = canonical?.position;
     const matchesKnownStale = normalizeStalePositions(stalePositions).some(position => samePosition(sourcePosition, position));
-    if (!validPosition(sourcePosition) || (zeroPosition(sourcePosition) && !zeroPosition(canonicalPosition)) || matchesKnownStale) {
-      return clone(canonical);
-    }
+    if (!validPosition(sourcePosition) || (zeroPosition(sourcePosition) && !zeroPosition(canonicalPosition)) || matchesKnownStale) return clone(canonical);
     return source;
   }
   function repairKnownCreatureSizeScale(kind, merged, canonical) {
@@ -438,7 +337,6 @@
     }
     return repaired;
   }
-
   function reconcileProfiles(input = {}) {
     const source = input && typeof input === 'object' ? input : {};
     const output = { ...clone(source), characters: clone(source.characters || {}), creatures: clone(source.creatures || {}) };
@@ -478,7 +376,6 @@
     output.creatureShoulderGripDefaults = Object.fromEntries(Object.entries(output.creatures).filter(([kind]) => masterCreatures[kind]).map(([kind, profile]) => [kind, { ...profile.anchors.shoulderGrip.position }]));
     return output;
   }
-
   function reconcileRigExport(data) {
     const output = clone(data || {});
     output.schema = MASTER_SCHEMA;
@@ -487,32 +384,18 @@
     output.masterFieldProvenance = clone(MASTER_PROVENANCE);
     output.profiles = reconcileProfiles(output.profiles || output.attachmentRigProfiles || {});
     delete output.attachmentRigProfiles;
-    output.exportGuard = {
-      version: 2,
-      behavior: 'canonical master baseline + current intentional edits; known v1/v9/default corruption fingerprints are repaired before persistence/export',
-    };
+    output.exportGuard = { version: 2, behavior: 'canonical master baseline + current intentional edits; known v1/v9/default corruption fingerprints are repaired before persistence/export' };
     return output;
   }
 
   const masterGuard = {
-    version: 2,
-    masterConfigVersion: MASTER_VERSION,
-    legacyStorageKey: 'hobunjiAttachmentRigProfiles.v2',
+    version: 2, masterConfigVersion: MASTER_VERSION, legacyStorageKey: 'hobunjiAttachmentRigProfiles.v2',
     storageKey: `hobunjiAttachmentRigProfiles.master.${MASTER_VERSION}`,
-    reconcileProfiles,
-    reconcileRigExport,
-    getMasterProfiles: () => clone(masterProfiles),
-    provenance: MASTER_PROVENANCE,
+    reconcileProfiles, reconcileRigExport, getMasterProfiles: () => clone(masterProfiles), provenance: MASTER_PROVENANCE,
   };
   window.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD = Object.freeze(masterGuard);
 
-  // Migration sources are checked once before the redirect wrapper is installed.
-  // This preserves a real draft without letting hidden origin-wide state mutate
-  // the committed runtime library outside the editor's normal autosave path.
-  const previousRigStorageKeys = Object.freeze([
-    'hobunjiAttachmentRigProfiles.master.hobunji-attachment-rig-master-2026-09-03-v1',
-    masterGuard.legacyStorageKey,
-  ]); // Used only by the one-time migration below.
+  const previousRigStorageKeys = Object.freeze(['hobunjiAttachmentRigProfiles.master.hobunji-attachment-rig-master-2026-09-03-v1', masterGuard.legacyStorageKey]);
   const normalizeRigAutosavePayload = value => {
     if (!value || typeof value !== 'object') return null;
     if (value.profiles || value.attachmentRigProfiles) return value;
@@ -529,9 +412,8 @@
       const originalRemoveItem = proto.removeItem;
       let migrationStatus = { migrated: false, sourceKey: null, reason: 'current-v2-autosave-missing' };
       try {
-        if (originalGetItem.call(localStorage, masterGuard.storageKey)) {
-          migrationStatus = { migrated: false, sourceKey: masterGuard.storageKey, reason: 'current-v2-autosave-present' };
-        } else {
+        if (originalGetItem.call(localStorage, masterGuard.storageKey)) migrationStatus = { migrated: false, sourceKey: masterGuard.storageKey, reason: 'current-v2-autosave-present' };
+        else {
           for (const sourceKey of previousRigStorageKeys) {
             const raw = originalGetItem.call(localStorage, sourceKey);
             if (!raw) continue;
@@ -542,9 +424,7 @@
             break;
           }
         }
-      } catch (error) {
-        migrationStatus = { migrated: false, sourceKey: null, reason: `migration-error:${error?.message || error}` };
-      }
+      } catch (error) { migrationStatus = { migrated: false, sourceKey: null, reason: `migration-error:${error?.message || error}` }; }
       window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.autosaveMigration = migrationStatus;
       Object.defineProperty(proto, marker, { value: true, configurable: false });
       proto.getItem = function(key) {
@@ -569,9 +449,6 @@
     }
   }
 
-  // Patch the public API and the visible Export JSON button without modifying
-  // the giant inline editor. The editor's normal serializer still supplies all
-  // non-rig metadata; this guard only reconciles the rig profile payload.
   if (isAnimationAuthor && typeof document !== 'undefined') {
     const installExporterGuard = () => {
       const api = window.MultiAvatarAnimationAuthor;
@@ -602,16 +479,12 @@
     };
     if (!installExporterGuard()) {
       let attempts = 0;
-      const timer = setInterval(() => {
-        if (installExporterGuard() || ++attempts >= 200) clearInterval(timer);
-      }, 50);
+      const timer = setInterval(() => { if (installExporterGuard() || ++attempts >= 200) clearInterval(timer); }, 50);
     }
 
-    // V15.24 still replaces the live creature library with an embedded snapshot,
-    // while V15.37 restores only characters from this shared master. Reuse the
-    // editor's own Import control to migrate only exact stale creature fingerprints
-    // after the user opens/resets/imports Rig Coordinates. This preserves custom
-    // authoring and runs every existing import wrapper/preview refresh path.
+    // V15.24 replaces the live creature library with an embedded snapshot and
+    // V15.37 restores only characters. On Rig open/reset, repair only exact old
+    // creature fingerprints through the editor's own latest Import pipeline.
     let creatureSyncQueued = false;
     const animationAuthorCreatureSyncStatus = window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.animationAuthorCreatureSync;
     const staleCreatureFields = live => {
@@ -662,7 +535,7 @@
       animationAuthorCreatureSyncStatus.state = 'repair-dispatched';
       animationAuthorCreatureSyncStatus.repairs += 1;
       animationAuthorCreatureSyncStatus.lastReason = `${reason}: ${stale.join(', ')}`;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: false }));
       return true;
     };
     const queueAnimationAuthorCreatureRepair = reason => {
@@ -677,9 +550,6 @@
         queueAnimationAuthorCreatureRepair(target.id === 'maaRigTab' ? 'rig-tab-open' : 'rig-new-reset');
       }
     }, true);
-    document.addEventListener('change', event => {
-      if (event.target?.id === 'maaImportInput') queueAnimationAuthorCreatureRepair('rig-import');
-    });
     window.HobunjiAnimationAuthorRigMasterSync = Object.freeze({
       repairNow: () => repairAnimationAuthorCreatureDefaults('manual-debug'),
       staleFields: () => staleCreatureFields(window.MultiAvatarAnimationAuthor?.getAttachmentRigProfiles?.() || {}),
@@ -687,11 +557,7 @@
     });
   }
 
-  // Shoulder-pet observation behavior retained from the prior shared config.
-  const shoulderPetObservationFlipRuntime = {
-    instrumentedStates: new WeakSet(), instrumentedCount: 0,
-    activePetCount: 0, flipCount: 0, lastFlip: null,
-  };
+  const shoulderPetObservationFlipRuntime = { instrumentedStates: new WeakSet(), instrumentedCount: 0, activePetCount: 0, flipCount: 0, lastFlip: null };
   const applyShoulderPetObservationMirror = (pet, flipped) => {
     if (!pet) return false;
     pet.__hobunjiShoulderObservationFlipped = !!flipped;
@@ -730,10 +596,7 @@
           const flipped = !pet.__hobunjiShoulderObservationFlipped;
           applyShoulderPetObservationMirror(pet, flipped);
           shoulderPetObservationFlipRuntime.flipCount += 1;
-          shoulderPetObservationFlipRuntime.lastFlip = {
-            creatureKey: pet.creatureKey || pet.kind || 'unknown', flipped,
-            atMs: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-          };
+          shoulderPetObservationFlipRuntime.lastFlip = { creatureKey: pet.creatureKey || pet.kind || 'unknown', flipped, atMs: typeof performance !== 'undefined' ? performance.now() : Date.now() };
         }
         phase = nextPhase;
       },
@@ -763,12 +626,7 @@
     shoulderPetObservationFlipRuntime.activePetCount = activePetCount;
   };
   window.ShoulderPetObservationFlip = Object.freeze({
-    getDebug: () => ({
-      activePetCount: shoulderPetObservationFlipRuntime.activePetCount,
-      instrumentedCount: shoulderPetObservationFlipRuntime.instrumentedCount,
-      flipCount: shoulderPetObservationFlipRuntime.flipCount,
-      lastFlip: shoulderPetObservationFlipRuntime.lastFlip ? { ...shoulderPetObservationFlipRuntime.lastFlip } : null,
-    }),
+    getDebug: () => ({ activePetCount: shoulderPetObservationFlipRuntime.activePetCount, instrumentedCount: shoulderPetObservationFlipRuntime.instrumentedCount, flipCount: shoulderPetObservationFlipRuntime.flipCount, lastFlip: shoulderPetObservationFlipRuntime.lastFlip ? { ...shoulderPetObservationFlipRuntime.lastFlip } : null }),
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
       const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none';
