@@ -1,6 +1,10 @@
 [build]
-  # Static site, no build step -- just serve docs/ as-is.
+  # Static game; Netlify still installs package.json dependencies for Functions.
   publish = "docs"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
 
 [build.processing]
   skip_processing = true

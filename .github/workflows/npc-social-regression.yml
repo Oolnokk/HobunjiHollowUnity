@@ -16,6 +16,7 @@ on:
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
+      - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
@@ -35,6 +36,7 @@ on:
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
+      - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
@@ -68,11 +70,14 @@ jobs:
           node --check docs/js/combat/combat-config-loader.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
           node --check scripts/test-npc-social-seating.js
+          node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
+      - name: Test NPC swig offer visibility and cooldown
+        run: node scripts/test-npc-swig-offer-cooldown.js
       - name: Test relationship-aware reactive seating
         run: node scripts/test-npc-social-seating.js
       - name: Test placeholder wardrobes and old prompt suppression

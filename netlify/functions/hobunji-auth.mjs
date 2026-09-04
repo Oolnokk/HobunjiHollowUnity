@@ -71,11 +71,18 @@ export default async function hobunjiAuth(req) {
     if (action === 'signup') {
       if (!body.email || !body.password) return json({ ok: false, error: 'Email and password are required.' }, 400);
       const metadata = body.name ? { full_name: String(body.name).trim().slice(0, 120) } : undefined;
-      const user = await signup(String(body.email).trim(), String(body.password), metadata);
+      const createdUser = await signup(String(body.email).trim(), String(body.password), metadata);
+      // signup() can return the newly-created user before email confirmation has
+      // established a session. Only report `user` when Identity says this request
+      // is actually authenticated, otherwise the browser would try cloud APIs too early.
+      const activeUser = await getUser();
       return json({
         ok: true,
-        user: publicUser(user),
-        message: 'Account created. If email confirmation is enabled for this Netlify site, check your inbox before signing in.',
+        user: publicUser(activeUser),
+        createdUser: publicUser(createdUser),
+        message: activeUser
+          ? 'Account created and signed in.'
+          : 'Account created. Check your inbox for the Netlify Identity confirmation email, then return here.',
       });
     }
 

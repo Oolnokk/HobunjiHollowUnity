@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<base href="../../">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>Hobunji Hollow Loading Screen Editor</title>
+<style>
+@font-face {
+  font-family: "KhymeryyanRoman";
+  src: url("assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "TankanScript";
+  src: url("assets/hud/tankanscript_rotated_flipped_horiz.otf") format("opentype");
+  font-display: swap;
+}
+:root {
+  color-scheme: dark;
+  --ui: rgba(9, 9, 9, .91);
+  --ui2: rgba(20, 20, 20, .94);
+  --line: rgba(255,255,255,.18);
+  --soft: rgba(255,255,255,.08);
+  --white: #fff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; background: #000; color: #fff; overflow: hidden; }
+body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+button, input, select, textarea { font: inherit; color: #fff; }
+button, .fileButton {
+  min-height: 40px; padding: 8px 11px; border-radius: 9px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.07); color: #fff; cursor: pointer; font-weight: 700;
+}
+button:hover, .fileButton:hover { background: rgba(255,255,255,.13); }
+button.active { outline: 2px solid #fff; outline-offset: 1px; }
+input, select, textarea {
+  width: 100%; min-height: 40px; padding: 8px 9px; border-radius: 8px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.07); outline: none;
+}
+textarea { min-height: 84px; resize: vertical; line-height: 1.35; }
+input[type="range"] { padding: 0; min-height: 32px; }
+input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: white; }
+label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; color: #fff; }
+small { color: #fff; opacity: .72; }
+.hidden { display: none !important; }
+
+#stage {
+  position: fixed; inset: 0; overflow: hidden; background: #000; isolation: isolate;
+  touch-action: none;
+}
+#loadingImage {
+  position: absolute; left: 50%; top: 48%; width: auto; height: auto;
+  max-width: 78vw; max-height: 70vh; object-fit: contain; object-position: center;
+  pointer-events: none; user-select: none; -webkit-user-drag: none;
+  will-change: transform; transform-origin: center center;
+}
+#emptyImage {
+  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
+  font: 700 13px/1.4 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; opacity: .48;
+}
+#lore {
+  position: absolute; left: 50%; bottom: max(5.5vh, 28px); transform: translateX(-50%);
+  width: min(78vw, 980px); text-align: center; color: #fff; font-family: "KhymeryyanRoman", serif;
+  font-size: 11px; line-height: 1.24; text-wrap: balance;
+  text-shadow: 0 2px 8px rgba(0,0,0,.9); pointer-events: none;
+}
+#loadPercentDisplay {
+  position: absolute; right: max(4vw, 24px); bottom: max(5.5vh, 28px);
+  color: #fff; font-family: "KhymeryyanRoman", serif; font-size: 18px; line-height: 1;
+  text-shadow: 0 2px 8px rgba(0,0,0,.9); pointer-events: none; white-space: nowrap;
+}
+#scriptViewport {
+  position: absolute; top: 46%; left: 25%; width: min(42vw, 540px); height: min(72vh, 880px);
+  overflow: hidden; pointer-events: none; transform: translate(-50%, -50%);
+}
+#scriptFloat {
+  position: absolute; left: 50%; top: 0; color: #fff; pointer-events: none; will-change: transform;
+}
+#scriptWords {
+  display: flex; flex-direction: row; align-items: flex-start; justify-content: center;
+  gap: 0; color: #fff; width: max-content;
+  --script-column-spacing: 0em;
+}
+.verticalWord + .verticalWord { margin-left: var(--script-column-spacing); }
+.verticalWord {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  gap: 0; font-family: "TankanScript", sans-serif; font-size: 140px; line-height: .56; color: #fff;
+  white-space: nowrap;
+}
+.verticalGlyph {
+  display: block; width: 1em; height: .56em; line-height: .56em; text-align: center; color: #fff;
+  letter-spacing: 0;
+}
+
+#topbar {
+  position: fixed; z-index: 20; left: 10px; right: 10px; top: max(10px, env(safe-area-inset-top));
+  display: flex; gap: 7px; align-items: center; flex-wrap: wrap; pointer-events: auto;
+}
+#topbar .group {
+  display: flex; gap: 6px; align-items: center; padding: 6px; border: 1px solid var(--line);
+  border-radius: 11px; background: var(--ui); backdrop-filter: blur(10px);
+}
+#statusPill { font-size: 12px; padding: 0 8px; opacity: .82; max-width: 35vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+#editor {
+  position: fixed; z-index: 15; top: 72px; right: 10px; bottom: 10px; width: min(410px, calc(100vw - 20px));
+  overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 13px;
+  background: var(--ui); backdrop-filter: blur(13px); padding: 10px;
+}
+.section { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; margin-bottom: 9px; }
+.section summary { cursor: pointer; padding: 10px; font-size: 12px; font-weight: 850; text-transform: uppercase; letter-spacing: .06em; background: var(--soft); }
+.sectionBody { padding: 10px; }
+.field { margin-bottom: 9px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.row > * { flex: 1 1 auto; }
+.entryRow { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; margin-bottom: 8px; }
+.entryRow select { min-width: 0; }
+.valueReadout { font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; opacity: .8; margin-left: 5px; }
+.fileButton { display: inline-flex; align-items: center; justify-content: center; }
+.fileButton input { display: none; }
+
+#dpad {
+  position: fixed; z-index: 12; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
+  display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); gap: 4px;
+  opacity: .72;
+}
+#dpad button { min-height: 48px; padding: 0; border-radius: 12px; background: rgba(0,0,0,.45); font-size: 20px; }
+#dpad .up { grid-column: 2; grid-row: 1; }
+#dpad .left { grid-column: 1; grid-row: 2; }
+#dpad .reset { grid-column: 2; grid-row: 2; font-size: 12px; }
+#dpad .right { grid-column: 3; grid-row: 2; }
+#dpad .down { grid-column: 2; grid-row: 3; }
+
+#debugPanel {
+  position: fixed; z-index: 30; left: 10px; bottom: 10px; width: min(560px, calc(100vw - 20px)); max-height: 48vh;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: rgba(0,0,0,.96);
+  display: none; grid-template-rows: auto minmax(0,1fr);
+}
+#debugPanel.visible { display: grid; }
+#debugHead { display: flex; gap: 6px; align-items: center; padding: 8px; border-bottom: 1px solid var(--line); }
+#debugLog { margin: 0; padding: 9px; overflow: auto; white-space: pre-wrap; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+body.previewOnly #editor, body.previewOnly #topbar { display: none; }
+body.previewOnly #dpad { opacity: .42; }
+
+@media (max-width: 720px) {
+  #editor { top: 118px; width: calc(100vw - 20px); max-height: calc(100dvh - 128px); }
+  #loadingImage { max-width: 92vw; max-height: 62vh; top: 45%; }
+  #lore { width: 90vw; bottom: max(4.5vh, 22px); }
+  #loadPercentDisplay { right: max(3vw, 18px); bottom: max(4.5vh, 22px); font-size: 16px; }
+  #scriptViewport { width: 46vw; height: min(68vh, 780px); }
+  .verticalWord { font-size: 112px; }
+  #statusPill { max-width: 72vw; }
+}
+</style>
+</head>
+<body>
+<div id="stage" aria-label="Loading screen preview">
+  <img id="loadingImage" alt="Loading screen art" draggable="false" />
+  <div id="emptyImage">No image selected</div>
+  <div id="scriptViewport"><div id="scriptFloat"><div id="scriptWords"></div></div></div>
+  <div id="lore"></div>
+  <div id="loadPercentDisplay"></div>
+</div>
+
+<div id="topbar">
+  <div class="group">
+    <button id="toggleEditorBtn" type="button">Hide editor</button>
+    <button id="randomBtn" type="button">Random screen</button>
+    <button id="motionBtn" type="button">Pause motion</button>
+    <button id="previewBtn" type="button">Full preview</button>
+  </div>
+  <div class="group">
+    <span id="statusPill">Ready</span>
+  </div>
+</div>
+
+<aside id="editor">
+  <details class="section" open>
+    <summary>Loading-screen entry</summary>
+    <div class="sectionBody">
+      <div class="entryRow">
+        <select id="entrySelect" aria-label="Loading screen entry"></select>
+        <button id="addEntryBtn" type="button">+ Entry</button>
+      </div>
+      <div class="row" style="margin-bottom:9px">
+        <button id="duplicateEntryBtn" type="button">Duplicate</button>
+        <button id="deleteEntryBtn" type="button">Delete</button>
+      </div>
+      <div class="field">
+        <label for="entryName">Entry name</label>
+        <input id="entryName" type="text" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Image</label>
+        <div class="row">
+          <label class="fileButton">Upload image<input id="imageFile" type="file" accept="image/*" /></label>
+          <button id="clearImageBtn" type="button">Clear</button>
+        </div>
+        <small>PNG transparency stays transparent over a pure black stage.</small>
+      </div>
+      <div class="field">
+        <label for="imageUrl">Or image URL / repo-relative path</label>
+        <input id="imageUrl" type="text" placeholder="assets/.../image.png" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="loreText">Lore text — KhymeryyanRoman</label>
+        <textarea id="loreText" spellcheck="true"></textarea>
+      </div>
+      <div class="field">
+        <label for="scriptText">Vertical Tankan-script text</label>
+        <textarea id="scriptText" spellcheck="false" placeholder="Each word becomes one top-to-bottom column. Words advance left to right."></textarea>
+      </div>
+    </div>
+  </details>
+
+  <details class="section" open>
+    <summary>Composition</summary>
+    <div class="sectionBody">
+      <div class="two">
+        <div class="field">
+          <label for="scriptSide">Script side</label>
+          <select id="scriptSide"><option value="left">Left half</option><option value="right">Right half</option></select>
+        </div>
+        <div class="field">
+          <label for="imageScale">Image scale <span class="valueReadout" id="imageScaleOut"></span></label>
+          <input id="imageScale" type="range" min="0.45" max="1.8" step="0.01" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="panRange">Auto-pan range <span class="valueReadout" id="panRangeOut"></span></label>
+        <input id="panRange" type="range" min="0" max="18" step="0.25" />
+      </div>
+      <div class="field">
+        <label for="panSpeed">Corner-to-corner speed <span class="valueReadout" id="panSpeedOut"></span></label>
+        <input id="panSpeed" type="range" min="0.015" max="0.18" step="0.005" />
+      </div>
+      <div class="field">
+        <label for="manualSpeed">Manual pan speed <span class="valueReadout" id="manualSpeedOut"></span></label>
+        <input id="manualSpeed" type="range" min="30" max="360" step="10" />
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="loreSize">Lore size <span class="valueReadout" id="loreSizeOut"></span></label>
+          <input id="loreSize" type="range" min="8" max="24" step="1" />
+        </div>
+        <div class="field">
+          <label for="scriptSize">Script size <span class="valueReadout" id="scriptSizeOut"></span></label>
+          <input id="scriptSize" type="range" min="48" max="220" step="1" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="scriptY">Script vertical position <span class="valueReadout" id="scriptYOut"></span></label>
+        <input id="scriptY" type="range" min="20" max="78" step="1" />
+      </div>
+      <div class="field">
+        <label for="columnSpacing">Script column spacing <span class="valueReadout" id="columnSpacingOut"></span></label>
+        <input id="columnSpacing" type="range" min="-0.9" max="0.6" step="0.01" />
+        <small>Negative values pull the vertical word-columns closer together; positive values spread them apart.</small>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="scriptScrollSpeed">Script scroll speed <span class="valueReadout" id="scriptScrollSpeedOut"></span></label>
+          <input id="scriptScrollSpeed" type="range" min="0.003" max="0.06" step="0.001" />
+        </div>
+        <div class="field">
+          <label for="loadPercent">Load percent <span class="valueReadout" id="loadPercentOut"></span></label>
+          <input id="loadPercent" type="range" min="0" max="100" step="1" />
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>Import / export / fonts</summary>
+    <div class="sectionBody">
+      <div class="row" style="margin-bottom:9px">
+        <button id="exportBtn" type="button">Export JSON</button>
+        <label class="fileButton">Import JSON<input id="importFile" type="file" accept="application/json,.json" /></label>
+      </div>
+      <div class="field">
+        <label>Offline font overrides</label>
+        <div class="row">
+          <label class="fileButton">Lore font<input id="loreFontFile" type="file" accept=".ttf,.otf,font/ttf,font/otf" /></label>
+          <label class="fileButton">Tankan font<input id="tankanFontFile" type="file" accept=".ttf,.otf,font/ttf,font/otf" /></label>
+        </div>
+        <small>Use these only if the downloaded HTML cannot reach the repo fonts. The repo-hosted editor uses the fonts directly from docs/assets/hud.</small>
+      </div>
+      <div class="row">
+        <button id="resetBtn" type="button">Reset editor data</button>
+        <button id="debugBtn" type="button">Debug</button>
+      </div>
+      <div class="field" style="margin-top:9px">
+        <small>Export JSON here and save it over <code>docs/config/loading-screens.json</code> to ship it -- the game reads that file directly, not this editor's local browser storage.</small>
+      </div>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>Controls</summary>
+    <div class="sectionBody">
+      <small>WASD / arrow keys manually pan the image. Hold a direction to keep moving. R resets manual pan. Space pauses/resumes autonomous motion. The on-screen D-pad provides the same movement controls on mobile. The Tankan script now auto-scrolls vertically to reveal oversized text from top to bottom.</small>
+    </div>
+  </details>
+</aside>
+
+<div id="dpad" aria-label="Manual image pan controls">
+  <button class="up" data-dir="up" type="button">▲</button>
+  <button class="left" data-dir="left" type="button">◀</button>
+  <button class="reset" id="resetPanBtn" type="button">RESET</button>
+  <button class="right" data-dir="right" type="button">▶</button>
+  <button class="down" data-dir="down" type="button">▼</button>
+</div>
+
+<section id="debugPanel" aria-label="Debug panel">
+  <div id="debugHead"><b>Loading Screen Debug</b><button id="closeDebugBtn" type="button">Close</button></div>
+  <pre id="debugLog"></pre>
+</section>
+
+<script>
+(() => {
+  "use strict";
+
+  const STORAGE_KEY = "hobunji.loadingScreenEditor.v1";
+  const DEFAULTS = {
+    version: 5,
+    selectedId: "sample",
+    settings: {
+      scriptSide: "left",
+      imageScale: 1,
+      panRange: 7,
+      panSpeed: 0.055,
+      manualSpeed: 150,
+      loreSize: 11,
+      scriptSize: 140,
+      scriptY: 46,
+      columnSpacing: 0,
+      scriptScrollSpeed: 0.02,
+      loadPercent: 64
+    },
+    entries: [
+      {
+        id: "sample",
+        name: "Sample loading screen",
+        image: "",
+        lore: "Lore text appears here in Khymeryyan Roman.",
+        script: "HOBUNJI HOLLOW"
+      }
+    ]
+  };
+
+  const $ = id => document.getElementById(id);
+  const els = {
+    image: $("loadingImage"), emptyImage: $("emptyImage"), lore: $("lore"), loadPercentLabel: $("loadPercentDisplay"), scriptViewport: $("scriptViewport"), scriptFloat: $("scriptFloat"), scriptWords: $("scriptWords"),
+    editor: $("editor"), toggleEditorBtn: $("toggleEditorBtn"), randomBtn: $("randomBtn"), motionBtn: $("motionBtn"), previewBtn: $("previewBtn"), status: $("statusPill"),
+    entrySelect: $("entrySelect"), addEntryBtn: $("addEntryBtn"), duplicateEntryBtn: $("duplicateEntryBtn"), deleteEntryBtn: $("deleteEntryBtn"),
+    entryName: $("entryName"), imageFile: $("imageFile"), imageUrl: $("imageUrl"), clearImageBtn: $("clearImageBtn"), loreText: $("loreText"), scriptText: $("scriptText"),
+    scriptSide: $("scriptSide"), imageScale: $("imageScale"), panRange: $("panRange"), panSpeed: $("panSpeed"), manualSpeed: $("manualSpeed"),
+    loreSize: $("loreSize"), scriptSize: $("scriptSize"), scriptY: $("scriptY"), columnSpacing: $("columnSpacing"), scriptScrollSpeed: $("scriptScrollSpeed"), loadPercent: $("loadPercent"),
+    imageScaleOut: $("imageScaleOut"), panRangeOut: $("panRangeOut"), panSpeedOut: $("panSpeedOut"), manualSpeedOut: $("manualSpeedOut"),
+    loreSizeOut: $("loreSizeOut"), scriptSizeOut: $("scriptSizeOut"), scriptYOut: $("scriptYOut"), columnSpacingOut: $("columnSpacingOut"), scriptScrollSpeedOut: $("scriptScrollSpeedOut"), loadPercentOut: $("loadPercentOut"),
+    exportBtn: $("exportBtn"), importFile: $("importFile"), loreFontFile: $("loreFontFile"), tankanFontFile: $("tankanFontFile"), resetBtn: $("resetBtn"), debugBtn: $("debugBtn"),
+    debugPanel: $("debugPanel"), debugLog: $("debugLog"), closeDebugBtn: $("closeDebugBtn"), resetPanBtn: $("resetPanBtn")
+  };
+
+  let data = loadData();
+  let motionEnabled = true;
+  let editorVisible = true;
+  let manualX = 0;
+  let manualY = 0;
+  let autoPhase = 0;
+  let scriptScrollPhase = 0;
+  let lastTime = performance.now();
+  let keys = new Set();
+  let touchDirs = new Set();
+  let lastRandomId = null;
+  const logs = [];
+
+  function clone(value) { return JSON.parse(JSON.stringify(value)); }
+  function uid() { return "ls_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function currentEntry() { return data.entries.find(e => e.id === data.selectedId) || data.entries[0]; }
+
+  function log(message) {
+    const stamp = new Date().toLocaleTimeString();
+    logs.unshift(`[${stamp}] ${message}`);
+    if (logs.length > 80) logs.length = 80;
+    updateDebug();
+  }
+
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return clone(DEFAULTS);
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed.entries) || !parsed.entries.length) throw new Error("No entries in saved data");
+      const version = Number(parsed.version || 1);
+      return {
+        version: 5,
+        selectedId: parsed.selectedId || parsed.entries[0].id,
+        settings: {
+          ...DEFAULTS.settings,
+          ...(parsed.settings || {}),
+          // Lore remains fixed to the requested 11px default when migrating older saves.
+          loreSize: version < 3
+            ? 11
+            : Number(parsed.settings?.loreSize ?? DEFAULTS.settings.loreSize),
+          // Version 4 switches to intentionally oversized Tankan script with slow vertical scrolling.
+          scriptSize: version < 4
+            ? 140
+            : Number(parsed.settings?.scriptSize ?? DEFAULTS.settings.scriptSize),
+          columnSpacing: version < 5
+            ? DEFAULTS.settings.columnSpacing
+            : Number(parsed.settings?.columnSpacing ?? DEFAULTS.settings.columnSpacing),
+          scriptScrollSpeed: version < 4
+            ? DEFAULTS.settings.scriptScrollSpeed
+            : Number(parsed.settings?.scriptScrollSpeed ?? DEFAULTS.settings.scriptScrollSpeed),
+          loadPercent: Number(parsed.settings?.loadPercent ?? DEFAULTS.settings.loadPercent)
+        },
+        entries: parsed.entries
+      };
+    } catch (err) {
+      console.warn("Loading-screen editor save could not be loaded", err);
+      return clone(DEFAULTS);
+    }
+  }
+
+  function saveData() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      els.status.textContent = "Saved locally";
+    } catch (err) {
+      els.status.textContent = "Preview updated; save storage full";
+      log(`Local save failed: ${err.message}`);
+    }
+  }
+
+  function renderEntrySelect() {
+    els.entrySelect.innerHTML = "";
+    for (const entry of data.entries) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.name || "Untitled entry";
+      els.entrySelect.appendChild(option);
+    }
+    els.entrySelect.value = currentEntry().id;
+  }
+
+  function renderScript(text) {
+    els.scriptWords.innerHTML = "";
+    const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+    for (const word of words) {
+      const column = document.createElement("div");
+      column.className = "verticalWord";
+      column.style.fontSize = `${data.settings.scriptSize}px`;
+      for (const char of Array.from(word)) {
+        const glyph = document.createElement("span");
+        glyph.className = "verticalGlyph";
+        glyph.textContent = char;
+        column.appendChild(glyph);
+      }
+      els.scriptWords.appendChild(column);
+    }
+  }
+
+  function applySettingsToUI() {
+    const s = data.settings;
+    for (const key of ["scriptSide","imageScale","panRange","panSpeed","manualSpeed","loreSize","scriptSize","scriptY","columnSpacing","scriptScrollSpeed","loadPercent"]) {
+      if (els[key]) els[key].value = s[key];
+    }
+    els.imageScaleOut.textContent = `${Number(s.imageScale).toFixed(2)}×`;
+    els.panRangeOut.textContent = `${Number(s.panRange).toFixed(2)}vmin`;
+    els.panSpeedOut.textContent = `${Number(s.panSpeed).toFixed(3)}`;
+    els.manualSpeedOut.textContent = `${Math.round(s.manualSpeed)}px/s`;
+    els.loreSizeOut.textContent = `${Math.round(s.loreSize)}px`;
+    els.scriptSizeOut.textContent = `${Math.round(s.scriptSize)}px`;
+    els.scriptYOut.textContent = `${Math.round(s.scriptY)}%`;
+    els.columnSpacingOut.textContent = `${Number(s.columnSpacing).toFixed(2)}em`;
+    els.scriptScrollSpeedOut.textContent = `${Number(s.scriptScrollSpeed).toFixed(3)} cyc/s`;
+    els.loadPercentOut.textContent = `${Math.round(s.loadPercent)}%`;
+  }
+
+  function renderEditor() {
+    const entry = currentEntry();
+    renderEntrySelect();
+    els.entryName.value = entry.name || "";
+    els.imageUrl.value = entry.image && !entry.image.startsWith("data:") ? entry.image : "";
+    els.loreText.value = entry.lore || "";
+    els.scriptText.value = entry.script || "";
+    applySettingsToUI();
+  }
+
+  function renderPreview() {
+    const entry = currentEntry();
+    const hasImage = Boolean(entry.image);
+    els.image.classList.toggle("hidden", !hasImage);
+    els.emptyImage.classList.toggle("hidden", hasImage);
+    if (hasImage && els.image.src !== entry.image) els.image.src = entry.image;
+    els.lore.textContent = entry.lore || "";
+    els.lore.style.fontSize = `${data.settings.loreSize}px`;
+    els.loadPercentLabel.textContent = `${Math.round(Number(data.settings.loadPercent) || 0)}%`;
+    renderScript(entry.script);
+    els.scriptWords.style.setProperty("--script-column-spacing", `${Number(data.settings.columnSpacing)}em`);
+    els.scriptViewport.style.left = data.settings.scriptSide === "right" ? "75%" : "25%";
+    els.scriptViewport.style.top = `${data.settings.scriptY}%`;
+    els.status.textContent = entry.name || "Untitled entry";
+    updateDebug();
+  }
+
+  function syncAll(save = true) {
+    renderEditor();
+    renderPreview();
+    if (save) saveData();
+  }
+
+  function setEntryField(key, value) {
+    const entry = currentEntry();
+    if (!entry) return;
+    entry[key] = value;
+    if (key === "name") renderEntrySelect();
+    renderPreview();
+    saveData();
+  }
+
+  function setSetting(key, value) {
+    data.settings[key] = value;
+    applySettingsToUI();
+    renderPreview();
+    saveData();
+  }
+
+  function chooseRandomEntry() {
+    if (!data.entries.length) return;
+    let pool = data.entries;
+    if (data.entries.length > 1 && lastRandomId) pool = data.entries.filter(e => e.id !== lastRandomId);
+    const entry = pool[Math.floor(Math.random() * pool.length)];
+    lastRandomId = entry.id;
+    data.selectedId = entry.id;
+    manualX = manualY = 0;
+    autoPhase = Math.random() * 4;
+    scriptScrollPhase = 0;
+    syncAll();
+    log(`Randomized to entry: ${entry.name || entry.id}`);
+  }
+
+  function cornerPan(phase, rangePx) {
+    const corners = [[-1,-1],[1,-1],[1,1],[-1,1],[-1,-1]];
+    const wrapped = ((phase % 4) + 4) % 4;
+    const index = Math.floor(wrapped);
+    const local = wrapped - index;
+    const t = local * local * (3 - 2 * local);
+    const a = corners[index], b = corners[index + 1];
+    return {
+      x: (a[0] + (b[0] - a[0]) * t) * rangePx,
+      y: (a[1] + (b[1] - a[1]) * t) * rangePx
+    };
+  }
+
+  function updateMotion(now) {
+    const dt = Math.min(.05, Math.max(0, (now - lastTime) / 1000));
+    lastTime = now;
+    const s = data.settings;
+    const held = new Set([...keys, ...touchDirs]);
+    const speed = Number(s.manualSpeed) || 150;
+    if (held.has("left")) manualX -= speed * dt;
+    if (held.has("right")) manualX += speed * dt;
+    if (held.has("up")) manualY -= speed * dt;
+    if (held.has("down")) manualY += speed * dt;
+    const maxManual = Math.max(innerWidth, innerHeight) * .65;
+    manualX = clamp(manualX, -maxManual, maxManual);
+    manualY = clamp(manualY, -maxManual, maxManual);
+
+    if (motionEnabled) autoPhase += dt * Number(s.panSpeed);
+    const rangePx = Math.min(innerWidth, innerHeight) * (Number(s.panRange) / 100);
+    const pan = cornerPan(autoPhase, rangePx);
+    els.image.style.transform = `translate(calc(-50% + ${pan.x + manualX}px), calc(-50% + ${pan.y + manualY}px)) scale(${Number(s.imageScale)})`;
+
+    if (motionEnabled) {
+      scriptScrollPhase = (scriptScrollPhase + dt * Number(s.scriptScrollSpeed || 0)) % 1;
+    }
+    const viewportHeight = els.scriptViewport.clientHeight || 0;
+    const contentHeight = els.scriptFloat.offsetHeight || 0;
+    const maxScroll = Math.max(0, contentHeight - viewportHeight);
+    const scrollY = maxScroll * scriptScrollPhase;
+    els.scriptFloat.style.transform = `translateX(-50%) translateY(${-scrollY}px)`;
+
+    if (els.debugPanel.classList.contains("visible")) updateDebug(pan);
+    requestAnimationFrame(updateMotion);
+  }
+
+  function resetManualPan() {
+    manualX = 0; manualY = 0;
+    log("Manual image pan reset");
+  }
+
+  function parseKey(event, down) {
+    const tag = document.activeElement?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    const map = { ArrowLeft:"left", a:"left", A:"left", ArrowRight:"right", d:"right", D:"right", ArrowUp:"up", w:"up", W:"up", ArrowDown:"down", s:"down", S:"down" };
+    if (map[event.key]) {
+      event.preventDefault();
+      if (down) keys.add(map[event.key]); else keys.delete(map[event.key]);
+    }
+    if (down && event.key === "r") resetManualPan();
+    if (down && event.code === "Space") {
+      event.preventDefault();
+      motionEnabled = !motionEnabled;
+      els.motionBtn.textContent = motionEnabled ? "Pause motion" : "Resume motion";
+      log(`Motion ${motionEnabled ? "resumed" : "paused"}`);
+    }
+  }
+
+  function handleImageFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setEntryField("image", String(reader.result));
+      els.imageUrl.value = "";
+      log(`Loaded local image: ${file.name} (${Math.round(file.size / 1024)} KB)`);
+    };
+    reader.onerror = () => log(`Image read failed: ${reader.error?.message || "unknown error"}`);
+    reader.readAsDataURL(file);
+  }
+
+  async function loadLocalFont(file, family) {
+    if (!file) return;
+    try {
+      const bytes = await file.arrayBuffer();
+      const face = new FontFace(family, bytes);
+      await face.load();
+      document.fonts.add(face);
+      log(`Loaded local ${family} override: ${file.name}`);
+    } catch (err) {
+      log(`Font load failed (${family}): ${err.message}`);
+    }
+  }
+
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "loading-screens.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    log("Exported loading-screen JSON");
+  }
+
+  function importJson(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        if (!Array.isArray(parsed.entries) || !parsed.entries.length) throw new Error("JSON needs a non-empty entries array");
+        const version = Number(parsed.version || 1);
+        data = {
+          version: 5,
+          selectedId: parsed.selectedId || parsed.entries[0].id,
+          settings: {
+            ...DEFAULTS.settings,
+            ...(parsed.settings || {}),
+            loreSize: version < 3 ? 11 : Number(parsed.settings?.loreSize ?? DEFAULTS.settings.loreSize),
+            scriptSize: version < 4 ? 140 : Number(parsed.settings?.scriptSize ?? DEFAULTS.settings.scriptSize),
+            columnSpacing: version < 5 ? DEFAULTS.settings.columnSpacing : Number(parsed.settings?.columnSpacing ?? DEFAULTS.settings.columnSpacing),
+            scriptScrollSpeed: version < 4 ? DEFAULTS.settings.scriptScrollSpeed : Number(parsed.settings?.scriptScrollSpeed ?? DEFAULTS.settings.scriptScrollSpeed),
+            loadPercent: Number(parsed.settings?.loadPercent ?? DEFAULTS.settings.loadPercent)
+          },
+          entries: parsed.entries.map((entry, i) => ({
+            id: entry.id || uid(), name: entry.name || `Entry ${i + 1}`, image: entry.image || "", lore: entry.lore || "", script: entry.script || ""
+          }))
+        };
+        if (!data.entries.some(e => e.id === data.selectedId)) data.selectedId = data.entries[0].id;
+        syncAll();
+        log(`Imported ${data.entries.length} loading-screen entr${data.entries.length === 1 ? "y" : "ies"}`);
+      } catch (err) {
+        log(`Import failed: ${err.message}`);
+        alert(`Import failed: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function updateDebug(pan = null) {
+    if (!els.debugPanel.classList.contains("visible")) return;
+    const entry = currentEntry();
+    const fontLore = document.fonts.check('16px "KhymeryyanRoman"');
+    const fontTankan = document.fonts.check('16px "TankanScript"');
+    els.debugLog.textContent = [
+      `screen: ${innerWidth}x${innerHeight} dpr=${devicePixelRatio}`,
+      `entry: ${entry?.name || "(none)"} / ${entry?.id || ""}`,
+      `image: ${entry?.image ? (entry.image.startsWith("data:") ? "embedded data URL" : entry.image) : "none"}`,
+      `image natural: ${els.image.naturalWidth || 0}x${els.image.naturalHeight || 0}`,
+      `manual pan: x=${manualX.toFixed(1)} y=${manualY.toFixed(1)}`,
+      `auto pan: ${pan ? `x=${pan.x.toFixed(1)} y=${pan.y.toFixed(1)}` : "pending frame"}`,
+      `motion: ${motionEnabled ? "running" : "paused"}`,
+      `script scroll: progress=${(scriptScrollPhase * 100).toFixed(1)}% viewport=${els.scriptViewport.clientHeight || 0}px content=${els.scriptFloat.offsetHeight || 0}px`,
+      `script column spacing: ${Number(data.settings.columnSpacing).toFixed(2)}em`,
+      `load percent: ${Math.round(Number(data.settings.loadPercent) || 0)}%`,
+      `font checks: KhymeryyanRoman=${fontLore} TankanScript=${fontTankan}`,
+      `script rule: letters top→bottom; words left→right`,
+      "",
+      "Recent events:",
+      ...logs.slice(0, 20)
+    ].join("\n");
+  }
+
+  els.image.addEventListener("load", () => { els.emptyImage.classList.add("hidden"); log(`Image loaded: ${els.image.naturalWidth}x${els.image.naturalHeight}`); });
+  els.image.addEventListener("error", () => { els.emptyImage.classList.remove("hidden"); log("Image failed to load. Check URL/path or upload the file directly."); });
+
+  els.entrySelect.addEventListener("change", () => { data.selectedId = els.entrySelect.value; manualX = manualY = 0; scriptScrollPhase = 0; syncAll(); });
+  els.addEntryBtn.addEventListener("click", () => {
+    const entry = { id: uid(), name: `Loading screen ${data.entries.length + 1}`, image: "", lore: "", script: "" };
+    data.entries.push(entry); data.selectedId = entry.id; scriptScrollPhase = 0; syncAll(); log("Added loading-screen entry");
+  });
+  els.duplicateEntryBtn.addEventListener("click", () => {
+    const source = currentEntry(); if (!source) return;
+    const entry = { ...clone(source), id: uid(), name: `${source.name || "Loading screen"} copy` };
+    data.entries.push(entry); data.selectedId = entry.id; scriptScrollPhase = 0; syncAll(); log("Duplicated loading-screen entry");
+  });
+  els.deleteEntryBtn.addEventListener("click", () => {
+    if (data.entries.length <= 1) { alert("Keep at least one loading-screen entry."); return; }
+    const index = data.entries.findIndex(e => e.id === data.selectedId);
+    data.entries.splice(index, 1); data.selectedId = data.entries[Math.max(0, index - 1)].id; scriptScrollPhase = 0; syncAll(); log("Deleted loading-screen entry");
+  });
+
+  els.entryName.addEventListener("input", e => setEntryField("name", e.target.value));
+  els.loreText.addEventListener("input", e => setEntryField("lore", e.target.value));
+  els.scriptText.addEventListener("input", e => setEntryField("script", e.target.value));
+  els.imageUrl.addEventListener("change", e => setEntryField("image", e.target.value.trim()));
+  els.imageFile.addEventListener("change", e => handleImageFile(e.target.files?.[0]));
+  els.clearImageBtn.addEventListener("click", () => { setEntryField("image", ""); els.imageUrl.value = ""; });
+
+  els.scriptSide.addEventListener("change", e => setSetting("scriptSide", e.target.value));
+  for (const key of ["imageScale","panRange","panSpeed","manualSpeed","loreSize","scriptSize","scriptY","columnSpacing","scriptScrollSpeed","loadPercent"]) {
+    els[key].addEventListener("input", e => setSetting(key, Number(e.target.value)));
+  }
+
+  els.randomBtn.addEventListener("click", chooseRandomEntry);
+  els.motionBtn.addEventListener("click", () => { motionEnabled = !motionEnabled; els.motionBtn.textContent = motionEnabled ? "Pause motion" : "Resume motion"; log(`Motion ${motionEnabled ? "resumed" : "paused"}`); });
+  els.toggleEditorBtn.addEventListener("click", () => { editorVisible = !editorVisible; els.editor.classList.toggle("hidden", !editorVisible); els.toggleEditorBtn.textContent = editorVisible ? "Hide editor" : "Show editor"; });
+  els.previewBtn.addEventListener("click", () => { document.body.classList.toggle("previewOnly"); });
+  els.exportBtn.addEventListener("click", exportJson);
+  els.importFile.addEventListener("change", e => importJson(e.target.files?.[0]));
+  els.loreFontFile.addEventListener("change", e => loadLocalFont(e.target.files?.[0], "KhymeryyanRoman"));
+  els.tankanFontFile.addEventListener("change", e => loadLocalFont(e.target.files?.[0], "TankanScript"));
+  els.resetBtn.addEventListener("click", () => {
+    if (!confirm("Reset all loading-screen editor data stored in this browser?")) return;
+    data = clone(DEFAULTS); localStorage.removeItem(STORAGE_KEY); manualX = manualY = 0; scriptScrollPhase = 0; syncAll(false); log("Editor data reset");
+  });
+  els.resetPanBtn.addEventListener("click", resetManualPan);
+  els.debugBtn.addEventListener("click", () => { els.debugPanel.classList.toggle("visible"); updateDebug(); });
+  els.closeDebugBtn.addEventListener("click", () => els.debugPanel.classList.remove("visible"));
+
+  window.addEventListener("keydown", e => parseKey(e, true), { passive: false });
+  window.addEventListener("keyup", e => parseKey(e, false), { passive: false });
+  window.addEventListener("blur", () => { keys.clear(); touchDirs.clear(); });
+
+  document.querySelectorAll("#dpad [data-dir]").forEach(button => {
+    const dir = button.dataset.dir;
+    const start = e => { e.preventDefault(); touchDirs.add(dir); };
+    const end = e => { e.preventDefault(); touchDirs.delete(dir); };
+    button.addEventListener("pointerdown", start);
+    button.addEventListener("pointerup", end);
+    button.addEventListener("pointercancel", end);
+    button.addEventListener("pointerleave", end);
+  });
+
+  document.fonts.ready.then(() => log(`Fonts ready: lore=${document.fonts.check('16px "KhymeryyanRoman"')} tankan=${document.fonts.check('16px "TankanScript"')}`));
+  renderEditor();
+  renderPreview();
+  log("Editor initialized.");
+  requestAnimationFrame(updateMotion);
+})();
+</script>
+</body>
+</html>
