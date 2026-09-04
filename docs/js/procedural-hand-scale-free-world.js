@@ -300,20 +300,29 @@
 
       const posteriorAnchor = profile?.anchors?.posterior;
       if (posteriorAnchor) {
-        if (!validBinding(posteriorAnchor.portraitBinding)) {
-          let displayed = profile.resolvedPosteriorPosition;
-          if (!displayed || !Number.isFinite(Number(displayed.y))) {
+        const liveResolvedPosterior = profile.resolvedPosteriorPosition;
+        const hasLiveResolvedPosterior = Number.isFinite(Number(liveResolvedPosterior?.y));
+        // Animation Author already publishes the displayed posterior gizmo position.
+        // That live value must win during the hand solve; replacing it with an older
+        // persisted portraitBinding is what made posterior edits stop moving hands
+        // and allowed stale zero-valued bindings to pin a hand to the floor.
+        if (!hasLiveResolvedPosterior) {
+          if (!validBinding(posteriorAnchor.portraitBinding)) {
             const oldY = priorRigMath?.characterPosteriorY?.(
               profile.posteriorRule,
               metrics.modelHeight,
               rig?.avatarRoot?.userData?.handAttachY,
             );
-            displayed = { x: finite(posteriorAnchor.position?.x), y: finite(oldY), z: finite(posteriorAnchor.position?.z) };
+            const displayed = {
+              x: finite(posteriorAnchor.position?.x),
+              y: finite(oldY),
+              z: finite(posteriorAnchor.position?.z),
+            };
+            bindPosteriorFromDisplayed(profile, displayed, metrics);
           }
-          bindPosteriorFromDisplayed(profile, displayed, metrics);
+          profile.resolvedPosteriorPosition = resolveAnchor(profile, 'posterior', metrics);
+          mirrorPosteriorBindingToRule(profile);
         }
-        profile.resolvedPosteriorPosition = resolveAnchor(profile, 'posterior', metrics);
-        mirrorPosteriorBindingToRule(profile);
       }
       return callback();
     } finally {
@@ -327,6 +336,7 @@
     const profile = characterProfileForRig(rig);
     const metrics = metricsForAvatarRoot(rig?.avatarRoot, profile);
     if (!profile || !metrics) return null;
+    const liveResolvedPosterior = profile?.resolvedPosteriorPosition;
     return {
       coordinateSpace: 'character-portrait-pre-deadzone -> actor visual-local',
       actorScaleFactor: actorScaleFactor(metrics),
@@ -335,7 +345,9 @@
       placementRatio: metrics.placementRatio,
       leftHandShoulder: resolveAnchor(profile, 'leftHandShoulder', metrics),
       rightHandShoulder: resolveAnchor(profile, 'rightHandShoulder', metrics),
-      posterior: profile?.anchors?.posterior ? resolveAnchor(profile, 'posterior', metrics) : null,
+      posterior: Number.isFinite(Number(liveResolvedPosterior?.y))
+        ? positionOf(liveResolvedPosterior)
+        : profile?.anchors?.posterior ? resolveAnchor(profile, 'posterior', metrics) : null,
     };
   }
 
