@@ -33,20 +33,14 @@ const profile = {
   posteriorRule: {},
 };
 
-// Garanki Gabu is an ADULT Mao-ao. His current portrait scale is therefore the
-// authored adult scale, not the 0.5 child multiplier. The known live Garanki
-// shoulder/posterior values must be preserved exactly at this state.
-const garankiAdult = { modelWidth: 0.9, modelHeight: 0.9, currentScale: 1, adultScale: 1, placementRatio: 0.95 };
-space.ensureStoredBinding(profile, 'leftHandShoulder', garankiAdult);
+const adult = { modelWidth: 0.9, modelHeight: 0.9, currentScale: 1, adultScale: 1, placementRatio: 0.95 };
+space.ensureStoredBinding(profile, 'leftHandShoulder', adult);
 assert.deepStrictEqual(
-  JSON.parse(JSON.stringify(space.resolveAnchor(profile, 'leftHandShoulder', garankiAdult))),
+  JSON.parse(JSON.stringify(space.resolveAnchor(profile, 'leftHandShoulder', adult))),
   left,
-  'adult Garanki-style portrait binding must preserve the point at the anatomy state it was authored against',
+  'initial portrait binding must preserve the point at the anatomy state it was authored against',
 );
 
-// Child scaling is a separate actor-state case. Gantami Ginju is the actual
-// child example in the game; the coordinate-space layer itself remains generic
-// and simply consumes PNGPlaneAvatar's rendered 0.5 actor scale.
 const childActor = { modelWidth: 0.45, modelHeight: 0.45, currentScale: 0.5, adultScale: 1, placementRatio: 0.95 };
 const childLeft = space.resolveAnchor(profile, 'leftHandShoulder', childActor);
 assert.strictEqual(childLeft.x, left.x * 0.5);
@@ -69,21 +63,23 @@ space.captureBindingFromDisplayed(profile, 'leftHandShoulder', dragged, shiftedC
 const roundTrip = space.resolveAnchor(profile, 'leftHandShoulder', shiftedChild);
 for (const axis of ['x', 'y', 'z']) assert(Math.abs(roundTrip[axis] - dragged[axis]) < 1e-12, `gizmo inverse must round-trip ${axis}`);
 
-// The 0.1679 posterior came from the live ADULT Garanki dump. Migration must
-// capture it at adult scale, not reinterpret it as a half-scale child point.
-space.bindPosteriorFromDisplayed(profile, { x: 0, y: 0.1679, z: 0 }, garankiAdult);
-const posteriorAdult = space.resolveAnchor(profile, 'posterior', garankiAdult);
-assert(Math.abs(posteriorAdult.y - 0.1679) < 1e-12, 'adult Garanki posterior migration must be visually lossless');
-const shiftedAdult = { ...garankiAdult, placementRatio: 1.05 };
+space.bindPosteriorFromDisplayed(profile, { x: 0, y: 0.1679, z: 0 }, adult);
+const posteriorAdult = space.resolveAnchor(profile, 'posterior', adult);
+assert(Math.abs(posteriorAdult.y - 0.1679) < 1e-12, 'posterior migration must be visually lossless');
+const shiftedAdult = { ...adult, placementRatio: 1.05 };
 const posteriorShifted = space.resolveAnchor(profile, 'posterior', shiftedAdult);
-assert(Math.abs(posteriorShifted.y - (0.1679 + garankiAdult.modelHeight * 0.10)) < 1e-12, 'adult posterior must follow portrait Y after migration');
+assert(Math.abs(posteriorShifted.y - (0.1679 + adult.modelHeight * 0.10)) < 1e-12, 'posterior must follow portrait Y after migration');
 const posteriorChild = space.resolveAnchor(profile, 'posterior', childActor);
-assert(Math.abs(posteriorChild.y - 0.1679 * 0.5) < 1e-12, 'a real child actor must derive its posterior from the same adult portrait binding at child scale');
+assert(Math.abs(posteriorChild.y - 0.1679 * 0.5) < 1e-12, 'child scale must derive from the same adult portrait binding');
 
 assert.match(source, /portraitBindingPreservingNormalizer/, 'Animation Author imports must preserve portraitBinding');
 assert.match(source, /portraitBoundHandleAnimationTransformChanged/, 'rig gizmo writes must use the inverse portrait transform');
 assert.match(source, /dataset\?\.animationAuthorMode === 'rig'/,
   'portrait-binding inverse must never intercept ordinary multi\/single animation transforms');
+assert.match(source, /const liveResolvedPosterior = profile\.resolvedPosteriorPosition;[\s\S]*const hasLiveResolvedPosterior = Number\.isFinite\(Number\(liveResolvedPosterior\?\.y\)\);[\s\S]*if \(!hasLiveResolvedPosterior\) \{/,
+  'hand solves must preserve the live posterior published by the rigger and only derive a binding when no live value exists');
+assert.match(source, /posterior: Number\.isFinite\(Number\(liveResolvedPosterior\?\.y\)\)[\s\S]*positionOf\(liveResolvedPosterior\)/,
+  'hand debug output must report the same live posterior that placement consumes');
 assert.match(source, /applyCharacterPortraitPlacementV1530/, 'portrait Y edits must resync attachment anchors immediately');
 assert.match(source, /transformOrder: 'portrait binding -> body\/child scale \+ portrait Y -> deadzone\/facing rotation -> world'/,
   'export metadata must explicitly keep deadzone rotation after portrait-bound attachment placement');
