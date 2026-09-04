@@ -478,6 +478,12 @@
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
       cookingState: {},               // quality buckets, generated meals, and active food effects
+      // A brand-new member has no legacy favor to fix, so it starts already
+      // "migrated" — see game.js's DialogueContent.loadNpcRelationships/
+      // _applyLegacyFavorRescale. A member saved before this field existed
+      // reads it back as undefined/falsy, which is what triggers the
+      // one-time favor reset.
+      npcFavorRescaleApplied: true,
       joinedAt:         Date.now(),
     };
   }
@@ -1201,6 +1207,7 @@
       nonGearInventory:  { ...(memberState.nonGearInventory || {}) },
       packClothing:      [...(memberState.packClothing || [])],
       npcRelationships:  { ...(memberState.npcRelationships || {}) },
+      npcFavorRescaleApplied: !!memberState.npcFavorRescaleApplied,
       questProgress:     { ...(memberState.questProgress || {}) },
       alcoholBottleSwigs: { ...(memberState.alcoholBottleSwigs || {}) },
       npcAlcoholState: { ...(memberState.npcAlcoholState || {}) },
@@ -1562,6 +1569,7 @@
       playerData.nonGearInventory = { ...memberState.nonGearInventory };
       playerData.packClothing   = [...memberState.packClothing];
       playerData.npcRelationships = { ...memberState.npcRelationships };
+      playerData.npcFavorRescaleApplied = !!memberState.npcFavorRescaleApplied;
       playerData.questProgress  = { ...memberState.questProgress };
       playerData.alcoholBottleSwigs = { ...(memberState.alcoholBottleSwigs || {}) };
       playerData.npcAlcoholState = { ...(memberState.npcAlcoholState || {}) };
