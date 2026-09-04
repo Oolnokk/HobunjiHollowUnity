@@ -2,9 +2,9 @@
 // character portrait-anchor coordinate space.
 //
 // Character attachment points are authored against the UNROTATED portrait, not
-// against the outer character/world rig.  A point therefore follows the same
+// against the outer character/world rig. A point therefore follows the same
 // portrait-scale and portrait-Y changes as the pixel it was placed over, before
-// camera/deadzone facing rotation is applied.  Hand/foot size multipliers remain
+// camera/deadzone facing rotation is applied. Hand/foot size multipliers remain
 // independent; only body-location anchors use this coordinate space.
 (function (global) {
   'use strict';
@@ -75,13 +75,7 @@
     const modelHeight = positive(userData.portraitModelHeight, modelWidth);
     const currentScale = positive(userData.portraitScaleMultiplier, anatomy.portraitScale);
     const placementRatio = finite(userData.portraitVerticalPlacementRatio, anatomy.placementRatio);
-    return {
-      modelWidth,
-      modelHeight,
-      currentScale,
-      adultScale: anatomy.portraitScale,
-      placementRatio,
-    };
+    return { modelWidth, modelHeight, currentScale, adultScale: anatomy.portraitScale, placementRatio };
   }
 
   function actorScaleFactor(metrics) {
@@ -221,10 +215,8 @@
   };
   global.HobunjiCharacterPortraitAnchorSpace = portraitAnchorSpace;
 
-  // Existing mount/posterior consumers call the shared characterPosteriorY helper
-  // with only modelHeight.  Preserve that API while teaching it the new portrait
-  // binding when an exported profile carries one.  Legacy profiles still fall
-  // through to the exact previous formula.
+  // Preserve the old characterPosteriorY API for mount consumers, but let new
+  // exported posterior bindings win when present.
   const priorRigMath = global.HOBUNJI_ATTACHMENT_RIG_MATH;
   if (priorRigMath?.characterPosteriorY && !priorRigMath.characterPosteriorY.__hobunjiPortraitBound) {
     const priorPosteriorY = priorRigMath.characterPosteriorY.bind(priorRigMath);
@@ -254,7 +246,6 @@
   function installScaleFreePlacement(THREE, rig) {
     const parent = rig?.parent;
     if (!parent?.isObject3D || rig.__hobunjiScaleFreeWorldPlacement) return rig;
-
     const parentWorldQuaternion = new THREE.Quaternion();
     const localQuaternion = new THREE.Quaternion();
 
@@ -278,7 +269,6 @@
     rig.getDebug = function scaleFreeHandDebug() {
       return { ...(originalDebug?.() || {}), worldQuaternionBasis: 'scale-free-hierarchy' };
     };
-
     Object.defineProperty(rig, '__hobunjiScaleFreeWorldPlacement', { value: true, configurable: true });
     return rig;
   }
@@ -288,10 +278,8 @@
   };
   scaleFreeAttach.__hobunjiScaleFreeWorldWrapped = true;
 
-  // Shoulder aim loads immediately after this file.  Catch that assignment and
-  // wrap the FINISHED shoulder solver so it sees actor-space positions derived
-  // from portrait-bound anchors.  The mutable profile is restored after every
-  // synchronous solve; only portraitBinding metadata persists.
+  // Shoulder aim loads immediately after this file. Catch that assignment and
+  // wrap the finished solver so it sees portrait-transformed actor positions.
   let activeAttach = scaleFreeAttach;
 
   function withResolvedCharacterProfile(rig, callback) {
@@ -299,8 +287,8 @@
     const metrics = metricsForAvatarRoot(rig?.avatarRoot, profile);
     if (!profile || !metrics) return callback();
     const originals = [];
-    let originalResolvedPosterior = profile.resolvedPosteriorPosition;
-    let hadResolvedPosterior = Object.prototype.hasOwnProperty.call(profile, 'resolvedPosteriorPosition');
+    const originalResolvedPosterior = profile.resolvedPosteriorPosition;
+    const hadResolvedPosterior = Object.prototype.hasOwnProperty.call(profile, 'resolvedPosteriorPosition');
     try {
       for (const name of HAND_SHOULDERS) {
         const anchor = profile?.anchors?.[name];
@@ -389,13 +377,8 @@
     hands.attach = scaleFreeAttach;
   }
 
-  // Animation Author integration.  The giant inline author keeps profile data in
-  // adult species/gender space, while each preview actor can additionally be a
-  // child.  Wrap its final V15.45 functions after repository runtime startup so:
-  //   profile -> gizmo applies the portrait transform;
-  //   gizmo -> profile applies its inverse;
-  //   portrait Y edits re-resolve every anchor immediately;
-  //   normalizer/import preserves the new binding metadata.
+  // Animation Author integration. Its stored profile remains adult species/gender
+  // data while each preview actor can additionally be a child.
   function installAnimationAuthorPortraitAnchorBridge() {
     if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(global.location?.pathname || '')) return true;
     const PATCH_ID = 'animation-author-character-portrait-anchor-space-v1';
@@ -435,9 +418,7 @@
         const anchor = profile.anchors?.[name];
         if (!group || !anchor) continue;
         if (name === 'posterior' && !validBinding(anchor.portraitBinding)) {
-          // The V15.39 posterior is derived rather than stored.  Capture its
-          // ALREADY-CORRECT displayed point as the migration reference so this
-          // coordinate-system fix does not undo the user's posterior calibration.
+          // Preserve the already-fixed displayed posterior as the migration point.
           bindPosteriorFromDisplayed(profile, group.position, metrics);
         } else {
           ensureStoredBinding(profile, name, metrics);
@@ -484,7 +465,8 @@
     const baseHandleTransform = global.handleAnimationTransformChanged;
     global.handleAnimationTransformChanged = function portraitBoundHandleAnimationTransformChanged(source, changedTarget) {
       const actor = global.selectedAnimationActor?.();
-      const isRigEdit = actor?.source?.type === 'npc' && (changedTarget === 'rigAnchor' || changedTarget == null);
+      const rigMode = global.document?.body?.dataset?.animationAuthorMode === 'rig';
+      const isRigEdit = actor?.source?.type === 'npc' && rigMode && (changedTarget === 'rigAnchor' || changedTarget == null);
       const name = isRigEdit ? global.selectedRigAnchorName?.(actor) : null;
       const group = name ? actor?.rigAnchors?.[name] : null;
       const profile = isRigEdit ? global.attachmentRigProfileForActor?.(actor) : null;
@@ -494,7 +476,7 @@
       if (name === 'posterior') {
         captureBindingFromDisplayed(profile, name, group.position, metrics);
         mirrorPosteriorBindingToRule(profile);
-        const result = baseHandleTransform.apply(this, arguments); // Retains the old percentage mirror for backwards compatibility.
+        const result = baseHandleTransform.apply(this, arguments);
         mirrorPosteriorBindingToRule(profile);
         applyBindingsToActor(actor, profile);
         return result;
@@ -502,11 +484,9 @@
 
       const binding = captureBindingFromDisplayed(profile, name, group.position, metrics);
       const displayed = { x: group.position.x, y: group.position.y, z: group.position.z };
-      const adultPosition = resolveAnchor(profile, name, adultMetrics(metrics));
-      group.position.set(adultPosition.x, adultPosition.y, adultPosition.z);
+      const compatibilityPosition = resolveAnchor(profile, name, adultMetrics(metrics));
+      group.position.set(compatibilityPosition.x, compatibilityPosition.y, compatibilityPosition.z);
       const result = baseHandleTransform.apply(this, arguments);
-      // V15.7 replaces the whole transform snapshot while saving a gizmo edit,
-      // so reattach the portrait-binding metadata after that compatibility write.
       if (profile.anchors?.[name]) profile.anchors[name].portraitBinding = clone(binding);
       group.position.set(displayed.x, displayed.y, displayed.z);
       applyBindingsToActor(actor, profile);
@@ -540,9 +520,6 @@
     global.__HobunjiAnimationAuthorPortraitAnchorBridge = PATCH_ID;
     global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
     global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.characterPortraitAnchorBridge = 'installed after final Animation Author wrappers';
-    // Existing restored actors can already be present if repository loading was
-    // unusually fast.  Their next profile application is wrapped; also resync the
-    // current selected actor immediately when possible.
     const selected = global.selectedAnimationActor?.();
     if (selected?.source?.type === 'npc') applyBindingsToActor(selected);
     return true;
