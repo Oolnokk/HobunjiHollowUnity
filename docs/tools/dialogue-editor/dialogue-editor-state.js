@@ -30,6 +30,7 @@ const EXPRESSION_OPTIONS=['neutral','smile','frown','laugh','yap'];
 const REVEAL_SPEED_OPTIONS=['normal','slow','fast','instant'];
 const CHOICE_ACTION_TYPES=[
   {type:'setLocalNickname',label:'Set nickname',field:'value',fieldLabel:'Nickname'},
+  {type:'adjustRapport',label:'Adjust rapport',field:'amount',fieldLabel:'Rapport delta'},
   {type:'openShop',label:'Open shop',field:'pool',fieldLabel:'Shop',kind:'shopSelect'},
   {type:'openCraftMenu',label:'Open craft menu',field:null},
   {type:'startChat',label:'Start chat',field:null},

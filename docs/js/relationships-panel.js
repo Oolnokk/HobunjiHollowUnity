@@ -57,6 +57,8 @@
         ensureChathead(npcId, profile);
         const name = rec?.name || npcId;
         const progressNote = next != null ? `${next - favor} favor to Tier ${tier + 1}` : 'max tier';
+        const rapport = Math.max(0, Math.min(100, Number(window.NpcRapport?.get?.(npcId) || 0))); // Used to render the NPC's temporary daily social affinity without altering permanent friendship sorting.
+        const rapportPct = Number.isFinite(rapport) ? rapport : 0; // Used as the clamped width/value for the 0–100 rapport bar.
         const row = document.createElement('div');
         row.className = 'shop-row';
         row.innerHTML = `
@@ -64,6 +66,12 @@
           <div class="sh-info">
             <div class="sh-name">${deps.esc(name)} — Friendship Tier ${tier}</div>
             <div class="sh-desc">${favor} favor (${progressNote})</div>
+            <div class="sh-desc" style="margin-top:5px;display:flex;align-items:center;gap:7px">
+              <span style="min-width:78px">Rapport ${Math.round(rapportPct)}/100</span>
+              <span role="progressbar" aria-label="Daily rapport" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(rapportPct)}" style="display:inline-block;flex:1;min-width:72px;max-width:190px;height:7px;border:1px solid rgba(255,255,255,.2);border-radius:999px;overflow:hidden;background:rgba(0,0,0,.2)">
+                <span style="display:block;height:100%;width:${rapportPct}%;background:currentColor;opacity:.72"></span>
+              </span>
+            </div>
             <div class="sh-desc">${discoveredGiftTraitsHtml(npcId)}</div>
           </div>
         `;

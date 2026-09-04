@@ -525,3 +525,13 @@ if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.path
   impactTabsScript.defer = true;
   document.head.appendChild(impactTabsScript);
 }
+
+// The Building Interior Author keeps its selected-furniture state inside a
+// large inline closure, so attach the small NPC wardrobe authoring adapter as
+// a tool-specific extension instead of duplicating/restructuring that editor.
+if (/\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname)) {
+  const npcWardrobeScript = document.createElement('script'); // Used to add instance-level npcWardrobeFor authoring to the selected-furniture inspector.
+  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20260904a';
+  npcWardrobeScript.defer = true;
+  document.head.appendChild(npcWardrobeScript);
+}
