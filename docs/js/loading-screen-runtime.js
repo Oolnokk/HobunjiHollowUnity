@@ -23,6 +23,12 @@
     scriptScrollPhase: 0,
     lastFrameTime: 0,
     els: null,
+    generation: 0, // Bumped by hide() so a show() still awaiting its fonts/config
+                   // fetch can tell it was cancelled and must not paint the
+                   // overlay after the fact -- see show()'s call sites (e.g.
+                   // enterZone/enterBuilding), several of which fire-and-forget
+                   // show() right before a synchronous rebuild and call hide()
+                   // immediately after, well before this async chain settles.
   };
 
   function ensureFontsLoaded() {
@@ -144,9 +150,16 @@
   // Shows a random entry and resolves after the browser has actually
   // painted it -- callers doing a synchronous (blocking) zone rebuild
   // right after this should await it, or the overlay would never appear
-  // before the main thread gets busy.
+  // before the main thread gets busy. Some call sites fire-and-forget this
+  // instead (enterBuilding/enterZone don't all await it) and call hide()
+  // immediately afterward, well before the fonts/config fetch below can
+  // possibly settle -- the generation check makes that a no-op instead of
+  // painting a black overlay that hide() already fired for and nothing
+  // will ever clear again.
   async function show() {
+    const myGeneration = ++state.generation;
     await Promise.all([ensureFontsLoaded(), ensureConfigLoaded()]);
+    if (state.generation !== myGeneration) return; // hide() (or a newer show()) already ran
     const config = await state.configPromise;
     const els = buildDom();
     const settings = config.settings || {};
@@ -171,9 +184,11 @@
     // Two rAFs: the first is scheduled before the browser's next paint: the
     // second only fires after that paint has actually happened.
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (state.generation !== myGeneration) hide(); // hide() ran while we were waiting on the paint
   }
 
   function hide() {
+    state.generation++;
     state.visible = false;
     if (state.motionRaf) { cancelAnimationFrame(state.motionRaf); state.motionRaf = null; }
     state.els?.root.classList.remove('visible');

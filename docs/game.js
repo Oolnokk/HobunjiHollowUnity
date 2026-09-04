@@ -12368,7 +12368,11 @@
         // only covers a zone's first-ever build in a session, not a
         // rebuild-after-eviction -- matches buildZoneScene's own cache check.
         const needsBuild = _dirtyZoneScenes.has(mapId) || !_zoneScenes.has(mapId);
-        if (needsBuild) window.LoadingScreenRuntime?.show();
+        // Awaited so the overlay actually paints (show() resolves after two
+        // rAFs) before buildZoneScene's synchronous, potentially multi-second
+        // rebuild blocks the main thread -- see LoadingScreenRuntime.show()'s
+        // own doc comment.
+        if (needsBuild) await window.LoadingScreenRuntime?.show();
         const zi = buildZoneScene(mapId, col, row);
         if (!zi) { if (needsBuild) window.LoadingScreenRuntime?.hide(); return; }
         window.ReagentPlants.ensureZoneReagents(mapId);
