@@ -16,6 +16,10 @@
     if (typeof window.hobunjiTransformSpeciesId === 'function') return normalizeSpecies(window.hobunjiTransformSpeciesId(species));
     return species === 'rakakoan' ? 'kenkari' : species === 'ghoul' ? 'mao-ao' : species;
   };
+  const nativeFrameAllAtInstall = (() => {
+    try { return typeof frameAllAnimationActors === 'function' ? frameAllAnimationActors : null; }
+    catch (_) { return null; }
+  })();
 
   let lastActor = null;
 
@@ -170,9 +174,7 @@
   }
 
   function frameAll(view) {
-    try {
-      if (typeof frameAllAnimationActors === 'function' && frameAllAnimationActors !== frameAll) return frameAllAnimationActors(view);
-    } catch (_) {}
+    return nativeFrameAllAtInstall?.(view);
   }
 
   function strictAppearance(npc) {
