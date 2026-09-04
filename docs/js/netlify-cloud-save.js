@@ -715,12 +715,18 @@
     if (!row) return;
     const status = row.querySelector('[data-hcs-inline-status]');
     if (!status) return;
-    if (_availability === 'checking') status.textContent = 'Checking Netlify cloud service…';
-    else if (_availability !== 'ready') status.textContent = 'Unavailable here; open the Netlify deployment or enable Identity.';
-    else if (!_user) status.textContent = 'Not signed in. Browser/local-folder saves still work normally.';
-    else if (_conflict) status.textContent = `Signed in as ${_user.email}. Conflict requires a choice before autosync.`;
-    else if (_remote) status.textContent = `Signed in as ${_user.email}. Cloud revision ${_remote.revision}; ${readLinkState()?.autoSyncArmed ? 'autosync on' : 'autosync paused'}.`;
-    else status.textContent = `Signed in as ${_user.email}. No cloud save yet.`;
+    let text;
+    if (_availability === 'checking') text = 'Checking Netlify cloud service…';
+    else if (_availability !== 'ready') text = 'Unavailable here; open the Netlify deployment or enable Identity.';
+    else if (!_user) text = 'Not signed in. Browser/local-folder saves still work normally.';
+    else if (_conflict) text = `Signed in as ${_user.email}. Conflict requires a choice before autosync.`;
+    else if (_remote) text = `Signed in as ${_user.email}. Cloud revision ${_remote.revision}; ${readLinkState()?.autoSyncArmed ? 'autosync on' : 'autosync paused'}.`;
+    else text = `Signed in as ${_user.email}. No cloud save yet.`;
+    // Assigning textContent always replaces the child text node, even when
+    // the string is unchanged -- that's a childList mutation, which the
+    // document.body observer below reacts to by calling this function again,
+    // forever. Skipping no-op writes breaks that self-triggering loop.
+    if (status.textContent !== text) status.textContent = text;
   }
 
   function renderAll() {
@@ -752,10 +758,23 @@
       notify();
     }
 
+    // rAF-throttled (not a raw per-mutation callback): renderSettingsRow()
+    // itself mutates the observed subtree (see its own comment), so an
+    // unthrottled callback here would re-trigger itself every microtask
+    // instead of every frame -- a storm that never lets the browser paint,
+    // run rAF, or dispatch input events, so it looks like the whole page has
+    // hung. Coalescing to one pass per frame keeps this self-triggering but
+    // bounded, same as save-startup-gate.js's own document.body observer.
+    let _bodyObserverScheduled = false;
     const observer = new MutationObserver(() => {
-      ensureLauncher();
-      ensureSettingsRow();
-      renderSettingsRow();
+      if (_bodyObserverScheduled) return;
+      _bodyObserverScheduled = true;
+      requestAnimationFrame(() => {
+        _bodyObserverScheduled = false;
+        ensureLauncher();
+        ensureSettingsRow();
+        renderSettingsRow();
+      });
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
