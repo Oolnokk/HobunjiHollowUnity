@@ -26,7 +26,7 @@ assert.match(socialSource, /eventDriven:\s*true/, 'Rapport v2 identifies its eve
 assert.match(wardrobeSource, /eventDriven:\s*true/, 'wardrobe v2 identifies its event-driven runtime');
 assert.match(socialSource, /effectiveInhibition/, 'liquor gating reads the real inhibition runtime result field');
 assert.match(socialSource, /mod\?\.key === 'player-dance-invitation'/, 'liquor gating reads the real inhibition modifier key');
-assert.match(loaderSource, /npc-furniture-wardrobe-bridge-v2\.js[\s\S]*?npc-social-relationship-bridge-v2\.js/, 'bootstrap loads only the event-driven v2 bridges');
+assert.match(loaderSource, /npc-furniture-wardrobe-bridge-v3\.js[\s\S]*?npc-social-relationship-bridge-v2\.js/, 'bootstrap loads wardrobe v3 before event-driven Rapport v2');
 assert.doesNotMatch(loaderSource, /npc-furniture-wardrobe-bridge\.js\?v=/, 'bootstrap no longer executes polling wardrobe v1');
 assert.doesNotMatch(loaderSource, /npc-social-relationship-bridge\.js\?v=/, 'bootstrap no longer executes polling Rapport v1');
 
