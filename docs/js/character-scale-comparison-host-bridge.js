@@ -47,20 +47,27 @@
     return Number.isFinite(number) ? Math.max(0.25, Math.min(2, number)) : null;
   }
 
-  // Accepts either a { x, y, head } triple or a legacy single uniform number
-  // (treated as that same value on all three axes). Returns a fully-resolved
-  // { x, y, head } triple, or null if nothing usable was supplied.
+  function normalizedOffsetYNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(-0.5, Math.min(0.5, number)) : null;
+  }
+
+  // Accepts either a { x, y, head, offsetY } tuple or a legacy single uniform
+  // number (treated as that same value on x/y/head; offsetY defaults to 0,
+  // it has no legacy single-field form). Returns a fully-resolved tuple, or
+  // null if nothing usable was supplied.
   function normalizedRigScale(value) {
     if (value == null) return null;
     if (typeof value === 'number' || typeof value === 'string') {
       const uniform = normalizedRigScaleNumber(value);
-      return uniform == null ? null : { x: uniform, y: uniform, head: uniform };
+      return uniform == null ? null : { x: uniform, y: uniform, head: uniform, offsetY: 0 };
     }
     const x = normalizedRigScaleNumber(value.x);
     const y = normalizedRigScaleNumber(value.y);
     const head = normalizedRigScaleNumber(value.head);
-    if (x == null && y == null && head == null) return null;
-    return { x: x ?? y ?? head ?? 1, y: y ?? x ?? head ?? 1, head: head ?? x ?? y ?? 1 };
+    const offsetY = normalizedOffsetYNumber(value.offsetY);
+    if (x == null && y == null && head == null && offsetY == null) return null;
+    return { x: x ?? y ?? head ?? 1, y: y ?? x ?? head ?? 1, head: head ?? x ?? y ?? 1, offsetY: offsetY ?? 0 };
   }
 
   function anatomyRigScale(anatomy) {
@@ -68,7 +75,8 @@
     const x = normalizedRigScaleNumber(anatomy.rigScaleX);
     const y = normalizedRigScaleNumber(anatomy.rigScaleY);
     const head = normalizedRigScaleNumber(anatomy.headScale);
-    if (x != null || y != null || head != null) return normalizedRigScale({ x, y, head });
+    const offsetY = normalizedOffsetYNumber(anatomy.headOffsetY);
+    if (x != null || y != null || head != null || offsetY != null) return normalizedRigScale({ x, y, head, offsetY });
     return normalizedRigScale(anatomy.rigScale); // Pre-split single-field profiles.
   }
 
@@ -80,6 +88,7 @@
       profile.anatomy.rigScaleX = value.x;
       profile.anatomy.rigScaleY = value.y;
       profile.anatomy.headScale = value.head;
+      profile.anatomy.headOffsetY = value.offsetY;
     }
   }
 
@@ -108,7 +117,7 @@
       const scale = anatomyRigScale(profile?.anatomy);
       if (scale != null) return scale;
     }
-    return normalizedRigScale(fallback) ?? { x: 1, y: 1, head: 1 };
+    return normalizedRigScale(fallback) ?? { x: 1, y: 1, head: 1, offsetY: 0 };
   }
 
   function captureSharedRigScales({ persist = true } = {}) {
@@ -119,7 +128,7 @@
       const scale = anatomyRigScale(profile?.anatomy);
       if (!key || scale == null) continue;
       const existing = rigScaleOverrides.get(key);
-      if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head) {
+      if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head || existing.offsetY !== scale.offsetY) {
         rigScaleOverrides.set(key, scale);
         changed = true;
       }
@@ -132,7 +141,8 @@
   // authored fields from every live shared profile so scaleFor()'s normal fallback
   // chain resolves straight through to the repository's own authored defaults
   // (character-rig-scale-defaults.js) — not a frozen snapshot of them, so a later
-  // change to that file is picked up without needing another reset.
+  // change to that file is picked up without needing another reset. Also clears
+  // every per-NPC age override, since "reset everything" should mean everything.
   function resetToRepositoryDefaults() {
     rigScaleOverrides.clear();
     try { localStorage.removeItem(RIG_SCALE_STORAGE_KEY); } catch (_) {}
@@ -144,11 +154,56 @@
       delete profile.anatomy.rigScaleX;
       delete profile.anatomy.rigScaleY;
       delete profile.anatomy.headScale;
+      delete profile.anatomy.headOffsetY;
       delete profile.anatomy.rigScale; // Pre-split legacy field — also cleared so it can't resurrect an old override.
       reset += 1;
     }
-    window.HobunjiCharacterRigScale?.installProfileDefaults?.(); // Re-derives x/y/head immediately instead of waiting for the next bootstrap poll tick.
+    window.HobunjiCharacterRigScale?.installProfileDefaults?.(); // Re-derives x/y/head/offsetY immediately instead of waiting for the next bootstrap poll tick.
+    resetNpcAges();
     return reset;
+  }
+
+  // Per-NPC age (0-1, "how hunched") is instance data, not species/gender-authored
+  // data — it never lives in HOBUNJI_ATTACHMENT_RIG_PROFILES or the attachment-rig
+  // export, only in its own storage key, kept simple/separate from the rigScale
+  // round-trip machinery above.
+  const NPC_AGE_STORAGE_KEY = 'hobunjiFullCharacterNpcAges.v1';
+  const npcAgeOverrides = new Map();
+
+  function normalizedAge(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : null;
+  }
+
+  function persistNpcAgeOverrides() {
+    try {
+      localStorage.setItem(NPC_AGE_STORAGE_KEY, JSON.stringify(Object.fromEntries(npcAgeOverrides)));
+    } catch (_) {}
+  }
+
+  function setNpcAge(npcId, age) {
+    const id = String(npcId || '');
+    const value = normalizedAge(age);
+    if (!id || value == null) return null;
+    if (value <= 0) npcAgeOverrides.delete(id); else npcAgeOverrides.set(id, value);
+    persistNpcAgeOverrides();
+    return value;
+  }
+
+  function npcAgeFor(npcId) {
+    return npcAgeOverrides.get(String(npcId || '')) || 0;
+  }
+
+  function resetNpcAges() {
+    npcAgeOverrides.clear();
+    try { localStorage.removeItem(NPC_AGE_STORAGE_KEY); } catch (_) {}
+  }
+
+  function restorePersistedNpcAges() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(NPC_AGE_STORAGE_KEY) || '{}');
+      for (const [id, value] of Object.entries(parsed || {})) setNpcAge(id, value);
+    } catch (_) {}
   }
 
   function restorePersistedRigScales() {
@@ -218,6 +273,7 @@
       profile.anatomy.rigScaleX = scale.x;
       profile.anatomy.rigScaleY = scale.y;
       profile.anatomy.headScale = scale.head;
+      profile.anatomy.headOffsetY = scale.offsetY;
       delete profile.anatomy.rigScale; // Superseded by the x/y/head split; dropped so a re-export never resurrects the ambiguous uniform field.
     }
     return profiles;
@@ -227,8 +283,8 @@
     if (!data || data.schema !== 'hobunji.attachment-rig-profiles.v10') return data;
     data.profiles = mergeRigScalesIntoProfiles(data.profiles || data.attachmentRigProfiles || {});
     data.anatomySemantics ||= {};
-    data.anatomySemantics.rigScale = 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) authored in Full Character Scale, applied uniformly to the floor-relative visual root, hands, feet, and attachment coordinates; headScale is a separate, neck-rig-compensated factor that never inherits the body’s aspect ratio.';
-    data.fullCharacterScaleRoundTripVersion = 2;
+    data.anatomySemantics.rigScale = 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) authored in Full Character Scale, applied uniformly to the floor-relative visual root, hands, feet, and attachment coordinates; headScale is a separate, neck-rig-compensated factor that never inherits the body’s aspect ratio; headOffsetY additionally repositions the head (fraction of model height), composed at runtime with a per-NPC age-hunch factor that is instance data and not part of this export.';
+    data.fullCharacterScaleRoundTripVersion = 3;
     return data;
   }
 
@@ -403,9 +459,9 @@
       exportedAt: new Date().toISOString(),
       profiles,
       anatomySemantics: {
-        rigScale: 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) plus a separate, neck-rig-compensated headScale, authored in Full Character Scale.',
+        rigScale: 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) plus a separate, neck-rig-compensated headScale and headOffsetY, authored in Full Character Scale.',
       },
-      fullCharacterScaleRoundTripVersion: 2,
+      fullCharacterScaleRoundTripVersion: 3,
       exportSource: privateProfiles ? 'animation-author-public-rig-profiles+full-character-scale' : 'full-character-scale-shared-profiles',
     };
   }
@@ -469,6 +525,7 @@
       importProjectClear: typeof api.importProject === 'function' && typeof api.exportProject === 'function',
       nativeRigProfilesReadable: typeof api.getAttachmentRigProfiles === 'function',
       rigScaleRoundTripOverrides: rigScaleOverrides.size,
+      npcAgeOverrides: npcAgeOverrides.size,
       rigScaleExportBlobPatch: !!window.Blob?.__hobunjiRigScaleExportWrapped,
       selectActor: typeof api.selectActor === 'function',
       sharedProfiles: !!window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters,
@@ -528,6 +585,8 @@
     rigScaleFor,
     captureSharedRigScales,
     resetToRepositoryDefaults,
+    setNpcAge,
+    npcAgeFor,
     frameAll,
     strictAppearance,
     diagnostics,
@@ -554,6 +613,7 @@
   }
 
   restorePersistedRigScales();
+  restorePersistedNpcAges();
   installRigExportBlobPatch();
   installRigScaleRoundTripHooks();
 

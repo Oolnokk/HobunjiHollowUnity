@@ -8,9 +8,17 @@
 // uniform factor: the neck rig bone compensates it against whatever the body
 // axes are doing (see applyHeadCompensation in character-rig-scale.js), so
 // stretching the body's aspect ratio never distorts the meticulously authored
-// head/head-cosmetic/expression proportions. A fresh install has all three
+// head/head-cosmetic/expression proportions. A fresh install has x/y/head all
 // equal to the old single rigScale value per species+gender, so nothing looks
 // different until someone actually pulls an axis apart.
+//
+// headOffsetY is a separate, additive vertical nudge for the head — a
+// fraction of the avatar's own model height (0 = authored position, negative
+// = lower/more hunched, positive = higher) — authored per species+gender and
+// composed at runtime with a separate per-NPC "age" value that can lower it
+// further for a hunched-over look (see ageHunchFraction in
+// character-rig-scale.js). Defaults to 0 for every species+gender: no visual
+// change until it's actually authored.
 (() => {
   'use strict';
 
@@ -28,7 +36,7 @@
     'mashtzarr::female': 1.095,
   });
   const VALUES = Object.freeze(Object.fromEntries( // Used by game/runtime and Animation Author whenever a profile has no explicit override for a given axis.
-    Object.entries(LEGACY_UNIFORM_VALUES).map(([key, uniform]) => [key, Object.freeze({ x: uniform, y: uniform, head: uniform })])
+    Object.entries(LEGACY_UNIFORM_VALUES).map(([key, uniform]) => [key, Object.freeze({ x: uniform, y: uniform, head: uniform, offsetY: 0 })])
   ));
   const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao' }); // Used so transform-equivalent NPC-only species inherit the same full-rig defaults.
 
@@ -40,7 +48,7 @@
     const raw = String(value || '').trim().toLowerCase();
     return raw === 'female' || raw === 'f' ? 'female' : 'male';
   };
-  const scaleFor = (species, gender) => VALUES[`${normalizeSpecies(species)}::${normalizeGender(gender)}`] || { x: 1, y: 1, head: 1 };
+  const scaleFor = (species, gender) => VALUES[`${normalizeSpecies(species)}::${normalizeGender(gender)}`] || { x: 1, y: 1, head: 1, offsetY: 0 };
   const uniformScaleFor = (species, gender) => scaleFor(species, gender).x; // Back-compat for any reader that only ever wanted one number (the pre-split behavior).
 
   window.HOBUNJI_CHARACTER_RIG_SCALE_DEFAULTS = VALUES;

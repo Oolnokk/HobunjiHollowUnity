@@ -59,13 +59,18 @@ assert.strictEqual(profile.anatomy.headScale, 1.125, 'live shared rig profiles m
 assert.deepStrictEqual(plain(api.scaleFor('mao-ao', 'male')), { x: 1.125, y: 1.125, head: 1.125 });
 
 function makeBone() {
-  return { scale: { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } }, updateMatrix() {} };
+  return {
+    scale: { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
+    position: { x: 0, y: 0.4, z: 0 }, // Nonzero baseline Y, matching a real authored neck pivot — proves offset composes with the baseline instead of overwriting it.
+    userData: {},
+    updateMatrix() {},
+  };
 }
-function makeParent(neckJoint = null) {
+function makeParent(neckJoint = null, modelHeight = null) {
   return {
     isObject3D: true,
     scale: { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
-    userData: neckJoint ? { neckRig: { available: true, neckJoint } } : {},
+    userData: neckJoint ? { neckRig: { available: true, neckJoint }, portraitModelHeight: modelHeight } : {},
     children: [],
     updateMatrix() {},
     updateMatrixWorld() {},
@@ -114,7 +119,7 @@ assert.ok(Math.abs(neckJoint.scale.x - (1.1 / 1.3)) < 1e-9, 'neck bone must canc
 assert.ok(Math.abs(neckJoint.scale.y - (1.1 / 0.7)) < 1e-9, 'neck bone must cancel body height stretch and land on the authored head scale');
 assert.strictEqual(neckJoint.scale.z, 1);
 // An avatar with no neck rig (most world creatures/NPCs) must be entirely unaffected.
-assert.strictEqual(api.applyHeadCompensation(makeParent(), 'mao-ao', 'male', 1.1, { x: 1.3, y: 0.7 }), false,
+assert.strictEqual(api.applyHeadCompensation(makeParent(), 'mao-ao', 'male', { x: 1.3, y: 0.7, head: 1.1 }), false,
   'avatars without a neck rig have no head to protect and must be a safe no-op');
 
 // Animation Author's own Full Character Scale editor builds its neck rig through a
@@ -139,9 +144,33 @@ assert.ok(Math.abs(toolNeckJoint.scale.x - (1.1 / 1.3)) < 1e-9,
 assert.ok(Math.abs(toolNeckJoint.scale.y - (1.1 / 0.7)) < 1e-9,
   'the editor-shaped neck rig (no `available` flag) must still be found and compensated');
 
-// clearFromParent must also reset any head compensation back to identity.
+// Head Y offset is authored per species/gender as a fraction of the avatar's own
+// model height, and composes additively with a separate per-NPC age-hunch factor —
+// neither one is baked into shared profile data, both are supplied by the caller.
+const offsetNeckJoint = makeBone();
+const offsetParent = makeParent(offsetNeckJoint, 2); // modelHeight = 2, so a 0.1 fraction is a 0.2 world-unit move.
+const baselineY = offsetNeckJoint.position.y;
+api.applyToParent(offsetParent, 'mao-ao', 'male', { x: 1, y: 1, head: 1, offsetY: 0.1 });
+assert.ok(Math.abs(offsetNeckJoint.position.y - (baselineY + 0.2)) < 1e-9,
+  'headOffsetY must move the neck bone by that fraction of the avatar\'s own model height');
+// Reapplying with age must ADD the age-hunch amount on top of the same authored
+// offset, and must never drift from the original baseline on repeated calls.
+api.applyToParent(offsetParent, 'mao-ao', 'male', { x: 1, y: 1, head: 1, offsetY: 0.1 }, 1);
+const expectedWithAge = baselineY + (0.1 + api.ageHunchFraction(1)) * 2;
+assert.ok(Math.abs(offsetNeckJoint.position.y - expectedWithAge) < 1e-9,
+  'a fully-aged (age=1) NPC must compose the max age-hunch fraction on top of the authored offset');
+assert.ok(api.ageHunchFraction(1) < 0, 'age must only ever lower the head, never raise it');
+assert.strictEqual(api.ageHunchFraction(0), 0, 'age 0 must add no hunch at all');
+// Reapplying with age back at 0 must return to exactly the authored offset — no leftover drift.
+api.applyToParent(offsetParent, 'mao-ao', 'male', { x: 1, y: 1, head: 1, offsetY: 0.1 }, 0);
+assert.ok(Math.abs(offsetNeckJoint.position.y - (baselineY + 0.2)) < 1e-9,
+  'clearing age back to 0 must return exactly to the authored offset, not leave residual drift');
+
+// clearFromParent must also reset any head compensation (scale and Y offset) back to identity.
 api.clearFromParent(headParent);
 assert.deepStrictEqual([neckJoint.scale.x, neckJoint.scale.y, neckJoint.scale.z], [1, 1, 1]);
+api.clearFromParent(offsetParent);
+assert.ok(Math.abs(offsetNeckJoint.position.y - baselineY) < 1e-9, 'clearFromParent must restore the neck bone\'s original authored Y position');
 
 // The real game hook is the procedural-hand floor parent. Avatar body, hands and
 // feet share/inherit this assembled parent, so the runtime must apply the default
@@ -163,10 +192,13 @@ assert.match(source, /coordinateSpace: 'character-floor-parent'/);
 assert.match(source, /Body width \(%\)/);
 assert.match(source, /Body height \(%\)/);
 assert.match(source, /Head scale \(%\)/);
+assert.match(source, /Head Y offset \(%\)/);
 assert.match(source, /anatomy\.rigScale\b/, 'the legacy pre-split rigScale field must still be read as a fallback');
 assert.match(source, /profile\.anatomy\.rigScaleX/);
 assert.match(source, /profile\.anatomy\.rigScaleY/);
 assert.match(source, /profile\.anatomy\.headScale/);
+assert.match(source, /profile\.anatomy\.headOffsetY/);
+assert.match(source, /ageHunchFraction/);
 assert.match(source, /characterRigScaleRuntimeHook = 'ProceduralHandAttachments\.floor-parent'/,
   'runtime diagnostics must identify the real assembled-character hook');
 assert.doesNotMatch(source, /anchor\.position\s*=|anchors\[[^\]]+\]\.position\s*=/,
@@ -221,8 +253,18 @@ assert.match(scaleHostSource, /RigScaleAwareBlob/,
   'native attachment-rig downloads must be patched without replacing their metadata payload');
 assert.match(scaleHostSource, /maaImportInput/,
   'native Rig imports must recover rigScale from the selected JSON');
-assert.match(scaleHostSource, /fullCharacterScaleRoundTripVersion = 2/,
-  'patched v10 exports must identify the x/y/head round-trip extension');
+assert.match(scaleHostSource, /fullCharacterScaleRoundTripVersion = 3/,
+  'patched v10 exports must identify the x/y/head/offsetY round-trip extension');
+assert.match(scaleHostSource, /profile\.anatomy\.headOffsetY = value\.offsetY/,
+  'shared species profiles must receive restored/imported headOffsetY values');
+assert.match(scaleHostSource, /profile\.anatomy\.headOffsetY = scale\.offsetY/,
+  'serialized character profiles must contain headOffsetY');
+assert.match(scaleHostSource, /NPC_AGE_STORAGE_KEY/,
+  'per-NPC age must have its own dedicated persistence key, separate from the species/gender rigScale round-trip');
+assert.match(scaleHostSource, /function setNpcAge/);
+assert.match(scaleHostSource, /function npcAgeFor/);
+assert.match(scaleHostSource, /resetNpcAges\(\)/,
+  'resetting to repo defaults must also clear per-NPC age overrides');
 
 // The ordinary game loads this same bootstrap through held-action-animations,
 // so the default config and runtime scale module are not editor-only features.
@@ -258,12 +300,20 @@ assert.doesNotMatch(scaleBootstrapSource, /character-scale-comparison-camera\.js
   'obsolete private-state camera/picking wrapper must not load with the isolated comparison');
 assert.match(scaleBootstrapSource, /character-scale-comparison\.js\?v=20260904k/,
   'bootstrap must cache-bust the isolated Full Character Scale comparison');
-assert.match(scaleComparisonSource, /maaFullScaleRangeX/,
-  'the comparison tab must expose an independent body-width control');
-assert.match(scaleComparisonSource, /maaFullScaleRangeY/,
-  'the comparison tab must expose an independent body-height control');
-assert.match(scaleComparisonSource, /maaFullScaleRangeHead/,
-  'the comparison tab must expose an independent head-scale control');
+// The five slider rows are rendered through one small scaleRow(axis, ...) template
+// helper (id="maaFullScaleRange${axis}"/"maaFullScaleNum${axis}") rather than five
+// near-identical literal blocks, so these check the call sites, not the interpolated
+// ids — still fails if any of the five controls is dropped or renamed.
+for (const axis of ['X', 'Y', 'Head', 'OffsetY', 'Age']) {
+  assert.match(scaleComparisonSource, new RegExp(`scaleRow\\('${axis}'`),
+    `the comparison tab must expose a ${axis} slider row`);
+}
+assert.match(scaleComparisonSource, /maaFullScaleNum\$\{axis\}/,
+  'each slider must be paired with an editable exact-value entry box, not just a range input');
+assert.match(scaleComparisonSource, /host\(\)\?\.setNpcAge\?\./,
+  'the age slider must persist through the host, not just mutate local UI state');
+assert.match(scaleComparisonSource, /host\(\)\?\.npcAgeFor\?\./,
+  'selecting a character must recover its own persisted age, not reset to 0');
 
 // Regression guard: the comparison lineup builds its own preview avatars directly
 // (deliberately not through Animation Author actors — see the doesNotMatch guards
