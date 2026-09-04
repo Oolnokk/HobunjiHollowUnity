@@ -412,6 +412,15 @@
         backNeckSkin?.weightedGeometry?.dispose();
         frontNeckSkin?.skeleton?.dispose?.();
         backNeckSkin?.skeleton?.dispose?.();
+        // `group` is a freshly built THREE.Group standing in as the avatar's
+        // rendered geometry (see the frontMesh/backMesh convention comment
+        // above), not the `portrait` object buildSinglePlaneAvatarModel
+        // returned. procedural-hand-frame-driver.js's hand rig (and anything
+        // chained onto ProceduralHandAttachments.attach) is registered
+        // against that original `portrait` avatarRoot, so disposing only
+        // `group` disposes the visible geometry but leaves the hand rig
+        // (and its sentinels/records) orphaned on every bandit death.
+        window.PNGPlaneAvatar.disposeAvatarModel?.(portrait);
         window.PNGPlaneAvatar.disposeAvatarModel?.(group);
       },
     };
