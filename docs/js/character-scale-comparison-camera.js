@@ -1,4 +1,5 @@
-// Aspect-aware framing for the deliberately very wide full-character scale lineup.
+// Aspect-aware framing and direct tap/click picking for the deliberately wide
+// full-character scale lineup.
 (() => {
   'use strict';
   if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname)) return;
@@ -37,4 +38,49 @@
   };
   wrapped.__hobunjiFullScaleAspectAware = true;
   frameAllAnimationActors = wrapped;
+
+  function installPicking() {
+    const canvas = document.getElementById('view3d');
+    if (!canvas || canvas.dataset.fullScaleRayPick === '1') return !!canvas;
+    canvas.dataset.fullScaleRayPick = '1';
+    let down = null;
+    canvas.addEventListener('pointerdown', event => {
+      if (document.body.dataset.animationAuthorMode !== 'scale-compare') return;
+      down = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    });
+    canvas.addEventListener('pointerup', event => {
+      if (document.body.dataset.animationAuthorMode !== 'scale-compare' || !down || down.id !== event.pointerId) {
+        down = null;
+        return;
+      }
+      const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+      down = null;
+      if (moved > 8 || typeof state === 'undefined' || typeof animationAuthor === 'undefined' || !state.three?.ready) return;
+      const THREE = state.three.THREE;
+      const camera = state.three.camera;
+      if (!THREE || !camera) return;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const pointer = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -(((event.clientY - rect.top) / rect.height) * 2 - 1),
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(pointer, camera);
+      let best = null;
+      for (const actor of animationAuthor.actors || []) {
+        const target = actor.visualOffset || actor.model || actor.root;
+        const hit = target ? raycaster.intersectObject(target, true)[0] : null;
+        if (hit && (!best || hit.distance < best.distance)) best = { actor, distance: hit.distance };
+      }
+      if (best?.actor?.id) selectAnimationActor(best.actor.id);
+    });
+    return true;
+  }
+
+  let attempts = 0;
+  const timer = setInterval(() => {
+    if (installPicking() || ++attempts >= 600) clearInterval(timer);
+  }, 50);
+  installPicking();
 })();
