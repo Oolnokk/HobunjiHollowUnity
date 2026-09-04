@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <base href="../../">
+  <title>Hobunji Hollow — Foliage Generator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="config/root-totem-config.js?v=20260903-rootcfg1"></script>
+  <script src="js/sprite-recolor.js?v=20260903-rootcfg1"></script>
+  <script src="js/perp-rotation.js?v=20260903-rootcfg1"></script>
+  <script src="js/deadzone-billboard.js?v=20260903-rootcfg1"></script>
+  <script src="js/foliage-generator.js?v=20260903-rootcfg1"></script>
+  <script src="js/structural-wrap.js?v=20260903-rootcfg1"></script>
+  <script src="js/root-totem-plants.js?v=20260903-rootcfg1"></script>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    :root{--panel:#111b28;--border:rgba(255,255,255,.13);--accent:#6aa7ff;--text:#edf5ff;--muted:#9fb4cf}
+    button,select,input{font:inherit}button{border:1px solid rgba(106,167,255,.35);background:rgba(106,167,255,.13);color:var(--text);border-radius:8px;padding:7px 10px;font-weight:700;cursor:pointer}button:hover{background:rgba(106,167,255,.23)}
+    select,input[type=number]{width:100%;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);border-radius:7px;padding:6px 8px}input[type=range]{width:100%;accent-color:var(--accent)}code{color:#b8d4ff}
+    #app{display:grid;grid-template-columns:minmax(270px,330px) minmax(0,1fr);height:100%}#sidebar{min-height:0;overflow:auto;background:var(--panel);border-right:1px solid var(--border);padding:12px;-webkit-overflow-scrolling:touch}#sidebar h1{font-size:16px;margin:0 0 3px}.subtitle{font-size:11px;color:var(--muted);margin-bottom:12px}
+    .card{background:rgba(0,0,0,.12);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px}.card h2{font-size:11px;text-transform:uppercase;letter-spacing:.45px;color:var(--muted);margin:0 0 8px}.row{display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:8px;align-items:center;margin:7px 0}.row label{font-size:12px}.slider-row{margin:8px 0}.slider-head{display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-bottom:2px}.slider-head output{color:#b8d4ff;font-family:ui-monospace,monospace}.actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}.help,.advanced-note{font-size:11px;color:var(--muted)}
+    #viewportWrap{position:relative;min-width:0;min-height:0;background:radial-gradient(circle at 50% 35%,#163041 0,#09121c 52%,#050b11 100%)}#viewport{position:absolute;inset:0}#status{position:absolute;left:10px;top:10px;max-width:min(560px,calc(100% - 20px));padding:6px 9px;border:1px solid var(--border);border-radius:8px;background:rgba(5,10,16,.78);font:11px/1.35 ui-monospace,monospace;color:#cfe1f8;pointer-events:none;white-space:pre-wrap}#diagnostics{margin:0;max-height:180px;overflow:auto;padding:8px;border:1px solid rgba(69,214,160,.22);border-radius:7px;background:rgba(0,0,0,.24);color:#b8f5cf;font:10px/1.4 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}#errorBox{display:none;margin-bottom:8px;padding:7px;border:1px solid rgba(251,113,133,.4);border-radius:7px;background:rgba(251,113,133,.09);color:#fecdd3;font-size:11px;white-space:pre-wrap}.pill{display:inline-block;border:1px solid rgba(69,214,160,.35);border-radius:999px;padding:2px 7px;color:#9ef0ce;background:rgba(69,214,160,.08);font-size:10px}.advanced-note{margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
+    @media(max-width:760px){#app{grid-template-columns:1fr;grid-template-rows:minmax(250px,48vh) minmax(0,1fr)}#sidebar{grid-row:2;border-right:none;border-top:1px solid var(--border);padding:9px}#viewportWrap{grid-row:1}.card{padding:8px;margin-bottom:8px}.row{grid-template-columns:minmax(0,1fr) 82px}#status{font-size:9px;top:6px;left:6px;max-width:calc(100% - 12px)}}
+  </style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <h1>🌿 Foliage Generator</h1><div class="subtitle">Runtime-backed foliage authoring + generic structural wrap lab</div><div id="errorBox" role="alert"></div>
+    <section class="card"><h2>Preview</h2><div class="row"><label for="plantType">Plant type</label><select id="plantType"><option value="rootTotem">Root Totem</option><option value="crownedPine">Crowned Pine</option><option value="shadewood">Shadewood</option><option value="bush">Bush</option><option value="stump">Stump</option></select></div><div class="row"><label for="seed">Seed</label><input id="seed" type="number" step="1"></div><div class="actions"><button id="randomizeSeed">🎲 Randomize</button><button id="rebuild">↻ Rebuild</button></div></section>
+    <section class="card" id="rootTotemControls"><h2>Root Totem <span class="pill">shared runtime config</span></h2><div class="row"><label for="sourceTree">Source tree</label><select id="sourceTree"><option value="crownedPine">Crowned Pine</option><option value="shadewood">Shadewood</option></select></div><div class="row"><label for="treeCount">Tree count</label><input id="treeCount" type="number"></div>
+      <div class="slider-row"><div class="slider-head"><label for="height">Height</label><output id="heightOut"></output></div><input id="height" type="range"></div><div class="slider-row"><div class="slider-head"><label for="turns">Wrap turns</label><output id="turnsOut"></output></div><input id="turns" type="range"></div><div class="slider-row"><div class="slider-head"><label for="radiusStart">Base clearance</label><output id="radiusStartOut"></output></div><input id="radiusStart" type="range"></div><div class="slider-row"><div class="slider-head"><label for="radiusEnd">Top clearance</label><output id="radiusEndOut"></output></div><input id="radiusEnd" type="range"></div><div class="slider-row"><div class="slider-head"><label for="crossStart">Wrapped-tree width at base</label><output id="crossStartOut"></output></div><input id="crossStart" type="range"></div><div class="slider-row"><div class="slider-head"><label for="crossEnd">Wrapped-tree width at top</label><output id="crossEndOut"></output></div><input id="crossEnd" type="range"></div><div class="slider-row"><div class="slider-head"><label for="hostSway">Combined-trunk smoothing</label><output id="hostSwayOut"></output></div><input id="hostSway" type="range"></div><div id="rootTotemConfigNote" class="advanced-note"></div>
+    </section>
+    <section class="card"><h2>Authoring</h2><div class="actions"><button id="copyJson">📋 Copy JSON</button><button id="downloadJson">⬇ JSON</button></div><div class="help" style="margin-top:7px">Runtime Root Totem defaults, limits, lighting, bottle/rope settings, and canonical recipe come from <code>config/root-totem-config.js</code>.</div></section>
+    <section class="card"><h2>Visible diagnostics</h2><pre id="diagnostics">Initializing…</pre></section>
+  </aside>
+  <main id="viewportWrap"><div id="viewport"></div><div id="status">Initializing foliage runtime…</div></main>
+</div>
+<script src="tools/foliage-generator/tool.js?v=20260903-rootcfg1"></script>
+</body>
+</html>
