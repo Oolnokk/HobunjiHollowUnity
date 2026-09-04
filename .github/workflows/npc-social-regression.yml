@@ -5,6 +5,7 @@ on:
     paths:
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
+      - 'docs/js/npc-furniture-wardrobe-bridge-v3.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
@@ -12,11 +13,13 @@ on:
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-npc-wardrobe-placeholders.js'
       - '.github/workflows/npc-social-regression.yml'
   pull_request:
     paths:
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
+      - 'docs/js/npc-furniture-wardrobe-bridge-v3.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
@@ -24,6 +27,7 @@ on:
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-npc-wardrobe-placeholders.js'
       - '.github/workflows/npc-social-regression.yml'
 
 permissions:
@@ -43,6 +47,7 @@ jobs:
         run: |
           node --check docs/js/npc-social-relationship-bridge-v2.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v2.js
+          node --check docs/js/npc-furniture-wardrobe-bridge-v3.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
           node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/dialogue-content.js
@@ -50,5 +55,8 @@ jobs:
           node --check docs/js/panel-ui.js
           node --check docs/js/combat/combat-config-loader.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
+          node --check scripts/test-npc-wardrobe-placeholders.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
+      - name: Test placeholder wardrobes and old prompt suppression
+        run: node scripts/test-npc-wardrobe-placeholders.js
