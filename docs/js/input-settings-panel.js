@@ -203,10 +203,8 @@
         } else {
           control.addEventListener('click', () => {
             control.classList.add('is-listening');
-            control.textContent = 'Press input…';
-            const once = ev => {
-              ev.preventDefault();
-              const code = ev.code;
+            control.textContent = 'Press input… (key or mouse button)';
+            const finish = code => {
               const conflict = deps.bindingConflict(device, code, action.id);
               if (conflict) warn.textContent = conflict;
               else {
@@ -215,9 +213,19 @@
                 saveBindingChange(device, action.id);
                 renderInputSettings();
               }
-              window.removeEventListener('keydown', once, true);
+              window.removeEventListener('keydown', onKey, true);
+              window.removeEventListener('mousedown', onMouse, true);
+              window.removeEventListener('contextmenu', onContextMenu, true);
             };
-            window.addEventListener('keydown', once, true);
+            const onKey = ev => { ev.preventDefault(); finish(ev.code); };
+            const onMouse = ev => { ev.preventDefault(); finish('Mouse' + ev.button); };
+            const onContextMenu = ev => ev.preventDefault(); // Swallows the right-click's context menu while capturing a mouse-button bind.
+            window.addEventListener('keydown', onKey, true);
+            // Deferred a tick so the click that opened capture mode isn't itself captured as Mouse0.
+            setTimeout(() => {
+              window.addEventListener('mousedown', onMouse, true);
+              window.addEventListener('contextmenu', onContextMenu, true);
+            }, 0);
           });
         }
         el.appendChild(row);
