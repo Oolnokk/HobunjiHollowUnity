@@ -50,11 +50,6 @@
       && Math.abs(Number(a.z) - Number(b.z)) <= EPSILON;
   }
 
-  // Compose with other parent-scale systems without baking our factor into their
-  // baseline. If another system (notably Animation Author's live Body scale
-  // preview) has recomputed parent.scale since our last application, the current
-  // value is treated as the new unscaled assembled-rig scale before rigScale is
-  // reapplied exactly once.
   function applyToParent(parent, species, gender, explicitScale = null) {
     if (!parent?.isObject3D || !parent.scale) return false;
     const next = clampScale(explicitScale ?? scaleFor(species, gender));
@@ -184,7 +179,6 @@
         applyToParent(actor.visualOffset, profile.species || actor.source?.species, profile.gender || actor.source?.gender, profile.anatomy.rigScale);
         try { window.publishCharacterHandShouldersV1525?.(actor, profile); } catch (_) {}
         window.ProceduralHandFrameDriver?.syncNow?.();
-        window.renderAttachmentRigInspector?.();
       };
       input.addEventListener('input', applyInput);
       input.addEventListener('change', applyInput);
@@ -208,8 +202,6 @@
       window.serializeAttachmentRigLibrary = wrappedSerialize;
     }
 
-    // Existing selected actors may predate this wrapper. Apply the persisted value
-    // once without requiring a rebuild.
     const selected = window.selectedAnimationActor?.();
     if (selected?.source?.type === 'npc') {
       const profile = window.attachmentRigProfileForActor(selected);
@@ -219,6 +211,9 @@
     window.__hobunjiCharacterRigScaleAuthorInstalled = true;
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.wholeRigScale = 'ground-relative runtime/editor parent scale installed';
+    // Re-render once so an actor that was already selected when the shared runtime
+    // finished loading immediately gains the Whole rig scale field.
+    if (selected?.source?.type === 'npc') window.renderAttachmentRigInspector?.();
     return true;
   }
 
