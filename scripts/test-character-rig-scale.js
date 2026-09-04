@@ -54,4 +54,29 @@ assert.match(source, /runtime: true/);
 assert.doesNotMatch(source, /anchor\.position\s*=|anchors\[[^\]]+\]\.position\s*=/,
   'whole-rig scale must not rewrite individual anchor positions');
 
+// Full Character Scale must be an isolated client of Animation Author, not a
+// monkey-patch that replaces the editor functions it later tries to invoke.
+const scaleHostSource = fs.readFileSync('docs/js/character-scale-comparison-host-bridge.js', 'utf8');
+const scaleBootstrapSource = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8');
+assert.match(scaleHostSource, /HobunjiAnimationAuthorScaleHost/,
+  'Full Character Scale must expose a dedicated host API');
+for (const globalName of [
+  'setAnimationAuthorMode',
+  'addNpcAnimationActor',
+  'selectedAnimationActor',
+  'attachmentRigProfileForActor',
+  'clearAnimationActors',
+  'selectAnimationActor',
+  'serializeAttachmentRigLibrary',
+  'frameAllAnimationActors',
+  'strictNpcAppearanceV1514',
+]) {
+  assert.doesNotMatch(scaleHostSource, new RegExp(`window\\.${globalName}\\s*=`),
+    `Full Character Scale host must not replace window.${globalName}`);
+}
+assert.match(scaleHostSource, /editorGlobalsOverridden: false/,
+  'mobile diagnostics must report that core editor globals are untouched');
+assert.match(scaleBootstrapSource, /character-scale-comparison-host-bridge\.js\?v=20260904e/,
+  'bootstrap must cache-bust the decoupled Full Character Scale host');
+
 console.log('Ground-relative whole character rig scale guards passed');
