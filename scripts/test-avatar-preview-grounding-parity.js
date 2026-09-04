@@ -9,25 +9,26 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const pngAvatar = read('docs/js/png-plane-avatar.js');
 const author = read('docs/tools/animation-author/index.html');
 const authorFix = read('docs/js/animation-author-preview-grounding-fix.js');
-const cutsceneDirector = read('docs/tools/cutscene-director/index.html');
+const transformDumpBootstrap = read('docs/js/transform-dump-utils.js');
 
 assert.match(pngAvatar, /const assemblyY = \(placementRatio - 0\.5\) \* modelHeight/,
-  'PNG avatar builder must continue grounding the portrait internally from portraitVerticalPlacementRatio');
+  'PNG avatar builder must retain its authored portrait placement inside the avatar model');
 
-// These are the exact stale assumptions found during the parity audit. Keep
-// them visible until each consumer is migrated, then invert these assertions.
+// Animation Author intentionally raises the RepositoryAvatarBox by half the
+// model height. This is presentation geometry: the floor-relative rig origin
+// stays at Y=0 while the visible portrait is centered at its real displayed
+// character height. Do not confuse that preview lift with an attachment offset.
 assert.match(author, /const groundLiftY = modelHeight \/ 2/,
-  'Animation Author currently contains the obsolete extra half-height preview lift');
-assert.match(author, /\.5 \+ metrics\.placementRatio - \(finiteNumber\(pixelY\) \+ \.5\) \/ metrics\.pixelHeight/,
-  'Animation Author currently contains the matching +half-height portrait-to-floor conversion error');
-assert.match(cutsceneDirector, /avatarGroup\.position\.set\(0, avatarHeight\/2, 0\)/,
-  'Cutscene Director currently contains the same obsolete half-height preview lift');
+  'Animation Author must retain the intentional half-height RepositoryAvatarBox presentation lift');
+assert.match(author, /presentation\.position\.y = metrics\.groundLiftY/,
+  'RepositoryAvatarBox must continue applying the intentional preview-height lift');
 
+// The old experimental A/B repair remains available only to its dedicated test
+// wrapper. It is based on the opposite grounding assumption and must never be
+// injected into production Animation Author boot.
 assert.match(authorFix, /groundLiftY: 0/,
-  'isolated author preview repair must restore gameplay floor-root grounding');
-assert.match(authorFix, /y: modelHeight \* \(placementRatio - \(finite\(pixelY\) \+ \.5\) \/ pixelHeight\)/,
-  'portrait pixel conversion must cancel the two half-height terms exactly');
-assert.doesNotMatch(authorFix, /placementRatio \+ \.5/,
-  'fixed portrait-to-floor conversion must not retain an extra half-height');
+  'experimental grounding A/B patch remains identifiable by its zero-lift behavior');
+assert.doesNotMatch(transformDumpBootstrap, /animation-author-preview-grounding-fix\.js/,
+  'production shared transform utility must not inject the experimental zero-lift patch');
 
-console.log('avatar preview grounding parity regression guards passed');
+console.log('Animation Author portrait presentation grounding contract guards passed');
