@@ -21,6 +21,131 @@
     outlineWidth: 2,
     seed: 28480,
   });
+
+  // Authored from docs/tools/portrait-arm-mask. Rakako'an deliberately mirrors
+  // Kenkari by gender, matching the repo's existing transform alias. Ghouls
+  // deliberately mirror the authored Mao'ao male profile for both genders because
+  // this authored set currently contains only one Mao'ao profile.
+  const AUTHORED_PROFILES = Object.freeze({
+    'mao-ao:male': {
+      maskYScaleMultiplier: 0.99,
+      axOffset: -0.02,
+      cutThreshold: 0.65,
+      wobbleStrength: 0.16,
+      wobbleScale: 1.9,
+      outlineWidth: 2,
+      seed: 660632132,
+    },
+    'tletingan:male': {
+      maskYScaleMultiplier: 0.6,
+      axOffset: 0.45,
+      cutThreshold: 0.28,
+      wobbleStrength: 0.29,
+      wobbleScale: 1,
+      outlineWidth: 5,
+      seed: 28480,
+    },
+    'tletingan:female': {
+      maskYScaleMultiplier: 1.35,
+      axOffset: 0.34,
+      cutThreshold: 0.93,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 2,
+      seed: 28480,
+    },
+    'kenkari:male': {
+      maskYScaleMultiplier: 1.14,
+      axOffset: 0.45,
+      cutThreshold: 0.56,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 2,
+      seed: 28480,
+    },
+    'kenkari:female': {
+      maskYScaleMultiplier: 1.25,
+      axOffset: 0.25,
+      cutThreshold: 0.11,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 2,
+      seed: 28480,
+    },
+    'rakakoan:male': {
+      maskYScaleMultiplier: 1.14,
+      axOffset: 0.45,
+      cutThreshold: 0.56,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 2,
+      seed: 28480,
+    },
+    'rakakoan:female': {
+      maskYScaleMultiplier: 1.25,
+      axOffset: 0.25,
+      cutThreshold: 0.11,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 2,
+      seed: 28480,
+    },
+    'engh-sho:male': {
+      maskYScaleMultiplier: 1.04,
+      axOffset: -0.07,
+      cutThreshold: 0.18,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 4,
+      seed: 28480,
+    },
+    'engh-sho:female': {
+      maskYScaleMultiplier: 1.15,
+      axOffset: 0.195,
+      cutThreshold: 0.78,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 2,
+      seed: 28480,
+    },
+    'mashtzarr:male': {
+      maskYScaleMultiplier: 0.91,
+      axOffset: 0.11,
+      cutThreshold: 0.45,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 5,
+      seed: 28480,
+    },
+    'mashtzarr:female': {
+      maskYScaleMultiplier: 1.35,
+      axOffset: -0.065,
+      cutThreshold: 0.5,
+      wobbleStrength: 0.16,
+      wobbleScale: 1,
+      outlineWidth: 2,
+      seed: 28480,
+    },
+    'ghoul:male': {
+      maskYScaleMultiplier: 0.99,
+      axOffset: -0.02,
+      cutThreshold: 0.65,
+      wobbleStrength: 0.16,
+      wobbleScale: 1.9,
+      outlineWidth: 2,
+      seed: 660632132,
+    },
+    'ghoul:female': {
+      maskYScaleMultiplier: 0.99,
+      axOffset: -0.02,
+      cutThreshold: 0.65,
+      wobbleStrength: 0.16,
+      wobbleScale: 1.9,
+      outlineWidth: 2,
+      seed: 660632132,
+    },
+  });
+
   const imageCache = new Map();
   const activeArmClipsByCanvas = new WeakMap();
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
@@ -97,10 +222,11 @@
     const fighter = profileOrFighter?.fighter || profileOrFighter || null;
     const root = rawMaskConfig();
     const profileKey = fighterProfileKey(fighter);
+    const authoredSettings = AUTHORED_PROFILES[profileKey] || {};
     const profileSettings = root.profiles?.[profileKey]
       || root.bySpeciesGender?.[profileKey]
       || {};
-    const merged = { ...root, ...profileSettings };
+    const merged = { ...root, ...authoredSettings, ...profileSettings };
     return {
       profileKey,
       maskYScaleMultiplier: clamp(finite(merged.maskYScaleMultiplier, DEFAULTS.maskYScaleMultiplier), 0.05, 2),
@@ -434,6 +560,7 @@
   global.PortraitArmCloudMask = {
     mode: 'per-arm-hard-cut-black-cap',
     defaults: DEFAULTS,
+    authoredProfiles: AUTHORED_PROFILES,
     profileKeyFor: fighterProfileKey,
     resolveSettingsFor: resolveArmMaskSettings,
     get maskYScaleMultiplier() { return MASK_Y_SCALE_MULTIPLIER; },
