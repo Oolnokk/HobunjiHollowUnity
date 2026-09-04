@@ -394,6 +394,11 @@
           if (act.type === 'setLocalNickname') {
             const st = getNpcDlgState(_dlgNpcRec?.id);
             st.localNickname = _resolveTokens(act.value || '', _dlgNpcRec) || null;
+          } else if (act.type === 'adjustRapport') {
+            const amount = Number(act.amount); // Used to keep dialogue-authored positive/negative Rapport changes numeric and reject malformed values.
+            if (Number.isFinite(amount) && amount !== 0) {
+              window.NpcRapport?.adjust?.(_dlgNpcRec?.id, amount, `dialogue_choice:${_dlgTree?.id || 'synthetic'}:${node.id || i}`);
+            }
           } else if (act.type === 'openShop') {
             // `pool` names a WARES_POOLS entry; omitted defaults to the
             // General Store for backward compatibility with any tree
