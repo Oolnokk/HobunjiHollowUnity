@@ -8648,8 +8648,29 @@
       const LOOSE_PROP_GRAVITY = 9;
       const LOOSE_PROP_AIR_DRAG = 0.6;
       const LOOSE_PROP_GROUND_FRICTION = 5;
-      const LOOSE_PROP_CARRY_DISTANCE_PX = 26;
-      const LOOSE_PROP_THROW_SPEED_WORLD = 4.8; // world-units/s, split across the full 3D aim direction — see throwCarriedProp.
+      // Carry stance offsets (world/local units, TILE-normalized — see
+      // updateCarriedPropTransform). Large objects (crate/jar/statue) lock
+      // to the same "held in front of the chest" position/height the
+      // ordinary held-item sprite system uses (playerItemHoldY,
+      // HELD_ITEM_FORWARD_OFFSET) pushed out a bit further for physical
+      // clearance; a key instead reuses the potion/thrust held stance
+      // (playerToolBaseX/Y) since it's small enough to hold one-handed at
+      // the hip like a flask, not cradled two-handed against the chest.
+      const LOOSE_PROP_CARRY_FORWARD_TILES = 0.34;
+      const LOOSE_PROP_CARRY_SPEED_MULT = 0.62; // Movement-speed multiplier while carrying — see updateMovement's targetSpeed.
+      // Approximate half-width per kind (world/local units) — used to place
+      // the two carry-hand proxy meshes just outside each side of the
+      // object, see ensureCarryHands. Keys skip hand meshes entirely (held
+      // one-handed in the potion/thrust stance instead).
+      const LOOSE_PROP_HAND_HALF_WIDTH_BY_KIND = { crate: 0.27, statue: 0.3, jar: 0.18 };
+      // How much a prop's own fall/gravity is scaled by its kind once
+      // thrown/launched — see updateLooseProps' gravity line and
+      // launchCarriedPropAtTarget. A heavier object arcs and drops faster.
+      const LOOSE_PROP_WEIGHT_BY_KIND = { crate: 1, jar: 0.55, statue: 1.8, key: 0.3 };
+      const LOOSE_PROP_HOLD_THRESHOLD_S = 0.16; // Tap-vs-hold split for the throw/place action — matches combat-input.js's own HOLD_THRESHOLD_S for a consistent feel.
+      const LOOSE_PROP_THROW_RANGE_TILES = 12; // Max aim-target distance from the player while the throw reticle is live — see computeThrowAimTarget.
+      const LOOSE_PROP_THROW_LAUNCH_SPEED = 620; // world px/s horizontal speed at detach — a real power-throw, not a lob.
+      const LOOSE_PROP_THROW_LAUNCH_UP_SPEED = 2; // world-units/s upward pop at detach, before weighted gravity takes over.
       const LOOSE_PROP_VOID_Y = -3; // Below even the pit chamber's sublevel (-2) — see updateLooseProps' "fallen into space" respawn.
       const LOOSE_PROP_REST_EPS = 0.05; // Below this speed on every axis (and grounded), a prop is considered settled — see updateLooseProps.
       // Simulation is skipped outright for any prop this far (in tiles,
@@ -12056,6 +12077,59 @@
         return Math.max(dCol, dRow) <= LOOSE_PROP_SIM_RANGE_TILES;
       }
 
+      // Two small hand-proxy meshes flanking a carried large object (crate/
+      // jar/statue — never a key, held one-handed instead), lazily built the
+      // first time a given prop is carried and reused after. Only visible
+      // while actually carried — see updateCarriedPropTransform.
+      function ensureCarryHands(prop) {
+        if (prop.carryHands) return prop.carryHands;
+        const geometry = new THREE.SphereGeometry(0.055, 8, 6);
+        const material = new THREE.MeshLambertMaterial({ color: 0xd8a878 });
+        const left = new THREE.Mesh(geometry, material);
+        const right = new THREE.Mesh(geometry.clone(), material);
+        left.name = 'loose_prop_carry_hand_left';
+        right.name = 'loose_prop_carry_hand_right';
+        prop.mesh.add(left, right);
+        prop.carryHands = { left, right };
+        return prop.carryHands;
+      }
+
+      // Positions a carried prop's mesh every frame it's held — either the
+      // two-handed "chest" stance (crate/jar/statue, matching the ordinary
+      // held-item sprite system's own chest position/height — see
+      // playerItemHoldY/HELD_ITEM_FORWARD_OFFSET) with a hand-proxy mesh
+      // flanking each side, or the one-handed potion/thrust stance (key —
+      // small enough to hold at the hip like a flask, see usesThrustHeldPose)
+      // with no hand meshes at all. Real physics stays off the whole time —
+      // see updateLooseProps' carriedProp branch, which routes here instead
+      // of running gravity/collision.
+      function updateCarriedPropTransform(prop) {
+        const angle = player.angle;
+        const carryFloor = looseFloorInfoAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+        const baseY = carryFloor ? carryFloor.y : 0;
+        if (prop.kind === 'key') {
+          // Mirrors the thrust/potion held-item pose: a lateral hip offset
+          // (playerToolBaseX), no forward push, tilted up slightly.
+          const rightAngle = angle - Math.PI / 2;
+          const px = player.x / TILE + Math.cos(rightAngle) * playerToolBaseX;
+          const py = player.y / TILE + Math.sin(rightAngle) * playerToolBaseX;
+          prop.mesh.position.set(px, baseY + playerToolBaseY, py);
+          prop.mesh.rotation.set(THREE.MathUtils.degToRad(10.31), -angle, 0);
+          if (prop.carryHands) { prop.carryHands.left.visible = false; prop.carryHands.right.visible = false; }
+          return;
+        }
+        const forwardX = Math.cos(angle), forwardY = Math.sin(angle);
+        const px = player.x / TILE + forwardX * LOOSE_PROP_CARRY_FORWARD_TILES;
+        const py = player.y / TILE + forwardY * LOOSE_PROP_CARRY_FORWARD_TILES;
+        prop.mesh.position.set(px, baseY + playerItemHoldY, py);
+        prop.mesh.rotation.set(0, -angle, 0);
+        const halfWidth = LOOSE_PROP_HAND_HALF_WIDTH_BY_KIND[prop.kind] ?? 0.25;
+        const hands = ensureCarryHands(prop);
+        hands.left.position.set(-halfWidth, 0, 0.05);
+        hands.right.position.set(halfWidth, 0, 0.05);
+        hands.left.visible = true; hands.right.visible = true;
+      }
+
       // Per-frame Dungeon Test loose-prop physics: gravity, wall-sliding
       // horizontal movement, ground bounce/friction (per-kind bounciness —
       // a jar bounces noticeably more than a heavy crate), and a chasm-gap
@@ -12083,11 +12157,7 @@
         if (!props) return;
         for (const prop of props) {
           if (prop === player.carriedProp) {
-            const cx = player.x + Math.cos(player.angle) * LOOSE_PROP_CARRY_DISTANCE_PX;
-            const cy = player.y + Math.sin(player.angle) * LOOSE_PROP_CARRY_DISTANCE_PX;
-            const carryFloor = looseFloorInfoAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
-            prop.mesh.position.set(cx / TILE, (carryFloor ? carryFloor.y : 0) + 0.5, cy / TILE);
-            prop.mesh.rotation.y = -player.angle;
+            updateCarriedPropTransform(prop);
             continue;
           }
           const col = Math.floor(prop.x / TILE), row = Math.floor(prop.y / TILE);
@@ -12099,7 +12169,7 @@
           }
           if (!looseIsNearPlayer(prop)) continue; // Out of range — frozen until the player's back in range.
 
-          prop.vz -= LOOSE_PROP_GRAVITY * dt;
+          prop.vz -= LOOSE_PROP_GRAVITY * (prop.gravityScale || 1) * dt;
           prop.z += prop.vz * dt;
           const desiredX = prop.x + prop.vx * dt, desiredY = prop.y + prop.vy * dt;
           const swept = sweptMove(prop.x, prop.y, desiredX, desiredY, (x, y) => canOccupyAt(x, y, LOOSE_PROP_RADIUS_PX));
@@ -12204,36 +12274,18 @@
         return { ok: true, message: `Picked up the ${looseCapitalized(prop)}.` };
       }
 
-      // The camera's own aim direction (a normalized THREE.Vector3, x/z
-      // horizontal + y vertical) — the same ray ranged weapons read via
-      // window.RangedWeapons.playerAimSolution, but computed directly
-      // rather than through that function so a throw works regardless of
-      // whether the player actually owns/has equipped a ranged weapon.
-      // Prefers the true camera ray (only available in shoulder-cam mode,
-      // or while actively wielding a ranged weapon — see
-      // currentPlayerAimRay), then the broader-availability interaction ray
-      // (works in any camera mode except with a menu open), then finally
-      // falls back to the flat facingAngle/pitch pair exactly like
-      // playerAimSolution's own last resort.
-      function computeThrowDirection() {
-        const rawRay = currentPlayerAimRay() || currentPlayerInteractionRay();
-        if (rawRay) {
-          const dir = new THREE.Vector3(rawRay.direction.x, rawRay.direction.y, rawRay.direction.z);
-          if (dir.lengthSq() > 0.0001) return dir.normalize();
-        }
-        const angle = currentPlayerAimAngle();
-        const pitch = currentPlayerAimPitch();
-        const horiz = Math.cos(pitch);
-        return new THREE.Vector3(Math.cos(angle) * horiz, Math.sin(pitch), Math.sin(angle) * horiz).normalize();
+      function hideCarriedPropHands(prop) {
+        if (prop.carryHands) { prop.carryHands.left.visible = false; prop.carryHands.right.visible = false; }
       }
 
       // Where the interaction raycast (the same ray "Show Interaction
       // Raycast" visualizes) currently meets the floor, if that point is on
-      // the player's own tile or directly adjacent to it — reused both to
-      // offer gentle Set Down instead of Throw, and by placeCarriedProp to
-      // actually place it there. Reuses the existing shoulder-surf reticle
-      // raycaster/plane/vector rather than allocating new THREE objects
-      // every frame this is checked.
+      // the player's own tile or directly adjacent to it — used to offer
+      // gentle Set Down (a quick tap — see endPropThrowPress) precise enough
+      // for fiddly placements like "exactly on this pressure plate", as
+      // opposed to a full held-and-released throw. Reuses the existing
+      // shoulder-surf reticle raycaster/plane/vector rather than allocating
+      // new THREE objects every frame this is checked.
       function getAdjacentPlaceTarget() {
         const ray = currentPlayerInteractionRay();
         if (!ray) return null;
@@ -12252,30 +12304,67 @@
         return { col, row, y: floorInfo ? floorInfo.y : 0 };
       }
 
-      function throwCarriedProp() {
-        const prop = player.carriedProp;
-        if (!prop) return { ok: false, message: 'Not carrying anything.' };
-        player.carriedProp = null;
-        const dir = computeThrowDirection();
-        prop.vx = dir.x * LOOSE_PROP_THROW_SPEED_WORLD * TILE;
-        prop.vy = dir.z * LOOSE_PROP_THROW_SPEED_WORLD * TILE;
-        prop.vz = dir.y * LOOSE_PROP_THROW_SPEED_WORLD;
-        prop.settled = false;
-        return { ok: true, message: `Threw the ${looseCapitalized(prop)}.` };
+      // The live throw-aim target while the player holds the throw input
+      // down (see updatePropThrowPress) — same interaction ray as
+      // getAdjacentPlaceTarget, but clamped to LOOSE_PROP_THROW_RANGE_TILES
+      // instead of "adjacent tile only", and falling back to a max-range
+      // point along the ray's horizontal direction when it's aimed above
+      // the horizon (mirrors AlchemyFlasks' own interactionRayGroundTarget
+      // horizon fallback, so aiming up never leaves the reticle stranded).
+      // Returns world pixels (player.x/y convention), not tile coordinates.
+      function computeThrowAimTarget() {
+        const ray = currentPlayerAimRay() || currentPlayerInteractionRay();
+        if (!ray) return { x: player.x, y: player.y };
+        const dir = new THREE.Vector3(ray.direction.x, ray.direction.y, ray.direction.z);
+        const horizLen = Math.hypot(dir.x, dir.z);
+        const maxPx = LOOSE_PROP_THROW_RANGE_TILES * TILE;
+        const clampToRange = (x, y) => {
+          const dx = x - player.x, dy = y - player.y;
+          const dist = Math.hypot(dx, dy);
+          const scale = dist > maxPx ? maxPx / dist : 1;
+          return { x: player.x + dx * scale, y: player.y + dy * scale };
+        };
+        if (horizLen < 0.0001) return clampToRange(player.x, player.y);
+        const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE);
+        const floorHere = looseFloorInfoAt(currentArea, playerCol, playerRow);
+        _shoulderSurfReticleRaycaster.set(new THREE.Vector3(ray.origin.x, ray.origin.y, ray.origin.z), dir.normalize());
+        _shoulderSurfReticleGroundPlane.constant = -(floorHere ? floorHere.y : 0);
+        if (_shoulderSurfReticleRaycaster.ray.intersectPlane(_shoulderSurfReticleGroundPlane, _shoulderSurfReticleWorld)) {
+          return clampToRange(_shoulderSurfReticleWorld.x * TILE, _shoulderSurfReticleWorld.z * TILE);
+        }
+        return clampToRange(player.x + dir.x / horizLen * maxPx, player.y + dir.z / horizLen * maxPx);
       }
 
-      // The contextual alternative to throwCarriedProp when the player is
-      // aiming at their own tile or one directly next to it (see
-      // getAdjacentPlaceTarget/computeActionButtons) — sets it straight
-      // down at rest rather than launching it, for the fiddly "exactly on
-      // this pressure plate" placements a full throw isn't precise enough
-      // for.
+      // The actual detach — fires exactly once per hold-and-release throw,
+      // partway through the strike playback (see updatePropThrowPress). A
+      // real power-throw: fixed high horizontal speed straight at the
+      // tracked aim target, a small upward pop, then ordinary gravity (see
+      // updateLooseProps) scaled by the prop's own kind (heavier objects
+      // arc and drop faster — see LOOSE_PROP_WEIGHT_BY_KIND) takes over.
+      function launchCarriedPropAtTarget(prop, target) {
+        player.carriedProp = null;
+        hideCarriedPropHands(prop);
+        const dx = target.x - prop.x, dy = target.y - prop.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        prop.vx = dx / dist * LOOSE_PROP_THROW_LAUNCH_SPEED;
+        prop.vy = dy / dist * LOOSE_PROP_THROW_LAUNCH_SPEED;
+        prop.vz = LOOSE_PROP_THROW_LAUNCH_UP_SPEED;
+        prop.gravityScale = LOOSE_PROP_WEIGHT_BY_KIND[prop.kind] ?? 1;
+        prop.settled = false;
+      }
+
+      // The contextual alternative to a held-and-released throw when the
+      // player is aiming at their own tile or one directly next to it (see
+      // getAdjacentPlaceTarget) — sets it straight down at rest rather than
+      // launching it, for the fiddly "exactly on this pressure plate"
+      // placements a full throw isn't precise enough for.
       function placeCarriedProp() {
         const prop = player.carriedProp;
         if (!prop) return { ok: false, message: 'Not carrying anything.' };
         const target = getAdjacentPlaceTarget();
         if (!target) return { ok: false, message: 'Nowhere to set it down there.' };
         player.carriedProp = null;
+        hideCarriedPropHands(prop);
         prop.x = (target.col + 0.5) * TILE;
         prop.y = (target.row + 0.5) * TILE;
         prop.z = target.y;
@@ -12283,6 +12372,135 @@
         prop.settled = true;
         prop.mesh.position.set(target.col + 0.5, target.y, target.row + 0.5);
         return { ok: true, message: `Set down the ${looseCapitalized(prop)}.` };
+      }
+
+      // ── Throw/place input: tap-vs-hold (see LOOSE_PROP_HOLD_THRESHOLD_S,
+      // same split combat-input.js uses for weapon hold abilities). A quick
+      // tap is always gentle placement; holding past the threshold shows
+      // the aim target and plays the same windup→strike animation the
+      // throwing flask uses (HeldActionAnimations.throwFlask), except
+      // driving the real carried 3D prop instead of a flat sprite plane.
+      // Releasing lets the strike/follow-through play out; the physics
+      // object detaches and launches partway through that release motion
+      // (see LOOSE_PROP_THROW_RELEASE_PROGRESS below), not the instant the
+      // button comes up.
+      let _propThrowPressed = false;   // true from pointerdown until pointerup
+      let _propThrowDownAt = 0;        // performance.now() at pointerdown
+      let _propThrowAiming = false;    // true once past the hold threshold — reticle/windup live
+      let _propThrowReleasing = false; // true once released from an aim — strike/follow-through playing out
+      let _propThrowAnimProgress = 0;  // 0..1 through HeldActionAnimations.throwFlask
+      let _propThrowDetached = false;  // guards launchCarriedPropAtTarget to fire exactly once per throw
+      let _propThrowTargetX = 0, _propThrowTargetY = 0; // live world-px aim target while aiming/releasing
+
+      // A lost release (alt-tab, browser losing the pointer mid-hold) must
+      // not leave the carried prop permanently stuck mid-windup — same
+      // reasoning as combat-input.js's own abortAllPresses.
+      window.addEventListener('blur', () => {
+        _propThrowPressed = false; _propThrowAiming = false; _propThrowReleasing = false; _propThrowDetached = false;
+      });
+
+      function beginPropThrowPress() {
+        if (!player.carriedProp) return;
+        _propThrowPressed = true;
+        _propThrowDownAt = performance.now();
+        _propThrowAiming = false;
+        _propThrowReleasing = false;
+        _propThrowDetached = false;
+      }
+
+      // Mobile-only: the held button can be dragged around its own root
+      // like a joystick (same drag-from-root shape as the camera-look
+      // joystick/VirtualJoystick) to nudge the aim target left/right and
+      // toward/away from its camera-driven default, once already aiming.
+      function nudgePropThrowAimFromDrag(dx, dy, magnitude) {
+        if (!_propThrowAiming) return;
+        const nudgeAngle = Math.atan2(dy, dx);
+        const nudgeDist = window.FormatUtils.clamp(magnitude, 0, 1) * TILE * 2.5;
+        _propThrowTargetX += Math.cos(nudgeAngle) * nudgeDist;
+        _propThrowTargetY += Math.sin(nudgeAngle) * nudgeDist;
+      }
+
+      function endPropThrowPress() {
+        if (!_propThrowPressed) return;
+        _propThrowPressed = false;
+        if (!player.carriedProp) return;
+        if (!_propThrowAiming) {
+          // Released before the hold threshold — a plain tap, always gentle placement.
+          const result = placeCarriedProp();
+          lastActionMessage = result.message;
+          showToast(result.message, result.ok !== false);
+          if (result.ok !== false) refreshActionBar();
+          return;
+        }
+        _propThrowReleasing = true; // Let updatePropThrowPress carry the windup on into its strike/follow-through.
+      }
+
+      // Ticked every frame (see the main loop's updateLooseProps call) —
+      // promotes a pending press into an aiming hold once
+      // LOOSE_PROP_HOLD_THRESHOLD_S passes, keeps the aim target tracking
+      // the interaction ray while aiming, and drives the windup→strike
+      // animation progress both while held (parked at windupFrac) and
+      // during release playback, detaching the real physics object exactly
+      // once partway through that release.
+      function updatePropThrowPress(dt) {
+        const prop = player.carriedProp;
+        if (!prop) { _propThrowPressed = false; _propThrowAiming = false; _propThrowReleasing = false; return; }
+        const anim = window.HeldActionAnimations?.throwFlask;
+        if (_propThrowPressed && !_propThrowAiming) {
+          if ((performance.now() - _propThrowDownAt) / 1000 >= LOOSE_PROP_HOLD_THRESHOLD_S) {
+            _propThrowAiming = true;
+            const target = computeThrowAimTarget();
+            _propThrowTargetX = target.x; _propThrowTargetY = target.y;
+          }
+          return;
+        }
+        if (_propThrowAiming && !_propThrowReleasing) {
+          const target = computeThrowAimTarget();
+          _propThrowTargetX = target.x; _propThrowTargetY = target.y;
+          _propThrowAnimProgress = anim?.windupFrac ?? 0.44;
+          applyCarriedPropThrowPose(prop, _propThrowAnimProgress);
+          return;
+        }
+        if (_propThrowReleasing) {
+          const windupFrac = anim?.windupFrac ?? 0.44;
+          const durationS = Math.max(0.1, anim?.durationS ?? 0.62);
+          _propThrowAnimProgress = Math.min(1, _propThrowAnimProgress + Math.max(0, dt) / durationS);
+          applyCarriedPropThrowPose(prop, _propThrowAnimProgress);
+          // "Halfway through the lerp" — halfway between where the release
+          // motion actually starts (windupFrac) and its completion, i.e.
+          // roughly the strike's peak, not the literal 0..1 midpoint.
+          const detachProgress = windupFrac + (1 - windupFrac) / 2;
+          if (!_propThrowDetached && _propThrowAnimProgress >= detachProgress) {
+            _propThrowDetached = true;
+            launchCarriedPropAtTarget(prop, { x: _propThrowTargetX, y: _propThrowTargetY });
+            lastActionMessage = `Threw the ${looseCapitalized(prop)}.`;
+            showToast(lastActionMessage, true);
+            refreshActionBar();
+          }
+          if (_propThrowAnimProgress >= 1) { _propThrowReleasing = false; _propThrowDetached = false; }
+        }
+      }
+
+      // Drives a carried prop's mesh through the same windup→strike pose
+      // timeline the held-item sprite system uses for the throwing flask
+      // (heldActionPoseAt/fourPhaseLerp), applied to the real 3D object
+      // instead of a flat plane — carried forward from wherever
+      // updateCarriedPropTransform last placed it.
+      function applyCarriedPropThrowPose(prop, progress) {
+        const anim = window.HeldActionAnimations?.throwFlask;
+        if (!anim) return;
+        const pose = heldActionPoseAt(anim, progress);
+        const angle = player.angle;
+        const forwardX = Math.cos(angle), forwardY = Math.sin(angle);
+        const rightAngle = angle - Math.PI / 2;
+        const rightX = Math.cos(rightAngle), rightY = Math.sin(rightAngle);
+        const carryFloor = looseFloorInfoAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+        const baseY = carryFloor ? carryFloor.y : 0;
+        const px = player.x / TILE + forwardX * (LOOSE_PROP_CARRY_FORWARD_TILES + pose.z) + rightX * pose.x;
+        const py = player.y / TILE + forwardY * (LOOSE_PROP_CARRY_FORWARD_TILES + pose.z) + rightY * pose.x;
+        prop.mesh.position.set(px, baseY + playerItemHoldY + pose.y, py);
+        prop.mesh.rotation.set(THREE.MathUtils.degToRad(pose.pitch), -angle + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll));
+        hideCarriedPropHands(prop); // Two-handed grip lets go the moment the wind-up starts.
       }
 
       function disposeDungeonLooseProps(mapId) {
@@ -15995,7 +16213,8 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * devGlobalSpeedMul;
+        const carryPropSpeedMul = player.carriedProp ? LOOSE_PROP_CARRY_SPEED_MULT : 1;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * devGlobalSpeedMul * carryPropSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -17502,13 +17721,12 @@
           return;
         }
         if (activeAction === 'obj_throw_prop') {
-          const result = throwCarriedProp();
-          lastActionMessage = result.message;
-          showToast(result.message, result.ok !== false);
-          if (result.ok !== false) refreshActionBar();
-          return;
-        }
-        if (activeAction === 'obj_place_prop') {
+          // Genuine hold-to-aim-and-throw is driven by this button's own
+          // pointer handlers (beginPropThrowPress/endPropThrowPress in
+          // applyAbt), which see the real press/release timing. An instant
+          // useActiveAction() call — keyboard/gamepad tapping this slot —
+          // has no hold concept to offer, so it falls back to the same
+          // gentle placement a quick tap already means.
           const result = placeCarriedProp();
           lastActionMessage = result.message;
           showToast(result.message, result.ok !== false);
@@ -22365,6 +22583,7 @@
         updateDungeonFalling(dt); // Must run before updatePlayerMesh, which reads player.falling/fallSurfaceY this same frame.
         updateDungeonBraziers(dt);
         updateLooseProps(dt);
+        updatePropThrowPress(dt);
         updateDungeonGates(dt);
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
@@ -23004,19 +23223,16 @@
           // Dungeon Test loose props (crates/jars, see updateLooseProps) —
           // a moving free-floating pickup, not a tile-anchored interactable,
           // so it's checked here rather than through _buildingInteractables.
-          // Carrying one offers Throw normally, but Set Down instead the
-          // instant the interaction raycast is aimed at the player's own
-          // tile or one directly next to it (see getAdjacentPlaceTarget) —
-          // fiddly placements like "exactly on this pressure plate" need
-          // gentle, precise placement, not a full camera-driven throw.
+          // A single button now covers both actions: a quick tap is always
+          // gentle placement, holding it down shows the throw reticle/
+          // windup and launches on release (see beginPropThrowPress/
+          // updatePropThrowPress/endPropThrowPress, wired from this
+          // button's own pointer handlers in applyAbt).
           // Pick Up only shows with both hands genuinely free (heldMode
           // 'item' still counts as "hands full" here on purpose — carrying
           // a prop one-handed alongside a held item reads oddly).
           if (window.DungeonTest?.floorFromMapId?.(currentArea)) {
             if (player.carriedProp) {
-              if (getAdjacentPlaceTarget()) {
-                return [{ icon: '✋', label: `Set Down ${looseCapitalized(player.carriedProp)}`, action: 'obj_place_prop', style: 'primary', allowed: true, worldInteraction: true }];
-              }
               return [{ icon: '🤾', label: `Throw ${looseCapitalized(player.carriedProp)}`, action: 'obj_throw_prop', style: 'primary', allowed: true, worldInteraction: true }];
             }
             if (heldMode === 'none') {
@@ -23414,6 +23630,7 @@
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
+            let _propThrowGesture = false; // Used by the carried-prop throw/place button's own tap-vs-hold (see beginPropThrowPress).
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -23493,6 +23710,12 @@
               _flaskGesture = act === 'alchemy_flask_primary';
               _flaskCanceled = false;
               if (_flaskGesture && !window.AlchemyFlasks?.aiming) _abtFire(); // Mobile press enters aim without consuming.
+              _propThrowGesture = act === 'obj_throw_prop';
+              // Unlike the flask (which always enters aim on press), a prop
+              // throw's press doesn't commit to anything yet — tap-vs-hold
+              // is decided purely by how long it stays down (see
+              // beginPropThrowPress/updatePropThrowPress).
+              if (_propThrowGesture) beginPropThrowPress();
               if (act === 'ammo_select' || act === 'potion_select') {
                 _selectorKind = act === 'ammo_select' ? 'ammo' : 'potions';
                 window._desktopSelectionArc?.beginHeldSelection?.(_selectorKind); // Lets a physical mouse wheel navigate while this on-screen button owns the hold.
@@ -23529,6 +23752,13 @@
                   window.AlchemyFlasks.cancelAim();
                   _flaskCanceled = true;
                 }
+                return;
+              }
+              if (_propThrowGesture) {
+                // Mobile-only nudge (see nudgePropThrowAimFromDrag's own
+                // comment) — a no-op until the hold threshold has actually
+                // promoted this press into an aim.
+                nudgePropThrowAimFromDrag(dx, dy, Math.min(1, dist / Math.max(1, _sockR)));
                 return;
               }
               if (_selectorKind) {
@@ -23583,6 +23813,8 @@
                 }
               } else if (_flaskGesture) {
                 if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
+              } else if (_propThrowGesture) {
+                endPropThrowPress(); // Decides tap-vs-hold from the real press duration — see its own comment.
               } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
                 else _abtFire();
@@ -23595,6 +23827,7 @@
               document.querySelectorAll('.flask-cancel-hover').forEach(button => button.classList.remove('flask-cancel-hover'));
               _flaskGesture = false;
               _flaskCanceled = false;
+              _propThrowGesture = false;
               _pressSlot = null;
             }
 
