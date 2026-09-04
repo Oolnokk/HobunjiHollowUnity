@@ -16,10 +16,14 @@
     plannerDeps: null,
     config: null,
     configError: null,
-    encounters: new Map(), // npcId -> { inside, serial, lastReactionAt, lastPolarity, lastLine }
+    ambientGreetingRadiusTiles: 2.6,
+    ambientGreetingConfigError: null,
+    greetingSuppressedNpcIds: new Set(), // Reactions replace a same-encounter ordinary player greeting until the pair separate.
+    encounters: new Map(), // npcId -> { inside, serial, lastReactionAt, lastReactionSerial, lastPolarity, lastLine }
     reactions: 0,
     positive: 0,
     negative: 0,
+    greetingReplacements: 0,
   };
 
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -57,6 +61,40 @@
     api.init.__npcSillinessReactionDepsWrapped = true;
   }
 
+  function patchAmbientDialogue(api) {
+    if (!api?.init || api.init.__npcSillinessGreetingPriorityWrapped) return;
+
+    // AmbientDialogue gets its own shallow dependency bag so only its greeting
+    // walker query is filtered. No shared game dependency object is mutated.
+    const originalInit = api.init.bind(api);
+    api.init = function sillinessPriorityAmbientInit(injectedDeps) {
+      const sourceDeps = injectedDeps || {};
+      const originalGetNpcWalkers = sourceDeps.getNpcWalkers;
+      if (typeof originalGetNpcWalkers !== 'function') return originalInit(injectedDeps);
+      const ambientDeps = {
+        ...sourceDeps,
+        getNpcWalkers: (...args) => {
+          const walkers = originalGetNpcWalkers.apply(sourceDeps, args) || [];
+          return walkers.filter(walker => !state.greetingSuppressedNpcIds.has(String(walker?.rec?.id || '')));
+        },
+      };
+      return originalInit(ambientDeps);
+    };
+    api.init.__npcSillinessGreetingPriorityWrapped = true;
+
+    // Run the reaction pass immediately before AmbientDialogue's own greeting
+    // scan. That makes priority deterministic rather than depending on whether
+    // the 180 ms silliness interval or the 200 ms greeting throttle fired first.
+    if (api.update && !api.update.__npcSillinessGreetingPriorityWrapped) {
+      const originalUpdate = api.update.bind(api);
+      api.update = function sillinessPriorityAmbientUpdate(now) {
+        update(Number.isFinite(Number(now)) ? Number(now) : nowMs());
+        return originalUpdate(now);
+      };
+      api.update.__npcSillinessGreetingPriorityWrapped = true;
+    }
+  }
+
   async function loadConfig() {
     if (state.config) return state.config;
     try {
@@ -74,6 +112,23 @@
       state.configError = error?.message || String(error);
       return null;
     }
+  }
+
+  async function loadAmbientGreetingRadius() {
+    try {
+      const url = new URL('config/dialogue/ambient-dialogue.json', document.baseURI).href;
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const loaded = await response.json();
+      const radius = Number(loaded?.greetingRadiusTiles);
+      if (Number.isFinite(radius) && radius > 0) state.ambientGreetingRadiusTiles = radius;
+      state.ambientGreetingConfigError = null;
+    } catch (error) {
+      // 2.6 is AmbientDialogue's own built-in default, so this fallback remains
+      // behaviorally identical if the authored config cannot be fetched.
+      state.ambientGreetingConfigError = error?.message || String(error);
+    }
+    return state.ambientGreetingRadiusTiles;
   }
 
   function heartsFor(npcId) {
@@ -118,6 +173,60 @@
       : null;
   }
 
+  function playerXZ() {
+    const player = playerTarget();
+    const x = Number(player?.root?.position?.x ?? player?.x);
+    const z = Number(player?.root?.position?.z ?? player?.z);
+    return Number.isFinite(x) && Number.isFinite(z) ? { x, z } : null;
+  }
+
+  function setGreetingSuppressed(npcId, suppressed) {
+    const id = String(npcId || '');
+    if (!id) return;
+    if (suppressed) {
+      if (!state.greetingSuppressedNpcIds.has(id)) state.greetingReplacements++;
+      state.greetingSuppressedNpcIds.add(id);
+    } else {
+      state.greetingSuppressedNpcIds.delete(id);
+    }
+  }
+
+  function refreshGreetingSuppressionFor(walker, encounter) {
+    const id = String(walker?.rec?.id || '');
+    if (!id || !walker?.root || !encounter) return;
+    const player = playerXZ();
+    if (!player) {
+      setGreetingSuppressed(id, false);
+      return;
+    }
+    const distance = Math.hypot(walker.root.position.x - player.x, walker.root.position.z - player.z);
+    if (distance > state.ambientGreetingRadiusTiles) {
+      // Separation ends the replacement encounter. A later re-approach may use
+      // the ordinary once-per-day greeting if it has not actually been spoken.
+      setGreetingSuppressed(id, false);
+      return;
+    }
+    // Once this silliness encounter produced a reaction, that reaction owns any
+    // regular player greeting opportunity that overlaps it. This remains true
+    // while the pair stay in greeting range, even if the dance stops one frame
+    // later, preventing an awkward "reaction -> hello" double line.
+    setGreetingSuppressed(id, encounter.lastReactionSerial === encounter.serial && encounter.serial > 0);
+  }
+
+  function refreshSuppressionAfterStimulusEnds(walkers) {
+    const live = new Set();
+    for (const walker of walkers || []) {
+      const id = String(walker?.rec?.id || '');
+      if (!id) continue;
+      live.add(id);
+      if (!state.greetingSuppressedNpcIds.has(id)) continue;
+      refreshGreetingSuppressionFor(walker, state.encounters.get(id));
+    }
+    for (const id of [...state.greetingSuppressedNpcIds]) {
+      if (!live.has(id)) state.greetingSuppressedNpcIds.delete(id);
+    }
+  }
+
   function react(walker, options = {}) {
     if (!walker?.root || !walker?.rec?.id || !state.config || !global.AmbientDialogue?.show) return false;
     if (global.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(walker.rec.id)) return false;
@@ -138,7 +247,7 @@
       walker.applyFacingDeadzone?.(angle, 0.34);
     }
 
-    global.AmbientDialogue.show(walker.root, line, {
+    const shown = global.AmbientDialogue.show(walker.root, line, {
       speakerId: id,
       profile: walker.profile,
       mode: 'chathead',
@@ -148,13 +257,16 @@
       faceWalker: walker,
       faceTarget: player,
     });
+    if (!shown) return false;
 
     const encounter = state.encounters.get(id) || { inside: false, serial: 0, lastReactionAt: -Infinity };
     encounter.lastReactionAt = nowMs();
+    encounter.lastReactionSerial = serial;
     encounter.lastPolarity = polarity;
     encounter.lastLine = line;
     encounter.lastHearts = hearts;
     state.encounters.set(id, encounter);
+    refreshGreetingSuppressionFor(walker, encounter);
     state.reactions++;
     state[polarity]++;
     return true;
@@ -178,6 +290,7 @@
 
     if (!stimulus) {
       for (const encounter of state.encounters.values()) encounter.inside = false;
+      refreshSuppressionAfterStimulusEnds(walkers);
       return;
     }
 
@@ -192,7 +305,7 @@
       liveIds.add(id);
       let encounter = state.encounters.get(id);
       if (!encounter) {
-        encounter = { inside: false, serial: 0, lastReactionAt: -Infinity, lastPolarity: null, lastLine: null };
+        encounter = { inside: false, serial: 0, lastReactionAt: -Infinity, lastReactionSerial: 0, lastPolarity: null, lastLine: null };
         state.encounters.set(id, encounter);
       }
       const distance = Math.hypot(walker.root.position.x - stimulus.x, walker.root.position.z - stimulus.z);
@@ -212,15 +325,21 @@
       } else if (!inside) {
         encounter.inside = false;
       }
+      refreshGreetingSuppressionFor(walker, encounter);
     }
 
     for (const [id, encounter] of state.encounters) {
-      if (!liveIds.has(id)) encounter.inside = false;
+      if (!liveIds.has(id)) {
+        encounter.inside = false;
+        state.greetingSuppressedNpcIds.delete(id);
+      }
     }
   }
 
   chainGlobal('NpcActivityPlanner', patchPlanner);
+  chainGlobal('AmbientDialogue', patchAmbientDialogue);
   loadConfig();
+  loadAmbientGreetingRadius();
   global.setInterval?.(update, 180);
 
   global.NpcSillinessReactions = Object.freeze({
@@ -228,7 +347,8 @@
     react,
     reload: async () => {
       state.config = null;
-      return loadConfig();
+      await Promise.all([loadConfig(), loadAmbientGreetingRadius()]);
+      return state.config;
     },
     getDebug(npcId) {
       if (npcId) {
@@ -238,16 +358,21 @@
           hearts: heartsFor(id),
           polarity: heartsFor(id) < 0 ? 'negative' : 'positive',
           authored: !!state.config?.npcs?.[id],
+          greetingSuppressed: state.greetingSuppressedNpcIds.has(id),
           encounter: state.encounters.get(id) || null,
         };
       }
       return {
         configLoaded: !!state.config,
         configError: state.configError,
+        ambientGreetingRadiusTiles: state.ambientGreetingRadiusTiles,
+        ambientGreetingConfigError: state.ambientGreetingConfigError,
         authoredNpcCount: Object.keys(state.config?.npcs || {}).length,
         reactions: state.reactions,
         positive: state.positive,
         negative: state.negative,
+        greetingReplacements: state.greetingReplacements,
+        greetingSuppressedNpcIds: [...state.greetingSuppressedNpcIds],
       };
     },
   });
