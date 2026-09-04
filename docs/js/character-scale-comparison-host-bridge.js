@@ -128,6 +128,29 @@
     return changed;
   }
 
+  // Discards every local override (in-memory, both persistence keys) and deletes the
+  // authored fields from every live shared profile so scaleFor()'s normal fallback
+  // chain resolves straight through to the repository's own authored defaults
+  // (character-rig-scale-defaults.js) — not a frozen snapshot of them, so a later
+  // change to that file is picked up without needing another reset.
+  function resetToRepositoryDefaults() {
+    rigScaleOverrides.clear();
+    try { localStorage.removeItem(RIG_SCALE_STORAGE_KEY); } catch (_) {}
+    try { localStorage.removeItem(LEGACY_SCALE_STORAGE_KEY_V1); } catch (_) {}
+    const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+    let reset = 0;
+    for (const profile of Object.values(characters)) {
+      if (!profile?.anatomy) continue;
+      delete profile.anatomy.rigScaleX;
+      delete profile.anatomy.rigScaleY;
+      delete profile.anatomy.headScale;
+      delete profile.anatomy.rigScale; // Pre-split legacy field — also cleared so it can't resurrect an old override.
+      reset += 1;
+    }
+    window.HobunjiCharacterRigScale?.installProfileDefaults?.(); // Re-derives x/y/head immediately instead of waiting for the next bootstrap poll tick.
+    return reset;
+  }
+
   function restorePersistedRigScales() {
     let recoveredLegacy = 0;
     try {
@@ -504,6 +527,7 @@
     setRigScale,
     rigScaleFor,
     captureSharedRigScales,
+    resetToRepositoryDefaults,
     frameAll,
     strictAppearance,
     diagnostics,

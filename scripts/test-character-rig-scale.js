@@ -278,4 +278,19 @@ assert.match(scaleComparisonSource, /headCanvas:\s*avatar\.head/,
 assert.match(scaleComparisonSource, /onlyHeadSprite:\s*true/,
   'buildPortrait must render a head-only canvas alongside front/back, matching the real game’s neckRig setup');
 
+// "Reset all to repo defaults" must discard every local override — in-memory and both
+// persistence keys — not just visually snap the current selection back for one session.
+assert.match(scaleHostSource, /function resetToRepositoryDefaults/,
+  'the host must own clearing local overrides and re-deriving x/y/head from the authored defaults');
+assert.match(scaleHostSource, /rigScaleOverrides\.clear\(\)/,
+  'reset must clear the in-memory override map, not just localStorage');
+assert.match(scaleHostSource, /localStorage\.removeItem\(RIG_SCALE_STORAGE_KEY\)/,
+  'reset must clear the current-format persistence key');
+assert.match(scaleHostSource, /localStorage\.removeItem\(LEGACY_SCALE_STORAGE_KEY_V1\)/,
+  'reset must also clear the legacy pre-split persistence key, or it would resurrect old values on next load');
+assert.match(scaleComparisonSource, /maaFullScaleReset/,
+  'the comparison tab must expose a reset-to-repo-defaults control');
+assert.match(scaleComparisonSource, /resetToRepositoryDefaults/,
+  'the reset button must call through to the host\'s reset, not just clear local UI state');
+
 console.log('Ground-relative whole character rig scale guards passed (independent x/y body scale, neck-rig-compensated head scale)');

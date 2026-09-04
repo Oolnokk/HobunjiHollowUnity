@@ -197,9 +197,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         <div class="scaleRow"><label for="maaFullScaleRangeX">Width</label><input id="maaFullScaleRangeX" type="range" min="25" max="200" step="0.5" value="100" aria-label="Body width scale"><output id="maaFullScaleOutX">100%</output></div>
         <div class="scaleRow"><label for="maaFullScaleRangeY">Height</label><input id="maaFullScaleRangeY" type="range" min="25" max="200" step="0.5" value="100" aria-label="Body height scale"><output id="maaFullScaleOutY">100%</output></div>
         <div class="scaleRow"><label for="maaFullScaleRangeHead">Head</label><input id="maaFullScaleRangeHead" type="range" min="25" max="200" step="0.5" value="100" aria-label="Head scale"><output id="maaFullScaleOutHead">100%</output></div>
-        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button></div>
+        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode. Head scale is compensated at the neck rig so stretching width/height never distorts head proportions.</div>`;
       workspace.appendChild(panel);
+      panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
       for (const axis of ['X', 'Y', 'Head']) {
         panel.querySelector(`#maaFullScaleRange${axis}`).addEventListener('input', applySlider);
         panel.querySelector(`#maaFullScaleRange${axis}`).addEventListener('change', persistProfiles);
@@ -311,6 +312,27 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       };
       localStorage.setItem(RIG_SAVE_KEY, JSON.stringify(data));
     } catch (error) { console.warn('[full-character-scale] profile autosave failed', error); }
+  }
+
+  // Discards every author override — in-memory, both localStorage persistence keys,
+  // and the authored fields on every live shared profile — then re-derives x/y/head
+  // straight from character-rig-scale-defaults.js and reapplies it to every visible
+  // lineup avatar (not just the selected one), so "everything" really does mean the
+  // whole comparison, not just whatever's currently picked.
+  function resetAllToRepoDefaults() {
+    if (!active) return;
+    if (window.confirm && !window.confirm('Reset every species/gender scale (width, height, head) back to the repository defaults? This discards all local overrides.')) return;
+    const count = host()?.resetToRepositoryDefaults?.() || 0;
+    for (const entry of entries) {
+      const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1 };
+      window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, scale);
+    }
+    window.ProceduralHandFrameDriver?.syncNow?.();
+    if (selected) select(selected);
+    persistProfiles();
+    status(`Reset ${count} species/gender scale${count === 1 ? '' : 's'} to repository defaults.`);
+    if (frameRaf) cancelAnimationFrame(frameRaf);
+    frameRaf = requestAnimationFrame(frame);
   }
 
   function exportJson() {
