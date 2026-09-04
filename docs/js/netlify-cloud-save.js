@@ -472,6 +472,14 @@
       return true;
     } catch (error) {
       _lastError = String(error?.message || error);
+      // Unlike recover/invite (user-initiated retries with a freshly-typed
+      // password), 'confirm' auto-runs on every page load that still has this
+      // token in the URL -- leaving it in place would silently re-attempt the
+      // same dead/already-used token forever, permanently stuck on this
+      // screen with no way to reach ordinary sign-in. Clear it now so a
+      // reload lands on a normal screen instead.
+      _pendingAuthCallback = null;
+      history.replaceState(null, '', location.pathname + location.search);
       return false;
     } finally {
       _busy = false;
@@ -571,11 +579,35 @@
   }
 
   function callbackFormHtml() {
-    const invite = _pendingAuthCallback?.type === 'invite';
+    const type = _pendingAuthCallback?.type;
+    // 'confirm' auto-processes in init() (see processSimpleCallback) and only
+    // ever reaches this form if that attempt failed -- there's no password to
+    // collect for it, just a way back to a normal screen instead of being
+    // stuck re-showing (and, before this fix, mislabeling) a dead callback.
+    if (type === 'confirm') {
+      return `
+        <div class="hcs-status hcs-error">${esc(_lastError || 'That confirmation link did not work.')}</div>
+        <div class="hcs-row"><button class="hcs-btn primary" id="hcsCancelCallback">Back to Sign In</button></div>`;
+    }
+    const invite = type === 'invite';
+    const errorHtml = _lastError ? `<div class="hcs-status hcs-error">${esc(_lastError)}</div>` : '';
     return `
       <div class="hcs-status">${invite ? 'Invitation found. Choose a password to finish creating this account.' : 'Password recovery link found. Choose a new password.'}</div>
+      ${errorHtml}
       <div class="hcs-row"><input id="hcsCallbackPassword" type="password" autocomplete="new-password" placeholder="New password"></div>
-      <div class="hcs-row"><button class="hcs-btn primary" id="hcsFinishCallback">${invite ? 'Accept Invitation' : 'Set New Password'}</button></div>`;
+      <div class="hcs-row">
+        <button class="hcs-btn primary" id="hcsFinishCallback">${invite ? 'Accept Invitation' : 'Set New Password'}</button>
+        <button class="hcs-btn" id="hcsCancelCallback">Cancel</button>
+      </div>`;
+  }
+
+  // Clears a stuck/failed callback (confirm/recover/invite) and the URL hash
+  // that keeps re-triggering it, so a dead or already-used token can't lock
+  // the player out of the ordinary sign-in/sign-up screen forever.
+  function cancelAuthCallback() {
+    _pendingAuthCallback = null;
+    history.replaceState(null, '', location.pathname + location.search);
+    notify();
   }
 
   function signedInHtml() {
@@ -664,6 +696,7 @@
     panel.querySelector('#hcsFinishCallback')?.addEventListener('click', () => {
       finishPasswordCallback(panel.querySelector('#hcsCallbackPassword')?.value);
     });
+    panel.querySelector('#hcsCancelCallback')?.addEventListener('click', cancelAuthCallback);
     panel.querySelector('#hcsSyncNow')?.addEventListener('click', () => safeSync({ automatic: false }));
     panel.querySelector('#hcsPushNow')?.addEventListener('click', () => pushNow({ force: false, automatic: false }).catch(error => { _lastError = String(error?.message || error); notify(); }));
     panel.querySelector('#hcsPullNow')?.addEventListener('click', () => pullNow({ confirmOverwrite: true }).catch(error => { _lastError = String(error?.message || error); notify(); }));
