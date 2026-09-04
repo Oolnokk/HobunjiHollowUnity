@@ -1,0 +1,55 @@
+name: NPC social and wardrobe regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/npc-social-relationship-bridge.js'
+      - 'docs/js/npc-furniture-wardrobe-bridge.js'
+      - 'docs/js/building-interior-npc-wardrobe-editor.js'
+      - 'docs/js/dialogue-content.js'
+      - 'docs/js/relationships-panel.js'
+      - 'docs/js/panel-ui.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - '.github/workflows/npc-social-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/npc-social-relationship-bridge.js'
+      - 'docs/js/npc-furniture-wardrobe-bridge.js'
+      - 'docs/js/building-interior-npc-wardrobe-editor.js'
+      - 'docs/js/dialogue-content.js'
+      - 'docs/js/relationships-panel.js'
+      - 'docs/js/panel-ui.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - '.github/workflows/npc-social-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check NPC social modules
+        run: |
+          node --check docs/js/npc-social-relationship-bridge.js
+          node --check docs/js/npc-furniture-wardrobe-bridge.js
+          node --check docs/js/building-interior-npc-wardrobe-editor.js
+          node --check docs/js/dialogue-content.js
+          node --check docs/js/relationships-panel.js
+          node --check docs/js/panel-ui.js
+          node --check docs/js/combat/combat-config-loader.js
+          node --check docs/tools/dialogue-editor/dialogue-editor-state.js
+      - name: Test Rapport, social gates, dialogue, and wardrobe furniture
+        run: node scripts/test-npc-social-rapport-wardrobes.js
+      - name: Re-run established alcohol regression
+        run: node scripts/test-alcohol-swigs-and-npc-offers.js
