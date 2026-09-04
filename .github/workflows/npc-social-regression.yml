@@ -14,6 +14,7 @@ on:
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
+      - 'scripts/audit-npc-wardrobe-placeholders.js'
       - '.github/workflows/npc-social-regression.yml'
   pull_request:
     paths:
@@ -28,6 +29,7 @@ on:
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
+      - 'scripts/audit-npc-wardrobe-placeholders.js'
       - '.github/workflows/npc-social-regression.yml'
 
 permissions:
@@ -56,7 +58,10 @@ jobs:
           node --check docs/js/combat/combat-config-loader.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
           node --check scripts/test-npc-wardrobe-placeholders.js
+          node --check scripts/audit-npc-wardrobe-placeholders.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
       - name: Test placeholder wardrobes and old prompt suppression
         run: node scripts/test-npc-wardrobe-placeholders.js
+      - name: Audit placeholder wardrobe coverage for every NPC
+        run: node scripts/audit-npc-wardrobe-placeholders.js
