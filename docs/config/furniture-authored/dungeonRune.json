@@ -43,29 +43,19 @@
       "tint": 0.9
     },
     {
-      "id": "part_drune_disc",
-      "kind": "disc",
-      "name": "Rune Disc",
-      "transform": { "x": 0, "y": 0.66, "z": 0, "rx": -18, "ry": 0, "rz": 0, "sx": 0.4, "sy": 0.05, "sz": 0.4 },
+      "id": "part_drune_orb",
+      "kind": "sphere",
+      "name": "Rune Orb",
+      "transform": { "x": 0, "y": 0.68, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.34, "sy": 0.34, "sz": 0.34 },
       "color": "#8a5cff",
-      "segments": 20,
-      "topScaleX": 1,
-      "topScaleZ": 1,
-      "bottomScaleX": 1,
-      "bottomScaleZ": 1,
       "tint": 1
     },
     {
       "id": "part_drune_glow",
-      "kind": "disc",
+      "kind": "sphere",
       "name": "Rune Glow",
-      "transform": { "x": 0, "y": 0.685, "z": 0, "rx": -18, "ry": 0, "rz": 0, "sx": 0.24, "sy": 0.02, "sz": 0.24 },
+      "transform": { "x": 0, "y": 0.68, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.2, "sy": 0.2, "sz": 0.2 },
       "color": "#c9b6ff",
-      "segments": 16,
-      "topScaleX": 1,
-      "topScaleZ": 1,
-      "bottomScaleX": 1,
-      "bottomScaleZ": 1,
       "tint": 1
     }
   ],

@@ -905,6 +905,48 @@
     worldTargets.delete(areaId);
   }
 
+  // Tiles a projectile's own per-frame occupancy check (updateProjectiles)
+  // should never treat as a wall — built for the Dungeon Test's chasm/rune
+  // puzzle (see game.js's wireDungeonRune): the gap tiles are registered as
+  // ordinary movement colliders so the player can't just walk across, but
+  // that collider mechanism (canOccupyAt) has no concept of "blocks walking,
+  // not flight" — an arrow fired at the far-side rune used to die the
+  // instant it reached the gap, making the puzzle's own intended solution
+  // impossible. Same areaId/key-set shape as worldTargets/flameZones above,
+  // keyed by "col,row" instead of a caller key since there's no per-tile
+  // payload, just membership.
+  const projectilePassthroughTiles = new Map(); // areaId -> Set("col,row")
+  function registerProjectilePassthrough(areaId, tiles) {
+    if (!areaId || !tiles?.length) return;
+    if (!projectilePassthroughTiles.has(areaId)) projectilePassthroughTiles.set(areaId, new Set());
+    const set = projectilePassthroughTiles.get(areaId);
+    for (const [c, r] of tiles) set.add(`${c},${r}`);
+  }
+  function unregisterProjectilePassthrough(areaId, tiles) {
+    const set = projectilePassthroughTiles.get(areaId);
+    if (!set || !tiles?.length) return;
+    for (const [c, r] of tiles) set.delete(`${c},${r}`);
+  }
+  // Samples the same four ±radius corners canOccupyAt itself checks, not
+  // just the bare center tile — a projectile approaching the gap edge-on
+  // has its collision footprint touching the gap tile well before its own
+  // center tile changes, and canOccupyAt would already report blocked from
+  // that overlap alone; checking only the center tile here let that edge
+  // case slip through and still kill the shot right at the gap's lip.
+  function isProjectilePassthroughAt(areaId, x, y, radius = 0) {
+    const set = projectilePassthroughTiles.get(areaId);
+    if (!set || !set.size) return false;
+    const r = Math.max(0, Number(radius) || 0);
+    const tile = deps.TILE || 64;
+    return set.has(`${Math.floor((x - r) / tile)},${Math.floor((y - r) / tile)}`)
+        || set.has(`${Math.floor((x + r) / tile)},${Math.floor((y - r) / tile)}`)
+        || set.has(`${Math.floor((x - r) / tile)},${Math.floor((y + r) / tile)}`)
+        || set.has(`${Math.floor((x + r) / tile)},${Math.floor((y + r) / tile)}`);
+  }
+  function clearAreaProjectilePassthrough(areaId) {
+    projectilePassthroughTiles.delete(areaId);
+  }
+
   // Flame zones — a projectile flying through one just catches fire
   // (p.onFire = true) and keeps going, unlike a world target above, which
   // always stops the shot. Built for the Dungeon Test's relay-lighting
@@ -1087,8 +1129,17 @@
       const dx = p.vx * dt, dy = p.vy * dt;
       p.x += dx; p.y += dy; p.worldY += p.vyWorld * dt; p.distancePx += Math.hypot(dx, dy);
       checkFlamePassThrough(p);
-      const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
-      if (!deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx) || groundedAtGround || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
+      // A registered passthrough tile (see registerProjectilePassthrough)
+      // isn't real open floor at the terrain-query level — it's whatever a
+      // walking-blocked "gap" collider renders as, which can carry its own
+      // (nonzero) surface height — so both the wall-occupancy check AND the
+      // ground-height check need to stand down there, not just the former;
+      // otherwise a flat shot still "grounds out" on the gap's own surface
+      // query before ever reaching what's on the far side of it.
+      const overPassthrough = isProjectilePassthroughAt(p.areaId, p.x, p.y, p.def.projectileRadiusPx);
+      const groundedAtGround = !overPassthrough && p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
+      const blockedByTerrain = !overPassthrough && !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx);
+      if (blockedByTerrain || groundedAtGround || projectileHit(p) || p.distancePx >= p.maxDistancePx) {
         disposeProjectile(p);
         continue;
       }
@@ -1362,6 +1413,7 @@
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     movementDirectionMultiplier,
     registerWorldTarget, unregisterWorldTarget, clearAreaWorldTargets,
+    registerProjectilePassthrough, unregisterProjectilePassthrough, clearAreaProjectilePassthrough,
     registerFlameZone, unregisterFlameZone, clearAreaFlameZones,
     equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
     devBumpMastery: itemKey => deps?.devBumpToolMasteryLevel?.(itemKey),

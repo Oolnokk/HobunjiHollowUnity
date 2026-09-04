@@ -12683,6 +12683,14 @@
             bScene.add(pit);
             pitOverlays.push(pit);
           }
+          // The gap tiles are also registered as ordinary movement colliders
+          // (mapData.colliders) so the player can't walk into the pit, but
+          // that's the exact same mechanism a projectile's own flight uses
+          // to check for walls — without this, the shot this puzzle actually
+          // needs (fired across the gap at the far-side rune) would die the
+          // instant it reached the gap, making the puzzle unsolvable as
+          // designed. See registerProjectilePassthrough's own comment.
+          window.RangedWeapons?.registerProjectilePassthrough(mapId, f.gateTiles || []);
         }
         let spent = false;
         window.RangedWeapons?.registerWorldTarget(mapId, key, box, () => {
@@ -12698,6 +12706,7 @@
           for (const [gc, gr] of (f.gateTiles || [])) {
             if (bGrid[gr]?.[gc]) bGrid[gr][gc].type = TileType.GRASS;
           }
+          window.RangedWeapons?.unregisterProjectilePassthrough(mapId, f.gateTiles || []);
           for (const pit of pitOverlays) {
             bScene.remove(pit);
             pit.geometry?.dispose?.();
@@ -12774,6 +12783,7 @@
         window.ClimbSystem?.resetAreaRopes(mapId);
         window.RangedWeapons?.clearAreaWorldTargets(mapId);
         window.RangedWeapons?.clearAreaFlameZones(mapId);
+        window.RangedWeapons?.clearAreaProjectilePassthrough(mapId);
         _dungeonPitChambers.delete(mapId);
         disposeDungeonBraziers(mapId);
         disposeDungeonLooseProps(mapId);
@@ -12808,6 +12818,7 @@
           window.ClimbSystem?.resetAreaRopes(mapId);
           window.RangedWeapons?.clearAreaWorldTargets(mapId);
           window.RangedWeapons?.clearAreaFlameZones(mapId);
+          window.RangedWeapons?.clearAreaProjectilePassthrough(mapId);
           _dungeonPitChambers.delete(mapId);
           disposeDungeonBraziers(mapId);
           disposeDungeonLooseProps(mapId);

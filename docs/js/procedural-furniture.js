@@ -255,6 +255,9 @@
   function disc(x, y, z, sx, sy, sz, tint, extra) {
     return withExtra({ kind: 'disc', tint, segments: 24, transform: { x, y, z, sx, sy, sz } }, extra);
   }
+  function sphere(x, y, z, size, tint, extra) {
+    return withExtra({ kind: 'sphere', tint, transform: { x, y, z, sx: size, sy: size, sz: size } }, extra);
+  }
 
   // Table-like: flat top on four (or more, for long tables) legs.
   function tableRecipe(fw, fd, topThickness, legHeight) {
@@ -569,10 +572,14 @@ function campfireRecipe() {
   ];
 
   // Same reasoning as dungeonChest above — a small stand-in until
-  // dungeonRune.json is ready.
+  // dungeonRune.json is ready. A radial orb rather than a flat directional
+  // disc — see dungeonRune.json's own comment for why: a tilted panel only
+  // reads as a target from whichever way it happens to face, which a
+  // procedurally-rotated puzzle piece can get wrong.
   CATALOG.dungeonRune = [
     box(0, .12, 0, .5, .24, .5, .8, { color: 0x6f7566 }),
-    disc(0, .66, 0, .4, .05, .4, 1, { color: 0x8a5cff, segments: 16 }),
+    sphere(0, .68, 0, .34, 1, { color: 0x8a5cff }),
+    sphere(0, .68, 0, .2, 1, { color: 0xc9b6ff }),
   ];
 
   // Same reasoning as dungeonChest/dungeonRune above — a small stand-in
