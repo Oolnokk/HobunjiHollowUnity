@@ -44,6 +44,7 @@ jobs:
           node --check docs/js/npc-social-relationship-bridge-v2.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v2.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
+          node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/dialogue-content.js
           node --check docs/js/relationships-panel.js
           node --check docs/js/panel-ui.js
@@ -51,5 +52,3 @@ jobs:
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
-      - name: Re-run established alcohol regression
-        run: node scripts/test-alcohol-swigs-and-npc-offers.js
