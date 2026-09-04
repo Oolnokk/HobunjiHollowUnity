@@ -105,6 +105,21 @@
     const dialogue = window.DialogueContent;
     if (dialoguePatched || !dialogue?.npcRelationshipsSnapshot || !dialogue?.loadNpcRelationships) return false;
     dialoguePatched = true;
+    const originalGetState = typeof dialogue.getNpcDlgState === 'function' ? dialogue.getNpcDlgState.bind(dialogue) : null; // Existing relationship getter becomes the event boundary for midnight settlement.
+    if (originalGetState) {
+      dialogue.getNpcDlgState = function getNpcDlgStateWithRapportRollover(npcId, ...args) {
+        const state = originalGetState(npcId, ...args);
+        const id = String(npcId || '');
+        if (id && state) {
+          touchedNpcIds.add(id);
+          if (!Number.isFinite(Number(state.rapport))) state.rapport = 0;
+          if (!Number.isFinite(Number(state.rapportDay))) state.rapportDay = socialDay();
+          if (!Number.isFinite(Number(state.lastGiftDay))) state.lastGiftDay = -1;
+          settle(id, state);
+        }
+        return state;
+      };
+    }
     const originalSnapshot = dialogue.npcRelationshipsSnapshot.bind(dialogue); // Legacy relationship serializer remains authoritative.
     dialogue.npcRelationshipsSnapshot = function (...args) {
       flushRollover();
