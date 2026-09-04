@@ -51,7 +51,7 @@
       billboard: { rotationLerp:0.18, alphaTest:0.02, noOutline:true },
       rope: {
         color:'#6b4728', radialScale:2.25, lengthScale:2, sideCount:5,
-        taperRatio:0.94, textureRepeatWorldLength:0.09, shellOutline:true,
+        taperRatio:0.94, textureRepeatWorldLength:0.09, shellOutline:false,
         shellThicknessScale:0.18,
       },
       wind: {
