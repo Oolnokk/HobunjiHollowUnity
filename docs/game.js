@@ -8645,9 +8645,7 @@
       // a THREE-unit world height, matching player.fallSurfaceY.
       const _dungeonLooseProps = new Map();
       const LOOSE_PROP_RADIUS_PX = 12;
-      const LOOSE_PROP_GRAVITY = 9;
-      const LOOSE_PROP_AIR_DRAG = 0.6;
-      const LOOSE_PROP_GROUND_FRICTION = 5;
+      const LOOSE_PROP_GRAVITY = 9; // Only ever feeds the analytic arc-timing formula below (beginLooseFlight) — see its own comment for why there's no real per-frame integration anymore.
       // Carry stance offsets (world/local units, TILE-normalized — see
       // updateCarriedPropTransform). Large objects (crate/jar/statue) lock
       // to the same "held in front of the chest" position/height the
@@ -8670,10 +8668,7 @@
       const LOOSE_PROP_WEIGHT_BY_KIND = { crate: 1, jar: 0.55, statue: 1.8, key: 0.3 };
       const LOOSE_PROP_HOLD_THRESHOLD_S = 0.16; // Tap-vs-hold split for the throw/place action — matches combat-input.js's own HOLD_THRESHOLD_S for a consistent feel.
       const LOOSE_PROP_THROW_RANGE_TILES = 12; // Max aim-target distance from the player while the throw reticle is live — see computeThrowAimTarget.
-      const LOOSE_PROP_THROW_LAUNCH_SPEED = 620; // world px/s horizontal speed at detach — a real power-throw, not a lob.
-      const LOOSE_PROP_THROW_LAUNCH_UP_SPEED = 2; // world-units/s upward pop at detach, before weighted gravity takes over.
-      const LOOSE_PROP_VOID_Y = -3; // Below even the pit chamber's sublevel (-2) — see updateLooseProps' "fallen into space" respawn.
-      const LOOSE_PROP_REST_EPS = 0.05; // Below this speed on every axis (and grounded), a prop is considered settled — see updateLooseProps.
+      const LOOSE_PROP_REST_EPS = 0.05; // Small position-closeness epsilon — see looseIsOnAnimatedFloor's per-frame pillar recheck.
       // Simulation is skipped outright for any prop this far (in tiles,
       // Chebyshev distance — cheap and good enough given the dungeon's
       // grid/room+corridor structure, no real line-of-sight raycast needed)
@@ -12055,7 +12050,7 @@
           props.push({
             id: p.id, kind: p.kind, name: p.name || null, mesh,
             apertureId: p.apertureId || null,
-            x, y, z: 0, vx: 0, vy: 0, vz: 0,
+            x, y, z: 0, flight: null, // flight — see beginLooseFlight/updateLooseFlight — replaces real per-frame velocity/physics entirely.
             bounciness: p.kind === 'jar' ? 0.42 : p.kind === 'key' ? 0.3 : p.kind === 'statue' ? 0.04 : 0.18,
             originX: x, originY: y, originZ: 0,
             // Starts settled (its own spawn IS its default resting state) —
@@ -12091,7 +12086,7 @@
 
       function respawnLooseProp(prop) {
         prop.x = prop.originX; prop.y = prop.originY; prop.z = prop.originZ;
-        prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        prop.flight = null;
         prop.settled = true;
         showToast(`${looseCapitalized(prop)} clatters back into place.`, false);
       }
@@ -12133,21 +12128,29 @@
       // along separately — see carriedPropHandGripOverride.
       function updateCarriedPropTransform(prop) {
         const angle = player.angle;
+        // playerMesh.position — not raw player.x/y — is what's actually on
+        // screen: updatePlayerMesh eases the rendered avatar toward the
+        // logical position each frame (playerMesh.position.x/z += (wx/wz -
+        // ...) * 0.25) so ordinary movement reads smoothly instead of
+        // snapping every tile-speed change. Anchoring the carried prop to
+        // the raw logical position instead made it visibly race ahead of
+        // the character's own catching-up body — see carriedPropHandGripOverride
+        // for why the hands inherited the same detached look.
         const carryFloor = looseFloorInfoAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
         const baseY = carryFloor ? carryFloor.y : 0;
         if (prop.kind === 'key') {
           // Mirrors the thrust/potion held-item pose: a lateral hip offset
           // (playerToolBaseX), no forward push, tilted up slightly.
           const rightAngle = angle - Math.PI / 2;
-          const px = player.x / TILE + Math.cos(rightAngle) * playerToolBaseX;
-          const py = player.y / TILE + Math.sin(rightAngle) * playerToolBaseX;
+          const px = playerMesh.position.x + Math.cos(rightAngle) * playerToolBaseX;
+          const py = playerMesh.position.z + Math.sin(rightAngle) * playerToolBaseX;
           prop.mesh.position.set(px, baseY + playerToolBaseY, py);
           prop.mesh.rotation.set(THREE.MathUtils.degToRad(10.31), -angle, 0);
           return;
         }
         const forwardX = Math.cos(angle), forwardY = Math.sin(angle);
-        const px = player.x / TILE + forwardX * LOOSE_PROP_CARRY_FORWARD_TILES;
-        const py = player.y / TILE + forwardY * LOOSE_PROP_CARRY_FORWARD_TILES;
+        const px = playerMesh.position.x + forwardX * LOOSE_PROP_CARRY_FORWARD_TILES;
+        const py = playerMesh.position.z + forwardY * LOOSE_PROP_CARRY_FORWARD_TILES;
         prop.mesh.position.set(px, baseY + playerItemHoldY, py);
         prop.mesh.rotation.set(0, -angle, 0);
       }
@@ -12194,17 +12197,32 @@
       // currently carried prop (if any) skips all of this and just follows
       // the player instead.
       //
+      // Not real physics — no per-frame force integration or wall collision
+      // at all. A "flight" (see beginLooseFlight) is a fully precomputed
+      // parabolic arc from wherever the prop started to a known landing
+      // point, evaluated analytically each frame (updateLooseFlight); real
+      // step-by-step gravity+collision looked janky in practice (small
+      // per-frame bounce/friction jitter, unpredictable wall-slide response)
+      // for something this was never meant to be a precise simulation of —
+      // a deterministic authored-feeling toss/drop reads better and costs
+      // less. Gravity still drives the arc's height/duration relationship
+      // (see beginLooseFlight), so it's "faked" only in that nothing
+      // actually steps through space integrating forces or checking walls
+      // along the way — same spirit as the throwing flask's own
+      // alchemy-flasks.js projectile arc, which nobody's had a problem with.
+      //
       // Performance: a prop that's settled (at rest, matching its own
-      // default/resting state — see LOOSE_PROP_REST_EPS) skips the entire
-      // block below outright, and skips even the position/rotation mesh
-      // sync since neither changed. The one exception is a prop resting on
-      // an animated pit-chamber pillar tile, which still needs a cheap
-      // floor-height recheck every frame (see looseIsOnAnimatedFloor) to
-      // notice the pillar retracting out from under it. A prop that's NOT
-      // settled (actively thrown/falling) but far outside
-      // LOOSE_PROP_SIM_RANGE_TILES of the player is frozen in place instead
-      // of fully simulated — nothing the player could currently see or
-      // affect needs to keep animating every frame.
+      // default/resting state) skips the entire block below outright, and
+      // skips even the position/rotation mesh sync since neither changed.
+      // The one exception is a prop resting on an animated pit-chamber
+      // pillar tile, which still needs a cheap floor-height recheck every
+      // frame (see looseIsOnAnimatedFloor) to notice the pillar retracting
+      // out from under it — that starts a new (unarced, straight-down)
+      // flight rather than running any kind of real fall physics either. A
+      // prop mid-flight but far outside LOOSE_PROP_SIM_RANGE_TILES of the
+      // player is frozen in place instead of fully simulated — nothing the
+      // player could currently see or affect needs to keep animating every
+      // frame.
       function updateLooseProps(dt) {
         if (!window.DungeonTest?.floorFromMapId?.(currentArea)) {
           if (player.carriedProp) player.carriedProp = null; // Left the dungeon still carrying something — it can't come along.
@@ -12222,47 +12240,65 @@
             if (!looseIsOnAnimatedFloor(currentArea, col, row)) continue; // Fully idle — nothing to recompute.
             const floorInfo = looseFloorInfoAt(currentArea, col, row);
             if (floorInfo && Math.abs(prop.z - floorInfo.y) < LOOSE_PROP_REST_EPS) continue; // Pillar's still where it left it.
-            prop.settled = false; // The floor moved out from under it — let gravity take back over below.
+            // The floor moved out from under it — a straight drop-flight to
+            // wherever the (now-lower) floor actually is; see the pit
+            // chamber's sublevel. No real floor at all there is a
+            // last-resort case the ordinary throw path never triggers.
+            if (!floorInfo) { respawnLooseProp(prop); continue; }
+            beginLooseFlight(prop, prop.x, prop.y, floorInfo.y, 0);
           }
+          if (!prop.flight) continue; // Genuinely idle (shouldn't happen once settled is handled above, but cheap to be sure).
           if (!looseIsNearPlayer(prop)) continue; // Out of range — frozen until the player's back in range.
+          updateLooseFlight(prop, dt);
+        }
+      }
 
-          prop.vz -= LOOSE_PROP_GRAVITY * (prop.gravityScale || 1) * dt;
-          prop.z += prop.vz * dt;
-          const desiredX = prop.x + prop.vx * dt, desiredY = prop.y + prop.vy * dt;
-          const swept = sweptMove(prop.x, prop.y, desiredX, desiredY, (x, y) => canOccupyAt(x, y, LOOSE_PROP_RADIUS_PX));
-          prop.x = swept.x; prop.y = swept.y;
-          if (swept.blockedX) prop.vx *= -0.3;
-          if (swept.blockedY) prop.vy *= -0.3;
-          const drag = Math.min(1, LOOSE_PROP_AIR_DRAG * dt);
-          prop.vx *= (1 - drag); prop.vy *= (1 - drag);
+      // Starts (or continues into, on a bounce — see updateLooseFlight) one
+      // analytic parabolic hop: a fixed peak arcHeight (0 for a straight
+      // drop, e.g. a retracting pillar) reached and left exactly at ratio
+      // 0.5 via a sine curve, over a duration solved from real projectile-
+      // motion timing (2*sqrt(2h/g) for an arc that launches and lands at
+      // the same height, sqrt(2h/g) for a straight fall) so heavier props
+      // (higher gravityScale/LOOSE_PROP_WEIGHT_BY_KIND) genuinely fall
+      // faster without any per-frame integration.
+      function beginLooseFlight(prop, toX, toY, toZ, arcHeight) {
+        const weight = prop.gravityScale || LOOSE_PROP_WEIGHT_BY_KIND[prop.kind] || 1;
+        const g = Math.max(0.5, LOOSE_PROP_GRAVITY * weight);
+        const straightDrop = Math.hypot(toX - prop.x, toY - prop.y) < 1;
+        const durationS = straightDrop
+          ? window.FormatUtils.clamp(Math.sqrt(2 * Math.max(0.02, Math.abs(toZ - prop.z)) / g), 0.12, 1.6)
+          : window.FormatUtils.clamp(2 * Math.sqrt(2 * Math.max(0.02, arcHeight) / g), 0.12, 1.6);
+        prop.flight = { fromX: prop.x, fromY: prop.y, fromZ: prop.z, toX, toY, toZ, arcHeight, t: 0, durationS };
+        prop.settled = false;
+      }
 
-          // Safety-net "fallen into space" respawn — reachable in practice
-          // by rolling off a pit-chamber sublevel patch onto sublevel-height
-          // open air (that sublevel only has real floor directly under each
-          // pillar — see buildDungeonPitChamber), and a last-resort catch
-          // for anything else that could otherwise leave a prop stuck below
-          // the map with no way back for the player to retrieve it.
-          if (prop.z < LOOSE_PROP_VOID_Y) { respawnLooseProp(prop); continue; }
-          const newCol = Math.floor(prop.x / TILE), newRow = Math.floor(prop.y / TILE);
-          const floorInfo = looseFloorInfoAt(currentArea, newCol, newRow);
-          let grounded = false;
-          if (floorInfo && prop.z <= floorInfo.y) {
-            prop.z = floorInfo.y;
-            if (Math.abs(prop.vz) > 0.4) {
-              prop.vz = -prop.vz * prop.bounciness;
-              prop.vx *= 0.6; prop.vy *= 0.6;
-            } else {
-              prop.vz = 0;
-              const friction = Math.max(0, 1 - LOOSE_PROP_GROUND_FRICTION * dt);
-              prop.vx *= friction; prop.vy *= friction;
-              grounded = true;
-            }
-          }
-          prop.mesh.position.set(prop.x / TILE, prop.z, prop.y / TILE);
-          if (grounded && Math.abs(prop.vx) < LOOSE_PROP_REST_EPS * TILE && Math.abs(prop.vy) < LOOSE_PROP_REST_EPS * TILE && Math.abs(prop.vz) < LOOSE_PROP_REST_EPS) {
-            prop.vx = 0; prop.vy = 0; prop.vz = 0;
-            prop.settled = true;
-          }
+      // Evaluates the active flight's position for this frame and, once it
+      // lands, either chains into a smaller decaying bounce (scaled by the
+      // prop's own bounciness — see wireDungeonLooseProps — so a jar keeps
+      // hopping noticeably longer than a crate, and a statue's near-zero
+      // bounciness makes it stop dead) or settles for good.
+      function updateLooseFlight(prop, dt) {
+        const f = prop.flight;
+        f.t += dt;
+        const ratio = Math.min(1, f.t / f.durationS);
+        prop.x = f.fromX + (f.toX - f.fromX) * ratio;
+        prop.y = f.fromY + (f.toY - f.fromY) * ratio;
+        prop.z = f.fromZ + (f.toZ - f.fromZ) * ratio + (f.arcHeight > 0 ? Math.sin(Math.PI * ratio) * f.arcHeight : 0);
+        prop.mesh.position.set(prop.x / TILE, prop.z, prop.y / TILE);
+        if (ratio < 1) return;
+        prop.x = f.toX; prop.y = f.toY; prop.z = f.toZ;
+        const nextArcHeight = f.arcHeight * prop.bounciness;
+        if (f.arcHeight > 0.001 && nextArcHeight > 0.035) {
+          const traveled = Math.hypot(f.toX - f.fromX, f.toY - f.fromY);
+          const hopDist = traveled * prop.bounciness * 0.6;
+          const dirLen = traveled || 1;
+          const dirX = (f.toX - f.fromX) / dirLen, dirY = (f.toY - f.fromY) / dirLen;
+          const nextToX = prop.x + dirX * hopDist, nextToY = prop.y + dirY * hopDist;
+          const bounceFloor = looseFloorInfoAt(currentArea, Math.floor(nextToX / TILE), Math.floor(nextToY / TILE));
+          beginLooseFlight(prop, nextToX, nextToY, bounceFloor ? bounceFloor.y : f.toZ, nextArcHeight);
+        } else {
+          prop.flight = null;
+          prop.settled = true;
         }
       }
 
@@ -12326,7 +12362,7 @@
         const prop = findNearbyLooseProp();
         if (!prop) return { ok: false, message: 'Nothing nearby to pick up.' };
         player.carriedProp = prop;
-        prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        prop.flight = null; // In case it was mid-bounce when grabbed out of the air.
         prop.settled = false; // Carrying always counts as "not at rest" — see updateLooseProps' idle skip.
         return { ok: true, message: `Picked up the ${looseCapitalized(prop)}.` };
       }
@@ -12390,19 +12426,18 @@
 
       // The actual detach — fires exactly once per hold-and-release throw,
       // partway through the strike playback (see updatePropThrowPress). A
-      // real power-throw: fixed high horizontal speed straight at the
-      // tracked aim target, a small upward pop, then ordinary gravity (see
-      // updateLooseProps) scaled by the prop's own kind (heavier objects
-      // arc and drop faster — see LOOSE_PROP_WEIGHT_BY_KIND) takes over.
+      // real power-throw straight at the tracked aim target: a parabolic
+      // arc (see beginLooseFlight) that peaks higher the lighter the
+      // object and the farther the throw, then ordinary weighted gravity
+      // (LOOSE_PROP_WEIGHT_BY_KIND) governs how fast it actually drops.
       function launchCarriedPropAtTarget(prop, target) {
         player.carriedProp = null;
-        const dx = target.x - prop.x, dy = target.y - prop.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        prop.vx = dx / dist * LOOSE_PROP_THROW_LAUNCH_SPEED;
-        prop.vy = dy / dist * LOOSE_PROP_THROW_LAUNCH_SPEED;
-        prop.vz = LOOSE_PROP_THROW_LAUNCH_UP_SPEED;
-        prop.gravityScale = LOOSE_PROP_WEIGHT_BY_KIND[prop.kind] ?? 1;
-        prop.settled = false;
+        const weight = LOOSE_PROP_WEIGHT_BY_KIND[prop.kind] ?? 1;
+        prop.gravityScale = weight;
+        const dist = Math.hypot(target.x - prop.x, target.y - prop.y);
+        const arcHeight = window.FormatUtils.clamp((dist / TILE) * 0.11 / weight, 0.28, 1.7);
+        const targetFloor = looseFloorInfoAt(currentArea, Math.floor(target.x / TILE), Math.floor(target.y / TILE));
+        beginLooseFlight(prop, target.x, target.y, targetFloor ? targetFloor.y : 0, arcHeight);
       }
 
       // The contextual alternative to a held-and-released throw when the
@@ -12419,7 +12454,7 @@
         prop.x = (target.col + 0.5) * TILE;
         prop.y = (target.row + 0.5) * TILE;
         prop.z = target.y;
-        prop.vx = 0; prop.vy = 0; prop.vz = 0;
+        prop.flight = null;
         prop.settled = true;
         prop.mesh.position.set(target.col + 0.5, target.y, target.row + 0.5);
         return { ok: true, message: `Set down the ${looseCapitalized(prop)}.` };
@@ -12547,8 +12582,8 @@
         const rightX = Math.cos(rightAngle), rightY = Math.sin(rightAngle);
         const carryFloor = looseFloorInfoAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
         const baseY = carryFloor ? carryFloor.y : 0;
-        const px = player.x / TILE + forwardX * (LOOSE_PROP_CARRY_FORWARD_TILES + pose.z) + rightX * pose.x;
-        const py = player.y / TILE + forwardY * (LOOSE_PROP_CARRY_FORWARD_TILES + pose.z) + rightY * pose.x;
+        const px = playerMesh.position.x + forwardX * (LOOSE_PROP_CARRY_FORWARD_TILES + pose.z) + rightX * pose.x;
+        const py = playerMesh.position.z + forwardY * (LOOSE_PROP_CARRY_FORWARD_TILES + pose.z) + rightY * pose.x;
         prop.mesh.position.set(px, baseY + playerItemHoldY + pose.y, py);
         prop.mesh.rotation.set(THREE.MathUtils.degToRad(pose.pitch), -angle + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll));
         // The hands (see carriedPropHandGripOverride) keep tracking the
@@ -12631,9 +12666,8 @@
         const props = _dungeonLooseProps.get(currentArea) || [];
         for (const gate of gates) {
           if (gate.kind !== 'plate') continue;
-          const pressed = props.some(p => p.kind === 'statue' && p !== player.carriedProp
-            && Math.floor(p.x / TILE) === gate.plateCol && Math.floor(p.y / TILE) === gate.plateRow
-            && Math.abs(p.vz) < 0.15);
+          const pressed = props.some(p => p.kind === 'statue' && p !== player.carriedProp && p.settled
+            && Math.floor(p.x / TILE) === gate.plateCol && Math.floor(p.y / TILE) === gate.plateRow);
           if (pressed === gate.pressed) continue;
           gate.pressed = pressed;
           setDungeonGateOpen(currentArea, gate, pressed);
@@ -23297,6 +23331,17 @@
           // a prop one-handed alongside a held item reads oddly).
           if (window.DungeonTest?.floorFromMapId?.(currentArea)) {
             if (player.carriedProp) {
+              // A carried key aimed at its matching aperture (or any other
+              // building interactable that actually has something to do
+              // with a carried prop) takes priority over the generic
+              // throw/place button — this used to return unconditionally
+              // here, so aiming a carried key at its lock could never reach
+              // the ordinary _buildingInteractables check below and offer
+              // "Insert Key" at all.
+              const carryReticle = getReticleTile();
+              const carryInteractable = _buildingInteractables.get(currentArea + ',' + carryReticle.col + ',' + carryReticle.row);
+              const carryButtons = carryInteractable?.getButtons();
+              if (carryButtons?.some(b => b.allowed !== false)) return carryButtons;
               return [{ icon: '🤾', label: `Throw ${looseCapitalized(player.carriedProp)}`, action: 'obj_throw_prop', style: 'primary', allowed: true, worldInteraction: true }];
             }
             if (heldMode === 'none') {
