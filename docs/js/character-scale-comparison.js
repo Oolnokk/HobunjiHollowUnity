@@ -194,12 +194,16 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       panel.className = 'maaInteractive';
       panel.innerHTML = `
         <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Tap a character</span><span id="maaFullScaleNpc" class="pill">—</span></div>
-        <div class="scaleRow"><input id="maaFullScaleRange" type="range" min="25" max="200" step="0.5" value="100" aria-label="Full character scale"><output id="maaFullScaleOut">100%</output></div>
+        <div class="scaleRow"><label for="maaFullScaleRangeX">Width</label><input id="maaFullScaleRangeX" type="range" min="25" max="200" step="0.5" value="100" aria-label="Body width scale"><output id="maaFullScaleOutX">100%</output></div>
+        <div class="scaleRow"><label for="maaFullScaleRangeY">Height</label><input id="maaFullScaleRangeY" type="range" min="25" max="200" step="0.5" value="100" aria-label="Body height scale"><output id="maaFullScaleOutY">100%</output></div>
+        <div class="scaleRow"><label for="maaFullScaleRangeHead">Head</label><input id="maaFullScaleRangeHead" type="range" min="25" max="200" step="0.5" value="100" aria-label="Head scale"><output id="maaFullScaleOutHead">100%</output></div>
         <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button></div>
-        <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode.</div>`;
+        <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode. Head scale is compensated at the neck rig so stretching width/height never distorts head proportions.</div>`;
       workspace.appendChild(panel);
-      panel.querySelector('#maaFullScaleRange').addEventListener('input', applySlider);
-      panel.querySelector('#maaFullScaleRange').addEventListener('change', persistProfiles);
+      for (const axis of ['X', 'Y', 'Head']) {
+        panel.querySelector(`#maaFullScaleRange${axis}`).addEventListener('input', applySlider);
+        panel.querySelector(`#maaFullScaleRange${axis}`).addEventListener('change', persistProfiles);
+      }
       panel.querySelector('#maaFullScaleExport').addEventListener('click', exportJson);
       panel.querySelector('#maaFullScaleFrame').addEventListener('click', frame);
     }
@@ -266,22 +270,30 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
   function select(entry) {
     if (!entry) return;
     selected = entry;
-    const scale = Number(entry.profile?.anatomy?.rigScale ?? 1);
+    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1 };
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
     document.getElementById('maaFullScaleNpc').textContent = entry.npc?.name || entry.npc?.id || 'Repository NPC';
-    document.getElementById('maaFullScaleRange').value = String(clampPercent(scale * 100));
-    document.getElementById('maaFullScaleOut').textContent = `${Math.round(scale * 1000) / 10}%`;
+    for (const [axis, field] of [['X', 'x'], ['Y', 'y'], ['Head', 'head']]) {
+      const percent = clampPercent(scale[field] * 100);
+      document.getElementById(`maaFullScaleRange${axis}`).value = String(percent);
+      document.getElementById(`maaFullScaleOut${axis}`).textContent = `${Math.round(scale[field] * 1000) / 10}%`;
+    }
     status(`Selected ${prettySpecies(entry.species)} ${entry.gender} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}.`);
   }
 
-  function applySlider(event) {
+  function applySlider() {
     if (!active || !selected) return;
-    const percent = clampPercent(event.currentTarget.value);
-    const scale = percent / 100;
+    const scale = { x: 1, y: 1, head: 1 };
+    for (const [axis, field] of [['X', 'x'], ['Y', 'y'], ['Head', 'head']]) {
+      const percent = clampPercent(document.getElementById(`maaFullScaleRange${axis}`).value);
+      scale[field] = percent / 100;
+      document.getElementById(`maaFullScaleOut${axis}`).textContent = `${Math.round(percent * 10) / 10}%`;
+    }
     selected.profile.anatomy ||= {};
-    selected.profile.anatomy.rigScale = scale;
+    selected.profile.anatomy.rigScaleX = scale.x;
+    selected.profile.anatomy.rigScaleY = scale.y;
+    selected.profile.anatomy.headScale = scale.head;
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale);
-    document.getElementById('maaFullScaleOut').textContent = `${Math.round(percent * 10) / 10}%`;
     clearTimeout(persistTimer);
     persistTimer = setTimeout(persistProfiles, 180);
     if (frameRaf) cancelAnimationFrame(frameRaf);
@@ -305,8 +317,13 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const data = {};
     for (const descriptor of profileDescriptors()) {
       const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[descriptor.key];
+      const scale = window.HobunjiCharacterRigScale?.scaleFor?.(descriptor.species, descriptor.gender, profile) || { x: 1, y: 1, head: 1 };
       data[descriptor.species] ||= {};
-      data[descriptor.species][descriptor.gender] = Math.round(Number(profile?.anatomy?.rigScale ?? 1) * 10000) / 10000;
+      data[descriptor.species][descriptor.gender] = {
+        x: Math.round(scale.x * 10000) / 10000,
+        y: Math.round(scale.y * 10000) / 10000,
+        head: Math.round(scale.head * 10000) / 10000,
+      };
     }
     const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -397,7 +414,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[rep.key];
     if (!rigProfile) throw new Error(`Missing rig profile ${rep.key}.`);
     rigProfile.anatomy ||= {};
-    if (!Number.isFinite(Number(rigProfile.anatomy.rigScale))) rigProfile.anatomy.rigScale = 1;
+    const initialScale = window.HobunjiCharacterRigScale?.scaleFor?.(rep.species, rep.gender, rigProfile) || { x: 1, y: 1, head: 1 };
+    rigProfile.anatomy.rigScaleX ??= initialScale.x;
+    rigProfile.anatomy.rigScaleY ??= initialScale.y;
+    rigProfile.anatomy.headScale ??= initialScale.head;
     applyAnatomyConfig(rigProfile);
 
     const avatar = await buildPortrait(rep.npc);
@@ -438,7 +458,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     feet?.update?.(0, 0, false, null);
 
     previewRoot.add(group);
-    window.HobunjiCharacterRigScale?.applyToParent?.(group, rep.species, rep.gender, rigProfile.anatomy.rigScale);
+    window.HobunjiCharacterRigScale?.applyToParent?.(group, rep.species, rep.gender, {
+      x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY, head: rigProfile.anatomy.headScale,
+    });
     window.ProceduralHandFrameDriver?.syncNow?.();
     return { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
   }

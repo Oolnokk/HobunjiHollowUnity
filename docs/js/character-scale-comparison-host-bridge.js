@@ -11,7 +11,8 @@
 
   const publicApi = () => window.MultiAvatarAnimationAuthor || {}; // Used for supported project, mode, actor-add, selection, and rig-profile reads.
   const MODE_TAB_IDS = Object.freeze({ multi: 'maaMultiTab', single: 'maaSingleTab', rig: 'maaRigTab' }); // Used only when restoring a mode the early public setMode API does not understand.
-  const RIG_SCALE_STORAGE_KEY = 'hobunjiFullCharacterRigScales.v1'; // Persists whole-character scales independently because the editor's V15.30 anatomy normalizer drops unknown fields.
+  const RIG_SCALE_STORAGE_KEY = 'hobunjiFullCharacterRigScales.v2'; // Persists whole-character scales independently because the editor's V15.30 anatomy normalizer drops unknown fields. v2 stores {x,y,head} triples instead of v1's single uniform number.
+  const LEGACY_SCALE_STORAGE_KEY_V1 = 'hobunjiFullCharacterRigScales.v1'; // Recovers pre-split saves (a single uniform number per species/gender) so upgrading never loses an author's existing tuning.
   const LEGACY_RIG_SAVE_KEY = 'hobunjiAttachmentRigProfiles.v2'; // Recovers scales already autosaved by earlier Full Character Scale builds even though their native Rig export omitted them.
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   const normalizeGender = value => {
@@ -41,9 +42,34 @@
     return profileKey(profile.species || rawSpecies, profile.gender || rawGender);
   }
 
-  function normalizedRigScale(value) {
+  function normalizedRigScaleNumber(value) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0.25, Math.min(2, number)) : null;
+  }
+
+  // Accepts either a { x, y, head } triple or a legacy single uniform number
+  // (treated as that same value on all three axes). Returns a fully-resolved
+  // { x, y, head } triple, or null if nothing usable was supplied.
+  function normalizedRigScale(value) {
+    if (value == null) return null;
+    if (typeof value === 'number' || typeof value === 'string') {
+      const uniform = normalizedRigScaleNumber(value);
+      return uniform == null ? null : { x: uniform, y: uniform, head: uniform };
+    }
+    const x = normalizedRigScaleNumber(value.x);
+    const y = normalizedRigScaleNumber(value.y);
+    const head = normalizedRigScaleNumber(value.head);
+    if (x == null && y == null && head == null) return null;
+    return { x: x ?? y ?? head ?? 1, y: y ?? x ?? head ?? 1, head: head ?? x ?? y ?? 1 };
+  }
+
+  function anatomyRigScale(anatomy) {
+    if (!anatomy) return null;
+    const x = normalizedRigScaleNumber(anatomy.rigScaleX);
+    const y = normalizedRigScaleNumber(anatomy.rigScaleY);
+    const head = normalizedRigScaleNumber(anatomy.headScale);
+    if (x != null || y != null || head != null) return normalizedRigScale({ x, y, head });
+    return normalizedRigScale(anatomy.rigScale); // Pre-split single-field profiles.
   }
 
   function applyRigScaleToSharedProfiles(key, value) {
@@ -51,7 +77,9 @@
     for (const [rawKey, profile] of Object.entries(characters)) {
       if (profileKeyFromEntry(rawKey, profile) !== key) continue;
       profile.anatomy ||= {};
-      profile.anatomy.rigScale = value;
+      profile.anatomy.rigScaleX = value.x;
+      profile.anatomy.rigScaleY = value.y;
+      profile.anatomy.headScale = value.head;
     }
   }
 
@@ -77,10 +105,10 @@
     const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
     for (const [rawKey, profile] of Object.entries(characters)) {
       if (profileKeyFromEntry(rawKey, profile) !== key) continue;
-      const scale = normalizedRigScale(profile?.anatomy?.rigScale);
+      const scale = anatomyRigScale(profile?.anatomy);
       if (scale != null) return scale;
     }
-    return normalizedRigScale(fallback) ?? 1;
+    return normalizedRigScale(fallback) ?? { x: 1, y: 1, head: 1 };
   }
 
   function captureSharedRigScales({ persist = true } = {}) {
@@ -88,9 +116,10 @@
     const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
     for (const [rawKey, profile] of Object.entries(characters)) {
       const key = profileKeyFromEntry(rawKey, profile);
-      const scale = normalizedRigScale(profile?.anatomy?.rigScale);
+      const scale = anatomyRigScale(profile?.anatomy);
       if (!key || scale == null) continue;
-      if (rigScaleOverrides.get(key) !== scale) {
+      const existing = rigScaleOverrides.get(key);
+      if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head) {
         rigScaleOverrides.set(key, scale);
         changed = true;
       }
@@ -108,6 +137,17 @@
         setRigScale(species, gender, value, { persist: false });
       }
     } catch (_) {}
+    // Pre-split saves stored a single uniform number per species/gender — normalizedRigScale
+    // mirrors it onto x/y/head so an author's existing tuning survives the upgrade untouched.
+    if (!rigScaleOverrides.size) {
+      try {
+        const parsedLegacy = JSON.parse(localStorage.getItem(LEGACY_SCALE_STORAGE_KEY_V1) || '{}');
+        for (const [key, value] of Object.entries(parsedLegacy || {})) {
+          const [species, gender] = key.split('::');
+          if (setRigScale(species, gender, value, { persist: false }) != null) recoveredLegacy += 1;
+        }
+      } catch (_) {}
+    }
     try {
       const legacy = JSON.parse(localStorage.getItem(LEGACY_RIG_SAVE_KEY) || 'null');
       for (const [key, scale] of importedRigScaleEntries(legacy)) {
@@ -126,7 +166,7 @@
     const entries = [];
     for (const [rawKey, profile] of Object.entries(characters)) {
       const key = profileKeyFromEntry(rawKey, profile);
-      const scale = normalizedRigScale(profile?.anatomy?.rigScale);
+      const scale = anatomyRigScale(profile?.anatomy);
       if (key && scale != null) entries.push([key, scale]);
     }
     return entries;
@@ -150,9 +190,12 @@
     for (const [rawKey, profile] of Object.entries(profiles.characters)) {
       const key = profileKeyFromEntry(rawKey, profile);
       const [species, gender] = key.split('::');
-      const scale = rigScaleFor(species, gender, profile?.anatomy?.rigScale ?? 1);
+      const scale = rigScaleFor(species, gender, anatomyRigScale(profile?.anatomy) ?? 1);
       profile.anatomy ||= {};
-      profile.anatomy.rigScale = scale;
+      profile.anatomy.rigScaleX = scale.x;
+      profile.anatomy.rigScaleY = scale.y;
+      profile.anatomy.headScale = scale.head;
+      delete profile.anatomy.rigScale; // Superseded by the x/y/head split; dropped so a re-export never resurrects the ambiguous uniform field.
     }
     return profiles;
   }
@@ -161,8 +204,8 @@
     if (!data || data.schema !== 'hobunji.attachment-rig-profiles.v10') return data;
     data.profiles = mergeRigScalesIntoProfiles(data.profiles || data.attachmentRigProfiles || {});
     data.anatomySemantics ||= {};
-    data.anatomySemantics.rigScale = 'Whole-character species/gender multiplier authored in Full Character Scale; applies uniformly to the floor-relative visual root, hands, feet, and attachment coordinates.';
-    data.fullCharacterScaleRoundTripVersion = 1;
+    data.anatomySemantics.rigScale = 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) authored in Full Character Scale, applied uniformly to the floor-relative visual root, hands, feet, and attachment coordinates; headScale is a separate, neck-rig-compensated factor that never inherits the body’s aspect ratio.';
+    data.fullCharacterScaleRoundTripVersion = 2;
     return data;
   }
 
@@ -197,14 +240,15 @@
     if (document.documentElement.dataset.fullScaleRoundTripHooks === '1') return;
     document.documentElement.dataset.fullScaleRoundTripHooks = '1';
 
-    // The comparison slider updates the shared profile in its own target listener.
+    const FULL_SCALE_RANGE_IDS = new Set(['maaFullScaleRangeX', 'maaFullScaleRangeY', 'maaFullScaleRangeHead']);
+    // The comparison sliders update the shared profile in their own target listener.
     // Capture it afterward at document bubble phase so the value is durable across reloads.
     document.addEventListener('input', event => {
-      if (event.target?.id !== 'maaFullScaleRange') return;
+      if (!FULL_SCALE_RANGE_IDS.has(event.target?.id)) return;
       queueMicrotask(() => captureSharedRigScales());
     });
     document.addEventListener('change', event => {
-      if (event.target?.id === 'maaFullScaleRange') {
+      if (FULL_SCALE_RANGE_IDS.has(event.target?.id)) {
         queueMicrotask(() => captureSharedRigScales());
         return;
       }
@@ -237,7 +281,10 @@
     const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${species}::${gender}`] || null;
     if (profile) {
       profile.anatomy ||= {};
-      profile.anatomy.rigScale = rigScaleFor(species, gender, profile.anatomy.rigScale ?? 1);
+      const scale = rigScaleFor(species, gender, anatomyRigScale(profile.anatomy) ?? 1);
+      profile.anatomy.rigScaleX = scale.x;
+      profile.anatomy.rigScaleY = scale.y;
+      profile.anatomy.headScale = scale.head;
     }
     return profile;
   }
@@ -333,9 +380,9 @@
       exportedAt: new Date().toISOString(),
       profiles,
       anatomySemantics: {
-        rigScale: 'Whole-character species/gender multiplier authored in Full Character Scale.',
+        rigScale: 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) plus a separate, neck-rig-compensated headScale, authored in Full Character Scale.',
       },
-      fullCharacterScaleRoundTripVersion: 1,
+      fullCharacterScaleRoundTripVersion: 2,
       exportSource: privateProfiles ? 'animation-author-public-rig-profiles+full-character-scale' : 'full-character-scale-shared-profiles',
     };
   }
