@@ -524,8 +524,20 @@
     _npcDialogueTypeUnits = [];
   }
 
+  // World of Warcraft's drunken speech filter is deliberately simple: every
+  // S/s gains a lowercase h, then " ...hic!" is appended. Apply it only to
+  // the final resolved NPC line so authored text stays pristine and inserted
+  // tokens/phrase-pool output are slurred exactly like the surrounding words.
+  function _wowDrunkifyNpcSpeech(text, rec = _dlgNpcRec || deps?.getDialogueWalker?.()?.rec) {
+    const source = String(text || ''); // Used as the unchanged sober line and as the input to WoW's text transform.
+    const npcId = rec?.id; // Used to query the existing NPC alcohol state instead of introducing a second drunkenness model.
+    const drunkFraction = npcId ? (Number(window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(npcId)) || 0) : 0; // Used only to gate the visual speech filter.
+    if (!(drunkFraction > 0)) return source;
+    return source.replace(/[Ss]/g, '$&h') + ' ...hic!';
+  }
+
   function _setNpcDialogueText(text, node = null) {
-    const resolvedText = String(text || '');
+    const resolvedText = _wowDrunkifyNpcSpeech(text);
     stopNpcDialogueTypewriter(false);
     _applyNpcDialogueLinePresentation(resolvedText, node);
     const cfg = npcDialogueTypewriterConfig();
@@ -776,6 +788,7 @@
     // this module's dialogue-box/choice-button rendering for its own
     // scripted talk/choice stages instead of an authored dialogueTree.
     setNpcDialogueText: _setNpcDialogueText,
+    wowDrunkifyNpcSpeech: _wowDrunkifyNpcSpeech,
     fitDlgOptionLabel: _fitDlgOptionLabel,
     playSpeechTick: _playNpcDialogueLetterSfx,
     npcDlgState: _npcDlgState,
