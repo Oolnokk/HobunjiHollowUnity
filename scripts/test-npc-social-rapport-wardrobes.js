@@ -212,8 +212,10 @@ assert.match(dialogueEditorState, /type:'adjustRapport'[\s\S]*?field:'amount'/,
   'Dialogue Editor exposes numeric positive/negative Rapport actions through its existing choice-action UI');
 assert.match(dialogueSource, /act\.type === 'adjustRapport'[\s\S]*?NpcRapport\?\.adjust/,
   'runtime dialogue choice execution applies authored Rapport changes');
-assert.match(relationshipsSource, /Rapport[\s\S]*?NpcRapport/,
-  'Relationships panel displays the temporary Rapport state');
+assert.match(relationshipsSource, /NpcRapport\?\.get\?\.\(npcId\)/,
+  'Relationships panel reads temporary Rapport from NpcRapport');
+assert.match(relationshipsSource, /Rapport \$\{Math\.round\(rapport\)\}\/100/,
+  'Relationships panel displays the temporary Rapport value');
 
 assert.match(wardrobeEditorSource, /METADATA_KEY = 'npcWardrobeFor'/,
   'Interior Author stores wardrobe ownership on a specific furniture instance');
