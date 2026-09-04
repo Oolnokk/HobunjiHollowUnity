@@ -58,13 +58,14 @@ assert.doesNotMatch(source, /anchor\.position\s*=|anchors\[[^\]]+\]\.position\s*
 // the supported public editor API / backdrop scene instead of pretending those
 // private bindings are globally reachable and then recursively wrapping itself.
 const scaleHostSource = fs.readFileSync('docs/js/character-scale-comparison-host-bridge.js', 'utf8');
+const scaleComparisonSource = fs.readFileSync('docs/js/character-scale-comparison.js', 'utf8');
 const scaleBootstrapSource = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8');
 assert.match(scaleHostSource, /HobunjiAnimationAuthorScaleHost/,
   'Full Character Scale must expose a dedicated host API');
 assert.match(scaleHostSource, /publicApi\(\)/,
   'Full Character Scale host must route editor operations through the public Animation Author API');
 assert.match(scaleHostSource, /HobunjiGameplayBackdrop/,
-  'Full Character Scale framing must use the public backdrop scene/camera');
+  'Full Character Scale host must use the public backdrop scene/camera');
 for (const globalName of [
   'setAnimationAuthorMode',
   'addNpcAnimationActor',
@@ -81,7 +82,27 @@ for (const globalName of [
 }
 assert.match(scaleHostSource, /privateEditorStateRequired: false/,
   'mobile diagnostics must confirm the scale host has no private-IIFE dependency');
-assert.match(scaleBootstrapSource, /character-scale-comparison-host-bridge\.js\?v=20260904f/,
-  'bootstrap must cache-bust the public-only Full Character Scale host');
+
+// The lineup itself must never become Animation Author actors. It should use the
+// exact public preview contracts already proven by Rig Coordinates reference NPCs:
+// proceduralHandParent for normal free hands and ProceduralLegAnimation for feet.
+assert.match(scaleComparisonSource, /FullCharacterScalePreviewRoot/,
+  'Full Character Scale must own a preview-only scene root');
+assert.match(scaleComparisonSource, /model\.userData\.proceduralHandParent = group/,
+  'comparison avatars must use the normal free-hand parent contract');
+assert.match(scaleComparisonSource, /ProceduralLegAnimation\?\.attach\?/,
+  'comparison avatars must attach the gameplay procedural feet runtime');
+assert.match(scaleComparisonSource, /raycaster\.intersectObject\(entry\.group, true\)/,
+  'selection must raycast each preview group directly');
+assert.match(scaleComparisonSource, /select\(best\.entry\)/,
+  'a tapped preview must directly update the comparison selection');
+assert.doesNotMatch(scaleComparisonSource, /addNpcAnimationActor/,
+  'comparison lineup must not create Animation Author actors');
+assert.doesNotMatch(scaleComparisonSource, /selectedAnimationActor/,
+  'comparison slider selection must not depend on Animation Author selection state');
+assert.doesNotMatch(scaleBootstrapSource, /character-scale-comparison-camera\.js/,
+  'obsolete private-state camera/picking wrapper must not load with the isolated comparison');
+assert.match(scaleBootstrapSource, /character-scale-comparison\.js\?v=20260904d/,
+  'bootstrap must cache-bust the isolated Full Character Scale comparison');
 
 console.log('Ground-relative whole character rig scale guards passed');
