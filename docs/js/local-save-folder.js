@@ -5,3 +5,4 @@ document.write('<script src="js/save-snapshot-core.js?v=20260904a"><\/script>');
 document.write('<script src="js/local-save-folder-core.js?v=20260812a"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260904a"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');
+document.write('<script src="js/save-startup-gate.js?v=20260904a"><\/script>');
