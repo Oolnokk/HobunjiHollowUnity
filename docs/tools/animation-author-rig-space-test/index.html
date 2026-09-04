@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Animation Author — rig-space test</title>
+  <style>
+    html,body,#author{width:100%;height:100%;margin:0;border:0;background:#05070b;overflow:hidden}
+    #author{display:block}
+    #badge{position:fixed;right:8px;top:8px;z-index:10;padding:5px 8px;border-radius:7px;background:#111c;color:#d7e7ff;font:12px system-ui,sans-serif;pointer-events:none}
+  </style>
+</head>
+<body>
+  <iframe id="author" src="../animation-author/index.html"></iframe>
+  <div id="badge">rig-space preview fix injected</div>
+  <script>
+    (() => {
+      const frame = document.getElementById('author');
+      frame.addEventListener('load', () => {
+        try {
+          const doc = frame.contentDocument;
+          if (!doc || doc.querySelector('script[data-rig-space-test]')) return;
+          const script = doc.createElement('script');
+          script.src = '../../js/animation-author-preview-rig-space-fix.js?v=20260903a';
+          script.dataset.rigSpaceTest = 'true';
+          doc.head.appendChild(script);
+        } catch (error) {
+          document.getElementById('badge').textContent = `injection failed: ${error.message}`;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

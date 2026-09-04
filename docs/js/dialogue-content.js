@@ -44,6 +44,7 @@
   let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
   const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
+  let _favorRescaleApplied = true; // see loadNpcRelationships/_applyLegacyFavorRescale
 
   function npcDialogueTextConfig() {
     return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
@@ -133,6 +134,31 @@
         heardPoolEntries:[...(rel.heardPoolEntries || [])],
       });
     }
+    _favorRescaleApplied = !!playerData?.npcFavorRescaleApplied;
+    if (!_favorRescaleApplied) {
+      _applyLegacyFavorRescale(playerData);
+      _favorRescaleApplied = true;
+    }
+  }
+
+  // One-time migration for a world member saved before Friendship Tier was
+  // unified onto the same -5..10 hearts scale favor already used
+  // everywhere else (renderRelationshipHearts, authored dialogue
+  // relationship:{min,max} conditions, npc-gifting.js's TIER_FAVOR, the
+  // rapport→favor rollover) — see procedural-tasks.js. Such a save can
+  // carry favor accumulated under the old, much larger tier thresholds
+  // (single quest turn-ins of up to +85), which reads as nonsense/maxed-
+  // out hearts now that both systems share one small scale. Every NPC's
+  // favor resets to a clean 0; Kinami Kunji is the one authored exception
+  // — she starts frosty (-2) toward anyone who isn't Mao'ao, same as
+  // everyone else (0) if the player is. Runs once per member (gated by
+  // npcFavorRescaleApplied, persisted alongside npcRelationships) — a
+  // brand-new member is created with that flag already set, so it never
+  // re-runs on saves made after this migration shipped.
+  function _applyLegacyFavorRescale(playerData) {
+    for (const st of _npcDlgState.values()) st.favor = 0;
+    const isMaoAo = playerData?.appearance?.speciesId === 'mao-ao';
+    getNpcDlgState('kinami_kunji').favor = isMaoAo ? 0 : -2; // force-create even if never met
   }
 
   function npcRelationshipsSnapshot() {
@@ -524,8 +550,20 @@
     _npcDialogueTypeUnits = [];
   }
 
+  // World of Warcraft's drunken speech filter is deliberately simple: every
+  // S/s gains a lowercase h, then " ...hic!" is appended. Apply it only to
+  // the final resolved NPC line so authored text stays pristine and inserted
+  // tokens/phrase-pool output are slurred exactly like the surrounding words.
+  function _wowDrunkifyNpcSpeech(text, rec = _dlgNpcRec || deps?.getDialogueWalker?.()?.rec) {
+    const source = String(text || ''); // Used as the unchanged sober line and as the input to WoW's text transform.
+    const npcId = rec?.id; // Used to query the existing NPC alcohol state instead of introducing a second drunkenness model.
+    const drunkFraction = npcId ? (Number(window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(npcId)) || 0) : 0; // Used only to gate the visual speech filter.
+    if (!(drunkFraction > 0)) return source;
+    return source.replace(/[Ss]/g, '$&h') + ' ...hic!';
+  }
+
   function _setNpcDialogueText(text, node = null) {
-    const resolvedText = String(text || '');
+    const resolvedText = _wowDrunkifyNpcSpeech(text);
     stopNpcDialogueTypewriter(false);
     _applyNpcDialogueLinePresentation(resolvedText, node);
     const cfg = npcDialogueTypewriterConfig();
@@ -762,6 +800,7 @@
     updateNpcDialoguePortrait,
     loadNpcRelationships,
     npcRelationshipsSnapshot,
+    npcFavorRescaleApplied: () => _favorRescaleApplied,
     recordNpcMemory,
     adjustNpcFavor,
     stopNpcDialogueTypewriter,
@@ -776,6 +815,7 @@
     // this module's dialogue-box/choice-button rendering for its own
     // scripted talk/choice stages instead of an authored dialogueTree.
     setNpcDialogueText: _setNpcDialogueText,
+    wowDrunkifyNpcSpeech: _wowDrunkifyNpcSpeech,
     fitDlgOptionLabel: _fitDlgOptionLabel,
     playSpeechTick: _playNpcDialogueLetterSfx,
     npcDlgState: _npcDlgState,

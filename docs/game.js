@@ -7388,6 +7388,12 @@
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
           alcoholBottleSwigs: {}, npcAlcoholState: {}, npcWardrobeState: {}, npcDiscoveredGiftTraits: {},
           alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
+          // A brand-new member has no legacy favor to fix, so it starts
+          // already "migrated" — see DialogueContent's loadNpcRelationships/
+          // _applyLegacyFavorRescale. A member saved before this field
+          // existed loads it as undefined/falsy, which is what triggers the
+          // one-time reset.
+          npcFavorRescaleApplied: true,
           joinedAt: Date.now(),
         };
       }
@@ -7476,6 +7482,7 @@
           member.nonGearInventory = { ...inventory };
           member.packClothing    = [...packClothing];
           member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
+          member.npcFavorRescaleApplied = window.DialogueContent?.npcFavorRescaleApplied?.() ?? true;
           member.questProgress    = { ...questProgress };
           member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
           member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
@@ -12139,6 +12146,7 @@
               if (safeSpawn && (safeSpawn.x !== intendedX || safeSpawn.y !== intendedY)) window.__farmLog?.(`[cavern] corrected unsafe entry spawn in ${mapId}`, 'warn', 'mine');
               _snapCameraTarget();
             }
+            window.LoadingScreenRuntime?.hide();
           }
           debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
           return;
@@ -12199,6 +12207,7 @@
         if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
           bScene.add(playerMesh); bScene.add(playerGroundShadow);
           bScene.add(toolHolder);
+          window.LoadingScreenRuntime?.hide();
         }
         debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
       }
@@ -12256,6 +12265,11 @@
         _currentBuildingMapId = mapId;
         currentArea = mapId;
         const bi = _buildingScenes.get(mapId);
+        // loadBuildingScene resolves asynchronously (a fresh mine floor/den
+        // cavern can take real time to generate) -- covers that instead of
+        // a blank/frozen interior. Hidden from loadBuildingScene itself
+        // once the scene it's building for THIS mapId actually lands.
+        if (!bi) window.LoadingScreenRuntime?.show();
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
         // Default entry is one tile north of the building's exit. Explicit
         // inter-floor spawn coordinates still win when an exit supplies them.
@@ -12286,6 +12300,14 @@
         }
         refreshActionBar();
         logMapSwap('enterBuilding', currentArea, { source: bi?.loadSource || 'loading', fallback: bi?.fallback || !bi, loading: !bi });
+        // Disposing the mine floor just left (instead of caching it forever
+        // like every other building) was tried here and reverted out of
+        // caution, not a confirmed problem: the analogous change for
+        // wilderness zones (see _disposeZoneScene's call site in enterZone)
+        // reproducibly crashed the tab after several dispose/rebuild
+        // cycles, and this shares the same never-before-exercised pattern
+        // (discardGeneratedMineFloor previously only ran for the same-floor
+        // re-entry case) without having been independently verified safe.
       }
 
       function exitBuilding() {
@@ -12333,8 +12355,26 @@
         if (!zdef && !_zoneLayouts.has(mapId)) return;
         const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
         const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
+        // Wilderness zones stay cached in _zoneScenes forever once built
+        // (same as before) -- disposing the outgoing zone on every exit was
+        // tried here and reverted: it reproducibly crashed the tab after a
+        // handful of dispose/rebuild cycles, even with the loading screen
+        // removed from the equation entirely (a bare, unrelated
+        // `await new Promise(r => requestAnimationFrame(r))` right here
+        // reproduced the same crash). Root cause not yet found -- something
+        // in the engine's own per-frame zone systems (WildernessChunks is
+        // the top suspect) doesn't tolerate a frame rendering mid-transition
+        // once a zone or two has actually been disposed this way. So this
+        // only covers a zone's first-ever build in a session, not a
+        // rebuild-after-eviction -- matches buildZoneScene's own cache check.
+        const needsBuild = _dirtyZoneScenes.has(mapId) || !_zoneScenes.has(mapId);
+        // Awaited so the overlay actually paints (show() resolves after two
+        // rAFs) before buildZoneScene's synchronous, potentially multi-second
+        // rebuild blocks the main thread -- see LoadingScreenRuntime.show()'s
+        // own doc comment.
+        if (needsBuild) await window.LoadingScreenRuntime?.show();
         const zi = buildZoneScene(mapId, col, row);
-        if (!zi) return;
+        if (!zi) { if (needsBuild) window.LoadingScreenRuntime?.hide(); return; }
         window.ReagentPlants.ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
         window.WildTreasure.ensureZone(mapId); // after both, so it can avoid their tiles too
@@ -12366,6 +12406,7 @@
         // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
         window.BanditCamps?.markZoneEntered(mapId);
         window.WildernessCampfire?.onZoneEntered(mapId);
+        if (needsBuild) window.LoadingScreenRuntime?.hide();
       }
 
       // Town/zone building mesh spawning (detectTownBuildings/

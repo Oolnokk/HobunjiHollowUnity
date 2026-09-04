@@ -45,10 +45,18 @@
 
   const TASK_DOMAINS = ['farming', 'fishing', 'combat', 'alchemy'];
 
-  // Friendship tiers ride the existing (previously unused) per-NPC favor
-  // counter — see DialogueContent's getNpcDlgState/adjustNpcFavor. No new
-  // persisted counter needed; this just adds tier thresholds on top of it.
-  const FRIENDSHIP_TIER_THRESHOLDS = [0, 40, 100, 200, 350, 550];
+  // Friendship tiers ride the exact same per-NPC favor counter the
+  // relationship hearts render from (DialogueContent's
+  // getNpcDlgState/adjustNpcFavor, and renderRelationshipHearts's -5..10
+  // clamp) — no separate counter or scale of its own. Thresholds are
+  // spaced two favor/hearts apart so "Friendship Tier N" always lines up
+  // with 2N hearts filled; every other system that reads favor (gift
+  // reactions in npc-gifting.js's TIER_FAVOR, the rapport→favor rollover
+  // in npc-social-relationship-bridge-v2.js, the social-inhibition and
+  // silliness-reaction runtimes) already assumes this same small scale, so
+  // reward amounts below are sized to match rather than the old
+  // hundreds-of-favor scale that used to live here.
+  const FRIENDSHIP_TIER_THRESHOLDS = [0, 2, 4, 6, 8, 10];
   function friendshipFavor(npcId) { return window.DialogueContent?.getNpcDlgState(npcId).favor || 0; }
   function friendshipTier(npcId) {
     const favor = friendshipFavor(npcId);
@@ -69,7 +77,7 @@
   const FAVOR_CHANCE_BY_TIER       = [0, 0.12, 0.20, 0.30, 0.42, 0.55];
   const TASK_QTY_BY_TIER           = [1, 2, 2, 3, 4, 5];
   const FAVOR_REWARD_MULT          = 1.6;
-  const TASK_FRIENDSHIP_REWARD     = { favor: [18, 25, 35, 48, 65, 85], request: 20 };
+  const TASK_FRIENDSHIP_REWARD     = { favor: [1, 1.5, 2, 2.5, 3, 4], request: 1.5 };
 
   // role (free-text NPC job, e.g. "carpenter / roofing family
   // connection", "great fae / fishing solution") → which item pool their

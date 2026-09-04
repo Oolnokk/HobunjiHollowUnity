@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Animation Author — literal grounding parity test</title>
+  <style>
+    html,body,#host{width:100%;height:100%;margin:0;background:#05070b;overflow:hidden}
+    #status{position:fixed;z-index:999999;right:8px;top:8px;max-width:80vw;padding:6px 9px;border-radius:7px;background:#102030ee;color:#d7efff;font:12px system-ui,sans-serif;pointer-events:none}
+    #host{border:0;display:block}
+  </style>
+</head>
+<body>
+  <iframe id="host"></iframe>
+  <div id="status">rewriting Animation Author source…</div>
+  <script>
+  (async () => {
+    const status = document.getElementById('status');
+    const frame = document.getElementById('host');
+    try {
+      const sourceUrl = new URL('../animation-author/index.html', location.href);
+      const response = await fetch(sourceUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`editor fetch HTTP ${response.status}`);
+      let html = await response.text();
+
+      const replacements = [
+        [
+          'const groundLiftY = modelHeight / 2;',
+          'const groundLiftY = 0; // GROUNDING-SOURCE-TEST: PNGPlaneAvatar root is already floor-relative.'
+        ],
+        [
+          'canvasBottomY: (placementRatio - .5) * modelHeight,',
+          'canvasBottomY: (placementRatio - 1) * modelHeight, // GROUNDING-SOURCE-TEST'
+        ],
+        [
+          'canvasTopY: (placementRatio + .5) * modelHeight,',
+          'canvasTopY: placementRatio * modelHeight, // GROUNDING-SOURCE-TEST'
+        ],
+        [
+          'canvasCenterY: placementRatio * modelHeight,',
+          'canvasCenterY: (placementRatio - .5) * modelHeight, // GROUNDING-SOURCE-TEST'
+        ],
+        [
+          "y: metrics.modelHeight * (.5 + metrics.placementRatio - (finiteNumber(pixelY) + .5) / metrics.pixelHeight),",
+          "y: metrics.modelHeight * (metrics.placementRatio - (finiteNumber(pixelY) + .5) / metrics.pixelHeight), // GROUNDING-SOURCE-TEST"
+        ],
+        [
+          '// game.js places the model root at floor Y, then raises the complete portrait model by avatarHeight / 2.',
+          '// GROUNDING-SOURCE-TEST: gameplay leaves the PNGPlaneAvatar model root at floor Y; no extra half-height lift.'
+        ],
+        [
+          "log('V15.45 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview; animal ambient speech and animal-looking NPC dialogue share the same crop runtime.');",
+          "log('V15.45 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview; animal ambient speech and animal-looking NPC dialogue share the same crop runtime.');\nlog('GROUNDING SOURCE TEST ACTIVE · literal editor math changed before execution', 'warn');"
+        ]
+      ];
+
+      const report = [];
+      for (const [from, to] of replacements) {
+        const count = html.split(from).length - 1;
+        report.push(`${count}× ${from.slice(0, 42)}`);
+        if (count !== 1) throw new Error(`Expected exactly 1 source match, found ${count}: ${from.slice(0, 90)}`);
+        html = html.replace(from, to);
+      }
+
+      // srcdoc keeps the document same-origin. Add an explicit base so every
+      // repository-relative script/image path resolves exactly as it does in the
+      // real docs/tools/animation-author/index.html page.
+      html = html.replace('<head>', `<head><base href="${sourceUrl.href}">`);
+      frame.srcdoc = html;
+      status.textContent = 'GROUNDING SOURCE TEST ACTIVE · 6 math changes + visible log marker';
+      status.style.background = '#123d25ee';
+      console.info('[grounding-source-test]', report.join(' | '));
+    } catch (error) {
+      status.textContent = `GROUNDING SOURCE TEST FAILED: ${error.message}`;
+      status.style.background = '#581818ee';
+      console.error(error);
+    }
+  })();
+  </script>
+</body>
+</html>

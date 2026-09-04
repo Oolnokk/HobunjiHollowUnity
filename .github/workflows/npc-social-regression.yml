@@ -3,7 +3,9 @@ name: NPC social and wardrobe regression
 on:
   push:
     paths:
+      - 'docs/config/npcs/social-relations.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
+      - 'docs/js/npc-social-seating-bridge.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v3.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
@@ -13,13 +15,17 @@ on:
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-npc-social-seating.js'
+      - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
       - '.github/workflows/npc-social-regression.yml'
   pull_request:
     paths:
+      - 'docs/config/npcs/social-relations.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
+      - 'docs/js/npc-social-seating-bridge.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v3.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
@@ -29,6 +35,8 @@ on:
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
+      - 'scripts/test-npc-social-seating.js'
+      - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
@@ -49,7 +57,9 @@ jobs:
           node-version: '20'
       - name: Syntax check NPC social modules
         run: |
+          node --check docs/config/npcs/social-relations.js
           node --check docs/js/npc-social-relationship-bridge-v2.js
+          node --check docs/js/npc-social-seating-bridge.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v2.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v3.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
@@ -59,11 +69,17 @@ jobs:
           node --check docs/js/panel-ui.js
           node --check docs/js/combat/combat-config-loader.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
+          node --check scripts/test-npc-social-seating.js
+          node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
+      - name: Test NPC swig offer visibility and cooldown
+        run: node scripts/test-npc-swig-offer-cooldown.js
+      - name: Test relationship-aware reactive seating
+        run: node scripts/test-npc-social-seating.js
       - name: Test placeholder wardrobes and old prompt suppression
         run: node scripts/test-npc-wardrobe-placeholders.js
       - name: Generate complete placeholder wardrobe registry

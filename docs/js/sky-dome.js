@@ -179,7 +179,13 @@
   function makeCloudMaterial(texture) {
     const THREE = deps.THREE;
     return new THREE.ShaderMaterial({
-      side: THREE.BackSide, transparent: true, depthTest: false, depthWrite: false, fog: false,
+      // depthTest stays on (unlike the base sky sphere, which is opaque and
+      // relies on draw order instead) because this material is transparent:
+      // transparent objects render in their own pass *after* every opaque
+      // object, including the ground, so with depthTest off these cloud
+      // shells painted straight over the ground at any pixel their geometry
+      // covers, regardless of which was actually nearer to the camera.
+      side: THREE.BackSide, transparent: true, depthTest: true, depthWrite: false, fog: false,
       uniforms: { uMap: { value: texture }, uOffset: { value: new THREE.Vector2() }, uBrightness: { value: 1 }, uOpacity: { value: 1 }, uSunUV: { value: new THREE.Vector2() }, uSunLight: { value: 0 }, uMoonUV: { value: new THREE.Vector2() }, uMoonLight: { value: 0 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
       fragmentShader: `

@@ -34,8 +34,10 @@
   const transformSpeciesId = value => {
     const species = normalizeKey(value);
     if (typeof global.hobunjiTransformSpeciesId === 'function') return global.hobunjiTransformSpeciesId(species);
-    return species === 'rakakoan' ? 'kenkari' : species;
-  }; // Rakakoan shoulder reads/edits always target the matching Kenkari transform record.
+    if (species === 'rakakoan') return 'kenkari';
+    if (species === 'ghoul') return 'mao-ao';
+    return species;
+  }; // Alias species always target the canonical species/gender transform record.
 
   function normalizePoint(raw) {
     return { x: number(raw?.x), y: number(raw?.y) };
@@ -47,7 +49,7 @@
       for (const [key, entry] of Object.entries(raw.characters)) {
         const rawSpecies = normalizeKey(key.split('::')[0]);
         const canonicalSpecies = transformSpeciesId(rawSpecies);
-        if (canonicalSpecies !== rawSpecies) continue; // Ignore stale independently-authored Rakakoan saves instead of letting them overwrite Kenkari.
+        if (canonicalSpecies !== rawSpecies) continue; // Ignore stale independently-authored aliases instead of overwriting canonical transforms.
         const normalized = canonicalSpecies + '::' + normalizeGender(key.split('::')[1]);
         next.characters[normalized] = {
           left: normalizePoint(entry?.left),
@@ -125,7 +127,7 @@
   global.HobunjiHandShoulderPoints = {
     schema: source.schema,
     coordinateSpace: source.coordinateSpace,
-    transformSpeciesAliases: Object.freeze({ rakakoan: 'kenkari' }),
+    transformSpeciesAliases: Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao' }),
     get data() { return data; },
     get defaultData() { return normalizeData(source); },
     keyFor,

@@ -63,7 +63,8 @@
         "kzubug": [
           "{targetName}! I finished the edge.",
           "I’m all right, {targetName}. Promise."
-        ]
+        ],
+        "namui_u_hakaru": []
       }
     },
     "gorobi_ginju": {
@@ -144,7 +145,8 @@
       ],
       "friends": {
         "takua_ao_hakaru": [],
-        "father_hunundi_hodu": []
+        "father_hunundi_hodu": [],
+        "sloomi": []
       }
     },
     "takua_ao_hakaru": {
