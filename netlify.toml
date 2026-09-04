@@ -1,0 +1,6 @@
+[build]
+  # Static site, no build step -- just serve docs/ as-is.
+  publish = "docs"
+
+[build.processing]
+  skip_processing = true
