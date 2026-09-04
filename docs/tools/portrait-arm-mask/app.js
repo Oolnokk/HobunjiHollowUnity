@@ -2,7 +2,7 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
-const STORAGE_KEY = 'hobunji_portrait_arm_mask_profiles_v2';
+const STORAGE_KEY = 'hobunji_portrait_arm_mask_profiles_v3';
 const DEFAULTS = Object.freeze({
   maskYScaleMultiplier: 0.60,
   axOffset: 0.12,
@@ -30,6 +30,19 @@ function ensureMaskConfig() {
   cfg.profiles = cfg.profiles || {};
   return cfg;
 }
+function authoredProfiles() {
+  const profiles = window.PortraitArmCloudMask?.authoredProfiles;
+  return profiles && typeof profiles === 'object' ? profiles : {};
+}
+function authoredSettingsFor(fighter = state.fighter) {
+  return authoredProfiles()[profileKey(fighter)] || {};
+}
+function seedAuthoredProfiles() {
+  const cfg = ensureMaskConfig();
+  for (const [key, settings] of Object.entries(authoredProfiles())) {
+    cfg.profiles[key] = { ...settings };
+  }
+}
 function fallbackSettings() {
   const cfg = ensureMaskConfig();
   return {
@@ -44,7 +57,11 @@ function fallbackSettings() {
 }
 function settingsFor(fighter = state.fighter) {
   const cfg = ensureMaskConfig();
-  return { ...fallbackSettings(), ...(cfg.profiles?.[profileKey(fighter)] || {}) };
+  return {
+    ...fallbackSettings(),
+    ...authoredSettingsFor(fighter),
+    ...(cfg.profiles?.[profileKey(fighter)] || {}),
+  };
 }
 function controlsToSettings() {
   return {
@@ -109,7 +126,8 @@ function exportObject() {
 }
 function syncOutput() {
   $('output').value = JSON.stringify(exportObject(), null, 2);
-  $('profileCount').textContent = `${Object.keys(ensureMaskConfig().profiles || {}).length} authored profile${Object.keys(ensureMaskConfig().profiles || {}).length === 1 ? '' : 's'}`;
+  const count = Object.keys(ensureMaskConfig().profiles || {}).length;
+  $('profileCount').textContent = `${count} authored profile${count === 1 ? '' : 's'}`;
 }
 function status(message, kind = '') {
   const node = $('status');
@@ -139,7 +157,7 @@ async function render() {
     });
     if (!ok) throw new Error('Portrait renderer returned false.');
     $('badge').textContent = `${state.fighter.label || state.fighter.id} · hard cut + black cap`;
-    status('Rendered through the real portrait pipeline. The cloud fade is now thresholded into a verdigris-style wobbly hard cut, and the exposed arm edge is capped in black.', 'good');
+    status('Rendered through the real portrait pipeline. The cloud fade is thresholded into a verdigris-style wobbly hard cut, and the exposed arm edge is capped in black.', 'good');
   } catch (error) {
     status(`Preview failed: ${error?.message || error}`, 'warn');
   } finally {
@@ -182,9 +200,12 @@ function wire() {
   });
   $('reset').addEventListener('click', () => {
     if (!state.fighter) return;
-    delete ensureMaskConfig().profiles[profileKey()];
+    const key = profileKey();
+    const authored = authoredSettingsFor();
+    if (Object.keys(authored).length) ensureMaskConfig().profiles[key] = { ...authored };
+    else delete ensureMaskConfig().profiles[key];
     persistProfiles();
-    loadSettingsIntoControls(fallbackSettings());
+    loadSettingsIntoControls(settingsFor());
     syncOutput();
     render();
   });
@@ -207,6 +228,7 @@ async function boot() {
   try {
     window.setPortraitAssetBase?.('../../assets/');
     if (typeof window.loadPortraitCosmetics === 'function') await window.loadPortraitCosmetics('../../config/');
+    seedAuthoredProfiles();
     restoreProfiles();
     populateFighters();
     if (!state.fighters.length) { status('No portrait fighters with authored arm layers were found.', 'warn'); return; }
