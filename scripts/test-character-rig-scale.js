@@ -117,6 +117,28 @@ assert.strictEqual(neckJoint.scale.z, 1);
 assert.strictEqual(api.applyHeadCompensation(makeParent(), 'mao-ao', 'male', 1.1, { x: 1.3, y: 0.7 }), false,
   'avatars without a neck rig have no head to protect and must be a safe no-op');
 
+// Animation Author's own Full Character Scale editor builds its neck rig through a
+// separate two-sided-plane implementation that never sets an `available` flag at all
+// (unlike the shared png-plane-avatar.js shape used by the real game) — regression
+// guard for a bug where the editor's own preview silently never found its neck bone
+// and so never protected head proportions, exactly the "at least in the scale editor"
+// symptom this was authored to fix.
+const toolNeckJoint = makeBone();
+const toolStyleParent = {
+  isObject3D: true,
+  scale: { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
+  userData: { neckRig: { torsoBone: {}, neckJoint: toolNeckJoint, eyeMarker: {}, detected: {} } }, // No `available` field — matches the Animation Author tool's own rig object shape.
+  children: [],
+  updateMatrix() {},
+  updateMatrixWorld() {},
+  traverse(visit) { visit(this); },
+};
+api.applyToParent(toolStyleParent, 'mao-ao', 'male', { x: 1.3, y: 0.7, head: 1.1 });
+assert.ok(Math.abs(toolNeckJoint.scale.x - (1.1 / 1.3)) < 1e-9,
+  'the editor-shaped neck rig (no `available` flag) must still be found and compensated');
+assert.ok(Math.abs(toolNeckJoint.scale.y - (1.1 / 0.7)) < 1e-9,
+  'the editor-shaped neck rig (no `available` flag) must still be found and compensated');
+
 // clearFromParent must also reset any head compensation back to identity.
 api.clearFromParent(headParent);
 assert.deepStrictEqual([neckJoint.scale.x, neckJoint.scale.y, neckJoint.scale.z], [1, 1, 1]);

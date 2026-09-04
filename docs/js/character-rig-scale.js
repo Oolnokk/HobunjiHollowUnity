@@ -129,16 +129,24 @@
   // avatarRoot carrying userData.neckRig is commonly root itself, a direct
   // child (the real game hooks in one level above it — see
   // installHandParentRuntime below), or nested deeper (editor previews) —
-  // checked in that cheap-to-expensive order.
+  // checked in that cheap-to-expensive order. Accepts either shape: the
+  // shared png-plane-avatar.js rig ({ available, neckJoint, ... }) or
+  // Animation Author's own separate two-sided-plane rig builder (its scale
+  // editor selects/previews actor.visualOffset, whose neckRig never sets
+  // `available` at all) — usability is decided by an actual bone with a
+  // scale to drive, not that one flag.
+  function usableNeckRig(rig) {
+    return !!(rig && rig.neckJoint && rig.neckJoint.scale);
+  }
   function findNeckRig(root) {
     if (!root) return null;
-    if (root.userData?.neckRig?.available) return root.userData.neckRig;
+    if (usableNeckRig(root.userData?.neckRig)) return root.userData.neckRig;
     for (const child of root.children || []) {
-      if (child?.userData?.neckRig?.available) return child.userData.neckRig;
+      if (usableNeckRig(child?.userData?.neckRig)) return child.userData.neckRig;
     }
     let found = null;
     root.traverse?.(node => {
-      if (!found && node?.userData?.neckRig?.available) found = node.userData.neckRig;
+      if (!found && usableNeckRig(node?.userData?.neckRig)) found = node.userData.neckRig;
     });
     return found;
   }
