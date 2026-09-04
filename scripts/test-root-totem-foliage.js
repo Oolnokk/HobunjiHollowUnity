@@ -20,9 +20,8 @@ assert.strictEqual(cfg.shadewoodSurface.vineCountScale, 0.5);
 assert.strictEqual(cfg.shadewoodSurface.vineRadiusScale, 2);
 assert.strictEqual(cfg.shadewoodSurface.reuseNaturalSurfaceMaterials, true);
 assert.strictEqual(cfg.shadewoodSurface.shellOutline, true);
-assert.strictEqual(cfg.bottle.rope.shellOutline, true);
-assert(Number.isFinite(cfg.bottle.rope.shellThicknessScale));
-assert(cfg.bottle.rope.shellThicknessScale > 0 && cfg.bottle.rope.shellThicknessScale < 1);
+assert.strictEqual(cfg.bottle.rope.shellOutline, false,
+  'Root Totem ropes must stay out of the shell-outline pass');
 assert.strictEqual(cfg.basin.material.model, 'unlit');
 assert.strictEqual(cfg.bottle.light.weatherOverlayMask, true);
 assert.strictEqual(cfg.basin.light.weatherOverlayMask, true);
@@ -40,9 +39,6 @@ assert(!wrap.includes('crossVectors(tangent, normal)'), 'StructuralWrap must not
 
 const deadzone = parses('docs/js/deadzone-billboard.js');
 assert(deadzone.includes('ropeShellOutline'));
-assert(deadzone.includes('installShellThicknessScale'));
-assert(deadzone.includes('uniform.value=previous*multiplier'));
-assert(deadzone.includes('restore.uniform.value=restore.value'));
 assert(deadzone.includes('mesh.layers.enable(1)'));
 assert(deadzone.includes('MeshLambertMaterial({map:texture,color:colorHex,side:THREE.FrontSide})'));
 assert(!deadzone.includes('MeshLambertMaterial({map:texture,color:colorHex,side:THREE.DoubleSide})'));
@@ -69,7 +65,6 @@ const root = parses('docs/js/root-totem-plants.js');
 assert(root.includes('RootTotemSurfaceStyle?.prepareTreeGeometry'));
 assert(root.includes('RootTotemSurfaceStyle?.finalizeTreeSurface'));
 assert(root.includes('ropeShellOutline:bottle.rope.shellOutline===true'));
-assert(root.includes('ropeShellThicknessScale:bottle.rope.shellThicknessScale'));
 assert(!root.includes('seedU32:7319'));
 
 const life = parses('docs/js/life-totem-furniture.js');
