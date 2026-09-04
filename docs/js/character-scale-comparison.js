@@ -1,4 +1,10 @@
 // Animation Author full-character species/gender scale comparison tab.
+//
+// The lineup is deliberately NOT built from Animation Author actors. Each entry is
+// a preview-only avatar group attached directly to the public backdrop scene, using
+// the same free-hand parent and ProceduralLegAnimation setup as the Rig Coordinates
+// reference-NPC preview. This keeps comparison previews out of Multi/Rig actor state
+// and makes selection independent from the editor's selected actor.
 (() => {
   'use strict';
   if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname)) return;
@@ -20,10 +26,12 @@
   let savedMulti = null;
   let entries = [];
   let selected = null;
+  let previewRoot = null; // Holds comparison-only avatar groups and is never registered in Animation Author mode state.
   let chair = null;
   let THREE = null;
   let persistTimer = 0;
   let frameRaf = 0;
+  let portraitRenderChain = Promise.resolve(); // Serializes portrait rendering because NpcAvatarPreview temporarily installs the active NPC account shim.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -39,6 +47,10 @@
   const prettySpecies = value => String(value || '').split('-').map(part => part ? part[0].toUpperCase() + part.slice(1) : '').join('-');
   const clampPercent = value => Math.max(25, Math.min(200, Number(value) || 100));
 
+  function host() {
+    return window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost || null;
+  }
+
   function profileDescriptors() {
     const profiles = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
     const seen = new Set();
@@ -48,7 +60,6 @@
       const keySpecies = normalizeSpecies(rawSpecies);
       const profileSpecies = normalizeSpecies(profile?.species || keySpecies);
       const gender = normalizeGender(rawGender || profile?.gender);
-      // Exclude transform aliases such as ghoul -> mao-ao and rakakoan -> kenkari.
       if (!keySpecies || keySpecies !== profileSpecies || !['male', 'female'].includes(gender)) continue;
       const species = canonicalSpecies(keySpecies);
       const canonicalKey = `${species}::${gender}`;
@@ -59,18 +70,47 @@
     return out;
   }
 
-  function npcAppearance(npc) {
-    try {
-      const strict = window.strictNpcAppearanceV1514?.(npc);
-      if (strict?.speciesId && strict?.gender) return strict;
-    } catch (_) {}
-    const raw = npc?.avatarEditor?.rawExport || {};
+  function portraitExportFor(npc) {
+    npc ||= {};
+    const raw = npc.avatarEditor?.rawExport || {};
     const profile = raw.profile || raw.avatarProfile || raw.npcProfile || raw;
-    const appearance = { ...(npc?.appearance || {}), ...(profile?.appearance || {}), ...(profile?.visuals?.appearance || {}), ...(raw?.appearance || {}) };
-    return {
-      speciesId: normalizeSpecies(appearance.speciesId || appearance.species || npc?.species),
-      gender: normalizeGender(appearance.gender || npc?.gender),
+    const appearance = {
+      ...(profile.appearance || {}),
+      ...(profile.visuals?.appearance || {}),
+      ...(raw.appearance || {}),
+      ...(npc.appearance || {}),
     };
+    appearance.speciesId = normalizeSpecies(appearance.speciesId || appearance.species || npc.species);
+    appearance.gender = normalizeGender(appearance.gender || npc.gender);
+    appearance.cosmetics = {
+      ...(profile.appearance?.cosmetics || {}),
+      ...(profile.visuals?.appearance?.cosmetics || {}),
+      ...(raw.appearance?.cosmetics || {}),
+      ...(npc.appearance?.cosmetics || {}),
+    };
+    appearance.bodyColors = {
+      ...(profile.appearance?.bodyColors || {}),
+      ...(profile.visuals?.appearance?.bodyColors || {}),
+      ...(raw.appearance?.bodyColors || {}),
+      ...(npc.appearance?.bodyColors || {}),
+    };
+    const asEquipArray = value => {
+      if (Array.isArray(value)) return value.filter(Boolean);
+      if (value && typeof value === 'object') return Object.values(value).filter(item => typeof item === 'string' && item);
+      return [];
+    };
+    return {
+      name: npc.name || npc.id || 'NPC',
+      appearance,
+      equippedCosmetics: asEquipArray(raw.equippedCosmetics || profile.equippedCosmetics || profile.cosmetics || profile.equipment || npc.equippedCosmetics),
+      appliedDyes: raw.appliedDyes || profile.appliedDyes || profile.dyes || npc.appliedDyes || {},
+      portrait: npc.portrait || {},
+      rawExport: raw,
+    };
+  }
+
+  function npcAppearance(npc) {
+    return portraitExportFor(npc).appearance;
   }
 
   function isChild(npc) {
@@ -156,7 +196,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Tap a character</span><span id="maaFullScaleNpc" class="pill">—</span></div>
         <div class="scaleRow"><input id="maaFullScaleRange" type="range" min="25" max="200" step="0.5" value="100" aria-label="Full character scale"><output id="maaFullScaleOut">100%</output></div>
         <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button></div>
-        <div id="maaFullScaleStatus" class="scaleStatus">The chair at the far right is fixed world size.</div>`;
+        <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleRange').addEventListener('input', applySlider);
       panel.querySelector('#maaFullScaleRange').addEventListener('change', persistProfiles);
@@ -188,16 +228,22 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     }
 
     const canvas = document.getElementById('view3d');
-    if (canvas && canvas.dataset.fullScalePick !== '1') {
-      canvas.dataset.fullScalePick = '1';
-      canvas.addEventListener('click', () => {
-        if (!active) return;
-        setTimeout(() => {
-          const actor = window.selectedAnimationActor?.();
-          const entry = entries.find(item => item.actor?.id === actor?.id);
-          if (entry) select(entry);
-          chrome();
-        }, 0);
+    if (canvas && canvas.dataset.fullScalePreviewPick !== '1') {
+      canvas.dataset.fullScalePreviewPick = '1';
+      let down = null; // Used to ignore camera drags while still allowing simple tap/click selection on mobile and desktop.
+      canvas.addEventListener('pointerdown', event => {
+        if (document.body.dataset.animationAuthorMode !== MODE) return;
+        down = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      });
+      canvas.addEventListener('pointerup', event => {
+        if (document.body.dataset.animationAuthorMode !== MODE || !down || down.id !== event.pointerId) {
+          down = null;
+          return;
+        }
+        const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+        down = null;
+        if (moved > 8) return;
+        pickAt(event.clientX, event.clientY);
       });
     }
     return true;
@@ -214,16 +260,18 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     for (const id of ['maaMultiTab','maaSingleTab','maaRigTab']) document.getElementById(id)?.setAttribute('aria-selected','false');
     document.getElementById(TAB_ID)?.setAttribute('aria-selected','true');
     const badge = document.getElementById('maaViewportBadge');
-    if (badge) badge.textContent = 'Full character scale comparison · tap/click any character, then adjust the slider. chairSimple is a fixed world-size reference.';
+    if (badge) badge.textContent = 'Full character scale · preview-only lineup with Rig Coordinates hands and feet. Tap a character to edit that species/gender scale.';
   }
 
   function select(entry) {
+    if (!entry) return;
     selected = entry;
     const scale = Number(entry.profile?.anatomy?.rigScale ?? 1);
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
     document.getElementById('maaFullScaleNpc').textContent = entry.npc?.name || entry.npc?.id || 'Repository NPC';
     document.getElementById('maaFullScaleRange').value = String(clampPercent(scale * 100));
     document.getElementById('maaFullScaleOut').textContent = `${Math.round(scale * 1000) / 10}%`;
+    status(`Selected ${prettySpecies(entry.species)} ${entry.gender} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}.`);
   }
 
   function applySlider(event) {
@@ -232,12 +280,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const scale = percent / 100;
     selected.profile.anatomy ||= {};
     selected.profile.anatomy.rigScale = scale;
-    const globalProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[selected.key];
-    if (globalProfile) {
-      globalProfile.anatomy ||= {};
-      globalProfile.anatomy.rigScale = scale;
-    }
-    window.HobunjiCharacterRigScale?.applyToParent?.(selected.actor.visualOffset, selected.species, selected.gender, scale);
+    window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale);
     document.getElementById('maaFullScaleOut').textContent = `${Math.round(percent * 10) / 10}%`;
     clearTimeout(persistTimer);
     persistTimer = setTimeout(persistProfiles, 180);
@@ -249,8 +292,12 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     clearTimeout(persistTimer);
     persistTimer = 0;
     try {
-      const data = window.serializeAttachmentRigLibrary?.();
-      if (data) localStorage.setItem(RIG_SAVE_KEY, JSON.stringify(data));
+      const data = host()?.serializeRig?.() || {
+        schema: 'hobunji.attachment-rig-profiles.v10',
+        exportedAt: new Date().toISOString(),
+        profiles: clone(window.HOBUNJI_ATTACHMENT_RIG_PROFILES || {}),
+      };
+      localStorage.setItem(RIG_SAVE_KEY, JSON.stringify(data));
     } catch (error) { console.warn('[full-character-scale] profile autosave failed', error); }
   }
 
@@ -273,6 +320,129 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     status('Exported species + gender full-character scales only.');
   }
 
+  function applyAnatomyConfig(profile) {
+    const anatomy = profile?.anatomy || {};
+    const species = normalizeSpecies(profile?.species);
+    const gender = normalizeGender(profile?.gender);
+    const pngConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
+    if (!species || !gender || !pngConfig) return;
+
+    const placement = Number(anatomy.portraitVerticalPlacementRatio);
+    if (Number.isFinite(placement)) {
+      pngConfig.portraitVerticalPlacement ||= { default: .5 };
+      pngConfig.portraitVerticalPlacement[species] ||= {};
+      pngConfig.portraitVerticalPlacement[species][gender] = placement;
+    }
+
+    const portraitScale = Number(anatomy.portraitScale);
+    if (Number.isFinite(portraitScale) && portraitScale > 0) {
+      pngConfig.portraitScaleBySpecies ||= {};
+      const legacy = Number(pngConfig.portraitScaleBySpecies[species]);
+      const entry = typeof pngConfig.portraitScaleBySpecies[species] === 'object'
+        ? pngConfig.portraitScaleBySpecies[species]
+        : { default: Number.isFinite(legacy) && legacy > 0 ? legacy : 1 };
+      entry[gender] = portraitScale;
+      pngConfig.portraitScaleBySpecies[species] = entry;
+    }
+
+    const footScale = Number(anatomy.footScale);
+    if (Number.isFinite(footScale) && footScale > 0) {
+      pngConfig.proceduralFeet ||= {};
+      pngConfig.proceduralFeet.footScale ||= { default: 1 };
+      pngConfig.proceduralFeet.footScale[species] ||= {};
+      pngConfig.proceduralFeet.footScale[species][gender] = footScale;
+    }
+
+    const handScale = Number(anatomy.handScale);
+    if (Number.isFinite(handScale) && handScale > 0 && window.HobunjiHandModelProfiles?.mutate) {
+      window.HobunjiHandModelProfiles.mutate(data => {
+        data.speciesScaleOverrides ||= {};
+        data.speciesScaleOverrides[species] ||= {};
+        data.speciesScaleOverrides[species][gender] = handScale;
+      });
+    }
+  }
+
+  async function renderPortrait(canvas, profile, options) {
+    const job = portraitRenderChain.then(() => window.NpcAvatarPreview.renderProfileToCanvas(canvas, profile, options));
+    portraitRenderChain = job.catch(() => {});
+    return job;
+  }
+
+  async function buildPortrait(npc) {
+    await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: '../../assets/', configBase: '../../config/' });
+    const exportNpc = portraitExportFor(npc);
+    let profile = window.NpcAvatarPreview.buildProfileFromNpcExport(exportNpc);
+    if (!profile) {
+      profile = window.NpcAvatarPreview.randomProfile(`full-scale:${npc.id || npc.name}`, {
+        speciesId: exportNpc.appearance.speciesId,
+        gender: exportNpc.appearance.gender,
+      });
+    }
+    if (!profile) throw new Error(`Could not build a portrait profile for ${npc.name || npc.id}.`);
+    const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
+    const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
+    const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
+    await renderPortrait(front, profile, { seatId: npc.id || npc.name || 'full-scale' });
+    await renderPortrait(back, profile, { seatId: npc.id || npc.name || 'full-scale', portraitView: 'behind' });
+    return { exportNpc, profile, front, back };
+  }
+
+  function avatarBaseWidth() {
+    const configured = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth);
+    return Number.isFinite(configured) && configured > 0 ? configured : 0.9;
+  }
+
+  async function buildPreviewEntry(rep) {
+    const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[rep.key];
+    if (!rigProfile) throw new Error(`Missing rig profile ${rep.key}.`);
+    rigProfile.anatomy ||= {};
+    if (!Number.isFinite(Number(rigProfile.anatomy.rigScale))) rigProfile.anatomy.rigScale = 1;
+    applyAnatomyConfig(rigProfile);
+
+    const avatar = await buildPortrait(rep.npc);
+    const group = new THREE.Group(); // Preview-only parent used by portrait, hands, feet, and whole-character scale together.
+    group.name = `FullScalePreview_${rep.key}`;
+    group.userData.fullScalePreviewKey = rep.key;
+
+    const baseWidth = avatarBaseWidth();
+    const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
+      backCanvas: avatar.back,
+      profile: avatar.profile,
+      appearance: avatar.exportNpc.appearance,
+      npcRecord: rep.npc,
+      modelWidth: baseWidth,
+      modelHeight: baseWidth,
+      name: `${group.name}_portrait`,
+      userData: { source: 'full-character-scale-preview', nonInteractive: true, npcId: rep.npc.id || null },
+    });
+    model.userData.proceduralHandParent = group; // Exact Rig reference-NPC contract: the normal free-hand runtime owns hand placement under this floor-relative parent.
+    model.userData.rigAvatarProfile = avatar.profile;
+    group.add(model);
+
+    const modelHeight = Number(model.userData.portraitModelHeight) || 1;
+    const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
+    model.position.y = modelHeight / 2;
+
+    const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, {
+      speciesId: rep.species,
+      gender: rep.gender,
+      bodyColors: avatar.profile?.bodyColors || avatar.exportNpc.appearance?.bodyColors,
+      modelWidth,
+      modelHeight,
+      handAttachY: model.userData.handAttachY,
+      name: `${group.name}_feet`,
+      profile: avatar.profile,
+      portraitSize: avatar.front.width || 200,
+    }) || null;
+    feet?.update?.(0, 0, false, null);
+
+    previewRoot.add(group);
+    window.HobunjiCharacterRigScale?.applyToParent?.(group, rep.species, rep.gender, rigProfile.anatomy.rigScale);
+    window.ProceduralHandFrameDriver?.syncNow?.();
+    return { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
+  }
+
   async function buildChair() {
     const config = await json(chairUrl);
     const group = new THREE.Group();
@@ -289,33 +459,21 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     return group;
   }
 
-  function disposeChair() {
-    if (!chair) return;
-    chair.parent?.remove(chair);
-    chair.traverse(node => {
-      node.geometry?.dispose?.();
-      node.material?.dispose?.();
-    });
-    chair = null;
-  }
-
   function layout() {
-    if (!THREE || !entries.length) return;
-    const parent = entries[0].actor.root.parent;
-    if (!parent) return;
-    if (chair) chair.parent?.remove(chair);
+    if (!THREE || !entries.length || !previewRoot) return;
+    if (chair) chair.parent?.remove?.(chair);
     let cursor = 0;
     for (const entry of entries) {
-      entry.actor.root.position.set(0,0,0);
-      entry.actor.root.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(entry.actor.visualOffset || entry.actor.model);
+      entry.group.position.set(0,0,0);
+      entry.group.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(entry.group);
       const width = Math.max(0.45, box.getSize(new THREE.Vector3()).x);
       const centerX = box.getCenter(new THREE.Vector3()).x;
       entry._lineX = cursor + width / 2 - centerX;
       cursor += width + 0.34;
     }
     if (chair) {
-      parent.add(chair);
+      previewRoot.add(chair);
       chair.position.set(cursor + 0.48,0,0);
       chair.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(chair);
@@ -324,13 +482,50 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       cursor += 0.48 + width;
     }
     const shift = cursor / 2;
-    for (const entry of entries) entry.actor.root.position.x = entry._lineX - shift;
+    for (const entry of entries) entry.group.position.x = entry._lineX - shift;
     if (chair) chair.position.x -= shift;
+    previewRoot.updateMatrixWorld(true);
   }
 
   function frame() {
-    if (!active && !building) return;
-    window.frameAllAnimationActors?.('front');
+    if ((!active && !building) || !THREE || !previewRoot) return;
+    const camera = window.HobunjiGameplayBackdrop?.getCamera?.();
+    if (!camera) return;
+    const box = new THREE.Box3().setFromObject(previewRoot);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const canvas = document.getElementById('view3d');
+    const aspect = Math.max(0.1, Number(camera.aspect) || ((canvas?.clientWidth || 1) / Math.max(1, canvas?.clientHeight || 1)));
+    const verticalFov = THREE.MathUtils.degToRad(Number(camera.fov) || 50);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
+    const byWidth = (size.x / 2 + 0.35) / Math.max(0.01, Math.tan(horizontalFov / 2));
+    const byHeight = (size.y / 2 + 0.3) / Math.max(0.01, Math.tan(verticalFov / 2));
+    const distance = Math.max(1.6, byWidth, byHeight) * 1.12 + size.z / 2;
+    const targetY = Math.max(center.y, size.y * 0.42);
+    camera.position.set(center.x, targetY + Math.min(0.2, size.y * 0.08), center.z + distance);
+    camera.lookAt(center.x, targetY, center.z);
+    camera.updateMatrixWorld?.(true);
+  }
+
+  function pickAt(clientX, clientY) {
+    if (!active || !THREE || !entries.length) return;
+    const camera = window.HobunjiGameplayBackdrop?.getCamera?.();
+    const canvas = document.getElementById('view3d');
+    const rect = canvas?.getBoundingClientRect?.();
+    if (!camera || !rect?.width || !rect?.height) return;
+    const pointer = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -(((clientY - rect.top) / rect.height) * 2 - 1),
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(pointer, camera);
+    let best = null;
+    for (const entry of entries) {
+      const hit = raycaster.intersectObject(entry.group, true)[0];
+      if (hit && (!best || hit.distance < best.distance)) best = { entry, distance: hit.distance };
+    }
+    if (best?.entry) select(best.entry);
   }
 
   function preserveMultiSave() {
@@ -343,28 +538,59 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const missing = reps.filter(item => !item.npc);
     if (missing.length) status(`Missing preview NPC: ${missing.map(item => item.key).join(', ')}`);
     entries = [];
+
+    THREE = (await window.PNGPlaneAvatar?.loadThreeModules?.())?.THREE || null;
+    if (!THREE) throw new Error('Three.js is unavailable.');
+    const scene = window.HobunjiGameplayBackdrop?.getScene?.();
+    if (!scene) throw new Error('Animation Author backdrop scene is unavailable.');
+    if (!window.NpcAvatarPreview || !window.ProceduralLegAnimation || !window.ProceduralHandFrameDriver) {
+      throw new Error('Rig preview hand/foot runtime is unavailable.');
+    }
+
+    previewRoot = new THREE.Group();
+    previewRoot.name = 'FullCharacterScalePreviewRoot';
+    previewRoot.userData.fullCharacterScalePreviewOnly = true;
+    scene.add(previewRoot);
+
     for (const rep of reps) {
       if (buildId !== generation || !rep.npc) continue;
-      await window.addNpcAnimationActor(rep.npc.id || rep.npc.name);
+      status(`Building ${prettySpecies(rep.species)} ${rep.gender}…`);
+      const entry = await buildPreviewEntry(rep);
       if (buildId !== generation) return;
-      const actor = window.selectedAnimationActor?.();
-      const profile = actor ? window.attachmentRigProfileForActor?.(actor) : null;
-      if (!actor || !profile) continue;
-      profile.anatomy ||= {};
-      if (!Number.isFinite(Number(profile.anatomy.rigScale))) profile.anatomy.rigScale = 1;
-      entries.push({ ...rep, actor, profile });
-      window.HobunjiCharacterRigScale?.applyToParent?.(actor.visualOffset, rep.species, rep.gender, profile.anatomy.rigScale);
+      entries.push(entry);
       chrome();
     }
     if (!entries.length) throw new Error('No repository character previews could be built.');
-    THREE = (await window.PNGPlaneAvatar?.loadThreeModules?.())?.THREE || null;
-    if (!THREE) throw new Error('Three.js is unavailable.');
+
     chair = await buildChair();
     layout();
-    window.selectAnimationActor?.(entries[0].actor.id);
+    window.ProceduralHandFrameDriver?.syncNow?.();
     select(entries[0]);
     frame();
-    setTimeout(preserveMultiSave, 350); // Temporary lineup must never replace the real multi-avatar autosave.
+    setTimeout(preserveMultiSave, 350);
+  }
+
+  function disposePreview() {
+    selected = null;
+    for (const entry of entries) {
+      try { entry.feet?.dispose?.(); } catch (_) {}
+      try { window.PNGPlaneAvatar?.disposeAvatarModel?.(entry.model); } catch (_) {}
+      try { entry.group?.parent?.remove?.(entry.group); } catch (_) {}
+    }
+    entries = [];
+    if (chair) {
+      try { chair.parent?.remove?.(chair); } catch (_) {}
+      chair.traverse?.(node => {
+        try { node.geometry?.dispose?.(); } catch (_) {}
+        try { node.material?.dispose?.(); } catch (_) {}
+      });
+      chair = null;
+    }
+    if (previewRoot) {
+      try { previewRoot.parent?.remove?.(previewRoot); } catch (_) {}
+      previewRoot = null;
+    }
+    window.ProceduralHandFrameDriver?.syncNow?.();
   }
 
   async function enter() {
@@ -373,39 +599,39 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const buildId = ++generation;
     originMode = ['multi','single','rig'].includes(document.body.dataset.animationAuthorMode) ? document.body.dataset.animationAuthorMode : 'multi';
     try {
-      if (originMode !== 'multi') await window.setAnimationAuthorMode('multi');
+      const scaleHost = host();
+      if (!scaleHost) throw new Error('Full Character Scale host is unavailable.');
+      if (originMode !== 'multi') await scaleHost.setMode('multi');
       savedMulti = clone(window.MultiAvatarAnimationAuthor?.exportProject?.());
       if (!savedMulti) throw new Error('Could not snapshot the multi-avatar workspace.');
       preserveMultiSave();
-      window.clearAnimationActors?.();
+      await scaleHost.clearActors();
       chrome();
-      status('Building one adult repository NPC per species + gender…');
+      status('Building preview-only species/gender lineup…');
       await buildLineup(buildId);
       if (buildId !== generation) return;
       building = false;
       active = true;
       chrome();
-      status('Tap/click a character, then move the slider. The chair is a fixed world-size reference.');
+      status('Tap/click any character to select its own species/gender scale. Hands and feet use the Rig Coordinates preview runtime.');
     } catch (error) {
       console.warn('[full-character-scale]', error);
       building = false;
       active = false;
       status(`Could not build scale comparison: ${error.message}`);
+      disposePreview();
       await restore(originMode);
     }
   }
 
   async function restore(targetMode) {
-    disposeChair();
-    selected = null;
-    entries = [];
-    try { window.clearAnimationActors?.(); } catch (_) {}
+    disposePreview();
     if (savedMulti) {
       try { await window.MultiAvatarAnimationAuthor?.importProject?.(clone(savedMulti)); }
       catch (error) { console.warn('[full-character-scale] multi restore failed', error); }
       preserveMultiSave();
     }
-    if (targetMode && targetMode !== 'multi') await window.setAnimationAuthorMode?.(targetMode);
+    if (targetMode && targetMode !== 'multi') await host()?.setMode?.(targetMode);
     document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
   }
 
@@ -423,18 +649,26 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 
   function install() {
     if (!ensureUi()) return false;
-    window.HobunjiFullCharacterScaleComparison = Object.freeze({ enter, exit, exportJson, get active() { return active; } });
+    window.HobunjiFullCharacterScaleComparison = Object.freeze({
+      enter,
+      exit,
+      exportJson,
+      get active() { return active; },
+      get selectedKey() { return selected?.key || null; },
+      get previewCount() { return entries.length; },
+    });
     return true;
   }
 
   let attempts = 0;
   const timer = setInterval(() => {
     const ready = !!window.MultiAvatarAnimationAuthor
-      && typeof window.setAnimationAuthorMode === 'function'
-      && typeof window.addNpcAnimationActor === 'function'
-      && typeof window.selectedAnimationActor === 'function'
-      && typeof window.attachmentRigProfileForActor === 'function'
-      && !!window.HobunjiCharacterRigScale;
+      && !!host()
+      && !!window.HobunjiCharacterRigScale
+      && !!window.NpcAvatarPreview
+      && !!window.PNGPlaneAvatar
+      && !!window.ProceduralLegAnimation
+      && !!window.ProceduralHandFrameDriver;
     if ((ready && install()) || ++attempts >= 600) clearInterval(timer);
   }, 50);
   install();
