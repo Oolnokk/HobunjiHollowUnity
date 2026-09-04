@@ -2,7 +2,7 @@
   'use strict';
 
   const DEFAULT_CONFIG = Object.freeze({ // Used to seed modular social-relationship tuning without hardcoded gameplay values in the handlers below.
-    representedMinutesPerDay: 16 * 60,
+    representedMinutesPerDay: 24 * 60,
     drinkAcceptedCooldownMinutes: 30,
     rapportToFavorRate: 0.10,
     rapportMin: 0,
@@ -51,8 +51,8 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  function currentGameDay() {
-    const debug = window.CalendarSystem?.timeDebugSnapshot?.(); // Used to derive a save-stable game-day number from the authoritative calendar.
+  function rawGameDay() {
+    const debug = window.CalendarSystem?.timeDebugSnapshot?.(); // Used as the simulation-day component of the monotonic absolute-minute clock.
     return Math.max(0, Math.floor(finiteNumber(debug?.rawDay, window.calendar?.day || 0)));
   }
 
@@ -61,9 +61,20 @@
     return clamp(finiteNumber(debug?.time01, window.time01 || 0), 0, 0.999999);
   }
 
+  function currentClockHour() {
+    return finiteNumber(window.CalendarSystem?.getHour?.(), NaN); // Used to detect midnight independently from the world's authored 06:00 simulation-day rollover.
+  }
+
+  function currentGameDay() {
+    const rawDay = rawGameDay(); // Used as the base day index before applying the social midnight boundary below.
+    const hour = currentClockHour(); // Full-day CalendarSystem returns 24..30 between midnight and the 06:00 simulation rollover.
+    if (window.CalendarSystem?.constants?.FULL_DAY_CYCLE && Number.isFinite(hour) && hour >= 24) return rawDay + 1;
+    return rawDay;
+  }
+
   function absoluteGameMinute() {
     const minutesPerDay = Math.max(1, finiteNumber(config.representedMinutesPerDay, DEFAULT_CONFIG.representedMinutesPerDay)); // Used to keep the cooldown independent of the game's real-time day length.
-    return currentGameDay() * minutesPerDay + currentTime01() * minutesPerDay;
+    return rawGameDay() * minutesPerDay + currentTime01() * minutesPerDay;
   }
 
   function relationshipState(npcId) {
@@ -82,7 +93,7 @@
   function settleNpcRollover(npcId, stateArg = null) {
     const state = stateArg || window.DialogueContent?.getNpcDlgState?.(npcId) || window.DialogueContent?.npcDlgState?.get?.(npcId); // Used to convert a touched NPC's prior-day rapport in place.
     if (!state) return 0;
-    const today = currentGameDay(); // Used to detect the first access/update after midnight.
+    const today = currentGameDay(); // Used to detect the first access/update after midnight rather than the world's 06:00 simulation rollover.
     const stateDay = Number.isFinite(Number(state.rapportDay)) ? Math.floor(Number(state.rapportDay)) : today; // Used to keep old saves backward compatible.
     if (stateDay >= today) {
       state.rapportDay = today;
@@ -269,7 +280,8 @@
     const baseHasRelationship = (result?.modifiers || []).some(modifier => modifier?.label === 'player-dance-invitation'); // Used to avoid double-applying relationship when the selected contextual stimulus was already a player dance.
     const relationshipAmount = baseHasRelationship ? 0 : finiteNumber(relationshipModifier?.amount, 0); // Used to make the personal liquor offer include the same relationship context as a personal dance invitation.
     const effective = clamp(finiteNumber(result?.effective, 99) + relationshipAmount, 1, 99); // Used as the final shared inhibition target for the hidden d100.
-    const draw = Math.floor(Math.random() * 100) + 1; // Used as the requested hidden d100 roll; contextual difficulty comes entirely from the shared dance evaluator.
+    const random01 = typeof window.GameRandom?.random === 'function' ? window.GameRandom.random() : Math.random(); // Used to keep gameplay-affecting liquor acceptance deterministic under the game's seeded random source when available.
+    const draw = Math.floor(random01 * 100) + 1; // Used as the requested hidden d100 roll; contextual difficulty comes entirely from the shared dance evaluator.
     const blockedReason = result?.blockedReason || probe?.blockedReason || null; // Used to preserve critical-work/blackout-style hard refusals from the shared evaluator.
     return {
       accepted: !blockedReason && draw >= effective,
@@ -414,7 +426,9 @@
   function getDebug() {
     return {
       config: JSON.parse(JSON.stringify(config)),
+      rawGameDay: rawGameDay(),
       gameDay: currentGameDay(),
+      clockHour: currentClockHour(),
       absoluteGameMinute: absoluteGameMinute(),
       rapport: Object.fromEntries([...touchedNpcIds].map(npcId => [npcId, get(npcId)])),
       giftDays: Object.fromEntries([...touchedNpcIds].map(npcId => [npcId, relationshipState(npcId)?.lastGiftDay ?? -1])),
@@ -426,6 +440,7 @@
   window.NpcRapport = Object.freeze({
     installed: true,
     config,
+    rawGameDay,
     currentGameDay,
     absoluteGameMinute,
     get,
