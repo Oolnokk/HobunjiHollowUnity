@@ -28,7 +28,7 @@ assert(!runtime.includes('buildSinglePlaneAvatarModel'), 'arm-only cut must not 
 assert(!runtime.includes('hobunjiArmCloudAlphaMap'), 'legacy flattened arm alpha-map state must stay removed');
 
 assert(editor.includes("schema: 'hobunji_portrait_arm_mask.v2'"), 'mask editor must export the species/gender profile schema');
-assert(editor.includes('cfg.profiles[profileKey()]'), 'editor must store distinct settings per species+gender');
+assert(editor.includes('profiles[profileKey()]'), 'editor must store distinct settings per species+gender');
 assert(editor.includes('STORAGE_KEY'), 'editor must retain authored profile values across browser reloads');
 assert(editor.includes('wobbleStrength') && editor.includes('outlineWidth'), 'editor must expose hard-edge authoring values');
 assert(editor.includes('NpcAvatarPreview.renderProfileToCanvas'), 'mask editor must preview through the real portrait pipeline');
