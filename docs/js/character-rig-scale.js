@@ -30,6 +30,15 @@
     return species;
   };
 
+  function defaultScaleFor(species, gender) {
+    const transformed = transformSpecies(species); // Used so Rakakoan/Ghoul inherit their transform-equivalent Kenkari/Mao-ao authored defaults.
+    const normalizedGender = normalizeGender(gender);
+    const configured = Number(window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(transformed, normalizedGender)); // Preferred canonical default source loaded by attachment-rig bootstrap.
+    if (Number.isFinite(configured) && configured > 0) return clampScale(configured);
+    const fallback = Number(window.HOBUNJI_CHARACTER_RIG_SCALE_DEFAULTS?.[`${transformed}::${normalizedGender}`]);
+    return clampScale(Number.isFinite(fallback) && fallback > 0 ? fallback : 1);
+  }
+
   function profileFor(species, gender) {
     const transformed = transformSpecies(species);
     const normalizedGender = normalizeGender(gender);
@@ -40,7 +49,27 @@
   }
 
   function scaleFor(species, gender, profile = null) {
-    return clampScale((profile || profileFor(species, gender))?.anatomy?.rigScale ?? 1);
+    const authored = Number((profile || profileFor(species, gender))?.anatomy?.rigScale);
+    return clampScale(Number.isFinite(authored) && authored > 0 ? authored : defaultScaleFor(species, gender));
+  }
+
+  function installProfileDefaults() {
+    const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters; // Live shared rig library consumed by game hands/feet and the Animation Author comparison.
+    if (!characters) return false;
+    let installed = 0; // Reported in mobile diagnostics so a stale/cached build cannot silently fall back to 1.0.
+    for (const [key, profile] of Object.entries(characters)) {
+      if (!profile) continue;
+      const [keySpecies, keyGender] = key.split('::');
+      profile.anatomy ||= {};
+      const existing = Number(profile.anatomy.rigScale);
+      if (!Number.isFinite(existing) || existing <= 0) {
+        profile.anatomy.rigScale = defaultScaleFor(profile.species || keySpecies, profile.gender || keyGender);
+      }
+      if (Number.isFinite(Number(profile.anatomy.rigScale))) installed += 1;
+    }
+    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.characterRigScaleDefaults = installed;
+    return true;
   }
 
   function vectorNear(a, b) {
@@ -67,6 +96,8 @@
       factor: next,
       base,
       output,
+      species: transformSpecies(species),
+      gender: normalizeGender(gender),
       groundRelative: true,
       coordinateSpace: 'character-floor-parent',
     };
@@ -88,10 +119,12 @@
   const api = Object.freeze({
     minScale: MIN_SCALE,
     maxScale: MAX_SCALE,
+    defaultScaleFor,
     profileFor,
     scaleFor,
     applyToParent,
     clearFromParent,
+    installProfileDefaults,
   });
   window.HobunjiCharacterRigScale = api;
 
@@ -101,12 +134,17 @@
     if (hands.attach.__hobunjiCharacterRigScaleWrapped) return true;
     const base = hands.attach.bind(hands);
     const wrapped = function characterRigScaleHandAttach(THREE, parent, options = {}) {
+      // The direct-hand runtime deliberately attaches to the same floor-relative
+      // character parent that owns the body assembly. Scaling that one parent
+      // therefore scales portrait + hands + already-attached feet exactly once.
       applyToParent(parent, options.speciesId || options.profile?.speciesId || options.profile?.species, options.gender || options.profile?.gender);
       return base(THREE, parent, options);
     };
     Object.assign(wrapped, base);
     wrapped.__hobunjiCharacterRigScaleWrapped = true;
     hands.attach = wrapped;
+    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+    window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.characterRigScaleRuntimeHook = 'ProceduralHandAttachments.floor-parent';
     return true;
   }
 
@@ -121,7 +159,7 @@
       const result = baseConfiguredAnatomy.apply(this, arguments);
       const existing = source?.anatomy?.rigScale
         ?? window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${transformSpecies(species)}::${normalizeGender(gender)}`]?.anatomy?.rigScale
-        ?? 1;
+        ?? defaultScaleFor(species, gender);
       result.rigScale = clampScale(existing);
       return result;
     };
@@ -211,18 +249,18 @@
     window.__hobunjiCharacterRigScaleAuthorInstalled = true;
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
     window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.wholeRigScale = 'ground-relative runtime/editor parent scale installed';
-    // Re-render once so an actor that was already selected when the shared runtime
-    // finished loading immediately gains the Whole rig scale field.
     if (selected?.source?.type === 'npc') window.renderAttachmentRigInspector?.();
     return true;
   }
 
   let attempts = 0;
   const timer = setInterval(() => {
+    const defaultsReady = installProfileDefaults();
     const handReady = installHandParentRuntime();
     const authorReady = installAnimationAuthor();
-    if ((handReady && authorReady) || ++attempts >= 600) clearInterval(timer);
+    if ((defaultsReady && handReady && authorReady) || ++attempts >= 600) clearInterval(timer);
   }, 50);
+  installProfileDefaults();
   installHandParentRuntime();
   installAnimationAuthor();
 })();
