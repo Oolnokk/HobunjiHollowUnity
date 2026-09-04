@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "assetType": "LifeTotem",
+  "generator": "rootTotemCanonical",
+  "seed": 7319,
+  "recipe": "canonical",
+  "includeStoneFont": false,
+  "editableFurnitureParts": true,
+  "authoredFurniturePath": "docs/config/furniture-authored/lifeTotem.json",
+  "liquidColor": "#7fe7c4",
+  "note": "The foliage source generates only the canonical living Root Totem plant. Base/font/replacement geometry is ordinary selectable V58 furniture loaded from authoredFurniturePath."
+}
