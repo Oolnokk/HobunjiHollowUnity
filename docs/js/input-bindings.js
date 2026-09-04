@@ -28,15 +28,22 @@
     }
   }
 
+  function getCurrentBindings() {
+    return deps?.getInputBindings?.() || null;
+  }
+
   function saveInputBindings() {
-    localStorage.setItem(deps.INPUT_DEFAULTS.storageKey, JSON.stringify(deps.getInputBindings()));
+    const bindings = getCurrentBindings();
+    if (!bindings) return false;
+    localStorage.setItem(deps.INPUT_DEFAULTS.storageKey, JSON.stringify(bindings));
+    return true;
   }
 
   function bindingConflict(device, button, actionId, modeShift = null) {
     if (!button) return '';
     if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
-    const inputBindings = deps.getInputBindings();
-    const bindings = inputBindings[device] || {};
+    const inputBindings = getCurrentBindings();
+    const bindings = inputBindings?.[device] || {};
     for (const [otherAction, otherButton] of Object.entries(bindings)) {
       if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
     }
@@ -52,11 +59,17 @@
   }
 
   function buttonLabel(code) {
+    if (!code) return 'Unbound';
+    const chordParts = String(code).split('+').map(part => part.trim()).filter(Boolean);
+    if (chordParts.length > 1) {
+      const key = chordParts.pop();
+      return `${chordParts.join(' + ')} + ${buttonLabel(key)}`;
+    }
     const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
-    return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+    return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
   }
 
   window.InputBindings = {
-    init, loadInputBindings, saveInputBindings, bindingConflict, actionLabel, buttonLabel,
+    init, loadInputBindings, getCurrentBindings, saveInputBindings, bindingConflict, actionLabel, buttonLabel,
   };
 })();

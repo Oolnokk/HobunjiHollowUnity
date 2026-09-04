@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "description": "Ambient reactions to player silliness. Runtime polarity is determined only by hearts: negative hearts use negative lines; zero or positive hearts use positive lines. Inhibition informs authored voice only, never branch selection.",
+  "reactionRadiusTiles": 4,
+  "cooldownMs": 9000,
+  "durationMs": 4400,
+  "default": {
+    "positive": ["Ha! All right, that was funny."],
+    "negative": ["Enough. You're making a nuisance of yourself."]
+  },
+  "npcs": {
+    "kzubug": {
+      "positive": ["Heh. Well, I suppose not everything worth doing needs a practical purpose."],
+      "negative": ["Easy now. Foolishness stops being charming when it starts making work for everybody else."]
+    },
+    "sloomi": {
+      "positive": ["...That was really stupid. I liked it."],
+      "negative": ["I know how to be ridiculous too. I just don't want to be ridiculous with you."]
+    },
+    "gorobi_ginju": {
+      "positive": ["HA! Now that's how you make an entrance, partner!"],
+      "negative": ["If you're gonna make a spectacle of yourself, at least make it a good one."]
+    },
+    "gikali_ginju": {
+      "positive": ["I shouldn't laugh at that—oh, Breath, I'm laughing at that."],
+      "negative": ["Could you please not do that where everyone can see us?"]
+    },
+    "aliri_ginju": {
+      "positive": ["Ha! Okay, that was dumb. You've got one more before I pretend I didn't laugh."],
+      "negative": ["You're not funny enough to make the trouble worth it."]
+    },
+    "gantami_ginju": {
+      "positive": ["Ha! You're ridiculous! I bet I can do worse."],
+      "negative": ["Whoa. You're making me look responsible. That's too far."]
+    },
+    "leaf": {
+      "positive": ["That was stupid. ...I didn't say stop."],
+      "negative": ["I live out here so I don't have to watch people do things like that."]
+    },
+    "pahu": {
+      "positive": ["YES! Exactly! More of that! Leaf, look!"],
+      "negative": ["Hey, I love stupid. That wasn't fun-stupid. That was annoying-stupid."]
+    },
+    "furunji_funji": {
+      "positive": ["Heh. I'd nearly forgotten people could be foolish just because they felt like it."],
+      "negative": ["I've got enough nonsense to clean up after without you adding to it."]
+    },
+    "foroji_funji": {
+      "positive": ["Finally! A fellow scholar of the noble art of looking ridiculous."],
+      "negative": ["I make a living out of nonsense, man. Somehow you made it irritating."]
+    },
+    "namui_u_hakaru": {
+      "positive": ["Ha! I'm trying to live honestly, not solemnly."],
+      "negative": ["Could you not make a scene around me? I have enough reasons not to be noticed."]
+    },
+    "takua_ao_hakaru": {
+      "positive": ["Heh. Fine. That was funny. Don't make me admit it twice."],
+      "negative": ["We're trying to look respectable here. You are very much not helping."]
+    },
+    "father_hunundi_hodu": {
+      "positive": ["Joy has its place. I suppose that was yours."],
+      "negative": ["There is freedom in joy, yes. There is also virtue in restraint."]
+    },
+    "kaboku_kunji": {
+      "positive": ["Heh heh. A little foolishness does a house good."],
+      "negative": ["Easy, now. Fun stops being fun when only one person is enjoying it."]
+    },
+    "kinami_kunji": {
+      "positive": ["Hmph. That was disgraceful. ...Do it again before I decide it wasn't funny."],
+      "negative": ["Must you carry on like a badly raised child? Some of us still have standards."]
+    },
+    "dzibim_khibu": {
+      "positive": ["HA! That's the sort of nonsense a good day needs!"],
+      "negative": ["There's a line between lively and tiresome, and you just ran straight past it."]
+    },
+    "dzahiri_khibu": {
+      "positive": ["Ha! Well, would ya look at you. That got me."],
+      "negative": ["Oh, knock it off. You're wearin' out the joke."]
+    },
+    "nashka_khibu": {
+      "positive": ["Pfft—okay, that was actually funny."],
+      "negative": ["Nope. Too much. You're making it weird."]
+    },
+    "teacup_unumanuk": {
+      "positive": ["Oh, you silly thing. Heh heh... come now, you've made an old woman laugh."],
+      "negative": ["Easy, dear. A little foolishness is good for the heart, but don't wear everyone out with it."]
+    },
+    "spearhead_unumanuk": {
+      "positive": ["That was irresponsible. ...Do it again when I'm off duty."],
+      "negative": ["Enough. Some of us are responsible for keeping this place safe."]
+    },
+    "oddclaw_unumanuk": {
+      "positive": ["Ha! See? Not everything worthwhile has to look sensible."],
+      "negative": ["Even I think that's a bad idea, and Father thinks all my ideas are bad."]
+    },
+    "binding_hatayap": {
+      "positive": ["Heh. All right. I suppose we don't have to be solemn every minute."],
+      "negative": ["Please. I've had enough chaos in my life without choosing more of it."]
+    },
+    "tooth_hatayap": {
+      "positive": ["Ha! Oh, that was stupid. Do it again."],
+      "negative": ["I work at an inn. I know the difference between fun and being a nuisance."]
+    },
+    "garanki_gabu": {
+      "positive": ["Ha! Yeah! Do it again, but bigger!"],
+      "negative": ["Whoa, hey—there's funny, and then there's whatever that was."]
+    },
+    "hreesh": {
+      "positive": ["Heh. Stupid. I like it."],
+      "negative": ["If you're trying to be funny, try farther away from me."]
+    },
+    "jubmir": {
+      "positive": ["That was absurd. I needed that."],
+      "negative": ["I've spent enough time attracting the wrong kind of attention. Don't drag me into yours."]
+    },
+    "khazud": {
+      "positive": ["Hnh. Absurd... but not unwelcome."],
+      "negative": ["Do not mistake my patience for an invitation to behave like a fool."]
+    },
+    "bird_bone": {
+      "positive": ["Keh-heh. Strange little display. I approve."],
+      "negative": ["Enough fluttering. You have made your point."]
+    },
+    "nohuknuk": {
+      "positive": ["Hah! Foolishness keeps the bones from turning to roots."],
+      "negative": ["There's good foolish and bad foolish. That was the second kind."]
+    },
+    "mother_rahayobi": {
+      "positive": ["Heh. Even old roots enjoy a little nonsense."],
+      "negative": ["Child, there is mischief, and then there is wasting everyone's patience."]
+    },
+    "squall": {
+      "positive": ["Ha. Didn't expect that from you."],
+      "negative": ["You're trying too hard. Stop."]
+    }
+  }
+}
