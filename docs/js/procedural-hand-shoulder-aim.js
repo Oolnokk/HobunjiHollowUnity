@@ -29,6 +29,18 @@
     const placementRatio = Number(avatarRoot.userData?.portraitVerticalPlacementRatio);
     const assemblyY = ((Number.isFinite(placementRatio) ? placementRatio : 0.5) - 0.5) * modelHeight;
     const sourceCanvas = options.sourceCanvas || avatarRoot.userData?.sourceCanvas || null;
+    // attachment-rig-profiles.js's leftHandShoulder/rightHandShoulder are shared per
+    // species+gender and authored/derived against that species' ordinary (non-child)
+    // portrait scale. A child avatar (e.g. a kid NPC) renders its portrait smaller via
+    // pngPlaneAvatar.childScaleMultiplier, so the shared adult-sized coordinate has to be
+    // scaled down to match, or it drifts off a child's visibly smaller portrait while
+    // every non-child NPC of the same species/gender lines up fine.
+    const rigProfileBaselineScale = Math.max(.001, Number(global.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+      speciesId: rig.speciesId,
+      gender: rig.gender,
+    })) || 1);
+    const rigProfileActualScale = Number(avatarRoot.userData?.portraitScaleMultiplier) || rigProfileBaselineScale;
+    const rigProfileScaleFactor = rigProfileActualScale / rigProfileBaselineScale;
 
     const shoulderAvatar = {};
     const shoulderSource = { left: 'pending', right: 'pending' };
@@ -83,7 +95,7 @@
       const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
       if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
       shoulderSource[side] = 'attachment-rig-profile';
-      return new THREE.Vector3(Number(position.x), Number(position.y), Number(position.z));
+      return new THREE.Vector3(Number(position.x), Number(position.y), Number(position.z)).multiplyScalar(rigProfileScaleFactor);
     }
 
     function installManualPoints() {

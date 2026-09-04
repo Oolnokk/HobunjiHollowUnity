@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Hobunji Animation Author V15.45</title>
+<title>Hobunji Animation Author V15.46</title>
 <style>
 :root {
   color-scheme: dark;
@@ -13595,6 +13595,88 @@ if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version
 animationAuthor.recentChange = 'V15.45 adds species-authored animal dialogue chathead framing to Rig Coordinates; animal ambient dialogue plus Banubu/Grehlr and Hiki-hiki/Drenkirra full dialogue consume the same crop.';
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('V15.45 patch installed: creature Rig Coordinates now author normalized dialogue chathead frames with touch preview; animal ambient speech and animal-looking NPC dialogue share the same crop runtime.');
+
+
+// -----------------------------------------------------------------------------
+// V15.46 scales the shared shoulderPerch/leftHandShoulder/rightHandShoulder rig
+// anchors for child NPCs. Those three anchors are shared per species+gender
+// (every mao'ao male reuses the same profile.anchors.shoulderPerch, for
+// example), authored/derived against that species' ordinary adult-scale
+// portrait. A child NPC (e.g. Garanki Gabu) renders its portrait smaller via
+// pngPlaneAvatar.childScaleMultiplier, so reusing that shared coordinate
+// unscaled drifts the gizmo and preview off a child's visibly smaller
+// portrait while every non-child NPC of the same species/gender still lines
+// up exactly. Posterior is unaffected: it is already stored as a percentage
+// of the actor's own rendered height (see resolvedCharacterPosteriorSnapshot),
+// so it self-scales correctly for every actor already.
+// -----------------------------------------------------------------------------
+const CHILD_SCALE_SENSITIVE_RIG_ANCHORS_V1546 = Object.freeze(['shoulderPerch', 'leftHandShoulder', 'rightHandShoulder']);
+
+function characterRigAnchorScaleFactorV1546(actor) {
+  if (actor?.source?.type !== 'npc' || !actor.model) return 1;
+  const baselineScale = Math.max(.001, finiteNumber(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+    speciesId: actor.source.species,
+    gender: actor.source.gender,
+    appearance: actor.source.appearance,
+  }), 1)); // Matches the non-child scale in effect when these shared anchors were derived/authored.
+  const actualScale = finiteNumber(actor.model.userData?.portraitScaleMultiplier, baselineScale); // Includes the child multiplier when this actor is a child.
+  return actualScale / baselineScale;
+}
+
+const baseApplyAttachmentRigProfileToActorV1546 = applyAttachmentRigProfileToActor;
+applyAttachmentRigProfileToActor = function(actor) {
+  const result = baseApplyAttachmentRigProfileToActorV1546(actor);
+  const factor = characterRigAnchorScaleFactorV1546(actor);
+  if (factor !== 1 && actor?.rigAnchors) {
+    for (const name of CHILD_SCALE_SENSITIVE_RIG_ANCHORS_V1546) {
+      actor.rigAnchors[name]?.position.multiplyScalar(factor);
+      actor.rigAnchors[name]?.updateMatrixWorld?.(true);
+    }
+    updateActorAttachmentAlignment(actor);
+  }
+  return result;
+};
+
+// The rig gizmo drags actor.rigAnchors[name] directly, so a committed edit on
+// a child actor lands in profile.anchors[name] already scaled down. Divide it
+// back out immediately so the shared species/gender profile always stores the
+// same adult-baseline coordinate regardless of which actor's gizmo authored it.
+const baseHandleAnimationTransformChangedV1546 = handleAnimationTransformChanged;
+handleAnimationTransformChanged = function(source, changedTarget = animationAuthor.editTarget) {
+  const actor = selectedAnimationActor();
+  const name = actor ? selectedRigAnchorName(actor) : null;
+  const factor = characterRigAnchorScaleFactorV1546(actor);
+  const result = baseHandleAnimationTransformChangedV1546(source, changedTarget);
+  if (factor !== 1 && CHILD_SCALE_SENSITIVE_RIG_ANCHORS_V1546.includes(name)) {
+    const profile = attachmentRigProfileForActor(actor, { create: false });
+    const position = profile?.anchors?.[name]?.position;
+    if (position) {
+      position.x /= factor;
+      position.y /= factor;
+      position.z /= factor;
+      for (const candidate of animationAuthor.actors) {
+        if (candidate.source.type === 'npc' && characterRigProfileKey(candidate.source) === characterRigProfileKey(actor.source)) applyAttachmentRigProfileToActor(candidate);
+      }
+      publishCharacterHandShouldersV1525(actor, profile);
+      scheduleAnimationProjectSave();
+    }
+  }
+  return result;
+};
+
+const basePrepareMultiAvatarAnimationAuthorV1546 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const result = basePrepareMultiAvatarAnimationAuthorV1546();
+  document.title = 'Hobunji Animation Author V15.46';
+  if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.46';
+  return result;
+};
+
+document.title = 'Hobunji Animation Author V15.46';
+if (window.MultiAvatarAnimationAuthor) window.MultiAvatarAnimationAuthor.version = '15.46';
+animationAuthor.recentChange = 'V15.46 scales the shared shoulder-perch/hand-shoulder rig anchors for child NPCs (e.g. Garanki Gabu) so their gizmo and preview match that child\'s smaller portrait, instead of reusing the adult-sized species/gender coordinate unscaled.';
+animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
+log('V15.46 patch installed: shoulder-perch and hand-shoulder gizmos now scale with a child NPC\'s smaller portrait; edits made on a child actor are stored back at the shared adult baseline so other same-species/gender NPCs stay correct.');
 })();
 </script>
 <script>
