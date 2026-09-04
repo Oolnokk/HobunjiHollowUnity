@@ -1,0 +1,13 @@
+{
+  "name": "hobunji-hollow-netlify",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Netlify runtime dependencies for Hobunji Hollow cloud saves.",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@netlify/blobs": "11.0.3",
+    "@netlify/identity": "2.0.0"
+  }
+}
