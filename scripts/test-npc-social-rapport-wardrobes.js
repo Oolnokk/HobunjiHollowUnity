@@ -94,11 +94,14 @@ assert.equal(rapport.config.representedMinutesPerDay, 1440, 'cooldowns use 24 di
 assert.equal(rapport.config.drinkAcceptedCooldownMinutes, 30, 'accepted-sip cooldown defaults to configurable 30 minutes');
 
 rapport.adjust('midnight_npc', 50, 'test_before_midnight');
+rapport.adjust('getter_npc', 40, 'test_relationship_getter');
 assert.equal(relation('midnight_npc').favor, 0, 'Rapport remains temporary before midnight');
 clockHour = 24.01;
 time01 = 18.01 / 24;
 assert.equal(rapport.currentGameDay(), 4, 'social day advances at midnight while raw simulation day is still 3');
-assert.equal(rapport.get('midnight_npc'), 0, 'first access after midnight lazily settles and resets Rapport');
+assert.equal(dialogueStub.getNpcDlgState('getter_npc').favor, 4, 'ordinary relationship reads settle midnight conversion without a timer');
+assert.equal(dialogueStub.getNpcDlgState('getter_npc').rapport, 0, 'ordinary relationship reads reset prior-day Rapport before returning state');
+assert.equal(rapport.get('midnight_npc'), 0, 'first Rapport access after midnight settles and resets Rapport');
 assert.equal(relation('midnight_npc').favor, 5, '50 Rapport converts using the configurable 10% exchange rate');
 
 clockHour = 10;
