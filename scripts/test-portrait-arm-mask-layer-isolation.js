@@ -13,19 +13,27 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(runtime.includes("mode: 'per-arm-draw-clip'"), 'arm mask must report per-arm draw clipping mode');
-assert(runtime.includes('activeArmClipsByCanvas'), 'arm mask must scope clip state to the portrait canvas');
-assert(runtime.includes('buildClippedArmImage'), 'arm mask must pre-clip the authored arm image');
-assert(runtime.includes("globalCompositeOperation = 'destination-out'"), 'arm image clipping must subtract the higher cloud mask');
+assert(runtime.includes("mode: 'per-arm-hard-cut-black-cap'"), 'arm cut must report hard-cut black-cap mode');
+assert(runtime.includes('activeArmClipsByCanvas'), 'arm cut must scope temporary arm images to the portrait canvas');
+assert(runtime.includes('buildClippedArmImage'), 'arm cut must preprocess only the authored arm image');
+assert(runtime.includes('buildCutOutlineMask'), 'arm cut must cap the newly exposed edge');
+assert(runtime.includes('valueNoise1D') && runtime.includes('valueNoise2D'), 'arm cut must retain deterministic verdigris-style noise');
+assert(runtime.includes('profiles?.[profileKey]'), 'runtime must support species+gender profile overrides');
+assert(runtime.includes('cutThreshold') && runtime.includes('wobbleStrength') && runtime.includes('outlineWidth'), 'hard-cut controls must be runtime tunables');
+assert(runtime.includes('armData.data[i + 3] = 0'), 'masked arm pixels must be erased instead of softly faded');
+assert(runtime.includes('armData.data[i] = 0'), 'new arm cap pixels must be painted black');
 assert(runtime.includes('state?.clips?.get'), 'draw helpers must substitute only known authored arm source keys');
-assert(!runtime.includes('material.alphaMap'), 'arm-only mask must not be applied to the flattened portrait material');
-assert(!runtime.includes('buildSinglePlaneAvatarModel'), 'arm-only mask must not patch the finished PNG-plane avatar');
+assert(!runtime.includes('material.alphaMap'), 'arm-only cut must not be applied to the flattened portrait material');
+assert(!runtime.includes('buildSinglePlaneAvatarModel'), 'arm-only cut must not patch the finished PNG-plane avatar');
 assert(!runtime.includes('hobunjiArmCloudAlphaMap'), 'legacy flattened arm alpha-map state must stay removed');
 
-assert(editor.includes("schema: 'hobunji_portrait_arm_mask.v1'"), 'mask editor must export the focused mask schema');
+assert(editor.includes("schema: 'hobunji_portrait_arm_mask.v2'"), 'mask editor must export the species/gender profile schema');
+assert(editor.includes('cfg.profiles[profileKey()]'), 'editor must store distinct settings per species+gender');
+assert(editor.includes('STORAGE_KEY'), 'editor must retain authored profile values across browser reloads');
+assert(editor.includes('wobbleStrength') && editor.includes('outlineWidth'), 'editor must expose hard-edge authoring values');
 assert(editor.includes('NpcAvatarPreview.renderProfileToCanvas'), 'mask editor must preview through the real portrait pipeline');
 assert(!editor.includes('weightMap'), 'mask editor must not retain weight-paint data');
 assert(!editor.includes('calculated-bicep'), 'mask editor must not retain bicep-rig bindings');
 assert(!editor.includes('deformPreview'), 'mask editor must not retain deformation preview code');
 
-console.log('portrait arm mask layer-isolation regression checks passed');
+console.log('portrait arm hard-cut/profile regression checks passed');
