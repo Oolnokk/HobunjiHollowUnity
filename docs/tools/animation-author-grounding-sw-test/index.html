@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Animation Author grounding source test launcher</title>
+  <style>
+    html,body{margin:0;min-height:100%;background:#071019;color:#e4f0ff;font:15px/1.45 system-ui,sans-serif}
+    main{max-width:720px;margin:0 auto;padding:24px}.card{padding:18px;border:1px solid #31516f;border-radius:12px;background:#0d1b28}
+    #status{font-weight:700;margin-bottom:8px}#detail{white-space:pre-wrap;color:#bfd0e4}button{font:inherit;padding:10px 14px;border:0;border-radius:9px;background:#c8e2ff;color:#071019;font-weight:700}
+  </style>
+</head>
+<body>
+<main><div class="card"><div id="status">Installing real-page grounding test…</div><div id="detail">This will either open the actual Animation Author URL with its source rewritten before execution, or show an explicit setup error.</div><p><button id="retry" hidden>Retry</button></p></div></main>
+<script>
+(() => {
+  const status=document.getElementById('status'), detail=document.getElementById('detail'), retry=document.getElementById('retry');
+  const target=new URL('../animation-author/index.html',location.href);
+  target.searchParams.set('groundingSourceTest','1');
+  target.searchParams.set('_launcher','2026-09-03-sw-v1');
+
+  async function launch(){
+    retry.hidden=true;
+    if(!('serviceWorker' in navigator)){
+      status.textContent='GROUNDING TEST CANNOT RUN';
+      detail.textContent='This browser/origin does not expose ServiceWorker. The normal editor was not changed.';
+      return;
+    }
+    try{
+      status.textContent='Registering source-rewrite worker…';
+      const registration=await navigator.serviceWorker.register('../grounding-source-test-sw.js?v=20260903a',{scope:'../'});
+      await navigator.serviceWorker.ready;
+      if(registration.installing) await new Promise((resolve,reject)=>{
+        const worker=registration.installing;
+        const timeout=setTimeout(()=>reject(new Error('Service worker install timed out')),8000);
+        worker.addEventListener('statechange',()=>{
+          if(worker.state==='activated'){clearTimeout(timeout);resolve();}
+          else if(worker.state==='redundant'){clearTimeout(timeout);reject(new Error('Service worker became redundant'));}
+        });
+      });
+      status.textContent='Worker active · opening real Animation Author page…';
+      detail.textContent=target.pathname+target.search;
+      location.replace(target.href);
+    }catch(error){
+      status.textContent='GROUNDING TEST SETUP FAILED';
+      detail.textContent=`${error?.name||'Error'}: ${error?.message||error}\n\nThe normal editor was not modified.`;
+      retry.hidden=false;
+    }
+  }
+  retry.addEventListener('click',launch);
+  launch();
+})();
+</script>
+</body>
+</html>
