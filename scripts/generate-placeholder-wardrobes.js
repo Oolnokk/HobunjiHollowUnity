@@ -21,12 +21,13 @@ const PRIORITY = [
 const HOMEISH = /sleep|rest|home|bed|dorm|residen/i;
 const WORKISH = /work|shop|bar|smith|carpent|temple|guard|research|tend|counter|keg/i;
 
-const maps = new Map(); // Existing interior map id -> parsed document; used to guarantee every generated target is real.
+const maps = new Map(); // Runtime area filename (not the sometimes-stale internal map.id) -> parsed interior document.
 for (const name of fs.readdirSync(mapsDir).filter(name => /^map_i_.*\.json$/i.test(name)).sort()) {
   const file = path.join(mapsDir, name);
   try {
     const map = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (map?.id && Array.isArray(map.furniture)) maps.set(map.id, map);
+    const runtimeArea = path.basename(name, '.json'); // game.js loads interiors by config/maps/<area>.json, so the filename is authoritative.
+    if (Array.isArray(map?.furniture)) maps.set(runtimeArea, map);
   } catch (_) {}
 }
 
