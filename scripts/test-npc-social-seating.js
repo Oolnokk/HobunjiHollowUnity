@@ -80,6 +80,12 @@ assert.deepEqual([...Seating.relationTags('namui_u_hakaru', 'sloomi')], ['friend
 assert.deepEqual([...Seating.relationTags('namui_u_hakaru', 'takua_ao_hakaru')], ['family']);
 assert.deepEqual([...Seating.relationTags('gorobi_ginju', 'gikali_ginju')], ['partner']);
 
+// The ambient-dialogue friendship map agrees with the shared relationship
+// data so Namu'i and Sloomi recognize each other socially outside seating too.
+const ambientDialogue = JSON.parse(read('docs/config/dialogue/ambient-dialogue.json'));
+assert(Array.isArray(ambientDialogue.npcGreetings?.namui_u_hakaru?.friends?.sloomi), 'Namu\'i should recognize Sloomi as a friend in ambient dialogue');
+assert(Array.isArray(ambientDialogue.npcGreetings?.sloomi?.friends?.namui_u_hakaru), 'Sloomi should recognize Namu\'i as a friend in ambient dialogue');
+
 // Leaf's formerly fixed inn seat becomes reactive and pulls toward Pahu,
 // while still respecting occupancy (Leaf cannot choose Pahu's exact stool).
 snapshots = {
