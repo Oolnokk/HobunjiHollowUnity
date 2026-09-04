@@ -115,5 +115,6 @@
   const socialDanceRuntime = new URL('social-action-dance-runtime.js?v=20260903social4', base).href;
   const socialBodyPlaneRuntime = new URL('social-action-body-plane-runtime.js?v=20260903social6', base).href;
   const socialCameraRuntime = new URL('social-action-camera-runtime.js?v=20260903social7', base).href;
-  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${social}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script>`);
+  const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20260903social11', base).href;
+  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${social}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script>`);
 })();
