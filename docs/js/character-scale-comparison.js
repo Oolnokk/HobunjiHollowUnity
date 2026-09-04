@@ -30,7 +30,6 @@
   let chair = null;
   let THREE = null;
   let persistTimer = 0;
-  let frameRaf = 0;
   let portraitRenderChain = Promise.resolve(); // Serializes portrait rendering because NpcAvatarPreview temporarily installs the active NPC account shim.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -334,8 +333,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
     clearTimeout(persistTimer);
     persistTimer = setTimeout(persistProfiles, 180);
-    if (frameRaf) cancelAnimationFrame(frameRaf);
-    frameRaf = requestAnimationFrame(frame);
   }
 
   // Age is per-NPC instance data, not species+gender-authored — it's stored and
@@ -348,8 +345,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     host()?.setNpcAge?.(selected.npc.id, percent / 100);
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, percent / 100);
-    if (frameRaf) cancelAnimationFrame(frameRaf);
-    frameRaf = requestAnimationFrame(frame);
   }
 
   function persistProfiles() {
@@ -383,8 +378,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (selected) select(selected);
     persistProfiles();
     status(`Reset ${count} species/gender scale${count === 1 ? '' : 's'} and every per-NPC age to repository defaults.`);
-    if (frameRaf) cancelAnimationFrame(frameRaf);
-    frameRaf = requestAnimationFrame(frame);
   }
 
   function exportJson() {
@@ -748,8 +741,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     active = false;
     building = false;
     persistProfiles();
-    if (frameRaf) cancelAnimationFrame(frameRaf);
-    frameRaf = 0;
     await restore(targetMode || originMode || 'multi');
     savedMulti = null;
   }

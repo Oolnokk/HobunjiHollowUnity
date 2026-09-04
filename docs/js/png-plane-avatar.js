@@ -432,6 +432,28 @@
     const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .30);
     const pixelWidth = Math.max(1, Number(options.pixelWidth) || 1); // Used below to map the overall PNG plane into model/UV space.
     const pixelHeight = Math.max(1, Number(options.pixelHeight) || 1); // Used below to map the overall PNG plane into model/UV space.
+    // The broad Y-band above only knows a vertex's height, not whether it's
+    // actually near the head horizontally — at head height it happily
+    // includes shoulders, collars, and wide overwear too, which is exactly
+    // what the head-TURN blend wants (a natural partial shoulder-follow).
+    // But HobunjiCharacterRigScale's head scale/offset (bone index 2, driven
+    // independently of rotation's bone index 1 below) must never drag that
+    // nearby torso/clothing along with it, so its share of headWeight is
+    // additionally gated by horizontal distance from the detected head's own
+    // silhouette (options.headBoundsPx, from detectHeadRigPixels — a plain
+    // geometric AABB test, deliberately NOT texel opacity: per-pixel alpha
+    // weighting is exactly what the coherent-rig comment above rules out,
+    // since a hat/hood/hair rendered as a separate alpha island right next
+    // to the bare head would score near-zero and be left behind when the
+    // head scales). Full weight out to 1.5x the bare head's own half-width
+    // — room for a hat brim or hood — tapering smoothly to zero by 2.5x;
+    // shoulder/collar pixels at head height sit well past that and keep
+    // their full headWeight on the rotation bone instead.
+    const headBoundsPx = options.headBoundsPx || null;
+    const headHalfWidthPx = headBoundsPx ? Math.max(1, (headBoundsPx.right - headBoundsPx.left) / 2) : 0;
+    const headCenterXPx = headBoundsPx ? (headBoundsPx.left + headBoundsPx.right) / 2 : 0;
+    const headScaleInnerPx = headHalfWidthPx * 1.5;
+    const headScaleOuterPx = headHalfWidthPx * 2.5;
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
@@ -443,8 +465,17 @@
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
       const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
-      skinIndices.push(0, 1, 0, 0);
-      skinWeights.push(1 - headWeight, headWeight, 0, 0);
+      let headScaleGate = 1;
+      if (headBoundsPx) {
+        const dx = Math.abs(pixelX - headCenterXPx);
+        headScaleGate = dx <= headScaleInnerPx ? 1
+          : dx >= headScaleOuterPx ? 0
+          : smoothstep01(1 - (dx - headScaleInnerPx) / (headScaleOuterPx - headScaleInnerPx));
+      }
+      const headScaleWeight = headWeight * headScaleGate;
+      const headRotateWeight = headWeight - headScaleWeight;
+      skinIndices.push(0, 1, 2, 0);
+      skinWeights.push(1 - headWeight, headRotateWeight, headScaleWeight, 0);
     };
 
     const appendCell = ({ column, row }, normalZ) => {
@@ -517,6 +548,7 @@
     const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, {
       pixelWidth: pxW,
       pixelHeight: pxH,
+      headBoundsPx: detectedHead.boundsPx,
     });
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
@@ -535,6 +567,16 @@
     neckJoint.name = `${config.name}_neck_bone`;
     neckJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
     torsoBone.add(neckJoint);
+    // Child of neckJoint, not a torsoBone sibling: it inherits head-turn
+    // rotation for free, while its OWN local scale/position (untouched by
+    // rotation) is what HobunjiCharacterRigScale's head scale/offset drives —
+    // see applyHeadCompensation in character-rig-scale.js. Only vertices
+    // buildSkinnedPlaneGeometry actually classified as head pixels (via the
+    // headCanvas alpha sample above) are weighted to it at all, so scale/
+    // offset can never drag nearby torso or overwear along with the head.
+    const headScaleJoint = new THREE.Bone();
+    headScaleJoint.name = `${config.name}_head_scale_bone`;
+    neckJoint.add(headScaleJoint);
 
     const skinnedPlane = new THREE.SkinnedMesh(geometry, [frontMaterial, backMaterial]);
     skinnedPlane.name = config.name || 'npc_avatar_skinned_plane_assembly';
@@ -542,14 +584,14 @@
     skinnedPlane.renderOrder = 2;
     skinnedPlane.frustumCulled = false;
     skinnedPlane.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, neckJoint]);
+    const skeleton = new THREE.Skeleton([torsoBone, neckJoint, headScaleJoint]);
     skinnedPlane.bind(skeleton);
 
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
     group.add(skinnedPlane);
     return {
-      group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx,
+      group, neckJoint, torsoBone, headScaleJoint, skinnedPlane, skeleton, neckLocal, pivotPx,
       headCentroidPx, headCentroidLocal, headBoundsPx: detectedHead.boundsPx,
       detectionMethod: detectedHead.method, coverageMode: geometry.userData.coverageMode,
       planeBoundsPx: geometry.userData.planeBoundsPx,
@@ -948,7 +990,7 @@
     assembly.position.y = assemblyY;
     root.userData.neckRig = skinnedRig
       ? {
-          available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone,
+          available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone, headScaleJoint: skinnedRig.headScaleJoint,
           skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
           pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
           headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,

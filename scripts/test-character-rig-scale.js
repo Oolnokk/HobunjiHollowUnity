@@ -25,38 +25,42 @@ vm.runInContext(source, context, { filename: 'character-rig-scale.js' });
 // Object.prototype than object literals in this file, which trips
 // assert.deepStrictEqual's prototype check even when every field matches.
 // Rebuild a plain object in the current realm before comparing.
-const plain = v => ({ x: v.x, y: v.y, head: v.head });
+const plain = v => ({ x: v.x, y: v.y, head: v.head, offsetY: v.offsetY });
 
+// Hand-authored via Full Character Scale itself (an exported
+// hobunji_full_character_scales.json), each axis genuinely independent now —
+// no longer x === y === head per species/gender.
 const authoredDefaults = {
-  'tletingan::male': 0.85,
-  'tletingan::female': 0.8,
-  'engh-sho::male': 0.84,
-  'engh-sho::female': 0.8,
-  'mao-ao::male': 1.125,
-  'mao-ao::female': 1.045,
-  'kenkari::male': 1.225,
-  'kenkari::female': 1.1,
-  'mashtzarr::male': 1.27,
-  'mashtzarr::female': 1.095,
+  'tletingan::male': { x: 0.85, y: 0.85, head: 0.85, offsetY: 0 },
+  'tletingan::female': { x: 1.01, y: 0.89, head: 0.92, offsetY: 0 },
+  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.94, offsetY: 0 },
+  'engh-sho::female': { x: 0.795, y: 0.765, head: 0.86, offsetY: 0 },
+  'mao-ao::male': { x: 1.125, y: 1.125, head: 1.085, offsetY: 0 },
+  'mao-ao::female': { x: 1.045, y: 1.045, head: 1.045, offsetY: 0 },
+  'kenkari::male': { x: 1.225, y: 1.225, head: 1.085, offsetY: 0 },
+  'kenkari::female': { x: 1.1, y: 1.1, head: 1.1, offsetY: 0 },
+  'mashtzarr::male': { x: 0.95, y: 1.255, head: 1.01, offsetY: -0.065 },
+  'mashtzarr::female': { x: 1.01, y: 1.095, head: 0.91, offsetY: -0.06 },
 };
 for (const [key, expected] of Object.entries(authoredDefaults)) {
   const [species, gender] = key.split('::');
-  assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), { x: expected, y: expected, head: expected },
-    `${key} must use the authored Full Character Scale default on every axis until an author pulls one apart`);
-  assert.strictEqual(context.HobunjiCharacterRigScaleDefaults.uniformScaleFor(species, gender), expected,
-    `${key} uniform back-compat accessor must still expose the single legacy number`);
+  assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), expected,
+    `${key} must use the hand-authored Full Character Scale default`);
+  assert.strictEqual(context.HobunjiCharacterRigScaleDefaults.uniformScaleFor(species, gender), expected.x,
+    `${key} uniform back-compat accessor must still expose x`);
 }
-assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('ghoul', 'male')), { x: 1.125, y: 1.125, head: 1.125 },
+assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('ghoul', 'male')), authoredDefaults['mao-ao::male'],
   'Ghoul must inherit Mao-ao male transform scale');
-assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('rakakoan', 'female')), { x: 1.1, y: 1.1, head: 1.1 },
+assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('rakakoan', 'female')), authoredDefaults['kenkari::female'],
   'Rakakoan must inherit Kenkari female transform scale');
 
 const api = context.HobunjiCharacterRigScale;
 assert(api, 'whole-rig scale API must install');
 assert.strictEqual(profile.anatomy.rigScaleX, 1.125, 'live shared rig profiles must receive the authored x default when no override exists');
 assert.strictEqual(profile.anatomy.rigScaleY, 1.125, 'live shared rig profiles must receive the authored y default when no override exists');
-assert.strictEqual(profile.anatomy.headScale, 1.125, 'live shared rig profiles must receive the authored head default when no override exists');
-assert.deepStrictEqual(plain(api.scaleFor('mao-ao', 'male')), { x: 1.125, y: 1.125, head: 1.125 });
+assert.strictEqual(profile.anatomy.headScale, 1.085, 'live shared rig profiles must receive the authored head default when no override exists');
+assert.strictEqual(profile.anatomy.headOffsetY, 0, 'live shared rig profiles must receive the authored offsetY default when no override exists');
+assert.deepStrictEqual(plain(api.scaleFor('mao-ao', 'male')), authoredDefaults['mao-ao::male']);
 
 function makeBone() {
   return {
@@ -144,6 +148,37 @@ assert.ok(Math.abs(toolNeckJoint.scale.x - (1.1 / 1.3)) < 1e-9,
 assert.ok(Math.abs(toolNeckJoint.scale.y - (1.1 / 0.7)) < 1e-9,
   'the editor-shaped neck rig (no `available` flag) must still be found and compensated');
 
+// When a headScaleJoint exists (the shared png-plane-avatar.js rig — only vertices
+// actually classified as head pixels are weighted to it), it must be preferred over
+// neckJoint for scale/offset, and neckJoint itself must be left completely alone —
+// otherwise head-turn rotation's broad shoulder-follow blend would get dragged by
+// scale/offset too, exactly the "affects parts of torso and overwear clothing near
+// the head" bug this bone split exists to fix.
+const splitNeckJoint = makeBone();
+const splitHeadScaleJoint = makeBone();
+const splitParent = {
+  isObject3D: true,
+  scale: { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
+  userData: { neckRig: { available: true, neckJoint: splitNeckJoint, headScaleJoint: splitHeadScaleJoint } },
+  children: [],
+  updateMatrix() {},
+  updateMatrixWorld() {},
+  traverse(visit) { visit(this); },
+};
+const splitBaselineY = splitNeckJoint.position.y;
+api.applyToParent(splitParent, 'mao-ao', 'male', { x: 1.3, y: 0.7, head: 1.1, offsetY: 0.2 });
+assert.deepStrictEqual([splitNeckJoint.scale.x, splitNeckJoint.scale.y, splitNeckJoint.scale.z], [1, 1, 1],
+  'neckJoint (head-turn rotation) must be untouched by scale when a headScaleJoint exists');
+assert.strictEqual(splitNeckJoint.position.y, splitBaselineY,
+  'neckJoint (head-turn rotation) must be untouched by Y offset when a headScaleJoint exists');
+assert.ok(Math.abs(splitHeadScaleJoint.scale.x - (1.1 / 1.3)) < 1e-9,
+  'headScaleJoint must receive the head-scale compensation instead');
+assert.ok(Math.abs(splitHeadScaleJoint.scale.y - (1.1 / 0.7)) < 1e-9,
+  'headScaleJoint must receive the head-scale compensation instead');
+api.clearFromParent(splitParent);
+assert.deepStrictEqual([splitHeadScaleJoint.scale.x, splitHeadScaleJoint.scale.y, splitHeadScaleJoint.scale.z], [1, 1, 1],
+  'clearFromParent must reset headScaleJoint, not (only) neckJoint, when a headScaleJoint exists');
+
 // Head Y offset is authored per species/gender as a fraction of the avatar's own
 // model height, and composes additively with a separate per-NPC age-hunch factor —
 // neither one is baked into shared profile data, both are supplied by the caller.
@@ -185,7 +220,7 @@ const runtimeParent = {
   traverse(visit) { visit(this); },
 };
 hands.attach(null, runtimeParent, { speciesId: 'engh-sho', gender: 'male' });
-assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], [0.84, 0.84, 0.84]);
+assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], [0.8, 0.845, 0.8]);
 assert.strictEqual(runtimeParent.userData.hobunjiCharacterRigScaleState.coordinateSpace, 'character-floor-parent');
 
 assert.match(source, /coordinateSpace: 'character-floor-parent'/);

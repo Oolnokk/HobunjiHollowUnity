@@ -193,26 +193,35 @@
     neckJoint.updateMatrix?.();
   }
 
-  // Sets the neck bone's own local scale so the head-weighted region of the
-  // skinned plane ends up at `overrides.head` (or the resolved default) in
-  // world space regardless of the non-uniform x/y body scale it inherits from
-  // its parent chain, and repositions it by `overrides.offsetY` (or the
-  // resolved default) composed with `ageFraction`'s hunch amount.
+  // Sets the head-scale bone's own local scale so the vertices actually
+  // classified as head (see the headCanvas alpha sampling in
+  // buildSkinnedPlaneGeometry) end up at `overrides.head` (or the resolved
+  // default) in world space regardless of the non-uniform x/y body scale it
+  // inherits from its parent chain, and repositions it by `overrides.offsetY`
+  // (or the resolved default) composed with `ageFraction`'s hunch amount.
+  // Prefers rig.headScaleJoint (a child of neckJoint that ONLY head-alpha
+  // vertices are weighted to) over rig.neckJoint itself, which head-TURN
+  // rotation also drives and whose much broader Y-band blend deliberately
+  // includes nearby shoulders/collar/overwear — scaling or offsetting THAT
+  // bone would drag those along with the head. Animation Author's own
+  // separate two-sided-plane rig builder has no headScaleJoint yet, so it
+  // still falls back to neckJoint there.
   function applyHeadCompensation(root, species, gender, overrides = {}, ageFraction = 0) {
     const found = findNeckRig(root);
     if (!found) return false;
     const { rig, modelHeight } = found;
+    const target = rig.headScaleJoint || rig.neckJoint;
     const resolved = scaleFor(species, gender);
     const bx = clampScale(Number.isFinite(Number(overrides.x)) && Number(overrides.x) > 0 ? overrides.x : resolved.x);
     const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
     const headNumber = Number(overrides.head);
     const head = clampScale(Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head);
-    rig.neckJoint.scale.set(bx > 0 ? head / bx : head, by > 0 ? head / by : head, 1);
-    rig.neckJoint.updateMatrix?.();
+    target.scale.set(bx > 0 ? head / bx : head, by > 0 ? head / by : head, 1);
+    target.updateMatrix?.();
 
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
-    applyHeadYOffset(rig.neckJoint, clampOffset(baseOffset) + ageHunchFraction(ageFraction), modelHeight);
+    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction), modelHeight);
     return true;
   }
 
@@ -254,12 +263,13 @@
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
     const found = findNeckRig(parent);
-    if (found?.rig?.neckJoint) {
-      found.rig.neckJoint.scale.set(1, 1, 1);
-      if (Number.isFinite(found.rig.neckJoint.userData?.hobunjiHeadOffsetBaseY)) {
-        found.rig.neckJoint.position.y = found.rig.neckJoint.userData.hobunjiHeadOffsetBaseY;
+    const target = found?.rig?.headScaleJoint || found?.rig?.neckJoint;
+    if (target) {
+      target.scale.set(1, 1, 1);
+      if (Number.isFinite(target.userData?.hobunjiHeadOffsetBaseY)) {
+        target.position.y = target.userData.hobunjiHeadOffsetBaseY;
       }
-      found.rig.neckJoint.updateMatrix?.();
+      target.updateMatrix?.();
     }
     return true;
   }
