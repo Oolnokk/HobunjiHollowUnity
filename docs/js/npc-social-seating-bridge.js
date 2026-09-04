@@ -399,6 +399,13 @@
     const request = seatRoleRequest(rec, beat, result);
     if (!request) return result;
 
+    // Headless regression tests and very-early boot do not expose the live
+    // walker array. Keep those calls uncached so mocked occupancy changes are
+    // observed immediately; the real game always exposes window._npcWalkers.
+    if (!Array.isArray(window._npcWalkers)) {
+      return reseatWithRequest(result, beat, callerCtx, request);
+    }
+
     const key = cacheKeyFor(result, beat, callerCtx, request);
     const now = runtimeNowMs();
     const cached = decisionCacheByNpc.get(rec.id);
