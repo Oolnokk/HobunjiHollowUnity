@@ -12,6 +12,7 @@
   const publicApi = () => window.MultiAvatarAnimationAuthor || {}; // Used for supported project, mode, actor-add, selection, and rig-profile reads.
   const MODE_TAB_IDS = Object.freeze({ multi: 'maaMultiTab', single: 'maaSingleTab', rig: 'maaRigTab' }); // Used only when restoring a mode the early public setMode API does not understand.
   const RIG_SCALE_STORAGE_KEY = 'hobunjiFullCharacterRigScales.v1'; // Persists whole-character scales independently because the editor's V15.30 anatomy normalizer drops unknown fields.
+  const LEGACY_RIG_SAVE_KEY = 'hobunjiAttachmentRigProfiles.v2'; // Recovers scales already autosaved by earlier Full Character Scale builds even though their native Rig export omitted them.
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   const normalizeGender = value => {
     const gender = String(value || '').trim().toLowerCase();
@@ -99,6 +100,7 @@
   }
 
   function restorePersistedRigScales() {
+    let recoveredLegacy = 0;
     try {
       const parsed = JSON.parse(localStorage.getItem(RIG_SCALE_STORAGE_KEY) || '{}');
       for (const [key, value] of Object.entries(parsed || {})) {
@@ -106,6 +108,16 @@
         setRigScale(species, gender, value, { persist: false });
       }
     } catch (_) {}
+    try {
+      const legacy = JSON.parse(localStorage.getItem(LEGACY_RIG_SAVE_KEY) || 'null');
+      for (const [key, scale] of importedRigScaleEntries(legacy)) {
+        if (rigScaleOverrides.has(key)) continue;
+        const [species, gender] = key.split('::');
+        if (setRigScale(species, gender, scale, { persist: false }) != null) recoveredLegacy += 1;
+      }
+    } catch (_) {}
+    if (recoveredLegacy) persistRigScaleOverrides();
+    return recoveredLegacy;
   }
 
   function importedRigScaleEntries(data) {
@@ -484,6 +496,7 @@
     destructiveDomFallbacks: false,
     rigScaleRoundTrip: true,
     rigScaleStorageKey: RIG_SCALE_STORAGE_KEY,
+    legacyRigScaleRecoveryKey: LEGACY_RIG_SAVE_KEY,
     nativeRigExportBlobPatched: !!window.Blob?.__hobunjiRigScaleExportWrapped,
   };
 
