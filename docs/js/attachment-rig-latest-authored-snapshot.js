@@ -8,6 +8,7 @@
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
     new URL('character-rig-scale.js?v=20260904a', base).href,
     new URL('character-scale-comparison.js?v=20260904a', base).href,
+    new URL('character-scale-comparison-camera.js?v=20260904a', base).href,
   ];
   const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
     const script = document.createElement('script');
