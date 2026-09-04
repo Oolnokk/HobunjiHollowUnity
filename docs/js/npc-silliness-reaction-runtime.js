@@ -23,7 +23,7 @@
     reactions: 0,
     positive: 0,
     negative: 0,
-    greetingReplacements: 0,
+    greetingReplacementEncounters: 0,
   };
 
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -184,7 +184,7 @@
     const id = String(npcId || '');
     if (!id) return;
     if (suppressed) {
-      if (!state.greetingSuppressedNpcIds.has(id)) state.greetingReplacements++;
+      if (!state.greetingSuppressedNpcIds.has(id)) state.greetingReplacementEncounters++;
       state.greetingSuppressedNpcIds.add(id);
     } else {
       state.greetingSuppressedNpcIds.delete(id);
@@ -371,7 +371,7 @@
         reactions: state.reactions,
         positive: state.positive,
         negative: state.negative,
-        greetingReplacements: state.greetingReplacements,
+        greetingReplacementEncounters: state.greetingReplacementEncounters,
         greetingSuppressedNpcIds: [...state.greetingSuppressedNpcIds],
       };
     },
