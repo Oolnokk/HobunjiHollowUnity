@@ -5756,22 +5756,6 @@
         _playerAttachmentAnchorCache.set(anchorName, result);
         return result;
       }
-      // Normalizes an authored anchor's optional scale (Animation Author's
-      // multi-avatar rig-anchor gizmo — see applyTransformSnapshot in
-      // docs/tools/animation-author/index.html, which literally parents a
-      // rider's full avatar root under the carrier anchor's THREE.Group, so
-      // the group's own authored scale scales the entire parented body) into
-      // a safe {x,y,z} triple. Falls back to identity so an anchor authored
-      // before this field existed (or with a non-finite/zero component)
-      // renders exactly as it did before scale support was added.
-      function _normalizedAnchorScale(scale) {
-        const x = Number(scale?.x), y = Number(scale?.y), z = Number(scale?.z);
-        return {
-          x: Number.isFinite(x) && x > 0 ? x : 1,
-          y: Number.isFinite(y) && y > 0 ? y : 1,
-          z: Number.isFinite(z) && z > 0 ? z : 1,
-        };
-      }
       function _computePlayerAttachmentAnchor(anchorName) {
         const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters;
         if (!lib) return null;
@@ -5794,9 +5778,9 @@
           const y = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY(rec.posteriorRule, modelHeight, playerToolBaseY)
             ?? ((Number.isFinite(Number(playerToolBaseY)) ? Number(playerToolBaseY) : modelHeight / 2)
               + modelHeight * (Number.isFinite(legacyOffset) ? legacyOffset : -18) / 100);
-          return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg, scale: _normalizedAnchorScale(anchor.scale) };
+          return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg };
         }
-        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg, scale: _normalizedAnchorScale(anchor.scale), sourcePixel: anchor.sourcePixel ? { ...anchor.sourcePixel } : null } : null;
+        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg, sourcePixel: anchor.sourcePixel ? { ...anchor.sourcePixel } : null } : null;
       }
       function creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass = null) {
         const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotypeOrSizeClass); // Matches anchor coordinates to the visible size class.
@@ -5809,7 +5793,6 @@
           y: anchor.position.y * sizeScale.y,
           z: Number(anchor.position.z) || 0,
           rotationDeg: anchor.rotationDeg,
-          scale: _normalizedAnchorScale(anchor.scale),
         } : null;
         _creatureAttachmentAnchorCache.set(cacheKey, result);
         return result;
@@ -5870,14 +5853,6 @@
         return {
           worldPosition: perchWorldPosition.clone().sub(gripWorldOffset),
           worldQuaternion,
-          // The carrier (character.shoulderPerch) is the anchor Animation
-          // Author's own multi-avatar mode literally parents the rider
-          // (creature.shoulderGrip) root beneath — see attachmentSemantics
-          // in docs/config/attachment-rig-profiles.js and setActorAttachment
-          // in the tool. Its authored scale is what "full body parented
-          // scaling" per species+gender means, so it — not the rider's own
-          // grip anchor scale — is what should scale the whole pet body.
-          scale: _normalizedAnchorScale(perch.scale),
           perchWorldPosition: perchWorldPosition.clone(),
           gripWorldOffset: gripWorldOffset.clone(),
           rotationFrameWorldQuaternion: selectedRotationQuaternion,
@@ -6974,15 +6949,6 @@
           : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
         group.position.copy(localPosition);
         group.quaternion.copy(localQuaternion);
-        // Mirrors Animation Author's own "full body parented scaling":
-        // that tool literally parents the pet's root under the character's
-        // shoulderPerch anchor Group, so the anchor's authored per-species/
-        // gender scale scales the pet's entire body as one unit. finalTransform.scale
-        // carries that same value here (see _shoulderPetSurfaceTransform);
-        // the no-rig-data fallback path never sets it, so identity keeps
-        // that legacy case pixel-for-pixel unchanged.
-        const petScale = finalTransform.scale;
-        group.scale.set(Number(petScale?.x) || 1, Number(petScale?.y) || 1, Number(petScale?.z) || 1);
         // The selected root transform is now authoritative for both placement
         // and rendering. Restore normal matrix inheritance and only retain the
         // canonical mirrored face rotations; png-plane-avatar's render hook
