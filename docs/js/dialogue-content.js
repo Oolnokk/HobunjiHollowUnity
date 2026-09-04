@@ -52,7 +52,7 @@
 
   function npcDialogueLetterSfxConfig(rec = _dlgNpcRec || deps.getDialogueWalker()?.rec) {
     const audioCfg = window.AudioSystem?.gameAudioConfig();
-    const dialogueCfg = audioCfg.dialogueLetter || {};
+    const dialogueCfg = { url: 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a', ...(audioCfg.dialogueLetter || {}) }; // Defaults dialogue pulses to the bundled Kurraya pluck; audio.dialogueLetter.url can override/null this experiment.
     const npcOverrides = dialogueCfg.npcs || {};
     const speciesOverrides = dialogueCfg.species || {};
     const speciesId = rec?.appearance?.speciesId || rec?.speciesId || rec?.species || deps.getDialogueWalker()?.speciesId;
