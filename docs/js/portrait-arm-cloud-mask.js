@@ -110,7 +110,7 @@
 
   function markCanvasAsImage(canvas) {
     // portrait-utils accepts CanvasImageSource objects but also reads naturalWidth/
-    // naturalHeight like an HTMLImageElement. Define those aliases for our clipped canvas.
+    // naturalHeight like an HTMLImageElement. Define those aliases after sizing.
     if (!('naturalWidth' in canvas)) Object.defineProperty(canvas, 'naturalWidth', { value: canvas.width });
     if (!('naturalHeight' in canvas)) Object.defineProperty(canvas, 'naturalHeight', { value: canvas.height });
     return canvas;
@@ -119,9 +119,10 @@
   function buildClippedArmImage(armImage, armXform, maskImage, maskXform) {
     const width = Math.max(1, Number(armImage?.naturalWidth || armImage?.width) || 1);
     const height = Math.max(1, Number(armImage?.naturalHeight || armImage?.height) || 1);
-    const canvas = markCanvasAsImage(document.createElement('canvas'));
+    const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
+    markCanvasAsImage(canvas);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(armImage, 0, 0, width, height);
 
@@ -226,13 +227,15 @@
       && renderOptions?.view !== 'behind';
     if (!shouldClip) return originalRenderToCanvas(canvas, profile, renderOptions);
 
+    let state = null;
     try {
-      const state = await buildArmClipState(profile);
-      if (state) activeArmClipsByCanvas.set(canvas, state);
-      return await originalRenderToCanvas(canvas, profile, renderOptions);
+      state = await buildArmClipState(profile);
     } catch (error) {
-      console.warn('[arm-cloud-mask] per-arm clip skipped:', error);
-      return originalRenderToCanvas(canvas, profile, renderOptions);
+      console.warn('[arm-cloud-mask] per-arm clip preparation skipped:', error);
+    }
+    if (state) activeArmClipsByCanvas.set(canvas, state);
+    try {
+      return await originalRenderToCanvas(canvas, profile, renderOptions);
     } finally {
       activeArmClipsByCanvas.delete(canvas);
     }
