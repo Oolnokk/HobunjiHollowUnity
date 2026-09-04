@@ -83,6 +83,26 @@ for (const globalName of [
 assert.match(scaleHostSource, /privateEditorStateRequired: false/,
   'mobile diagnostics must confirm the scale host has no private-IIFE dependency');
 
+// rigScale is authored outside the editor IIFE, while V15.30's private anatomy
+// normalizer reconstructs a fixed field set. The host therefore owns round-trip
+// persistence and injects only rigScale into the native v10 JSON download.
+assert.match(scaleHostSource, /hobunjiFullCharacterRigScales\.v1/,
+  'whole-character scales need an independent reload-safe persistence key');
+assert.match(scaleHostSource, /getAttachmentRigProfiles/,
+  'rig export must start from the editor public rig-profile snapshot, preserving native rig fields');
+assert.match(scaleHostSource, /profile\.anatomy\.rigScale = value/,
+  'shared species profiles must receive restored/imported rigScale values');
+assert.match(scaleHostSource, /profile\.anatomy\.rigScale = scale/,
+  'serialized character profiles must contain rigScale');
+assert.match(scaleHostSource, /RigScaleAwareBlob/,
+  'native attachment-rig downloads must be patched without replacing their metadata payload');
+assert.match(scaleHostSource, /maaImportInput/,
+  'native Rig imports must recover rigScale from the selected JSON');
+assert.match(scaleHostSource, /fullCharacterScaleRoundTripVersion = 1/,
+  'patched v10 exports must identify the rigScale round-trip extension');
+assert.match(scaleBootstrapSource, /character-scale-comparison-host-bridge\.js\?v=20260904g/,
+  'bootstrap must cache-bust the rigScale round-trip host');
+
 // The lineup itself must never become Animation Author actors. It should use the
 // exact public preview contracts already proven by Rig Coordinates reference NPCs:
 // proceduralHandParent for normal free hands and ProceduralLegAnimation for feet.
