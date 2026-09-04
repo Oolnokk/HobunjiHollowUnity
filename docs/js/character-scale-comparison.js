@@ -400,9 +400,15 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
     const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
     const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
+    const head = Object.assign(document.createElement('canvas'), { width: size, height: size });
     await renderPortrait(front, profile, { seatId: npc.id || npc.name || 'full-scale' });
     await renderPortrait(back, profile, { seatId: npc.id || npc.name || 'full-scale', portraitView: 'behind' });
-    return { exportNpc, profile, front, back };
+    // Same pattern the real game uses (see game.js's playerNeckJoint/NPC dialogue setup): a
+    // head-only render lets buildSinglePlaneAvatarModel's neckRig option locate the head pixels
+    // and skin-weight a neck bone for it. Without this, there is no bone for Full Character
+    // Scale's Head slider to drive at all — it silently does nothing.
+    await renderPortrait(head, profile, { seatId: npc.id || npc.name || 'full-scale', onlyHeadSprite: true, forceEyesOpen: true });
+    return { exportNpc, profile, front, back, head };
   }
 
   function avatarBaseWidth() {
@@ -428,6 +434,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const baseWidth = avatarBaseWidth();
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
       backCanvas: avatar.back,
+      headCanvas: avatar.head,
+      neckRig: true, // Without this, buildSinglePlaneAvatarModel never builds a neck bone, and the Head slider (which only ever drives that bone — see applyHeadCompensation) has nothing to act on.
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
       npcRecord: rep.npc,

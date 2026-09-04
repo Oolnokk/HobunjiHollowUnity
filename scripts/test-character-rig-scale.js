@@ -265,4 +265,17 @@ assert.match(scaleComparisonSource, /maaFullScaleRangeY/,
 assert.match(scaleComparisonSource, /maaFullScaleRangeHead/,
   'the comparison tab must expose an independent head-scale control');
 
+// Regression guard: the comparison lineup builds its own preview avatars directly
+// (deliberately not through Animation Author actors — see the doesNotMatch guards
+// above), which means it must opt into a neck rig itself. Without `neckRig: true`
+// and a rendered head-only canvas, buildSinglePlaneAvatarModel never builds a neck
+// bone at all, so applyHeadCompensation has nothing to act on and the Head slider
+// silently does nothing — the exact bug this test guards against regressing.
+assert.match(scaleComparisonSource, /neckRig:\s*true/,
+  'comparison avatars must opt into a neck rig or the Head slider has no bone to drive');
+assert.match(scaleComparisonSource, /headCanvas:\s*avatar\.head/,
+  'comparison avatars must supply a head-only render so the neck rig can locate head pixels');
+assert.match(scaleComparisonSource, /onlyHeadSprite:\s*true/,
+  'buildPortrait must render a head-only canvas alongside front/back, matching the real game’s neckRig setup');
+
 console.log('Ground-relative whole character rig scale guards passed (independent x/y body scale, neck-rig-compensated head scale)');
