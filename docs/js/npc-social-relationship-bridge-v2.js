@@ -231,7 +231,9 @@
     return drinkState.get(id);
   }
   function drinkCooldownRemaining(npcId) {
-    const last = Number(drinkState.get(String(npcId || ''))?.lastAcceptedSwigMinute);
+    const record = drinkState.get(String(npcId || '')); // Used to distinguish a never-accepted/refused offer from a real accepted-sip timestamp.
+    if (!record || record.lastAcceptedSwigMinute == null) return 0;
+    const last = Number(record.lastAcceptedSwigMinute);
     if (!Number.isFinite(last)) return 0;
     return Math.max(0, Math.max(0, num(config.drinkAcceptedCooldownMinutes, DEFAULTS.drinkAcceptedCooldownMinutes)) - Math.max(0, absoluteGameMinute() - last));
   }
@@ -247,11 +249,8 @@
     const bridge = window.HobunjiDrunkGameplayBridge;
     if (alcoholPatched || !bridge?.getNpcSwigOfferAction || !bridge?.offerNpcSwig) return false;
     alcoholPatched = true;
-    const getAction = bridge.getNpcSwigOfferAction.bind(bridge); // Existing held-bottle/animation eligibility remains authoritative.
-    bridge.getNpcSwigOfferAction = (walker, ...args) => {
-      const id = String(walker?.rec?.id || '');
-      return id && drinkCooldownRemaining(id) > 0 ? null : getAction(walker, ...args);
-    };
+    // Keep the legacy offer action visible. The 30-minute rule governs whether
+    // an NPC can accept another sip, not whether the player is allowed to offer.
     const offer = bridge.offerNpcSwig.bind(bridge); // Existing alcohol flow still consumes the sip and applies drunkenness.
     bridge.offerNpcSwig = function (walker, ...args) {
       const id = String(walker?.rec?.id || '');
