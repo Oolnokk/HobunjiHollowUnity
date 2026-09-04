@@ -149,7 +149,7 @@
       faceTarget: player,
     });
 
-    const encounter = state.encounters.get(id) || { inside: false, serial: 0, lastReactionAt: 0 };
+    const encounter = state.encounters.get(id) || { inside: false, serial: 0, lastReactionAt: -Infinity };
     encounter.lastReactionAt = nowMs();
     encounter.lastPolarity = polarity;
     encounter.lastLine = line;
@@ -192,7 +192,7 @@
       liveIds.add(id);
       let encounter = state.encounters.get(id);
       if (!encounter) {
-        encounter = { inside: false, serial: 0, lastReactionAt: 0, lastPolarity: null, lastLine: null };
+        encounter = { inside: false, serial: 0, lastReactionAt: -Infinity, lastPolarity: null, lastLine: null };
         state.encounters.set(id, encounter);
       }
       const distance = Math.hypot(walker.root.position.x - stimulus.x, walker.root.position.z - stimulus.z);
@@ -202,7 +202,13 @@
         encounter.serial++;
         // Cooldown controls repetition only. It never changes which polarity is
         // selected; when a line is allowed to fire, hearts < 0 is the whole rule.
-        if (now - encounter.lastReactionAt >= cooldownMs) react(walker, { stimulus, serial: encounter.serial });
+        if (now - encounter.lastReactionAt >= cooldownMs) {
+          const emitted = react(walker, { stimulus, serial: encounter.serial });
+          // If dialogue/UI systems were temporarily unavailable, keep this as an
+          // unconsumed entrance so the NPC can answer on a later poll while the
+          // player is still nearby instead of silently losing the reaction.
+          if (!emitted) encounter.inside = false;
+        }
       } else if (!inside) {
         encounter.inside = false;
       }
