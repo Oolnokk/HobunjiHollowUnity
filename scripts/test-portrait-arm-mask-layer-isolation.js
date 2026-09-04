@@ -27,6 +27,9 @@ assert(runtime.includes('cutThreshold') && runtime.includes('wobbleStrength') &&
 assert(runtime.includes('armData.data[i + 3] = 0'), 'masked arm pixels must be erased instead of softly faded');
 assert(runtime.includes('armData.data[i] = 0'), 'new arm cap pixels must be painted black');
 assert(runtime.includes('state?.clips?.get'), 'draw helpers must substitute only known authored arm source keys');
+assert(runtime.includes("const shouldClip = renderOptions?.onlyHeadSprite !== true;"), 'front and behind portrait planes must both receive the arm hard cut');
+assert(!runtime.includes("renderOptions?.portraitView !== 'behind'"), 'behind portrait renders must not bypass the arm hard cut');
+assert(!runtime.includes("renderOptions?.view !== 'behind'"), 'behind-view alias must not bypass the arm hard cut');
 assert(!runtime.includes('material.alphaMap'), 'arm-only cut must not be applied to the flattened portrait material');
 assert(!runtime.includes('buildSinglePlaneAvatarModel'), 'arm-only cut must not patch the finished PNG-plane avatar');
 assert(!runtime.includes('hobunjiArmCloudAlphaMap'), 'legacy flattened arm alpha-map state must stay removed');
