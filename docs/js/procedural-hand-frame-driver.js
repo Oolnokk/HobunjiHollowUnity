@@ -445,6 +445,40 @@
     }
   }
 
+  // Lets external code (currently only game.js's Dungeon Test carried-prop
+  // system — see setExternalHandGripOverride) claim both hands for a frame
+  // instead of the ordinary held-tool grip / idle-fallback logic below,
+  // without this generic driver needing to know anything about props,
+  // dungeons, or any other specific feature. getOverride() is polled once
+  // per sync and must return either null (nothing to claim — normal tool/
+  // fallback logic runs as usual) or { left: {position,quaternion},
+  // right: {position,quaternion} } (both world-space, same shape
+  // syncRigToTool itself feeds placeHandWorld) to claim both hands at
+  // once; there is no partial single-hand claim since nothing here needs
+  // one yet.
+  let externalGripOverride = null;
+  function applyExternalGripOverride(record) {
+    if (!externalGripOverride) return false;
+    const result = externalGripOverride();
+    if (!result?.left || !result?.right) return false;
+    record.rig?.placeHandWorld?.('left', result.left.position, result.left.quaternion);
+    record.rig?.placeHandWorld?.('right', result.right.position, result.right.quaternion);
+    const state = ensureFallbackState(record);
+    state.owners.left = 'external-grip';
+    state.owners.right = 'external-grip';
+    record.secondaryActive = false;
+    record.lastToolKey = null;
+    record.lastVisualGripBasis = null;
+    return true;
+  }
+  function syncRecordHands(record) {
+    if (applyExternalGripOverride(record)) return { direct: true, external: true };
+    const holder = currentToolHolder(record);
+    if (holder) return syncRigToTool(record, holder);
+    applyFallbackBoth(record);
+    return { direct: true, toolVisible: false, secondaryActive: false };
+  }
+
   const originalInstallGameRuntime = hands.installGameRuntime?.bind(hands);
   if (originalInstallGameRuntime) {
     hands.installGameRuntime = function directHandGameRuntime(deps) {
@@ -477,11 +511,7 @@
     sentinel.name = `${record.name || 'avatar'}_direct_hand_sync`;
     sentinel.frustumCulled = false;
     sentinel.renderOrder = -100000;
-    sentinel.onBeforeRender = () => {
-      const holder = currentToolHolder(record);
-      if (holder) syncRigToTool(record, holder);
-      else applyFallbackBoth(record);
-    };
+    sentinel.onBeforeRender = () => { syncRecordHands(record); };
     record.rig.parent.add(sentinel);
     record.syncSentinel = sentinel;
   }
@@ -495,9 +525,7 @@
       }
       ensureSyncSentinel(record);
       updateFallbackMotion(record);
-      const holder = currentToolHolder(record);
-      if (holder) syncRigToTool(record, holder);
-      else applyFallbackBoth(record);
+      syncRecordHands(record);
     }
   }
 
@@ -518,14 +546,15 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
-        const holder = currentToolHolder(record);
-        if (holder) results.push(syncRigToTool(record, holder));
-        else {
-          applyFallbackBoth(record);
-          results.push({ direct: true, toolVisible: false, secondaryActive: false });
-        }
+        results.push(syncRecordHands(record));
       }
       return results;
+    },
+    // See applyExternalGripOverride's own comment above. Pass null to
+    // release the claim and return to normal tool/fallback hand logic.
+    setExternalHandGripOverride(getOverride) {
+      externalGripOverride = typeof getOverride === 'function' ? getOverride : null;
+      global.ProceduralHandFrameDriver?.syncNow?.();
     },
     getDebug() {
       return [...managed].map(record => ({

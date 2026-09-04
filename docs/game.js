@@ -8657,11 +8657,12 @@
       // (playerToolBaseX/Y) since it's small enough to hold one-handed at
       // the hip like a flask, not cradled two-handed against the chest.
       const LOOSE_PROP_CARRY_FORWARD_TILES = 0.34;
-      const LOOSE_PROP_CARRY_SPEED_MULT = 0.62; // Movement-speed multiplier while carrying — see updateMovement's targetSpeed.
+      const LOOSE_PROP_CARRY_SPEED_MULT = 0.93; // Movement-speed multiplier while carrying (0.62 base x1.5 — was too sluggish) — see updateMovement's targetSpeed.
       // Approximate half-width per kind (world/local units) — used to place
-      // the two carry-hand proxy meshes just outside each side of the
-      // object, see ensureCarryHands. Keys skip hand meshes entirely (held
-      // one-handed in the potion/thrust stance instead).
+      // the player's own two hands (the real hand rig, not a placeholder —
+      // see carriedPropHandGripOverride) just outside each side of the
+      // object. Keys aren't in this map since they're held one-handed in
+      // the potion/thrust stance instead and never claim both hands.
       const LOOSE_PROP_HAND_HALF_WIDTH_BY_KIND = { crate: 0.27, statue: 0.3, jar: 0.18 };
       // How much a prop's own fall/gravity is scaled by its kind once
       // thrown/launched — see updateLooseProps' gravity line and
@@ -11740,35 +11741,59 @@
         return window.FarmTroughs.synthesizeBarnInteriorMapData(mapId);
       }
 
-      // A climbable rope spanning a Dungeon Test chasm — real segmented
-      // cylinder geometry with a slight catenary sag, not a placeholder
-      // box. x1/z1/x2/z2 are tile-unit scene coordinates (matching every
-      // other building-interior mesh position, e.g. the furniture loop's
-      // own bx/bz), unlike window.ClimbSystem.registerRope's baseX/Y/
-      // tipX/Y which are raw pixels (the player.x/y convention every
-      // creature/collision system uses — see wireDungeonRune below).
-      function buildRopeMesh(x1, z1, x2, z2) {
+      // A wooden plank bridge that slides out across a Dungeon Test chasm
+      // once its rune is shot — walked across normally like any other
+      // floor (the gap tiles themselves flip walkable at the same moment,
+      // see wireDungeonRune), not climbed. x1/z1/x2/z2 are tile-unit scene
+      // coordinates (matching every other building-interior mesh position,
+      // e.g. the furniture loop's own bx/bz). The returned group's own
+      // origin sits at the near anchor (x1,z1) with .userData.plank/length
+      // set so updateDungeonBridges can grow the plank out from that fixed
+      // point over time instead of it just popping into existence.
+      function buildMovingBridgeMesh(x1, z1, x2, z2) {
         const group = new THREE.Group();
-        const ropeMat = new THREE.MeshLambertMaterial({ color: 0x8a6a45 });
-        const ropeY = 0.95, sagY = 0.72;
-        const midX = (x1 + x2) / 2, midZ = (z1 + z2) / 2;
-        const points = [
-          new THREE.Vector3(x1, ropeY, z1),
-          new THREE.Vector3(midX, sagY, midZ),
-          new THREE.Vector3(x2, ropeY, z2),
-        ];
-        for (let i = 0; i < points.length - 1; i++) {
-          const a = points[i], b = points[i + 1];
-          const dir = new THREE.Vector3().subVectors(b, a);
-          const length = dir.length();
-          if (length < 0.001) continue;
-          const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, length, 8), ropeMat);
-          mesh.position.copy(a).addScaledVector(dir, 0.5);
-          mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-          mesh.castShadow = true;
-          group.add(mesh);
+        group.position.set(x1, 0, z1);
+        const dx = x2 - x1, dz = z2 - z1;
+        const length = Math.max(0.001, Math.hypot(dx, dz));
+        group.rotation.y = -Math.atan2(dz, dx);
+        const plankMat = new THREE.MeshLambertMaterial({ color: 0x8a6a45 });
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(length, 0.08, 0.86), plankMat);
+        plank.position.set(0, 0.03, 0); // updateDungeonBridges drives x/scale.x as it extends
+        plank.scale.x = 0.001;
+        plank.castShadow = true;
+        group.add(plank);
+        const railMat = new THREE.MeshLambertMaterial({ color: 0x6f5535 });
+        for (const side of [-1, 1]) {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(length, 0.05, 0.05), railMat);
+          rail.position.set(0, 0.09, side * 0.42);
+          rail.scale.x = 0.001;
+          group.add(rail);
         }
+        group.userData.length = length;
+        group.userData.extendParts = [...group.children]; // plank + both rails, all driven together
         return group;
+      }
+
+      // mapId -> [{ parts, length, t, durationS }] — active plank-extend
+      // animations (see buildMovingBridgeMesh/wireDungeonRune's onHit).
+      // Ticked every frame only while non-empty; once a bridge finishes
+      // extending it's removed and the plank just sits there as ordinary
+      // static geometry.
+      const _dungeonBridgeAnimations = new Map();
+      function updateDungeonBridges(dt) {
+        if (!_dungeonBridgeAnimations.size) return;
+        for (const [mapId, anims] of _dungeonBridgeAnimations) {
+          for (let i = anims.length - 1; i >= 0; i--) {
+            const a = anims[i];
+            a.t = Math.min(1, a.t + dt / a.durationS);
+            for (const part of a.parts) {
+              part.scale.x = Math.max(0.001, a.t);
+              part.position.x = (a.length / 2) * a.t;
+            }
+            if (a.t >= 1) anims.splice(i, 1);
+          }
+          if (!anims.length) _dungeonBridgeAnimations.delete(mapId);
+        }
       }
 
       // A real climbable-ladder look (two side rails + rungs) for the pit
@@ -11971,6 +11996,24 @@
         return group;
       }
 
+      // A single, properly centered crate — unlike ProceduralFurniture's
+      // own 'crateStack' recipe (two crates deliberately offset/staggered
+      // for a scattered-pile look as static floor dressing), which reads
+      // as lopsided the instant it's actually held symmetrically in front
+      // of the player's chest instead of sitting on the ground.
+      function buildCrateMesh(colorHex) {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshLambertMaterial({ color: colorHex });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.42, 0.46), mat);
+        body.position.y = 0.21;
+        group.add(body);
+        const trimMat = new THREE.MeshLambertMaterial({ color: 0x5c4830 });
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.5), trimMat);
+        lid.position.y = 0.435;
+        group.add(lid);
+        return group;
+      }
+
       // A thin shaft + a torus bow — reads as a key silhouette without
       // needing an authored/imported model, same reasoning as buildJarMesh.
       function buildKeyMesh() {
@@ -11991,18 +12034,20 @@
 
       // Builds every placed loose prop (mapData.looseProps — crates,
       // chemical jars, keys, and statues, see dungeon-test.js) into live
-      // physics state, driven every frame by updateLooseProps. Crates and
-      // statues reuse the same procedural crateStack/statue recipes
-      // DECORATIVE_FURNITURE_DEFS already renders as ordinary dressing
-      // elsewhere — same look, but these instances are real pick-up-and-
-      // throw objects instead of static decor.
+      // physics state, driven every frame by updateLooseProps. Statues
+      // reuse the same procedural 'statue' recipe DECORATIVE_FURNITURE_DEFS
+      // already renders as ordinary dressing elsewhere; crates use their
+      // own centered buildCrateMesh instead of that catalog's 'crateStack'
+      // (see its own comment — that recipe is deliberately off-center,
+      // wrong for something held symmetrically rather than sitting on the
+      // ground).
       function wireDungeonLooseProps(mapId, mapData, bScene) {
         const props = [];
         for (const p of (mapData.looseProps || [])) {
           const mesh = p.kind === 'jar' ? buildJarMesh(p.colorHex || 0x6a8a4a)
             : p.kind === 'key' ? buildKeyMesh()
             : p.kind === 'statue' ? buildFurnitureVisual('statue', 0x8a8578)
-            : buildFurnitureVisual('crateStack', 0x8a6a3a);
+            : buildCrateMesh(0x8a6a3a);
           _markOutline(mesh);
           mesh.position.set(p.col + 0.5, 0, p.row + 0.5);
           bScene.add(mesh);
@@ -12077,32 +12122,15 @@
         return Math.max(dCol, dRow) <= LOOSE_PROP_SIM_RANGE_TILES;
       }
 
-      // Two small hand-proxy meshes flanking a carried large object (crate/
-      // jar/statue — never a key, held one-handed instead), lazily built the
-      // first time a given prop is carried and reused after. Only visible
-      // while actually carried — see updateCarriedPropTransform.
-      function ensureCarryHands(prop) {
-        if (prop.carryHands) return prop.carryHands;
-        const geometry = new THREE.SphereGeometry(0.055, 8, 6);
-        const material = new THREE.MeshLambertMaterial({ color: 0xd8a878 });
-        const left = new THREE.Mesh(geometry, material);
-        const right = new THREE.Mesh(geometry.clone(), material);
-        left.name = 'loose_prop_carry_hand_left';
-        right.name = 'loose_prop_carry_hand_right';
-        prop.mesh.add(left, right);
-        prop.carryHands = { left, right };
-        return prop.carryHands;
-      }
-
       // Positions a carried prop's mesh every frame it's held — either the
       // two-handed "chest" stance (crate/jar/statue, matching the ordinary
       // held-item sprite system's own chest position/height — see
-      // playerItemHoldY/HELD_ITEM_FORWARD_OFFSET) with a hand-proxy mesh
-      // flanking each side, or the one-handed potion/thrust stance (key —
-      // small enough to hold at the hip like a flask, see usesThrustHeldPose)
-      // with no hand meshes at all. Real physics stays off the whole time —
+      // playerItemHoldY/HELD_ITEM_FORWARD_OFFSET) or the one-handed potion/
+      // thrust stance (key — small enough to hold at the hip like a flask,
+      // see usesThrustHeldPose). Real physics stays off the whole time —
       // see updateLooseProps' carriedProp branch, which routes here instead
-      // of running gravity/collision.
+      // of running gravity/collision. The player's own actual hands follow
+      // along separately — see carriedPropHandGripOverride.
       function updateCarriedPropTransform(prop) {
         const angle = player.angle;
         const carryFloor = looseFloorInfoAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
@@ -12115,7 +12143,6 @@
           const py = player.y / TILE + Math.sin(rightAngle) * playerToolBaseX;
           prop.mesh.position.set(px, baseY + playerToolBaseY, py);
           prop.mesh.rotation.set(THREE.MathUtils.degToRad(10.31), -angle, 0);
-          if (prop.carryHands) { prop.carryHands.left.visible = false; prop.carryHands.right.visible = false; }
           return;
         }
         const forwardX = Math.cos(angle), forwardY = Math.sin(angle);
@@ -12123,12 +12150,42 @@
         const py = player.y / TILE + forwardY * LOOSE_PROP_CARRY_FORWARD_TILES;
         prop.mesh.position.set(px, baseY + playerItemHoldY, py);
         prop.mesh.rotation.set(0, -angle, 0);
-        const halfWidth = LOOSE_PROP_HAND_HALF_WIDTH_BY_KIND[prop.kind] ?? 0.25;
-        const hands = ensureCarryHands(prop);
-        hands.left.position.set(-halfWidth, 0, 0.05);
-        hands.right.position.set(halfWidth, 0, 0.05);
-        hands.left.visible = true; hands.right.visible = true;
       }
+
+      // Claims both of the player's real hands (via
+      // window.ProceduralHandFrameDriver's generic external-grip-override
+      // hook — see its own comment) to flank a carried large object,
+      // instead of a separate pair of placeholder meshes bolted onto the
+      // prop and disconnected from the character's own idle/walk hand
+      // animation. A key is held one-handed in the potion/thrust stance
+      // (see updateCarriedPropTransform) and doesn't claim the hands at
+      // all — releasing null here lets the driver's own tool/idle logic
+      // run normally, which is also what happens the instant nothing is
+      // carried.
+      const _carryHandLeftWorld = new THREE.Vector3();
+      const _carryHandRightWorld = new THREE.Vector3();
+      const _carryHandQuat = new THREE.Quaternion();
+      function carriedPropHandGripOverride() {
+        const prop = player.carriedProp;
+        if (!prop || prop.kind === 'key') return null;
+        const halfWidth = LOOSE_PROP_HAND_HALF_WIDTH_BY_KIND[prop.kind] ?? 0.25;
+        prop.mesh.updateMatrixWorld();
+        prop.mesh.getWorldQuaternion(_carryHandQuat);
+        _carryHandLeftWorld.set(-halfWidth, 0, 0.05).applyMatrix4(prop.mesh.matrixWorld);
+        _carryHandRightWorld.set(halfWidth, 0, 0.05).applyMatrix4(prop.mesh.matrixWorld);
+        return {
+          left: { position: _carryHandLeftWorld, quaternion: _carryHandQuat },
+          right: { position: _carryHandRightWorld, quaternion: _carryHandQuat },
+        };
+      }
+      // procedural-hand-frame-driver.js loads dynamically off the back of
+      // held-action-animations.js (see window.HobunjiHandRuntimeReady) —
+      // normally already resolved by the time this line runs, but awaiting
+      // it here rather than relying on load-order luck matches how the
+      // rest of the codebase depends on that same promise.
+      (window.HobunjiHandRuntimeReady || Promise.resolve()).then(() => {
+        window.ProceduralHandFrameDriver?.setExternalHandGripOverride?.(carriedPropHandGripOverride);
+      }).catch(() => {});
 
       // Per-frame Dungeon Test loose-prop physics: gravity, wall-sliding
       // horizontal movement, ground bounce/friction (per-kind bounciness —
@@ -12274,10 +12331,6 @@
         return { ok: true, message: `Picked up the ${looseCapitalized(prop)}.` };
       }
 
-      function hideCarriedPropHands(prop) {
-        if (prop.carryHands) { prop.carryHands.left.visible = false; prop.carryHands.right.visible = false; }
-      }
-
       // Where the interaction raycast (the same ray "Show Interaction
       // Raycast" visualizes) currently meets the floor, if that point is on
       // the player's own tile or directly adjacent to it — used to offer
@@ -12343,7 +12396,6 @@
       // arc and drop faster — see LOOSE_PROP_WEIGHT_BY_KIND) takes over.
       function launchCarriedPropAtTarget(prop, target) {
         player.carriedProp = null;
-        hideCarriedPropHands(prop);
         const dx = target.x - prop.x, dy = target.y - prop.y;
         const dist = Math.hypot(dx, dy) || 1;
         prop.vx = dx / dist * LOOSE_PROP_THROW_LAUNCH_SPEED;
@@ -12364,7 +12416,6 @@
         const target = getAdjacentPlaceTarget();
         if (!target) return { ok: false, message: 'Nowhere to set it down there.' };
         player.carriedProp = null;
-        hideCarriedPropHands(prop);
         prop.x = (target.col + 0.5) * TILE;
         prop.y = (target.row + 0.5) * TILE;
         prop.z = target.y;
@@ -12500,7 +12551,10 @@
         const py = player.y / TILE + forwardY * (LOOSE_PROP_CARRY_FORWARD_TILES + pose.z) + rightY * pose.x;
         prop.mesh.position.set(px, baseY + playerItemHoldY + pose.y, py);
         prop.mesh.rotation.set(THREE.MathUtils.degToRad(pose.pitch), -angle + THREE.MathUtils.degToRad(pose.yaw), THREE.MathUtils.degToRad(pose.roll));
-        hideCarriedPropHands(prop); // Two-handed grip lets go the moment the wind-up starts.
+        // The hands (see carriedPropHandGripOverride) keep tracking the
+        // prop's own live position/rotation through the whole windup and
+        // strike, so they swing with it right up until launchCarriedProp-
+        // AtTarget actually clears player.carriedProp.
       }
 
       function disposeDungeonLooseProps(mapId) {
@@ -12702,7 +12756,7 @@
             summonGhostlyGuardians(mapId, bScene, bGrid, cols, rows, bx * TILE, bz * TILE, 1 + Math.floor(Math.random() * 2));
             return;
           }
-          showToast('The rune blazes gold — a rope creaks and drops across the chasm!', true);
+          showToast('The rune blazes gold — a bridge slides out across the chasm!', true);
           for (const [gc, gr] of (f.gateTiles || [])) {
             if (bGrid[gr]?.[gc]) bGrid[gr][gc].type = TileType.GRASS;
           }
@@ -12713,15 +12767,11 @@
             pit.material?.dispose?.();
           }
           if (f.ropeBase && f.ropeTip) {
-            const rope = buildRopeMesh(f.ropeBase[0] + 0.5, f.ropeBase[1] + 0.5, f.ropeTip[0] + 0.5, f.ropeTip[1] + 0.5);
-            _markOutline(rope);
-            bScene.add(rope);
-            window.ClimbSystem?.registerRope(mapId, {
-              id: key,
-              baseX: (f.ropeBase[0] + 0.5) * TILE, baseY: (f.ropeBase[1] + 0.5) * TILE,
-              tipX: (f.ropeTip[0] + 0.5) * TILE, tipY: (f.ropeTip[1] + 0.5) * TILE,
-              active: true,
-            });
+            const bridge = buildMovingBridgeMesh(f.ropeBase[0] + 0.5, f.ropeBase[1] + 0.5, f.ropeTip[0] + 0.5, f.ropeTip[1] + 0.5);
+            _markOutline(bridge);
+            bScene.add(bridge);
+            if (!_dungeonBridgeAnimations.has(mapId)) _dungeonBridgeAnimations.set(mapId, []);
+            _dungeonBridgeAnimations.get(mapId).push({ parts: bridge.userData.extendParts, length: bridge.userData.length, t: 0, durationS: 1.1 });
           }
         });
       }
@@ -12785,6 +12835,7 @@
         window.RangedWeapons?.clearAreaFlameZones(mapId);
         window.RangedWeapons?.clearAreaProjectilePassthrough(mapId);
         _dungeonPitChambers.delete(mapId);
+        _dungeonBridgeAnimations.delete(mapId);
         disposeDungeonBraziers(mapId);
         disposeDungeonLooseProps(mapId);
         disposeDungeonGates(mapId);
@@ -12820,6 +12871,7 @@
           window.RangedWeapons?.clearAreaFlameZones(mapId);
           window.RangedWeapons?.clearAreaProjectilePassthrough(mapId);
           _dungeonPitChambers.delete(mapId);
+          _dungeonBridgeAnimations.delete(mapId);
           disposeDungeonBraziers(mapId);
           disposeDungeonLooseProps(mapId);
           disposeDungeonGates(mapId);
@@ -22592,6 +22644,7 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updateDungeonFalling(dt); // Must run before updatePlayerMesh, which reads player.falling/fallSurfaceY this same frame.
+        updateDungeonBridges(dt);
         updateDungeonBraziers(dt);
         updateLooseProps(dt);
         updatePropThrowPress(dt);
@@ -24367,6 +24420,10 @@
         if (phase === 'release') {
           if (actionId === 'action1') actionHeldDown = false;
           if (visibleWeaponContextPresses.delete(actionId)) return;
+          // Same tap-vs-hold gesture as the mouse/on-screen button (see
+          // beginPropThrowPress) — keyboard/controller action1 gets it too,
+          // instead of only ever firing the instant tap below.
+          if (actionId === 'action1' && player.carriedProp) { endPropThrowPress(); return; }
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
           return;
@@ -24381,6 +24438,11 @@
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
           runActionButtonAtSlot(visibleOverride.slot);
+          return;
+        }
+        if (actionId === 'action1' && player.carriedProp) {
+          actionHeldDown = true;
+          beginPropThrowPress();
           return;
         }
         const weaponSlot = weaponActionSlot(actionId);
@@ -25012,6 +25074,18 @@
             return;
           }
           if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
+          // Carrying a Dungeon Test prop is the same tap-vs-hold gesture as
+          // the on-screen action button's own pointer handling (see
+          // beginPropThrowPress/endPropThrowPress) — without this, a direct
+          // mouse press on the game world always fell straight through to
+          // useActiveAction()'s instant single fire below, so holding the
+          // mouse button down could never enter the aim/windup the on-screen
+          // button already offered.
+          if (e.button === 0 && player.carriedProp) {
+            actionHeldDown = true;
+            beginPropThrowPress();
+            return;
+          }
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -25044,7 +25118,10 @@
           return;
         }
         if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
-        if (e.button === 0) actionHeldDown = false;
+        if (e.button === 0) {
+          actionHeldDown = false;
+          endPropThrowPress(); // No-ops unless a mouse-driven prop-throw press is actually pending/aiming.
+        }
       }
       // Capture release before action-arch/backdrop handlers can consume a
       // moved right-click gesture. `contextmenu` is Chromium/Opera's final
