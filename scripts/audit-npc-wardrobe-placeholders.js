@@ -4,92 +4,42 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
-const source = read('docs/js/npc-furniture-wardrobe-bridge-v3.js');
-const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json'));
+const readJson = relative => JSON.parse(fs.readFileSync(path.join(root, relative), 'utf8'));
+const npcDatabase = readJson('docs/config/npcs/hobunji-starter-npc-database.json');
+const scheduleOverrides = readJson('docs/config/npcs/schedule-overrides.json');
+const registry = readJson('docs/config/npcs/placeholder-wardrobes.json');
+const removedNpcIds = new Set(scheduleOverrides.removeNpcIds || []); // Mirrors LocalDBOverrides.applyNpcScheduleOverrides runtime removal policy.
+const activeNpcIds = new Set((npcDatabase.npcs || []).filter(rec => rec?.id && !removedNpcIds.has(rec.id)).map(rec => rec.id));
+const assignments = registry.assignments || {};
+const assignedNpcIds = new Set(Object.keys(assignments));
 
-const windowStub = {
-  SCRATCHBONES_CONFIG: { game: {} },
-  NpcWardrobe: { openWardrobePanel() { return true; } },
-  __hobunjiFurnitureDebug: { getCurrentArea: () => null },
-  matchMedia: () => ({ matches: false }),
-};
-const documentStub = {
-  readyState: 'complete', documentElement: { dataset: {} }, body: { dataset: {} },
-  getElementById() { return null; }, addEventListener() {},
-};
-class MutationObserverStub { observe() {} }
-vm.runInNewContext(source, {
-  window: windowStub,
-  document: documentStub,
-  MutationObserver: MutationObserverStub,
-  fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }),
-  queueMicrotask(fn) { fn(); },
-  localStorage: { getItem: () => null },
-  Math,
-  console,
-});
-const api = windowStub.NpcFurnitureWardrobes;
-assert.equal(api?.version, 3, 'wardrobe v3 installs for audit');
+assert.equal(registry.schema, 'hobunji_npc_placeholder_wardrobes.v1', 'placeholder registry schema must be recognized');
+assert.equal(assignedNpcIds.size, activeNpcIds.size, 'registry must contain exactly one entry for every runtime-effective NPC');
+for (const npcId of activeNpcIds) assert(assignedNpcIds.has(npcId), `${npcId} must have a placeholder wardrobe`);
+for (const npcId of assignedNpcIds) assert(activeNpcIds.has(npcId), `${npcId} must still exist in the runtime-effective NPC database`);
+for (const npcId of removedNpcIds) assert(!assignedNpcIds.has(npcId), `${npcId} is runtime-removed and must not receive a placeholder wardrobe`);
 
-const mapDir = path.join(root, 'docs/config/maps');
-const unresolved = [];
-const covered = [];
-const areaCache = new Map();
-
-function canonicalArea(buildingId) {
-  const id = String(buildingId || '').trim();
-  if (!id) return null;
-  return id.startsWith('map_i_') ? id : `map_i_${id}`;
-}
-function loadArea(area) {
-  if (!area) return null;
-  if (areaCache.has(area)) return areaCache.get(area);
-  const file = path.join(mapDir, `${area}.json`);
-  const map = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
-  areaCache.set(area, map);
-  return map;
-}
-function workArea(rec) {
-  return canonicalArea(rec?.workBuildingId || rec?.scheduleHooks?.workBuildingId);
+const occupiedFurniture = new Map(); // Proves the registry never makes one physical furniture instance represent two NPC wardrobes.
+for (const [npcId, assignment] of Object.entries(assignments)) {
+  assert.match(String(assignment.area || ''), /^map_i_/, `${npcId} placeholder area must be a runtime interior filename id`);
+  assert(assignment.furnitureId, `${npcId} must reference a concrete furniture instance id`);
+  const mapPath = path.join(root, 'docs/config/maps', `${assignment.area}.json`);
+  assert(fs.existsSync(mapPath), `${npcId} placeholder area ${assignment.area} must exist`);
+  const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+  const piece = (map.furniture || []).find(entry => String(entry?.id || '') === String(assignment.furnitureId));
+  assert(piece, `${npcId} placeholder furniture ${assignment.furnitureId} must exist in ${assignment.area}`);
+  const key = `${assignment.area}|${assignment.furnitureId}`;
+  assert(!occupiedFurniture.has(key), `${npcId} and ${occupiedFurniture.get(key)} cannot share placeholder furniture ${key}`);
+  occupiedFurniture.set(key, npcId);
 }
 
-for (const rec of npcDatabase.npcs.filter(entry => entry?.id)) {
-  const homeArea = canonicalArea(rec.homeId) || (/^map_i_/.test(String(rec?.scheduleHooks?.defaultMapId || '')) ? rec.scheduleHooks.defaultMapId : null);
-  const homeMap = loadArea(homeArea);
-  if (homeMap) {
-    const binding = api.wardrobeBindings(homeMap, homeArea, npcDatabase).find(entry => entry.npcId === String(rec.id));
-    if (binding) {
-      covered.push({ npcId: rec.id, area: homeArea, furnitureId: binding.id, source: binding.source });
-      continue;
-    }
-    unresolved.push({ npcId: rec.id, reason: 'home interior has no available placeholder furniture', area: homeArea });
-    continue;
-  }
+assert.deepEqual(assignments.hreesh, {
+  area: 'map_i_inn',
+  furnitureId: 'fmss04iltqngq',
+  itemKey: 'tableLongFurniture',
+  reason: 'home:home',
+}, 'Hreesh keeps the selected inn placeholder');
 
-  const workplace = workArea(rec);
-  const workMap = loadArea(workplace);
-  if (workMap) {
-    const binding = api.wardrobeBindings(workMap, workplace, npcDatabase).find(entry => entry.npcId === String(rec.id));
-    if (binding) {
-      covered.push({ npcId: rec.id, area: workplace, furnitureId: binding.id, source: binding.source });
-      continue;
-    }
-    unresolved.push({ npcId: rec.id, reason: 'no home map; workplace did not assign a placeholder', area: workplace });
-    continue;
-  }
-
-  unresolved.push({ npcId: rec.id, reason: 'no canonical home or workplace interior map', area: homeArea || workplace || null });
-}
-
-console.log(`Placeholder wardrobe audit: ${covered.length}/${covered.length + unresolved.length} NPCs covered.`);
-if (unresolved.length) {
-  console.error('Unresolved NPC wardrobes:');
-  for (const item of unresolved) console.error(`- ${item.npcId}: ${item.reason}${item.area ? ` (${item.area})` : ''}`);
-  process.exitCode = 1;
-} else {
-  console.log('Every NPC has an authored or deterministic placeholder wardrobe target.');
-}
+console.log(`Placeholder wardrobe registry audit passed: ${assignedNpcIds.size}/${activeNpcIds.size} runtime-effective NPCs, ${occupiedFurniture.size} unique furniture targets.`);
