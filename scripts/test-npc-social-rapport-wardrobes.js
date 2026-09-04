@@ -214,8 +214,8 @@ assert.match(dialogueSource, /act\.type === 'adjustRapport'[\s\S]*?NpcRapport\?\
   'runtime dialogue choice execution applies authored Rapport changes');
 assert.match(relationshipsSource, /NpcRapport\?\.get\?\.\(npcId\)/,
   'Relationships panel reads temporary Rapport from NpcRapport');
-assert.match(relationshipsSource, /Rapport \$\{Math\.round\(rapport\)\}\/100/,
-  'Relationships panel displays the temporary Rapport value');
+assert.match(relationshipsSource, /Rapport \$\{Math\.round\(rapportPct\)\}\/100/,
+  'Relationships panel displays the clamped temporary Rapport value');
 
 assert.match(wardrobeEditorSource, /METADATA_KEY = 'npcWardrobeFor'/,
   'Interior Author stores wardrobe ownership on a specific furniture instance');
