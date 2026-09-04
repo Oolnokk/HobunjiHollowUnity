@@ -19,6 +19,10 @@ assert(runtime.includes('buildClippedArmImage'), 'arm cut must preprocess only t
 assert(runtime.includes('buildCutOutlineMask'), 'arm cut must cap the newly exposed edge');
 assert(runtime.includes('valueNoise1D') && runtime.includes('valueNoise2D'), 'arm cut must retain deterministic verdigris-style noise');
 assert(runtime.includes('profiles?.[profileKey]'), 'runtime must support species+gender profile overrides');
+assert(runtime.includes('AUTHORED_PROFILES'), 'runtime must carry committed authored profile defaults');
+assert(runtime.includes("'rakakoan:male'") && runtime.includes("'rakakoan:female'"), 'Rakakoan must retain copied Kenkari arm-mask defaults');
+assert(runtime.includes("'ghoul:male'") && runtime.includes("'ghoul:female'"), 'both ghoul genders must retain copied Mao-ao arm-mask defaults');
+assert(runtime.includes('660632132'), 'Mao-ao/ghoul authored edge seed must be retained');
 assert(runtime.includes('cutThreshold') && runtime.includes('wobbleStrength') && runtime.includes('outlineWidth'), 'hard-cut controls must be runtime tunables');
 assert(runtime.includes('armData.data[i + 3] = 0'), 'masked arm pixels must be erased instead of softly faded');
 assert(runtime.includes('armData.data[i] = 0'), 'new arm cap pixels must be painted black');
@@ -29,6 +33,8 @@ assert(!runtime.includes('hobunjiArmCloudAlphaMap'), 'legacy flattened arm alpha
 
 assert(editor.includes("schema: 'hobunji_portrait_arm_mask.v2'"), 'mask editor must export the species/gender profile schema');
 assert(editor.includes('profiles[profileKey()]'), 'editor must store distinct settings per species+gender');
+assert(editor.includes('seedAuthoredProfiles'), 'editor must seed the committed authored profiles');
+assert(editor.includes('authoredSettingsFor'), 'editor reset must return to committed species/gender defaults');
 assert(editor.includes('STORAGE_KEY'), 'editor must retain authored profile values across browser reloads');
 assert(editor.includes('wobbleStrength') && editor.includes('outlineWidth'), 'editor must expose hard-edge authoring values');
 assert(editor.includes('NpcAvatarPreview.renderProfileToCanvas'), 'mask editor must preview through the real portrait pipeline');
