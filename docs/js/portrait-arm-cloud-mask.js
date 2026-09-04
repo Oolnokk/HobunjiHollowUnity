@@ -536,9 +536,11 @@
 
   const originalRenderToCanvas = previewApi.renderProfileToCanvas.bind(previewApi);
   const wrappedRenderToCanvas = async function armCloudClipRenderToCanvas(canvas, profile, renderOptions = {}) {
-    const shouldClip = renderOptions?.onlyHeadSprite !== true
-      && renderOptions?.portraitView !== 'behind'
-      && renderOptions?.view !== 'behind';
+    // Base body arms use the same authored PNGs in the front and behind portrait
+    // planes; the behind renderer only flips their transforms. Keep the hard-cut
+    // source canvas active for both views so the same anatomical cap appears on
+    // both sides of the character. Head-only helper renders remain untouched.
+    const shouldClip = renderOptions?.onlyHeadSprite !== true;
     if (!shouldClip) return originalRenderToCanvas(canvas, profile, renderOptions);
 
     let state = null;
