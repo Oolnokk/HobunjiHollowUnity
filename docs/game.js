@@ -7388,6 +7388,12 @@
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
           alcoholBottleSwigs: {}, npcAlcoholState: {}, npcWardrobeState: {}, npcDiscoveredGiftTraits: {},
           alchemyKnownEffects: {}, alchemyKnownRecipes: [], alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
+          // A brand-new member has no legacy favor to fix, so it starts
+          // already "migrated" — see DialogueContent's loadNpcRelationships/
+          // _applyLegacyFavorRescale. A member saved before this field
+          // existed loads it as undefined/falsy, which is what triggers the
+          // one-time reset.
+          npcFavorRescaleApplied: true,
           joinedAt: Date.now(),
         };
       }
@@ -7476,6 +7482,7 @@
           member.nonGearInventory = { ...inventory };
           member.packClothing    = [...packClothing];
           member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
+          member.npcFavorRescaleApplied = window.DialogueContent?.npcFavorRescaleApplied?.() ?? true;
           member.questProgress    = { ...questProgress };
           member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
           member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};

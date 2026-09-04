@@ -44,6 +44,7 @@
   let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
   const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
+  let _favorRescaleApplied = true; // see loadNpcRelationships/_applyLegacyFavorRescale
 
   function npcDialogueTextConfig() {
     return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
@@ -133,6 +134,31 @@
         heardPoolEntries:[...(rel.heardPoolEntries || [])],
       });
     }
+    _favorRescaleApplied = !!playerData?.npcFavorRescaleApplied;
+    if (!_favorRescaleApplied) {
+      _applyLegacyFavorRescale(playerData);
+      _favorRescaleApplied = true;
+    }
+  }
+
+  // One-time migration for a world member saved before Friendship Tier was
+  // unified onto the same -5..10 hearts scale favor already used
+  // everywhere else (renderRelationshipHearts, authored dialogue
+  // relationship:{min,max} conditions, npc-gifting.js's TIER_FAVOR, the
+  // rapport→favor rollover) — see procedural-tasks.js. Such a save can
+  // carry favor accumulated under the old, much larger tier thresholds
+  // (single quest turn-ins of up to +85), which reads as nonsense/maxed-
+  // out hearts now that both systems share one small scale. Every NPC's
+  // favor resets to a clean 0; Kinami Kunji is the one authored exception
+  // — she starts frosty (-2) toward anyone who isn't Mao'ao, same as
+  // everyone else (0) if the player is. Runs once per member (gated by
+  // npcFavorRescaleApplied, persisted alongside npcRelationships) — a
+  // brand-new member is created with that flag already set, so it never
+  // re-runs on saves made after this migration shipped.
+  function _applyLegacyFavorRescale(playerData) {
+    for (const st of _npcDlgState.values()) st.favor = 0;
+    const isMaoAo = playerData?.appearance?.speciesId === 'mao-ao';
+    getNpcDlgState('kinami_kunji').favor = isMaoAo ? 0 : -2; // force-create even if never met
   }
 
   function npcRelationshipsSnapshot() {
@@ -762,6 +788,7 @@
     updateNpcDialoguePortrait,
     loadNpcRelationships,
     npcRelationshipsSnapshot,
+    npcFavorRescaleApplied: () => _favorRescaleApplied,
     recordNpcMemory,
     adjustNpcFavor,
     stopNpcDialogueTypewriter,
