@@ -1,56 +1,56 @@
 // Adds a second, slightly higher cloud opacity cutout to the base arm sprites only.
 //
-// This deliberately does NOT replace renderPortraitProfile(), drawPortraitLayer(),
-// or drawPortraitLayerWarped(). The canonical portrait renderer must remain the
-// sole owner of its deformation grids. Instead, after an ordinary front portrait
-// finishes rendering, we build a separate alphaMap: white everywhere, with the
-// intersection of raw arm alpha and the higher cloud mask punched to black.
-// PNGPlaneAvatar then applies that alphaMap to the finished portrait material.
-// Torso, overwear and every other portrait layer are therefore untouched.
+// The higher cutout is applied to each authored arm image BEFORE the portrait is
+// composited. This is important: applying it as a final PNG-plane alpha map also
+// punched holes through torso/clothing pixels that happened to occupy the same
+// screen-space coordinates. Raw fighter/body-layer data remains untouched.
 (function (global) {
   'use strict';
 
   const previewApi = global.NpcAvatarPreview;
-  const avatarApi = global.PNGPlaneAvatar;
-  const MASK_Y_SCALE_MULTIPLIER = 0.60; // Applied to both the canonical portrait cloud mask and the arm-only copy below.
+  const MASK_Y_SCALE_MULTIPLIER = 0.60; // Preserves the established scale of the canonical full-portrait cloud mask.
+  const DEFAULT_ARM_MASK_Y_SCALE_MULTIPLIER = 0.60; // Used by the second arm-only cloud when config does not override it.
   const LOGICAL_W = 200;
   const LOGICAL_H = 200;
   const LAYER_SIZE = 80;
   const DEFAULT_AX_OFFSET = 0.12;
   const imageCache = new Map();
+  const activeArmClipsByCanvas = new WeakMap(); // Associates one in-flight portrait canvas with its pre-clipped arm images.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
 
-  function scaleMaskY(xform) {
+  function configuredArmMaskYScaleMultiplier() {
+    const value = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.maskYScaleMultiplier);
+    return Number.isFinite(value) && value > 0
+      ? Math.max(0.05, Math.min(2, value))
+      : DEFAULT_ARM_MASK_Y_SCALE_MULTIPLIER;
+  }
+
+  function scaleMaskY(xform, multiplier = MASK_Y_SCALE_MULTIPLIER) {
     if (!xform || typeof xform !== 'object') return xform;
     const ax = Number(xform.ax);
     const sy = Number(xform.sy);
     const resolvedAx = Number.isFinite(ax) ? ax : 0;
     const resolvedSy = Number.isFinite(sy) ? sy : 1;
-    const bottomAnchorCompensation = resolvedSy * (1 - MASK_Y_SCALE_MULTIPLIER) / 2; // Counteracts center-based canvas scaling so the bottom edge stays fixed.
+    const resolvedMultiplier = Number.isFinite(Number(multiplier)) ? Number(multiplier) : 1;
+    const bottomAnchorCompensation = resolvedSy * (1 - resolvedMultiplier) / 2; // Keeps the authored bottom edge fixed while Y scale changes.
     return {
       ...xform,
       ax: resolvedAx - bottomAnchorCompensation,
-      sy: resolvedSy * MASK_Y_SCALE_MULTIPLIER,
+      sy: resolvedSy * resolvedMultiplier,
     };
   }
 
-  // portrait-utils.js owns the normal full-portrait mask. Its classic-script
-  // function binding is writable through window, so wrapping it here keeps the
-  // authored per-species transform but halves only the cloud's vertical scale,
-  // with scaleMaskY compensating position to preserve the authored bottom edge.
-  // The arm-only alpha-map path below uses the same transform explicitly.
+  // Keep the existing canonical cloud-mask adjustment. This is the original full
+  // portrait mask; the extra arm-only mask is handled separately below.
   const originalApplyPortraitOpacityMask = global.applyPortraitOpacityMask;
   if (typeof originalApplyPortraitOpacityMask === 'function' && !originalApplyPortraitOpacityMask.__hobunjiCloudMaskYScaled) {
     const scaledApplyPortraitOpacityMask = function portraitCloudMaskYScaled(ctx, image, xform) {
-      return originalApplyPortraitOpacityMask(ctx, image, scaleMaskY(xform));
+      return originalApplyPortraitOpacityMask(ctx, image, scaleMaskY(xform, MASK_Y_SCALE_MULTIPLIER));
     };
     scaledApplyPortraitOpacityMask.__hobunjiCloudMaskYScaled = true;
     global.applyPortraitOpacityMask = scaledApplyPortraitOpacityMask;
   }
-
-  if (!previewApi?.renderProfileToCanvas || !avatarApi?.buildSinglePlaneAvatarModel) return;
-  if (previewApi.renderProfileToCanvas.__hobunjiArmCloudAlphaWrapped) return;
 
   function resolveAssetPath(path) {
     const raw = String(path || '');
@@ -98,138 +98,153 @@
     };
   }
 
-  function drawLogicalImage(ctx, image, xform, canvas) {
-    if (!ctx || !image || !canvas) return;
-    const scaleX = canvas.width / LOGICAL_W;
-    const scaleY = canvas.height / LOGICAL_H;
-    const h = LAYER_SIZE * xform.sy;
-    const w = (image.naturalWidth / Math.max(1, image.naturalHeight)) * LAYER_SIZE * xform.sx;
-    const cx = LOGICAL_W / 2 + xform.ay * LAYER_SIZE;
-    const cy = LOGICAL_H / 2 - xform.ax * LAYER_SIZE;
-    ctx.drawImage(image,
-      (cx - w / 2) * scaleX,
-      (cy - h / 2) * scaleY,
-      w * scaleX,
-      h * scaleY,
-    );
+  function portraitRectFor(image, xform) {
+    const naturalWidth = Number(image?.naturalWidth || image?.width) || 1;
+    const naturalHeight = Number(image?.naturalHeight || image?.height) || 1;
+    const h = LAYER_SIZE * Number(xform?.sy || 1);
+    const w = (naturalWidth / naturalHeight) * LAYER_SIZE * Math.abs(Number(xform?.sx || 1));
+    const cx = LOGICAL_W / 2 + Number(xform?.ay || 0) * LAYER_SIZE;
+    const cy = LOGICAL_H / 2 - Number(xform?.ax || 0) * LAYER_SIZE;
+    return { x: cx - w / 2, y: cy - h / 2, w, h };
   }
 
-  async function buildArmCloudAlphaMap(sourceCanvas, profile) {
+  function markCanvasAsImage(canvas) {
+    // portrait-utils accepts CanvasImageSource objects but also reads naturalWidth/
+    // naturalHeight like an HTMLImageElement. Define those aliases for our clipped canvas.
+    if (!('naturalWidth' in canvas)) Object.defineProperty(canvas, 'naturalWidth', { value: canvas.width });
+    if (!('naturalHeight' in canvas)) Object.defineProperty(canvas, 'naturalHeight', { value: canvas.height });
+    return canvas;
+  }
+
+  function buildClippedArmImage(armImage, armXform, maskImage, maskXform) {
+    const width = Math.max(1, Number(armImage?.naturalWidth || armImage?.width) || 1);
+    const height = Math.max(1, Number(armImage?.naturalHeight || armImage?.height) || 1);
+    const canvas = markCanvasAsImage(document.createElement('canvas'));
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(armImage, 0, 0, width, height);
+
+    const armRect = portraitRectFor(armImage, armXform);
+    const maskRect = portraitRectFor(maskImage, maskXform);
+    if (!armRect.w || !armRect.h || !maskRect.w || !maskRect.h) return canvas;
+
+    const mappedX = (maskRect.x - armRect.x) / armRect.w * width;
+    const mappedY = (maskRect.y - armRect.y) / armRect.h * height;
+    const mappedW = maskRect.w / armRect.w * width;
+    const mappedH = maskRect.h / armRect.h * height;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    if (Number(armXform?.sx || 1) < 0) {
+      // drawPortraitLayer mirrors negative-SX sprites before placement, so mirror
+      // the portrait-space mask back into source space before cutting the raw arm.
+      ctx.translate(width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(maskImage, mappedX, mappedY, mappedW, mappedH);
+    ctx.restore();
+    return canvas;
+  }
+
+  async function buildArmClipState(profile) {
     const fighter = resolvedFighterFor(profile);
     const maskLayer = fighter?.opacityMaskLayer || profile?.fighter?.opacityMaskLayer || null;
     const armLayers = (fighter?.bodyLayers || profile?.fighter?.bodyLayers || [])
       .filter(layer => /arm[lr]/i.test(String(layer?.id || '')) && layer?.url);
-    if (!sourceCanvas?.width || !sourceCanvas?.height || !maskLayer?.url || !armLayers.length) return null;
+    if (!maskLayer?.url || !armLayers.length) return null;
 
     const [maskImage, ...armImages] = await Promise.all([
       loadImage(maskLayer.url),
       ...armLayers.map(layer => loadImage(layer.url)),
     ]);
-    if (!maskImage || armImages.every(image => !image)) return null;
+    if (!maskImage) return null;
 
-    // Build the exact arm-only coverage first. Torso/overwear never enter this canvas.
-    const intersection = document.createElement('canvas');
-    intersection.width = sourceCanvas.width;
-    intersection.height = sourceCanvas.height;
-    const ictx = intersection.getContext('2d');
-    for (let index = 0; index < armLayers.length; index++) {
-      const image = armImages[index];
-      if (image) drawLogicalImage(ictx, image, xformFor(armLayers[index]), intersection);
-    }
-
-    // Keep only the pixels where that arm coverage intersects the higher cloud.
-    const maskXform = scaleMaskY(xformFor(maskLayer));
+    const maskXform = scaleMaskY(xformFor(maskLayer), configuredArmMaskYScaleMultiplier());
     const configuredOffset = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
     maskXform.ax += Number.isFinite(configuredOffset) ? configuredOffset : DEFAULT_AX_OFFSET;
-    ictx.save();
-    ictx.globalCompositeOperation = 'destination-in';
-    drawLogicalImage(ictx, maskImage, maskXform, intersection);
-    ictx.restore();
 
-    // Three.js alphaMap samples the texture's green channel. White preserves the
-    // finished portrait; transparent/black pixels from destination-out remove only
-    // the higher-cloud/arm intersection.
-    const alphaCanvas = document.createElement('canvas');
-    alphaCanvas.width = sourceCanvas.width;
-    alphaCanvas.height = sourceCanvas.height;
-    const actx = alphaCanvas.getContext('2d');
-    actx.fillStyle = '#ffffff';
-    actx.fillRect(0, 0, alphaCanvas.width, alphaCanvas.height);
-    actx.globalCompositeOperation = 'destination-out';
-    actx.drawImage(intersection, 0, 0);
-    actx.globalCompositeOperation = 'source-over';
-    return alphaCanvas;
-  }
-
-  const originalRenderToCanvas = previewApi.renderProfileToCanvas.bind(previewApi);
-  const wrappedRenderToCanvas = async function armCloudAlphaRenderToCanvas(canvas, profile, renderOptions = {}) {
-    const rendered = await originalRenderToCanvas(canvas, profile, renderOptions);
-    // Head-only and behind-view canvases are auxiliary inputs to the shared neck/
-    // back-face rig. Only the canonical front portrait owns this alphaMap.
-    if (rendered && renderOptions?.onlyHeadSprite !== true && renderOptions?.portraitView !== 'behind' && renderOptions?.view !== 'behind') {
-      try {
-        canvas.hobunjiArmCloudAlphaMap = await buildArmCloudAlphaMap(canvas, profile);
-      } catch (error) {
-        // A decorative cloud mask must never be capable of rejecting avatar construction.
-        canvas.hobunjiArmCloudAlphaMap = null;
-        console.warn('[arm-cloud-mask] alpha-map build skipped:', error);
-      }
+    const clips = new Map();
+    for (let index = 0; index < armLayers.length; index++) {
+      const armImage = armImages[index];
+      const armLayer = armLayers[index];
+      if (!armImage || !armLayer?.url) continue;
+      clips.set(String(armLayer.url), buildClippedArmImage(armImage, xformFor(armLayer), maskImage, maskXform));
     }
-    return rendered;
-  };
-  wrappedRenderToCanvas.__hobunjiArmCloudAlphaWrapped = true;
-  previewApi.renderProfileToCanvas = wrappedRenderToCanvas;
-
-  function applyAlphaMap(THREE, avatarRoot, alphaCanvas) {
-    if (!THREE?.CanvasTexture || !avatarRoot?.traverse || !alphaCanvas) return null;
-    const texture = new THREE.CanvasTexture(alphaCanvas);
-    texture.name = 'portrait_arm_cloud_alpha_map';
-    texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = THREE.NearestFilter;
-    texture.generateMipmaps = false;
-    let applied = 0;
-    avatarRoot.traverse(node => {
-      if (!node?.isMesh || !node.material) return;
-      const materials = Array.isArray(node.material) ? node.material : [node.material];
-      for (const material of materials) {
-        if (!material || !('map' in material)) continue;
-        material.alphaMap = texture;
-        material.transparent = true;
-        material.needsUpdate = true;
-        applied++;
-      }
-    });
-    if (!applied) {
-      texture.dispose();
-      return null;
-    }
-    avatarRoot.userData.armCloudAlphaTexture = texture;
-    return texture;
-  }
-
-  const originalBuildAvatar = avatarApi.buildSinglePlaneAvatarModel;
-  const wrappedBuildAvatar = function armCloudAlphaAvatarBuild(THREE, sourceCanvas, options = {}) {
-    const avatarRoot = originalBuildAvatar.call(this, THREE, sourceCanvas, options);
-    if (avatarRoot && sourceCanvas?.hobunjiArmCloudAlphaMap) {
-      applyAlphaMap(THREE, avatarRoot, sourceCanvas.hobunjiArmCloudAlphaMap);
-    }
-    return avatarRoot;
-  };
-  wrappedBuildAvatar.__hobunjiArmCloudAlphaWrapped = true;
-  avatarApi.buildSinglePlaneAvatarModel = wrappedBuildAvatar;
-
-  const originalDisposeAvatar = avatarApi.disposeAvatarModel?.bind(avatarApi);
-  if (originalDisposeAvatar) {
-    avatarApi.disposeAvatarModel = function armCloudAlphaDispose(avatarRoot) {
-      avatarRoot?.userData?.armCloudAlphaTexture?.dispose?.();
-      if (avatarRoot?.userData) avatarRoot.userData.armCloudAlphaTexture = null;
-      return originalDisposeAvatar(avatarRoot);
+    if (!clips.size) return null;
+    return {
+      clips,
+      cacheSuffix: `arm-cloud:${configuredArmMaskYScaleMultiplier().toFixed(4)}:${maskXform.ax.toFixed(4)}`,
     };
   }
 
+  const originalDrawPortraitLayer = global.drawPortraitLayer;
+  if (typeof originalDrawPortraitLayer === 'function' && !originalDrawPortraitLayer.__hobunjiArmCloudClip) {
+    const clippedDrawPortraitLayer = function drawPortraitLayerWithArmCloudClip(ctx, image, xform, tint, sourceKey) {
+      const state = activeArmClipsByCanvas.get(ctx?.canvas);
+      const clipped = state?.clips?.get(String(sourceKey || ''));
+      if (!clipped) return originalDrawPortraitLayer.call(this, ctx, image, xform, tint, sourceKey);
+      return originalDrawPortraitLayer.call(this, ctx, clipped, xform, tint, `${sourceKey}#${state.cacheSuffix}`);
+    };
+    clippedDrawPortraitLayer.__hobunjiArmCloudClip = true;
+    clippedDrawPortraitLayer.__hobunjiArmCloudOriginal = originalDrawPortraitLayer;
+    global.drawPortraitLayer = clippedDrawPortraitLayer;
+  }
+
+  const originalDrawPortraitLayerWarped = global.drawPortraitLayerWarped;
+  if (typeof originalDrawPortraitLayerWarped === 'function' && !originalDrawPortraitLayerWarped.__hobunjiArmCloudClip) {
+    const clippedDrawPortraitLayerWarped = function drawPortraitLayerWarpedWithArmCloudClip(
+      ctx, image, xform, tint, breathingComposer, speciesId, gender, nowMs,
+      phaseOffsetMs, seatId, staticDeform, sourceKey
+    ) {
+      const state = activeArmClipsByCanvas.get(ctx?.canvas);
+      const clipped = state?.clips?.get(String(sourceKey || ''));
+      if (!clipped) {
+        return originalDrawPortraitLayerWarped.call(
+          this, ctx, image, xform, tint, breathingComposer, speciesId, gender, nowMs,
+          phaseOffsetMs, seatId, staticDeform, sourceKey
+        );
+      }
+      return originalDrawPortraitLayerWarped.call(
+        this, ctx, clipped, xform, tint, breathingComposer, speciesId, gender, nowMs,
+        phaseOffsetMs, seatId, staticDeform, `${sourceKey}#${state.cacheSuffix}`
+      );
+    };
+    clippedDrawPortraitLayerWarped.__hobunjiArmCloudClip = true;
+    clippedDrawPortraitLayerWarped.__hobunjiArmCloudOriginal = originalDrawPortraitLayerWarped;
+    global.drawPortraitLayerWarped = clippedDrawPortraitLayerWarped;
+  }
+
+  if (!previewApi?.renderProfileToCanvas) return;
+  if (previewApi.renderProfileToCanvas.__hobunjiArmCloudClipWrapped) return;
+
+  const originalRenderToCanvas = previewApi.renderProfileToCanvas.bind(previewApi);
+  const wrappedRenderToCanvas = async function armCloudClipRenderToCanvas(canvas, profile, renderOptions = {}) {
+    // Behind/head-only canvases do not own the front arm-cloud cutout.
+    const shouldClip = renderOptions?.onlyHeadSprite !== true
+      && renderOptions?.portraitView !== 'behind'
+      && renderOptions?.view !== 'behind';
+    if (!shouldClip) return originalRenderToCanvas(canvas, profile, renderOptions);
+
+    try {
+      const state = await buildArmClipState(profile);
+      if (state) activeArmClipsByCanvas.set(canvas, state);
+      return await originalRenderToCanvas(canvas, profile, renderOptions);
+    } catch (error) {
+      console.warn('[arm-cloud-mask] per-arm clip skipped:', error);
+      return originalRenderToCanvas(canvas, profile, renderOptions);
+    } finally {
+      activeArmClipsByCanvas.delete(canvas);
+    }
+  };
+  wrappedRenderToCanvas.__hobunjiArmCloudClipWrapped = true;
+  previewApi.renderProfileToCanvas = wrappedRenderToCanvas;
+
   global.PortraitArmCloudMask = {
-    mode: 'png-plane-alpha-map',
+    mode: 'per-arm-draw-clip',
     get maskYScaleMultiplier() { return MASK_Y_SCALE_MULTIPLIER; },
+    get defaultArmMaskYScaleMultiplier() { return DEFAULT_ARM_MASK_Y_SCALE_MULTIPLIER; },
+    get configuredArmMaskYScaleMultiplier() { return configuredArmMaskYScaleMultiplier(); },
     get defaultAxOffset() { return DEFAULT_AX_OFFSET; },
     get configuredAxOffset() {
       const value = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
