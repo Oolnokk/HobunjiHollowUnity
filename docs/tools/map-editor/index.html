@@ -118,6 +118,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
         <button class="sec" data-mode="river" id="riverModeBtn">🌊 River</button>
         <button class="sec" data-mode="spot">🔁 Spot</button>
         <button class="sec" data-mode="station">🧍 Station</button>
+        <button class="sec" data-mode="entry">📍 Entry</button>
         <button class="sec" data-mode="plateau" id="plateauModeBtn">⛰ Plateau</button>
         <button class="sec" data-mode="ramp">🪜 Ramp</button>
         <button class="sec" data-mode="visual-height">〰 Subtle elevation</button>
@@ -267,6 +268,90 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           </div>
         </div>
 
+        <!-- ENTRY POINTS (Entry mode only) — named drop-spots for MapLayoutSystem's
+             pickEntryPoint (see docs/js/map-layout-system.js). Always base-level,
+             never per-layout: a room's physical entry points don't change just
+             because its decor does. -->
+        <div class="section" id="entryPointsSection" style="--sec:#5adc8c;--secBg:rgba(90,220,140,.08);display:none">
+          <div class="sect-head"><b>Entry Points</b><span class="sect-tag" id="entryPointCountTag">0</span></div>
+          <p class="muted">Named spots the player can be dropped at on this map — picked by an alternate layout's "Entry point on activate" below, or the one nearest the player if none is named (see the Alternate Layouts panel). Not required: a map with none authored falls back to its usual spawn/door logic.</p>
+          <div class="itemlist" id="entryPointList" style="margin-top:6px"></div>
+          <div class="row" style="margin-top:6px">
+            <button class="ok" id="addEntryPointBtn">+ New</button>
+            <button class="sec" id="placeEntryPointBtn">📍 Place on map</button>
+          </div>
+          <div id="entryPointFields" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)">
+            <div class="g2">
+              <div><label>Label</label><input id="entryLabel" placeholder="Main Gate"></div>
+              <div><label>Col / Row</label>
+                <div class="row" style="margin:0;gap:4px">
+                  <input id="entryCol" type="number" min="0" style="width:50%">
+                  <input id="entryRow" type="number" min="0" style="width:50%">
+                </div>
+              </div>
+            </div>
+            <div class="row" style="margin-top:8px;gap:4px">
+              <button class="ok" id="applyEntryPointBtn" style="flex:1">Apply</button>
+              <button class="bad" id="delEntryPointBtn">Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ALTERNATE LAYOUTS — always visible (not mode-gated): a named
+             alternate arrangement of this map's own decor, swapped in
+             automatically by a calendar/flag condition. See
+             docs/js/map-layout-system.js for the runtime side; this panel
+             only authors the shape it reads. -->
+        <div class="section" id="layoutsSection" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.08)">
+          <div class="sect-head"><b>Alternate Layouts</b><span class="qhelp" data-help="layouts" style="margin-left:4px">?</span><span class="sect-tag" id="layoutCountTag">0</span></div>
+          <p class="muted">A layout swaps this map's decor for a special occasion (a festival, a ritual) — pick one below, then use the 🪑 Decor tool as normal: while a layout (not Base) is selected, placing/erasing decor edits <em>that layout's</em> decor instead of the base map's. Only decor is layout-aware in this tool — buildings/furniture/objects/routes/etc. stay base-level; if a layout needs those too, hand-edit the exported JSON's <code>layouts</code> array (Copy/Download, edit, Import back in).</p>
+          <div class="field" style="margin:8px 0 6px">
+            <label>Now editing</label>
+            <select id="layoutEditSelect"><option value="">Base (default)</option></select>
+          </div>
+          <div class="row">
+            <button class="ok" id="addLayoutBtn">+ New layout</button>
+            <button class="sec" id="cloneBaseDecorBtn">Clone base decor in</button>
+          </div>
+          <div id="layoutFields" style="display:none;margin-top:8px;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">
+            <div class="g2">
+              <div><label>Name</label><input id="layoutName" placeholder="Harvest Festival"></div>
+              <div><label>Priority</label><input id="layoutPriority" type="number" value="0"></div>
+            </div>
+            <div style="margin-top:4px"><label>Entry point on activate</label><select id="layoutEntryPoint"><option value="">Auto (nearest to player)</option></select></div>
+            <div style="margin-top:8px">
+              <div class="row" style="justify-content:space-between">
+                <b style="font-size:12px">When active</b>
+                <span class="sect-tag">any one below is enough (OR)</span>
+              </div>
+              <div style="margin-top:4px"><label>Time of day (blank = all day)</label>
+                <div class="row" style="margin:0;gap:4px">
+                  <input id="layoutCondFrom" placeholder="18:00" style="width:50%">
+                  <input id="layoutCondTo" placeholder="21:00" style="width:50%">
+                </div>
+              </div>
+              <div style="margin-top:6px"><label>Days (blank = every day)</label>
+                <div class="row" id="layoutCondDays" style="margin:0;gap:3px;flex-wrap:wrap"></div>
+              </div>
+              <div style="margin-top:6px"><label>Date range (blank = every year) — month/day, both ends</label>
+                <div class="row" style="margin:0;gap:4px">
+                  <input id="layoutCondFromMonth" type="number" min="1" max="12" placeholder="mo" style="width:25%">
+                  <input id="layoutCondFromDay" type="number" min="1" max="28" placeholder="day" style="width:25%">
+                  <span style="align-self:center">→</span>
+                  <input id="layoutCondToMonth" type="number" min="1" max="12" placeholder="mo" style="width:25%">
+                  <input id="layoutCondToDay" type="number" min="1" max="28" placeholder="day" style="width:25%">
+                </div>
+              </div>
+              <div style="margin-top:6px"><label>World-state flag (blank = ignore)</label><input id="layoutCondFlag" placeholder="harvestFestivalActive"></div>
+              <p class="muted" style="margin-top:4px">Need this layout to trigger on several unrelated windows (OR)? Edit the JSON's <code>conditions</code> array directly — Copy/Download JSON, edit, Import back in.</p>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button class="ok" id="applyLayoutBtn">Apply</button>
+              <button class="bad" id="delLayoutBtn">Delete layout</button>
+            </div>
+          </div>
+        </div>
+
         <!-- STATUS / JSON -->
         <div class="section" id="statusSection" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.06)">
           <div class="sect-head"><b>Active Map JSON</b><span class="sect-tag" id="statusPill">Ready</span></div>
@@ -338,6 +423,7 @@ const QHELP = {
   'station-id': { title: 'Station id', body: 'Referenced by NPC schedule rules (Schedule Editor tab) as stationId — renaming this id will break any rule that already points at it. Copy it from here when wiring up a schedule.' },
   'station-wander': { title: 'Wander mode', body: 'Radius (default, 0 tiles) keeps the NPC frozen exactly at this tile, matching a tool loop/fixed pose if set — set it above 0 to roam a circle of that many tiles instead. Custom shape instead roams only the tiles you paint: click 🖌 Paint, then click (or click-and-drag) tiles on the map to add them, click 🖌 again to stop — good for an irregular or disconnected region a circle can\'t express. Either way: pick a random open tile in the region, walk there, pause, repeat. The region only draws on the map while this station is selected.' },
   'station-paint-brush': { title: 'Paint brush size', body: 'How many tiles wide each click/drag stroke paints, in tiles (1 = original single-tile precision, click a painted tile again to remove it). Above 1, drag across the map to fill a whole area in one stroke — same rounded-circle brush shape the Plateau tool uses.' },
+  'layouts': { title: 'Alternate layouts', body: 'A layout is a named alternate decor arrangement for this map, shown instead of the base decor whenever its conditions match the current calendar time (or an authored world-state flag). Only one plus the base can ever be "live" at once — if two layouts\' conditions both match, the higher Priority wins. A layout with no conditions at all never activates on its own (reachable only by explicit id).' },
 };
 let _qhelpBtn = null;
 function showHelp(btn) {
@@ -475,6 +561,11 @@ function makeMap(name, category, cols, rows) {
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
     npcStations: [], // { id, label, col, row, rotY, pose, toolKey, toolIntervalSec, toolAnimStyle }
     buildings: [],    // { id, label, pieceFile, gridX, gridZ, footprintW, footprintD, wbOpts, wbGableOpts }
+    entryPoints: [],  // { id, label, col, row } — named drop-spots for MapLayoutSystem.pickEntryPoint
+    layouts: [],      // { id, name, priority, entryPointId?, conditions:[...], decor:[...] } — see map-layout-system.js.
+                       // Only `decor` is authored/edited per-layout by this tool (see activeDecor below);
+                       // any other overridable key (furniture/buildings/objects/routes/etc.) round-trips
+                       // untouched through Copy/Download/Import but has no dedicated UI here.
     // Plateau / elevation: a map is either a root map (isSubmap=false, elevation=0) or an
     // auto-generated sub-map representing one plateau group's footprint on its parent.
     isSubmap: false,
@@ -699,6 +790,8 @@ function loadWorkspace() {
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
           m.npcStations = Array.isArray(m.npcStations) ? m.npcStations : [];
+          m.entryPoints = Array.isArray(m.entryPoints) ? m.entryPoints : [];
+          m.layouts = Array.isArray(m.layouts) ? m.layouts : [];
           m.isSubmap = !!m.isSubmap;
           m.parentMapId = m.parentMapId || null;
           m.plateauGroupId = m.plateauGroupId || null;
@@ -739,6 +832,44 @@ function saveWorkspace() {
 }
 function activeMap() { return ws.maps.find(m => m.id === ws.activeId) || ws.maps[0]; }
 function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
+
+// ── Alternate layouts: decor seam ────────────────────────────────────────────
+// See docs/js/map-layout-system.js for the runtime side: it picks the
+// highest-priority layout whose conditions currently match the calendar (or
+// the base map if none do) and merges just that layout's overridable arrays
+// over the base. Of those, only `decor` gets dedicated authoring UI here —
+// while a layout (not Base) is selected in the Alternate Layouts panel,
+// `editingLayoutId` redirects every decor placement/erase/render call site at
+// this one seam instead of a larger refactor, mirroring
+// building-interior-author's activeFurniture/setActiveFurniture. The map
+// object itself (and thus JSON.stringify/export/undo snapshots) always stays
+// the true, unmodified base data; only these accessors know a layout might be
+// "borrowing" the decor tools right now. Every other overridable key
+// (furniture/buildings/objects/routes/vendorZones/etc.) stays base-level only.
+let editingLayoutId = null; // null = editing the base map; otherwise an id in activeMap().layouts
+function currentLayoutObj(m) {
+  if (!editingLayoutId) return null;
+  return (m.layouts || []).find(l => l.id === editingLayoutId) || null;
+}
+function activeDecor(m) {
+  const lay = currentLayoutObj(m);
+  if (!lay) return m.decor || (m.decor = []);
+  if (!lay.decor) lay.decor = [];
+  return lay.decor;
+}
+function setActiveDecor(m, arr) {
+  const lay = currentLayoutObj(m);
+  if (lay) lay.decor = arr; else m.decor = arr;
+}
+// Every decor array on this map (base + every layout's own) — used only by
+// structural map edits (resize, shift) that must stay consistent no matter
+// which one happens to be selected for interactive editing right now; see
+// activeDecor for the single-array accessor used everywhere else.
+function allDecorArrays(m) {
+  const arrs = [m.decor || (m.decor = [])];
+  (m.layouts || []).forEach(l => arrs.push(l.decor || (l.decor = [])));
+  return arrs;
+}
 
 // ── Plateau groups & elevation sub-maps ──────────────────────────────────────
 // A plateau group is a workspace-wide, manually-authored palette entry (number +
@@ -902,11 +1033,12 @@ function shiftMapContents(m, dc, dr) {
   for (const k in m.objects) { const [c, r] = m.objects[k]; newObjects[k] = [c+dc, r+dr]; }
   m.objects = newObjects;
   (m.furniture || []).forEach(f => { f.col += dc; f.row += dr; });
-  (m.decor || []).forEach(d => { d.col += dc; d.row += dr; });
+  allDecorArrays(m).forEach(arr => arr.forEach(d => { d.col += dc; d.row += dr; }));
   ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
   (m.rivers || []).forEach(p => { p.nodes = p.nodes.map(([c,r]) => [c+dc, r+dr]); });
   (m.transitions || []).forEach(t => { t.col += dc; t.row += dr; });
   (m.npcStations || []).forEach(st => { st.col += dc; st.row += dr; });
+  (m.entryPoints || []).forEach(ep => { ep.col += dc; ep.row += dr; });
 }
 function getOrCreateSubmap(parentMap, group) {
   let sm = ws.maps.find(x => x.parentMapId === parentMap.id && x.plateauGroupId === group.id);
@@ -984,7 +1116,11 @@ function resizeMapAndSubmaps(m, nc, nr) {
   m.visualHeights = normalizeVisualHeights(m.visualHeights, nc, nr);
   Object.keys(m.objects).forEach(k => { const [c,r] = m.objects[k]; if (c < 0 || r < 0 || c >= nc || r >= nr) delete m.objects[k]; });
   m.furniture = m.furniture.filter(f => f.col >= 0 && f.row >= 0 && f.col < nc && f.row < nr);
-  m.decor = m.decor.filter(d => { const inf = DECOR[d.key]; return inf && d.col >= 0 && d.row >= 0 && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
+  allDecorArrays(m).forEach(arr => {
+    const kept = arr.filter(d => { const inf = DECOR[d.key]; return inf && d.col >= 0 && d.row >= 0 && d.col + inf.fw <= nc && d.row + inf.fd <= nr; });
+    arr.length = 0; arr.push(...kept);
+  });
+  m.entryPoints = (m.entryPoints || []).filter(ep => ep.col >= 0 && ep.row >= 0 && ep.col < nc && ep.row < nr);
   ((m.routes || []).concat(m.npcPaths || [])).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
   (m.rivers || []).forEach(p => { p.nodes = p.nodes.filter(([c,r]) => c >= 0 && r >= 0 && c < nc && r < nr); });
   m.transitions = (m.transitions || []).filter(t => t.col >= 0 && t.row >= 0 && t.col < nc && t.row < nr);
@@ -1290,6 +1426,90 @@ function renderPlateauGroupList() {
   }));
 }
 
+// ── Entry points panel (sidebar) ─────────────────────────────────────────────
+function renderEntryPointsPanel() {
+  const m = activeMap();
+  const eps = m.entryPoints || [];
+  $('entryPointCountTag').textContent = String(eps.length);
+  $('entryPointList').innerHTML = eps.map((ep, i) => `<div class="item ${ep.id===activeEntryId?'sel':''}" data-epid="${ep.id}">
+      <div class="item-name">S${i+1} · ${ep.label || ep.id}</div>
+      <div class="item-meta">col ${ep.col}, row ${ep.row}</div>
+    </div>`).join('') || '<p class="muted">No entry points yet. Named drop-spots a layout (or a fresh entry into this map) can send the player to.</p>';
+  $('entryPointList').querySelectorAll('[data-epid]').forEach(el => {
+    el.addEventListener('click', () => { activeEntryId = el.dataset.epid; renderEntryPointsPanel(); draw(); updateBrushPill(); });
+  });
+  const ep = eps.find(x => x.id === activeEntryId);
+  $('entryPointFields').style.display = ep ? '' : 'none';
+  if (ep) {
+    $('entryLabel').value = ep.label || '';
+    $('entryCol').value = ep.col ?? 0;
+    $('entryRow').value = ep.row ?? 0;
+  }
+  // Kept in sync here (rather than only inside renderLayoutsPanel) since an
+  // entry point add/rename/delete should immediately update the layout
+  // panel's "entry point on activate" choices without requiring a mode switch.
+  renderLayoutEntryPointOptions();
+}
+function renderLayoutEntryPointOptions() {
+  const m = activeMap();
+  const epSel = $('layoutEntryPoint');
+  const prev = epSel.value;
+  epSel.innerHTML = '<option value="">Auto (nearest to player)</option>' + (m.entryPoints || [])
+    .map(ep => `<option value="${ep.id}">${ep.label || ep.id}</option>`).join('');
+  epSel.value = prev;
+  const lay = currentLayoutObj(m);
+  if (lay) epSel.value = lay.entryPointId || '';
+}
+
+// ── Alternate layouts panel (sidebar) ────────────────────────────────────────
+// See docs/js/map-layout-system.js for the runtime side of this: it picks the
+// highest-Priority layout whose conditions currently match the calendar (or
+// the base map if none do) and merges just that layout's overridable arrays
+// over the base. This panel authors that same shape; decor editing while a
+// layout is selected is redirected through activeDecor/setActiveDecor above —
+// every other tool (buildings/furniture/objects/routes/vendor zones/entry
+// points) always stays base-level.
+// Same weekday names as docs/js/calendar-system.js's WEEKDAY_NAMES — this tool
+// has no dependency on that module, so the list is kept in sync by hand (same
+// convention as its other duplicated data tables, e.g. DECOR/PROCESSORS above).
+const LAYOUT_WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung'];
+function readSelectedLayoutDays() {
+  return Array.from(document.querySelectorAll('#layoutCondDays .dayBtn.act')).map(b => b.dataset.day);
+}
+function renderLayoutsPanel() {
+  const m = activeMap();
+  const sel = $('layoutEditSelect');
+  sel.innerHTML = '<option value="">Base (default)</option>' + (m.layouts || [])
+    .map(l => `<option value="${l.id}">${l.name || l.id}</option>`).join('');
+  sel.value = (m.layouts || []).some(l => l.id === editingLayoutId) ? editingLayoutId : '';
+  $('layoutCountTag').textContent = String((m.layouts || []).length);
+
+  renderLayoutEntryPointOptions();
+
+  const daysEl = $('layoutCondDays');
+  if (!daysEl.dataset.built) {
+    daysEl.innerHTML = LAYOUT_WEEKDAY_NAMES.map(d => `<button type="button" class="sec dayBtn" data-day="${d}" style="padding:4px 7px;font-size:11px">${d.slice(0,3)}</button>`).join('');
+    daysEl.dataset.built = '1';
+    daysEl.querySelectorAll('.dayBtn').forEach(btn => btn.addEventListener('click', () => btn.classList.toggle('act')));
+  }
+
+  const lay = currentLayoutObj(m);
+  $('layoutFields').style.display = lay ? '' : 'none';
+  if (!lay) return;
+  $('layoutName').value = lay.name || '';
+  $('layoutPriority').value = lay.priority || 0;
+  $('layoutEntryPoint').value = lay.entryPointId || '';
+  const cond = (Array.isArray(lay.conditions) && lay.conditions[0]) || {};
+  $('layoutCondFrom').value = cond.from || ''; $('layoutCondTo').value = cond.to || '';
+  const days = cond.days || (cond.day ? [cond.day] : []);
+  daysEl.querySelectorAll('.dayBtn').forEach(btn => btn.classList.toggle('act', days.includes(btn.dataset.day)));
+  $('layoutCondFromMonth').value = (cond.dateFrom && cond.dateFrom.month) || '';
+  $('layoutCondFromDay').value = (cond.dateFrom && cond.dateFrom.day) || '';
+  $('layoutCondToMonth').value = (cond.dateTo && cond.dateTo.month) || '';
+  $('layoutCondToDay').value = (cond.dateTo && cond.dateTo.day) || '';
+  $('layoutCondFlag').value = cond.flag || '';
+}
+
 // ── Mode / brush state ────────────────────────────────────────────────────────
 let mode = 'pan';
 const HEIGHT_EDITOR = HOBUNJI_CONFIG.editor;
@@ -1302,6 +1522,7 @@ let activeRiverId = null;  // river/stream being extended in river mode
 let activeRiverNodeIndex = null; // selected node index in active river
 let activeSpotId = null;   // transition spot selected in spot mode
 let activeStationId = null; // NPC station selected in station mode
+let activeEntryId = null;  // entry point selected in entry mode (see Entry Points panel)
 let _stationPaintMode = false; // painting the active station's wanderShapeTiles instead of placing/selecting stations
 let _stationPaintRadius = 1; // brush size (tiles) for station shape painting — 1 keeps the original single-tile toggle-on-click behavior
 let activeRampId = null;   // ramp being extended in ramp mode
@@ -1338,6 +1559,7 @@ function updateSectionVisibility() {
   $('plateauGroupsSection').style.display = (mode === 'plateau') ? '' : 'none';
   $('terrainCheckSection').style.display = (mode === 'plateau' || mode === 'ramp') ? '' : 'none';
   $('buildingsSection').style.display = (isExterior && mode === 'building') ? '' : 'none';
+  $('entryPointsSection').style.display = (mode === 'entry') ? '' : 'none';
   renderToc();
 }
 // The TOC only lists sections that are actually visible right now, so it stays
@@ -1351,6 +1573,8 @@ const TOC_SECTIONS = [
   { id: 'gameLinkSection', label: 'Game Link' },
   { id: 'materialsSection', label: 'Materials' },
   { id: 'buildingsSection', label: 'Buildings' },
+  { id: 'entryPointsSection', label: 'Entry Points' },
+  { id: 'layoutsSection', label: 'Alternate Layouts' },
   { id: 'statusSection', label: 'Active Map JSON' },
 ];
 function renderToc() {
@@ -1375,6 +1599,10 @@ function updateBrushPill() {
   if (mode === 'station') {
     const st = (activeMap().npcStations || []).find(x => x.id === activeStationId);
     t = _stationPaintMode && st ? `station: ${st.label} — 🖌 painting wander tiles (click to toggle)` : st ? `station: ${st.label}` : 'station: click map to place';
+  }
+  if (mode === 'entry') {
+    const ep = (activeMap().entryPoints || []).find(x => x.id === activeEntryId);
+    t = ep ? `entry: ${ep.label || ep.id} — click map to (re)place` : 'entry: select (or +New) an entry point first';
   }
   $('brushPill').textContent = t;
 }
@@ -2140,6 +2368,7 @@ function renderPalette() {
   if (esmb) esmb.addEventListener('click', () => {
     ws.activeId = esmb.dataset.submapid; undoStack.length = 0; redoStack.length = 0;
     activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
+    activeEntryId = null; editingLayoutId = null;
     updateAll(); fitView();
   });
   // Ramp palette wiring
@@ -2530,8 +2759,10 @@ function draw() {
     ctx.fillStyle = 'rgba(202,164,94,.4)'; ctx.fillRect(p.x+1, p.y+1, z-2, z-2);
     if (z > 9) ctx.fillText(info.icon, p.x + z/2, p.y + z/2);
   });
-  // Decor (with footprints)
-  (m.decor || []).forEach(d => {
+  // Decor (with footprints) — from the currently-edited layout if one is
+  // selected in the Alternate Layouts panel (see activeDecor), otherwise the
+  // base map's own decor.
+  activeDecor(m).forEach(d => {
     const info = DECOR[d.key]; if (!info) return;
     const p = w2s(d.col, d.row);
     ctx.fillStyle = 'rgba(167,139,250,.35)'; ctx.fillRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
@@ -2663,6 +2894,22 @@ function draw() {
     ctx.restore();
     if (z > 12) { ctx.fillStyle = '#cffafe'; ctx.font = `${clamp(z*.25,8,11)}px system-ui`; ctx.fillText(st.label || st.id, p.x, p.y + s + clamp(z*.3,7,10)); ctx.font = `${Math.floor(z*0.5)}px system-ui`; }
   });
+  // Entry points (green pucks) — named drop-spots, see Entry Points panel.
+  (m.entryPoints || []).forEach((ep, i) => {
+    const p = w2s(ep.col + .5, ep.row + .5);
+    const rPx = Math.max(4, z * .3);
+    const isActive = ep.id === activeEntryId;
+    ctx.beginPath(); ctx.arc(p.x, p.y, rPx, 0, Math.PI*2);
+    ctx.fillStyle = isActive ? 'rgba(90,220,140,.9)' : 'rgba(90,220,140,.55)'; ctx.fill();
+    ctx.strokeStyle = isActive ? '#fff' : '#5adc8c'; ctx.lineWidth = isActive ? 2.5 : 1.5; ctx.stroke();
+    if (z > 10) {
+      ctx.fillStyle = '#08150d'; ctx.font = `bold ${clamp(z*.28,8,11)}px system-ui`;
+      ctx.fillText('S' + (i+1), p.x, p.y);
+      ctx.fillStyle = '#c8f7dd'; ctx.font = `${clamp(z*.24,8,11)}px system-ui`;
+      ctx.fillText(ep.label || ep.id, p.x, p.y + rPx + clamp(z*.3,7,10));
+      ctx.font = `${Math.floor(z*0.5)}px system-ui`;
+    }
+  });
   ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 }
 
@@ -2744,10 +2991,15 @@ function applyAt(tile) {
     if (!m.furniture.some(f => f.col === c && f.row === r)) m.furniture.push({ key: brush.furniture, col: c, row: r });
   } else if (mode === 'decor') {
     const info = DECOR[brush.decor];
+    const decorArr = activeDecor(m);
     if (info && c + info.fw <= m.cols && r + info.fd <= m.rows
-        && !m.decor.some(d => overlaps(d, c, r, info.fw, info.fd))) {
-      m.decor.push({ key: brush.decor, col: c, row: r });
+        && !decorArr.some(d => overlaps(d, c, r, info.fw, info.fd))) {
+      decorArr.push({ key: brush.decor, col: c, row: r });
     }
+  } else if (mode === 'entry') {
+    if (!activeEntryId) { setStatus('Select (or create) an entry point first.'); return; }
+    const ep = (m.entryPoints || []).find(e => e.id === activeEntryId);
+    if (ep) { ep.col = c; ep.row = r; renderEntryPointsPanel(); }
   } else if (mode === 'path') {
     m.routes = m.routes || [];
     let p = m.routes.find(x => x.id === activePathId);
@@ -2866,8 +3118,9 @@ function applyAt(tile) {
     else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
     const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }
-    const di = m.decor.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
-    if (di >= 0) { m.decor.splice(di,1); did = true; }
+    const decorArr = activeDecor(m);
+    const di = decorArr.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
+    if (di >= 0) { decorArr.splice(di,1); did = true; }
     ((m.routes || []).concat(m.npcPaths || [])).forEach(p => {
       for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
     });
@@ -2882,6 +3135,8 @@ function applyAt(tile) {
     if (ti >= 0) { if (m.transitions[ti].id === activeSpotId) activeSpotId = null; m.transitions.splice(ti,1); did = true; }
     const si = (m.npcStations || []).findIndex(st => st.col === c && st.row === r);
     if (si >= 0) { if (m.npcStations[si].id === activeStationId) activeStationId = null; m.npcStations.splice(si,1); did = true; }
+    const ei = (m.entryPoints || []).findIndex(ep => ep.col === c && ep.row === r);
+    if (ei >= 0) { if (m.entryPoints[ei].id === activeEntryId) activeEntryId = null; m.entryPoints.splice(ei,1); did = true; renderEntryPointsPanel(); }
     if (!did) return;
     if (mode === 'erase') renderPalette();
   } else return;
@@ -2894,7 +3149,7 @@ function overlaps(d, c, r, fw, fd) {
 }
 
 const PAINT_MODES = ['tile','crop','erase','plateau','visual-height'];   // drag-paintable
-const TAP_MODES = ['object','furniture','decor','path','river','ramp','spot','station','fill'];
+const TAP_MODES = ['object','furniture','decor','entry','path','river','ramp','spot','station','fill'];
 
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture?.(e.pointerId); ptrs.set(e.pointerId, canvasPt(e));
@@ -3116,11 +3371,13 @@ function renderMapList() {
     const submapTag = m.isSubmap ? `<span style="color:${group?.color||'#c084fc'}">⛰ ${group ? `#${group.number} ` : ''}tier ${m.elevation} ·</span> ` : '';
     return `<div class="item ${m.id===ws.activeId?'sel':''}" data-id="${m.id}" style="margin-left:${indent}px">
       <div class="item-name">${m.isSubmap ? '↳ ' : ''}${icon(m)} ${m.name}</div>
-      <div class="item-meta">${submapTag}${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations</div>
+      <div class="item-meta">${submapTag}${m.category} · ${m.cols}×${m.rows} · ${Object.keys(m.tiles).length} tiles · ${(m.routes||[]).length} routes · ${(m.rivers||[]).length} rivers · ${(m.transitions||[]).length} spots · ${(m.npcStations||[]).length} stations · ${(m.entryPoints||[]).length} entries${(m.layouts||[]).length ? ` · ${(m.layouts||[]).length} layouts` : ''}</div>
     </div>`;
   }).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
-    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null; updateAll(); fitView();
+    ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
+    activeEntryId = null; editingLayoutId = null;
+    updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);
   // Game link dropdowns
@@ -3653,7 +3910,7 @@ function runQuickCheck() {
 }
 
 function setStatus(msg) { $('statusPill').textContent = msg; }
-function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
+function updateAll() { syncViewOffset(); renderMapList(); fillSettings(); renderPalette(); renderPlateauGroupList(); renderEntryPointsPanel(); renderLayoutsPanel(); refreshPreview(); updateBrushPill(); refreshBuildingDetection(); draw(); saveWorkspace(); }
 
 // ── Game bridge: hobunji_farm_layout_v3 ──────────────────────────────────────
 function buildFarmLayoutV3() {
@@ -3882,6 +4139,8 @@ function importAny(obj) {
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
+    m.entryPoints = Array.isArray(obj.entryPoints) ? obj.entryPoints : [];
+    m.layouts = Array.isArray(obj.layouts) ? obj.layouts : [];
     m.audioIndex = obj.audioIndex || '';
     ws.maps.push(m); ws.activeId = m.id;
     captureBaseline(m);
@@ -3906,6 +4165,8 @@ function importAny(obj) {
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
+      m.entryPoints = Array.isArray(src.entryPoints) ? src.entryPoints : [];
+      m.layouts = Array.isArray(src.layouts) ? src.layouts : [];
       m.audioIndex = src.audioIndex || '';
       if (src.buildingInteriorBase) m.buildingInteriorBase = src.buildingInteriorBase;
       m.isSubmap = !!src.isSubmap;
@@ -3996,6 +4257,7 @@ $('upToParentBtn').addEventListener('click', () => {
   if (!m.isSubmap || !mapById(m.parentMapId)) return;
   ws.activeId = m.parentMapId; undoStack.length = 0; redoStack.length = 0;
   activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
+  activeEntryId = null; editingLayoutId = null;
   updateAll(); fitView();
 });
 $('newPlateauGroupBtn').addEventListener('click', () => {
@@ -4234,6 +4496,97 @@ $('delBldgBtn').addEventListener('click', () => {
   _selectedBuildingId = null;
   $('buildingCountTag').textContent = m.buildings.length;
   renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building removed.');
+});
+
+// ── Entry point panel handlers ────────────────────────────────────────────────
+$('addEntryPointBtn').addEventListener('click', () => {
+  pushUndo();
+  const m = activeMap();
+  m.entryPoints = m.entryPoints || [];
+  const id = uid('entry');
+  const cx = Math.floor((m.cols||10)/2), cr = Math.floor((m.rows||10)/2);
+  m.entryPoints.push({ id, label: `Entry ${m.entryPoints.length+1}`, col: cx, row: cr });
+  activeEntryId = id;
+  setMode('entry');
+  renderEntryPointsPanel(); draw(); refreshPreview(); saveWorkspace();
+  setStatus('Entry point added — drag it into place, or use 📍 Place on map.');
+});
+$('placeEntryPointBtn').addEventListener('click', () => {
+  if (!activeEntryId) { setStatus('Select (or +New) an entry point first.'); return; }
+  setMode('entry');
+});
+$('applyEntryPointBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const ep = (m.entryPoints || []).find(e => e.id === activeEntryId);
+  if (!ep) return;
+  pushUndo();
+  ep.label = $('entryLabel').value.trim() || ep.label;
+  ep.col = clamp(parseInt($('entryCol').value) || 0, 0, m.cols - 1);
+  ep.row = clamp(parseInt($('entryRow').value) || 0, 0, m.rows - 1);
+  renderEntryPointsPanel(); draw(); refreshPreview(); saveWorkspace(); setStatus('Entry point updated.');
+});
+$('delEntryPointBtn').addEventListener('click', () => {
+  const m = activeMap();
+  if (!activeEntryId) return;
+  pushUndo();
+  m.entryPoints = (m.entryPoints || []).filter(e => e.id !== activeEntryId);
+  activeEntryId = null;
+  renderEntryPointsPanel(); draw(); refreshPreview(); saveWorkspace(); setStatus('Entry point deleted.');
+});
+
+// ── Alternate layouts panel handlers ──────────────────────────────────────────
+$('layoutEditSelect').addEventListener('change', () => {
+  editingLayoutId = $('layoutEditSelect').value || null;
+  renderLayoutsPanel(); draw(); refreshPreview();
+});
+$('addLayoutBtn').addEventListener('click', () => {
+  pushUndo();
+  const m = activeMap();
+  m.layouts = m.layouts || [];
+  const id = uid('layout');
+  m.layouts.push({ id, name: 'New layout', priority: 0, conditions: [], decor: JSON.parse(JSON.stringify(m.decor || [])) });
+  editingLayoutId = id;
+  renderLayoutsPanel(); draw(); refreshPreview(); saveWorkspace();
+  setStatus('New layout created as a copy of the base decor — rearrange it with the 🪑 Decor tool, then set its conditions below.');
+});
+$('cloneBaseDecorBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const lay = currentLayoutObj(m);
+  if (!lay) { setStatus('Select a layout first.'); return; }
+  pushUndo();
+  lay.decor = JSON.parse(JSON.stringify(m.decor || []));
+  draw(); refreshPreview(); saveWorkspace(); setStatus(`Cloned base decor into "${lay.name || lay.id}".`);
+});
+$('applyLayoutBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const lay = currentLayoutObj(m);
+  if (!lay) return;
+  pushUndo();
+  lay.name = $('layoutName').value.trim() || lay.name;
+  lay.priority = Number($('layoutPriority').value) || 0;
+  const entryPointId = $('layoutEntryPoint').value;
+  if (entryPointId) lay.entryPointId = entryPointId; else delete lay.entryPointId;
+  const cond = {};
+  const from = $('layoutCondFrom').value.trim(), to = $('layoutCondTo').value.trim();
+  if (from && to) { cond.from = from; cond.to = to; }
+  const days = readSelectedLayoutDays(); if (days.length) cond.days = days;
+  const fm = Number($('layoutCondFromMonth').value) || 0, fd = Number($('layoutCondFromDay').value) || 0,
+        tm = Number($('layoutCondToMonth').value) || 0, td = Number($('layoutCondToDay').value) || 0;
+  if (fm && fd && tm && td) { cond.dateFrom = { month: fm, day: fd }; cond.dateTo = { month: tm, day: td }; }
+  const flag = $('layoutCondFlag').value.trim(); if (flag) cond.flag = flag;
+  lay.conditions = Object.keys(cond).length ? [cond] : [];
+  renderLayoutsPanel(); refreshPreview(); saveWorkspace();
+  setStatus(`Layout "${lay.name}" updated.${!lay.conditions.length ? ' No conditions set — it will never auto-activate.' : ''}`);
+});
+$('delLayoutBtn').addEventListener('click', () => {
+  const m = activeMap();
+  const lay = currentLayoutObj(m);
+  if (!lay) return;
+  if (!confirm(`Delete layout "${lay.name || lay.id}"?`)) return;
+  pushUndo();
+  m.layouts = (m.layouts || []).filter(l => l.id !== lay.id);
+  editingLayoutId = null;
+  renderLayoutsPanel(); draw(); refreshPreview(); saveWorkspace(); setStatus('Layout deleted.');
 });
 
 $('toggle3dBtn').addEventListener('click', () => toggle3D());
