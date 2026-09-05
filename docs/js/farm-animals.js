@@ -142,28 +142,52 @@
     return { ok: true, message: troughIndex != null ? `${rec.name} assigned to trough ${troughIndex + 1}.` : `${rec.name} unassigned from its trough.` };
   }
 
+  // kind|frame|sig|blink -> {front, back} CanvasTexture, so every distinct
+  // genotype/blink combo gets composited and uploaded to the GPU exactly
+  // once and is then reused forever — the same cache-by-signature pattern
+  // game.js's own _getGenotypeTextures uses for wild/companion creatures.
+  // Without this, every single blink toggle (see _tickFarmAnimalBlink,
+  // which fires repeatedly for as long as a genotype-bearing animal is
+  // alive) minted a brand-new CanvasTexture pair and dropped the previous
+  // pair's material.map reference without ever calling .dispose() on it —
+  // a real, unbounded WebGL texture leak whose rate scales with both how
+  // many genotype animals a save has accumulated (bred up over long play
+  // sessions) and how long the farm stays loaded, which is exactly what
+  // was crashing long-lived saves on mobile from GPU-memory exhaustion.
+  const _farmGenotypeTexCache = new Map();
+
   // Composites a genotype's textures onto an animal's front/back planes —
   // shared by both factories' initial one-shot compose below and their
   // per-frame blink-toggle recompose (item 3): a farm animal never runs,
   // so there's no per-frame retry loop the way the wild/companion
   // CREATURE_DB path needs via updateCreatureAnimFrame, but blinking still
-  // needs a fresh compose each time window.CreatureBlink's eyes-open/shut
-  // state actually flips. Resolves true once a real composited texture
-  // got applied, false otherwise (no genotype, no renderer, or a failed
-  // compose) — callers use this to know whether to retry.
+  // needs the composite reapplied each time window.CreatureBlink's
+  // eyes-open/shut state actually flips. Resolves true once a real
+  // composited texture got applied, false otherwise (no genotype, no
+  // renderer, or a failed compose) — callers use this to know whether to
+  // retry.
   function _applyGenotypeCompositeTexture(avatarRef, kind, frame, genotype, blinkShut) {
     if (!genotype || !window.CreatureGeneticsRender) return Promise.resolve(false);
+    const sig = window.CreatureGeneticsRender.genotypeSignature(kind, genotype);
+    const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
+    const applyCached = (tex) => {
+      for (const child of avatarRef.group.children) {
+        if (!child.material) continue;
+        if (child.name.endsWith('_front_plane')) { child.material.map = tex.front; child.material.needsUpdate = true; }
+        else if (child.name.endsWith('_back_plane')) { child.material.map = tex.back; child.material.needsUpdate = true; }
+      }
+      return true;
+    };
+    const cached = _farmGenotypeTexCache.get(key);
+    if (cached) return Promise.resolve(applyCached(cached));
     return window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
       if (!canvas) return false;
       const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
       const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
       backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
-      for (const child of avatarRef.group.children) {
-        if (!child.material) continue;
-        if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
-        else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
-      }
-      return true;
+      const tex = { front: frontTex, back: backTex };
+      _farmGenotypeTexCache.set(key, tex);
+      return applyCached(tex);
     }).catch(() => false);
   }
 
