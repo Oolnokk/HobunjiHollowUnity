@@ -499,6 +499,13 @@
       if (thrownCharge?.pointerId === event.pointerId) cancelThrownCharge('pointer-cancel');
     }, true);
 
+    // A lost release (alt-tab, app switch) must not leave the player parked in the
+    // charging windup pose forever — same convention as combat-input.js's abortAllPresses.
+    window.addEventListener('blur', () => { if (thrownCharge) cancelThrownCharge('window-blur'); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && thrownCharge) cancelThrownCharge('visibility-hidden');
+    });
+
     window.addEventListener('keyup', event => {
       if (thrownCharge && desktopBindingFor('action1') === event.code) releaseThrownCharge('desktop-keyup');
     }, true);

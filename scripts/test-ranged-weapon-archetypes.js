@@ -65,13 +65,15 @@ const windowObject = {
   },
   WeaponToolStances: { refreshDefinitions: () => {} },
   InputBindings: { getCurrentBindings: () => ({ desktop: { action1: 'KeyF' }, controller: { action1: 'Button0' } }) },
-  addEventListener: () => {},
   __farmLog: () => {},
 };
+const windowListeners = {}; // Captures window-level listeners (e.g. 'blur') so the test can fire them directly.
+windowObject.addEventListener = (type, listener) => { windowListeners[type] = listener; };
+const documentListeners = {}; // Captures document-level listeners (e.g. 'visibilitychange') so the test can fire them directly.
 
 const context = {
   window: windowObject,
-  document: { readyState: 'complete' },
+  document: { readyState: 'complete', addEventListener: (type, listener) => { documentListeners[type] = listener; } },
   navigator: { getGamepads: () => [] },
   performance: { now: () => now },
   Date,
@@ -137,5 +139,25 @@ assert.deepStrictEqual(baseStarts, [{ itemKey: 'kylie_copper', loaded: true }]);
 
 assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('bshuakauitl_copper'), true, 'Blowgun should retain ordinary load/fire start behavior.');
 assert.strictEqual(baseStarts.at(-1).itemKey, 'bshuakauitl_copper');
+
+// A lost release (alt-tab, app switch) must not leave the player parked in the
+// charging windup pose forever -- regression guard for a missing blur/visibilitychange
+// handler that could otherwise strand thrownCharge indefinitely (see combat-input.js's
+// own abortAllPresses convention for the same class of bug on melee holds).
+assert.ok(windowListeners.blur, 'installInputBridge must register a window blur handler for thrown charges.');
+assert.ok(documentListeners.visibilitychange, 'installInputBridge must register a document visibilitychange handler for thrown charges.');
+assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), true, 'Kylie press should begin a thrown hold.');
+assert.ok(windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot().thrownCharge, 'a charge must be active before simulating focus loss.');
+windowListeners.blur();
+let snapshot = windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot();
+assert.strictEqual(snapshot.thrownCharge, null, 'window blur must cancel an in-progress thrown charge.');
+assert.strictEqual(snapshot.lastRelease.type, 'cancelled', 'window blur must report the charge as cancelled, not released.');
+
+assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), true, 'Kylie press should begin another thrown hold.');
+context.document.hidden = true;
+documentListeners.visibilitychange();
+snapshot = windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot();
+assert.strictEqual(snapshot.thrownCharge, null, 'tab hide (document.hidden) must cancel an in-progress thrown charge.');
+assert.strictEqual(snapshot.lastRelease.type, 'cancelled', 'tab hide must report the charge as cancelled, not released.');
 
 console.log('PASS ranged weapon archetypes');

@@ -88,7 +88,7 @@
   }
 
   function build(options={}) {
-    if(!window.THREE||!window.RootTotemPlants?.buildRootTotemPlant)return new THREE.Group();
+    if(!window.THREE||!window.RootTotemPlants?.buildRootTotemPlant)return new window.THREE.Group();
     const recipe={...CFG.canonicalRecipe,...(options.rootTotemPlant||options.recipe||options||{})};
     const group=new THREE.Group();
     group.name='lifeTotemFurniture';
