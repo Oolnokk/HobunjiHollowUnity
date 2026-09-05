@@ -361,6 +361,13 @@
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
   <script src="js/calendar-system.js?v=20260830release1"></script>
+  <!-- Resolves a map/interior's active alternate `layouts` entry (see
+       docs/config/maps/map_i_temple.json's spirit_communion layout) against
+       the current calendar time — window.MapLayoutSystem. Pure/stateless, no
+       load-order dependency on anything else here; game.js calls into it
+       from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
+       check. -->
+  <script src="js/map-layout-system.js?v=20260905layouts1"></script>
   <!-- Relationships menu tab render (window.RelationshipsPanel) —
        self-contained aside from deps injected via init(), and reads
        window.DialogueContent/window.ProceduralTasks at render time (already

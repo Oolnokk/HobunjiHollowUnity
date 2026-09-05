@@ -8603,6 +8603,19 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       window.HobunjiCacheAudit?.register('game.buildingScenes (loaded interiors)', () => _buildingScenes.size);
+      // mapId → the `layouts` entry id (or 'default') actually baked into
+      // that map's currently-live _buildingScenes entry — compared against
+      // window.MapLayoutSystem's live resolution to notice a scheduled
+      // layout (e.g. spirit_communion) starting/ending; see
+      // checkMapLayoutChanges/performLiveLayoutSwap.
+      const _activeLayoutByMap = new Map();
+      // mapId → the raw (pre-layout-resolution) mapData last loaded for it —
+      // kept alongside _buildingScenes so checkMapLayoutChanges can cheaply
+      // re-resolve "what layout should be active right now" without
+      // re-fetching config/maps/<id>.json.
+      const _rawMapDataByMapId = new Map();
+      let _layoutSwapInProgress = false;
+      let _layoutCheckAccumS = 0; // Real seconds since checkMapLayoutChanges last ran — see its call in gameLoop.
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
       // being purely decorative (e.g. the Alchemy Table, the Bulletin
@@ -11172,7 +11185,20 @@
                 for (const t of data.tiles) d[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' };
                 data.tiles = d;
               }
-              return data;
+              // Exterior maps (hobunji_map.v1) get their `layouts` resolved
+              // here, once, at boot — e.g. a festival's decor/buildings
+              // override renders correctly if the game happens to load
+              // during its scheduled window. Interiors resolve their own
+              // `layouts` independently inside loadBuildingScene (which
+              // re-fetches config/maps/<id>.json itself), so this only
+              // actually changes anything for schema:'hobunji_map.v1'.
+              // Unlike an authored interior, the always-resident exterior
+              // scene (buildTownScene/buildZoneScene) has no safe in-place
+              // rebuild for a map already loaded this session — see
+              // checkMapLayoutChanges's own comment — so an exterior
+              // layout's window opening/closing mid-session takes effect on
+              // the next fresh load rather than live.
+              return window.MapLayoutSystem.getEffectiveMapData(data, window.MapLayoutSystem.currentSnapshot());
             } catch(_) { return m; }
           }));
           _workspaceMaps = resolvedMaps;
@@ -11642,6 +11668,31 @@
         _zoneMinedRockPersist.delete(mapId);
       }
 
+      // Same dispose-then-forget shape as discardGeneratedMineFloor above,
+      // just for any ordinary authored interior (not just generated mine
+      // floors) — used to force loadBuildingScene to rebuild a room from
+      // scratch once its resolved `layouts` entry has actually changed (see
+      // performLiveLayoutSwap). Safe to call whether or not the player is
+      // currently standing in mapId; only removes the player/tool meshes
+      // from the outgoing scene when they actually are.
+      function discardBuildingScene(mapId) {
+        const info = _buildingScenes.get(mapId);
+        if (!info?.scene) { _buildingScenes.delete(mapId); return; }
+        if (currentArea === mapId) {
+          info.scene.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
+        }
+        for (const creature of [...hostileObjects]) {
+          if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
+          hostileObjects.delete(creature);
+          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+          creature.mesh?.parent?.remove(creature.mesh);
+          creature.groundShadow?.parent?.remove(creature.groundShadow);
+        }
+        info.scene.traverse(object => object.geometry?.dispose?.());
+        info.scene.clear();
+        _buildingScenes.delete(mapId);
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -11699,6 +11750,18 @@
           }
         }
         }
+
+        // Swap in whichever `layouts` entry (if any) currently matches the
+        // calendar — e.g. the temple's benches-to-the-walls/rug-away/
+        // campfire "spirit_communion" layout during its scheduled window.
+        // Pure/non-destructive (mapData.layouts itself is untouched), so
+        // resolving an already-resolved mapData again later is harmless —
+        // see performLiveLayoutSwap, which re-enters this same function.
+        if (mapData) {
+          _rawMapDataByMapId.set(mapId, mapData);
+          mapData = window.MapLayoutSystem.getEffectiveMapData(mapData, window.MapLayoutSystem.currentSnapshot());
+        }
+        _activeLayoutByMap.set(mapId, mapData?.activeLayoutId || 'default');
 
         // ── hobunji_building_interior.v1 schema ──────────────────────────
         if (mapData?.schema === 'hobunji_building_interior.v1') {
@@ -12279,6 +12342,17 @@
 
       function enterBuilding(mapId, defaultCol, defaultRow) {
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
+        // A room visited earlier this session and still cached may no longer
+        // match its own `layouts` schedule (e.g. the temple's spirit
+        // communion window opened or closed while the player was elsewhere)
+        // — force a fresh rebuild on this ordinary door-entry instead of
+        // showing the stale cached furniture. Doesn't apply to the "already
+        // standing inside" case; that's performLiveLayoutSwap's job.
+        if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) != null) {
+          const rawMapData = _rawMapDataByMapId.get(mapId);
+          const wantLayoutId = rawMapData ? (window.MapLayoutSystem.resolveActiveLayout(rawMapData, window.MapLayoutSystem.currentSnapshot())?.id || 'default') : 'default';
+          if (wantLayoutId !== _activeLayoutByMap.get(mapId)) discardBuildingScene(mapId);
+        }
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
           : currentArea === 'town' ? townScene : scene;
@@ -12332,6 +12406,69 @@
         // (discardGeneratedMineFloor previously only ran for the same-floor
         // re-entry case) without having been independently verified safe.
       }
+
+      // Resolves once _buildingScenes actually holds mapId's freshly (re)built
+      // scene — enterBuilding kicks loadBuildingScene off without awaiting it
+      // (see its own "resolves asynchronously" comment above), so
+      // performLiveLayoutSwap awaits this instead of racing the iris reopen
+      // against a still-empty room.
+      function waitForBuildingSceneReady(mapId, timeoutMs = 4000) {
+        return new Promise(resolve => {
+          const start = performance.now();
+          (function poll() {
+            if (_buildingScenes.get(mapId) || performance.now() - start > timeoutMs) { resolve(); return; }
+            requestAnimationFrame(poll);
+          })();
+        });
+      }
+
+      // The player is standing inside mapId right now and its resolved
+      // `layouts` entry (e.g. the temple's spirit_communion window) just
+      // started or ended — rebuild the room and drop the player at one of
+      // its authored entry points behind the same iris wipe the Wait-in-
+      // chair/Sleep time-skip uses (see checkMapLayoutChanges for the two
+      // triggers: an explicit time-passage skip, and ordinary real-time hour
+      // rollover while the player just happens to already be inside).
+      async function performLiveLayoutSwap(mapId) {
+        if (_layoutSwapInProgress) return;
+        const rawMapData = _rawMapDataByMapId.get(mapId);
+        if (!rawMapData) return;
+        const snapshot = window.MapLayoutSystem.currentSnapshot();
+        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, snapshot);
+        const nextLayoutId = nextLayout?.id || 'default';
+        if (nextLayoutId === _activeLayoutByMap.get(mapId)) return;
+        _layoutSwapInProgress = true;
+        try {
+          await window.CalendarSystem.runScreenTransition(async () => {
+            const fromCol = Math.floor(player.x / TILE), fromRow = Math.floor(player.y / TILE);
+            const entry = window.MapLayoutSystem.pickEntryPoint(rawMapData, { layout: nextLayout, fromCol, fromRow });
+            discardBuildingScene(mapId);
+            enterBuilding(mapId, entry?.col, entry?.row);
+            await waitForBuildingSceneReady(mapId);
+          });
+          window.__farmLog?.(`[layout] ${mapId} -> ${nextLayoutId}`);
+        } finally {
+          _layoutSwapInProgress = false;
+        }
+      }
+
+      // Two triggers: (1) window.dispatchEvent('hobunji-time-passage') right
+      // after a Wait-in-chair/Sleep skip (see the listener below), and (2)
+      // gameLoop's own throttled call, covering ordinary real-time hour
+      // rollover for a player who's simply standing inside when a scheduled
+      // layout's window opens or closes without ever opening the Wait menu.
+      // Scoped to authored interiors only (see _isBuildingArea) — the
+      // always-resident exterior town scene has no rebuild-in-place path
+      // today (buildTownScene builds once per page load; see its own
+      // _townSceneBuilt guard), so an exterior `layouts` entry currently
+      // takes effect on the next fresh load/session rather than live.
+      function checkMapLayoutChanges() {
+        if (_layoutSwapInProgress) return;
+        if (!_isBuildingArea(currentArea) || !_buildingScenes.has(currentArea)) return;
+        performLiveLayoutSwap(currentArea);
+      }
+
+      window.addEventListener('hobunji-time-passage', checkMapLayoutChanges);
 
       function exitBuilding() {
         if (!_isBuildingArea(currentArea)) return;
@@ -21142,6 +21279,8 @@
 
         if (!paused) {
           updateCalendar(dt);
+          _layoutCheckAccumS += dt;
+          if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
           updateMeleeAutoTarget(dt);

@@ -151,6 +151,30 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
 
     <div class="section">
+      <h2>3d. Entry points <span class="qhelp" data-help="bia-entry-points">?</span></h2>
+      <div class="row" style="flex-wrap:wrap;gap:5px">
+        <button id="addEntryBtn">+ New entry point</button>
+        <button id="toolPlaceEntry">Place on grid</button>
+      </div>
+      <div id="entryPointList" style="margin-top:6px;display:flex;flex-direction:column;gap:5px"></div>
+      <div id="entryPointFields" class="hidden" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+        <div class="grid2">
+          <div class="field"><label>Label</label><input id="entryLabel" placeholder="Main Doors"></div>
+          <div class="field"><label>Col / Row</label>
+            <div class="row" style="margin:0;gap:4px">
+              <input id="entryCol" type="number" min="0" value="0" style="width:50%">
+              <input id="entryRow" type="number" min="0" value="0" style="width:50%">
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="applyEntryBtn">Apply</button>
+          <button id="delEntryBtn" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
       <h2>4. Furniture catalog</h2>
       <div class="field" style="margin-bottom:6px">
         <label>Active item</label>
@@ -221,7 +245,57 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
 
     <div class="section">
-      <h2>8. Import / export</h2>
+      <h2>8. Alternate layouts <span class="qhelp" data-help="bia-layouts">?</span></h2>
+      <p class="hint">A layout swaps this room's furniture for a special occasion (a festival, a ritual) — the game plays the same black-iris wipe used for waiting/sleeping, then drops the player at an entry point above to find the room changed. Pick one below, then use the floor plan / furniture tools as normal: while a layout (not Base) is selected, placing/moving/deleting furniture edits <em>that layout's</em> furniture instead of the base room's.</p>
+      <div class="field" style="margin:8px 0 6px">
+        <label>Now editing</label>
+        <select id="layoutEditSelect"><option value="">Base (default)</option></select>
+      </div>
+      <div class="row">
+        <button id="addLayoutBtn">+ New layout</button>
+        <button id="cloneBaseIntoLayoutBtn">Clone base furniture in</button>
+      </div>
+      <div id="layoutFields" class="hidden" style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px">
+        <div class="grid2">
+          <div class="field"><label>Name</label><input id="layoutName" placeholder="Spirit Communion"></div>
+          <div class="field"><label>Priority</label><input id="layoutPriority" type="number" value="0"></div>
+        </div>
+        <div class="field" style="margin-top:4px"><label>Entry point on activate</label><select id="layoutEntryPoint"><option value="">Auto (nearest to player)</option></select></div>
+        <div style="margin-top:8px">
+          <div class="row" style="justify-content:space-between">
+            <b style="font-size:12px;color:#c9d8f3">When active</b>
+            <span class="chip">any one below is enough (OR)</span>
+          </div>
+          <div class="field" style="margin-top:4px"><label>Time of day (blank = all day)</label>
+            <div class="row" style="margin:0;gap:4px">
+              <input id="layoutCondFrom" placeholder="18:00" style="width:50%">
+              <input id="layoutCondTo" placeholder="21:00" style="width:50%">
+            </div>
+          </div>
+          <div class="field" style="margin-top:6px"><label>Days (blank = every day)</label>
+            <div class="row" id="layoutCondDays" style="margin:0;gap:3px;flex-wrap:wrap"></div>
+          </div>
+          <div class="field" style="margin-top:6px"><label>Date range (blank = every year) — month/day, both ends</label>
+            <div class="row" style="margin:0;gap:4px">
+              <input id="layoutCondFromMonth" type="number" min="1" max="12" placeholder="mo" style="width:25%">
+              <input id="layoutCondFromDay" type="number" min="1" max="28" placeholder="day" style="width:25%">
+              <span style="align-self:center">→</span>
+              <input id="layoutCondToMonth" type="number" min="1" max="12" placeholder="mo" style="width:25%">
+              <input id="layoutCondToDay" type="number" min="1" max="28" placeholder="day" style="width:25%">
+            </div>
+          </div>
+          <div class="field" style="margin-top:6px"><label>World-state flag (blank = ignore)</label><input id="layoutCondFlag" placeholder="harvestFestivalActive"></div>
+          <p class="hint" style="margin-top:4px">Need this layout to trigger on several unrelated windows (OR)? Edit the JSON's <code>conditions</code> array directly below — Copy JSON, edit, Import JSON back in.</p>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="applyLayoutBtn">Apply</button>
+          <button id="delLayoutBtn" class="danger">Delete layout</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>9. Import / export</h2>
       <div class="row">
         <label class="fileButton" for="importInput">Import JSON</label>
         <input id="importInput" class="hidden" type="file" accept=".json,application/json">
@@ -255,6 +329,8 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 // for the full explanation; only QHELP's contents differ per tool.
 var QHELP = {
   'bia-exit-target': { title: 'Target map', body: 'Leave blank for this interior\'s one Front Door (leads back outside — the map wall-builder cuts a gap here, and the exterior side computes its spawn point from this zone). Any other exit (stairs, another room) needs a real map id here, e.g. "map_i_inn_F2".' },
+  'bia-entry-points': { title: 'Entry points', body: 'Named spots the player can be dropped at inside this room — used when an alternate layout activates while they\'re already standing here (they\'re moved to whichever entry point is nearest their current position, or the one that layout names explicitly). Not required: a room with none authored falls back to its usual door-based spawn.' },
+  'bia-layouts': { title: 'Alternate layouts', body: 'A layout is a full replacement furniture set for this room, shown instead of the base layout whenever its conditions match the current calendar time. Only one plus the base can ever be "live" at once — if two layouts\' conditions both match, the higher Priority wins. A layout with no conditions at all never activates on its own.' },
 };
 function showHelp(btn) {
   var entry = QHELP[btn.getAttribute('data-help')];
@@ -356,7 +432,8 @@ function makeBlank(){
   var cols=12, rows=10, floor=[];
   for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
   return { schema:'hobunji_building_interior.v1', id:'map_i_building_01', name:'Building Interior',
-           cols:cols, rows:rows, exits:[], colliders:[], vendorZones:[], floor:floor, furniture:[] };
+           cols:cols, rows:rows, exits:[], colliders:[], vendorZones:[], floor:floor, furniture:[],
+           entryPoints:[], layouts:[] };
 }
 
 var state = {
@@ -367,11 +444,39 @@ var state = {
   selectedId: null,
   activeExitId: null,
   activeVendorId: null,
+  activeEntryId: null,
+  editingLayoutId: null, // null = editing the base room; otherwise a state.interior.layouts[] id — see currentLayoutObj/activeFurniture.
   library: [],
   dragging: false,
   dragFurn: null,
   dragOff: null,
 };
+
+// Same weekday names as docs/js/calendar-system.js's WEEKDAY_NAMES — this
+// standalone tool has no dependency on that module, so the list is kept in
+// sync by hand (same pattern as this file's own duplicated furniture catalog
+// data — every editor tool here is deliberately self-contained).
+var WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung'];
+
+// A layout being edited redirects every existing furniture call site (drawGrid,
+// gridAction, selectFurn, rebuild3D, ...) at this one seam instead of a much
+// larger refactor — state.interior itself (and thus JSON.stringify/export/
+// undo snapshots) always stays the true, unmodified room data; only these two
+// accessors know a layout might be "borrowing" the furniture tools right now.
+function currentLayoutObj(){
+  if(!state.editingLayoutId) return null;
+  return (state.interior.layouts||[]).filter(function(l){return l.id===state.editingLayoutId;})[0] || null;
+}
+function activeFurniture(){
+  var lay=currentLayoutObj();
+  if(!lay) return state.interior.furniture;
+  if(!lay.furniture) lay.furniture=[];
+  return lay.furniture;
+}
+function setActiveFurniture(arr){
+  var lay=currentLayoutObj();
+  if(lay) lay.furniture=arr; else state.interior.furniture=arr;
+}
 
 function syncFloorSet(){
   state.floorSet = new Set();
@@ -452,8 +557,20 @@ function drawGrid(){
     });
   });
 
-  // Furniture
-  state.interior.furniture.forEach(function(f){
+  // Entry points
+  (state.interior.entryPoints||[]).forEach(function(ep,ei){
+    var isActive=ep.id===state.activeEntryId;
+    gx.beginPath(); gx.arc((ep.col+0.5)*cw,(ep.row+0.5)*ch,Math.min(cw,ch)*0.28,0,Math.PI*2);
+    gx.fillStyle=isActive?'rgba(140,255,180,0.9)':'rgba(90,220,140,0.6)'; gx.fill();
+    gx.strokeStyle=isActive?'#fff':'#5adc8c'; gx.lineWidth=isActive?2:1; gx.stroke();
+    var fs=Math.max(6,Math.min(10,cw*0.3));
+    gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
+    gx.fillStyle='#08150d'; gx.fillText('S'+(ei+1),(ep.col+0.5)*cw,(ep.row+0.5)*ch);
+  });
+
+  // Furniture — from the currently-edited layout if one is selected (see
+  // activeFurniture), otherwise the base room's own furniture.
+  activeFurniture().forEach(function(f){
     var cat=catOf(f.itemKey), sel=f.id===state.selectedId;
     gx.fillStyle=sel?'#76b8ff':catColHex(f.itemKey); gx.globalAlpha=sel?0.9:0.7;
     gx.fillRect(f.col*cw+2,f.row*ch+2,cat.fw*cw-4,cat.fd*ch-4);
@@ -473,7 +590,8 @@ function drawGrid(){
   for(var r=0;r<=rows;r++){ gx.beginPath(); gx.moveTo(0,r*ch); gx.lineTo(W,r*ch); gx.stroke(); }
 
   var nColl=(state.interior.colliders||[]).length, nEZ=(state.interior.exits||[]).length, nVZ=(state.interior.vendorZones||[]).length;
-  $('viewStats').textContent=state.floorSet.size+' tiles | '+state.interior.furniture.length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' coll':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
+  var lay=currentLayoutObj();
+  $('viewStats').textContent=(lay?('✎ '+(lay.name||lay.id)+' | '):'')+state.floorSet.size+' tiles | '+activeFurniture().length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' coll':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
 }
 
 function gridCell(e){
@@ -483,8 +601,9 @@ function gridCell(e){
 }
 function inGrid(c,r){ return c>=0&&r>=0&&c<state.interior.cols&&r<state.interior.rows; }
 function furnAt(c,r){
-  for(var i=0;i<state.interior.furniture.length;i++){
-    var f=state.interior.furniture[i], cat=catOf(f.itemKey);
+  var arr=activeFurniture();
+  for(var i=0;i<arr.length;i++){
+    var f=arr[i], cat=catOf(f.itemKey);
     if(c>=f.col&&c<f.col+cat.fw&&r>=f.row&&r<f.row+cat.fd) return f;
   }
   return null;
@@ -501,12 +620,12 @@ function gridAction(e){
   else if(tool==='eraseFloor'){
     if(state.floorSet.has(key)){
       state.floorSet.delete(key);
-      interior.furniture=interior.furniture.filter(function(f){
+      setActiveFurniture(activeFurniture().filter(function(f){
         var cat=catOf(f.itemKey);
         for(var dc=0;dc<cat.fw;dc++) for(var dd=0;dd<cat.fd;dd++)
           if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
-      });
+      }));
       (interior.exits||[]).forEach(function(ez){ ez.tiles=(ez.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
       (interior.vendorZones||[]).forEach(function(vz){ vz.tiles=(vz.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
       syncFloorFromSet(); drawGrid(); rebuild3D();
@@ -516,6 +635,13 @@ function gridAction(e){
     if(!isFloor(c,r)){ log('Exit must be on a floor tile.','warn'); return; }
     interior.exit={col:c,row:r}; drawGrid(); rebuild3D();
   }
+  else if(tool==='placeEntry'){
+    if(!state.activeEntryId){ log('Select (or create) an entry point first.','warn'); return; }
+    var ep=(interior.entryPoints||[]).filter(function(x){return x.id===state.activeEntryId;})[0]; if(!ep) return;
+    if(!isFloor(c,r)){ log('Entry points must be on a floor tile.','warn'); return; }
+    ep.col=c; ep.row=r; $('entryCol').value=c; $('entryRow').value=r;
+    drawGrid(); rebuild3D();
+  }
   else if(tool==='furniture'){
     if(!isFloor(c,r)){ log('Furniture must be on a floor tile.','warn'); return; }
     var cat=catOf(state.activeKey);
@@ -524,7 +650,7 @@ function gridAction(e){
         { log('Not enough floor space here.','warn'); return; }
     var existing=furnAt(c,r);
     if(existing){ selectFurn(existing.id); return; }
-    interior.furniture.push({id:newId(),itemKey:state.activeKey,col:c,row:r,rotY:0,postX:0,postY:0,postZ:0});
+    activeFurniture().push({id:newId(),itemKey:state.activeKey,col:c,row:r,rotY:0,postX:0,postY:0,postZ:0});
     drawGrid(); rebuild3D();
   }
   else if(tool==='select'){
@@ -540,7 +666,7 @@ function gridAction(e){
   }
   else if(tool==='erase'){
     var f=furnAt(c,r);
-    if(f){ interior.furniture=interior.furniture.filter(function(x){return x.id!==f.id;}); if(state.selectedId===f.id) selectFurn(null); drawGrid(); rebuild3D(); }
+    if(f){ setActiveFurniture(activeFurniture().filter(function(x){return x.id!==f.id;})); if(state.selectedId===f.id) selectFurn(null); drawGrid(); rebuild3D(); }
   }
   else if(tool==='paintCollider'){
     if(!interior.colliders) interior.colliders=[];
@@ -620,7 +746,7 @@ gc.addEventListener('pointerleave',function(){
 });
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
-var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor'};
+var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor',placeEntry:'toolPlaceEntry'};
 function setTool(t){
   state.tool=t;
   Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).classList.toggle('active',k===t); });
@@ -648,10 +774,21 @@ function updateCatHL(){
   document.querySelectorAll('.catBtn').forEach(function(b){ b.classList.toggle('active',b.dataset.key===state.activeKey); });
 }
 
+// Every furniture array in this file (base + every layout's own) — used only
+// by structural room edits (grid resize, clear floor) that must stay
+// consistent no matter which one happens to be selected for interactive
+// editing right now; see activeFurniture for the single-array accessor used
+// everywhere else.
+function allFurnitureArrays(){
+  var arrs=[state.interior.furniture];
+  (state.interior.layouts||[]).forEach(function(l){ arrs.push(l.furniture||(l.furniture=[])); });
+  return arrs;
+}
+
 // ─── Selection UI ─────────────────────────────────────────────────────────────
 function selectFurn(id){
   state.selectedId=id;
-  var f=id?state.interior.furniture.filter(function(x){return x.id===id;})[0]:null;
+  var f=id?activeFurniture().filter(function(x){return x.id===id;})[0]:null;
   if(f){
     $('noSelMsg').classList.add('hidden'); $('selFields').classList.remove('hidden');
     var cat=catOf(f.itemKey);
@@ -670,7 +807,7 @@ function selectFurn(id){
   drawGrid();
 }
 $('applyPTBtn').addEventListener('click',function(){
-  var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo();
   f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
   f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
@@ -678,12 +815,12 @@ $('applyPTBtn').addEventListener('click',function(){
   rebuild3D();
 });
 $('resetPTBtn').addEventListener('click',function(){
-  var f=state.interior.furniture.filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo(); f.rotY=0; f.postX=0; f.postY=0; f.postZ=0; f.postSX=1; f.postSY=1; f.postSZ=1; delete f.postScale; rebuild3D(); selectFurn(state.selectedId);
 });
 $('delFurnBtn').addEventListener('click',function(){
   if(!state.selectedId) return; pushUndo();
-  state.interior.furniture=state.interior.furniture.filter(function(x){return x.id!==state.selectedId;});
+  setActiveFurniture(activeFurniture().filter(function(x){return x.id!==state.selectedId;}));
   selectFurn(null); drawGrid(); rebuild3D();
 });
 
@@ -695,11 +832,13 @@ $('applyGridBtn').addEventListener('click',function(){
   state.interior.cols=cols; state.interior.rows=rows;
   state.interior.floor=(state.interior.floor||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
   syncFloorSet();
-  state.interior.furniture=state.interior.furniture.filter(function(f){
-    var cat=catOf(f.itemKey); return f.col+cat.fw<=cols&&f.row+cat.fd<=rows;
+  allFurnitureArrays().forEach(function(arr){
+    var kept=arr.filter(function(f){ var cat=catOf(f.itemKey); return f.col+cat.fw<=cols&&f.row+cat.fd<=rows; });
+    arr.length=0; Array.prototype.push.apply(arr,kept);
   });
   (state.interior.exits||[]).forEach(function(e){ e.tiles=(e.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
   (state.interior.vendorZones||[]).forEach(function(v){ v.tiles=(v.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
+  (state.interior.entryPoints||[]).forEach(function(ep){ if(ep.col>=cols||ep.row>=rows){ep.col=0;ep.row=0;} });
   state.interior.colliders=(state.interior.colliders||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
   drawGrid(); rebuild3D(); log('Grid '+cols+'x'+rows);
 });
@@ -710,7 +849,8 @@ $('fillRectBtn').addEventListener('click',function(){
   state.interior.floor=floor; syncFloorSet(); drawGrid(); rebuild3D(); log('Filled rectangle.');
 });
 $('clearFloorBtn').addEventListener('click',function(){
-  pushUndo(); state.interior.floor=[]; syncFloorSet(); state.interior.furniture=[];
+  pushUndo(); state.interior.floor=[]; syncFloorSet();
+  allFurnitureArrays().forEach(function(arr){ arr.length=0; });
   (state.interior.exits||[]).forEach(function(e){e.tiles=[];});
   (state.interior.vendorZones||[]).forEach(function(v){v.tiles=[];});
   selectFurn(null); drawGrid(); rebuild3D(); log('Floor cleared.');
@@ -822,6 +962,154 @@ $('delVendorBtn').addEventListener('click',function(){
   renderVendorList(); drawGrid(); rebuild3D();
 });
 
+// ─── Entry point management ────────────────────────────────────────────────────
+// A single named point the player can be dropped at — used by
+// window.MapLayoutSystem.pickEntryPoint (docs/js/map-layout-system.js) when a
+// layout switch (or a fresh door-entry into a stale cached room) needs
+// somewhere sane to place them. Always base-level (never per-layout): the
+// room's physical entry points don't change just because its furniture does.
+function renderEntryList(){
+  var el=$('entryPointList'); el.innerHTML='';
+  (state.interior.entryPoints||[]).forEach(function(ep){
+    var isActive=ep.id===state.activeEntryId;
+    var div=document.createElement('div'); div.className='listItem';
+    div.style.outline=isActive?'2px solid #5adc8c':'';
+    div.innerHTML='<span><b>'+(ep.label||ep.id)+'</b><br><span class="chip">col '+ep.col+', row '+ep.row+'</span></span>'+
+      '<button type="button" onclick="window.__biaSelEntry(\''+ep.id+'\')">Edit</button>';
+    el.appendChild(div);
+  });
+}
+window.__biaSelEntry=function(id){
+  var ep=(state.interior.entryPoints||[]).filter(function(e){return e.id===id;})[0]; if(!ep) return;
+  state.activeEntryId=id;
+  $('entryPointFields').classList.remove('hidden');
+  $('entryLabel').value=ep.label||'';
+  $('entryCol').value=ep.col||0; $('entryRow').value=ep.row||0;
+  setTool('placeEntry'); renderEntryList(); drawGrid();
+};
+$('addEntryBtn').addEventListener('click',function(){
+  pushUndo();
+  if(!state.interior.entryPoints) state.interior.entryPoints=[];
+  var id='entry_'+Date.now().toString(36);
+  var cx=Math.floor((state.interior.cols||12)/2), cz=Math.floor((state.interior.rows||10)/2);
+  state.interior.entryPoints.push({id:id,label:'Entry '+(state.interior.entryPoints.length+1),col:cx,row:cz});
+  window.__biaSelEntry(id); renderLayoutsPanel(); rebuild3D();
+});
+$('applyEntryBtn').addEventListener('click',function(){
+  if(!state.activeEntryId) return;
+  var ep=(state.interior.entryPoints||[]).filter(function(e){return e.id===state.activeEntryId;})[0]; if(!ep) return;
+  pushUndo();
+  ep.label=$('entryLabel').value.trim()||ep.label;
+  ep.col=Math.max(0,+$('entryCol').value||0); ep.row=Math.max(0,+$('entryRow').value||0);
+  renderEntryList(); renderLayoutsPanel(); drawGrid(); rebuild3D(); refreshExport(); log('Entry point updated.');
+});
+$('delEntryBtn').addEventListener('click',function(){
+  if(!state.activeEntryId) return; pushUndo();
+  state.interior.entryPoints=(state.interior.entryPoints||[]).filter(function(e){return e.id!==state.activeEntryId;});
+  state.activeEntryId=null; $('entryPointFields').classList.add('hidden');
+  renderEntryList(); renderLayoutsPanel(); drawGrid(); rebuild3D();
+});
+
+// ─── Alternate layouts ──────────────────────────────────────────────────────────
+// See docs/js/map-layout-system.js for the runtime side of this: it picks the
+// highest-Priority layout whose conditions currently match the calendar (or
+// the base room if none do) and merges just that layout's furniture over the
+// base — everything here just authors that same shape. Furniture editing
+// while a layout is selected is redirected through activeFurniture/
+// setActiveFurniture above; every other tool (floor/exits/colliders/vendor
+// zones/entry points) always stays base-level.
+function readSelectedDays(){
+  var out=[];
+  Array.prototype.forEach.call(document.querySelectorAll('#layoutCondDays .dayBtn.active'),function(btn){ out.push(btn.dataset.day); });
+  return out;
+}
+function renderLayoutsPanel(){
+  var sel=$('layoutEditSelect');
+  sel.innerHTML='<option value="">Base (default)</option>'+(state.interior.layouts||[]).map(function(l){
+    return '<option value="'+l.id+'">'+(l.name||l.id)+'</option>';
+  }).join('');
+  sel.value=state.editingLayoutId||'';
+
+  var epSel=$('layoutEntryPoint');
+  epSel.innerHTML='<option value="">Auto (nearest to player)</option>'+(state.interior.entryPoints||[]).map(function(ep){
+    return '<option value="'+ep.id+'">'+(ep.label||ep.id)+'</option>';
+  }).join('');
+
+  var daysEl=$('layoutCondDays');
+  if(!daysEl.children.length){
+    daysEl.innerHTML=WEEKDAY_NAMES.map(function(d){
+      return '<button type="button" class="dayBtn" data-day="'+d+'" style="padding:4px 7px;font-size:11px">'+d.slice(0,3)+'</button>';
+    }).join('');
+    Array.prototype.forEach.call(daysEl.querySelectorAll('.dayBtn'),function(btn){
+      btn.addEventListener('click',function(){ btn.classList.toggle('active'); });
+    });
+  }
+
+  var lay=currentLayoutObj();
+  if(!lay){ $('layoutFields').classList.add('hidden'); return; }
+  $('layoutFields').classList.remove('hidden');
+  $('layoutName').value=lay.name||'';
+  $('layoutPriority').value=lay.priority||0;
+  epSel.value=lay.entryPointId||'';
+  var cond=(Array.isArray(lay.conditions)&&lay.conditions[0])||{};
+  $('layoutCondFrom').value=cond.from||''; $('layoutCondTo').value=cond.to||'';
+  var days=cond.days||(cond.day?[cond.day]:[]);
+  Array.prototype.forEach.call(daysEl.querySelectorAll('.dayBtn'),function(btn){
+    btn.classList.toggle('active', days.indexOf(btn.dataset.day)>=0);
+  });
+  $('layoutCondFromMonth').value=(cond.dateFrom&&cond.dateFrom.month)||'';
+  $('layoutCondFromDay').value=(cond.dateFrom&&cond.dateFrom.day)||'';
+  $('layoutCondToMonth').value=(cond.dateTo&&cond.dateTo.month)||'';
+  $('layoutCondToDay').value=(cond.dateTo&&cond.dateTo.day)||'';
+  $('layoutCondFlag').value=cond.flag||'';
+}
+$('layoutEditSelect').addEventListener('change',function(){
+  state.editingLayoutId=$('layoutEditSelect').value||null;
+  selectFurn(null); renderLayoutsPanel(); drawGrid(); rebuild3D();
+});
+$('addLayoutBtn').addEventListener('click',function(){
+  pushUndo();
+  if(!state.interior.layouts) state.interior.layouts=[];
+  var id='layout_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  state.interior.layouts.push({id:id,name:'New layout',priority:0,conditions:[],furniture:JSON.parse(JSON.stringify(state.interior.furniture))});
+  state.editingLayoutId=id;
+  selectFurn(null); renderLayoutsPanel(); drawGrid(); rebuild3D();
+  log('New layout created as a copy of the base room — rearrange furniture, then set its conditions below.');
+});
+$('cloneBaseIntoLayoutBtn').addEventListener('click',function(){
+  var lay=currentLayoutObj(); if(!lay){ log('Select a layout first.','warn'); return; }
+  pushUndo();
+  lay.furniture=JSON.parse(JSON.stringify(state.interior.furniture));
+  selectFurn(null); drawGrid(); rebuild3D(); log('Cloned base furniture into "'+(lay.name||lay.id)+'".');
+});
+$('applyLayoutBtn').addEventListener('click',function(){
+  var lay=currentLayoutObj(); if(!lay) return;
+  pushUndo();
+  lay.name=$('layoutName').value.trim()||lay.name;
+  lay.priority=+$('layoutPriority').value||0;
+  var entryPointId=$('layoutEntryPoint').value;
+  if(entryPointId) lay.entryPointId=entryPointId; else delete lay.entryPointId;
+  var cond={};
+  var from=$('layoutCondFrom').value.trim(), to=$('layoutCondTo').value.trim();
+  if(from&&to){ cond.from=from; cond.to=to; }
+  var days=readSelectedDays(); if(days.length) cond.days=days;
+  var fm=+$('layoutCondFromMonth').value||0, fd=+$('layoutCondFromDay').value||0,
+      tm=+$('layoutCondToMonth').value||0, td=+$('layoutCondToDay').value||0;
+  if(fm&&fd&&tm&&td){ cond.dateFrom={month:fm,day:fd}; cond.dateTo={month:tm,day:td}; }
+  var flag=$('layoutCondFlag').value.trim(); if(flag) cond.flag=flag;
+  lay.conditions=Object.keys(cond).length?[cond]:[];
+  renderLayoutsPanel(); refreshExport();
+  log('Layout "'+lay.name+'" updated.'+(!lay.conditions.length?' No conditions set — it will never auto-activate.':''));
+});
+$('delLayoutBtn').addEventListener('click',function(){
+  var lay=currentLayoutObj(); if(!lay) return;
+  if(!confirm('Delete layout "'+(lay.name||lay.id)+'"?')) return;
+  pushUndo();
+  state.interior.layouts=(state.interior.layouts||[]).filter(function(l){return l.id!==lay.id;});
+  state.editingLayoutId=null;
+  selectFurn(null); renderLayoutsPanel(); drawGrid(); rebuild3D(); log('Layout deleted.');
+});
+
 // ─── Three.js setup ───────────────────────────────────────────────────────────
 var canvas3=$('threeCanvas');
 var renderer=new THREE.WebGLRenderer({canvas:canvas3,antialias:true});
@@ -913,7 +1201,7 @@ function furnGroupFor(f){
 function rebuild3D(){
   if(previewGroup){ scene3.remove(previewGroup); previewGroup.traverse(function(o){if(o.geometry)o.geometry.dispose();}); }
   furnMeshes={};
-  var floorSet=state.floorSet, interior=state.interior, furniture=interior.furniture;
+  var floorSet=state.floorSet, interior=state.interior, furniture=activeFurniture();
   previewGroup=new THREE.Group();
 
   // Floor tiles — wallStyle-aware material (boards.png plank texture by
@@ -948,6 +1236,13 @@ function rebuild3D(){
   (interior.colliders||[]).forEach(function(p){
     var m=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.3,0.9),colliderMat3);
     m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
+  });
+
+  // Entry point markers (editor-only) — see the 2D grid's own "S1" pucks.
+  var entryMat3=new THREE.MeshLambertMaterial({color:0x5adc8c,transparent:true,opacity:0.75});
+  (interior.entryPoints||[]).forEach(function(ep){
+    var m=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.05,16),entryMat3);
+    m.position.set(ep.col+0.5,0.03,ep.row+0.5); previewGroup.add(m);
   });
 
   // Walls — brick (WallBuilder)/cavern (rock)/canvas (cloth), dispatched by
@@ -996,7 +1291,7 @@ function initTC(){
   tc.addEventListener('dragging-changed',function(e){
     orbit.enabled=!e.value;
     if(!e.value && state.selectedId){
-      var f=null; for(var i=0;i<state.interior.furniture.length;i++) if(state.interior.furniture[i].id===state.selectedId){f=state.interior.furniture[i];break;}
+      var _af=activeFurniture(); var f=null; for(var i=0;i<_af.length;i++) if(_af[i].id===state.selectedId){f=_af[i];break;}
       var grp=furnMeshes[state.selectedId];
       if(!f||!grp) return;
       var cat=catOf(f.itemKey);
@@ -1167,19 +1462,24 @@ function afterLoad(){
   if(!i.exits) i.exits=[];
   if(!i.colliders) i.colliders=[];
   if(!i.vendorZones) i.vendorZones=[];
-  // Migrate legacy uniform postScale → per-axis
-  (i.furniture||[]).forEach(function(f){
-    if(f.postScale!=null && f.postSX==null){
-      f.postSX=f.postScale; f.postSY=f.postScale; f.postSZ=f.postScale; delete f.postScale;
-    }
+  if(!i.entryPoints) i.entryPoints=[];
+  if(!i.layouts) i.layouts=[];
+  // Migrate legacy uniform postScale → per-axis (base room + every layout's own furniture)
+  allFurnitureArrays().forEach(function(arr){
+    arr.forEach(function(f){
+      if(f.postScale!=null && f.postSX==null){
+        f.postSX=f.postScale; f.postSY=f.postScale; f.postSZ=f.postScale; delete f.postScale;
+      }
+    });
   });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';
   $('wallStyle').value=i.wallStyle||'';
   $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
-  state.activeExitId=null; state.activeVendorId=null;
+  state.activeExitId=null; state.activeVendorId=null; state.activeEntryId=null; state.editingLayoutId=null;
   $('exitZoneFields').classList.add('hidden'); $('vendorZoneFields').classList.add('hidden');
+  $('entryPointFields').classList.add('hidden'); $('layoutFields').classList.add('hidden');
   syncFloorSet(); selectFurn(null); drawGrid(); rebuild3D(); refreshExport(); updateUR(); renderLib();
-  renderExitList(); renderVendorList();
+  renderExitList(); renderVendorList(); renderEntryList(); renderLayoutsPanel();
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────

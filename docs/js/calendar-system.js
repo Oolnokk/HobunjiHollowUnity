@@ -972,6 +972,13 @@
     copyTimeDebug,
     timeDebugSnapshot,
     renderCalendarPanel,
+    // Same black iris close/reopen used by the Wait-in-chair/Sleep time skip
+    // (runIrisTransition, above) — exposed so other systems (see game.js's
+    // map-layout live swap) can play the identical transition around their
+    // own work instead of re-implementing the iris mask. Builds the iris DOM
+    // on first use (normally lazy, via openTimePassage) since a player who
+    // never opened Wait/Sleep this session wouldn't have it yet.
+    runScreenTransition: (onClosed) => { buildTimePassageUi(); return runIrisTransition(onClosed); },
     constants: Object.freeze({
       FIRST_AOT_YEAR,
       DAYS_PER_MONTH,
