@@ -57,6 +57,17 @@
     return store[name] || (store[name] = makeBucket());
   }
 
+  function isOutlineCompositeMaterial(material) {
+    const uniforms = material?.uniforms;
+    return !!(
+      uniforms?.tColor
+      && uniforms?.tEdgeId
+      && uniforms?.uTexel
+      && uniforms?.uDepthOutlinesOn
+      && uniforms?.uSeamOutlinesOn
+    );
+  }
+
   // game.js renders its final outline composite with a separate fixed _postCamera,
   // whose layer mask is unrelated to the gameplay camera. Identify that pass by
   // the composite material itself rather than requiring the post camera to have
@@ -66,14 +77,7 @@
     for (const child of children) {
       const materials = Array.isArray(child?.material) ? child.material : [child?.material];
       for (const material of materials) {
-        const uniforms = material?.uniforms;
-        if (
-          uniforms?.tColor
-          && uniforms?.tEdgeId
-          && uniforms?.uTexel
-          && uniforms?.uDepthOutlinesOn
-          && uniforms?.uSeamOutlinesOn
-        ) return material;
+        if (isOutlineCompositeMaterial(material)) return material;
       }
     }
     return null;
@@ -133,13 +137,21 @@
     const entries = [];
     scene?.traverse?.(object => {
       if (!isWorldTextOverlayMesh(object)) return;
-      entries.push({ object, originalLayerMask: object.layers.mask });
+      entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: object.visible !== false });
     });
     return entries;
   }
 
   function reserveWorldTextOverlayLayer(entries) {
     for (const entry of entries || []) entry.object.layers.set(WORLD_TEXT_OVERLAY_LAYER);
+  }
+
+  function hideWorldTextDuringBase(entries) {
+    for (const entry of entries || []) entry.object.visible = false;
+  }
+
+  function restoreWorldTextBaseVisibility(entries) {
+    for (const entry of entries || []) entry.object.visible = entry.originalVisible;
   }
 
   function restoreWorldTextOverlayLayers(pending) {
@@ -151,6 +163,7 @@
   function invalidatePendingWorldTextOverlay(renderer) {
     const pending = pendingWorldTextOverlayByRenderer.get(renderer);
     if (pending) {
+      restoreWorldTextBaseVisibility(pending.entries);
       restoreWorldTextOverlayLayers(pending);
       abandonedWorldTextOverlays++;
     }
@@ -198,6 +211,7 @@
     try {
       return drawWorldTextOverlayToCanvas(renderer, pending);
     } finally {
+      restoreWorldTextBaseVisibility(pending.entries);
       restoreWorldTextOverlayLayers(pending);
       pendingWorldTextOverlayByRenderer.delete(renderer);
     }
@@ -207,12 +221,18 @@
   // is a tiny scene whose top-level quad owns all of these uniforms; requiring
   // the sampler/texel signature avoids touching ordinary gameplay ShaderMaterials.
   function suppressNonShellComposite(scene) {
-    const material = findOutlineCompositeMaterial(scene);
-    const uniforms = material?.uniforms;
-    if (!uniforms) return false;
-    const changed = Number(uniforms.uDepthOutlinesOn.value) !== 0 || Number(uniforms.uSeamOutlinesOn.value) !== 0;
-    uniforms.uDepthOutlinesOn.value = 0;
-    uniforms.uSeamOutlinesOn.value = 0;
+    const children = Array.isArray(scene?.children) ? scene.children : [];
+    let changed = false;
+    for (const child of children) {
+      const materials = Array.isArray(child?.material) ? child.material : [child?.material];
+      for (const material of materials) {
+        if (!isOutlineCompositeMaterial(material)) continue;
+        const uniforms = material.uniforms;
+        if (Number(uniforms.uDepthOutlinesOn.value) !== 0 || Number(uniforms.uSeamOutlinesOn.value) !== 0) changed = true;
+        uniforms.uDepthOutlinesOn.value = 0;
+        uniforms.uSeamOutlinesOn.value = 0;
+      }
+    }
     return changed;
   }
 
@@ -365,12 +385,14 @@
         const entries = collectWorldTextOverlayEntries(scene);
         if (entries.length) {
           reserveWorldTextOverlayLayer(entries);
-          const previousMask = camera.layers.mask; // Restored immediately after withholding layer 6 from the offscreen base draw.
-          camera.layers.disable(WORLD_TEXT_OVERLAY_LAYER);
+          hideWorldTextDuringBase(entries);
           try {
+            // Keep the gameplay camera mask unchanged here. Render wrappers loaded
+            // beneath this one (notably CloudForestMistSoftDepth) use MASK_ALL to
+            // identify the real base pass and must still see the authoritative mask.
             result = originalRender.call(renderer, scene, camera);
           } finally {
-            camera.layers.mask = previousMask;
+            restoreWorldTextBaseVisibility(entries);
           }
           pendingWorldTextOverlayByRenderer.set(renderer, { scene, camera, entries });
           withheldWorldTextBasePasses++;
