@@ -187,12 +187,22 @@
     }
   }
 
+  let updatedThisFrame = false; // A visual frame drives renderer.render() several times when outlines are on
+  // (color pass, shell/target/material-ID/depth outline passes, final composite -- all
+  // synchronous back to back). Only the first, real-camera color pass should recompute
+  // billboard transforms: a later pass's camera can be an unrelated fixed post-process
+  // camera (see game.js's _postScene/_postCamera composite), and recomputing per pass
+  // wastes a full visuals-Map iteration only to be overwritten again next frame anyway.
   function installRenderHook() {
     const prototype = THREE.WebGLRenderer?.prototype;
     if (!prototype || prototype.__hobunjiDeathMarkHooked || typeof prototype.render !== 'function') return;
     const previousRender = prototype.render;
     prototype.render = function deathMarkBillboardRender(scene, camera, ...rest) {
-      updateTransforms(camera);
+      if (!updatedThisFrame) {
+        updatedThisFrame = true;
+        updateTransforms(camera);
+        Promise.resolve().then(() => { updatedThisFrame = false; });
+      }
       return previousRender.call(this, scene, camera, ...rest);
     };
     prototype.render.__hobunjiDeathMarkOriginal = previousRender;

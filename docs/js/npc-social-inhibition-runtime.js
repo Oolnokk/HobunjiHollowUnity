@@ -69,6 +69,8 @@
     renderCount: 0,
     facingApplications: 0,
     danceApplications: 0,
+    frameApplied: false, // True while this frame's presentation is applied and awaiting its deferred revert.
+    frameSnapshots: [],
   };
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
@@ -732,14 +734,28 @@
     if (typeof original !== 'function') return;
     if (original.__npcSocialInhibitionRenderHook) { state.renderHookInstalled = true; return; }
     function npcSocialInhibitionRender(scene, camera) {
-      const snapshots = applyAllNpcPresentation();
-      state.renderCount++;
-      try { return original.call(this, scene, camera); }
-      finally {
-        for (let i = snapshots.length - 1; i >= 0; i--) {
-          try { snapshots[i](); } catch (_) {}
-        }
+      // A single visual frame drives renderer.render() multiple times when
+      // outlines are on (color pass, shell/target/material-ID/depth outline
+      // passes, final composite -- see game.js's s_outlines block), all
+      // synchronously back to back. Applying/reverting per internal render()
+      // call recomputed the exact same facing/dance transforms up to 6x for
+      // one visual frame; apply once for the whole synchronous frame instead,
+      // and defer the revert to a microtask so every pass within the frame
+      // (outlines included) still sees the same posed transforms.
+      if (!state.frameApplied) {
+        state.frameApplied = true;
+        state.frameSnapshots = applyAllNpcPresentation();
+        Promise.resolve().then(() => {
+          state.frameApplied = false;
+          const snapshots = state.frameSnapshots;
+          state.frameSnapshots = [];
+          for (let i = snapshots.length - 1; i >= 0; i--) {
+            try { snapshots[i](); } catch (_) {}
+          }
+        });
       }
+      state.renderCount++;
+      return original.call(this, scene, camera);
     }
     npcSocialInhibitionRender.__npcSocialInhibitionRenderHook = true;
     npcSocialInhibitionRender.__npcSocialInhibitionOriginal = original;
