@@ -320,7 +320,7 @@
       return;
     }
     const script = document.createElement('script');
-    script.src = 'js/performance-debug.js?v=20260905cacheaudit1';
+    script.src = 'js/performance-debug.js?v=20260905cacheaudit2';
     script.async = true;
     script.dataset.hobunjiPerformanceDebug = '1';
     script.onload = _installCloudForestDevModeGate;
