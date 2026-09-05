@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  const THREE = window.THREE; // Used to capture farm-border scene additions and enable the shell layer.
+  const THREE = window.THREE; // Used to capture farm-border scene additions and remove redundant shell-layer participation from the finished cliff skins.
   if (!THREE || window.FarmCliffRockOutline?.installed) return;
 
-  const SHELL_LAYER = 1; // Used by the existing inverted-shell outline render pass.
+  const SHELL_LAYER = 1; // Existing inverted-shell layer explicitly disabled once the authored rock texture provides the cliff edge treatment.
   const SOURCE_SURFACE = 'cliffs'; // Used to identify only the stone skins generated for the farm border.
   const TARGET_SURFACE = 'rocks'; // Used to route farm cliffs through the exact rock natural-surface pipeline.
   const POSITION_KEY_SCALE = 100000; // Used to match the base terrain's Float32 triangles to the coplanar cliff-skin triangles robustly.
@@ -13,7 +13,7 @@
     hookInstalls: 0,
     farmBuildsCaptured: 0,
     cliffMeshesRockified: 0,
-    shellMeshesEnabled: 0,
+    shellMeshesSuppressed: 0,
     baseMeshesTrimmed: 0,
     coplanarBaseTrianglesRemoved: 0,
   }; // Exposed through snapshot() for mobile-friendly verification.
@@ -105,30 +105,45 @@
     return removedTotal;
   }
 
-  function applyRockMaterialAndShell(roots) {
+  function suppressShellForTextureOutlinedCliff(object) {
+    const reduction = window.FacetedNaturalSurfaceShellReduction; // Shared rock/cliff policy also used by ordinary natural-surface meshes outside the farm.
+    if (reduction?.suppressMesh) {
+      reduction.suppressMesh(object, TARGET_SURFACE);
+      return;
+    }
+    object.layers?.disable(SHELL_LAYER);
+    object.userData = Object.assign({}, object.userData, {
+      noOutline: true,
+      facetedSurfaceTextureOutline: true,
+      shellOutlineDisabledReason: 'faceted-surface-texture-outline',
+    });
+  }
+
+  function applyRockMaterialAndTextureOutline(roots) {
     const naturalSurfaces = window.NaturalSurfaceMaterials; // Used to apply the same material factory/config path as ordinary rocks.
     if (!naturalSurfaces?.naturalizeMesh) return 0;
 
     const meshes = collectMeshes(roots); // Used both for cliff discovery and for removing the base terrain directly beneath those cliff skins.
     const cliffMeshes = meshes.filter(mesh => surfaceForMesh(mesh) === SOURCE_SURFACE); // Captured before naturalizeMesh changes their surface tag to rocks.
-    const removedBaseTriangles = removeCoplanarBaseTriangles(meshes, cliffMeshes); // Prevents the hidden green border mesh from depth-occluding the cliff shell.
+    const removedBaseTriangles = removeCoplanarBaseTriangles(meshes, cliffMeshes); // Prevents the hidden green border mesh from depth-occluding the authored cliff texture.
     let changed = 0; // Returned for diagnostics and used to decide whether to log the first successful application.
 
     for (const object of cliffMeshes) {
       naturalSurfaces.naturalizeMesh(object, TARGET_SURFACE);
-      object.layers.enable(SHELL_LAYER);
+      suppressShellForTextureOutlinedCliff(object);
       object.userData = Object.assign({}, object.userData, {
         farmCliffRockMaterial: true,
-        farmCliffShellOutline: true,
+        farmCliffTextureOutline: true,
+        farmCliffShellOutline: false,
       });
       stats.cliffMeshesRockified++;
-      stats.shellMeshesEnabled++;
+      stats.shellMeshesSuppressed++;
       changed++;
     }
 
     if ((changed || removedBaseTriangles) && !loggedFirstApply) {
       loggedFirstApply = true;
-      const message = `[farm-cliff-render] ${changed} farm cliff mesh(es): rock material + shell outline; removed ${removedBaseTriangles} coplanar base triangle(s)`; // Used by the in-game render log when available.
+      const message = `[farm-cliff-render] ${changed} farm cliff mesh(es): rock material + authored texture outline, shell skipped; removed ${removedBaseTriangles} coplanar base triangle(s)`; // Used by the in-game render log when available.
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -155,7 +170,7 @@
     }
 
     stats.farmBuildsCaptured++;
-    applyRockMaterialAndShell(addedRoots);
+    applyRockMaterialAndTextureOutline(addedRoots);
     return result;
   }
 
@@ -206,7 +221,8 @@
 
   window.FarmCliffRockOutline = {
     installed: true,
-    applyRockMaterialAndShell,
+    applyRockMaterialAndTextureOutline,
+    applyRockMaterialAndShell: applyRockMaterialAndTextureOutline, // Backward-compatible API alias for older debug/tools that still call the original name.
     snapshot() { return Object.assign({}, stats); },
   };
 

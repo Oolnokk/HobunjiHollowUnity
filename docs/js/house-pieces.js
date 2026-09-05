@@ -27,7 +27,9 @@
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260905b'],
-    ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260827b'],
+    // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
+    ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
+    ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260905a'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
