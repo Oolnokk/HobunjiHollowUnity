@@ -84,7 +84,8 @@ assert.deepStrictEqual(plainPosition(library.characters['mao-ao::female'].anchor
 assert.deepStrictEqual(plainPosition(library.characters['mao-ao::female'].anchors.rightHandShoulder.position), { x: -0.23898599170593354, y: 0.646996571654354, z: 0 });
 assert.strictEqual(library.characters['mao-ao::female'].anatomy.armLengthHeightPercentOffset, 5);
 
-// 3) Width/height/head-Y edits must preserve the already-authored headScale.
+// 3) Width/height/head-Y edits preserve headScale; raw-PNG Head still converts
+// correctly and every guarded field is persisted directly through host.setRigScale.
 const guardSource = fs.readFileSync('docs/js/character-scale-comparison-body-input-guard.js', 'utf8');
 const guardWindow = { addEventListener() {} };
 guardWindow.window = guardWindow;
@@ -97,14 +98,17 @@ const guardContext = vm.createContext({
 });
 vm.runInContext(guardSource, guardContext, { filename: 'character-scale-comparison-body-input-guard.js' });
 const guard = guardWindow.HobunjiFullScaleBodyInputGuard;
-assert(guard, 'body-input guard test API must install');
+assert(guard, 'guarded full-scale input API must install');
 const starting = { x: 1.125, y: 1.125, head: 1.0813, offsetY: 0 };
 for (const [field, percent, expectedValue] of [['x', 130, 1.3], ['y', 90, 0.9], ['offsetY', -12.5, -0.125]]) {
   const next = guard.nextScalePreservingHead(starting, field, percent);
   assert.strictEqual(next.head, 1.0813, `${field} edit must preserve headScale exactly`);
   assert.strictEqual(next[field], expectedValue, `${field} edit should still apply requested value`);
 }
-assert.doesNotMatch(guardSource, /profile\.anatomy\.headScale\s*=/, 'body-input guard must never assign headScale');
-assert.match(guardSource, /stopImmediatePropagation\(\)/, 'body-input guard must block the legacy all-fields input handler');
+const convertedHead = guard.nextScale(starting, 'head', 80, 0.8);
+assert.strictEqual(convertedHead.head, 1, '80% raw-PNG Head with an 80% portrait plane must persist runtime headScale 1.0');
+assert.match(guardSource, /maaFullScaleRangeHead/, 'guard must own Head as well as body controls');
+assert.match(guardSource, /setRigScale/, 'guard must update the host round-trip override map directly');
+assert.match(guardSource, /stopImmediatePropagation\(\)/, 'guard must block the legacy all-fields input handler');
 
 console.log('latest full-character scale + Mao-ao rig allowlist tests passed');
