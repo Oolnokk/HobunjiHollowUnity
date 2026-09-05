@@ -6,20 +6,36 @@
 (() => {
   'use strict';
 
-  const VERSION = 1;
+  const VERSION = 2;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_HOLD_VISUAL_S = 3600; // Used to park the ranged visual at its authored windup without adding another game.js hold state.
   const THROWN_TYPE = 'thrown';
   const BLOWGUN_TYPE = 'blowgun';
+  const BLOWGUN_RAW_DAMAGE = 2; // Used as the deliberately tiny direct dart hit; mastery afflictions are the blowgun's real damage identity.
+  const BLOWGUN_AFFLICTION_SCALE = 40; // Multiplies the ranged system's normal 0.15-per-rank buildup into a huge 6.0x raw-damage multiplier per chosen affliction rank.
+  const BLOWGUN_AFFLICTION_EFFECT_IDS = Object.freeze([
+    'bleedingHealth', 'woundedStamina', 'congealedHealth', 'infectedStamina',
+    'windedStamina', 'bruisedHealth', 'shatteredStamina', 'poisonedHealth',
+  ]); // Used by Blowgun mastery to offer the full authored affliction set instead of a physical-damage-biased subset.
+  const KYLIE_BLUNT_EFFECT_IDS = Object.freeze([
+    'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
+  ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
+  const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
   let thrownCharge = null; // Used to retain the active hold-release input until its matching release arrives.
   let lastRelease = null; // Used by the mobile-accessible debug snapshot to explain the most recent thrown release.
   let wrapperInstalled = false; // Used to avoid wrapping RangedWeapons.startPlayerAction more than once.
   let inputBridgeInstalled = false; // Used to avoid duplicate global release listeners after hot reloads.
+  let ammoProfileInstalled = false; // Used to install weapon-specific mastery choices only once while keeping the old ranged API compatible.
+  let afflictionBridgeInstalled = false; // Used to avoid wrapping ResourceSystem.addAffliction more than once.
   let baseStartPlayerAction = null; // Used to invoke the original ranged fire state machine after a thrown hold releases.
   let basePlayerActionLabel = null; // Used to preserve ordinary crossbow/blowgun action labels.
+  let baseSetBasicEffect = null; // Used by the profile-aware mastery validator after checking the current weapon's allowed choices.
+  let baseAddAffliction = null; // Used by the scaled-affliction alias bridge to reach the normal ResourceSystem implementation.
+  let baseBasicAmmoEffects = null; // Holds the ranged system's original effect objects so its closure-private payload builder can keep using them.
+  let baseBasicAmmoDescriptors = []; // Immutable-ish plain copies used to build filtered UI/mastery choice lists without triggering affliction alias getters.
 
   function clonePose(pose = {}) { return { ...pose, shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : undefined }; }
   function clonePoseSet(source = {}) {
@@ -87,6 +103,17 @@
     };
   }
 
+  function finiteOr(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+  }
+
+  function authoredEffectIds(toolDef, fallback) {
+    return Array.isArray(toolDef?.rangedBasicAmmoEffectIds) && toolDef.rangedBasicAmmoEffectIds.length
+      ? [...toolDef.rangedBasicAmmoEffectIds]
+      : [...fallback];
+  }
+
   function thrownConfig(itemKey, toolDef) {
     const base = crossbowDefaults();
     const animation = sharedThrowAnimation();
@@ -100,7 +127,8 @@
       ((animation.holdFrac ?? 0.68) - (animation.windupFrac ?? 0.44)) /
       Math.max(0.01, 1 - (animation.windupFrac ?? 0.44))
     ));
-    return {
+    const shapeKey = shapeKeyFor(itemKey, toolDef);
+    const config = {
       ...base,
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
@@ -134,14 +162,24 @@
       },
       chargeWindupS: Math.max(0.05, (animation.durationS || 0.62) * (animation.windupFrac ?? 0.44)),
     };
+    if (shapeKey === 'kylie' || Array.isArray(toolDef?.rangedBasicAmmoEffectIds)) {
+      config.basicAmmoEffectIds = authoredEffectIds(toolDef, KYLIE_BLUNT_EFFECT_IDS);
+      config.afflictionProfile = toolDef?.rangedAfflictionProfile || 'blunt';
+    }
+    if (Number.isFinite(Number(toolDef?.rangedDamage))) config.damage = Number(toolDef.rangedDamage);
+    return config;
   }
 
   function blowgunConfig(toolDef) {
     const base = crossbowDefaults();
     return {
       ...base,
+      damage: finiteOr(toolDef?.rangedDamage, BLOWGUN_RAW_DAMAGE),
       label: toolDef?.label || 'Blowgun',
       rangedType: BLOWGUN_TYPE,
+      afflictionProfile: toolDef?.rangedAfflictionProfile || BLOWGUN_TYPE,
+      basicAfflictionScale: Math.max(1, finiteOr(toolDef?.rangedAfflictionScale, BLOWGUN_AFFLICTION_SCALE)),
+      basicAmmoEffectIds: authoredEffectIds(toolDef, BLOWGUN_AFFLICTION_EFFECT_IDS),
       inputMode: 'load-fire',
       projectileSprite: toolDef?.rangedProjectileSprite || 'assets/toolsprites/arrow_short.png',
       reloadDurationS: 1.04,
@@ -176,6 +214,132 @@
     if (!def.slots.includes(slot)) def.slots.push(slot);
   }
 
+  function allowedBasicEffectIds(itemKey) {
+    const configured = window.RangedWeapons?.config?.[itemKey]?.basicAmmoEffectIds;
+    if (Array.isArray(configured) && configured.length) return configured;
+    return baseBasicAmmoDescriptors.map(effect => effect.id);
+  }
+
+  function basicAmmoEffectsFor(itemKey = window.RangedWeapons?.equippedRangedKey?.()) {
+    const allowed = new Set(allowedBasicEffectIds(itemKey));
+    const config = window.RangedWeapons?.config?.[itemKey] || {};
+    const highBuildup = Number(config.basicAfflictionScale) > 1;
+    const shotNoun = config.rangedType === BLOWGUN_TYPE ? 'dart' : (config.rangedType === THROWN_TYPE ? 'throw' : 'shot');
+    return baseBasicAmmoDescriptors
+      .filter(effect => allowed.has(effect.id))
+      .map(effect => ({
+        ...effect,
+        desc: highBuildup && effect.afflictionId
+          ? `Each ${shotNoun} applies very high ${effect.label} buildup.`
+          : effect.desc,
+      }));
+  }
+
+  function sanitizeBasicLoadout(itemKey) {
+    const effects = window.Combat?.deps?.getGearInventory?.()?.rangedAmmoLoadouts?.[itemKey]?.basicEffects;
+    if (!effects) return false;
+    const allowed = new Set(allowedBasicEffectIds(itemKey));
+    let changed = false;
+    for (const rank of [1, 3, 5]) {
+      if (effects[rank] && !allowed.has(effects[rank])) {
+        effects[rank] = null;
+        changed = true;
+      }
+    }
+    if (changed) window.Combat?.deps?.saveGearInventory?.();
+    return changed;
+  }
+
+  function aliasToken(value) {
+    return String(value || 'ranged').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'ranged';
+  }
+
+  function installAfflictionScalingBridge() {
+    const rs = window.ResourceSystem;
+    if (!rs?.AFFLICTIONS || typeof rs.addAffliction !== 'function') return false;
+    if (afflictionBridgeInstalled) return true;
+    baseAddAffliction = rs.addAffliction.bind(rs);
+    rs.addAffliction = function rangedScaledAddAffliction(entity, id, amount) {
+      const alias = scaledAfflictionAliases.get(id);
+      if (!alias) return baseAddAffliction(entity, id, amount);
+      return baseAddAffliction(entity, alias.realId, amount * alias.scale);
+    };
+    afflictionBridgeInstalled = true;
+    return true;
+  }
+
+  function ensureScaledAfflictionAlias(realId, scale, profile) {
+    if (!(scale > 1) || !realId) return realId;
+    if (!installAfflictionScalingBridge()) return realId;
+    const rs = window.ResourceSystem;
+    const realDef = rs?.AFFLICTIONS?.[realId];
+    if (!realDef) return realId;
+    const roundedScale = Math.round(scale * 1000) / 1000;
+    const aliasId = `__ranged_${aliasToken(profile)}_${String(roundedScale).replace('.', '_')}x_${realId}`;
+    if (!scaledAfflictionAliases.has(aliasId)) {
+      scaledAfflictionAliases.set(aliasId, { realId, scale: roundedScale, profile: profile || 'ranged' });
+      rs.AFFLICTIONS[aliasId] = { ...realDef, rangedAliasFor: realId, rangedScale: roundedScale };
+      const colors = window.ResourceRings?.AFFLICTION_COLORS;
+      if (colors && Object.prototype.hasOwnProperty.call(colors, realId)) {
+        try { colors[aliasId] = colors[realId]; } catch (_) { /* Cosmetic color table may be frozen; white trail fallback is harmless. */ }
+      }
+    }
+    return aliasId;
+  }
+
+  function scaledAfflictionId(realId) {
+    const ranged = window.RangedWeapons;
+    const itemKey = ranged?.equippedRangedKey?.();
+    const config = ranged?.config?.[itemKey];
+    const scale = Number(config?.basicAfflictionScale) || 1;
+    return scale > 1 ? ensureScaledAfflictionAlias(realId, scale, config?.afflictionProfile || config?.rangedType || itemKey) : realId;
+  }
+
+  function installAmmoProfiles() {
+    const ranged = window.RangedWeapons;
+    if (!ranged) return false;
+    if (ammoProfileInstalled) {
+      installAfflictionScalingBridge();
+      return true;
+    }
+    if (!Array.isArray(ranged.BASIC_AMMO_EFFECTS) || typeof ranged.setBasicEffect !== 'function') return false;
+
+    baseBasicAmmoEffects = ranged.BASIC_AMMO_EFFECTS;
+    baseBasicAmmoDescriptors = baseBasicAmmoEffects.map(effect => ({
+      id: effect.id,
+      label: effect.label,
+      desc: effect.desc,
+      afflictionId: effect.afflictionId || null,
+      knockbackMul: effect.knockbackMul || 0,
+    }));
+
+    for (const effect of baseBasicAmmoEffects) {
+      const descriptor = baseBasicAmmoDescriptors.find(entry => entry.id === effect.id);
+      if (!descriptor?.afflictionId) continue;
+      const realId = descriptor.afflictionId;
+      Object.defineProperty(effect, 'afflictionId', {
+        configurable: true,
+        enumerable: true,
+        get: () => scaledAfflictionId(realId),
+      });
+    }
+
+    baseSetBasicEffect = ranged.setBasicEffect.bind(ranged);
+    ranged.setBasicEffect = function profileAwareSetBasicEffect(itemKey, rank, effectId) {
+      if (!basicAmmoEffectsFor(itemKey).some(effect => effect.id === effectId)) return false;
+      return baseSetBasicEffect(itemKey, rank, effectId);
+    };
+    ranged.basicAmmoEffectsFor = basicAmmoEffectsFor;
+    Object.defineProperty(ranged, 'BASIC_AMMO_EFFECTS', {
+      configurable: true,
+      enumerable: true,
+      get: () => basicAmmoEffectsFor(ranged.equippedRangedKey?.()),
+    });
+    installAfflictionScalingBridge();
+    ammoProfileInstalled = true;
+    return true;
+  }
+
   function patchItem(itemKey, def) {
     const shapeKey = shapeKeyFor(itemKey, def);
     const type = rangedTypeFor(itemKey, def);
@@ -194,6 +358,7 @@
       // the normal ranged state machine exposes its explicit load stage.
       ranged.setLoaded?.(itemKey, true);
     }
+    sanitizeBasicLoadout(itemKey);
     patchedItems.add(itemKey);
     return !!shapeKey;
   }
@@ -201,6 +366,7 @@
   function patchGeneratedDefinitions() {
     const defs = toolDefinitions();
     if (!defs || !window.RangedWeapons?.config) return false;
+    installAmmoProfiles();
     syncBlowgunStanceFromDrink();
     let changed = 0;
     for (const [itemKey, def] of Object.entries(defs)) {
@@ -349,11 +515,15 @@
 
   function bootstrap() {
     installRangedWrapper();
+    installAmmoProfiles();
+    installAfflictionScalingBridge();
     installInputBridge();
     let attempts = 0;
     const patchTimer = setInterval(() => {
       attempts++;
       installRangedWrapper();
+      installAmmoProfiles();
+      installAfflictionScalingBridge();
       if (patchGeneratedDefinitions() || attempts >= PATCH_RETRY_LIMIT) clearInterval(patchTimer);
     }, PATCH_RETRY_MS);
   }
@@ -365,6 +535,7 @@
     releaseThrownCharge,
     cancelThrownCharge,
     isThrown,
+    basicAmmoEffectsFor,
     animations: {
       // These are mutable authored copies on purpose: the user can tune/export
       // Blowgun without changing the Crossbow or Drink source animations.
@@ -377,8 +548,12 @@
       patchedItems: [...patchedItems],
       equippedRanged: window.RangedWeapons?.equippedRangedKey?.() || null,
       equippedType: window.RangedWeapons?.config?.[window.RangedWeapons?.equippedRangedKey?.()]?.rangedType || null,
+      equippedBasicEffects: basicAmmoEffectsFor().map(effect => effect.id),
+      scaledAfflictionAliases: Object.fromEntries([...scaledAfflictionAliases].map(([id, value]) => [id, { ...value }])),
       thrownCharge: thrownCharge ? { ...thrownCharge, heldMs: Math.round(performance.now() - thrownCharge.startedAt) } : null,
       lastRelease,
+      blowgunRawDamage: BLOWGUN_RAW_DAMAGE,
+      blowgunAfflictionScale: BLOWGUN_AFFLICTION_SCALE,
       blowgunLoadSource: 'crossbow-load-copy',
       blowgunStanceSource: 'drink-strike-copy',
     }),
