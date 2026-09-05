@@ -47,6 +47,7 @@
   let suppressedCompositeActivations = 0; // Debug counter: post composites whose non-shell uniforms were zeroed.
   let finalWorldTextOverlayPasses = 0; // Debug counter: final canvas draws containing only popup/dialogue text planes.
   let withheldWorldTextBasePasses = 0; // Debug counter: offscreen base draws where text was intentionally reserved for the final overlay.
+  let abandonedWorldTextOverlays = 0; // Debug counter: stale pending overlays restored by the next base pass instead of reaching presentation.
 
   function makeBucket() {
     return { renders: 0, calls: 0, triangles: 0, points: 0, lines: 0, cpuMs: 0 };
@@ -56,9 +57,32 @@
     return store[name] || (store[name] = makeBucket());
   }
 
+  // game.js renders its final outline composite with a separate fixed _postCamera,
+  // whose layer mask is unrelated to the gameplay camera. Identify that pass by
+  // the composite material itself rather than requiring the post camera to have
+  // every gameplay layer enabled.
+  function findOutlineCompositeMaterial(scene) {
+    const children = Array.isArray(scene?.children) ? scene.children : [];
+    for (const child of children) {
+      const materials = Array.isArray(child?.material) ? child.material : [child?.material];
+      for (const material of materials) {
+        const uniforms = material?.uniforms;
+        if (
+          uniforms?.tColor
+          && uniforms?.tEdgeId
+          && uniforms?.uTexel
+          && uniforms?.uDepthOutlinesOn
+          && uniforms?.uSeamOutlinesOn
+        ) return material;
+      }
+    }
+    return null;
+  }
+
   function classifyPass(renderer, scene, camera) {
     const mask = Number(camera?.layers?.mask ?? 0) >>> 0;
     const override = scene?.overrideMaterial || null;
+    const target = renderer.getRenderTarget?.() || null;
 
     if (
       mask === MASK_SHELL
@@ -75,8 +99,13 @@
 
     if (mask === MASK_PNG_OCCLUDER && !override) return 'pngDepth';
 
+    // The final outline composite is a fullscreen post scene. Its camera normally
+    // uses only the default layer, so camera.layers === MASK_ALL is not a valid
+    // requirement for recognizing the presentation pass.
+    if (!target && !override && findOutlineCompositeMaterial(scene)) return 'postOrDirect';
+
     if (mask === MASK_ALL && !override) {
-      return renderer.getRenderTarget?.() ? 'base' : 'postOrDirect';
+      return target ? 'base' : 'postOrDirect';
     }
     return 'other';
   }
@@ -121,7 +150,10 @@
 
   function invalidatePendingWorldTextOverlay(renderer) {
     const pending = pendingWorldTextOverlayByRenderer.get(renderer);
-    if (pending) restoreWorldTextOverlayLayers(pending);
+    if (pending) {
+      restoreWorldTextOverlayLayers(pending);
+      abandonedWorldTextOverlays++;
+    }
     pendingWorldTextOverlayByRenderer.delete(renderer);
   }
 
@@ -161,29 +193,26 @@
     }
   }
 
+  function finalizeWorldTextOverlay(renderer, pending) {
+    if (!pending) return false;
+    try {
+      return drawWorldTextOverlayToCanvas(renderer, pending);
+    } finally {
+      restoreWorldTextOverlayLayers(pending);
+      pendingWorldTextOverlayByRenderer.delete(renderer);
+    }
+  }
+
   // Called immediately before a canvas/direct render. The real outline composite
   // is a tiny scene whose top-level quad owns all of these uniforms; requiring
   // the sampler/texel signature avoids touching ordinary gameplay ShaderMaterials.
   function suppressNonShellComposite(scene) {
-    const children = Array.isArray(scene?.children) ? scene.children : [];
-    let changed = false;
-    for (const child of children) {
-      const materials = Array.isArray(child?.material) ? child.material : [child?.material];
-      for (const material of materials) {
-        const uniforms = material?.uniforms;
-        const isOutlineComposite = !!(
-          uniforms?.tColor
-          && uniforms?.tEdgeId
-          && uniforms?.uTexel
-          && uniforms?.uDepthOutlinesOn
-          && uniforms?.uSeamOutlinesOn
-        );
-        if (!isOutlineComposite) continue;
-        if (Number(uniforms.uDepthOutlinesOn.value) !== 0 || Number(uniforms.uSeamOutlinesOn.value) !== 0) changed = true;
-        uniforms.uDepthOutlinesOn.value = 0;
-        uniforms.uSeamOutlinesOn.value = 0;
-      }
-    }
+    const material = findOutlineCompositeMaterial(scene);
+    const uniforms = material?.uniforms;
+    if (!uniforms) return false;
+    const changed = Number(uniforms.uDepthOutlinesOn.value) !== 0 || Number(uniforms.uSeamOutlinesOn.value) !== 0;
+    uniforms.uDepthOutlinesOn.value = 0;
+    uniforms.uSeamOutlinesOn.value = 0;
     return changed;
   }
 
@@ -252,6 +281,7 @@
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
       if (withheldWorldTextBasePasses) parts.push(`world-text-withheld ${withheldWorldTextBasePasses}x`);
       if (finalWorldTextOverlayPasses) parts.push(`world-text-final-overlay ${finalWorldTextOverlayPasses}x`);
+      if (abandonedWorldTextOverlays) parts.push(`world-text-abandoned ${abandonedWorldTextOverlays}x`);
       if (suppressedMaterialIdPasses) parts.push(`material-seam-blocked ${suppressedMaterialIdPasses}x`);
       if (suppressedCompositeActivations) parts.push(`non-shell-composite-blocked ${suppressedCompositeActivations}x`);
       const message = `[outline-perf] ${parts.join(' | ')}`;
@@ -328,6 +358,9 @@
     let result;
     try {
       if (pass === 'base') {
+        // A still-pending overlay means the prior frame never reached the known
+        // presentation pass. Restore those layers before collecting this frame so
+        // a bad/alternate render sequence cannot strand popup meshes indefinitely.
         invalidatePendingWorldTextOverlay(renderer);
         const entries = collectWorldTextOverlayEntries(scene);
         if (entries.length) {
@@ -339,7 +372,7 @@
           } finally {
             camera.layers.mask = previousMask;
           }
-          pendingWorldTextOverlayByRenderer.set(renderer, { scene, camera, entries, sawShell: false });
+          pendingWorldTextOverlayByRenderer.set(renderer, { scene, camera, entries });
           withheldWorldTextBasePasses++;
         } else {
           result = originalRender.call(renderer, scene, camera);
@@ -349,17 +382,20 @@
       }
 
       const pending = pendingWorldTextOverlayByRenderer.get(renderer);
-      if (pass === 'shell' && pending?.scene === scene && pending.camera === camera) {
-        pending.sawShell = true;
-      } else if (pass === 'postOrDirect' && pending) {
-        if (pending.sawShell) drawWorldTextOverlayToCanvas(renderer, pending);
-        restoreWorldTextOverlayLayers(pending);
-        pendingWorldTextOverlayByRenderer.delete(renderer);
-      } else if (pass !== 'pngDepth' && pass !== 'materialId' && pass !== 'base' && pass !== 'shell') {
-        // Any unrelated render between base and composite invalidates the handoff;
-        // never let a stale scene's text layer assignment leak into a later frame.
-        invalidatePendingWorldTextOverlay(renderer);
+      if (pass === 'postOrDirect' && pending && !renderer.getRenderTarget?.()) {
+        const isOutlineComposite = !!findOutlineCompositeMaterial(scene);
+        const isDirectGameplayPresentation = pending.scene === scene && pending.camera === camera;
+        if (isOutlineComposite || isDirectGameplayPresentation) {
+          // Text was withheld from the offscreen base regardless of whether a shell
+          // happened to run, so always draw it once on the recognized presentation
+          // pass. This keeps outlines-off and partial-outline paths visible too.
+          finalizeWorldTextOverlay(renderer, pending);
+        }
       }
+      // Do not invalidate a pending overlay merely because an unrelated renderer
+      // call occurred between base and presentation. Several runtime systems wrap
+      // renderer.render(), and auxiliary passes must not be able to delete popup
+      // text before the real _postScene/_postCamera composite arrives.
     } finally {
       if (canReuseBaseState && hadSceneAutoUpdate) scene.autoUpdate = true;
       if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) shadowMap.autoUpdate = true;
@@ -388,6 +424,7 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
+        abandonedWorldTextOverlays,
         nonShellOutlinesSuppressed: true,
         worldTextAboveShell: true,
         worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
