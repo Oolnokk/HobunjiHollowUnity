@@ -20,6 +20,7 @@
   const state = { // Mutable bridge state shared by the render hook, UI, and Manual IK host callbacks.
     THREE: null,
     manual: null,
+    manualModel: null,
     renderer: null,
     priorRender: null,
     renderHookInstalled: false,
@@ -182,6 +183,18 @@
     if (pre) pre.textContent = JSON.stringify(state.debug, null, 2);
   }
 
+  function disposeManual(reason = 'disposed') {
+    const manual = state.manual; // Existing controller must be torn down before another avatar's locomotion root is captured.
+    if (manual) {
+      try { manual.dispose?.(); }
+      catch (error) { editorLog(`[Ground / Rest manual] Dispose failed: ${error?.message || error}`, 'warn'); }
+    }
+    state.manual = null;
+    state.manualModel = null;
+    setState({ active: false, ownership: 'preset', stopReason: reason, selectedHandle: null, dragging: false });
+    syncUi();
+  }
+
   function copyManualJson() {
     const payload = state.manual?.snapshot?.() || null; // Current authored handle positions copied for debugging/reuse.
     if (!payload) return false;
@@ -194,9 +207,10 @@
   }
 
   async function ensureManual() {
-    if (state.manual) return state.manual;
+    const model = currentModel(); // Current avatar determines whether the captured Manual IK locomotion root is still valid.
+    if (state.manual && state.manualModel === model) return state.manual;
+    if (state.manual) disposeManual('avatar-changed');
     const api = global.HobunjiGameplayBackdrop; // Public editor host supplying scene/camera/renderer/model access.
-    const model = currentModel(); // Current avatar whose limbs are being authored.
     const locomotionRoot = locomotionRootFor(model); // Parent coordinate space shared by Ground / Rest guides and handles.
     if (!api?.getScene?.() || !api?.getCamera?.() || !api?.getRenderer?.() || !locomotionRoot || !state.THREE) {
       throw new Error('Ground / Rest Manual IK host is not ready.');
@@ -236,6 +250,7 @@
       onHistoryChanged: history => setState({ history }),
       onDebug: debug => setState({ ...debug, pose: state.activePose }),
     });
+    state.manualModel = model;
     return state.manual;
   }
 
@@ -305,6 +320,7 @@
     const api = global.HobunjiProceduralLimbPoseAuthor; // Public Ground / Rest API wrapped so changing presets safely releases manual ownership.
     if (!api?.setPose || api.__manualBridgeWrapped) return Boolean(api?.setPose);
     const originalSetPose = api.setPose.bind(api); // Original preset selector retained under the bridge wrapper.
+    const originalResetPose = typeof api.resetPose === 'function' ? api.resetPose.bind(api) : null; // Carry and other callers use this direct reset path.
     api.setPose = async function manualAwareSetPose(pose, options) {
       if (state.manual?.active) stopManual('pose-changed');
       const result = await originalSetPose(pose, options); // Ground / Rest remains authoritative for body/preset selection.
@@ -313,6 +329,16 @@
       syncUi();
       return result;
     };
+    if (originalResetPose) {
+      api.resetPose = async function manualAwareResetPose(options) {
+        if (state.manual?.active) stopManual('pose-reset');
+        const result = await originalResetPose(options); // Original reset remains authoritative for restoring body/feet/hands.
+        state.activePose = 'normal';
+        setState({ pose: 'normal', active: false, ownership: 'preset', stopReason: 'pose-reset' });
+        syncUi();
+        return result;
+      };
+    }
     api.__manualBridgeWrapped = true;
     state.poseApiWrapped = true;
     return true;
@@ -334,6 +360,10 @@
     state.renderer = renderer;
     state.priorRender = renderer.render.bind(renderer); // Original renderer called after Manual IK gets its final-frame override.
     renderer.render = function proceduralGroundRestManualRender(scene, camera) {
+      if (state.manual?.active && state.manualModel !== currentModel()) {
+        disposeManual('avatar-changed');
+        editorLog('[Ground / Rest manual] Avatar changed; released stale Manual IK handles before rendering the new avatar.', 'info');
+      }
       if (state.manual?.active && !state.manual.released) {
         try { state.manual.update(); }
         catch (error) {
@@ -377,7 +407,12 @@
     whenRenderHookReady: () => readyPromise,
     startManual,
     stopManual,
-    getDebug: () => ({ ...state.debug, renderHookInstalled: state.renderHookInstalled, poseApiWrapped: state.poseApiWrapped }),
+    getDebug: () => ({
+      ...state.debug,
+      renderHookInstalled: state.renderHookInstalled,
+      poseApiWrapped: state.poseApiWrapped,
+      manualModelMatchesAvatar: !state.manual || state.manualModel === currentModel(),
+    }),
   };
 
   bootstrap();
