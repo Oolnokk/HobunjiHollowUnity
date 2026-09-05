@@ -7,9 +7,14 @@
   const stats = {
     naturalizeWrapInstalled: false,
     mapperWrapInstalled: false,
+    foliageBoulderWrapInstalled: false,
+    farmRockWrapInstalled: false,
     rocksSuppressed: 0,
     cliffsSuppressed: 0,
     shellLayerMembershipsRemoved: 0,
+    proceduralBoulderMeshesStyled: 0,
+    farmRockMeshesStyled: 0,
+    farmRockPostPasses: 0,
   }; // Exposed through snapshot() for mobile-friendly verification.
 
   function materialSurface(mesh) {
@@ -54,6 +59,21 @@
     return changed;
   }
 
+  function naturalizeRockRoot(root) {
+    const naturalSurfaces = window.NaturalSurfaceMaterials; // Canonical authored-PNG material/tint path used by farm cliffs and all other natural rock surfaces.
+    if (!root || !naturalSurfaces?.naturalizeMesh) return 0;
+    let changed = 0;
+    const visit = object => {
+      if (!object?.isMesh) return;
+      naturalSurfaces.naturalizeMesh(object, 'rocks');
+      suppressMesh(object, 'rocks');
+      changed++;
+    };
+    if (root.isMesh) visit(root);
+    root.traverse?.(object => { if (object !== root) visit(object); });
+    return changed;
+  }
+
   function wrapNaturalize() {
     const api = window.NaturalSurfaceMaterials;
     const original = api?.naturalizeMesh;
@@ -84,13 +104,79 @@
     stats.mapperWrapInstalled = true;
   }
 
+  function wrapProceduralBoulders() {
+    const foliage = window.FoliageGenerator;
+    const original = foliage?.buildBoulderMesh;
+    if (!foliage || typeof original !== 'function' || original.__hobunjiFacetedSurfaceShellWrapped) return;
+    function wrappedBuildBoulderMesh(...args) {
+      const root = original.apply(this, args);
+      stats.proceduralBoulderMeshesStyled += naturalizeRockRoot(root);
+      return root;
+    }
+    wrappedBuildBoulderMesh.__hobunjiFacetedSurfaceShellWrapped = true;
+    wrappedBuildBoulderMesh.__hobunjiFacetedSurfaceShellOriginal = original;
+    foliage.buildBoulderMesh = wrappedBuildBoulderMesh;
+    stats.foliageBoulderWrapInstalled = true;
+  }
+
+  function wrapFarmRockTiles() {
+    const rendering = window.VegetationCropRendering;
+    if (!rendering || rendering.__hobunjiFacetedSurfaceShellWrapped) return;
+    let farmDeps = null; // Captured from VegetationCropRendering.init so post-build scans can identify the shared farm ROCK material without hardcoding colors.
+
+    const originalInit = rendering.init;
+    if (typeof originalInit === 'function') {
+      rendering.init = function (injectedDeps, ...args) {
+        farmDeps = injectedDeps;
+        return originalInit.call(this, injectedDeps, ...args);
+      };
+    }
+
+    function styleCurrentFarmRockMeshes() {
+      const scene = farmDeps?.scene; // Farm scene whose tile renderer may directly enable shell layer 1 after constructing ROCK mound meshes.
+      const rockType = farmDeps?.TileType?.ROCK;
+      const rockMaterial = rockType != null ? farmDeps?.resolveTileMat?.('farm', rockType) : null; // Shared pre-naturalization material used to distinguish stone mound geometry from its grass floor/top pieces.
+      if (!scene?.traverse || !rockMaterial) return 0;
+      let changed = 0;
+      scene.traverse(object => {
+        if (!object?.isMesh) return;
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        const alreadyNaturalRock = object.userData?.naturalSurface === 'rocks'
+          || materials.some(material => material?.userData?.naturalSurface === 'rocks');
+        if (!alreadyNaturalRock && !materials.includes(rockMaterial)) return;
+        const wasNaturalRock = alreadyNaturalRock;
+        naturalizeRockRoot(object);
+        if (!wasNaturalRock) stats.farmRockMeshesStyled++;
+        changed++;
+      });
+      stats.farmRockPostPasses++;
+      return changed;
+    }
+
+    for (const name of ['buildTileMeshes', 'refreshTileMesh']) {
+      const original = rendering[name];
+      if (typeof original !== 'function') continue;
+      rendering[name] = function (...args) {
+        const result = original.apply(this, args);
+        styleCurrentFarmRockMeshes(); // Runs after the legacy tile renderer's deps.markOutline/layer-enable calls, making the authored PNG treatment authoritative.
+        return result;
+      };
+    }
+
+    rendering.__hobunjiFacetedSurfaceShellWrapped = true;
+    stats.farmRockWrapInstalled = true;
+  }
+
   wrapNaturalize();
   wrapSurfaceMapper();
+  wrapProceduralBoulders();
+  wrapFarmRockTiles();
 
   window.FacetedNaturalSurfaceShellReduction = {
     installed: true,
     apply,
     suppressMesh,
+    naturalizeRockRoot,
     snapshot() {
       return Object.assign({}, stats, {
         policy: 'rocks/cliffs use authored irregular-surface PNG outlines; rounded natural meshes may retain shell outlines',
