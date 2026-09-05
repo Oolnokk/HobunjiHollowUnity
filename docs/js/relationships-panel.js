@@ -44,12 +44,14 @@
   // inventory made visually large/awkward items consume correspondingly large
   // rectangular footprints; here we reuse that visual language without adding
   // manual inventory management to a relationship-history screen.
-  const KEEPSAKE_GRID_COLUMNS = 6;
+  const KEEPSAKE_GRID_COLUMNS = 18;
   const KEEPSAKE_MIN_ROWS = 4;
   const KEEPSAKE_TARGET_CELLS = 5;
   const KEEPSAKE_MAX_ITEM_CELLS = 4;
+  const KEEPSAKE_ALPHA_THRESHOLD = 1;
+  const KEEPSAKE_PREVIEW_MAX_PX = 256;
   const keepsakeProviders = new Set(); // Extra systems (quests/hearts/etc.) register providers here instead of patching this renderer.
-  const spriteAspectCache = new Map(); // sprite URL -> natural width/height ratio; used to derive each keepsake's tile footprint.
+  const spriteVisualCache = new Map(); // sprite+rotation -> cropped preview/opaque bounds; used for layout and rendering.
   let keepsakeRerenderQueued = false;
   let keepsakeStylesInstalled = false;
 
@@ -61,7 +63,7 @@
     style.textContent = `
       #relationshipsList .relationship-row {
         display: grid;
-        grid-template-columns: minmax(0, 1.18fr) minmax(210px, .82fr);
+        grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr);
         align-items: stretch;
         gap: 0;
         padding: 0;
@@ -97,14 +99,10 @@
         width: calc(${KEEPSAKE_GRID_COLUMNS} * var(--ks-cell));
         max-width: 100%;
         min-height: calc(${KEEPSAKE_MIN_ROWS} * var(--ks-cell));
-        border: 1px solid rgba(255, 255, 255, .08);
+        border: 0;
         border-radius: 7px;
         overflow: hidden;
-        background-color: rgba(0, 0, 0, .13);
-        background-image:
-          linear-gradient(to right, rgba(255,255,255,.055) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(255,255,255,.055) 1px, transparent 1px);
-        background-size: var(--ks-cell) var(--ks-cell);
+        background: rgba(0, 0, 0, .08);
       }
       #relationshipsList .relationship-keepsake-item {
         position: relative;
@@ -127,6 +125,9 @@
         -webkit-user-drag: none;
         transition: filter .16s ease, opacity .16s ease, transform .16s ease;
       }
+      #relationshipsList .relationship-keepsake-item.css-rotate img {
+        rotate: 90deg;
+      }
       #relationshipsList .relationship-keepsake-item.locked img {
         filter: brightness(0);
         opacity: .90;
@@ -147,10 +148,14 @@
       }
       @media (max-width: 760px) {
         #relationshipsList .relationship-row {
-          grid-template-columns: minmax(0, 1fr) minmax(160px, .72fr);
+          grid-template-columns: 1fr;
+        }
+        #relationshipsList .relationship-keepsakes {
+          border-left: 0;
+          border-top: 1px solid var(--border);
         }
         #relationshipsList .relationship-keepsake-grid {
-          --ks-cell: clamp(14px, 3.3vw, 20px);
+          --ks-cell: clamp(13px, 4.3vw, 19px);
         }
       }
     `;
@@ -168,28 +173,126 @@
     else setTimeout(run, 0);
   }
 
-  function spriteAspectRatio(sprite) {
-    const src = String(sprite || '').trim();
-    if (!src) return 1;
-    const cached = spriteAspectCache.get(src);
-    if (Number.isFinite(cached) && cached > 0) return cached;
-    if (cached === null) return 1;
+  function fallbackSpriteVisual(keepsake) {
+    return {
+      ratio: 1,
+      previewSrc: String(keepsake?.sprite || ''),
+      opaqueWidth: null,
+      opaqueHeight: null,
+      rotated: !!keepsake?.rotate90,
+      preRotated: false,
+    };
+  }
 
-    spriteAspectCache.set(src, null);
+  function spriteVisualInfo(keepsake) {
+    const src = String(keepsake?.sprite || '').trim();
+    if (!src) return fallbackSpriteVisual(keepsake);
+    const rotate90 = !!keepsake?.rotate90;
+    const cacheKey = `${rotate90 ? 'r90' : 'r0'}:${src}`;
+    const cached = spriteVisualCache.get(cacheKey);
+    if (cached) return cached;
+    if (cached === null) return fallbackSpriteVisual(keepsake);
+
+    spriteVisualCache.set(cacheKey, null);
     const image = new Image();
     image.decoding = 'async';
     image.onload = () => {
-      const width = Number(image.naturalWidth) || 1;
-      const height = Number(image.naturalHeight) || 1;
-      spriteAspectCache.set(src, Math.max(.15, Math.min(6, width / height)));
+      const naturalWidth = Math.max(1, Number(image.naturalWidth) || 1);
+      const naturalHeight = Math.max(1, Number(image.naturalHeight) || 1);
+      let minX = 0;
+      let minY = 0;
+      let maxX = naturalWidth - 1;
+      let maxY = naturalHeight - 1;
+      let previewSrc = src;
+      let preRotated = false;
+
+      try {
+        const scan = document.createElement('canvas');
+        scan.width = naturalWidth;
+        scan.height = naturalHeight;
+        const scanCtx = scan.getContext('2d', { willReadFrequently: true });
+        if (!scanCtx) throw new Error('2d canvas unavailable');
+        scanCtx.clearRect(0, 0, naturalWidth, naturalHeight);
+        scanCtx.drawImage(image, 0, 0);
+        const pixels = scanCtx.getImageData(0, 0, naturalWidth, naturalHeight).data;
+        let foundOpaque = false;
+        minX = naturalWidth;
+        minY = naturalHeight;
+        maxX = -1;
+        maxY = -1;
+        for (let y = 0; y < naturalHeight; y++) {
+          for (let x = 0; x < naturalWidth; x++) {
+            const alpha = pixels[((y * naturalWidth + x) * 4) + 3];
+            if (alpha < KEEPSAKE_ALPHA_THRESHOLD) continue;
+            foundOpaque = true;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+        if (!foundOpaque) {
+          minX = 0; minY = 0; maxX = naturalWidth - 1; maxY = naturalHeight - 1;
+        }
+
+        const cropWidth = Math.max(1, maxX - minX + 1);
+        const cropHeight = Math.max(1, maxY - minY + 1);
+        const rotatedWidth = rotate90 ? cropHeight : cropWidth;
+        const rotatedHeight = rotate90 ? cropWidth : cropHeight;
+        const scale = Math.min(1, KEEPSAKE_PREVIEW_MAX_PX / Math.max(rotatedWidth, rotatedHeight));
+        const outputWidth = Math.max(1, Math.round(rotatedWidth * scale));
+        const outputHeight = Math.max(1, Math.round(rotatedHeight * scale));
+        const preview = document.createElement('canvas');
+        preview.width = outputWidth;
+        preview.height = outputHeight;
+        const previewCtx = preview.getContext('2d');
+        if (!previewCtx) throw new Error('preview 2d canvas unavailable');
+        previewCtx.imageSmoothingEnabled = true;
+        if (rotate90) {
+          previewCtx.translate(outputWidth / 2, outputHeight / 2);
+          previewCtx.rotate(Math.PI / 2);
+          previewCtx.drawImage(
+            image,
+            minX, minY, cropWidth, cropHeight,
+            -(cropWidth * scale) / 2, -(cropHeight * scale) / 2,
+            cropWidth * scale, cropHeight * scale,
+          );
+        } else {
+          previewCtx.drawImage(image, minX, minY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+        }
+        previewSrc = preview.toDataURL('image/png');
+        preRotated = rotate90;
+      } catch (err) {
+        // Same-origin game sprites take the opaque-pixel path above. External
+        // provider images may be canvas-tainted; keep them usable with natural
+        // dimensions and CSS rotation rather than breaking the panel.
+        window.__farmLog?.(`[Relationships] Keepsake sprite analysis fallback for ${src}: ${err?.message || err}`, 'warn', 'ui');
+        minX = 0; minY = 0; maxX = naturalWidth - 1; maxY = naturalHeight - 1;
+      }
+
+      const opaqueWidth = Math.max(1, maxX - minX + 1);
+      const opaqueHeight = Math.max(1, maxY - minY + 1);
+      const displayWidth = rotate90 ? opaqueHeight : opaqueWidth;
+      const displayHeight = rotate90 ? opaqueWidth : opaqueHeight;
+      spriteVisualCache.set(cacheKey, {
+        ratio: Math.max(.15, Math.min(6, displayWidth / displayHeight)),
+        previewSrc,
+        opaqueWidth,
+        opaqueHeight,
+        rotated: rotate90,
+        preRotated,
+      });
       scheduleKeepsakeRerender();
     };
     image.onerror = () => {
-      spriteAspectCache.set(src, 1);
+      spriteVisualCache.set(cacheKey, {
+        ...fallbackSpriteVisual(keepsake),
+        ratio: 1,
+      });
       scheduleKeepsakeRerender();
     };
     image.src = src;
-    return 1;
+    return fallbackSpriteVisual(keepsake);
   }
 
   function footprintForKeepsake(keepsake) {
@@ -202,7 +305,7 @@
       };
     }
 
-    const ratio = spriteAspectRatio(keepsake?.sprite);
+    const ratio = spriteVisualInfo(keepsake).ratio;
     const w = Math.max(1, Math.min(KEEPSAKE_MAX_ITEM_CELLS, Math.round(Math.sqrt(KEEPSAKE_TARGET_CELLS * ratio))));
     const h = Math.max(1, Math.min(KEEPSAKE_MAX_ITEM_CELLS, Math.round(Math.sqrt(KEEPSAKE_TARGET_CELLS / ratio))));
     return { w: Math.min(KEEPSAKE_GRID_COLUMNS, w), h };
@@ -233,6 +336,7 @@
           unlocked: !!trust.giftCompleted?.(gift),
           source: 'weapon-trust',
           itemKey,
+          rotate90: true,
         };
       });
   }
@@ -332,10 +436,12 @@
     const itemsHtml = placements.map(({ keepsake, row, col, w, h }) => {
       const unlocked = keepsake.unlocked;
       const title = unlocked ? keepsake.label : 'Locked keepsake';
+      const visual = spriteVisualInfo(keepsake);
       const sprite = keepsake.sprite
-        ? `<img src="${escAttr(keepsake.sprite)}" alt="" loading="eager">`
+        ? `<img src="${escAttr(visual.previewSrc || keepsake.sprite)}" alt="" loading="eager">`
         : '<span class="relationship-keepsake-fallback" aria-hidden="true"></span>';
-      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
+      const cssRotate = keepsake.rotate90 && !visual.preRotated ? ' css-rotate' : '';
+      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}${cssRotate}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
     }).join('');
 
     return `
@@ -364,13 +470,18 @@
       : [...new Set((window.WeaponTrustVisits?.config?.gifts || []).map(gift => gift?.npcId).filter(Boolean))];
     const report = {};
     for (const id of ids) {
-      report[id] = packKeepsakes(getKeepsakesForNpc(id)).placements.map(item => ({
-        id: item.keepsake.id,
-        unlocked: item.keepsake.unlocked,
-        sprite: item.keepsake.sprite,
-        footprint: `${item.w}x${item.h}`,
-        at: `${item.col},${item.row}`,
-      }));
+      report[id] = packKeepsakes(getKeepsakesForNpc(id)).placements.map(item => {
+        const visual = spriteVisualInfo(item.keepsake);
+        return {
+          id: item.keepsake.id,
+          unlocked: item.keepsake.unlocked,
+          sprite: item.keepsake.sprite,
+          opaquePixels: visual.opaqueWidth && visual.opaqueHeight ? `${visual.opaqueWidth}x${visual.opaqueHeight}` : 'pending/fallback',
+          rotation: item.keepsake.rotate90 ? 90 : 0,
+          footprint: `${item.w}x${item.h}`,
+          at: `${item.col},${item.row}`,
+        };
+      });
     }
     window.__farmLog?.(`[Relationships] Keepsake layout ${JSON.stringify(report)}`, 'info', 'ui');
     return report;
