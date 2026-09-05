@@ -13,7 +13,7 @@
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20260904j', base).href,
     new URL('character-scale-comparison.js?v=20260904k', base).href,
-    new URL('character-scale-comparison-presentation.js?v=20260905a', base).href,
+    new URL('character-scale-comparison-presentation.js?v=20260905b', base).href,
   ];
   const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
     const script = document.createElement('script');
