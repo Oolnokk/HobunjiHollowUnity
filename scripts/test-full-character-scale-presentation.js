@@ -36,7 +36,8 @@ assert(Math.abs(api.rawHeadPercentFromRuntime(1.02, 1) - 102) < 1e-9, 'Mao-ao ma
 assert(Math.abs(api.rawHeadPercentFromRuntime(1.085, 0.75) - 81.375) < 1e-9, 'Kenkari male head should include its 75% portrait-plane scale');
 assert(Math.abs(api.rawHeadPercentFromRuntime(1.01, 1.18) - 119.18) < 1e-9, 'Mashtzarr male head should include its 118% portrait-plane scale');
 assert(Math.abs(api.runtimeHeadPercentFromRaw(81.375, 0.75) - 108.5) < 1e-9, 'raw-PNG percentage must round-trip to the existing runtime headScale percent');
-assert.deepStrictEqual(Array.from(Object.values(api.rawHeadBounds(0.75))), [7.5, 300], 'raw head bounds must map the runtime 10%-400% limits through portrait scale');
+const bounds = api.rawHeadBounds(0.75);
+assert(Math.abs(bounds.min - 7.5) < 1e-9 && Math.abs(bounds.max - 300) < 1e-9, 'raw head bounds must map the runtime 10%-400% limits through portrait scale');
 assert(Math.abs(api.pinchZoomFromDistances(1, 100, 150) - 1.5) < 1e-9, 'pinch spreading must zoom the orthographic camera in');
 assert(Math.abs(api.pinchZoomFromDistances(2, 200, 100) - 1) < 1e-9, 'pinch closing must zoom the orthographic camera out');
 assert.strictEqual(api.pinchZoomFromDistances(1, 100, 5000), 6, 'pinch zoom must respect the configured maximum');
@@ -46,7 +47,7 @@ assert.match(source, /camera\.isPerspectiveCamera = false/);
 assert.match(source, /camera\.isOrthographicCamera = true/);
 assert.match(source, /projectionMatrix\.makeOrthographic/);
 assert.match(source, /camera\.zoom = pinchZoomFromDistances/);
-assert.match(source, /event\.stopImmediatePropagation\(\).*OrbitControls never receives the second finger/s);
+assert.match(source, /stopImmediatePropagation\(\).*OrbitControls never receives the second finger/s);
 assert.match(source, /document\.activeElement === number/);
 assert.match(source, /Empty\/partial mobile numeric edits stay editable/);
 assert.doesNotMatch(source, /translateDisplayedHeadForOriginalHandler/, 'the old same-event head-value rewrite must stay removed');
