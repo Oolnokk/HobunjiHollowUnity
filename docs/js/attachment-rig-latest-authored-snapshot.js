@@ -1,6 +1,6 @@
 // Bootstrap the sanitized latest-authored rig snapshot, shared whole-rig scale,
-// runtime head-scale bridge, and the Animation Author's dedicated species/gender
-// scale-comparison workspace.
+// runtime head-scale bridge, Pixel Probe character-rig verification, and the
+// Animation Author's dedicated species/gender scale-comparison workspace.
 (() => {
   'use strict';
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
@@ -10,6 +10,7 @@
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
     new URL('character-rig-scale.js?v=20260904i', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20260905a', base).href,
+    new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20260904j', base).href,
     new URL('character-scale-comparison.js?v=20260904k', base).href,
   ];
