@@ -1,38 +1,51 @@
-// Full Character Scale body-input guard.
+// Full Character Scale guarded input path.
 //
-// character-scale-comparison.js historically reapplies X/Y/Head/Head-Y together
-// whenever any one control changes. The raw-PNG Head presentation adapter makes
-// that unsafe because the visible Head percentage is not the runtime headScale
-// percentage. Own Width/Height/Head-Y input here and update only the requested
-// field, preserving headScale byte-for-byte.
+// The legacy comparison editor reapplies X/Y/Head/Head-Y together whenever any
+// one control changes. Head is now displayed in raw-PNG percentage space, so
+// letting that legacy handler read the visible Head value can reinterpret it as
+// runtime headScale and slam it into the 400% clamp. This module owns all four
+// scale controls, persists them through the host's round-trip map, and only
+// changes the field the user actually touched.
 (() => {
   'use strict';
 
   if (!/\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname)) return;
 
-  const MODE = 'scale-compare'; // Scopes the interception to Full Character Scale mode only.
+  const MODE = 'scale-compare'; // Scopes interception to Full Character Scale mode only.
   const PANEL_ID = 'maaFullScalePanel'; // Existing comparison control panel.
   const RIG_SAVE_KEY = 'hobunjiAttachmentRigProfiles.v2'; // Same autosave key used by the editor.
-  const BODY_FIELDS = Object.freeze({
+  const MIN_RUNTIME_HEAD = 0.1; // Matches HobunjiCharacterRigScale's clamp.
+  const MAX_RUNTIME_HEAD = 4; // Matches HobunjiCharacterRigScale's clamp.
+  const FIELD_SPECS = Object.freeze({
     maaFullScaleRangeX: Object.freeze({ field: 'x', pair: 'maaFullScaleNumX', min: 10, max: 400, number: false }),
     maaFullScaleNumX: Object.freeze({ field: 'x', pair: 'maaFullScaleRangeX', min: 10, max: 400, number: true }),
     maaFullScaleRangeY: Object.freeze({ field: 'y', pair: 'maaFullScaleNumY', min: 10, max: 400, number: false }),
     maaFullScaleNumY: Object.freeze({ field: 'y', pair: 'maaFullScaleRangeY', min: 10, max: 400, number: true }),
+    maaFullScaleRangeHead: Object.freeze({ field: 'head', pair: 'maaFullScaleNumHead', rawHead: true, number: false }),
+    maaFullScaleNumHead: Object.freeze({ field: 'head', pair: 'maaFullScaleRangeHead', rawHead: true, number: true }),
     maaFullScaleRangeOffsetY: Object.freeze({ field: 'offsetY', pair: 'maaFullScaleNumOffsetY', min: -50, max: 50, number: false }),
     maaFullScaleNumOffsetY: Object.freeze({ field: 'offsetY', pair: 'maaFullScaleRangeOffsetY', min: -50, max: 50, number: true }),
   });
 
   let installedPanel = null; // Prevents duplicate capture listeners if the workspace is rebuilt.
-  let persistTimer = 0; // Debounces local rig autosaves while dragging a slider.
+  let persistTimer = 0; // Debounces the legacy rig JSON autosave while dragging.
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value)));
+  const finitePositive = (value, fallback = 1) => {
+    const number = Number(value); // Used for portrait-scale conversion and safe fallback.
+    return Number.isFinite(number) && number > 1e-9 ? number : fallback;
+  };
 
   function comparisonApi() {
     return window.HobunjiFullCharacterScaleComparison || null;
   }
 
+  function host() {
+    return window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost || null;
+  }
+
   function selectedIdentity() {
-    const key = String(comparisonApi()?.selectedKey || ''); // Resolves the currently edited canonical species/gender profile.
+    const key = String(comparisonApi()?.selectedKey || ''); // Resolves the canonical species/gender currently being edited.
     const [species, gender] = key.split('::');
     return species && gender ? { key, species, gender } : null;
   }
@@ -46,16 +59,39 @@
       || { x: 1, y: 1, head: 1, offsetY: 0 };
   }
 
-  function nextScalePreservingHead(current, field, percent) {
+  function portraitScaleFor(identity) {
+    const authored = Number(profileFor(identity)?.anatomy?.portraitScale); // Same species/gender portrait-plane multiplier used by the preview/runtime.
+    if (Number.isFinite(authored) && authored > 0) return authored;
+    try {
+      return finitePositive(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+        appearance: { speciesId: identity?.species, gender: identity?.gender },
+      }), 1);
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  function boundsFor(identity, spec) {
+    if (!spec?.rawHead) return { min: spec.min, max: spec.max };
+    const portrait = portraitScaleFor(identity); // Converts runtime [0.1,4] into raw-PNG display percentage bounds.
+    return { min: MIN_RUNTIME_HEAD * portrait * 100, max: MAX_RUNTIME_HEAD * portrait * 100 };
+  }
+
+  function nextScale(current, field, percent, portraitScale = 1) {
     const next = {
       x: Number(current?.x) || 1,
       y: Number(current?.y) || 1,
       head: Number(current?.head) || 1,
       offsetY: Number(current?.offsetY) || 0,
-    }; // Head is copied first and is never derived from the visible Head control.
+    }; // Every untouched field, especially Head during body edits, is copied verbatim.
     if (field === 'x' || field === 'y') next[field] = Number(percent) / 100;
     else if (field === 'offsetY') next.offsetY = Number(percent) / 100;
+    else if (field === 'head') next.head = clamp((Number(percent) / 100) / finitePositive(portraitScale, 1), MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD);
     return next;
+  }
+
+  function nextScalePreservingHead(current, field, percent) {
+    return nextScale(current, field, percent, 1); // Public regression helper for width/height/head-Y edits.
   }
 
   function previewGroupFor(identity) {
@@ -63,10 +99,9 @@
   }
 
   function ageFractionFor(group) {
-    let npcId = null; // Filled from the preview avatar's existing userData so age hunch survives body edits.
+    let npcId = null; // Filled from preview userData so age hunch survives any scale edit.
     group?.traverse?.(node => { if (!npcId && node?.userData?.npcId) npcId = node.userData.npcId; });
-    const host = window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost;
-    return npcId ? (Number(host?.npcAgeFor?.(npcId)) || 0) : 0;
+    return npcId ? (Number(host()?.npcAgeFor?.(npcId)) || 0) : 0;
   }
 
   function persistProfilesSoon() {
@@ -74,86 +109,109 @@
     persistTimer = setTimeout(() => {
       persistTimer = 0;
       try {
-        const host = window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost;
-        const data = host?.serializeRig?.() || {
+        const data = host()?.serializeRig?.() || {
           schema: 'hobunji.attachment-rig-profiles.v10',
           exportedAt: new Date().toISOString(),
           profiles: JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES || {})),
         };
         localStorage.setItem(RIG_SAVE_KEY, JSON.stringify(data));
       } catch (error) {
-        console.warn('[full-character-scale] body autosave failed', error);
+        console.warn('[full-character-scale] scale autosave failed', error);
       }
     }, 180);
   }
 
-  function applyBodyField(field, percent) {
+  function applyScaleField(field, percent) {
     const identity = selectedIdentity();
     const profile = profileFor(identity);
     if (!identity || !profile) return null;
     const before = currentScale(identity);
-    const next = nextScalePreservingHead(before, field, percent);
-    profile.anatomy ||= {};
-    if (field === 'x') profile.anatomy.rigScaleX = next.x;
-    else if (field === 'y') profile.anatomy.rigScaleY = next.y;
-    else profile.anatomy.headOffsetY = next.offsetY;
-    // Deliberately DO NOT write profile.anatomy.headScale here. That field is
-    // preserved from `before.head`, preventing the old raw-percent -> 400% bug.
+    const portrait = portraitScaleFor(identity);
+    const next = nextScale(before, field, percent, portrait);
+
+    // The host owns the durable scale override map used by Rig export/reload.
+    // Calling it directly avoids the old document-bubble listener, which cannot
+    // observe these deliberately capture-stopped events.
+    const persisted = host()?.setRigScale?.(identity.species, identity.gender, next) || next;
+    if (!host()?.setRigScale) {
+      profile.anatomy ||= {};
+      profile.anatomy.rigScaleX = next.x;
+      profile.anatomy.rigScaleY = next.y;
+      profile.anatomy.headScale = next.head;
+      profile.anatomy.headOffsetY = next.offsetY;
+    }
+
     const group = previewGroupFor(identity);
-    if (group) window.HobunjiCharacterRigScale?.applyToParent?.(group, identity.species, identity.gender, next, ageFractionFor(group));
+    if (group) window.HobunjiCharacterRigScale?.applyToParent?.(group, identity.species, identity.gender, persisted, ageFractionFor(group));
     persistProfilesSoon();
-    return next;
+    return persisted;
   }
 
-  function consumeBodyInput(event) {
+  function displayedPercentFor(identity, field, scale) {
+    if (field === 'head') return scale.head * portraitScaleFor(identity) * 100;
+    if (field === 'offsetY') return scale.offsetY * 100;
+    return scale[field] * 100;
+  }
+
+  function consumeScaleInput(event) {
     if (document.body.dataset.animationAuthorMode !== MODE) return;
-    const spec = BODY_FIELDS[event.target?.id];
+    const spec = FIELD_SPECS[event.target?.id];
     if (!spec) return;
     event.stopPropagation();
-    event.stopImmediatePropagation(); // Blocks the legacy all-four-fields target listener from touching Head.
+    event.stopImmediatePropagation(); // Blocks both the legacy all-fields target handler and later presentation adapters.
 
+    const identity = selectedIdentity();
+    if (!identity) return;
+    const bounds = boundsFor(identity, spec);
     const raw = Number(event.target.value);
-    if (!Number.isFinite(raw)) return; // Keep partial/empty mobile number edits editable.
-    if (spec.number && (raw < spec.min || raw > spec.max)) return; // Do not snap the first digit of a multi-digit typed value.
-    const percent = clamp(raw, spec.min, spec.max);
-    const pair = document.getElementById(spec.pair); // Mirrors the valid value into the range/number partner.
+    if (!Number.isFinite(raw)) return; // Empty/partial mobile number edits remain editable.
+    if (spec.number && (raw < bounds.min || raw > bounds.max)) return; // Do not snap the first digit of a multi-digit value.
+    const percent = clamp(raw, bounds.min, bounds.max);
+    const pair = document.getElementById(spec.pair); // Mirrors valid range/number partners.
     if (pair) pair.value = String(percent);
-    applyBodyField(spec.field, percent);
+    applyScaleField(spec.field, percent);
   }
 
-  function commitBodyNumber(event) {
+  function commitScaleNumber(event) {
     if (document.body.dataset.animationAuthorMode !== MODE) return;
-    const spec = BODY_FIELDS[event.target?.id];
+    const spec = FIELD_SPECS[event.target?.id];
     if (!spec?.number) return;
     event.stopPropagation();
     event.stopImmediatePropagation();
     const identity = selectedIdentity();
+    if (!identity) return;
+    const bounds = boundsFor(identity, spec);
     const scale = currentScale(identity);
-    const fallbackPercent = spec.field === 'offsetY' ? scale.offsetY * 100 : scale[spec.field] * 100;
+    const fallbackPercent = displayedPercentFor(identity, spec.field, scale);
     const typed = Number(event.target.value);
-    const percent = Number.isFinite(typed) ? clamp(typed, spec.min, spec.max) : fallbackPercent;
+    const percent = Number.isFinite(typed) ? clamp(typed, bounds.min, bounds.max) : fallbackPercent;
     event.target.value = String(Math.round(percent * 10) / 10);
     const pair = document.getElementById(spec.pair);
     if (pair) pair.value = String(percent);
-    applyBodyField(spec.field, percent);
+    applyScaleField(spec.field, percent);
   }
 
   function install() {
     const panel = document.getElementById(PANEL_ID);
     if (!panel || installedPanel === panel) return !!panel;
     installedPanel = panel;
-    panel.addEventListener('input', consumeBodyInput, true);
-    panel.addEventListener('change', commitBodyNumber, true);
+    panel.addEventListener('input', consumeScaleInput, true);
+    panel.addEventListener('change', commitScaleNumber, true);
     panel.addEventListener('focusout', event => {
-      if (BODY_FIELDS[event.target?.id]?.number) commitBodyNumber(event);
+      if (FIELD_SPECS[event.target?.id]?.number) commitScaleNumber(event);
     }, true);
     return true;
   }
 
-  window.HobunjiFullScaleBodyInputGuard = Object.freeze({ nextScalePreservingHead, applyBodyField });
+  window.HobunjiFullScaleBodyInputGuard = Object.freeze({
+    nextScalePreservingHead,
+    nextScale,
+    applyScaleField,
+    boundsFor,
+  });
 
   install();
-  let attempts = 0; // Panel is lazy; retry until character-scale-comparison.js creates it.
+  let attempts = 0; // Panel is lazy; loaded before presentation so this capture listener wins ownership.
   const timer = setInterval(() => {
     if (install() || ++attempts >= 600) clearInterval(timer);
   }, 50);
