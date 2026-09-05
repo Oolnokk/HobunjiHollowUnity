@@ -23,12 +23,16 @@
     scriptScrollPhase: 0,
     lastFrameTime: 0,
     els: null,
-    generation: 0, // Bumped by hide() so a show() still awaiting its fonts/config
-                   // fetch can tell it was cancelled and must not paint the
-                   // overlay after the fact -- see show()'s call sites (e.g.
-                   // enterZone/enterBuilding), several of which fire-and-forget
-                   // show() right before a synchronous rebuild and call hide()
-                   // immediately after, well before this async chain settles.
+    generation: 0, // Bumped by each show() call so a stale one still awaiting
+                   // its fonts/config fetch (or its post-paint rAFs) can tell a
+                   // newer show() has since taken over -- see show()'s call
+                   // sites (e.g. enterZone/enterBuilding), several of which
+                   // fire-and-forget show() right before a synchronous rebuild.
+    hiddenGeneration: 0, // Set to the generation hide() most recently hid, so a
+                         // stale show() can tell it was actually cancelled by a
+                         // real hide() call, as opposed to merely superseded by
+                         // a newer show() (which owns the overlay now and must
+                         // not be hidden out from under it).
   };
 
   function ensureFontsLoaded() {
@@ -159,7 +163,7 @@
   async function show() {
     const myGeneration = ++state.generation;
     await Promise.all([ensureFontsLoaded(), ensureConfigLoaded()]);
-    if (state.generation !== myGeneration) return; // hide() (or a newer show()) already ran
+    if (state.generation !== myGeneration || state.hiddenGeneration === myGeneration) return; // hide() (or a newer show()) already ran
     const config = await state.configPromise;
     const els = buildDom();
     const settings = config.settings || {};
@@ -184,11 +188,14 @@
     // Two rAFs: the first is scheduled before the browser's next paint: the
     // second only fires after that paint has actually happened.
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    if (state.generation !== myGeneration) hide(); // hide() ran while we were waiting on the paint
+    // Only self-correct if hide() actually ran against this exact show() while we
+    // waited on the paint -- a newer show() taking over in the meantime (without an
+    // intervening hide()) now owns the overlay and must be left alone, not clobbered.
+    if (state.hiddenGeneration === myGeneration) hide();
   }
 
   function hide() {
-    state.generation++;
+    state.hiddenGeneration = state.generation;
     state.visible = false;
     if (state.motionRaf) { cancelAnimationFrame(state.motionRaf); state.motionRaf = null; }
     state.els?.root.classList.remove('visible');

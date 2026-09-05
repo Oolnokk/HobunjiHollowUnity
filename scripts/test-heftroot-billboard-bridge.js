@@ -11,18 +11,18 @@ function source(relativePath) {
 
 const bridge = source('docs/js/heftroot-billboard-bridge.js'); // Used to pin the 3D->PNG replacement behavior without coupling to unrelated crop art.
 const foliage = source('docs/js/foliage-generator.js'); // Used to prove needlegrain/heftroot still enter through separate public builders.
-const game = source('docs/game.js'); // Used to prove game.js still owns the existing heftroot cluster/growth lifecycle.
+const cropRendering = source('docs/js/vegetation-crop-rendering.js'); // Crop draw code now lives here rather than inline in game.js -- still owns the heftroot cluster/growth lifecycle.
 const loader = source('docs/js/combat/combat-config-loader.js'); // Used to pin parser-blocking bridge order before game.js constructs crops.
 
 assert.match(foliage, /buildNeedlegrainMesh\(growth01, col, row\)/,
   'needlegrain keeps its independent procedural foliage builder');
 assert.match(foliage, /buildHeftrootMesh\(growth01, col, row\)/,
   'heftroot still exposes the builder seam replaced by the billboard bridge');
-assert.match(game, /crop === 'needlegrain'[\s\S]*?FG\.buildNeedlegrainMesh/,
-  'needlegrain continues through its procedural builder in game.js');
-assert.match(game, /crop === 'heftroot'[\s\S]*?FG\.buildHeftrootMesh/,
+assert.match(cropRendering, /crop === 'needlegrain'[\s\S]*?FG\.buildNeedlegrainMesh/,
+  'needlegrain continues through its procedural builder');
+assert.match(cropRendering, /crop === 'heftroot'[\s\S]*?FG\.buildHeftrootMesh/,
   'heftroot continues through the normal crop lifecycle while its visual builder is replaceable');
-assert.match(game, /offsets = \[\[-0\.20, 0, 0\.14\], \[0\.22, 0, 0\.14\], \[0\.0, 0, -0\.22\]\]/,
+assert.match(cropRendering, /offsets = \[\[-0\.20, 0, 0\.14\], \[0\.22, 0, 0\.14\], \[0\.0, 0, -0\.22\]\]/,
   'the legacy three-plant heftroot wrapper still owns its existing triangle offsets');
 
 assert.match(bridge, /BILLBOARD_PATH = 'assets\/objectsprites\/heftroot\.png'/,

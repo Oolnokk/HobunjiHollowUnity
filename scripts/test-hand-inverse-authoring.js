@@ -40,7 +40,7 @@ assert(toolGrips.includes('hoe:'), 'hoe must have a secondary-grip definition');
 assert((toolGrips.match(/enabled: false/g) || []).length >= 2, 'hatchet and hoe secondary grips must default disabled pending reauthoring');
 assert(toolGrips.includes('secondaryGripForTool'), 'tool grip config must expose a reusable secondary socket lookup');
 
-assert(directEditor.includes('Optional second hand grip'), 'Attack Editor must expose secondary grip authoring');
+assert(directEditor.includes('Attach left hand to secondary grip'), 'Attack Editor must expose secondary grip authoring');
 assert(!directEditor.includes('handShowArmBones'), 'Attack Editor must not restore the old arm-bone toggle');
 assert(directEditor.includes('handSecondaryGripEnabled'), 'Attack Editor must provide a secondary grip enable toggle');
 assert(directEditor.includes('NO ARM IK'), 'Attack Editor must visibly report the simplified attachment model');

@@ -31,16 +31,16 @@ const plain = v => ({ x: v.x, y: v.y, head: v.head, offsetY: v.offsetY });
 // hobunji_full_character_scales.json), each axis genuinely independent now —
 // no longer x === y === head per species/gender.
 const authoredDefaults = {
-  'tletingan::male': { x: 0.85, y: 0.85, head: 0.85, offsetY: 0 },
-  'tletingan::female': { x: 1.01, y: 0.89, head: 0.92, offsetY: 0 },
-  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.94, offsetY: 0 },
-  'engh-sho::female': { x: 0.795, y: 0.765, head: 0.86, offsetY: 0 },
-  'mao-ao::male': { x: 1.125, y: 1.125, head: 1.085, offsetY: 0 },
-  'mao-ao::female': { x: 1.045, y: 1.045, head: 1.045, offsetY: 0 },
-  'kenkari::male': { x: 1.225, y: 1.225, head: 1.085, offsetY: 0 },
-  'kenkari::female': { x: 1.1, y: 1.1, head: 1.1, offsetY: 0 },
-  'mashtzarr::male': { x: 0.95, y: 1.255, head: 1.01, offsetY: -0.065 },
-  'mashtzarr::female': { x: 1.01, y: 1.095, head: 0.91, offsetY: -0.06 },
+  'tletingan::male': { x: 0.85, y: 0.85, head: 0.8824, offsetY: 0 },
+  'tletingan::female': { x: 0.915, y: 0.89, head: 0.8471, offsetY: 0 },
+  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.9053, offsetY: 0 },
+  'engh-sho::female': { x: 0.795, y: 0.81, head: 0.8947, offsetY: 0 },
+  'mao-ao::male': { x: 1.125, y: 1.125, head: 1.0813, offsetY: 0 },
+  'mao-ao::female': { x: 1.045, y: 1.045, head: 1.075, offsetY: 0 },
+  'kenkari::male': { x: 1.225, y: 1.225, head: 1.04, offsetY: 0 },
+  'kenkari::female': { x: 1.1, y: 1.1, head: 1.0467, offsetY: 0 },
+  'mashtzarr::male': { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 },
+  'mashtzarr::female': { x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 },
 };
 for (const [key, expected] of Object.entries(authoredDefaults)) {
   const [species, gender] = key.split('::');
@@ -58,7 +58,7 @@ const api = context.HobunjiCharacterRigScale;
 assert(api, 'whole-rig scale API must install');
 assert.strictEqual(profile.anatomy.rigScaleX, 1.125, 'live shared rig profiles must receive the authored x default when no override exists');
 assert.strictEqual(profile.anatomy.rigScaleY, 1.125, 'live shared rig profiles must receive the authored y default when no override exists');
-assert.strictEqual(profile.anatomy.headScale, 1.085, 'live shared rig profiles must receive the authored head default when no override exists');
+assert.strictEqual(profile.anatomy.headScale, 1.0813, 'live shared rig profiles must receive the authored head default when no override exists');
 assert.strictEqual(profile.anatomy.headOffsetY, 0, 'live shared rig profiles must receive the authored offsetY default when no override exists');
 assert.deepStrictEqual(plain(api.scaleFor('mao-ao', 'male')), authoredDefaults['mao-ao::male']);
 
@@ -305,7 +305,7 @@ assert.match(scaleHostSource, /resetNpcAges\(\)/,
 // so the default config and runtime scale module are not editor-only features.
 assert.match(heldActionSource, /attachment-rig-latest-authored-snapshot\.js/,
   'game held-hand bootstrap must load the shared attachment-rig bootstrap');
-assert.match(scaleBootstrapSource, /character-rig-scale-defaults\.js\?v=20260904h/,
+assert.match(scaleBootstrapSource, /character-rig-scale-defaults\.js\?v=20260905c/,
   'shared bootstrap must load authored full-character defaults');
 assert.ok(scaleBootstrapSource.indexOf('character-rig-scale-defaults.js') < scaleBootstrapSource.indexOf('character-rig-scale.js'),
   'defaults must load before the runtime scale module');

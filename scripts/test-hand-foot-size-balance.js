@@ -26,8 +26,9 @@ const windowObject = {
       assets: { pngPlaneAvatar: { proceduralFeet: { footScale: { default: 1 } } } },
     },
   },
+  requestAnimationFrame() {}, // hand-tool-grips.js self-schedules a managed per-frame loop on load.
 };
-const sandbox = { window: windowObject, localStorage };
+const sandbox = { window: windowObject, localStorage, requestAnimationFrame: windowObject.requestAnimationFrame, location: { pathname: '/index.html' } };
 const almostEqual = (actual, expected) => assert(Math.abs(actual - expected) < 1e-12, `expected ${actual} to equal ${expected}`); // Handles decimal scale products without brittle IEEE-754 equality.
 
 vm.runInNewContext(profileSource, sandbox, { filename: 'hand-model-profiles.js' });
@@ -63,15 +64,22 @@ const grips = windowObject.HobunjiHandToolGrips;
 assert.strictEqual(grips.secondaryGripForTool('hatchet'), null, 'hatchet second-hand toggle must default off');
 assert.strictEqual(grips.secondaryGripForTool('bronzehoe'), null, 'hoe second-hand toggle must default off');
 
-const oldGrips = grips.clone(); // Simulates existing saved/editor data whose enabled toggles must be cleared once.
-delete oldGrips.secondaryGripPreset;
-oldGrips.tools.hatchet.secondaryGrip.enabled = true;
-oldGrips.tools.hoe.secondaryGrip.enabled = true;
+// Simulates saved/editor data from before the animation-gated span migration -- no
+// secondaryGripSpan key at all, just the old always-on per-tool toggle -- which must
+// convert into a span but not resurrect as always-on secondary grip afterward.
+const oldGrips = {
+  schema: grips.schema,
+  tools: {
+    hatchet: { secondaryGrip: { enabled: true, position: { x: 0, y: 0, z: 1 } } },
+    hoe: { secondaryGrip: { enabled: true, position: { x: 0, y: 0, z: 1 } } },
+  },
+};
 grips.replace(oldGrips);
-assert.strictEqual(grips.secondaryGripForTool('hatchet'), null);
-assert.strictEqual(grips.secondaryGripForTool('hoe'), null);
-grips.mutate(data => { data.tools.hatchet.secondaryGrip.enabled = true; });
-assert(grips.secondaryGripForTool('hatchet'), 'future deliberate reauthoring must remain possible after migration');
+assert.strictEqual(grips.secondaryGripForTool('hatchet'), null, 'legacy always-on toggle must not resurrect as always-on after migration');
+assert.strictEqual(grips.secondaryGripForTool('hoe'), null, 'legacy always-on toggle must not resurrect as always-on after migration');
+assert(grips.secondaryGripSpanForTool('hatchet')?.enabled, 'legacy always-on toggle must migrate into an enabled animation-gated span');
+grips.mutate(data => { data.tools.hatchet.secondaryGripSpan.enabled = true; });
+assert(grips.secondaryGripSpanForTool('hatchet')?.enabled, 'future deliberate reauthoring must remain possible after migration');
 
 assert.match(scratchConfigSource, /"sizeBalanceMultiplier": 1\.2/, 'shared feet config must enlarge all species by 20%');
 assert.match(feetSource, /footScaleMultiplierForSpecies\(speciesId, gender\) \* sizeBalanceMultiplier/, 'foot radius must apply the shared multiplier after species scale');

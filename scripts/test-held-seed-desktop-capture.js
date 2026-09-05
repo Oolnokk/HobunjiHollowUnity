@@ -15,12 +15,12 @@ const loader = source('docs/js/combat/combat-config-loader.js'); // Used to ensu
 const config = source('docs/config/scratchbones-config.js'); // Used to prove the displayed/action routing follows authored configurable bindings rather than stale hard-coded badges.
 const game = source('docs/game.js'); // Used to document the old mismatch this adapter must override without editing crop semantics.
 
-assert.match(config, /\{ "id": "action1", "label": "Tool\/Item Action 1", "desktop": "Space"/,
-  'authored action1 desktop binding is Space');
-assert.match(config, /\{ "id": "action2", "label": "Tool\/Item Action 2", "desktop": "KeyQ"/,
-  'authored action2 desktop binding is Q');
-assert.match(config, /\{ "id": "action3", "label": "Tool\/Item Action 3", "desktop": "KeyR"/,
-  'authored action3 desktop binding is R');
+assert.match(config, /\{ "id": "action1", "label": "Tool\/Item Action 1", "desktop": "Mouse0"/,
+  'authored action1 desktop binding is Mouse0');
+assert.match(config, /\{ "id": "action2", "label": "Tool\/Item Action 2", "desktop": "Mouse2"/,
+  'authored action2 desktop binding is Mouse2');
+assert.match(config, /\{ "id": "action3", "label": "Tool\/Item Action 3", "desktop": "KeyF"/,
+  'authored action3 desktop binding is F');
 assert.match(game, /const DESK_KEYS = \['E', 'Q', 'F3', 'F4'\]/,
   'regression fixture confirms game.js still writes the stale legacy desktop badges that need correcting at runtime');
 

@@ -74,11 +74,13 @@ const gameSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'game.js')
 const grassSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-grass-billboards.js'), 'utf8');
 const terrainChunkSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'terrain-render-chunks.js'), 'utf8');
 const mesaSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-plateau-mesa.js'), 'utf8');
+const terrainGeometrySource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'terrain-geometry.js'), 'utf8'); // Route grass apron exclusion now lives here rather than inline in game.js.
+const zoneRegrowthSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'zone-regrowth.js'), 'utf8'); // Runtime route-apron refresh-on-edit call site now lives here rather than inline in game.js.
 assert.match(gameSource, /isCarvedPlateauOverride[\s\S]{0,900}outTiles\.set\(key, \{ \.\.\.staked, type: t\.type \}\)/,
   'live workspace fold must mirror the preview carved-plateau preservation rule');
-assert.match(gameSource, /const EXCLUDED = new Set\(\[\.\.\.CARVED_TILE_TYPES,[^\n]+TileType\.RAMP, TileType\.PADDY\]\)/,
+assert.match(terrainGeometrySource, /const EXCLUDED = new Set\(\[\.\.\.deps\.CARVED_TILE_TYPES,[^\n]+deps\.TileType\.RAMP, deps\.TileType\.PADDY\]\)/,
   'the route grass apron must not cover any carved surface, waterfall, ramp, or paddy');
-assert.match(gameSource, /const ownsMesaSurface[\s\S]{0,650}ownsMesaSurface\(cellAt\(ci \+ dc, cj \+ dr\)\)/,
+assert.match(terrainGeometrySource, /const ownsMesaSurface[\s\S]{0,650}ownsMesaSurface\(cellAt\(ci \+ dc, cj \+ dr\)\)/,
   'the route grass apron must leave a complete one-cell seam around mesa and cliff geometry owners');
 assert.match(gameSource, /const matKey = tile\.type === TileType\.PATH \? TileType\.GRASS/,
   'a route tile excluded at a cliff seam must fall back to ordinary flat grass beneath its paved bricks');
@@ -86,31 +88,31 @@ assert.match(gameSource, /terrainTileDebug[\s\S]{0,500}routeExcluded:/,
   'mobile Pixel Probe must receive live route exclusion metadata from the global path mesh');
 assert.match(mesaSource, /if \(steep\)[\s\S]{0,360}ownerTile\.mesaCliffFace = true/,
   'the rendered mesa must tag every tile that actually emits a steep stone quad');
-assert.match(gameSource, /delete tile\.mesaCliffFace[\s\S]{0,700}buildPlateauMesa/,
+assert.match(mesaSource, /delete tile\.mesaCliffFace[\s\S]{0,700}buildPlateauMesa/,
   'mesa rebuilds must replace stale geometry-derived cliff ownership tags');
-assert.match(gameSource, /isExcludedTile: \(c, r\) => isExcludedCell\(c - minC, r - minR\)/,
+assert.match(terrainGeometrySource, /isExcludedTile: \(c, r\) => isExcludedCell\(c - minC, r - minR\)/,
   'load-time and runtime route-apron exclusions must share the complete-cell predicate');
 assert.doesNotMatch(gameSource, /PATH_(?:MESA|Z_FIGHT)_LIFT/,
   'the route grass mesh must not use a vertical lift that can expose it through neighboring cliff faces');
 assert.match(gameSource, /mesh\.name = 'zone_path_ground'/,
   'mobile Pixel Probe reports must identify the global path grass mesh directly');
-assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
+assert.match(terrainGeometrySource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,4200}refreshTile\(c, r\)[\s\S]{0,1000}indexAttr\.needsUpdate = true/,
   'the route grass apron must index the final rendered geometry for surgical runtime hole updates');
 assert.doesNotMatch(gameSource, /if \(isExcluded\(tci, tcj\)\) continue/,
   'route geometry must reserve restorable triangles even for tiles carved when the zone first loads');
-assert.match(gameSource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,1800}this\.isExcludedTile\(c, r\)\) this\.refreshTile\(c, r\)/,
+assert.match(terrainGeometrySource, /bindRenderedGroundGeometry\(geometry\)[\s\S]{0,1800}this\.isExcludedTile\(c, r\)\) this\.refreshTile\(c, r\)/,
   'initially carved route tiles must be collapsed before the first rendered frame');
 assert.match(terrainChunkSource, /notifyTerrainGeometryReady\(scene\)[\s\S]{0,1800}notifyTerrainGeometryReady\(scene\)/,
   'the terrain renderer must return the post-jigsaw, post-spatial-split geometry to runtime terrain owners');
-assert.match(gameSource, /zi\.pathNet\?\.refreshTileAndSeam\?\.\(col, row\)/,
+assert.match(zoneRegrowthSource, /zi\.pathNet\?\.refreshTileAndSeam\?\.\(col, row\)/,
   'runtime wilderness edits must toggle the edited route-apron tile and its one-cell cliff seam');
 assert.doesNotMatch(gameSource, /zi\.pathNet = buildPathNetworkGeo\(zi\.grid, zi\.cols, zi\.rows\)/,
   'runtime edits must not regenerate the whole route heightfield');
 assert.match(gameSource, /buildTerrainTileGeo\(c, r, tile\.type, zGrid, \{ includeCutWalls: true \}\)/,
   'wilderness trench meshes must request their own visible cut walls');
-assert.match(gameSource, /const wallIdx = \[\][\s\S]{0,4000}dirtIdx\.push\(\.\.\.wallIdx\)/,
+assert.match(terrainGeometrySource, /const wallIdx = \[\][\s\S]{0,4000}dirtIdx\.push\(\.\.\.wallIdx\)/,
   'trench cut walls must be included in the dirt geometry');
-assert.match(gameSource, /const isCutWaterBasin = options\.includeCutWalls && WATERWAY_TYPES\.has\(type\)[\s\S]{0,4200}if \(isDepression && options\.includeCutWalls\)/,
+assert.match(terrainGeometrySource, /const isCutWaterBasin = options\.includeCutWalls && deps\.WATERWAY_TYPES\.has\(type\)[\s\S]{0,4200}if \(isDepression && options\.includeCutWalls\)/,
   'wilderness waterways must use the trench-style full-depth basin and cut walls');
 assert.match(grassSource, /\[deps\.TileType\.GRASS, deps\.TileType\.SHRUB, deps\.TileType\.WEEDS\]\.includes\(liveTile\.type\)/,
   'rich grass patches must reject trenches and other carved runtime tiles');
@@ -164,9 +166,10 @@ const TileType = {
 };
 const CARVED_TILE_TYPES = new Set([TileType.RIVER, TileType.STREAM, TileType.WATERFALL, TileType.TRENCH, TileType.RAISED]);
 const PLATEAU_UNIT = 2.5;
+const deps = { TileType, CARVED_TILE_TYPES, PLATEAU_UNIT }; // buildPathNetworkGeo's own captured deps, extracted from js/terrain-geometry.js's init(deps) pattern.
 const _sharedSplitNormals = (_positions, vertCount) => new Float32Array(vertCount * 3);
 global.window = { TerrainRenderChunks: { installed: true } };
-const pathFunctionMatch = gameSource.match(/(function buildPathNetworkGeo\(srcGrid, gcols, grows\) \{[\s\S]*?\n      \})\n\n      \/\/ ── Path:/);
+const pathFunctionMatch = terrainGeometrySource.match(/(function buildPathNetworkGeo\(srcGrid, gcols, grows\) \{[\s\S]*?\n  \})\n\n  \/\/ ── Path:/);
 assert(pathFunctionMatch, 'must be able to execute the live path-network builder in this regression');
 const buildPathNetworkGeo = eval(`(${pathFunctionMatch[1]})`); // Executes repository code only.
 const liveGrid = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => ({ type: TileType.GRASS, elevTier: 0 })));
@@ -248,7 +251,8 @@ const DEPRESSION_TOP = {
   [TileType.STREAM]: STREAM_TOP,
   [TileType.WATERFALL]: RIVER_TOP,
 };
-const basinFunctionMatch = gameSource.match(/(function buildTerrainTileGeo\(col, row, type, srcGrid = grid, options = \{\}\) \{[\s\S]*?\n      \})\n\n      \/\/ Procedural farm\/town border terrain/);
+Object.assign(deps, { NORMAL_TOP, RAISED_TOP, WATERWAY_TYPES, sameWaterway, DEPRESSION_TOP, getGrid: () => basinGrid });
+const basinFunctionMatch = terrainGeometrySource.match(/(function buildTerrainTileGeo\(col, row, type, srcGrid = deps\.getGrid\(\), options = \{\}\) \{[\s\S]*?\n  \})\n\n  window\.TerrainGeometry = \{/);
 assert(basinFunctionMatch, 'must be able to execute the live terrain-basin builder in this regression');
 const buildTerrainTileGeo = eval(`(${basinFunctionMatch[1]})`); // Executes repository code only.
 const basinGrid = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => ({ type: TileType.GRASS })));

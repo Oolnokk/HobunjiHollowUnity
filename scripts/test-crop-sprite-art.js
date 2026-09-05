@@ -12,11 +12,11 @@ function source(relativePath) {
 
 const cropArtSource = source('docs/js/crop-sprite-art.js'); // Used to validate both static world-routing policy and executable item-art integration.
 const loaderSource = source('docs/js/combat/combat-config-loader.js'); // Used to ensure crop art initializes before inventory metadata synchronization.
-const gameSource = source('docs/game.js'); // Used to pin the existing foliage/placeholder crop ownership that must remain untouched.
+const cropRenderingSource = source('docs/js/vegetation-crop-rendering.js'); // Used to pin the existing foliage/placeholder crop ownership that must remain untouched.
 
-assert.match(gameSource, /const FOLIAGE_CROPS = new Set\(\['needlegrain', 'heftroot'\]\);/,
+assert.match(cropRenderingSource, /const FOLIAGE_CROPS = new Set\(\['needlegrain', 'heftroot'\]\);/,
   'needlegrain and heftroot remain owned by the foliage renderer lifecycle');
-assert.match(gameSource, /Simple colored cube \(all other crops\)/,
+assert.match(cropRenderingSource, /Simple colored cube \(all other crops\)/,
   'non-foliage crops still expose the generic placeholder path that crop-sprite-art upgrades or tags');
 assert.match(cropArtSource, /garlink:\s*Object\.freeze\(\{ spriteIcon: 'garlink_bunch\.png', worldMode: 'billboard' \}\)/,
   'garlink uses its PNG for held/icon art and world billboard clusters');

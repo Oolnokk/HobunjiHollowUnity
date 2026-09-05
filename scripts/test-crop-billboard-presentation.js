@@ -12,11 +12,12 @@ function source(relativePath) {
 const presentation = source('docs/js/crop-billboard-presentation.js'); // Used to pin shared farm-crop soil anchoring and clustered billboard grounding.
 const loader = source('docs/js/combat/combat-config-loader.js'); // Used to ensure the presentation wrapper installs after crop sprite/heftroot bridges.
 const game = source('docs/game.js'); // Used to pin the exact water lift this presentation cancels.
+const cropRendering = source('docs/js/vegetation-crop-rendering.js'); // Crop draw positioning now lives here rather than inline in game.js.
 
 assert.match(game, /const WATER_UNIT = SLAB_H \/ MAX_WATER/,
   'game.js still computes crop water lift from the shared water-depth conversion');
-assert.match(game, /const surfY\s*= tileSurfaceY\(tile\.type\) \+ tile\.water \* WATER_UNIT/,
-  'game.js still supplies water-raised crop positions that the presentation layer must counter at draw time');
+assert.match(cropRendering, /const surfY\s*= deps\.tileSurfaceY\(tile\.type\) \+ tile\.water \* deps\.WATER_UNIT/,
+  'crop rendering still supplies water-raised crop positions that the presentation layer must counter at draw time');
 assert.match(presentation, /const WATER_UNIT = 0\.5 \/ 3\.0/,
   'presentation mirrors the current 0.5/3 water-depth-to-world-Y conversion');
 assert.match(presentation, /waterLift = waterDepth \* WATER_UNIT/,

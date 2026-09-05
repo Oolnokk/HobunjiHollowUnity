@@ -41,6 +41,7 @@ const context = {
     VegetationCropRendering,
     LivestockNursery: { install() {} },
   },
+  document: { readyState: 'loading', write() {} }, // Parser-time feature bootstrap this bridge now runs unconditionally on load.
   setInterval() { throw new Error('FarmPanel setter path should install synchronously'); },
   clearInterval() {},
   Object,

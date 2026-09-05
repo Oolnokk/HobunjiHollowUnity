@@ -32,7 +32,7 @@ assert.strictEqual(new Set(woodParts.map(part => part.color.toUpperCase())).size
 assert.strictEqual(metalParts.length, 5, 'only four lid-rim strips and the lock are metal');
 assert.ok(metalParts.every(part => part.id === config.object.parts.lock || part.id.startsWith(config.object.parts.lidRimPrefix)), 'metal is restricted to configured rim/lock parts');
 assert.ok(metalParts.every(part => part.color.toUpperCase() === config.material.copperVerdigris.toUpperCase()), 'metal uses configured native-copper verdigris');
-assert.match(gameSource, new RegExp(`nativeCopper:\\s*\\{[\\s\\S]{0,300}?verdigrisHex:'${config.material.copperVerdigris}'`), 'Shipping Box verdigris matches the weapon/native-copper source of truth');
+assert.match(gameSource, new RegExp(`nativeCopper:\\s*\\{[\\s\\S]{0,300}?verdigrisHex:\\s*'${config.material.copperVerdigris}'`), 'Shipping Box verdigris matches the weapon/native-copper source of truth');
 
 // Runtime waits for the PNG itself, then puts a resolved clone onto every part
 // and restores the authored tint. This protects body/lid from async texture reset.

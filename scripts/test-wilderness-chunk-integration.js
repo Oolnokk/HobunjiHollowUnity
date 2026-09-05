@@ -8,6 +8,7 @@ const index = fs.readFileSync('docs/index.html', 'utf8');
 const grass = fs.readFileSync('docs/js/zone-grass-billboards.js', 'utf8');
 const features = fs.readFileSync('docs/js/zone-terrain-features.js', 'utf8');
 const climb = fs.readFileSync('docs/js/climb-system.js', 'utf8');
+const zoneRegrowth = fs.readFileSync('docs/js/zone-regrowth.js', 'utf8'); // Runtime chunk-rebuild call site now lives here rather than inline in game.js.
 
 assert.match(index, /js\/wilderness-chunks\.js\?v=[^"']+/);
 assert.ok(index.indexOf('js/wilderness-chunks.js') < index.indexOf('src="game.js?v='));
@@ -19,7 +20,7 @@ assert.ok(index.includes('id="settingCloudForestResetDefaults"'));
 assert.ok(game.includes('function buildZoneScene(mapId, focusCol = null, focusRow = null)'));
 assert.ok(game.includes('window.WildernessChunks.createZone({'));
 assert.ok(game.includes('window.WildernessChunks?.update(dt);'));
-assert.ok(game.includes('window.WildernessChunks.rebuildZone(mapId, col, row);'));
+assert.ok(zoneRegrowth.includes('window.WildernessChunks.rebuildZone(mapId, col, row);'));
 assert.ok(game.includes('member.wildernessChunkState = serializeWildernessChunkState();'));
 assert.ok(game.includes('restoreWildernessChunkState(playerData.wildernessChunkState);'));
 assert.ok(game.includes('recordWildernessChunkTileDelta(currentArea, col, row);'));
