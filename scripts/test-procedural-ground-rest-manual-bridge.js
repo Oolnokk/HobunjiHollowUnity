@@ -15,6 +15,10 @@ assert(bridge.includes("guidePoint(side, 'leg', 2)"), 'manual foot targets must 
 assert(bridge.includes('solveSubdividedChain'), 'manual elbows/knees must use the explicit-joint subdivided solver');
 assert(bridge.includes('preset body → manual limbs'), 'manual ownership must remain layered on top of the Ground / Rest body preset');
 assert(bridge.includes('limbManualStart') && bridge.includes('limbManualStop') && bridge.includes('limbManualCopy'), 'Ground / Rest panel must expose manual edit/stop/copy controls');
+assert(bridge.includes('manualModel') && bridge.includes("disposeManual('avatar-changed')"), 'Manual IK must be recreated instead of retaining another avatar locomotion root');
+assert(bridge.includes('manualModelMatchesAvatar'), 'mobile-visible bridge diagnostics must expose stale-avatar protection');
+assert(bridge.includes('originalResetPose') && bridge.includes('manualAwareResetPose'), 'direct resetPose callers such as Carry must release manual ownership');
+assert(bridge.includes("stopManual('pose-reset')"), 'resetPose must stop active Manual IK before restoring the normal pose');
 assert(manual.includes('limbManualUndo') && manual.includes('limbManualRedo'), 'existing Manual IK undo/redo controls must remain available');
 assert(manual.includes('Ctrl/Cmd+Z'), 'existing Manual IK keyboard history shortcut must remain available');
 assert(carry.includes('state.uiInstalled = Boolean(movementUiReady && panelReady && quickButtonReady)'), 'Carry bootstrap must set uiInstalled when its UI is actually ready');
