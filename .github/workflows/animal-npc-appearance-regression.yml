@@ -1,0 +1,60 @@
+name: Animal NPC appearance regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/animal-npc-headwear.js'
+      - 'docs/js/animal-head-rig-hat-authoring.js'
+      - 'docs/js/character-studio-animal-appearance.js'
+      - 'docs/js/character-studio-animal-fey-extras.js'
+      - 'docs/js/character-action-locks.js'
+      - 'docs/js/repo-picker.js'
+      - 'docs/js/creature-genetics.js'
+      - 'docs/config/scratchbones-config.js'
+      - 'docs/tools/animal-head-rig/index.html'
+      - 'scripts/test-animal-npc-appearance.js'
+      - 'scripts/test-animal-npc-fey-extras.js'
+      - '.github/workflows/animal-npc-appearance-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/animal-npc-headwear.js'
+      - 'docs/js/animal-head-rig-hat-authoring.js'
+      - 'docs/js/character-studio-animal-appearance.js'
+      - 'docs/js/character-studio-animal-fey-extras.js'
+      - 'docs/js/character-action-locks.js'
+      - 'docs/js/repo-picker.js'
+      - 'docs/js/creature-genetics.js'
+      - 'docs/config/scratchbones-config.js'
+      - 'docs/tools/animal-head-rig/index.html'
+      - 'scripts/test-animal-npc-appearance.js'
+      - 'scripts/test-animal-npc-fey-extras.js'
+      - '.github/workflows/animal-npc-appearance-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check animal/fey NPC modules
+        run: |
+          node --check docs/js/animal-chathead-frame.js
+          node --check docs/js/animal-npc-headwear.js
+          node --check docs/js/animal-head-rig-hat-authoring.js
+          node --check docs/js/character-studio-animal-appearance.js
+          node --check docs/js/character-studio-animal-fey-extras.js
+          node --check docs/js/character-action-locks.js
+          node --check docs/js/repo-picker.js
+      - name: Test animal NPC appearance integration
+        run: node scripts/test-animal-npc-appearance.js
+      - name: Test fey colors opacity and animal hats
+        run: node scripts/test-animal-npc-fey-extras.js

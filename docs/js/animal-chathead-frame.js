@@ -1,6 +1,6 @@
 // Species-authored animal chathead framing shared by ambient and full dialogue.
-// Runtime use is intentionally limited to sprite-space head metadata/cropping;
-// full livestock staging/facing/camera behavior lives in livestock-dialogue.js.
+// Also bridges animal-form NPC appearance records into the ordinary NPC avatar
+// preview pipeline so the same creature/genotype, fey overrides, opacity, and hat render in-world and in chat.
 (() => {
   'use strict';
 
@@ -23,16 +23,34 @@
     lastSpeakerId: null,
     lastFrame: null,
     lastFrameSource: null,
+    lastSurface: null,
+    lastProfileSource: null,
+    lastOpacity: 1,
+    lastHatId: null,
+    lastColorOverrides: null,
     lastError: null,
-  };
+  }; // Shared mobile/debug snapshot for both chathead crops and full animal NPC renders.
 
   function clamp(value, min = 0, max = 1) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : min;
   }
 
+  function normalizeOpacity(value) {
+    return Number.isFinite(Number(value)) ? clamp(Number(value), 0, 1) : 1;
+  }
+
+  function normalizeCustomHex(value) {
+    const match = String(value || '').trim().match(/^#?([0-9a-f]{6})$/i);
+    return match ? `#${match[1].toUpperCase()}` : null;
+  }
+
   function normalizeKind(kind) {
     return String(kind || '').trim().toLowerCase().replace(/_/g, '-');
+  }
+
+  function normalizeNpcKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   }
 
   function normalizeFrame(frame) {
@@ -163,7 +181,80 @@
       || profile?.fighter?.creatureKind;
     if (explicit) return normalizeKind(explicit);
     const speakerId = String(options.speakerId || speakerIdFromSeatId(options.seatId) || '').trim().toLowerCase();
-    return SPECIAL_NPC_KINDS[speakerId] || null;
+    return SPECIAL_NPC_KINDS[speakerId] || SPECIAL_NPC_KINDS[normalizeNpcKey(speakerId)] || null;
+  }
+
+  function legacyAnimalKindForNpc(npc) {
+    const candidates = [npc?.id, npc?.npcId, npc?.name]; // Covers database exports and runtime callers that pass only the NPC's display name.
+    for (const candidate of candidates) {
+      const raw = String(candidate || '').trim().toLowerCase();
+      const normalized = normalizeNpcKey(candidate);
+      const compact = normalized.replace(/_/g, '');
+      const kind = SPECIAL_NPC_KINDS[raw] || SPECIAL_NPC_KINDS[normalized] || SPECIAL_NPC_KINDS[compact];
+      if (kind) return kind;
+    }
+    return null;
+  }
+
+  function resolveAnimalNpcExport(npc) {
+    const appearance = npc?.appearance || {};
+    if (appearance.avatarType === 'person') return null;
+    const explicit = normalizeKind(appearance.creatureKind || appearance.animalKind || npc?.creatureKind || npc?.animalKind);
+    if (explicit) return { kind: explicit, source: 'appearance' };
+    const legacy = legacyAnimalKindForNpc(npc);
+    return legacy ? { kind: normalizeKind(legacy), source: 'legacy-name' } : null;
+  }
+
+  function animalKindForNpcExport(npc) {
+    return resolveAnimalNpcExport(npc)?.kind || null;
+  }
+
+  function defaultGenotypeForKind(kind) {
+    const palettes = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.palettes || {};
+    const palette = palettes[kind] || palettes.default || [];
+    const firstColor = palette[0]?.hex || '#8c7a66';
+    const secondColor = palette[1]?.hex || firstColor;
+    if (kind === 'uumkaoii') {
+      return {
+        fur: { color: firstColor, copies: 2, inheritance: 'dominant' },
+        plates: { color: secondColor, copies: 2, inheritance: 'dominant' },
+        sizeClass: 'medium',
+      };
+    }
+    const genotype = { base: { color: firstColor, copies: 2, inheritance: 'dominant' }, sizeClass: 'medium' };
+    const patternIds = window.CreatureGenetics?.PATTERN_DEFS?.[kind] || window.CreatureGeneticsRender?.SPECIES?.[kind]?.patterns || [];
+    for (const patternId of patternIds) genotype[patternId] = { color: secondColor, copies: 0, inheritance: 'dominant', enabled: false };
+    return genotype;
+  }
+
+  function buildAnimalProfileFromNpcExport(npc, resolution = resolveAnimalNpcExport(npc)) {
+    if (!resolution?.kind) return null;
+    const appearance = npc?.appearance || {};
+    const authoredGenotype = appearance.creatureGenotype || appearance.genotype || npc?.creatureGenotype || npc?.genotype || null;
+    const genotype = authoredGenotype || (resolution.source === 'appearance' ? defaultGenotypeForKind(resolution.kind) : null);
+    const opacity = normalizeOpacity(appearance.animalOpacity ?? npc?.animalOpacity);
+    const hatId = String(appearance.animalHatId || npc?.animalHatId || 'none');
+    const animalAppearance = {
+      ...appearance,
+      avatarType: 'animal',
+      creatureKind: resolution.kind,
+      animalOpacity: opacity,
+      animalHatId: hatId,
+      ...(genotype ? { creatureGenotype: genotype } : {}),
+    };
+    debugState.lastKind = resolution.kind;
+    debugState.lastProfileSource = resolution.source;
+    return {
+      name: npc?.name || npc?.id || resolution.kind,
+      appearance: animalAppearance,
+      isAnimalNpc: true,
+      creatureKind: resolution.kind,
+      animalKind: resolution.kind,
+      animalOpacity: opacity,
+      animalHatId: hatId,
+      ...(genotype ? { creatureGenotype: genotype, genotype } : {}),
+      animalNpcAppearanceSource: resolution.source,
+    };
   }
 
   function isAnimalChatheadSurface(canvas, options = {}) {
@@ -172,7 +263,29 @@
     return String(options.seatId || '').startsWith('ambient:');
   }
 
-  function drawFrameToCanvas(source, target, frame) {
+  function opacityForProfile(profile, options = {}) {
+    return normalizeOpacity(options.opacity ?? profile?.animalOpacity ?? profile?.appearance?.animalOpacity);
+  }
+
+  function genotypeForProfile(options = {}) {
+    const source = options.genotype || options.profile?.creatureGenotype || options.profile?.genotype || null;
+    const appearance = options.profile?.appearance || {};
+    const overrides = appearance.creatureColorOverrides || options.profile?.creatureColorOverrides || {};
+    if (!source || !overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return source;
+    let genotype;
+    try { genotype = JSON.parse(JSON.stringify(source)); } catch (_) { genotype = { ...source }; }
+    const applied = {};
+    for (const [layerId, rawColor] of Object.entries(overrides)) {
+      const color = normalizeCustomHex(rawColor);
+      if (!color) continue;
+      genotype[layerId] = { ...(genotype[layerId] || {}), color };
+      applied[layerId] = color;
+    }
+    debugState.lastColorOverrides = Object.keys(applied).length ? applied : null;
+    return genotype;
+  }
+
+  function drawFrameToCanvas(source, target, frame, opacity = 1) {
     const sourceWidth = Number(source?.width || source?.naturalWidth) || 0;
     const sourceHeight = Number(source?.height || source?.naturalHeight) || 0;
     if (!target || !sourceWidth || !sourceHeight) return false;
@@ -190,25 +303,36 @@
     const scale = Math.min((targetWidth * 0.96) / sw, (targetHeight * 0.96) / sh);
     const dw = sw * scale;
     const dh = sh * scale;
+    context.save();
+    context.globalAlpha = normalizeOpacity(opacity);
     context.drawImage(source, sx, sy, sw, sh, (targetWidth - dw) / 2, (targetHeight - dh) / 2, dw, dh);
+    context.restore();
     return true;
   }
 
   async function sourceCanvasForKind(kind, options = {}) {
     const renderer = window.CreatureGeneticsRender;
+    const genotype = genotypeForProfile(options); // NPC-only fey overrides intentionally bypass breeding palette normalization at the final render seam.
+    let canvas = null;
     if (renderer?.composeFrame) {
-      const genotype = options.genotype || options.profile?.creatureGenotype || options.profile?.genotype || null;
-      const canvas = await renderer.composeFrame(normalizeKind(kind), options.frame || 'idle', genotype, options.blinkShut === true);
-      if (canvas) return canvas;
+      canvas = await renderer.composeFrame(normalizeKind(kind), options.frame || 'idle', genotype, options.blinkShut === true);
     }
-    const idleUrl = renderer?.SPECIES?.[normalizeKind(kind)]?.base?.idle;
-    if (!idleUrl || typeof Image === 'undefined') return null;
-    return await new Promise(resolve => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => resolve(null);
-      image.src = idleUrl;
-    });
+    if (!canvas) {
+      const idleUrl = renderer?.SPECIES?.[normalizeKind(kind)]?.base?.idle;
+      if (!idleUrl || typeof Image === 'undefined') return null;
+      canvas = await new Promise(resolve => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => resolve(null);
+        image.src = idleUrl;
+      });
+    }
+    const appearance = options.profile?.appearance || {};
+    const hatId = appearance.animalHatId || options.profile?.animalHatId || 'none';
+    if (canvas && hatId !== 'none' && window.AnimalNpcHeadwear?.composeWithHat) {
+      canvas = await window.AnimalNpcHeadwear.composeWithHat(canvas, normalizeKind(kind), { ...appearance, animalHatId: hatId });
+    }
+    return canvas;
   }
 
   async function renderCreatureChathead(targetCanvas, kind, options = {}) {
@@ -216,12 +340,16 @@
       const source = await sourceCanvasForKind(kind, options);
       const resolved = frameForKind(kind);
       if (!source || !resolved) return false;
-      const rendered = drawFrameToCanvas(source, targetCanvas, resolved.frame);
+      const opacity = opacityForProfile(options.profile, options);
+      const rendered = drawFrameToCanvas(source, targetCanvas, resolved.frame, opacity);
       if (rendered) {
         debugState.lastKind = normalizeKind(kind);
         debugState.lastSpeakerId = String(options.speakerId || speakerIdFromSeatId(options.seatId) || '');
         debugState.lastFrame = { ...resolved.frame };
         debugState.lastFrameSource = resolved.source;
+        debugState.lastSurface = 'chathead';
+        debugState.lastOpacity = opacity;
+        debugState.lastHatId = options.profile?.appearance?.animalHatId || options.profile?.animalHatId || 'none';
         debugState.lastError = null;
       }
       return rendered;
@@ -232,31 +360,77 @@
     }
   }
 
+  async function renderCreatureFullFrame(targetCanvas, kind, options = {}) {
+    try {
+      const source = await sourceCanvasForKind(kind, options);
+      if (!source) return false;
+      const fullFrame = { x: 0, y: 0, width: 1, height: 1 };
+      const opacity = opacityForProfile(options.profile, options);
+      const rendered = drawFrameToCanvas(source, targetCanvas, fullFrame, opacity);
+      if (rendered) {
+        debugState.lastKind = normalizeKind(kind);
+        debugState.lastSpeakerId = String(options.speakerId || speakerIdFromSeatId(options.seatId) || '');
+        debugState.lastFrame = { ...fullFrame };
+        debugState.lastFrameSource = 'full-creature-frame';
+        debugState.lastSurface = 'full-body';
+        debugState.lastOpacity = opacity;
+        debugState.lastHatId = options.profile?.appearance?.animalHatId || options.profile?.animalHatId || 'none';
+        debugState.lastError = null;
+        targetCanvas.__hobunjiAnimalNpcAppearance = {
+          kind: normalizeKind(kind),
+          genotype: genotypeForProfile(options),
+          opacity,
+          hatId: debugState.lastHatId,
+          colorOverrides: debugState.lastColorOverrides,
+        };
+      }
+      return rendered;
+    } catch (error) {
+      debugState.lastError = String(error?.message || error);
+      window.__farmLog?.(`[animal-npc] ${debugState.lastError}`, 'warn');
+      return false;
+    }
+  }
+
   function installNpcPreviewBridge() {
     debugState.installAttempts++;
     const preview = window.NpcAvatarPreview;
-    if (!preview?.renderProfileToCanvas || preview.__animalChatheadFrameWrapped) return false;
-    const original = preview.renderProfileToCanvas;
-    preview.renderProfileToCanvas = async function animalChatheadAwareRender(targetCanvas, profile, options = {}) {
-      if (isAnimalChatheadSurface(targetCanvas, options)) {
+    if (!preview) return false;
+
+    if (preview.buildProfileFromNpcExport && !preview.__animalNpcProfileBuildWrapped) {
+      const originalBuild = preview.buildProfileFromNpcExport;
+      preview.buildProfileFromNpcExport = function animalNpcAwareProfileBuild(npc) {
+        const resolution = resolveAnimalNpcExport(npc);
+        if (resolution) {
+          const animalProfile = buildAnimalProfileFromNpcExport(npc, resolution);
+          if (animalProfile) return animalProfile;
+        }
+        return originalBuild.call(preview, npc);
+      };
+      preview.__animalNpcProfileBuildWrapped = true;
+      preview.__animalNpcProfileBuildOriginal = originalBuild;
+    }
+
+    if (preview.renderProfileToCanvas && !preview.__animalChatheadFrameWrapped) {
+      const originalRender = preview.renderProfileToCanvas;
+      preview.renderProfileToCanvas = async function animalNpcAwareRender(targetCanvas, profile, options = {}) {
         const kind = creatureKindFor(profile, options);
         if (kind) {
-          const rendered = await renderCreatureChathead(targetCanvas, kind, { ...options, profile });
+          const rendered = isAnimalChatheadSurface(targetCanvas, options)
+            ? await renderCreatureChathead(targetCanvas, kind, { ...options, profile })
+            : await renderCreatureFullFrame(targetCanvas, kind, { ...options, profile });
           if (rendered) return targetCanvas;
         }
-      }
-      return original.call(preview, targetCanvas, profile, options);
-    };
-    preview.__animalChatheadFrameWrapped = true;
-    preview.__animalChatheadFrameOriginal = original;
-    debugState.installed = true;
-    return true;
+        return originalRender.call(preview, targetCanvas, profile, options);
+      };
+      preview.__animalChatheadFrameWrapped = true;
+      preview.__animalChatheadFrameOriginal = originalRender;
+    }
+
+    debugState.installed = !!(preview.__animalNpcProfileBuildWrapped && preview.__animalChatheadFrameWrapped);
+    return debugState.installed;
   }
 
-  // main now pins the authoring tools to Three r128. V15.45 branched just
-  // before that tiny compatibility change, so normalize the live author
-  // config here instead of replacing the huge editor file just for fallback
-  // literals. The ordinary game config is already r128 and is left alone.
   function installAuthorThreeCompatibility() {
     if (typeof location === 'undefined' || !/\/tools\/animation-author\//.test(location.pathname || '')) return;
     const assets = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
@@ -264,6 +438,17 @@
     assets.threeModuleUrl = 'https://esm.sh/three@0.128.0';
     assets.orbitControlsModuleUrl = 'https://esm.sh/three@0.128.0/examples/jsm/controls/OrbitControls.js?deps=three@0.128.0';
     assets.gltfExporterModuleUrl = 'https://esm.sh/three@0.128.0/examples/jsm/exporters/GLTFExporter.js?deps=three@0.128.0';
+  }
+
+  function scheduleNpcPreviewBridgeInstall() {
+    if (installNpcPreviewBridge() || typeof setTimeout !== 'function') return;
+    let retries = 0;
+    const retry = () => {
+      retries += 1;
+      if (installNpcPreviewBridge() || retries >= 80) return;
+      setTimeout(retry, 50);
+    };
+    setTimeout(retry, 0);
   }
 
   function debugSnapshot() { return { ...debugState }; }
@@ -274,17 +459,24 @@
     DIALOGUE_FACE_EXTRA_DEG,
     SPECIAL_NPC_KINDS,
     normalizeFrame,
+    normalizeOpacity,
+    normalizeCustomHex,
     automaticFrameForKind,
     frameForKind,
     frameCenterForKind,
     creatureKindFor,
+    animalKindForNpcExport,
+    buildAnimalProfileFromNpcExport,
+    genotypeForProfile,
     drawFrameToCanvas,
     sourceCanvasForKind,
     renderCreatureChathead,
+    renderCreatureFullFrame,
     installNpcPreviewBridge,
+    scheduleNpcPreviewBridgeInstall,
     debugSnapshot,
   });
   window.__animalChatheadFrameDebug = debugState;
   installAuthorThreeCompatibility();
-  installNpcPreviewBridge();
+  scheduleNpcPreviewBridgeInstall();
 })();
