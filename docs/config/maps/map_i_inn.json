@@ -17,7 +17,7 @@
     { "id": "fmqnw2up79w9r", "itemKey": "tableRoundFurniture", "col": 3, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
     { "id": "fmqnw75m0zv1z", "itemKey": "tableLongFurniture", "col": 1, "row": 5, "rotY": 0, "postX": 2, "postY": 0, "postZ": 0, "postSX": 2.25, "postSY": 1, "postSZ": 1.25 },
     { "id": "fmqnwfevo0fyh", "itemKey": "hearthFurniture", "col": 2, "row": 3, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmss04iltqngq", "itemKey": "tableLongFurniture", "col": 15, "row": 3, "rotY": 0, "postX": -0.5, "postY": 0, "postZ": 0.83, "postSX": 1.25, "postSY": 0.5, "postSZ": 2.5 }
+    { "id": "fmss04iltqngq", "itemKey": "tableLongFurniture", "col": 15, "row": 3, "rotY": 0, "postX": -0.5, "postY": 0, "postZ": 0.83, "postSX": 1.25, "postSY": 0.5, "postSZ": 2.5, "walkableElevation": true }
   ],
   "exits": [
     { "id": "exit_mqnwbsw9", "label": "Front Door", "tiles": [[12, 13], [11, 13], [10, 13], [9, 13]], "targetMap": "", "spawnCol": 0, "spawnRow": 0 },
