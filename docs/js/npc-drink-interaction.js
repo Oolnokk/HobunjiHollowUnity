@@ -8,6 +8,7 @@
 
   const HANDOFF_DURATION_S = 0.34;
   const activeInteractions = new Set(); // Advanced by update() and exposed through getDebug().
+  const ambientCarries = new Map(); // Reuses the drink-neutral bottle pose for persistent NPC-held bottles such as Tooth's nighttime carry.
   let deps = null; // Populated once by init() with game-owned rendering/state adapters.
 
   function log(message, level = 'items') {
@@ -38,6 +39,101 @@
     poseQuaternion.roll.setFromAxisAngle(poseQuaternion.forward, THREE.MathUtils.degToRad(pose.roll));
     holder.quaternion.copy(poseQuaternion.yaw).multiply(poseQuaternion.pitch).multiply(poseQuaternion.roll);
     if (bottlePlane) bottlePlane.rotation.x = Math.PI / 2;
+  }
+
+  function makePoseQuaternion(THREE) {
+    return {
+      up: new THREE.Vector3(0, 1, 0), right: new THREE.Vector3(1, 0, 0), forward: new THREE.Vector3(0, 0, 1),
+      yaw: new THREE.Quaternion(), pitch: new THREE.Quaternion(), roll: new THREE.Quaternion(),
+    };
+  }
+
+  function disposeAmbientCarry(carry) {
+    if (!carry) return;
+    carry.holder?.parent?.remove?.(carry.holder);
+    deps?.disposeBottlePlane?.(carry.bottlePlane, carry.holder);
+  }
+
+  function clearAmbientCarry(ownerId) {
+    const key = String(ownerId || '');
+    const carry = ambientCarries.get(key);
+    if (!carry) return false;
+    disposeAmbientCarry(carry);
+    ambientCarries.delete(key);
+    return true;
+  }
+
+  function clearAmbientCarryForRoot(root) {
+    if (!root) return;
+    for (const [key, carry] of ambientCarries) {
+      if (carry.root !== root) continue;
+      disposeAmbientCarry(carry);
+      ambientCarries.delete(key);
+    }
+  }
+
+  function hasActiveInteractionForRoot(root) {
+    if (!root) return false;
+    for (const interaction of activeInteractions) {
+      if (!interaction.finished && interaction.walker?.root === root) return true;
+    }
+    return false;
+  }
+
+  function setAmbientCarry({ ownerId, root, avatarGroup, itemKey, enabled = true } = {}) {
+    const key = String(ownerId || '');
+    if (!key) return false;
+    if (!enabled || !deps || !root?.isObject3D || !avatarGroup?.isObject3D || !itemKey) {
+      clearAmbientCarry(key);
+      return false;
+    }
+    // An actual offered-drink interaction owns the same hand while it runs.
+    // Suppress the ambient prop rather than rendering two bottles at once.
+    if (hasActiveInteractionForRoot(root)) {
+      clearAmbientCarry(key);
+      return false;
+    }
+
+    const animation = deps.getDrinkAnimation?.();
+    const itemDef = deps.getItemDef?.(itemKey);
+    const neutralPose = animation ? deps.poseAt?.(animation, 0) : null;
+    if (!animation || !itemDef || !neutralPose) {
+      clearAmbientCarry(key);
+      return false;
+    }
+
+    let carry = ambientCarries.get(key);
+    if (carry && (carry.root !== root || carry.avatarGroup !== avatarGroup || carry.itemKey !== itemKey)) {
+      disposeAmbientCarry(carry);
+      ambientCarries.delete(key);
+      carry = null;
+    }
+
+    if (!carry) {
+      const { THREE } = deps;
+      const holder = new THREE.Group(); // Persistent local-space bottle holder; updated against the current hand anchor each frame.
+      holder.name = `npc_ambient_drink_holder_${key}`;
+      const bottlePlane = deps.makeBottlePlane?.({ key: itemKey, icon: itemDef.icon, label: itemDef.label });
+      if (!bottlePlane) return false;
+      holder.add(bottlePlane);
+      root.add(holder);
+      carry = {
+        ownerId: key,
+        root,
+        avatarGroup,
+        itemKey,
+        holder,
+        bottlePlane,
+        hand: npcHandAnchor({ avatarGroup }),
+        poseQuaternion: makePoseQuaternion(THREE),
+      };
+      ambientCarries.set(key, carry);
+      log(`NPC ambient bottle start: owner=${key} item=${itemKey}`);
+    }
+
+    carry.hand = npcHandAnchor({ avatarGroup });
+    applyHolderPose(carry, neutralPose);
+    return true;
   }
 
   function applyDrinkEffect(interaction) {
@@ -77,6 +173,7 @@
     const activeScene = deps?.getActiveScene?.();
     if (!animation || !itemDef || !activeScene || !canPlay(walker, itemKey)) return 0;
 
+    clearAmbientCarryForRoot(walker.root);
     const durationS = Math.max(0.1, Number(animation.durationS) || 0.95);
     const totalDurationMs = Math.round((HANDOFF_DURATION_S + durationS) * 1000);
     const lockHandle = deps.actionLocks?.acquire?.({
@@ -103,10 +200,7 @@
       startPosition: new THREE.Vector3(), targetPosition: new THREE.Vector3(),
       startQuaternion: new THREE.Quaternion(), targetQuaternion: new THREE.Quaternion(),
       startScale: new THREE.Vector3(), targetScale: new THREE.Vector3(),
-      poseQuaternion: {
-        up: new THREE.Vector3(0, 1, 0), right: new THREE.Vector3(1, 0, 0), forward: new THREE.Vector3(0, 0, 1),
-        yaw: new THREE.Quaternion(), pitch: new THREE.Quaternion(), roll: new THREE.Quaternion(),
-      },
+      poseQuaternion: makePoseQuaternion(THREE),
     };
 
     const neutralPose = deps.poseAt(animation, 0);
@@ -190,11 +284,22 @@
     }));
   }
 
+  function getAmbientDebug() {
+    return [...ambientCarries.values()].map(carry => ({
+      ownerId: carry.ownerId,
+      itemKey: carry.itemKey,
+      holderName: carry.holder?.name || null,
+      attached: !!carry.holder?.parent,
+    }));
+  }
+
   function init(injectedDeps) {
+    for (const carry of ambientCarries.values()) disposeAmbientCarry(carry);
+    ambientCarries.clear();
     deps = injectedDeps || null;
     return api;
   }
 
-  const api = Object.freeze({ init, canPlay, play, update, getDebug });
+  const api = Object.freeze({ init, canPlay, play, update, getDebug, setAmbientCarry, clearAmbientCarry, getAmbientDebug });
   window.NpcDrinkInteraction = api;
 })();
