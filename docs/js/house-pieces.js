@@ -26,6 +26,8 @@
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
+    // Must wrap WebGLRenderer before OutlineRenderPerformance so mist can be redrawn from the captured scene-depth texture before world text gets its final overlay.
+    ['CloudForestMistSoftDepth', 'cloud-forest-mist-soft-depth.js?v=20260905a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260905b'],
     // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
