@@ -9,7 +9,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const socialSource = read('docs/js/npc-social-relationship-bridge-v2.js');
-const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v2.js');
+const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v4.js'); // v4 is the version combat-config-loader.js actually boots; v2 is unused dead code.
 const wardrobeEditorSource = read('docs/js/building-interior-npc-wardrobe-editor.js');
 const dialogueSource = read('docs/js/dialogue-content.js');
 const dialogueEditorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
@@ -185,7 +185,7 @@ vm.runInNewContext(wardrobeSource, {
 const furnitureWardrobes = wardrobeWindow.NpcFurnitureWardrobes;
 assert.equal(furnitureWardrobes?.eventDriven, true, 'wardrobe v2 installs without any timer API in its VM');
 const authoredMap = { cols: 10, rows: 10, furniture: [{ id: 'cabinet_1', itemKey: 'cabinetFurniture', col: 4, row: 2, npcWardrobeFor: 'gorobi_ginju' }, { id: 'chair_1', itemKey: 'chairFurniture', col: 1, row: 1 }] };
-assert.deepEqual(JSON.parse(JSON.stringify(furnitureWardrobes.wardrobeBindings(authoredMap))), [{ id: 'cabinet_1', itemKey: 'cabinetFurniture', col: 4, row: 2, npcId: 'gorobi_ginju', interactionRadiusTiles: 0.82 }], 'runtime reads instance-level wardrobe metadata');
+assert.deepEqual(JSON.parse(JSON.stringify(furnitureWardrobes.wardrobeBindings(authoredMap))), [{ id: 'cabinet_1', itemKey: 'cabinetFurniture', col: 4, row: 2, npcId: 'gorobi_ginju', interactionRadiusTiles: 0.82, source: 'authored' }], 'runtime reads instance-level wardrobe metadata');
 assert.equal(furnitureWardrobes.bindingAtTarget(authoredMap)?.npcId, 'gorobi_ginju', 'aimed authored furniture resolves the assigned NPC');
 assert.match(wardrobeSource, /new MutationObserver\(scheduleActionRefresh\)/, 'wardrobe refresh piggybacks existing action-bar mutations');
 assert.match(wardrobeSource, /openWardrobePanel = function furnitureOnlyWardrobePanel/, 'old direct NPC wardrobe entry point is gated through authored furniture');
