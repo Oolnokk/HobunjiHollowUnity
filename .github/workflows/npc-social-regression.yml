@@ -14,12 +14,15 @@ on:
       - 'docs/js/relationships-panel.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/outline-render-performance.js'
+      - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
+      - 'scripts/test-world-text-outline-overlay.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
       - '.github/workflows/npc-social-regression.yml'
@@ -36,12 +39,15 @@ on:
       - 'docs/js/relationships-panel.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/outline-render-performance.js'
+      - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
+      - 'scripts/test-world-text-outline-overlay.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
       - '.github/workflows/npc-social-regression.yml'
@@ -73,11 +79,14 @@ jobs:
           node --check docs/js/relationships-panel.js
           node --check docs/js/panel-ui.js
           node --check docs/js/combat/combat-config-loader.js
+          node --check docs/js/outline-render-performance.js
+          node --check docs/js/world-popup-text.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
           node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
+          node --check scripts/test-world-text-outline-overlay.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
       - name: Test balanced multi-trait NPC gifting
@@ -90,6 +99,8 @@ jobs:
         run: node scripts/test-npc-social-seating.js
       - name: Test placeholder wardrobes and old prompt suppression
         run: node scripts/test-npc-wardrobe-placeholders.js
+      - name: Test world popup final overlay handoff
+        run: node scripts/test-world-text-outline-overlay.js
       - name: Generate complete placeholder wardrobe registry
         run: node scripts/generate-placeholder-wardrobes.js
       - name: Audit placeholder wardrobe coverage for every NPC
