@@ -200,7 +200,6 @@
       persistWorkspace();
       refreshJsonPreview();
       updateButton();
-      window.MapEditorExportFixes?.captureWorkspaceBaselines?.();
       setStatus(`Walkable furniture elevation saved · ${changed} change${changed === 1 ? '' : 's'}.`);
       dialog.close();
     });
