@@ -66,6 +66,7 @@
     }
   }
 
+  const PREFERENCE_TIERS = ['loved', 'liked', 'disliked', 'hated'];
   const TIER_FAVOR = { loved: 10, liked: 4, neutral: 1, disliked: -4, hated: -10 };
   const TIER_VERBS = {
     loved: 'lights up over',
@@ -97,23 +98,67 @@
     return window.ItemTraits?.computeItemTraits(held.key, null) || [];
   }
 
-  // Hate outranks love (an item with both a hated and a loved trait should
-  // never read as an unqualified win), then love > dislike > like > neutral.
-  function reactionTier(npcGifts, traits) {
-    const has = (list) => (list || []).some(t => traits.includes(t));
-    if (has(npcGifts?.hated)) return 'hated';
-    if (has(npcGifts?.loved)) return 'loved';
-    if (has(npcGifts?.disliked)) return 'disliked';
-    if (has(npcGifts?.liked)) return 'liked';
-    return 'neutral';
-  }
-
   function matchedTrait(list, traits) {
     return (list || []).find(t => traits.includes(t));
   }
 
   function matchedTraits(list, traits) {
-    return (list || []).filter(t => traits.includes(t));
+    const heldTraits = new Set(traits || []);
+    return [...new Set((list || []).filter(t => heldTraits.has(t)))];
+  }
+
+  // Every matching preference contributes independently. Liked/disliked are
+  // deliberately symmetric (+4/-4 per trait), while the existing stronger
+  // loved/hated authoring remains ±10 per trait. The final dialogue verdict
+  // is based on the NET score, so mixed gifts can cancel or outweigh one
+  // another instead of one disliked/hated trait automatically winning.
+  function evaluateGiftReaction(npcGifts, traits) {
+    const matches = { loved: [], liked: [], disliked: [], hated: [] };
+    let score = 0;
+    let matchedCount = 0;
+    for (const tier of PREFERENCE_TIERS) {
+      matches[tier] = matchedTraits(npcGifts?.[tier], traits);
+      matchedCount += matches[tier].length;
+      score += matches[tier].length * TIER_FAVOR[tier];
+    }
+
+    let tier = 'neutral';
+    if (matchedCount) {
+      if (score >= TIER_FAVOR.loved) tier = 'loved';
+      else if (score > 0) tier = 'liked';
+      else if (score <= TIER_FAVOR.hated) tier = 'hated';
+      else if (score < 0) tier = 'disliked';
+    }
+
+    return {
+      tier,
+      score,
+      matchedCount,
+      matches,
+      favorDelta: matchedCount ? score : TIER_FAVOR.neutral,
+    };
+  }
+
+  function reactionTier(npcGifts, traits) {
+    return evaluateGiftReaction(npcGifts, traits).tier;
+  }
+
+  // Apply each preference match separately instead of collapsing the result
+  // into one tier-sized adjustment. This is intentional: the Rapport bridge
+  // intercepts the same gift_* calls and therefore also receives the full
+  // cumulative positive/negative result without needing a parallel scorer.
+  function applyGiftRelationshipDelta(npcId, evaluation) {
+    const adjustFavor = window.DialogueContent?.adjustNpcFavor;
+    if (!adjustFavor) return;
+    if (!evaluation.matchedCount) {
+      adjustFavor(npcId, TIER_FAVOR.neutral, 'gift_neutral');
+      return;
+    }
+    for (const tier of PREFERENCE_TIERS) {
+      for (const _trait of evaluation.matches[tier]) {
+        adjustFavor(npcId, TIER_FAVOR[tier], 'gift_' + tier);
+      }
+    }
   }
 
   // Only calls out a dislike/hate in the prompt when the player has
@@ -155,10 +200,13 @@
 
     const traits = traitsForHeld(held);
     const npcGifts = walker.rec.gifts || {};
-    const tier = reactionTier(npcGifts, traits);
+    const evaluation = evaluateGiftReaction(npcGifts, traits);
+    const tier = evaluation.tier;
     const name = walker.rec.name || walker.rec.displayName || 'They';
     const itemLabel = itemLabelFor(held);
-    recordDiscoveredTraits(npcId, tier, matchedTraits(npcGifts[tier], traits));
+    for (const preferenceTier of PREFERENCE_TIERS) {
+      recordDiscoveredTraits(npcId, preferenceTier, evaluation.matches[preferenceTier]);
+    }
 
     let kept = true;
     let keepNote = '';
@@ -168,9 +216,7 @@
       keepNote = kept ? ' It goes into their wardrobe.' : ` ${name} hands it right back — not ${window.NpcWardrobe ? 'their style' : 'able to store it'}.`;
     }
 
-    if (kept) {
-      window.DialogueContent?.adjustNpcFavor?.(npcId, TIER_FAVOR[tier], 'gift_' + tier);
-    }
+    if (kept) applyGiftRelationshipDelta(npcId, evaluation);
 
     if (held.kind === 'clothing') {
       if (kept) {
@@ -219,6 +265,7 @@
     init,
     isItemGiftable,
     reactionTier,
+    evaluateGiftReaction,
     getNpcGiftOfferAction,
     offerGift,
     getDiscoveredGiftTraits,
