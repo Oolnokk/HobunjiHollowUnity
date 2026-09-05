@@ -29,7 +29,6 @@
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
   const WORLD_TEXT_OVERLAY_LAYER = 6; // Reserved here to carry depth-disabled world text outside the shell/post-process passes.
-  const WORLD_TEXT_OVERLAY_MASK = (1 << WORLD_TEXT_OVERLAY_LAYER) >>> 0; // Used for the final text-only canvas render.
   const WORLD_TEXT_RENDER_ORDER_MIN = 1200; // WorldPopupText is 1200/1201; AmbientDialogue text/chatheads are 1210/1211.
   const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
   const LOG_INTERVAL_MS = 5000;
