@@ -17,7 +17,7 @@ assert.match(bridge, /bindPosteriorFromDisplayed/, 'posterior migration must pre
 assert.match(bridge, /portraitBoundHandleAnimationTransformChanged/, 'rig gizmo edits must be inverted back into portrait space');
 assert.match(bridge, /animationAuthorMode === 'rig'/, 'ordinary animation editing must remain outside the rig inverse');
 assert.match(bridge, /portraitBindingPreservingNormalizer/, 'imports\/autosaves must preserve portrait bindings');
-assert.match(bootstrap, /procedural-hand-scale-free-world\.js\?v=20260903portraitanchors1/,
+assert.match(bootstrap, /procedural-hand-scale-free-world\.js\?v=20260904posteriorlive1/,
   'stable game\/tool URLs must fetch the new portrait-bound bridge instead of a cached older child script');
 
 console.log('Animation Author portrait-anchor integration guards passed');

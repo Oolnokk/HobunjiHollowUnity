@@ -79,7 +79,7 @@ assert.match(crates, /const pendingSaleCounts = Object\.create\(null\)/, 'shippi
 assert.match(crates, /function captureMidnightCutoff\(/, 'explicit midnight cutoff stage remains');
 assert.match(crates, /available - alreadyPending/, 'post-cutoff deposits do not join the prior shipment');
 assert.match(crates, /life\.resolveOnTimePassageKinds\.includes\(kind\)/, 'Wait/Sleep resolution kinds come from config');
-assert.match(crates, /life\.farmContextAreas\.includes\(area\)/, 'farm-context areas come from config');
+assert.match(crates, /lifecycleCfg\(\)\.farmContextAreas\.includes\(area\)/, 'farm-context areas come from config');
 assert.match(crates, /life\.reasons\.leftFarm/, 'leaving-farm settlement reason comes from config');
 assert.match(crates, /pendingSaleCounts\[key\] = Math\.max\(0, pendingSaleCounts\[key\] - moved\)/, 'withdrawing before collection cancels pending units');
 assert.doesNotMatch(crates, /gameHour - lastSellHour/, 'old rolling sale timer stays removed');

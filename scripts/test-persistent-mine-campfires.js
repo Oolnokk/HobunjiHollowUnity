@@ -8,6 +8,7 @@ const source = fs.readFileSync('docs/js/wilderness-campfire.js', 'utf8');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const mine = fs.readFileSync('docs/js/town-mine.js', 'utf8');
 const index = fs.readFileSync('docs/index.html', 'utf8');
+const arcUi = fs.readFileSync('docs/js/action-arc-ui.js', 'utf8'); // Return to Camp travel now lives in the modularized utilities-wheel handler, not inline in game.js.
 
 const scene = {
   add(object) { object.parent = this; },
@@ -92,7 +93,7 @@ assert.match(game, /member\.wildernessCampfireState = window\.WildernessCampfire
 assert.match(game, /WildernessCampfire\?\.restore\(playerData\.wildernessCampfireState\)/, 'game restores campfire world state');
 assert.match(game, /clearMineCampfireOnDeath/, 'mine player death clears underground camp');
 assert.match(game, /supportsArea\?\.\(currentArea\)/, 'placement and nearby interaction gates accept supported mine areas');
-assert.match(game, /requestReturnToCampfire[\s\S]{0,180}enterBuilding\(campfire\.mapId\)/, 'Return to Camp can travel back to a mine floor');
+assert.match(arcUi, /requestReturnToCampfire[\s\S]{0,180}enterBuilding\(campfire\.mapId\)/, 'Return to Camp can travel back to a mine floor');
 assert.match(game, /isMineArea: area => !!window\.TownMine\?\.floorFromMapId/, 'mine-area classification is injected into campfire system');
 assert.match(mine, /relocateForGeneratedMineFloor/, 'regenerated mine floors preserve underground camp placement');
 assert.match(mine, /persistedCampfire[\s\S]{0,180}excluded\.add/, 'mine content scatter reserves the persistent camp tile');

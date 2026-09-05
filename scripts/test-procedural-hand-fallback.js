@@ -76,6 +76,7 @@ const windowObject = {
   },
   HobunjiHandToolGrips: {
     toolKeyFor(value) { return value; },
+    primaryGripForTool() { return null; },
     secondaryGripForTool() { return null; },
     subscribe() {},
   },

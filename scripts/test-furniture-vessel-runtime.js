@@ -63,7 +63,7 @@ assert(authoredRuntime.includes('_liquidSurfaceGeometry(part, partById'));
 // configured PointLight created through the shared helper.
 assert.doesNotThrow(() => new vm.Script(rootTotemConfigSource, { filename: 'root-totem-config.js' }));
 assert(lifeTotem.includes('const liquidCfg=CFG.basin.material'));
-assert(lifeTotem.includes('const lightCfg=CFG.basin.light'));
+assert(lifeTotem.includes('lightCfg=CFG.basin.light'));
 assert(lifeTotem.includes('CFG.colors.liquid'));
 assert(lifeTotem.includes('new THREE.MeshBasicMaterial'));
 assert(!lifeTotem.includes('new THREE.MeshLambertMaterial'));

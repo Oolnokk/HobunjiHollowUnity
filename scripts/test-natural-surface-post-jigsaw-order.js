@@ -19,7 +19,9 @@ assert(/naturalApi\.naturalizeMesh\s*=\s*wrappedNaturalizeMesh/.test(runtime), '
 assert(/natural_#\?\[0-9a-f\]\{6\}/.test(runtime) || /natural_#\?\[0-9a-f\]\{6\}/i.test(runtime), 'runtime repair must recognize metadata-less natural texture names');
 
 const jigsawScanAt = post.indexOf('jigsawApi.scanScene(scene, now)'); // Used as the first render-time terrain mutation.
-const naturalRepairAt = post.indexOf('inspectSceneTerrain(scene)'); // Used to restore natural texture/UV ownership immediately after Jigsaw.
+// Searched starting after jigsawScanAt so this finds the actual call site rather than
+// the (now named, top-level) inspectSceneTerrain function declaration earlier in the file.
+const naturalRepairAt = post.indexOf('inspectSceneTerrain(scene)', jigsawScanAt + 1); // Used to restore natural texture/UV ownership immediately after Jigsaw.
 const chunkScanAt = post.indexOf('chunkApi.scanScene(scene, now)'); // Used to spatially split only after natural surfaces are final.
 const renderAt = post.indexOf('originalRender.call(this, scene, camera)'); // Used as the final actual GPU render call.
 assert(jigsawScanAt >= 0, 'post-Jigsaw guard must invoke the existing Jigsaw scan');

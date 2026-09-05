@@ -3,7 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 
-const snapshot = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8');
+const snapshot = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot-core.js', 'utf8');
 const bootstrap = fs.readFileSync('docs/js/held-action-animations.js', 'utf8');
 
 assert.match(snapshot, /2026-09-04T02:12:48\.704Z/, 'latest authored snapshot must identify the supplied export');

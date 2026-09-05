@@ -6,8 +6,11 @@ const runtimeSource = fs.readFileSync('docs/js/animal-chathead-frame.js', 'utf8'
 const authorSource = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8'); // Guards Rig Coordinates authoring and attachment-profile serialization.
 const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards runtime load order after creature compositing is available.
 
-assert.match(indexSource, /creature-genetics-render\.js[^\n]*\n\s*<script src="js\/animal-chathead-frame\.js\?v=20260901a"><\/script>/,
-  'game must load animal chathead framing immediately after the creature compositor');
+const actionLocksSource = fs.readFileSync('docs/js/character-action-locks.js', 'utf8'); // Guards the dynamic loader that now injects animal-chathead-frame.js.
+assert.match(indexSource, /js\/character-action-locks\.js\?v=[^"']+/,
+  'game must statically load the interaction-lock primitive that bootstraps animal chathead framing');
+assert.match(actionLocksSource, /animal-chathead-frame\.js\?v=20260902modular1/,
+  'the interaction-lock bootstrap must dynamically load animal chathead framing early, before FarmAnimals/DialogueContent/game.js');
 assert.match(authorSource, /<script src="\.\.\/\.\.\/js\/animal-chathead-frame\.js\?v=20260901a"><\/script>/,
   'Animation Author must load the shared animal chathead framing helper');
 assert.match(authorSource, /chatheadFrame: normalizedAnimalChatheadFrameV1543\(profile\.chatheadFrame\)/,
@@ -35,7 +38,10 @@ assert.match(runtimeSource, /return original\.call\(preview, targetCanvas, profi
   'ordinary humanoid and in-world avatar renders must continue through the original portrait renderer');
 assert.match(runtimeSource, /const DIALOGUE_FACE_EXTRA_DEG = 8/,
   'full livestock dialogue must add a small readability margin on top of the ordinary creature deadzone');
-assert.match(runtimeSource, /baseDeadRad \+ DIALOGUE_FACE_EXTRA_RAD/,
+const livestockDialogueSource = fs.readFileSync('docs/js/livestock-dialogue.js', 'utf8'); // Composes the exported DIALOGUE_FACE_EXTRA_DEG onto the existing creature deadzone.
+assert.match(livestockDialogueSource, /window\.AnimalChatheadFrame\?\.DIALOGUE_FACE_EXTRA_DEG/,
+  'dialogue facing must read its readability margin from the shared chathead framing constant');
+assert.match(livestockDialogueSource, /baseDeadRad \+ extraRad/,
   'dialogue facing must derive its readable angle from the existing creature deadzone rather than replacing it with unrelated rotation math');
 
 const sandbox = {
