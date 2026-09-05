@@ -118,14 +118,19 @@
     if (typeof original !== 'function') return false;
     Object.defineProperty(proto, '__hobunjiPerfWrapped', { value: true, configurable: true });
     proto.render = function hobunjiProfiledRender(scene, camera) {
+      // Captured unconditionally (cheap: two reference assignments) so
+      // getLiveGpuInfo() below can report real-time renderer.info numbers
+      // — and the low-FPS auto-snapshot watcher can trigger a cache audit
+      // — without requiring the user to have opted into the (heavier)
+      // Performance Profiler overlay first.
+      perfState.renderer = this;
+      perfState.scene = scene;
       if (!profilerEnabled) return original.call(this, scene, camera);
       const start = performance.now();
       const result = original.call(this, scene, camera);
       const elapsed = performance.now() - start;
       perfState.renderCpuMs += elapsed;
       perfState.renderSamples += 1;
-      perfState.renderer = this;
-      perfState.scene = scene;
       const info = this.info;
       if (info) {
         perfState.calls = Number(info.render?.calls) || 0;
@@ -543,6 +548,65 @@
     perf.input.addEventListener('change', () => setProfilerEnabled(perf.input.checked));
     box.appendChild(perf.row);
 
+    // Flashes a button's own label as inline feedback (e.g. "Copied!") and
+    // reverts it after a moment — deliberate alternative to log()/__farmLog
+    // for this whole cache-snapshot section, so neither a manual snapshot
+    // nor an automatic low-FPS one ever spams the regular in-game
+    // diagnostic log; see updateLagSnapshotStatusUI for the other feedback
+    // channel (the status line below).
+    function flashButtonLabel(btn, text, revertMs = 1500) {
+      const original = btn.dataset.originalLabel || btn.textContent;
+      btn.dataset.originalLabel = original;
+      btn.textContent = text;
+      setTimeout(() => { btn.textContent = btn.dataset.originalLabel || original; }, revertMs);
+    }
+
+    const cacheBtnRow = document.createElement('div');
+    cacheBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
+    const cacheBtnLabel = document.createElement('span');
+    cacheBtnLabel.textContent = 'Cache snapshot';
+    cacheBtnLabel.style.fontSize = '12px';
+    cacheBtnLabel.title = 'Lists every registered cache\'s current size (console.table) plus live GPU geometry/texture counts and localStorage size. Also captured automatically whenever FPS drops to 3 or below (20s cooldown) — see window.__hobunjiLagSnapshots.';
+    const cacheBtn = document.createElement('button');
+    cacheBtn.type = 'button';
+    cacheBtn.textContent = 'Snapshot now';
+    cacheBtn.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#d1d5db';
+    cacheBtn.addEventListener('click', () => {
+      const snap = root.HobunjiCacheAudit?.print?.();
+      flashButtonLabel(cacheBtn, snap ? 'Captured (see console)' : 'Unavailable');
+    });
+    cacheBtnRow.append(cacheBtnLabel, cacheBtn);
+    box.appendChild(cacheBtnRow);
+
+    const lagBtnRow = document.createElement('div');
+    lagBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
+    const lagBtnLabel = document.createElement('span');
+    lagBtnLabel.textContent = 'Copy last auto-snapshot';
+    lagBtnLabel.style.fontSize = '12px';
+    lagBtnLabel.title = 'Copies the most recent automatic low-FPS cache snapshot to the clipboard as JSON, ready to paste elsewhere.';
+    const lagBtn = document.createElement('button');
+    lagBtn.type = 'button';
+    lagBtn.textContent = 'Copy';
+    lagBtn.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#d1d5db';
+    lagBtn.addEventListener('click', async () => {
+      const last = root.__hobunjiLagSnapshots[root.__hobunjiLagSnapshots.length - 1];
+      if (!last) { flashButtonLabel(lagBtn, 'None yet'); return; }
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(last, null, 2));
+        flashButtonLabel(lagBtn, 'Copied!');
+      } catch (_) {
+        flashButtonLabel(lagBtn, 'Copy failed');
+      }
+    });
+    lagBtnRow.append(lagBtnLabel, lagBtn);
+    box.appendChild(lagBtnRow);
+
+    const lagStatus = document.createElement('div');
+    lagStatus.id = 'lagSnapshotStatus';
+    lagStatus.style.cssText = 'font-size:10px;opacity:.65;margin:-2px 0 5px';
+    box.appendChild(lagStatus);
+    updateLagSnapshotStatusUI();
+
     const baked = readStorage(TREE_MODE_KEY, 'baked') !== 'procedural';
     const tree = makeCheckboxRow('settingBakedTrees', 'Baked GLB Trees', baked,
       'On: use docs/assets/models/trees/*.glb. Off: use runtime procedural tree geometry. Changing this reloads the game for a clean comparison.');
@@ -605,10 +669,25 @@
     }).catch(error => log(`[TreeAssets] Baked tree preload failed: ${error?.message || error}; procedural fallback remains active.`, 'warn', 'assets'));
   }
 
+  // Live renderer.info numbers, independent of whether the (heavier,
+  // opt-in) Performance Profiler overlay is turned on — installRendererProfiler
+  // above always captures perfState.renderer, so this works from boot.
+  function getLiveGpuInfo() {
+    const info = perfState.renderer?.info;
+    if (!info) return null;
+    return {
+      geometries: Number(info.memory?.geometries) || 0,
+      textures: Number(info.memory?.textures) || 0,
+      calls: Number(info.render?.calls) || 0,
+      triangles: Number(info.render?.triangles) || 0,
+    };
+  }
+
   root.PerfProfiler = Object.freeze({
     isEnabled: () => profilerEnabled,
     setEnabled: setProfilerEnabled,
     setFpsEnabled,
+    getLiveGpuInfo,
     begin(name) { return profilerEnabled ? { name: String(name || 'unnamed'), t: performance.now() } : null; },
     end(token) { return token ? recordSubsystem(token.name, performance.now() - token.t) : 0; },
     measure(name, fn) {
@@ -634,6 +713,62 @@
     }
   });
 
+  // ── Low-FPS auto cache-snapshot ──────────────────────────────────────
+  // Runs unconditionally from boot (not gated behind the FPS counter or
+  // Performance Profiler opt-ins above) so a near-freeze gets captured
+  // automatically instead of only when a developer happened to have
+  // diagnostics already turned on. Deliberately its own tiny rAF loop
+  // rather than reusing frameLoop, which only runs while fpsEnabled or
+  // profilerEnabled is true.
+  const LAG_SNAPSHOT_FPS_THRESHOLD = 3;
+  const LAG_SNAPSHOT_COOLDOWN_MS = 20000; // Keeps a sustained lag spell from spamming a snapshot every sample window.
+  const LAG_SNAPSHOT_SAMPLE_MS = 500;
+  const lagWatch = { raf: 0, sampleStart: 0, sampleFrames: 0, lastSnapshotAt: -Infinity };
+  root.__hobunjiLagSnapshots = root.__hobunjiLagSnapshots || []; // Ring buffer of recent auto-captures, newest last.
+  const LAG_SNAPSHOT_HISTORY_LIMIT = 10;
+
+  function updateLagSnapshotStatusUI() {
+    const el = document.getElementById('lagSnapshotStatus');
+    if (!el) return;
+    const last = root.__hobunjiLagSnapshots[root.__hobunjiLagSnapshots.length - 1];
+    el.textContent = last
+      ? `Last auto-snapshot: ${new Date(last.takenAt).toLocaleTimeString()} at ${last.triggerFps.toFixed(1)} FPS (${last.caches.length} caches).`
+      : 'No automatic snapshot yet — captured whenever FPS drops to 3 or below.';
+  }
+
+  function captureLagSnapshot(fps) {
+    // print() logs a console.table (devtools only) — deliberately NOT routed
+    // through __farmLog/log() here, so a lag spell doesn't spam the regular
+    // in-game diagnostic log; the "Copy last auto-snapshot" button below
+    // reads root.__hobunjiLagSnapshots directly instead.
+    const snap = root.HobunjiCacheAudit?.print?.();
+    if (!snap) return;
+    snap.triggerFps = fps;
+    root.__hobunjiLagSnapshots.push(snap);
+    if (root.__hobunjiLagSnapshots.length > LAG_SNAPSHOT_HISTORY_LIMIT) root.__hobunjiLagSnapshots.shift();
+    updateLagSnapshotStatusUI();
+  }
+
+  function lagWatchLoop(ts) {
+    lagWatch.raf = requestAnimationFrame(lagWatchLoop);
+    if (!lagWatch.sampleStart) lagWatch.sampleStart = ts;
+    lagWatch.sampleFrames += 1;
+    const elapsed = ts - lagWatch.sampleStart;
+    if (elapsed < LAG_SNAPSHOT_SAMPLE_MS) return;
+    const fps = lagWatch.sampleFrames * 1000 / Math.max(1, elapsed);
+    lagWatch.sampleFrames = 0;
+    lagWatch.sampleStart = ts;
+    if (fps <= LAG_SNAPSHOT_FPS_THRESHOLD && (ts - lagWatch.lastSnapshotAt) >= LAG_SNAPSHOT_COOLDOWN_MS) {
+      lagWatch.lastSnapshotAt = ts;
+      captureLagSnapshot(fps);
+    }
+  }
+
+  function startLagWatch() {
+    if (lagWatch.raf) return;
+    lagWatch.raf = requestAnimationFrame(lagWatchLoop);
+  }
+
   function install() {
     installRendererProfiler();
     installSettingsUI();
@@ -641,6 +776,7 @@
     installCloudForestFogHook();
     setFpsEnabled(fpsEnabled);
     setProfilerEnabled(profilerEnabled);
+    startLagWatch();
     setTimeout(checkBakedTreeHealth, 4000);
   }
 

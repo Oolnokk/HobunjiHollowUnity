@@ -195,6 +195,7 @@
   // cache with its own shape, and the other family's genotype reads
   // would silently come back with none of the fields it expects.
   const _denGenotypes = new Map(); // key: `${cavernMapId}|${family}`
+  window.HobunjiCacheAudit?.register('WildlifeSpawn.denGenotypes', () => _denGenotypes.size);
   function getOrMakeDenGenotype(cavernMapId, family) {
     const key = `${cavernMapId}|${family}`;
     if (!_denGenotypes.has(key)) {

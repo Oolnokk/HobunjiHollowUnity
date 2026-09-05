@@ -344,6 +344,9 @@
   }
 
   window.CreatureGeneticsRender = { composeFrame, genotypeSignature, prewarm, SPECIES, recolorPixels, hexToRgb };
+
+  window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
+  window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);
 })();
 
 // Species-authored animal head weights. The weight map lives in normalized UV

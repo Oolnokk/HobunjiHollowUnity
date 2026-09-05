@@ -2479,6 +2479,17 @@
       const hostileObjects = new Set();   // Ambient-spawned hostile creatures (Gar-wolf / Gar-wolf Alpha).
       const corpseObjects = new Set();    // Creatures mid-death-lerp ('dying') or settled and lootable ('corpse').
 
+      // Live entity/object counts, not really "caches" in the evict-when-
+      // stale sense, but the same audit is the fastest way to see whether
+      // one of these is what a laggy long-play-hours save is actually
+      // paying for (e.g. a farm with a lot of placed furniture/crops, or a
+      // save that's accumulated more live animals than expected).
+      window.HobunjiCacheAudit?.register('game.worldObjects (placed farm objects)', () => worldObjects.size);
+      window.HobunjiCacheAudit?.register('game.animalObjects (live)', () => animalObjects.size);
+      window.HobunjiCacheAudit?.register('game.companionObjects (live)', () => companionObjects.size);
+      window.HobunjiCacheAudit?.register('game.hostileObjects (live)', () => hostileObjects.size);
+      window.HobunjiCacheAudit?.register('game.corpseObjects (live)', () => corpseObjects.size);
+
       // Preload uumkao'ii sprite; animals check this before spawning.
       let uumkaoiiSpriteImage = null;
       { const _img = new Image(); _img.onload = () => { uumkaoiiSpriteImage = _img; }; _img.src = "assets/creaturesprites/uumkao'ii.png"; }
@@ -3581,6 +3592,7 @@
       // above), built on the same two-plane side-view sprite avatars.
 
       const _creatureTexCache = { front: new Map(), back: new Map() };
+      window.HobunjiCacheAudit?.register('game.creatureTexCache', () => _creatureTexCache.front.size);
       function _getCreatureFrontTexture(url) {
         if (!_creatureTexCache.front.has(url)) {
           const tex = new THREE.TextureLoader().load(url);
@@ -3608,6 +3620,7 @@
       // signature's compose is still in flight, callers fall back to the
       // species' plain (uncolored) sprite — see setCreatureFrame below.
       const _genotypeTexCache = { front: new Map(), back: new Map() };
+      window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
       const _genotypeTexPending = new Set();
       // Every key this function has ever logged a "kicking off compose" line
       // for — so a creature stuck retrying every tick (see
@@ -3711,6 +3724,7 @@
       // creaturePlaneGroundOffset), or a Set of pending callbacks while
       // the very first scan of that species' idle sprite is still loading.
       const _creatureGroundAnchorCache = new Map();
+      window.HobunjiCacheAudit?.register('game.creatureGroundAnchorCache', () => _creatureGroundAnchorCache.size);
       const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 selects only alpha 255 pixels.
 
       // Scans a species' idle sprite (cached per URL, so only the first
@@ -8588,6 +8602,7 @@
       let _townBuildingDefs  = [];     // building entries from _townZone.buildings
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
+      window.HobunjiCacheAudit?.register('game.buildingScenes (loaded interiors)', () => _buildingScenes.size);
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
       // being purely decorative (e.g. the Alchemy Table, the Bulletin
@@ -8682,6 +8697,7 @@
       function _isCavernBuildingArea(area) { return typeof area === 'string' && (area.startsWith('map_i_den_') || !!window.TownMine?.floorFromMapId?.(area)); }
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       const _zoneScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions }
+      window.HobunjiCacheAudit?.register('game.zoneScenes (loaded zones)', () => _zoneScenes.size);
       // mapId → { cols, rows, tiles: [{c,r,type}], transitions, buildings, decor,
       // furniture } — real authored map data resolved from town-workspace-v1.json
       // by _loadTownFromWorkspace(), used in place of EXTERIOR_ZONES' tiny flat
@@ -8756,6 +8772,13 @@
       const _mineFloorRunStates = new Map(); // Per-visit rock/enemy counts and one-shot descent discovery state.
       let _wildernessChunkTileStateYear = null; // Scopes saved runtime tile deltas to the current Tothal year.
       const _wildernessChunkTileDeltas = new Map(); // mapId -> chunkKey -> tileKey -> authoritative edited tile fields.
+      window.HobunjiCacheAudit?.register('game.wildernessChunkTileDeltas (tiles)', () => {
+        let tiles = 0;
+        for (const zone of _wildernessChunkTileDeltas.values()) {
+          for (const chunk of zone.values()) tiles += chunk.size;
+        }
+        return tiles;
+      });
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
@@ -12430,6 +12453,7 @@
       // texture's own light/dark shading (veins, highlights) intact — only
       // hue/saturation change per reagent, not the source texture's value.
       const _reagentPlantMaterials = new Map(); // colorHex -> ShaderMaterial
+      window.HobunjiCacheAudit?.register('game.reagentPlantMaterials', () => _reagentPlantMaterials.size);
       function getReagentPlantMaterial(colorHex) {
         const grassLeafTex = window.VegetationCropRendering.getGrassLeafTex();
         if (!grassLeafTex) return null;
@@ -18343,6 +18367,7 @@
       }
 
       const _mapTileMatCache = new Map(); // "mapId,tileMatsKey" -> THREE.Material
+      window.HobunjiCacheAudit?.register('game.mapTileMatCache', () => _mapTileMatCache.size);
       function resolveTileMat(mapId, matKey) {
         const base = tileMats[matKey] || tileMats.grass;
         // '*' is a wildcard entry — applies to any map with no entry of its own
@@ -18371,6 +18396,7 @@
         polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
       });
       const _mapCliffMatCache = new Map(); // mapId -> THREE.Material
+      window.HobunjiCacheAudit?.register('game.mapCliffMatCache', () => _mapCliffMatCache.size);
       function resolveCliffMat(mapId) {
         const override = _terrainMaterialConfig.byMap?.[mapId]?.cliff || _terrainMaterialConfig.byMap?.['*']?.cliff;
         if (!override?.texture) return _defaultCliffMat;
