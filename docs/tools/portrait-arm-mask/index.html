@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Hobunji Portrait Arm Mask Editor</title>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/portrait-arm-cloud-mask.js"></script>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;--bg:#07101a;--panel:#101b28;--line:#2a3d56;--text:#edf5ff;--muted:#9eb2cb;--accent:#6ba9ff;--good:#45d6a0;--warn:#ffc857}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}button,input,select,textarea{font:inherit}button{min-height:42px;border:1px solid rgba(107,169,255,.35);border-radius:10px;background:rgba(107,169,255,.12);color:var(--text);padding:8px 11px;font-weight:700}button.primary{background:rgba(69,214,160,.14);border-color:rgba(69,214,160,.42)}input,select,textarea{width:100%;border:1px solid rgba(255,255,255,.15);border-radius:9px;background:#0a111b;color:var(--text);padding:8px}input[type=range]{padding:0}input[type=number]{font-variant-numeric:tabular-nums}textarea{min-height:150px;font:12px/1.35 ui-monospace,monospace;resize:vertical}.app{display:grid;grid-template-columns:minmax(300px,440px) minmax(0,1fr);gap:12px;padding:12px;min-height:100dvh}.panel{background:linear-gradient(180deg,var(--panel),#0b141f);border:1px solid var(--line);border-radius:14px;padding:12px}.controls{display:flex;flex-direction:column;gap:14px;max-height:calc(100dvh - 24px);overflow:auto}.stage{display:flex;flex-direction:column;gap:10px;min-width:0}.canvasWrap{display:grid;place-items:center;flex:1;min-height:520px;border:1px solid #30425d;border-radius:12px;overflow:hidden;background-color:#d3d3d3;background-image:linear-gradient(45deg,#b7b7b7 25%,transparent 25%),linear-gradient(-45deg,#b7b7b7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#b7b7b7 75%),linear-gradient(-45deg,transparent 75%,#b7b7b7 75%);background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0}canvas{width:min(92vw,720px);height:auto;image-rendering:auto}h1{font-size:19px;margin:0;color:var(--accent)}h2{font-size:14px;margin:0 0 7px;color:#cfe0ff}.hint,.small{font-size:12px;line-height:1.4;color:var(--muted)}label{display:flex;flex-direction:column;gap:5px;font-size:12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>button{flex:1}.status{white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;background:#080e16;border:1px solid #293b53;border-radius:9px;padding:8px;min-height:68px}.good{color:var(--good)}.warn{color:var(--warn)}.profile{font:12px/1.35 ui-monospace,monospace;color:#cfe0ff;background:#080e16;border:1px solid #293b53;border-radius:8px;padding:7px 8px}@media(max-width:850px){.app{grid-template-columns:1fr}.controls{max-height:none}.canvasWrap{min-height:56dvh}}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="panel controls">
+    <div><h1>Portrait Arm Cut Editor</h1><div class="hint">The extra arm cloud now erases pixels with a hard, hand-drawn edge and automatically caps the exposed arm edge in black. It never touches torso/clothing pixels and contains no rigging or deformation system.</div></div>
+    <div>
+      <h2>Species / gender</h2>
+      <label>Portrait source<select id="fighter"></select></label>
+      <div class="profile">Profile key: <span id="profileKey">—</span><br><span id="profileCount">0 authored profiles</span></div>
+      <div class="hint">Every species+gender keeps its own values while you switch between them. Settings are also retained in this browser until you export them.</div>
+    </div>
+    <div>
+      <h2>Cut position</h2>
+      <label>Mask vertical scale <span id="scaleLabel"></span><input id="scale" type="range" min="0.20" max="1.35" step="0.01" value="0.60"></label>
+      <label>Mask vertical offset <span id="offsetLabel"></span><input id="offset" type="range" min="-0.35" max="0.45" step="0.005" value="0.12"></label>
+      <label>Hard-cut threshold <span id="thresholdLabel"></span><input id="threshold" type="range" min="0.05" max="0.95" step="0.01" value="0.50"></label>
+      <div class="hint">The source cloud still determines where the cut happens, but its soft alpha is thresholded instead of left as a gentle fade.</div>
+    </div>
+    <div>
+      <h2>Verdigris-style edge</h2>
+      <label>Wobble strength <span id="wobbleLabel"></span><input id="wobble" type="range" min="0" max="0.60" step="0.01" value="0.16"></label>
+      <label>Wobble scale <span id="wobbleScaleLabel"></span><input id="wobbleScale" type="range" min="0.25" max="4" step="0.05" value="1"></label>
+      <label>Black cap width <span id="outlineLabel"></span><input id="outline" type="range" min="0" max="8" step="1" value="2"></label>
+      <label>Deterministic edge seed<input id="seed" type="number" min="1" step="1" value="28480"></label>
+      <button id="reroll">Reroll edge seed</button>
+      <div class="hint">The wobble/noise family and boundary-growth idea are adapted from the growing verdigris effect on tool sprites, so the cut should inherit that irregular authored-looking character instead of reading as a smooth digital mask.</div>
+    </div>
+    <div class="row"><button id="reset">Reset current species/gender</button><button id="refresh">Refresh preview</button></div>
+    <div><h2>Export all profiles</h2><div class="row"><button id="copy" class="primary">Copy config JSON</button><button id="download">Download JSON</button></div><textarea id="output" readonly spellcheck="false"></textarea></div>
+  </section>
+  <section class="panel stage">
+    <div class="row" style="justify-content:space-between"><strong>Actual runtime portrait render</strong><span id="badge" class="small">Loading…</span></div>
+    <div class="canvasWrap"><canvas id="preview" width="200" height="200"></canvas></div>
+    <div id="status" class="status">Loading portrait data…</div>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
