@@ -28,6 +28,7 @@
   const MASK_SHELL = (1 << 1) >>> 0;
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
+  const WORLD_POPUP_RENDER_ORDER_MIN = 1200; // Used to identify WorldPopupText's always-on-top billboard planes for the post-shell replay.
   const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
   const LOG_INTERVAL_MS = 5000;
 
@@ -42,6 +43,7 @@
   let sequenceInvalidations = 0;
   let suppressedMaterialIdPasses = 0; // Debug counter: material-seam source draws blocked by wrappedRender().
   let suppressedCompositeActivations = 0; // Debug counter: post composites whose non-shell uniforms were zeroed.
+  let replayedPopupOverlayPasses = 0; // Debug counter: shell passes followed by a WorldPopupText-only color replay.
 
   function makeBucket() {
     return { renders: 0, calls: 0, triangles: 0, points: 0, lines: 0, cpuMs: 0 };
@@ -78,6 +80,63 @@
 
   function isSecondaryOutlinePass(pass) {
     return pass === 'shell' || pass === 'materialId' || pass === 'pngDepth';
+  }
+
+  // WorldPopupText adds its planes directly to the active scene with a CanvasTexture,
+  // depth testing/writes disabled, billboard tagging, and renderOrder 1200/1201.
+  // renderOrder only sorts objects INSIDE one renderer.render() call; the shell is a
+  // later render call, so without this replay the shell can still paint over text.
+  function isWorldPopupOverlayMesh(object) {
+    const materials = Array.isArray(object?.material) ? object.material : [object?.material];
+    return !!(
+      object?.isMesh
+      && object.userData?.isBillboard
+      && Number(object.renderOrder) >= WORLD_POPUP_RENDER_ORDER_MIN
+      && materials.some(material => material?.map?.isCanvasTexture && material.depthTest === false && material.depthWrite === false)
+    );
+  }
+
+  // Repaint only direct WorldPopupText planes into the SAME target immediately
+  // after the shell pass. Popups are direct scene children by design. Temporarily
+  // removing the scene background is essential: THREE's Color background forces a
+  // clear even when renderer.autoClear=false, which would otherwise erase the frame.
+  function replayWorldPopupOverlay(renderer, scene, camera) {
+    const popups = Array.isArray(scene?.children) ? scene.children.filter(isWorldPopupOverlayMesh) : [];
+    if (!popups.length) return false;
+
+    const popupSet = new Set(popups); // Used to keep only popup planes visible during the replay.
+    const hidden = []; // Used to restore top-level gameplay objects after the popup-only replay.
+    for (const child of scene.children) {
+      if (!popupSet.has(child) && child.visible) {
+        child.visible = false;
+        hidden.push(child);
+      }
+    }
+
+    const previousMask = camera.layers.mask; // Restored so caller-owned outline layer selection remains unchanged.
+    const previousOverride = scene.overrideMaterial; // Restored to the shell material until game.js clears it after this wrapper returns.
+    const previousBackground = scene.background; // Restored after suppressing the background's forced clear for the overlay draw.
+    const previousAutoClear = renderer.autoClear; // Restored after forcing additive/no-clear replay behavior.
+    const shadowMap = renderer.shadowMap;
+    const previousShadowAutoUpdate = !!shadowMap?.autoUpdate; // Restored so normal shadow scheduling is unaffected.
+
+    try {
+      scene.overrideMaterial = null;
+      scene.background = null;
+      camera.layers.enableAll();
+      renderer.autoClear = false;
+      if (shadowMap?.enabled) shadowMap.autoUpdate = false;
+      originalRender.call(renderer, scene, camera);
+      replayedPopupOverlayPasses++;
+      return true;
+    } finally {
+      if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAutoUpdate;
+      renderer.autoClear = previousAutoClear;
+      camera.layers.mask = previousMask;
+      scene.background = previousBackground;
+      scene.overrideMaterial = previousOverride;
+      hidden.forEach(child => { child.visible = true; });
+    }
   }
 
   // Called immediately before a canvas/direct render. The real outline composite
@@ -169,6 +228,7 @@
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
+      if (replayedPopupOverlayPasses) parts.push(`popup-over-shell ${replayedPopupOverlayPasses}x`);
       if (suppressedMaterialIdPasses) parts.push(`material-seam-blocked ${suppressedMaterialIdPasses}x`);
       if (suppressedCompositeActivations) parts.push(`non-shell-composite-blocked ${suppressedCompositeActivations}x`);
       const message = `[outline-perf] ${parts.join(' | ')}`;
@@ -245,6 +305,7 @@
     let result;
     try {
       result = originalRender.call(renderer, scene, camera);
+      if (pass === 'shell') replayWorldPopupOverlay(renderer, scene, camera);
     } finally {
       if (canReuseBaseState && hadSceneAutoUpdate) scene.autoUpdate = true;
       if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) shadowMap.autoUpdate = true;
@@ -260,6 +321,7 @@
   const api = {
     installed: true,
     nonShellOutlinesSuppressed: true,
+    popupTextAboveShell: true,
     snapshot() {
       return {
         lifetime: JSON.parse(JSON.stringify(lifetime)),
@@ -269,7 +331,9 @@
         sequenceInvalidations,
         suppressedMaterialIdPasses,
         suppressedCompositeActivations,
+        replayedPopupOverlayPasses,
         nonShellOutlinesSuppressed: true,
+        popupTextAboveShell: true,
         maxReuseAgeMs: BASE_REUSE_MAX_AGE_MS,
       };
     },
