@@ -1,0 +1,95 @@
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const assert = require('assert');
+
+let now = 1000; // Deterministic clock used to verify thrown hold/release duration.
+let activeTool = 'weapon'; // Used by the dual-role animStyle getter to emulate weapon/ranged slot changes.
+let equippedRanged = 'kylie_copper'; // Current ranged-slot item used by the slot-aware style bridge.
+const loaded = new Map(); // Captures synthetic loaded-state changes made by the ranged archetype bridge.
+const baseStarts = []; // Captures calls that reach the original ranged action state machine.
+const intervalCallbacks = []; // Defers bootstrap intervals until both modules have been evaluated.
+
+const toolDefs = {
+  kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie' },
+  bshuakauitl_copper: { label: "Copper B'shuakauitl", sprite: "assets/toolsprites/b'shuakauitl.png", slots: ['weapon'], animStyle: 'sweep', shapeKey: 'bshuakauitl' },
+  dagger_copper: { label: 'Copper Dagger', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'dagger' },
+};
+
+const windowObject = {
+  HeldActionAnimations: {
+    throwFlask: {
+      durationS: 0.62, windupFrac: 0.44, strikeFrac: 0.62, holdFrac: 0.68, releaseFrac: 0.62,
+      poses: { neutral: { x: 0 }, windup: { x: 0.12 }, strike: { x: 0.18 } },
+    },
+    drink: { poses: { strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 } } },
+  },
+  Combat: {
+    deps: {
+      TOOL_ITEM_DEFS: toolDefs,
+      getActiveTool: () => activeTool,
+      triggerRangedWeaponVisual: () => {},
+      refreshActionBar: () => {},
+    },
+  },
+  RangedWeapons: {
+    config: {
+      crossbow: { projectileCount: 1, spreadDeg: 0, damage: 16, speedPxS: 720, rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 130, staminaCost: 10 },
+    },
+    setLoaded: (itemKey, value) => loaded.set(itemKey, !!value),
+    startPlayerAction(itemKey) { baseStarts.push({ itemKey, loaded: loaded.get(itemKey) }); return true; },
+    playerActionLabel: itemKey => `Base ${itemKey}`,
+    cancelPlayerAction: () => {},
+    equippedRangedKey: () => equippedRanged,
+  },
+  WeaponToolStances: { refreshDefinitions: () => {} },
+  InputBindings: { getCurrentBindings: () => ({ desktop: { action1: 'KeyF' }, controller: { action1: 'Button0' } }) },
+  addEventListener: () => {},
+  __farmLog: () => {},
+};
+
+const context = {
+  window: windowObject,
+  document: { readyState: 'complete' },
+  navigator: { getGamepads: () => [] },
+  performance: { now: () => now },
+  Date,
+  console,
+  requestAnimationFrame: () => 0,
+  setInterval: callback => { intervalCallbacks.push(callback); return intervalCallbacks.length; },
+  clearInterval: () => {},
+};
+vm.createContext(context);
+
+for (const relative of [
+  '../docs/js/combat/ranged-weapon-archetypes.js',
+  '../docs/js/combat/ranged-dual-role-anim-style.js',
+]) {
+  const source = fs.readFileSync(path.resolve(__dirname, relative), 'utf8');
+  vm.runInContext(source, context, { filename: relative });
+}
+for (const callback of [...intervalCallbacks]) callback();
+
+assert.ok(toolDefs.kylie_copper.slots.includes('ranged'), 'Kylie should be equippable in the ranged slot.');
+assert.ok(toolDefs.bshuakauitl_copper.slots.includes('ranged'), "B'shuakauitl should be equippable in the ranged slot.");
+assert.ok(!toolDefs.dagger_copper.slots.includes('ranged'), 'Unrelated melee weapons must remain melee-only.');
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.rangedType, 'thrown');
+assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.rangedType, 'blowgun');
+assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.neutral.pitch, -180, 'Blowgun stance should copy Drink strike pitch.');
+
+assert.strictEqual(toolDefs.kylie_copper.animStyle, 'sweep', 'Kylie must keep its melee sweep style in the weapon slot.');
+activeTool = 'ranged';
+assert.strictEqual(toolDefs.kylie_copper.animStyle, 'ranged', 'Kylie must report ranged style while active in the ranged slot.');
+activeTool = 'weapon';
+assert.strictEqual(toolDefs.kylie_copper.animStyle, 'sweep', 'Returning to melee must restore Kylie sweep style.');
+
+assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), true, 'Kylie press should begin a thrown hold.');
+assert.match(windowObject.RangedWeapons.playerActionLabel('kylie_copper'), /^Release /);
+now += 450;
+assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.releaseThrownCharge('test'), true, 'Kylie release should enter the existing ranged fire state machine.');
+assert.deepStrictEqual(baseStarts, [{ itemKey: 'kylie_copper', loaded: true }]);
+
+assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('bshuakauitl_copper'), true, 'Blowgun should retain ordinary load/fire start behavior.');
+assert.strictEqual(baseStarts.at(-1).itemKey, 'bshuakauitl_copper');
+
+console.log('PASS ranged weapon archetypes');
