@@ -21,6 +21,9 @@
   const BODY_CHANNEL = 'drunk';
   const BODY_PRIORITY = 200;
   const FOOT_TWIST_LIMIT = Math.PI - 1e-4;
+  const TOOTH_HATAYAP_NAME = 'tooth hatayap'; // Used to gate Tooth's nighttime bottle carry to her existing drunken locomotion handle.
+  const TOOTH_AMBIENT_BOTTLE_OWNER = 'tooth-hatayap-night'; // Stable owner key used to update/remove Tooth's persistent bottle without duplicating it.
+  const TOOTH_AMBIENT_BOTTLE_KEY = 'needlegrainSake'; // Existing alcohol item reused to render Tooth's carried bottle through the normal bottle-plane pipeline.
 
   let forcedLoss = null;
   let activePlayerState = null;
@@ -55,6 +58,53 @@
     return root?.getObjectByName?.(name) || null;
   }
 
+  function isNightPhase() {
+    try {
+      return window.Fishing?.timeOfDay?.() === 'night';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function hasHandAnchorData(node) {
+    const data = node?.userData;
+    return !!node?.isObject3D && !!data && (
+      Number.isFinite(Number(data.handAttachX))
+      || Number.isFinite(Number(data.handAttachY))
+      || Number.isFinite(Number(data.portraitModelWidth))
+      || Number.isFinite(Number(data.portraitModelHeight))
+    );
+  }
+
+  function resolveAmbientAvatarGroup(parent, options) {
+    const candidates = [options?.drunkBodyRoot, options?.drunkBodyRoot?.parent, parent?.parent, parent];
+    for (const candidate of candidates) {
+      if (hasHandAnchorData(candidate)) return candidate;
+    }
+    for (const start of [options?.drunkBodyRoot, parent]) {
+      let node = start;
+      for (let depth = 0; node && depth < 5; depth++, node = node.parent) {
+        if (hasHandAnchorData(node)) return node;
+      }
+    }
+    return options?.drunkBodyRoot?.isObject3D ? options.drunkBodyRoot
+      : parent?.parent?.isObject3D ? parent.parent
+        : null;
+  }
+
+  function syncToothAmbientBottle(parent, options, enabled) {
+    if (String(options?.name || '').trim().toLowerCase() !== TOOTH_HATAYAP_NAME) return;
+    const avatarGroup = resolveAmbientAvatarGroup(parent, options);
+    const root = avatarGroup?.parent?.isObject3D ? avatarGroup.parent : null;
+    window.NpcDrinkInteraction?.setAmbientCarry?.({
+      ownerId: TOOTH_AMBIENT_BOTTLE_OWNER,
+      root,
+      avatarGroup,
+      itemKey: TOOTH_AMBIENT_BOTTLE_KEY,
+      enabled: !!enabled && !!root && !!avatarGroup,
+    });
+  }
+
   function removeTrackedFootTwist(foot, trackedQuaternion) {
     if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
     const hasDelta = Math.abs(trackedQuaternion.x) + Math.abs(trackedQuaternion.y) + Math.abs(trackedQuaternion.z) > 1e-10
@@ -86,7 +136,7 @@
     });
   }
 
-  function decorateDrunkHandle(THREE, options, handle, lossProvider, isPlayer) {
+  function decorateDrunkHandle(THREE, parent, options, handle, lossProvider, isPlayer) {
     if (!handle) return handle;
     const modelWidth = Math.max(0.001, Number(options.modelWidth) || 0.9);
     const modelHeight = Math.max(0.001, Number(options.modelHeight) || modelWidth);
@@ -140,6 +190,7 @@
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
       const rawLoss = (suppressed || seatedPose) ? 0 : clamp01(lossProvider?.() || 0);
+      syncToothAmbientBottle(parent, options, rawLoss > 0 && !suppressed && !seatedPose && isNightPhase());
       const blend = smoothstep01(rawLoss);
       const extreme = blend * blend;
       const movement = clamp01(speed / referenceSpeed);
@@ -225,6 +276,7 @@
     handle.dispose = function footingDrunkWalkDispose() {
       if (state.disposed) return;
       state.disposed = true;
+      syncToothAmbientBottle(parent, options, false);
       clearPreviousFootTwist();
       clearPreviousBodyTilt();
       state.pitch = state.roll = 0;
@@ -249,7 +301,7 @@
     // retain their independent sobriety/alcohol provider instead of borrowing
     // the combat resource model.
     return isPlayer || npcLossProvider
-      ? decorateDrunkHandle(THREE, options, handle, isPlayer ? footingLoss : npcLossProvider, isPlayer)
+      ? decorateDrunkHandle(THREE, parent, options, handle, isPlayer ? footingLoss : npcLossProvider, isPlayer)
       : handle;
   };
   api.__footingDrunkWalkInstalled = true;
@@ -270,6 +322,7 @@
         yawDeg: 0,
         bodyYawOwnedByFacing: true,
         forcedLoss,
+        toothAmbientBottle: window.NpcDrinkInteraction?.getAmbientDebug?.().find?.(entry => entry.ownerId === TOOTH_AMBIENT_BOTTLE_OWNER) || null,
       };
     },
     setForcedLoss(value) { forcedLoss = value == null ? null : clamp01(value); },
