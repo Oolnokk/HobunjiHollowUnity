@@ -74,6 +74,14 @@ window.SCRATCHBONES_CONFIG = {
         "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
       },
       "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
+      // Daytime roaming cycle: choose a genuinely distant station, travel
+      // there without changing targets, then remain there before repeating.
+      "wander": {
+        "radiusTiles": 6,
+        "minTravelTiles": 3,
+        "waitMinSeconds": 10,
+        "waitMaxSeconds": 15
+      },
       // Diet classification, used by barn troughs to decide which fodder
       // (plantFodder/meatFodder) a housed animal will actually eat —
       // predator: meatFodder only, prey: plantFodder only, omnivore: either.
