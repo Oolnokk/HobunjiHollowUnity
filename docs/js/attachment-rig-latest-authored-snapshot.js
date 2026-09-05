@@ -8,7 +8,7 @@
   const urls = [
     new URL('../config/character-rig-scale-defaults.js?v=20260905c', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
-    new URL('character-rig-maoao-authored-20260905.js?v=20260905a', base).href,
+    new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('character-rig-scale.js?v=20260904i', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20260905a', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
