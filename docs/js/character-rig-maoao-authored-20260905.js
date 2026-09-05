@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'mao-ao-shoulders-2026-09-05-v1'; // Exposed below for diagnostics and stale-cache checks.
+  const VERSION = 'mao-ao-shoulders-2026-09-05-v2'; // Exposed below for diagnostics and stale-cache checks.
   const AUTHORED = Object.freeze({
     'mao-ao::male': Object.freeze({
       leftHandShoulder: Object.freeze({ x: 0.1525554542608865, y: 0.6292184955362587, z: 0 }),
@@ -54,10 +54,13 @@
 
   window.HobunjiMaoAoShoulderAuthoring = Object.freeze({ version: VERSION, authored: AUTHORED, applyToLibrary });
 
-  if (!applyToLibrary()) {
-    let attempts = 0; // Retries only until the shared attachment-rig library is constructed.
-    const timer = setInterval(() => {
-      if (applyToLibrary() || ++attempts >= 400) clearInterval(timer);
-    }, 50);
-  }
+  // The older 2026-09-04 snapshot module intentionally re-applies its own
+  // overrides on a short bootstrap interval. Register after it and mirror that
+  // window so its stale Mao-ao shoulder tuple can never win the final tick.
+  applyToLibrary();
+  let attempts = 0; // Runs slightly longer than the older snapshot's 600-tick retry window.
+  const timer = setInterval(() => {
+    applyToLibrary();
+    if (++attempts >= 620) clearInterval(timer);
+  }, 50);
 })();
