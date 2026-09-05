@@ -22,7 +22,8 @@
     ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902b'],
     // Natural rocks/cliffs have their own authoritative UV mapper now; keep Terrain Jigsaw from cloning/reinterpreting those finished UVs.
     ['NaturalSurfaceJigsawExclusion', 'natural-surface-jigsaw-exclusion.js?v=20260902a'],
-    ['StructuralBrickOutlineSuppression', 'structural-brick-outline-suppression.js?v=20260905a'],
+    // Faceted masonry keeps its authored texture-edge treatment and skips the general shell-outline pass; rounded meshes remain eligible for shells.
+    ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260905b'],
