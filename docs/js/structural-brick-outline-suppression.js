@@ -187,7 +187,9 @@
         const tintedCanvas = window.getShadeFillCanvas(cleaned.source, `${pngPath}|${fillColor}|structural-no-outline-v1`, {
           mode: 'shadeFill',
           rgb: [rgb.r, rgb.g, rgb.b],
-          options: { ...baseOptions, preserveNearBlackOutlines: false },
+          // Preserve normal interior dark carving exactly as before. The only
+          // pixels removed are the edge-connected border pixels above.
+          options: baseOptions,
         });
         finalTexture = new THREE.CanvasTexture(tintedCanvas);
       }
