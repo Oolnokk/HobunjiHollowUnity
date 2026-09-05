@@ -57,6 +57,7 @@ function makePopupMesh() {
   return {
     isMesh: true,
     renderOrder: 1200,
+    visible: true,
     layers: new Layers(1),
     material: {
       map: { isCanvasTexture: true },
@@ -131,6 +132,9 @@ function testFixedPostCameraAndUnrelatedPass() {
 
   renderBase(renderer, worldScene, worldCamera);
   assert.strictEqual(popup.layers.mask, 1 << 6, 'popup must be withheld from the offscreen base pass on the reserved overlay layer');
+  assert.strictEqual(popup.visible, true, 'popup visibility must be restored immediately after the base draw');
+  const baseCall = renderer.calls.find(call => call.scene === 'world' && call.target !== null);
+  assert.strictEqual(baseCall?.mask, 0xFFFFFFFF >>> 0, 'nested render hooks must still see the authoritative all-layers gameplay camera mask during the base pass');
 
   // An auxiliary render between base and composite used to invalidate the pending
   // popup handoff. It must no longer be allowed to make text disappear.
@@ -143,6 +147,7 @@ function testFixedPostCameraAndUnrelatedPass() {
 
   assert.strictEqual(api.classifyPass(renderer, postScene, postCamera), 'postOrDirect', 'default-layer fixed post camera must still be recognized as the outline presentation pass');
   assert.strictEqual(popup.layers.mask, 1, 'popup layer membership must be restored after the final overlay draw');
+  assert.strictEqual(popup.visible, true, 'popup visibility must remain restored after the final overlay draw');
 
   const overlayCalls = renderer.calls.filter(call => call.scene === 'world' && call.target === null && call.mask === (1 << 6));
   assert.strictEqual(overlayCalls.length, 1, 'world popup must be drawn exactly once after the final composite');
