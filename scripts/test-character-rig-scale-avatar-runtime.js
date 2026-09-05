@@ -49,16 +49,16 @@ assert.strictEqual(calls[0].species, 'mao-ao');
 assert.strictEqual(calls[0].gender, 'male');
 assert.strictEqual(calls[0].tuple, resolved);
 assert.strictEqual(calls[0].age, 0.25);
-assert.deepStrictEqual(avatarRoot.userData.hobunjiCharacterRigHeadRuntime, {
-  applied: true,
-  species: 'mao-ao',
-  gender: 'male',
-  headScale: 1.02,
-  headOffsetY: 0,
-  bodyScaleX: 1.125,
-  bodyScaleY: 1.125,
-  source: 'PNGPlaneAvatar.buildSinglePlaneAvatarModel',
-});
+
+const debug = avatarRoot.userData.hobunjiCharacterRigHeadRuntime; // Read back the in-object mobile diagnostic without cross-realm prototype comparisons.
+assert.strictEqual(debug?.applied, true);
+assert.strictEqual(debug?.species, 'mao-ao');
+assert.strictEqual(debug?.gender, 'male');
+assert.strictEqual(debug?.headScale, 1.02);
+assert.strictEqual(debug?.headOffsetY, 0);
+assert.strictEqual(debug?.bodyScaleX, 1.125);
+assert.strictEqual(debug?.bodyScaleY, 1.125);
+assert.strictEqual(debug?.source, 'PNGPlaneAvatar.buildSinglePlaneAvatarModel');
 
 // Re-running the retry callback after a successful immediate install must not
 // stack another wrapper or double-apply on each future avatar construction.
