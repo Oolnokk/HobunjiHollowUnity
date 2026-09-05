@@ -2244,6 +2244,26 @@
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
   <script src="js/npc-scheduling.js?v=20260902a"></script>
+  <!-- Authored NPC relationship tags (partner/family/friend) + social
+       seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
+       read lazily at call time by npc-social-seating-bridge.js below, so
+       load order between these two doesn't matter beyond both preceding
+       that bridge. This file existed in the repo with no <script> tag
+       referencing it at all until now — the seating bridge it feeds was
+       consequently always inert in the shipped game (see that file's own
+       header). -->
+  <script src="config/npcs/social-relations.js?v=20260905layouts1"></script>
+  <!-- Social seating (window.NpcSocialSeating) — decorates
+       NpcActivities.resolveDestination so a "sit" destination picks the
+       best-scoring free seat (nearby family/partner/friends weighted in)
+       instead of always the exact station a schedule rule names; also
+       backs fixedSeatRoleRedirects (an old fixed stationId treated as "any
+       seat in this area" — see social-relations.js). Must load after both
+       npc-activities.js and npc-scheduling.js (guards on
+       NpcActivities.resolveDestination/NpcScheduling.findStationsByRole
+       existing) — same previously-untagged situation as social-relations.js
+       above. -->
+  <script src="js/npc-social-seating-bridge.js?v=20260905layouts1"></script>
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->

@@ -33,19 +33,19 @@
       "priority": 10,
       "entryPointId": "entry_temple_main",
       "conditions": [
-        { "from": "19:00", "to": "22:00", "days": ["Uung"] }
+        { "from": "00:00", "to": "03:00", "days": ["Anan"] }
       ],
       "furniture": [
-        { "id": "sc_bench_w1", "itemKey": "benchFurniture", "col": 5, "row": 6, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75 },
-        { "id": "sc_bench_w2", "itemKey": "benchFurniture", "col": 5, "row": 8, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75 },
-        { "id": "sc_bench_w3", "itemKey": "benchFurniture", "col": 5, "row": 10, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75 },
-        { "id": "sc_bench_w4", "itemKey": "benchFurniture", "col": 5, "row": 12, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75 },
-        { "id": "sc_bench_e1", "itemKey": "benchFurniture", "col": 14, "row": 7, "rotY": 270, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75 },
-        { "id": "sc_bench_e2", "itemKey": "benchFurniture", "col": 14, "row": 9, "rotY": 270, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75 },
-        { "id": "sc_bench_e3", "itemKey": "benchFurniture", "col": 14, "row": 11, "rotY": 270, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75 },
+        { "id": "sc_bench_w1", "itemKey": "benchFurniture", "col": 5, "row": 6, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75, "lookAt": { "col": 9, "row": 9 } },
+        { "id": "sc_bench_w2", "itemKey": "benchFurniture", "col": 5, "row": 8, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75, "lookAt": { "col": 9, "row": 9 } },
+        { "id": "sc_bench_w3", "itemKey": "benchFurniture", "col": 5, "row": 10, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75, "lookAt": { "col": 9, "row": 9 } },
+        { "id": "sc_bench_w4", "itemKey": "benchFurniture", "col": 5, "row": 12, "rotY": 90, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75, "lookAt": { "col": 9, "row": 9 } },
+        { "id": "sc_bench_e1", "itemKey": "benchFurniture", "col": 14, "row": 7, "rotY": 270, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75, "lookAt": { "col": 9, "row": 9 } },
+        { "id": "sc_bench_e2", "itemKey": "benchFurniture", "col": 14, "row": 9, "rotY": 270, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75, "lookAt": { "col": 9, "row": 9 } },
+        { "id": "sc_bench_e3", "itemKey": "benchFurniture", "col": 14, "row": 11, "rotY": 270, "postX": 0, "postY": 0, "postZ": 0, "postSX": 2, "postSY": 1, "postSZ": 0.75, "lookAt": { "col": 9, "row": 9 } },
         { "id": "sc_candle_1", "itemKey": "candleTableFurniture", "col": 11, "row": 4, "rotY": 0, "postX": -0.504, "postY": 0.834, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
         { "id": "sc_candle_2", "itemKey": "candleTableFurniture", "col": 8, "row": 4, "rotY": 0, "postX": 0.5, "postY": 0.8, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-        { "id": "sc_campfire", "itemKey": "campfireKitFurniture", "col": 9, "row": 8, "rotY": 0, "postX": 0.077, "postY": 0, "postZ": 0, "postSX": 1.6, "postSY": 1.6, "postSZ": 1.6 }
+        { "id": "sc_campfire", "itemKey": "campfireKitFurniture", "col": 9, "row": 9, "rotY": 0, "postX": 0.077, "postY": 0, "postZ": 0, "postSX": 1.6, "postSY": 1.6, "postSZ": 1.6 }
       ]
     }
   ],
@@ -53,7 +53,7 @@
     { "id": "station_temple_altar", "label": "Leading Prayers", "col": 9, "row": 5, "rotY": 180, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_temple_evening", "label": "Evening Prayers at the Shrine", "col": 9, "row": 11, "rotY": 0, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_temple_candles", "label": "Tending the Candles", "col": 11, "row": 5, "rotY": 0, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_temple_counsel_teacup", "label": "Leading the Spirit Counsel, Eyes Lowered", "col": 9, "row": 9, "rotY": 0, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_temple_counsel_teacup", "label": "Leading the Spirit Counsel, Eyes Lowered", "col": 9, "row": 8, "rotY": 180, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "", "lookAt": { "col": 9, "row": 9 } },
     { "id": "station_temple_counsel_ring_1", "label": "Gathered for the Spirit Counsel", "col": 9, "row": 8, "rotY": 180, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_temple_counsel_ring_2", "label": "Gathered for the Spirit Counsel", "col": 9, "row": 10, "rotY": 0, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_temple_counsel_ring_3", "label": "Gathered for the Spirit Counsel", "col": 8, "row": 9, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },

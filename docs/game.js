@@ -9907,19 +9907,65 @@
         return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
       }
 
-      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+      // Shared core behind _aimNeckAtEyeContact below: rotates a neck-rig
+      // joint (yaw+pitch, clamped) so its owner's eyes point at an arbitrary
+      // world point — not necessarily another character's eyes. This is the
+      // generic primitive an ambient "look at" (see npcStations' optional
+      // `lookAt` field, applied in makeNpcWalker's update()) builds on, so a
+      // seated NPC can fix their gaze on a fire/altar/anything else authored
+      // without one of these being a dialogue participant.
+      function _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, targetWorld, maxYawDeg, maxPitchDeg, debugEntity) {
         if (!neckJoint?.parent) return false;
         neckJoint.parent.updateMatrixWorld(true);
         const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
-        const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
-        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
-        const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetWorld.x, y: targetWorld.y, z: targetWorld.z } };
+        const direction = neckJoint.parent.worldToLocal(targetWorld.clone()).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
         const horizontal = Math.hypot(direction.x, direction.z);
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
         const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
         neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
         return true;
+      }
+
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+        return _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight), maxYawDeg, maxPitchDeg, debugEntity);
+      }
+
+      // Default look-target height (world units above the target tile's own
+      // floor) for an authored npcStation `lookAt` that doesn't specify its
+      // own `height` — tuned for a low fire/altar rather than another
+      // person's face (see NPC_AMBIENT_LOOK_MAX_YAW_DEG below for the
+      // rotation limits; a station can always override either).
+      const NPC_AMBIENT_LOOK_DEFAULT_HEIGHT = 0.4;
+      const NPC_AMBIENT_LOOK_MAX_YAW_DEG = 70;
+      const NPC_AMBIENT_LOOK_MAX_PITCH_DEG = 45;
+
+      // Ambient (non-dialogue) "look at" for an NPC idling/seated at a
+      // station: applies the station's own authored `lookAt` (see
+      // docs/config/maps/map_i_temple.json's spirit_communion npcStations
+      // for a concrete example — "eyes on the fire") to `walker`'s neck
+      // joint, or eases it back to rest once no lookAt applies. A station's
+      // `lookAt` is just `{ col, row, height? }` in the same area as the
+      // station itself — authored the same way any other station field is,
+      // by hand in the map JSON or via the Map Editor's Station panel.
+      function _applyNpcAmbientLook(walker, target) {
+        if (!walker.neckJoint) return;
+        // Dialogue staging (faceNpcDialogueParticipants) already owns this
+        // walker's neck joint for the whole conversation — never fight it.
+        if (npcDialogueStaging?.walker === walker || _dialogueWalker === walker) return;
+        const lookAt = target?.lookAt;
+        if (lookAt && Number.isFinite(lookAt.col) && Number.isFinite(lookAt.row)) {
+          const groundY = npcSurfaceY(walker.area, lookAt.col, lookAt.row);
+          const height = Number.isFinite(lookAt.height) ? lookAt.height : NPC_AMBIENT_LOOK_DEFAULT_HEIGHT;
+          const targetWorld = new THREE.Vector3(lookAt.col + 0.5, groundY + height, lookAt.row + 0.5);
+          walker.root.updateMatrixWorld(true);
+          _aimNeckAtWorldPoint(walker.neckJoint, walker.root.position, walker.avatarHeight, targetWorld, NPC_AMBIENT_LOOK_MAX_YAW_DEG, NPC_AMBIENT_LOOK_MAX_PITCH_DEG, walker);
+          walker._ambientLookActive = true;
+        } else if (walker._ambientLookActive) {
+          walker.neckJoint.rotation.set(0, 0, 0);
+          walker._ambientLookActive = false;
+        }
       }
 
       function faceNpcDialogueParticipants() {
@@ -10148,7 +10194,7 @@
       function furnitureNpcStationId(area, col, row) {
         return `furniture_chair_${area}_${col}_${row}`;
       }
-      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles) {
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def?.sit) return;
         registerNpcStations([{
@@ -10163,6 +10209,11 @@
           // so several distinct seats can be addressed as one shared
           // destinationRole with occupancy bias, same idea as `sit` itself.
           roles: Array.isArray(extraRoles) && extraRoles.length ? ['sit', ...extraRoles] : ['sit'],
+          // Optional ambient gaze target (see _applyNpcAmbientLook) — a
+          // furniture entry's own authored `lookAt` (e.g. every bench around
+          // the temple's spirit_communion campfire) carries straight through
+          // to this auto-registered seat, same as `roles` above.
+          ...(lookAt ? { lookAt } : {}),
         }], area);
       }
       function unregisterChairNpcStation(furnitureKey, col, row, area) {
@@ -10502,6 +10553,7 @@
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
+          _ambientLookActive: false, // Whether _applyNpcAmbientLook currently owns this walker's neck joint (so it knows to ease back to rest once a station's `lookAt` no longer applies).
           // Keeps the logical facing separate from the rendered facing. The
           // latter is camera-relative, so even an idle NPC must refresh it as
           // the camera changes or a 90° station pose can become edge-on.
@@ -10837,6 +10889,7 @@
                 root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
+              _applyNpcAmbientLook(this, target);
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
@@ -11920,7 +11973,7 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
-              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles);
+              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);

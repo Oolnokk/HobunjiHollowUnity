@@ -117,6 +117,43 @@
       area: 'map_i_inn',
       role: 'sit',
     }),
+
+    // The five Spirit Counsel attendees each used to target one fixed floor
+    // spot in the old counsel-ring formation (station_temple_counsel_ring_1
+    // through _5 — see map_i_temple.json's scheduleHooks-authored stations).
+    // The ring formation is gone now that the room's spirit_communion layout
+    // moves the benches to the walls and puts a campfire where the ring
+    // used to sit — this redirects each of their still-authored ring
+    // stationIds to "any free bench in the temple" instead, same idea as
+    // Leaf/Pahu above. Every one of those benches carries its own `lookAt`
+    // at the campfire (see map_i_temple.json's spirit_communion furniture),
+    // so wherever the seating bridge actually seats them, their gaze
+    // follows automatically — no per-NPC lookAt authoring needed here.
+    binding_hatayap: Object.freeze({
+      stationIds: ['station_temple_counsel_ring_1'],
+      area: 'map_i_temple',
+      role: 'sit',
+    }),
+    spearhead_unumanuk: Object.freeze({
+      stationIds: ['station_temple_counsel_ring_2'],
+      area: 'map_i_temple',
+      role: 'sit',
+    }),
+    oddclaw_unumanuk: Object.freeze({
+      stationIds: ['station_temple_counsel_ring_3'],
+      area: 'map_i_temple',
+      role: 'sit',
+    }),
+    tooth_hatayap: Object.freeze({
+      stationIds: ['station_temple_counsel_ring_4'],
+      area: 'map_i_temple',
+      role: 'sit',
+    }),
+    bird_bone: Object.freeze({
+      stationIds: ['station_temple_counsel_ring_5'],
+      area: 'map_i_temple',
+      role: 'sit',
+    }),
   });
 
   function mergeNested(base, override) {
