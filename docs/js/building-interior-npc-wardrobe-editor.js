@@ -5,11 +5,14 @@
 
   const NPC_DATABASE_URL = '../../config/npcs/hobunji-starter-npc-database.json'; // Used to populate the selected furniture's NPC wardrobe owner dropdown.
   const METADATA_KEY = 'npcWardrobeFor'; // Used as the stable map-JSON field consumed by the runtime wardrobe interaction bridge.
+  const WALKABLE_ELEVATION_KEY = 'walkableElevation'; // Used by HobunjiWalkableElevation to opt this placed furniture instance into a geometry-derived support box.
   let npcRecords = []; // Used to resolve authored NPC ids into readable names in the furniture inspector.
   let lastSelection = null; // Used by mobile diagnostics and to keep status text meaningful immediately after an editor import rebuild.
   let statusEl = null; // Used to report assignment/import results without requiring console access.
   let ownerSelect = null; // Used to edit the selected furniture instance's wardrobe owner.
   let applyButton = null; // Used to commit the dropdown value through the editor's own JSON import path.
+  let walkableCheckbox = null; // Used to toggle geometry-derived vertical elevation on the selected furniture instance.
+  let walkableApplyButton = null; // Used to persist the elevation checkbox through the editor's authoritative JSON import path.
 
   function byId(id) { return document.getElementById(id); }
 
@@ -76,38 +79,52 @@
       .replace(/"/g, '&quot;');
   }
 
-  function refreshSelectionUi() {
-    const interior = readInterior();
-    const piece = selectedFurniture(interior);
-    const anchor = selectedAnchor();
-    lastSelection = piece ? {
+  function selectionSnapshot(piece) {
+    return piece ? {
       id: piece.id || null,
       itemKey: piece.itemKey || null,
       col: Number(piece.col),
       row: Number(piece.row),
       npcWardrobeFor: piece[METADATA_KEY] || null,
+      walkableElevation: !!piece[WALKABLE_ELEVATION_KEY],
     } : null;
-    if (!ownerSelect || !applyButton) return;
-    ownerSelect.disabled = !piece;
-    applyButton.disabled = !piece;
-    ownerSelect.value = piece?.[METADATA_KEY] || '';
+  }
+
+  function refreshSelectionUi() {
+    const interior = readInterior();
+    const piece = selectedFurniture(interior);
+    const anchor = selectedAnchor();
+    lastSelection = selectionSnapshot(piece);
+    if (ownerSelect && applyButton) {
+      ownerSelect.disabled = !piece;
+      applyButton.disabled = !piece;
+      ownerSelect.value = piece?.[METADATA_KEY] || '';
+    }
+    if (walkableCheckbox && walkableApplyButton) {
+      walkableCheckbox.disabled = !piece;
+      walkableApplyButton.disabled = !piece;
+      walkableCheckbox.checked = !!piece?.[WALKABLE_ELEVATION_KEY];
+    }
     if (!piece) {
-      setStatus(anchor ? 'The selected furniture could not be matched in the exported JSON.' : 'Select a furniture piece to assign an NPC wardrobe.');
+      setStatus(anchor ? 'The selected furniture could not be matched in the exported JSON.' : 'Select a furniture piece to edit its instance properties.');
       return;
     }
     const owner = piece[METADATA_KEY];
-    setStatus(owner
+    const elevationText = piece[WALKABLE_ELEVATION_KEY]
+      ? ' Walkable elevation is ON; runtime uses a box calculated from this instance’s complete rendered geometry.'
+      : ' Walkable elevation is off.';
+    setStatus((owner
       ? `${ownerLabel(owner)} uses this specific ${piece.itemKey || 'furniture'} instance as their wardrobe.`
-      : 'This furniture is not assigned as an NPC wardrobe.');
+      : 'This furniture is not assigned as an NPC wardrobe.') + elevationText);
   }
 
-  function importInterior(interior) {
+  function importInterior(interior, filename = 'furniture-instance-edit.json') {
     const input = byId('importInput'); // Used to feed edited JSON through the editor's authoritative import/undo/rebuild path.
     if (!input) throw new Error('Editor import control is unavailable.');
     if (typeof DataTransfer !== 'function' || typeof File !== 'function') {
       throw new Error('This browser cannot programmatically hand the edited JSON back to the editor.');
     }
-    const file = new File([JSON.stringify(interior, null, 2)], 'npc-wardrobe-edit.json', { type: 'application/json' });
+    const file = new File([JSON.stringify(interior, null, 2)], filename, { type: 'application/json' });
     const transfer = new DataTransfer();
     transfer.items.add(file);
     input.files = transfer.files;
@@ -130,17 +147,34 @@
     else delete piece[METADATA_KEY];
 
     try {
-      importInterior(interior);
-      lastSelection = {
-        id: piece.id || null,
-        itemKey: piece.itemKey || null,
-        col: Number(piece.col),
-        row: Number(piece.row),
-        npcWardrobeFor: npcId || null,
-      };
+      importInterior(interior, 'npc-wardrobe-edit.json');
+      lastSelection = selectionSnapshot(piece);
       setStatus(npcId
         ? `Assigned ${ownerLabel(npcId)}. Any other wardrobe for that NPC in this interior was cleared.`
         : 'Removed this furniture’s NPC wardrobe assignment.', 'ok');
+      return true;
+    } catch (error) {
+      setStatus(error.message, 'error');
+      return false;
+    }
+  }
+
+  function applyWalkableElevation() {
+    const interior = readInterior();
+    const piece = selectedFurniture(interior);
+    if (!interior || !piece) {
+      setStatus('Select a furniture piece before changing walkable elevation.', 'error');
+      return false;
+    }
+    const enabled = !!walkableCheckbox?.checked; // Used as the instance-level switch consumed by the runtime support-surface registry.
+    if (enabled) piece[WALKABLE_ELEVATION_KEY] = true;
+    else delete piece[WALKABLE_ELEVATION_KEY];
+    try {
+      importInterior(interior, 'walkable-elevation-edit.json');
+      lastSelection = selectionSnapshot(piece);
+      setStatus(enabled
+        ? 'Walkable elevation enabled. Runtime will calculate a support box from this furniture instance’s complete rendered geometry.'
+        : 'Walkable elevation disabled for this furniture instance.', 'ok');
       return true;
     } catch (error) {
       setStatus(error.message, 'error');
@@ -175,13 +209,25 @@
       <div class="row" style="margin-top:6px">
         <button id="applyNpcWardrobeOwner" type="button">Apply wardrobe assignment</button>
       </div>
-      <div id="npcWardrobeAssignmentStatus" class="hint" style="margin-top:6px">Select a furniture piece to assign an NPC wardrobe.</div>
-      <div class="hint" style="margin-top:4px">The assignment belongs to this placed furniture instance, not its furniture type. One wardrobe per NPC per interior.</div>`;
+      <div class="field" style="margin-top:10px">
+        <label style="display:flex;gap:8px;align-items:center">
+          <input id="walkableFurnitureElevation" type="checkbox">
+          Walkable vertical elevation
+        </label>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="applyWalkableFurnitureElevation" type="button">Apply elevation setting</button>
+      </div>
+      <div id="npcWardrobeAssignmentStatus" class="hint" style="margin-top:6px">Select a furniture piece to edit its instance properties.</div>
+      <div class="hint" style="margin-top:4px">Elevation is per placed instance. When enabled, runtime calculates one top-support box from the complete rendered furniture geometry; it does not make the box’s sides blocking.</div>`;
     selectionFields.appendChild(section);
     ownerSelect = byId('npcWardrobeOwner');
     applyButton = byId('applyNpcWardrobeOwner');
+    walkableCheckbox = byId('walkableFurnitureElevation');
+    walkableApplyButton = byId('applyWalkableFurnitureElevation');
     statusEl = byId('npcWardrobeAssignmentStatus');
     applyButton.addEventListener('click', applyAssignment);
+    walkableApplyButton.addEventListener('click', applyWalkableElevation);
 
     const selectionObserver = new MutationObserver(() => queueMicrotask(refreshSelectionUi)); // Used to follow the editor's private selectFurn() state through its visible inspector fields.
     const pos = byId('selPos');
@@ -209,21 +255,37 @@
       }));
   }
 
+  function elevationSnapshot() {
+    const interior = readInterior();
+    return (interior?.furniture || [])
+      .filter(piece => piece?.[WALKABLE_ELEVATION_KEY])
+      .map(piece => ({
+        id: piece.id || null,
+        itemKey: piece.itemKey || null,
+        col: Number(piece.col),
+        row: Number(piece.row),
+      }));
+  }
+
   function boot() {
     if (!installUi()) setTimeout(boot, 50);
   }
 
   window.BuildingInteriorNpcWardrobeEditor = Object.freeze({
     metadataKey: METADATA_KEY,
+    walkableElevationKey: WALKABLE_ELEVATION_KEY,
     readInterior,
     selectedFurniture,
     applyAssignment,
+    applyWalkableElevation,
     bindingsSnapshot,
+    elevationSnapshot,
     getLastSelection: () => lastSelection ? { ...lastSelection } : null,
   });
   window.__biaNpcWardrobeDebug = () => ({
     selected: lastSelection ? { ...lastSelection } : null,
     bindings: bindingsSnapshot(),
+    walkableElevation: elevationSnapshot(),
     npcCount: npcRecords.length,
   });
 
