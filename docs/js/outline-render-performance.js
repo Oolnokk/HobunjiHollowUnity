@@ -6,6 +6,11 @@
   // Reuse is sequence-bound: a secondary pass may reuse only the same scene's
   // most recent base render on the same renderer, with no unrelated render in
   // between. This is intentionally stricter than the old one-second time window.
+  //
+  // Runtime outline policy: shell outlines are the only general-purpose outline
+  // style. The older screen-space depth-edge and material-ID seam passes are
+  // forcibly suppressed here so town wall bricks and other solid geometry cannot
+  // acquire a second/internal border even if stale UI/runtime state enables them.
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   if (!rendererProto || typeof rendererProto.render !== 'function') return;
@@ -35,6 +40,8 @@
   let windowReusedSceneMatrixPasses = 0;
   let windowSkippedShadowAutoUpdates = 0;
   let sequenceInvalidations = 0;
+  let suppressedMaterialIdPasses = 0; // Debug counter: material-seam source draws blocked by wrappedRender().
+  let suppressedCompositeActivations = 0; // Debug counter: post composites whose non-shell uniforms were zeroed.
 
   function makeBucket() {
     return { renders: 0, calls: 0, triangles: 0, points: 0, lines: 0, cpuMs: 0 };
@@ -73,6 +80,60 @@
     return pass === 'shell' || pass === 'materialId' || pass === 'pngDepth';
   }
 
+  // Called immediately before a canvas/direct render. The real outline composite
+  // is a tiny scene whose top-level quad owns all of these uniforms; requiring
+  // the sampler/texel signature avoids touching ordinary gameplay ShaderMaterials.
+  function suppressNonShellComposite(scene) {
+    const children = Array.isArray(scene?.children) ? scene.children : [];
+    let changed = false;
+    for (const child of children) {
+      const materials = Array.isArray(child?.material) ? child.material : [child?.material];
+      for (const material of materials) {
+        const uniforms = material?.uniforms;
+        const isOutlineComposite = !!(
+          uniforms?.tColor
+          && uniforms?.tEdgeId
+          && uniforms?.uTexel
+          && uniforms?.uDepthOutlinesOn
+          && uniforms?.uSeamOutlinesOn
+        );
+        if (!isOutlineComposite) continue;
+        if (Number(uniforms.uDepthOutlinesOn.value) !== 0 || Number(uniforms.uSeamOutlinesOn.value) !== 0) changed = true;
+        uniforms.uDepthOutlinesOn.value = 0;
+        uniforms.uSeamOutlinesOn.value = 0;
+      }
+    }
+    return changed;
+  }
+
+  // game.js owns the private s_depthOutlines variable, so use its existing
+  // Settings change handler once the page is fully parsed to hard-reset it,
+  // then remove the obsolete controls from normal play. The renderer guard above
+  // remains authoritative even if another script later flips the private flag.
+  function disableDepthOutlineControls() {
+    const toggle = document.getElementById('settingDepthOutlines'); // Used here to drive game.js's existing change listener to false.
+    if (toggle) {
+      toggle.checked = false;
+      toggle.disabled = true;
+      toggle.dispatchEvent(new Event('change', { bubbles: true }));
+      const row = toggle.closest?.('.settings-row'); // Used here to hide the now-disabled depth-outline setting row.
+      if (row) row.hidden = true;
+    }
+
+    const sensitivity = document.getElementById('settingDepthOutlineSensitivity'); // Used here to hide the depth-only sensitivity control with its toggle.
+    if (sensitivity) {
+      sensitivity.disabled = true;
+      const row = sensitivity.closest?.('.settings-row'); // Used here to hide the now-inapplicable sensitivity row.
+      if (row) row.hidden = true;
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', disableDepthOutlineControls, { once: true });
+  } else {
+    disableDepthOutlineControls();
+  }
+
   function record(pass, renderer, cpuMs) {
     const info = renderer.info?.render || {};
     for (const store of [windowStats, lifetime]) {
@@ -108,6 +169,8 @@
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
+      if (suppressedMaterialIdPasses) parts.push(`material-seam-blocked ${suppressedMaterialIdPasses}x`);
+      if (suppressedCompositeActivations) parts.push(`non-shell-composite-blocked ${suppressedCompositeActivations}x`);
       const message = `[outline-perf] ${parts.join(' | ')}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
@@ -147,6 +210,19 @@
   function wrappedRender(scene, camera) {
     const renderer = this;
     const pass = classifyPass(renderer, scene, camera);
+
+    // Material-ID is solely the old screen-space internal/material seam source.
+    // Returning before WebGLRenderer.render() guarantees it cannot contribute a
+    // town/building seam and also avoids paying for the otherwise-useless pass.
+    if (pass === 'materialId') {
+      suppressedMaterialIdPasses++;
+      return undefined;
+    }
+
+    if (pass === 'postOrDirect' && suppressNonShellComposite(scene)) {
+      suppressedCompositeActivations++;
+    }
+
     const now = performance.now();
     const canReuseBaseState = canReuseSequence(renderer, scene, pass, now);
 
@@ -183,6 +259,7 @@
 
   const api = {
     installed: true,
+    nonShellOutlinesSuppressed: true,
     snapshot() {
       return {
         lifetime: JSON.parse(JSON.stringify(lifetime)),
@@ -190,6 +267,9 @@
         reusedSceneMatrixPasses,
         skippedShadowAutoUpdates,
         sequenceInvalidations,
+        suppressedMaterialIdPasses,
+        suppressedCompositeActivations,
+        nonShellOutlinesSuppressed: true,
         maxReuseAgeMs: BASE_REUSE_MAX_AGE_MS,
       };
     },
