@@ -43,9 +43,13 @@
         dialogueTreeId: 'weapon_trust_gift_bshuakauitl',
         dialogueLabel: "Trust Gift — B'shuakauitl",
         dialogueLines: [
-          "You've given me enough reasons to trust you that I wanted to come say this away from the inn.",
-          "I carried this B'shuakauitl before I settled into life here. I don't pass something like it on lightly.",
-          "Take it. If you ever want another made to suit a different metal, the bronzeworks can copy the shape now that you've seen how it's put together."
+          'Good {{timeOfDay}}, {{playerHonorific}} {{playerName}}.',
+          'I came here to thank you. Not only for being an ally in our efforts to save this village, but for being a friend.',
+          'I wish you to have this...',
+          "It's a B'shuakauitl, a traditional Slagothim blowgun-staff.",
+          'An ingeniously simple design, it can not only dispatch enemies in close range but can also fire envenomed darts that can not only harm, but incapacitate or even heal wounded allies.',
+          'When used wisely, it can turn the tide of battles.',
+          'Think of this not only as a gift, but as an investment. Hobunji Hollow needs both of us.'
         ],
       },
       {
