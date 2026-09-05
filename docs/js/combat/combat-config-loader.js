@@ -103,6 +103,7 @@
     ['js/npc-social-seating-bridge.js?v=20260904a', () => Number(window.NpcSocialSeating?.version) >= 1],
     ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-weapon-stances.js?v=20260903a', () => !!window.EnemyWeaponStances],
+    ['js/combat/ranged-weapon-archetypes.js?v=20260905a', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 1],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
