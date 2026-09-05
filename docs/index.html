@@ -104,7 +104,7 @@
   <script src="js/item-processing.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20260826categories1"></script>
+  <script src="debug.js?v=20260905cacheaudit1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
   <script src="config/scratchbones-config.js?v=20260831smithy1"></script>
@@ -156,7 +156,7 @@
        other), but they're a matched pair. -->
   <script src="js/creature-genetics.js?v=20260828breath1"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-genetics-render.js?v=20260828eyes1"></script>
+  <script src="js/creature-genetics-render.js?v=20260905cacheaudit1"></script>
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -299,7 +299,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260828breath3"></script>
+  <script src="js/farm-animals.js?v=20260905cacheaudit1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -425,7 +425,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=branchfalldefense1"></script>
+  <script src="js/wildlife-spawn.js?v=20260905cacheaudit1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -2278,7 +2278,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260902agenda3"></script>
+  <script src="game.js?v=20260905cacheaudit1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260903a"></script>
   <script>

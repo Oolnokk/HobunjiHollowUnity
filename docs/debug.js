@@ -111,6 +111,57 @@
     return true;
   };
 
+  // ── Cache audit registry ───────────────────────────────────────────
+  // A one-line opt-in registry: any module with a long-lived Map/Set it
+  // wants visibility into calls HobunjiCacheAudit.register('name', () =>
+  // theMap.size) once, near the cache's own declaration. Exists so a leak
+  // shaped like the farm-animal genotype-texture one (a cache quietly
+  // growing forever because nothing ever evicted it) can be spotted
+  // empirically — by snapshotting every registered cache's current size —
+  // instead of only by reading through every module by hand looking for
+  // the next one. js/performance-debug.js's low-FPS watcher uses this to
+  // auto-capture a snapshot the moment the game gets close to unplayable.
+  const _cacheRegistry = new Map(); // name -> () => number
+  window.HobunjiCacheAudit = {
+    register(name, sizeFn) {
+      if (typeof name !== 'string' || typeof sizeFn !== 'function') return;
+      _cacheRegistry.set(name, sizeFn);
+    },
+    unregister(name) { _cacheRegistry.delete(name); },
+    snapshot() {
+      const caches = [];
+      for (const [name, sizeFn] of _cacheRegistry) {
+        let size;
+        try { size = sizeFn(); } catch (_) { size = null; }
+        caches.push({ name, size });
+      }
+      caches.sort((a, b) => (Number(b.size) || 0) - (Number(a.size) || 0));
+      let localStorageBytes = null;
+      try {
+        let bytes = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          bytes += k.length + (localStorage.getItem(k) || '').length;
+        }
+        localStorageBytes = bytes * 2; // UTF-16 code units
+      } catch (_) {}
+      return {
+        takenAt: new Date().toISOString(),
+        gpu: window.PerfProfiler?.getLiveGpuInfo?.() || null,
+        localStorageBytes,
+        caches,
+      };
+    },
+    print() {
+      const snap = this.snapshot();
+      console.log(`[cache-audit] ${snap.takenAt}`);
+      if (snap.gpu) console.log(`  GPU live refs: geometries=${snap.gpu.geometries} textures=${snap.gpu.textures} drawCalls=${snap.gpu.calls} triangles=${snap.gpu.triangles}`);
+      if (snap.localStorageBytes != null) console.log(`  localStorage ~${(snap.localStorageBytes / 1024).toFixed(1)} KB`);
+      if (console.table) console.table(snap.caches); else console.log(snap.caches);
+      return snap;
+    },
+  };
+
   window.__debugLogFilter = window.__debugLogFilter || 'all';
   const AUDIO_LEVELS = { audio: true, bgm: true, cue: true, bgs: true };
   const NAMED_LEVELS = { audio: true, bgm: true, cue: true, bgs: true, error: true, warn: true, info: true };
@@ -269,7 +320,7 @@
       return;
     }
     const script = document.createElement('script');
-    script.src = 'js/performance-debug.js?v=20260824a';
+    script.src = 'js/performance-debug.js?v=20260905cacheaudit1';
     script.async = true;
     script.dataset.hobunjiPerformanceDebug = '1';
     script.onload = _installCloudForestDevModeGate;

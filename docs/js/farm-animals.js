@@ -155,6 +155,7 @@
   // sessions) and how long the farm stays loaded, which is exactly what
   // was crashing long-lived saves on mobile from GPU-memory exhaustion.
   const _farmGenotypeTexCache = new Map();
+  window.HobunjiCacheAudit?.register('FarmAnimals.genotypeTexCache', () => _farmGenotypeTexCache.size);
 
   // Composites a genotype's textures onto an animal's front/back planes —
   // shared by both factories' initial one-shot compose below and their
