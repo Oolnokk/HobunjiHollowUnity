@@ -28,10 +28,13 @@
   const MASK_SHELL = (1 << 1) >>> 0;
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
+  const WORLD_TEXT_OVERLAY_LAYER = 6; // Reserved here to carry depth-disabled world text outside the shell/post-process passes.
+  const WORLD_TEXT_RENDER_ORDER_MIN = 1200; // WorldPopupText is 1200/1201; AmbientDialogue text/chatheads are 1210/1211.
   const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
   const LOG_INTERVAL_MS = 5000;
 
   const reuseSequenceByRenderer = new WeakMap();
+  const pendingWorldTextOverlayByRenderer = new WeakMap(); // Carries active-scene text from the offscreen base pass to the final composite draw.
   const lifetime = Object.create(null);
   let windowStats = Object.create(null);
   let lastLogAt = performance.now();
@@ -42,6 +45,8 @@
   let sequenceInvalidations = 0;
   let suppressedMaterialIdPasses = 0; // Debug counter: material-seam source draws blocked by wrappedRender().
   let suppressedCompositeActivations = 0; // Debug counter: post composites whose non-shell uniforms were zeroed.
+  let finalWorldTextOverlayPasses = 0; // Debug counter: final canvas draws containing only popup/dialogue text planes.
+  let withheldWorldTextBasePasses = 0; // Debug counter: offscreen base draws where text was intentionally reserved for the final overlay.
 
   function makeBucket() {
     return { renders: 0, calls: 0, triangles: 0, points: 0, lines: 0, cpuMs: 0 };
@@ -78,6 +83,82 @@
 
   function isSecondaryOutlinePass(pass) {
     return pass === 'shell' || pass === 'materialId' || pass === 'pngDepth';
+  }
+
+  // Both WorldPopupText and AmbientDialogue use CanvasTexture planes with depth
+  // testing/writes disabled and renderOrder >= 1200. renderOrder only sorts inside
+  // ONE renderer.render() call; the shell is a later call, so these planes must be
+  // excluded from the offscreen outlined frame and drawn once after the final
+  // composite. This predicate deliberately uses render/material behavior instead
+  // of a module-specific name so nested ambient chatheads are covered too.
+  function isWorldTextOverlayMesh(object) {
+    const materials = Array.isArray(object?.material) ? object.material : [object?.material];
+    return !!(
+      object?.isMesh
+      && Number(object.renderOrder) >= WORLD_TEXT_RENDER_ORDER_MIN
+      && materials.some(material => material?.map?.isCanvasTexture && material.depthTest === false && material.depthWrite === false)
+    );
+  }
+
+  function collectWorldTextOverlayEntries(scene) {
+    const entries = [];
+    scene?.traverse?.(object => {
+      if (!isWorldTextOverlayMesh(object)) return;
+      entries.push({ object, originalLayerMask: object.layers.mask });
+    });
+    return entries;
+  }
+
+  function reserveWorldTextOverlayLayer(entries) {
+    for (const entry of entries || []) entry.object.layers.set(WORLD_TEXT_OVERLAY_LAYER);
+  }
+
+  function restoreWorldTextOverlayLayers(pending) {
+    for (const entry of pending?.entries || []) {
+      if (entry.object?.layers) entry.object.layers.mask = entry.originalLayerMask;
+    }
+  }
+
+  function invalidatePendingWorldTextOverlay(renderer) {
+    const pending = pendingWorldTextOverlayByRenderer.get(renderer);
+    if (pending) restoreWorldTextOverlayLayers(pending);
+    pendingWorldTextOverlayByRenderer.delete(renderer);
+  }
+
+  // Render only reserved layer 6 onto the already-composited canvas. Parent Groups
+  // may remain on layer 0; three.js still traverses their children and applies the
+  // camera layer test to each renderable child. Removing the scene background is
+  // essential because a THREE.Color background can force a clear even with
+  // renderer.autoClear=false, which would erase the frame under the text.
+  function drawWorldTextOverlayToCanvas(renderer, pending) {
+    if (!pending?.entries?.length) return false;
+    const { scene, camera } = pending;
+    const previousMask = camera.layers.mask; // Restored so gameplay camera layer selection remains unchanged.
+    const previousOverride = scene.overrideMaterial; // Restored in case a caller temporarily owns an override material.
+    const previousBackground = scene.background; // Restored after suppressing the background's forced clear.
+    const previousAutoClear = renderer.autoClear; // Restored after forcing additive/no-clear overlay behavior.
+    const previousTarget = renderer.getRenderTarget?.() || null; // Restored so an unexpected caller target is never leaked.
+    const shadowMap = renderer.shadowMap;
+    const previousShadowAutoUpdate = !!shadowMap?.autoUpdate; // Restored so normal shadow scheduling is unaffected.
+
+    try {
+      renderer.setRenderTarget(null);
+      scene.overrideMaterial = null;
+      scene.background = null;
+      camera.layers.set(WORLD_TEXT_OVERLAY_LAYER);
+      renderer.autoClear = false;
+      if (shadowMap?.enabled) shadowMap.autoUpdate = false;
+      originalRender.call(renderer, scene, camera);
+      finalWorldTextOverlayPasses++;
+      return true;
+    } finally {
+      if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAutoUpdate;
+      renderer.autoClear = previousAutoClear;
+      camera.layers.mask = previousMask;
+      scene.background = previousBackground;
+      scene.overrideMaterial = previousOverride;
+      renderer.setRenderTarget(previousTarget);
+    }
   }
 
   // Called immediately before a canvas/direct render. The real outline composite
@@ -169,6 +250,8 @@
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
+      if (withheldWorldTextBasePasses) parts.push(`world-text-withheld ${withheldWorldTextBasePasses}x`);
+      if (finalWorldTextOverlayPasses) parts.push(`world-text-final-overlay ${finalWorldTextOverlayPasses}x`);
       if (suppressedMaterialIdPasses) parts.push(`material-seam-blocked ${suppressedMaterialIdPasses}x`);
       if (suppressedCompositeActivations) parts.push(`non-shell-composite-blocked ${suppressedCompositeActivations}x`);
       const message = `[outline-perf] ${parts.join(' | ')}`;
@@ -244,7 +327,39 @@
     const startedAt = performance.now();
     let result;
     try {
-      result = originalRender.call(renderer, scene, camera);
+      if (pass === 'base') {
+        invalidatePendingWorldTextOverlay(renderer);
+        const entries = collectWorldTextOverlayEntries(scene);
+        if (entries.length) {
+          reserveWorldTextOverlayLayer(entries);
+          const previousMask = camera.layers.mask; // Restored immediately after withholding layer 6 from the offscreen base draw.
+          camera.layers.disable(WORLD_TEXT_OVERLAY_LAYER);
+          try {
+            result = originalRender.call(renderer, scene, camera);
+          } finally {
+            camera.layers.mask = previousMask;
+          }
+          pendingWorldTextOverlayByRenderer.set(renderer, { scene, camera, entries, sawShell: false });
+          withheldWorldTextBasePasses++;
+        } else {
+          result = originalRender.call(renderer, scene, camera);
+        }
+      } else {
+        result = originalRender.call(renderer, scene, camera);
+      }
+
+      const pending = pendingWorldTextOverlayByRenderer.get(renderer);
+      if (pass === 'shell' && pending?.scene === scene && pending.camera === camera) {
+        pending.sawShell = true;
+      } else if (pass === 'postOrDirect' && pending) {
+        if (pending.sawShell) drawWorldTextOverlayToCanvas(renderer, pending);
+        restoreWorldTextOverlayLayers(pending);
+        pendingWorldTextOverlayByRenderer.delete(renderer);
+      } else if (pass !== 'pngDepth' && pass !== 'materialId' && pass !== 'base' && pass !== 'shell') {
+        // Any unrelated render between base and composite invalidates the handoff;
+        // never let a stale scene's text layer assignment leak into a later frame.
+        invalidatePendingWorldTextOverlay(renderer);
+      }
     } finally {
       if (canReuseBaseState && hadSceneAutoUpdate) scene.autoUpdate = true;
       if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) shadowMap.autoUpdate = true;
@@ -260,6 +375,8 @@
   const api = {
     installed: true,
     nonShellOutlinesSuppressed: true,
+    worldTextAboveShell: true,
+    worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
     snapshot() {
       return {
         lifetime: JSON.parse(JSON.stringify(lifetime)),
@@ -269,7 +386,11 @@
         sequenceInvalidations,
         suppressedMaterialIdPasses,
         suppressedCompositeActivations,
+        withheldWorldTextBasePasses,
+        finalWorldTextOverlayPasses,
         nonShellOutlinesSuppressed: true,
+        worldTextAboveShell: true,
+        worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
         maxReuseAgeMs: BASE_REUSE_MAX_AGE_MS,
       };
     },
