@@ -23,6 +23,17 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  function setGenerationLabel(text, huge = false) {
+    if (typeof document === 'undefined') return;
+    const label = document.querySelector('#denLoadingLabel span'); // Used by both animal dens and procedural mine floors so they share one loading overlay.
+    if (!label) return;
+    label.textContent = String(text || '');
+    label.style.fontSize = huge ? 'clamp(64px, 14vw, 160px)' : '26px';
+    label.style.fontWeight = huge ? '900' : '400';
+    label.style.lineHeight = huge ? '0.9' : 'normal';
+    label.style.letterSpacing = huge ? '0.12em' : '0.08em';
+  }
+
   // How many floor tiles a den's cavern should aim for — bumped up from the
   // old blob-growth generator's 40-80 range so there's room for a real
   // "bigger, tunnely" crawl (regular wildlife between the entrance and the
@@ -225,6 +236,7 @@
   }
 
   function synthesizeCavernMapData(mapId) {
+    setGenerationLabel('Generating den…', false); // Reset the shared overlay after a mine visit so animal dens never inherit a stale floor title.
     const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId);
 
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
@@ -267,6 +279,7 @@
 
   window.CavernGenerator = {
     init,
+    setGenerationLabel,
     generateCavernFloor,
     entranceConnectedFloor,
     pickDenMotherKind,
