@@ -372,17 +372,13 @@
     tree.conditions = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [], relationship: { min: null, max: null } };
     tree.excludeConditions = clone(tree.conditions);
     tree.weaponTrustGiftId = gift.id;
-    // Trust-visit dialogue supports greeting-friendly tokens that are resolved
-    // from the same live player/world data used by the ordinary dialogue system.
+    // Trust-visit dialogue supports a greeting-friendly {{timeOfDay}} token.
+    // It intentionally uses the same dawn/day/dusk/night source as dialogue
+    // conditions, then converts those phases into natural greeting words.
     const phase = dialogueDeps?.fishingTimeOfDay?.();
     const timeOfDay = ({ dawn: 'morning', day: 'day', dusk: 'evening', night: 'evening' })[phase] || 'day';
-    const playerGender = dialogueDeps?.getPlayerData?.()?.appearance?.gender || 'male';
-    const playerHonorific = playerGender === 'female' ? 'Miss' : 'Master';
     for (const node of (tree.nodes || [])) {
-      if (node?.type !== 'text') continue;
-      node.text = String(node.text ?? '')
-        .replace(/\{\{timeOfDay\}\}/g, timeOfDay)
-        .replace(/\{\{playerHonorific\}\}/g, playerHonorific);
+      if (node?.type === 'text') node.text = String(node.text ?? '').replace(/\{\{timeOfDay\}\}/g, timeOfDay);
     }
     markNaturalTerminalText(tree);
     return tree;
