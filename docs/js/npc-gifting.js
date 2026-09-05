@@ -143,22 +143,18 @@
     return evaluateGiftReaction(npcGifts, traits).tier;
   }
 
-  // Apply each preference match separately instead of collapsing the result
-  // into one tier-sized adjustment. This is intentional: the Rapport bridge
-  // intercepts the same gift_* calls and therefore also receives the full
-  // cumulative positive/negative result without needing a parallel scorer.
+  // Apply the already-balanced result once so relationship clamping cannot
+  // make a mixed gift order-dependent near a minimum/maximum. The current
+  // social system routes ordinary gifts through temporary Rapport, so use
+  // that public API directly when present; older/non-Rapport runtimes keep
+  // using permanent favor as their fallback.
   function applyGiftRelationshipDelta(npcId, evaluation) {
-    const adjustFavor = window.DialogueContent?.adjustNpcFavor;
-    if (!adjustFavor) return;
-    if (!evaluation.matchedCount) {
-      adjustFavor(npcId, TIER_FAVOR.neutral, 'gift_neutral');
+    const reason = 'gift_' + evaluation.tier;
+    if (window.NpcRapport?.adjust) {
+      window.NpcRapport.adjust(npcId, evaluation.favorDelta, reason);
       return;
     }
-    for (const tier of PREFERENCE_TIERS) {
-      for (const _trait of evaluation.matches[tier]) {
-        adjustFavor(npcId, TIER_FAVOR[tier], 'gift_' + tier);
-      }
-    }
+    window.DialogueContent?.adjustNpcFavor?.(npcId, evaluation.favorDelta, reason);
   }
 
   // Only calls out a dislike/hate in the prompt when the player has
