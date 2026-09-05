@@ -540,9 +540,10 @@
     let attempts = 0;
     function frame() {
       installPresetBridge();
-      installMovementUi();
-      installPanel();
-      installQuickButton();
+      const movementUiReady = installMovementUi(); // Tracks the movement-preset button/dropdown integration used by uiInstalled.
+      const panelReady = installPanel(); // Tracks the tuning panel integration used by uiInstalled.
+      const quickButtonReady = installQuickButton(); // Tracks the HUD shortcut integration used by uiInstalled.
+      state.uiInstalled = Boolean(movementUiReady && panelReady && quickButtonReady);
       installRenderHook();
       if ((!state.renderHookInstalled || !state.uiInstalled) && attempts++ < 600) requestAnimationFrame(frame);
     }
@@ -555,7 +556,7 @@
     setEnabled,
     applyPreset: () => setEnabled(true),
     openPanel,
-    getDebug: () => ({ ...state.debug, enabled: state.enabled, options: { ...state.options } }),
+    getDebug: () => ({ ...state.debug, enabled: state.enabled, options: { ...state.options }, uiInstalled: state.uiInstalled }),
   };
 
   bootstrap();
