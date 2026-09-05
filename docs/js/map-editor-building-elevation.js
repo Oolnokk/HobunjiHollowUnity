@@ -1,26 +1,21 @@
-// Map Editor — per-building subtle elevation overrides.
+// Map Editor — building elevation entry point plus per-instance walkable furniture authoring.
 //
-// Each building can own an exact-footprint visual-height stamp plus an optional
-// outward radius. The stamp is materialized into map.visualHeights so the live
-// game consumes the same data as the editor's existing Subtle elevation brush.
+// The mature per-building subtle-elevation controller is preserved byte-for-byte
+// in map-editor-building-elevation-core.js. This small entry point loads it first,
+// then adds the related furniture support-height authoring UI without coupling that
+// UI to standalone-interior synchronization.
 (() => {
   'use strict';
 
   if (!/\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)) return;
 
-  const WORKSPACE_KEY = 'hobunji_map_editor_workspace_v1'; // Persists override metadata and the rebuilt runtime visual heights.
-  const PRESET_MIGRATION_KEY = 'hobunji_map_editor_building_elevation_level1_radius1_v1'; // Original one-time overwrite of older off/0/0 test values.
-  const RADIUS_ZERO_MIGRATION_KEY = 'hobunji_map_editor_building_elevation_level1_radius0_v2'; // Set only by the briefly-published radius-0 preset.
-  const RADIUS_ONE_RESTORE_KEY = 'hobunji_map_editor_building_elevation_radius1_restore_v3'; // One-time repair for browsers that opened that radius-0 build.
-  const HEIGHT_HALF_MIGRATION_KEY = 'hobunji_map_editor_building_elevation_level05_v4'; // One-time conversion from the level-1 preset to level 0.5.
-  const CORE_URL = '../../js/building-subtle-elevation.js'; // Loads the pure footprint/height math used by this controller and tests.
-  const PANEL_ID = 'bldgSubtleElevationPanel'; // Identifies the injected Building inspector controls across native rerenders.
-  const footprintLoads = new Map(); // Deduplicates piece JSON requests while several UI events target one building.
-  let core = null; // Set once BuildingSubtleElevation is loaded; all rebuilds route through it.
-  let observer = null; // Watches the native Building list because renderBuildingPanel replaces its selection markup.
-  let basePaintActive = false; // True while the native Subtle elevation brush is editing the preserved hand-painted base layer.
-  let syntheticSave = false; // Prevents our refresh click from recursively scheduling another rebuild.
-  let renderQueued = false; // Coalesces MutationObserver bursts into one injected-panel refresh.
+  const BASE_CONTROLLER_URL = '../../js/map-editor-building-elevation-core.js?v=20260905walk1'; // Loaded before the walkable-furniture UI so existing building elevation behavior remains authoritative.
+  const WORKSPACE_KEY = 'hobunji_map_editor_workspace_v1'; // Used to persist per-instance walkableElevation metadata in the editor's existing workspace.
+  const WALKABLE_ELEVATION_KEY = 'walkableElevation'; // Read by HobunjiWalkableElevation at runtime to opt one placed furniture instance into geometry-derived support.
+  const BUTTON_ID = 'walkableFurnitureElevationBtn'; // Used to keep one exterior-editor entry button across map/list rerenders.
+  const DIALOG_ID = 'walkableFurnitureElevationDialog'; // Used to replace stale dialogs after map changes or repeated opens.
+  let installed = false; // Used to prevent duplicate event listeners after the base controller's delayed startup.
+  let mapListObserver = null; // Used to refresh the enabled-count badge when the active map changes.
 
   function workspace() {
     try { return window._mapEditorBridge?.getWorkspace?.() || null; }
@@ -29,18 +24,13 @@
 
   function activeMap() {
     const ws = workspace();
-    if (!ws || !Array.isArray(ws.maps)) return null;
+    if (!ws || !Array.isArray(ws.maps) || !ws.maps.length) return null;
     return ws.maps.find(map => String(map?.id || '') === String(ws.activeId || '')) || ws.maps[0] || null;
   }
 
-  function selectedBuildingId() {
-    return document.querySelector('#buildingList [data-bid].sel')?.dataset.bid || '';
-  }
-
-  function selectedBuilding() {
-    const map = activeMap();
-    const id = selectedBuildingId();
-    return (Array.isArray(map?.buildings) ? map.buildings : []).find(building => String(building?.id || '') === id) || null;
+  function setStatus(message) {
+    const pill = document.getElementById('statusPill'); // Existing Map Editor status surface used so mobile testing never depends on the console.
+    if (pill) pill.textContent = message;
   }
 
   function persistWorkspace() {
@@ -50,378 +40,248 @@
       localStorage.setItem(WORKSPACE_KEY, JSON.stringify(ws));
       return true;
     } catch (error) {
-      console.warn('Building subtle elevation: workspace save failed', error);
+      console.warn('Walkable furniture elevation: workspace save failed', error);
+      setStatus(`Walkable furniture save failed: ${error?.message || error}`);
       return false;
     }
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function finiteNumber(value, fallback = NaN) {
+    const number = Number(value); // Used by furnitureDisplayLabel so authored zero coordinates remain valid.
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function furnitureCollections(map) {
+    const collections = []; // Used by the dialog and debug snapshot as the single list of instance-bearing map fields.
+    if (Array.isArray(map?.decor)) collections.push({ key: 'decor', label: 'Exterior decor / furniture', list: map.decor });
+    if (Array.isArray(map?.furniture)) collections.push({ key: 'furniture', label: 'Exterior processing furniture', list: map.furniture });
+    if (map?.category === 'building_interior' && Array.isArray(map?.buildingInteriorBase?.furniture)) {
+      collections.push({ key: 'buildingInteriorBase.furniture', label: 'Interior furniture', list: map.buildingInteriorBase.furniture });
+    }
+    return collections;
+  }
+
+  function furnitureDisplayLabel(record, index) {
+    const key = record?.itemKey || record?.key || record?.kind || record?.type || `piece ${index + 1}`; // Used as the readable instance name in the mobile-friendly checkbox list.
+    const col = finiteNumber(record?.col ?? record?.c ?? record?.x);
+    const row = finiteNumber(record?.row ?? record?.r ?? record?.y);
+    const id = String(record?.id || '').trim();
+    const position = Number.isFinite(col) && Number.isFinite(row) ? ` · ${col},${row}` : '';
+    return `${key}${position}${id ? ` · ${id}` : ''}`;
+  }
+
+  function walkableFurnitureSnapshot(map = activeMap()) {
+    if (!map) return { mapId: null, enabled: 0, total: 0, instances: [] };
+    const instances = []; // Used by copied diagnostics and the toolbar count.
+    for (const collection of furnitureCollections(map)) {
+      collection.list.forEach((record, index) => {
+        instances.push({
+          collection: collection.key,
+          index,
+          id: record?.id || null,
+          key: record?.itemKey || record?.key || record?.kind || record?.type || null,
+          col: finiteNumber(record?.col ?? record?.c ?? record?.x, null),
+          row: finiteNumber(record?.row ?? record?.r ?? record?.y, null),
+          walkableElevation: !!record?.[WALKABLE_ELEVATION_KEY],
+        });
+      });
+    }
+    return {
+      mapId: map.id || null,
+      mapName: map.name || null,
+      enabled: instances.filter(instance => instance.walkableElevation).length,
+      total: instances.length,
+      instances,
+    };
+  }
+
+  function updateButton() {
+    const button = document.getElementById(BUTTON_ID);
+    if (!button) return;
+    const snapshot = walkableFurnitureSnapshot();
+    button.textContent = snapshot.enabled
+      ? `Walkable Furniture · ${snapshot.enabled}`
+      : 'Walkable Furniture';
+    button.title = snapshot.total
+      ? `${snapshot.enabled} of ${snapshot.total} furniture/decor instances use geometry-derived vertical support.`
+      : 'This map has no furniture/decor instances to configure.';
+  }
+
   function refreshJsonPreview() {
+    const preview = document.getElementById('jsonPreview'); // Existing full-map JSON preview updated immediately after a walkability edit.
     const map = activeMap();
-    const preview = document.getElementById('jsonPreview');
-    if (!map || !preview) return;
+    if (!preview || !map) return;
     try {
-      const runtimeMap = core?.materializeMapForRuntime?.(map) || map;
-      const out = {
+      const runtimeMap = window.MapEditorBuildingElevation?.materializeActiveMap?.() || map;
+      const output = {
         ...runtimeMap,
         tiles: Object.keys(runtimeMap.tiles || {}).map(key => {
           const [c, r] = key.split(',').map(Number);
           return { c, r, ...runtimeMap.tiles[key] };
         }),
       };
-      preview.value = JSON.stringify(out, null, 2);
+      preview.value = JSON.stringify(output, null, 2);
     } catch (_) {}
   }
 
-  function requestNativeRefresh() {
-    refreshJsonPreview();
-    const save = document.getElementById('saveBldgBtn');
-    if (!save || !selectedBuilding()) {
-      window.dispatchEvent(new Event('resize'));
-      return;
-    }
-    syntheticSave = true;
-    try { save.click(); }
-    finally { syntheticSave = false; }
+  function copyWalkableDebug() {
+    const snapshot = walkableFurnitureSnapshot(); // Copied whole because mobile users cannot rely on devtools.
+    const text = JSON.stringify(snapshot, null, 2);
+    navigator.clipboard?.writeText(text)
+      .then(() => setStatus(`Copied walkable furniture debug: ${snapshot.enabled}/${snapshot.total} enabled.`))
+      .catch(() => console.log(text));
+    return snapshot;
   }
 
-  function migratePresetOnce() {
-    if (!core) return false;
-    try {
-      if (localStorage.getItem(PRESET_MIGRATION_KEY) === '1') return false;
-    } catch (_) {}
-    const ws = workspace();
-    if (!Array.isArray(ws?.maps)) return false;
-
-    let changed = false;
-    for (const map of ws.maps) {
-      for (const building of (Array.isArray(map?.buildings) ? map.buildings : [])) {
-        building.subtleElevationOverride = { enabled: true, value: 1, radius: 1 };
-        changed = true;
-      }
-      if ((map.buildings || []).length) core.rebuildMapVisualHeights(map);
-    }
-    if (changed) persistWorkspace();
-    try { localStorage.setItem(PRESET_MIGRATION_KEY, '1'); } catch (_) {}
-    return changed;
-  }
-
-  function restoreRadiusOneAfterRadiusZeroPreset() {
-    if (!core) return false;
-    try {
-      if (localStorage.getItem(RADIUS_ONE_RESTORE_KEY) === '1') return false;
-      // Do not overwrite intentional per-building edits on browsers that never
-      // loaded the reverted radius-0 preset. Only repair workspaces carrying
-      // that preset's own migration marker.
-      if (localStorage.getItem(RADIUS_ZERO_MIGRATION_KEY) !== '1') {
-        localStorage.setItem(RADIUS_ONE_RESTORE_KEY, '1');
-        return false;
-      }
-    } catch (_) {}
-
-    const ws = workspace();
-    if (!Array.isArray(ws?.maps)) return false;
-    let changed = false;
-    for (const map of ws.maps) {
-      for (const building of (Array.isArray(map?.buildings) ? map.buildings : [])) {
-        const existing = core.normalizeOverride(building.subtleElevationOverride);
-        building.subtleElevationOverride = { ...existing, radius: 1 };
-        changed = true;
-      }
-      if ((map.buildings || []).length) core.rebuildMapVisualHeights(map);
-    }
-    if (changed) persistWorkspace();
-    try { localStorage.setItem(RADIUS_ONE_RESTORE_KEY, '1'); } catch (_) {}
-    return changed;
-  }
-
-  function migrateHeightHalfOnce() {
-    if (!core) return false;
-    try {
-      if (localStorage.getItem(HEIGHT_HALF_MIGRATION_KEY) === '1') return false;
-    } catch (_) {}
-    const ws = workspace();
-    if (!Array.isArray(ws?.maps)) return false;
-
-    let changed = false;
-    for (const map of ws.maps) {
-      for (const building of (Array.isArray(map?.buildings) ? map.buildings : [])) {
-        const existing = core.normalizeOverride(building.subtleElevationOverride);
-        building.subtleElevationOverride = { ...existing, value: 0.5 };
-        changed = true;
-      }
-      if ((map.buildings || []).length) core.rebuildMapVisualHeights(map);
-    }
-    if (changed) persistWorkspace();
-    try { localStorage.setItem(HEIGHT_HALF_MIGRATION_KEY, '1'); } catch (_) {}
-    return changed;
-  }
-
-  function ensureDefaultsForWorkspace() {
-    const ws = workspace();
-    if (!core || !Array.isArray(ws?.maps)) return false;
-    let changed = false;
-    for (const map of ws.maps) {
-      if (core.ensureBuildingDefaults(map)) changed = true;
-      if ((map.buildings || []).some(building => building.subtleElevationOverride?.enabled)) {
-        core.rebuildMapVisualHeights(map);
-        changed = true;
-      }
-    }
-    if (changed) persistWorkspace();
-    return changed;
-  }
-
-  async function ensureFootprintShape(building) {
-    if (!core || !building) return null;
-    const ownerMap = (workspace()?.maps || []).find(map => (map.buildings || []).includes(building)) || activeMap(); // Rebuilds the map that actually owns this async-loaded building.
-    if (Array.isArray(building.footprintShape?.cells) && building.footprintShape.cells.length) return building.footprintShape;
-    if (!building.pieceFile) return null;
-    const cacheKey = `${building.id || ''}|${building.pieceFile}`;
-    if (footprintLoads.has(cacheKey)) return footprintLoads.get(cacheKey);
-
-    const promise = fetch('../../' + String(building.pieceFile).replace(/^\/+/, ''), { cache: 'no-store' })
-      .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then(pieceData => {
-        const shape = core.deriveFootprintShape(pieceData);
-        if (shape) {
-          building.footprintShape = shape;
-          building.footprintW = shape.bboxW;
-          building.footprintD = shape.bboxD;
-          core.rebuildMapVisualHeights(ownerMap);
-          persistWorkspace();
-        }
-        return shape;
-      })
-      .catch(error => {
-        console.warn(`Building subtle elevation: footprint load failed for ${building.pieceFile}`, error);
-        return null;
-      })
-      .finally(() => footprintLoads.delete(cacheKey));
-    footprintLoads.set(cacheKey, promise);
-    return promise;
-  }
-
-  function rebuildActive({ refresh = true } = {}) {
+  function showWalkableFurnitureEditor() {
     const map = activeMap();
-    if (!core || !map) return { activeOverrides: 0, affectedCells: 0 };
-    const stats = core.rebuildMapVisualHeights(map);
-    persistWorkspace();
-    updatePanelStats(stats);
-    if (refresh) requestNativeRefresh();
-    return stats;
-  }
-
-  function updatePanelStats() {
-    const line = document.querySelector(`#${PANEL_ID} [data-bse-stats]`);
-    const building = selectedBuilding();
-    if (!line || !building || !core) return;
-    const override = core.normalizeOverride(building.subtleElevationOverride);
-    const exactCount = core.worldFootprintCells(building).length;
-    const affected = override.enabled ? core.affectedCells(building, activeMap()).length : 0;
-    const shapeMode = Array.isArray(building.footprintShape?.cells) ? 'exact authored footprint' : 'rectangle fallback';
-    line.textContent = override.enabled
-      ? `${exactCount} footprint tile${exactCount === 1 ? '' : 's'} · ${affected} affected with radius · ${shapeMode}`
-      : `Off · ${shapeMode}`;
-  }
-
-  function applyControls() {
-    const building = selectedBuilding();
-    const panel = document.getElementById(PANEL_ID);
-    if (!building || !panel || !core) return;
-    building.subtleElevationOverride = core.normalizeOverride({
-      enabled: panel.querySelector('[data-bse-enabled]')?.checked,
-      value: panel.querySelector('[data-bse-value]')?.value,
-      radius: panel.querySelector('[data-bse-radius]')?.value,
-    });
-    rebuildActive({ refresh: false });
-    ensureFootprintShape(building).then(() => {
-      rebuildActive({ refresh: false });
-      renderPanel();
-      requestNativeRefresh();
-    });
-  }
-
-  function installPanelStyles() {
-    if (document.getElementById('mapEditorBuildingElevationStyles')) return;
-    const style = document.createElement('style');
-    style.id = 'mapEditorBuildingElevationStyles';
-    style.textContent = `
-#${PANEL_ID}{margin:0 0 8px;padding:8px;border:1px solid rgba(245,158,11,.24);border-radius:8px;background:rgba(245,158,11,.06)}
-#${PANEL_ID} .bseHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
-#${PANEL_ID} .bseToggle{display:flex;align-items:center;gap:7px;margin:0;color:var(--text,#edf5ff);font-size:11px;cursor:pointer}
-#${PANEL_ID} .bseToggle input{width:auto}
-#${PANEL_ID} .bseGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-#${PANEL_ID} .bseStats{font-size:10px;line-height:1.35;color:var(--muted,#9fb4cf);margin-top:5px}
-#${PANEL_ID} .bseDebug{padding:2px 7px;font-size:10px}
-`;
-    document.head.appendChild(style);
-  }
-
-  function copyDebug() {
-    const map = activeMap();
-    if (!map || !core) return;
-    const text = JSON.stringify(core.debugSnapshot(map), null, 2);
-    navigator.clipboard?.writeText(text).then(() => {
-      const line = document.querySelector(`#${PANEL_ID} [data-bse-stats]`);
-      if (line) line.textContent = 'Debug snapshot copied.';
-    }).catch(() => console.log(text));
-  }
-
-  function renderPanel() {
-    if (!core) return;
-    installPanelStyles();
-    const nativePanel = document.getElementById('selectedBuildingPanel');
-    const building = selectedBuilding();
-    let panel = document.getElementById(PANEL_ID);
-    if (!nativePanel || !building || nativePanel.style.display === 'none') {
-      panel?.remove();
-      return;
+    if (!map) {
+      setStatus('No active map is available for walkable furniture elevation.');
+      return false;
     }
 
-    building.subtleElevationOverride = core.normalizeOverride(building.subtleElevationOverride);
-    const override = building.subtleElevationOverride;
-    if (!panel || panel.parentElement !== nativePanel) {
-      panel?.remove();
-      panel = document.createElement('div');
-      panel.id = PANEL_ID;
-      const saveRow = document.getElementById('saveBldgBtn')?.parentElement;
-      if (saveRow?.parentElement === nativePanel) nativePanel.insertBefore(panel, saveRow);
-      else nativePanel.appendChild(panel);
-    }
+    document.getElementById(DIALOG_ID)?.remove();
+    const dialog = document.createElement('dialog'); // Used as the per-instance editor on desktop and touch devices.
+    dialog.id = DIALOG_ID;
+    dialog.style.cssText = 'max-width:min(94vw,760px);width:760px;max-height:84vh;background:#111827;color:#e5e7eb;border:1px solid #4b5563;border-radius:10px;padding:14px;overflow:auto';
 
-    panel.innerHTML = `
-      <div class="bseHead">
-        <label class="bseToggle"><input type="checkbox" data-bse-enabled ${override.enabled ? 'checked' : ''}> Subtle elevation override</label>
-        <button type="button" class="sec bseDebug" data-bse-debug>Copy debug</button>
+    const collections = furnitureCollections(map); // Captured for checkbox collection/index lookup until this modal is saved or closed.
+    const rows = [];
+    collections.forEach((collection, collectionIndex) => {
+      if (!collection.list.length) return;
+      rows.push(`<h4 style="margin:12px 0 6px">${escapeHtml(collection.label)}</h4>`);
+      collection.list.forEach((record, recordIndex) => {
+        rows.push(`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.07)"><input type="checkbox" data-walk-collection="${collectionIndex}" data-walk-index="${recordIndex}"${record?.[WALKABLE_ELEVATION_KEY] ? ' checked' : ''}><span>${escapeHtml(furnitureDisplayLabel(record, recordIndex))}</span></label>`);
+      });
+    });
+
+    dialog.innerHTML = `
+      <h3 style="margin:0 0 4px">Walkable Furniture Elevation</h3>
+      <div style="font-size:12px;color:#9ca3af;margin-bottom:8px">
+        Map: ${escapeHtml(map.name || map.id || 'Untitled')}. Enabled instances use a runtime box calculated from their complete rendered geometry. The top is walkable; box sides remain non-blocking.
       </div>
-      <div class="bseGrid">
-        <div><label>Level (-1 to 1)</label><input type="number" min="-1" max="1" step="0.05" data-bse-value value="${override.value}"></div>
-        <div><label>Radius (tiles)</label><input type="number" min="0" max="64" step="1" data-bse-radius value="${override.radius}"></div>
-      </div>
-      <p class="muted" style="margin-top:5px">Matches painting Subtle elevation over this building's exact footprint. Each radius step grows one tile farther around it, including diagonals. The building remains rigid and level.</p>
-      <div class="bseStats" data-bse-stats></div>`;
+      <div data-walk-list>${rows.join('') || '<div style="color:#9ca3af">This map has no furniture/decor instances to toggle.</div>'}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+        <button type="button" data-walk-debug>Copy debug</button>
+        <button type="button" data-walk-save>Save</button>
+        <button type="button" data-walk-close>Close</button>
+      </div>`;
 
-    panel.querySelector('[data-bse-enabled]').addEventListener('change', applyControls);
-    panel.querySelector('[data-bse-value]').addEventListener('change', applyControls);
-    panel.querySelector('[data-bse-radius]').addEventListener('change', applyControls);
-    panel.querySelector('[data-bse-debug]').addEventListener('click', copyDebug);
-    updatePanelStats();
-    ensureFootprintShape(building).then(() => { updatePanelStats(); });
-  }
+    dialog.querySelector('[data-walk-debug]')?.addEventListener('click', copyWalkableDebug);
+    dialog.querySelector('[data-walk-close]')?.addEventListener('click', () => dialog.close());
+    dialog.querySelector('[data-walk-save]')?.addEventListener('click', () => {
+      const liveMap = activeMap();
+      if (!liveMap || liveMap !== map) {
+        setStatus('Active map changed; reopen Walkable Furniture before saving.');
+        return;
+      }
 
-  function queueRender() {
-    if (renderQueued) return;
-    renderQueued = true;
-    requestAnimationFrame(() => {
-      renderQueued = false;
-      renderPanel();
-    });
-  }
+      let changed = 0; // Used to report the number of records whose authored walkability actually changed.
+      dialog.querySelectorAll('input[data-walk-collection][data-walk-index]').forEach(input => {
+        const collectionIndex = Number(input.dataset.walkCollection);
+        const recordIndex = Number(input.dataset.walkIndex);
+        const record = collections[collectionIndex]?.list?.[recordIndex]; // Exact placed instance edited by this checkbox.
+        if (!record) return;
+        const before = !!record[WALKABLE_ELEVATION_KEY];
+        const after = !!input.checked;
+        if (after) record[WALKABLE_ELEVATION_KEY] = true;
+        else delete record[WALKABLE_ELEVATION_KEY];
+        if (before !== after) changed += 1;
+      });
 
-  function isVisualHeightMode() {
-    return !!document.querySelector('#modeBar [data-mode="visual-height"].act');
-  }
-
-  function beginNativeHeightPaint() {
-    const map = activeMap();
-    if (!core || !map || !isVisualHeightMode()) return;
-    basePaintActive = core.beginBaseEdit(map);
-  }
-
-  function finishNativeHeightPaint() {
-    if (!basePaintActive || !core) return;
-    basePaintActive = false;
-    setTimeout(() => {
-      const map = activeMap();
-      if (!map) return;
-      core.endBaseEdit(map);
       persistWorkspace();
-      updatePanelStats();
-      requestNativeRefresh();
-    }, 0);
-  }
-
-  function installEventHooks() {
-    const canvas = document.getElementById('canvas2d');
-    canvas?.addEventListener('pointerdown', beginNativeHeightPaint, true);
-    canvas?.addEventListener('pointerup', () => {
-      finishNativeHeightPaint();
-      if (document.querySelector('#modeBar [data-mode="building"].act')) {
-        setTimeout(() => rebuildActive(), 0);
-      }
-    });
-    canvas?.addEventListener('pointercancel', finishNativeHeightPaint);
-
-    document.getElementById('saveBldgBtn')?.addEventListener('click', () => {
-      if (syntheticSave) return;
-      setTimeout(() => {
-        const building = selectedBuilding();
-        if (building) ensureFootprintShape(building).then(() => rebuildActive({ refresh: false }));
-        else rebuildActive({ refresh: false });
-        queueRender();
-      }, 0);
-    });
-    document.getElementById('delBldgBtn')?.addEventListener('click', () => {
-      setTimeout(() => { rebuildActive(); queueRender(); }, 0);
+      refreshJsonPreview();
+      updateButton();
+      setStatus(`Walkable furniture elevation saved · ${changed} change${changed === 1 ? '' : 's'}.`);
+      dialog.close();
     });
 
-    document.getElementById('buildingList')?.addEventListener('click', () => setTimeout(queueRender, 0));
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    return true;
   }
 
-  function installObserver() {
-    if (observer) return;
-    const root = document.getElementById('buildingList'); // Native list rerenders cover selection/add/remove without observing our injected panel and self-triggering forever.
-    if (!root) return;
-    observer = new MutationObserver(queueRender);
-    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  function installButton() {
+    if (document.getElementById(BUTTON_ID)) {
+      updateButton();
+      return true;
+    }
+    const section = document.getElementById('buildingsSection');
+    const heading = section?.querySelector('.sect-head');
+    if (!section || !heading) return false;
+
+    const row = document.createElement('div'); // Used to keep this related elevation control near the existing building-elevation inspector.
+    row.style.cssText = 'display:flex;gap:6px;margin:6px 0 2px;flex-wrap:wrap';
+    const button = document.createElement('button'); // Opens the per-instance walkable furniture dialog.
+    button.id = BUTTON_ID;
+    button.type = 'button';
+    button.className = 'sec';
+    button.textContent = 'Walkable Furniture';
+    button.addEventListener('click', showWalkableFurnitureEditor);
+    row.appendChild(button);
+    heading.insertAdjacentElement('afterend', row);
+    updateButton();
+    return true;
   }
 
-  function exposeDebugApi() {
-    window.MapEditorBuildingElevation = {
-      rebuildActiveMap: () => rebuildActive(),
-      rebuildAllMaps: () => {
-        const ws = workspace();
-        const results = [];
-        for (const map of (ws?.maps || [])) results.push({ mapId: map.id, ...core.rebuildMapVisualHeights(map) });
-        persistWorkspace();
-        requestNativeRefresh();
-        return results;
-      },
-      debugSnapshot: () => core.debugSnapshot(activeMap()),
-      materializeActiveMap: () => core.materializeMapForRuntime(activeMap()),
-    };
+  function installMapObserver() {
+    if (mapListObserver) return;
+    const mapList = document.getElementById('mapList'); // Existing active-map list observed so the button badge follows map switches.
+    if (!mapList) return;
+    mapListObserver = new MutationObserver(() => queueMicrotask(updateButton));
+    mapListObserver.observe(mapList, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-selected'] });
+    mapList.addEventListener('click', () => setTimeout(updateButton, 0));
   }
 
-  function install() {
-    if (!window._mapEditorBridge?.getWorkspace || !document.getElementById('buildingsSection')) {
-      setTimeout(install, 30);
+  function augmentBaseApi() {
+    const api = window.MapEditorBuildingElevation;
+    if (!api || api.__walkableFurnitureElevation) return false;
+    api.walkableFurnitureSnapshot = walkableFurnitureSnapshot;
+    api.showWalkableFurnitureEditor = showWalkableFurnitureEditor;
+    api.copyWalkableFurnitureDebug = copyWalkableDebug;
+    api.__walkableFurnitureElevation = true;
+    return true;
+  }
+
+  function installWalkableUi() {
+    if (installed) return;
+    if (!window.MapEditorBuildingElevation || !document.getElementById('buildingsSection')) {
+      setTimeout(installWalkableUi, 30);
       return;
     }
-    core = window.BuildingSubtleElevation;
-    if (!core) {
-      const existing = document.querySelector('script[data-building-subtle-elevation-core]');
-      if (existing) { existing.addEventListener('load', install, { once: true }); return; }
-      const script = document.createElement('script');
-      script.src = CORE_URL;
-      script.dataset.buildingSubtleElevationCore = '1';
-      script.addEventListener('load', install, { once: true });
-      document.head.appendChild(script);
-      return;
-    }
-
-    if (window.MapEditorBuildingElevation) return;
-    migratePresetOnce();
-    restoreRadiusOneAfterRadiusZeroPreset();
-    migrateHeightHalfOnce();
-    ensureDefaultsForWorkspace();
-    installEventHooks();
-    installObserver();
-    exposeDebugApi();
-    renderPanel();
+    installed = true;
+    installButton();
+    installMapObserver();
+    augmentBaseApi();
+    updateButton();
   }
 
-  install();
+  function loadBaseController() {
+    if (window.MapEditorBuildingElevation) {
+      installWalkableUi();
+      return;
+    }
+    const existing = document.querySelector('script[data-map-editor-building-elevation-core]'); // Prevents duplicate base-controller loads if another initializer races this entry point.
+    if (existing) {
+      existing.addEventListener('load', installWalkableUi, { once: true });
+      setTimeout(installWalkableUi, 0);
+      return;
+    }
+    const script = document.createElement('script'); // Loads the preserved original building-elevation implementation.
+    script.src = BASE_CONTROLLER_URL;
+    script.dataset.mapEditorBuildingElevationCore = '1';
+    script.addEventListener('load', installWalkableUi, { once: true });
+    document.head.appendChild(script);
+  }
+
+  loadBaseController();
 })();
