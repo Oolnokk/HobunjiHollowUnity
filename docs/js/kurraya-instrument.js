@@ -20,11 +20,25 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     installHostedSampleHook();
+    installMinimalPerformanceUiHook();
   }
 
   const KURRAYA_TOP_ASSET = { path: 'assets/toolsprites/kurraya_top.png', width: 318, height: 247 };
   const KURRAYA_AUDIO_ASSET = { path: 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a', filename: 'sfx_kurraya_pluck.m4a' }; // Bundled pluck fed into every hosted Kurraya sampler before it can sound notes.
   const KURRAYA_MUSIC_FRAME_SRC = 'assets/minigames/lyre-performance.html'; // Identifies both the player's visible performance iframe and ambient NPC performance iframes.
+  const KURRAYA_MINIMAL_PERFORMANCE_UI = true; // Temporary presentation flag used to leave only notes, Auto Pick/arpeggio selection, and scale selection visible during player performances.
+  const KURRAYA_MINIMAL_UI_HIDDEN_SELECTORS = [ // Host-side music chrome suppressed while the temporary minimal presentation is active.
+    '#compactSongPicker',
+    '#musicLayoutHud',
+    '#musicModeShiftHud',
+    '#musicPerformanceHud',
+    '#musicMinigameCloseBtn',
+    '#leftMusicControls .concertinaGroupHead',
+    '#leftMusicControls .edgeStickSide',
+    '#leftMusicControls .autoPickCrossHint',
+    '#rightMusicControls .concertinaGroupHead',
+    '#rightMusicControls .concertinaStrumWrap',
+  ];
   const KURRAYA_SAMPLE_RESTORE_WAIT_MS = 350; // Gives the minigame's IndexedDB restore a short chance to reuse an already-analyzed bundled sample.
   const KURRAYA_SAMPLE_IMPORT_TIMEOUT_MS = 5000; // Prevents a failed browser decoder from blocking Kurraya controls indefinitely.
   const KURRAYA_SAMPLE_ANALYSIS_WAIT_MS = 1400; // Lets the existing root-note analyzer finish before the first pitched performance begins.
@@ -49,6 +63,8 @@
   const KURRAYA_TWITCH_AXIS = 'z';
 
   let _hostedSampleHookInstalled = false; // Ensures init() registers the document-level iframe load hook only once.
+  let _minimalPerformanceUiHookInstalled = false; // Ensures the host DOM observer for the temporary minimal Kurraya presentation is registered only once.
+  let _minimalPerformanceUiRefreshPending = false; // Coalesces UI mutations into one animation-frame refresh while music controls are being rebuilt.
 
   function sampleLog(message, level = 'info') {
     window.__farmLog?.(`kurraya sample: ${message}`, level);
@@ -57,6 +73,74 @@
   function isKurrayaMusicFrame(frame) {
     const src = frame?.getAttribute?.('src') || ''; // Used to ignore unrelated iframes and the player's about:blank teardown load.
     return src.includes(KURRAYA_MUSIC_FRAME_SRC);
+  }
+
+  function setMinimalElementHidden(element, hidden) {
+    if (!element) return;
+    const savedDisplayAttribute = 'data-kurraya-minimal-display'; // Stores any pre-existing inline display value so temporary suppression can be reversed cleanly.
+    if (hidden) {
+      if (!element.hasAttribute(savedDisplayAttribute)) element.setAttribute(savedDisplayAttribute, element.style.display || '');
+      element.style.setProperty('display', 'none', 'important');
+      return;
+    }
+    if (!element.hasAttribute(savedDisplayAttribute)) return;
+    const previousDisplay = element.getAttribute(savedDisplayAttribute) || ''; // Restores the exact inline display value that existed before minimal mode hid the element.
+    element.style.removeProperty('display');
+    if (previousDisplay) element.style.display = previousDisplay;
+    element.removeAttribute(savedDisplayAttribute);
+  }
+
+  function setMinimalFrameHidden(frame, hidden) {
+    if (!frame) return;
+    const savedOpacityAttribute = 'data-kurraya-minimal-opacity'; // Stores the iframe's prior inline opacity while its visual minigame surface is temporarily suppressed.
+    const savedPointerAttribute = 'data-kurraya-minimal-pointer-events'; // Stores the iframe's prior pointer behavior while host-side controls remain interactive.
+    if (hidden) {
+      if (!frame.hasAttribute(savedOpacityAttribute)) frame.setAttribute(savedOpacityAttribute, frame.style.opacity || '');
+      if (!frame.hasAttribute(savedPointerAttribute)) frame.setAttribute(savedPointerAttribute, frame.style.pointerEvents || '');
+      frame.style.opacity = '0';
+      frame.style.pointerEvents = 'none';
+      return;
+    }
+    if (frame.hasAttribute(savedOpacityAttribute)) {
+      const previousOpacity = frame.getAttribute(savedOpacityAttribute) || ''; // Restores the iframe's previous inline opacity when the performance closes.
+      frame.style.removeProperty('opacity');
+      if (previousOpacity) frame.style.opacity = previousOpacity;
+      frame.removeAttribute(savedOpacityAttribute);
+    }
+    if (frame.hasAttribute(savedPointerAttribute)) {
+      const previousPointerEvents = frame.getAttribute(savedPointerAttribute) || ''; // Restores the iframe's previous inline pointer behavior after minimal mode ends.
+      frame.style.removeProperty('pointer-events');
+      if (previousPointerEvents) frame.style.pointerEvents = previousPointerEvents;
+      frame.removeAttribute(savedPointerAttribute);
+    }
+  }
+
+  function applyMinimalPerformanceUi() {
+    if (!KURRAYA_MINIMAL_PERFORMANCE_UI || typeof document === 'undefined') return;
+    const overlay = document.getElementById('musicMinigameOverlay'); // Supplies the authoritative open/closed state for the player's visible Kurraya performance.
+    const performanceOpen = Boolean(overlay?.classList.contains('open')); // Gates suppression so normal page chrome is restored immediately after the performance closes.
+    const playerFrame = document.getElementById('musicMinigameFrame'); // Keeps the music engine alive and focusable while hiding its lyre/chart presentation surface.
+    setMinimalFrameHidden(playerFrame, performanceOpen);
+    for (const selector of KURRAYA_MINIMAL_UI_HIDDEN_SELECTORS) {
+      document.querySelectorAll(selector).forEach(element => setMinimalElementHidden(element, performanceOpen));
+    }
+  }
+
+  function queueMinimalPerformanceUiRefresh() {
+    if (_minimalPerformanceUiRefreshPending || typeof requestAnimationFrame !== 'function') return;
+    _minimalPerformanceUiRefreshPending = true;
+    requestAnimationFrame(() => {
+      _minimalPerformanceUiRefreshPending = false;
+      applyMinimalPerformanceUi();
+    });
+  }
+
+  function installMinimalPerformanceUiHook() {
+    if (!KURRAYA_MINIMAL_PERFORMANCE_UI || _minimalPerformanceUiHookInstalled || typeof document === 'undefined' || !document.documentElement) return;
+    _minimalPerformanceUiHookInstalled = true;
+    const observer = new MutationObserver(queueMinimalPerformanceUiRefresh); // Watches the overlay class plus dynamically-created song/HUD/control chrome from music-minigame.js.
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    queueMinimalPerformanceUiRefresh();
   }
 
   function waitForAnalysisText(readout, predicate, timeoutMs) {
