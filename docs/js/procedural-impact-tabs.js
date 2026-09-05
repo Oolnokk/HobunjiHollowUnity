@@ -244,6 +244,21 @@
     // Wait for the canonical host first so a successful pose can actually render.
     const threeHostReady = await waitForEditorThreeHost();
 
+    // Manual IK must wrap renderer.render before Ground / Rest does. Ground then
+    // applies its body/preset first and calls into this bridge, which applies the
+    // draggable limb override immediately before the real render.
+    const manualBridgeLoaded = threeHostReady && await loadScript(
+      'proceduralGroundRestManualBridgeScript',
+      src('procedural-ground-rest-manual-bridge.js'),
+      () => Boolean(window.ProceduralGroundRestManualBridge?.installed)
+    );
+    let manualBridgeReady = false;
+    if (manualBridgeLoaded) {
+      try { manualBridgeReady = await window.ProceduralGroundRestManualBridge.whenRenderHookReady(); }
+      catch (error) { emitDiagnostic(`Ground/Rest Manual IK bridge readiness failed: ${error?.message || error}`, 'bad'); }
+    }
+    emitDiagnostic(`Ground/Rest Manual IK bridge loaded before preset hook: ${!!manualBridgeReady}`);
+
     const groundLoaded = threeHostReady && await loadScript(
       'proceduralGroundRestModeScript',
       src('procedural-limb-pose-author.js'),
@@ -266,15 +281,15 @@
     emitDiagnostic(`Carry locomotion module loaded: ${!!carryLoaded}`);
 
     const status = document.getElementById('statusPill');
-    const ready = Boolean(threeHostReady && groundLoaded && groundInputLoaded && carryLoaded && window.HobunjiProceduralLimbPoseAuthor?.version >= 5 && window.ProceduralGroundRestInputBridge?.installed && window.ProceduralCarryWalkMode?.installed);
+    const ready = Boolean(threeHostReady && manualBridgeReady && groundLoaded && groundInputLoaded && carryLoaded && window.HobunjiProceduralLimbPoseAuthor?.version >= 5 && window.ProceduralGroundRestManualBridge?.installed && window.ProceduralGroundRestInputBridge?.installed && window.ProceduralCarryWalkMode?.installed);
     if (status) {
       status.textContent = ready
-        ? 'Ground / Rest + Carry ready · Three host + pointer input active'
-        : `Ground / Rest adapter incomplete · three ${!!threeHostReady} · ground ${!!groundLoaded} · input ${!!groundInputLoaded} · carry ${!!carryLoaded}`;
+        ? 'Ground / Rest + Manual IK + Carry ready · Three host + pointer input active'
+        : `Ground / Rest adapter incomplete · three ${!!threeHostReady} · manual ${!!manualBridgeReady} · ground ${!!groundLoaded} · input ${!!groundInputLoaded} · carry ${!!carryLoaded}`;
       status.className = `pill ${ready ? 'good' : 'bad'}`;
     }
-    emitDiagnostic(ready ? 'Ground / Rest + Carry READY.' : 'Ground / Rest adapter incomplete.', ready ? 'info' : 'bad');
-    console.info('[Procedural adapters] Current-main Impact/Dance + editor-native Ground/Rest + hardened pointer input + Regular-derived Carry loaded.');
+    emitDiagnostic(ready ? 'Ground / Rest + Manual IK + Carry READY.' : 'Ground / Rest adapter incomplete.', ready ? 'info' : 'bad');
+    console.info('[Procedural adapters] Current-main Impact/Dance + editor-native Ground/Rest + Manual IK + hardened pointer input + Regular-derived Carry loaded.');
   }
 
   boot();
