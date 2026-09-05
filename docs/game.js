@@ -23276,7 +23276,16 @@
           return;
         }
         const boundDesktopAction = getActionForButton('desktop', event.code);
-        if (boundDesktopAction && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
+        // Interact/Utility Menu are excluded here because their own
+        // tap-vs-hold handling further down owns them (see the Interact and
+        // Utility Menu blocks below) — excluded by whatever key they're
+        // *currently* bound to, so rebinding either one away from its
+        // default doesn't leave the old key permanently swallowed. Item
+        // Wheel's KeyQ has no rebindable action at all (see
+        // RESERVED_DESKTOP_CODES in input-bindings.js), so it stays a fixed
+        // literal exclusion.
+        const reservedDesktopCodes = [inputBindings.desktop.interact, 'KeyQ', inputBindings.desktop.utilityMenu];
+        if (boundDesktopAction && !reservedDesktopCodes.includes(event.code)) {
           event.preventDefault();
           if (!event.repeat) runInputAction(boundDesktopAction, 'press');
           return;
@@ -23312,13 +23321,17 @@
           refreshActionBar();
           return;
         }
-        // C: hold to open the utilities wheel (Character View, Return to Camp,
-        // quick-select a Campfire Kit, Return to Farm) — same hold-to-open/tap-does-
-        // nothing pattern as E/Q above, but there's no separate tap
-        // behavior to fall back to on release (see the keyup handler).
-        if (key === 'c') {
+        // Utility Menu: hold to open the utilities wheel (Character View,
+        // Return to Camp, quick-select a Campfire Kit, Return to Farm) —
+        // same hold-to-open/tap-does-nothing pattern as E/Q above, but
+        // there's no separate tap behavior to fall back to on release (see
+        // the keyup handler). Driven by the rebindable 'utilityMenu'
+        // binding (default KeyC) rather than a literal key, so remapping it
+        // in Settings actually takes effect.
+        if (isDesktop && event.code === inputBindings.desktop.utilityMenu) {
           event.preventDefault();
-          if (isDesktop) { startDesktopHoldKey('c', event); return; }
+          startDesktopHoldKey('c', event);
+          return;
         }
 
         // Legacy unbound primary keys. Configured action bindings return above;
@@ -23395,7 +23408,7 @@
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
         // instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
-        if (boundDesktopActionUp && !['KeyE', 'KeyQ', 'KeyC'].includes(event.code)) {
+        if (boundDesktopActionUp && ![inputBindings.desktop.interact, 'KeyQ', inputBindings.desktop.utilityMenu].includes(event.code)) {
           runInputAction(boundDesktopActionUp, 'release');
         }
         if (key === 'shift') {
@@ -23428,7 +23441,7 @@
           }
           return;
         }
-        if (key === 'c' && isDesktop) {
+        if (isDesktop && event.code === inputBindings.desktop.utilityMenu) {
           event.preventDefault();
           // No tap fallback — the utilities wheel only ever does anything
           // once it's actually open (finishDesktopHoldKey's own arc==='utilities'
@@ -23635,44 +23648,41 @@
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
 
-      // Left click = tool action 1 (tap/hold), right click = tool action 2
-      // (tap/hold) when wielding the weapon tool — routed through
-      // Combat.input so the loadout's 4 ability slots can claim them.
-      // Every other tool keeps its previous click behavior unchanged: left
-      // click = primary action, right click = secondary action.
-      const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse press with the combat slot released below.
+      // Whatever mouse button is bound to action1/action2 (default: left/
+      // right click) acts as tool action 1/2 (tap/hold) when wielding the
+      // weapon tool — routed through Combat.input so the loadout's 4
+      // ability slots can claim them. Every other tool keeps its previous
+      // click behavior unchanged: action1's button = primary action,
+      // action2's button = secondary action. Resolved through the same
+      // getActionForButton binding lookup keyboard uses (not a literal
+      // e.button === 0/2 check) so rebinding action1/action2 to a
+      // different mouse button — or binding any other action to a mouse
+      // button at all — actually takes effect.
+      const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse button with the combat slot released below.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
+          const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
-            const pointerActionId = e.button === 0 ? 'action1' : e.button === 2 ? 'action2' : null; // Used to map mouse presses through the same visible-slot override as keyboard/controller input.
-            const visibleOverride = pointerActionId ? visibleActionOverrideForWeaponSlot(pointerActionId) : null;
+            const weaponSlot = weaponActionSlot(mouseAction);
+            const visibleOverride = weaponSlot ? visibleActionOverrideForWeaponSlot(mouseAction) : null;
             if (visibleOverride) {
               visibleWeaponContextPresses.add('mouse:' + e.button);
               runActionButtonAtSlot(visibleOverride.slot);
               return;
             }
-            tryAutoEngageMeleeTarget();
-            if (e.button === 0) {
-              desktopWeaponPointerSlots.set(e.button, 1);
-              actionHeldDown = true;
-              window.Combat.input.pressStart(1);
-            } else if (e.button === 2) {
-              desktopWeaponPointerSlots.set(e.button, 2);
-              window.Combat.input.pressStart(2);
+            if (weaponSlot) {
+              tryAutoEngageMeleeTarget();
+              desktopWeaponPointerSlots.set(e.button, weaponSlot);
+              if (weaponSlot === 1) actionHeldDown = true;
+              window.Combat.input.pressStart(weaponSlot);
+              return;
             }
-            return;
           }
-          if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
-          if (e.button === 0) {
-            actionHeldDown = true;
-            useActiveAction();
-          } else if (e.button === 2) {
-            const btns = computeActionButtons();
-            const second = btns.find((b, i) => i > 0 && b.allowed);
-            if (second) { activeAction = second.action; useActiveAction(); }
-          }
+          if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'press'); return; }
+          if (mouseAction === 'action1') { actionHeldDown = true; useActiveAction(); return; }
+          if (mouseAction) runInputAction(mouseAction, 'press'); // Any other action bound to a mouse button (e.g. a side button bound to Dodge).
         });
       }
       function finishDesktopMouseAction(e) {
@@ -23681,7 +23691,7 @@
         if (!isDesktop) return;
         if (e.pointerType && e.pointerType !== 'mouse') return;
         if (visibleWeaponContextPresses.delete('mouse:' + e.button)) {
-          if (e.button === 0) actionHeldDown = false;
+          if (weaponActionSlot(getActionForButton('desktop', 'Mouse' + e.button)) === 1) actionHeldDown = false;
           return;
         }
         const ownedSlot = desktopWeaponPointerSlots.get(e.button);
@@ -23691,13 +23701,18 @@
           window.Combat?.input?.pressEnd(ownedSlot);
           return;
         }
+        const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
         if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
-          if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
-          else if (e.button === 2) { window.Combat.input.pressEnd(2); }
-          return;
+          const weaponSlot = weaponActionSlot(mouseAction);
+          if (weaponSlot) {
+            if (weaponSlot === 1) actionHeldDown = false;
+            window.Combat.input.pressEnd(weaponSlot);
+            return;
+          }
         }
-        if (heldMode === 'tool' && activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
-        if (e.button === 0) actionHeldDown = false;
+        if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
+        if (mouseAction === 'action1') { actionHeldDown = false; return; }
+        if (mouseAction) runInputAction(mouseAction, 'release');
       }
       // Capture release before action-arch/backdrop handlers can consume a
       // moved right-click gesture. `contextmenu` is Chromium/Opera's final

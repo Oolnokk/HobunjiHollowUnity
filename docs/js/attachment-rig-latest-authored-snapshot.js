@@ -5,11 +5,11 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const base = selfUrl ? new URL('./', selfUrl) : new URL('./js/', location.href);
   const urls = [
-    new URL('../config/character-rig-scale-defaults.js?v=20260904a', base).href,
+    new URL('../config/character-rig-scale-defaults.js?v=20260904h', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
-    new URL('character-rig-scale.js?v=20260904b', base).href,
-    new URL('character-scale-comparison-host-bridge.js?v=20260904g', base).href,
-    new URL('character-scale-comparison.js?v=20260904d', base).href,
+    new URL('character-rig-scale.js?v=20260904i', base).href,
+    new URL('character-scale-comparison-host-bridge.js?v=20260904j', base).href,
+    new URL('character-scale-comparison.js?v=20260904k', base).href,
   ];
   const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
     const script = document.createElement('script');

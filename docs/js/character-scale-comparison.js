@@ -30,7 +30,6 @@
   let chair = null;
   let THREE = null;
   let persistTimer = 0;
-  let frameRaf = 0;
   let portraitRenderChain = Promise.resolve(); // Serializes portrait rendering because NpcAvatarPreview temporarily installs the active NPC account shim.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -45,7 +44,9 @@
     return species === 'rakakoan' ? 'kenkari' : species === 'ghoul' ? 'mao-ao' : species;
   };
   const prettySpecies = value => String(value || '').split('-').map(part => part ? part[0].toUpperCase() + part.slice(1) : '').join('-');
-  const clampPercent = value => Math.max(25, Math.min(200, Number(value) || 100));
+  const clampPercent = value => Math.max(10, Math.min(400, Number(value) || 100)); // Matches HobunjiCharacterRigScale's own [0.1, 4] clamp.
+  const clampOffsetPercent = value => Math.max(-50, Math.min(50, Number(value) || 0)); // Matches HobunjiCharacterRigScale.maxOffsetFraction.
+  const clampAgePercent = value => Math.max(0, Math.min(100, Number(value) || 0));
 
   function host() {
     return window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost || null;
@@ -192,14 +193,37 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       const panel = document.createElement('div');
       panel.id = PANEL_ID;
       panel.className = 'maaInteractive';
+      const scaleRow = (axis, label, min, max, step, value, ariaLabel) => `
+        <div class="scaleRow">
+          <label for="maaFullScaleRange${axis}">${label}</label>
+          <input id="maaFullScaleRange${axis}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${ariaLabel}">
+          <input id="maaFullScaleNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${ariaLabel} (exact value)">%
+        </div>`;
       panel.innerHTML = `
         <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Tap a character</span><span id="maaFullScaleNpc" class="pill">—</span></div>
-        <div class="scaleRow"><input id="maaFullScaleRange" type="range" min="25" max="200" step="0.5" value="100" aria-label="Full character scale"><output id="maaFullScaleOut">100%</output></div>
-        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button></div>
-        <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode.</div>`;
+        ${scaleRow('X', 'Width', 10, 400, 0.5, 100, 'Body width scale')}
+        ${scaleRow('Y', 'Height', 10, 400, 0.5, 100, 'Body height scale')}
+        ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
+        ${scaleRow('OffsetY', 'Head Y offset', -50, 50, 0.5, 0, 'Head Y offset, percent of model height')}
+        ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
+        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
+        <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode. Head scale/offset are compensated at the neck rig, so stretching width/height never distorts head proportions. Age is per-NPC and composes with Head Y offset for a hunched-over look.</div>`;
       workspace.appendChild(panel);
-      panel.querySelector('#maaFullScaleRange').addEventListener('input', applySlider);
-      panel.querySelector('#maaFullScaleRange').addEventListener('change', persistProfiles);
+      panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
+      for (const axis of ['X', 'Y', 'Head', 'OffsetY']) {
+        const range = panel.querySelector(`#maaFullScaleRange${axis}`);
+        const number = panel.querySelector(`#maaFullScaleNum${axis}`);
+        range.addEventListener('input', () => { number.value = range.value; applyBodyHeadSliders(); });
+        range.addEventListener('change', persistProfiles);
+        number.addEventListener('input', () => { range.value = number.value; applyBodyHeadSliders(); });
+        number.addEventListener('change', persistProfiles);
+      }
+      const ageRange = panel.querySelector('#maaFullScaleRangeAge');
+      const ageNumber = panel.querySelector('#maaFullScaleNumAge');
+      ageRange.addEventListener('input', () => { ageNumber.value = ageRange.value; applyAgeSlider(); });
+      ageRange.addEventListener('change', persistProfiles);
+      ageNumber.addEventListener('input', () => { ageRange.value = ageNumber.value; applyAgeSlider(); });
+      ageNumber.addEventListener('change', persistProfiles);
       panel.querySelector('#maaFullScaleExport').addEventListener('click', exportJson);
       panel.querySelector('#maaFullScaleFrame').addEventListener('click', frame);
     }
@@ -263,29 +287,64 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (badge) badge.textContent = 'Full character scale · preview-only lineup with Rig Coordinates hands and feet. Tap a character to edit that species/gender scale.';
   }
 
+  function setSliderValue(axis, percent) {
+    document.getElementById(`maaFullScaleRange${axis}`).value = String(percent);
+    document.getElementById(`maaFullScaleNum${axis}`).value = String(Math.round(percent * 10) / 10);
+  }
+
   function select(entry) {
     if (!entry) return;
     selected = entry;
-    const scale = Number(entry.profile?.anatomy?.rigScale ?? 1);
+    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
     document.getElementById('maaFullScaleNpc').textContent = entry.npc?.name || entry.npc?.id || 'Repository NPC';
-    document.getElementById('maaFullScaleRange').value = String(clampPercent(scale * 100));
-    document.getElementById('maaFullScaleOut').textContent = `${Math.round(scale * 1000) / 10}%`;
+    for (const [axis, field] of [['X', 'x'], ['Y', 'y'], ['Head', 'head']]) {
+      setSliderValue(axis, clampPercent(scale[field] * 100));
+    }
+    setSliderValue('OffsetY', clampOffsetPercent(scale.offsetY * 100));
+    const age = entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0;
+    setSliderValue('Age', clampAgePercent(age * 100));
     status(`Selected ${prettySpecies(entry.species)} ${entry.gender} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}.`);
   }
 
-  function applySlider(event) {
+  function currentAgeFraction() {
+    return selected?.npc?.id ? (host()?.npcAgeFor?.(selected.npc.id) || 0) : 0;
+  }
+
+  // Width/height/head/head-Y-offset are authored per species+gender, on the shared
+  // profile — moving any one of these four sliders reapplies all four together
+  // (each read fresh from its own range input) plus whatever age is already set.
+  function applyBodyHeadSliders() {
     if (!active || !selected) return;
-    const percent = clampPercent(event.currentTarget.value);
-    const scale = percent / 100;
+    const scale = { x: 1, y: 1, head: 1, offsetY: 0 };
+    for (const [axis, field] of [['X', 'x'], ['Y', 'y'], ['Head', 'head']]) {
+      const percent = clampPercent(document.getElementById(`maaFullScaleRange${axis}`).value);
+      scale[field] = percent / 100;
+      setSliderValue(axis, percent);
+    }
+    const offsetPercent = clampOffsetPercent(document.getElementById('maaFullScaleRangeOffsetY').value);
+    scale.offsetY = offsetPercent / 100;
+    setSliderValue('OffsetY', offsetPercent);
     selected.profile.anatomy ||= {};
-    selected.profile.anatomy.rigScale = scale;
-    window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale);
-    document.getElementById('maaFullScaleOut').textContent = `${Math.round(percent * 10) / 10}%`;
+    selected.profile.anatomy.rigScaleX = scale.x;
+    selected.profile.anatomy.rigScaleY = scale.y;
+    selected.profile.anatomy.headScale = scale.head;
+    selected.profile.anatomy.headOffsetY = scale.offsetY;
+    window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
     clearTimeout(persistTimer);
     persistTimer = setTimeout(persistProfiles, 180);
-    if (frameRaf) cancelAnimationFrame(frameRaf);
-    frameRaf = requestAnimationFrame(frame);
+  }
+
+  // Age is per-NPC instance data, not species+gender-authored — it's stored and
+  // persisted separately (see host().setNpcAge), and only ever composes with
+  // whatever headOffsetY the selected character's profile already has.
+  function applyAgeSlider() {
+    if (!active || !selected?.npc?.id) return;
+    const percent = clampAgePercent(document.getElementById('maaFullScaleRangeAge').value);
+    setSliderValue('Age', percent);
+    host()?.setNpcAge?.(selected.npc.id, percent / 100);
+    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
+    window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, percent / 100);
   }
 
   function persistProfiles() {
@@ -301,12 +360,38 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     } catch (error) { console.warn('[full-character-scale] profile autosave failed', error); }
   }
 
+  // Discards every author override — in-memory, both localStorage persistence keys,
+  // and the authored fields on every live shared profile — then re-derives x/y/head/
+  // offsetY straight from character-rig-scale-defaults.js and reapplies it to every
+  // visible lineup avatar (not just the selected one). Also clears every per-NPC age
+  // override, so "everything" really does mean the whole comparison, not just
+  // whatever's currently picked.
+  function resetAllToRepoDefaults() {
+    if (!active) return;
+    if (window.confirm && !window.confirm('Reset every species/gender scale (width, height, head, head Y offset) and every per-NPC age back to the repository defaults? This discards all local overrides.')) return;
+    const count = host()?.resetToRepositoryDefaults?.() || 0;
+    for (const entry of entries) {
+      const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
+      window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, scale, 0);
+    }
+    window.ProceduralHandFrameDriver?.syncNow?.();
+    if (selected) select(selected);
+    persistProfiles();
+    status(`Reset ${count} species/gender scale${count === 1 ? '' : 's'} and every per-NPC age to repository defaults.`);
+  }
+
   function exportJson() {
     const data = {};
     for (const descriptor of profileDescriptors()) {
       const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[descriptor.key];
+      const scale = window.HobunjiCharacterRigScale?.scaleFor?.(descriptor.species, descriptor.gender, profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
       data[descriptor.species] ||= {};
-      data[descriptor.species][descriptor.gender] = Math.round(Number(profile?.anatomy?.rigScale ?? 1) * 10000) / 10000;
+      data[descriptor.species][descriptor.gender] = {
+        x: Math.round(scale.x * 10000) / 10000,
+        y: Math.round(scale.y * 10000) / 10000,
+        head: Math.round(scale.head * 10000) / 10000,
+        offsetY: Math.round(scale.offsetY * 10000) / 10000,
+      };
     }
     const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -383,9 +468,15 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
     const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
     const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
+    const head = Object.assign(document.createElement('canvas'), { width: size, height: size });
     await renderPortrait(front, profile, { seatId: npc.id || npc.name || 'full-scale' });
     await renderPortrait(back, profile, { seatId: npc.id || npc.name || 'full-scale', portraitView: 'behind' });
-    return { exportNpc, profile, front, back };
+    // Same pattern the real game uses (see game.js's playerNeckJoint/NPC dialogue setup): a
+    // head-only render lets buildSinglePlaneAvatarModel's neckRig option locate the head pixels
+    // and skin-weight a neck bone for it. Without this, there is no bone for Full Character
+    // Scale's Head slider to drive at all — it silently does nothing.
+    await renderPortrait(head, profile, { seatId: npc.id || npc.name || 'full-scale', onlyHeadSprite: true, forceEyesOpen: true });
+    return { exportNpc, profile, front, back, head };
   }
 
   function avatarBaseWidth() {
@@ -397,7 +488,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[rep.key];
     if (!rigProfile) throw new Error(`Missing rig profile ${rep.key}.`);
     rigProfile.anatomy ||= {};
-    if (!Number.isFinite(Number(rigProfile.anatomy.rigScale))) rigProfile.anatomy.rigScale = 1;
+    const initialScale = window.HobunjiCharacterRigScale?.scaleFor?.(rep.species, rep.gender, rigProfile) || { x: 1, y: 1, head: 1, offsetY: 0 };
+    rigProfile.anatomy.rigScaleX ??= initialScale.x;
+    rigProfile.anatomy.rigScaleY ??= initialScale.y;
+    rigProfile.anatomy.headScale ??= initialScale.head;
+    rigProfile.anatomy.headOffsetY ??= initialScale.offsetY;
     applyAnatomyConfig(rigProfile);
 
     const avatar = await buildPortrait(rep.npc);
@@ -408,6 +503,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const baseWidth = avatarBaseWidth();
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
       backCanvas: avatar.back,
+      headCanvas: avatar.head,
+      neckRig: true, // Without this, buildSinglePlaneAvatarModel never builds a neck bone, and the Head slider (which only ever drives that bone — see applyHeadCompensation) has nothing to act on.
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
       npcRecord: rep.npc,
@@ -438,7 +535,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     feet?.update?.(0, 0, false, null);
 
     previewRoot.add(group);
-    window.HobunjiCharacterRigScale?.applyToParent?.(group, rep.species, rep.gender, rigProfile.anatomy.rigScale);
+    const ageFraction = rep.npc?.id ? (host()?.npcAgeFor?.(rep.npc.id) || 0) : 0;
+    window.HobunjiCharacterRigScale?.applyToParent?.(group, rep.species, rep.gender, {
+      x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY, head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
+    }, ageFraction);
     window.ProceduralHandFrameDriver?.syncNow?.();
     return { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
   }
@@ -641,8 +741,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     active = false;
     building = false;
     persistProfiles();
-    if (frameRaf) cancelAnimationFrame(frameRaf);
-    frameRaf = 0;
     await restore(targetMode || originMode || 'multi');
     savedMulti = null;
   }

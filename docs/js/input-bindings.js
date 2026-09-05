@@ -39,9 +39,16 @@
     return true;
   }
 
+  // Held outside the rebindable-action set entirely (see game.js's
+  // desktopHoldKeys) — binding anything else here would look successful in
+  // Settings but silently never fire, since KeyQ never reaches the generic
+  // dispatch on desktop.
+  const RESERVED_DESKTOP_CODES = { KeyQ: 'the held Item Wheel' };
+
   function bindingConflict(device, button, actionId, modeShift = null) {
     if (!button) return '';
     if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
+    if (device === 'desktop' && RESERVED_DESKTOP_CODES[button]) return `Reserved for ${RESERVED_DESKTOP_CODES[button]}.`;
     const inputBindings = getCurrentBindings();
     const bindings = inputBindings?.[device] || {};
     for (const [otherAction, otherButton] of Object.entries(bindings)) {
@@ -65,7 +72,10 @@
       const key = chordParts.pop();
       return `${chordParts.join(' + ')} + ${buttonLabel(key)}`;
     }
-    const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
+    const labels = {
+      LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓',
+      Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse 4', Mouse4: 'Mouse 5',
+    };
     return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
   }
 
