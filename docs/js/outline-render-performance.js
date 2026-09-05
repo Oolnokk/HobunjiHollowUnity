@@ -28,11 +28,12 @@
   const MASK_SHELL = (1 << 1) >>> 0;
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
-  const WORLD_POPUP_RENDER_ORDER_MIN = 1200; // Used to identify WorldPopupText's always-on-top billboard planes for the post-shell replay.
+  const WORLD_POPUP_RENDER_ORDER_MIN = 1200; // Used to identify WorldPopupText's final-overlay billboard planes.
   const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
   const LOG_INTERVAL_MS = 5000;
 
   const reuseSequenceByRenderer = new WeakMap();
+  const pendingPopupOverlayByRenderer = new WeakMap(); // Carries the active scene/camera from the offscreen base pass to the final composite draw.
   const lifetime = Object.create(null);
   let windowStats = Object.create(null);
   let lastLogAt = performance.now();
@@ -43,7 +44,8 @@
   let sequenceInvalidations = 0;
   let suppressedMaterialIdPasses = 0; // Debug counter: material-seam source draws blocked by wrappedRender().
   let suppressedCompositeActivations = 0; // Debug counter: post composites whose non-shell uniforms were zeroed.
-  let replayedPopupOverlayPasses = 0; // Debug counter: shell passes followed by a WorldPopupText-only color replay.
+  let replayedPopupOverlayPasses = 0; // Debug counter: final canvas draws containing only WorldPopupText planes.
+  let hiddenPopupBasePasses = 0; // Debug counter: offscreen base draws where popups were intentionally withheld for the final overlay.
 
   function makeBucket() {
     return { renders: 0, calls: 0, triangles: 0, points: 0, lines: 0, cpuMs: 0 };
@@ -84,8 +86,9 @@
 
   // WorldPopupText adds its planes directly to the active scene with a CanvasTexture,
   // depth testing/writes disabled, billboard tagging, and renderOrder 1200/1201.
-  // renderOrder only sorts objects INSIDE one renderer.render() call; the shell is a
-  // later render call, so without this replay the shell can still paint over text.
+  // renderOrder only sorts objects INSIDE one renderer.render() call; shell outlines
+  // are a later render call, so popup planes must live outside the offscreen outline
+  // pipeline and be drawn once after the final composite instead.
   function isWorldPopupOverlayMesh(object) {
     const materials = Array.isArray(object?.material) ? object.material : [object?.material];
     return !!(
@@ -96,16 +99,33 @@
     );
   }
 
-  // Repaint only direct WorldPopupText planes into the SAME target immediately
-  // after the shell pass. Popups are direct scene children by design. Temporarily
-  // removing the scene background is essential: THREE's Color background forces a
-  // clear even when renderer.autoClear=false, which would otherwise erase the frame.
-  function replayWorldPopupOverlay(renderer, scene, camera) {
-    const popups = Array.isArray(scene?.children) ? scene.children.filter(isWorldPopupOverlayMesh) : [];
-    if (!popups.length) return false;
+  function worldPopupOverlayMeshes(scene) {
+    return Array.isArray(scene?.children) ? scene.children.filter(isWorldPopupOverlayMesh) : [];
+  }
 
-    const popupSet = new Set(popups); // Used to keep only popup planes visible during the replay.
-    const hidden = []; // Used to restore top-level gameplay objects after the popup-only replay.
+  function withObjectsHidden(objects, draw) {
+    const hidden = []; // Used to restore only objects that were visible before this temporary render filter.
+    for (const object of objects || []) {
+      if (!object?.visible) continue;
+      object.visible = false;
+      hidden.push(object);
+    }
+    try {
+      return draw();
+    } finally {
+      hidden.forEach(object => { object.visible = true; });
+    }
+  }
+
+  // Draw only WorldPopupText planes to the final canvas after the post-process quad.
+  // Popups are direct scene children by design. Temporarily removing the scene
+  // background is essential: THREE's Color background can force a clear even when
+  // renderer.autoClear=false, which would otherwise erase the already-composited frame.
+  function drawWorldPopupOverlayToCanvas(renderer, scene, camera, popups) {
+    if (!popups?.length) return false;
+
+    const popupSet = new Set(popups); // Used to keep only popup planes visible during the final overlay draw.
+    const hidden = []; // Used to restore top-level gameplay objects after the popup-only draw.
     for (const child of scene.children) {
       if (!popupSet.has(child) && child.visible) {
         child.visible = false;
@@ -113,14 +133,16 @@
       }
     }
 
-    const previousMask = camera.layers.mask; // Restored so caller-owned outline layer selection remains unchanged.
-    const previousOverride = scene.overrideMaterial; // Restored to the shell material until game.js clears it after this wrapper returns.
-    const previousBackground = scene.background; // Restored after suppressing the background's forced clear for the overlay draw.
-    const previousAutoClear = renderer.autoClear; // Restored after forcing additive/no-clear replay behavior.
+    const previousMask = camera.layers.mask; // Restored so gameplay camera layer selection remains unchanged.
+    const previousOverride = scene.overrideMaterial; // Restored in case a caller temporarily owns an override material.
+    const previousBackground = scene.background; // Restored after suppressing the background's forced clear.
+    const previousAutoClear = renderer.autoClear; // Restored after forcing additive/no-clear overlay behavior.
+    const previousTarget = renderer.getRenderTarget?.() || null; // Restored so an unexpected caller target is never leaked.
     const shadowMap = renderer.shadowMap;
     const previousShadowAutoUpdate = !!shadowMap?.autoUpdate; // Restored so normal shadow scheduling is unaffected.
 
     try {
+      renderer.setRenderTarget(null);
       scene.overrideMaterial = null;
       scene.background = null;
       camera.layers.enableAll();
@@ -135,6 +157,7 @@
       camera.layers.mask = previousMask;
       scene.background = previousBackground;
       scene.overrideMaterial = previousOverride;
+      renderer.setRenderTarget(previousTarget);
       hidden.forEach(child => { child.visible = true; });
     }
   }
@@ -228,7 +251,8 @@
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
-      if (replayedPopupOverlayPasses) parts.push(`popup-over-shell ${replayedPopupOverlayPasses}x`);
+      if (hiddenPopupBasePasses) parts.push(`popup-withheld ${hiddenPopupBasePasses}x`);
+      if (replayedPopupOverlayPasses) parts.push(`popup-final-overlay ${replayedPopupOverlayPasses}x`);
       if (suppressedMaterialIdPasses) parts.push(`material-seam-blocked ${suppressedMaterialIdPasses}x`);
       if (suppressedCompositeActivations) parts.push(`non-shell-composite-blocked ${suppressedCompositeActivations}x`);
       const message = `[outline-perf] ${parts.join(' | ')}`;
@@ -304,8 +328,33 @@
     const startedAt = performance.now();
     let result;
     try {
-      result = originalRender.call(renderer, scene, camera);
-      if (pass === 'shell') replayWorldPopupOverlay(renderer, scene, camera);
+      if (pass === 'base') {
+        const popups = worldPopupOverlayMeshes(scene);
+        if (popups.length) {
+          result = withObjectsHidden(popups, () => originalRender.call(renderer, scene, camera));
+          pendingPopupOverlayByRenderer.set(renderer, { scene, camera, popups, sawShell: false });
+          hiddenPopupBasePasses++;
+        } else {
+          pendingPopupOverlayByRenderer.delete(renderer);
+          result = originalRender.call(renderer, scene, camera);
+        }
+      } else {
+        result = originalRender.call(renderer, scene, camera);
+      }
+
+      const pending = pendingPopupOverlayByRenderer.get(renderer);
+      if (pass === 'shell' && pending?.scene === scene && pending.camera === camera) {
+        pending.sawShell = true;
+      } else if (pass === 'postOrDirect' && pending) {
+        if (pending.sawShell) {
+          drawWorldPopupOverlayToCanvas(renderer, pending.scene, pending.camera, pending.popups);
+        }
+        pendingPopupOverlayByRenderer.delete(renderer);
+      } else if (pass !== 'pngDepth' && pass !== 'materialId' && pass !== 'base' && pass !== 'shell') {
+        // Any unrelated render between base and composite invalidates the handoff;
+        // never let a stale scene's popup planes leak into a later frame/pass.
+        pendingPopupOverlayByRenderer.delete(renderer);
+      }
     } finally {
       if (canReuseBaseState && hadSceneAutoUpdate) scene.autoUpdate = true;
       if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) shadowMap.autoUpdate = true;
@@ -331,6 +380,7 @@
         sequenceInvalidations,
         suppressedMaterialIdPasses,
         suppressedCompositeActivations,
+        hiddenPopupBasePasses,
         replayedPopupOverlayPasses,
         nonShellOutlinesSuppressed: true,
         popupTextAboveShell: true,
