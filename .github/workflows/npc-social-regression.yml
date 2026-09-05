@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'docs/config/npcs/social-relations.js'
+      - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
@@ -14,6 +15,7 @@ on:
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
@@ -24,6 +26,7 @@ on:
   pull_request:
     paths:
       - 'docs/config/npcs/social-relations.js'
+      - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
@@ -34,6 +37,7 @@ on:
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
@@ -58,6 +62,7 @@ jobs:
       - name: Syntax check NPC social modules
         run: |
           node --check docs/config/npcs/social-relations.js
+          node --check docs/js/npc-gifting.js
           node --check docs/js/npc-social-relationship-bridge-v2.js
           node --check docs/js/npc-social-seating-bridge.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v2.js
@@ -69,11 +74,14 @@ jobs:
           node --check docs/js/panel-ui.js
           node --check docs/js/combat/combat-config-loader.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
+          node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
+      - name: Test balanced multi-trait NPC gifting
+        run: node scripts/test-npc-gifting-multitrait.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
         run: node scripts/test-npc-social-rapport-wardrobes.js
       - name: Test NPC swig offer visibility and cooldown
