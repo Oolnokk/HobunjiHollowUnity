@@ -1,7 +1,9 @@
 // Replaces authored porch/stair/railing board faces with the Furniture + Avatar
-// Author's carved_smooth wood treatment, stretched once across each authored
-// quad instead of tiled by world size. Physics/elevation remain owned by
-// town-player-body-elevation-bridge.js; this module changes presentation only.
+// Author's carved_smooth wood treatment. Adjacent smooth porch faces are detected
+// as one connected surface island, so texture UVs continue across authored tile
+// boundaries instead of restarting from 0..1 on every tile. Physics/elevation
+// remain owned by town-player-body-elevation-bridge.js; this module changes
+// presentation only.
 (() => {
   'use strict';
 
@@ -9,18 +11,19 @@
   const housePieces = window.HousePieceGen;
   if (!THREE || !housePieces?.buildGroupFromPiece || window.HobunjiPorchSurfaceMaterial?.installed) return;
 
-  const TEXTURE_PATH = 'assets/textures/carved_smooth.png'; // Used by every porch surface instead of the legacy boards.png material.
-  const WOOD_TINT = '#8b6540'; // Furniture + Avatar Author's standard wood base color, used by authored wood furniture.
-  const WOOD_TINT_HEX = 0x8b6540; // Used as the immediate material fallback and texture-multiply fallback before/without shade-fill helpers.
-  const PORCH_TAGS = new Set(['porch', 'porchStair', 'railing']); // Limits the replacement to the porch assembly; ordinary floor faces keep their existing material.
-  const MATCH_EPSILON = 1e-4; // Used to match the generated face mesh back to the authored quad after HousePieceGen applies placement/rotation.
-  const FULL_QUAD_UVS = new Float32Array([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]); // Used to stretch one complete PNG square over one authored surface.
-  const DEBUG_ENABLED = new URLSearchParams(location.search).get('porchMatDebug') === '1'; // Used for mobile-visible render diagnostics without devtools.
+  const TEXTURE_PATH = 'assets/textures/carved_smooth.png';
+  const WOOD_TINT = '#8b6540';
+  const WOOD_TINT_HEX = 0x8b6540;
+  const PORCH_TAGS = new Set(['porch', 'porchStair', 'railing']);
+  const MATCH_EPSILON = 1e-4;
+  const SURFACE_SPLIT_ANGLE_DEG = 24;
+  const DEBUG_ENABLED = new URLSearchParams(location.search).get('porchMatDebug') === '1';
 
-  let sharedMaterial = null; // Used by all converted porch faces so one texture/tint load updates every existing building.
-  let textureStatus = 'not-requested'; // Used by the debug snapshot to distinguish fallback, loaded, and failed texture states.
-  let lastBuild = null; // Used by mobile diagnostics to report the most recently processed house piece.
-  let totalConvertedFaces = 0; // Used by diagnostics to confirm the patch is actually finding authored porch meshes.
+  let sharedMaterial = null;
+  let textureStatus = 'not-requested';
+  let lastBuild = null;
+  let totalConvertedFaces = 0;
+  let totalSurfaceIslands = 0;
 
   function log(message, level = 'info') {
     if (!DEBUG_ENABLED) return;
@@ -71,10 +74,6 @@
       : pieceData;
   }
 
-  // Mirrors only HousePieceGen.buildGroupFromPiece's placement transform so an
-  // authored face can be matched to the mesh the existing renderer already made.
-  // It never generates building geometry and therefore does not become a second
-  // source of truth for porch shape or elevation.
   function transformedFaceVertices(pieceData, face, gridX, gridZ, options = {}) {
     const piece = normalizePiece(pieceData) || {};
     const cells = Array.isArray(piece?.footprint?.cells) ? piece.footprint.cells : [];
@@ -136,19 +135,149 @@
     return true;
   }
 
-  function applyStretchToFaceMesh(mesh, tag) {
-    const geometry = mesh?.geometry;
-    if (!geometry) return false;
-    geometry.setAttribute('uv', new THREE.BufferAttribute(FULL_QUAD_UVS.slice(), 2));
-    mesh.material = porchMaterial();
-    mesh.userData = mesh.userData || {};
-    mesh.userData.hobunjiPorchSurfaceMaterial = {
-      tag,
-      texture: TEXTURE_PATH,
-      tint: WOOD_TINT,
-      mapping: 'stretch-to-authored-surface',
-    };
-    return true;
+  function vertexKey(point) {
+    const inv = 1 / MATCH_EPSILON;
+    return `${Math.round(point[0] * inv)},${Math.round(point[1] * inv)},${Math.round(point[2] * inv)}`;
+  }
+
+  function edgeKey(a, b) {
+    const ka = vertexKey(a);
+    const kb = vertexKey(b);
+    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+  }
+
+  function faceNormalAndArea(vertices) {
+    const a = new THREE.Vector3().fromArray(vertices[0]);
+    const b = new THREE.Vector3().fromArray(vertices[1]);
+    const c = new THREE.Vector3().fromArray(vertices[2]);
+    const cross = new THREE.Vector3().crossVectors(b.clone().sub(a), c.clone().sub(a));
+    const twiceArea = cross.length();
+    if (twiceArea < 1e-10) return { normal: new THREE.Vector3(0, 1, 0), area: 0 };
+    return { normal: cross.multiplyScalar(1 / twiceArea), area: twiceArea * 0.5 };
+  }
+
+  // Topology-first surface recognition: two porch faces only join when they
+  // share a real authored edge and their local normals remain within the same
+  // split angle used by the furniture surface workflow. The graph spans every
+  // porch face in the whole piece, so one deck can cross any number of tiles.
+  function detectConnectedSurfaceIslands(records) {
+    const edgeOwners = new Map();
+    const neighbors = Array.from({ length: records.length }, () => new Set());
+    const cosThreshold = Math.cos(SURFACE_SPLIT_ANGLE_DEG * Math.PI / 180);
+
+    records.forEach((record, index) => {
+      for (let edge = 0; edge < 4; edge += 1) {
+        const key = edgeKey(record.vertices[edge], record.vertices[(edge + 1) % 4]);
+        const owners = edgeOwners.get(key) || [];
+        owners.push(index);
+        edgeOwners.set(key, owners);
+      }
+    });
+
+    for (const owners of edgeOwners.values()) {
+      for (let a = 0; a < owners.length; a += 1) {
+        for (let b = a + 1; b < owners.length; b += 1) {
+          const ia = owners[a];
+          const ib = owners[b];
+          if (records[ia].normal.dot(records[ib].normal) + 1e-7 < cosThreshold) continue;
+          neighbors[ia].add(ib);
+          neighbors[ib].add(ia);
+        }
+      }
+    }
+
+    const visited = new Uint8Array(records.length);
+    const islands = [];
+    for (let start = 0; start < records.length; start += 1) {
+      if (visited[start]) continue;
+      visited[start] = 1;
+      const stack = [start];
+      const island = [];
+      while (stack.length) {
+        const index = stack.pop();
+        island.push(records[index]);
+        for (const neighbor of neighbors[index]) {
+          if (visited[neighbor]) continue;
+          visited[neighbor] = 1;
+          stack.push(neighbor);
+        }
+      }
+      islands.push(island);
+    }
+    return islands;
+  }
+
+  function projectionBasis(normal) {
+    const candidates = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 1, 0),
+    ];
+    let u = null;
+    for (const candidate of candidates) {
+      const projected = candidate.clone().addScaledVector(normal, -candidate.dot(normal));
+      if (projected.lengthSq() > 1e-6) {
+        u = projected.normalize();
+        break;
+      }
+    }
+    if (!u) u = new THREE.Vector3(1, 0, 0);
+    return { u, v: new THREE.Vector3().crossVectors(normal, u).normalize() };
+  }
+
+  // One UV frame is computed for the ENTIRE connected surface island. Each
+  // existing tile mesh keeps its geometry/material ownership, but samples the
+  // portion of the same 0..1 texture square corresponding to its position in
+  // that island. Adjacent tile-edge vertices therefore receive identical UVs.
+  function applyIslandUvs(island, islandIndex) {
+    const normal = new THREE.Vector3();
+    for (const record of island) normal.addScaledVector(record.normal, Math.max(record.area, 1e-8));
+    if (normal.lengthSq() < 1e-10) normal.set(0, 1, 0);
+    else normal.normalize();
+    const basis = projectionBasis(normal);
+
+    let minU = Infinity;
+    let maxU = -Infinity;
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (const record of island) {
+      for (const point of record.vertices) {
+        const p = new THREE.Vector3().fromArray(point);
+        const u = p.dot(basis.u);
+        const v = p.dot(basis.v);
+        minU = Math.min(minU, u);
+        maxU = Math.max(maxU, u);
+        minV = Math.min(minV, v);
+        maxV = Math.max(maxV, v);
+      }
+    }
+    const spanU = Math.max(1e-6, maxU - minU);
+    const spanV = Math.max(1e-6, maxV - minV);
+
+    for (const record of island) {
+      const geometry = record.mesh?.geometry;
+      const position = geometry?.getAttribute?.('position');
+      if (!position) continue;
+      const uv = new Float32Array(position.count * 2);
+      const p = new THREE.Vector3();
+      for (let index = 0; index < position.count; index += 1) {
+        p.set(position.getX(index), position.getY(index), position.getZ(index));
+        uv[index * 2] = (p.dot(basis.u) - minU) / spanU;
+        uv[index * 2 + 1] = (p.dot(basis.v) - minV) / spanV;
+      }
+      geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      record.mesh.material = porchMaterial();
+      record.mesh.userData = record.mesh.userData || {};
+      record.mesh.userData.hobunjiPorchSurfaceMaterial = {
+        tag: record.tag,
+        texture: TEXTURE_PATH,
+        tint: WOOD_TINT,
+        mapping: 'stretch-to-connected-surface-island',
+        islandIndex,
+        islandFaceCount: island.length,
+        splitAngleDeg: SURFACE_SPLIT_ANGLE_DEG,
+      };
+    }
   }
 
   function applyToBuiltGroup(group, pieceData, gridX, gridZ, options = {}) {
@@ -157,23 +286,31 @@
     const candidates = [];
     group?.traverse?.(node => { if (node?.isMesh && node.geometry) candidates.push(node); });
     const used = new Set();
-    let converted = 0;
+    const records = [];
     let missing = 0;
 
     for (const face of faces) {
       const tag = String(face?.tag || '');
       if (!PORCH_TAGS.has(tag) || face?.extensionFace === 'floor') continue;
-      const expected = triangulatedPositions(transformedFaceVertices(piece, face, gridX, gridZ, options));
+      const vertices = transformedFaceVertices(piece, face, gridX, gridZ, options);
+      const expected = triangulatedPositions(vertices);
       const mesh = candidates.find(candidate => !used.has(candidate) && meshMatchesPositions(candidate, expected));
       if (!mesh) {
         missing += 1;
         continue;
       }
       used.add(mesh);
-      if (applyStretchToFaceMesh(mesh, tag)) converted += 1;
+      const { normal, area } = faceNormalAndArea(vertices);
+      records.push({ face, tag, mesh, vertices, normal, area });
     }
 
+    const islands = detectConnectedSurfaceIslands(records);
+    islands.forEach((island, index) => applyIslandUvs(island, index));
+    const converted = records.length;
+    const largestIslandFaces = islands.reduce((max, island) => Math.max(max, island.length), 0);
+
     totalConvertedFaces += converted;
+    totalSurfaceIslands += islands.length;
     lastBuild = {
       pieceId: piece?.id || piece?.name || null,
       gridX: Number(gridX) || 0,
@@ -181,9 +318,13 @@
       rotationDeg: Number(options.rotationDeg) || 0,
       converted,
       missing,
+      surfaceIslands: islands.length,
+      largestIslandFaces,
     };
-    if (converted || missing) log(`${lastBuild.pieceId || 'piece'}: ${converted} porch face(s) stretched, ${missing} unmatched`);
-    return { converted, missing };
+    if (converted || missing) {
+      log(`${lastBuild.pieceId || 'piece'}: ${converted} porch face(s) mapped across ${islands.length} connected surface island(s), ${missing} unmatched`);
+    }
+    return { converted, missing, surfaceIslands: islands.length, largestIslandFaces };
   }
 
   function installPatch() {
@@ -195,8 +336,6 @@
       catch (error) { log(`surface replacement failed: ${error?.message || error}`, 'warn'); }
       return group;
     };
-    // Preserve compatibility/elevation wrapper markers so the existing
-    // HousePieceGen wrapper chain does not reinstall itself around us later.
     Object.assign(wrappedBuild, originalBuild);
     wrappedBuild.__porchSurfaceMaterialPatched = true;
     wrappedBuild.__originalPorchSurfaceMaterialBuild = originalBuild;
@@ -212,9 +351,11 @@
       texturePath: TEXTURE_PATH,
       woodTint: WOOD_TINT,
       textureStatus,
-      mapping: 'stretch-to-authored-surface',
+      mapping: 'stretch-to-connected-surface-island',
+      surfaceSplitAngleDeg: SURFACE_SPLIT_ANGLE_DEG,
       tags: [...PORCH_TAGS],
       totalConvertedFaces,
+      totalSurfaceIslands,
       lastBuild: lastBuild ? { ...lastBuild } : null,
       patchInstalled: !!housePieces.buildGroupFromPiece?.__porchSurfaceMaterialPatched,
       elevationPatchPreserved: !!housePieces.buildGroupFromPiece?.__walkableElevationPatched,
@@ -225,7 +366,9 @@
     installed: true,
     texturePath: TEXTURE_PATH,
     woodTint: WOOD_TINT,
+    surfaceSplitAngleDeg: SURFACE_SPLIT_ANGLE_DEG,
     applyToBuiltGroup,
+    detectConnectedSurfaceIslands,
     debugSnapshot,
   });
   window.__porchSurfaceMaterialDebug = debugSnapshot;
