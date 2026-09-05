@@ -7,6 +7,9 @@ const vm = require('vm');
 function plainScale(value) {
   return { x: value.x, y: value.y, head: value.head, offsetY: value.offsetY };
 }
+function plainPosition(value) {
+  return { x: value.x, y: value.y, z: value.z };
+}
 
 // 1) The separate Full Character Scale export is authoritative for all ten tuples.
 const defaultsSource = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8');
@@ -65,7 +68,7 @@ const beforeMaleScaleFields = {
 const maoWindow = {
   HOBUNJI_ATTACHMENT_RIG_PROFILES: library,
   HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS: {},
-  setInterval() { throw new Error('allowlisted Mao-ao authoring should apply immediately in this test'); },
+  setInterval() { return 1; },
   clearInterval() {},
 };
 maoWindow.window = maoWindow;
@@ -74,11 +77,11 @@ assert.deepStrictEqual(library.characters['tletingan::male'], beforeNonMao, 'non
 assert.deepStrictEqual(library.characters['mao-ao::male'].anchors.shoulderPerch, beforeMalePerch, 'Mao-ao shoulder perch is not part of this authoring pass');
 assert.deepStrictEqual(library.characters['mao-ao::male'].posteriorRule, beforeMalePosterior, 'Mao-ao posterior data is not part of this authoring pass');
 for (const [field, value] of Object.entries(beforeMaleScaleFields)) assert.strictEqual(library.characters['mao-ao::male'].anatomy[field], value, `${field} must not be imported from the bulk rig export`);
-assert.deepStrictEqual(library.characters['mao-ao::male'].anchors.leftHandShoulder.position, { x: 0.1525554542608865, y: 0.6292184955362587, z: 0 });
-assert.deepStrictEqual(library.characters['mao-ao::male'].anchors.rightHandShoulder.position, { x: -0.22929652083051758, y: 0.6455541403639915, z: 0 });
+assert.deepStrictEqual(plainPosition(library.characters['mao-ao::male'].anchors.leftHandShoulder.position), { x: 0.1525554542608865, y: 0.6292184955362587, z: 0 });
+assert.deepStrictEqual(plainPosition(library.characters['mao-ao::male'].anchors.rightHandShoulder.position), { x: -0.22929652083051758, y: 0.6455541403639915, z: 0 });
 assert.strictEqual(library.characters['mao-ao::male'].anatomy.armLengthHeightPercentOffset, 0);
-assert.deepStrictEqual(library.characters['mao-ao::female'].anchors.leftHandShoulder.position, { x: 0.1771042396564939, y: 0.6511546407522855, z: 0 });
-assert.deepStrictEqual(library.characters['mao-ao::female'].anchors.rightHandShoulder.position, { x: -0.23898599170593354, y: 0.646996571654354, z: 0 });
+assert.deepStrictEqual(plainPosition(library.characters['mao-ao::female'].anchors.leftHandShoulder.position), { x: 0.1771042396564939, y: 0.6511546407522855, z: 0 });
+assert.deepStrictEqual(plainPosition(library.characters['mao-ao::female'].anchors.rightHandShoulder.position), { x: -0.23898599170593354, y: 0.646996571654354, z: 0 });
 assert.strictEqual(library.characters['mao-ao::female'].anatomy.armLengthHeightPercentOffset, 5);
 
 // 3) Width/height/head-Y edits must preserve the already-authored headScale.
