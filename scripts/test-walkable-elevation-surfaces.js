@@ -4,11 +4,15 @@ const vm = require('node:vm');
 
 const runtimeSource = fs.readFileSync('docs/js/town-player-body-elevation-bridge.js', 'utf8');
 const interiorEditorSource = fs.readFileSync('docs/js/building-interior-npc-wardrobe-editor.js', 'utf8');
-const mapEditorSource = fs.readFileSync('docs/js/map-editor-interior-instance-sync.js', 'utf8');
+const mapEditorEntrySource = fs.readFileSync('docs/js/map-editor-building-elevation.js', 'utf8');
+const mapEditorCoreSource = fs.readFileSync('docs/js/map-editor-building-elevation-core.js', 'utf8');
+const interiorSyncSource = fs.readFileSync('docs/js/map-editor-interior-instance-sync.js', 'utf8');
 
 new Function(runtimeSource);
 new Function(interiorEditorSource);
-new Function(mapEditorSource);
+new Function(mapEditorEntrySource);
+new Function(mapEditorCoreSource);
+new Function(interiorSyncSource);
 
 assert.match(runtimeSource, /FURNITURE_METADATA_KEY = 'walkableElevation'/, 'runtime uses stable instance metadata');
 assert.match(runtimeSource, /new THREE\.Box3\(\)\.setFromObject\(object\)/, 'furniture collider is derived from complete rendered geometry');
@@ -18,8 +22,12 @@ assert.match(runtimeSource, /walkElevDebug=1/, 'mobile runtime diagnostics are a
 
 assert.match(interiorEditorSource, /WALKABLE_ELEVATION_KEY = 'walkableElevation'/, 'Interior Author persists the same metadata');
 assert.match(interiorEditorSource, /Walkable vertical elevation/, 'Interior Author exposes a selected-instance checkbox');
-assert.match(mapEditorSource, /WALKABLE_ELEVATION_KEY = 'walkableElevation'/, 'exterior Map Editor persists the same metadata');
-assert.match(mapEditorSource, /Walkable Furniture/, 'exterior Map Editor exposes a mobile-friendly furniture panel');
+
+assert.match(mapEditorEntrySource, /WALKABLE_ELEVATION_KEY = 'walkableElevation'/, 'exterior Map Editor entry point persists the same metadata');
+assert.match(mapEditorEntrySource, /Walkable Furniture/, 'exterior Map Editor exposes a mobile-friendly furniture panel');
+assert.match(mapEditorEntrySource, /map-editor-building-elevation-core\.js/, 'walkable furniture is hosted by the building-elevation entry point');
+assert.match(mapEditorCoreSource, /window\.MapEditorBuildingElevation/, 'original building elevation controller remains intact behind the entry point');
+assert.doesNotMatch(interiorSyncSource, /WALKABLE_ELEVATION_KEY|Walkable Furniture|walkableElevation/, 'standalone interior sync stays unrelated to walkable furniture authoring');
 
 const scene = {};
 const group = { parent: scene };
