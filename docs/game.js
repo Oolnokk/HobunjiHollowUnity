@@ -8603,6 +8603,19 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       window.HobunjiCacheAudit?.register('game.buildingScenes (loaded interiors)', () => _buildingScenes.size);
+      // mapId → the `layouts` entry id (or 'default') actually baked into
+      // that map's currently-live _buildingScenes entry — compared against
+      // window.MapLayoutSystem's live resolution to notice a scheduled
+      // layout (e.g. spirit_communion) starting/ending; see
+      // checkMapLayoutChanges/performLiveLayoutSwap.
+      const _activeLayoutByMap = new Map();
+      // mapId → the raw (pre-layout-resolution) mapData last loaded for it —
+      // kept alongside _buildingScenes so checkMapLayoutChanges can cheaply
+      // re-resolve "what layout should be active right now" without
+      // re-fetching config/maps/<id>.json.
+      const _rawMapDataByMapId = new Map();
+      let _layoutSwapInProgress = false;
+      let _layoutCheckAccumS = 0; // Real seconds since checkMapLayoutChanges last ran — see its call in gameLoop.
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
       // being purely decorative (e.g. the Alchemy Table, the Bulletin
@@ -9894,19 +9907,65 @@
         return new THREE.Vector3(rootPosition.x, rootPosition.y + modelHeight * PLAYER_FACE_HEIGHT_RATIO, rootPosition.z);
       }
 
-      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+      // Shared core behind _aimNeckAtEyeContact below: rotates a neck-rig
+      // joint (yaw+pitch, clamped) so its owner's eyes point at an arbitrary
+      // world point — not necessarily another character's eyes. This is the
+      // generic primitive an ambient "look at" (see npcStations' optional
+      // `lookAt` field, applied in makeNpcWalker's update()) builds on, so a
+      // seated NPC can fix their gaze on a fire/altar/anything else authored
+      // without one of these being a dialogue participant.
+      function _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, targetWorld, maxYawDeg, maxPitchDeg, debugEntity) {
         if (!neckJoint?.parent) return false;
         neckJoint.parent.updateMatrixWorld(true);
         const selfEyeWorld = _dialogueEyeWorldPosition(selfRootPosition, selfModelHeight);
-        const targetEyeWorld = _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight);
-        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetEyeWorld.x, y: targetEyeWorld.y, z: targetEyeWorld.z } };
-        const direction = neckJoint.parent.worldToLocal(targetEyeWorld).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
+        if (debugEntity) debugEntity._lookAtDebug = { head: { x: selfEyeWorld.x, y: selfEyeWorld.y, z: selfEyeWorld.z }, target: { x: targetWorld.x, y: targetWorld.y, z: targetWorld.z } };
+        const direction = neckJoint.parent.worldToLocal(targetWorld.clone()).sub(neckJoint.parent.worldToLocal(selfEyeWorld));
         const horizontal = Math.hypot(direction.x, direction.z);
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
         const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
         neckJoint.rotation.set(pitchDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0);
         return true;
+      }
+
+      function _aimNeckAtEyeContact(neckJoint, selfRootPosition, selfModelHeight, targetRootPosition, targetModelHeight, maxYawDeg, maxPitchDeg, debugEntity) {
+        return _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight), maxYawDeg, maxPitchDeg, debugEntity);
+      }
+
+      // Default look-target height (world units above the target tile's own
+      // floor) for an authored npcStation `lookAt` that doesn't specify its
+      // own `height` — tuned for a low fire/altar rather than another
+      // person's face (see NPC_AMBIENT_LOOK_MAX_YAW_DEG below for the
+      // rotation limits; a station can always override either).
+      const NPC_AMBIENT_LOOK_DEFAULT_HEIGHT = 0.4;
+      const NPC_AMBIENT_LOOK_MAX_YAW_DEG = 70;
+      const NPC_AMBIENT_LOOK_MAX_PITCH_DEG = 45;
+
+      // Ambient (non-dialogue) "look at" for an NPC idling/seated at a
+      // station: applies the station's own authored `lookAt` (see
+      // docs/config/maps/map_i_temple.json's spirit_communion npcStations
+      // for a concrete example — "eyes on the fire") to `walker`'s neck
+      // joint, or eases it back to rest once no lookAt applies. A station's
+      // `lookAt` is just `{ col, row, height? }` in the same area as the
+      // station itself — authored the same way any other station field is,
+      // by hand in the map JSON or via the Map Editor's Station panel.
+      function _applyNpcAmbientLook(walker, target) {
+        if (!walker.neckJoint) return;
+        // Dialogue staging (faceNpcDialogueParticipants) already owns this
+        // walker's neck joint for the whole conversation — never fight it.
+        if (npcDialogueStaging?.walker === walker || _dialogueWalker === walker) return;
+        const lookAt = target?.lookAt;
+        if (lookAt && Number.isFinite(lookAt.col) && Number.isFinite(lookAt.row)) {
+          const groundY = npcSurfaceY(walker.area, lookAt.col, lookAt.row);
+          const height = Number.isFinite(lookAt.height) ? lookAt.height : NPC_AMBIENT_LOOK_DEFAULT_HEIGHT;
+          const targetWorld = new THREE.Vector3(lookAt.col + 0.5, groundY + height, lookAt.row + 0.5);
+          walker.root.updateMatrixWorld(true);
+          _aimNeckAtWorldPoint(walker.neckJoint, walker.root.position, walker.avatarHeight, targetWorld, NPC_AMBIENT_LOOK_MAX_YAW_DEG, NPC_AMBIENT_LOOK_MAX_PITCH_DEG, walker);
+          walker._ambientLookActive = true;
+        } else if (walker._ambientLookActive) {
+          walker.neckJoint.rotation.set(0, 0, 0);
+          walker._ambientLookActive = false;
+        }
       }
 
       function faceNpcDialogueParticipants() {
@@ -10135,7 +10194,7 @@
       function furnitureNpcStationId(area, col, row) {
         return `furniture_chair_${area}_${col}_${row}`;
       }
-      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles) {
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def?.sit) return;
         registerNpcStations([{
@@ -10150,6 +10209,11 @@
           // so several distinct seats can be addressed as one shared
           // destinationRole with occupancy bias, same idea as `sit` itself.
           roles: Array.isArray(extraRoles) && extraRoles.length ? ['sit', ...extraRoles] : ['sit'],
+          // Optional ambient gaze target (see _applyNpcAmbientLook) — a
+          // furniture entry's own authored `lookAt` (e.g. every bench around
+          // the temple's spirit_communion campfire) carries straight through
+          // to this auto-registered seat, same as `roles` above.
+          ...(lookAt ? { lookAt } : {}),
         }], area);
       }
       function unregisterChairNpcStation(furnitureKey, col, row, area) {
@@ -10489,6 +10553,7 @@
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
+          _ambientLookActive: false, // Whether _applyNpcAmbientLook currently owns this walker's neck joint (so it knows to ease back to rest once a station's `lookAt` no longer applies).
           // Keeps the logical facing separate from the rendered facing. The
           // latter is camera-relative, so even an idle NPC must refresh it as
           // the camera changes or a 90° station pose can become edge-on.
@@ -10824,6 +10889,7 @@
                 root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
+              _applyNpcAmbientLook(this, target);
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
@@ -11172,7 +11238,20 @@
                 for (const t of data.tiles) d[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' };
                 data.tiles = d;
               }
-              return data;
+              // Exterior maps (hobunji_map.v1) get their `layouts` resolved
+              // here, once, at boot — e.g. a festival's decor/buildings
+              // override renders correctly if the game happens to load
+              // during its scheduled window. Interiors resolve their own
+              // `layouts` independently inside loadBuildingScene (which
+              // re-fetches config/maps/<id>.json itself), so this only
+              // actually changes anything for schema:'hobunji_map.v1'.
+              // Unlike an authored interior, the always-resident exterior
+              // scene (buildTownScene/buildZoneScene) has no safe in-place
+              // rebuild for a map already loaded this session — see
+              // checkMapLayoutChanges's own comment — so an exterior
+              // layout's window opening/closing mid-session takes effect on
+              // the next fresh load rather than live.
+              return window.MapLayoutSystem.getEffectiveMapData(data, window.MapLayoutSystem.currentSnapshot());
             } catch(_) { return m; }
           }));
           _workspaceMaps = resolvedMaps;
@@ -11642,6 +11721,31 @@
         _zoneMinedRockPersist.delete(mapId);
       }
 
+      // Same dispose-then-forget shape as discardGeneratedMineFloor above,
+      // just for any ordinary authored interior (not just generated mine
+      // floors) — used to force loadBuildingScene to rebuild a room from
+      // scratch once its resolved `layouts` entry has actually changed (see
+      // performLiveLayoutSwap). Safe to call whether or not the player is
+      // currently standing in mapId; only removes the player/tool meshes
+      // from the outgoing scene when they actually are.
+      function discardBuildingScene(mapId) {
+        const info = _buildingScenes.get(mapId);
+        if (!info?.scene) { _buildingScenes.delete(mapId); return; }
+        if (currentArea === mapId) {
+          info.scene.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
+        }
+        for (const creature of [...hostileObjects]) {
+          if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
+          hostileObjects.delete(creature);
+          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+          creature.mesh?.parent?.remove(creature.mesh);
+          creature.groundShadow?.parent?.remove(creature.groundShadow);
+        }
+        info.scene.traverse(object => object.geometry?.dispose?.());
+        info.scene.clear();
+        _buildingScenes.delete(mapId);
+      }
+
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
         _buildingScenes.set(mapId, null); // sentinel: loading in progress
@@ -11699,6 +11803,18 @@
           }
         }
         }
+
+        // Swap in whichever `layouts` entry (if any) currently matches the
+        // calendar — e.g. the temple's benches-to-the-walls/rug-away/
+        // campfire "spirit_communion" layout during its scheduled window.
+        // Pure/non-destructive (mapData.layouts itself is untouched), so
+        // resolving an already-resolved mapData again later is harmless —
+        // see performLiveLayoutSwap, which re-enters this same function.
+        if (mapData) {
+          _rawMapDataByMapId.set(mapId, mapData);
+          mapData = window.MapLayoutSystem.getEffectiveMapData(mapData, window.MapLayoutSystem.currentSnapshot());
+        }
+        _activeLayoutByMap.set(mapId, mapData?.activeLayoutId || 'default');
 
         // ── hobunji_building_interior.v1 schema ──────────────────────────
         if (mapData?.schema === 'hobunji_building_interior.v1') {
@@ -11857,7 +11973,7 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
-              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles);
+              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
@@ -12279,6 +12395,17 @@
 
       function enterBuilding(mapId, defaultCol, defaultRow) {
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
+        // A room visited earlier this session and still cached may no longer
+        // match its own `layouts` schedule (e.g. the temple's spirit
+        // communion window opened or closed while the player was elsewhere)
+        // — force a fresh rebuild on this ordinary door-entry instead of
+        // showing the stale cached furniture. Doesn't apply to the "already
+        // standing inside" case; that's performLiveLayoutSwap's job.
+        if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) != null) {
+          const rawMapData = _rawMapDataByMapId.get(mapId);
+          const wantLayoutId = rawMapData ? (window.MapLayoutSystem.resolveActiveLayout(rawMapData, window.MapLayoutSystem.currentSnapshot())?.id || 'default') : 'default';
+          if (wantLayoutId !== _activeLayoutByMap.get(mapId)) discardBuildingScene(mapId);
+        }
         if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
         const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
           : currentArea === 'town' ? townScene : scene;
@@ -12332,6 +12459,69 @@
         // (discardGeneratedMineFloor previously only ran for the same-floor
         // re-entry case) without having been independently verified safe.
       }
+
+      // Resolves once _buildingScenes actually holds mapId's freshly (re)built
+      // scene — enterBuilding kicks loadBuildingScene off without awaiting it
+      // (see its own "resolves asynchronously" comment above), so
+      // performLiveLayoutSwap awaits this instead of racing the iris reopen
+      // against a still-empty room.
+      function waitForBuildingSceneReady(mapId, timeoutMs = 4000) {
+        return new Promise(resolve => {
+          const start = performance.now();
+          (function poll() {
+            if (_buildingScenes.get(mapId) || performance.now() - start > timeoutMs) { resolve(); return; }
+            requestAnimationFrame(poll);
+          })();
+        });
+      }
+
+      // The player is standing inside mapId right now and its resolved
+      // `layouts` entry (e.g. the temple's spirit_communion window) just
+      // started or ended — rebuild the room and drop the player at one of
+      // its authored entry points behind the same iris wipe the Wait-in-
+      // chair/Sleep time-skip uses (see checkMapLayoutChanges for the two
+      // triggers: an explicit time-passage skip, and ordinary real-time hour
+      // rollover while the player just happens to already be inside).
+      async function performLiveLayoutSwap(mapId) {
+        if (_layoutSwapInProgress) return;
+        const rawMapData = _rawMapDataByMapId.get(mapId);
+        if (!rawMapData) return;
+        const snapshot = window.MapLayoutSystem.currentSnapshot();
+        const nextLayout = window.MapLayoutSystem.resolveActiveLayout(rawMapData, snapshot);
+        const nextLayoutId = nextLayout?.id || 'default';
+        if (nextLayoutId === _activeLayoutByMap.get(mapId)) return;
+        _layoutSwapInProgress = true;
+        try {
+          await window.CalendarSystem.runScreenTransition(async () => {
+            const fromCol = Math.floor(player.x / TILE), fromRow = Math.floor(player.y / TILE);
+            const entry = window.MapLayoutSystem.pickEntryPoint(rawMapData, { layout: nextLayout, fromCol, fromRow });
+            discardBuildingScene(mapId);
+            enterBuilding(mapId, entry?.col, entry?.row);
+            await waitForBuildingSceneReady(mapId);
+          });
+          window.__farmLog?.(`[layout] ${mapId} -> ${nextLayoutId}`);
+        } finally {
+          _layoutSwapInProgress = false;
+        }
+      }
+
+      // Two triggers: (1) window.dispatchEvent('hobunji-time-passage') right
+      // after a Wait-in-chair/Sleep skip (see the listener below), and (2)
+      // gameLoop's own throttled call, covering ordinary real-time hour
+      // rollover for a player who's simply standing inside when a scheduled
+      // layout's window opens or closes without ever opening the Wait menu.
+      // Scoped to authored interiors only (see _isBuildingArea) — the
+      // always-resident exterior town scene has no rebuild-in-place path
+      // today (buildTownScene builds once per page load; see its own
+      // _townSceneBuilt guard), so an exterior `layouts` entry currently
+      // takes effect on the next fresh load/session rather than live.
+      function checkMapLayoutChanges() {
+        if (_layoutSwapInProgress) return;
+        if (!_isBuildingArea(currentArea) || !_buildingScenes.has(currentArea)) return;
+        performLiveLayoutSwap(currentArea);
+      }
+
+      window.addEventListener('hobunji-time-passage', checkMapLayoutChanges);
 
       function exitBuilding() {
         if (!_isBuildingArea(currentArea)) return;
@@ -21142,6 +21332,8 @@
 
         if (!paused) {
           updateCalendar(dt);
+          _layoutCheckAccumS += dt;
+          if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
           updateMeleeAutoTarget(dt);

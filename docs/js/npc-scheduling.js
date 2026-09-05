@@ -101,6 +101,17 @@
 
   const npcStationsById = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec, ... }
 
+  // Optional ambient gaze target — see game.js's _applyNpcAmbientLook, which
+  // reads this off whatever station an idling/seated NPC currently resolves
+  // to and aims their neck joint at it (e.g. the temple's spirit_communion
+  // benches/eldress station all point at the campfire's tile). `col`/`row`
+  // are in the station's own area; `height` (world units above that tile's
+  // floor) is optional and defaults to a low, fire-appropriate value.
+  function normalizeStationLookAt(lookAt) {
+    if (!lookAt || !Number.isFinite(lookAt.col) || !Number.isFinite(lookAt.row)) return null;
+    return { col: lookAt.col, row: lookAt.row, height: Number.isFinite(lookAt.height) ? lookAt.height : undefined };
+  }
+
   function normalizeNpcStation(station, fallbackArea) {
     if (!station || !station.id) return null;
     const c = station.c ?? station.col;
@@ -142,6 +153,7 @@
       // no roles authored is simply never returned by findStationsByRole
       // below, and every existing exact-stationId lookup is unaffected.
       roles: Array.isArray(station.roles) ? station.roles.filter(r => typeof r === 'string' && r) : [],
+      lookAt: normalizeStationLookAt(station.lookAt),
     };
   }
   function registerNpcStations(stations, fallbackArea) {
