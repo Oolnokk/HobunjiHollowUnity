@@ -24,7 +24,7 @@
     ['NaturalSurfaceJigsawExclusion', 'natural-surface-jigsaw-exclusion.js?v=20260902a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
-    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
+    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260905a'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260827b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
