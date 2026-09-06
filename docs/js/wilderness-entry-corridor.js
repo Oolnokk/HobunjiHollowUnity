@@ -92,8 +92,6 @@
   function cloudCopseCandidate(c, r, side, centerAxis, inward) {
     const axis = axisFor(side, c, r);
     if (Math.abs(axis - centerAxis) <= SHOULDER_HALF_WIDTH) return false;
-    // Keep a readable but dense 2-world-ish lattice, offset per inward row.
-    // The first eligible row can contain trees, so the forest starts at the gate.
     const lattice = ((axis + (inward & 1)) & 1) === 0;
     if (!lattice) return false;
     return hash01(c, r, 91031) < 0.68;
@@ -125,7 +123,6 @@
     }
     if (!gate.length) return { applied: false, reason: 'no-gate-tiles', side, centerAxis };
 
-    // Keep the transition and route marker centered on the actual narrow road.
     if (side === 'north' || side === 'south') transition.col = centerAxis;
     else transition.row = centerAxis;
     const marker = (map.routes || []).find(route => route?.id === 'route_map_entry_marker');
@@ -138,8 +135,6 @@
     let roadTiles = 0, shoulderTiles = 0, reclaimed = 0, blockersCleared = 0, cloudTrees = 0;
     const newTreeKeys = new Set();
 
-    // First pass: guarantee the protected 3+1+1 corridor and reclaim all other
-    // old gate-apron tiles as natural grass.
     for (const item of gate) {
       const { tile, axis } = item;
       const lateral = Math.abs(axis - centerAxis);
@@ -166,18 +161,10 @@
         tile.type = 'grass';
         tile.entryCorridorProtected = false;
         tile.entryCorridorShoulder = false;
-        // Keep borderEntryGate as an invisible terrain-clearance tag: the broad
-        // anti-cliff flattening still exists, but it no longer reserves or paints
-        // this tile as road. Leaving the tag also lets a later zone-aware pass
-        // (notably Cloud Forest) repopulate a generically-trimmed apron safely.
         tile.entryCorridorReclaimed = true;
       }
     }
 
-    // Cloud Forest-specific backfill: the old giant path rectangle prevented
-    // placeCopses() from ever considering these tiles. Repopulate the reclaimed
-    // apron with normal copse metadata, beginning immediately outside the
-    // one-tile safety shoulder.
     if (zoneId === CLOUD_ID) {
       const candidates = gate
         .filter(item => Math.abs(item.axis - centerAxis) > SHOULDER_HALF_WIDTH)
@@ -188,7 +175,6 @@
         if (tile.type !== 'grass' || tile.generatedObjectType) continue;
         if (!cloudCopseCandidate(c, r, side, centerAxis, inward)) continue;
 
-        // Avoid placing newly backfilled trees directly adjacent to each other.
         let nearNew = false;
         for (let dr = -1; dr <= 1 && !nearNew; dr++) {
           for (let dc = -1; dc <= 1; dc++) {
@@ -244,13 +230,9 @@
       const originalZone = Generator.generateZoneWorkspace.bind(Generator);
       Generator.generateZoneWorkspace = (zoneMapId, seed, locales) => {
         const workspace = originalZone(zoneMapId, seed, locales);
-        // generateWorkspace may already have applied; explicit zone id still
-        // lets an unmarked Cloud Forest receive the forest backfill correctly.
         if (!rootMap(workspace)?.generatedFrom?.narrowEntryCorridorV1) {
           applyWorkspace(workspace, { zoneId: zoneMapId });
         } else if (zoneMapId === CLOUD_ID && !(rootMap(workspace)?.generatedFrom?.narrowEntryCorridorV1?.cloudForestBackfillTrees > 0)) {
-          // If a generic wrapper ran first without knowing the zone, allow one
-          // corrective pass by clearing only the idempotence marker.
           const map = rootMap(workspace);
           delete map.generatedFrom.narrowEntryCorridorV1;
           applyWorkspace(workspace, { zoneId: zoneMapId });
