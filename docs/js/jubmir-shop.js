@@ -64,7 +64,7 @@
     const entry = _jubmirEggEntry();
     if (stock.purchased) { deps.showToast("Jubmir's sold out for today — check back tomorrow.", false); return; }
     const gold = deps.inventory.gold || 0;
-    if (gold < entry.price) { deps.showToast('Not enough gold.', false); return; }
+    if (gold < entry.price) { deps.showToast('Not enough gananji.', false); return; }
     deps.inventory.gold = gold - entry.price;
     deps.inventory.dabinggiHoundEgg = Math.min(9, (deps.inventory.dabinggiHoundEgg || 0) + 1);
     window.FarmAnimals.queueItemGenotype('dabinggiHoundEgg', stock.genotype);

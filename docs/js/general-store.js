@@ -115,7 +115,7 @@
 
   function buyGeneralStoreItem(item) {
     const gold = deps.inventory.gold || 0;
-    if (gold < item.price) { deps.showToast('Not enough gold.', false); return; }
+    if (gold < item.price) { deps.showToast('Not enough gananji.', false); return; }
     const grants = configuredGrants(item);
     if (!Object.keys(grants).length) {
       deps.showToast('That shop item has no configured inventory grant.', false);
@@ -245,7 +245,7 @@
         <button class="shop-buy-btn gs-cloth-buy">Buy</button>
       `;
       row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
-        if ((deps.inventory.gold || 0) < item.price) { deps.showToast('Not enough gold.', false); return; }
+        if ((deps.inventory.gold || 0) < item.price) { deps.showToast('Not enough gananji.', false); return; }
         deps.inventory.gold = (deps.inventory.gold || 0) - item.price;
         deps.getPackClothing().push({ ...item });
         deps.showToast('Bought ' + item.label + '!', true);
