@@ -133,8 +133,8 @@
 
   function culturalRangedWeights(gangCfg, rank, speciesId, metalKey) {
     const weights = { ...(gangCfg?.rangedWeaponWeightsByRank?.[rank] || {}) };
-    const baseCulturalWeight = Number(cfg.bandits?.culturalRangedWeightByRank?.[rank]
-      ?? cfg.bandits?.culturalRangedWeight
+    const baseCulturalWeight = Number(gangCfg?.culturalRangedWeightByRank?.[rank]
+      ?? gangCfg?.culturalRangedWeight
       ?? weights.scatterbow
       ?? 1);
 
