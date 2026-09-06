@@ -33,6 +33,7 @@
     },
     "#mpInventory .inv-wallet-suffix": {
       "fontFamily": "'TankanScript', 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace",
+      "fontSize": "2em",
       "width": "1em",
       "height": "1em",
       "lineHeight": "0.76em",
