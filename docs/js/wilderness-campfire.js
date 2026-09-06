@@ -13,6 +13,7 @@
   // Save/Cook/Brew/Return-to-Camp interactions.
   const KIT_ITEM_KEY = 'campfireKitFurniture';
   const DEBUG_HISTORY_LIMIT = 24; // Caps the in-module persistence trace exposed by getDebugState().
+  const BOAT_SCRIPT_URL = 'js/wilderness-boat.js?v=20260906vehicle1'; // Used to lazy-load the separate wilderness boat runtime without adding another game.js dependency block.
 
   let deps = null;
   let group = null; // Live campfire THREE.Group in whichever scene currently owns the saved campfire map.
@@ -22,11 +23,61 @@
   let state = null; // Persistent { mapId, x, y, z, ry } placement in tile units.
   let returnPending = false; // Used when Return to Camp must first load/regenerate another map (notably a mine floor).
   let campfireDataPromise = null;
+  let boatScriptPromise = null; // Shared loader promise so repeated init/update calls can never append duplicate boat scripts.
   let debugHistory = []; // Recent state-changing events for mobile-friendly debug dumps without relying on console access.
+
+  // ActionArcUI loads before this file and is initialized later from game.js.
+  // Capture that exact dependency bag once, so wilderness-boat.js can add its
+  // utility entries without copying the utility wheel's private game globals.
+  const originalActionArcInit = window.ActionArcUI?.init; // Used to preserve the existing selector initialization while exposing its already-curated deps to the boat module.
+  if (typeof originalActionArcInit === 'function' && !window.ActionArcUI.__wildernessBoatDepsBridge) {
+    window.ActionArcUI.init = function (injectedDeps) {
+      window.__hobunjiVehicleArcDeps = injectedDeps;
+      return originalActionArcInit.call(this, injectedDeps);
+    };
+    window.ActionArcUI.__wildernessBoatDepsBridge = true;
+  }
+
+  function ensureBoatRuntime() {
+    if (window.WildernessBoat) {
+      window.WildernessBoat.init?.(deps);
+      return Promise.resolve(window.WildernessBoat);
+    }
+    if (!boatScriptPromise) {
+      boatScriptPromise = new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[data-hobunji-wilderness-boat="1"]`); // Used to adopt an in-flight loader if another caller installed it first.
+        const script = existing || document.createElement('script'); // Runtime script element appended only when needed.
+        const onReady = () => {
+          const api = window.WildernessBoat;
+          if (!api) { reject(new Error('wilderness-boat.js loaded without window.WildernessBoat')); return; }
+          api.init?.(deps);
+          resolve(api);
+        };
+        const onError = () => reject(new Error('Failed to load wilderness-boat.js'));
+        if (existing) {
+          if (window.WildernessBoat) onReady();
+          else { existing.addEventListener('load', onReady, { once: true }); existing.addEventListener('error', onError, { once: true }); }
+          return;
+        }
+        script.src = BOAT_SCRIPT_URL;
+        script.async = false;
+        script.dataset.hobunjiWildernessBoat = '1';
+        script.addEventListener('load', onReady, { once: true });
+        script.addEventListener('error', onError, { once: true });
+        document.head.appendChild(script);
+      }).catch(error => {
+        boatScriptPromise = null;
+        window.__farmLog?.(`[boat] runtime loader failed: ${error?.message || error}`, 'warn', 'world');
+        throw error;
+      });
+    }
+    return boatScriptPromise;
+  }
 
   function init(injectedDeps) {
     deps = injectedDeps;
     recordDebug('init');
+    ensureBoatRuntime().catch(() => {});
   }
 
   function recordDebug(event, details = {}) {
@@ -143,6 +194,7 @@
   function updateVfx(dt) {
     ensureVisualForCurrentArea();
     for (const visual of emitterVisuals) visual?.update?.(dt, true);
+    window.WildernessBoat?.update?.(dt); // Separate boat runtime piggybacks on this already-guaranteed world-frame hook without inheriting campfire behavior.
   }
 
   function place(col, row) {
