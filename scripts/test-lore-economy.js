@@ -30,8 +30,9 @@ const context = {
   Number,
   JSON,
   WeakSet,
+  Array,
   setTimeout(fn) { timers.push(fn); return timers.length; },
-  document: { getElementById() { return null; } },
+  document: { getElementById() { return null; }, body: null },
   window: {
     AudioSystem: fakeAudio,
     CalendarSystem: { currentSeason: () => ({ emoji: '', name: 'Test' }), getHour: () => 12, formatCalendarDate: () => 'Testday' },
@@ -68,6 +69,29 @@ assert.equal(itemDefs.bar_highTinBronze.sellPrice, 650, 'High-Tin Bronze must re
 assert.equal(context.window.HobunjiCurrencyLore.name, 'gananji', 'legacy inventory.gold must be presented as gananji currency');
 assert.equal(context.window.HobunjiCurrencyLore.meaning, 'bronze', 'gananji must explicitly mean bronze');
 assert.equal(context.window.HobunjiCurrencyLore.suffix, 'g', 'the Tankan-script g glyph remains the currency suffix');
+
+const formatCurrencyText = context.window.HobunjiCurrencyLore.formatText; // Uses the same conservative renderer installed in the browser for legacy UI copy.
+assert.equal(formatCurrencyText('Not enough gold.'), 'Not enough gananji.', 'legacy insufficient-funds copy must call the currency gananji');
+assert.equal(formatCurrencyText("Not enough gold for the smith's labor."), "Not enough gananji for the smith's labor.", 'smith labor copy must call the currency gananji');
+assert.equal(formatCurrencyText('Reward: 25 gold'), 'Reward: 25 gananji', 'spelled-out numeric currency rewards must become gananji');
+assert.equal(formatCurrencyText('Gold reward'), 'Gananji reward', 'currency reward labels must become gananji');
+assert.equal(formatCurrencyText('Gold Ore'), 'Gold Ore', 'physical Gold Ore names must remain gold');
+assert.equal(formatCurrencyText('Gold Bar'), 'Gold Bar', 'physical Gold Bar names must remain gold');
+assert.equal(formatCurrencyText('gold-colored trim'), 'gold-colored trim', 'ordinary color language must not be rewritten as currency');
+
+for (const file of [ // These are the known legacy callers from the repo-wide copy audit; their rendered insufficient-funds text is normalized centrally without renaming internal wallet fields.
+  'docs/js/metal-craft-shop.js',
+  'docs/js/farm-crates.js',
+  'docs/js/farm-panel.js',
+  'docs/js/combat/combat-core.js',
+  'docs/js/barn-incubator.js',
+]) {
+  const fileText = fs.readFileSync(file, 'utf8');
+  const matches = fileText.match(/Not enough gold[^'"`\n]*/gi) || [];
+  for (const legacyCopy of matches) {
+    assert(!/Not enough gold/i.test(formatCurrencyText(legacyCopy)), `${file} legacy currency copy must normalize to gananji at render time`);
+  }
+}
 
 context.window.AudioSystem.playObjectSfxKey('dig');
 assert.equal(inventory.ore_gold, 0, 'contact alone must never mint ore before the tile actually becomes a hole');
