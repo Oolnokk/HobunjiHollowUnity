@@ -14,14 +14,14 @@
 (() => {
   'use strict';
 
-  const VERSION = 6; // Latest user-authored Full Character Scale defaults, 2026-09-05; non-Mashtzarr raw-PNG Head is 75%.
+  const VERSION = 7; // Latest user-authored Full Character Scale defaults, 2026-09-06; Mao-ao body proportions updated, non-Mashtzarr raw-PNG Head remains 75%.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
     'engh-sho::male': Object.freeze({ x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 }),
     'engh-sho::female': Object.freeze({ x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 }),
-    'mao-ao::male': Object.freeze({ x: 1.125, y: 1.125, head: 0.75, offsetY: 0 }),
-    'mao-ao::female': Object.freeze({ x: 1.045, y: 1.045, head: 0.9375, offsetY: 0 }),
+    'mao-ao::male': Object.freeze({ x: 0.84375, y: 1.125, head: 0.75, offsetY: 0 }),
+    'mao-ao::female': Object.freeze({ x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }),
     'kenkari::male': Object.freeze({ x: 1.225, y: 1.225, head: 1, offsetY: 0 }),
     'kenkari::female': Object.freeze({ x: 1.1, y: 1.1, head: 1, offsetY: 0 }),
     'mashtzarr::male': Object.freeze({ x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 }),
