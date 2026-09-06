@@ -40,7 +40,7 @@
   // can be requested. It reuses this existing parser-synchronous bootstrap so
   // no second boot manifest or ordering path is introduced.
   (function loadEasternMireIslandsEarly() {
-    const src = 'js/eastern-mire-islands.js?v=20260906a';
+    const src = 'js/eastern-mire-islands.js?v=20260906b';
     if (window.EasternMireIslands || document.querySelector('script[data-eastern-mire-islands]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-eastern-mire-islands="1"><\/script>`);
