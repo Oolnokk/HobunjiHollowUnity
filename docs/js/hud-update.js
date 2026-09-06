@@ -12,8 +12,155 @@
   // TOOL_ITEM_DEFS/inventory/tileStyles/calendar/ITEM_DEFS are `const`s only
   // ever mutated in place, so they're passed by direct reference.
   let deps = null;
+  const BRONZE_BAR_SELL_FLOORS = Object.freeze({ // Used by applyLoreEconomy() to keep every ordinary bronze alloy dramatically more valuable than common gold.
+    bar_lowTinBronze: 400,
+    bar_tinBronze: 500,
+    bar_highTinBronze: 650,
+    bar_arsenicalBronze: 550,
+    bar_leadedBronze: 450,
+  });
+  const pendingGoldDigTiles = new WeakSet(); // Used by the dig-contact hook to prevent repeated contact cues from paying twice for one hole.
+  const loreEconomyDebug = { // Used by mobile-visible diagnostics through window.HobunjiLoreEconomy.getDebug().
+    goldOreSellPrice: null,
+    goldBarSellPrice: null,
+    bronzeBarSellPrices: {},
+    digHookInstalled: false,
+    lastDig: null,
+  };
+
+  function firstFinite(...values) {
+    for (const value of values) if (Number.isFinite(Number(value))) return Number(value);
+    return null;
+  }
+
+  function itemSellValue(def, fallback = 1) {
+    const sell = firstFinite(def?.sellPrice, def?.sellValue, def?.value, def?.baseValue); // Used to read the same authored sale-value fields accepted elsewhere in the economy.
+    if (sell != null && sell >= 0) return sell;
+    const retail = firstFinite(def?.price, def?.buyPrice, def?.cost); // Used only when an item has a retail price but no explicit sale value.
+    return retail != null && retail > 0 ? Math.max(1, Math.round(retail * 0.4)) : Math.max(1, Number(fallback) || 1);
+  }
+
+  function patchEconomyItem(itemKey, patch) {
+    const existing = deps?.ITEM_DEFS?.[itemKey] || {}; // Used to preserve authored icons, categories, sprites, tags, and future metadata while changing lore/economy fields.
+    if (!deps?.ITEM_DEFS) return null;
+    deps.ITEM_DEFS[itemKey] = { ...existing, ...patch };
+    return deps.ITEM_DEFS[itemKey];
+  }
+
+  function applyLoreEconomy() {
+    if (!deps?.ITEM_DEFS) return false;
+    const mulchSell = itemSellValue(deps.ITEM_DEFS.mulch, 1); // Used as the canonical baseline so Gold Ore always stays exactly one gananji above Mulch.
+    const goldOreSell = Math.max(1, Math.round(mulchSell) + 1); // Used for physical Gold Ore, intentionally almost worthless despite its familiar name.
+    const goldBarSell = Math.max(goldOreSell + 1, goldOreSell * 5 + 1); // Used for refined Gold Bars without restoring gold to prestige-metal pricing.
+
+    patchEconomyItem('ore_gold', {
+      label: deps.ITEM_DEFS.ore_gold?.label || 'Gold Ore',
+      cat: deps.ITEM_DEFS.ore_gold?.cat || 'material',
+      sellPrice: goldOreSell,
+      desc: 'A very common soft metal turned up in ordinary soil. Around Hobunji, raw gold is worth only a little more than mulch.',
+    });
+    patchEconomyItem('bar_gold', {
+      label: deps.ITEM_DEFS.bar_gold?.label || 'Gold Bar',
+      cat: deps.ITEM_DEFS.bar_gold?.cat || 'material',
+      sellPrice: goldBarSell,
+      desc: 'Refined common gold. Easy to find, soft, and cheap; it carries none of bronze’s prestige or scarcity.',
+    });
+    patchEconomyItem('bar_tumbaga', {
+      sellPrice: Math.min(itemSellValue(deps.ITEM_DEFS.bar_tumbaga, 60), 60),
+      desc: 'A copper-gold alloy. Useful for its working qualities and color, but its abundant gold content adds little value.',
+    });
+
+    const bronzeLabels = { // Used when a bronze bar definition is missing a label but still needs a complete player-facing economy entry.
+      bar_lowTinBronze: 'Low-Tin Bronze Bar',
+      bar_tinBronze: 'Tin Bronze Bar',
+      bar_highTinBronze: 'High-Tin Bronze Bar',
+      bar_arsenicalBronze: 'Arsenical Bronze Bar',
+      bar_leadedBronze: 'Leaded Bronze Bar',
+    };
+    for (const [itemKey, floor] of Object.entries(BRONZE_BAR_SELL_FLOORS)) {
+      const existing = deps.ITEM_DEFS[itemKey] || {}; // Used to retain any authored value above the lore floor rather than accidentally nerfing an already rarer bronze alloy.
+      const sellPrice = Math.max(floor, itemSellValue(existing, floor)); // Used to enforce bronze’s high-value floor while preserving intentionally higher authored prices.
+      patchEconomyItem(itemKey, {
+        label: existing.label || bronzeLabels[itemKey],
+        cat: existing.cat || 'material',
+        sellPrice,
+        desc: 'High-value bronze: scarce, prestigious, and trusted as a store of wealth. Finished bronze is worth vastly more than common gold.',
+      });
+      loreEconomyDebug.bronzeBarSellPrices[itemKey] = sellPrice;
+    }
+
+    loreEconomyDebug.goldOreSellPrice = goldOreSell;
+    loreEconomyDebug.goldBarSellPrice = goldBarSell;
+    window.HobunjiCurrencyLore = Object.freeze({ // Used as the canonical player-facing interpretation of the legacy inventory.gold save key.
+      storageKey: 'gold',
+      name: 'gananji',
+      meaning: 'bronze',
+      suffix: 'g',
+    });
+    return true;
+  }
+
+  function grantDugGoldOre(watch) {
+    const itemKey = 'ore_gold'; // Used as the physical ore stack; deliberately distinct from legacy inventory.gold, which stores gananji currency.
+    const before = Math.max(0, Number(deps?.inventory?.[itemKey]) || 0); // Used to respect the ordinary 99-item stack cap.
+    if (before >= 99) {
+      deps?.showToast?.('Gold Ore stack is full.', false);
+      loreEconomyDebug.lastDig = { area: watch.area, col: watch.col, row: watch.row, granted: 0, reason: 'stack-full', at: Date.now() };
+      return 0;
+    }
+    deps.inventory[itemKey] = Math.min(99, before + 1);
+    deps?.clampInventoryStack?.(itemKey);
+    deps?.showToast?.('Dug up 1 Gold Ore.', true);
+    deps?.buildInventoryGrid?.();
+    deps?.saveMemberWorldData?.();
+    loreEconomyDebug.lastDig = { area: watch.area, col: watch.col, row: watch.row, granted: 1, before, after: deps.inventory[itemKey], at: Date.now() };
+    window.__farmLog?.(`[economy] fresh hole yielded 1 Gold Ore at ${watch.area || '?'} ${watch.col},${watch.row}`, 'economy');
+    return 1;
+  }
+
+  function verifyFreshDig(watch, attempt = 0) {
+    if (!watch?.tile) return;
+    if (watch.tile.type === deps?.TileType?.TRENCH) {
+      pendingGoldDigTiles.delete(watch.tile);
+      grantDugGoldOre(watch);
+      return;
+    }
+    if (attempt >= 12) {
+      pendingGoldDigTiles.delete(watch.tile);
+      loreEconomyDebug.lastDig = { area: watch.area, col: watch.col, row: watch.row, granted: 0, reason: 'no-trench-transition', at: Date.now() };
+      return;
+    }
+    setTimeout(() => verifyFreshDig(watch, attempt + 1), 40);
+  }
+
+  function installGoldDigHook() {
+    const audio = window.AudioSystem; // Used as the existing shovel contact boundary; the reward still verifies the authoritative tile mutation before paying out.
+    if (!audio?.playObjectSfxKey) return false;
+    if (audio.__hobunjiGoldDigEconomyHook) { loreEconomyDebug.digHookInstalled = true; return true; }
+    const originalPlayObjectSfxKey = audio.playObjectSfxKey.bind(audio); // Used to preserve every existing configured sound and the dew-specific override chain.
+    audio.playObjectSfxKey = function loreAwareObjectSfxKey(key, ...args) {
+      let watch = null; // Used only for a non-trench tile targeted at the moment an actual dig contact cue fires.
+      if (key === 'dig' && deps?.getReticleTile && deps?.getActiveTileAt && deps?.TileType) {
+        const reticle = deps.getReticleTile(); // Used to capture the exact gameplay target before the shovel mutation occurs.
+        const tile = reticle ? deps.getActiveTileAt(reticle.col, reticle.row) : null; // Used as the authoritative mutable tile object checked after contact.
+        if (tile && tile.type !== deps.TileType.TRENCH && !pendingGoldDigTiles.has(tile)) {
+          pendingGoldDigTiles.add(tile);
+          watch = { tile, col: reticle.col, row: reticle.row, area: deps.getCurrentArea?.() || null };
+        }
+      }
+      const result = originalPlayObjectSfxKey(key, ...args);
+      if (watch) setTimeout(() => verifyFreshDig(watch, 0), 0);
+      return result;
+    };
+    audio.__hobunjiGoldDigEconomyHook = true;
+    loreEconomyDebug.digHookInstalled = true;
+    return true;
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
+    applyLoreEconomy();
+    installGoldDigHook();
     deps.itemPrev.addEventListener('click', () => {
       deps.cycleActiveInventoryItem(-1);
       refreshItemScroll();
@@ -168,7 +315,7 @@
   }
 
   // Status-pill fields only actually change a few times a (real) second at
-  // most (season/weather/day/gold on world-state events, time once a
+  // most (season/weather/day/gananji on world-state events, time once a
   // simulated minute, tool/tile/water on reticle or equip changes) —
   // updateHud runs every frame, so each field caches its last-written
   // string/color and skips the DOM write (and, for spTile/spWater, the
@@ -176,6 +323,7 @@
   const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
 
   function updateHud() {
+    if (!loreEconomyDebug.digHookInstalled) installGoldDigHook();
     const season = window.CalendarSystem.currentSeason();
     const clock  = window.FormatUtils.formatClock(window.CalendarSystem.getHour());
 
@@ -256,6 +404,13 @@
       if (wd) wd.textContent = (deps.inventory.gold || 0);
     }
   }
+
+  window.HobunjiLoreEconomy = { // Exposes concise mobile-safe state without requiring devtools or console access.
+    apply: applyLoreEconomy,
+    installGoldDigHook,
+    getDebug: () => ({ ...loreEconomyDebug, bronzeBarSellPrices: { ...loreEconomyDebug.bronzeBarSellPrices } }),
+    formatDebug: () => `Lore economy: Gold Ore ${loreEconomyDebug.goldOreSellPrice ?? '?'}g | Gold Bar ${loreEconomyDebug.goldBarSellPrice ?? '?'}g | dig hook ${loreEconomyDebug.digHookInstalled ? 'on' : 'off'} | last dig ${loreEconomyDebug.lastDig ? JSON.stringify(loreEconomyDebug.lastDig) : 'none'}`,
+  };
 
   window.HudUpdate = {
     init, refreshKeyHud, contextualActionLabel, refreshItemScroll, updateHud,
