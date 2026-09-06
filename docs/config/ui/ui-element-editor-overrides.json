@@ -30,6 +30,9 @@
     },
     "#invKeyList": {
       "height": "0"
+    },
+    "#mpInventory .inv-wallet-amount": {
+      "color": "#6fae9b"
     }
   }
 }
