@@ -5,7 +5,7 @@ const fs = require('node:fs'); // Used to read the runtime and bootstrap sources
 
 const source = fs.readFileSync('docs/js/generic-hud-icons.js', 'utf8'); // Used to pin icon substitution and relationship-popup behavior.
 const social = fs.readFileSync('docs/js/npc-social-relationship-bridge-v2.js', 'utf8'); // Used to pin gifts to permanent Favor rather than temporary Rapport.
-const menuTabs = fs.readFileSync('docs/js/menu-tab-icon-only.js', 'utf8'); // Used to pin icon-only main menu tabs and the Relationships glow.
+const menuTabs = fs.readFileSync('docs/js/menu-tab-icon-only.js', 'utf8'); // Used to pin icon-only main menu tabs, wallet currency artwork, and the Relationships glow.
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8'); // Used to pin parser-blocking load order before game initialization.
 
 assert.doesNotThrow(() => new Function(source), 'generic relationship popup/icon runtime must parse');
@@ -40,7 +40,10 @@ assert.doesNotMatch(social, /adjust\(id, giftDelta/, 'gift reactions must no lon
 assert.match(social, /Existing gift code remains authoritative for its authored permanent Favor delta and reaction/, 'daily gift wrapper must preserve authored Favor handling');
 
 assert.match(menuTabs, /TAB_SELECTOR = '\.mp-tabs \.mp-tab\[data-mpanel\]'/, 'all main menu tabs must be targeted as one presentation group');
-assert.match(menuTabs, /tab\.textContent = '';[\s\S]*tab\.appendChild\(makeGlyphNode\(glyph\)\)/, 'non-relationship menu tabs must retain only their existing leading icon');
+assert.match(menuTabs, /tab\.replaceChildren\(makeGlyphNode\(glyph\)\)/, 'non-relationship menu tabs must retain only their existing leading icon');
+assert.match(menuTabs, /CURRENCY_ICON_FILE = 'icon_tbu\.png'/, 'wallet currency presentation must use icon_tbu.png while the Tankanscript glyph metrics are being corrected');
+assert.match(menuTabs, /suffix\.replaceChildren\(image\)/, 'wallet currency glyph text must be replaced by the temporary PNG artwork');
+assert.match(menuTabs, /walletCurrencyIconPresent/, 'wallet currency icon state must remain available in mobile-safe diagnostics');
 assert.match(menuTabs, /tab\.setAttribute\('aria-label', label\)/, 'removed visible tab labels must remain available to assistive UI');
 assert.match(menuTabs, /drop-shadow\(0 0 2px rgba\(255, 113, 143, \.76\)\)[\s\S]*drop-shadow\(0 0 6px rgba\(255, 113, 143, \.34\)\)/, 'Relationships heart must have a soft two-stage pink glow');
 assert.match(menuTabs, /window\.__menuTabIconsDebug = debugSnapshot/, 'icon-only tab presentation must expose mobile-safe diagnostics');
