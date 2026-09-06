@@ -1,17 +1,22 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 4) return;
+  if (window.HobunjiMenuTabIcons?.version >= 5) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
   const LOADOUT_PANEL_ID = 'loadout'; // Used to render the melee-over-ranged composite tab icon.
   const STYLE_ID = 'hobunjiMenuTabIconOnlyStyles'; // Used to keep the presentation rules idempotent.
-  const GENERIC_ICON_BASE = new URL('assets/hud/generic_icons/', document.baseURI).href; // Used by generic menu-tab artwork and the wallet currency icon.
+  const GENERIC_ICON_BASE = new URL('assets/hud/generic_icons/', document.baseURI).href; // Used by generic menu-tab artwork and the gananji currency icon.
   const ACTION_ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Used by gameplay action artwork reused by menu tabs.
-  const WALLET_SUFFIX_SELECTOR = '#mpInventory .inv-wallet-suffix'; // Used to replace the mis-metric Tankanscript currency glyph with PNG artwork.
-  const CURRENCY_ICON_FILE = 'icon_bronzecurrency.png'; // Used by applyWalletCurrencyIcon() as the gananji currency symbol.
-  const WALLET_CURRENCY_COLOR = '#6fae9b'; // Used as the shared bronze-verdigris tint for the gananji amount and symbol.
+  const WALLET_SUFFIX_SELECTOR = '#mpInventory .inv-wallet-suffix'; // Used as the inventory wallet's currency-symbol character space.
+  const HUD_GOLD_SELECTOR = '#spGold'; // Used as the persistent gameplay HUD's gananji readout host.
+  const HUD_GOLD_AMOUNT_SELECTOR = '#spGoldAmount'; // Used to preserve the live amount node that hud-update.js already updates.
+  const HUD_SUFFIX_SELECTOR = '#spGold .sb-gold-suffix'; // Used as the gameplay HUD's currency-symbol character space.
+  const CURRENCY_ICON_FILE = 'icon_bronzecurrency.png'; // Used as the shared gananji currency symbol artwork.
+  const CURRENCY_ICON_CLASS = 'gananji-currency-icon'; // Used to share one presentation rule between menu and gameplay HUD currency symbols.
+  const CURRENCY_VERDIGRIS_COLOR = '#6fae9b'; // Used as the shared bronze-verdigris tint for gananji amounts and symbols.
+  const CURRENCY_ICON_SCALE = 0.7667; // Used to render the symbol 15% larger than the previous two-thirds scale.
   const LOADOUT_ICON_SIZE = 128; // Used as the raster resolution for the outlined loadout composite.
   const LOADOUT_OUTLINE_RADIUS = 4; // Used to punch a readable halo around melee before it covers ranged.
   const LOADOUT_COLORS = Object.freeze({
@@ -32,8 +37,12 @@
     loadoutRasterReady: false,
     loadoutRasterError: null,
     walletCurrencyIconApplied: false,
+    hudCurrencyIconApplied: false,
+    hudCurrencyRepairs: 0,
   }; // Used by the mobile-safe debug snapshot below.
   let loadoutRasterUrl = null; // Used after the two action icons have been composited once.
+  let hudGoldAmountNode = null; // Used to preserve the original live HUD amount node if another system rewrites #spGold textContent.
+  let hudGoldObserver = null; // Used to repair only event-driven DOM rewrites of the HUD currency readout; no frame loop is added.
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -102,22 +111,34 @@
         object-fit: contain;
         pointer-events: none;
       }
-      #mpInventory .inv-wallet-amount {
-        color: ${WALLET_CURRENCY_COLOR} !important;
+      #mpInventory .inv-wallet-amount,
+      ${HUD_GOLD_AMOUNT_SELECTOR} {
+        color: ${CURRENCY_VERDIGRIS_COLOR} !important;
       }
-      ${WALLET_SUFFIX_SELECTOR} {
+      ${HUD_GOLD_SELECTOR} {
+        display: inline-flex;
+        align-items: center;
+        gap: 0;
+      }
+      ${HUD_GOLD_SELECTOR} .sb-gold-icon {
+        display: none !important;
+      }
+      ${WALLET_SUFFIX_SELECTOR},
+      ${HUD_SUFFIX_SELECTOR} {
         display: inline-flex !important;
         align-items: flex-end;
         justify-content: flex-start;
         width: 1em !important;
         height: 1em !important;
+        flex: 0 0 1em;
         padding: 0 !important;
         line-height: 1 !important;
       }
-      ${WALLET_SUFFIX_SELECTOR} .wallet-currency-icon {
+      ${WALLET_SUFFIX_SELECTOR} .${CURRENCY_ICON_CLASS},
+      ${HUD_SUFFIX_SELECTOR} .${CURRENCY_ICON_CLASS} {
         display: block;
-        width: 0.6667em;
-        height: 0.6667em;
+        width: ${CURRENCY_ICON_SCALE}em;
+        height: ${CURRENCY_ICON_SCALE}em;
         object-fit: contain;
         object-position: left bottom;
         filter: brightness(0) saturate(100%) invert(81%) sepia(24%) saturate(1092%) hue-rotate(111deg) brightness(117%) contrast(25%);
@@ -158,25 +179,78 @@
     return new URL(file, root).href;
   }
 
-  function applyWalletCurrencyIcon() {
-    const suffix = document.querySelector(WALLET_SUFFIX_SELECTOR); // Used as the existing wallet currency-symbol host; keeps the wallet DOM/layout contract intact.
-    if (!suffix) return false;
-    if (suffix.dataset.walletCurrencyIcon === 'bronze' && suffix.querySelector('.wallet-currency-icon')) {
-      debugState.walletCurrencyIconApplied = true;
-      return false;
-    }
-    const image = document.createElement('img'); // Used instead of the Tankanscript g until that font glyph's authored metrics are corrected.
-    image.className = 'wallet-currency-icon';
+  function makeCurrencyImage() {
+    const image = document.createElement('img'); // Used by both currency readouts so their symbol source and accessibility behavior stay identical.
+    image.className = CURRENCY_ICON_CLASS;
     image.src = iconUrl('generic', CURRENCY_ICON_FILE);
     image.alt = '';
     image.draggable = false;
     image.setAttribute('aria-hidden', 'true');
-    suffix.replaceChildren(image);
-    suffix.dataset.walletCurrencyIcon = 'bronze';
-    suffix.setAttribute('aria-label', 'Gananji');
-    suffix.title = 'Gananji';
-    debugState.walletCurrencyIconApplied = true;
+    return image;
+  }
+
+  function applyCurrencyIcon(host, marker) {
+    if (!host) return false;
+    if (host.dataset.gananjiCurrencyIcon === marker && host.querySelector(`.${CURRENCY_ICON_CLASS}`)) return false;
+    host.replaceChildren(makeCurrencyImage());
+    host.dataset.gananjiCurrencyIcon = marker;
+    host.setAttribute('aria-label', 'Gananji');
+    host.title = 'Gananji';
     return true;
+  }
+
+  function applyWalletCurrencyIcon() {
+    const suffix = document.querySelector(WALLET_SUFFIX_SELECTOR); // Used as the existing wallet currency-symbol host; keeps the wallet DOM/layout contract intact.
+    if (!suffix) return false;
+    const changed = applyCurrencyIcon(suffix, 'wallet');
+    debugState.walletCurrencyIconApplied = true;
+    return changed;
+  }
+
+  function hudAmountFromText(text) {
+    const match = String(text || '').match(/-?\d[\d,]*/); // Used only when legacy code has flattened #spGold back into plain text.
+    return match ? match[0].replace(/,/g, '') : null;
+  }
+
+  function applyHudCurrencyPresentation() {
+    const hud = document.querySelector(HUD_GOLD_SELECTOR); // Used as the persistent gameplay money readout.
+    if (!hud) return false;
+
+    if (!hudGoldAmountNode) {
+      hudGoldAmountNode = hud.querySelector(HUD_GOLD_AMOUNT_SELECTOR); // Used to retain the exact node hud-update.js already holds and updates.
+      if (!hudGoldAmountNode) {
+        hudGoldAmountNode = document.createElement('span'); // Used only as a fallback for malformed/legacy markup.
+        hudGoldAmountNode.className = 'sb-gold-amount';
+        hudGoldAmountNode.id = 'spGoldAmount';
+        hudGoldAmountNode.textContent = hudAmountFromText(hud.textContent) || '0';
+      }
+    }
+
+    const amountWasDetached = hudGoldAmountNode.parentNode !== hud; // Used to detect a textContent rewrite without polling.
+    if (amountWasDetached) {
+      const flattenedAmount = hudAmountFromText(hud.textContent);
+      if (flattenedAmount !== null) hudGoldAmountNode.textContent = flattenedAmount;
+    }
+
+    let suffix = hud.querySelector('.sb-gold-suffix'); // Used as the HUD's 1em currency-symbol character space.
+    if (!suffix) {
+      suffix = document.createElement('span'); // Used to restore the authored suffix host after a legacy full-text rewrite.
+      suffix.className = 'sb-gold-suffix';
+    }
+    const iconChanged = applyCurrencyIcon(suffix, 'hud');
+    const structureChanged = hud.childNodes.length !== 2 || hud.firstChild !== hudGoldAmountNode || hud.lastChild !== suffix;
+    if (structureChanged) hud.replaceChildren(hudGoldAmountNode, suffix);
+    if (amountWasDetached) debugState.hudCurrencyRepairs += 1;
+    debugState.hudCurrencyIconApplied = true;
+    return iconChanged || structureChanged;
+  }
+
+  function installHudCurrencyRepair() {
+    if (hudGoldObserver) return;
+    const hud = document.querySelector(HUD_GOLD_SELECTOR); // Used as the narrow observation target; this does not watch the whole document.
+    if (!hud || typeof MutationObserver !== 'function') return;
+    hudGoldObserver = new MutationObserver(() => applyHudCurrencyPresentation()); // Used only when child content changes, such as farm-panel's legacy textContent refresh.
+    hudGoldObserver.observe(hud, { childList: true });
   }
 
   function applyMask(span, url, color) {
@@ -366,12 +440,14 @@
   function transformAll() {
     document.querySelectorAll(TAB_SELECTOR).forEach(transformTab);
     applyWalletCurrencyIcon();
+    applyHudCurrencyPresentation();
+    installHudCurrencyRepair();
   }
 
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 4,
+      version: 5,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
       totalTabs: tabs.length,
@@ -383,10 +459,14 @@
       loadoutRasterError: debugState.loadoutRasterError,
       loadoutCompositePresent: !!document.querySelector(`${TAB_SELECTOR}[data-mpanel="loadout"] .menu-tab-loadout`),
       walletCurrencyIconApplied: debugState.walletCurrencyIconApplied,
-      walletCurrencyIconPresent: !!document.querySelector(`${WALLET_SUFFIX_SELECTOR} .wallet-currency-icon`),
-      walletCurrencyColor: WALLET_CURRENCY_COLOR,
-      walletCurrencyIconScale: 2 / 3,
-      walletCurrencyIconAnchor: 'bottom-left',
+      walletCurrencyIconPresent: !!document.querySelector(`${WALLET_SUFFIX_SELECTOR} .${CURRENCY_ICON_CLASS}`),
+      hudCurrencyIconApplied: debugState.hudCurrencyIconApplied,
+      hudCurrencyIconPresent: !!document.querySelector(`${HUD_SUFFIX_SELECTOR} .${CURRENCY_ICON_CLASS}`),
+      hudCurrencyAmountPreserved: !!hudGoldAmountNode && hudGoldAmountNode.parentNode === document.querySelector(HUD_GOLD_SELECTOR),
+      hudCurrencyRepairs: debugState.hudCurrencyRepairs,
+      currencyColor: CURRENCY_VERDIGRIS_COLOR,
+      currencyIconScale: CURRENCY_ICON_SCALE,
+      currencyIconAnchor: 'bottom-left',
     };
   }
 
@@ -395,6 +475,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 4, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 5, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();
