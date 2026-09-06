@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "defaultBoatId": "kenkari_rivership",
+  "vehicles": {
+    "kenkari_rivership": {
+      "id": "kenkari_rivership",
+      "label": "Kenkari Rivership",
+      "category": "boat",
+      "modelPath": "assets/models/vehicles/kenkari-rivership.glb",
+      "footprint": {
+        "widthTiles": 2.6,
+        "lengthTiles": 5.1,
+        "fitMode": "contain"
+      },
+      "placement": {
+        "heightAboveWaterTiles": 0.15,
+        "spawnYawOffsetDeg": 0,
+        "requireCenterWaterTile": true
+      },
+      "walkable": {
+        "normalContinuityDeg": 24,
+        "faceIndices": [598, 599]
+      },
+      "steerTrigger": {
+        "centerTiles": [0, 0.75, -1.35],
+        "sizeTiles": [1.15, 1.5, 0.9],
+        "prompt": "Steer Rivership"
+      },
+      "movement": {
+        "forwardSpeedTilesPerSecond": 1.7,
+        "reverseSpeedTilesPerSecond": 0.75,
+        "accelerationTilesPerSecond2": 0.7,
+        "decelerationTilesPerSecond2": 0.22,
+        "turnRateDegPerSecond": 34,
+        "highSpeedTurnMultiplier": 0.42,
+        "shoreBounceSpeedTilesPerSecond": 0.9,
+        "shoreBounceCooldownSeconds": 0.45,
+        "collisionInsetTiles": 0.12
+      },
+      "camera": {
+        "steeringFollowPlayer": true
+      },
+      "editor": {
+        "notes": "Initial boat preset. Walkable faces seed the broad deck detected from the Google-safe 600-triangle GLB."
+      }
+    }
+  },
+  "futureCategories": {
+    "wagons": {
+      "enabled": false,
+      "label": "Wagons / Chariots",
+      "note": "Placeholder only. Ground-vehicle runtime behavior will be authored later."
+    }
+  }
+}
