@@ -465,6 +465,8 @@
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = 'rgba(0,0,0,0.28)';
       ctx.fillRect(0, 0, rect.width, rect.height);
+      // Enclosed areas still need the carried lantern to clear the darkness layer.
+      drawLanternMasksCompat();
       drawFurnitureLightMasksCompat();
       if (sceneTransAlpha > 0) {
         ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
