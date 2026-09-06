@@ -128,7 +128,18 @@
         -webkit-user-drag: none;
         transition: filter .16s ease, opacity .16s ease, transform .16s ease;
       }
+      #relationshipsList .relationship-keepsake-item.css-rotate {
+        overflow: hidden;
+      }
       #relationshipsList .relationship-keepsake-item.css-rotate img {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: max(1px, calc(var(--ks-span-h) * var(--ks-cell) - 4px));
+        height: max(1px, calc(var(--ks-span-w) * var(--ks-cell) - 4px));
+        max-width: none;
+        max-height: none;
+        translate: -50% -50%;
         rotate: 90deg;
       }
       #relationshipsList .relationship-keepsake-item.locked img {
@@ -312,8 +323,8 @@
         preRotated = rotate90;
       } catch (err) {
         // Same-origin game sprites take the opaque-pixel path above. External
-        // provider images may be canvas-tainted; keep them usable with natural
-        // dimensions and CSS rotation rather than breaking the panel.
+        // provider images may be canvas-tainted; keep them usable with an
+        // orientation-aware CSS fallback rather than breaking the panel.
         window.__farmLog?.(`[Relationships] Keepsake sprite analysis fallback for ${src}: ${err?.message || err}`, 'warn', 'ui');
         minX = 0; minY = 0; maxX = naturalWidth - 1; maxY = naturalHeight - 1;
       }
@@ -493,7 +504,7 @@
         ? `<img src="${escAttr(visual.previewSrc || keepsake.sprite)}" alt="" loading="eager">`
         : '<span class="relationship-keepsake-fallback" aria-hidden="true"></span>';
       const cssRotate = keepsake.rotate90 && !visual.preRotated ? ' css-rotate' : '';
-      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}${cssRotate}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
+      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}${cssRotate}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="--ks-span-w:${w};--ks-span-h:${h};grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
     }).join('');
 
     return `
