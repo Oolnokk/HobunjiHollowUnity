@@ -2,11 +2,16 @@
   'use strict';
 
   const THREE = window.THREE;
-  const rendererProto = THREE?.WebGLRenderer?.prototype;
-  if (!rendererProto || typeof rendererProto.render !== 'function') return;
+  const OriginalWebGLRenderer = THREE?.WebGLRenderer;
+  if (typeof OriginalWebGLRenderer !== 'function') return;
   if (window.CloudForestMistSoftDepth?.installed) return;
 
-  const previousRender = rendererProto.render; // Captured before OutlineRenderPerformance loads, so the final mist overlay can render beneath world-text overlays without recursion.
+  // r128's WebGLRenderer assigns `render` as an own instance property inside
+  // the constructor closure (over private per-instance state, e.g. the
+  // active render list/target) rather than on the shared prototype, so
+  // WebGLRenderer.prototype.render is undefined and there is nothing there
+  // to patch. Wrap the constructor instead: every instance gets its own
+  // wrapped render that closes over that same instance's original render.
   const MASK_ALL = 0xFFFFFFFF;
   const OVERLAY_LAYER = 7; // Reserved only during the final mist overlay draw; the mist keeps its normal layer membership during ordinary/direct renders.
   const DEFAULTS = Object.freeze({
@@ -21,6 +26,7 @@
   };
 
   const pendingByRenderer = new WeakMap();
+  const originalRenderByRenderer = new WeakMap();
   const materialState = new WeakMap();
   const stats = {
     installed: true,
@@ -243,7 +249,7 @@
         }
       }
 
-      previousRender.call(renderer, scene, camera);
+      originalRenderByRenderer.get(renderer).call(renderer, scene, camera);
       stats.overlayDraws++;
       if (!loggedFirstOverlay) {
         loggedFirstOverlay = true;
@@ -283,7 +289,7 @@
         group.visible = false; // Keep mist out of the colour pass while preserving the target's real world/player depth for the later soft overlay.
         let result;
         try {
-          result = previousRender.call(renderer, scene, camera);
+          result = originalRenderByRenderer.get(renderer).call(renderer, scene, camera);
         } finally {
           group.visible = wasVisible;
         }
@@ -309,7 +315,7 @@
     if (pending && !renderer.getRenderTarget?.()) {
       const postMaterial = findPostMaterial(scene);
       if (postMaterial) {
-        const result = previousRender.call(renderer, scene, camera);
+        const result = originalRenderByRenderer.get(renderer).call(renderer, scene, camera);
         if (isMatchingPostPass(renderer, scene, pending)) {
           drawSoftMistOverlay(renderer, pending);
           pendingByRenderer.delete(renderer);
@@ -321,12 +327,22 @@
       }
     }
 
-    return previousRender.call(renderer, scene, camera);
+    return originalRenderByRenderer.get(renderer).call(renderer, scene, camera);
   }
 
   wrappedRender.__hobunjiCloudForestMistSoftDepthWrapped = true;
-  wrappedRender.__hobunjiCloudForestMistSoftDepthOriginal = previousRender;
-  rendererProto.render = wrappedRender;
+
+  // Wrap the constructor (not the prototype) so each renderer instance gets
+  // its own render patched over its own original — see the comment at the
+  // top of this file for why prototype patching doesn't reach anything here.
+  THREE.WebGLRenderer = function HobunjiCloudForestMistSoftDepthRenderer(...args) {
+    const instance = new OriginalWebGLRenderer(...args);
+    originalRenderByRenderer.set(instance, instance.render);
+    instance.render = wrappedRender;
+    return instance;
+  };
+  THREE.WebGLRenderer.prototype = OriginalWebGLRenderer.prototype;
+  THREE.WebGLRenderer.__hobunjiCloudForestMistSoftDepthOriginal = OriginalWebGLRenderer;
 
   window.CloudForestMistSoftDepth = {
     installed: true,

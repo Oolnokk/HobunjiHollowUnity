@@ -156,6 +156,25 @@
     return scene;
   }
 
+  // The exporter's source bark material is an untextured MeshLambertMaterial
+  // (see foliage-generator.js's hslMat/hexBarkMat) -- flat-shaded, no
+  // specular term at all. Three r128's GLTFExporter only reads
+  // metalness/roughness off THREE.MeshStandardMaterial; every other material
+  // type (Lambert included) is written with a hardcoded metallicFactor/
+  // roughnessFactor of 0.5 regardless of its actual look. GLTFLoader then
+  // reconstructs that as a half-metallic, half-rough MeshStandardMaterial,
+  // which reads as a shiny/specular trunk in-game -- baked GLB trees only,
+  // never the procedural fallback, since that never round-trips through the
+  // exporter. Untextured bark meshes never intended any specular response,
+  // so force them fully non-metallic/rough here to match the flat look the
+  // procedural material (and the original authored asset) actually has.
+  function demoteSpecularBarkMaterial(material) {
+    if (!material?.isMeshStandardMaterial || material.map) return material;
+    material.metalness = 0;
+    material.roughness = 1;
+    return material;
+  }
+
   function normalizeLoadedRoot(entry, gltf, level, branched) {
     const treeRoot = findTreeRoot(entry, gltf);
     if (!treeRoot) return null;
@@ -175,6 +194,8 @@
       child.receiveShadow = true;
       child.frustumCulled = true;
       child.userData = { ...(child.userData || {}), bakedTreeAsset: true, treeAssetLevel: level, treeAssetBranched: !!branched };
+      if (Array.isArray(child.material)) child.material.forEach(demoteSpecularBarkMaterial);
+      else demoteSpecularBarkMaterial(child.material);
     });
     return treeRoot;
   }
