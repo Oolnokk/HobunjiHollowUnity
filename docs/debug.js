@@ -36,9 +36,9 @@
   })();
 
   // Eastern Mire terrain is reshaped after the generic wilderness generator
-  // finishes, but the adapter must begin polling before the first Tothal map
-  // can be requested. It reuses this existing parser-synchronous bootstrap so
-  // no second boot manifest or ordering path is introduced.
+  // finishes. Load this adapter before the generator so it can both install
+  // its zone wrapper and invalidate stale same-year Tothal caches before the
+  // wildlife debug Force Tothal Shift path is used.
   (function loadEasternMireIslandsEarly() {
     const src = 'js/eastern-mire-islands.js?v=20260906b';
     if (window.EasternMireIslands || document.querySelector('script[data-eastern-mire-islands]')) return;
