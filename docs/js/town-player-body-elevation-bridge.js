@@ -396,43 +396,15 @@
     return activeFurnitureSync;
   }
 
-  function npcWalkersFromDeps(injectedDeps) {
-    const direct = injectedDeps?.getNpcWalkers?.()
-      || injectedDeps?.npcWalkers
-      || window.__hobunjiFurnitureDebug?.getNpcWalkers?.()
-      || null;
-    if (!direct) return [];
-    if (Array.isArray(direct)) return direct;
-    try { return [...direct]; } catch (_) { return [];
-    }
-  }
-
-  function syncNpcSupportLift(injectedDeps, area) {
-    const walkers = npcWalkersFromDeps(injectedDeps); // Reuses the live NPC walker roots rather than maintaining a parallel NPC registry.
-    for (const walker of walkers) {
-      const root = walker?.root || walker?.avatarRef?.group;
-      if (!root?.position || (walker.area && area && walker.area !== area)) continue;
-      if (walker.pose === 'sit' || walker.state === 'sit' || walker.seated === true) continue;
-      const debug = root.userData = root.userData || {};
-      const previousFinalY = finite(debug.walkableElevationFinalY, NaN); // Used to distinguish an untouched prior visual lift from a fresh movement-system Y write.
-      const previousBaseY = finite(debug.walkableElevationBaseY, NaN);
-      const currentY = finite(root.position.y, 0);
-      const baseY = Number.isFinite(previousFinalY) && Math.abs(currentY - previousFinalY) <= 1e-5 && Number.isFinite(previousBaseY)
-        ? previousBaseY
-        : currentY;
-      const world = new THREE.Vector3(); // Used to sample support at the NPC walker's actual rendered X/Z position.
-      root.getWorldPosition?.(world);
-      if (!Number.isFinite(world.x) || !Number.isFinite(world.z)) {
-        world.x = finite(root.position.x, 0);
-        world.z = finite(root.position.z, 0);
-      }
-      const lift = surfaceLiftAt(world.x, world.z, area);
-      root.position.y = baseY + lift;
-      debug.walkableElevationBaseY = baseY;
-      debug.walkableElevationFinalY = root.position.y;
-      debug.walkableElevationLift = lift;
-    }
-  }
+  // NPCs no longer get their support lift stomped onto root.position.y here.
+  // game.js's npcSurfaceY() folds surfaceLiftAt() straight into the height
+  // every NPC movement/idle branch already targets, so the existing
+  // absolute-set and lerp-toward-ground code paths track furniture "stages"
+  // correctly on their own — see npcSurfaceY's own comment. A separate
+  // post-hoc rewrite here couldn't tell an idle NPC's fresh absolute Y write
+  // apart from a walking NPC's incremental lerp toward its own last lifted
+  // Y, so it re-added lift on top of lift it had already baked in during the
+  // walking case, compounding every frame into runaway upward drift.
 
   function clearChannel(reason, playerMesh = null) {
     composer.clearChannel(CHANNEL);
@@ -460,7 +432,6 @@
     }
 
     scheduleFurnitureSync(area);
-    syncNpcSupportLift(injectedDeps, area);
 
     const sit = injectedDeps?.getSitInteraction?.();
     if (sit && sit.phase !== 'out') {

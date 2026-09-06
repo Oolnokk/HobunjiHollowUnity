@@ -2,9 +2,21 @@
 //
 // Two deliberately presentation-only responsibilities live here:
 // 1) Dance hands are applied AFTER ProceduralHandFrameDriver's -100000
-//    pre-render sync, so the visible hand pose is authoritative and the
-//    existing outline-parity adapter snapshots the same matrix instead of
-//    animating a shell independently of the hand.
+//    pre-render sync, so the visible hand pose is authoritative. This
+//    reapplies on every renderer.render() call within a frame — including
+//    the shell/material-ID outline passes — the same way the proven-working
+//    player social-dance sentinel (social-action-dance-runtime.js) does.
+//    An earlier version skipped reapplying during outline passes and relied
+//    on procedural-hand-outline-parity.js to replay the visible draw's
+//    matrix onto the shell instead; that adapter only ever hooks a hand
+//    mesh once, at rig-attach time, and NPC hands are always still showing
+//    their fallback placeholder mesh at that moment (the real GLB swaps in
+//    a moment later, asynchronously) — so the hook silently never reaches
+//    the mesh actually being drawn, and the shell pass fell back to
+//    whatever pose ProceduralHandFrameDriver's own always-reapplying
+//    sentinel had just reset the socket to, i.e. the idle pose. Reapplying
+//    here unconditionally sidesteps that gap entirely instead of depending
+//    on it.
 // 2) World-avatar front textures are re-baked with the authored `smile`
 //    mouth while an NPC is actually dancing, then restored to the ordinary
 //    resting expression when the dance ends. This never mutates dialogue
@@ -105,11 +117,11 @@
     return { left, right };
   }
 
-  function lateHandPose(entry, target, renderScene) {
-    // Shell/material-ID passes should replay the matrix captured from the real
-    // color-writing hand. Re-running local socket animation during an outline
-    // pass would make the outline adapter fight a second source of truth.
-    if (renderScene?.overrideMaterial) return;
+  function lateHandPose(entry, target) {
+    // Reapplied on every renderer.render() call this frame — visible pass
+    // and outline/shell/material-ID passes alike — so the shell always
+    // matches the hand actually being drawn. See the file header for why
+    // this can't lean on procedural-hand-outline-parity.js instead.
     if (!arrivedForSocialPose(entry.walker, target)) return;
 
     const presentation = target.socialDance;
@@ -197,10 +209,10 @@
     // matching the working player-social dance ownership ordering.
     sentinel.renderOrder = cfgNumber('npcDanceHandSyncRenderOrder', -99990, -99999, -1000);
     const entry = { walker, sentinel, left: null, right: null };
-    sentinel.onBeforeRender = (_renderer, renderScene) => {
+    sentinel.onBeforeRender = () => {
       const target = walker.currentScheduleTarget;
       if (!target?.socialDance) return;
-      lateHandPose(entry, target, renderScene);
+      lateHandPose(entry, target);
     };
     walker.root.add(sentinel);
     state.sentinels.set(String(walker.rec.id), entry);
