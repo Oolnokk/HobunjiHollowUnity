@@ -16580,6 +16580,22 @@
           if (result.ok !== false) refreshActionBar(); // placeFromKit already persists via WildernessCampfire's own deps.persist (saveMemberWorldData).
           return;
         }
+        // plant_*/harvest are exactly the "every other place_*/plant_*
+        // action" case the comment above warns about: reached only via
+        // raw desktop mouse clicks, gamepad, and runActionButtonAtSlot
+        // (touch/keyboard taps on the visible button are already caught
+        // earlier by HobunjiInventoryActionMetadataBridge before they ever
+        // reach useActiveAction). Route them through the same immediate
+        // firePendingAction() dispatch instead of queuing pendingAction,
+        // which would otherwise sit inert until heldMode briefly becomes
+        // 'tool' (e.g. the player swaps to a tool) lets updateToolMesh's
+        // swing tracker drain it.
+        if (activeAction.startsWith('plant_') || activeAction === 'harvest') {
+          const reticle = getReticleTile();
+          pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };
+          firePendingAction();
+          return;
+        }
         // Same immediate-dispatch reasoning as place_campfire_kit above —
         // each of these fires straight from its own action-bar slot near a
         // placed campfire (see getNearbyActions in wilderness-campfire.js)
