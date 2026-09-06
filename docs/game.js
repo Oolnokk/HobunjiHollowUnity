@@ -1620,10 +1620,10 @@
       // Clean/polished target hex + verdigris hex ported from the tool-sprite
       // recolorer dev tool's METAL_PRESETS list. `tier` is null for metals
       // that don't produce a verdigris (sold or used only for
-      // cosmetic plating) — the seven that do have tier: 1 (weakest, native
-      // copper) through 7 (strongest, tumbaga) form the hierarchy Sloomi/
-      // Kzubug can craft real tools from and reinforce a tool up through
-      // (see toolEffectiveMetalKey). Placeholder tuning throughout.
+      // cosmetic plating) — the six that do have tier: 1 (weakest, native
+      // copper) through 6 (strongest, leaded bronze) form the hierarchy
+      // Sloomi/Kzubug can craft real tools from and reinforce a tool up
+      // through (see toolEffectiveMetalKey). Placeholder tuning throughout.
       const METAL_DEFS = {
         nativeCopper:    { label: 'Native Copper',    hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 },
         lowTinBronze:    { label: 'Low-Tin Bronze',   hex: '#B66A2E', verdigrisHex: '#4EAA86', tier: 2 },
@@ -1631,7 +1631,6 @@
         highTinBronze:   { label: 'High-Tin Bronze',  hex: '#BAA06A', verdigrisHex: '#78BFA5', tier: 4 },
         arsenicalBronze: { label: 'Arsenical Bronze', hex: '#B4A78E', verdigrisHex: '#8ABFB0', tier: 5 },
         leadedBronze:    { label: 'Leaded Bronze',    hex: '#997047', verdigrisHex: '#4E9672', tier: 6 },
-        tumbaga:         { label: 'Tumbaga',           hex: '#C87A2A', verdigrisHex: '#40A88C', tier: 7 },
         tin:             { label: 'Tin',               hex: '#C8CCD0', verdigrisHex: null, tier: null },
         lead:            { label: 'Lead',              hex: '#6D7375', verdigrisHex: null, tier: null },
         silver:          { label: 'Silver',            hex: '#C0C0C0', verdigrisHex: null, tier: null },
@@ -1655,7 +1654,6 @@
         highTinBronze:   { copper: 2, tin: 3 },
         arsenicalBronze: { copper: 4, arsenic: 1 },
         leadedBronze:    { copper: 3, tin: 1, lead: 1 },
-        tumbaga:         { copper: 3, gold: 2 },
         tin:             { tin: 5 },
         lead:            { lead: 5 },
         silver:          { silver: 5 },
@@ -1677,7 +1675,7 @@
       // roll that wants to share the same material-tier scale.
       function metalDmgMultiplier(metalKey) {
         const tier = METAL_DEFS[metalKey]?.tier;
-        return tier ? 0.85 + tier * 0.05 : 1; // tier1=0.90 … tier7=1.20
+        return tier ? 0.85 + tier * 0.05 : 1; // tier1=0.90 … tier6=1.15
       }
 
       // ── Tool "shapes" (the physical object) vs. metal (what it's crafted

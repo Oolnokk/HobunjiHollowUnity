@@ -72,7 +72,7 @@
     "captains": 1
   },
   "weaponMetalTierRangeByRank": {
-    "_comment": "A bandit's actual held weapon: a random TOOL_SHAPE_DEFS shape (the same hatchet/fishing-mace/fishing-spear/pick-shovel improvised-weapon pool the player fights with -- this game has no dedicated 'sword' item) crafted from a random METAL_DEFS verdigris metal whose tier falls in this [min,max] range for the bandit's rank, bumped by +1 per difficulty tier (clamped to tier 7, tumbaga) -- 'their weapons have mastery ranks too, with randomly chosen upgrades, tied to their rank within the gang.' Drives both the rendered weapon prop and an attackDamage bump via game.js's own metalDmgMultiplier, and the weapon shape's own dmgType (sharp/blunt) replaces the flat hardcoded attackTag.",
+    "_comment": "A bandit's actual held weapon: a random TOOL_SHAPE_DEFS shape (the same hatchet/fishing-mace/fishing-spear/pick-shovel improvised-weapon pool the player fights with -- this game has no dedicated 'sword' item) crafted from a random METAL_DEFS verdigris metal whose tier falls in this [min,max] range for the bandit's rank, bumped by +1 per difficulty tier (clamped to the strongest verdigris metal tier) -- 'their weapons have mastery ranks too, with randomly chosen upgrades, tied to their rank within the gang.' Drives both the rendered weapon prop and an attackDamage bump via game.js's own metalDmgMultiplier, and the weapon shape's own dmgType (sharp/blunt) replaces the flat hardcoded attackTag.",
     "grunt": [
       1,
       2

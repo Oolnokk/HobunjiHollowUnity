@@ -483,7 +483,8 @@
     const shape = deps.HELD_SHAPE_DEFS[shapeKey];
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
     const bonusT = tier;
-    const loT = deps.clamp(Math.round(minT), 1, 7), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, 7);
+    const maxMetalTier = Math.max(...deps.VERDIGRIS_METAL_KEYS.map(k => deps.METAL_DEFS[k].tier));
+    const loT = deps.clamp(Math.round(minT), 1, maxMetalTier), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, maxMetalTier);
     const tierPool = deps.VERDIGRIS_METAL_KEYS.filter(k => deps.METAL_DEFS[k].tier >= loT && deps.METAL_DEFS[k].tier <= hiT);
     const metalKey = (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))];
     const weaponKey = deps.craftedToolItemKey(shapeKey, metalKey);

@@ -117,7 +117,7 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   const recipes = vm.runInNewContext(`(${recipesMatch[1]})`);
   for (const [metalKey, ingredients] of Object.entries(recipes)) {
     assert.strictEqual(Object.values(ingredients).reduce((sum, amount) => sum + amount, 0), 5, `${metalKey} should consume exactly five ore`);
-    if (/bronze|electrum|tumbaga|pewter/i.test(metalKey)) assert.ok(Object.keys(ingredients).length > 1, `${metalKey} must combine multiple elemental ores`);
+    if (/bronze|electrum|pewter/i.test(metalKey)) assert.ok(Object.keys(ingredients).length > 1, `${metalKey} must combine multiple elemental ores`);
     assert.ok(Object.keys(ingredients).every(key => oreDefs[key]), `${metalKey} should reference only registered elemental ores`);
   }
 
