@@ -379,6 +379,8 @@
 
   const _imgCache = new Map();
   const _canvasCache = new Map();
+  window.HobunjiCacheAudit?.register('ToolMetalRecolor.imgCache', () => _imgCache.size);
+  window.HobunjiCacheAudit?.register('ToolMetalRecolor.canvasCache', () => _canvasCache.size);
 
   function loadImage(spritePath, opts = {}) {
     let promise = _imgCache.get(spritePath);
