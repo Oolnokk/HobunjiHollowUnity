@@ -186,6 +186,8 @@
       // while the underlying Three.js PointLights still shade nearby models.
       lctx.fillStyle = 'rgba(32,20,10,0.28)';
       lctx.fillRect(0, 0, rect.width, rect.height);
+      // The carried lantern remains a local light indoors, including dens and mines.
+      drawLanternMasks();
       drawFurnitureLightMasks();
       if (sceneTransAlpha > 0) {
         lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
