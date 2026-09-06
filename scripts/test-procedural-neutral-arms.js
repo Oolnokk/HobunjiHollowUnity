@@ -7,7 +7,7 @@ const editor = fs.readFileSync('docs/tools/procedural-animation-editor/index.htm
 const shoulderAim = fs.readFileSync('docs/js/procedural-hand-shoulder-aim.js', 'utf8'); // Gameplay shoulder positioning authority for free hands.
 const frameDriver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // Gameplay idle/walk fallback authority.
 
-assert(neutral.includes('ProceduralHandAttachments.attach'), 'neutral editor parity must attach through the gameplay hand runtime, not construct its own neutral chain');
+assert(neutral.includes('const hands = global.ProceduralHandAttachments') && neutral.includes('hands.attach(state.THREE, handParent'), 'neutral editor parity must attach through the gameplay hand runtime, not construct its own neutral chain');
 assert(neutral.includes('proceduralHandParent'), 'neutral editor parity must use the authoring-preview hand parent supported by the real frame driver');
 assert(neutral.includes('model.userData.proceduralHandRig'), 'neutral editor parity must publish/reuse the same proceduralHandRig slot as gameplay');
 assert(neutral.includes("procedural-hand-shoulder-aim.js"), 'neutral editor parity must load the runtime shoulder-aim wrapper');
