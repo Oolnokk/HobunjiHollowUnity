@@ -15,6 +15,7 @@
     const parity = window.HobunjiHandOutlineParity?.getDebug?.() || null;
     const frame = window.ProceduralHandFrameDriver?.getDebug?.() || [];
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
+    const mist = window.CloudForestMistSoftDepth?.snapshot?.() || null;
     const lines = ['', SECTION];
 
     if (parity) {
@@ -34,6 +35,16 @@
       );
     } else {
       lines.push('Held x-ray: module missing');
+    }
+
+    if (mist) {
+      lines.push(
+        `Cloud Forest mist depth: installed=${mist.installed ? 'yes' : 'no'} base=${mist.baseDepthCaptures ?? '-'} `
+        + `overlays=${mist.overlayDraws ?? '-'} avatarCaptures=${mist.avatarOccluderCaptures ?? '-'} `
+        + `avatarOccluders=${mist.lastAvatarOccluderCount ?? '-'} feather=${mist.config?.featherPixels ?? '-'}px`
+      );
+    } else {
+      lines.push('Cloud Forest mist depth: module missing');
     }
 
     if (Array.isArray(frame) && frame.length) {
