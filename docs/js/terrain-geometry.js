@@ -754,38 +754,122 @@
     }
   }
 
-  // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
-  // 9×9 vertex grid (0.125u steps) over a 1×1 tile. Uses seam-safe FNV hash
-  // at tile edges so vertices match adjacent makeFloorGeo tiles exactly.
+  // ── Rock tile: irregular mini plateau heightfield ───────────────────────────
+  // Restores the pre-extraction contract: callers receive separate stone and
+  // grass geometries sharing one deterministic mound surface. The extraction
+  // accidentally replaced this with one flat BufferGeometry even though every
+  // live caller continued destructuring { stoneGeo, grassGeo }.
   function buildRockTileGeo(col, row) {
     const VERTS = 7, CELLS = 6;
     const STEP = 1.0 / CELLS;
-    const TOP = deps.ROCK_H / 2 - deps.SLAB_H / 2; // relative to the floor slab's own top, added by the caller
+
+    let seed = ((col * 374761393) ^ (row * 668265263)) >>> 0; // Used to make each tile's irregular mound deterministic.
+    const rng = () => {
+      seed += 0x6D2B79F5;
+      let value = Math.imul(seed ^ seed >>> 15, seed | 1);
+      value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+      return ((value ^ value >>> 14) >>> 0) / 4294967296;
+    };
+
     const seamDisp = (vx, vz) => {
       const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
       let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
       h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+      return (h / 4294967296 - 0.5) * 0.026;
+    };
+
+    // Finer roughness detail for the mound surface.
+    const roughDisp = (vx, vz) => {
+      const kx = Math.round(vx * 8) | 0;
+      const kz = Math.round(vz * 8) | 0;
+      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+      h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
       return (h / 4294967296 - 0.5) * 0.05;
     };
+
+    const Y = new Float32Array(VERTS * VERTS);
+    for (let vj = 0; vj < VERTS; vj++)
+      for (let vi = 0; vi < VERTS; vi++)
+        Y[vj*VERTS+vi] = seamDisp(col + vi*STEP, row + vj*STEP);
+
+    // BFS plateau from a random interior starting cell (never touches edge cells).
+    const startCi = 1 + Math.floor(rng() * (CELLS - 2));
+    const startCj = 1 + Math.floor(rng() * (CELLS - 2));
+    const maxSize = 2 + Math.floor(rng() * 12);
+    const group = new Set([startCj * CELLS + startCi]);
+    const front = [[startCi, startCj]];
+
+    while (front.length && group.size < maxSize) {
+      const fi = Math.floor(rng() * front.length);
+      const [ci, cj] = front.splice(fi, 1)[0];
+      for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const ni = ci+dc, nj = cj+dr;
+        if (ni < 1 || ni > CELLS-2 || nj < 1 || nj > CELLS-2) continue;
+        const nk = nj*CELLS+ni;
+        if (group.has(nk)) continue;
+        group.add(nk); front.push([ni, nj]);
+      }
+    }
+
+    // Collect plateau vertex indices and find peak.
+    let maxY = -Infinity;
+    const raised = new Set();
+    for (const ck of group) {
+      const ci = ck % CELLS, cj = (ck / CELLS) | 0;
+      for (const vi of [cj*VERTS+ci, cj*VERTS+ci+1, (cj+1)*VERTS+ci, (cj+1)*VERTS+ci+1]) {
+        raised.add(vi);
+        if (Y[vi] > maxY) maxY = Y[vi];
+      }
+    }
+
+    const PEAK = 0.32 + rng() * 0.38;
+    const target = maxY + PEAK;
+
+    // Raise plateau verts, blending to zero at tile edges.
+    for (const vi of raised) {
+      const vix = vi % VERTS, viy = (vi / VERTS) | 0;
+      const edgeDist = Math.min(vix, VERTS-1-vix, viy, VERTS-1-viy);
+      const blend = Math.min(1, edgeDist / 2);
+      if (blend <= 0) continue;
+      const vx = col + vix*STEP, vz = row + viy*STEP;
+      const h = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
+      if (h > Y[vi]) Y[vi] = h;
+    }
+
     const positions = [], uvs = [];
     for (let vj = 0; vj < VERTS; vj++)
       for (let vi = 0; vi < VERTS; vi++) {
-        const vx = col + vi * STEP, vz = row + vj * STEP;
-        positions.push(vi * STEP - 0.5, TOP + seamDisp(vx, vz), vj * STEP - 0.5);
-        uvs.push(vx, vz);
+        positions.push(vi*STEP - 0.5, Y[vj*VERTS+vi], vj*STEP - 0.5);
+        // World-space (X,Z) UV, same convention as _mergeTileGeos — this
+        // geometry is also used directly for farm/cavern loose rocks.
+        uvs.push(col + vi*STEP, row + vj*STEP);
       }
-    const idx = [];
+
+    // Split cells: stone if any corner is elevated (plateau or cliff face),
+    // grass if all corners are at ground level. Threshold 0.05u sits above
+    // the ±0.013u seam noise so ground cells always go green.
+    const stoneIdx = [], grassIdx = [];
     for (let cj = 0; cj < CELLS; cj++)
       for (let ci = 0; ci < CELLS; ci++) {
-        const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1, v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
-        idx.push(v00, v01, v11, v00, v11, v10);
+        const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+        const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+        const tgt = Math.max(Y[v00], Y[v10], Y[v01], Y[v11]) > 0.05
+          ? stoneIdx : grassIdx;
+        tgt.push(v00, v01, v11, v00, v11, v10);
       }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
-    g.computeVertexNormals();
-    return g;
+
+    const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+    const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
+    const makeGeo = idx => {
+      if (!idx.length) return null;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', posAttr);
+      g.setAttribute('uv', uvAttr);
+      g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+      g.computeVertexNormals();
+      return g;
+    };
+    return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx) };
   }
 
   function buildTerrainTileGeo(col, row, type, srcGrid = deps.getGrid(), options = {}) {
