@@ -4,10 +4,10 @@
 (() => {
   'use strict';
 
-  const VERSION = 1;
+  const VERSION = 2;
   let rangedInitWrapped = false; // Exposed in debugSnapshot() to verify the ranged initialization boundary was patched once.
   let combatInitWrapped = false; // Exposed in debugSnapshot() to verify native melee camera callbacks are restored once after Combat.init.
-  let rangedInteractionReads = 0; // Counts how many times the focus wrapper reads the bridged interaction getter during the latest ranged init.
+  let muzzleRayDepsProvided = false; // Exposed in debugSnapshot() to verify the explicit muzzle-parallel dependency was handed to the latest ranged init.
   let nativeMeleeDirectionRestored = false; // Records whether Combat's original camera-derived melee direction callback won after initialization.
   let nativeMeleePitchRestored = false; // Records whether Combat's original camera-derived melee pitch callback won after initialization.
   let lastMuzzleRay = null; // Mobile-readable snapshot of the camera-parallel ray supplied privately to ranged-camera-focus.
@@ -50,9 +50,10 @@
   // ranged-camera-focus privately resolves first surfaces from this ray. Giving
   // that private resolver the REAL camera direction but a muzzle origin removes
   // Shoulder Cam parallax from its convergence math: a close floor/wall can no
-  // longer create a 90-degree muzzle-to-surface vector. The original interaction
-  // ray is still handed to RangedWeapons itself on the focus wrapper's later
-  // object-spread read, so ordinary world-focus semantics remain untouched.
+  // longer create a 90-degree muzzle-to-surface vector. This is handed to
+  // ranged-camera-focus through its own explicitly-named dependency
+  // (getMuzzleParallelInteractionRay); getPlayerInteractionRay itself is passed
+  // through untouched so ordinary world-focus semantics remain untouched.
   function muzzleParallelCameraRay(deps, rawInteractionRay, rawAimRay) {
     let raw = null;
     try { raw = rawInteractionRay?.() || rawAimRay?.() || null; }
@@ -76,29 +77,12 @@
     function cameraAlignedRangedInit(injectedDeps = {}) {
       const rawInteractionRay = injectedDeps?.getPlayerInteractionRay;
       const rawAimRay = injectedDeps?.getPlayerAimRay;
-      const bridgedDeps = { ...injectedDeps };
-      let reads = 0;
-      Object.defineProperty(bridgedDeps, 'getPlayerInteractionRay', {
-        configurable: true,
-        enumerable: true,
-        get() {
-          reads++;
-          rangedInteractionReads = reads;
-          // ranged-camera-focus reads this property once before spreading deps.
-          // That first read is its private surface resolver. The spread's second
-          // read must remain the game's original interaction-ray callback.
-          if (reads === 1) {
-            return () => muzzleParallelCameraRay(injectedDeps, rawInteractionRay, rawAimRay);
-          }
-          return rawInteractionRay;
-        },
-      });
-
-      const result = previousInit.call(this, bridgedDeps);
-      if (reads < 2) {
-        window.__farmLog?.('[combat-camera-alignment] ranged init read order changed; native camera fallback remains active.', 'warn', 'combat');
-      }
-      return result;
+      const bridgedDeps = {
+        ...injectedDeps,
+        getMuzzleParallelInteractionRay: () => muzzleParallelCameraRay(injectedDeps, rawInteractionRay, rawAimRay),
+      };
+      muzzleRayDepsProvided = true;
+      return previousInit.call(this, bridgedDeps);
     }
 
     cameraAlignedRangedInit.__hobunjiCombatCameraAlignmentBridge = true;
@@ -161,7 +145,7 @@
       version: VERSION,
       rangedInitWrapped,
       combatInitWrapped,
-      rangedInteractionReads,
+      muzzleRayDepsProvided,
       nativeMeleeDirectionRestored,
       nativeMeleePitchRestored,
       lastMuzzleRay: lastMuzzleRay ? {

@@ -145,7 +145,10 @@ const windowStub = {
     actorHitbox: actor => ({ center: actor === player ? new Vector3(player.x / 64, 0.5, player.y / 64) : new Vector3(6, 0.5, 3) }),
     update() {},
   },
-  HobunjiRangedWeaponArchetypes: { debugSnapshot: () => ({ thrownCharge }) },
+  HobunjiRangedWeaponArchetypes: {
+    debugSnapshot: () => ({ thrownCharge }),
+    activeThrownChargeItemKey: () => thrownCharge?.itemKey || null,
+  },
   __farmLog: message => logs.push(message),
 };
 

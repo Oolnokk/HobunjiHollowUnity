@@ -40,11 +40,13 @@ const nativeAimRay = () => ({
 let focusPrivateInteractionRay = null;
 let baseRangedDeps = null;
 
-// Emulates the exact important read order in ranged-camera-focus v6:
-// capture getPlayerInteractionRay privately, then spread deps for RangedWeapons.
+// Emulates ranged-camera-focus's actual dependency contract: prefer the
+// bridge's explicit muzzle-parallel ray for the private surface resolver,
+// then spread the untouched deps (including the real getPlayerInteractionRay)
+// for RangedWeapons itself.
 function focusLikeRangedInit(injectedDeps) {
   const capturedAimRay = injectedDeps.getPlayerAimRay;
-  focusPrivateInteractionRay = injectedDeps.getPlayerInteractionRay;
+  focusPrivateInteractionRay = injectedDeps.getMuzzleParallelInteractionRay || injectedDeps.getPlayerInteractionRay;
   const wrappedDeps = {
     ...injectedDeps,
     getPlayerAimRay: () => focusPrivateInteractionRay?.() || capturedAimRay?.(),
@@ -78,7 +80,7 @@ const context = {
 };
 vm.runInNewContext(source, context, { filename: 'combat-camera-alignment-bridge.js' });
 
-assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 1);
+assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 2);
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().updateMode,
   'initialization-only-no-frame-hook');
 
@@ -143,7 +145,7 @@ assert.equal(windowStub.Combat.deps.getPlayerMeleeAimPitch(), 0.1);
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
 assert.equal(debug.rangedInitWrapped, true);
 assert.equal(debug.combatInitWrapped, true);
-assert(debug.rangedInteractionReads >= 2, 'focus capture + spread read order was observed');
+assert.equal(debug.muzzleRayDepsProvided, true, 'bridge handed the focus wrapper its explicit muzzle-parallel dependency');
 assert.equal(debug.nativeMeleeDirectionRestored, true);
 assert.equal(debug.nativeMeleePitchRestored, true);
 assertVector(debug.lastMuzzleRay.direction, { x: 1, y: 0, z: 0 }, 'debug reports camera-forward muzzle ray');

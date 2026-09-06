@@ -21,15 +21,30 @@ const window = {
     itemNameTokenOverrides: { denaturedStinkOil: 'Stink Oil' },
   },
   ProceduralFurniture: { CATALOG: {} },
+  // FarmEditor loads before food-processing.js in index.html, matching production.
   FarmEditor: { init(deps) { this.deps = deps; } },
-  FurniturePlacer: { init(deps) { this.deps = deps; } },
-  CarpenterShop: { init(deps) { this.deps = deps; } },
-  CraftingPanel: { init(deps) { this.deps = deps; } },
 };
-const context = vm.createContext({ window, console });
+const domContentLoadedListeners = [];
+const document = {
+  readyState: 'loading',
+  addEventListener(event, callback) {
+    if (event === 'DOMContentLoaded') domContentLoadedListeners.push(callback);
+  },
+};
+const context = vm.createContext({ window, document, console });
 
 vm.runInContext(fs.readFileSync('docs/js/item-processing.js', 'utf8'), context, { filename: 'item-processing.js' });
 vm.runInContext(fs.readFileSync('docs/js/food-processing.js', 'utf8'), context, { filename: 'food-processing.js' });
+
+// furniture-placer.js/carpenter-shop.js/crafting-panel.js load after
+// food-processing.js in index.html, so their namespaces only appear now —
+// food-processing.js must pick them up via its deferred DOMContentLoaded retry.
+window.FurniturePlacer = { init(deps) { this.deps = deps; } };
+window.CarpenterShop = { init(deps) { this.deps = deps; } };
+window.CraftingPanel = { init(deps) { this.deps = deps; } };
+document.readyState = 'complete';
+assert.equal(domContentLoadedListeners.length, 1, 'food-processing.js defers its furniture/blueprint hooks to DOMContentLoaded');
+domContentLoadedListeners.forEach(listener => listener());
 
 const itemDefs = {
   garWolfMilk: {
