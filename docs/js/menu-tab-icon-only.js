@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 3) return;
+  if (window.HobunjiMenuTabIcons?.version >= 4) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
@@ -11,6 +11,7 @@
   const ACTION_ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Used by gameplay action artwork reused by menu tabs.
   const WALLET_SUFFIX_SELECTOR = '#mpInventory .inv-wallet-suffix'; // Used to replace the mis-metric Tankanscript currency glyph with PNG artwork.
   const CURRENCY_ICON_FILE = 'icon_bronzecurrency.png'; // Used by applyWalletCurrencyIcon() as the gananji currency symbol.
+  const WALLET_CURRENCY_COLOR = '#6fae9b'; // Used as the shared bronze-verdigris tint for the gananji amount and symbol.
   const LOADOUT_ICON_SIZE = 128; // Used as the raster resolution for the outlined loadout composite.
   const LOADOUT_OUTLINE_RADIUS = 4; // Used to punch a readable halo around melee before it covers ranged.
   const LOADOUT_COLORS = Object.freeze({
@@ -101,10 +102,13 @@
         object-fit: contain;
         pointer-events: none;
       }
+      #mpInventory .inv-wallet-amount {
+        color: ${WALLET_CURRENCY_COLOR} !important;
+      }
       ${WALLET_SUFFIX_SELECTOR} {
         display: inline-flex !important;
-        align-items: center;
-        justify-content: center;
+        align-items: flex-end;
+        justify-content: flex-start;
         width: 1em !important;
         height: 1em !important;
         padding: 0 !important;
@@ -112,10 +116,11 @@
       }
       ${WALLET_SUFFIX_SELECTOR} .wallet-currency-icon {
         display: block;
-        width: 1em;
-        height: 1em;
+        width: 0.6667em;
+        height: 0.6667em;
         object-fit: contain;
-        object-position: center;
+        object-position: left bottom;
+        filter: brightness(0) saturate(100%) invert(81%) sepia(24%) saturate(1092%) hue-rotate(111deg) brightness(117%) contrast(25%);
         pointer-events: none;
       }
       ${TAB_SELECTOR}[data-mpanel="relationships"] .relationships-tab-heart {
@@ -366,7 +371,7 @@
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 3,
+      version: 4,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
       totalTabs: tabs.length,
@@ -379,6 +384,9 @@
       loadoutCompositePresent: !!document.querySelector(`${TAB_SELECTOR}[data-mpanel="loadout"] .menu-tab-loadout`),
       walletCurrencyIconApplied: debugState.walletCurrencyIconApplied,
       walletCurrencyIconPresent: !!document.querySelector(`${WALLET_SUFFIX_SELECTOR} .wallet-currency-icon`),
+      walletCurrencyColor: WALLET_CURRENCY_COLOR,
+      walletCurrencyIconScale: 2 / 3,
+      walletCurrencyIconAnchor: 'bottom-left',
     };
   }
 
@@ -387,6 +395,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 3, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 4, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();
