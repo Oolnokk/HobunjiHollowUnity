@@ -41,7 +41,7 @@ assert.match(social, /Existing gift code remains authoritative for its authored 
 
 assert.match(menuTabs, /TAB_SELECTOR = '\.mp-tabs \.mp-tab\[data-mpanel\]'/, 'all main menu tabs must be targeted as one presentation group');
 assert.match(menuTabs, /tab\.replaceChildren\(makeGlyphNode\(glyph\)\)/, 'non-relationship menu tabs must retain only their existing leading icon');
-assert.match(menuTabs, /CURRENCY_ICON_FILE = 'icon_tbu\.png'/, 'wallet currency presentation must use icon_tbu.png while the Tankanscript glyph metrics are being corrected');
+assert.match(menuTabs, /CURRENCY_ICON_FILE = 'icon_bronzecurrency\.png'/, 'wallet currency presentation must use icon_bronzecurrency.png while the Tankanscript glyph metrics are being corrected');
 assert.match(menuTabs, /suffix\.replaceChildren\(image\)/, 'wallet currency glyph text must be replaced by the temporary PNG artwork');
 assert.match(menuTabs, /walletCurrencyIconPresent/, 'wallet currency icon state must remain available in mobile-safe diagnostics');
 assert.match(menuTabs, /tab\.setAttribute\('aria-label', label\)/, 'removed visible tab labels must remain available to assistive UI');
