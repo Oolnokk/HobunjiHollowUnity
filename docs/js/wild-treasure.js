@@ -115,14 +115,62 @@
     return keys;
   }
 
+  // Roads are authored as PATH tiles and the shovel intentionally cannot
+  // turn them into trenches. Feed every road coordinate into the shared
+  // empty-tile picker's occupied list so buried treasure only lands where
+  // the player can actually dig it back up.
+  function _treasureRoadTiles(zi) {
+    const roadTiles = []; // Used by new scatters and legacy-placement repair to reserve every non-diggable road tile.
+    const rowCount = zi.rows ?? zi.grid?.length ?? 0; // Used to scan every row in the active wilderness-zone grid.
+    for (let row = 0; row < rowCount; row++) {
+      const colCount = zi.cols ?? zi.grid?.[row]?.length ?? 0; // Used to scan every tile in this row for PATH terrain.
+      for (let col = 0; col < colCount; col++) {
+        if (zi.grid?.[row]?.[col]?.type === deps.TileType.PATH) roadTiles.push({ col, row });
+      }
+    }
+    return roadTiles;
+  }
+
   function _scatterTreasureForZone(mapId) {
     const zi = deps._zoneScenes.get(mapId);
     if (!zi) return [];
     const targetCount = 1 + Math.floor((zi.cols * zi.rows) / 3200); // rare — usually 1-2 per zone
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure:' + weekIndex()));
-    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || [])];
+    const roadTiles = _treasureRoadTiles(zi); // Used to keep the shared flat-empty picker from selecting non-diggable roads.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...roadTiles];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
     return spots.map(({ col, row }) => ({ col, row, found: false, loot: _rollTreasureLootBundle() }));
+  }
+
+  // Saves created before the road exclusion can already contain a live
+  // current-week chest under PATH terrain. Preserve that chest's rolled
+  // loot, but move it to a deterministic legal tile. If a pathological
+  // zone has no legal replacement, drop only that inaccessible placement
+  // rather than leaving companion hints pointed at an impossible dig site.
+  function _repairRoadTreasurePlacements(mapId, persisted) {
+    const zi = deps._zoneScenes.get(mapId); // Used to inspect the current authored terrain beneath persisted treasure.
+    if (!zi || !persisted?.placements?.length) return 0;
+    const blocked = persisted.placements.filter(placement => !placement.found && zi.grid?.[placement.row]?.[placement.col]?.type === deps.TileType.PATH); // Used as the set of inaccessible legacy road placements that need relocation.
+    if (!blocked.length) return 0;
+    const blockedSet = new Set(blocked); // Used to retain all unaffected placements without relying on coordinate equality.
+    const kept = persisted.placements.filter(placement => !blockedSet.has(placement)); // Used as the repaired placement list and as occupied positions during replacement search.
+    const roadTiles = _treasureRoadTiles(zi); // Used to prevent replacement candidates from landing on any road tile.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...roadTiles, ...kept]; // Used to keep repairs off plants, berries, roads, and surviving treasure.
+    const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure-road-repair:' + weekIndex())); // Used to make save repair deterministic for this zone/week.
+    const replacements = deps.findZoneFlatEmptyTiles(mapId, blocked.length, rng, avoid); // Used one-for-one to relocate as many blocked chests as the zone can legally fit.
+    let repaired = 0; // Used for repair diagnostics and to distinguish relocated chests from dropped inaccessible ones.
+    for (let i = 0; i < blocked.length; i++) {
+      const replacement = replacements[i]; // Used to move this legacy chest while preserving its existing loot bundle.
+      if (!replacement) continue;
+      blocked[i].col = replacement.col;
+      blocked[i].row = replacement.row;
+      blocked[i]._mesh = null;
+      kept.push(blocked[i]);
+      repaired++;
+    }
+    persisted.placements = kept;
+    deps.debugLog?.(`repairZoneTreasureRoads(${mapId}): relocated ${repaired}, dropped ${blocked.length - repaired} inaccessible road chest(s)`);
+    return blocked.length;
   }
 
   // Simple wood-and-band chest silhouette — same box+lid shape as
@@ -265,7 +313,8 @@
     if (!zi) return;
     let persisted = deps._zoneTreasurePersist.get(mapId);
     if (persisted?.week === weekIndex()) {
-      if (deps._zoneTreasureMeshGroups.has(mapId)) return; // already built for this week
+      const repairedRoadPlacements = _repairRoadTreasurePlacements(mapId, persisted); // Used to force a rebuild only when this current-week save contained inaccessible road treasure.
+      if (deps._zoneTreasureMeshGroups.has(mapId) && repairedRoadPlacements === 0) return; // already built for this week
     } else {
       persisted = { week: weekIndex(), placements: _scatterTreasureForZone(mapId) };
       deps._zoneTreasurePersist.set(mapId, persisted);
