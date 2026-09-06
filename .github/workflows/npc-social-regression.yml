@@ -12,11 +12,14 @@ on:
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
+      - 'docs/js/generic-hud-icons.js'
+      - 'docs/js/menu-tab-icon-only.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/outline-render-performance.js'
       - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
@@ -37,11 +40,14 @@ on:
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
+      - 'docs/js/generic-hud-icons.js'
+      - 'docs/js/menu-tab-icon-only.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/outline-render-performance.js'
       - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
@@ -77,11 +83,14 @@ jobs:
           node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/dialogue-content.js
           node --check docs/js/relationships-panel.js
+          node --check docs/js/generic-hud-icons.js
+          node --check docs/js/menu-tab-icon-only.js
           node --check docs/js/panel-ui.js
           node --check docs/js/combat/combat-config-loader.js
           node --check docs/js/outline-render-performance.js
           node --check docs/js/world-popup-text.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
+          node --check scripts/test-generic-hud-icons.js
           node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-npc-swig-offer-cooldown.js
@@ -89,6 +98,8 @@ jobs:
           node --check scripts/test-world-text-outline-overlay.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
+      - name: Test generic HUD icon replacement and rapport popup integration
+        run: node scripts/test-generic-hud-icons.js
       - name: Test balanced multi-trait NPC gifting
         run: node scripts/test-npc-gifting-multitrait.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes

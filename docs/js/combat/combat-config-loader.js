@@ -100,6 +100,8 @@
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20260904placeholder2', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
     ['js/npc-social-relationship-bridge-v2.js?v=20260904event1', () => !!window.NpcRapport?.eventDriven],
+    ['js/generic-hud-icons.js?v=20260905a', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
+    ['js/menu-tab-icon-only.js?v=20260905a', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
     ['js/npc-social-seating-bridge.js?v=20260904a', () => Number(window.NpcSocialSeating?.version) >= 1],
     ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-weapon-stances.js?v=20260903a', () => !!window.EnemyWeaponStances],

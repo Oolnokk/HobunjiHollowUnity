@@ -151,42 +151,25 @@
     return true;
   }
 
-  function giftDelta(tier) {
-    const key = `gift${String(tier || 'neutral').replace(/^./, c => c.toUpperCase())}`;
-    return num(config.rapportDeltas?.[key], 0);
-  }
   function patchGifting() {
     const gifting = window.NpcGifting;
-    const dialogue = window.DialogueContent;
-    if (giftingPatched || !gifting?.getNpcGiftOfferAction || !gifting?.offerGift || !dialogue?.adjustNpcFavor) return false;
+    if (giftingPatched || !gifting?.getNpcGiftOfferAction || !gifting?.offerGift) return false;
     giftingPatched = true;
     const getAction = gifting.getNpcGiftOfferAction.bind(gifting); // Existing gift eligibility remains authoritative before the daily gate.
     gifting.getNpcGiftOfferAction = (walker, ...args) => {
       const id = String(walker?.rec?.id || '');
       return id && !canGiftToday(id) ? null : getAction(walker, ...args);
     };
-    const offerGift = gifting.offerGift.bind(gifting); // Existing inventory/reaction flow still performs the actual gift.
+    const offerGift = gifting.offerGift.bind(gifting); // Existing gift code remains authoritative for its authored permanent Favor delta and reaction.
     gifting.offerGift = function (walker, ...args) {
       const id = String(walker?.rec?.id || '');
       if (!id || !canGiftToday(id)) { window.__farmLog?.(`${walker?.rec?.name || 'They'} already received a gift today.`); return false; }
-      const originalAdjust = dialogue.adjustNpcFavor;
-      let giftReaction = false; // Marks that the existing gift flow actually produced a gift_* relationship result.
-      dialogue.adjustNpcFavor = function (targetId, delta, reason, ...favorArgs) {
-        if (String(targetId) === id && String(reason || '').startsWith('gift_')) {
-          giftReaction = true;
-          adjust(id, giftDelta(String(reason).slice(5)), reason);
-          return get(id);
-        }
-        return originalAdjust.call(dialogue, targetId, delta, reason, ...favorArgs);
-      };
-      try {
-        const result = offerGift(walker, ...args);
-        if (result) markGiftedToday(id);
-        return result;
-      } finally {
-        dialogue.adjustNpcFavor = originalAdjust;
-        if (giftReaction) touchedNpcIds.add(id);
+      const result = offerGift(walker, ...args);
+      if (result) {
+        markGiftedToday(id);
+        touchedNpcIds.add(id);
       }
+      return result;
     };
     return true;
   }

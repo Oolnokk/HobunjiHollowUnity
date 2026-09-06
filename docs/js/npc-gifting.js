@@ -144,16 +144,11 @@
   }
 
   // Apply the already-balanced result once so relationship clamping cannot
-  // make a mixed gift order-dependent near a minimum/maximum. The current
-  // social system routes ordinary gifts through temporary Rapport, so use
-  // that public API directly when present; older/non-Rapport runtimes keep
-  // using permanent favor as their fallback.
+  // make a mixed gift order-dependent near a minimum/maximum. Gifts change
+  // permanent Favor directly; temporary Rapport is reserved for short-lived
+  // social affinity such as drinks, dancing, music, and authored dialogue.
   function applyGiftRelationshipDelta(npcId, evaluation) {
     const reason = 'gift_' + evaluation.tier;
-    if (window.NpcRapport?.adjust) {
-      window.NpcRapport.adjust(npcId, evaluation.favorDelta, reason);
-      return;
-    }
     window.DialogueContent?.adjustNpcFavor?.(npcId, evaluation.favorDelta, reason);
   }
 

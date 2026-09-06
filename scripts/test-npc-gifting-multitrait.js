@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/npc-gifting.js'), 'utf8');
 assert.doesNotThrow(() => new vm.Script(source, { filename: 'npc-gifting.js' }), 'npc-gifting.js must parse as JavaScript');
 
-const rapportAdjustments = [];
+const favorAdjustments = [];
 const toasts = [];
 const inventory = { mixedGift: 2 };
 const held = { kind: 'item', key: 'mixedGift', def: { label: 'Mixed Gift', icon: '🎁' } };
@@ -23,14 +23,14 @@ const windowStub = {
     getTraitLabel(id) { return id; },
   },
   NpcRapport: {
-    adjust(npcId, amount, reason) {
-      rapportAdjustments.push({ npcId, amount, reason });
-      return amount;
+    adjust() {
+      throw new Error('ordinary gifts must not be diverted into temporary Rapport');
     },
   },
   DialogueContent: {
-    adjustNpcFavor() {
-      throw new Error('Rapport runtime should receive the balanced gift result directly');
+    adjustNpcFavor(npcId, amount, reason) {
+      favorAdjustments.push({ npcId, amount, reason });
+      return amount;
     },
   },
 };
@@ -61,7 +61,7 @@ const prefs = {
 
 const evaluation = gifting.evaluateGiftReaction(prefs, heldTraits);
 assert.equal(evaluation.score, 4, 'two liked traits and one disliked trait net to one liked-trait unit');
-assert.equal(evaluation.favorDelta, 4, 'relationship delta preserves the full balanced score');
+assert.equal(evaluation.favorDelta, 4, 'Favor delta preserves the full balanced score');
 assert.equal(evaluation.tier, 'liked', 'positive net score produces a liked dialogue verdict');
 assert.deepEqual(Array.from(evaluation.matches.liked), ['warm', 'bright'], 'all matching liked traits are retained');
 assert.deepEqual(Array.from(evaluation.matches.disliked), ['blue'], 'all matching disliked traits are retained');
@@ -77,7 +77,7 @@ assert.equal(accumulatedLikes.tier, 'loved', 'a sufficiently strong positive net
 
 const walker = { rec: { id: 'test_npc', name: 'Test NPC', gifts: prefs } };
 assert.equal(gifting.offerGift(walker), true, 'mixed gift is accepted');
-assert.deepEqual(rapportAdjustments, [{ npcId: 'test_npc', amount: 4, reason: 'gift_liked' }], 'runtime applies the balanced result once, not once per winning trait');
+assert.deepEqual(favorAdjustments, [{ npcId: 'test_npc', amount: 4, reason: 'gift_liked' }], 'runtime applies the balanced permanent Favor result once, not once per winning trait');
 assert.equal(inventory.mixedGift, 1, 'accepted gift still consumes exactly one item');
 assert.match(toasts.at(-1), /is happy with the Mixed Gift/, 'dialogue/toast reflects the net liked verdict');
 
