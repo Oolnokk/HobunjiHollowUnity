@@ -14,6 +14,18 @@
   // wrapped render that closes over that same instance's original render.
   const MASK_ALL = 0xFFFFFFFF;
   const OVERLAY_LAYER = 7; // Reserved only during the final mist overlay draw; the mist keeps its normal layer membership during ordinary/direct renders.
+  // Same convention game.js's _markPngPlane and held-object-render-order.js's
+  // PNG_OCCLUDER_LAYER use: the player/creature/held PNG cutout planes enable
+  // this layer on top of their normal one specifically so an auxiliary pass
+  // can still find and depth-test them. They need it because their *normal*
+  // materials render with depthWrite:false (so overlapping avatar planes --
+  // e.g. a shoulder pet in front of the player -- blend by paint order
+  // instead of hard z-clipping each other). That same depthWrite:false means
+  // they never appear in the main pass's depth texture, so without this,
+  // the mist's depth comparison below sees only whatever is *behind* them
+  // (ground, usually) and renders mist right through them.
+  const AVATAR_OCCLUDER_LAYER = 4;
+  const AVATAR_RESCAN_MS = 500; // Matches this codebase's existing scan-throttle convention (see held-object-render-order.js's FALLBACK_SCAN_INTERVAL_MS) -- avatar/pet sets change rarely frame-to-frame.
   const DEFAULTS = Object.freeze({
     featherPixels: 2.25, // Screen-space depth-mask feather radius used to prevent bright one-pixel mist rims around foreground silhouettes.
     coveragePower: 2.0, // Shapes the 5-tap depth coverage so partially occluded edge pixels fade more aggressively than a linear average.
@@ -27,6 +39,8 @@
 
   const pendingByRenderer = new WeakMap();
   const originalRenderByRenderer = new WeakMap();
+  const avatarTargetByRenderer = new WeakMap();
+  const avatarMeshCacheByScene = new WeakMap();
   const materialState = new WeakMap();
   const stats = {
     installed: true,
@@ -38,6 +52,8 @@
     skippedPostMismatch: 0,
     lastTargetWidth: 0,
     lastTargetHeight: 0,
+    avatarOccluderCaptures: 0,
+    lastAvatarOccluderCount: 0,
   }; // Exposed through snapshot() so the mobile Debug panel / console can verify the path without devtools inspection.
   let loggedFirstOverlay = false;
 
@@ -80,6 +96,7 @@
       material,
       shader: null,
       depthTexture: null,
+      avatarDepthTexture: null,
       invViewportX: 1,
       invViewportY: 1,
       enabled: 0,
@@ -92,11 +109,103 @@
     const shader = state?.shader;
     if (!shader?.uniforms) return;
     shader.uniforms.uHobunjiMistSceneDepth.value = state.depthTexture;
+    shader.uniforms.uHobunjiMistAvatarDepth.value = state.avatarDepthTexture;
     shader.uniforms.uHobunjiMistInvViewport.value.set(state.invViewportX, state.invViewportY);
     shader.uniforms.uHobunjiMistSoftDepthEnabled.value = state.enabled;
     shader.uniforms.uHobunjiMistFeatherPixels.value = config.featherPixels;
     shader.uniforms.uHobunjiMistCoveragePower.value = config.coveragePower;
     shader.uniforms.uHobunjiMistDepthBias.value = config.depthBias;
+  }
+
+  function forEachMistMaterialTarget(material, fn) {
+    if (Array.isArray(material)) { for (const entry of material) if (entry) fn(entry); return; }
+    if (material) fn(material);
+  }
+
+  // r128's THREE.Layers has no isEnabled() -- only set/enable/disable/toggle/
+  // test -- so check the bitmask directly, same as held-object-render-order.js's
+  // own hasLayer() helper does for this exact layer.
+  function hasAvatarOccluderLayer(object) {
+    const mask = Number(object?.layers?.mask ?? 0) >>> 0;
+    return !!(mask & ((1 << AVATAR_OCCLUDER_LAYER) >>> 0));
+  }
+
+  // Rebuilds (on a throttle) the list of avatar/creature/held PNG planes that
+  // need their depth reconstructed for the mist comparison -- same layer tag
+  // game.js's _markPngPlane stamps on those meshes for held-object-render-
+  // order.js's own, differently-scoped depth reconstruction.
+  function collectAvatarOccluderMeshes(scene) {
+    const now = performance.now();
+    const cached = avatarMeshCacheByScene.get(scene);
+    if (cached && now - cached.lastScan < AVATAR_RESCAN_MS) return cached.meshes;
+    const meshes = [];
+    scene.traverse(object => {
+      if (object?.isMesh && object.visible !== false && hasAvatarOccluderLayer(object)) meshes.push(object);
+    });
+    avatarMeshCacheByScene.set(scene, { meshes, lastScan: now });
+    return meshes;
+  }
+
+  function ensureAvatarDepthTarget(renderer, width, height) {
+    const entry = avatarTargetByRenderer.get(renderer);
+    if (entry && entry.width === width && entry.height === height) return entry.target;
+    entry?.target?.dispose?.();
+    const target = new THREE.WebGLRenderTarget(width, height, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
+    });
+    target.depthTexture = new THREE.DepthTexture(width, height);
+    avatarTargetByRenderer.set(renderer, { target, width, height });
+    return target;
+  }
+
+  // Renders just the avatar/pet PNG planes (layer-restricted, so nothing else
+  // draws) into a private target, forcing depthWrite on for this pass only so
+  // their real alpha-cutout silhouette lands in a depth texture despite their
+  // normal depthWrite:false avatar-layering trick. Left untouched: the main
+  // pass's own depth texture, which other consumers (the outline composite,
+  // held-object-render-order.js's own reconstruction) still read as before.
+  function captureAvatarDepth(renderer, scene, camera, width, height) {
+    const meshes = collectAvatarOccluderMeshes(scene);
+    const target = ensureAvatarDepthTarget(renderer, width, height);
+
+    const previousTarget = renderer.getRenderTarget?.() || null;
+    const previousCameraMask = camera.layers.mask;
+    const previousBackground = scene.background;
+    const previousAutoClearColor = renderer.autoClearColor;
+    const previousAutoClearDepth = renderer.autoClearDepth;
+    const materialStates = new Map();
+
+    for (const mesh of meshes) {
+      forEachMistMaterialTarget(mesh.material, material => {
+        if (materialStates.has(material)) return;
+        materialStates.set(material, { depthWrite: material.depthWrite, colorWrite: material.colorWrite });
+        material.depthWrite = true;
+        material.colorWrite = false;
+      });
+    }
+
+    try {
+      renderer.setRenderTarget(target);
+      renderer.autoClearColor = true;
+      renderer.autoClearDepth = true;
+      scene.background = null;
+      camera.layers.mask = ((1 << AVATAR_OCCLUDER_LAYER) >>> 0);
+      originalRenderByRenderer.get(renderer).call(renderer, scene, camera);
+      stats.avatarOccluderCaptures++;
+      stats.lastAvatarOccluderCount = meshes.length;
+    } finally {
+      for (const [material, state] of materialStates) {
+        material.depthWrite = state.depthWrite;
+        material.colorWrite = state.colorWrite;
+      }
+      camera.layers.mask = previousCameraMask;
+      scene.background = previousBackground;
+      renderer.autoClearColor = previousAutoClearColor;
+      renderer.autoClearDepth = previousAutoClearDepth;
+      renderer.setRenderTarget(previousTarget);
+    }
+
+    return target.depthTexture;
   }
 
   function patchMistMaterial(material) {
@@ -112,13 +221,14 @@
       if (!shader.fragmentShader.includes(commonMarker) || !shader.fragmentShader.includes(outputMarker)) return;
 
       shader.uniforms.uHobunjiMistSceneDepth = { value: state.depthTexture };
+      shader.uniforms.uHobunjiMistAvatarDepth = { value: state.avatarDepthTexture };
       shader.uniforms.uHobunjiMistInvViewport = { value: new THREE.Vector2(state.invViewportX, state.invViewportY) };
       shader.uniforms.uHobunjiMistSoftDepthEnabled = { value: state.enabled };
       shader.uniforms.uHobunjiMistFeatherPixels = { value: config.featherPixels };
       shader.uniforms.uHobunjiMistCoveragePower = { value: config.coveragePower };
       shader.uniforms.uHobunjiMistDepthBias = { value: config.depthBias };
 
-      shader.fragmentShader = shader.fragmentShader.replace(commonMarker, `${commonMarker}\n\n        uniform sampler2D uHobunjiMistSceneDepth;\n        uniform vec2 uHobunjiMistInvViewport;\n        uniform float uHobunjiMistSoftDepthEnabled;\n        uniform float uHobunjiMistFeatherPixels;\n        uniform float uHobunjiMistCoveragePower;\n        uniform float uHobunjiMistDepthBias;\n\n        float hobunjiMistDepthVisibility(vec2 uv, float mistDepth) {\n          float sceneDepth = texture2D(uHobunjiMistSceneDepth, clamp(uv, vec2(0.0), vec2(1.0))).x;\n          return step(mistDepth - uHobunjiMistDepthBias, sceneDepth);\n        }\n      `);
+      shader.fragmentShader = shader.fragmentShader.replace(commonMarker, `${commonMarker}\n\n        uniform sampler2D uHobunjiMistSceneDepth;\n        uniform sampler2D uHobunjiMistAvatarDepth;\n        uniform vec2 uHobunjiMistInvViewport;\n        uniform float uHobunjiMistSoftDepthEnabled;\n        uniform float uHobunjiMistFeatherPixels;\n        uniform float uHobunjiMistCoveragePower;\n        uniform float uHobunjiMistDepthBias;\n\n        float hobunjiMistDepthVisibility(vec2 uv, float mistDepth) {\n          vec2 clampedUv = clamp(uv, vec2(0.0), vec2(1.0));\n          float sceneDepth = texture2D(uHobunjiMistSceneDepth, clampedUv).x;\n          float avatarDepth = texture2D(uHobunjiMistAvatarDepth, clampedUv).x;\n          float nearestOccluderDepth = min(sceneDepth, avatarDepth);\n          return step(mistDepth - uHobunjiMistDepthBias, nearestOccluderDepth);\n        }\n      `);
 
       shader.fragmentShader = shader.fragmentShader.replace(outputMarker, `
         if (uHobunjiMistSoftDepthEnabled > 0.5) {
@@ -162,7 +272,7 @@
     }
   }
 
-  function setOverlayState(meshes, depthTexture, width, height, enabled) {
+  function setOverlayState(meshes, depthTexture, avatarDepthTexture, width, height, enabled) {
     const invX = 1 / Math.max(1, Number(width) || 1);
     const invY = 1 / Math.max(1, Number(height) || 1);
     for (const mesh of meshes || []) {
@@ -170,6 +280,7 @@
       for (const material of materials) {
         const state = stateForMaterial(material);
         state.depthTexture = depthTexture || null;
+        state.avatarDepthTexture = avatarDepthTexture || null;
         state.invViewportX = invX;
         state.invViewportY = invY;
         state.enabled = enabled ? 1 : 0;
@@ -211,11 +322,11 @@
   }
 
   function drawSoftMistOverlay(renderer, pending) {
-    const { scene, camera, meshes, depthTexture, targetWidth, targetHeight } = pending;
+    const { scene, camera, meshes, depthTexture, avatarDepthTexture, targetWidth, targetHeight } = pending;
     if (!meshes?.length || !depthTexture) return false;
 
     patchMistMeshes(meshes);
-    setOverlayState(meshes, depthTexture, targetWidth, targetHeight, true);
+    setOverlayState(meshes, depthTexture, avatarDepthTexture, targetWidth, targetHeight, true);
 
     const previousCameraMask = camera.layers.mask;
     const previousOverride = scene.overrideMaterial;
@@ -266,7 +377,7 @@
           matState.material.depthTest = matState.depthTest;
         }
       }
-      setOverlayState(meshes, depthTexture, targetWidth, targetHeight, false);
+      setOverlayState(meshes, depthTexture, avatarDepthTexture, targetWidth, targetHeight, false);
       if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAutoUpdate;
       camera.layers.mask = previousCameraMask;
       renderer.autoClear = previousAutoClear;
@@ -295,11 +406,13 @@
         }
         const width = Number(target.width) || renderer.domElement?.width || 1;
         const height = Number(target.height) || renderer.domElement?.height || 1;
+        const avatarDepthTexture = captureAvatarDepth(renderer, scene, camera, width, height);
         pendingByRenderer.set(renderer, {
           scene,
           camera,
           meshes,
           depthTexture: target.depthTexture,
+          avatarDepthTexture,
           targetTexture: target.texture,
           targetWidth: width,
           targetHeight: height,
@@ -352,7 +465,7 @@
       return {
         ...stats,
         config: { ...config },
-        mode: 'offscreen-scene-depth + 5-tap silhouette feather + post-composite mist overlay',
+        mode: 'offscreen-scene-depth + reconstructed avatar/pet depth + 5-tap silhouette feather + post-composite mist overlay',
         fallback: 'ordinary depth-tested mist when the main offscreen outline/depth pass is disabled',
       };
     },
