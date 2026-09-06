@@ -1211,6 +1211,8 @@
       questProgress:     { ...(memberState.questProgress || {}) },
       alcoholBottleSwigs: { ...(memberState.alcoholBottleSwigs || {}) },
       npcAlcoholState: { ...(memberState.npcAlcoholState || {}) },
+      npcWardrobeState: { ...(memberState.npcWardrobeState || {}) },
+      npcDiscoveredGiftTraits: { ...(memberState.npcDiscoveredGiftTraits || {}) },
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
       alchemyKnownRecipes: [...(memberState.alchemyKnownRecipes || [])],
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
@@ -1227,6 +1229,7 @@
       felledTreeState:   { ...(memberState.felledTreeState || {}) },
       minedRockState:    { ...(memberState.minedRockState || {}) },
       wildernessCampfireState: memberState.wildernessCampfireState || null,
+      townMineState:     memberState.townMineState || null,
       lastPosition:      memberState.lastPosition || null,
       isNewWorld,
     };
@@ -1573,6 +1576,8 @@
       playerData.questProgress  = { ...memberState.questProgress };
       playerData.alcoholBottleSwigs = { ...(memberState.alcoholBottleSwigs || {}) };
       playerData.npcAlcoholState = { ...(memberState.npcAlcoholState || {}) };
+      playerData.npcWardrobeState = { ...(memberState.npcWardrobeState || {}) };
+      playerData.npcDiscoveredGiftTraits = { ...(memberState.npcDiscoveredGiftTraits || {}) };
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
       playerData.alchemyKnownRecipes = [...(memberState.alchemyKnownRecipes || [])];
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
@@ -1588,6 +1593,7 @@
       playerData.felledTreeState = { ...(memberState.felledTreeState || {}) };
       playerData.minedRockState = { ...(memberState.minedRockState || {}) };
       playerData.wildernessCampfireState = memberState.wildernessCampfireState || null;
+      playerData.townMineState = memberState.townMineState || null;
       playerData.lastPosition = memberState.lastPosition || null;
       playerData.isNewWorld     = true;
     }
