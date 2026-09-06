@@ -148,13 +148,17 @@
 
   window.LegBones = { solveTwoBoneLeg, solveFixedTwoBoneChain, solveSubdividedChain };
 
+  function isProceduralEditorPath() {
+    return /\/tools\/procedural-animation-editor\/(?:index\.html)?\/?$/.test(location.pathname);
+  }
+
   // The procedural editor always fetches leg-bones.js as part of its portrait
   // runtime, including commit-pinned raw.githack previews. PanelUI's historical
   // location.pathname gate only matches the deployed /tools/... route, so use
   // this guaranteed runtime hook as a duplicate-safe fallback bootstrap when
   // the editor is hosted under /owner/repo/<sha>/docs/tools/... instead.
   function bootstrapProceduralGroundCarryAdapter() {
-    if (!/\/tools\/procedural-animation-editor\/(?:index\.html)?\/?$/.test(location.pathname)) return;
+    if (!isProceduralEditorPath()) return;
     if (window.HobunjiProceduralGroundCarryDiagnostics || document.getElementById('proceduralGroundCarryAdapterScript')) return;
     const selfSrc = document.currentScript?.src || '';
     const script = document.createElement('script');
@@ -168,5 +172,24 @@
     document.head.appendChild(script);
   }
 
+  // Neutral arms are a correction layer, not another animator. Load it from the
+  // same commit-pinned leg-bones URL so the authored shoulder/posterior rules and
+  // the editor it corrects can never silently come from different revisions.
+  function bootstrapProceduralNeutralArms() {
+    if (!isProceduralEditorPath()) return;
+    if (window.HobunjiProceduralNeutralArms?.installed || document.getElementById('proceduralNeutralArmFixScript')) return;
+    const selfSrc = document.currentScript?.src || '';
+    const script = document.createElement('script');
+    script.id = 'proceduralNeutralArmFixScript';
+    script.async = false;
+    script.src = selfSrc
+      ? new URL('procedural-neutral-arm-fix.js?v=20260905neutralarm1', selfSrc).href
+      : new URL('../../js/procedural-neutral-arm-fix.js?v=20260905neutralarm1', window.location.href).href;
+    script.addEventListener('load', () => console.info(`[Neutral arms bootstrap] Correction loaded from ${script.src}`), { once: true });
+    script.addEventListener('error', () => console.error(`[Neutral arms bootstrap] Failed to load ${script.src}`), { once: true });
+    document.head.appendChild(script);
+  }
+
   bootstrapProceduralGroundCarryAdapter();
+  bootstrapProceduralNeutralArms();
 })();
