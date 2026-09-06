@@ -27,6 +27,90 @@
           "conditions": {}
         },
         {
+          "key": "heftrootStaple",
+          "icon": "🟡",
+          "name": "Heftroot",
+          "desc": "Minimum-quality staple vegetable for cooking.",
+          "price": 30,
+          "gives": {
+            "heftroot": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
+          "key": "garlinkStaple",
+          "icon": "🧄",
+          "name": "Garlink",
+          "desc": "Minimum-quality staple vegetable for cooking.",
+          "price": 30,
+          "gives": {
+            "garlink": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
+          "key": "ongyumsStaple",
+          "icon": "🧅",
+          "name": "Ongyums",
+          "desc": "Minimum-quality staple vegetable for cooking.",
+          "price": 30,
+          "gives": {
+            "ongyums": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
+          "key": "needlegrainFlourStaple",
+          "icon": "🥣",
+          "name": "Needlegrain Flour",
+          "desc": "Minimum-quality flour for basic cooking.",
+          "price": 30,
+          "gives": {
+            "needlegrainFlour": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
+          "key": "crownedPineNutOilStaple",
+          "icon": "🫗",
+          "name": "Crowned Pine Nut Oil",
+          "desc": "Minimum-quality cooking oil pressed from crowned pine nuts.",
+          "price": 40,
+          "gives": {
+            "crownedPineNutOil": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
+          "key": "uumkaoiiMeatStaple",
+          "icon": "🥩",
+          "name": "Uumkao'ii Meat",
+          "desc": "Minimum-quality Uumkao'ii meat for cooking.",
+          "price": 40,
+          "gives": {
+            "uumkaoiiMeat": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
+          "key": "whiteDewStaple",
+          "icon": "💧",
+          "name": "White Uumkao'ii Dew",
+          "desc": "Minimum-quality neutral Uumkao'ii dew for cooking and processing.",
+          "price": 30,
+          "gives": {
+            "whiteDew": 1
+          },
+          "qualityStars": 1,
+          "conditions": {}
+        },
+        {
           "key": "kurraya",
           "icon": "🎵",
           "name": "Kurraya",
