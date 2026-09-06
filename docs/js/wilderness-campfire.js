@@ -4,13 +4,15 @@
   // One player-owned portable campfire may exist at a time. It can be placed
   // in a wilderness zone or on a procedural Town Mine floor, persists as
   // world-member state across map changes and game sessions, and silently
-  // replaces the previous campfire when a new kit is used. Mine-floor camps
-  // are the one exception to indefinite persistence: dying anywhere in the
-  // Town Mine destroys the currently placed campfire if that campfire is
-  // underground. Reuses the authored campfire furniture + its existing
-  // Save/Cook/Brew/Return-to-Camp interactions rather than creating a second
-  // underground-only camp system.
+  // replaces the previous campfire when a new kit is used. Same-year Tothal
+  // reconstruction is only an in-memory replay of the already-saved terrain,
+  // so it must not delete the restored camp. A genuine new-year Tothal Shift
+  // still clears a wilderness camp because the terrain under its coordinates
+  // has actually changed. Mine-floor camps are also cleared by mine death.
+  // Reuses the authored campfire furniture + its existing
+  // Save/Cook/Brew/Return-to-Camp interactions.
   const KIT_ITEM_KEY = 'campfireKitFurniture';
+  const DEBUG_HISTORY_LIMIT = 24; // Caps the in-module persistence trace exposed by getDebugState().
 
   let deps = null;
   let group = null; // Live campfire THREE.Group in whichever scene currently owns the saved campfire map.
@@ -20,8 +22,48 @@
   let state = null; // Persistent { mapId, x, y, z, ry } placement in tile units.
   let returnPending = false; // Used when Return to Camp must first load/regenerate another map (notably a mine floor).
   let campfireDataPromise = null;
+  let debugHistory = []; // Recent state-changing events for mobile-friendly debug dumps without relying on console access.
 
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    recordDebug('init');
+  }
+
+  function recordDebug(event, details = {}) {
+    const entry = { // Appended to debugHistory so persistence loss can be traced after it happens.
+      at: Date.now(),
+      event,
+      area: deps?.getCurrentArea?.() || null,
+      state: state ? { ...state } : null,
+      details: { ...details },
+    };
+    debugHistory.push(entry);
+    if (debugHistory.length > DEBUG_HISTORY_LIMIT) debugHistory.splice(0, debugHistory.length - DEBUG_HISTORY_LIMIT);
+    const stateLabel = entry.state
+      ? `${entry.state.mapId}@${Number(entry.state.x).toFixed(1)},${Number(entry.state.z).toFixed(1)}`
+      : 'none'; // Used by the existing mobile-visible Debug log so console access is not required.
+    window.__farmLog?.(`[campfire] ${event} area=${entry.area || 'none'} state=${stateLabel}`);
+  }
+
+  // performTothalShift() also runs once on every fresh page load to rebuild
+  // this session's deterministic same-year zone layouts. During that replay,
+  // world.lastTothalYear already equals CalendarSystem.yearNumber(); during a
+  // real new-year shift it does not get updated until after all zones finish.
+  // Keep the legacy clearIfZone() call safe by proving which case we are in
+  // here, without requiring game.js to maintain a second campfire-specific
+  // lifecycle flag.
+  function isSameYearTothalReplay() {
+    const worldId = window.__hobunjiPlayerProfile?.worldId;
+    const currentYear = Number(window.CalendarSystem?.yearNumber?.());
+    if (!worldId || !Number.isFinite(currentYear)) return false;
+    try {
+      const meta = JSON.parse(window.localStorage?.getItem('hobunjiSaveMeta') || 'null');
+      const savedYear = (meta?.worlds || []).find(world => world.id === worldId)?.lastTothalYear;
+      return savedYear != null && Number(savedYear) === currentYear;
+    } catch {
+      return false;
+    }
+  }
 
   function supportsArea(area = deps?.getCurrentArea?.()) {
     return !!(area && (deps?.isZoneArea?.(area) || deps?.isMineArea?.(area)));
@@ -61,7 +103,7 @@
     if (!data) return;
     const targetScene = deps.getActiveScene?.();
     if (!targetScene?.add) return;
-    const surfaceY = Number(deps.surfaceYAt?.(state.x, state.z)); // Re-sampled after map regeneration so restored mine fires sit on the rebuilt floor.
+    const surfaceY = Number(deps.surfaceYAt?.(state.x, state.z)); // Re-sampled after map regeneration so restored fires sit on the rebuilt surface.
     if (Number.isFinite(surfaceY)) state.y = surfaceY;
     const built = deps.AuthoredFurniture.buildGroup(data);
     built.position.set(state.x, state.y, state.z);
@@ -111,6 +153,7 @@
     removeVisual(); // Placing one new fire destroys the old visual globally before replacing its persistent record.
     state = { mapId: area, x: wx, y: deps.surfaceYAt(wx, wz), z: wz, ry: deps.getFacingAngle() };
     returnPending = false;
+    recordDebug('place');
     ensureVisualForCurrentArea();
     deps.persist?.();
     return { ok: true, message: '🔥 Campfire set up. You can save, cook, mix potions, and return here.' };
@@ -127,26 +170,38 @@
     return place(col, row);
   }
 
-  function clear() {
+  function clear(reason = 'explicit') {
     if (!state) return false;
+    const previousState = { ...state }; // Included in the debug trace so the deleted placement can be identified later.
     state = null;
     returnPending = false;
     removeVisual();
+    recordDebug('clear', { reason, previousState });
     deps.persist?.();
     return true;
   }
 
-  // Tothal Shift only passes wilderness zone ids. The persistent record is
-  // destroyed when that specific terrain is replaced, just as before.
+  // Legacy name retained because game.js calls this from both a real Tothal
+  // Shift and the same-year boot reconstruction. Only the real shift destroys
+  // the camp. The boot replay is rebuilding identical deterministic terrain,
+  // so deleting here would erase a correctly restored save moments after load.
   function clearIfZone(mapId) {
-    if (state && state.mapId === mapId && deps.isZoneArea?.(mapId)) return clear();
-    return false;
+    if (!state || state.mapId !== mapId || !deps.isZoneArea?.(mapId)) return false;
+    if (isSameYearTothalReplay()) {
+      removeVisual();
+      recordDebug('same-year-rebuild-preserved', {
+        mapId,
+        tothalYear: Number(window.CalendarSystem?.yearNumber?.()),
+      });
+      return true;
+    }
+    return clear('tothal-shift');
   }
 
   // A death anywhere on a Town Mine floor ends the underground camp. A
   // wilderness camp remains untouched by a mine death.
   function clearMineCampfireOnDeath() {
-    if (state && deps.isMineArea?.(state.mapId)) return clear();
+    if (state && deps.isMineArea?.(state.mapId)) return clear('mine-death');
     return false;
   }
 
@@ -168,9 +223,11 @@
     const nextX = best[0] + 0.5;
     const nextZ = best[1] + 0.5;
     if (nextX === state.x && nextZ === state.z) return false;
+    const previousPosition = { x: state.x, z: state.z }; // Captured for the relocation debug trace below.
     state.x = nextX;
     state.z = nextZ;
     state.y = 0; // Re-sampled from the active regenerated scene by spawnVisual().
+    recordDebug('mine-relocated', { mapId, previousPosition, nextPosition: { x: nextX, z: nextZ } });
     return true;
   }
 
@@ -200,6 +257,7 @@
   }
 
   function doSave() {
+    recordDebug('manual-save');
     deps.persist?.();
     deps.showToast('💾 Game saved.', true);
   }
@@ -229,12 +287,24 @@
     state = saved && saved.mapId ? { ...saved } : null;
     returnPending = false;
     removeVisual();
+    recordDebug('restore', { suppliedState: !!(saved && saved.mapId) });
+  }
+
+  function getDebugState() {
+    return {
+      state: serialize(),
+      visualArea,
+      hasVisual: !!group,
+      visualSpawnPending,
+      returnPending,
+      history: debugHistory.map(entry => ({ ...entry, state: entry.state ? { ...entry.state } : null })),
+    };
   }
 
   window.WildernessCampfire = {
     init, supportsArea, place, placeFromKit, clear, clearIfZone, clearMineCampfireOnDeath,
     relocateForGeneratedMineFloor, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
     getNearbyActions, returnToCampfire, requestReturnToCampfire, doSave, doCook, doBrew,
-    serialize, restore, ensureLoaded,
+    serialize, restore, ensureLoaded, getDebugState,
   };
 })();
