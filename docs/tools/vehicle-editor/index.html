@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Hobunji Hollow Vehicle Editor</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #181818; color: #eee; }
+    header { padding: 10px 14px; border-bottom: 1px solid #444; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    header h1 { margin:0; font-size:18px; }
+    header .hint { color:#aaa; font-size:12px; }
+    main { display:grid; grid-template-columns:minmax(250px,330px) minmax(0,1fr) minmax(230px,310px); min-height:calc(100vh - 55px); }
+    .panel { padding:12px; overflow:auto; border-right:1px solid #333; }
+    .panel.right { border-right:0; border-left:1px solid #333; }
+    .stage-wrap { position:relative; min-height:520px; background:#222; }
+    #stage { width:100%; height:100%; min-height:520px; touch-action:none; display:block; }
+    fieldset { border:1px solid #444; margin:0 0 12px; padding:10px; }
+    legend { color:#ddd; padding:0 6px; }
+    label { display:grid; grid-template-columns:1fr minmax(80px,120px); gap:8px; align-items:center; margin:7px 0; font-size:13px; }
+    input, select, button, textarea { background:#252525; color:#eee; border:1px solid #555; border-radius:4px; padding:6px 7px; }
+    input[type=number] { width:100%; }
+    button { cursor:pointer; }
+    button.active { outline:2px solid #ddd; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .buttons { display:flex; flex-wrap:wrap; gap:6px; }
+    .full { width:100%; }
+    textarea { width:100%; min-height:150px; font-family:ui-monospace,Consolas,monospace; font-size:11px; resize:vertical; }
+    #hud { position:absolute; left:10px; bottom:10px; max-width:min(620px,calc(100% - 20px)); padding:7px 9px; background:#000b; font:12px ui-monospace,monospace; white-space:pre-wrap; pointer-events:none; }
+    .note { color:#aaa; font-size:12px; line-height:1.4; }
+    .diag { font:11px ui-monospace,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .placeholder { opacity:.65; }
+    @media (max-width: 900px) {
+      main { display:block; }
+      .panel, .panel.right { border:0; border-bottom:1px solid #333; max-height:none; }
+      .stage-wrap, #stage { min-height:55vh; }
+      label { grid-template-columns:1fr 110px; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Vehicle Editor</h1>
+  <span class="hint">Boat authoring first. Walkable detection mirrors furniture surface selection.</span>
+</header>
+<main>
+  <section class="panel">
+    <fieldset>
+      <legend>Preset</legend>
+      <label>Vehicle <select id="presetSelect"></select></label>
+      <label>Label <input id="label" type="text" /></label>
+      <label>Width (tiles) <input id="widthTiles" type="number" min="0.1" step="0.05" /></label>
+      <label>Length (tiles) <input id="lengthTiles" type="number" min="0.1" step="0.05" /></label>
+      <label>Height above water <input id="waterHeight" type="number" step="0.01" /></label>
+      <label>Model yaw offset ° <input id="yawOffset" type="number" step="1" /></label>
+      <div class="buttons">
+        <button id="reloadModel">Reload model</button>
+        <label style="display:inline-block">Local GLB <input id="localGlb" type="file" accept=".glb,model/gltf-binary" /></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Walkable surface</legend>
+      <p class="note">Connected-surface paint uses <b>real shared edges</b>. A flood continues only when the <b>current face is within the split angle of its neighbor</b>. No seed-normal or growing-average veto is used.</p>
+      <label>Split angle ° <input id="splitAngle" type="number" min="0" max="180" step="1" /></label>
+      <div class="buttons">
+        <button data-mode="surface" class="mode active">Connected surface</button>
+        <button data-mode="face" class="mode">Single face</button>
+        <button id="clearWalkable">Clear</button>
+      </div>
+      <p class="note">Click a face in the preview to toggle it. Connected mode flood-fills edge-adjacent faces using the same 24° default rule as the furniture authoring path.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Steer trigger</legend>
+      <div class="buttons"><button data-mode="trigger" class="mode">Place trigger</button></div>
+      <label>Center X <input id="triggerX" type="number" step="0.01" /></label>
+      <label>Center Y <input id="triggerY" type="number" step="0.01" /></label>
+      <label>Center Z <input id="triggerZ" type="number" step="0.01" /></label>
+      <label>Size X <input id="triggerSizeX" type="number" min="0.01" step="0.01" /></label>
+      <label>Size Y <input id="triggerSizeY" type="number" min="0.01" step="0.01" /></label>
+      <label>Size Z <input id="triggerSizeZ" type="number" min="0.01" step="0.01" /></label>
+      <p class="note">The box is editor-only/invisible at runtime. Entering it exposes the normal Interact prompt to steer.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Boat handling</legend>
+      <label>Forward speed <input id="maxForward" type="number" step="0.05" /></label>
+      <label>Reverse speed <input id="maxReverse" type="number" step="0.05" /></label>
+      <label>Acceleration <input id="acceleration" type="number" step="0.01" /></label>
+      <label>Deceleration <input id="deceleration" type="number" step="0.01" /></label>
+      <label>Reverse acceleration <input id="reverseAcceleration" type="number" step="0.01" /></label>
+      <label>Turn rate °/s <input id="turnRate" type="number" step="1" /></label>
+      <label>High-speed turn mult. <input id="highSpeedTurn" type="number" step="0.01" /></label>
+      <label>Shore bounce speed <input id="shoreBounce" type="number" step="0.01" /></label>
+      <label>Bounce cooldown <input id="bounceCooldown" type="number" step="0.01" /></label>
+      <label>Collision inset <input id="collisionInset" type="number" step="0.01" /></label>
+    </fieldset>
+
+    <fieldset class="placeholder">
+      <legend>Wagons / Chariots — placeholder only</legend>
+      <p class="note">Reserved for later ground-vehicle authoring. No wagon/chariot runtime behavior is emitted yet.</p>
+      <button disabled>Ground vehicle settings (later)</button>
+    </fieldset>
+  </section>
+
+  <section class="stage-wrap">
+    <canvas id="stage"></canvas>
+    <div id="hud">Loading…</div>
+  </section>
+
+  <section class="panel right">
+    <fieldset>
+      <legend>Export</legend>
+      <div class="buttons">
+        <button id="copyPreset">Copy preset JSON</button>
+        <button id="downloadDb">Download vehicles.json</button>
+      </div>
+      <textarea id="jsonPreview" spellcheck="false"></textarea>
+    </fieldset>
+    <fieldset>
+      <legend>Diagnostics</legend>
+      <div id="diagnostics" class="diag"></div>
+    </fieldset>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../js/GLTFLoader.js?v=20260712d"></script>
+<script>
+(() => {
+  'use strict';
+
+  const CONFIG_URL = '../../config/vehicles/vehicles.json';
+  const DEFAULT_MODEL_PREFIX = '../../';
+  const EDGE_EPSILON = 1e-5; // Used to identify logical shared vertices even when GLB attribute seams duplicate indices.
+  const SELECTED_LIFT = 0.004; // Used to keep selected-face overlays from z-fighting with the source mesh.
+
+  const $ = id => document.getElementById(id);
+  const canvas = $('stage');
+  const hud = $('hud');
+  const diagnostics = $('diagnostics');
+  const jsonPreview = $('jsonPreview');
+  const presetSelect = $('presetSelect');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.01, 500);
+  camera.position.set(5.8, 5.0, 7.6);
+  const orbit = { yaw:0.65, pitch:0.45, distance:9, dragging:false, x:0, y:0 };
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 1.3));
+  const key = new THREE.DirectionalLight(0xffffff, 1.2); key.position.set(5,8,4); scene.add(key);
+  const grid = new THREE.GridHelper(20, 20); scene.add(grid);
+  const waterPlane = new THREE.Mesh(new THREE.PlaneGeometry(20,20), new THREE.MeshBasicMaterial({ transparent:true, opacity:0.14, side:THREE.DoubleSide }));
+  waterPlane.rotation.x = -Math.PI/2; scene.add(waterPlane);
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+
+  let database = { version:1, presets:[], future:{ wagonsAndChariots:{ status:'placeholder', note:'Reserved for future land vehicles.' } } };
+  let record = null;
+  let modelUrlOverride = null;
+  let boatPivot = null;
+  let modelRoot = null;
+  let topology = null;
+  let selected = new Set();
+  let selectionOverlay = null;
+  let triggerHelper = null;
+  let mode = 'surface';
+  let status = 'Loading vehicle database…';
+
+  const inputMap = {
+    label:'label',
+    widthTiles:'tileSize.width', lengthTiles:'tileSize.length', waterHeight:'waterline.heightAboveWater', yawOffset:'modelYawOffsetDeg',
+    splitAngle:'surfaceDetection.splitAngleDeg',
+    triggerX:'steerTrigger.center.0', triggerY:'steerTrigger.center.1', triggerZ:'steerTrigger.center.2',
+    triggerSizeX:'steerTrigger.size.0', triggerSizeY:'steerTrigger.size.1', triggerSizeZ:'steerTrigger.size.2',
+    maxForward:'handling.maxForwardTilesPerSecond', maxReverse:'handling.maxReverseTilesPerSecond', acceleration:'handling.accelerationTilesPerSecond2',
+    deceleration:'handling.decelerationTilesPerSecond2', reverseAcceleration:'handling.reverseAccelerationTilesPerSecond2', turnRate:'handling.turnRateDegPerSecond',
+    highSpeedTurn:'handling.highSpeedTurnMultiplier', shoreBounce:'handling.shoreBounceSpeedTilesPerSecond', bounceCooldown:'handling.shoreBounceCooldownSeconds',
+    collisionInset:'handling.collisionInsetTiles',
+  };
+
+  function pathGet(object, path) {
+    return path.split('.').reduce((value, key) => value?.[Number.isInteger(+key) && String(+key) === key ? +key : key], object);
+  }
+  function pathSet(object, path, value) {
+    const parts = path.split('.'); let target = object;
+    for (let i=0;i<parts.length-1;i++) { const key = /^\d+$/.test(parts[i]) ? +parts[i] : parts[i]; target = target[key]; }
+    const final = /^\d+$/.test(parts.at(-1)) ? +parts.at(-1) : parts.at(-1); target[final] = value;
+  }
+  function degreesToCos(degrees) { return Math.cos(THREE.MathUtils.degToRad(Number(degrees) || 0)); }
+  function logicalVertexKey(v) {
+    return `${Math.round(v.x/EDGE_EPSILON)},${Math.round(v.y/EDGE_EPSILON)},${Math.round(v.z/EDGE_EPSILON)}`;
+  }
+  function edgeKey(a,b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
+
+  function buildTopology(root) {
+    const triangles = [];
+    const edgeOwners = new Map();
+    root.updateMatrixWorld(true);
+    root.traverse(mesh => {
+      if (!mesh.isMesh || !mesh.geometry?.attributes?.position) return;
+      const geometry = mesh.geometry;
+      const position = geometry.attributes.position;
+      const index = geometry.index;
+      const triangleCount = index ? Math.floor(index.count/3) : Math.floor(position.count/3);
+      for (let localTriangle=0; localTriangle<triangleCount; localTriangle++) {
+        const vertices = [];
+        const keys = [];
+        for (let corner=0;corner<3;corner++) {
+          const sourceIndex = index ? index.getX(localTriangle*3+corner) : localTriangle*3+corner;
+          const v = new THREE.Vector3().fromBufferAttribute(position, sourceIndex);
+          v.applyMatrix4(mesh.matrixWorld);
+          vertices.push(v); keys.push(logicalVertexKey(v));
+        }
+        const normal = new THREE.Vector3().subVectors(vertices[1],vertices[0]).cross(new THREE.Vector3().subVectors(vertices[2],vertices[0])).normalize();
+        const id = triangles.length;
+        triangles.push({ id, mesh, localTriangle, vertices, normal, neighbors:new Set() });
+        [[0,1],[1,2],[2,0]].forEach(([a,b]) => {
+          const key = edgeKey(keys[a],keys[b]);
+          if (!edgeOwners.has(key)) edgeOwners.set(key,[]);
+          edgeOwners.get(key).push(id);
+        });
+      }
+    });
+    edgeOwners.forEach(ids => {
+      if (ids.length < 2) return;
+      for (let a=0;a<ids.length;a++) for (let b=a+1;b<ids.length;b++) {
+        triangles[ids[a]].neighbors.add(ids[b]); triangles[ids[b]].neighbors.add(ids[a]);
+      }
+    });
+    return { triangles, edgeCount:edgeOwners.size };
+  }
+
+  function connectedSurface(seedId) {
+    if (!topology?.triangles?.[seedId]) return new Set();
+    const cosine = degreesToCos(record.surfaceDetection.splitAngleDeg);
+    const result = new Set([seedId]);
+    const queue = [seedId];
+    while (queue.length) {
+      const current = topology.triangles[queue.shift()];
+      current.neighbors.forEach(neighborId => {
+        if (result.has(neighborId)) return;
+        const neighbor = topology.triangles[neighborId];
+        // Furniture-style rule: the current face is within the split angle of its neighbor.
+        // No seed-normal or growing-average veto: curvature may propagate gradually across a surface.
+        if (current.normal.dot(neighbor.normal) + 1e-9 < cosine) return;
+        result.add(neighborId); queue.push(neighborId);
+      });
+    }
+    return result;
+  }
+
+  function removeObject(object) {
+    if (!object) return;
+    object.parent?.remove(object);
+    object.traverse?.(child => { child.geometry?.dispose?.(); if (Array.isArray(child.material)) child.material.forEach(m=>m?.dispose?.()); else child.material?.dispose?.(); });
+  }
+
+  function fitModel() {
+    if (!boatPivot || !modelRoot || !record) return;
+    modelRoot.position.set(0,0,0); modelRoot.scale.set(1,1,1); modelRoot.rotation.set(0,0,0); modelRoot.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(modelRoot);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const scale = Math.min(record.tileSize.width/Math.max(size.x,1e-6), record.tileSize.length/Math.max(size.z,1e-6));
+    modelRoot.position.set(-center.x*scale, 0, -center.z*scale);
+    modelRoot.scale.setScalar(scale);
+    boatPivot.position.y = Number(record.waterline.heightAboveWater)||0;
+    boatPivot.rotation.y = THREE.MathUtils.degToRad(Number(record.modelYawOffsetDeg)||0);
+    boatPivot.updateMatrixWorld(true);
+    topology = buildTopology(modelRoot);
+    refreshSelectionOverlay(); refreshTrigger(); updateDiagnostics();
+  }
+
+  function refreshSelectionOverlay() {
+    removeObject(selectionOverlay); selectionOverlay = null;
+    if (!topology || !selected.size) return;
+    const positions = [];
+    selected.forEach(id => topology.triangles[id]?.vertices?.forEach(v => positions.push(v.x, v.y + SELECTED_LIFT, v.z)));
+    if (!positions.length) return;
+    const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+    const material = new THREE.MeshBasicMaterial({ transparent:true, opacity:.55, side:THREE.DoubleSide, depthWrite:false });
+    selectionOverlay = new THREE.Mesh(geometry,material); scene.add(selectionOverlay);
+  }
+
+  function refreshTrigger() {
+    removeObject(triggerHelper); triggerHelper = null;
+    if (!record || !boatPivot) return;
+    const size = record.steerTrigger.size.map(v=>Math.max(.01,Number(v)||.01));
+    const geometry = new THREE.BoxGeometry(...size);
+    const material = new THREE.MeshBasicMaterial({ wireframe:true, transparent:true, opacity:.8, depthTest:false });
+    triggerHelper = new THREE.Mesh(geometry,material);
+    triggerHelper.position.fromArray(record.steerTrigger.center);
+    boatPivot.add(triggerHelper);
+  }
+
+  function setRecord(next) {
+    record = next;
+    selected = new Set(record.surfaceDetection?.walkableTriangleIds || []);
+    Object.entries(inputMap).forEach(([id,path]) => { const element=$(id); if (element) element.value=pathGet(record,path) ?? ''; });
+    modelUrlOverride = null;
+    loadModel(); updateJson();
+  }
+
+  async function loadDatabase() {
+    const response = await fetch(CONFIG_URL,{cache:'no-store'}); if(!response.ok) throw new Error(`HTTP ${response.status}`);
+    database = await response.json();
+    presetSelect.replaceChildren(...database.presets.map((preset,index) => Object.assign(document.createElement('option'),{value:String(index),textContent:preset.label||preset.id})));
+    presetSelect.value='0'; setRecord(database.presets[0]);
+  }
+
+  function loadModel() {
+    removeObject(boatPivot); boatPivot = null; modelRoot = null; topology = null;
+    const url = modelUrlOverride || DEFAULT_MODEL_PREFIX + record.modelUrl;
+    status = `Loading ${url}…`; updateDiagnostics();
+    new THREE.GLTFLoader().load(url, gltf => {
+      modelRoot = gltf.scene;
+      boatPivot = new THREE.Group(); boatPivot.name='vehicle_preview'; boatPivot.add(modelRoot); scene.add(boatPivot);
+      fitModel(); status=`Loaded ${record.label}`; updateDiagnostics();
+    }, undefined, error => { status=`Model load failed: ${error?.message||error}`; updateDiagnostics(); });
+  }
+
+  function updateRecordFromInputs() {
+    if (!record) return;
+    Object.entries(inputMap).forEach(([id,path]) => {
+      const element=$(id); if(!element) return;
+      const oldValue=pathGet(record,path);
+      const value=typeof oldValue==='number' ? Number(element.value) : element.value;
+      pathSet(record,path,Number.isFinite(value) || typeof value==='string' ? value : oldValue);
+    });
+    record.surfaceDetection.walkableTriangleIds=[...selected].sort((a,b)=>a-b);
+    if (boatPivot) fitModel();
+    updateJson();
+  }
+
+  function updateJson() {
+    if (!record) return;
+    record.surfaceDetection.walkableTriangleIds=[...selected].sort((a,b)=>a-b);
+    jsonPreview.value=JSON.stringify(record,null,2); updateDiagnostics();
+  }
+
+  function updateDiagnostics() {
+    const triCount=topology?.triangles?.length ?? 0;
+    diagnostics.textContent=[
+      status,
+      `mode=${mode}`,
+      `triangles=${triCount}`,
+      `logical shared edges=${topology?.edgeCount ?? 0}`,
+      `walkable selected=${selected.size}`,
+      `selected ids=${[...selected].sort((a,b)=>a-b).join(', ')||'(none)'}`,
+      `split angle=${record?.surfaceDetection?.splitAngleDeg ?? '-'}°`,
+      `footprint=${record ? `${record.tileSize.width} × ${record.tileSize.length}` : '-'} tiles`,
+      `waterline=${record?.waterline?.heightAboveWater ?? '-'}`,
+      `steer center=${record?.steerTrigger?.center?.map(v=>Number(v).toFixed(2)).join(', ') ?? '-'}`,
+      `steer size=${record?.steerTrigger?.size?.map(v=>Number(v).toFixed(2)).join(', ') ?? '-'}`,
+    ].join('\n');
+    hud.textContent = mode==='surface' ? 'Click: toggle connected walkable surface · drag: orbit · wheel: zoom' : mode==='face' ? 'Click: toggle one triangle · drag: orbit · wheel: zoom' : 'Click model: move steer trigger center · drag: orbit · wheel: zoom';
+  }
+
+  function toggleSelection(ids) {
+    const allSelected=[...ids].every(id=>selected.has(id));
+    ids.forEach(id=>allSelected ? selected.delete(id) : selected.add(id));
+    updateJson(); refreshSelectionOverlay();
+  }
+
+  function hitFromEvent(event) {
+    if (!modelRoot) return null;
+    const rect=canvas.getBoundingClientRect(); pointer.x=((event.clientX-rect.left)/rect.width)*2-1; pointer.y=-((event.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(pointer,camera);
+    return raycaster.intersectObject(modelRoot,true)[0] || null;
+  }
+
+  function globalTriangleIdForHit(hit) {
+    if (!hit?.object || hit.faceIndex == null || !topology) return -1;
+    const mesh=hit.object; const local=hit.faceIndex;
+    return topology.triangles.find(tri=>tri.mesh===mesh && tri.localTriangle===local)?.id ?? -1;
+  }
+
+  function applyClick(event) {
+    const hit=hitFromEvent(event); if(!hit) return;
+    if (mode==='trigger') {
+      const local=boatPivot.worldToLocal(hit.point.clone());
+      record.steerTrigger.center=[+local.x.toFixed(3), +local.y.toFixed(3), +local.z.toFixed(3)];
+      ['triggerX','triggerY','triggerZ'].forEach((id,index)=>$(id).value=record.steerTrigger.center[index]);
+      refreshTrigger(); updateJson(); return;
+    }
+    const id=globalTriangleIdForHit(hit); if(id<0) return;
+    toggleSelection(mode==='face' ? new Set([id]) : connectedSurface(id));
+  }
+
+  Object.keys(inputMap).forEach(id => $(id)?.addEventListener('change',updateRecordFromInputs));
+  presetSelect.addEventListener('change',()=>setRecord(database.presets[Number(presetSelect.value)||0]));
+  $('reloadModel').addEventListener('click',loadModel);
+  $('clearWalkable').addEventListener('click',()=>{selected.clear();updateJson();refreshSelectionOverlay();});
+  document.querySelectorAll('.mode').forEach(button=>button.addEventListener('click',()=>{mode=button.dataset.mode;document.querySelectorAll('.mode').forEach(b=>b.classList.toggle('active',b===button));updateDiagnostics();}));
+  $('localGlb').addEventListener('change',event=>{const file=event.target.files?.[0];if(!file)return;if(modelUrlOverride)URL.revokeObjectURL(modelUrlOverride);modelUrlOverride=URL.createObjectURL(file);loadModel();});
+  $('copyPreset').addEventListener('click',async()=>{updateJson();await navigator.clipboard?.writeText(jsonPreview.value);status='Preset JSON copied.';updateDiagnostics();});
+  $('downloadDb').addEventListener('click',()=>{updateRecordFromInputs();const blob=new Blob([JSON.stringify(database,null,2)+'\n'],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='vehicles.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+
+  let pointerDown=null;
+  canvas.addEventListener('pointerdown',event=>{pointerDown={x:event.clientX,y:event.clientY};orbit.dragging=true;orbit.x=event.clientX;orbit.y=event.clientY;canvas.setPointerCapture?.(event.pointerId);});
+  canvas.addEventListener('pointermove',event=>{if(!orbit.dragging)return;const dx=event.clientX-orbit.x,dy=event.clientY-orbit.y;orbit.x=event.clientX;orbit.y=event.clientY;if(Math.hypot(dx,dy)>0){orbit.yaw-=dx*.007;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+dy*.007,-1.3,1.3);}});
+  canvas.addEventListener('pointerup',event=>{orbit.dragging=false;if(pointerDown && Math.hypot(event.clientX-pointerDown.x,event.clientY-pointerDown.y)<5)applyClick(event);pointerDown=null;});
+  canvas.addEventListener('pointercancel',()=>{orbit.dragging=false;pointerDown=null;});
+  canvas.addEventListener('wheel',event=>{orbit.distance=THREE.MathUtils.clamp(orbit.distance*Math.exp(event.deltaY*.001),2,30);event.preventDefault();},{passive:false});
+
+  function resize() {
+    const rect=canvas.getBoundingClientRect(); const width=Math.max(1,Math.round(rect.width)),height=Math.max(1,Math.round(rect.height));
+    if(canvas.width!==Math.round(width*renderer.getPixelRatio()) || canvas.height!==Math.round(height*renderer.getPixelRatio())) renderer.setSize(width,height,false);
+    camera.aspect=width/height;camera.updateProjectionMatrix();
+  }
+  function frame() {
+    resize(); const cp=Math.cos(orbit.pitch),sp=Math.sin(orbit.pitch);camera.position.set(Math.cos(orbit.yaw)*cp*orbit.distance, sp*orbit.distance+1.8, Math.sin(orbit.yaw)*cp*orbit.distance);camera.lookAt(0,1,0);renderer.render(scene,camera);requestAnimationFrame(frame);
+  }
+  loadDatabase().catch(error=>{status=`Vehicle database failed: ${error?.message||error}`;updateDiagnostics();});
+  frame();
+})();
+</script>
+</body>
+</html>
