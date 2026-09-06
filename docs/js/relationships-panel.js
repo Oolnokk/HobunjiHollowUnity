@@ -48,6 +48,7 @@
   const KEEPSAKE_MIN_ROWS = 4;
   const KEEPSAKE_TARGET_CELLS = 5;
   const KEEPSAKE_MAX_ITEM_CELLS = 4;
+  const KEEPSAKE_WEAPON_TILE_SCALE = 3; // Used by footprintForKeepsake to enlarge weapon-trust keepsakes without changing future provider sizing.
   const KEEPSAKE_ALPHA_THRESHOLD = 1;
   const KEEPSAKE_PREVIEW_MAX_PX = 256;
   const keepsakeProviders = new Set(); // Extra systems (quests/hearts/etc.) register providers here instead of patching this renderer.
@@ -80,7 +81,7 @@
         min-width: 0;
         padding: 7px 8px 8px;
         border-left: 1px solid var(--border);
-        background: rgba(0, 0, 0, .10);
+        background: transparent;
       }
       #relationshipsList .relationship-keepsakes-title {
         margin-bottom: 5px;
@@ -102,7 +103,7 @@
         border: 0;
         border-radius: 7px;
         overflow: hidden;
-        background: rgba(0, 0, 0, .08);
+        background: transparent;
       }
       #relationshipsList .relationship-keepsake-item {
         position: relative;
@@ -308,7 +309,11 @@
     const ratio = spriteVisualInfo(keepsake).ratio;
     const w = Math.max(1, Math.min(KEEPSAKE_MAX_ITEM_CELLS, Math.round(Math.sqrt(KEEPSAKE_TARGET_CELLS * ratio))));
     const h = Math.max(1, Math.min(KEEPSAKE_MAX_ITEM_CELLS, Math.round(Math.sqrt(KEEPSAKE_TARGET_CELLS / ratio))));
-    return { w: Math.min(KEEPSAKE_GRID_COLUMNS, w), h };
+    const tileScale = keepsake?.source === 'weapon-trust' ? KEEPSAKE_WEAPON_TILE_SCALE : 1;
+    return {
+      w: Math.min(KEEPSAKE_GRID_COLUMNS, w * tileScale),
+      h: h * tileScale,
+    };
   }
 
   function weaponTrustKeepsakes(npcId) {
