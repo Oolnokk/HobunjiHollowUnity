@@ -66,7 +66,7 @@
     style.textContent = `
       #relationshipsList .relationship-row {
         display: grid;
-        grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr);
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
         align-items: stretch;
         gap: 0;
         padding: 0;
@@ -81,6 +81,7 @@
       }
       #relationshipsList .relationship-keepsakes {
         min-width: 0;
+        overflow: hidden;
         padding: 7px 8px 8px;
         border-left: 1px solid var(--border);
         background: transparent;
@@ -94,14 +95,13 @@
         color: var(--muted);
       }
       #relationshipsList .relationship-keepsake-grid {
-        --ks-cell: clamp(17px, 1.45vw, 25px);
         position: relative;
         display: grid;
-        grid-template-columns: repeat(${KEEPSAKE_GRID_COLUMNS}, var(--ks-cell));
-        grid-auto-rows: var(--ks-cell);
-        width: calc(${KEEPSAKE_GRID_COLUMNS} * var(--ks-cell));
+        grid-template-columns: repeat(${KEEPSAKE_GRID_COLUMNS}, minmax(0, 1fr));
+        width: 100%;
         max-width: 100%;
-        min-height: calc(${KEEPSAKE_MIN_ROWS} * var(--ks-cell));
+        min-width: 0;
+        min-height: 0;
         border: 0;
         border-radius: 7px;
         overflow: hidden;
@@ -135,8 +135,8 @@
         position: absolute;
         left: 50%;
         top: 50%;
-        width: max(1px, calc(var(--ks-span-h) * var(--ks-cell) - 4px));
-        height: max(1px, calc(var(--ks-span-w) * var(--ks-cell) - 4px));
+        width: calc(100% * var(--ks-fallback-width-scale));
+        height: calc(100% * var(--ks-fallback-height-scale));
         max-width: none;
         max-height: none;
         translate: -50% -50%;
@@ -161,15 +161,16 @@
         opacity: .85;
       }
       @media (max-width: 760px) {
-        #relationshipsList .relationship-row {
-          grid-template-columns: 1fr;
+        #relationshipsList .relationship-summary {
+          gap: 6px;
+          padding: 6px;
         }
         #relationshipsList .relationship-keepsakes {
-          border-left: 0;
-          border-top: 1px solid var(--border);
+          padding: 6px;
         }
-        #relationshipsList .relationship-keepsake-grid {
-          --ks-cell: clamp(13px, 4.3vw, 19px);
+        #relationshipsList .relationship-keepsakes-title {
+          font-size: 7px;
+          margin-bottom: 3px;
         }
       }
     `;
@@ -504,13 +505,15 @@
         ? `<img src="${escAttr(visual.previewSrc || keepsake.sprite)}" alt="" loading="eager">`
         : '<span class="relationship-keepsake-fallback" aria-hidden="true"></span>';
       const cssRotate = keepsake.rotate90 && !visual.preRotated ? ' css-rotate' : '';
-      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}${cssRotate}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="--ks-span-w:${w};--ks-span-h:${h};grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
+      const fallbackWidthScale = h / Math.max(1, w);
+      const fallbackHeightScale = w / Math.max(1, h);
+      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}${cssRotate}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="--ks-span-w:${w};--ks-span-h:${h};--ks-fallback-width-scale:${fallbackWidthScale};--ks-fallback-height-scale:${fallbackHeightScale};grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
     }).join('');
 
     return `
       <div class="relationship-keepsakes">
         <div class="relationship-keepsakes-title">Keepsakes</div>
-        <div class="relationship-keepsake-grid" style="grid-template-rows:repeat(${rows}, var(--ks-cell))" data-keepsake-count="${keepsakes.length}">
+        <div class="relationship-keepsake-grid" style="grid-template-rows:repeat(${rows}, minmax(0, 1fr));aspect-ratio:${KEEPSAKE_GRID_COLUMNS} / ${rows}" data-keepsake-count="${keepsakes.length}">
           ${itemsHtml}
         </div>
       </div>
