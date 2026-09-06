@@ -49,7 +49,9 @@
   const KEEPSAKE_TARGET_CELLS = 5;
   const KEEPSAKE_MAX_ITEM_CELLS = 4;
   const KEEPSAKE_WEAPON_TILE_SCALE = 3; // Used by footprintForKeepsake to enlarge weapon-trust keepsakes without changing future provider sizing.
-  const KEEPSAKE_ALPHA_THRESHOLD = 1;
+  const KEEPSAKE_ALPHA_THRESHOLD = 16; // Used by spriteVisualInfo to ignore effectively invisible fringe/noise pixels when finding visual bounds.
+  const KEEPSAKE_ALPHA_TRIM_FRACTION = 0.0005; // Used by spriteVisualInfo to ignore negligible isolated alpha mass at the outside edges.
+  const KEEPSAKE_ALPHA_TRIM_MIN_MASS = 2; // Used by spriteVisualInfo so one or two stray opaque pixels cannot define an otherwise-empty edge.
   const KEEPSAKE_PREVIEW_MAX_PX = 256;
   const keepsakeProviders = new Set(); // Extra systems (quests/hearts/etc.) register providers here instead of patching this renderer.
   const spriteVisualCache = new Map(); // sprite+rotation -> cropped preview/opaque bounds; used for layout and rendering.
@@ -216,6 +218,9 @@
         scanCtx.clearRect(0, 0, naturalWidth, naturalHeight);
         scanCtx.drawImage(image, 0, 0);
         const pixels = scanCtx.getImageData(0, 0, naturalWidth, naturalHeight).data;
+        const rowAlphaMass = new Float64Array(naturalHeight); // Accumulates meaningful opacity by row for edge-noise-resistant crop bounds.
+        const colAlphaMass = new Float64Array(naturalWidth); // Accumulates meaningful opacity by column for edge-noise-resistant crop bounds.
+        let totalAlphaMass = 0;
         let foundOpaque = false;
         minX = naturalWidth;
         minY = naturalHeight;
@@ -225,6 +230,10 @@
           for (let x = 0; x < naturalWidth; x++) {
             const alpha = pixels[((y * naturalWidth + x) * 4) + 3];
             if (alpha < KEEPSAKE_ALPHA_THRESHOLD) continue;
+            const alphaMass = alpha / 255;
+            rowAlphaMass[y] += alphaMass;
+            colAlphaMass[x] += alphaMass;
+            totalAlphaMass += alphaMass;
             foundOpaque = true;
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
@@ -234,6 +243,44 @@
         }
         if (!foundOpaque) {
           minX = 0; minY = 0; maxX = naturalWidth - 1; maxY = naturalHeight - 1;
+        } else {
+          const rawMinX = minX;
+          const rawMinY = minY;
+          const rawMaxX = maxX;
+          const rawMaxY = maxY;
+          // Ignore only a tiny amount of opacity mass at each outer edge. This
+          // preserves legitimate thin weapon tips while preventing one stray
+          // nearly/fully opaque pixel from expanding the crop across empty PNG.
+          const trimMass = Math.min(
+            totalAlphaMass * 0.10,
+            Math.max(KEEPSAKE_ALPHA_TRIM_MIN_MASS, totalAlphaMass * KEEPSAKE_ALPHA_TRIM_FRACTION),
+          );
+          const lowerMeaningfulIndex = masses => {
+            let mass = 0;
+            for (let i = 0; i < masses.length; i++) {
+              mass += masses[i];
+              if (mass > trimMass) return i;
+            }
+            return 0;
+          };
+          const upperMeaningfulIndex = masses => {
+            let mass = 0;
+            for (let i = masses.length - 1; i >= 0; i--) {
+              mass += masses[i];
+              if (mass > trimMass) return i;
+            }
+            return masses.length - 1;
+          };
+          const trimmedMinX = lowerMeaningfulIndex(colAlphaMass);
+          const trimmedMaxX = upperMeaningfulIndex(colAlphaMass);
+          const trimmedMinY = lowerMeaningfulIndex(rowAlphaMass);
+          const trimmedMaxY = upperMeaningfulIndex(rowAlphaMass);
+          if (trimmedMinX <= trimmedMaxX && trimmedMinY <= trimmedMaxY) {
+            minX = Math.max(rawMinX, trimmedMinX);
+            maxX = Math.min(rawMaxX, trimmedMaxX);
+            minY = Math.max(rawMinY, trimmedMinY);
+            maxY = Math.min(rawMaxY, trimmedMaxY);
+          }
         }
 
         const cropWidth = Math.max(1, maxX - minX + 1);
@@ -481,6 +528,7 @@
           id: item.keepsake.id,
           unlocked: item.keepsake.unlocked,
           sprite: item.keepsake.sprite,
+          alphaThreshold: KEEPSAKE_ALPHA_THRESHOLD,
           opaquePixels: visual.opaqueWidth && visual.opaqueHeight ? `${visual.opaqueWidth}x${visual.opaqueHeight}` : 'pending/fallback',
           rotation: item.keepsake.rotate90 ? 90 : 0,
           footprint: `${item.w}x${item.h}`,
