@@ -26143,10 +26143,15 @@
         // Non-gear inventory (resources) and pack clothing are world-scoped
         // per character — they stay behind in this world's member record
         // rather than following the character to another world.
+        // Use the onboarding-computed isNewWorld flag rather than inferring
+        // "new" from an empty nonGearInventory object — a returning player
+        // can legitimately have spent/sold everything down to zero items,
+        // and treating that as "never played this world" silently discarded
+        // their real (empty) inventory and refilled it with starter items.
         Object.keys(inventory).forEach(key => { delete inventory[key]; });
-        Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
-          ? { ...playerData.nonGearInventory }
-          : { ...STARTING_INVENTORY });
+        Object.assign(inventory, playerData.isNewWorld
+          ? { ...STARTING_INVENTORY }
+          : { ...(playerData.nonGearInventory || {}) });
         // Worlds saved before the Campfire Kit blueprint joined
         // STARTING_INVENTORY never picked it up — backfill it for free,
         // once, same as existing characters getting the crossbow/scatterbow
