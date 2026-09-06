@@ -184,7 +184,10 @@ aimPitch = Math.PI / 6;
 const pitchedPose = windowStub.RangedWeapons.playerIdlePose('crossbow');
 assert(pitchedPose.y > 0.08, 'aiming upward moves the crossbow stance upward around the portrait pivot');
 assert(Math.abs(pitchedPose.pitch + 14) < 1e-9, '30-degree upward aim rotates the authored 16-degree pose by the same amount');
-assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().verticalStance.pitchDeg, 30, 'vertical stance pitch is mobile-debug visible');
+windowStub.RangedWeapons.update(1 / 60); // Mirror runtime frame order so updateCameraFocus publishes the just-computed stance transform into the mobile debug snapshot.
+const stanceDebug = windowStub.HobunjiRangedCameraFocus.snapshot().verticalStance;
+assert(stanceDebug, 'vertical stance transform is mobile-debug visible');
+assert(Math.abs(stanceDebug.pitchDeg - 30) < 1e-9, 'vertical stance pitch is mobile-debug visible');
 injectedRangedDeps.triggerRangedWeaponVisual(1, {
   pose: {
     neutral: { y: 0.08, z: 0.14, pitch: 16 },
