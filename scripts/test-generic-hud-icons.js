@@ -42,7 +42,11 @@ assert.match(social, /Existing gift code remains authoritative for its authored 
 assert.match(menuTabs, /TAB_SELECTOR = '\.mp-tabs \.mp-tab\[data-mpanel\]'/, 'all main menu tabs must be targeted as one presentation group');
 assert.match(menuTabs, /tab\.replaceChildren\(makeGlyphNode\(glyph\)\)/, 'non-relationship menu tabs must retain only their existing leading icon');
 assert.match(menuTabs, /CURRENCY_ICON_FILE = 'icon_bronzecurrency\.png'/, 'wallet currency presentation must use icon_bronzecurrency.png while the Tankanscript glyph metrics are being corrected');
-assert.match(menuTabs, /suffix\.replaceChildren\(image\)/, 'wallet currency glyph text must be replaced by the temporary PNG artwork');
+assert.match(menuTabs, /WALLET_CURRENCY_COLOR = '#6fae9b'/, 'wallet amount and icon must share the authored bronze-verdigris color');
+assert.match(menuTabs, /align-items: flex-end;[\s\S]*justify-content: flex-start;/, 'wallet currency symbol must anchor to the bottom-left of its 1em character space');
+assert.match(menuTabs, /width: 0\.6667em;[\s\S]*height: 0\.6667em;/, 'wallet currency artwork must render at two-thirds of its character-space size');
+assert.match(menuTabs, /#mpInventory \.inv-wallet-amount \{[\s\S]*color: \$\{WALLET_CURRENCY_COLOR\} !important;/, 'wallet number must use the same verdigris color as the symbol');
+assert.match(menuTabs, /suffix\.replaceChildren\(image\)/, 'wallet currency glyph text must be replaced by the PNG artwork');
 assert.match(menuTabs, /walletCurrencyIconPresent/, 'wallet currency icon state must remain available in mobile-safe diagnostics');
 assert.match(menuTabs, /tab\.setAttribute\('aria-label', label\)/, 'removed visible tab labels must remain available to assistive UI');
 assert.match(menuTabs, /drop-shadow\(0 0 2px rgba\(255, 113, 143, \.76\)\)[\s\S]*drop-shadow\(0 0 6px rgba\(255, 113, 143, \.34\)\)/, 'Relationships heart must have a soft two-stage pink glow');
