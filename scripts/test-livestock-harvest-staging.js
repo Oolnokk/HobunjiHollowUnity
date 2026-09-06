@@ -98,6 +98,12 @@ assert.equal(deps.getPlayerFaceTarget, faceTarget, 'the ordinary face target dep
 assert.equal(player.x, 70 + (2.5 - 2.1) * 48, 'player receives the same X translation as the staged animal');
 assert.equal(player.y, 90 + (2.5 - 2.2) * 48, 'player receives the same Z translation as the staged animal');
 
+const activePlayerX = player.x;
+const activePlayerY = player.y;
+api.updateHarvestInteraction(0.1);
+assert.equal(player.x, activePlayerX, 'the active harvest hold does not accumulate the same player X correction every frame');
+assert.equal(player.y, activePlayerY, 'the active harvest hold does not accumulate the same player Y correction every frame');
+
 const debug = sandbox.window.LivestockHarvestStaging.getDebug();
 assert.equal(debug.active.phase, 'active', 'debug state exposes the current harvest phase without devtools');
 assert.equal(debug.active.playerApproachSuppressed, true, 'debug state explicitly reports approach suppression');
