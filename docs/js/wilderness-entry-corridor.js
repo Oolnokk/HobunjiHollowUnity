@@ -3,17 +3,12 @@
 // preserving the broad terrain cut only as invisible anti-cliff surgery.
 (function (root) {
   'use strict';
-
   const PATH_HALF_WIDTH = 1;
   const SHOULDER_HALF_WIDTH = 2;
   const CLOUD_ID = 'map_southern_cloud_forest';
-
-  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-  function rootMap(workspace) { return workspace?.maps?.find(m => m && !m.isSubmap) || workspace?.maps?.[0] || null; }
-  function entryTransition(map) {
-    return (map?.transitions || []).find(t => t?.id === 'sp_generated_entry')
-      || (map?.transitions || []).find(t => /^Entry\s/i.test(String(t?.label || ''))) || null;
-  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rootMap = workspace => workspace?.maps?.find(m => m && !m.isSubmap) || workspace?.maps?.[0] || null;
+  const entryTransition = map => (map?.transitions || []).find(t => t?.id === 'sp_generated_entry') || (map?.transitions || []).find(t => /^Entry\s/i.test(String(t?.label || ''))) || null;
   function transitionSide(transition, map) {
     const label = String(transition?.label || '').toLowerCase();
     for (const side of ['north', 'south', 'west', 'east']) if (label.includes(side)) return side;
@@ -23,139 +18,62 @@
     choices.sort((a, b) => a[1] - b[1]);
     return choices[0]?.[0] || null;
   }
-  function axisFor(side, c, r) { return side === 'north' || side === 'south' ? c : r; }
-  function inwardFor(side, c, r, map) {
-    if (side === 'north') return r;
-    if (side === 'south') return map.rows - 1 - r;
-    if (side === 'west') return c;
-    return map.cols - 1 - c;
-  }
-  function tileCoords(key) {
-    const [c, r] = String(key).split(',').map(Number);
-    return Number.isFinite(c) && Number.isFinite(r) ? { c, r } : null;
-  }
-  function hash01(c, r, salt = 0) {
-    let h = (2166136261 ^ Math.imul((c | 0) + 0x9e37, 374761393) ^ Math.imul((r | 0) + 0x85eb, 668265263) ^ Math.imul(salt | 0, 2246822519)) >>> 0;
-    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-    return h / 4294967296;
-  }
+  const axisFor = (side, c, r) => side === 'north' || side === 'south' ? c : r;
+  function inwardFor(side, c, r, map) { if (side === 'north') return r; if (side === 'south') return map.rows - 1 - r; if (side === 'west') return c; return map.cols - 1 - c; }
+  function tileCoords(key) { const [c, r] = String(key).split(',').map(Number); return Number.isFinite(c) && Number.isFinite(r) ? { c, r } : null; }
+  function hash01(c, r, salt = 0) { let h = (2166136261 ^ Math.imul((c | 0) + 0x9e37, 374761393) ^ Math.imul((r | 0) + 0x85eb, 668265263) ^ Math.imul(salt | 0, 2246822519)) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return h / 4294967296; }
   function clearGeneratedOverlay(tile) { delete tile.generatedObjectId; delete tile.generatedObjectType; }
-  function clearSlopeAndCliffFlags(tile) {
-    delete tile.plateau; delete tile.rampElevation; delete tile.borderEscarpment; delete tile.generatedBorderEscarpment;
-    delete tile.borderEscarpmentDepth; delete tile.borderEscarpmentSide; delete tile.borderEscarpmentHeightBonus;
-  }
-  function inferZoneId(workspace, explicitZoneId) {
-    if (explicitZoneId) return explicitZoneId;
-    if (workspace?.wildernessLabLiveRecipe?.zoneId) return workspace.wildernessLabLiveRecipe.zoneId;
-    if (workspace?.zoneId) return workspace.zoneId;
-    const map = rootMap(workspace);
-    return map?.generatedFrom?.zoneMapId || map?.generatedFrom?.sourceMapId || workspace?.generatorPreset?.zoneMapId || null;
-  }
-  function cloudCopseCandidate(c, r, side, centerAxis, inward) {
-    const axis = axisFor(side, c, r);
-    if (Math.abs(axis - centerAxis) <= SHOULDER_HALF_WIDTH) return false;
-    if (((axis + (inward & 1)) & 1) !== 0) return false;
-    return hash01(c, r, 91031) < 0.68;
-  }
-
+  function clearSlopeAndCliffFlags(tile) { delete tile.plateau; delete tile.rampElevation; delete tile.borderEscarpment; delete tile.generatedBorderEscarpment; delete tile.borderEscarpmentDepth; delete tile.borderEscarpmentSide; delete tile.borderEscarpmentHeightBonus; }
+  function inferZoneId(workspace, explicitZoneId) { if (explicitZoneId) return explicitZoneId; if (workspace?.wildernessLabLiveRecipe?.zoneId) return workspace.wildernessLabLiveRecipe.zoneId; if (workspace?.zoneId) return workspace.zoneId; const map = rootMap(workspace); return map?.generatedFrom?.zoneMapId || map?.generatedFrom?.sourceMapId || workspace?.generatorPreset?.zoneMapId || null; }
+  function cloudCopseCandidate(c, r, side, centerAxis, inward) { const axis = axisFor(side, c, r); if (Math.abs(axis - centerAxis) <= SHOULDER_HALF_WIDTH) return false; if (((axis + (inward & 1)) & 1) !== 0) return false; return hash01(c, r, 91031) < 0.68; }
   function applyWorkspace(workspace, options = {}) {
     const map = rootMap(workspace);
     if (!map?.tiles || !map.cols || !map.rows) return { applied: false, reason: 'no-root-map' };
     if (map.generatedFrom?.narrowEntryCorridorV1) return { applied: false, reason: 'already-applied', ...(map.generatedFrom.narrowEntryCorridorV1 || {}) };
-
-    const transition = entryTransition(map);
-    const side = transitionSide(transition, map);
+    const transition = entryTransition(map), side = transitionSide(transition, map);
     if (!transition || !side) return { applied: false, reason: 'no-entry' };
     const centerAxisRaw = side === 'north' || side === 'south' ? Number(transition.col) : Number(transition.row);
     if (!Number.isFinite(centerAxisRaw)) return { applied: false, reason: 'no-entry-axis' };
     const axisLimit = side === 'north' || side === 'south' ? map.cols : map.rows;
-    const centerAxis = clamp(Math.round(centerAxisRaw), 0, axisLimit - 1);
-    const zoneId = inferZoneId(workspace, options.zoneId);
-
-    const gate = [];
-    for (const [key, tile] of Object.entries(map.tiles)) {
-      if (!tile?.borderEntryGate) continue;
-      const p = tileCoords(key);
-      if (!p) continue;
-      gate.push({ key, tile, c: p.c, r: p.r, axis: axisFor(side, p.c, p.r), inward: inwardFor(side, p.c, p.r, map) });
-    }
+    const centerAxis = clamp(Math.round(centerAxisRaw), 0, axisLimit - 1), zoneId = inferZoneId(workspace, options.zoneId), gate = [];
+    for (const [key, tile] of Object.entries(map.tiles)) { if (!tile?.borderEntryGate) continue; const p = tileCoords(key); if (!p) continue; gate.push({ tile, c: p.c, r: p.r, axis: axisFor(side, p.c, p.r), inward: inwardFor(side, p.c, p.r, map) }); }
     if (!gate.length) return { applied: false, reason: 'no-gate-tiles', side, centerAxis };
-
-    if (side === 'north' || side === 'south') transition.col = centerAxis;
-    else transition.row = centerAxis;
+    if (side === 'north' || side === 'south') transition.col = centerAxis; else transition.row = centerAxis;
     const marker = (map.routes || []).find(route => route?.id === 'route_map_entry_marker');
-    if (marker) {
-      const c = side === 'west' ? 0 : side === 'east' ? map.cols - 1 : centerAxis;
-      const r = side === 'north' ? 0 : side === 'south' ? map.rows - 1 : centerAxis;
-      marker.nodes = [[c, r]];
-    }
-
-    let roadTiles = 0, shoulderTiles = 0, reclaimed = 0, blockersCleared = 0, cloudTrees = 0;
-    const newTreeKeys = new Set();
+    if (marker) { const c = side === 'west' ? 0 : side === 'east' ? map.cols - 1 : centerAxis; const r = side === 'north' ? 0 : side === 'south' ? map.rows - 1 : centerAxis; marker.nodes = [[c, r]]; }
+    let roadTiles = 0, shoulderTiles = 0, reclaimed = 0, blockersCleared = 0, cloudTrees = 0; const newTreeKeys = new Set();
     for (const item of gate) {
       const lateral = Math.abs(item.axis - centerAxis);
-      if (lateral <= PATH_HALF_WIDTH) {
-        if (item.tile.generatedObjectId || item.tile.generatedObjectType || item.tile.type !== 'path') blockersCleared++;
-        clearGeneratedOverlay(item.tile); clearSlopeAndCliffFlags(item.tile);
-        item.tile.type = 'path'; item.tile.borderEntryGate = true; item.tile.entryCorridorProtected = true; item.tile.entryCorridorShoulder = false; roadTiles++;
-      } else if (lateral <= SHOULDER_HALF_WIDTH) {
-        if (item.tile.generatedObjectId || item.tile.generatedObjectType || (item.tile.type !== 'grass' && item.tile.type !== 'path')) blockersCleared++;
-        clearGeneratedOverlay(item.tile); clearSlopeAndCliffFlags(item.tile);
-        item.tile.type = 'grass'; item.tile.borderEntryGate = true; item.tile.entryCorridorProtected = true; item.tile.entryCorridorShoulder = true; shoulderTiles++;
-      } else {
-        if (item.tile.type === 'path') reclaimed++;
-        item.tile.type = 'grass'; item.tile.entryCorridorProtected = false; item.tile.entryCorridorShoulder = false; item.tile.entryCorridorReclaimed = true;
-      }
+      if (lateral <= PATH_HALF_WIDTH) { if (item.tile.generatedObjectId || item.tile.generatedObjectType || item.tile.type !== 'path') blockersCleared++; clearGeneratedOverlay(item.tile); clearSlopeAndCliffFlags(item.tile); item.tile.type = 'path'; item.tile.borderEntryGate = true; item.tile.entryCorridorProtected = true; item.tile.entryCorridorShoulder = false; roadTiles++; }
+      else if (lateral <= SHOULDER_HALF_WIDTH) { if (item.tile.generatedObjectId || item.tile.generatedObjectType || (item.tile.type !== 'grass' && item.tile.type !== 'path')) blockersCleared++; clearGeneratedOverlay(item.tile); clearSlopeAndCliffFlags(item.tile); item.tile.type = 'grass'; item.tile.borderEntryGate = true; item.tile.entryCorridorProtected = true; item.tile.entryCorridorShoulder = true; shoulderTiles++; }
+      else { if (item.tile.type === 'path') reclaimed++; item.tile.type = 'grass'; item.tile.entryCorridorProtected = false; item.tile.entryCorridorShoulder = false; item.tile.entryCorridorReclaimed = true; }
     }
-
     if (zoneId === CLOUD_ID) {
       const candidates = gate.filter(item => Math.abs(item.axis - centerAxis) > SHOULDER_HALF_WIDTH).sort((a, b) => a.inward - b.inward || a.axis - b.axis);
       for (const item of candidates) {
         const { tile, c, r, inward } = item;
         if (tile.type !== 'grass' || tile.generatedObjectType || !cloudCopseCandidate(c, r, side, centerAxis, inward)) continue;
         let nearNew = false;
-        for (let dr = -1; dr <= 1 && !nearNew; dr++) for (let dc = -1; dc <= 1; dc++) {
-          if (dc === 0 && dr === 0) continue;
-          if (newTreeKeys.has(`${c + dc},${r + dr}`)) { nearNew = true; break; }
-        }
+        for (let dr = -1; dr <= 1 && !nearNew; dr++) for (let dc = -1; dc <= 1; dc++) { if (dc === 0 && dr === 0) continue; if (newTreeKeys.has(`${c + dc},${r + dr}`)) { nearNew = true; break; } }
         if (nearNew) continue;
-        tile.type = 'shrub'; tile.generatedObjectType = 'copse'; tile.generatedObjectId = `entry_copse_${c}_${r}`; tile.entryCorridorReclaimedForest = true;
-        newTreeKeys.add(`${c},${r}`); cloudTrees++;
+        tile.type = 'shrub'; tile.generatedObjectType = 'copse'; tile.generatedObjectId = `entry_copse_${c}_${r}`; tile.entryCorridorReclaimedForest = true; newTreeKeys.add(`${c},${r}`); cloudTrees++;
       }
     }
-
-    map.generatedFrom = { ...(map.generatedFrom || {}), narrowEntryCorridorV1: {
-      side, centerAxis, roadWidthTiles: 3, protectedWidthTiles: 5, gateTiles: gate.length, roadTiles, shoulderTiles,
-      reclaimedTiles: reclaimed, blockersCleared, cloudForestBackfillTrees: cloudTrees,
-    }};
+    map.generatedFrom = { ...(map.generatedFrom || {}), narrowEntryCorridorV1: { side, centerAxis, roadWidthTiles: 3, protectedWidthTiles: 5, gateTiles: gate.length, roadTiles, shoulderTiles, reclaimedTiles: reclaimed, blockersCleared, cloudForestBackfillTrees: cloudTrees } };
     workspace.wildernessEntryCorridor = { ...map.generatedFrom.narrowEntryCorridorV1, zoneId: zoneId || null };
     return { applied: true, ...workspace.wildernessEntryCorridor };
   }
-
   function installGeneratorAdapter() {
     const Generator = root.WildernessMapGenerator;
     if (!Generator || Generator.__narrowEntryCorridorInstalled) return false;
     Generator.__narrowEntryCorridorInstalled = true;
-    if (typeof Generator.generateWorkspace === 'function') {
-      const original = Generator.generateWorkspace.bind(Generator);
-      Generator.generateWorkspace = (seed, overrides) => { const workspace = original(seed, overrides); applyWorkspace(workspace, {}); return workspace; };
-    }
+    if (typeof Generator.generateWorkspace === 'function') { const original = Generator.generateWorkspace.bind(Generator); Generator.generateWorkspace = (seed, overrides) => { const workspace = original(seed, overrides); applyWorkspace(workspace, {}); return workspace; }; }
     if (typeof Generator.generateZoneWorkspace === 'function') {
       const originalZone = Generator.generateZoneWorkspace.bind(Generator);
-      Generator.generateZoneWorkspace = (zoneMapId, seed, locales) => {
-        const workspace = originalZone(zoneMapId, seed, locales);
-        const map = rootMap(workspace);
-        if (!map?.generatedFrom?.narrowEntryCorridorV1) applyWorkspace(workspace, { zoneId: zoneMapId });
-        else if (zoneMapId === CLOUD_ID && !(map.generatedFrom.narrowEntryCorridorV1.cloudForestBackfillTrees > 0)) {
-          delete map.generatedFrom.narrowEntryCorridorV1;
-          applyWorkspace(workspace, { zoneId: zoneMapId });
-        }
-        return workspace;
-      };
+      Generator.generateZoneWorkspace = (zoneMapId, seed, locales) => { const workspace = originalZone(zoneMapId, seed, locales), map = rootMap(workspace); if (!map?.generatedFrom?.narrowEntryCorridorV1) applyWorkspace(workspace, { zoneId: zoneMapId }); else if (zoneMapId === CLOUD_ID && !(map.generatedFrom.narrowEntryCorridorV1.cloudForestBackfillTrees > 0)) { delete map.generatedFrom.narrowEntryCorridorV1; applyWorkspace(workspace, { zoneId: zoneMapId }); } return workspace; };
     }
     return true;
   }
-
   root.WildernessEntryCorridor = { PATH_HALF_WIDTH, SHOULDER_HALF_WIDTH, CLOUD_ID, applyWorkspace, installGeneratorAdapter };
   installGeneratorAdapter();
 })(typeof window !== 'undefined' ? window : globalThis);
