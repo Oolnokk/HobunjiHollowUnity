@@ -1,0 +1,61 @@
+name: Lore economy regression
+
+on:
+  push:
+    paths:
+      - 'docs/config/town-mine.json'
+      - 'docs/js/hud-update.js'
+      - 'docs/js/general-store.js'
+      - 'docs/js/jubmir-shop.js'
+      - 'docs/js/carpenter-shop.js'
+      - 'docs/js/metal-craft-shop.js'
+      - 'docs/js/farm-crates.js'
+      - 'docs/js/farm-panel.js'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/barn-incubator.js'
+      - 'scripts/test-lore-economy.js'
+      - 'scripts/test-town-mine-descent.js'
+      - 'scripts/test-economy-progression.js'
+      - 'scripts/test-mastery-policy.js'
+      - '.github/workflows/lore-economy-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/config/town-mine.json'
+      - 'docs/js/hud-update.js'
+      - 'docs/js/general-store.js'
+      - 'docs/js/jubmir-shop.js'
+      - 'docs/js/carpenter-shop.js'
+      - 'docs/js/metal-craft-shop.js'
+      - 'docs/js/farm-crates.js'
+      - 'docs/js/farm-panel.js'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/barn-incubator.js'
+      - 'scripts/test-lore-economy.js'
+      - 'scripts/test-town-mine-descent.js'
+      - 'scripts/test-economy-progression.js'
+      - 'scripts/test-mastery-policy.js'
+      - '.github/workflows/lore-economy-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check lore economy host
+        run: node --check docs/js/hud-update.js
+      - name: Test lore economy and gananji copy
+        run: node scripts/test-lore-economy.js
+      - name: Test town mine descent
+        run: node scripts/test-town-mine-descent.js
+      - name: Test economy progression
+        run: node scripts/test-economy-progression.js
+      - name: Test mastery economy integration
+        run: node scripts/test-mastery-policy.js
