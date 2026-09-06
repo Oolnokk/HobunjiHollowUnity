@@ -652,13 +652,19 @@
   });
 
   installForceShiftButtonFix();
-  // Fire-and-forget is intentional: this script executes far earlier than the
-  // world-load Tothal check, so the old cache is normally gone long before a
-  // zone lookup can occur. The Force button path separately awaits deletion,
-  // which removes the race entirely for manual testing.
-  invalidateOldCacheForThisAdapter().catch(error => log(`startup cache invalidation failed: ${error?.message || error}`, 'warn'));
-
-  if (!ensureInstalled() && typeof root.setInterval === 'function') {
-    installTimer = root.setInterval(ensureInstalled, INSTALL_POLL_MS);
+  // Invalidate stale same-year caches only after the boot generator patch is
+  // installed. This keeps adapter revision changes self-healing on reload while
+  // avoiding an IndexedDB delete racing game.js's first read on fast devices.
+  const invalidateWhenInstalled = () => {
+    if (!ensureInstalled()) return false;
+    invalidateOldCacheForThisAdapter().catch(error => log(`startup cache invalidation failed: ${error?.message || error}`, 'warn'));
+    return true;
+  };
+  if (!invalidateWhenInstalled() && typeof root.setInterval === 'function') {
+    installTimer = root.setInterval(() => {
+      if (!invalidateWhenInstalled()) return;
+      root.clearInterval(installTimer);
+      installTimer = null;
+    }, INSTALL_POLL_MS);
   }
 })(typeof window !== 'undefined' ? window : globalThis);
