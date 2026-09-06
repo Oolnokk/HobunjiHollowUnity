@@ -15,7 +15,7 @@
     const parity = window.HobunjiHandOutlineParity?.getDebug?.() || null;
     const frame = window.ProceduralHandFrameDriver?.getDebug?.() || [];
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
-    const mist = window.CloudForestMistSoftDepth?.snapshot?.() || null;
+    const mist = window.CloudForestAvatarDepthOccluder?.snapshot?.() || null;
     const lines = ['', SECTION];
 
     if (parity) {
@@ -38,10 +38,11 @@
     }
 
     if (mist) {
+      const recordKeys = Object.keys(mist.records || {});
+      const visibleKeys = recordKeys.filter(key => mist.records[key]?.helperVisible);
       lines.push(
-        `Cloud Forest mist depth: installed=${mist.installed ? 'yes' : 'no'} base=${mist.baseDepthCaptures ?? '-'} `
-        + `overlays=${mist.overlayDraws ?? '-'} avatarCaptures=${mist.avatarOccluderCaptures ?? '-'} `
-        + `avatarOccluders=${mist.lastAvatarOccluderCount ?? '-'} feather=${mist.config?.featherPixels ?? '-'}px`
+        `Cloud Forest mist depth: hooked=${mist.hooked ? 'yes' : 'no'} mistActive=${mist.mistActive ? 'yes' : 'no'} `
+        + `records=${recordKeys.join(',') || '-'} visible=${visibleKeys.join(',') || '-'}`
       );
     } else {
       lines.push('Cloud Forest mist depth: module missing');

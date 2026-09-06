@@ -21691,6 +21691,20 @@
             camera.layers.enableAll();
             scene.overrideMaterial = null;
           }
+
+          // Redraw Cloud Forest mist (layer 5, see cloud-forest-fog.js) over
+          // the two outline passes above. Both just drew straight into
+          // _mainRT with real depth, with no idea the mist cylinders add
+          // extra atmospheric haze beyond the scene's own regular fog — so
+          // an outline on something genuinely behind the mist would
+          // otherwise come out fully crisp, reading as a cutout hole in the
+          // haze around it. depthTest still applies, so this correctly
+          // leaves outlines on anything nearer than the mist untouched.
+          if (s_cloudForestFog) {
+            camera.layers.set(5);
+            renderer.render(activeScene, camera);
+            camera.layers.enableAll();
+          }
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
 
