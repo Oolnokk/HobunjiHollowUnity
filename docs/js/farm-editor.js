@@ -325,27 +325,38 @@
       }
     }
     (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
-      if (deps.PROCESSING_FURNITURE_DEFS[key] && deps.canPlaceFurnitureAt(col, row)) {
-        const obj = deps.makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
-        if (obj) { deps.worldObjects.set(col + ',' + row, obj); deps.processingFurnitureObjects.add(obj); }
+      // Guarded per-entry: one malformed saved processing station must not
+      // throw and abort the rest of this restore (decor, house pieces,
+      // barns, dew-pile meshes all run after this loop in the same call).
+      try {
+        if (deps.PROCESSING_FURNITURE_DEFS[key] && deps.canPlaceFurnitureAt(col, row)) {
+          const obj = deps.makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
+          if (obj) { deps.worldObjects.set(col + ',' + row, obj); deps.processingFurnitureObjects.add(obj); }
+        }
+      } catch (err) {
+        console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
     });
     (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
-      const def = deps.DECORATIVE_FURNITURE_DEFS[key];
-      if (!def) return;
-      const decorArea = area || 'farm';
-      const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
-      const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
-      const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
-      if (result) deps.interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-        mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-        ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-        localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
-      if (result && decorArea === 'farm' && def.sit) {
-        const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
-        deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+      try {
+        const def = deps.DECORATIVE_FURNITURE_DEFS[key];
+        if (!def) return;
+        const decorArea = area || 'farm';
+        const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
+        const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
+        const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
+        if (result) deps.interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+          ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+          localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
+        if (result && decorArea === 'farm' && def.sit) {
+          const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
+          deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+        }
+        if (result) deps.registerChairNpcStation(key, col, row, rotYDeg || 0, deps.normalizeNpcArea(decorArea));
+      } catch (err) {
+        console.error('[farm-editor] failed to restore decorative furniture', { key, col, row, area }, err);
       }
-      if (result) deps.registerChairNpcStation(key, col, row, rotYDeg || 0, deps.normalizeNpcArea(decorArea));
     });
     // House pieces — initWorldObjects() already seeded the starter piece at
     // its hard default position before this runs. A modern save's own
@@ -411,11 +422,15 @@
     const farmBuildings = deps.getFarmBuildings();
     const barnTiers = deps.getBarnTiers();
     (layout.buildings || []).forEach(saved => {
-      if (saved.kind !== 'barn' || !barnTiers[saved.tier]) return;
-      if (farmBuildings.some(b => b.id === saved.id)) return;
-      const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
-      farmBuildings.push(entry);
-      window.FarmBuildings.spawnEntry(entry);
+      try {
+        if (saved.kind !== 'barn' || !barnTiers[saved.tier]) return;
+        if (farmBuildings.some(b => b.id === saved.id)) return;
+        const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
+        farmBuildings.push(entry);
+        window.FarmBuildings.spawnEntry(entry);
+      } catch (err) {
+        console.error('[farm-editor] failed to restore barn', saved, err);
+      }
     });
     // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
     // which always runs first (see the two call sites) — this just builds
