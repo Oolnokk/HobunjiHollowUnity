@@ -1,11 +1,12 @@
 // Shared generated-wilderness entrance corridor repair.
-// Guarantees a narrow traversable entry without leaving a giant sterile apron.
+// Experimental branch version: guarantee only the exact one-tile route and let
+// terrain/objects crowd it immediately on both sides.
 (function (root) {
   'use strict';
 
-  const PATH_HALF_WIDTH = 1;      // 3 visible road tiles.
-  const SHOULDER_HALF_WIDTH = 2;  // +1 blocker-free grass tile each side.
-  const APRON_HALF_WIDTH = 12;    // Bound all post-export surgery near the actual entry.
+  const PATH_HALF_WIDTH = 0;      // 1 final-world road tile.
+  const SHOULDER_HALF_WIDTH = 0;  // Deliberately no permanent safety shoulder.
+  const APRON_HALF_WIDTH = 12;    // Only bounds cleanup of the old giant apron.
   const MAX_APRON_DEPTH = 48;
   const CLOUD_ID = 'map_southern_cloud_forest';
 
@@ -62,10 +63,6 @@
     delete tile.borderEscarpmentHeightBonus;
   }
 
-  // Prefer the exact number of broad road slices the older runtime repair saw.
-  // If that wasn't recorded, follow the entry's centerline only while it still
-  // carries gate semantics. This avoids treating Cloud Forest's whole north
-  // boundary as an entrance just because that cleanup also uses borderEntryGate.
   function detectApronDepth(map, side, centerAxis) {
     const recorded = Math.round(Number(map?.generatedFrom?.entryPathRepairSlices) || 0);
     if (recorded > 0) return clamp(recorded, 1, MAX_APRON_DEPTH);
@@ -92,8 +89,6 @@
       const axis = axisFor(side, p.c, p.r);
       const lateral = Math.abs(axis - centerAxis);
       if (lateral > APRON_HALF_WIDTH) continue;
-      // Only rewrite tiles that belong to the old gate/apron. Ordinary nearby
-      // terrain and authored objects are left alone.
       if (!tile.borderEntryGate && !tile.entryCorridorReclaimed && !tile.entryCorridorProtected) continue;
       out.push({ tile, c: p.c, r: p.r, inward, axis, lateral });
     }
@@ -101,16 +96,16 @@
   }
 
   function shouldCloudTree(item) {
-    if (item.lateral <= SHOULDER_HALF_WIDTH) return false;
-    // Dense two-tile checkerboard: forest begins immediately outside the one-
-    // tile safety shoulder without stacking trunks on adjacent cardinal tiles.
+    if (item.lateral <= PATH_HALF_WIDTH) return false;
+    // Aggressive entrance fill: every other tile in a checkerboard can become
+    // a copse, including tiles immediately adjacent to the road centerline.
     return ((item.axis + item.inward) & 1) === 0;
   }
 
   function applyWorkspace(workspace, options = {}) {
     const map = rootMap(workspace);
     if (!map?.tiles || !map.cols || !map.rows) return { applied:false, reason:'no-root-map' };
-    if (map.generatedFrom?.narrowEntryCorridorV2) return { applied:false, reason:'already-applied', ...map.generatedFrom.narrowEntryCorridorV2 };
+    if (map.generatedFrom?.narrowEntryCorridorV3) return { applied:false, reason:'already-applied', ...map.generatedFrom.narrowEntryCorridorV3 };
 
     const transition = entryTransition(map);
     const side = transitionSide(transition, map);
@@ -132,7 +127,7 @@
       marker.nodes = [[c, r]];
     }
 
-    let roadTiles = 0, shoulderTiles = 0, reclaimedTiles = 0, blockersCleared = 0, cloudTrees = 0;
+    let roadTiles = 0, reclaimedTiles = 0, blockersCleared = 0, cloudTrees = 0;
     for (const item of apron) {
       const tile = item.tile;
       if (item.lateral <= PATH_HALF_WIDTH) {
@@ -142,25 +137,10 @@
         tile.type = 'path';
         tile.borderEntryGate = true;
         tile.entryCorridorProtected = true;
-        tile.entryCorridorShoulder = false;
+        delete tile.entryCorridorShoulder;
         delete tile.entryCorridorReclaimed;
         delete tile.entryCorridorReclaimedForest;
         roadTiles++;
-        continue;
-      }
-      if (item.lateral <= SHOULDER_HALF_WIDTH) {
-        if (tile.generatedObjectId || tile.generatedObjectType || (tile.type !== 'grass' && tile.type !== 'path')) blockersCleared++;
-        clearGeneratedOverlay(tile);
-        clearSlopeAndCliffFlags(tile);
-        tile.type = 'grass';
-        // This is ordinary grass, not a fake cliff-gate tile. The road itself
-        // alone keeps borderEntryGate so runtime incline handling stays safe.
-        delete tile.borderEntryGate;
-        tile.entryCorridorProtected = true;
-        tile.entryCorridorShoulder = true;
-        delete tile.entryCorridorReclaimed;
-        delete tile.entryCorridorReclaimedForest;
-        shoulderTiles++;
         continue;
       }
 
@@ -169,7 +149,7 @@
       tile.type = 'grass';
       delete tile.borderEntryGate;
       tile.entryCorridorProtected = false;
-      tile.entryCorridorShoulder = false;
+      delete tile.entryCorridorShoulder;
       tile.entryCorridorReclaimed = true;
 
       if (zoneId === CLOUD_ID && !tile.generatedObjectType && shouldCloudTree(item)) {
@@ -181,35 +161,34 @@
       }
     }
 
-    // Replace the V1 diagnostic rather than allowing stale "success" metadata
-    // to mask a V2 pass in the Lab.
     if (map.generatedFrom?.narrowEntryCorridorV1) delete map.generatedFrom.narrowEntryCorridorV1;
+    if (map.generatedFrom?.narrowEntryCorridorV2) delete map.generatedFrom.narrowEntryCorridorV2;
     const report = {
-      version: 2,
+      version: 3,
       side,
       centerAxis,
       apronDepthTiles: depth,
       apronHalfWidthTiles: APRON_HALF_WIDTH,
-      roadWidthTiles: 3,
-      protectedWidthTiles: 5,
+      roadWidthTiles: 1,
+      protectedWidthTiles: 1,
+      shoulderTiles: 0,
       apronTiles: apron.length,
       roadTiles,
-      shoulderTiles,
       reclaimedTiles,
       blockersCleared,
       cloudForestBackfillTrees: cloudTrees,
       zoneId: zoneId || null,
     };
-    map.generatedFrom = { ...(map.generatedFrom || {}), narrowEntryCorridorV2: report };
+    map.generatedFrom = { ...(map.generatedFrom || {}), narrowEntryCorridorV3: report };
     workspace.wildernessEntryCorridor = report;
-    try { (root.__farmLog || console.log)(`[wilderness-entry] v2 ${side} depth=${depth} road=${roadTiles} shoulder=${shoulderTiles} reclaimed=${reclaimedTiles} cloudTrees=${cloudTrees}`); } catch {}
+    try { (root.__farmLog || console.log)(`[wilderness-entry] v3 ${side} depth=${depth} road=${roadTiles} reclaimed=${reclaimedTiles} cloudTrees=${cloudTrees}`); } catch {}
     return { applied:true, ...report };
   }
 
   function installGeneratorAdapter() {
     const Generator = root.WildernessMapGenerator;
-    if (!Generator || Generator.__narrowEntryCorridorV2Installed) return false;
-    Generator.__narrowEntryCorridorV2Installed = true;
+    if (!Generator || Generator.__narrowEntryCorridorV3Installed) return false;
+    Generator.__narrowEntryCorridorV3Installed = true;
 
     if (typeof Generator.generateWorkspace === 'function') {
       const original = Generator.generateWorkspace.bind(Generator);
@@ -224,12 +203,10 @@
       Generator.generateZoneWorkspace = (zoneMapId, seed, locales) => {
         const workspace = originalZone(zoneMapId, seed, locales);
         const map = rootMap(workspace);
-        // A nested generateWorkspace wrapper may already have run without an
-        // explicit zone id; redo only when Cloud Forest identity was missing.
-        if (zoneMapId === CLOUD_ID && map?.generatedFrom?.narrowEntryCorridorV2?.zoneId !== CLOUD_ID) {
-          delete map.generatedFrom.narrowEntryCorridorV2;
+        if (zoneMapId === CLOUD_ID && map?.generatedFrom?.narrowEntryCorridorV3?.zoneId !== CLOUD_ID) {
+          delete map.generatedFrom.narrowEntryCorridorV3;
           applyWorkspace(workspace, { zoneId: zoneMapId });
-        } else if (!map?.generatedFrom?.narrowEntryCorridorV2) {
+        } else if (!map?.generatedFrom?.narrowEntryCorridorV3) {
           applyWorkspace(workspace, { zoneId: zoneMapId });
         }
         return workspace;
