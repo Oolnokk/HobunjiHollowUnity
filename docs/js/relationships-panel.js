@@ -44,12 +44,17 @@
   // inventory made visually large/awkward items consume correspondingly large
   // rectangular footprints; here we reuse that visual language without adding
   // manual inventory management to a relationship-history screen.
-  const KEEPSAKE_GRID_COLUMNS = 6;
+  const KEEPSAKE_GRID_COLUMNS = 18;
   const KEEPSAKE_MIN_ROWS = 4;
   const KEEPSAKE_TARGET_CELLS = 5;
   const KEEPSAKE_MAX_ITEM_CELLS = 4;
+  const KEEPSAKE_WEAPON_TILE_SCALE = 3; // Used by footprintForKeepsake to enlarge weapon-trust keepsakes without changing future provider sizing.
+  const KEEPSAKE_ALPHA_THRESHOLD = 16; // Used by spriteVisualInfo to ignore effectively invisible fringe/noise pixels when finding visual bounds.
+  const KEEPSAKE_ALPHA_TRIM_FRACTION = 0.0005; // Used by spriteVisualInfo to ignore negligible isolated alpha mass at the outside edges.
+  const KEEPSAKE_ALPHA_TRIM_MIN_MASS = 2; // Used by spriteVisualInfo so one or two stray opaque pixels cannot define an otherwise-empty edge.
+  const KEEPSAKE_PREVIEW_MAX_PX = 256;
   const keepsakeProviders = new Set(); // Extra systems (quests/hearts/etc.) register providers here instead of patching this renderer.
-  const spriteAspectCache = new Map(); // sprite URL -> natural width/height ratio; used to derive each keepsake's tile footprint.
+  const spriteVisualCache = new Map(); // sprite+rotation -> cropped preview/opaque bounds; used for layout and rendering.
   let keepsakeRerenderQueued = false;
   let keepsakeStylesInstalled = false;
 
@@ -61,7 +66,7 @@
     style.textContent = `
       #relationshipsList .relationship-row {
         display: grid;
-        grid-template-columns: minmax(0, 1.18fr) minmax(210px, .82fr);
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
         align-items: stretch;
         gap: 0;
         padding: 0;
@@ -76,9 +81,10 @@
       }
       #relationshipsList .relationship-keepsakes {
         min-width: 0;
+        overflow: hidden;
         padding: 7px 8px 8px;
         border-left: 1px solid var(--border);
-        background: rgba(0, 0, 0, .10);
+        background: transparent;
       }
       #relationshipsList .relationship-keepsakes-title {
         margin-bottom: 5px;
@@ -89,22 +95,17 @@
         color: var(--muted);
       }
       #relationshipsList .relationship-keepsake-grid {
-        --ks-cell: clamp(17px, 1.45vw, 25px);
         position: relative;
         display: grid;
-        grid-template-columns: repeat(${KEEPSAKE_GRID_COLUMNS}, var(--ks-cell));
-        grid-auto-rows: var(--ks-cell);
-        width: calc(${KEEPSAKE_GRID_COLUMNS} * var(--ks-cell));
+        grid-template-columns: repeat(${KEEPSAKE_GRID_COLUMNS}, minmax(0, 1fr));
+        width: 100%;
         max-width: 100%;
-        min-height: calc(${KEEPSAKE_MIN_ROWS} * var(--ks-cell));
-        border: 1px solid rgba(255, 255, 255, .08);
+        min-width: 0;
+        min-height: 0;
+        border: 0;
         border-radius: 7px;
         overflow: hidden;
-        background-color: rgba(0, 0, 0, .13);
-        background-image:
-          linear-gradient(to right, rgba(255,255,255,.055) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(255,255,255,.055) 1px, transparent 1px);
-        background-size: var(--ks-cell) var(--ks-cell);
+        background: transparent;
       }
       #relationshipsList .relationship-keepsake-item {
         position: relative;
@@ -127,6 +128,20 @@
         -webkit-user-drag: none;
         transition: filter .16s ease, opacity .16s ease, transform .16s ease;
       }
+      #relationshipsList .relationship-keepsake-item.css-rotate {
+        overflow: hidden;
+      }
+      #relationshipsList .relationship-keepsake-item.css-rotate img {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: calc(100% * var(--ks-fallback-width-scale));
+        height: calc(100% * var(--ks-fallback-height-scale));
+        max-width: none;
+        max-height: none;
+        translate: -50% -50%;
+        rotate: 90deg;
+      }
       #relationshipsList .relationship-keepsake-item.locked img {
         filter: brightness(0);
         opacity: .90;
@@ -146,11 +161,16 @@
         opacity: .85;
       }
       @media (max-width: 760px) {
-        #relationshipsList .relationship-row {
-          grid-template-columns: minmax(0, 1fr) minmax(160px, .72fr);
+        #relationshipsList .relationship-summary {
+          gap: 6px;
+          padding: 6px;
         }
-        #relationshipsList .relationship-keepsake-grid {
-          --ks-cell: clamp(14px, 3.3vw, 20px);
+        #relationshipsList .relationship-keepsakes {
+          padding: 6px;
+        }
+        #relationshipsList .relationship-keepsakes-title {
+          font-size: 7px;
+          margin-bottom: 3px;
         }
       }
     `;
@@ -168,28 +188,171 @@
     else setTimeout(run, 0);
   }
 
-  function spriteAspectRatio(sprite) {
-    const src = String(sprite || '').trim();
-    if (!src) return 1;
-    const cached = spriteAspectCache.get(src);
-    if (Number.isFinite(cached) && cached > 0) return cached;
-    if (cached === null) return 1;
+  function fallbackSpriteVisual(keepsake) {
+    return {
+      ratio: 1,
+      previewSrc: String(keepsake?.sprite || ''),
+      opaqueWidth: null,
+      opaqueHeight: null,
+      rotated: !!keepsake?.rotate90,
+      preRotated: false,
+    };
+  }
 
-    spriteAspectCache.set(src, null);
+  function spriteVisualInfo(keepsake) {
+    const src = String(keepsake?.sprite || '').trim();
+    if (!src) return fallbackSpriteVisual(keepsake);
+    const rotate90 = !!keepsake?.rotate90;
+    const cacheKey = `${rotate90 ? 'r90' : 'r0'}:${src}`;
+    const cached = spriteVisualCache.get(cacheKey);
+    if (cached) return cached;
+    if (cached === null) return fallbackSpriteVisual(keepsake);
+
+    spriteVisualCache.set(cacheKey, null);
     const image = new Image();
     image.decoding = 'async';
     image.onload = () => {
-      const width = Number(image.naturalWidth) || 1;
-      const height = Number(image.naturalHeight) || 1;
-      spriteAspectCache.set(src, Math.max(.15, Math.min(6, width / height)));
+      const naturalWidth = Math.max(1, Number(image.naturalWidth) || 1);
+      const naturalHeight = Math.max(1, Number(image.naturalHeight) || 1);
+      let minX = 0;
+      let minY = 0;
+      let maxX = naturalWidth - 1;
+      let maxY = naturalHeight - 1;
+      let previewSrc = src;
+      let preRotated = false;
+
+      try {
+        const scan = document.createElement('canvas');
+        scan.width = naturalWidth;
+        scan.height = naturalHeight;
+        const scanCtx = scan.getContext('2d', { willReadFrequently: true });
+        if (!scanCtx) throw new Error('2d canvas unavailable');
+        scanCtx.clearRect(0, 0, naturalWidth, naturalHeight);
+        scanCtx.drawImage(image, 0, 0);
+        const pixels = scanCtx.getImageData(0, 0, naturalWidth, naturalHeight).data;
+        const rowAlphaMass = new Float64Array(naturalHeight); // Accumulates meaningful opacity by row for edge-noise-resistant crop bounds.
+        const colAlphaMass = new Float64Array(naturalWidth); // Accumulates meaningful opacity by column for edge-noise-resistant crop bounds.
+        let totalAlphaMass = 0;
+        let foundOpaque = false;
+        minX = naturalWidth;
+        minY = naturalHeight;
+        maxX = -1;
+        maxY = -1;
+        for (let y = 0; y < naturalHeight; y++) {
+          for (let x = 0; x < naturalWidth; x++) {
+            const alpha = pixels[((y * naturalWidth + x) * 4) + 3];
+            if (alpha < KEEPSAKE_ALPHA_THRESHOLD) continue;
+            const alphaMass = alpha / 255;
+            rowAlphaMass[y] += alphaMass;
+            colAlphaMass[x] += alphaMass;
+            totalAlphaMass += alphaMass;
+            foundOpaque = true;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+        if (!foundOpaque) {
+          minX = 0; minY = 0; maxX = naturalWidth - 1; maxY = naturalHeight - 1;
+        } else {
+          const rawMinX = minX;
+          const rawMinY = minY;
+          const rawMaxX = maxX;
+          const rawMaxY = maxY;
+          // Ignore only a tiny amount of opacity mass at each outer edge. This
+          // preserves legitimate thin weapon tips while preventing one stray
+          // nearly/fully opaque pixel from expanding the crop across empty PNG.
+          const trimMass = Math.min(
+            totalAlphaMass * 0.10,
+            Math.max(KEEPSAKE_ALPHA_TRIM_MIN_MASS, totalAlphaMass * KEEPSAKE_ALPHA_TRIM_FRACTION),
+          );
+          const lowerMeaningfulIndex = masses => {
+            let mass = 0;
+            for (let i = 0; i < masses.length; i++) {
+              mass += masses[i];
+              if (mass > trimMass) return i;
+            }
+            return 0;
+          };
+          const upperMeaningfulIndex = masses => {
+            let mass = 0;
+            for (let i = masses.length - 1; i >= 0; i--) {
+              mass += masses[i];
+              if (mass > trimMass) return i;
+            }
+            return masses.length - 1;
+          };
+          const trimmedMinX = lowerMeaningfulIndex(colAlphaMass);
+          const trimmedMaxX = upperMeaningfulIndex(colAlphaMass);
+          const trimmedMinY = lowerMeaningfulIndex(rowAlphaMass);
+          const trimmedMaxY = upperMeaningfulIndex(rowAlphaMass);
+          if (trimmedMinX <= trimmedMaxX && trimmedMinY <= trimmedMaxY) {
+            minX = Math.max(rawMinX, trimmedMinX);
+            maxX = Math.min(rawMaxX, trimmedMaxX);
+            minY = Math.max(rawMinY, trimmedMinY);
+            maxY = Math.min(rawMaxY, trimmedMaxY);
+          }
+        }
+
+        const cropWidth = Math.max(1, maxX - minX + 1);
+        const cropHeight = Math.max(1, maxY - minY + 1);
+        const rotatedWidth = rotate90 ? cropHeight : cropWidth;
+        const rotatedHeight = rotate90 ? cropWidth : cropHeight;
+        const scale = Math.min(1, KEEPSAKE_PREVIEW_MAX_PX / Math.max(rotatedWidth, rotatedHeight));
+        const outputWidth = Math.max(1, Math.round(rotatedWidth * scale));
+        const outputHeight = Math.max(1, Math.round(rotatedHeight * scale));
+        const preview = document.createElement('canvas');
+        preview.width = outputWidth;
+        preview.height = outputHeight;
+        const previewCtx = preview.getContext('2d');
+        if (!previewCtx) throw new Error('preview 2d canvas unavailable');
+        previewCtx.imageSmoothingEnabled = true;
+        if (rotate90) {
+          previewCtx.translate(outputWidth / 2, outputHeight / 2);
+          previewCtx.rotate(Math.PI / 2);
+          previewCtx.drawImage(
+            image,
+            minX, minY, cropWidth, cropHeight,
+            -(cropWidth * scale) / 2, -(cropHeight * scale) / 2,
+            cropWidth * scale, cropHeight * scale,
+          );
+        } else {
+          previewCtx.drawImage(image, minX, minY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+        }
+        previewSrc = preview.toDataURL('image/png');
+        preRotated = rotate90;
+      } catch (err) {
+        // Same-origin game sprites take the opaque-pixel path above. External
+        // provider images may be canvas-tainted; keep them usable with an
+        // orientation-aware CSS fallback rather than breaking the panel.
+        window.__farmLog?.(`[Relationships] Keepsake sprite analysis fallback for ${src}: ${err?.message || err}`, 'warn', 'ui');
+        minX = 0; minY = 0; maxX = naturalWidth - 1; maxY = naturalHeight - 1;
+      }
+
+      const opaqueWidth = Math.max(1, maxX - minX + 1);
+      const opaqueHeight = Math.max(1, maxY - minY + 1);
+      const displayWidth = rotate90 ? opaqueHeight : opaqueWidth;
+      const displayHeight = rotate90 ? opaqueWidth : opaqueHeight;
+      spriteVisualCache.set(cacheKey, {
+        ratio: Math.max(.15, Math.min(6, displayWidth / displayHeight)),
+        previewSrc,
+        opaqueWidth,
+        opaqueHeight,
+        rotated: rotate90,
+        preRotated,
+      });
       scheduleKeepsakeRerender();
     };
     image.onerror = () => {
-      spriteAspectCache.set(src, 1);
+      spriteVisualCache.set(cacheKey, {
+        ...fallbackSpriteVisual(keepsake),
+        ratio: 1,
+      });
       scheduleKeepsakeRerender();
     };
     image.src = src;
-    return 1;
+    return fallbackSpriteVisual(keepsake);
   }
 
   function footprintForKeepsake(keepsake) {
@@ -202,10 +365,14 @@
       };
     }
 
-    const ratio = spriteAspectRatio(keepsake?.sprite);
+    const ratio = spriteVisualInfo(keepsake).ratio;
     const w = Math.max(1, Math.min(KEEPSAKE_MAX_ITEM_CELLS, Math.round(Math.sqrt(KEEPSAKE_TARGET_CELLS * ratio))));
     const h = Math.max(1, Math.min(KEEPSAKE_MAX_ITEM_CELLS, Math.round(Math.sqrt(KEEPSAKE_TARGET_CELLS / ratio))));
-    return { w: Math.min(KEEPSAKE_GRID_COLUMNS, w), h };
+    const tileScale = keepsake?.source === 'weapon-trust' ? KEEPSAKE_WEAPON_TILE_SCALE : 1;
+    return {
+      w: Math.min(KEEPSAKE_GRID_COLUMNS, w * tileScale),
+      h: h * tileScale,
+    };
   }
 
   function weaponTrustKeepsakes(npcId) {
@@ -233,6 +400,7 @@
           unlocked: !!trust.giftCompleted?.(gift),
           source: 'weapon-trust',
           itemKey,
+          rotate90: true,
         };
       });
   }
@@ -332,16 +500,20 @@
     const itemsHtml = placements.map(({ keepsake, row, col, w, h }) => {
       const unlocked = keepsake.unlocked;
       const title = unlocked ? keepsake.label : 'Locked keepsake';
+      const visual = spriteVisualInfo(keepsake);
       const sprite = keepsake.sprite
-        ? `<img src="${escAttr(keepsake.sprite)}" alt="" loading="eager">`
+        ? `<img src="${escAttr(visual.previewSrc || keepsake.sprite)}" alt="" loading="eager">`
         : '<span class="relationship-keepsake-fallback" aria-hidden="true"></span>';
-      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
+      const cssRotate = keepsake.rotate90 && !visual.preRotated ? ' css-rotate' : '';
+      const fallbackWidthScale = h / Math.max(1, w);
+      const fallbackHeightScale = w / Math.max(1, h);
+      return `<div class="relationship-keepsake-item ${unlocked ? 'unlocked' : 'locked'}${cssRotate}" data-keepsake-id="${escAttr(keepsake.id)}" data-keepsake-source="${escAttr(keepsake.source || '')}" style="--ks-span-w:${w};--ks-span-h:${h};--ks-fallback-width-scale:${fallbackWidthScale};--ks-fallback-height-scale:${fallbackHeightScale};grid-column:${col + 1} / span ${w};grid-row:${row + 1} / span ${h}" title="${escAttr(title)}" aria-label="${escAttr(title)}">${sprite}</div>`;
     }).join('');
 
     return `
       <div class="relationship-keepsakes">
         <div class="relationship-keepsakes-title">Keepsakes</div>
-        <div class="relationship-keepsake-grid" style="grid-template-rows:repeat(${rows}, var(--ks-cell))" data-keepsake-count="${keepsakes.length}">
+        <div class="relationship-keepsake-grid" style="grid-template-rows:repeat(${rows}, minmax(0, 1fr));aspect-ratio:${KEEPSAKE_GRID_COLUMNS} / ${rows}" data-keepsake-count="${keepsakes.length}">
           ${itemsHtml}
         </div>
       </div>
@@ -364,13 +536,19 @@
       : [...new Set((window.WeaponTrustVisits?.config?.gifts || []).map(gift => gift?.npcId).filter(Boolean))];
     const report = {};
     for (const id of ids) {
-      report[id] = packKeepsakes(getKeepsakesForNpc(id)).placements.map(item => ({
-        id: item.keepsake.id,
-        unlocked: item.keepsake.unlocked,
-        sprite: item.keepsake.sprite,
-        footprint: `${item.w}x${item.h}`,
-        at: `${item.col},${item.row}`,
-      }));
+      report[id] = packKeepsakes(getKeepsakesForNpc(id)).placements.map(item => {
+        const visual = spriteVisualInfo(item.keepsake);
+        return {
+          id: item.keepsake.id,
+          unlocked: item.keepsake.unlocked,
+          sprite: item.keepsake.sprite,
+          alphaThreshold: KEEPSAKE_ALPHA_THRESHOLD,
+          opaquePixels: visual.opaqueWidth && visual.opaqueHeight ? `${visual.opaqueWidth}x${visual.opaqueHeight}` : 'pending/fallback',
+          rotation: item.keepsake.rotate90 ? 90 : 0,
+          footprint: `${item.w}x${item.h}`,
+          at: `${item.col},${item.row}`,
+        };
+      });
     }
     window.__farmLog?.(`[Relationships] Keepsake layout ${JSON.stringify(report)}`, 'info', 'ui');
     return report;
