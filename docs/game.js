@@ -11898,6 +11898,14 @@
           player.fallVZ = 0;
           player.fallSurfaceY = 0;
           player.fallBottomY = chamber.sublevelY;
+          // Re-anchor the (single, shared) recovery ladder to wherever the
+          // player actually fell — a chamber can have several pillars, but
+          // the ladder's rope was only ever registered once at a fixed
+          // entryLanding spot, so falling through any OTHER pillar left the
+          // climb-out prompt out of proximity range with x/y frozen and no
+          // way to ever reach it (see the "if (player.falling) return;"
+          // movement freeze).
+          window.ClimbSystem?.setRopePosition?.(currentArea, chamber.ladderKey, (col + 0.5) * TILE, (row + 0.5) * TILE);
           showToast('The floor gives way beneath you!', false);
         }
       }

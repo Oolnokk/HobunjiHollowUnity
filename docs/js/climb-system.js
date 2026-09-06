@@ -77,6 +77,20 @@
     if (rope) rope.active = active;
     return rope || null;
   }
+  // Re-anchors a rope's base/tip to a new world point — used by the
+  // Dungeon Test's pit chamber (see updateDungeonFalling) to recenter the
+  // fall-recovery ladder on wherever the player actually fell each time,
+  // since a chamber can have several pillars but only ever registers the
+  // one ladder rope; without this, falling through any pillar other than
+  // the one nearest the ladder's fixed entryLanding spot left the player
+  // stranded out of the rope's proximity range with x/y permanently frozen
+  // (see game.js's "if (player.falling) return;" movement freeze) and no
+  // way to ever trigger the climb back out.
+  function setRopePosition(mapId, ropeId, x, y) {
+    const rope = (ropesByArea.get(mapId) || []).find(r => r.id === ropeId);
+    if (rope) { rope.baseX = x; rope.baseY = y; rope.tipX = x; rope.tipY = y; }
+    return rope || null;
+  }
 
   const ROPE_CLIMB_PROXIMITY_TILES = 1.15;
   const ROPE_CLIMB_FACING_COS = 0.6; // ~53 degrees either side of dead-on toward the far anchor.
@@ -632,6 +646,7 @@
     resetAreaRopes,
     registerRope,
     setRopeActive,
+    setRopePosition,
     // Ground height at a world point, in the same THREE-unit convention as
     // branch.baseWorldY/tipWorldY — used by wildlife-cloud-forest-
     // behavior.js to tell how far a given branch actually sits above its
