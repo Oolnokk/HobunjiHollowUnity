@@ -18,7 +18,9 @@ const furniture = { particleEmitters: [] };
 const player = { x: 0, y: 0, vx: 0, vy: 0 };
 let area = 'map_i_town_mine_f_005';
 let persistCount = 0;
+let tothalYear = 7; // Used to distinguish a same-year boot replay from a genuine new-year shift.
 const inventory = { campfireKitFurniture: 3 };
+const saveMeta = { worlds: [{ id: 'world_test', lastTothalYear: 7 }] }; // Used by campfire clearIfZone() to classify Tothal rebuilds.
 
 const context = {
   console,
@@ -27,6 +29,10 @@ const context = {
     PerkSystem: { rank: () => 1 },
     CookingSystem: { openAtHearth() {} },
     AlchemySystem: { setCampfireBrewing() {} },
+    CalendarSystem: { yearNumber: () => tothalYear },
+    __hobunjiPlayerProfile: { worldId: 'world_test' },
+    localStorage: { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(saveMeta) : null },
+    __farmLog() {},
   },
 };
 vm.createContext(context);
@@ -84,16 +90,18 @@ assert.equal(camp.placeFromKit(2, 3).ok, true, 'wilderness camp still works');
 assert.equal(camp.clearMineCampfireOnDeath(), false, 'mine death cleanup does not destroy a wilderness camp');
 assert.equal(camp.serialize().mapId, 'map_northern_cliffs');
 const savedWildernessCamp = camp.serialize();
-const beforeShiftPersistCount = persistCount;
-assert.equal(camp.clearIfZone('map_northern_cliffs'), true, 'zone regeneration invalidates the old visual');
-assert.deepEqual(camp.serialize(), savedWildernessCamp, 'Tothal Shift preserves the wilderness camp location');
-assert.equal(persistCount, beforeShiftPersistCount, 'Tothal Shift does not overwrite the saved camp with null');
-assert.equal(camp.restore(undefined), false, 'missing restore data is ignored rather than treated as an explicit clear');
-assert.deepEqual(camp.serialize(), savedWildernessCamp, 'missing restore data cannot erase a live campfire');
-assert.equal(camp.restore(null), true, 'explicit null restore is still accepted');
-assert.equal(camp.serialize(), null, 'explicit null restore clears camp state');
-assert.equal(camp.restore(savedWildernessCamp), true, 'saved wilderness camp can be restored after an explicit clear');
-assert.ok(camp.getDebugState().history.some(entry => entry.event === 'zone-regeneration-preserved'), 'debug trace records preserved terrain regeneration');
+const beforeReplayPersistCount = persistCount;
+assert.equal(camp.clearIfZone('map_northern_cliffs'), true, 'same-year zone reconstruction invalidates only the old visual');
+assert.deepEqual(camp.serialize(), savedWildernessCamp, 'same-year boot reconstruction preserves the restored wilderness camp');
+assert.equal(persistCount, beforeReplayPersistCount, 'same-year boot reconstruction does not overwrite the saved camp with null');
+assert.ok(camp.getDebugState().history.some(entry => entry.event === 'same-year-rebuild-preserved'), 'debug trace records the preserved same-year reconstruction');
+
+tothalYear = 8;
+const beforeRealShiftPersistCount = persistCount;
+assert.equal(camp.clearIfZone('map_northern_cliffs'), true, 'genuine new-year Tothal Shift still clears a wilderness camp');
+assert.equal(camp.serialize(), null, 'genuine new-year terrain replacement invalidates the old camp coordinates');
+assert.equal(persistCount, beforeRealShiftPersistCount + 1, 'genuine new-year camp removal is persisted immediately');
+assert.ok(camp.getDebugState().history.some(entry => entry.event === 'clear' && entry.details.reason === 'tothal-shift'), 'debug trace identifies genuine Tothal deletion');
 
 area = 'map_i_town_mine_f_012';
 assert.equal(camp.placeFromKit(4, 4).ok, true, 'placing a new camp replaces the previous global camp');
