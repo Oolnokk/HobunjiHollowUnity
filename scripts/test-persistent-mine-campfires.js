@@ -83,6 +83,17 @@ area = 'map_northern_cliffs';
 assert.equal(camp.placeFromKit(2, 3).ok, true, 'wilderness camp still works');
 assert.equal(camp.clearMineCampfireOnDeath(), false, 'mine death cleanup does not destroy a wilderness camp');
 assert.equal(camp.serialize().mapId, 'map_northern_cliffs');
+const savedWildernessCamp = camp.serialize();
+const beforeShiftPersistCount = persistCount;
+assert.equal(camp.clearIfZone('map_northern_cliffs'), true, 'zone regeneration invalidates the old visual');
+assert.deepEqual(camp.serialize(), savedWildernessCamp, 'Tothal Shift preserves the wilderness camp location');
+assert.equal(persistCount, beforeShiftPersistCount, 'Tothal Shift does not overwrite the saved camp with null');
+assert.equal(camp.restore(undefined), false, 'missing restore data is ignored rather than treated as an explicit clear');
+assert.deepEqual(camp.serialize(), savedWildernessCamp, 'missing restore data cannot erase a live campfire');
+assert.equal(camp.restore(null), true, 'explicit null restore is still accepted');
+assert.equal(camp.serialize(), null, 'explicit null restore clears camp state');
+assert.equal(camp.restore(savedWildernessCamp), true, 'saved wilderness camp can be restored after an explicit clear');
+assert.ok(camp.getDebugState().history.some(entry => entry.event === 'zone-regeneration-preserved'), 'debug trace records preserved terrain regeneration');
 
 area = 'map_i_town_mine_f_012';
 assert.equal(camp.placeFromKit(4, 4).ok, true, 'placing a new camp replaces the previous global camp');
