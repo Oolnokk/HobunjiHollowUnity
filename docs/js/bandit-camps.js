@@ -456,17 +456,9 @@
       const rangePx = _companionPerceptionRangePx(c);
       const label = c.name || c.def?.label || 'Your companion';
 
-      for (const rec of (_banditCampInstances.get(deps.getCurrentArea()) || [])) {
-        const key = 'camp:' + rec.instance.id;
-        if (_perceivedThreats.has(key) || isBanditCampCleared(rec)) continue;
-        const col = rec.instance.site.x + rec.instance.site.w / 2, row = rec.instance.site.y + rec.instance.site.h / 2;
-        if (Math.hypot(col * deps.TILE - c.x, row * deps.TILE - c.y) > rangePx) continue;
-        const info = { discoveryKey: rec.discoveryKey, kind: 'camp', zoneId: deps.getCurrentArea(), instanceId: rec.instance.id, col, row, label: 'Bandit Camp' };
-        _perceivedThreats.set(key, info);
-        window.WildernessMap?.rememberDiscoveredThreat?.(rec.discoveryKey, info);
-        deps.requestCompanionDiscovery?.(c, 'bandit-camp');
-        deps.showToast(`${label} senses a bandit camp nearby — marked on the map!`, false);
-      }
+      // Bandit camps are no longer sensed by proximity — see
+      // revealCampFromTracking, triggered by winning a random road ambush
+      // (updateRandomEncounters), for how a companion now finds them.
 
       for (const den of (layout?.dens || [])) {
         const denKey = deps.denKeyFor(deps.getCurrentArea(), den);
@@ -483,6 +475,141 @@
     }
   }
 
+  // ── Random road ambush (Skyrim-style random encounter) ─────────────
+  // While the player is actually travelling through a wilderness zone, a
+  // periodic low-probability roll can drop a pair of bandits on them —
+  // the same "random encounter zone" idea Skyrim uses on its overworld
+  // roads: no fixed trigger point, just a timed chance check gated on
+  // the player being out in the world and moving. Winning the fight is
+  // what tips the player's companion off to the source camp; the camp
+  // stays hidden until then.
+  const ENCOUNTER_CHECK_INTERVAL_S = 5;
+  const ENCOUNTER_CHANCE_PER_CHECK = 0.05;
+  const ENCOUNTER_COOLDOWN_S = 100;
+  const ENCOUNTER_MOVE_SPEED_MIN_PXS = 5;
+  // Kept inside a grunt's ~6.2-tile aggroRangePx (see combat-bandit.js) so
+  // the pair notices and closes in right away instead of standing idle.
+  const ENCOUNTER_MIN_SPAWN_TILES = 4;
+  const ENCOUNTER_MAX_SPAWN_TILES = 6;
+  const ENCOUNTER_NEARBY_HOSTILE_TILES = 16;
+  const ENCOUNTER_MAX_ACTIVE_S = 180;
+
+  let _encounterCheckAccum = 0;
+  let _encounterCooldownRemaining = 0;
+  let _activeAmbush = null; // { campRec, banditIds: Set<id> }
+
+  function _ambushSourceCamp(zoneId) {
+    const candidates = (_banditCampInstances.get(zoneId) || [])
+      .filter(rec => !isBanditCampCleared(rec) && !_perceivedThreats.has('camp:' + rec.instance.id));
+    if (!candidates.length) return null;
+    return candidates[Math.floor(deps.rnd() * candidates.length)];
+  }
+
+  function _bestAlertCompanion() {
+    for (const c of deps.companionObjects) {
+      if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
+      if ((c.master || deps.player) !== deps.player) continue;
+      return c;
+    }
+    return null;
+  }
+
+  function revealCampFromTracking(rec, companion) {
+    const key = 'camp:' + rec.instance.id;
+    if (!rec || isBanditCampCleared(rec) || _perceivedThreats.has(key)) return false;
+    const col = rec.instance.site.x + rec.instance.site.w / 2, row = rec.instance.site.y + rec.instance.site.h / 2;
+    const info = { discoveryKey: rec.discoveryKey, kind: 'camp', zoneId: rec.zoneId, instanceId: rec.instance.id, col, row, label: 'Bandit Camp' };
+    _perceivedThreats.set(key, info);
+    window.WildernessMap?.rememberDiscoveredThreat?.(rec.discoveryKey, info);
+    const label = companion?.name || companion?.def?.label || 'Your companion';
+    deps.requestCompanionDiscovery?.(companion, 'bandit-camp-tracks');
+    deps.showToast(`${label} found tracks leading to a bandit camp — marked on the map!`, false);
+    return true;
+  }
+
+  async function _spawnAmbushBandit(rec, x, y) {
+    const c = await window.BanditCombat.makeEntity(rec.cfg, 'grunt', rec.tier, x, y, {
+      zoneId: rec.zoneId,
+      extra: { state: 'idle', isAmbushBandit: true },
+    });
+    if (!c) return null;
+    deps.hostileObjects.add(c);
+    return c;
+  }
+
+  async function _tryStartRoadAmbush(zoneId) {
+    const rec = _ambushSourceCamp(zoneId);
+    if (!rec) return;
+    const angle = deps.rnd() * Math.PI * 2;
+    const dist = deps.TILE * (ENCOUNTER_MIN_SPAWN_TILES + deps.rnd() * (ENCOUNTER_MAX_SPAWN_TILES - ENCOUNTER_MIN_SPAWN_TILES));
+    const originX = deps.player.x + Math.cos(angle) * dist;
+    const originY = deps.player.y + Math.sin(angle) * dist;
+    const spacing = deps.TILE * 0.9;
+    const sideAngle = angle + Math.PI / 2;
+    const banditIds = new Set();
+    for (const side of [-1, 1]) {
+      const x = originX + Math.cos(sideAngle) * spacing * side * 0.5;
+      const y = originY + Math.sin(sideAngle) * spacing * side * 0.5;
+      const c = await _spawnAmbushBandit(rec, x, y);
+      if (c) banditIds.add(c.id);
+    }
+    if (!banditIds.size) return;
+    _activeAmbush = { campRec: rec, banditIds, elapsedS: 0 };
+    deps.showToast('Bandits ambush you!', true);
+    window.__farmLog?.('[bandits] road ambush: 2 grunts sprung near the player, tied to camp ' + rec.instance.id + '.', 'wildlife');
+  }
+
+  function _resolveAmbushVictory(ambush) {
+    const rec = ambush.campRec;
+    const companion = _bestAlertCompanion();
+    if (!companion) return;
+    revealCampFromTracking(rec, companion);
+  }
+
+  function updateRandomEncounters(dt) {
+    const zoneId = deps.getCurrentArea();
+    if (!deps.isZoneArea(zoneId)) { _encounterCheckAccum = 0; return; }
+
+    if (_activeAmbush) {
+      let anyAlive = false;
+      for (const c of deps.hostileObjects) {
+        if (_activeAmbush.banditIds.has(c.id) && c.health > 0) { anyAlive = true; break; }
+      }
+      _activeAmbush.elapsedS += dt;
+      // No victory reveal past the timeout — either the player fled or the
+      // pair leashed back to idle; the tracks go cold instead of blocking
+      // every future roll forever.
+      if (!anyAlive) _resolveAmbushVictory(_activeAmbush);
+      if (!anyAlive || _activeAmbush.elapsedS >= ENCOUNTER_MAX_ACTIVE_S) {
+        _activeAmbush = null;
+        _encounterCooldownRemaining = ENCOUNTER_COOLDOWN_S;
+      }
+      return;
+    }
+
+    if (_encounterCooldownRemaining > 0) {
+      _encounterCooldownRemaining -= dt;
+      return;
+    }
+
+    if (Math.hypot(deps.player.vx || 0, deps.player.vy || 0) < ENCOUNTER_MOVE_SPEED_MIN_PXS) {
+      _encounterCheckAccum = 0;
+      return;
+    }
+
+    _encounterCheckAccum += dt;
+    if (_encounterCheckAccum < ENCOUNTER_CHECK_INTERVAL_S) return;
+    _encounterCheckAccum = 0;
+
+    const nearbyHostileRangePx = deps.TILE * ENCOUNTER_NEARBY_HOSTILE_TILES;
+    for (const c of deps.hostileObjects) {
+      if (c.health <= 0) continue;
+      if (Math.hypot(c.x - deps.player.x, c.y - deps.player.y) <= nearbyHostileRangePx) return;
+    }
+
+    if (deps.rnd() > ENCOUNTER_CHANCE_PER_CHECK) return;
+    _tryStartRoadAmbush(zoneId);
+  }
 
   // ── Simple hydra camp sequence ────────────────────────────────────
   // One exterior guard is active at a time. Each non-captain death can
@@ -745,6 +872,7 @@
       if (info.zoneId !== zoneId) continue;
       _perceivedThreats.delete(key);
     }
+    if (_activeAmbush?.campRec.zoneId === zoneId) _activeAmbush = null;
   }
 
   let campsEnabled = true;
@@ -1051,6 +1179,7 @@
     updateCampBanners: updateBanditCampBanners,
     companionPerceptionRangePx: _companionPerceptionRangePx,
     updateCompanionPerception,
+    updateRandomEncounters,
     forgetZoneState: forgetZoneBanditState,
     ensureCurrentZoneCamps: ensureCurrentZoneBanditCamps,
     updateTentInteraction: updateBanditTentInteraction,

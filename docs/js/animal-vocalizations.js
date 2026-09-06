@@ -68,7 +68,7 @@
       textEachUtterance: false,
       textLines: Object.freeze([]),
     }),
-    discoveryText: Object.freeze({ 'animal-den': Object.freeze([]), 'bandit-camp': Object.freeze([]) }),
+    discoveryText: Object.freeze({ 'animal-den': Object.freeze([]), 'bandit-camp': Object.freeze([]), 'bandit-camp-tracks': Object.freeze([]) }),
   });
 
   const debug = {
