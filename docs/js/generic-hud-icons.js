@@ -4,7 +4,7 @@
   if (window.HobunjiGenericHudIcons?.version >= 1) return;
 
   const ICON_BASE = 'assets/hud/generic_icons/'; // Used as the single runtime base for all generic HUD icon files.
-  const ICONS = Object.freeze({ // Used by DOM replacement and the rapport popup renderer.
+  const ICONS = Object.freeze({ // Used by DOM replacement and relationship popup rendering.
     heart: `${ICON_BASE}icon_heart.png`,
     exclamation: `${ICON_BASE}icon_exclamation.png`,
     question: `${ICON_BASE}icon_question.png`,
@@ -23,23 +23,29 @@
   const TEXT_SKIP_SELECTOR = 'script,style,textarea,input,select,option,[data-generic-hud-icon]'; // Used to keep icon substitution out of editable/source-like DOM.
   const X_CONTROL_HINT = /(close|cancel|delete|remove|unequip|unassign|dismiss|clear)/i; // Used to distinguish a semantic × close/remove control from multiplication text.
   const RELATIONSHIPS_TAB_SELECTOR = '[data-mpanel="relationships"]'; // Used to make the Relationships tab a heart-only affordance.
-  const RAPPORT_COLOR = '#ffd84d'; // Used by the Rapport popup +number so the entire event is visually distinct from normal heart UI.
-  const RAPPORT_HEART_COLOR = '#ffd84d'; // Used only by the Rapport gain heart so it cannot be mistaken for a normal relationship/health heart.
-  const RAPPORT_RENDER_ORDER = 1200; // Used to keep rapport popups in WorldPopupText's shell-outline-safe overlay band.
-  const rapportPopups = []; // Used by the WorldPopupText update extension to animate/dispose active rapport gains.
-  const decoratedMemoryArrays = new WeakSet(); // Used to ensure each relationship memory array reports rapport gains exactly once.
+  const RAPPORT_HEART_COLOR = '#ffd84d'; // Used only by Rapport change hearts so the changed value reads as temporary Rapport.
+  const FAVOR_HEART_COLOR = '#ff8fbd'; // Used only by Favor change hearts so permanent Favor is explicitly pink, not negative red.
+  const RELATIONSHIP_GAIN_COLOR = '#66d96f'; // Used by positive relationship change numbers regardless of which relationship value changed.
+  const RELATIONSHIP_LOSS_COLOR = '#ff5b5b'; // Used by negative relationship change numbers regardless of which relationship value changed.
+  const RELATIONSHIP_RENDER_ORDER = 1200; // Used to keep relationship popups in WorldPopupText's shell-outline-safe overlay band.
+  const relationshipPopups = []; // Used by the WorldPopupText update extension to animate/dispose active Rapport and Favor changes.
+  const decoratedMemoryArrays = new WeakSet(); // Used to ensure each relationship memory array reports Rapport changes exactly once.
   const initCaptureNames = new Set(); // Used to avoid installing duplicate dependency-capture wrappers on runtime namespaces.
   const debugState = { // Used by the in-game/mobile-accessible debug snapshot.
     replacementCount: 0,
     lastReplacement: null,
     runtimeDepsCaptured: false,
     popupDepsCaptured: false,
+    lastRelationshipPopup: null,
+    lastRelationshipPopupSkipped: null,
     lastRapportPopup: null,
     lastRapportPopupSkipped: null,
+    lastFavorPopup: null,
+    lastFavorPopupSkipped: null,
   };
   let runtimeDeps = null; // Used to resolve an NPC id to its current live walker/root.
   let popupDeps = null; // Used to access THREE/camera while extending WorldPopupText.
-  let heartImagePromise = null; // Used to preload and reuse icon_heart.png for all rapport popup canvases.
+  let heartImagePromise = null; // Used to preload and reuse icon_heart.png for all relationship popup canvases.
   let observer = null; // Used to watch dynamically generated runtime UI for emoji/symbol additions.
 
   function injectStyles() {
@@ -294,15 +300,28 @@
     return canvas;
   }
 
-  function disposeRapportPopup(event) {
+  function signedRelationshipAmount(amount) {
+    const value = Math.round((Number(amount) || 0) * 10) / 10; // Used to retain the sign while keeping popup values compact.
+    return Object.is(value, -0) ? 0 : value;
+  }
+
+  function relationshipHeartColor(kind) {
+    return kind === 'favor' ? FAVOR_HEART_COLOR : RAPPORT_HEART_COLOR;
+  }
+
+  function relationshipNumberColor(amount) {
+    return amount > 0 ? RELATIONSHIP_GAIN_COLOR : RELATIONSHIP_LOSS_COLOR;
+  }
+
+  function disposeRelationshipPopup(event) {
     event?.plane?.parent?.remove(event.plane);
     event?.geometry?.dispose?.();
     event?.material?.dispose?.();
     event?.texture?.dispose?.();
   }
 
-  function clearRapportPopups() {
-    while (rapportPopups.length) disposeRapportPopup(rapportPopups.pop());
+  function clearRelationshipPopups() {
+    while (relationshipPopups.length) disposeRelationshipPopup(relationshipPopups.pop());
   }
 
   function rootScene(root) {
@@ -314,15 +333,15 @@
   function popupHeadOffset(root, center) {
     const THREE = popupDeps?.THREE || window.THREE; // Used to compute the NPC's visible top once at popup spawn.
     if (!THREE?.Box3 || !root || !center) return 0.45;
-    const bounds = new THREE.Box3().setFromObject(root); // Used to place the rapport event above the live avatar instead of at body center.
+    const bounds = new THREE.Box3().setFromObject(root); // Used to place relationship events above the live avatar instead of at body center.
     if (!Number.isFinite(bounds.max?.y)) return 0.45;
     return Math.max(0.2, bounds.max.y - center.y + 0.08);
   }
 
-  async function spawnRapportPopup(root, amount) {
-    const api = window.WorldPopupText; // Used as the owner/anchor provider for this specialized popup type.
+  async function spawnRelationshipPopup(root, kind, amount) {
+    const api = window.WorldPopupText; // Used as the owner/anchor provider for specialized relationship popup types.
     const THREE = popupDeps?.THREE || window.THREE; // Used to build the same canvas-textured mesh style as WorldPopupText.
-    const value = Math.round(Math.max(0, Number(amount) || 0) * 10) / 10; // Used as the clamped positive +number displayed to the player.
+    const value = signedRelationshipAmount(amount); // Used as the actual signed delta displayed to the player.
     if (!api?.avatarCentroidWorld || !THREE || !root || !value) return null;
     const initialScene = rootScene(root); // Used to reject a root that is not currently in a rendered world scene.
     if (!initialScene) return null;
@@ -330,18 +349,20 @@
     const scene = rootScene(root); // Used again after image loading in case the NPC changed areas during the await.
     if (!root.parent || !scene) return null;
 
-    const canvas = document.createElement('canvas'); // Used as the combined heart + number texture.
+    const canvas = document.createElement('canvas'); // Used as the combined value-colored heart + direction-colored number texture.
     canvas.width = 360;
     canvas.height = 112;
-    const context = canvas.getContext('2d'); // Used to draw the yellow heart art and outlined yellow number.
+    const context = canvas.getContext('2d'); // Used to draw the heart art and outlined signed number.
     const iconSize = 76; // Used to keep the heart visually comparable to the popup numeral height.
     const iconX = 16; // Used as the heart's left padding inside the popup texture.
     const iconY = (canvas.height - iconSize) * 0.5; // Used to vertically center the heart beside the number.
+    const heartColor = relationshipHeartColor(kind); // Used so yellow means Rapport while pink means Favor.
+    const numberColor = relationshipNumberColor(value); // Used so green means increase while red means decrease.
     if (image) {
-      const tinted = tintHeartCanvas(image, RAPPORT_HEART_COLOR, iconSize); // Used to make Rapport gain hearts yellow while normal heart UI keeps its authored red/pink relationship colors.
+      const tinted = tintHeartCanvas(image, heartColor, iconSize); // Used to identify which relationship value changed independently from direction.
       context.drawImage(tinted, iconX, iconY, iconSize, iconSize);
     }
-    const label = `+${value}`; // Used as the exact rapport gain text requested above NPC heads.
+    const label = `${value > 0 ? '+' : '-'}${Math.abs(value)}`; // Used as the exact signed relationship change shown above NPC heads.
     context.font = "900 68px 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace";
     context.textAlign = 'left';
     context.textBaseline = 'middle';
@@ -349,23 +370,24 @@
     context.lineWidth = 9;
     context.strokeStyle = 'rgba(15,10,8,.92)';
     context.strokeText(label, 108, canvas.height / 2);
-    context.fillStyle = RAPPORT_COLOR;
+    context.fillStyle = numberColor;
     context.fillText(label, 108, canvas.height / 2);
 
     const texture = new THREE.CanvasTexture(canvas); // Used by the shell-outline-safe world-space popup material.
     if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
     const aspect = canvas.width / canvas.height; // Used to keep the PNG and number from stretching horizontally.
-    const geometry = new THREE.PlaneGeometry(aspect, 1); // Used as the camera-facing rapport billboard.
+    const geometry = new THREE.PlaneGeometry(aspect, 1); // Used as the camera-facing relationship billboard.
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide }); // Used to match WorldPopupText's visibility/render characteristics.
-    const plane = new THREE.Mesh(geometry, material); // Used as the actual world-space rapport visual.
+    const plane = new THREE.Mesh(geometry, material); // Used as the actual world-space relationship visual.
     const worldHeight = Math.max(0.18, Number(api.defaults?.floatPlus?.worldHeight) || 0.36); // Used to reuse the configured Float+ physical scale.
     plane.scale.setScalar(worldHeight);
-    plane.renderOrder = RAPPORT_RENDER_ORDER;
+    plane.renderOrder = RELATIONSHIP_RENDER_ORDER;
     plane.frustumCulled = false;
     plane.userData.isBillboard = true;
     const center = api.avatarCentroidWorld(root); // Used to calculate a stable above-head offset at spawn.
-    const event = { // Used by updateRapportPopups to animate, fade, and clean up this one gain.
+    const event = { // Used by updateRelationshipPopups to animate, fade, and clean up this one change.
+      kind,
       root,
       plane,
       geometry,
@@ -376,31 +398,36 @@
       headOffsetY: popupHeadOffset(root, center),
       worldHeight,
       value,
+      heartColor,
+      numberColor,
     };
     scene.add(plane);
-    rapportPopups.push(event);
-    debugState.lastRapportPopup = { value, npcId: root.userData?.npcId || null, at: Date.now() };
+    relationshipPopups.push(event);
+    const payload = { kind, value, heartColor, numberColor, npcId: root.userData?.npcId || null, at: Date.now() };
+    debugState.lastRelationshipPopup = payload;
+    if (kind === 'favor') debugState.lastFavorPopup = payload;
+    else debugState.lastRapportPopup = payload;
     return event;
   }
 
-  function updateRapportPopups(now) {
+  function updateRelationshipPopups(now) {
     const api = window.WorldPopupText; // Used to share the popup system's live avatar centroid calculation.
-    const camera = popupDeps?.camera || runtimeDeps?.camera; // Used to billboard rapport meshes exactly like the core popup system.
+    const camera = popupDeps?.camera || runtimeDeps?.camera; // Used to billboard relationship meshes exactly like the core popup system.
     if (!api?.avatarCentroidWorld || !camera) return;
-    for (let index = rapportPopups.length - 1; index >= 0; index--) {
-      const event = rapportPopups[index]; // Used as the active rapport popup being advanced this frame.
+    for (let index = relationshipPopups.length - 1; index >= 0; index--) {
+      const event = relationshipPopups[index]; // Used as the active relationship popup being advanced this frame.
       const progress = Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs)); // Used for Float+-style rise/fade timing.
-      const center = api.avatarCentroidWorld(event.root); // Used to follow an NPC who keeps moving after the rapport award.
+      const center = api.avatarCentroidWorld(event.root); // Used to follow an NPC who keeps moving after the relationship change.
       if (!center || !event.root?.parent || progress >= 1) {
-        disposeRapportPopup(event);
-        rapportPopups.splice(index, 1);
+        disposeRelationshipPopup(event);
+        relationshipPopups.splice(index, 1);
         continue;
       }
       center.y += event.headOffsetY + 0.14 * (1 - Math.pow(1 - progress, 2));
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = progress < 0.72 ? 1 : (1 - progress) / 0.28;
-      const pop = 1.08 - 0.08 * Math.min(1, progress / 0.24); // Used to give the gain the same quick settle as Float+ damage text.
+      const pop = 1.08 - 0.08 * Math.min(1, progress / 0.24); // Used to give the change the same quick settle as Float+ damage text.
       event.plane.scale.setScalar(event.worldHeight * pop);
     }
   }
@@ -438,11 +465,11 @@
   }
 
   function extendWorldPopupText(api = window.WorldPopupText) {
-    if (!api || api.__genericHudRapportExtended) return false;
+    if (!api || api.__genericHudRelationshipExtended) return false;
     const originalInit = typeof api.init === 'function' ? api.init.bind(api) : null; // Used to capture the core popup's THREE/camera dependencies without changing game.js.
-    const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null; // Used to keep all existing popup updates ahead of rapport updates.
-    const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null; // Used to dispose rapport meshes whenever the core popup system clears.
-    const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null; // Used to append rapport diagnostics to the existing debug surface.
+    const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null; // Used to keep all existing popup updates ahead of relationship updates.
+    const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null; // Used to dispose relationship meshes whenever the core popup system clears.
+    const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null; // Used to append relationship diagnostics to the existing debug surface.
     if (originalInit) {
       api.init = function genericHudPopupInit(injectedDeps, ...args) {
         popupDeps = injectedDeps;
@@ -453,42 +480,64 @@
     if (originalUpdate) {
       api.update = function genericHudPopupUpdate(now, ...args) {
         const result = originalUpdate(now, ...args); // Used as the untouched core WorldPopupText frame result.
-        updateRapportPopups(now);
+        updateRelationshipPopups(now);
         return result;
       };
     }
     if (originalClear) {
       api.clear = function genericHudPopupClear(...args) {
-        clearRapportPopups();
+        clearRelationshipPopups();
         return originalClear(...args);
       };
     }
-    api.showRapportGain = (root, amount) => spawnRapportPopup(root, amount);
+    api.showRelationshipChange = (root, kind, amount) => spawnRelationshipPopup(root, kind, amount);
+    api.showRapportGain = (root, amount) => spawnRelationshipPopup(root, 'rapport', amount); // Compatibility alias retained for callers from the previous popup revision.
+    api.showRapportChange = (root, amount) => spawnRelationshipPopup(root, 'rapport', amount);
+    api.showFavorChange = (root, amount) => spawnRelationshipPopup(root, 'favor', amount);
     api.debugSnapshot = function genericHudPopupDebugSnapshot() {
       const base = originalDebugSnapshot ? originalDebugSnapshot() : {}; // Used to preserve the core popup debug payload.
-      return { ...base, rapportPopups: rapportPopups.map(event => ({ value: event.value, ageMs: Math.max(0, performance.now() - event.startedAt) })) };
+      return { ...base, relationshipPopups: relationshipPopups.map(event => ({ kind: event.kind, value: event.value, ageMs: Math.max(0, performance.now() - event.startedAt) })) };
     };
-    api.__genericHudRapportExtended = true;
+    api.__genericHudRelationshipExtended = true;
+    api.__genericHudRapportExtended = true; // Compatibility marker retained for older diagnostics.
     return true;
   }
 
-  function showRapportGain(npcId, amount) {
-    const value = Math.round(Math.max(0, Number(amount) || 0) * 10) / 10; // Used to reject zero/negative rapport changes before any visual work.
+  function showRelationshipChange(npcId, kind, amount) {
+    const value = signedRelationshipAmount(amount); // Used to reject only zero changes while retaining losses.
     if (!value) return false;
-    const walker = walkerForNpc(npcId); // Used to anchor the gain to the NPC who actually received rapport.
+    const id = String(npcId || '');
+    const walker = walkerForNpc(id); // Used to anchor the change to the NPC whose relationship value actually changed.
     if (!walker?.root) {
-      debugState.lastRapportPopupSkipped = { npcId: String(npcId || ''), value, reason: 'walker-not-found', at: Date.now() };
+      const payload = { npcId: id, kind, value, reason: 'walker-not-found', at: Date.now() };
+      debugState.lastRelationshipPopupSkipped = payload;
+      if (kind === 'favor') debugState.lastFavorPopupSkipped = payload;
+      else debugState.lastRapportPopupSkipped = payload;
       return false;
     }
-    const api = window.WorldPopupText; // Used to route the gain through the existing world popup owner.
-    if (!api?.showRapportGain) extendWorldPopupText(api);
-    if (!api?.showRapportGain) {
-      debugState.lastRapportPopupSkipped = { npcId: String(npcId || ''), value, reason: 'popup-api-unavailable', at: Date.now() };
+    const api = window.WorldPopupText; // Used to route both relationship values through the existing world popup owner.
+    if (!api?.showRelationshipChange) extendWorldPopupText(api);
+    if (!api?.showRelationshipChange) {
+      const payload = { npcId: id, kind, value, reason: 'popup-api-unavailable', at: Date.now() };
+      debugState.lastRelationshipPopupSkipped = payload;
+      if (kind === 'favor') debugState.lastFavorPopupSkipped = payload;
+      else debugState.lastRapportPopupSkipped = payload;
       return false;
     }
-    api.showRapportGain(walker.root, value);
-    debugState.lastRapportPopup = { npcId: String(npcId || ''), value, at: Date.now() };
+    api.showRelationshipChange(walker.root, kind, value);
+    const payload = { npcId: id, kind, value, at: Date.now() };
+    debugState.lastRelationshipPopup = payload;
+    if (kind === 'favor') debugState.lastFavorPopup = payload;
+    else debugState.lastRapportPopup = payload;
     return true;
+  }
+
+  function showRapportChange(npcId, amount) {
+    return showRelationshipChange(npcId, 'rapport', amount);
+  }
+
+  function showFavorChange(npcId, amount) {
+    return showRelationshipChange(npcId, 'favor', amount);
   }
 
   function decorateRelationshipState(npcId, state) {
@@ -502,8 +551,8 @@
         const result = originalPush.apply(this, entries); // Used as the original Array push result expected by callers.
         for (const entry of entries) {
           if (entry?.type !== 'rapport') continue;
-          const amount = Number(entry.amount); // Used to show only positive, actually-applied rapport deltas after clamping.
-          if (Number.isFinite(amount) && amount > 0) showRapportGain(npcId, amount);
+          const amount = Number(entry.amount); // Used to show both positive and negative actually-applied Rapport deltas after clamping.
+          if (Number.isFinite(amount) && amount !== 0) showRapportChange(npcId, amount);
         }
         return result;
       },
@@ -523,18 +572,49 @@
     return true;
   }
 
+  function installFavorObserver() {
+    const dialogue = window.DialogueContent; // Used as the authoritative permanent-Favor mutation surface, including gifts.
+    if (!dialogue?.adjustNpcFavor || dialogue.__genericHudFavorObserver) return false;
+    const originalAdjust = dialogue.adjustNpcFavor.bind(dialogue); // Used to preserve Favor clamping, memory, spillover, and existing reward text exactly.
+    dialogue.adjustNpcFavor = function genericHudFavorAdjust(npcId, amount, reason, ...args) {
+      const id = String(npcId || '');
+      const beforeState = id ? dialogue.getNpcDlgState?.(id) : null; // Used to measure the actual applied delta instead of the requested delta.
+      const before = Number(beforeState?.favor);
+      const result = originalAdjust(npcId, amount, reason, ...args);
+      const afterState = id ? dialogue.getNpcDlgState?.(id) : null;
+      const after = Number(afterState?.favor);
+      const applied = Number.isFinite(before) && Number.isFinite(after) ? after - before : Number(amount) || 0;
+      if (applied) showFavorChange(id, applied);
+      return result;
+    };
+    dialogue.__genericHudFavorObserver = true;
+    return true;
+  }
+
   function debugSnapshot() {
     return {
       version: 1,
       icons: { ...ICONS },
+      relationshipColors: {
+        rapportHeart: RAPPORT_HEART_COLOR,
+        favorHeart: FAVOR_HEART_COLOR,
+        gainNumber: RELATIONSHIP_GAIN_COLOR,
+        lossNumber: RELATIONSHIP_LOSS_COLOR,
+      },
       replacementCount: debugState.replacementCount,
       lastReplacement: debugState.lastReplacement,
       runtimeDepsCaptured: debugState.runtimeDepsCaptured,
       popupDepsCaptured: debugState.popupDepsCaptured,
       initCaptureNames: [...initCaptureNames],
-      activeRapportPopups: rapportPopups.length,
+      activeRelationshipPopups: relationshipPopups.length,
+      activeRapportPopups: relationshipPopups.filter(event => event.kind === 'rapport').length,
+      activeFavorPopups: relationshipPopups.filter(event => event.kind === 'favor').length,
+      lastRelationshipPopup: debugState.lastRelationshipPopup,
+      lastRelationshipPopupSkipped: debugState.lastRelationshipPopupSkipped,
       lastRapportPopup: debugState.lastRapportPopup,
       lastRapportPopupSkipped: debugState.lastRapportPopupSkipped,
+      lastFavorPopup: debugState.lastFavorPopup,
+      lastFavorPopupSkipped: debugState.lastFavorPopupSkipped,
       observed: !!observer,
       relationshipsTabStyled: document.querySelector(RELATIONSHIPS_TAB_SELECTOR)?.dataset?.genericRelationshipsHeart === '1',
     };
@@ -547,12 +627,14 @@
   hookRuntimeNamespace('NpcWardrobe');
   hookWorldPopupText();
   installRapportObserver();
+  installFavorObserver();
   loadHeartImage();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       scanNode(document.body);
       installRapportObserver();
+      installFavorObserver();
       styleRelationshipsTab();
       labelVitalsHeart();
     }, { once: true });
@@ -564,7 +646,10 @@
     version: 1,
     icons: ICONS,
     scan: () => scanNode(document.body),
-    showRapportGain,
+    showRelationshipChange,
+    showRapportGain: showRapportChange,
+    showRapportChange,
+    showFavorChange,
     debugSnapshot,
   });
   window.__genericHudIconsDebug = debugSnapshot;
