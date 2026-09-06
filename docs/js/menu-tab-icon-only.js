@@ -10,7 +10,7 @@
   const GENERIC_ICON_BASE = new URL('assets/hud/generic_icons/', document.baseURI).href; // Used by generic menu-tab artwork and the temporary wallet currency icon.
   const ACTION_ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Used by gameplay action artwork reused by menu tabs.
   const WALLET_SUFFIX_SELECTOR = '#mpInventory .inv-wallet-suffix'; // Used to replace the mis-metric Tankanscript currency glyph with temporary PNG artwork.
-  const CURRENCY_ICON_FILE = 'icon_tbu.png'; // Used by applyWalletCurrencyIcon() as the temporary gananji currency symbol.
+  const CURRENCY_ICON_FILE = 'icon_bronzecurrency.png'; // Used by applyWalletCurrencyIcon() as the temporary gananji currency symbol.
   const LOADOUT_ICON_SIZE = 128; // Used as the raster resolution for the outlined loadout composite.
   const LOADOUT_OUTLINE_RADIUS = 4; // Used to punch a readable halo around melee before it covers ranged.
   const LOADOUT_COLORS = Object.freeze({
@@ -156,7 +156,7 @@
   function applyWalletCurrencyIcon() {
     const suffix = document.querySelector(WALLET_SUFFIX_SELECTOR); // Used as the existing wallet currency-symbol host; keeps the wallet DOM/layout contract intact.
     if (!suffix) return false;
-    if (suffix.dataset.walletCurrencyIcon === 'tbu' && suffix.querySelector('.wallet-currency-icon')) {
+    if (suffix.dataset.walletCurrencyIcon === 'bronze' && suffix.querySelector('.wallet-currency-icon')) {
       debugState.walletCurrencyIconApplied = true;
       return false;
     }
@@ -167,7 +167,7 @@
     image.draggable = false;
     image.setAttribute('aria-hidden', 'true');
     suffix.replaceChildren(image);
-    suffix.dataset.walletCurrencyIcon = 'tbu';
+    suffix.dataset.walletCurrencyIcon = 'bronze';
     suffix.setAttribute('aria-label', 'Gananji');
     suffix.title = 'Gananji';
     debugState.walletCurrencyIconApplied = true;
