@@ -44,6 +44,16 @@
   }
 
   function giftCompleted(gift) {
+    // Check the durable owned-tool flag first (see giveGiftItem) — it's an
+    // idempotent boolean in gearInventory.tools that never gets evicted.
+    // The NPC memory event below is a FIFO-capped log (50 entries/NPC,
+    // see DialogueContent.recordNpcMemory) that ordinary continued talking/
+    // gifting with this same NPC can push the completion entry out of, so
+    // it can't be the sole source of truth without an already-earned
+    // weapon shape silently re-locking itself.
+    const itemKey = gift && craftDeps?.craftedToolItemKey?.(gift.shapeKey, gift.giftMetalKey);
+    const gear = itemKey ? craftDeps?.getGearInventory?.() : null;
+    if (gear?.tools?.[itemKey]) return true;
     const state = originalNpcState(gift);
     const event = completionMemoryEvent(gift);
     return !!state?.memory?.some?.(entry => entry?.event === event);

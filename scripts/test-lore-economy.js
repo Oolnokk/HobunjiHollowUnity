@@ -13,7 +13,6 @@ const itemDefs = { // Provides a small economy surface sufficient to verify Mulc
   mulch: { label: 'Mulch', sellPrice: 5 },
   ore_gold: { label: 'Gold Ore', sellPrice: 500 },
   bar_gold: { label: 'Gold Bar', sellPrice: 5000 },
-  bar_tumbaga: { label: 'Tumbaga Bar', sellPrice: 900 },
   bar_lowTinBronze: { label: 'Low-Tin Bronze Bar', sellPrice: 25 },
   bar_tinBronze: { label: 'Tin Bronze Bar', sellPrice: 30 },
   bar_highTinBronze: { label: 'High-Tin Bronze Bar', sellPrice: 35 },
@@ -62,7 +61,6 @@ context.window.HudUpdate.init(deps);
 
 assert.equal(itemDefs.ore_gold.sellPrice, 6, 'Gold Ore must sell for exactly one gananji more than Mulch');
 assert.equal(itemDefs.bar_gold.sellPrice, 31, 'Gold Bar must remain cheap after refining common Gold Ore');
-assert.equal(itemDefs.bar_tumbaga.sellPrice, 60, 'Gold-heavy Tumbaga must not retain an old prestige-metal sale price');
 assert.equal(itemDefs.bar_lowTinBronze.sellPrice, 400, 'Low-Tin Bronze must receive the bronze value floor');
 assert.equal(itemDefs.bar_tinBronze.sellPrice, 500, 'Tin Bronze must receive the bronze value floor');
 assert.equal(itemDefs.bar_highTinBronze.sellPrice, 650, 'High-Tin Bronze must receive the bronze value floor');

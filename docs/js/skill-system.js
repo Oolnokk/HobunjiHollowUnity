@@ -185,17 +185,22 @@
   // tree for that skill (see docs/js/perk-system.js), so leveling those
   // three only grants perk points rather than free passive power. Mining's
   // yield and pick speed are also perk-owned now. Farming and Cooking keep
-  // the original automatic level-based curve below.
+  // the original automatic level-based curve below. The matching food
+  // effect (Combat/Foraging/Fishing/Mining meals) still adds its own
+  // temporary stack-based bonus on top of the perk rank, at the same
+  // stacks*0.02-per-stack rate every other food effect uses (see
+  // attackMultiplier/damageTakenMultiplier/rareFishWeightMultiplier below) —
+  // otherwise those meals would show an active buff icon that does nothing.
   function bonusYieldChance(skillKey) {
-    if (skillKey === 'foraging') return Math.min(0.6, (window.PerkSystem?.rank('foraging', 'increaseYieldChance') || 0) * 0.1); // Increase Yield Chance perk.
-    if (skillKey === 'mining') return Math.min(0.35, (window.PerkSystem?.rank('mining', 'increaseMiningYield') || 0) * 0.07); // Increase Mining Yield perk; five ranks preserve the former 35% cap.
+    if (skillKey === 'foraging') return Math.min(0.6, (window.PerkSystem?.rank('foraging', 'increaseYieldChance') || 0) * 0.1 + foodStacks('foraging') * 0.02); // Increase Yield Chance perk.
+    if (skillKey === 'mining') return Math.min(0.35, (window.PerkSystem?.rank('mining', 'increaseMiningYield') || 0) * 0.07 + foodStacks('mining') * 0.02); // Increase Mining Yield perk; five ranks preserve the former 35% cap.
     return Math.min(0.35, normalizedPower(skillKey) * 0.35); // Used by stone and future ore rewards.
   }
 
   function actionSpeedMultiplier(skillKey) {
     let skillSpeed = 1 + normalizedPower(skillKey) * 0.5; // Used as the skill-owned action baseline before temporary alchemy modifiers.
-    if (skillKey === 'foraging') skillSpeed = 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1; // Increase Foraging Speed perk.
-    else if (skillKey === 'mining') skillSpeed = 1 + (window.PerkSystem?.rank('mining', 'increaseMiningSpeed') || 0) * 0.1; // Increase Mining Speed perk; five ranks preserve the former +50% cap.
+    if (skillKey === 'foraging') skillSpeed = 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1 + foodStacks('foraging') * 0.02; // Increase Foraging Speed perk.
+    else if (skillKey === 'mining') skillSpeed = 1 + (window.PerkSystem?.rank('mining', 'increaseMiningSpeed') || 0) * 0.1 + foodStacks('mining') * 0.02; // Increase Mining Speed perk; five ranks preserve the former +50% cap.
     const strengthWorkSpeed = ['foraging', 'mining', 'farming'].includes(skillKey) ? (window.AlchemySystem?.getWorkSpeedMultiplier?.() || 1) : 1; // Used to apply Strength only to chop, mine, and dig actions.
     return skillSpeed * strengthWorkSpeed;
   }
@@ -239,7 +244,7 @@
 
   function qualityPower(skillKey) {
     const perkId = QUALITY_PERKS[skillKey];
-    return perkId ? Math.min(1, (window.PerkSystem?.rank(skillKey, perkId) || 0) * 0.2) : normalizedPower(skillKey);
+    return perkId ? Math.min(1, (window.PerkSystem?.rank(skillKey, perkId) || 0) * 0.2 + foodStacks(skillKey) * 0.02) : normalizedPower(skillKey);
   }
 
   function rollQuality(skillKey) {

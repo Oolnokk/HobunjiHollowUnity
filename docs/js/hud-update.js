@@ -115,11 +115,6 @@
       sellPrice: goldBarSell,
       desc: 'Refined common gold. Easy to find, soft, and cheap; it carries none of bronze’s prestige or scarcity.',
     });
-    patchEconomyItem('bar_tumbaga', {
-      sellPrice: Math.min(itemSellValue(deps.ITEM_DEFS.bar_tumbaga, 60), 60),
-      desc: 'A copper-gold alloy. Useful for its working qualities and color, but its abundant gold content adds little value.',
-    });
-
     const bronzeLabels = { // Used when a bronze bar definition is missing a label but still needs a complete player-facing economy entry.
       bar_lowTinBronze: 'Low-Tin Bronze Bar',
       bar_tinBronze: 'Tin Bronze Bar',
