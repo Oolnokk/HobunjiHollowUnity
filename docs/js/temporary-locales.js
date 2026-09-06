@@ -273,11 +273,13 @@
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 
-// Keep the Cloud Forest / wilderness-entry fix in its own module, but load it
-// synchronously here: this script already sits after wilderness-map-generator.js
-// and before border-terrain.js in docs/index.html. document.write preserves that
-// ordering without making the large index or generator files carry the patch.
+// Keep the Cloud Forest / wilderness-entry refinements in their own modules,
+// but load them synchronously here: this script already sits after
+// wilderness-map-generator.js and before border-terrain.js in docs/index.html.
+// The narrow-corridor adapter runs after the older Cloud Forest repair so it
+// can also repopulate the apron that repair reclaimed too late for flora.
 if (typeof document !== 'undefined' && document.currentScript) {
   const cloudRuntimeSrc = new URL('cloud-forest-runtime.js', document.currentScript.src).href;
-  document.write('<script src="' + cloudRuntimeSrc + '"></' + 'script>');
+  const entryCorridorSrc = new URL('wilderness-entry-corridor.js', document.currentScript.src).href;
+  document.write('<script src="' + cloudRuntimeSrc + '"></' + 'script><script src="' + entryCorridorSrc + '"></' + 'script>');
 }

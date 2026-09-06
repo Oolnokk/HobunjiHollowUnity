@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Wilderness Generation Lab</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../config/config.js"></script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/terrain-preview.js"></script>
+<script src="../../js/wilderness-map-generator.js"></script>
+<script src="lab-features.js"></script>
+<script src="lab-preview.js"></script>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
+:root{--bg:#07101a;--panel:#111b28;--border:rgba(255,255,255,.13);--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf}
+button,input,select,textarea{font:inherit}button{border:1px solid rgba(106,167,255,.34);background:rgba(106,167,255,.12);color:var(--text);border-radius:8px;padding:7px 10px;font-weight:700;cursor:pointer;min-height:36px}button:hover{background:rgba(106,167,255,.22)}button.secondary{border-color:var(--border);background:rgba(255,255,255,.05)}button.primary{background:rgba(52,211,153,.16);border-color:rgba(52,211,153,.45)}button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.14);border-radius:7px;color:var(--text);outline:none}input,select{min-height:34px;padding:5px 7px}textarea{width:100%;min-height:92px;padding:8px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+#shell{height:100%;display:flex;flex-direction:column;min-height:0}#toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0}#toolbar h1{font-size:13px;margin:0 6px 0 0;color:#fff;white-space:nowrap}#toolbar .seed{width:155px}#toolbar .status{margin-left:auto;color:var(--muted);font-size:11px;max-width:430px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#main{display:flex;flex:1;min-height:0}.sidebar{width:375px;min-width:285px;max-width:50vw;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}.sidebar-head{padding:8px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap}.sidebar-scroll{overflow:auto;-webkit-overflow-scrolling:touch;padding:8px;min-height:0}.card{background:rgba(0,0,0,.12);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden}.card>summary{cursor:pointer;padding:9px 10px;font-weight:800;color:#dbeafe;list-style:none}.card>summary::-webkit-details-marker{display:none}.card>summary:before{content:'▸';display:inline-block;width:15px;color:var(--muted)}.card[open]>summary:before{content:'▾'}.card-body{padding:0 10px 10px}.help{font-size:11px;color:var(--muted);line-height:1.4}.control{display:grid;grid-template-columns:minmax(105px,1fr) minmax(115px,1.4fr) 65px;gap:6px;align-items:center;margin:7px 0}.control label{font-size:11px;color:#dbeafe}.control input[type=range]{width:100%;padding:0;border:none;background:transparent;min-height:25px}.control input[type=number]{width:65px}.control.check{grid-template-columns:1fr auto}.control.check input{width:20px;height:20px}.control.select{grid-template-columns:1fr 1.6fr}.control.select select{width:100%}.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.divider{height:1px;background:var(--border);margin:9px 0}.chip{font-size:10px;padding:3px 6px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}
+#stage{flex:1;min-width:0;min-height:0;position:relative;background:#111923}#view3d,#view2d{position:absolute;inset:0;width:100%;height:100%;display:block}#view2d{display:none;background:#0a1018;image-rendering:pixelated}.viewbar{position:absolute;left:9px;top:9px;z-index:7;display:flex;gap:5px;background:rgba(4,8,13,.74);padding:5px;border:1px solid var(--border);border-radius:9px;backdrop-filter:blur(4px)}.viewbar button{min-height:31px;padding:5px 8px;font-size:11px}.viewbar button.active{border-color:rgba(52,211,153,.65);background:rgba(52,211,153,.18)}
+#statsPanel{position:absolute;right:9px;top:9px;z-index:6;width:min(350px,46%);max-height:52%;overflow:auto;background:rgba(4,8,13,.78);border:1px solid var(--border);border-radius:9px;padding:8px;backdrop-filter:blur(4px);font-size:11px;line-height:1.45}#statsPanel b{color:#dbeafe}.statgrid{display:grid;grid-template-columns:1fr auto;gap:2px 8px}.legend{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.legend span{font-size:9px;border:1px solid var(--border);padding:2px 5px;border-radius:6px;background:rgba(255,255,255,.04)}
+#debugToggle{position:absolute;right:10px;bottom:10px;z-index:9}#debugPanel{display:none;position:absolute;right:10px;bottom:54px;z-index:10;width:min(560px,calc(100% - 20px));max-height:48%;overflow:auto;background:rgba(5,9,14,.96);border:1px solid var(--border);border-radius:10px;padding:8px;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}.debug-head{display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:6px}.debug-head button{min-height:30px;padding:4px 7px;font-size:10px}
+@media(max-width:780px){html,body{overflow:auto;height:auto;min-height:100%}#shell{height:auto;min-height:100vh}#main{flex-direction:column}.sidebar{width:100%;max-width:none;min-width:0;border-right:0;border-bottom:1px solid var(--border)}.sidebar-scroll{max-height:52vh}.control{grid-template-columns:minmax(100px,1fr) minmax(95px,1.25fr) 60px}#stage{height:64vh;min-height:430px;flex:none}#toolbar .status{width:100%;margin-left:0}#statsPanel{width:48%;font-size:10px}}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="toolbar">
+    <h1>🌲 Wilderness Generation Lab</h1>
+    <label class="help" for="seedInput">Seed</label>
+    <input id="seedInput" class="seed" value="wild-lab-2" autocomplete="off">
+    <button id="randomSeedBtn" class="secondary" type="button">🎲 Seed</button>
+    <button id="generateBtn" class="primary" type="button">Generate</button>
+    <label class="help" style="display:flex;align-items:center;gap:4px"><input id="autoGenerate" type="checkbox"> Auto</label>
+    <span id="statusText" class="status">Booting renderer…</span>
+  </div>
+  <div id="main">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <select id="recipeSelect" title="Generation recipe">
+          <option value="default">Stock generator</option>
+          <option value="hybridEscarpment">Incline → sheer cliff</option>
+          <option value="northernCliffs">Northern cliffs</option>
+          <option value="greatIncline">Great incline</option>
+          <option value="greatBasin">Great basin</option>
+          <option value="lowSprawl">Low sprawling plateaus</option>
+          <option value="riverlands">Riverlands</option>
+          <option value="denseForest">Dense forest</option>
+          <option value="sparseRocky">Sparse rocky uplands</option>
+        </select>
+        <button id="applyRecipeBtn" class="secondary" type="button">Apply recipe</button>
+        <button id="resetSettingsBtn" class="secondary" type="button">Defaults</button>
+      </div>
+      <div class="sidebar-scroll">
+        <details class="card" open><summary>Terrain shape</summary><div class="card-body" id="groupTerrain"></div></details>
+        <details class="card" open><summary>Experimental: incline → sheer cliff</summary><div class="card-body">
+          <div class="help">This uses the existing gameplay <b>rampElevation</b> surface as a continuous broad heightfield. The gentle side is fully walkable; the high boundary drops directly to untouched ground so the existing rock-span solver makes a sheer cliff. It does not create plateau submaps.</div>
+          <div class="control check"><label for="hybridEnabled">Enable hybrid escarpment</label><input id="hybridEnabled" type="checkbox"></div>
+          <div class="control select"><label for="hybridApproach">Walkable approach side</label><select id="hybridApproach"><option value="south">south</option><option value="north">north</option><option value="west">west</option><option value="east">east</option></select></div>
+          <div class="control"><label for="hybridRise">Rise (plateau units)</label><input id="hybridRise" type="range" min="0.25" max="12" step="0.05" value="3.5"><input id="hybridRiseNum" type="number" min="0.25" max="12" step="0.05" value="3.5"></div>
+          <div class="control"><label for="hybridCliffPosition">Cliff position</label><input id="hybridCliffPosition" type="range" min="0.15" max="0.9" step="0.01" value="0.62"><input id="hybridCliffPositionNum" type="number" min="0.15" max="0.9" step="0.01" value="0.62"></div>
+          <div class="control"><label for="hybridInclineRun">Incline run</label><input id="hybridInclineRun" type="range" min="0.05" max="0.75" step="0.01" value="0.34"><input id="hybridInclineRunNum" type="number" min="0.05" max="0.75" step="0.01" value="0.34"></div>
+          <div class="control"><label for="hybridWidth">Feature width</label><input id="hybridWidth" type="range" min="0.08" max="1" step="0.01" value="0.72"><input id="hybridWidthNum" type="number" min="0.08" max="1" step="0.01" value="0.72"></div>
+          <div class="control"><label for="hybridCenter">Cross-axis center</label><input id="hybridCenter" type="range" min="0" max="1" step="0.01" value="0.5"><input id="hybridCenterNum" type="number" min="0" max="1" step="0.01" value="0.5"></div>
+          <div class="control"><label for="hybridShoulder">Side taper</label><input id="hybridShoulder" type="range" min="0.02" max="0.48" step="0.01" value="0.16"><input id="hybridShoulderNum" type="number" min="0.02" max="0.48" step="0.01" value="0.16"></div>
+          <div class="control"><label for="hybridCurve">Incline curve</label><input id="hybridCurve" type="range" min="0.25" max="4" step="0.05" value="1.15"><input id="hybridCurveNum" type="number" min="0.25" max="4" step="0.05" value="1.15"></div>
+          <div class="control"><label for="hybridJitter">Cliff irregularity</label><input id="hybridJitter" type="range" min="0" max="0.12" step="0.0025" value="0.025"><input id="hybridJitterNum" type="number" min="0" max="0.12" step="0.0025" value="0.025"></div>
+        </div></details>
+        <details class="card"><summary>Hydrology + paths</summary><div class="card-body" id="groupHydro"></div></details>
+        <details class="card"><summary>Flora + resources</summary><div class="card-body" id="groupFlora"></div></details>
+        <details class="card"><summary>Structures + fauna</summary><div class="card-body" id="groupLife"></div></details>
+        <details class="card" open><summary>Seasonal surface lab</summary><div class="card-body">
+          <div class="help">Visual-only snow/slush shell over generated terrain. This still does not alter collision or exported workspace data.</div>
+          <div class="control check"><label for="winterEnabled">Enable winter layer</label><input id="winterEnabled" type="checkbox"></div>
+          <div class="control select"><label for="winterPreset">Layer</label><select id="winterPreset"><option value="snow">Snow</option><option value="slush">Coldmuck slush</option></select></div>
+          <div class="control select"><label for="winterTarget">Target material</label><select id="winterTarget"><option>grass</option><option>path</option><option>tilled</option><option>trench</option><option>raised</option><option>paddy</option><option>rock</option><option>shrub</option><option>river</option><option>stream</option><option>waterfall</option><option>cliff</option></select></div>
+          <div class="control"><label for="winterHeight">Accumulation / blizzard depth</label><input id="winterHeight" type="range" min="0" max="2" step="0.01" value="0.35"><input id="winterHeightNum" type="number" min="0" max="2" step="0.01" value="0.35"></div>
+          <div class="control"><label for="winterOpacity">Opacity</label><input id="winterOpacity" type="range" min="0.05" max="1" step="0.01" value="1"><input id="winterOpacityNum" type="number" min="0.05" max="1" step="0.01" value="1"></div>
+          <div class="control"><label for="winterNoise">Lump scale</label><input id="winterNoise" type="range" min="0.1" max="8" step="0.05" value="1.1"><input id="winterNoiseNum" type="number" min="0.1" max="8" step="0.05" value="1.1"></div>
+          <div class="control"><label for="winterBulge">Layer bulge</label><input id="winterBulge" type="range" min="0" max="1" step="0.01" value="0.65"><input id="winterBulgeNum" type="number" min="0" max="1" step="0.01" value="0.65"></div>
+          <div class="control"><label for="winterLayers">Layers</label><input id="winterLayers" type="range" min="1" max="12" step="1" value="5"><input id="winterLayersNum" type="number" min="1" max="12" step="1" value="5"></div>
+          <div class="control check"><label for="edgeWrapEnabled">Bell/wrap exposed edges</label><input id="edgeWrapEnabled" type="checkbox" checked></div>
+          <div class="control"><label for="edgeWrapWidth">Edge width</label><input id="edgeWrapWidth" type="range" min="0" max="0.45" step="0.01" value="0.18"><input id="edgeWrapWidthNum" type="number" min="0" max="0.45" step="0.01" value="0.18"></div>
+          <div class="control"><label for="edgeWrapDrop">Edge drop</label><input id="edgeWrapDrop" type="range" min="0" max="0.4" step="0.01" value="0.13"><input id="edgeWrapDropNum" type="number" min="0" max="0.4" step="0.01" value="0.13"></div>
+          <div class="control"><label for="edgeWrapRoundness">Bell roundness</label><input id="edgeWrapRoundness" type="range" min="0.4" max="3" step="0.1" value="1.4"><input id="edgeWrapRoundnessNum" type="number" min="0.4" max="3" step="0.1" value="1.4"></div>
+        </div></details>
+        <details class="card"><summary>Advanced overrides + export</summary><div class="card-body">
+          <div class="help">Any JSON keys here merge last into WildernessMapGenerator settings, so experimental generator parameters can be tested before dedicated controls exist.</div>
+          <textarea id="advancedJson" spellcheck="false" placeholder='{"plateauAreaMul":1.4}'></textarea>
+          <div class="row" style="margin-top:7px"><button id="copySettingsBtn" class="secondary" type="button">Copy settings</button><button id="downloadSettingsBtn" class="secondary" type="button">Download settings</button><button id="downloadWorkspaceBtn" class="secondary" type="button">Export workspace</button></div>
+          <div class="divider"></div><div class="help" id="generatorReport">Generator report appears after generation.</div>
+        </div></details>
+      </div>
+    </aside>
+    <main id="stage">
+      <canvas id="view3d"></canvas><canvas id="view2d"></canvas>
+      <div class="viewbar"><button id="show3dBtn" class="active" type="button">3D terrain</button><button id="show2dBtn" type="button">2D layout</button><button id="fitBtn" class="secondary" type="button">Fit</button></div>
+      <div id="statsPanel"><b>No generation yet.</b></div>
+      <button id="debugToggle" class="secondary" type="button">Debug</button>
+      <div id="debugPanel"><div class="debug-head"><b>Wilderness lab debug</b><div><button id="debugCopy" class="secondary" type="button">Copy</button> <button id="debugClear" class="secondary" type="button">Clear</button></div></div><div id="debugText"></div></div>
+    </main>
+  </div>
+</div>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const Generator = window.WildernessMapGenerator;
+const Features = window.WildernessLabFeatures;
+const Preview = window.WildernessLabPreview;
+const TerrainPreview = window.TerrainPreview;
+const CONTROL_SCHEMA = [
+  {group:'Terrain',key:'width',label:'Source width',min:32,max:150,step:1},{group:'Terrain',key:'height',label:'Source height',min:32,max:150,step:1},
+  {group:'Terrain',key:'entrySide',label:'Entry side',type:'select',values:['random','north','east','south','west']},{group:'Terrain',key:'preset',label:'Terrain preset',type:'select',values:['custom','cliffs','greatBasin']},
+  {group:'Terrain',key:'stepCurve',label:'Step curve',type:'select',values:['northernCliffs','greatIncline']},{group:'Terrain',key:'boundaryMode',label:'Boundary mode',type:'select',values:['legacyFullRing','followMapHeight','entrySideDistantLandscape']},
+  {group:'Terrain',key:'boundaryCliffBoost',label:'Boundary cliff boost',min:-8,max:20,step:1},{group:'Terrain',key:'plateaus',label:'Plateau attempts',min:0,max:180,step:1},{group:'Terrain',key:'maxTier',label:'Max tier',min:1,max:32,step:1},
+  {group:'Terrain',key:'lowProfilePlateaus',label:'Low-profile plateaus',type:'checkbox'},{group:'Terrain',key:'plateauAreaMul',label:'Plateau area multiplier',min:.25,max:3.5,step:.05},
+  {group:'Terrain',key:'ramps',label:'Ramp attempts',min:0,max:50,step:1},{group:'Terrain',key:'wideRamps',label:'Wide ramps',type:'checkbox'},{group:'Terrain',key:'rampMinDiff',label:'Ramp minimum tier diff',min:1,max:8,step:1},{group:'Terrain',key:'rampMaxAngle',label:'Ramp max angle',min:5,max:85,step:1},{group:'Terrain',key:'entryGateWidthMul',label:'Entry gate width',min:.2,max:3,step:.05},
+  {group:'Hydro',key:'ponds',label:'Lowland ponds',min:0,max:30,step:1},{group:'Hydro',key:'plateauPonds',label:'Plateau ponds',min:0,max:30,step:1},{group:'Hydro',key:'plateauStreams',label:'Plateau streams',min:0,max:35,step:1},{group:'Hydro',key:'rivers',label:'Rivers',min:0,max:8,step:1},{group:'Hydro',key:'pathAnchors',label:'Path anchors',min:0,max:14,step:1},{group:'Hydro',key:'pathWindiness',label:'Path windiness',min:0,max:4,step:.05},
+  {group:'Flora',key:'trees',label:'Trees',min:0,max:500,step:1},{group:'Flora',key:'treesFillGaps',label:'Trees fill gaps',type:'checkbox'},{group:'Flora',key:'treeThinning',label:'Tree thinning',min:0,max:.95,step:.01},{group:'Flora',key:'treeVarietyFraction',label:'Tree variety fraction',min:0,max:.95,step:.01},{group:'Flora',key:'logs',label:'Fallen logs',min:0,max:100,step:1},{group:'Flora',key:'bushes',label:'Bushes',min:0,max:220,step:1},{group:'Flora',key:'forage',label:'Forage plants',min:0,max:180,step:1},{group:'Flora',key:'fruitBushes',label:'Fruit bushes',min:0,max:80,step:1},{group:'Flora',key:'mushrooms',label:'Mushrooms',min:0,max:90,step:1},{group:'Flora',key:'beehives',label:'Beehives',min:0,max:40,step:1},{group:'Flora',key:'treasure',label:'Treasure',min:0,max:90,step:1},{group:'Flora',key:'ore',label:'Ore rocks',min:0,max:160,step:1},{group:'Flora',key:'boulders',label:'Boulders',min:0,max:160,step:1},{group:'Flora',key:'denEntranceTreeClearance',label:'Den tree clearance',min:0,max:10,step:1},
+  {group:'Life',key:'structures',label:'Structures',min:0,max:30,step:1},{group:'Life',key:'caves',label:'Caves',min:0,max:30,step:1},{group:'Life',key:'statues',label:'Statues',min:0,max:50,step:1},{group:'Life',key:'pillars',label:'Submerged pillars',min:0,max:60,step:1},{group:'Life',key:'animalDens',label:'Animal dens',min:0,max:24,step:1},{group:'Life',key:'rootTotems',label:'Root totems',min:0,max:12,step:1},{group:'Life',key:'prey',label:'Prey agents',min:0,max:30,step:1},{group:'Life',key:'packPredators',label:'Pack predators',min:0,max:20,step:1},{group:'Life',key:'ambushPredators',label:'Ambush predators',min:0,max:16,step:1},{group:'Life',key:'omnivores',label:'Omnivores',min:0,max:16,step:1},
+];
+const RECIPES = {
+  default:{settings:{},hybrid:{enabled:false}},
+  hybridEscarpment:{settings:{preset:'custom',boundaryMode:'followMapHeight',plateaus:0,ramps:0,ponds:1,plateauPonds:0,plateauStreams:0,rivers:0,pathAnchors:3},hybrid:{enabled:true,approachSide:'south',rise:4,cliffPosition:.64,inclineRun:.38,width:.78,center:.5,shoulder:.18,curve:1.05,edgeJitter:.025}},
+  northernCliffs:{settings:{preset:'cliffs',stepCurve:'northernCliffs',boundaryMode:'followMapHeight',boundaryCliffBoost:5,plateaus:92,maxTier:12,ramps:18},hybrid:{enabled:false}},
+  greatIncline:{settings:{preset:'cliffs',stepCurve:'greatIncline',boundaryMode:'entrySideDistantLandscape',boundaryCliffBoost:5,plateaus:110,maxTier:18,ramps:22,wideRamps:true,plateauAreaMul:1.15},hybrid:{enabled:false}},
+  greatBasin:{settings:{preset:'greatBasin',stepCurve:'northernCliffs',boundaryMode:'entrySideDistantLandscape',boundaryCliffBoost:4,plateaus:96,maxTier:12,ramps:18,rivers:2,plateauStreams:14},hybrid:{enabled:false}},
+  lowSprawl:{settings:{preset:'custom',boundaryMode:'followMapHeight',plateaus:44,maxTier:4,lowProfilePlateaus:true,plateauAreaMul:2.2,ramps:12,wideRamps:true},hybrid:{enabled:false}},
+  riverlands:{settings:{preset:'custom',boundaryMode:'followMapHeight',plateaus:52,maxTier:5,ponds:16,plateauPonds:16,plateauStreams:24,rivers:5,pathAnchors:7,pathWindiness:1.6},hybrid:{enabled:false}},
+  denseForest:{settings:{trees:280,treesFillGaps:true,treeThinning:.18,treeVarietyFraction:.16,bushes:120,forage:90,fruitBushes:28,mushrooms:34,logs:44},hybrid:{enabled:false}},
+  sparseRocky:{settings:{trees:38,treeThinning:.1,bushes:30,boulders:92,ore:78,plateaus:112,maxTier:10,plateauAreaMul:.8,structures:8,caves:10},hybrid:{enabled:false}},
+};
+let defaults = null; // Populated from the real WildernessMapGenerator defaults during boot.
+let currentWorkspace = null; // Last post-feature workspace; exported exactly as previewed.
+let currentFeatureReport = null; // Hybrid escarpment report displayed in generation statistics/debug.
+let autoTimer = 0; // Debounce timer for expensive generator reruns while Auto is enabled.
+let currentView = '3d'; // Controls which canvas is visible without rebuilding generation.
+const debugLines = []; // Mobile-visible rolling diagnostics buffer.
+function log(message){const line=`[${new Date().toLocaleTimeString()}] ${message}`;debugLines.push(line);if(debugLines.length>350)debugLines.shift();$('debugText').textContent=debugLines.join('\n');console.log('[WildernessLab]',message)}
+window.addEventListener('error',event=>log(`ERROR: ${event.message} @ ${event.filename||'?'}:${event.lineno||0}`));
+window.addEventListener('unhandledrejection',event=>log(`PROMISE: ${event.reason?.stack||event.reason||'unknown'}`));
+function clampNumber(value,min,max){const n=Number(value);if(!Number.isFinite(n))return min;return Math.max(min,Math.min(max,n))}
+function bindPair(rangeId,numId,onChange){const range=$(rangeId),num=$(numId);const sync=(source,other)=>{const value=clampNumber(source.value,Number(source.min),Number(source.max));source.value=value;other.value=value;onChange?.()};range.addEventListener('input',()=>sync(range,num));num.addEventListener('change',()=>sync(num,range))}
+function buildControls(){defaults=Generator.defaultSettings();const containers={Terrain:$('groupTerrain'),Hydro:$('groupHydro'),Flora:$('groupFlora'),Life:$('groupLife')};for(const def of CONTROL_SCHEMA){const host=containers[def.group];if(def.type==='checkbox'){const row=document.createElement('div');row.className='control check';row.innerHTML=`<label for="ctl_${def.key}">${def.label}</label><input id="ctl_${def.key}" type="checkbox">`;host.appendChild(row);row.querySelector('input').addEventListener('change',onGeneratorControlChanged);continue}if(def.type==='select'){const row=document.createElement('div');row.className='control select';row.innerHTML=`<label for="ctl_${def.key}">${def.label}</label><select id="ctl_${def.key}">${def.values.map(value=>`<option value="${value}">${value}</option>`).join('')}</select>`;host.appendChild(row);row.querySelector('select').addEventListener('change',onGeneratorControlChanged);continue}const row=document.createElement('div');row.className='control';row.innerHTML=`<label for="ctl_${def.key}">${def.label}</label><input id="ctl_${def.key}" type="range" min="${def.min}" max="${def.max}" step="${def.step}"><input id="ctl_${def.key}_num" type="number" min="${def.min}" max="${def.max}" step="${def.step}">`;host.appendChild(row);bindPair(`ctl_${def.key}`,`ctl_${def.key}_num`,onGeneratorControlChanged)}applySettingsToControls(defaults)}
+function applySettingsToControls(settings){for(const def of CONTROL_SCHEMA){const el=$(`ctl_${def.key}`);if(!el)continue;const value=settings[def.key]??defaults?.[def.key];if(def.type==='checkbox')el.checked=!!value;else if(def.type==='select')el.value=String(value);else{el.value=value;$(`ctl_${def.key}_num`).value=value}}}
+function settingsFromControls(){const output={};for(const def of CONTROL_SCHEMA){const el=$(`ctl_${def.key}`);if(def.type==='checkbox')output[def.key]=el.checked;else if(def.type==='select')output[def.key]=el.value;else output[def.key]=Number(el.value)}const raw=$('advancedJson').value.trim();if(raw){const extra=JSON.parse(raw);if(!extra||Array.isArray(extra)||typeof extra!=='object')throw new Error('Advanced overrides must be a JSON object.');Object.assign(output,extra)}return output}
+function hybridSettings(){return{enabled:$('hybridEnabled').checked,approachSide:$('hybridApproach').value,rise:Number($('hybridRise').value),cliffPosition:Number($('hybridCliffPosition').value),inclineRun:Number($('hybridInclineRun').value),width:Number($('hybridWidth').value),center:Number($('hybridCenter').value),shoulder:Number($('hybridShoulder').value),curve:Number($('hybridCurve').value),edgeJitter:Number($('hybridJitter').value)}}
+function applyHybridToControls(settings){const merged={...Features.defaultHybridEscarpmentSettings(),...(settings||{})};$('hybridEnabled').checked=!!merged.enabled;$('hybridApproach').value=merged.approachSide;for(const [id,key] of [['hybridRise','rise'],['hybridCliffPosition','cliffPosition'],['hybridInclineRun','inclineRun'],['hybridWidth','width'],['hybridCenter','center'],['hybridShoulder','shoulder'],['hybridCurve','curve'],['hybridJitter','edgeJitter']]){$(id).value=merged[key];$(`${id}Num`).value=merged[key]}}
+function winterSettings(){return{enabled:$('winterEnabled').checked,preset:$('winterPreset').value,target:$('winterTarget').value,opacity:Number($('winterOpacity').value),height:Number($('winterHeight').value),noise:Number($('winterNoise').value),bulge:Number($('winterBulge').value),layers:Number($('winterLayers').value),edge:$('edgeWrapEnabled').checked,edgeWidth:Number($('edgeWrapWidth').value),edgeDrop:Number($('edgeWrapDrop').value),edgeRound:Number($('edgeWrapRoundness').value)}}
+function onGeneratorControlChanged(){scheduleGenerate(false)}
+function scheduleGenerate(immediate=false){if(!$('autoGenerate').checked&&!immediate)return;clearTimeout(autoTimer);autoTimer=setTimeout(generateNow,immediate?0:450)}
+function randomSeed(){const seed=`wild-${Date.now().toString(36)}-${Math.floor(Math.random()*1e6).toString(36)}`;$('seedInput').value=seed;if($('autoGenerate').checked)generateNow()}
+function applyRecipe(){const recipe=RECIPES[$('recipeSelect').value]||RECIPES.default;applySettingsToControls({...defaults,...recipe.settings});applyHybridToControls(recipe.hybrid);scheduleGenerate(true);log(`Applied recipe: ${$('recipeSelect').value}`)}
+function rootMapForWorkspace(workspace){return Features.rootMapForWorkspace(workspace)}
+function generationSummary(workspace,merged,settings,elapsed){const counts={},ramps=[];for(const tile of merged.tiles.values()){counts[tile.type]=(counts[tile.type]||0)+1;if(tile.type==='ramp')ramps.push(tile.rampElevation||0)}return{elapsed,counts,warnings:Array.isArray(workspace.warnings)?workspace.warnings:[],settings,rampMin:ramps.length?Math.min(...ramps):null,rampMax:ramps.length?Math.max(...ramps):null}}
+function renderStats(summary){const total=Object.values(summary.counts).reduce((a,b)=>a+b,0);const rows=[['generation',`${summary.elapsed.toFixed(0)} ms`],['merged tiles',total.toLocaleString()],['warnings',summary.warnings.length],['terrain kinds',Object.keys(summary.counts).length]];if(currentFeatureReport?.applied){rows.push(['hybrid tiles',currentFeatureReport.changedTiles.toLocaleString()],['hybrid rise',`${currentFeatureReport.options.rise.toFixed(2)} tiers`]);if(summary.rampMax!=null)rows.push(['ramp elevation range',`${summary.rampMin.toFixed(2)}–${summary.rampMax.toFixed(2)}`])}$('statsPanel').innerHTML=`<b>Generation summary</b><div class="statgrid">${rows.map(([a,b])=>`<span>${a}</span><b>${b}</b>`).join('')}</div><div class="legend">${Object.entries(summary.counts).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${k} ${v}</span>`).join('')}</div>${currentFeatureReport?.applied?`<div class="divider"></div><b>Incline → cliff</b><div class="help">${currentFeatureReport.options.approachSide} approach · smooth rampElevation field · sheer opposite boundary · no plateau submaps</div>`:''}${summary.warnings.length?`<div class="divider"></div><b style="color:var(--warn)">Warnings</b><div class="help">${summary.warnings.slice(0,6).map(String).join('<br>')}</div>`:''}`}
+async function generateNow(){if(!Generator||!TerrainPreview||!Features||!Preview){$('statusText').textContent='Required lab scripts missing.';return}let settings;try{settings=settingsFromControls()}catch(error){$('statusText').textContent=error.message;log(error.message);return}const seed=$('seedInput').value.trim()||'wild';$('generateBtn').disabled=true;$('statusText').textContent='Generating wilderness…';const start=performance.now();try{const workspace=Generator.generateWorkspace(seed,settings);currentFeatureReport=Features.applyHybridEscarpment(workspace,hybridSettings());const root=rootMapForWorkspace(workspace);if(!root)throw new Error('Generator returned no root map.');currentWorkspace=workspace;const merged=Preview.renderWorkspace(workspace,root.id,winterSettings());const elapsed=performance.now()-start;renderStats(generationSummary(workspace,merged,settings,elapsed));Preview.draw2d();$('generatorReport').textContent=Generator.lastReport?.()||'No generator export report.';$('statusText').textContent=`${root.cols}×${root.rows} generated in ${elapsed.toFixed(0)} ms · ${seed}`;log(`Generated ${root.id}: ${root.cols}×${root.rows}, ${elapsed.toFixed(0)} ms.${currentFeatureReport?.applied?` Hybrid incline rewrote ${currentFeatureReport.changedTiles} root tiles.`:''}`)}catch(error){$('statusText').textContent=`Generation failed: ${error.message}`;log(error.stack||error.message)}finally{$('generateBtn').disabled=false}}
+function setView(view){currentView=view;const is3d=view==='3d';$('view3d').style.display=is3d?'block':'none';$('view2d').style.display=is3d?'none':'block';$('show3dBtn').classList.toggle('active',is3d);$('show2dBtn').classList.toggle('active',!is3d);if(!is3d)Preview.draw2d();else Preview.resize()}
+function jsonDownload(filename,data){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),0)}
+function currentSettingsPackage(){return{schema:'hobunji_wilderness_generation_lab_settings.v2',seed:$('seedInput').value.trim()||'wild',settings:settingsFromControls(),hybridEscarpment:hybridSettings(),winter:winterSettings()}}
+for(const [range,num] of [['hybridRise','hybridRiseNum'],['hybridCliffPosition','hybridCliffPositionNum'],['hybridInclineRun','hybridInclineRunNum'],['hybridWidth','hybridWidthNum'],['hybridCenter','hybridCenterNum'],['hybridShoulder','hybridShoulderNum'],['hybridCurve','hybridCurveNum'],['hybridJitter','hybridJitterNum']])bindPair(range,num,onGeneratorControlChanged);
+$('hybridEnabled').addEventListener('change',onGeneratorControlChanged);$('hybridApproach').addEventListener('change',onGeneratorControlChanged);
+for(const [range,num] of [['winterHeight','winterHeightNum'],['winterOpacity','winterOpacityNum'],['winterNoise','winterNoiseNum'],['winterBulge','winterBulgeNum'],['winterLayers','winterLayersNum'],['edgeWrapWidth','edgeWrapWidthNum'],['edgeWrapDrop','edgeWrapDropNum'],['edgeWrapRoundness','edgeWrapRoundnessNum']])bindPair(range,num,()=>Preview.rebuildWinter(winterSettings()));
+for(const id of ['winterEnabled','winterPreset','winterTarget','edgeWrapEnabled'])$(id).addEventListener('change',()=>{if(id==='winterPreset'){$('winterOpacity').value=$('winterOpacityNum').value=$('winterPreset').value==='slush'?.55:1}Preview.rebuildWinter(winterSettings())});
+$('generateBtn').addEventListener('click',generateNow);$('randomSeedBtn').addEventListener('click',randomSeed);$('seedInput').addEventListener('change',()=>scheduleGenerate(false));$('applyRecipeBtn').addEventListener('click',applyRecipe);$('resetSettingsBtn').addEventListener('click',()=>{applySettingsToControls(defaults);applyHybridToControls(Features.defaultHybridEscarpmentSettings());$('advancedJson').value='';scheduleGenerate(true)});$('advancedJson').addEventListener('change',()=>scheduleGenerate(false));
+$('show3dBtn').addEventListener('click',()=>setView('3d'));$('show2dBtn').addEventListener('click',()=>setView('2d'));$('fitBtn').addEventListener('click',()=>Preview.fit());
+$('downloadWorkspaceBtn').addEventListener('click',()=>{if(currentWorkspace)jsonDownload(`wilderness-${$('seedInput').value.trim()||'seed'}.workspace.json`,currentWorkspace)});$('downloadSettingsBtn').addEventListener('click',()=>jsonDownload(`wilderness-lab-settings-${$('seedInput').value.trim()||'seed'}.json`,currentSettingsPackage()));$('copySettingsBtn').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(JSON.stringify(currentSettingsPackage(),null,2));$('statusText').textContent='Settings copied.'}catch(error){log(`Clipboard failed: ${error.message}`)}});
+$('debugToggle').addEventListener('click',()=>{$('debugPanel').style.display=$('debugPanel').style.display==='block'?'none':'block'});$('debugClear').addEventListener('click',()=>{debugLines.length=0;$('debugText').textContent=''});$('debugCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(debugLines.join('\n'))}catch(_){}});
+async function boot(){if(!Generator)throw new Error('wilderness-map-generator.js failed to load.');if(!TerrainPreview)throw new Error('terrain-preview.js failed to load.');if(!Features)throw new Error('lab-features.js failed to load.');if(!Preview)throw new Error('lab-preview.js failed to load.');buildControls();applyHybridToControls(Features.defaultHybridEscarpmentSettings());await Preview.init({canvas3d:$('view3d'),canvas2d:$('view2d'),stage:$('stage'),debugLog:log});setView('3d');log(`Generator ready. Zone ids: ${(Generator.zoneMapIds?.()||[]).join(', ')||'(none)'}.`);$('statusText').textContent='Ready.';generateNow()}
+boot().catch(error=>{log(error.stack||error.message);$('statusText').textContent=`Boot failed: ${error.message}`});
+})();
+</script>
+</body>
+</html>
