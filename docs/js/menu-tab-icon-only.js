@@ -105,15 +105,15 @@
         display: inline-flex !important;
         align-items: center;
         justify-content: center;
-        width: 2em !important;
-        height: 2em !important;
+        width: 1em !important;
+        height: 1em !important;
         padding: 0 !important;
         line-height: 1 !important;
       }
       ${WALLET_SUFFIX_SELECTOR} .wallet-currency-icon {
         display: block;
-        width: 2em;
-        height: 2em;
+        width: 1em;
+        height: 1em;
         object-fit: contain;
         object-position: center;
         pointer-events: none;
