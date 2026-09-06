@@ -536,19 +536,25 @@
     // is instant. Re-enabling needs no counterpart: the very next update()
     // call sets group.visible from isCloudForestArea() itself.
     setEnabled: (enabled) => { if (!enabled && group) group.visible = false; },
-    getDebugState: () => ({
-      active: !!deps?.isCloudForestArea?.(),
-      area: skyPolicyDeps?.getCurrentArea?.() ?? null,
-      fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
-      skydomeSuppressed: !!isNoSkyArea(skyPolicyDeps?.getCurrentArea?.()),
-      renderingMode: 'original-skydome-visibility-only',
-      lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
-      configPath: ATMOSPHERE_CONFIG_PATH,
-      tuning: {
-        cloudForest: { ...tuning.cloudForest },
-        lantern: { ...tuning.lantern },
-      },
-      layers: layerLive.map(l => ({ ...l })),
-    }),
+    getDebugState: () => {
+      const debugScene = skyPolicyDeps?.getActiveScene?.(); // Used below to expose the actual runtime player-lantern light state for mobile QA.
+      const debugArea = skyPolicyDeps?.getCurrentArea?.() ?? null; // Used below to show which underground-area rule is currently active.
+      return {
+        active: !!deps?.isCloudForestArea?.(),
+        area: debugArea,
+        fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
+        skydomeSuppressed: !!isNoSkyArea(debugArea),
+        undergroundLanternArea: isUndergroundLanternArea(debugArea),
+        playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
+        renderingMode: 'original-skydome-visibility-only',
+        lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
+        configPath: ATMOSPHERE_CONFIG_PATH,
+        tuning: {
+          cloudForest: { ...tuning.cloudForest },
+          lantern: { ...tuning.lantern },
+        },
+        layers: layerLive.map(l => ({ ...l })),
+      };
+    },
   };
 })();
