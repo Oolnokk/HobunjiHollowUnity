@@ -86,7 +86,7 @@ windowObject.BanditCombat = {
 assert.strictEqual(upstreamBandit,1,'must preserve upstream BanditCombat setter');
 assert.strictEqual(windowObject.BanditCombat.init(banditDeps),'bandit-init');
 
-const gangCfg={rangedWeaponWeightsByRank:{grunt:{crossbow:4,scatterbow:1}}};
+const gangCfg={rangedWeaponWeightsByRank:{grunt:{crossbow:4,scatterbow:1}},culturalRangedWeightByRank:{grunt:7}};
 (async()=>{
   rolls=[0.9,0.99];
   const a=await windowObject.BanditCombat.makeEntity(gangCfg,'grunt',0,0,0,{species:'species-a',ranged:'crossbow',weapon:'shapeB_bronze'});
@@ -97,6 +97,7 @@ const gangCfg={rangedWeaponWeightsByRank:{grunt:{crossbow:4,scatterbow:1}}};
   assert.strictEqual(a._banditToolHolder.children[0].key,'shapeA_bronze');
   assert.strictEqual(a._banditRangedToolHolder.children[0].key,'shapeA_bronze');
   assert.ok(!Object.hasOwn(a._weaponTrustCulturalLoadout.ranged.weights,'shapeB_bronze'));
+  assert.strictEqual(a._weaponTrustCulturalLoadout.ranged.weights.shapeA_bronze,7,'cultural ranged weight must come from bandit config');
 
   rolls=[0.99];
   const unknown=await windowObject.BanditCombat.makeEntity(gangCfg,'grunt',0,0,0,{species:'unknown',ranged:null,weapon:'shapeA_bronze'});
