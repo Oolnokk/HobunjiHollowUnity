@@ -1,0 +1,40 @@
+name: Ranged camera focus regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/combat/ranged-camera-focus.js'
+      - 'docs/js/combat/combat-camera-alignment-bridge.js'
+      - 'docs/js/combat/ranged-weapon-archetypes.js'
+      - 'docs/js/combat/ranged-weapons.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-ranged-camera-focus.js'
+      - 'scripts/test-combat-camera-alignment.js'
+      - '.github/workflows/ranged-camera-focus-regression.yml'
+  push:
+    paths:
+      - 'docs/js/combat/ranged-camera-focus.js'
+      - 'docs/js/combat/combat-camera-alignment-bridge.js'
+      - 'docs/js/combat/ranged-weapon-archetypes.js'
+      - 'docs/js/combat/ranged-weapons.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-ranged-camera-focus.js'
+      - 'scripts/test-combat-camera-alignment.js'
+      - '.github/workflows/ranged-camera-focus-regression.yml'
+
+jobs:
+  ranged-camera-focus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check interaction aim adapter
+        run: node --check docs/js/combat/ranged-camera-focus.js
+      - name: Syntax check camera alignment bridge
+        run: node --check docs/js/combat/combat-camera-alignment-bridge.js
+      - name: Run shared interaction-target regression
+        run: node scripts/test-ranged-camera-focus.js
+      - name: Run camera-authoritative alignment regression
+        run: node scripts/test-combat-camera-alignment.js
