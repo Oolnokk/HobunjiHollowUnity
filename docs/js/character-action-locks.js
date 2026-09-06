@@ -108,6 +108,7 @@
   const chathead = new URL('animal-chathead-frame.js?v=20260902modular1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
   const social = new URL('social-action-wheel.js?v=20260903social1', base).href;
+  const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
   const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260903social8', base).href;
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
@@ -118,5 +119,5 @@
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20260903social12', base).href;
   const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20260903social13', base).href;
   const npcSillinessReactionRuntime = new URL('npc-silliness-reaction-runtime.js?v=20260903social16', base).href;
-  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${social}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
+  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
 })();
