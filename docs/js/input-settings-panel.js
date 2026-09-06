@@ -14,7 +14,6 @@
     'js/combat/ranged-hud-reticle.js',
     'js/fullscreen-toggle.js',
     'js/mobile-combat-zoom.js',
-    'js/ambient-biome-audio.js',
   ];
 
   function ensureRuntimeHelpers() {
@@ -99,7 +98,7 @@
       setProgressionResetStatus('Motes of Prowess are already at 0.');
       return;
     }
-    if (window.confirm && !window.confirm(`Reset all ${currentMotes} Mote${currentMotes === 1 ? '' : 's'} of Prowess to 0? This cannot be undone.')) return;
+    if (window.confirm && !window.confirm(`Reset all ${currentMotes} Mote${currentMotes === 1 ? '' : 's'} of Prowess to 0? This cannot be undone.`)) return;
     if (!combatDeps.spendMotesOfProwess(currentMotes)) {
       setProgressionResetStatus('Mote reset failed; the saved balance changed before it could be cleared.', true);
       return;
