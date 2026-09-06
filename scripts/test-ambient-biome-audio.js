@@ -1,25 +1,25 @@
 'use strict';
 
-const assert = require('node:assert/strict'); // Supplies deterministic regression assertions for the standalone runtime helper.
-const fs = require('node:fs'); // Reads the shipped helper source without requiring a browser bundle.
-const path = require('node:path'); // Resolves the repository-relative helper path on every platform.
-const vm = require('node:vm'); // Executes the browser IIFE against a small fake runtime.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 
-const ROOT = path.resolve(__dirname, '..'); // Anchors test paths to the patch/repository root.
-const SOURCE_PATH = path.join(ROOT, 'docs/js/ambient-biome-audio.js'); // Points at the runtime helper under test.
-const source = fs.readFileSync(SOURCE_PATH, 'utf8'); // Loads the exact source that ships to the browser.
+const ROOT = path.resolve(__dirname, '..');
+const SOURCE_PATH = path.join(ROOT, 'docs/js/ambient-biome-audio.js');
+const source = fs.readFileSync(SOURCE_PATH, 'utf8');
 
-const loaderSource = fs.readFileSync(path.join(ROOT, 'docs/js/input-settings-panel.js'), 'utf8'); // Reads the existing runtime-helper bootstrap integration point.
+const loaderSource = fs.readFileSync(path.join(ROOT, 'docs/js/input-settings-panel.js'), 'utf8');
 assert.match(loaderSource, /'js\/ambient-biome-audio\.js'/, 'input settings bootstrap should load the ambience helper after game initialization');
 for (const fileName of ['bgs_nightbugs1.ogg', 'bgs_cloudforest.ogg', 'bgs_cloudforest_night.ogg', 'bgs_river.ogg']) {
-  const oggPath = path.join(ROOT, 'docs/assets/audio/sfx/bgs', fileName); // Points at each converted repository asset expected by AUDIO_URLS.
+  const oggPath = path.join(ROOT, 'docs/assets/audio/sfx/bgs', fileName);
   assert.equal(fs.existsSync(oggPath), true, `${fileName} should exist`);
-  const header = fs.readFileSync(oggPath).subarray(0, 4); // Validates the Ogg container signature without loading the full recordings into memory.
+  const header = fs.readFileSync(oggPath).subarray(0, 4);
   assert.equal(header.toString('ascii'), 'OggS', `${fileName} should be an Ogg file`);
 }
 
 class FakeAudio {
-  static instances = []; // Retains created media elements so tests can inspect persistent-loop behavior.
+  static instances = [];
 
   constructor(url) {
     this.src = url;
@@ -51,22 +51,22 @@ class FakeAudio {
 }
 
 function makeGrid(size = 16) {
-  const grid = Array.from({ length: size }, () => Array.from({ length: size }, () => ({ type: 'GRASS' }))); // Builds a compact mutable terrain grid for proximity tests.
+  const grid = Array.from({ length: size }, () => Array.from({ length: size }, () => ({ type: 'GRASS' })));
   grid[5][5] = { type: 'RIVER' };
   grid[5][6] = { type: 'STREAM' };
   return grid;
 }
 
 function target(snapshot, id) {
-  return snapshot.layers[id]?.targetVolume || 0; // Reads one layer's requested mix rather than its in-progress fade volume.
+  return snapshot.layers[id]?.targetVolume || 0;
 }
 
-const grid = makeGrid(); // Represents the loaded wilderness/town terrain for every test area.
+const grid = makeGrid();
 const state = {
   area: 'map_southern_cloud_forest',
   night: false,
   raining: false,
-}; // Drives map/time/weather transitions without recreating the helper.
+};
 const config = {
   enabled: true,
   bgsFadeMs: 0,
@@ -79,12 +79,12 @@ const config = {
     riverRangeTiles: 9,
     riverFullVolumeRadiusTiles: 1.5,
   },
-}; // Mirrors the live AudioSystem config object that both mixers mutate/read.
-const player = { x: 5.5 * 64, y: 5.5 * 64 }; // Starts the player directly on a river tile.
-const documentListeners = new Map(); // Tracks installed unlock handlers so disposal can be verified.
-let intervalCallback = null; // Captures the low-frequency timer callback without starting a real Node timer.
-let gridResolveCount = 0; // Proves the area grid is not repeatedly resolved while the player remains in one tile.
-let nowMs = 1000; // Advances fade timestamps deterministically between manual updates.
+};
+const player = { x: 5.5 * 64, y: 5.5 * 64 };
+const documentListeners = new Map();
+let intervalCallback = null;
+let gridResolveCount = 0;
+let nowMs = 1000;
 
 const context = {
   Audio: FakeAudio,
@@ -129,7 +129,7 @@ const context = {
       },
     },
   },
-}; // Supplies only the browser/game APIs consumed by the helper.
+};
 context.window.window = context.window;
 context.window.document = context.document;
 context.window.performance = context.performance;
@@ -138,12 +138,12 @@ context.window.clearInterval = context.clearInterval;
 context.globalThis = context;
 
 vm.runInNewContext(source, context, { filename: SOURCE_PATH });
-const api = context.window.HobunjiAmbientBgs; // Exposes manual updates and diagnostics exactly as mobile runtime does.
+const api = context.window.HobunjiAmbientBgs;
 assert.ok(api?.installed, 'ambient helper should install');
 assert.equal(typeof intervalCallback, 'function', 'helper should use one low-frequency timer');
 assert.equal(FakeAudio.instances.length, 2, 'initial load should fetch only the active cloud-forest and river Ogg files');
 
-let snapshot = api.debugSnapshot(); // Captures the initial southern-cloud-forest daytime mix.
+let snapshot = api.debugSnapshot();
 assert.equal(target(snapshot, 'cloudforest'), 0.30, 'cloud forest day ambience should replace generic birds');
 assert.equal(target(snapshot, 'cloudforestNight'), 0, 'night forest ambience should remain silent during day');
 assert.equal(target(snapshot, 'nightbugs'), 0, 'generic nightbugs should not double the cloud-forest bed');
@@ -173,8 +173,8 @@ state.night = false;
 player.x = 5.5 * 64;
 player.y = 5.5 * 64;
 api.updateNow();
-const scansAtTownEntry = api.debugSnapshot().riverScanCount; // Establishes the scan count after entering an allowed map/tile.
-const resolvesAtTownEntry = gridResolveCount; // Establishes how often the area-grid resolver ran on entry.
+const scansAtTownEntry = api.debugSnapshot().riverScanCount;
+const resolvesAtTownEntry = gridResolveCount;
 api.updateNow();
 player.x = 5.9 * 64;
 player.y = 5.1 * 64;
