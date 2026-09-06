@@ -59,6 +59,9 @@
       renderZ: finite(animal.wz),
       deltaPxX: 0,
       deltaPxY: 0,
+      appliedPlayerCorrectionPxX: 0,
+      appliedPlayerCorrectionPxY: 0,
+      canonicalResetPlayerPositionThisFrame: false,
     }; // Drives both the livestock transform and the equal player-space correction during this harvest.
 
     harvestStates.set(animal, state);
@@ -88,6 +91,8 @@
   function advanceHarvestState(state, dt) {
     if (!state) return;
     const frameDt = Math.max(0, finite(dt)); // Mirrors the same dt consumed by FarmAnimals.updateHarvestInteraction.
+    const phaseBeforeAdvance = state.phase; // Identifies whether the canonical harvest update rewrites player x/y on this frame.
+    state.canonicalResetPlayerPositionThisFrame = phaseBeforeAdvance === 'in' || phaseBeforeAdvance === 'out';
     if (state.phase === 'in') {
       state.t = Math.min(1, state.t + frameDt / HARVEST_TRANSITION_S);
       updateRenderPosition(state, state.t);
@@ -115,9 +120,14 @@
     const player = farmDeps?.player; // Receives the livestock translation so the authored handler offset remains unchanged while both actors lerp.
     if (!player || !state) return;
     const weight = playerCorrectionWeight(state); // Fades the shared translation back out only while the player returns to their pre-harvest position.
-    if (weight <= 0) return;
-    player.x = finite(player.x) + state.deltaPxX * weight;
-    player.y = finite(player.y) + state.deltaPxY * weight;
+    const desiredX = state.deltaPxX * weight; // Tracks the correction that should exist on the player's X coordinate after this canonical harvest frame.
+    const desiredY = state.deltaPxY * weight; // Tracks the correction that should exist on the player's Y/Z-plane coordinate after this canonical harvest frame.
+    const addX = state.canonicalResetPlayerPositionThisFrame ? desiredX : desiredX - state.appliedPlayerCorrectionPxX; // Reapplies fully after canonical in/out lerps, but only by delta during the active hold.
+    const addY = state.canonicalResetPlayerPositionThisFrame ? desiredY : desiredY - state.appliedPlayerCorrectionPxY; // Prevents the active phase from accumulating the same translation every frame.
+    player.x = finite(player.x) + addX;
+    player.y = finite(player.y) + addY;
+    state.appliedPlayerCorrectionPxX = desiredX;
+    state.appliedPlayerCorrectionPxY = desiredY;
   }
 
   function finishHarvestState(animal) {
