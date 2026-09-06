@@ -9,15 +9,26 @@
     rapportMin: 0,
     rapportMax: 100,
     playerOfferRelationshipProbeRadiusTiles: 2,
-    rapportDeltas: Object.freeze({ drinkAccepted: 4, danceWithPlayer: 3, playerMusicDance: 2, giftLoved: 10, giftLiked: 4, giftNeutral: 1, giftDisliked: -4, giftHated: -10 }),
+    danceRapport: Object.freeze({
+      basePerSecond: 1,
+      perPositiveHeartPerSecond: 1,
+      neutralFavor: 0,
+      maxPositiveHearts: 10,
+    }),
+    rapportDeltas: Object.freeze({ drinkAccepted: 4, playerMusicDance: 2, giftLoved: 10, giftLiked: 4, giftNeutral: 1, giftDisliked: -4, giftHated: -10 }),
   });
   const root = window.SCRATCHBONES_CONFIG = window.SCRATCHBONES_CONFIG || {}; // Existing config root used by the rest of the game.
   root.game = root.game || {};
   const authored = root.game.socialRelationships || {}; // User-authored overrides retained across this bridge.
-  const config = root.game.socialRelationships = { ...DEFAULTS, ...authored, rapportDeltas: { ...DEFAULTS.rapportDeltas, ...(authored.rapportDeltas || {}) } };
+  const config = root.game.socialRelationships = {
+    ...DEFAULTS,
+    ...authored,
+    danceRapport: { ...DEFAULTS.danceRapport, ...(authored.danceRapport || {}) },
+    rapportDeltas: { ...DEFAULTS.rapportDeltas, ...(authored.rapportDeltas || {}) },
+  };
   const touchedNpcIds = new Set(); // NPCs whose existing relationship records gained social metadata.
   const drinkState = new Map(); // Accepted-sip timestamps and last hidden roll, keyed by NPC id.
-  const activeDanceByNpc = new Map(); // Current accepted dance stimulus per NPC so entry awards happen once.
+  const activeDanceByNpc = new Map(); // Current dance session per NPC; used to accrue player-dance Rapport from elapsed real gameplay seconds without a polling loop.
   let dialoguePatched = false; // One-shot guard for relationship save/load wrappers.
   let giftingPatched = false; // One-shot guard for daily gift wrappers.
   let alcoholPatched = false; // One-shot guard for drink wrappers.
@@ -271,21 +282,90 @@
     return true;
   }
 
+  function realNowMs() {
+    const monotonicMs = Number(window.performance?.now?.()); // Used to measure continuous dance duration independently of frame rate and in-game clock speed.
+    return Number.isFinite(monotonicMs) ? monotonicMs : Date.now();
+  }
+  function completedPositiveHearts(npcId) {
+    const danceConfig = config.danceRapport || DEFAULTS.danceRapport; // Used to convert the NPC's permanent Favor heart level into the dance Rapport rate bonus.
+    const neutralFavor = num(danceConfig.neutralFavor, DEFAULTS.danceRapport.neutralFavor);
+    const maxPositiveHearts = Math.max(0, Math.floor(num(danceConfig.maxPositiveHearts, DEFAULTS.danceRapport.maxPositiveHearts)));
+    const favor = num(relationship(npcId)?.favor, neutralFavor);
+    return Math.floor(clamp(favor - neutralFavor, 0, maxPositiveHearts));
+  }
+  function danceRapportPerSecond(npcId) {
+    const danceConfig = config.danceRapport || DEFAULTS.danceRapport; // Used to calculate the live Rapport-per-second value for an accepted player dance.
+    const basePerSecond = Math.max(0, num(danceConfig.basePerSecond, DEFAULTS.danceRapport.basePerSecond));
+    const perHeart = Math.max(0, num(danceConfig.perPositiveHeartPerSecond, DEFAULTS.danceRapport.perPositiveHeartPerSecond));
+    return basePerSecond + completedPositiveHearts(npcId) * perHeart;
+  }
+  function accruePlayerDanceRapport(npcId, session, nowMs = realNowMs()) {
+    if (!session?.playerDance) return 0;
+    const elapsedMs = Math.max(0, nowMs - num(session.lastMs, nowMs)) + Math.max(0, num(session.remainderMs, 0));
+    const wholeSeconds = Math.floor(elapsedMs / 1000);
+    session.lastMs = nowMs;
+    session.remainderMs = elapsedMs - wholeSeconds * 1000;
+    if (!wholeSeconds) {
+      session.rapportPerSecond = danceRapportPerSecond(npcId);
+      return 0;
+    }
+    const rate = Math.max(0, num(session.rapportPerSecond, danceRapportPerSecond(npcId)));
+    const gained = adjust(npcId, wholeSeconds * rate, 'dance_with_player');
+    session.totalAwarded = num(session.totalAwarded, 0) + gained;
+    session.rapportPerSecond = danceRapportPerSecond(npcId);
+    return gained;
+  }
+
   function activeStimulus(stimulusId) {
     return (window.NpcSocialStimuli?.getActive?.() || []).find(stimulus => String(stimulus?.id || '') === String(stimulusId || '')) || null;
   }
   function handleDanceTarget(rec, target) {
     const id = String(rec?.id || '');
     if (!id) return;
+    const nowMs = realNowMs();
+    const previous = activeDanceByNpc.get(id) || null;
     const dance = target?.socialDance;
-    if (!dance) { activeDanceByNpc.delete(id); return; }
+    if (!dance) {
+      accruePlayerDanceRapport(id, previous, nowMs);
+      activeDanceByNpc.delete(id);
+      return;
+    }
     const stimulusId = String(dance.stimulusId || '');
-    if (!stimulusId || activeDanceByNpc.get(id) === stimulusId) return;
-    activeDanceByNpc.set(id, stimulusId);
-    if (!dance.sourceIsPlayer) return;
+    if (!stimulusId) {
+      accruePlayerDanceRapport(id, previous, nowMs);
+      activeDanceByNpc.delete(id);
+      return;
+    }
+    if (previous?.stimulusId === stimulusId) {
+      accruePlayerDanceRapport(id, previous, nowMs);
+      return;
+    }
+    accruePlayerDanceRapport(id, previous, nowMs);
     const stimulus = activeStimulus(stimulusId);
-    if (stimulus?.type === 'dance') adjust(id, num(config.rapportDeltas?.danceWithPlayer, DEFAULTS.rapportDeltas.danceWithPlayer), 'dance_with_player');
-    else if (stimulus?.type === 'music') adjust(id, num(config.rapportDeltas?.playerMusicDance, DEFAULTS.rapportDeltas.playerMusicDance), 'player_music_dance');
+    if (!stimulus) {
+      activeDanceByNpc.delete(id);
+      return;
+    }
+    if (!dance.sourceIsPlayer) {
+      activeDanceByNpc.set(id, { stimulusId, sourceIsPlayer: false, type: stimulus.type || null });
+      return;
+    }
+    if (stimulus.type === 'dance') {
+      const rapportPerSecond = danceRapportPerSecond(id); // Used by this NPC's active player-dance session until the next planner observation refreshes the heart-based rate.
+      activeDanceByNpc.set(id, {
+        stimulusId,
+        sourceIsPlayer: true,
+        type: 'dance',
+        playerDance: true,
+        lastMs: nowMs,
+        remainderMs: 0,
+        rapportPerSecond,
+        totalAwarded: 0,
+      });
+      return;
+    }
+    activeDanceByNpc.set(id, { stimulusId, sourceIsPlayer: true, type: stimulus.type || null });
+    if (stimulus.type === 'music') adjust(id, num(config.rapportDeltas?.playerMusicDance, DEFAULTS.rapportDeltas.playerMusicDance), 'player_music_dance');
   }
   function patchPlanner(api) {
     if (!api?.resolveNpcTarget || api.__npcRapportEventDrivenWrapped) return false;
@@ -327,11 +407,20 @@
       rapport: Object.fromEntries([...touchedNpcIds].map(id => [id, get(id)])),
       giftDays: Object.fromEntries([...touchedNpcIds].map(id => [id, relationship(id)?.lastGiftDay ?? -1])),
       drink: Object.fromEntries([...drinkState].map(([id, record]) => [id, { ...record, cooldownRemaining: drinkCooldownRemaining(id) }])),
-      activeDanceStimulusByNpc: Object.fromEntries(activeDanceByNpc),
+      activeDanceStimulusByNpc: Object.fromEntries([...activeDanceByNpc].map(([id, session]) => [id, session?.stimulusId || null])),
+      danceRapportByNpc: Object.fromEntries([...activeDanceByNpc]
+        .filter(([, session]) => session?.playerDance)
+        .map(([id, session]) => [id, {
+          stimulusId: session.stimulusId,
+          completedPositiveHearts: completedPositiveHearts(id),
+          rapportPerSecond: session.rapportPerSecond,
+          pendingMilliseconds: session.remainderMs,
+          totalAwarded: session.totalAwarded,
+        }])),
     };
   }
 
-  window.NpcRapport = Object.freeze({ installed: true, eventDriven: true, config, rawGameDay: rawDay, currentGameDay: socialDay, absoluteGameMinute, get, adjust, canGiftToday, markGiftedToday, drinkCooldownRemaining, flushRollover, getDebug });
+  window.NpcRapport = Object.freeze({ installed: true, eventDriven: true, config, rawGameDay: rawDay, currentGameDay: socialDay, absoluteGameMinute, get, adjust, danceRapportPerSecond, canGiftToday, markGiftedToday, drinkCooldownRemaining, flushRollover, getDebug });
   window.__npcRapportDebug = getDebug;
   patchDialogue();
   patchGifting();

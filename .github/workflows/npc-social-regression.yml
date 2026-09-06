@@ -19,6 +19,7 @@ on:
       - 'docs/js/outline-render-performance.js'
       - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-dance-rapport-rate.js'
       - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
@@ -47,6 +48,7 @@ on:
       - 'docs/js/outline-render-performance.js'
       - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
+      - 'scripts/test-dance-rapport-rate.js'
       - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
@@ -90,6 +92,7 @@ jobs:
           node --check docs/js/outline-render-performance.js
           node --check docs/js/world-popup-text.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
+          node --check scripts/test-dance-rapport-rate.js
           node --check scripts/test-generic-hud-icons.js
           node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/test-npc-social-seating.js
@@ -98,6 +101,8 @@ jobs:
           node --check scripts/test-world-text-outline-overlay.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
+      - name: Test continuous player-dance Rapport rate
+        run: node scripts/test-dance-rapport-rate.js
       - name: Test generic HUD icon replacement and rapport popup integration
         run: node scripts/test-generic-hud-icons.js
       - name: Test balanced multi-trait NPC gifting
