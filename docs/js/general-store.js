@@ -108,6 +108,21 @@
     return grants;
   }
 
+  function configuredQualityStars(item) {
+    if (item?.qualityStars == null) return null;
+    const authoredStars = Number(item.qualityStars); // Used to preserve explicitly authored shop-food quality instead of falling back to an item's normal quality later.
+    return Number.isFinite(authoredStars) ? Math.max(1, Math.min(5, Math.round(authoredStars))) : null;
+  }
+
+  function addConfiguredGrant(key, value, qualityStars) {
+    const requestedAmount = Math.max(0, Number(value) || 0); // Used to normalize shop grants before applying the 99-item stack cap.
+    const previousAmount = Math.max(0, Number(deps.inventory[key]) || 0); // Used to measure how many units actually fit in the inventory stack.
+    const nextAmount = Math.min(99, previousAmount + requestedAmount); // Used as the authoritative post-purchase stack count.
+    const addedAmount = Math.max(0, nextAmount - previousAmount); // Used so quality buckets never record units rejected by the stack cap.
+    deps.inventory[key] = nextAmount;
+    if (qualityStars != null && addedAmount > 0) window.CookingSystem?.recordItemQuality?.(key, qualityStars, addedAmount);
+  }
+
   function ensureConfiguredGoodsDefs(item) {
     configuredGrants(item);
     window.AnimalGrowth?.ensureItemDef?.(deps); // Registers Growth Tonic from the animal-growth module when this shop exposes it.
@@ -122,10 +137,9 @@
       return;
     }
 
+    const qualityStars = configuredQualityStars(item); // Used for minimum-quality food staples without changing ordinary shop goods.
     deps.inventory.gold = gold - item.price;
-    Object.entries(grants).forEach(([key, value]) => {
-      deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + Math.max(0, Number(value) || 0));
-    });
+    Object.entries(grants).forEach(([key, value]) => addConfiguredGrant(key, value, qualityStars));
     deps.showToast('Bought ' + item.name + '!', true);
     renderGeneralStorePage();
     deps.buildInventoryGrid();
@@ -279,12 +293,12 @@
   function debugSnapshot() {
     const state = activeShopState();
     return {
-      mostRecentChange: 'GeneralStore now renders any configured generalStore-menu shop pool for the current business map.',
+      mostRecentChange: 'Configured shop food can now grant an explicit 1-5 star quality; the General Store uses this for minimum-quality cooking staples.',
       poolId: state.poolId,
       label: state.shop.label,
       mapId: currentMapId(),
       specialized: state.specialized,
-      goods: goodsForShop(state).map(item => ({ key: item.key, name: item.name, price: item.price, alchemyRecipeId: item.alchemyRecipeId || null })),
+      goods: goodsForShop(state).map(item => ({ key: item.key, name: item.name, price: item.price, qualityStars: configuredQualityStars(item), alchemyRecipeId: item.alchemyRecipeId || null })),
     };
   }
 

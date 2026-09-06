@@ -108,8 +108,27 @@ assert.equal(tonic.gives.growthTonic, 1, 'Growth Tonic shop row grants the share
 const healing = kunji.goods.find(item => item.alchemyRecipeId === 'healingPotion');
 assert.equal(healing.alchemyPotencyTier, 0, 'shop Healing Potion uses the basic brewed potency tier');
 
+const generalStore = shopConfig.shops.generalStoreWares; // Used to verify Funji's basic cooking stock without duplicating the authored goods elsewhere.
+const stapleGrants = { // Used to pin the intended representative staple for each newly stocked cooking category.
+  heftrootStaple: 'heftroot',
+  garlinkStaple: 'garlink',
+  ongyumsStaple: 'ongyums',
+  needlegrainFlourStaple: 'needlegrainFlour',
+  crownedPineNutOilStaple: 'crownedPineNutOil',
+  uumkaoiiMeatStaple: 'uumkaoiiMeat',
+  whiteDewStaple: 'whiteDew',
+};
+Object.entries(stapleGrants).forEach(([shopKey, inventoryKey]) => {
+  const row = generalStore.goods.find(item => item.key === shopKey); // Used to check each authored general-store row against its inventory grant.
+  assert.ok(row, `${shopKey} is stocked by the General Store`);
+  assert.equal(row.gives[inventoryKey], 1, `${shopKey} grants exactly one ${inventoryKey}`);
+  assert.equal(row.qualityStars, 1, `${shopKey} is explicitly minimum-quality`);
+});
+
 assert.match(generalStoreSource, /activeShopState/, 'General Store renderer resolves the active configured shop pool');
 assert.match(generalStoreSource, /AlchemySystem\.ensureRecipeItemDef/, 'configured alchemy shop goods register canonical brewed potion stacks');
+assert.match(generalStoreSource, /CookingSystem\?\.recordItemQuality/, 'configured food quality is recorded in CookingSystem when a shop purchase is added');
+assert.match(generalStoreSource, /addedAmount = Math\.max\(0, nextAmount - previousAmount\)/, 'shop quality tracking records only units that fit under the stack cap');
 assert.match(generalStoreSource, /state\.specialized/, 'specialized shops reuse the General Store menu without clothing/sell categories');
 
-console.log('animal growth + Kunji potion shop tests passed');
+console.log('animal growth + configured shop tests passed');
