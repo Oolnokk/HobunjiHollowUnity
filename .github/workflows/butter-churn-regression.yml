@@ -1,0 +1,34 @@
+name: Butter churn regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/food-processing.js'
+      - 'docs/js/item-processing.js'
+      - 'docs/config/furniture-authored/openBarrel.json'
+      - 'docs/config/furniture-authored/butterChurn.json'
+      - 'scripts/test-butter-churn.js'
+      - '.github/workflows/butter-churn-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/food-processing.js'
+      - 'docs/js/item-processing.js'
+      - 'docs/config/furniture-authored/openBarrel.json'
+      - 'docs/config/furniture-authored/butterChurn.json'
+      - 'scripts/test-butter-churn.js'
+      - '.github/workflows/butter-churn-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  butter-churn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run butter churn regression
+        run: node scripts/test-butter-churn.js
