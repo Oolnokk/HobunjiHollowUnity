@@ -1,6 +1,23 @@
 (() => {
   'use strict';
 
+  // HousePieceGen is loaded immediately before this shared pre-game helper.
+  // Load the door bridge synchronously here so it can wrap the one shared
+  // buildEntryTunnelGroup path before game.js creates any world structures.
+  (function loadEntryTunnelDoorFurniture() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/entry-tunnel-door-furniture.js?v=20260906a'; // Used by this one-time parser-synchronous companion loader.
+    if (window.EntryTunnelDoorFurniture || document.querySelector('script[data-entry-tunnel-door-furniture]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-entry-tunnel-door-furniture="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.entryTunnelDoorFurniture = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
