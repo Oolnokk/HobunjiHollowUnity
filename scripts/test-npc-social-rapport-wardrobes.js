@@ -34,6 +34,7 @@ let rawDay = 3; // Simulation-day index used to prove the social day still chang
 let time01 = 0.50; // Normalized 24-hour simulation time used by the accepted-sip cooldown.
 let clockHour = 18; // Displayed hour, including CalendarSystem's 24..30 post-midnight range.
 let gameRandom = 0.49; // Seeded hidden roll source; 0.49 maps to d100 result 50.
+let performanceNow = 0; // Monotonic real-time clock advanced explicitly by dance tests so Rapport-per-second behavior is deterministic.
 let bottleRemaining = 4; // Bottle state used to detect a genuinely consumed NPC sip.
 let restoredAlcoholSnapshot = null; // Captures what the legacy alcohol restore function actually receives.
 let plannerTarget = { activity: 'wander' }; // Existing planner output changed by this test to simulate dance entry/exit events.
@@ -85,6 +86,7 @@ const socialWindow = {
   },
   AmbientDialogue: { showAlcoholOfferResponse(walker, response) { refusalLines.push(response.text || response.line); } },
   GameRandom: { random: () => gameRandom },
+  performance: { now: () => performanceNow },
   __farmLog() {},
 };
 vm.runInNewContext(socialSource, { window: socialWindow, Math, console });
@@ -146,16 +148,40 @@ assert.equal(rapport.drinkCooldownRemaining('drink_npc'), 0, 'serialized expired
 clockHour = 13;
 activeStimuli = [{ id: 'player-dance-1', type: 'dance', sourceIsPlayer: true, x: 0, z: 0, radius: 8, strength: 1 }];
 plannerTarget = { socialDance: { stimulusId: 'player-dance-1', sourceIsPlayer: true } };
+performanceNow = 0;
 plannerStub.resolveNpcTarget({ id: 'dance_npc' });
-assert.equal(rapport.get('dance_npc'), 3, 'entering an accepted player-dance target awards dance Rapport once');
+assert.equal(rapport.get('dance_npc'), 0, 'entering an accepted player-dance target starts continuous Rapport timing without the old one-time +3');
+performanceNow = 999;
 plannerStub.resolveNpcTarget({ id: 'dance_npc' });
-assert.equal(rapport.get('dance_npc'), 3, 're-resolving the same dance target does not farm Rapport');
+assert.equal(rapport.get('dance_npc'), 0, 'less than one completed second awards no Rapport yet');
+performanceNow = 1000;
+plannerStub.resolveNpcTarget({ id: 'dance_npc' });
+assert.equal(rapport.get('dance_npc'), 1, 'neutral player dancing awards exactly 1 Rapport per completed second');
+relation('dance_npc').favor = 2;
+plannerStub.resolveNpcTarget({ id: 'dance_npc' });
+assert.equal(rapport.danceRapportPerSecond('dance_npc'), 3, 'two positive Favor hearts raise the dance rate to 3 Rapport per second');
+performanceNow = 2000;
+plannerStub.resolveNpcTarget({ id: 'dance_npc' });
+assert.equal(rapport.get('dance_npc'), 4, 'each completed positive heart adds another Rapport per second');
+relation('dance_npc').favor = -2;
+plannerStub.resolveNpcTarget({ id: 'dance_npc' });
+assert.equal(rapport.danceRapportPerSecond('dance_npc'), 1, 'negative hearts never reduce dancing below the neutral 1 Rapport per second base');
+performanceNow = 3000;
+plannerStub.resolveNpcTarget({ id: 'dance_npc' });
+assert.equal(rapport.get('dance_npc'), 5, 'negative Favor still earns the neutral base rate while the NPC is willing to dance');
+relation('dance_npc').favor = 12;
+plannerStub.resolveNpcTarget({ id: 'dance_npc' });
+assert.equal(rapport.danceRapportPerSecond('dance_npc'), 11, 'heart bonus is capped to the existing ten positive relationship hearts');
 plannerTarget = { activity: 'wander' };
 plannerStub.resolveNpcTarget({ id: 'dance_npc' });
 activeStimuli = [{ id: 'player-music-1', type: 'music', sourceIsPlayer: true, x: 0, z: 0, radius: 8, strength: 1 }];
 plannerTarget = { socialDance: { stimulusId: 'player-music-1', sourceIsPlayer: true } };
 plannerStub.resolveNpcTarget({ id: 'dance_npc' });
-assert.equal(rapport.get('dance_npc'), 5, 'entering a new dance caused by player music awards the configured music Rapport');
+assert.equal(rapport.get('dance_npc'), 7, 'player-music dancing keeps its separate one-time configured +2 Rapport behavior');
+plannerStub.resolveNpcTarget({ id: 'dance_npc' });
+assert.equal(rapport.get('dance_npc'), 7, 're-resolving the same player-music dance still cannot farm its one-time Rapport award');
+const danceDebug = rapport.getDebug().danceRapportByNpc;
+assert.equal(Object.keys(danceDebug).length, 0, 'dance debug reports no continuous player-dance session after switching to music');
 
 assert.match(dialogueEditorState, /type:'adjustRapport'[\s\S]*?field:'amount'/, 'Dialogue Editor exposes positive/negative Rapport actions');
 assert.match(dialogueSource, /act\.type === 'adjustRapport'[\s\S]*?NpcRapport\?\.adjust/, 'dialogue runtime applies authored Rapport changes');
