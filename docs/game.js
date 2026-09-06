@@ -2775,15 +2775,7 @@
       // only ever holds farm objects), called from the main loop alongside
       // updateDewPileMeshRotations.
       function updateProcessingFurnitureVfx(dt) {
-        // Guarded per-station: gameLoop has no enclosing try/catch, so a
-        // single station throwing here (a malformed timed job, a stale
-        // mesh reference) would otherwise stop the entire frame loop from
-        // rescheduling itself — freezing the whole game, not just that
-        // station.
-        processingFurnitureObjects.forEach(obj => {
-          try { obj.update && obj.update(dt); }
-          catch (err) { console.error('[processing-furniture] station update failed', obj?.furnitureKey, err); }
-        });
+        processingFurnitureObjects.forEach(obj => obj.update && obj.update(dt));
       }
 
       // ── Decorative furniture (interior) ──────────────────────────
@@ -2806,26 +2798,11 @@
       function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0) {
         const g = currentArea === 'interior' ? interiorGrid : grid;
         const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
-        // Farm decor also has to respect worldObjects — the same shared
-        // occupancy map processing furniture, barns, and the sell/supply
-        // crates register into (see canPlaceFurnitureAt above) — or a
-        // sittable piece (registerSitWorldObject) can silently overwrite a
-        // processor's map entry, permanently orphaning it (still drawn,
-        // still saved, but no longer reachable by tile interaction). The
-        // ignored piece's own current anchor tile is exempted so rotating
-        // or moving a farm-placed sittable piece doesn't see its own
-        // pre-move registration as a collision.
-        const ignoreObj = ignoreId ? interiorFurnitureObjects.find(o => o.id === ignoreId) : null;
         for (let r = row; r < row + fd; r++) {
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
             if (!tile || tile.type === TileType.ROCK) return false;
-            if (currentArea === 'farm') {
-              if (window.GridTileAccessors.isHouseFootprint(c, r)) return false;
-              const occupyingWorldObject = getWorldObjectAt(c, r);
-              const isOwnCurrentTile = ignoreObj && ignoreObj.col === c && ignoreObj.row === r;
-              if (occupyingWorldObject && !isOwnCurrentTile) return false;
-            }
+            if (currentArea === 'farm' && window.GridTileAccessors.isHouseFootprint(c, r)) return false;
           }
         }
         return !interiorFurnitureObjects.find(o => {
