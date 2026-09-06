@@ -109,7 +109,8 @@
   }
 
   function configuredQualityStars(item) {
-    const authoredStars = Number(item?.qualityStars); // Used to preserve explicitly authored shop-food quality instead of falling back to an item's normal quality later.
+    if (item?.qualityStars == null) return null;
+    const authoredStars = Number(item.qualityStars); // Used to preserve explicitly authored shop-food quality instead of falling back to an item's normal quality later.
     return Number.isFinite(authoredStars) ? Math.max(1, Math.min(5, Math.round(authoredStars))) : null;
   }
 
@@ -265,6 +266,7 @@
         renderGeneralStorePage(); deps.buildInventoryGrid(); deps.buildPackClothingSection();
         deps.saveMemberWorldData();
       });
+      list.appendChild(row);
     });
   }
 
