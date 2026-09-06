@@ -4,7 +4,7 @@
 
   "weaponAbilities": {
     "cut":   { "damage": 6,  "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 360,  "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
-    "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
+    "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 520,  "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
   },
 
   "combo": {
@@ -18,7 +18,7 @@
     "pokeCombo": [
       { "name": "Short Thrust", "damageMul": 0.95, "halfConeDeg": 9,  "rangeMul": 1.15, "knockbackMul": 0.4, "staminaCost": 13, "windupS": 0.12, "strikeS": 0.09, "anim": "thrust", "dirSign": 1,  "holdS": 1, "dmgTag": "sharp", "lungeMul": 2.0 },
       { "name": "Step Thrust",  "damageMul": 1.15, "halfConeDeg": 12, "rangeMul": 1.35, "knockbackMul": 0.5, "staminaCost": 16, "windupS": 0.16, "strikeS": 0.10, "anim": "thrust", "dirSign": 1,  "holdS": 1, "dmgTag": "sharp", "lungeMul": 1.0 },
-      { "name": "Long Lunge",   "damageMul": 1.25, "halfConeDeg": 13, "rangeMul": 1.65, "knockbackMul": 2.85, "staminaCost": 25, "windupS": 0.27, "strikeS": 0.12, "returnS": 0.35, "anim": "thrust", "dirSign": 1, "power": 1.35, "holdS": 1, "dmgTag": "sharp", "heavy": true, "lungeMul": 1.0 }
+      { "name": "Long Lunge",   "damageMul": 1.25, "halfConeDeg": 13, "rangeMul": 1.65, "knockbackMul": 2.85, "staminaCost": 25, "windupS": 0.27, "strikeS": 0.12, "returnS": 0.35, "anim": "thrust", "dirSign": 1,  "power": 1.35, "holdS": 1, "dmgTag": "sharp", "heavy": true, "lungeMul": 1.0 }
     ]
   },
 
@@ -44,7 +44,7 @@
 
   "quickAttacks": {
     "WINDUP_S": 0.075, "STRIKE_S": 0.105, "COST_BASE": 11, "COST_BONUS": 18, "HOLD_S": 1,
-    "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 5.5,
+    "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 3.0,
     "techniques": {
       "opportunistJab": { "label": "Opportunist Jab", "condKey": "enemyStriking", "halfConeDeg": 16, "rangeMul": 0.95,
         "base": { "damageMul": 0.5,  "knockbackMul": 0.9 }, "bonus": { "damageMul": 3.2, "knockbackMul": 1.9 }, "bonusText": "bonus: target was in strike stage" },
@@ -58,13 +58,13 @@
   },
 
   "chargedBreaker": {
-    "MIN_READY_S": 0.62, "MAX_CHARGE_S": 1.75, "CHARGE_DRAIN_PER_S": 18,
+    "MIN_READY_S": 1.0, "MAX_CHARGE_S": 2.5, "CHARGE_DRAIN_PER_S": 18,
     "COST_MIN": 16, "COST_MAX": 28,
     "DAMAGE_MUL_MIN": 1.05, "DAMAGE_MUL_MAX": 1.3,
     "KNOCKBACK_MUL_MIN": 1.275, "KNOCKBACK_MUL_MAX": 2.4,
     "RANGE_MUL_MIN": 1.4, "RANGE_MUL_MAX": 1.9,
     "HALF_CONE_DEG": 55, "WINDUP_S": 0.52, "STRIKE_S": 0.30, "POWER": 1.7, "HOLD_S": 1,
-    "LUNGE_TILE_MUL": 2.0, "LUNGE_HOP_UNITS": 0.45
+    "LUNGE_TILE_MUL": 5.5, "LUNGE_HOP_UNITS": 0.45
   },
 
   "flurry": {
