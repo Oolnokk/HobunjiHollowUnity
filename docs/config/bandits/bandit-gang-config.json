@@ -106,6 +106,12 @@
       "scatterbow": 3
     }
   },
+  "culturalRangedWeightByRank": {
+    "_comment": "After a bandit passes rangedWeaponChanceByRank, each trust-dialogue weapon that both belongs to that bandit's species and has a real ranged definition is added beside crossbow/scatterbow with this weight. This changes only the weapon mix, never the chance of receiving a ranged weapon.",
+    "grunt": 1,
+    "lieutenant": 2,
+    "captain": 3
+  },
   "masteryBaseByRank": {
     "_comment": "Added to the current difficulty tier (see difficultyTiers below) and clamped to the tool mastery system's real 0-5 range (game.js MASTERY_XP_THRESHOLDS) to get a bandit's weapon mastery level.",
     "grunt": 0,
