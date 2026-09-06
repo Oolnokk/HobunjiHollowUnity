@@ -10,7 +10,10 @@
   // pattern as its sibling systems, alongside js/zone-plateau-mesa.js,
   // js/zone-terrain-features.js, and js/zone-den-totem-features.js.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    window.GrassPlayerResponse?.init(injectedDeps);
+  }
 
   // A single whole-zone InstancedMesh cannot be usefully frustum-culled while
   // the camera is standing inside the zone. Wilderness maps are much larger
@@ -236,6 +239,341 @@
     init,
     buildZoneGrassBillboards,
     buildRichFoliageBillboards,
+  };
+})();
+
+// Live player-to-grass response. This is deliberately isolated from grass
+// generation: builders keep owning density/culling, while this module only
+// adjusts nearby instance Y scales and restores them as the player leaves.
+(() => {
+  'use strict';
+  if (typeof window === 'undefined' || typeof THREE === 'undefined') return;
+
+  let runtimeDeps = null; // Latest injected game deps; used to refresh player/renderer references on re-init.
+  let playerMesh = null; // Current player root; its world X/Z position drives the response field.
+  let renderer = null; // Active WebGL renderer; wrapped once so response updates happen immediately before drawing.
+  let frameUpdated = false; // Per-browser-frame gate; prevents duplicate work across post-process render passes.
+  let lastUpdateMs = 0; // Timestamp of the previous real response update; used to make lerping frame-rate independent.
+  let lastDebug = null; // Most recent counters; exposed through debugSnapshot() for mobile-visible diagnostics.
+  let loggedError = false; // One-shot guard; keeps a bad instance from spamming the in-game/browser log every frame.
+
+  const meshRegistry = new Map(); // Instanced grass mesh -> spatial/index metadata, reused until that mesh is rebuilt.
+  const sceneRegistry = new WeakMap(); // Scene -> responsive mesh metadata set, so only the rendered scene is touched.
+  const matrix = new THREE.Matrix4(); // Scratch transform used when reading/writing one grass instance matrix.
+  const position = new THREE.Vector3(); // Scratch local instance position used for bucket indexing and matrix writes.
+  const quaternion = new THREE.Quaternion(); // Scratch instance rotation preserved while only Y scale changes.
+  const scale = new THREE.Vector3(); // Scratch instance scale; X/Z are preserved and Y receives the response factor.
+  const worldPosition = new THREE.Vector3(); // Scratch world point used to compare each blade against player world X/Z.
+  const RESPONSE_EPSILON = 0.001; // Completion tolerance used to stop tracking fully regrown blades.
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function config() {
+    const raw = window.HOBUNJI_CONFIG?.grassPlayerResponse || {}; // Authored tuning source; read live for debug/edit reloads.
+    const innerRadiusTiles = Math.max(0, Number(raw.innerRadiusTiles) || 0); // Fully flattened radius in tile units.
+    const requestedOuterRadius = Number(raw.outerRadiusTiles); // Raw transition-edge radius before ordering validation.
+    const outerRadiusTiles = Math.max(innerRadiusTiles, Number.isFinite(requestedOuterRadius) ? requestedOuterRadius : innerRadiusTiles); // Normal-height edge radius.
+    const rawMinimumScale = Number(raw.minimumYScale); // Raw authored minimum, sanitized before matrix use.
+    const minimumYScale = clamp(Number.isFinite(rawMinimumScale) ? rawMinimumScale : 0, 0, 1); // Smallest allowed blade-height fraction.
+    const flattenLerpRate = Math.max(0.01, Number(raw.flattenLerpRate) || 8); // Exponential shortening rate while target height decreases.
+    const regrowLerpRate = Math.max(0.01, Number(raw.regrowLerpRate) || 3.5); // Exponential recovery rate while target height increases.
+    const discoveryIntervalSeconds = Math.max(0.05, Number(raw.discoveryIntervalSeconds) || 0.5); // Scene-rescan cadence for streamed/rebuilt grass.
+    return {
+      enabled: raw.enabled !== false,
+      innerRadiusTiles,
+      outerRadiusTiles,
+      minimumYScale,
+      flattenLerpRate,
+      regrowLerpRate,
+      discoveryIntervalSeconds,
+    };
+  }
+
+  function targetYScaleAtDistance(distance, cfg = config()) {
+    const safeDistance = Math.max(0, Number(distance) || 0); // Sanitized radial distance used for the response curve.
+    if (safeDistance <= cfg.innerRadiusTiles) return cfg.minimumYScale;
+    if (safeDistance >= cfg.outerRadiusTiles) return 1;
+    const span = cfg.outerRadiusTiles - cfg.innerRadiusTiles; // Width of the authored transition annulus.
+    if (span <= 1e-6) return 1;
+    const linearT = clamp((safeDistance - cfg.innerRadiusTiles) / span, 0, 1); // 0..1 position across the transition annulus.
+    const smoothT = linearT * linearT * (3 - 2 * linearT); // Smoothstep avoids a visible slope kink at either configured radius.
+    return cfg.minimumYScale + (1 - cfg.minimumYScale) * smoothT;
+  }
+
+  function grassMaterialMatches(mesh) {
+    const canonicalMaterial = window.VegetationCropRendering?.getGrassBillboardMat?.(); // Shared normal grass shader when available.
+    if (canonicalMaterial && mesh.material === canonicalMaterial) return true;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Material list handles future multi-material instanced grass safely.
+    return materials.some(material => material?.isShaderMaterial && material.uniforms?.uGrassTex && material.uniforms?.uDensity);
+  }
+
+  function isResponsiveGrassMesh(mesh) {
+    return !!(mesh?.isInstancedMesh && mesh.instanceMatrix && mesh.count > 0 && grassMaterialMatches(mesh));
+  }
+
+  function meshSignature(mesh) {
+    const count = Math.max(0, mesh.count | 0); // Current live instance count; part of the rebuild signature.
+    if (!count) return '0';
+    const sampleCount = Math.min(7, count); // Small fixed sample catches most same-count refills without scanning the whole mesh.
+    const parts = [String(count)]; // Signature pieces are only X/Z positions, so our own Y scaling cannot invalidate the index.
+    for (let sample = 0; sample < sampleCount; sample++) {
+      const index = sampleCount === 1 ? 0 : Math.round(sample * (count - 1) / (sampleCount - 1)); // Evenly distributed instance index used for refill detection.
+      mesh.getMatrixAt(index, matrix);
+      matrix.decompose(position, quaternion, scale);
+      parts.push(`${position.x.toFixed(3)},${position.z.toFixed(3)}`);
+    }
+    return parts.join('|');
+  }
+
+  function restoreOldActiveScales(meta) {
+    const mesh = meta?.mesh; // Existing mesh whose active instances may still contain response-scaled matrices.
+    if (!mesh?.instanceMatrix || !meta.active.size) return;
+    let changed = false; // Tracks whether the GPU matrix buffer needs a final restore upload.
+    for (const index of meta.active) {
+      if (index < 0 || index >= mesh.count) continue;
+      const factor = meta.factors[index]; // Last factor applied by this module at this instance index.
+      if (!(factor < 1 - RESPONSE_EPSILON)) continue;
+      mesh.getMatrixAt(index, matrix);
+      matrix.decompose(position, quaternion, scale);
+      const baseYScale = meta.baseYScales[index]; // Authored uncompressed blade height captured when the index was built.
+      const expectedScaledY = baseYScale * factor; // Value we expect if this matrix still contains our old response.
+      const tolerance = Math.max(0.002, Math.abs(baseYScale) * 0.06); // Allows float drift without mistaking an external refill for our matrix.
+      if (Math.abs(scale.y - expectedScaledY) > tolerance) continue;
+      scale.y = baseYScale;
+      matrix.compose(position, quaternion, scale);
+      mesh.setMatrixAt(index, matrix);
+      changed = true;
+    }
+    if (changed) mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  function buildMeshMeta(mesh, previousMeta = null) {
+    if (previousMeta) restoreOldActiveScales(previousMeta);
+    mesh.updateMatrixWorld?.(true);
+    const count = Math.max(0, mesh.count | 0); // Number of live blade-plane instances represented by this metadata object.
+    const baseYScales = new Float32Array(count); // Authored per-instance Y scales used as the absolute regrowth baseline.
+    const factors = new Float32Array(count); // Current 0..1 response factor per instance; starts fully grown.
+    const worldX = new Float32Array(count); // Cached world X positions used for radial distance tests without matrix decomposes every frame.
+    const worldZ = new Float32Array(count); // Cached world Z positions used for radial distance tests without matrix decomposes every frame.
+    const buckets = new Map(); // Tile-coordinate bucket -> instance indices, bounding per-frame work to the configured outer radius.
+    const active = new Set(); // Instances below full height; kept until they finish regrowing even after leaving the radius.
+    factors.fill(1);
+
+    for (let index = 0; index < count; index++) {
+      mesh.getMatrixAt(index, matrix);
+      matrix.decompose(position, quaternion, scale);
+      baseYScales[index] = Math.max(0, Number(scale.y) || 0);
+      worldPosition.copy(position).applyMatrix4(mesh.matrixWorld);
+      worldX[index] = worldPosition.x;
+      worldZ[index] = worldPosition.z;
+      const bucketKey = `${Math.floor(worldPosition.x)},${Math.floor(worldPosition.z)}`; // One gameplay tile per bucket keeps lookup directly tied to configured tile radii.
+      let indices = buckets.get(bucketKey); // Existing instance list for this world tile, if this is not its first blade.
+      if (!indices) {
+        indices = [];
+        buckets.set(bucketKey, indices);
+      }
+      indices.push(index);
+    }
+
+    return {
+      mesh,
+      count,
+      signature: meshSignature(mesh),
+      baseYScales,
+      factors,
+      worldX,
+      worldZ,
+      buckets,
+      active,
+    };
+  }
+
+  function getSceneState(scene) {
+    let state = sceneRegistry.get(scene); // Existing responsive-mesh set for this rendered scene.
+    if (!state) {
+      state = { metas: new Set(), lastDiscoveryMs: -Infinity };
+      sceneRegistry.set(scene, state);
+    }
+    return state;
+  }
+
+  function discoverGrass(scene, nowMs, cfg) {
+    const state = getSceneState(scene); // Per-scene cache updated only at the configured discovery cadence.
+    if (nowMs - state.lastDiscoveryMs < cfg.discoveryIntervalSeconds * 1000) return state;
+    state.lastDiscoveryMs = nowMs;
+
+    scene.updateMatrixWorld?.(true);
+    scene.traverse?.(object => {
+      if (!isResponsiveGrassMesh(object)) return;
+      const signature = meshSignature(object); // Cheap refill signature used before deciding whether to rebuild the spatial index.
+      let meta = meshRegistry.get(object); // Existing spatial metadata for this exact InstancedMesh object.
+      if (!meta || meta.count !== object.count || meta.signature !== signature) {
+        meta = buildMeshMeta(object, meta || null);
+        meshRegistry.set(object, meta);
+      }
+      state.metas.add(meta);
+    });
+
+    for (const meta of [...state.metas]) {
+      if (meta.mesh?.parent && meshRegistry.get(meta.mesh) === meta) continue;
+      state.metas.delete(meta);
+      if (meshRegistry.get(meta.mesh) === meta) meshRegistry.delete(meta.mesh);
+    }
+    return state;
+  }
+
+  function applyFactor(meta, index, targetFactor, dtSeconds, cfg) {
+    const mesh = meta.mesh; // Owning InstancedMesh whose one blade-plane matrix is being updated.
+    const currentFactor = meta.factors[index]; // Last response factor applied to this blade-plane.
+    const responseRate = targetFactor < currentFactor ? cfg.flattenLerpRate : cfg.regrowLerpRate; // Shortening and recovery have independently authored rates.
+    const alpha = 1 - Math.exp(-responseRate * dtSeconds); // Frame-rate-independent exponential interpolation amount.
+    let nextFactor = currentFactor + (targetFactor - currentFactor) * alpha; // New response factor before completion snapping.
+    if (Math.abs(nextFactor - targetFactor) < RESPONSE_EPSILON) nextFactor = targetFactor;
+    if (Math.abs(nextFactor - currentFactor) < 1e-5) return false;
+
+    mesh.getMatrixAt(index, matrix);
+    matrix.decompose(position, quaternion, scale);
+    let baseYScale = meta.baseYScales[index]; // Absolute authored Y scale that must never accumulate our own previous compression.
+    const expectedScaledY = baseYScale * currentFactor; // Matrix Y scale expected if nobody else rewrote this instance since our last frame.
+    const tolerance = Math.max(0.002, Math.abs(baseYScale) * 0.06); // Change threshold distinguishing float noise from an external matrix rewrite.
+    if (currentFactor < 1 - RESPONSE_EPSILON && Math.abs(scale.y - baseYScale) <= tolerance) {
+      // A terrain/grass refresh restored the natural scale while this blade was
+      // still logically flattened. Keep the known base and simply reapply the
+      // current response instead of treating that reset as a new authored size.
+    } else if (currentFactor > 0.05 && Math.abs(scale.y - expectedScaledY) > tolerance) {
+      const inferredBase = scale.y / currentFactor; // Updated authored scale inferred after an external non-response rescale.
+      if (Number.isFinite(inferredBase) && inferredBase >= 0) {
+        baseYScale = inferredBase;
+        meta.baseYScales[index] = inferredBase;
+      }
+    }
+
+    scale.y = baseYScale * nextFactor;
+    matrix.compose(position, quaternion, scale);
+    mesh.setMatrixAt(index, matrix);
+    meta.factors[index] = nextFactor;
+    if (nextFactor < 1 - RESPONSE_EPSILON) meta.active.add(index);
+    else meta.active.delete(index);
+    return true;
+  }
+
+  function updateMesh(meta, playerX, playerZ, dtSeconds, cfg) {
+    if (!meta.mesh?.parent || !meta.count) return 0;
+    const processed = new Set(); // Candidate indices handled from nearby spatial buckets this frame.
+    const bucketRadius = Math.ceil(cfg.outerRadiusTiles) + 1; // Bucket search extent derived from, rather than hardcoded beside, the authored outer radius.
+    const centerCol = Math.floor(playerX); // Player tile-space column used to select nearby world buckets.
+    const centerRow = Math.floor(playerZ); // Player tile-space row used to select nearby world buckets.
+    let changed = 0; // Number of instance matrices actually rewritten for this mesh this frame.
+
+    for (let row = centerRow - bucketRadius; row <= centerRow + bucketRadius; row++) {
+      for (let col = centerCol - bucketRadius; col <= centerCol + bucketRadius; col++) {
+        const indices = meta.buckets.get(`${col},${row}`); // Grass blade-plane indices whose roots lie in this nearby tile bucket.
+        if (!indices) continue;
+        for (const index of indices) {
+          const dx = meta.worldX[index] - playerX; // Horizontal X separation used for radial falloff.
+          const dz = meta.worldZ[index] - playerZ; // Horizontal Z separation used for radial falloff.
+          const distance = Math.hypot(dx, dz); // Euclidean player-to-root distance in gameplay tile/world units.
+          const targetFactor = targetYScaleAtDistance(distance, cfg); // Configured minimum/transition/normal target for this root.
+          if (targetFactor >= 1 - RESPONSE_EPSILON && !meta.active.has(index)) continue;
+          processed.add(index);
+          if (applyFactor(meta, index, targetFactor, dtSeconds, cfg)) changed++;
+        }
+      }
+    }
+
+    for (const index of [...meta.active]) {
+      if (processed.has(index)) continue;
+      if (applyFactor(meta, index, 1, dtSeconds, cfg)) changed++;
+    }
+    if (changed) meta.mesh.instanceMatrix.needsUpdate = true;
+    return changed;
+  }
+
+  function updateScene(scene, nowMs = performance.now()) {
+    if (!scene?.traverse || !playerMesh?.position) return;
+    const cfg = config(); // Current authored response tuning used for this entire frame update.
+    const state = discoverGrass(scene, nowMs, cfg); // Responsive grass meshes currently belonging to the rendered scene.
+    if (!state.metas.size) return;
+    if (frameUpdated) return;
+    frameUpdated = true;
+    const resetFrameGate = () => { frameUpdated = false; }; // Releases the once-per-frame guard after all render passes complete.
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(resetFrameGate);
+    else setTimeout(resetFrameGate, 0);
+
+    const rawDt = lastUpdateMs > 0 ? (nowMs - lastUpdateMs) / 1000 : 1 / 60; // Real elapsed time since the previous grass response frame.
+    const dtSeconds = clamp(rawDt, 0, 0.1); // Large tab/background gaps are clamped so grass never pops across its interpolation.
+    lastUpdateMs = nowMs;
+    const playerX = Number(playerMesh.position.x) || 0; // Player world X used as the radial response center.
+    const playerZ = Number(playerMesh.position.z) || 0; // Player world Z used as the radial response center.
+    let changedInstances = 0; // Aggregate matrix-write count exposed to the debug snapshot.
+    let activeInstances = 0; // Aggregate not-yet-regrown blade count exposed to the debug snapshot.
+
+    for (const meta of [...state.metas]) {
+      if (!meta.mesh?.parent) {
+        state.metas.delete(meta);
+        meshRegistry.delete(meta.mesh);
+        continue;
+      }
+      changedInstances += updateMesh(meta, playerX, playerZ, dtSeconds, cfg.enabled ? cfg : { ...cfg, innerRadiusTiles: 0, outerRadiusTiles: 0, minimumYScale: 1 });
+      activeInstances += meta.active.size;
+    }
+
+    lastDebug = {
+      playerX,
+      playerZ,
+      meshCount: state.metas.size,
+      activeInstances,
+      changedInstances,
+      config: cfg,
+      timestampMs: nowMs,
+    };
+  }
+
+  function installRendererHook(nextRenderer) {
+    if (!nextRenderer || nextRenderer.__hobunjiGrassPlayerResponseHook) return;
+    const originalRender = nextRenderer.render; // Render function already containing any earlier compatibility wrappers.
+    if (typeof originalRender !== 'function') return;
+    nextRenderer.render = function (...args) {
+      try {
+        updateScene(args[0]);
+      } catch (error) {
+        if (!loggedError) {
+          loggedError = true;
+          window.__farmLog?.(`Grass player response disabled after runtime error: ${error?.message || error}`, 'error');
+          console.error('GrassPlayerResponse update failed', error);
+        }
+      }
+      return originalRender.apply(this, args);
+    };
+    nextRenderer.__hobunjiGrassPlayerResponseHook = true;
+  }
+
+  function init(injectedDeps) {
+    runtimeDeps = injectedDeps || runtimeDeps; // Retained for debug parity and future dependency extension without touching builders.
+    playerMesh = injectedDeps?.playerMesh || playerMesh; // Player dependency refreshed whenever the parent grass system is reinitialized.
+    renderer = injectedDeps?.renderer || renderer; // Renderer dependency refreshed whenever the parent grass system is reinitialized.
+    installRendererHook(renderer);
+  }
+
+  function debugSnapshot() {
+    return lastDebug ? { ...lastDebug } : {
+      playerX: Number(playerMesh?.position?.x) || 0,
+      playerZ: Number(playerMesh?.position?.z) || 0,
+      meshCount: meshRegistry.size,
+      activeInstances: [...meshRegistry.values()].reduce((sum, meta) => sum + meta.active.size, 0),
+      changedInstances: 0,
+      config: config(),
+      timestampMs: performance.now(),
+    };
+  }
+
+  window.GrassPlayerResponse = {
+    init,
+    updateScene,
+    targetYScaleAtDistance,
+    debugSnapshot,
   };
 })();
 
