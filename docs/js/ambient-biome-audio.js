@@ -11,11 +11,11 @@
   const CLOUD_FOREST_AREA = 'map_southern_cloud_forest'; // Selects the dedicated day/night cloud-forest beds.
   const RIVER_AREAS = new Set([CLOUD_FOREST_AREA, 'town', 'map_hobunji_town', 'map_northern_cliffs']); // Restricts river ambience to the three requested locations.
   const AUDIO_URLS = Object.freeze({
-    nightbugs: 'assets/audio/sfx/bgs/bgs_nightbugs1.wav',
-    cloudforest: 'assets/audio/sfx/bgs/bgs_cloudforest.wav',
-    cloudforestNight: 'assets/audio/sfx/bgs/bgs_cloudforest_night.wav',
-    river: 'assets/audio/sfx/bgs/bgs_river.wav',
-  }); // Provides the converted WAV assets used by each persistent layer.
+    nightbugs: 'assets/audio/sfx/bgs/bgs_nightbugs1.ogg',
+    cloudforest: 'assets/audio/sfx/bgs/bgs_cloudforest.ogg',
+    cloudforestNight: 'assets/audio/sfx/bgs/bgs_cloudforest_night.ogg',
+    river: 'assets/audio/sfx/bgs/bgs_river.ogg',
+  }); // Provides the Ogg Vorbis assets used by each persistent layer.
   const layers = new Map(); // Retains one reusable HTMLAudioElement per ambience layer.
   const debugState = {
     lastError: null,
@@ -121,7 +121,7 @@
 
   function setLayerTarget(id, targetVolume, now) {
     const target = clamp01(targetVolume); // Keeps authored multipliers within HTMLMediaElement.volume's legal range.
-    const layer = layers.get(id) || (target > 0 ? ensureLayer(id) : null); // Lazily fetches large WAVs only after their layer first becomes audible.
+    const layer = layers.get(id) || (target > 0 ? ensureLayer(id) : null); // Lazily fetches Ogg files only after their layer first becomes audible.
     if (!layer) return;
     const audio = layer.audio; // Applies the smoothed target and play/pause lifecycle below.
     const config = audioConfig(); // Reads the same BGS fade duration used by the main Music mixer.
@@ -147,7 +147,7 @@
       capturedConfig.hadNightbugsVolume = Object.prototype.hasOwnProperty.call(bgs, 'nightbugsVolume');
       capturedConfig.nightbugsVolume = bgs.nightbugsVolume;
     }
-    bgs.nightbugsVolume = 0; // Mutes Music's old generic loop so the converted WAV owns that layer without doubling.
+    bgs.nightbugsVolume = 0; // Mutes Music's old generic loop so the converted Ogg owns that layer without doubling.
     if (inCloudForest) {
       bgs.birdsVolume = 0; // Replaces generic daytime birds with the dedicated cloud-forest recording.
       capturedConfig.birdsSuppressed = true;
