@@ -25,7 +25,8 @@
       await loadScript('lab-object-markers.js', 'wilderness-lab-object-markers'); // Schematic cube marker renderer consumes the reconstructed object array and wraps the adjusted terrain preview.
       await loadScript('lab-terrain-skin.js', 'wilderness-lab-terrain-skin'); // Final pass keeps the broad Great Basin ramp field grass-skinned rather than path-skinned.
       await loadScript('lab-environment-refresh.js', 'wilderness-lab-environment-refresh'); // Corrects old generic winter terminology: Coldmuck is localized slush; Western Slope snow is persistent avalanche deposition.
-      console.log('[WildernessLab] terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh loaded');
+      await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
+      console.log('[WildernessLab] terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + pixel probe loaded');
       const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {
