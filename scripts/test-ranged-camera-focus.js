@@ -8,10 +8,12 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260906d[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 4/, 'loader requires the shared interaction-target v4 adapter');
-assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook is no longer loaded');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260906e[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 5/, 'loader requires fail-safe shared-target v5');
+assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /shared-3d-interaction-target-native-camera/, 'combat aim reports the shared 3D interaction-target contract');
-assert.match(source, /intersectObjects\(scene\.children, true\)/, 'shared aim resolves the first active-scene surface recursively');
+assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots are raycast independently so one bad root cannot abort the whole frame');
+assert.doesNotMatch(source, /intersectObjects\(scene\.children, true\)/, 'monolithic whole-scene raycast is not used');
+assert.match(source, /surface-ray-root/, 'bad scene roots are caught and surfaced through mobile-readable combat diagnostics');
 assert.match(source, /getPlayerAimRay: \(\) => rangedInteractionAimRay\(\)/, 'ranged shots consume the shared interaction target');
 assert.match(source, /interactionTargetMeleeHit/, 'actual player melee collision receives the shared interaction-target direction');
 assert.match(source, /transformCrossbowPose/, 'crossbow stance retains portrait-orbit vertical aiming');
@@ -21,7 +23,6 @@ assert.doesNotMatch(source, /this\.position\.set/, 'combat aim never writes came
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
-  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
   clone() { return new Vector3(this.x, this.y, this.z); }
   addScaledVector(v, s) { this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; return this; }
   sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
@@ -33,12 +34,28 @@ class Vector3 {
   }
 }
 
-let sceneRaycasts = 0;
+function isDescendant(object, root) {
+  let node = object;
+  while (node) {
+    if (node === root) return true;
+    node = node.parent || null;
+  }
+  return false;
+}
+
+let rootRaycasts = 0;
 let sceneHits = [];
 class Raycaster {
   constructor() { this.ray = { origin: new Vector3(), direction: new Vector3() }; this.near = 0; this.far = Infinity; }
   set(origin, direction) { this.ray.origin = origin.clone(); this.ray.direction = direction.clone(); return this; }
-  intersectObjects() { sceneRaycasts++; return sceneHits.filter(hit => hit.distance >= this.near && hit.distance <= this.far); }
+  intersectObject(root, recursive, target = []) {
+    rootRaycasts++;
+    if (root?.throwRaycast) throw new Error('synthetic malformed raycast root');
+    for (const hit of sceneHits) {
+      if ((hit.object === root || (recursive && isDescendant(hit.object, root))) && hit.distance >= this.near && hit.distance <= this.far) target.push(hit);
+    }
+    return target;
+  }
 }
 
 let heldMode = 'tool';
@@ -53,11 +70,13 @@ let lastRangedVisual = null;
 let lastMeleeHitOptions = null;
 const player = { x: 128, y: 192, angle: 0 };
 const targetActor = { x: 400, y: 192, id: 'dummy' };
+
 const avatarRoot = { name: 'player-avatar', parent: null, visible: true, userData: { handAttachY: 0.45 } };
-const debugMesh = { isMesh: true, name: 'debug-helper-plane', parent: null, visible: true, material: { visible: true, opacity: 1 } };
 const playerMesh = { isMesh: true, name: 'player-body', parent: avatarRoot, visible: true, material: { visible: true, opacity: 1 } };
+const debugMesh = { isMesh: true, name: 'debug-helper-plane', parent: null, visible: true, material: { visible: true, opacity: 1 } };
+const badRoot = { name: 'broken-root', parent: null, visible: true, throwRaycast: true };
 const wallMesh = { isMesh: true, name: 'farm-wall', parent: null, visible: true, material: { visible: true, opacity: 1 } };
-const scene = { children: [debugMesh, avatarRoot, wallMesh] };
+const scene = { children: [debugMesh, avatarRoot, badRoot, wallMesh] };
 sceneHits = [
   { object: debugMesh, distance: 4, point: new Vector3(4, 2.4, 3) },
   { object: playerMesh, distance: 5, point: new Vector3(5, 2.7, 3) },
@@ -104,6 +123,7 @@ const windowStub = {
     setItem: (key, value) => storage.set(key, String(value)),
   },
   SCRATCHBONES_CONFIG: { game: { camera: { modes: { shoulderSurf: { distanceTiles: 2.6 } } } } },
+  GridTileAccessors: { getActiveScene: () => scene },
   Combat: {
     deps: combatDeps,
     loadout: { getSlot: () => 'swingCombo' },
@@ -162,44 +182,43 @@ windowStub.RangedWeapons.init({
 });
 assert(injectedRangedDeps, 'wrapped ranged init still reaches the original initializer');
 
-// First-surface targeting ignores debug helpers and the player's own portrait,
-// then converges the shot from its real projectile origin on the first valid wall.
 const rangedTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
 assert.equal(rangedTarget.source, 'interaction-first-surface');
 assert.equal(rangedTarget.surfaceName, 'farm-wall');
 assert.equal(rangedTarget.point.x, 6);
+assert(logs.some(line => line.includes('[combat-aim] surface-ray-root skipped broken-root')), 'bad root is reported without escaping into game loop');
+let snapshot = windowStub.HobunjiRangedCameraFocus.snapshot();
+assert.equal(snapshot.lastAimError.stage, 'surface-ray-root');
+assert.equal(snapshot.lastAimError.object, 'broken-root');
+
 const sharedRay = injectedRangedDeps.getPlayerAimRay();
-assert.equal(sharedRay.origin.x, 2, 'ranged ray starts at the projectile/player origin');
-assert(sharedRay.direction.x > 0.84 && sharedRay.direction.y > 0.5, 'ranged shot converges from the muzzle toward the shared 3D surface point');
-const raycastsAfterFirstResolve = sceneRaycasts;
+assert.equal(sharedRay.origin.x, 2, 'ranged ray starts at projectile/player origin');
+assert(sharedRay.direction.x > 0.84 && sharedRay.direction.y > 0.5, 'ranged shot converges from muzzle toward shared 3D surface point');
+const raycastsAfterFirstResolve = rootRaycasts;
 windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
-assert.equal(sceneRaycasts, raycastsAfterFirstResolve, 'scene surface raycast is cached within the rendered frame');
+assert.equal(rootRaycasts, raycastsAfterFirstResolve, 'scene surface raycast is cached within rendered frame');
 
 function settle(frames = 90) {
   for (let i = 0; i < frames; i++) windowStub.RangedWeapons.update(1 / 60);
 }
 
-// Existing ready-state zoom and independent shoulder framing are retained; the
-// adapter reports explicitly that the native Shoulder Cam transform is untouched.
 windowStub.RangedWeapons.update(1 / 60);
-assert(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles < 2.6, 'loaded crossbow still starts easing camera distance inward');
-assert.equal(sliderValue, 0.60, 'first focus tick waits for game.js to expose the authored Combat shoulder preset');
+assert(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles < 2.6, 'loaded crossbow still eases camera distance inward');
+assert.equal(sliderValue, 0.60, 'first focus tick waits for authored Combat shoulder preset');
 windowStub.RangedWeapons.update(1 / 60);
-assert(sliderValue < 0.60, 'loaded crossbow still eases toward its separate ranged-focus shoulder offset');
-let focusSnapshot = windowStub.HobunjiRangedCameraFocus.snapshot();
-assert.equal(focusSnapshot.cameraMutation, 'native-shoulder-camera-only');
-assert.equal(focusSnapshot.aimAlignment, 'shared-3d-interaction-target-native-camera');
+assert(sliderValue < 0.60, 'loaded crossbow eases toward ranged-focus shoulder offset');
+snapshot = windowStub.HobunjiRangedCameraFocus.snapshot();
+assert.equal(snapshot.cameraMutation, 'native-shoulder-camera-only');
+assert.equal(snapshot.aimAlignment, 'shared-3d-interaction-target-native-camera');
 
 windowStub.HobunjiRangedCameraFocus.setFocusHorizontalOffset(-0.35);
-assert.equal(storage.get('hobunjiRangedFocusShoulderOffsetH'), '-0.35', 'separate focus shoulder offset still persists independently');
+assert.equal(storage.get('hobunjiRangedFocusShoulderOffsetH'), '-0.35', 'separate focus shoulder offset persists independently');
 settle(30);
-assert(sliderValue < 0.18, 'live focused framing follows the separately-authored focus shoulder value');
+assert(sliderValue < 0.18, 'focused framing follows separately-authored shoulder value');
 
-// Crossbow/scatterbow loaded stance uses the same resolved 3D target pitch and
-// continues rotating its whole pose around the portrait center.
 const pitchedPose = windowStub.RangedWeapons.playerIdlePose('crossbow');
-assert(pitchedPose.y > 0.08, 'upward surface target moves the crossbow stance upward around the portrait pivot');
-assert(pitchedPose.pitch < 0, 'upward surface target pitches the authored crossbow pose upward');
+assert(pitchedPose.y > 0.08, 'upward surface target moves crossbow stance upward around portrait pivot');
+assert(pitchedPose.pitch < 0, 'upward surface target pitches authored crossbow pose upward');
 injectedRangedDeps.triggerRangedWeaponVisual(1, {
   pose: {
     neutral: { y: 0.08, z: 0.14, pitch: 16 },
@@ -207,23 +226,20 @@ injectedRangedDeps.triggerRangedWeaponVisual(1, {
     strike: { y: 0.11, z: 0.12, pitch: -9 },
   },
 });
-assert(lastRangedVisual.options.pose.neutral.y > 0.08, 'fire animation pose receives the same portrait-orbit transform');
+assert(lastRangedVisual.options.pose.neutral.y > 0.08, 'fire animation pose receives portrait-orbit transform');
 
-// Melee falls back to the combo's maximum reach while the wall is too far away,
-// then the real windup range makes that same first surface the shared target.
 activeTool = 'weapon';
 windowStub.RangedWeapons.update(1 / 60);
 let meleeTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
 assert.equal(meleeTarget.mode, 'melee');
-assert.equal(meleeTarget.source, 'interaction-range-fallback', 'idle short combo cannot select a surface outside its reach');
+assert.equal(meleeTarget.source, 'interaction-range-fallback', 'idle short combo cannot select surface beyond reach');
 combatDeps.triggerWeaponSwingVisual(0.5, { coneRangePx: 64 * 4.5, coneAngle: player.angle });
 meleeTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget();
-assert.equal(meleeTarget.source, 'interaction-first-surface', 'windup switches targeting to the attack-specific reach');
+assert.equal(meleeTarget.source, 'interaction-first-surface', 'windup switches to attack-specific reach');
 assert.equal(meleeTarget.surfaceName, 'farm-wall');
 windowStub.Combat.meleeHit(player, targetActor, { rangePx: 64 * 4.5, halfConeRad: 0.4, yaw: Math.PI / 2, pitch: 0 });
-assert(lastMeleeHitOptions.direction.x > 0.8 && lastMeleeHitOptions.direction.y > 0.5, 'actual melee collision overrides stale yaw/pitch with the shared 3D target direction');
+assert(lastMeleeHitOptions.direction.x > 0.8 && lastMeleeHitOptions.direction.y > 0.5, 'melee collision overrides stale yaw/pitch with shared 3D target direction');
 
-// Other ranged archetypes retain the original readiness contract.
 activeTool = 'ranged';
 for (const itemKey of ['scatterbow', 'blowgun']) {
   equipped = itemKey;
@@ -231,14 +247,14 @@ for (const itemKey of ['scatterbow', 'blowgun']) {
   windowStub.RangedWeapons.update(1 / 60);
   const state = windowStub.HobunjiRangedCameraFocus.snapshot();
   assert.equal(state.active, true, `${itemKey} focuses while loaded`);
-  assert.equal(state.reason, 'loaded', `${itemKey} reports the loaded focus reason`);
+  assert.equal(state.reason, 'loaded', `${itemKey} reports loaded focus reason`);
 }
 
 equipped = 'crossbow';
 loaded = false;
 settle();
-assert(Math.abs(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles - 2.6) < 0.01, 'camera distance restores after the shot');
-assert(Math.abs(sliderValue - 0.60) < 0.01, 'ordinary Combat horizontal offset restores after the shot');
+assert(Math.abs(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles - 2.6) < 0.01, 'camera distance restores after shot');
+assert(Math.abs(sliderValue - 0.60) < 0.01, 'ordinary Combat horizontal offset restores after shot');
 
 equipped = 'kylie';
 thrownCharge = { itemKey: 'kylie', startedAt: 10 };
@@ -247,22 +263,23 @@ assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().reason, 'thrown-wind
 assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, true);
 thrownCharge = null;
 windowStub.RangedWeapons.update(1 / 60);
-assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'releasing a thrown weapon ends tight focus immediately');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'releasing thrown weapon ends tight focus');
 
 activeTool = 'weapon';
 equipped = 'crossbow';
 loaded = true;
 windowStub.RangedWeapons.update(1 / 60);
-assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'loaded ranged slot does not focus while melee is actually out');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'loaded ranged slot does not focus while melee is out');
 
 activeTool = 'ranged';
 settle(8);
 const dispatchesBeforePutAway = sliderDispatches;
 activeTool = 'hoe';
 settle(20);
-assert.equal(sliderDispatches, dispatchesBeforePutAway, 'putting combat away never writes the temporary Combat preset into Default');
-assert(logs.some(line => line.includes('native camera untouched')), 'transition log makes native-camera ownership visible on mobile');
+assert.equal(sliderDispatches, dispatchesBeforePutAway, 'non-combat mode does not synthesize Default-offset writes');
+
+assert(logs.some(line => line.includes('focus ON')), 'focus transitions remain visible in in-game log');
 assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.tightDistanceTiles, 1.55);
 assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.defaultFocusHorizontalOffsetTiles, 0.18);
 assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.crossbowVerticalPitchLimitDeg, 70);
-console.log('Shared interaction-target combat aim checks passed.');
+console.log('Fail-safe shared interaction-target combat checks passed.');
