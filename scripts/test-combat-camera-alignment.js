@@ -19,6 +19,13 @@ assert.doesNotMatch(source, /setInterval\s*\(/, 'alignment bridge adds no pollin
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(/, 'alignment bridge adds no animation-frame loop');
 assert.doesNotMatch(source, /\.update\s*=\s*function/, 'alignment bridge does not wrap a per-frame update');
 
+function assertVector(actual, expected, message) {
+  assert(actual, message);
+  assert.equal(Number(actual.x), Number(expected.x), `${message}: x`);
+  assert.equal(Number(actual.y), Number(expected.y), `${message}: y`);
+  assert.equal(Number(actual.z), Number(expected.z), `${message}: z`);
+}
+
 const logs = [];
 const player = { x: 128, y: 192 };
 const nativeInteractionRay = () => ({
@@ -88,15 +95,15 @@ assert.equal(typeof focusPrivateInteractionRay, 'function', 'focus wrapper captu
 assert(baseRangedDeps, 'underlying ranged initializer still receives deps');
 
 const privateRay = focusPrivateInteractionRay();
-assert.deepEqual(privateRay.origin, { x: 2, y: 0.8, z: 3 },
+assertVector(privateRay.origin, { x: 2, y: 0.8, z: 3 },
   'focus-private surface ray is rooted at the projectile/muzzle origin');
-assert.deepEqual(privateRay.direction, { x: 1, y: 0, z: 0 },
+assertVector(privateRay.direction, { x: 1, y: 0, z: 0 },
   'focus-private surface ray preserves the normalized native camera direction');
 
 const ordinaryInteraction = baseRangedDeps.getPlayerInteractionRay();
-assert.deepEqual(ordinaryInteraction.origin, { x: -4, y: 2.4, z: 3 },
+assertVector(ordinaryInteraction.origin, { x: -4, y: 2.4, z: 3 },
   'ordinary RangedWeapons interaction ray keeps the real camera origin');
-assert.deepEqual(ordinaryInteraction.direction, { x: 4, y: 0, z: 0 },
+assertVector(ordinaryInteraction.direction, { x: 4, y: 0, z: 0 },
   'ordinary world interaction semantics remain untouched');
 
 // This is the key 90-degree-shot regression. A pathological nearby surface at
@@ -105,17 +112,17 @@ assert.deepEqual(ordinaryInteraction.direction, { x: 4, y: 0, z: 0 },
 // eventual getPlayerAimRay remains +X and RangedWeapons cannot feed +Z back into
 // updateShoulderSurfReticleAim/head facing.
 const focusAimRay = baseRangedDeps.getPlayerAimRay();
-assert.deepEqual(focusAimRay.origin, { x: 2, y: 0.8, z: 3 });
-assert.deepEqual(focusAimRay.direction, { x: 1, y: 0, z: 0 });
+assertVector(focusAimRay.origin, { x: 2, y: 0.8, z: 3 }, 'focus aim ray uses muzzle origin');
+assertVector(focusAimRay.direction, { x: 1, y: 0, z: 0 }, 'focus aim ray stays camera-forward');
 const hypotheticalBadSideSurface = { x: 2, y: 0.8, z: 4 };
 const oldBadDirection = {
-  x: hypotheticalBadSideSurface.x - privateRay.origin.x,
-  y: hypotheticalBadSideSurface.y - privateRay.origin.y,
-  z: hypotheticalBadSideSurface.z - privateRay.origin.z,
+  x: hypotheticalBadSideSurface.x - Number(privateRay.origin.x),
+  y: hypotheticalBadSideSurface.y - Number(privateRay.origin.y),
+  z: hypotheticalBadSideSurface.z - Number(privateRay.origin.z),
 };
 assert.deepEqual(oldBadDirection, { x: 0, y: 0, z: 1 }, 'fixture represents the reported right-angle failure');
-assert.equal(focusAimRay.direction.x, 1, 'actual bridged shot/facing direction stays camera-forward');
-assert.equal(focusAimRay.direction.z, 0, 'actual bridged shot/facing direction cannot turn 90 degrees sideways');
+assert.equal(Number(focusAimRay.direction.x), 1, 'actual bridged shot/facing direction stays camera-forward');
+assert.equal(Number(focusAimRay.direction.z), 0, 'actual bridged shot/facing direction cannot turn 90 degrees sideways');
 
 const nativeMeleeDirection = () => ({ x: 0.8, y: 0.1, z: 0.2 });
 const nativeMeleePitch = () => 0.1;
@@ -129,7 +136,8 @@ assert.strictEqual(windowStub.Combat.deps.getPlayerMeleeAimDirection, nativeMele
   'native camera-derived melee/head direction is restored after focus initialization');
 assert.strictEqual(windowStub.Combat.deps.getPlayerMeleeAimPitch, nativeMeleePitch,
   'native camera-derived melee/head pitch is restored after focus initialization');
-assert.deepEqual(windowStub.Combat.deps.getPlayerMeleeAimDirection(), { x: 0.8, y: 0.1, z: 0.2 });
+assertVector(windowStub.Combat.deps.getPlayerMeleeAimDirection(), { x: 0.8, y: 0.1, z: 0.2 },
+  'restored melee/head direction returns the native camera vector');
 assert.equal(windowStub.Combat.deps.getPlayerMeleeAimPitch(), 0.1);
 
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
@@ -138,7 +146,7 @@ assert.equal(debug.combatInitWrapped, true);
 assert(debug.rangedInteractionReads >= 2, 'focus capture + spread read order was observed');
 assert.equal(debug.nativeMeleeDirectionRestored, true);
 assert.equal(debug.nativeMeleePitchRestored, true);
-assert.deepEqual(debug.lastMuzzleRay.direction, { x: 1, y: 0, z: 0 });
+assertVector(debug.lastMuzzleRay.direction, { x: 1, y: 0, z: 0 }, 'debug reports camera-forward muzzle ray');
 assert.equal(debug.lastError, null);
 assert(logs.some(line => line.includes('native camera-facing authority bridge installed')),
   'bridge installation is visible in the mobile in-game debug log');
