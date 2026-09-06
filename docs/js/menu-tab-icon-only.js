@@ -1,14 +1,16 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 2) return;
+  if (window.HobunjiMenuTabIcons?.version >= 3) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
   const LOADOUT_PANEL_ID = 'loadout'; // Used to render the melee-over-ranged composite tab icon.
   const STYLE_ID = 'hobunjiMenuTabIconOnlyStyles'; // Used to keep the presentation rules idempotent.
-  const GENERIC_ICON_BASE = new URL('assets/hud/generic_icons/', document.baseURI).href; // Used by generic menu-tab artwork.
+  const GENERIC_ICON_BASE = new URL('assets/hud/generic_icons/', document.baseURI).href; // Used by generic menu-tab artwork and the temporary wallet currency icon.
   const ACTION_ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Used by gameplay action artwork reused by menu tabs.
+  const WALLET_SUFFIX_SELECTOR = '#mpInventory .inv-wallet-suffix'; // Used to replace the mis-metric Tankanscript currency glyph with temporary PNG artwork.
+  const CURRENCY_ICON_FILE = 'icon_tbu.png'; // Used by applyWalletCurrencyIcon() as the temporary gananji currency symbol.
   const LOADOUT_ICON_SIZE = 128; // Used as the raster resolution for the outlined loadout composite.
   const LOADOUT_OUTLINE_RADIUS = 4; // Used to punch a readable halo around melee before it covers ranged.
   const LOADOUT_COLORS = Object.freeze({
@@ -28,6 +30,7 @@
     lastPanel: null,
     loadoutRasterReady: false,
     loadoutRasterError: null,
+    walletCurrencyIconApplied: false,
   }; // Used by the mobile-safe debug snapshot below.
   let loadoutRasterUrl = null; // Used after the two action icons have been composited once.
 
@@ -98,6 +101,23 @@
         object-fit: contain;
         pointer-events: none;
       }
+      ${WALLET_SUFFIX_SELECTOR} {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 2em !important;
+        height: 2em !important;
+        padding: 0 !important;
+        line-height: 1 !important;
+      }
+      ${WALLET_SUFFIX_SELECTOR} .wallet-currency-icon {
+        display: block;
+        width: 2em;
+        height: 2em;
+        object-fit: contain;
+        object-position: center;
+        pointer-events: none;
+      }
       ${TAB_SELECTOR}[data-mpanel="relationships"] .relationships-tab-heart {
         filter:
           drop-shadow(0 0 2px rgba(255, 113, 143, .76))
@@ -131,6 +151,27 @@
   function iconUrl(base, file) {
     const root = base === 'action' ? ACTION_ICON_BASE : GENERIC_ICON_BASE; // Used to resolve requested assets without duplicating path logic.
     return new URL(file, root).href;
+  }
+
+  function applyWalletCurrencyIcon() {
+    const suffix = document.querySelector(WALLET_SUFFIX_SELECTOR); // Used as the existing wallet currency-symbol host; keeps the wallet DOM/layout contract intact.
+    if (!suffix) return false;
+    if (suffix.dataset.walletCurrencyIcon === 'tbu' && suffix.querySelector('.wallet-currency-icon')) {
+      debugState.walletCurrencyIconApplied = true;
+      return false;
+    }
+    const image = document.createElement('img'); // Used instead of the Tankanscript g until that font glyph's authored metrics are corrected.
+    image.className = 'wallet-currency-icon';
+    image.src = iconUrl('generic', CURRENCY_ICON_FILE);
+    image.alt = '';
+    image.draggable = false;
+    image.setAttribute('aria-hidden', 'true');
+    suffix.replaceChildren(image);
+    suffix.dataset.walletCurrencyIcon = 'tbu';
+    suffix.setAttribute('aria-label', 'Gananji');
+    suffix.title = 'Gananji';
+    debugState.walletCurrencyIconApplied = true;
+    return true;
   }
 
   function applyMask(span, url, color) {
@@ -319,12 +360,13 @@
 
   function transformAll() {
     document.querySelectorAll(TAB_SELECTOR).forEach(transformTab);
+    applyWalletCurrencyIcon();
   }
 
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 2,
+      version: 3,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
       totalTabs: tabs.length,
@@ -335,6 +377,8 @@
       loadoutRasterReady: debugState.loadoutRasterReady,
       loadoutRasterError: debugState.loadoutRasterError,
       loadoutCompositePresent: !!document.querySelector(`${TAB_SELECTOR}[data-mpanel="loadout"] .menu-tab-loadout`),
+      walletCurrencyIconApplied: debugState.walletCurrencyIconApplied,
+      walletCurrencyIconPresent: !!document.querySelector(`${WALLET_SUFFIX_SELECTOR} .wallet-currency-icon`),
     };
   }
 
@@ -343,6 +387,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 2, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 3, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();
