@@ -166,9 +166,11 @@
         tile.type = 'grass';
         tile.entryCorridorProtected = false;
         tile.entryCorridorShoulder = false;
-        // This tile is no longer part of the gameplay gate; the broad terrain
-        // flattening already happened upstream, but flora/objects may occupy it.
-        tile.borderEntryGate = false;
+        // Keep borderEntryGate as an invisible terrain-clearance tag: the broad
+        // anti-cliff flattening still exists, but it no longer reserves or paints
+        // this tile as road. Leaving the tag also lets a later zone-aware pass
+        // (notably Cloud Forest) repopulate a generically-trimmed apron safely.
+        tile.entryCorridorReclaimed = true;
       }
     }
 
