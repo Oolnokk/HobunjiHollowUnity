@@ -7,54 +7,79 @@ document.write('<script src="js/netlify-cloud-save.js?v=20260904a"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');
 document.write('<script src="js/save-startup-gate.js?v=20260904a"><\/script>');
 
-// Harugasirri is visual-only, so it must not participate in BorderTerrain's
-// parser-time accessor/setter chain. Load it once normal game bootstrap is
-// complete; it then patches the already-existing BorderTerrain API and attaches
-// directly to the currently-active scene. This also means any failure is visible
-// through the normal in-menu debug logger instead of occurring before it.
+// Harugasirri remains visual-only and loads after normal parser bootstrap. The
+// game can keep GridTileAccessors uninitialized until later startup work has
+// finished, though, so DOMContentLoaded alone is not a reliable scene-ready
+// signal. We therefore arm one event-like hook on GridTileAccessors.init and
+// attach immediately after its real deps are installed. No frame loop/polling.
 (function loadHarugasirriAfterGameBoot() {
   const log = (message, level = 'info', category = 'world') => {
     if (typeof window.__farmLog === 'function') window.__farmLog(`[HarugasirriLoader] ${message}`, level, category);
     else if (level === 'warn' || level === 'error') console.warn(`[HarugasirriLoader] ${message}`);
   };
 
-  const load = () => {
-    if (window.HarugasirriSuperBackdrop) return;
-    log('normal game bootstrap complete; loading distant-terrain module now.');
-    const script = document.createElement('script'); // Used once to load the visual backdrop after parser-time game bootstrap.
-    script.src = 'js/harugasirri-superbackdrop.js?v=20260906g';
+  const appendScript = (src, onload) => {
+    const script = document.createElement('script');
+    script.src = src;
     script.async = false;
-    script.onload = () => {
-      try {
-        const scene = window.GridTileAccessors?.getActiveScene?.(); // Current scene receives the backdrop because the farm border build already happened before this late-safe loader.
-        if (scene) window.HarugasirriSuperBackdrop?.attach?.(scene, 'active_boot_scene');
-        else log('module loaded, but no active scene was available for the initial attach.', 'warn');
-
-        // Harugasirri's own town wrapper normally captures BorderTerrain.init
-        // deps. A late-safe load intentionally happens after init, so provide a
-        // one-time fallback wrapper that resolves the active scene instead.
-        const border = window.BorderTerrain; // Existing already-initialized API whose town builder needs the late-load scene fallback.
-        if (border?.buildTownBorderTerrain && !border.__harugasirriLateTownFallback) {
-          const originalTownBuild = border.buildTownBorderTerrain;
-          border.buildTownBorderTerrain = function (...args) {
-            const result = originalTownBuild.apply(this, args);
-            try {
-              const townScene = window.GridTileAccessors?.getActiveScene?.();
-              if (townScene) window.HarugasirriSuperBackdrop?.attach?.(townScene, 'map_hobunji_town');
-            } catch (error) {
-              log(`late town attach failed: ${error?.message || error}`, 'warn');
-            }
-            return result;
-          };
-          border.__harugasirriLateTownFallback = true;
-        }
-        log('safe late loader armed; parser-time BorderTerrain was left untouched.');
-      } catch (error) {
-        log(`late loader attach failed: ${error?.message || error}`, 'error');
-      }
-    };
-    script.onerror = () => log('script failed to load.', 'error', 'assets');
+    script.onload = onload;
+    script.onerror = () => log(`script failed to load: ${src}`, 'error', 'assets');
     document.head.appendChild(script);
+    return script;
+  };
+
+  let attachedBootScene = false;
+  function tryAttachActiveScene(reason) {
+    if (attachedBootScene || !window.HarugasirriSuperBackdrop) return attachedBootScene;
+    try {
+      const accessors = window.GridTileAccessors;
+      if (!accessors?.getActiveScene) return false;
+      const scene = accessors.getActiveScene();
+      if (!scene) return false;
+      attachedBootScene = true;
+      window.HarugasirriSuperBackdrop.attach?.(scene, 'active_boot_scene');
+      log(`attached through ${reason}; active scene is ready.`);
+      return true;
+    } catch (error) {
+      // Most importantly, this is expected while GridTileAccessors exists but
+      // its injected deps are still null. Its init hook below will retry once,
+      // at the exact point those deps become valid.
+      log(`scene not ready through ${reason}: ${error?.message || error}`, 'info');
+      return false;
+    }
+  }
+
+  function armGridAccessorInitHook() {
+    const accessors = window.GridTileAccessors;
+    if (!accessors?.init || accessors.__harugasirriSceneReadyHook) return false;
+    const originalInit = accessors.init;
+    accessors.init = function (...args) {
+      const result = originalInit.apply(this, args);
+      tryAttachActiveScene('GridTileAccessors.init');
+      return result;
+    };
+    Object.defineProperty(accessors, '__harugasirriSceneReadyHook', { value: true, configurable: true });
+    return true;
+  }
+
+  function runtimeReady() {
+    armGridAccessorInitHook();
+    // Covers the opposite ordering: if GridTileAccessors was already initialized
+    // before the late visual runtime finished loading, attach right now.
+    const attached = tryAttachActiveScene('runtime load');
+    if (!attached) log('runtime armed; waiting for GridTileAccessors.init before first scene attach.');
+    log('safe late loader armed; parser-time BorderTerrain was left untouched.');
+  }
+
+  const loadRuntime = () => {
+    if (window.HarugasirriSuperBackdrop) { runtimeReady(); return; }
+    appendScript('js/harugasirri-superbackdrop-runtime.js?v=20260906b', runtimeReady);
+  };
+
+  const load = () => {
+    log('normal parser bootstrap complete; loading Harugasirri transform + distant-terrain runtime now.');
+    if (window.HarugasirriTransform) loadRuntime();
+    else appendScript('js/harugasirri-transform.js?v=20260906a', loadRuntime);
   };
 
   if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', load, { once: true });

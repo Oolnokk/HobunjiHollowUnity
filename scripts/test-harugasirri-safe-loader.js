@@ -7,74 +7,106 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const loaderSource = fs.readFileSync(path.join(repoRoot, 'docs/js/local-save-folder.js'), 'utf8');
-const backdropSource = fs.readFileSync(path.join(repoRoot, 'docs/js/harugasirri-superbackdrop.js'), 'utf8');
+const backdropSource = fs.readFileSync(path.join(repoRoot, 'docs/js/harugasirri-superbackdrop-runtime.js'), 'utf8');
 
-// Regression: the Harugasirri script must NOT be parser-injected before
-// border-terrain.js. That used to replace/chase the Cloud Forest BorderTerrain
-// accessor chain before normal rendering had booted, which could leave the UI
-// alive while the Three.js world never reached its normal render bootstrap.
+// Regression: neither Harugasirri transform nor runtime may be parser-injected
+// alongside the core save/bootstrap scripts. They remain post-bootstrap visuals.
 const writes = [];
 const listeners = new Map();
-let appendedScript = null;
+const appendedScripts = [];
 const activeScene = { id: 'farm-scene' };
 const logs = [];
+let accessorsReady = false;
+const gridAccessors = {
+  init() { accessorsReady = true; },
+  getActiveScene() {
+    if (!accessorsReady) throw new TypeError('deps is null');
+    return activeScene;
+  },
+};
 const windowForLoader = {
-  GridTileAccessors: { getActiveScene: () => activeScene },
+  GridTileAccessors: gridAccessors,
   BorderTerrain: { buildTownBorderTerrain() { return 'town-built'; } },
   __farmLog: message => logs.push(message),
 };
 const documentForLoader = {
   readyState: 'loading',
   write: text => writes.push(String(text)),
-  addEventListener: (name, handler) => listeners.set(name, handler),
   createElement: tag => ({ tagName: String(tag).toUpperCase(), async: true, src: '', onload: null, onerror: null }),
-  head: { appendChild: node => { appendedScript = node; } },
+  head: { appendChild: node => appendedScripts.push(node) },
 };
-vm.runInNewContext(loaderSource, { window: windowForLoader, document: documentForLoader, console });
-assert.equal(writes.some(text => text.includes('harugasirri-superbackdrop.js')), false,
-  'Harugasirri must not be inserted by document.write during parser bootstrap');
-assert.equal(typeof listeners.get('DOMContentLoaded'), 'function', 'late Harugasirri loader should wait for normal game bootstrap');
+const loaderContext = {
+  window: windowForLoader,
+  document: documentForLoader,
+  console,
+  Object,
+};
+windowForLoader.addEventListener = (name, handler) => listeners.set(name, handler);
+vm.runInNewContext(loaderSource, loaderContext);
+assert.equal(writes.some(text => text.includes('harugasirri-transform.js')), false,
+  'Harugasirri transform helper must not be document.write-loaded during game parser bootstrap');
+assert.equal(writes.some(text => text.includes('harugasirri-superbackdrop')), false,
+  'Harugasirri runtime must not be document.write-loaded during game parser bootstrap');
+assert.equal(typeof listeners.get('DOMContentLoaded'), 'function', 'late Harugasirri loader should wait for parser bootstrap');
+
 listeners.get('DOMContentLoaded')();
-assert(appendedScript?.src.includes('harugasirri-superbackdrop.js'), 'late loader should append Harugasirri after bootstrap');
-assert(logs.some(message => message.includes('normal game bootstrap complete')),
-  'the first Harugasirri status message should reach menu debug only after normal bootstrap');
+assert.equal(appendedScripts.length, 1, 'post-bootstrap loader should start with the transform helper only');
+assert(appendedScripts[0].src.includes('harugasirri-transform.js'), 'transform helper should load before backdrop runtime');
+windowForLoader.HarugasirriTransform = {};
+appendedScripts[0].onload();
+assert.equal(appendedScripts.length, 2, 'runtime should be appended only after the transform helper loads');
+assert(appendedScripts[1].src.includes('harugasirri-superbackdrop-runtime.js'), 'second late script should be the transform-aware runtime');
 
 let attachedScene = null;
 windowForLoader.HarugasirriSuperBackdrop = {
   attach(scene) { attachedScene = scene; return Promise.resolve(scene); },
 };
-appendedScript.onload();
-assert.equal(attachedScene, activeScene, 'late loader should attach to the already-built active scene');
-assert.equal(windowForLoader.BorderTerrain.__harugasirriLateTownFallback, true,
-  'late loader should install the town-scene fallback after BorderTerrain.init has already run');
+appendedScripts[1].onload();
+assert.equal(attachedScene, null, 'runtime load must tolerate GridTileAccessors existing before its deps are initialized');
+assert.equal(gridAccessors.__harugasirriSceneReadyHook, true, 'loader should arm the one-shot scene-ready init hook');
+gridAccessors.init({});
+assert.equal(attachedScene, activeScene, 'GridTileAccessors.init should attach the backdrop at the exact point scene deps become valid');
+assert(logs.some(message => message.includes('normal parser bootstrap complete')),
+  'Harugasirri status should start only after parser bootstrap');
+assert(logs.some(message => message.includes('waiting for GridTileAccessors.init')),
+  'menu debug should explain the delayed scene-ready wait');
+assert(logs.some(message => message.includes('attached through GridTileAccessors.init')),
+  'menu debug should confirm the actual scene-ready attach path');
 assert(logs.some(message => message.includes('safe late loader armed')),
   'safe late-loader status should be available through the in-menu debug logger');
 
-// Regression: when Harugasirri itself executes after BorderTerrain exists, it
-// must take the simple wrapping path and leave BorderTerrain as an ordinary
-// value property. No accessor/setter interception is permitted in this path.
+// Regression: the new runtime sees an already-created BorderTerrain and wraps
+// it directly. It must never install the old parser-time accessor/setter hook.
 const borderTerrain = {
   init() {},
   buildBorderTerrain() {},
   buildZoneBorderTerrain() {},
   buildTownBorderTerrain() {},
 };
+const runtimeListeners = new Map();
 const windowForBackdrop = {
   BorderTerrain: borderTerrain,
   HobunjiCacheAudit: { register() {} },
   __farmLog() {},
+  addEventListener(name, handler) { runtimeListeners.set(name, handler); },
 };
 vm.runInNewContext(backdropSource, {
   window: windowForBackdrop,
+  document: { currentScript: { src: 'https://example.test/js/harugasirri-superbackdrop-runtime.js' } },
+  location: { href: 'https://example.test/index.html', pathname: '/index.html' },
+  URL,
   console,
   fetch: () => Promise.reject(new Error('fetch should not run during bootstrap-only test')),
   Promise,
+  Set,
   WeakMap,
   WeakSet,
 });
 const descriptor = Object.getOwnPropertyDescriptor(windowForBackdrop, 'BorderTerrain');
 assert.equal(windowForBackdrop.BorderTerrain, borderTerrain, 'Harugasirri should wrap the existing BorderTerrain object in place');
-assert.equal(typeof descriptor?.set, 'undefined', 'late Harugasirri load must not install a BorderTerrain setter');
+assert.equal(typeof descriptor?.set, 'undefined', 'late Harugasirri runtime must not install a BorderTerrain setter');
 assert.equal(borderTerrain.__harugasirriSuperBackdropPatch, true, 'existing BorderTerrain API should be wrapped successfully');
+assert.equal(typeof runtimeListeners.get('harugasirri-transform-changed'), 'function',
+  'runtime should refresh attached backdrops only when transform state changes');
 
-console.log('PASS Harugasirri safe loader: no parser-time BorderTerrain interception; late active-scene attach and town fallback armed.');
+console.log('PASS Harugasirri safe loader: delayed GridTileAccessors init attaches the boot scene with no parser-time BorderTerrain interception.');
