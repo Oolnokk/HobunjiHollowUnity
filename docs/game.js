@@ -10241,7 +10241,15 @@
         if (!tile) return 0;
         // Zone terrain has real plateau tiers/ramps — tileSurfaceY(type) alone
         // (used by every other area, all flat ground) would ignore them.
-        return _isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceY(tile.type);
+        const base = _isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceY(tile.type);
+        // Furniture/porch "stages" (walkableElevation:true) sit on top of the
+        // ordinary tile surface and aren't part of the terrain grid at all —
+        // folding that lift in here means every consumer of npcSurfaceY (the
+        // idle absolute-set assignment and the walking/holding lerp toward it
+        // alike) already targets the true stood-on height with no separate
+        // system fighting over root.position.y afterward.
+        const lift = window.HobunjiWalkableElevation?.surfaceLiftAt?.(c + 0.5, r + 0.5, area) || 0;
+        return base + lift;
       }
       function resolveNpcSpawnPosition(rec, target) {
         const legacy = target?.legacyPath || null;
