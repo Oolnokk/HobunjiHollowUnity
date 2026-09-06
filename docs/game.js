@@ -2534,12 +2534,28 @@
       }
 
       function addProcessedOutputs(outputs, inputStars) {
-        outputs.forEach(output => {
+        // Returns each output's actual gain (0 once that stack is already
+        // at the 99 cap) so callers can tell a genuine batch completion
+        // from one whose product was silently discarded — an unattended
+        // station (see finishTimedJob) would otherwise always report
+        // success even when nothing was actually added.
+        return outputs.map(output => {
           window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
           inventory[output.key] = Math.min(99, previousCount + 1);
-          window.CookingSystem?.recordItemQuality?.(output.key, inputStars, inventory[output.key] - previousCount); // Used to carry the source stars through pressing, grinding, drying, and aging.
+          const gained = inventory[output.key] - previousCount;
+          window.CookingSystem?.recordItemQuality?.(output.key, inputStars, gained); // Used to carry the source stars through pressing, grinding, drying, and aging.
+          return { key: output.key, label: output.label, gained };
         });
+      }
+
+      // A short suffix noting when some/all of a batch's product couldn't
+      // actually be added because that item's 99-stack cap was already hit.
+      function processedOutputsFullNote(results) {
+        const capped = results.filter(r => r.gained <= 0);
+        if (!capped.length) return '';
+        if (capped.length === results.length) return ' Storage is already full (99) — nothing was added.';
+        return ` ${capped.map(r => r.label).join(', ')} storage is already full (99) — that part was lost.`;
       }
 
       function makeProcessingFurniture(col, row, furnitureKey, savedJob, rotYDeg = 0) {
@@ -2590,13 +2606,14 @@
           if (job?.kind !== 'timed') return;
           const finished = job;
           job = null;
-          addProcessedOutputs(finished.outputs, finished.inputStars);
+          const results = addProcessedOutputs(finished.outputs, finished.inputStars);
+          const anyGained = results.some(r => r.gained > 0);
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
           window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
-          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+          if (anyGained) window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.${processedOutputsFullNote(results)}`, anyGained);
         }
         function updateVfx(dt) {
           if (!authoredVfx) return;
@@ -2663,10 +2680,11 @@
               const outputs = job.outputs;
               const inputStars = job.inputStars;
               job = null;
-              addProcessedOutputs(outputs, inputStars);
+              const results = addProcessedOutputs(outputs, inputStars);
+              const anyGained = results.some(r => r.gained > 0);
               window.FarmEditor.saveFarmLayout();
-              window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+              if (anyGained) window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.${processedOutputsFullNote(results)}` };
             }
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
@@ -2687,10 +2705,11 @@
                 ? { ok: true, message: `${def.icon} Started squeezing 1 ${inputLabel}; the batch will finish in ${Math.round(started.durationS)} seconds.` }
                 : started;
             }
-            addProcessedOutputs(outputs, inputStars);
-            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+            const results = addProcessedOutputs(outputs, inputStars);
+            const anyGained = results.some(r => r.gained > 0);
+            if (anyGained) window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
-            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.${processedOutputsFullNote(results)}` };
           },
           reset() {
             window.FarmAnimals?.clearVatWorkerPose?.(this.id);
@@ -25980,6 +25999,7 @@
 
       window.FarmCrates?.init({
         BASE_PRICES,
+        ITEM_DEFS,
         MORNING_HOUR,
         SELL_INTERVAL_HOURS,
         SUPPLY_CATALOG,

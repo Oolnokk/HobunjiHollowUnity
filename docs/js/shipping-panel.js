@@ -70,8 +70,22 @@
     return isBoxSide(side) ? (getShippingBoxContents()[key] || 0) : (deps.inventory[key] || 0);
   }
 
+  // Mirrors FarmCrates' own sellPriceFor: raw crops price through
+  // deps.BASE_PRICES, but every processed good (jam, wine, butter, cheese,
+  // flour…) instead gets its sellPrice registered onto ITEM_DEFS the first
+  // time its recipe fires (see ItemProcessing.ensureProcessedItemDef). Without
+  // this fallback the Shipping Box transfer UI treated every processed item
+  // as unsellable, even though FarmCrates' own deposit/settle pipeline
+  // already prices anything with an ITEM_DEFS sellPrice.
+  function sellPriceFor(key) {
+    const basePrice = deps.BASE_PRICES[key];
+    if (basePrice !== undefined) return basePrice;
+    const processedPrice = deps.ITEM_DEFS?.[key]?.sellPrice;
+    return Number.isFinite(processedPrice) ? processedPrice : undefined;
+  }
+
   function canShipKey(key) {
-    return !!deps && deps.BASE_PRICES[key] !== undefined;
+    return !!deps && sellPriceFor(key) !== undefined;
   }
 
   function selectShippingItem(side, key) {
@@ -182,7 +196,7 @@
     setText('shipRightFooter', isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.rightFooter);
     setText('shipDetailIcon', def ? def.icon : panel.iconFallback);
     setText('shipDetailName', def ? def.label : panel.text.detailName);
-    setText('shipDetailValue', def && canShipKey(key) ? `${deps.BASE_PRICES[key]}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
+    setText('shipDetailValue', def && canShipKey(key) ? `${sellPriceFor(key)}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
     setText('shipDetailDesc', def ? `${def.desc}${blocked ? panel.text.blockedSuffix : ''}` : panel.text.detailEmpty);
     const tags = document.getElementById('shipDetailTags');
     if (tags) tags.innerHTML = def

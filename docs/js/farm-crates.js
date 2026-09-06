@@ -26,6 +26,23 @@
   const actionCfg = () => config().actions;
   const interactionCfg = () => config().interactionUi;
 
+  // The Shipping Box originally only recognized raw crops (deps.BASE_PRICES).
+  // Every processed good (jam, wine, butter, cheese, flour…) also gets a
+  // sellPrice registered onto ITEM_DEFS when its recipe first fires (see
+  // ItemProcessing.ensureProcessedItemDef), so this falls back to that once
+  // BASE_PRICES doesn't recognize the key — letting a factory's actual
+  // products auto-sell through the same deposit/midnight-settle pipeline
+  // raw crops already use, instead of only ever being sellable one at a
+  // time through the Inventory grid's manual Sell buttons. Returns
+  // undefined (not 0) for anything genuinely unsellable, so callers can
+  // still tell "no price" apart from "sells for 0".
+  function sellPriceFor(key) {
+    const basePrice = deps.BASE_PRICES[key];
+    if (basePrice !== undefined) return basePrice;
+    const processedPrice = deps.ITEM_DEFS?.[key]?.sellPrice;
+    return Number.isFinite(processedPrice) ? processedPrice : undefined;
+  }
+
   function footprintSize() {
     const fp = objectCfg().footprint;
     return {
@@ -111,7 +128,7 @@
         if (qty < 1) continue;
         bin[key] -= qty;
         sold += qty;
-        earned += qty * (deps.BASE_PRICES[key] || 0);
+        earned += qty * (sellPriceFor(key) || 0);
         soldParts.push((deps.itemIconForKey(key) || key) + '×' + qty);
       }
       if (sold < 1) return { sold: 0, earned: 0 };
@@ -439,7 +456,7 @@
       getButtons() {
         const item = deps.getActiveInventoryItem();
         const btns = [];
-        if (item && deps.BASE_PRICES[item.key] !== undefined) {
+        if (item && sellPriceFor(item.key) !== undefined) {
           const count = deps.inventory[item.key] || 0;
           btns.push({
             icon: item.icon,
@@ -462,7 +479,7 @@
       onAction(action) {
         if (action === actions.deposit) {
           const item = deps.getActiveInventoryItem();
-          if (!item || deps.BASE_PRICES[item.key] === undefined) return { ok: false, message: labels.cannotDeposit };
+          if (!item || sellPriceFor(item.key) === undefined) return { ok: false, message: labels.cannotDeposit };
           const qty = deps.inventory[item.key] || 0;
           if (qty < 1) return { ok: false, message: messages.noItemPrefix + item.label + messages.noItemSuffix };
           deps.inventory[item.key]--;
@@ -481,7 +498,7 @@
       getContents() { return bin; },
       getTotalItems() { return totalItems(); },
       depositItem(key, qty) {
-        if (deps.BASE_PRICES[key] === undefined) return 0;
+        if (sellPriceFor(key) === undefined) return 0;
         const moved = Math.max(0, Math.min(qty, deps.inventory[key] || 0));
         if (moved < 1) return 0;
         deps.inventory[key] -= moved;
