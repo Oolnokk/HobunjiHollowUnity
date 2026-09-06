@@ -87,17 +87,18 @@
 
   function replaceHolder(entity, field, itemKey, name, visible) {
     const old = entity?.[field];
-    old?.parent?.remove?.(old);
     const holder = makeHolder(entity?.scene, itemKey, name, visible);
+    if (!holder) return false;
+    old?.parent?.remove?.(old);
     entity[field] = holder;
-    return !!holder;
+    return true;
   }
 
   function applyMeleeRoll(entity, speciesId, metalKey, opts) {
     const allowed = allowedMeleeShapes(speciesId);
     const originalKey = entity?.def?.weaponKey || null;
     const originalShape = banditDeps?.TOOL_ITEM_DEFS?.[originalKey]?.shapeKey
-      || allowed.find(shapeKey => originalKey?.startsWith?.(`${shapeKey}_`))
+      || [...configuredBanditShapes].find(shapeKey => originalKey?.startsWith?.(`${shapeKey}_`))
       || null;
 
     if (opts?.defOverride && Object.prototype.hasOwnProperty.call(opts.defOverride, 'weaponKey')) {
@@ -113,16 +114,20 @@
     const finalShape = allowed[Math.floor((banditDeps?.rnd?.() ?? Math.random()) * allowed.length)];
     const shapeDef = banditDeps.HELD_SHAPE_DEFS?.[finalShape];
     const finalKey = banditDeps.craftedToolItemKey?.(finalShape, metalKey) || `${finalShape}_${metalKey}`;
+    if (finalKey !== originalKey && !replaceHolder(entity, '_banditToolHolder', finalKey, 'banditToolHolder', !entity._rangedMode)) {
+      global.__farmLog?.(`[bandits] cultural melee holder failed for ${finalKey}; keeping ${originalKey || 'none'}.`, 'warn');
+      return { originalKey, finalKey: originalKey, originalShape, finalShape: originalShape, allowed, holderFailed: true };
+    }
     entity.def.weaponKey = finalKey;
     entity.def.attackTag = shapeDef?.dmgType || 'sharp';
     const naturalStyle = shapeDef?.comboStyle || shapeDef?.animStyle;
     if (entity.def.banditAbilityLoadout) entity.def.banditAbilityLoadout.tap1 = naturalStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
-    const isSweep = banditDeps.TOOL_ITEM_DEFS?.[finalKey]?.animStyle === 'sweep';
+    const isSweep = (banditDeps.TOOL_ITEM_DEFS?.[finalKey]?.animStyle || shapeDef?.animStyle) === 'sweep';
     entity._banditSwingAnim = isSweep ? 'sweep' : 'thrust';
     entity._banditSwingPose = isSweep ? global.Combat?.poses?.SWEEP_POSE : null;
     entity._banditSwingDirSign = 1;
     entity._banditSwingPower = 1;
-    entity.banditWeaponMeshAttached = replaceHolder(entity, '_banditToolHolder', finalKey, 'banditToolHolder', !entity._rangedMode);
+    entity.banditWeaponMeshAttached = !!entity._banditToolHolder;
     return { originalKey, finalKey, originalShape, finalShape, allowed, overridden: false };
   }
 
@@ -157,11 +162,16 @@
     if (!originalKey || !entity?.def) return { originalKey, finalKey: originalKey, weights: null, skipped: true };
 
     const weights = culturalRangedWeights(gangCfg, rank, speciesId, metalKey);
-    const finalKey = weightedPick(weights) || originalKey;
+    const pickedKey = weightedPick(weights) || originalKey;
+    let finalKey = pickedKey;
+    if (pickedKey !== originalKey && !replaceHolder(entity, '_banditRangedToolHolder', pickedKey, 'banditRangedToolHolder', !!entity._rangedMode)) {
+      global.__farmLog?.(`[bandits] cultural ranged holder failed for ${pickedKey}; keeping ${originalKey}.`, 'warn');
+      finalKey = originalKey;
+    }
+    if (finalKey !== originalKey) global.RangedWeapons?.setLoaded?.(originalKey, false, entity);
     entity.def.rangedWeaponKey = finalKey;
-    replaceHolder(entity, '_banditRangedToolHolder', finalKey, 'banditRangedToolHolder', !!entity._rangedMode);
     global.RangedWeapons?.setLoaded?.(finalKey, true, entity);
-    return { originalKey, finalKey, weights, overridden: false };
+    return { originalKey, pickedKey, finalKey, weights, overridden: false };
   }
 
   function applyCulturalLoadout(entity, gangCfg, rank, opts) {
