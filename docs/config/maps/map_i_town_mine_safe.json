@@ -18,6 +18,17 @@
       "postY": 0,
       "postZ": 0,
       "postScale": 1
+    },
+    {
+      "id": "f_mine_safe_lamp",
+      "itemKey": "standingLampFurniture",
+      "col": 2,
+      "row": 3,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postScale": 1
     }
   ],
   "exits": [
