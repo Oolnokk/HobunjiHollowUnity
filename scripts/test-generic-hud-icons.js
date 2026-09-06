@@ -20,9 +20,10 @@ assert.match(source, /element\.textContent\.trim\(\) !== '×'/, 'plain multiplic
 assert.match(source, /X_CONTROL_HINT = \/\(close\|cancel\|delete\|remove\|unequip\|unassign\|dismiss\|clear\)/, '× replacement must be limited to semantic X controls');
 assert.match(source, /entry\?\.type !== 'rapport'/, 'rapport visuals must observe the centralized applied-delta memory event');
 assert.match(source, /Number\.isFinite\(amount\) && amount > 0/, 'only positive applied rapport deltas should produce hearts');
-assert.match(source, /RAPPORT_HEART_COLOR = '#ffd84d'/, 'Rapport gain hearts must use their own yellow tint instead of normal heart colors');
+assert.match(source, /RAPPORT_COLOR = '#ffd84d'/, 'Rapport +number text must use the yellow Rapport color instead of normal heart colors');
+assert.match(source, /RAPPORT_HEART_COLOR = '#ffd84d'/, 'Rapport gain hearts must use the yellow Rapport tint instead of normal heart colors');
 assert.match(source, /tintHeartCanvas\(image, RAPPORT_HEART_COLOR, iconSize\)/, 'the Rapport popup heart must actually use the yellow-only tint');
-assert.match(source, /context\.fillStyle = RAPPORT_COLOR;[\s\S]*context\.fillText\(label/, 'the Rapport +number label should remain pink while only the heart turns yellow');
+assert.match(source, /context\.fillStyle = RAPPORT_COLOR;[\s\S]*context\.fillText\(label/, 'the Rapport +number label must use the same yellow Rapport color');
 assert.match(source, /api\.showRapportGain = \(root, amount\) => spawnRapportPopup\(root, amount\)/, 'rapport gains must be owned by WorldPopupText');
 assert.match(source, /renderOrder = RAPPORT_RENDER_ORDER/, 'rapport popup must share the world-text overlay render band');
 assert.match(source, /depthTest: false, depthWrite: false/, 'rapport popup must remain outside depth/shell occlusion like other world popup text');
