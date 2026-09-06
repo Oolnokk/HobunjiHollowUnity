@@ -3,6 +3,7 @@
 
   const Preview = window.WildernessLabPreview;
   const Generator = window.WildernessMapGenerator;
+  const THREE = window.THREE;
   if (!Preview || Preview.__environmentRefreshInstalled) return;
   Preview.__environmentRefreshInstalled = true;
 
@@ -14,12 +15,26 @@
     liveEasternMire: 'map_eastern_mire',
   }); // Live recipes resolve through the current main generator instead of preserving August-era copied overrides.
 
+  // CalendarSystem's current-main Deadgrass surface tint is HSL(45deg, 0.40, 0.34).
+  // Coldmuck slush uses that same underlying grass appearance with only a small
+  // additional saturation reduction, so it reads as cold/wet Deadgrass rather
+  // than an unrelated gray substrate.
+  const DEADGRASS_H = 45 / 360;
+  const DEADGRASS_S = 0.40;
+  const DEADGRASS_L = 0.34;
+  const COLDMUCK_DESATURATION = 0.15;
+  const COLDMUCK_GROUND_TINT = THREE
+    ? new THREE.Color().setHSL(DEADGRASS_H, DEADGRASS_S * (1 - COLDMUCK_DESATURATION), DEADGRASS_L)
+    : null;
+  const DEFAULT_GRASS_GREEN = THREE ? new THREE.Color(0x2f711e) : null;
+  const activeColdmuckGroundMeshes = new Map(); // Mesh -> previous onBeforeRender hook; only the generated grass surface is season-tinted.
+
   function relabelEnvironmentUi() {
     const seasonal = [...document.querySelectorAll('details.card > summary')].find(summary => /Seasonal surface lab|Environmental surface preview/i.test(summary.textContent || ''));
     if (seasonal) seasonal.textContent = 'Environmental surface preview';
     const cardBody = seasonal?.parentElement?.querySelector('.card-body');
     const help = cardBody?.querySelector('.help');
-    if (help) help.innerHTML = '<b>Coldmuck is not winter.</b> Coldmuck produces the region\'s localized gray slush conditions. The Western Slope instead carries persistent deep snow deposited by avalanches from extremely high altitude. Both previews use the current game terrain underneath; neither changes collision or exported workspace data.';
+    if (help) help.innerHTML = '<b>Coldmuck is not winter.</b> Coldmuck slush is a low-opacity black wet layer over the <b>Deadgrass-season grass surface</b>, with that underlying surface slightly desaturated. The Western Slope instead carries persistent deep snow deposited by avalanches from extremely high altitude. Neither preview changes collision or exported workspace data.';
 
     const enabledLabel = document.querySelector('label[for="winterEnabled"]');
     if (enabledLabel) enabledLabel.textContent = 'Enable surface layer';
@@ -29,6 +44,8 @@
     if (targetLabel) targetLabel.textContent = 'Slush target material';
     const heightLabel = document.querySelector('label[for="winterHeight"]');
     if (heightLabel) heightLabel.textContent = 'Accumulation depth';
+    const opacityLabel = document.querySelector('label[for="winterOpacity"]');
+    if (opacityLabel) opacityLabel.textContent = 'Layer opacity';
 
     const preset = document.getElementById('winterPreset');
     if (preset) {
@@ -51,13 +68,15 @@
     if (!settings) return settings;
     const next = { ...settings };
     if (next.preset === 'slush') {
-      next.opacity = Number.isFinite(Number(next.opacity)) ? Number(next.opacity) : 0.58; // Gray semitransparent shell keeps the actual game terrain legible beneath the wet mass.
-      if (next.opacity > 0.72) next.opacity = 0.58;
+      const requestedOpacity = Number(next.opacity);
+      next.opacity = Number.isFinite(requestedOpacity) && requestedOpacity < 0.85 ? requestedOpacity : 0.22; // Low-opacity black reads as waterlogged slush over the Deadgrass base rather than pale ice.
       next.height = Math.min(0.32, Math.max(0.06, Number(next.height) || 0.18)); // Slush is shallow, lumpy three-dimensional accumulation that the player visually wades through.
       next.noise = Number(next.noise) || 1.6;
       next.bulge = Math.min(0.78, Number(next.bulge) || 0.52);
       next.environmentKind = 'coldmuckSlush';
       next.localized = true;
+      next.baseSeason = 'Deadgrass';
+      next.baseDesaturation = COLDMUCK_DESATURATION;
     } else if (next.preset === 'snow') {
       next.environmentKind = 'westernAvalancheSnowpack';
       next.localized = false;
@@ -78,19 +97,94 @@
     }
   }
 
+  function clearColdmuckGroundLook() {
+    for (const [mesh, previousOnBeforeRender] of activeColdmuckGroundMeshes) {
+      mesh.onBeforeRender = previousOnBeforeRender || (() => {});
+      const material = mesh.material;
+      if (!material?.color?.isColor) continue;
+      if (material.map) material.color.set(0xffffff); // Textured grass materials are white in the normal preview so the authored texture is unmodified.
+      else if (DEFAULT_GRASS_GREEN) material.color.copy(DEFAULT_GRASS_GREEN); // Untextured grass falls back to the Lab/game-authored green.
+      material.needsUpdate = true;
+    }
+    activeColdmuckGroundMeshes.clear();
+  }
+
+  function applyColdmuckGroundLook() {
+    clearColdmuckGroundLook();
+    if (!COLDMUCK_GROUND_TINT) return;
+    for (const scene of [...(window.__wildernessLabScenes || [])]) {
+      scene.traverse?.(mesh => {
+        if (!mesh?.isMesh) return;
+        const terrainKey = mesh.material?.userData?.terrainKey || mesh.userData?.terrainKey;
+        if (terrainKey !== 'grass') return; // Current-main seasonal tinting changes grass surfaces; paths/rock/cliffs keep their own authored surface materials.
+        const material = mesh.material;
+        if (!material?.color?.isColor) return;
+        const previousOnBeforeRender = mesh.onBeforeRender;
+        activeColdmuckGroundMeshes.set(mesh, previousOnBeforeRender);
+        material.color.copy(COLDMUCK_GROUND_TINT);
+        if (material.emissive?.isColor) material.emissive.copy(COLDMUCK_GROUND_TINT).multiplyScalar(0.3); // Mirrors the game's seasonal Lambert emissive floor behavior when present.
+        material.needsUpdate = true;
+        mesh.onBeforeRender = function (...args) {
+          if (typeof previousOnBeforeRender === 'function') previousOnBeforeRender.apply(this, args);
+          if (material.color?.isColor) material.color.copy(COLDMUCK_GROUND_TINT); // Reassert after async texture loads, which normally reset the Lab grass material color to white.
+          if (material.emissive?.isColor) material.emissive.copy(COLDMUCK_GROUND_TINT).multiplyScalar(0.3);
+        };
+      });
+    }
+  }
+
+  function withColdmuckSlushMaterial(build) {
+    if (!THREE?.MeshPhongMaterial) return build();
+    const OriginalMeshPhongMaterial = THREE.MeshPhongMaterial;
+    function ColdmuckAwareMeshPhongMaterial(parameters = {}) {
+      const wet = {
+        ...parameters,
+        color: 0x000000,
+        specular: new THREE.Color(0x70777c), // Small neutral glint keeps the black transparent mass looking wet without turning it silver/white.
+        shininess: 72,
+        transparent: true,
+        depthWrite: false,
+      };
+      return new OriginalMeshPhongMaterial(wet);
+    }
+    ColdmuckAwareMeshPhongMaterial.prototype = OriginalMeshPhongMaterial.prototype;
+    Object.setPrototypeOf(ColdmuckAwareMeshPhongMaterial, OriginalMeshPhongMaterial);
+    THREE.MeshPhongMaterial = ColdmuckAwareMeshPhongMaterial;
+    try {
+      return build();
+    } finally {
+      THREE.MeshPhongMaterial = OriginalMeshPhongMaterial;
+    }
+  }
+
+  function rebuildEnvironmentLayer(settings, rebuild) {
+    const normalized = normalizeEnvironmentSettings(settings);
+    if (!normalized?.enabled || normalized.preset !== 'slush') {
+      clearColdmuckGroundLook();
+      return rebuild(normalized);
+    }
+    const result = withColdmuckSlushMaterial(() => rebuild(normalized));
+    restoreGameTerrainUnderSlush(); // Old preview hid the terrain entirely; Coldmuck is real Deadgrass terrain plus translucent black slush.
+    applyColdmuckGroundLook();
+    return result;
+  }
+
   const previousRebuild = typeof Preview.rebuildWinter === 'function' ? Preview.rebuildWinter.bind(Preview) : null;
   if (previousRebuild) {
-    Preview.rebuildWinter = settings => {
-      const normalized = normalizeEnvironmentSettings(settings);
-      const result = previousRebuild(normalized);
-      if (normalized?.preset === 'slush' && normalized.enabled) restoreGameTerrainUnderSlush(); // Old preview hid the terrain entirely; the in-game-style preview is real terrain plus gray translucent slush.
-      return result;
-    };
+    Preview.rebuildWinter = settings => rebuildEnvironmentLayer(settings, previousRebuild);
   }
 
   const previousRender = Preview.renderWorkspace.bind(Preview);
   Preview.renderWorkspace = (workspace, rootId, environmentSettings) => {
     const normalized = normalizeEnvironmentSettings(environmentSettings);
+    if (normalized?.preset === 'slush' && normalized.enabled) {
+      clearColdmuckGroundLook();
+      const merged = withColdmuckSlushMaterial(() => previousRender(workspace, rootId, normalized));
+      restoreGameTerrainUnderSlush();
+      applyColdmuckGroundLook();
+      return merged;
+    }
+    clearColdmuckGroundLook();
     if (normalized?.preset !== 'snow' || !normalized.enabled) return previousRender(workspace, rootId, normalized);
 
     const merged = previousRender(workspace, rootId, null); // Build current-main terrain first; avalanche snow is layered after every current terrain adapter has run.
@@ -133,8 +227,8 @@
     preset.value = kind;
     enabled.checked = true;
     if (kind === 'slush') {
-      if (opacity) opacity.value = '0.58';
-      if (opacityNum) opacityNum.value = '0.58';
+      if (opacity) opacity.value = '0.22';
+      if (opacityNum) opacityNum.value = '0.22';
       if (height) height.value = '0.18';
       if (heightNum) heightNum.value = '0.18';
       if (target) { target.value = 'grass'; target.disabled = false; }
@@ -157,6 +251,7 @@
       preset.addEventListener('change', () => {
         const target = document.getElementById('winterTarget');
         if (target) target.disabled = preset.value === 'snow';
+        if (preset.value !== 'slush') clearColdmuckGroundLook();
       });
       const target = document.getElementById('winterTarget');
       if (target) target.disabled = preset.value === 'snow';
@@ -182,5 +277,5 @@
   relabelEnvironmentUi();
   installEnvironmentUiBehavior();
   installCurrentMainLiveRecipeRouting();
-  console.log('[WildernessLab] current-main environment refresh active: Coldmuck slush + Western avalanche snowpack + live zone routing.');
+  console.log(`[WildernessLab] Coldmuck preview: black slush at low opacity over Deadgrass HSL(45, 0.40, 0.34) with ${Math.round(COLDMUCK_DESATURATION * 100)}% extra desaturation.`);
 })();
