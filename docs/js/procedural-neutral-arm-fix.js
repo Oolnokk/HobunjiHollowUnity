@@ -1,54 +1,115 @@
-// Procedural Animation Editor: authoritative neutral-arm bridge.
+// Procedural Animation Editor: exact unarmed-NPC hand parity.
 //
-// The game does not infer shoulders from handAttachX/Y. Free hands are positioned
-// from the authored character attachment-rig shoulder + posterior/arm-length rules,
-// with portrait-scale/placement correction applied before the hand is aimed back
-// toward its shoulder. The procedural editor historically duplicated an older
-// approximation (and one duplicate hand builder even forced abs(handAttachX),
-// mirroring left/right). This file makes the editor consume the same authored
-// neutral frame and then uses that frame as the fixed-length baseline for Dance
-// and Carry arm guides.
+// Normal weaponless NPCs do not render generated upper/forearms. Their arms are
+// already painted into the PNG-plane character; the runtime adds only GLB hands.
+// This editor bridge therefore does not solve, draw, or infer a neutral arm chain.
+// It loads the same direct-hand runtime stack as gameplay, adopts the current
+// preview avatar into that stack, and hides the editor-only duplicate hands/arm
+// guides while no procedural limb mode owns them.
 (function (global) {
   'use strict';
 
   if (global.HobunjiProceduralNeutralArms?.installed) return;
 
-  const DOWN = Object.freeze({ x: 0, y: -1, z: 0 }); // Authored hand/limb down axis used by the existing hand and LegBones systems.
-  const LEFT_IDLE_YAW_DEG = 90; // Actual free-hand socket medial yaw from procedural-hand-attachments.js.
-  const RIGHT_VISUAL_TWIST_DEG = 180; // Actual extra right-hand visual twist around the shoulder/wrist axis.
-  const DANCE_ROOT_SUFFIX = '_procedural_arms'; // Existing Dance debug-arm root corrected immediately before draw.
-  const CARRY_ROOT_SUFFIX = '_carry_arms'; // Existing Carry debug-arm root corrected immediately before draw.
+  const SELF_URL = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : new URL('./procedural-neutral-arm-fix.js', location.href); // Same-revision base used for every runtime parity dependency below.
+  const DANCE_ROOT_SUFFIX = '_procedural_arms'; // Editor-only Dance arm visualization hidden in ordinary neutral.
+  const CARRY_ROOT_SUFFIX = '_carry_arms'; // Editor-only Carry arm visualization hidden in ordinary neutral.
+  const GROUND_GUIDE_ROOT = 'ProceduralGroundRestNativeGuides'; // Ground/Rest debug chain hidden when Ground/Rest does not own the limbs.
+  const FRAME_DRIVER_GRACE_FRAMES = 6; // Gives the real frame driver a few renders to adopt avatars built after its wrapper loads before the editor falls back to direct attach.
 
-  const state = { // Shared neutral-frame cache and final-render diagnostics.
+  const state = { // Runtime-parity binding, visibility ownership, and mobile diagnostics.
     THREE: null,
+    runtimeReady: false,
     scene: null,
-    model: null,
-    frame: null,
-    frameSignature: null,
-    previousSceneBeforeRender: null,
+    priorSceneBeforeRender: null,
     hookInstalled: false,
+    model: null,
+    rig: null,
+    rigOwner: null,
+    handParent: null,
+    adoptAttempts: 0,
+    lastMode: null,
+    hiddenNodes: new Set(),
+    originalVisibility: new WeakMap(),
     lastLoggedModel: null,
-    debug: { installed: true, mode: 'waiting' },
+    debug: { installed: true, runtimeReady: false, mode: 'loading-runtime' },
   };
 
   function editorLog(message, level = 'info', extra = null) {
-    const logger = global.HobunjiGameplayBackdrop?.log; // Existing copyable editor Diagnostics logger; avoids console-only debugging on mobile.
+    const logger = global.HobunjiGameplayBackdrop?.log; // Existing copyable Diagnostics surface keeps this usable on mobile.
     if (logger) { logger(message, level, extra); return; }
     const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
     console[method]?.(message, extra ?? '');
   }
 
-  function finite(value, fallback = 0) {
-    const number = Number(value); // Sanitized numeric helper used for authored rig/profile inputs.
-    return Number.isFinite(number) ? number : fallback;
+  function resolveScript(relativePath) {
+    return new URL(relativePath, SELF_URL).href; // Preserves commit-pinned RawGitHack/GitHub revision instead of falling back to main.
   }
 
-  function positive(value, fallback = 1) {
-    const number = Number(value); // Positive-only numeric helper used for dimensions and scale factors.
-    return Number.isFinite(number) && number > 0 ? number : fallback;
+  function scriptAlreadyPresent(url) {
+    const target = new URL(url, location.href).href.split('#')[0];
+    return [...document.scripts].some(script => {
+      if (!script.src) return false;
+      try { return new URL(script.src, location.href).href.split('#')[0] === target; }
+      catch (_) { return false; }
+    });
   }
 
-  function normalizeSpecies(value) {
+  function loadScript(relativePath, ready = null) {
+    if (ready?.()) return Promise.resolve();
+    const src = resolveScript(relativePath);
+    if (scriptAlreadyPresent(src)) {
+      if (ready?.()) return Promise.resolve();
+      return new Promise(resolve => requestAnimationFrame(() => resolve()));
+    }
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.async = false;
+      script.src = src;
+      script.dataset.hobunjiProceduralNeutralParity = '1';
+      script.addEventListener('load', resolve, { once: true });
+      script.addEventListener('error', () => reject(new Error(`Failed to load ${relativePath}`)), { once: true });
+      document.head.appendChild(script);
+    });
+  }
+
+  async function loadRuntimeHandStack() {
+    // This order mirrors held-action-animations.js / gameplay hand bootstrap.
+    const modules = await global.PNGPlaneAvatar?.loadThreeModules?.();
+    state.THREE = modules?.THREE || global.THREE || null;
+    if (!state.THREE) throw new Error('Procedural editor Three.js instance is unavailable.');
+    if (!global.THREE) global.THREE = state.THREE; // Late forearm-alignment runtime reads window.THREE at module evaluation.
+
+    await loadScript('../config/hand-shoulder-points.js', () => !!global.HobunjiHandShoulderPoints);
+    await loadScript('../config/hand-shoulder-pose-profiles.js');
+    await loadScript('procedural-hand-foot-material-roles.js');
+    await loadScript('hand-tool-grips.js', () => !!global.HobunjiHandToolGrips);
+    await loadScript('hand-grip-modes.js', () => !!global.HobunjiHandGripModes);
+    await loadScript('hand-shoulder-pose-runtime.js', () => !!global.HobunjiHandShoulderPoseRuntime);
+    await loadScript('portrait-arm-cloud-mask.js');
+    await loadScript('portrait-hand-shoulder-scan.js', () => !!global.PortraitHandShoulderScan);
+    await loadScript('portrait-hand-shoulder-scan-species.js');
+    await loadScript('procedural-hand-attachments.js', () => !!global.ProceduralHandAttachments?.attach);
+    await loadScript('procedural-hand-outline-parity.js', () => !!global.ProceduralHandAttachments?.attach?.__hobunjiHandOutlineParityWrapped);
+    await loadScript('attachment-rig-latest-authored-snapshot.js');
+    await loadScript('procedural-hand-scale-free-world.js', () => !!global.ProceduralHandScaleFreeWorld);
+    await loadScript('procedural-hand-shoulder-aim.js', () => !!global.ProceduralHandAttachments?.attach?.__hobunjiShoulderAimWrapped);
+    await loadScript('procedural-hand-frame-driver.js', () => !!global.ProceduralHandFrameDriver);
+    await loadScript('procedural-hand-forearm-alignment-runtime.js', () => !!global.ProceduralHandForearmAlignmentRuntime);
+
+    state.runtimeReady = !!global.ProceduralHandAttachments?.attach && !!global.ProceduralHandFrameDriver;
+    if (!state.runtimeReady) throw new Error('Runtime direct-hand stack loaded incompletely.');
+  }
+
+  function currentModel() {
+    return global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
+  }
+
+  function selectedNpc() {
+    return global.HobunjiGameplayBackdrop?.getSelectedNpc?.() || {};
+  }
+
+  function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
@@ -57,409 +118,300 @@
     return gender === 'female' || gender === 'f' ? 'female' : 'male';
   }
 
-  function selectedIdentity(model) {
-    const npc = global.HobunjiGameplayBackdrop?.getSelectedNpc?.() || {}; // Selected preview NPC supplies species/gender when model.userData has not yet been populated.
+  function runtimeIdentity(model) {
+    const npc = selectedNpc(); // Same appearance/profile data supplied to PNGPlaneAvatar when the preview actor was built.
     const appearance = npc.appearance || npc.profile?.appearance || npc.fighter?.appearance || {};
-    const rawSpecies = appearance.speciesId || appearance.species || npc.species || model?.userData?.speciesId || 'mao-ao';
-    const canonical = typeof global.hobunjiTransformSpeciesId === 'function'
-      ? global.hobunjiTransformSpeciesId(rawSpecies)
-      : ({ rakakoan: 'kenkari', ghoul: 'mao-ao' }[normalizeSpecies(rawSpecies)] || rawSpecies);
-    return { species: normalizeSpecies(canonical), gender: normalizeGender(appearance.gender || npc.gender || model?.userData?.gender || 'male') };
+    return {
+      speciesId: normalizeKey(appearance.speciesId || appearance.species || npc.species || model?.userData?.speciesId || 'mao-ao'),
+      gender: normalizeGender(appearance.gender || npc.gender || model?.userData?.gender || 'male'),
+      bodyColors: appearance.bodyColors || npc.profile?.bodyColors || npc.bodyColors || null,
+      profile: npc.profile || npc.fighter || null,
+    };
   }
 
-  function profileFor(model) {
-    const identity = selectedIdentity(model); // Canonical identity selects the same attachment-rig profile as runtime hand aiming.
-    const characters = global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
-    return { identity, profile: characters[`${identity.species}::${identity.gender}`] || null };
+  function runtimeHandParent(model) {
+    // The editor's floor-relative locomotion root is model.parent.parent.parent,
+    // matching its Ground/Rest Manual IK bridge and the authoring-preview hook
+    // supported by ProceduralHandFrameDriver.attachPending().
+    return model?.userData?.proceduralHandParent || model?.parent?.parent?.parent || model?.parent || null;
   }
 
-  function portraitMetrics(model, profile) {
-    const anatomy = profile?.anatomy || {}; // Authored adult portrait values are the reference frame for shoulder coordinates.
-    const modelHeight = positive(model?.userData?.portraitModelHeight || model?.userData?.gameModelHeight, .9);
-    const modelWidth = positive(model?.userData?.portraitModelWidth, modelHeight);
-    const currentScale = positive(model?.userData?.portraitScaleMultiplier, positive(anatomy.portraitScale, 1));
-    const adultScale = positive(anatomy.portraitScale, 1);
-    const placementRatio = finite(model?.userData?.portraitVerticalPlacementRatio, finite(anatomy.portraitVerticalPlacementRatio, .5));
-    const adultPlacementRatio = finite(anatomy.portraitVerticalPlacementRatio, .5);
-    return { modelHeight, modelWidth, currentScale, adultScale, placementRatio, adultPlacementRatio, actorScaleFactor: currentScale / adultScale };
-  }
-
-  function validPosition(value) {
-    return ['x', 'y', 'z'].every(axis => Number.isFinite(Number(value?.[axis])));
-  }
-
-  function resolvePortraitBoundAnchor(model, profile, anchorName, metrics) {
-    const anchor = profile?.anchors?.[anchorName]; // Authored character anchor used instead of handAttach-derived shoulder guesses.
-    const binding = anchor?.portraitBinding;
-    if (validPosition(binding?.referencePosition) && positive(binding?.referencePortraitScale, 0) > 0) {
-      const factor = metrics.currentScale / positive(binding.referencePortraitScale, metrics.adultScale);
-      const referencePlacement = finite(binding.referencePlacementRatio, metrics.adultPlacementRatio);
-      return new state.THREE.Vector3(
-        finite(binding.referencePosition.x) * factor,
-        finite(binding.referencePosition.y) * factor + metrics.modelHeight * (metrics.placementRatio - referencePlacement),
-        finite(binding.referencePosition.z) * factor,
-      );
+  function cleanupBoundModel() {
+    restoreHiddenNodes();
+    if (state.model && state.rigOwner === 'editor-parity-fallback' && state.rig) {
+      try { state.rig.dispose?.(); }
+      catch (error) { editorLog(`[Neutral arms] Runtime fallback rig dispose failed: ${error?.message || error}`, 'warn'); }
+      if (state.model.userData?.proceduralHandRig === state.rig) state.model.userData.proceduralHandRig = null;
     }
-    const authored = anchor?.position;
-    if (!validPosition(authored)) return null;
-    return new state.THREE.Vector3(
-      finite(authored.x) * metrics.actorScaleFactor,
-      finite(authored.y) * metrics.actorScaleFactor + metrics.modelHeight * (metrics.placementRatio - metrics.adultPlacementRatio),
-      finite(authored.z) * metrics.actorScaleFactor,
-    );
+    state.model = null;
+    state.rig = null;
+    state.rigOwner = null;
+    state.handParent = null;
+    state.adoptAttempts = 0;
+    state.lastMode = null;
   }
 
-  function posteriorY(model, profile, metrics) {
-    const handAttachY = finite(model?.userData?.handAttachY, metrics.modelHeight / 2); // Legacy input retained only because the canonical posterior API accepts it as fallback.
-    const shared = global.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(profile?.posteriorRule, metrics.modelHeight, handAttachY);
-    if (Number.isFinite(Number(shared))) return Number(shared);
-    const live = Number(profile?.resolvedPosteriorPosition?.y);
-    if (Number.isFinite(live)) return live;
-    const floorPercent = Number(profile?.posteriorRule?.heightPercentFromFloor);
-    if (Number.isFinite(floorPercent)) return metrics.modelHeight * floorPercent / 100;
-    return handAttachY + metrics.modelHeight * finite(profile?.posteriorRule?.heightPercentOffset, -18) / 100;
+  function adoptExistingRig(model) {
+    const rig = model?.userData?.proceduralHandRig || null; // Future preview avatars are normally attached by the real frame driver wrapper itself.
+    if (!rig) return null;
+    state.rig = rig;
+    state.rigOwner = rig.__hobunjiProceduralEditorRuntimeParity ? 'editor-parity-fallback' : 'frame-driver';
+    state.handParent = rig.parent || runtimeHandParent(model);
+    return rig;
   }
 
-  function floorLiftFor(model, metrics) {
-    const authored = Number(model?.userData?.gameGrounding?.avatarHeightHalfLift); // Existing preview grounding value converts floor-relative character anchors into centered model-local points.
-    if (Number.isFinite(authored)) return authored;
-    const avatarLiftRoot = model?.parent?.parent;
-    const live = Number(avatarLiftRoot?.position?.y);
-    return Number.isFinite(live) ? live : metrics.modelHeight / 2;
+  function attachCurrentAvatarThroughRuntime(model) {
+    const hands = global.ProceduralHandAttachments;
+    if (!hands?.attach || !state.THREE || !model?.parent) return null;
+    const identity = runtimeIdentity(model);
+    const handParent = runtimeHandParent(model);
+    if (!handParent) return null;
+    model.userData ||= {};
+    model.userData.proceduralHandParent = handParent; // Exact authoring-preview escape hatch consumed by the real frame driver.
+    const rig = hands.attach(state.THREE, handParent, {
+      speciesId: identity.speciesId,
+      gender: identity.gender,
+      bodyColors: identity.bodyColors,
+      profile: identity.profile,
+      sourceCanvas: model.userData?.sourceCanvas || null,
+      modelHeight: model.userData?.portraitModelHeight,
+      handAttachX: model.userData?.handAttachX,
+      handAttachY: model.userData?.handAttachY,
+      avatarRoot: model,
+      name: model.name || 'avatar',
+    });
+    if (!rig) return null;
+    Object.defineProperty(rig, '__hobunjiProceduralEditorRuntimeParity', { value: true, configurable: true });
+    model.userData.proceduralHandRig = rig;
+    state.rig = rig;
+    state.rigOwner = 'editor-parity-fallback';
+    state.handParent = handParent;
+    return rig;
   }
 
-  function floorPointToModelBase(model, point, floorLift) {
-    // Attachment anchors are authored in floor-relative pose-root space. The
-    // editor's duplicate hand markers are model children, so remove the preview's
-    // half-height lift and preserve the same x/z axes. This intentionally avoids
-    // worldToLocal here: Dance mutates model transforms each frame and neutral
-    // anatomy must move WITH that body rather than remain pinned in world space.
-    return new state.THREE.Vector3(point.x, point.y - floorLift, point.z);
+  function ensureModelRig(model) {
+    if (state.model !== model) {
+      cleanupBoundModel();
+      state.model = model;
+      state.adoptAttempts = 0;
+    }
+    if (state.rig && model?.userData?.proceduralHandRig === state.rig) return state.rig;
+    if (adoptExistingRig(model)) return state.rig;
+
+    // The frame driver wraps PNGPlaneAvatar builds. Give it a few exact syncs
+    // before directly attaching only the avatar that predates that wrapper.
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    if (adoptExistingRig(model)) return state.rig;
+    if (state.adoptAttempts++ < FRAME_DRIVER_GRACE_FRAMES) return null;
+    return attachCurrentAvatarThroughRuntime(model);
   }
 
-  function neutralSide(model, profile, metrics, side, upperArmFraction, floorLift) {
-    const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder'; // Side-specific authored shoulder target used by runtime hand aiming.
-    const shoulderFloor = resolvePortraitBoundAnchor(model, profile, anchorName, metrics);
-    if (!shoulderFloor) return null;
-    const armOffset = finite(profile?.anatomy?.armLengthHeightPercentOffset, 0); // Positive authored value lengthens the hanging arm by lowering its wrist.
-    const wristFloor = new state.THREE.Vector3(
-      shoulderFloor.x,
-      posteriorY(model, profile, metrics) - metrics.modelHeight * armOffset / 100,
-      0,
-    );
-    const shoulder = floorPointToModelBase(model, shoulderFloor, floorLift);
-    const hand = floorPointToModelBase(model, wristFloor, floorLift);
-    const totalLength = Math.max(metrics.modelHeight * .08, shoulder.distanceTo(hand));
-    return {
-      shoulderFloor,
-      handFloor: wristFloor,
-      shoulder,
-      hand,
-      totalLength,
-      upperLength: totalLength * upperArmFraction,
-      lowerLength: totalLength * (1 - upperArmFraction),
-    };
-  }
-
-  function frameSignature(model, profile, metrics) {
-    const left = profile?.anchors?.leftHandShoulder?.position || {}; // Signature invalidates cached neutral anatomy when authoring/scaling changes live.
-    const right = profile?.anchors?.rightHandShoulder?.position || {};
-    return [
-      selectedIdentity(model).species,
-      selectedIdentity(model).gender,
-      metrics.modelHeight,
-      metrics.currentScale,
-      metrics.placementRatio,
-      profile?.anatomy?.portraitScale,
-      profile?.anatomy?.armLengthHeightPercentOffset,
-      left.x, left.y, left.z,
-      right.x, right.y, right.z,
-      profile?.resolvedPosteriorPosition?.y,
-    ].join('|');
-  }
-
-  function buildNeutralFrame(model) {
-    if (!model || !state.THREE) return null;
-    const { identity, profile } = profileFor(model); // Current canonical attachment profile is the only shoulder authority.
-    if (!profile) return null;
-    const metrics = portraitMetrics(model, profile); // Current actor scale/placement resolves adult-authored shoulder anchors.
-    const tuned = global.HOBUNJI_PROCEDURAL_ANATOMY_PROFILES?.resolve?.(identity.species, identity.gender) || {};
-    const upperArmFraction = Math.max(.35, Math.min(.70, finite(tuned.upperArmFraction, .52))); // Existing anatomy profile only chooses where the elbow subdivides the real neutral span.
-    const floorLift = floorLiftFor(model, metrics); // Preview half-height lift removed from floor-relative authored coordinates.
-    const left = neutralSide(model, profile, metrics, 'left', upperArmFraction, floorLift);
-    const right = neutralSide(model, profile, metrics, 'right', upperArmFraction, floorLift);
-    if (!left || !right) return null;
-    return {
-      model,
-      identity,
-      profile,
-      metrics,
-      floorLift,
-      upperArmFraction,
-      left,
-      right,
-      shoulderSource: 'attachment-rig-profile + portrait-scale/placement binding',
-      handSource: 'shoulder.x + canonical posteriorY + armLengthHeightPercentOffset',
-    };
-  }
-
-  function currentGroundPose() {
-    return global.HobunjiProceduralLimbPoseAuthor?.getDebug?.()?.pose || 'normal';
-  }
-
-  function manualActive() {
-    return Boolean(global.ProceduralGroundRestManualBridge?.getDebug?.()?.active);
-  }
-
-  function ownershipMode() {
-    if (manualActive()) return 'ground-manual';
-    if (currentGroundPose() !== 'normal') return 'ground-preset';
+  function currentMode() {
+    if (global.ProceduralGroundRestManualBridge?.getDebug?.()?.active) return 'ground-manual';
+    const groundPose = global.HobunjiProceduralLimbPoseAuthor?.getDebug?.()?.pose || 'normal';
+    if (groundPose !== 'normal') return 'ground-preset';
     if (global.ProceduralCarryWalkMode?.getDebug?.()?.enabled) return 'carry';
-    const dance = global.ProceduralDanceMode?.getDebug?.() || {};
-    if (dance.enabled) return `dance:${dance.armStyle || 'none'}`;
+    if (global.ProceduralDanceMode?.getDebug?.()?.enabled) return 'dance';
     return 'neutral';
   }
 
-  function markerFor(model, side) {
-    return model?.getObjectByName?.(`${model.name || 'Avatar'}_${side === 'left' ? 'Left' : 'Right'}Hand`) || null;
+  function directEditorHandRoot(model) {
+    const expected = `${model?.name || 'Avatar'}_procedural_hands`; // buildExperimentalHandsForAvatar() parents this duplicate root directly under the model.
+    return model?.children?.find?.(child => child?.name === expected && child !== state.rig?.group) || null;
   }
 
-  function orientationForForearm(side, forearmDirection) {
-    const direction = forearmDirection?.clone?.() || new state.THREE.Vector3(0, -1, 0); // Current lower-arm direction drives the hand's authored down axis.
-    if (direction.lengthSq() < 1e-10) direction.set(0, -1, 0);
-    direction.normalize();
-    const aim = new state.THREE.Quaternion().setFromUnitVectors(new state.THREE.Vector3(DOWN.x, DOWN.y, DOWN.z), direction);
-    const localTwistDeg = LEFT_IDLE_YAW_DEG + (side === 'right' ? RIGHT_VISUAL_TWIST_DEG : 0); // Experimental wrapper has no separate socket/visual hierarchy, so compose both runtime Y twists here.
-    const twist = new state.THREE.Quaternion().setFromAxisAngle(new state.THREE.Vector3(0, 1, 0), state.THREE.MathUtils.degToRad(localTwistDeg));
-    return aim.multiply(twist).normalize();
+  function findNamedRoot(model, name) {
+    return model?.getObjectByName?.(name) || null;
   }
 
-  function writeLine(line, shoulder, solved) {
-    const attr = line?.geometry?.attributes?.position; // Existing editor line remains the visualization; only its invalid coordinates are replaced.
-    if (!attr || attr.count < 3 || !solved) return false;
-    attr.setXYZ(0, shoulder.x, shoulder.y, shoulder.z);
-    attr.setXYZ(1, solved.joint.x, solved.joint.y, solved.joint.z);
-    attr.setXYZ(2, solved.solvedTarget.x, solved.solvedTarget.y, solved.solvedTarget.z);
-    attr.needsUpdate = true;
-    line.geometry.computeBoundingSphere?.();
-    return true;
+  function groundGuideRoot(model) {
+    const locomotion = runtimeHandParent(model); // Same locomotion root that owns Ground/Rest's guide hierarchy.
+    return locomotion?.getObjectByName?.(GROUND_GUIDE_ROOT) || null;
   }
 
-  function solveSide(sideFrame, target, pole = null) {
-    return global.LegBones?.solveFixedTwoBoneChain?.(state.THREE, {
-      root: sideFrame.shoulder,
-      target,
-      upperLength: sideFrame.upperLength,
-      lowerLength: sideFrame.lowerLength,
-      pole: pole || sideFrame.hand.clone().add(new state.THREE.Vector3(sideFrame.shoulder.x >= 0 ? .1 : -.1, 0, -.1)),
-    }) || null;
+  function hideNode(node) {
+    if (!node || state.hiddenNodes.has(node)) return;
+    state.originalVisibility.set(node, node.visible !== false);
+    state.hiddenNodes.add(node);
+    node.visible = false;
   }
 
-  function applyHand(model, side, solved) {
-    const marker = markerFor(model, side); // Editor duplicate GLB marker receives the corrected wrist endpoint/orientation.
-    if (!marker || !solved) return false;
-    marker.position.copy(solved.solvedTarget);
-    const forearm = solved.solvedTarget.clone().sub(solved.joint);
-    marker.quaternion.copy(orientationForForearm(side, forearm));
-    marker.updateMatrix?.();
-    marker.updateMatrixWorld?.(true);
-    return true;
+  function restoreNode(node) {
+    if (!node || !state.hiddenNodes.has(node)) return;
+    node.visible = state.originalVisibility.get(node) !== false;
+    state.hiddenNodes.delete(node);
   }
 
-  function neutralSolve(sideFrame) {
-    // At true neutral the authored shoulder->wrist span is the limb length, so a
-    // straight subdivided chain is the most literal representation: no invented
-    // 14-degree bend and no target-derived/stretchy segment lengths.
-    return global.LegBones?.solveSubdividedChain?.(state.THREE, {
-      root: sideFrame.shoulder,
-      target: sideFrame.hand,
-      jointFraction: state.frame.upperArmFraction,
-    }) || null;
+  function restoreHiddenNodes() {
+    for (const node of [...state.hiddenNodes]) restoreNode(node);
   }
 
-  function applyNeutral(model) {
-    const result = {};
-    for (const side of ['left', 'right']) {
-      const solved = neutralSolve(state.frame[side]); // Exact authored neutral chain used when no procedural pose owns the arms.
-      result[side] = { solved, marker: applyHand(model, side, solved) };
+  function applyVisibilityForMode(model, mode) {
+    if (mode !== state.lastMode) {
+      restoreHiddenNodes(); // Return ownership cleanly before applying the next mode's visibility contract.
+      state.lastMode = mode;
     }
-    return result;
-  }
+    const runtimeGroup = state.rig?.group || null;
+    const duplicateHands = directEditorHandRoot(model);
+    const danceArms = findNamedRoot(model, `${model.name || 'Avatar'}${DANCE_ROOT_SUFFIX}`);
+    const carryArms = findNamedRoot(model, `${model.name || 'Avatar'}${CARRY_ROOT_SUFFIX}`);
+    const groundGuides = groundGuideRoot(model);
 
-  function linePoint(line, index) {
-    const attr = line?.geometry?.attributes?.position; // Current generated arm endpoint/pole read before final correction so authored animation deltas can be preserved.
-    if (!attr || attr.count <= index) return null;
-    return new state.THREE.Vector3(attr.getX(index), attr.getY(index), attr.getZ(index));
-  }
-
-  function oldDanceIdle(model, side) {
-    const h = state.frame.metrics.modelHeight; // Legacy Dance target baseline reconstructed only to preserve its authored motion delta while replacing the bad neutral origin.
-    const rawX = Number(model?.userData?.handAttachX);
-    const rawY = Number(model?.userData?.handAttachY);
-    const handAttachX = Number.isFinite(rawX) ? rawX : -state.frame.metrics.modelWidth * .28;
-    const handAttachY = Number.isFinite(rawY) ? rawY : h * .45;
-    return new state.THREE.Vector3(side === 'left' ? -handAttachX : handAttachX, handAttachY, 0);
-  }
-
-  function applyDance(model, armStyle) {
-    const root = model.getObjectByName?.(`${model.name || 'Avatar'}${DANCE_ROOT_SUFFIX}`); // Existing Dance-generated arm visualization.
-    if (!root) return { corrected: false, reason: 'dance-root-missing' };
-    const result = {};
-    for (const side of ['left', 'right']) {
-      const line = root.getObjectByName?.(`${side}ArmDebugLine`); // Existing line's endpoint contains the Dance style's current authored target.
-      const currentTarget = linePoint(line, 2);
-      const currentJoint = linePoint(line, 1);
-      if (!line || !currentTarget) { result[side] = { corrected: false, reason: 'line-missing' }; continue; }
-      let target;
-      if (armStyle === 'none') {
-        target = state.frame[side].hand.clone(); // Relaxed Dance must be identical to authoritative neutral, not the old handAttach approximation.
-      } else {
-        const motionDelta = currentTarget.clone().sub(oldDanceIdle(model, side)); // Keep existing arm-style animation while transplanting it onto the real neutral wrist.
-        target = state.frame[side].hand.clone().add(motionDelta);
-      }
-      const solved = solveSide(state.frame[side], target, currentJoint);
-      const lineUpdated = writeLine(line, state.frame[side].shoulder, solved);
-      result[side] = { corrected: lineUpdated, reachable: solved?.reachable ?? null, marker: applyHand(model, side, solved) };
+    if (mode === 'neutral') {
+      restoreNode(runtimeGroup); // Real game hand stack is the only extra 3D limb geometry in ordinary neutral.
+      hideNode(duplicateHands); // The editor's separately loaded GLB hand markers are not the runtime rig.
+      hideNode(danceArms); // Painted PNG arms remain visible; virtual arm chains do not.
+      hideNode(carryArms);
+      hideNode(groundGuides);
+    } else {
+      hideNode(runtimeGroup); // Explicit authoring modes retain their existing draggable/generated hand/arm presentation without double hands.
+      restoreNode(duplicateHands);
+      restoreNode(danceArms);
+      restoreNode(carryArms);
+      restoreNode(groundGuides);
     }
-    return result;
+
+    return { runtimeGroup, duplicateHands, danceArms, carryArms, groundGuides };
   }
 
-  function applyCarry(model) {
-    const root = model.getObjectByName?.(`${model.name || 'Avatar'}${CARRY_ROOT_SUFFIX}`); // Existing Carry upper-body guide root.
-    if (!root) return { corrected: false, reason: 'carry-root-missing' };
-    const result = {};
-    for (const side of ['left', 'right']) {
-      const line = root.getObjectByName?.(`${side}CarryArmGuide`); // Carry already computes the moving grip target; only its approximate shoulder/length baseline is replaced.
-      const target = linePoint(line, 2);
-      const pole = linePoint(line, 1);
-      if (!line || !target) { result[side] = { corrected: false, reason: 'line-missing' }; continue; }
-      const solved = solveSide(state.frame[side], target, pole);
-      const lineUpdated = writeLine(line, state.frame[side].shoulder, solved);
-      result[side] = { corrected: lineUpdated, reachable: solved?.reachable ?? null, marker: applyHand(model, side, solved) };
-    }
-    return result;
-  }
-
-  function refreshFrameIfNeeded(model, mode) {
-    const { profile } = profileFor(model); // Current attachment profile used to detect live authoring/scaling changes.
-    if (!profile) return false;
-    const metrics = portraitMetrics(model, profile);
-    const signature = frameSignature(model, profile, metrics);
-    const canRebind = mode === 'neutral' || state.model !== model || !state.frame;
-    if (state.model === model && state.frame && state.frameSignature === signature) return true;
-    if (!canRebind) return Boolean(state.frame); // Preserve pre-animation model-local neutral frame while Dance/Carry moves the body.
-    const frame = buildNeutralFrame(model);
-    if (!frame) return false;
-    state.model = model;
-    state.frame = frame;
-    state.frameSignature = signature;
-    if (state.lastLoggedModel !== model) {
-      state.lastLoggedModel = model;
-      editorLog('[Neutral arms] Bound authored shoulder/posterior neutral frame; removed handAttach shoulder approximation.', 'info', {
-        identity: frame.identity,
-        actorScaleFactor: frame.metrics.actorScaleFactor,
-        left: { shoulder: frame.left.shoulderFloor, hand: frame.left.handFloor },
-        right: { shoulder: frame.right.shoulderFloor, hand: frame.right.handFloor },
-      });
-    }
-    return true;
-  }
-
-  function correctBeforeRender() {
-    const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null; // Current editor preview avatar corrected at the actual final scene draw boundary.
-    if (!model || !state.THREE) return;
-    const mode = ownershipMode();
-    if (!refreshFrameIfNeeded(model, mode)) {
-      state.debug = { installed: true, mode, error: 'neutral-frame-unavailable' };
+  function applyExactStationaryIdle(model, rig) {
+    if (!rig) return;
+    if (state.rigOwner === 'frame-driver') {
+      global.ProceduralHandFrameDriver?.syncNow?.(); // Use gameplay's own idle/walk fallback when the real manager owns this avatar.
       return;
     }
 
-    let result = null;
-    if (mode === 'neutral') result = applyNeutral(model);
-    else if (mode.startsWith('dance:')) result = applyDance(model, mode.slice('dance:'.length));
-    else if (mode === 'carry') result = applyCarry(model);
-    // Ground/Rest automatic/manual posing already owns explicit authored targets.
-    // Do not fight that ownership here; its next refactor can consume this public
-    // neutral-frame API directly for target seeding.
+    // Current preview avatar existed before the frame-driver wrapper loaded, so
+    // reproduce only the frame driver's stationary fallback and still feed it
+    // through the REAL wrapped setSideIdle() shoulder/scale/orientation stack.
+    const modelHeight = Math.max(0.1, Number(model?.userData?.portraitModelHeight) || 0.9);
+    const timeSeconds = performance.now() / 1000;
+    for (const side of ['left', 'right']) {
+      const idleBreath = Math.sin(timeSeconds * 2.15 + (side === 'left' ? 0 : Math.PI)) * modelHeight * 0.0035;
+      rig.setSideIdle?.(side, {
+        position: { x: 0, y: idleBreath, z: 0 },
+        rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
+      });
+    }
+  }
+
+  function vectorRecord(vector) {
+    if (!vector) return null;
+    return {
+      x: Number((Number(vector.x) || 0).toFixed(5)),
+      y: Number((Number(vector.y) || 0).toFixed(5)),
+      z: Number((Number(vector.z) || 0).toFixed(5)),
+    };
+  }
+
+  function quaternionRecord(quaternion) {
+    if (!quaternion) return null;
+    return {
+      x: Number((Number(quaternion.x) || 0).toFixed(5)),
+      y: Number((Number(quaternion.y) || 0).toFixed(5)),
+      z: Number((Number(quaternion.z) || 0).toFixed(5)),
+      w: Number((Number(quaternion.w) || 1).toFixed(5)),
+    };
+  }
+
+  function socketSnapshot(side) {
+    const socket = state.rig?.group?.getObjectByName?.(`${side}_hand_socket`) || null; // Actual runtime socket, not the editor duplicate wrapper.
+    return socket ? { position: vectorRecord(socket.position), quaternion: quaternionRecord(socket.quaternion), visible: socket.visible !== false } : null;
+  }
+
+  function updateParityBeforeRender() {
+    if (!state.runtimeReady) return;
+    const model = currentModel();
+    if (!model) {
+      if (state.model) cleanupBoundModel();
+      return;
+    }
+    const rig = ensureModelRig(model);
+    const mode = currentMode();
+    if (!rig) {
+      state.debug = { installed: true, runtimeReady: true, mode, rigOwner: 'waiting-for-frame-driver', adoptAttempts: state.adoptAttempts };
+      return;
+    }
+
+    const visibility = applyVisibilityForMode(model, mode);
+    if (mode === 'neutral') applyExactStationaryIdle(model, rig);
 
     state.debug = {
       installed: true,
+      runtimeReady: true,
       mode,
-      identity: state.frame.identity,
-      shoulderSource: state.frame.shoulderSource,
-      handSource: state.frame.handSource,
-      actorScaleFactor: state.frame.metrics.actorScaleFactor,
-      currentPortraitScale: state.frame.metrics.currentScale,
-      authoredPortraitScale: state.frame.metrics.adultScale,
-      placementRatio: state.frame.metrics.placementRatio,
-      left: {
-        shoulder: vectorDebug(state.frame.left.shoulder),
-        neutralHand: vectorDebug(state.frame.left.hand),
-        totalArmLength: Number(state.frame.left.totalLength.toFixed(5)),
-      },
-      right: {
-        shoulder: vectorDebug(state.frame.right.shoulder),
-        neutralHand: vectorDebug(state.frame.right.hand),
-        totalArmLength: Number(state.frame.right.totalLength.toFixed(5)),
-      },
-      result,
+      source: 'ProceduralHandAttachments + ProceduralHandFrameDriver + procedural-hand-shoulder-aim',
+      armPresentation: mode === 'neutral' ? 'painted PNG-plane arm sprites; no generated neutral arm chain' : 'procedural authoring mode owns limbs',
+      rigOwner: state.rigOwner,
+      handParent: state.handParent?.name || state.handParent?.type || null,
+      duplicateEditorHandsHidden: mode === 'neutral' ? visibility.duplicateHands?.visible === false : null,
+      danceArmGuideHidden: mode === 'neutral' ? visibility.danceArms?.visible === false : null,
+      carryArmGuideHidden: mode === 'neutral' ? visibility.carryArms?.visible === false : null,
+      left: socketSnapshot('left'),
+      right: socketSnapshot('right'),
     };
-  }
 
-  function vectorDebug(vector) {
-    if (!vector) return null;
-    return { x: Number(vector.x.toFixed(5)), y: Number(vector.y.toFixed(5)), z: Number(vector.z.toFixed(5)) };
+    if (mode === 'neutral' && state.lastLoggedModel !== model) {
+      state.lastLoggedModel = model;
+      editorLog('[Neutral arms] Runtime unarmed-NPC parity active: painted sprite arms + real procedural hand rig; editor virtual neutral arms hidden.', 'info', state.debug);
+    }
   }
 
   function installSceneHook() {
-    const scene = global.HobunjiGameplayBackdrop?.getScene?.() || null; // Scene onBeforeRender executes after every renderer wrapper has applied Dance/Ground/Carry transforms.
+    const scene = global.HobunjiGameplayBackdrop?.getScene?.() || null;
     if (!scene) return false;
     if (state.scene === scene && state.hookInstalled) return true;
+    if (state.scene && state.hookInstalled && state.scene.onBeforeRender === state.boundBeforeRender) {
+      state.scene.onBeforeRender = state.priorSceneBeforeRender || null;
+    }
     state.scene = scene;
-    state.previousSceneBeforeRender = typeof scene.onBeforeRender === 'function' ? scene.onBeforeRender : null;
-    scene.onBeforeRender = function proceduralNeutralArmBeforeRender() {
-      state.previousSceneBeforeRender?.apply(this, arguments);
-      try { correctBeforeRender(); }
+    state.priorSceneBeforeRender = typeof scene.onBeforeRender === 'function' ? scene.onBeforeRender : null;
+    state.boundBeforeRender = function proceduralUnarmedNpcParityBeforeRender() {
+      state.priorSceneBeforeRender?.apply(this, arguments);
+      try { updateParityBeforeRender(); }
       catch (error) {
         state.debug = { ...state.debug, error: String(error?.message || error) };
-        editorLog(`[Neutral arms] Final correction failed: ${error?.stack || error}`, 'error');
+        editorLog(`[Neutral arms] Runtime NPC parity update failed: ${error?.stack || error}`, 'error');
       }
     };
+    scene.onBeforeRender = state.boundBeforeRender;
     state.hookInstalled = true;
-    editorLog('[Neutral arms] Final scene hook installed; authored attachment-rig neutral frame now wins over editor approximations.', 'info');
     return true;
   }
 
   async function bootstrap() {
     try {
-      const modules = await global.PNGPlaneAvatar?.loadThreeModules?.(); // Same Three.js instance as the procedural preview and LegBones solver.
-      state.THREE = modules?.THREE || global.THREE || null;
+      await loadRuntimeHandStack();
+      state.debug = { installed: true, runtimeReady: true, mode: 'waiting-for-preview' };
+      editorLog('[Neutral arms] Loaded gameplay unarmed-hand runtime stack for procedural-editor parity.', 'info');
     } catch (error) {
-      editorLog(`[Neutral arms] Could not resolve editor Three.js: ${error?.message || error}`, 'error');
+      state.debug = { installed: true, runtimeReady: false, mode: 'runtime-load-failed', error: String(error?.message || error) };
+      editorLog(`[Neutral arms] Runtime hand stack failed to load: ${error?.stack || error}`, 'error');
+      return;
     }
-    let attempts = 0; // Renderer/scene host arrives asynchronously after the editor finishes loading the selected NPC.
-    function frame() {
+
+    let attempts = 0;
+    const seekScene = () => {
       if (installSceneHook()) return;
-      if (attempts++ < 2400) requestAnimationFrame(frame);
-      else editorLog('[Neutral arms] Timed out waiting for editor scene.', 'error');
-    }
-    requestAnimationFrame(frame);
+      if (attempts++ < 2400) requestAnimationFrame(seekScene);
+      else editorLog('[Neutral arms] Timed out waiting for procedural-editor scene.', 'error');
+    };
+    requestAnimationFrame(seekScene);
   }
 
   global.HobunjiProceduralNeutralArms = Object.freeze({
     installed: true,
-    resolveNeutralFrame(model = global.HobunjiGameplayBackdrop?.getAvatarModel?.()) {
-      if (!model) return null;
-      const frame = buildNeutralFrame(model);
-      if (!frame) return null;
+    mode: 'runtime-unarmed-npc-parity',
+    getDebug: () => JSON.parse(JSON.stringify(state.debug)),
+    resolveNeutralFrame(model = currentModel()) {
+      if (!model || state.model !== model || !state.rig) return null;
       return {
-        identity: { ...frame.identity },
-        actorScaleFactor: frame.metrics.actorScaleFactor,
-        left: { shoulder: vectorDebug(frame.left.shoulder), hand: vectorDebug(frame.left.hand), totalArmLength: frame.left.totalLength },
-        right: { shoulder: vectorDebug(frame.right.shoulder), hand: vectorDebug(frame.right.hand), totalArmLength: frame.right.totalLength },
+        source: 'runtime-hand-sockets',
+        rigOwner: state.rigOwner,
+        left: socketSnapshot('left'),
+        right: socketSnapshot('right'),
       };
     },
-    getDebug: () => JSON.parse(JSON.stringify(state.debug)),
   });
 
   bootstrap();
