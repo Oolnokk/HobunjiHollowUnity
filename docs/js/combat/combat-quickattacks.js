@@ -94,13 +94,11 @@
   // counter-shield all scale off that same shared base and weren't
   // reported as too big.
   let RANGE_SCALE = 0.6;
-  // Farther forward step than the 3-hit combo's, layered under the jab —
-  // see game.js's beginCombatLunge. Expressed as a TILE multiple. Stops
-  // early once a hostile enters this jab's own hit cone (see the
-  // beginCombatLunge call below), so a longer reach here just means less
-  // whiffed closing distance rather than overshooting past the target.
-  // Originally 2.2; a 5x pass (11.0) proved too far, halved down to 5.5.
-  let LUNGE_TILE_MUL = 5.5;
+  // Short forward closing step layered under the jab — see game.js's
+  // beginCombatLunge. Expressed as a TILE multiple and stopped early once a
+  // hostile enters this jab's own hit cone, so it closes distance without
+  // turning every quick attack into a long-range gap closer.
+  let LUNGE_TILE_MUL = 3.0;
 
   function registerQuickAttack(id, def) {
     let busyAction = null;
