@@ -26,8 +26,13 @@
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
-    // Must wrap WebGLRenderer before OutlineRenderPerformance so mist can be redrawn from the captured scene-depth texture before world text gets its final overlay.
-    ['CloudForestMistSoftDepth', 'cloud-forest-mist-soft-depth.js?v=20260905a'],
+    // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
+    // post-composite pass disabled depth testing and could wash mist over the player
+    // and nearby world geometry even when every cylinder surface was behind them.
+    // Shoulder-pet layering intentionally disables the player's visible portrait
+    // depth writes, so provide a colorless order-889 depth copy before mist 890-892
+    // without changing the visible player/pet ordering that relies on depthWrite=false.
+    ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20260906a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260905c'],
     // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],

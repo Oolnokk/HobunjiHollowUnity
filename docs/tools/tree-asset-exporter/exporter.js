@@ -530,11 +530,46 @@
     }
   }
 
+  // Three r128's GLTFExporter only reads metalness/roughness off
+  // THREE.MeshStandardMaterial; every other material type -- including the
+  // untextured MeshLambertMaterial foliage-generator.js uses for bark/trunk
+  // color -- gets written with a hardcoded metallicFactor/roughnessFactor of
+  // 0.5 regardless of how it actually looks. GLTFLoader then reconstructs
+  // that as a half-metallic, half-rough MeshStandardMaterial, which reads as
+  // a shiny/specular trunk in-game instead of the flat bark color the
+  // procedural material has live. Swap those materials for an explicit
+  // fully-rough, non-metallic MeshStandardMaterial right before export so
+  // the baked GLB keeps the same flat look.
+  function demoteSpecularMaterialsForExport(object) {
+    object.traverse?.(child => {
+      if (!child?.isMesh) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      const replaced = materials.map(material => {
+        if (!material || material.isMeshStandardMaterial || material.isMeshBasicMaterial || material.map) return material;
+        const standard = new THREE.MeshStandardMaterial({
+          color: material.color,
+          emissive: material.emissive,
+          transparent: material.transparent,
+          opacity: material.opacity,
+          side: material.side,
+          depthWrite: material.depthWrite,
+          depthTest: material.depthTest,
+          metalness: 0,
+          roughness: 1,
+        });
+        standard.name = material.name;
+        return standard;
+      });
+      child.material = Array.isArray(child.material) ? replaced : replaced[0];
+    });
+  }
+
   async function exportGlb(entry) {
     const object = buildSource(entry);
     const reduction = decimationPercent();
     const stats = await applyDecimation(object, reduction);
     await waitForTextures(object);
+    demoteSpecularMaterialsForExport(object);
     object.updateMatrixWorld?.(true);
     const exporter = new THREE.GLTFExporter();
     return new Promise((resolve, reject) => {

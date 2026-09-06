@@ -3,6 +3,15 @@
 
   // Southern Cloud Forest mist + non-invasive sky/lighting integration.
   // The original skydome/material rendering paths remain authoritative.
+  // Shared with game.js's render loop: the shell/target outline passes draw
+  // straight into _mainRT with real depth, with no idea the mist cylinders
+  // add extra atmospheric haze beyond the scene's own regular fog -- so an
+  // outline on something genuinely behind the mist would otherwise come out
+  // fully crisp, reading as a cutout hole in the haze around it. Tagging
+  // mist meshes with this layer (in addition to their default one) lets the
+  // render loop redraw just them, after those outline passes, so they
+  // re-cover any outline drawn on something the mist should still obscure.
+  const MIST_REDRAW_LAYER = 5;
   let deps = null;
   let group = null;
   let texture = null;
@@ -212,6 +221,7 @@
     mesh.frustumCulled = false;
     mesh.renderOrder = 890 + index;
     mesh.visible = false;
+    mesh.layers.enable(MIST_REDRAW_LAYER);
     group.add(mesh);
     return { mesh, material, config };
   }
