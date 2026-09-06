@@ -158,7 +158,7 @@
 
   function loadImage(path) {
     return new Promise((resolve, reject) => {
-      const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error(`failed to load ${path}`)); image.src = path;
+      const image = new Image(); image.crossOrigin = 'anonymous'; image.onload = () => resolve(image); image.onerror = () => reject(new Error(`failed to load ${path}`)); image.src = path;
     });
   }
 
