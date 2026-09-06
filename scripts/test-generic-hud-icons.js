@@ -44,10 +44,13 @@ assert.match(menuTabs, /TAB_SELECTOR = '\.mp-tabs \.mp-tab\[data-mpanel\]'/, 'al
 assert.match(menuTabs, /tab\.replaceChildren\(makeGlyphNode\(glyph\)\)/, 'non-relationship menu tabs must retain only their existing leading icon');
 assert.match(menuTabs, /CURRENCY_ICON_FILE = 'icon_bronzecurrency\.png'/, 'gananji currency presentation must use icon_bronzecurrency.png while the Tankanscript glyph metrics are being corrected');
 assert.match(menuTabs, /CURRENCY_VERDIGRIS_COLOR = '#6fae9b'/, 'menu and gameplay HUD gananji amounts and symbols must share the bronze-verdigris color');
+assert.match(menuTabs, /CURRENCY_VERDIGRIS_GLOW = '#70ebc6'/, 'gananji glow must use a brighter saturated color at the same verdigris hue');
 assert.match(menuTabs, /CURRENCY_ICON_SCALE = 0\.7667/, 'currency artwork must be 15 percent larger than the previous two-thirds scale');
 assert.match(menuTabs, /align-items: flex-end;[\s\S]*justify-content: flex-start;/, 'currency symbols must anchor to the bottom-left of their 1em character spaces');
 assert.match(menuTabs, /width: \$\{CURRENCY_ICON_SCALE\}em;[\s\S]*height: \$\{CURRENCY_ICON_SCALE\}em;/, 'menu and gameplay HUD must share the same currency artwork scale');
 assert.match(menuTabs, /#mpInventory \.inv-wallet-amount,[\s\S]*\$\{HUD_GOLD_AMOUNT_SELECTOR\}[\s\S]*color: \$\{CURRENCY_VERDIGRIS_COLOR\} !important;/, 'wallet and persistent HUD numbers must share the same verdigris color');
+assert.match(menuTabs, /text-shadow:[\s\S]*-1px 0 0 #000[\s\S]*0 0 4px \$\{CURRENCY_VERDIGRIS_GLOW\}/, 'wallet and HUD numbers must have a black outline plus saturated verdigris glow');
+assert.match(menuTabs, /drop-shadow\(1px 0 0 #000\)[\s\S]*drop-shadow\(0 0 3px \$\{CURRENCY_VERDIGRIS_GLOW\}\)/, 'wallet and HUD currency symbols must have a black alpha-outline plus saturated verdigris glow');
 assert.match(menuTabs, /HUD_GOLD_SELECTOR = '#spGold'/, 'persistent gameplay HUD currency must use the existing spGold host');
 assert.match(menuTabs, /HUD_SUFFIX_SELECTOR = '#spGold \.sb-gold-suffix'/, 'persistent gameplay HUD currency must reuse its authored suffix character space');
 assert.match(menuTabs, /hud\.replaceChildren\(hudGoldAmountNode, suffix\)/, 'persistent HUD must render the amount followed by the bronze currency symbol');
