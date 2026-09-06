@@ -153,7 +153,7 @@
             faceTargetOverridden = farmDeps.getPlayerFaceTarget !== originalFaceTarget;
           } catch (_) { /* A read-only dependency seam degrades to the original update instead of breaking the interaction. */ }
         }
-        originalUpdate.call(this, 0);
+        originalUpdate.call(this, dt);
       } finally {
         if (faceTargetOverridden) farmDeps.getPlayerFaceTarget = originalFaceTarget;
       }
