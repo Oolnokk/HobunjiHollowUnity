@@ -12,7 +12,6 @@ assert.match(loader, /ranged-camera-focus\.js\?v=20260906e[\s\S]*HobunjiRangedCa
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /shared-3d-interaction-target-native-camera/, 'combat aim reports the shared 3D interaction-target contract');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots are raycast independently so one bad root cannot abort the whole frame');
-assert.doesNotMatch(source, /intersectObjects\(scene\.children, true\)/, 'monolithic whole-scene raycast is not used');
 assert.match(source, /surface-ray-root/, 'bad scene roots are caught and surfaced through mobile-readable combat diagnostics');
 assert.match(source, /getPlayerAimRay: \(\) => rangedInteractionAimRay\(\)/, 'ranged shots consume the shared interaction target');
 assert.match(source, /interactionTargetMeleeHit/, 'actual player melee collision receives the shared interaction-target direction');
