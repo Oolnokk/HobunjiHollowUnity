@@ -40,6 +40,8 @@
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
+    // Adds canvas.png as one fitted 20%-opacity visual layer across each connected rendered grass surface, reusing HobunjiSurfaceStretchUV rather than stretching separately per farm tile/chunk.
+    ['GrassSurfaceCanvasOverlay', 'grass-surface-canvas-overlay.js?v=20260904a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
