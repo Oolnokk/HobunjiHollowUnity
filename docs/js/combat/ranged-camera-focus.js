@@ -290,11 +290,9 @@
       return hits;
     }
 
-    // Do not call intersectObjects(scene.children, true) as one monolithic
-    // operation. One malformed/custom scene node can throw inside Three.js and,
-    // because Three is CDN-hosted, browsers surface that as the useless masked
-    // "Script error.". Isolating each top-level root lets us skip only the bad
-    // root and keep the rest of combat + the native camera alive.
+    // Raycast each top-level scene root independently. One malformed/custom
+    // scene node can throw inside Three.js; isolating roots lets us skip only
+    // that root and keep the rest of combat + the native camera alive.
     for (const root of Array.from(scene.children)) {
       if (!root || ignoredRoots.some(owned => isDescendantOf(owned, root))) continue;
       const localHits = [];
