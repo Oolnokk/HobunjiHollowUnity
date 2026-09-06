@@ -22,8 +22,12 @@ assert.match(presentation, /const WATER_UNIT = 0\.5 \/ 3\.0/,
   'presentation mirrors the current 0.5/3 water-depth-to-world-Y conversion');
 assert.match(presentation, /waterLift = waterDepth \* WATER_UNIT/,
   'live tile water depth is converted into the exact crop Y correction');
-assert.match(presentation, /root\.position\.y -= waterLift \+ centerLift/,
+assert.match(presentation, /const lift = waterLift \+ centerLift/,
+  'the per-root Y correction is exactly the water lift plus any cube-center lift');
+assert.match(presentation, /root\.position\.y -= lift/,
   'crop roots are lowered back to soil rather than riding on the water surface');
+assert.match(presentation, /frameLiftsByScene\.get\(scene\)/,
+  'crop-root discovery and lift computation are cached per scene for the whole synchronous frame instead of re-scanning the scene on every internal render() pass');
 assert.match(presentation, /hobunjiCropRootKey \|\| object\?\.userData\?\.hobunjiCropSpriteKey/,
   'the shared soil correction discovers procedural, clustered, and generic crop-root tags');
 assert.match(presentation, /cropKey === 'garlink' \|\| cropKey === 'ongyums'/,

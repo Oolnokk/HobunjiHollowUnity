@@ -82,10 +82,10 @@
     return { tile: grid[row][col], col, row };
   }
 
-  function prepare(scene) {
-    const restore = []; // Used to restore game.js-owned crop positions after the synchronous render call completes.
+  function computeCropLifts(scene) {
+    const lifts = []; // { root, lift } — one entry per crop root that needs a Y correction this frame.
     lastAnchoredRoots = 0;
-    if (!farmDeps?.scene || scene !== farmDeps.scene) return restore;
+    if (!farmDeps?.scene || scene !== farmDeps.scene) return lifts;
 
     for (const [root, cropKey] of collectCropRoots(scene)) {
       const located = tileForRoot(root);
@@ -98,11 +98,45 @@
       const centerLift = isConvertedCluster && Number.isFinite(gameScale)
         ? gameScale * 0.5 + SURFACE_EPSILON
         : 0;
-      if (waterLift <= 0 && centerLift <= 0) continue;
+      const lift = waterLift + centerLift;
+      if (lift <= 0) continue;
 
-      restore.push({ root, positionY: root.position.y });
-      root.position.y -= waterLift + centerLift;
+      lifts.push({ root, lift });
       lastAnchoredRoots++;
+    }
+    return lifts;
+  }
+
+  // renderer.render() fires several internal passes per visual frame (color,
+  // shell/target/material-ID/depth outlines, composite — see game.js's outline
+  // block), all synchronously back to back. Crop water depth and cluster
+  // conversion can't change mid-frame, so collectCropRoots' full scene.traverse
+  // plus every matched root's tile lookup only need to run once per distinct
+  // scene seen in a frame — cached here and cleared via a microtask so the
+  // next frame recomputes fresh. Keyed by scene (not a single slot) so an
+  // unrelated pass's scene (e.g. a fixed post-composite scene) interleaved
+  // between farm-scene passes can't evict the farm scene's cached lifts.
+  let frameLiftsByScene = null;
+
+  function liftsFor(scene) {
+    if (!frameLiftsByScene) {
+      frameLiftsByScene = new Map();
+      Promise.resolve().then(() => { frameLiftsByScene = null; });
+    }
+    let lifts = frameLiftsByScene.get(scene);
+    if (!lifts) {
+      lifts = computeCropLifts(scene);
+      frameLiftsByScene.set(scene, lifts);
+    }
+    return lifts;
+  }
+
+  function prepare(scene) {
+    const restore = []; // Used to restore game.js-owned crop positions after this synchronous render call completes.
+    for (const { root, lift } of liftsFor(scene)) {
+      if (!root?.position) continue;
+      restore.push({ root, positionY: root.position.y });
+      root.position.y -= lift;
     }
     return restore;
   }
