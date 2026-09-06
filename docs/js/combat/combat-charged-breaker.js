@@ -330,7 +330,7 @@
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : vegetationCleared > 0
-              ? `${tech.name}: cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
+              ? `Charged Breaker (${pct}% charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `Charged Breaker (${pct}% charge) connects with nothing.`;
           // silent: same reasoning as combat-combo.js — every swing already
           // has its own weapon swing/impact sfx.
