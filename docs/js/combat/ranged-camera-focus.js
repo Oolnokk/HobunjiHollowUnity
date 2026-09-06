@@ -1,56 +1,58 @@
-// Tight ranged framing plus shared 3D interaction-target aiming.
+// Tight ranged framing plus shared, fail-safe 3D interaction-target aiming.
 (() => {
   'use strict';
 
-  const VERSION = 4;
+  const VERSION = 5;
   const SHOULDER_MODE = 'shoulderSurf';
-  const TIGHT_DISTANCE_TILES = 1.55; // Used to pull the native shoulder camera inward while a ranged weapon is actually ready.
+  const TIGHT_DISTANCE_TILES = 1.55; // Used to pull only the native shoulder-camera distance inward while a ranged weapon is ready.
   const DEFAULT_FOCUS_HORIZONTAL_OFFSET_TILES = 0.18; // Used as the ranged-focus-only horizontal shoulder preset until the player authors another value.
   const FOCUS_HORIZONTAL_MIN_TILES = -1; // Used by the ranged-focus Settings slider and validation.
   const FOCUS_HORIZONTAL_MAX_TILES = 1; // Used by the ranged-focus Settings slider and validation.
   const FOCUS_HORIZONTAL_STEP_TILES = 0.05; // Used by the ranged-focus Settings slider for parity with normal shoulder controls.
   const FOCUS_HORIZONTAL_STORAGE_KEY = 'hobunjiRangedFocusShoulderOffsetH'; // Used to persist only the ranged-focus shoulder preset.
-  const FOCUS_EASE_PER_SEC = 9; // Used to ease the ready zoom and horizontal shoulder framing without a snap.
+  const FOCUS_EASE_PER_SEC = 9; // Used to ease ready zoom and horizontal shoulder framing without a snap.
   const RESTORE_EPSILON = 0.002; // Used to stop tiny interpolation residue after ranged focus ends.
   const MELEE_RANGE_CAPTURE_PAD_S = 0.12; // Used to retain a windup-authored melee reach through its visible strike.
   const CROSSBOW_VERTICAL_PITCH_LIMIT_DEG = 70; // Used to clamp portrait-orbit stance pitching to the combat vertical-aim envelope.
-  const SURFACE_RAY_CACHE_MS = 16; // Used to cap the expensive recursive scene raycast to roughly once per rendered frame.
-  const SURFACE_RAY_MAX_WORLD = 40; // Used as the absolute scene-ray ceiling; attack-specific reach still decides which hit may be selected.
-  const SURFACE_BEFORE_PLAYER_PAD_WORLD = 0.12; // Used to reject geometry between the camera and player instead of aiming backward into camera occluders.
-  const SURFACE_NAME_IGNORE_RE = /(debug|helper|reticle|popup|particle|trail|ground[_ -]?shadow|outline)/i; // Used to exclude obvious non-world helper meshes from the shared aim surface.
+  const SURFACE_RAY_CACHE_MS = 16; // Used to cap the expensive scene raycast to roughly once per rendered frame.
+  const SURFACE_RAY_MAX_WORLD = 40; // Used as an absolute scene-ray ceiling; attack reach still decides which surface can be selected.
+  const SURFACE_BEFORE_PLAYER_PAD_WORLD = 0.12; // Used to reject camera-side geometry before the player's attack origin.
+  const SURFACE_NAME_IGNORE_RE = /(debug|helper|reticle|popup|particle|trail|ground[_ -]?shadow|outline)/i; // Used to exclude obvious non-world helper meshes.
 
-  let baseUpdate = null; // Used to preserve the ranged system's existing update before focus/aim bookkeeping runs.
-  let baseRangedInit = null; // Used to preserve RangedWeapons.init while replacing only its player aim ray.
-  let basePlayerIdlePose = null; // Used to preserve the authored ranged idle stance before adding vertical portrait-orbit rotation.
-  let installed = false; // Used to avoid wrapping RangedWeapons.update more than once.
-  let rangedAimInstalled = false; // Used to wrap RangedWeapons.init exactly once before game.js injects the normal camera ray.
-  let verticalStanceInstalled = false; // Used to wrap playerIdlePose exactly once.
-  let meleeAimInstalled = false; // Used to redirect player melee collision/HUD aim to the shared interaction target exactly once.
-  let meleeRangeCaptureInstalled = false; // Used to capture real per-attack melee reach once Combat.deps exists.
-  let rangedAimDeps = null; // Ranged-specific injected deps retained for projectile origin, interaction ray, and avatar metrics.
-  let rawRangedGetPlayerAimRay = null; // Original camera aim ray retained as a fallback if the interaction ray is unavailable.
-  let rawRangedGetPlayerInteractionRay = null; // Original 3D interaction ray used as the common player intent ray.
-  let rawRangedGetPlayerAimPitch = null; // Original vertical look pitch retained only as a fallback before a resolved target exists.
-  let rawMeleeAimDirection = null; // Original melee aim direction retained as a fallback if no interaction target can be built.
-  let rawMeleeAimPitch = null; // Original melee pitch retained as a fallback if no interaction target can be built.
-  let rawMeleeHit = null; // Original Combat.meleeHit retained so only the player aim direction is overridden.
+  let baseUpdate = null; // Preserves the ranged system's existing update before focus/aim bookkeeping runs.
+  let baseRangedInit = null; // Preserves RangedWeapons.init while replacing only its player aim ray.
+  let basePlayerIdlePose = null; // Preserves the authored ranged idle stance before adding vertical portrait-orbit rotation.
+  let installed = false; // Prevents wrapping RangedWeapons.update more than once.
+  let rangedAimInstalled = false; // Prevents wrapping RangedWeapons.init more than once.
+  let verticalStanceInstalled = false; // Prevents wrapping playerIdlePose more than once.
+  let meleeAimInstalled = false; // Prevents wrapping player melee aim/collision more than once.
+  let meleeRangeCaptureInstalled = false; // Prevents wrapping shared melee range reports more than once.
+  let rangedAimDeps = null; // Stores ranged-specific injected deps for projectile origin, interaction ray, scene and avatar metrics.
+  let rawRangedGetPlayerAimRay = null; // Stores the original camera aim ray as a last-resort fallback.
+  let rawRangedGetPlayerInteractionRay = null; // Stores the original centered 3D interaction ray as the common player-intent ray.
+  let rawRangedGetPlayerAimPitch = null; // Stores original vertical look pitch for fallback before a resolved target exists.
+  let rawMeleeAimDirection = null; // Stores original melee aim direction for fail-safe fallback.
+  let rawMeleeAimPitch = null; // Stores original melee pitch for fail-safe fallback.
+  let rawMeleeHit = null; // Stores original Combat.meleeHit so only player direction is decorated.
   let surfaceRaycaster = null; // Reused Three.js raycaster for first-visible-surface resolution.
-  let surfaceRayCache = null; // Same-frame cache of filtered scene hits for the current centered interaction ray.
-  let blend = 0; // Used to drive current ranged-focus interpolation from 0 (normal) to 1 (tight).
-  let baseDistanceTiles = null; // Used to restore the authored shoulder-camera distance after ranged focus ends.
-  let baseCombatHorizontal = null; // Used to restore the player's authored Combat horizontal shoulder offset after ranged focus ends.
-  let focusHorizontalOffsetTiles = loadFocusHorizontalOffset(); // Used as the independent ranged-focus horizontal target.
-  let horizontalModified = false; // Used to know whether the temporary Combat shoulder value still needs restoration.
-  let previousCombatStance = false; // Used to detect a fresh melee/ranged stance entry for Combat slider capture.
-  let combatCapturePending = false; // Used to wait one frame for game.js to sync its Combat shoulder preset before capturing it.
-  let ownSliderDispatch = false; // Used to distinguish synthetic focus writes from player-authored Settings changes.
-  let sliderListenerInstalled = false; // Used to bind the existing Combat shoulder slider once.
-  let focusControlInstalled = false; // Used to create/bind the separate ranged-focus slider once.
-  let activeMeleeRange = null; // Latest real melee attack reach captured at windup/release, overriding idle combo reach while active.
-  let lastResolvedAimTarget = null; // Mobile-readable copy of the most recently resolved ranged/melee interaction target.
+  let surfaceRayCache = null; // Same-frame cache of filtered scene hits for the current interaction ray.
+  let lastAimError = null; // Mobile-readable record of the latest caught aim resolver error.
+  let lastAimErrorSignature = ''; // Prevents the same bad scene node from spamming the in-game log every frame.
+  let blend = 0; // Drives current ranged-focus interpolation from 0 normal to 1 tight.
+  let baseDistanceTiles = null; // Restores authored shoulder-camera distance after ranged focus ends.
+  let baseCombatHorizontal = null; // Restores the player's authored Combat horizontal shoulder offset after focus ends.
+  let focusHorizontalOffsetTiles = loadFocusHorizontalOffset(); // Independent ranged-focus horizontal target.
+  let horizontalModified = false; // Tracks whether temporary Combat shoulder framing still needs restoration.
+  let previousCombatStance = false; // Detects fresh melee/ranged stance entry for Combat slider capture.
+  let combatCapturePending = false; // Waits one frame for game.js to sync its Combat shoulder preset before capture.
+  let ownSliderDispatch = false; // Distinguishes synthetic focus writes from player-authored Settings changes.
+  let sliderListenerInstalled = false; // Binds the existing Combat shoulder slider once.
+  let focusControlInstalled = false; // Creates/binds the separate ranged-focus slider once.
+  let activeMeleeRange = null; // Latest real melee attack reach captured at windup/release.
+  let lastResolvedAimTarget = null; // Mobile-readable copy of the latest resolved ranged/melee interaction target.
   let lastVerticalStance = null; // Mobile-readable copy of the latest crossbow/scatterbow portrait-orbit transform.
-  let lastFocusSignature = ''; // Used to keep the in-game debug log transition-only instead of per-frame spam.
-  let lastState = null; // Used by snapshot() for mobile/debug inspection without recomputing state mid-frame.
+  let lastFocusSignature = ''; // Keeps in-game focus logging transition-only.
+  let lastState = null; // Snapshot cache for mobile/debug inspection.
 
   function three() { return window.THREE || null; }
   function nowMs() { return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(); }
@@ -59,6 +61,20 @@
   function focusHorizontalSlider() { return document.getElementById('settingRangedFocusShoulderOffsetH'); }
   function focusHorizontalValueLabel() { return document.getElementById('settingRangedFocusShoulderOffsetHValue'); }
   function combatDeps() { return window.Combat?.deps || null; }
+
+  function errorText(error) {
+    return String(error?.stack || error?.message || error || 'unknown error');
+  }
+
+  function noteAimError(stage, error, object = null) {
+    const objectLabel = String(object?.name || object?.type || object?.constructor?.name || 'unknown-root');
+    const detail = errorText(error);
+    const signature = `${stage}|${objectLabel}|${detail}`;
+    lastAimError = { at: Date.now(), stage, object: objectLabel, detail };
+    if (signature === lastAimErrorSignature) return;
+    lastAimErrorSignature = signature;
+    window.__farmLog?.(`[combat-aim] ${stage} skipped ${objectLabel}: ${detail}`, 'warn', 'combat');
+  }
 
   function clampFocusHorizontal(value) {
     const number = Number(value);
@@ -142,8 +158,12 @@
     const deps = combatDeps();
     const THREE = three();
     if (!deps?.player || !THREE?.Vector3) return null;
-    const hitboxCenter = window.RangedWeapons?.actorHitbox?.(deps.player)?.center;
-    if (hitboxCenter?.clone) return hitboxCenter.clone();
+    try {
+      const hitboxCenter = window.RangedWeapons?.actorHitbox?.(deps.player)?.center;
+      if (hitboxCenter?.clone) return hitboxCenter.clone();
+    } catch (error) {
+      noteAimError('player-melee-origin', error);
+    }
     const tile = Number(deps.TILE) || 64;
     return new THREE.Vector3(
       (Number(deps.player.x) || 0) / tile,
@@ -153,9 +173,15 @@
   }
 
   function rawInteractionRay() {
-    const raw = rawRangedGetPlayerInteractionRay?.()
-      || combatDeps()?.getPlayerInteractionRay?.()
-      || rawRangedGetPlayerAimRay?.();
+    let raw = null;
+    try {
+      raw = rawRangedGetPlayerInteractionRay?.()
+        || combatDeps()?.getPlayerInteractionRay?.()
+        || rawRangedGetPlayerAimRay?.();
+    } catch (error) {
+      noteAimError('interaction-ray', error);
+      try { raw = rawRangedGetPlayerAimRay?.() || null; } catch (_) { raw = null; }
+    }
     const origin = vectorFrom(raw?.origin);
     const direction = vectorFrom(raw?.direction);
     if (!origin || !direction || direction.lengthSq() < 1e-8) return null;
@@ -198,17 +224,28 @@
     return materials.some(material => material && material.visible !== false && (material.opacity == null || Number(material.opacity) > 0.01));
   }
 
-  function playerOwnedAimMesh(object) {
-    const avatar = rangedAimDeps?.getPlayerAvatarGroup?.() || null;
-    const tool = combatDeps()?.toolHolder?.() || null;
-    return isDescendantOf(object, avatar) || isDescendantOf(object, tool);
+  function playerAimRoots() {
+    const roots = [];
+    try {
+      const avatar = rangedAimDeps?.getPlayerAvatarGroup?.();
+      if (avatar) roots.push(avatar);
+    } catch (error) {
+      noteAimError('player-avatar-root', error);
+    }
+    try {
+      const tool = combatDeps()?.toolHolder?.();
+      if (tool) roots.push(tool);
+    } catch (error) {
+      noteAimError('player-tool-root', error);
+    }
+    return roots;
   }
 
-  function validSurfaceHit(hit) {
+  function validSurfaceHit(hit, ignoredRoots) {
     const object = hit?.object;
     if (!object?.isMesh || !hit?.point || !Number.isFinite(Number(hit.distance))) return false;
-    if (!hierarchyVisible(object) || !materialCanBeSurface(object)) return false;
-    if (playerOwnedAimMesh(object) || hierarchyHasIgnoredName(object)) return false;
+    if (!hierarchyVisible(object) || !materialCanBeSurface(object) || hierarchyHasIgnoredName(object)) return false;
+    if ((ignoredRoots || []).some(root => isDescendantOf(object, root))) return false;
     return true;
   }
 
@@ -218,20 +255,64 @@
       .map(value => Number(value).toFixed(4)).join('|');
   }
 
+  function activeScene() {
+    try {
+      return combatDeps()?.getActiveScene?.()
+        || rangedAimDeps?.getActiveScene?.()
+        || window.GridTileAccessors?.getActiveScene?.()
+        || null;
+    } catch (error) {
+      noteAimError('active-scene', error);
+      return null;
+    }
+  }
+
   function cachedSurfaceHits(ray) {
     const THREE = three();
-    const scene = combatDeps()?.getActiveScene?.() || rangedAimDeps?.getActiveScene?.() || null;
+    const scene = activeScene();
     if (!THREE?.Raycaster || !scene?.children || !ray) return [];
     const at = nowMs();
     const signature = interactionRaySignature(ray);
     if (surfaceRayCache && surfaceRayCache.scene === scene && surfaceRayCache.signature === signature && at - surfaceRayCache.at <= SURFACE_RAY_CACHE_MS) {
       return surfaceRayCache.hits;
     }
+
     if (!surfaceRaycaster) surfaceRaycaster = new THREE.Raycaster();
-    surfaceRaycaster.set(ray.origin, ray.direction);
-    surfaceRaycaster.near = 0;
-    surfaceRaycaster.far = SURFACE_RAY_MAX_WORLD;
-    const hits = surfaceRaycaster.intersectObjects(scene.children, true).filter(validSurfaceHit);
+    const ignoredRoots = playerAimRoots();
+    const hits = [];
+    try {
+      surfaceRaycaster.set(ray.origin, ray.direction);
+      surfaceRaycaster.near = 0;
+      surfaceRaycaster.far = SURFACE_RAY_MAX_WORLD;
+    } catch (error) {
+      noteAimError('surface-ray-setup', error);
+      surfaceRayCache = { scene, signature, at, hits };
+      return hits;
+    }
+
+    // Do not call intersectObjects(scene.children, true) as one monolithic
+    // operation. One malformed/custom scene node can throw inside Three.js and,
+    // because Three is CDN-hosted, browsers surface that as the useless masked
+    // "Script error.". Isolating each top-level root lets us skip only the bad
+    // root and keep the rest of combat + the native camera alive.
+    for (const root of Array.from(scene.children)) {
+      if (!root || ignoredRoots.some(owned => isDescendantOf(owned, root))) continue;
+      const localHits = [];
+      try {
+        surfaceRaycaster.intersectObject(root, true, localHits);
+      } catch (error) {
+        noteAimError('surface-ray-root', error, root);
+        continue;
+      }
+      for (const hit of localHits) {
+        try {
+          if (validSurfaceHit(hit, ignoredRoots)) hits.push(hit);
+        } catch (error) {
+          noteAimError('surface-hit-filter', error, hit?.object || root);
+        }
+      }
+    }
+    hits.sort((a, b) => Number(a.distance) - Number(b.distance));
     surfaceRayCache = { scene, signature, at, hits };
     return hits;
   }
@@ -243,39 +324,6 @@
       node = node.parent || null;
     }
     return object?.type || 'mesh';
-  }
-
-  function resolveInteractionAimTarget(maxRangeWorld, attackOrigin, metadata = {}) {
-    const ray = rawInteractionRay();
-    if (!ray || !attackOrigin || !Number.isFinite(Number(maxRangeWorld)) || Number(maxRangeWorld) <= 0) return null;
-    const range = Number(maxRangeWorld);
-    const dx = attackOrigin.x - ray.origin.x;
-    const dy = attackOrigin.y - ray.origin.y;
-    const dz = attackOrigin.z - ray.origin.z;
-    const alongToAttack = dx * ray.direction.x + dy * ray.direction.y + dz * ray.direction.z;
-    const fallbackRayDistance = Math.max(0.5, alongToAttack + range);
-    const minimumSurfaceDistance = Math.max(0, alongToAttack - SURFACE_BEFORE_PLAYER_PAD_WORLD);
-    const hits = cachedSurfaceHits(ray);
-    const hit = hits.find(candidate => candidate.distance >= minimumSurfaceDistance && candidate.distance <= fallbackRayDistance + 1e-4) || null;
-    const point = hit?.point?.clone?.() || ray.origin.clone().addScaledVector(ray.direction, fallbackRayDistance);
-    let direction = point.clone().sub(attackOrigin);
-    if (direction.lengthSq() < 1e-8) direction = ray.direction.clone();
-    else direction.normalize();
-    const target = {
-      ...metadata,
-      source: hit ? 'interaction-first-surface' : 'interaction-range-fallback',
-      maxRangeWorld: range,
-      rayOrigin: ray.origin,
-      rayDirection: ray.direction,
-      attackOrigin,
-      point,
-      direction,
-      rayDistance: hit ? Number(hit.distance) : fallbackRayDistance,
-      attackDistance: distanceBetween(attackOrigin, point),
-      surfaceName: hit ? surfaceLabel(hit.object) : null,
-    };
-    lastResolvedAimTarget = plainAimTarget(target);
-    return target;
   }
 
   function plainAimTarget(target) {
@@ -298,52 +346,134 @@
     };
   }
 
+  function resolveInteractionAimTarget(maxRangeWorld, attackOrigin, metadata = {}) {
+    const ray = rawInteractionRay();
+    if (!ray || !attackOrigin || !Number.isFinite(Number(maxRangeWorld)) || Number(maxRangeWorld) <= 0) return null;
+    try {
+      const range = Number(maxRangeWorld);
+      const dx = attackOrigin.x - ray.origin.x;
+      const dy = attackOrigin.y - ray.origin.y;
+      const dz = attackOrigin.z - ray.origin.z;
+      const alongToAttack = dx * ray.direction.x + dy * ray.direction.y + dz * ray.direction.z;
+      const fallbackRayDistance = Math.max(0.5, alongToAttack + range);
+      const minimumSurfaceDistance = Math.max(0, alongToAttack - SURFACE_BEFORE_PLAYER_PAD_WORLD);
+      const hits = cachedSurfaceHits(ray);
+      const hit = hits.find(candidate => candidate.distance >= minimumSurfaceDistance && candidate.distance <= fallbackRayDistance + 1e-4) || null;
+      const point = hit?.point?.clone?.() || ray.origin.clone().addScaledVector(ray.direction, fallbackRayDistance);
+      let direction = point.clone().sub(attackOrigin);
+      if (direction.lengthSq() < 1e-8) direction = ray.direction.clone();
+      else direction.normalize();
+      const target = {
+        ...metadata,
+        source: hit ? 'interaction-first-surface' : 'interaction-range-fallback',
+        maxRangeWorld: range,
+        rayOrigin: ray.origin,
+        rayDirection: ray.direction,
+        attackOrigin,
+        point,
+        direction,
+        rayDistance: hit ? Number(hit.distance) : fallbackRayDistance,
+        attackDistance: distanceBetween(attackOrigin, point),
+        surfaceName: hit ? surfaceLabel(hit.object) : null,
+      };
+      lastResolvedAimTarget = plainAimTarget(target);
+      return target;
+    } catch (error) {
+      noteAimError('resolve-target', error);
+      try {
+        const range = Number(maxRangeWorld);
+        const point = attackOrigin.clone().addScaledVector(ray.direction, range);
+        const fallback = {
+          ...metadata,
+          source: 'interaction-safe-fallback',
+          maxRangeWorld: range,
+          rayOrigin: ray.origin,
+          rayDirection: ray.direction,
+          attackOrigin,
+          point,
+          direction: ray.direction.clone(),
+          rayDistance: range,
+          attackDistance: range,
+          surfaceName: null,
+        };
+        lastResolvedAimTarget = plainAimTarget(fallback);
+        return fallback;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
   function rangedInteractionAimTarget(itemKey = window.RangedWeapons?.equippedRangedKey?.()) {
-    const def = itemKey ? window.RangedWeapons?.config?.[itemKey] : null;
-    const rangeTiles = Number(def?.rangeTiles);
-    const origin = playerProjectileOrigin(rangedAimDeps || combatDeps());
-    if (!itemKey || !origin || !Number.isFinite(rangeTiles) || rangeTiles <= 0) return null;
-    return resolveInteractionAimTarget(rangeTiles, origin, { mode: 'ranged', itemKey, rangeTiles });
+    try {
+      const def = itemKey ? window.RangedWeapons?.config?.[itemKey] : null;
+      const rangeTiles = Number(def?.rangeTiles);
+      const origin = playerProjectileOrigin(rangedAimDeps || combatDeps());
+      if (!itemKey || !origin || !Number.isFinite(rangeTiles) || rangeTiles <= 0) return null;
+      return resolveInteractionAimTarget(rangeTiles, origin, { mode: 'ranged', itemKey, rangeTiles });
+    } catch (error) {
+      noteAimError('ranged-target', error);
+      return null;
+    }
   }
 
   function rangedInteractionAimRay() {
-    const target = rangedInteractionAimTarget();
-    if (target?.attackOrigin && target?.direction) return { origin: target.attackOrigin.clone(), direction: target.direction.clone() };
-    return rawRangedGetPlayerAimRay?.() || rawRangedGetPlayerInteractionRay?.() || null;
+    try {
+      const target = rangedInteractionAimTarget();
+      if (target?.attackOrigin && target?.direction) return { origin: target.attackOrigin.clone(), direction: target.direction.clone() };
+    } catch (error) {
+      noteAimError('ranged-ray', error);
+    }
+    try { return rawRangedGetPlayerAimRay?.() || rawRangedGetPlayerInteractionRay?.() || null; }
+    catch (_) { return null; }
   }
 
   function currentMeleeRangePx() {
     if (activeMeleeRange && activeMeleeRange.expiresAt >= nowMs()) return activeMeleeRange.rangePx;
     if (activeMeleeRange) activeMeleeRange = null;
     const deps = combatDeps();
-    const comboId = window.Combat?.loadout?.getSlot?.('tap1') || deps?.currentComboAbilityId?.() || 'swingCombo';
-    const steps = window.Combat?.comboData?.[comboId];
-    const baseRange = Number(deps?.weaponAbility?.('cut')?.rangePx) || (Number(deps?.TILE) || 64) * 1.05;
-    const rangeScale = Number(window.Combat?.comboData?.RANGE_SCALE);
-    const scale = Number.isFinite(rangeScale) ? rangeScale : 1;
-    const maxStepMul = Array.isArray(steps) && steps.length ? Math.max(...steps.map(step => Number(step?.rangeMul) || 1)) : 1;
-    const effects = window.CombatProgression?.getEffects?.(deps?.currentWeaponKey?.(), comboId) || { stats: {} };
-    return baseRange * maxStepMul * scale * (1 + (Number(effects?.stats?.rangeMul) || 0));
+    try {
+      const comboId = window.Combat?.loadout?.getSlot?.('tap1') || deps?.currentComboAbilityId?.() || 'swingCombo';
+      const steps = window.Combat?.comboData?.[comboId];
+      const baseRange = Number(deps?.weaponAbility?.('cut')?.rangePx) || (Number(deps?.TILE) || 64) * 1.05;
+      const rangeScale = Number(window.Combat?.comboData?.RANGE_SCALE);
+      const scale = Number.isFinite(rangeScale) ? rangeScale : 1;
+      const maxStepMul = Array.isArray(steps) && steps.length ? Math.max(...steps.map(step => Number(step?.rangeMul) || 1)) : 1;
+      const effects = window.CombatProgression?.getEffects?.(deps?.currentWeaponKey?.(), comboId) || { stats: {} };
+      return baseRange * maxStepMul * scale * (1 + (Number(effects?.stats?.rangeMul) || 0));
+    } catch (error) {
+      noteAimError('melee-range', error);
+      return (Number(deps?.TILE) || 64) * 1.05;
+    }
   }
 
   function meleeInteractionAimTarget() {
-    const deps = combatDeps();
-    const origin = playerMeleeOrigin();
-    if (!deps?.player || !origin) return null;
-    const rangePx = currentMeleeRangePx();
-    const tile = Number(deps.TILE) || 64;
-    const rangeTiles = Math.max(0.05, rangePx / tile);
-    return resolveInteractionAimTarget(rangeTiles, origin, {
-      mode: 'melee',
-      itemKey: deps.currentWeaponKey?.() || null,
-      rangeTiles,
-      rangePx,
-    });
+    try {
+      const deps = combatDeps();
+      const origin = playerMeleeOrigin();
+      if (!deps?.player || !origin) return null;
+      const rangePx = currentMeleeRangePx();
+      const tile = Number(deps.TILE) || 64;
+      const rangeTiles = Math.max(0.05, rangePx / tile);
+      return resolveInteractionAimTarget(rangeTiles, origin, {
+        mode: 'melee',
+        itemKey: deps.currentWeaponKey?.() || null,
+        rangeTiles,
+        rangePx,
+      });
+    } catch (error) {
+      noteAimError('melee-target', error);
+      return null;
+    }
   }
 
   function rangedResolvedAimPitch() {
-    const target = rangedInteractionAimTarget();
-    if (target?.direction) return Math.asin(Math.max(-1, Math.min(1, target.direction.y)));
+    try {
+      const target = rangedInteractionAimTarget();
+      if (target?.direction) return Math.asin(Math.max(-1, Math.min(1, target.direction.y)));
+    } catch (error) {
+      noteAimError('ranged-pitch', error);
+    }
     const fallback = Number(rawRangedGetPlayerAimPitch?.());
     return Number.isFinite(fallback) ? fallback : 0;
   }
@@ -358,12 +488,17 @@
     const deps = rangedAimDeps || combatDeps();
     const player = deps?.player;
     if (!player) return null;
-    const avatar = deps?.getPlayerAvatarGroup?.();
-    const toolBaseY = Number(avatar?.userData?.handAttachY);
-    const playerBaseY = playerWorldBaseY(deps);
-    const portraitCenterY = Number(window.RangedWeapons?.actorHitbox?.(player)?.center?.y);
-    if (![toolBaseY, playerBaseY, portraitCenterY].every(Number.isFinite)) return null;
-    return { toolBaseY, portraitPivotY: portraitCenterY - playerBaseY };
+    try {
+      const avatar = deps?.getPlayerAvatarGroup?.();
+      const toolBaseY = Number(avatar?.userData?.handAttachY);
+      const playerBaseY = playerWorldBaseY(deps);
+      const portraitCenterY = Number(window.RangedWeapons?.actorHitbox?.(player)?.center?.y);
+      if (![toolBaseY, playerBaseY, portraitCenterY].every(Number.isFinite)) return null;
+      return { toolBaseY, portraitPivotY: portraitCenterY - playerBaseY };
+    } catch (error) {
+      noteAimError('crossbow-pivot', error);
+      return null;
+    }
   }
 
   function transformCrossbowPose(basePose, pitchRad = rangedResolvedAimPitch()) {
@@ -410,7 +545,8 @@
     ranged.playerIdlePose = function interactionAimAwarePlayerIdlePose(itemKey) {
       const pose = basePlayerIdlePose(itemKey);
       if (!pose || !heldState().rangedOut || !isCrossbowStyle(itemKey) || ranged.isLoaded?.(itemKey) !== true) return pose;
-      return transformCrossbowPose(pose);
+      try { return transformCrossbowPose(pose); }
+      catch (error) { noteAimError('crossbow-idle-pose', error); return pose; }
     };
     verticalStanceInstalled = true;
     return true;
@@ -433,8 +569,9 @@
         wrappedDeps.triggerRangedWeaponVisual = function interactionAimAwareRangedVisual(durationS, options = {}) {
           const itemKey = injectedDeps?.getEquippedRangedKey?.();
           const loadedFire = itemKey && isCrossbowStyle(itemKey) && window.RangedWeapons?.isLoaded?.(itemKey) === true;
-          const nextOptions = loadedFire && options?.pose ? { ...options, pose: transformCrossbowPoseSet(options.pose) } : options;
-          return rawTriggerRangedWeaponVisual(durationS, nextOptions);
+          if (!loadedFire || !options?.pose) return rawTriggerRangedWeaponVisual(durationS, options);
+          try { return rawTriggerRangedWeaponVisual(durationS, { ...options, pose: transformCrossbowPoseSet(options.pose) }); }
+          catch (error) { noteAimError('crossbow-fire-pose', error); return rawTriggerRangedWeaponVisual(durationS, options); }
         };
       }
       rangedAimDeps = wrappedDeps;
@@ -462,21 +599,21 @@
     const rawSwing = deps.triggerWeaponSwingVisual;
     if (typeof rawSwing === 'function') {
       deps.triggerWeaponSwingVisual = function interactionRangeAwareSwing(durationS, options = {}) {
-        captureMeleeRange(options?.coneRangePx, Number(durationS) + (Number(options?.holdS) || 0), 'swing-windup');
+        try { captureMeleeRange(options?.coneRangePx, Number(durationS) + (Number(options?.holdS) || 0), 'swing-windup'); } catch (_) {}
         return rawSwing.apply(this, arguments);
       };
     }
     const rawHold = deps.triggerWeaponHoldVisual;
     if (typeof rawHold === 'function') {
       deps.triggerWeaponHoldVisual = function interactionRangeAwareHold(durationS, options = {}) {
-        captureMeleeRange(options?.coneRangePx, Number(durationS) + (Number(options?.holdS) || 0), 'hold-windup');
+        try { captureMeleeRange(options?.coneRangePx, Number(durationS) + (Number(options?.holdS) || 0), 'hold-windup'); } catch (_) {}
         return rawHold.apply(this, arguments);
       };
     }
     const rawLunge = deps.beginCombatLunge;
     if (typeof rawLunge === 'function') {
-      deps.beginCombatLunge = function interactionRangeAwareLunge(distancePx, durationS, hopUnits, options = {}) {
-        captureMeleeRange(options?.rangePx, durationS, 'lunge/strike');
+      deps.beginCombatLunge = function interactionRangeAwareLunge(distancePx, durationS, hopUnits, hitTest = null) {
+        try { captureMeleeRange(hitTest?.rangePx, durationS, 'lunge/strike'); } catch (_) {}
         return rawLunge.apply(this, arguments);
       };
     }
@@ -490,19 +627,33 @@
     rawMeleeAimDirection = deps.getPlayerMeleeAimDirection;
     rawMeleeAimPitch = deps.getPlayerMeleeAimPitch;
     deps.getPlayerMeleeAimDirection = function sharedInteractionMeleeDirection() {
-      const target = meleeInteractionAimTarget();
-      return target?.direction ? plainVector(target.direction) : rawMeleeAimDirection?.();
+      try {
+        const target = meleeInteractionAimTarget();
+        if (target?.direction) return plainVector(target.direction);
+      } catch (error) {
+        noteAimError('melee-direction-callback', error);
+      }
+      try { return rawMeleeAimDirection?.(); } catch (_) { return null; }
     };
     deps.getPlayerMeleeAimPitch = function sharedInteractionMeleePitch() {
-      const target = meleeInteractionAimTarget();
-      return target?.direction ? Math.asin(Math.max(-1, Math.min(1, target.direction.y))) : (rawMeleeAimPitch?.() || 0);
+      try {
+        const target = meleeInteractionAimTarget();
+        if (target?.direction) return Math.asin(Math.max(-1, Math.min(1, target.direction.y)));
+      } catch (error) {
+        noteAimError('melee-pitch-callback', error);
+      }
+      try { return rawMeleeAimPitch?.() || 0; } catch (_) { return 0; }
     };
     if (!rawMeleeHit && typeof window.Combat?.meleeHit === 'function') {
       rawMeleeHit = window.Combat.meleeHit.bind(window.Combat);
       window.Combat.meleeHit = function interactionTargetMeleeHit(attacker, targetActor, options = {}) {
         if (attacker === deps.player) {
-          const target = meleeInteractionAimTarget();
-          if (target?.direction) options = { ...options, direction: plainVector(target.direction) };
+          try {
+            const target = meleeInteractionAimTarget();
+            if (target?.direction) options = { ...options, direction: plainVector(target.direction) };
+          } catch (error) {
+            noteAimError('melee-hit-direction', error);
+          }
         }
         return rawMeleeHit(attacker, targetActor, options);
       };
@@ -512,8 +663,12 @@
   }
 
   function thrownCharge(itemKey) {
-    const snapshot = window.HobunjiRangedWeaponArchetypes?.debugSnapshot?.();
-    return snapshot?.thrownCharge?.itemKey === itemKey ? snapshot.thrownCharge : null;
+    try {
+      const snapshot = window.HobunjiRangedWeaponArchetypes?.debugSnapshot?.();
+      return snapshot?.thrownCharge?.itemKey === itemKey ? snapshot.thrownCharge : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   function focusState() {
@@ -606,7 +761,7 @@
     lastFocusSignature = signature;
     const distanceText = Number.isFinite(distanceTiles) ? distanceTiles.toFixed(2) : 'n/a';
     const horizontalText = Number.isFinite(horizontalOffset) ? horizontalOffset.toFixed(2) : 'n/a';
-    window.__farmLog?.(`[ranged-camera] ${state.active ? 'focus ON' : 'focus off'}: ${state.reason}; ${state.itemKey || 'none'}; distance=${distanceText}; focusShoulder=${focusHorizontalOffsetTiles.toFixed(2)}; appliedHorizontal=${horizontalText}; native camera untouched; attacks use shared 3D interaction target.`, 'combat');
+    window.__farmLog?.(`[ranged-camera] ${state.active ? 'focus ON' : 'focus off'}: ${state.reason}; ${state.itemKey || 'none'}; distance=${distanceText}; focusShoulder=${focusHorizontalOffsetTiles.toFixed(2)}; appliedHorizontal=${horizontalText}; native camera untouched; attacks use fail-safe 3D interaction target.`, 'combat');
   }
 
   function installSliderListener() {
@@ -673,7 +828,12 @@
     if (!state.active && blend < RESTORE_EPSILON) blend = 0;
     const distanceTiles = applyDistance();
     const horizontalOffset = applyHorizontal(state);
-    const aimTarget = state.rangedOut ? rangedInteractionAimTarget(state.itemKey) : state.meleeOut ? meleeInteractionAimTarget() : null;
+    let aimTarget = null;
+    try {
+      aimTarget = state.rangedOut ? rangedInteractionAimTarget(state.itemKey) : state.meleeOut ? meleeInteractionAimTarget() : null;
+    } catch (error) {
+      noteAimError('frame-target', error);
+    }
     lastState = {
       ...state,
       blend,
@@ -694,6 +854,7 @@
       interactionAimTarget: plainAimTarget(aimTarget),
       activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,
       verticalStance: lastVerticalStance ? { ...lastVerticalStance } : null,
+      lastAimError: lastAimError ? { ...lastAimError } : null,
     };
     logTransition(state, distanceTiles, horizontalOffset);
     previousCombatStance = state.combatStance;
@@ -708,7 +869,8 @@
     baseUpdate = ranged.update.bind(ranged);
     ranged.update = function rangedUpdateWithCameraFocus(dt) {
       const result = baseUpdate(dt);
-      updateCameraFocus(dt);
+      try { updateCameraFocus(dt); }
+      catch (error) { noteAimError('frame-update', error); }
       return result;
     };
     installed = true;
@@ -767,6 +929,7 @@
       interactionAimTarget: lastResolvedAimTarget ? { ...lastResolvedAimTarget } : currentInteractionAimTarget(),
       activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,
       verticalStance: lastVerticalStance ? { ...lastVerticalStance } : null,
+      lastAimError: lastAimError ? { ...lastAimError } : null,
     },
     tuning: {
       tightDistanceTiles: TIGHT_DISTANCE_TILES,
