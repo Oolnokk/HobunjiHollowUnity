@@ -3,13 +3,14 @@
 
   // One player-owned portable campfire may exist at a time. It can be placed
   // in a wilderness zone or on a procedural Town Mine floor, persists as
-  // world-member state across map changes, game sessions, and wilderness
-  // terrain reshapes, and silently replaces the previous campfire when a new
-  // kit is used. Mine-floor camps are the one exception to indefinite
-  // persistence: dying anywhere in the Town Mine destroys the currently
-  // placed campfire if that campfire is underground. Reuses the authored
-  // campfire furniture + its existing Save/Cook/Brew/Return-to-Camp
-  // interactions rather than creating a second underground-only camp system.
+  // world-member state across map changes and game sessions, and silently
+  // replaces the previous campfire when a new kit is used. Same-year Tothal
+  // reconstruction is only an in-memory replay of the already-saved terrain,
+  // so it must not delete the restored camp. A genuine new-year Tothal Shift
+  // still clears a wilderness camp because the terrain under its coordinates
+  // has actually changed. Mine-floor camps are also cleared by mine death.
+  // Reuses the authored campfire furniture + its existing
+  // Save/Cook/Brew/Return-to-Camp interactions.
   const KIT_ITEM_KEY = 'campfireKitFurniture';
   const DEBUG_HISTORY_LIMIT = 24; // Caps the in-module persistence trace exposed by getDebugState().
 
@@ -38,6 +39,30 @@
     };
     debugHistory.push(entry);
     if (debugHistory.length > DEBUG_HISTORY_LIMIT) debugHistory.splice(0, debugHistory.length - DEBUG_HISTORY_LIMIT);
+    const stateLabel = entry.state
+      ? `${entry.state.mapId}@${Number(entry.state.x).toFixed(1)},${Number(entry.state.z).toFixed(1)}`
+      : 'none'; // Used by the existing mobile-visible Debug log so console access is not required.
+    window.__farmLog?.(`[campfire] ${event} area=${entry.area || 'none'} state=${stateLabel}`);
+  }
+
+  // performTothalShift() also runs once on every fresh page load to rebuild
+  // this session's deterministic same-year zone layouts. During that replay,
+  // world.lastTothalYear already equals CalendarSystem.yearNumber(); during a
+  // real new-year shift it does not get updated until after all zones finish.
+  // Keep the legacy clearIfZone() call safe by proving which case we are in
+  // here, without requiring game.js to maintain a second campfire-specific
+  // lifecycle flag.
+  function isSameYearTothalReplay() {
+    const worldId = window.__hobunjiPlayerProfile?.worldId;
+    const currentYear = Number(window.CalendarSystem?.yearNumber?.());
+    if (!worldId || !Number.isFinite(currentYear)) return false;
+    try {
+      const meta = JSON.parse(window.localStorage?.getItem('hobunjiSaveMeta') || 'null');
+      const savedYear = (meta?.worlds || []).find(world => world.id === worldId)?.lastTothalYear;
+      return savedYear != null && Number(savedYear) === currentYear;
+    } catch {
+      return false;
+    }
   }
 
   function supportsArea(area = deps?.getCurrentArea?.()) {
@@ -156,15 +181,21 @@
     return true;
   }
 
-  // Legacy name retained because game.js already calls this during a Tothal
-  // Shift. A terrain rebuild invalidates only the old scene object, not the
-  // player's saved camp location. The next visual reconciliation re-samples
-  // surface height against the rebuilt terrain while x/z remain persistent.
+  // Legacy name retained because game.js calls this from both a real Tothal
+  // Shift and the same-year boot reconstruction. Only the real shift destroys
+  // the camp. The boot replay is rebuilding identical deterministic terrain,
+  // so deleting here would erase a correctly restored save moments after load.
   function clearIfZone(mapId) {
     if (!state || state.mapId !== mapId || !deps.isZoneArea?.(mapId)) return false;
-    removeVisual();
-    recordDebug('zone-regeneration-preserved', { mapId });
-    return true;
+    if (isSameYearTothalReplay()) {
+      removeVisual();
+      recordDebug('same-year-rebuild-preserved', {
+        mapId,
+        tothalYear: Number(window.CalendarSystem?.yearNumber?.()),
+      });
+      return true;
+    }
+    return clear('tothal-shift');
   }
 
   // A death anywhere on a Town Mine floor ends the underground camp. A
@@ -253,18 +284,10 @@
   function serialize() { return state ? { ...state } : null; }
 
   function restore(saved) {
-    // Undefined means the caller did not supply campfire data at all; never
-    // reinterpret a missing field as an instruction to destroy live state.
-    // Onboarding normalizes an intentionally empty save slot to explicit null.
-    if (saved === undefined) {
-      recordDebug('restore-skipped-missing-field');
-      return false;
-    }
     state = saved && saved.mapId ? { ...saved } : null;
     returnPending = false;
     removeVisual();
     recordDebug('restore', { suppliedState: !!(saved && saved.mapId) });
-    return true;
   }
 
   function getDebugState() {
