@@ -30,7 +30,7 @@
   // setLayerRadius/setLayerOpacity and their Settings-tab sliders) — these
   // are just the startup defaults.
   const LAYER_CONFIG = [
-    { defaultRadiusTiles: 2.2, height: 6.5, defaultOpacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
+    { defaultRadiusTiles: 4, height: 6.5, defaultOpacity: 0.14, repeatX: 5, repeatY: 1.3, driftSpeed: 0.007, spinSpeed: 0.012 },
     { defaultRadiusTiles: 3.7, height: 8.5, defaultOpacity: 0.26, repeatX: 7, repeatY: 1.7, driftSpeed: -0.005, spinSpeed: -0.008 },
     { defaultRadiusTiles: 15, height: 10.5, defaultOpacity: 0.46, repeatX: 9, repeatY: 2.1, driftSpeed: 0.004, spinSpeed: 0.006 },
   ];
