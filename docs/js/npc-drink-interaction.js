@@ -94,6 +94,20 @@
       return false;
     }
 
+    let carry = ambientCarries.get(key);
+    if (carry && (carry.root !== root || carry.avatarGroup !== avatarGroup || carry.itemKey !== itemKey)) {
+      disposeAmbientCarry(carry);
+      ambientCarries.delete(key);
+      carry = null;
+    }
+
+    // Already attached to this exact root/avatarGroup/item — the hand anchor
+    // (static portrait userData) and neutral pose (frame 0 of the drink
+    // animation) can't have changed since creation, so there's nothing left
+    // to recompute here. Callers may invoke this every frame; only the first
+    // call after a real change (or the initial attach, below) does any work.
+    if (carry) return true;
+
     const animation = deps.getDrinkAnimation?.();
     const itemDef = deps.getItemDef?.(itemKey);
     const neutralPose = animation ? deps.poseAt?.(animation, 0) : null;
@@ -102,37 +116,26 @@
       return false;
     }
 
-    let carry = ambientCarries.get(key);
-    if (carry && (carry.root !== root || carry.avatarGroup !== avatarGroup || carry.itemKey !== itemKey)) {
-      disposeAmbientCarry(carry);
-      ambientCarries.delete(key);
-      carry = null;
-    }
-
-    if (!carry) {
-      const { THREE } = deps;
-      const holder = new THREE.Group(); // Persistent local-space bottle holder; updated against the current hand anchor each frame.
-      holder.name = `npc_ambient_drink_holder_${key}`;
-      const bottlePlane = deps.makeBottlePlane?.({ key: itemKey, icon: itemDef.icon, label: itemDef.label });
-      if (!bottlePlane) return false;
-      holder.add(bottlePlane);
-      root.add(holder);
-      carry = {
-        ownerId: key,
-        root,
-        avatarGroup,
-        itemKey,
-        holder,
-        bottlePlane,
-        hand: npcHandAnchor({ avatarGroup }),
-        poseQuaternion: makePoseQuaternion(THREE),
-      };
-      ambientCarries.set(key, carry);
-      log(`NPC ambient bottle start: owner=${key} item=${itemKey}`);
-    }
-
-    carry.hand = npcHandAnchor({ avatarGroup });
+    const { THREE } = deps;
+    const holder = new THREE.Group(); // Persistent local-space bottle holder; posed once below against the hand anchor, which doesn't move while attached.
+    holder.name = `npc_ambient_drink_holder_${key}`;
+    const bottlePlane = deps.makeBottlePlane?.({ key: itemKey, icon: itemDef.icon, label: itemDef.label });
+    if (!bottlePlane) return false;
+    holder.add(bottlePlane);
+    root.add(holder);
+    carry = {
+      ownerId: key,
+      root,
+      avatarGroup,
+      itemKey,
+      holder,
+      bottlePlane,
+      hand: npcHandAnchor({ avatarGroup }),
+      poseQuaternion: makePoseQuaternion(THREE),
+    };
+    ambientCarries.set(key, carry);
     applyHolderPose(carry, neutralPose);
+    log(`NPC ambient bottle start: owner=${key} item=${itemKey}`);
     return true;
   }
 

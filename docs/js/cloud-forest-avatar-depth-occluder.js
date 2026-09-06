@@ -29,9 +29,29 @@
       || null;
   }
 
+  function belongsToScene(object, scene) {
+    for (let node = object; node; node = node.parent) if (node === scene) return true;
+    return false;
+  }
+
+  let cachedPlayerRoot = null; // Player root this sync() saw last call — a full rig traverse only reruns when it changes.
+  let cachedPlayerMesh = null; // Portrait mesh found under cachedPlayerRoot, reused while still attached there.
+
   function playerPortraitMesh() {
     const root = playerRoot();
-    if (!root?.traverse) return null;
+    if (!root?.traverse) {
+      cachedPlayerRoot = null;
+      cachedPlayerMesh = null;
+      return null;
+    }
+    // The scored mesh's identity is stable frame to frame — only the root
+    // being rebuilt (a new root object) or the cached mesh being detached
+    // from it invalidates the cache. Runs once per frame from sync(); without
+    // this, every frame re-traversed and re-scored the entire player rig
+    // just to usually land on the exact same mesh again.
+    if (root === cachedPlayerRoot && cachedPlayerMesh && belongsToScene(cachedPlayerMesh, root)) {
+      return cachedPlayerMesh;
+    }
     let best = null;
     let bestScore = -1;
     root.traverse(object => {
@@ -50,12 +70,9 @@
         bestScore = score;
       }
     });
-    return bestScore > 0 ? best : null;
-  }
-
-  function belongsToScene(object, scene) {
-    for (let node = object; node; node = node.parent) if (node === scene) return true;
-    return false;
+    cachedPlayerRoot = root;
+    cachedPlayerMesh = bestScore > 0 ? best : null;
+    return cachedPlayerMesh;
   }
 
   function activeShoulderPet(activeScene) {

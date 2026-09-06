@@ -79,11 +79,58 @@
     return { minX, maxX, minZ, maxZ, baseY, topY };
   }
 
+  // Tile-cell spatial index over `supports`, so matchingSupports only checks
+  // the handful of supports actually near a query point instead of scanning
+  // every registered porch/furniture box in the area on every call (this
+  // backs npcSurfaceY, called for every NPC/player every frame). Supports
+  // are authored in the same 1-world-unit-per-tile space as the tile grid,
+  // so a support box is indexed under every integer tile cell it overlaps —
+  // expanded by SUPPORT_EDGE_EPSILON so the existing edge-tolerance in the
+  // exact bounds check below can never see a point whose cell the box wasn't
+  // also indexed into.
+  const supportCells = new Map(); // "cx,cz" -> Set<supportId>
+
+  function cellKey(cx, cz) {
+    return `${cx},${cz}`;
+  }
+
+  function cellsForBounds(bounds) {
+    const minCx = Math.floor(bounds.minX - SUPPORT_EDGE_EPSILON);
+    const maxCx = Math.floor(bounds.maxX + SUPPORT_EDGE_EPSILON);
+    const minCz = Math.floor(bounds.minZ - SUPPORT_EDGE_EPSILON);
+    const maxCz = Math.floor(bounds.maxZ + SUPPORT_EDGE_EPSILON);
+    const cells = [];
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cz = minCz; cz <= maxCz; cz++) cells.push(cellKey(cx, cz));
+    }
+    return cells;
+  }
+
+  function indexEntry(entry) {
+    for (const key of cellsForBounds(entry.bounds)) {
+      let set = supportCells.get(key);
+      if (!set) supportCells.set(key, set = new Set());
+      set.add(entry.id);
+    }
+  }
+
+  function unindexEntry(entry) {
+    if (!entry) return;
+    for (const key of cellsForBounds(entry.bounds)) {
+      const set = supportCells.get(key);
+      if (!set) continue;
+      set.delete(entry.id);
+      if (!set.size) supportCells.delete(key);
+    }
+  }
+
   function registerBox(bounds, options = {}) {
     const normalized = normalizeBounds(bounds);
     if (!normalized) return null;
     const id = String(options.id || `walk_support_${nextSupportId++}`); // Used to replace/reuse the same authored support deterministically.
-    supports.set(id, {
+    const existing = supports.get(id);
+    if (existing) unindexEntry(existing); // Re-registering the same id (e.g. a re-authored porch) must not leave stale cell entries behind.
+    const entry = {
       id,
       kind: options.kind || 'surface',
       area: options.area || null,
@@ -91,7 +138,9 @@
       sourceId: options.sourceId || null,
       owner: options.owner || null,
       bounds: normalized,
-    });
+    };
+    supports.set(id, entry);
+    indexEntry(entry);
     return id;
   }
 
@@ -118,12 +167,20 @@
   }
 
   function unregister(id) {
-    return supports.delete(String(id || ''));
+    const key = String(id || '');
+    const entry = supports.get(key);
+    if (!entry) return false;
+    unindexEntry(entry);
+    supports.delete(key);
+    return true;
   }
 
   function clearKind(kind) {
     for (const [id, entry] of supports) {
-      if (entry.kind === kind) supports.delete(id);
+      if (entry.kind === kind) {
+        unindexEntry(entry);
+        supports.delete(id);
+      }
     }
   }
 
@@ -131,8 +188,12 @@
     const x = finite(worldX, NaN);
     const z = finite(worldZ, NaN);
     if (!Number.isFinite(x) || !Number.isFinite(z)) return [];
+    const ids = supportCells.get(cellKey(Math.floor(x), Math.floor(z)));
+    if (!ids || !ids.size) return [];
     const matches = [];
-    for (const entry of supports.values()) {
+    for (const id of ids) {
+      const entry = supports.get(id);
+      if (!entry) continue;
       if (entry.area && area && entry.area !== area) continue;
       if (entry.owner && !objectInActiveScene(entry.owner)) continue;
       const b = entry.bounds;
@@ -364,7 +425,10 @@
     const mapData = await loadAuthoredMap(area);
     const records = walkableFurnitureRecords(mapData);
     for (const [id, entry] of supports) {
-      if (entry.kind === 'furniture' && (!entry.area || entry.area === area)) supports.delete(id);
+      if (entry.kind === 'furniture' && (!entry.area || entry.area === area)) {
+        unindexEntry(entry);
+        supports.delete(id);
+      }
     }
     const roots = candidateFurnitureRoots(scene);
     let registered = 0;

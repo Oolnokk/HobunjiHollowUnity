@@ -92,17 +92,29 @@
         : null;
   }
 
-  function syncToothAmbientBottle(parent, options, enabled) {
-    if (String(options?.name || '').trim().toLowerCase() !== TOOTH_HATAYAP_NAME) return;
-    const avatarGroup = resolveAmbientAvatarGroup(parent, options);
-    const root = avatarGroup?.parent?.isObject3D ? avatarGroup.parent : null;
-    window.NpcDrinkInteraction?.setAmbientCarry?.({
-      ownerId: TOOTH_AMBIENT_BOTTLE_OWNER,
-      root,
-      avatarGroup,
-      itemKey: TOOTH_AMBIENT_BOTTLE_KEY,
-      enabled: !!enabled && !!root && !!avatarGroup,
-    });
+  // Returns a per-handle sync(enabled) closure instead of a plain function so
+  // the avatarGroup/root lookup — a several-level parent walk — only runs
+  // until it first succeeds, then is cached for the handle's lifetime rather
+  // than repeated on every frame's applyDrunkenLayer call. Hand-anchor
+  // userData is static once the real GLB is attached, so nothing here can
+  // change again after that first successful resolution.
+  function makeToothAmbientBottleSync(parent, options) {
+    if (String(options?.name || '').trim().toLowerCase() !== TOOTH_HATAYAP_NAME) return () => {};
+    let resolved = null;
+    return function syncToothAmbientBottle(enabled) {
+      if (!resolved) {
+        const avatarGroup = resolveAmbientAvatarGroup(parent, options);
+        const root = avatarGroup?.parent?.isObject3D ? avatarGroup.parent : null;
+        if (avatarGroup && root) resolved = { avatarGroup, root };
+      }
+      window.NpcDrinkInteraction?.setAmbientCarry?.({
+        ownerId: TOOTH_AMBIENT_BOTTLE_OWNER,
+        root: resolved?.root || null,
+        avatarGroup: resolved?.avatarGroup || null,
+        itemKey: TOOTH_AMBIENT_BOTTLE_KEY,
+        enabled: !!enabled && !!resolved,
+      });
+    };
   }
 
   function removeTrackedFootTwist(foot, trackedQuaternion) {
@@ -144,6 +156,7 @@
       Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.referenceSpeedWorldUnitsPerSecond) || 4.3);
     const originalUpdate = handle.update.bind(handle);
     const originalDispose = handle.dispose.bind(handle);
+    const syncToothAmbientBottle = makeToothAmbientBottleSync(parent, options);
 
     const state = {
       phase: 0,
@@ -190,7 +203,7 @@
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
       const rawLoss = (suppressed || seatedPose) ? 0 : clamp01(lossProvider?.() || 0);
-      syncToothAmbientBottle(parent, options, rawLoss > 0 && !suppressed && !seatedPose && isNightPhase());
+      syncToothAmbientBottle(rawLoss > 0 && !suppressed && !seatedPose && isNightPhase());
       const blend = smoothstep01(rawLoss);
       const extreme = blend * blend;
       const movement = clamp01(speed / referenceSpeed);
@@ -276,7 +289,7 @@
     handle.dispose = function footingDrunkWalkDispose() {
       if (state.disposed) return;
       state.disposed = true;
-      syncToothAmbientBottle(parent, options, false);
+      syncToothAmbientBottle(false);
       clearPreviousFootTwist();
       clearPreviousBodyTilt();
       state.pitch = state.roll = 0;
