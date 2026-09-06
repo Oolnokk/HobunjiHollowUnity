@@ -1945,9 +1945,25 @@
         return { targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: toolVerdigrisFraction(itemKey) };
       }
       const _metalToolDataUrlCache = new Map(); // same cache key -> data URL, for plain <img src> consumers
+      window.HobunjiCacheAudit?.register('game.metalToolDataUrlCache', () => _metalToolDataUrlCache.size);
+      // Oxidation is mastery-XP-driven and only ever climbs for a given tool
+      // (see toolVerdigrisFraction/awardToolMasteryXp), so keying the cache on
+      // its raw value with 2-decimal precision meant a single well-used metal
+      // tool could mint and permanently retain up to ~100 distinct recolored
+      // canvases + data URLs over a long save (one per .01 step it ever
+      // passed through) — none reachable again once mastery moved past them.
+      // Snapping to a coarser 10% step (visually indistinguishable on an
+      // organic verdigris blotch pattern) caps that at ~11 per tool+plating
+      // instead, the same "quietly grows forever" shape as the farm-animal
+      // genotype-texture leak above, just in the smithing/mastery system.
+      const OXIDATION_CACHE_STEP = 0.1;
+      function quantizeOxidation(amount) {
+        const clamped = Math.max(0, Math.min(1, Number(amount) || 0));
+        return Math.round(clamped / OXIDATION_CACHE_STEP) * OXIDATION_CACHE_STEP;
+      }
       function metalToolCacheKey(itemKey, opts) {
         const plating = toolPlating(itemKey);
-        return `toolmetal:${itemKey}:${plating ? plating.mode + ':' + plating.metalKey : 'live'}:${opts.oxidationAmount.toFixed(2)}`;
+        return `toolmetal:${itemKey}:${plating ? plating.mode + ':' + plating.metalKey : 'live'}:${quantizeOxidation(opts.oxidationAmount).toFixed(2)}`;
       }
       function ensureMetalToolIconSource(itemKey) {
         const def = TOOL_ITEM_DEFS[itemKey];
@@ -1956,7 +1972,8 @@
         const key = metalToolCacheKey(itemKey, opts);
         if (_metalToolIconRequested.has(key)) return key;
         _metalToolIconRequested.add(key);
-        window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, opts).then(canvas => {
+        const quantizedOpts = { ...opts, oxidationAmount: quantizeOxidation(opts.oxidationAmount) };
+        window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, quantizedOpts).then(canvas => {
           window.ToolIconRender?.registerCanvasSource(key, canvas);
           try { _metalToolDataUrlCache.set(key, canvas.toDataURL('image/png')); } catch {}
           // A plain <img src> consumer (see metalToolImgSrc) was showing the
@@ -19477,7 +19494,11 @@
         const opts = metalToolRecolorOptions(itemKey);
         const tex = toolTextures[itemKey];
         if (!def?.sprite || !opts || !tex) return;
-        window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, opts).then(canvas => {
+        // Quantized the same way as ensureMetalToolIconSource's icon path, so
+        // this in-hand mesh recolor reuses that same cached canvas instead of
+        // minting its own raw-precision entry in ToolMetalRecolor's cache.
+        const quantizedOpts = { ...opts, oxidationAmount: quantizeOxidation(opts.oxidationAmount) };
+        window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, quantizedOpts).then(canvas => {
           tex.image = canvas;
           tex.needsUpdate = true;
         });
