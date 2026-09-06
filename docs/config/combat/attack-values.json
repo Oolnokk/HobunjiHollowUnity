@@ -18,7 +18,7 @@
     "pokeCombo": [
       { "name": "Short Thrust", "damageMul": 0.95, "halfConeDeg": 9,  "rangeMul": 1.15, "knockbackMul": 0.4, "staminaCost": 13, "windupS": 0.12, "strikeS": 0.09, "anim": "thrust", "dirSign": 1,  "holdS": 1, "dmgTag": "sharp", "lungeMul": 2.0 },
       { "name": "Step Thrust",  "damageMul": 1.15, "halfConeDeg": 12, "rangeMul": 1.35, "knockbackMul": 0.5, "staminaCost": 16, "windupS": 0.16, "strikeS": 0.10, "anim": "thrust", "dirSign": 1,  "holdS": 1, "dmgTag": "sharp", "lungeMul": 1.0 },
-      { "name": "Long Lunge",   "damageMul": 1.25, "halfConeDeg": 13, "rangeMul": 1.65, "knockbackMul": 2.85, "staminaCost": 25, "windupS": 0.27, "strikeS": 0.12, "returnS": 0.35, "anim": "thrust", "dirSign": 1, "power": 1.35, "holdS": 1, "dmgTag": "sharp", "heavy": true, "lungeMul": 1.0 }
+      { "name": "Long Lunge",   "damageMul": 1.25, "halfConeDeg": 13, "rangeMul": 1.65, "knockbackMul": 2.85, "staminaCost": 25, "windupS": 0.27, "strikeS": 0.12, "returnS": 0.35, "anim": "thrust", "dirSign": 1,  "power": 1.35, "holdS": 1, "dmgTag": "sharp", "heavy": true, "lungeMul": 1.0 }
     ]
   },
 
@@ -43,8 +43,8 @@
   },
 
   "quickAttacks": {
-    "WINDUP_S": 0.075, "STRIKE_S": 0.105, "COST_BASE": 11, "COST_BONUS": 18, "HOLD_S": 1,
-    "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 5.5,
+    "WINDUP_S": 0.075, "STRIKE_S": 0.105, "COST_COMMIT": 60, "CONDITIONAL_REFUND_FRACTION": 0.5, "HOLD_S": 1,
+    "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 4.5,
     "techniques": {
       "opportunistJab": { "label": "Opportunist Jab", "condKey": "enemyStriking", "halfConeDeg": 16, "rangeMul": 0.95,
         "base": { "damageMul": 0.5,  "knockbackMul": 0.9 }, "bonus": { "damageMul": 3.2, "knockbackMul": 1.9 }, "bonusText": "bonus: target was in strike stage" },
@@ -186,7 +186,8 @@
   "bandit": {
     "BASE_ATTACK_DAMAGE": 17,
     "attackRangeTiles": 0.9, "attackHalfConeDeg": 44, "attackStaminaCost": 12,
-    "attackCooldownSCaptain": 0.95, "attackCooldownSOther": 1.15
+    "attackCooldownSCaptain": 0.95, "attackCooldownSOther": 1.15,
+    "targetTurnRateRadS": 6
   },
 
   "creatures": {
