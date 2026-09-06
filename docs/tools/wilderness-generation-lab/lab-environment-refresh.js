@@ -274,8 +274,29 @@
     };
   }
 
+  function loadSharedEntryCorridor() {
+    if (window.WildernessEntryCorridor) {
+      window.WildernessEntryCorridor.installGeneratorAdapter?.();
+      return;
+    }
+    if (document.querySelector('script[data-wilderness-entry-corridor]')) return;
+    const script = document.createElement('script');
+    const base = document.currentScript?.src || window.location.href;
+    script.src = new URL('../../js/wilderness-entry-corridor.js', base).href;
+    script.async = false;
+    script.dataset.wildernessEntryCorridor = '1';
+    script.addEventListener('load', () => {
+      console.log('[WildernessLab] Shared narrow entrance-corridor adapter loaded.');
+      const generate = document.getElementById('generateBtn');
+      if (generate && !generate.disabled) generate.click(); // Regenerate once so an already-open initial preview also uses the shared runtime rule.
+    });
+    script.addEventListener('error', () => console.error('[WildernessLab] Failed to load wilderness-entry-corridor.js'));
+    document.head.appendChild(script);
+  }
+
   relabelEnvironmentUi();
   installEnvironmentUiBehavior();
   installCurrentMainLiveRecipeRouting();
+  loadSharedEntryCorridor();
   console.log(`[WildernessLab] Coldmuck preview: black slush at low opacity over Deadgrass HSL(45, 0.40, 0.34) with ${Math.round(COLDMUCK_DESATURATION * 100)}% extra desaturation.`);
 })();
