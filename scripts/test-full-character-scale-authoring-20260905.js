@@ -17,21 +17,32 @@ const defaultsWindow = {};
 defaultsWindow.window = defaultsWindow;
 vm.runInContext(defaultsSource, vm.createContext(defaultsWindow), { filename: 'character-rig-scale-defaults.js' });
 const expected = {
-  'tletingan::male': { x: 0.85, y: 0.85, head: 0.8824, offsetY: 0 },
-  'tletingan::female': { x: 0.915, y: 0.89, head: 0.8471, offsetY: 0 },
-  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.9053, offsetY: 0 },
-  'engh-sho::female': { x: 0.795, y: 0.81, head: 0.8947, offsetY: 0 },
-  'mao-ao::male': { x: 1.125, y: 1.125, head: 1.0813, offsetY: 0 },
-  'mao-ao::female': { x: 1.045, y: 1.045, head: 1.075, offsetY: 0 },
-  'kenkari::male': { x: 1.225, y: 1.225, head: 1.04, offsetY: 0 },
-  'kenkari::female': { x: 1.1, y: 1.1, head: 1.0467, offsetY: 0 },
+  'tletingan::male': { x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 },
+  'tletingan::female': { x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 },
+  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
+  'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
+  'mao-ao::male': { x: 1.125, y: 1.125, head: 0.75, offsetY: 0 },
+  'mao-ao::female': { x: 1.045, y: 1.045, head: 0.9375, offsetY: 0 },
+  'kenkari::male': { x: 1.225, y: 1.225, head: 1, offsetY: 0 },
+  'kenkari::female': { x: 1.1, y: 1.1, head: 1, offsetY: 0 },
   'mashtzarr::male': { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 },
   'mashtzarr::female': { x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 },
 };
-assert.strictEqual(defaultsWindow.HobunjiCharacterRigScaleDefaults.version, 5);
+const portraitScales = {
+  'tletingan::male': 0.85,
+  'tletingan::female': 0.85,
+  'engh-sho::male': 0.95,
+  'engh-sho::female': 0.95,
+  'mao-ao::male': 1,
+  'mao-ao::female': 0.8,
+  'kenkari::male': 0.75,
+  'kenkari::female': 0.75,
+}; // Used below to lock the user-facing raw-PNG Head value at exactly 75% for every non-Mashtzarr profile.
+assert.strictEqual(defaultsWindow.HobunjiCharacterRigScaleDefaults.version, 6);
 for (const [key, tuple] of Object.entries(expected)) {
   const [species, gender] = key.split('::');
   assert.deepStrictEqual(plainScale(defaultsWindow.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), tuple, `${key} scale tuple mismatch`);
+  if (portraitScales[key]) assert.ok(Math.abs(tuple.head * portraitScales[key] * 100 - 75) < 1e-9, `${key} raw-PNG Head must equal 75%`);
 }
 
 // 2) The bulk rig export is intentionally allowlisted: only Mao-ao hand shoulders
