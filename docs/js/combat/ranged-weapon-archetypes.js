@@ -543,6 +543,7 @@
     cancelThrownCharge,
     isThrown,
     basicAmmoEffectsFor,
+    activeThrownChargeItemKey: () => thrownCharge?.itemKey || null,
     animations: {
       // These are mutable authored copies on purpose: the user can tune/export
       // Blowgun without changing the Crossbow or Drink source animations.

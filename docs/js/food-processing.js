@@ -375,6 +375,18 @@
     wrapInitWithBlueprint(window.CraftingPanel);
   }
 
+  function installRuntimeHooksWhenReady() {
+    installRuntimeHooks();
+    // furniture-placer.js/carpenter-shop.js/crafting-panel.js load after this
+    // script, so their namespaces don't exist on the first pass above; retry
+    // once the rest of the document (and those scripts) has parsed.
+    if (!window.FurniturePlacer || !window.CarpenterShop || !window.CraftingPanel) {
+      if (typeof document !== 'undefined' && document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', installRuntimeHooks, { once: true });
+      }
+    }
+  }
+
   function diagnosticsText() {
     return `Stations: ${SQUEEZING_VAT.name}, ${BUTTER_CHURN.name}\nTree nut sources: ${Object.values(TREE_NUTS_BY_AREA).map(entry => entry.label).join(', ')}\nVat fats: nut oils, species lards, species fish oils\nChurn: white milk → butter; oil → margarine; stink oil → stink butter`;
   }
@@ -394,5 +406,5 @@
     ensureBlueprint,
   };
 
-  installRuntimeHooks();
+  installRuntimeHooksWhenReady();
 })();

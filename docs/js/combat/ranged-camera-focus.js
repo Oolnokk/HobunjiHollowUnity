@@ -67,7 +67,7 @@
   let lastFocusSignature = ''; // Keeps in-game focus logging transition-only.
   let lastAppliedDistance = null; // Used to avoid steady-state writes to Shoulder Cam distance.
   let lastAppliedHorizontal = null; // Used to avoid steady-state synthetic shoulder-slider events.
-  let lastState = null; // Snapshot cache for mobile/debug inspection.
+  let lastFocusSnapshotInputs = null; // Cheap per-frame refs (no cloning) for the debug snapshot() below; only cloned on demand when actually queried.
 
   function three() { return window.THREE || null; }
   function nowMs() { return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(); }
@@ -624,7 +624,10 @@
     baseRangedInit = ranged.init.bind(ranged);
     ranged.init = function interactionTargetRangedInit(injectedDeps) {
       rawRangedGetPlayerAimRay = injectedDeps?.getPlayerAimRay || null;
-      rawRangedGetPlayerInteractionRay = injectedDeps?.getPlayerInteractionRay || null;
+      // combat-camera-alignment-bridge.js, when installed, supplies this explicit
+      // muzzle-parallel ray for our private surface resolver; getPlayerInteractionRay
+      // itself always stays the real camera-centered ray for ordinary consumers.
+      rawRangedGetPlayerInteractionRay = injectedDeps?.getMuzzleParallelInteractionRay || injectedDeps?.getPlayerInteractionRay || null;
       rawRangedGetPlayerAimPitch = injectedDeps?.getPlayerAimPitch || null;
       const rawTriggerRangedWeaponVisual = injectedDeps?.triggerRangedWeaponVisual;
       const wrappedDeps = {
@@ -753,8 +756,9 @@
 
   function thrownCharge(itemKey) {
     try {
-      const snapshot = window.HobunjiRangedWeaponArchetypes?.debugSnapshot?.();
-      return snapshot?.thrownCharge?.itemKey === itemKey ? snapshot.thrownCharge : null;
+      const archetypes = window.HobunjiRangedWeaponArchetypes;
+      const activeItemKey = archetypes?.activeThrownChargeItemKey?.();
+      return activeItemKey === itemKey ? activeItemKey : null;
     } catch (_) {
       return null;
     }
@@ -929,31 +933,9 @@
     // runs from RangedWeapons.update for the focus easing only. Aim resolution
     // happens lazily in the ranged/melee consumers and persists until one of
     // its material input signatures changes.
-    lastState = {
-      ...state,
-      blend,
-      distanceTiles,
-      baseDistanceTiles,
-      horizontalOffset,
-      baseCombatHorizontal,
-      focusHorizontalOffsetTiles,
-      tightDistanceTiles: TIGHT_DISTANCE_TILES,
-      horizontalModified,
-      focusControlInstalled,
-      rangedAimInstalled,
-      combatInitBridgeInstalled,
-      meleeAimInstalled,
-      meleeRangeCaptureInstalled,
-      verticalStanceInstalled,
-      cameraMutation: 'native-shoulder-camera-only',
-      aimAlignment: 'shared-3d-interaction-target-native-camera',
-      aimUpdateMode: 'change-driven-persistent-cache',
-      interactionAimTarget: lastResolvedAimTarget ? { ...lastResolvedAimTarget } : null,
-      activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,
-      verticalStance: lastVerticalStance ? { ...lastVerticalStance } : null,
-      lastAimError: lastAimError ? { ...lastAimError } : null,
-      aimPerformance: aimPerformanceSnapshot(),
-    };
+    // Only stash cheap, unshared references here; snapshot() below does the
+    // (rarely-called, debug-only) cloning, so this runs every frame for free.
+    lastFocusSnapshotInputs = { state, distanceTiles, horizontalOffset };
     logTransition(state, distanceTiles, horizontalOffset);
     previousCombatStance = state.combatStance;
   }
@@ -1046,12 +1028,15 @@
     transformCrossbowPose,
     captureMeleeRange,
     aimPerformance: aimPerformanceSnapshot,
-    snapshot: () => lastState ? { ...lastState, aimPerformance: aimPerformanceSnapshot() } : {
-      ...focusState(),
+    snapshot: () => ({
+      ...(lastFocusSnapshotInputs ? lastFocusSnapshotInputs.state : focusState()),
       blend,
+      distanceTiles: lastFocusSnapshotInputs ? lastFocusSnapshotInputs.distanceTiles : undefined,
       baseDistanceTiles,
+      horizontalOffset: lastFocusSnapshotInputs ? lastFocusSnapshotInputs.horizontalOffset : undefined,
       baseCombatHorizontal,
       focusHorizontalOffsetTiles,
+      tightDistanceTiles: TIGHT_DISTANCE_TILES,
       horizontalModified,
       focusControlInstalled,
       rangedAimInstalled,
@@ -1067,7 +1052,7 @@
       verticalStance: lastVerticalStance ? { ...lastVerticalStance } : null,
       lastAimError: lastAimError ? { ...lastAimError } : null,
       aimPerformance: aimPerformanceSnapshot(),
-    },
+    }),
     tuning: {
       tightDistanceTiles: TIGHT_DISTANCE_TILES,
       get focusHorizontalOffsetTiles() { return focusHorizontalOffsetTiles; },
