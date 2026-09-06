@@ -6,7 +6,7 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const base = selfUrl ? new URL('./', selfUrl) : new URL('./js/', location.href);
   const urls = [
-    new URL('../config/character-rig-scale-defaults.js?v=20260905c', base).href,
+    new URL('../config/character-rig-scale-defaults.js?v=20260905d', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('character-rig-scale.js?v=20260904i', base).href,
