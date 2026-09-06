@@ -25,8 +25,12 @@
     goldBarSellPrice: null,
     bronzeBarSellPrices: {},
     digHookInstalled: false,
+    textObserverInstalled: false,
+    textRewriteCount: 0,
+    lastTextRewrite: null,
     lastDig: null,
   };
+  let currencyTextObserver = null; // Used to normalize legacy currency wording produced by older shop/task modules without renaming their save-compatible `gold` fields.
 
   function firstFinite(...values) {
     for (const value of values) if (Number.isFinite(Number(value))) return Number(value);
@@ -38,6 +42,52 @@
     if (sell != null && sell >= 0) return sell;
     const retail = firstFinite(def?.price, def?.buyPrice, def?.cost); // Used only when an item has a retail price but no explicit sale value.
     return retail != null && retail > 0 ? Math.max(1, Math.round(retail * 0.4)) : Math.max(1, Number(fallback) || 1);
+  }
+
+  function formatCurrencyText(value) {
+    const original = String(value ?? ''); // Used as the exact rendered copy supplied by legacy systems before currency-lore normalization.
+    let text = original;
+    text = text.replace(/\bNot enough gold\b/gi, match => match[0] === 'N' ? 'Not enough gananji' : 'not enough gananji');
+    text = text.replace(/\b(\d[\d,]*(?:\.\d+)?)\s+gold\b/gi, '$1 gananji');
+    text = text.replace(/\bGold\s+(reward|wallet|currency|payment|payout|bounty|wages?)\b/g, 'Gananji $1');
+    text = text.replace(/\bgold\s+(reward|wallet|currency|payment|payout|bounty|wages?|fee|cost)\b/g, 'gananji $1');
+    text = text.replace(/\b(reward|fee|cost|price|payment|payout|bounty|wages?)\s+in\s+gold\b/gi, (match, noun) => `${noun} in gananji`);
+    return text;
+  }
+
+  function rewriteCurrencyTextNode(node) {
+    if (!node || node.nodeType !== 3 || typeof node.nodeValue !== 'string') return false;
+    const before = node.nodeValue; // Used to preserve physical-metal wording whenever no currency-specific pattern matches.
+    const after = formatCurrencyText(before); // Used to translate only unambiguous legacy money phrases into gananji.
+    if (after === before) return false;
+    node.nodeValue = after;
+    loreEconomyDebug.textRewriteCount++;
+    loreEconomyDebug.lastTextRewrite = { before, after, at: Date.now() };
+    return true;
+  }
+
+  function rewriteCurrencySubtree(root) {
+    if (!root) return 0;
+    let changed = 0; // Used by diagnostics/tests to report how many visible text nodes were normalized.
+    if (rewriteCurrencyTextNode(root)) changed++;
+    const children = root.childNodes ? Array.from(root.childNodes) : [];
+    for (const child of children) changed += rewriteCurrencySubtree(child);
+    return changed;
+  }
+
+  function installCurrencyTextObserver() {
+    if (currencyTextObserver) { loreEconomyDebug.textObserverInstalled = true; return true; }
+    if (typeof MutationObserver !== 'function' || !document?.body) return false;
+    rewriteCurrencySubtree(document.body); // Normalizes any static or already-rendered currency copy before watching future menus/toasts/dialogue.
+    currencyTextObserver = new MutationObserver(records => {
+      for (const record of records || []) {
+        if (record.type === 'characterData') rewriteCurrencyTextNode(record.target);
+        for (const node of record.addedNodes || []) rewriteCurrencySubtree(node);
+      }
+    });
+    currencyTextObserver.observe(document.body, { subtree: true, childList: true, characterData: true });
+    loreEconomyDebug.textObserverInstalled = true;
+    return true;
   }
 
   function patchEconomyItem(itemKey, patch) {
@@ -96,6 +146,9 @@
       name: 'gananji',
       meaning: 'bronze',
       suffix: 'g',
+      formatText: formatCurrencyText,
+      rewriteSubtree: rewriteCurrencySubtree,
+      installTextObserver: installCurrencyTextObserver,
     });
     return true;
   }
@@ -161,6 +214,7 @@
     deps = injectedDeps;
     applyLoreEconomy();
     installGoldDigHook();
+    installCurrencyTextObserver();
     deps.itemPrev.addEventListener('click', () => {
       deps.cycleActiveInventoryItem(-1);
       refreshItemScroll();
@@ -324,6 +378,7 @@
 
   function updateHud() {
     if (!loreEconomyDebug.digHookInstalled) installGoldDigHook();
+    if (!loreEconomyDebug.textObserverInstalled) installCurrencyTextObserver();
     const season = window.CalendarSystem.currentSeason();
     const clock  = window.FormatUtils.formatClock(window.CalendarSystem.getHour());
 
@@ -408,8 +463,10 @@
   window.HobunjiLoreEconomy = { // Exposes concise mobile-safe state without requiring devtools or console access.
     apply: applyLoreEconomy,
     installGoldDigHook,
+    formatCurrencyText,
+    installCurrencyTextObserver,
     getDebug: () => ({ ...loreEconomyDebug, bronzeBarSellPrices: { ...loreEconomyDebug.bronzeBarSellPrices } }),
-    formatDebug: () => `Lore economy: Gold Ore ${loreEconomyDebug.goldOreSellPrice ?? '?'}g | Gold Bar ${loreEconomyDebug.goldBarSellPrice ?? '?'}g | dig hook ${loreEconomyDebug.digHookInstalled ? 'on' : 'off'} | last dig ${loreEconomyDebug.lastDig ? JSON.stringify(loreEconomyDebug.lastDig) : 'none'}`,
+    formatDebug: () => `Lore economy: Gold Ore ${loreEconomyDebug.goldOreSellPrice ?? '?'}g | Gold Bar ${loreEconomyDebug.goldBarSellPrice ?? '?'}g | dig hook ${loreEconomyDebug.digHookInstalled ? 'on' : 'off'} | text ${loreEconomyDebug.textObserverInstalled ? 'on' : 'off'} (${loreEconomyDebug.textRewriteCount}) | last dig ${loreEconomyDebug.lastDig ? JSON.stringify(loreEconomyDebug.lastDig) : 'none'}`,
   };
 
   window.HudUpdate = {
