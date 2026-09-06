@@ -28,6 +28,21 @@
   // the one that died) moves in. See game.js's advanceDay().
   const DEN_PACK_SIZE_MIN = 2;
   const DEN_PACK_SIZE_MAX = 4;
+  // Grehlr stay in much smaller groups than every other pack species, and
+  // (see GREHLR_DAY_SPREAD_TILES_MIN/MAX below) scatter apart from each
+  // other by day rather than roaming the den together — see spawnPackAtDen.
+  const GREHLR_SPECIES = 'grehlr';
+  const GREHLR_PACK_SIZE_MIN = 1;
+  const GREHLR_PACK_SIZE_MAX = 2;
+  // Each grehlr's own day "home" point (its idle-wander/patrol anchor —
+  // DEN_PACK_WANDER_RADIUS_PX in game.js's updateHostiles) is rolled
+  // independently in a random direction this far from the den, instead of
+  // every pack member sharing the den's own footprint center like every
+  // other species — spreads littermates across genuinely separate ground
+  // during the day. denEntranceX/Y (the shared doorway, unaffected by this)
+  // still brings them back together at night.
+  const GREHLR_DAY_SPREAD_TILES_MIN = 5;
+  const GREHLR_DAY_SPREAD_TILES_MAX = 12;
   const DEN_CHECK_INTERVAL_S = 2;
   let denCheckTimer = 0;
 
@@ -156,6 +171,11 @@
   // populated wherever a cavern id is minted (denCavernMapId) instead.
   // Used by game.js's teleportToRandomDen to work from inside a den too.
   const _denCavernZoneOf = new Map();
+  // Sibling to _denCavernZoneOf, same reasoning — recovers the other half
+  // (denId) a cavernMapId's own string can't be reliably split back into,
+  // needed by denKeyForCavern to reconstruct the exact denKeyFor(zoneId, den)
+  // key the exterior pack (spawnPackAtDen/isDenPackAlive) is tracked under.
+  const _denCavernDenIdOf = new Map();
   // Same id shape game.js's performTothalShift's denTransitions and
   // synthesizeCavernMapData both already use for the den's cavern —
   // reused as the shared lookup key so a den's exterior pack, its
@@ -164,7 +184,21 @@
   function denCavernMapId(zoneId, denId) {
     const id = `map_i_den_${zoneId}_${denId}`;
     _denCavernZoneOf.set(id, zoneId);
+    _denCavernDenIdOf.set(id, denId);
     return id;
+  }
+  // The exterior-pack denKey (denKeyFor's zoneId:denId shape) a den's
+  // cavern mapId belongs to — lets game.js's interior creatureSpawns check
+  // isDenPackAlive for the SAME den its exterior pack is tracked under,
+  // without either side needing to know the other's id shape. Null until
+  // this den's cavernMapId has actually been minted at least once (see
+  // denCavernMapId's callers — game.js's denTransitions setup runs for
+  // every den in a zone as soon as that zone builds, well before a player
+  // could ever reach this den's interior).
+  function denKeyForCavern(cavernMapId) {
+    const zoneId = _denCavernZoneOf.get(cavernMapId);
+    const denId = _denCavernDenIdOf.get(cavernMapId);
+    return (zoneId != null && denId != null) ? denKeyFor(zoneId, { id: denId }) : null;
   }
   // Which shared-genotype "family" a CREATURE_DB key rolls/renders as —
   // gar-wolf/gar-wolf-alpha/gar-wolf-den-mother all share one gar-wolf-
@@ -288,7 +322,10 @@
     // generated mouthAnchor, same fallback the dev teleport tools use.
     const denEntranceX = den.mouthAnchor ? (den.mouthAnchor.x + 0.5) * deps.TILE : homeX;
     const denEntranceY = den.mouthAnchor ? (den.mouthAnchor.y + 0.5) * deps.TILE : homeY;
-    const count = DEN_PACK_SIZE_MIN + Math.floor(deps.rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+    const isGrehlrPack = speciesKey === GREHLR_SPECIES;
+    const count = isGrehlrPack
+      ? GREHLR_PACK_SIZE_MIN + Math.floor(deps.rnd() * (GREHLR_PACK_SIZE_MAX - GREHLR_PACK_SIZE_MIN + 1))
+      : DEN_PACK_SIZE_MIN + Math.floor(deps.rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
     const zoneData = deps.zoneLayouts.get(zoneId);
     let spawned = 0;
     // Scatter radius must clear the footprint's own half-diagonal (den.x/y
@@ -301,8 +338,19 @@
       const angle = deps.rnd() * Math.PI * 2;
       const dist = footprintClearance + deps.rnd() * deps.TILE * 1.6;
       const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-      const opts = { homeX, homeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype };
-      assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
+      // Every other pack species shares one literal home point (the den's
+      // own footprint center) — a grehlr instead gets its own, rolled
+      // independently per member so they go their separate ways by day
+      // (see GREHLR_DAY_SPREAD_TILES_MIN/MAX above).
+      let memberHomeX = homeX, memberHomeY = homeY;
+      if (isGrehlrPack) {
+        const spreadAngle = deps.rnd() * Math.PI * 2;
+        const spreadDist = deps.TILE * (GREHLR_DAY_SPREAD_TILES_MIN + deps.rnd() * (GREHLR_DAY_SPREAD_TILES_MAX - GREHLR_DAY_SPREAD_TILES_MIN));
+        memberHomeX = homeX + Math.cos(spreadAngle) * spreadDist;
+        memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
+      }
+      const opts = { homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype };
+      assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, useHerd);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
       else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
@@ -635,6 +683,7 @@
     denKeyFor,
     denCavernMapId,
     denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
+    denKeyForCavern,
     denGenotypeFamily,
     getOrMakeDenGenotype,
     getDenGenotypes: () => _denGenotypes,

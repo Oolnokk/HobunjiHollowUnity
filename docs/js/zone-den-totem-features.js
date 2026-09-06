@@ -2,7 +2,7 @@
   'use strict';
 
   // Wilderness-zone landmark meshes tied to authored placement data rather
-  // than the tile grid itself: animal den rock mounds and composed living
+  // than the tile grid itself: animal den cave entrances and composed living
   // Root Totems. Farm and wilderness Root Totems share this renderer.
   function ensureCompanionScript(globalName, fileName) {
     if (window[globalName] || typeof document === 'undefined') return;
@@ -34,73 +34,136 @@
     return window.HOBUNJI_ROOT_TOTEM_CONFIG?.canonicalRecipe || null;
   }
 
-  function buildDenRockMoundGeo(colsTiles, rowsTiles, peakHeight, salt, mouthRect) {
-    const CX = Math.max(3, Math.round(colsTiles * deps.ROCK_MOUND_CELLS_PER_TILE));
-    const CZ = Math.max(3, Math.round(rowsTiles * deps.ROCK_MOUND_CELLS_PER_TILE));
-    const VX = CX + 1, VZ = CZ + 1;
-    let _s = (Math.imul(Math.round(colsTiles * 97) + 1, 374761393) ^ Math.imul(Math.round(rowsTiles * 131) + 1, 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
-    const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-    const roughSeed = rng() * 1000;
-    const roughDisp = (u, v) => {
-      const kx = Math.round(u * CX * 8) | 0, kz = Math.round(v * CZ * 8) | 0;
-      let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263) ^ Math.imul(roughSeed | 0, 97)) >>> 0;
-      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
-      return (h / 4294967296 - 0.5) * 0.16;
-    };
-    const Y = new Float32Array(VX * VZ);
-    for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
-      const u = vi / CX, v = vj / CZ;
-      const edgeDist = Math.min(u, 1 - u, v, 1 - v);
-      const norm = Math.min(1, edgeDist * 2);
-      const dome = norm * norm * (3 - 2 * norm);
-      Y[vj * VX + vi] = Math.max(0, dome * peakHeight + roughDisp(u, v) * dome);
+  // Animal den entrance prop: docs/assets/models/cave_small.glb, shared by
+  // every den in the game — recolored per den family (see denCaveVariantFor)
+  // rather than modeled once per look. The GLB ships with no UV attribute
+  // at all (a single baked-color mesh), so a flat XZ planar projection
+  // (assignCaveUv) stands in for authored UVs, same "generate UVs for a
+  // mesh that never had any" need HousePieceGen.js's shingle GLB solves for
+  // its own shell meshes.
+  const CAVE_SMALL_GLB_PATH = 'assets/models/cave_small.glb';
+  // Halves the den's visual footprint (see buildAnimalDenMeshes) — half of
+  // whatever span the entrance prop would otherwise fill relative to the
+  // den's tile footprint.
+  const DEN_SIZE_SCALE = 0.5;
+  const DEN_SINK = 0.35; // Settles the model's base slightly below ground level so it doesn't look like it's floating on top of the terrain.
+  // Matches the tiling density buildCarvedCavernMesh already uses for the
+  // mine's own carved_smooth.png cavern shell (game.js's mine wallStyle
+  // texture options) — small enough that the little entrance prop and the
+  // cavern beyond it read as the same continuous stone/soil surface.
+  const DEN_CAVE_TEXTURE_REPEAT = 0.35;
+  // Same two looks used for the den's cavern INTERIOR (see game.js's
+  // 'cavern' wallStyle texture options, which reads this exact table via
+  // denCaveVariantFor) — the farm border cliffs' own rock texture/tint for
+  // gar-wolf/uumkao'ii dens, the trench floor's own soil texture/tint for
+  // grehlr dens, so an entrance and the tunnel behind it always match.
+  const DEN_CAVE_VARIANTS = {
+    grehlr: { textureUrl: 'assets/textures/canvas.png', color: 0x423d35 },
+    default: { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080 },
+  };
+  function denCaveVariantFor(denMotherKind) {
+    return (typeof denMotherKind === 'string' && denMotherKind.startsWith('grehlr')) ? DEN_CAVE_VARIANTS.grehlr : DEN_CAVE_VARIANTS.default;
+  }
+
+  const _caveTextureCache = new Map(); // textureUrl -> THREE.Texture
+  function caveTextureFor(url) {
+    let tex = _caveTextureCache.get(url);
+    if (tex) return tex;
+    tex = new THREE.TextureLoader().load(url);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(DEN_CAVE_TEXTURE_REPEAT, DEN_CAVE_TEXTURE_REPEAT);
+    if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+    _caveTextureCache.set(url, tex);
+    return tex;
+  }
+
+  const _caveMaterialCache = new Map(); // color -> THREE.Material, shared by every den of that family
+  function caveMaterialFor(variant) {
+    let mat = _caveMaterialCache.get(variant.color);
+    if (mat) return mat;
+    mat = new THREE.MeshLambertMaterial({ color: variant.color, map: caveTextureFor(variant.textureUrl), side: THREE.DoubleSide });
+    _caveMaterialCache.set(variant.color, mat);
+    return mat;
+  }
+
+  // Flat XZ projection straight off local vertex position — see the GLB
+  // comment above. Deliberately not normalized to 0..1 (unlike a typical
+  // planar-stretch UV): using raw local units lets a shared DEN_CAVE_TEXTURE_REPEAT
+  // tile consistently across every den's clone regardless of its own scale.
+  function assignCaveUv(geometry) {
+    if (geometry.getAttribute('uv')) return;
+    const pos = geometry.getAttribute('position');
+    if (!pos) return;
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) { uv[i * 2] = pos.getX(i); uv[i * 2 + 1] = pos.getZ(i); }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  }
+
+  let _caveTemplate = null, _caveTemplatePromise = null;
+  function loadCaveSmallTemplate() {
+    if (_caveTemplate) return Promise.resolve(_caveTemplate);
+    if (_caveTemplatePromise) return _caveTemplatePromise;
+    const Loader = THREE.GLTFLoader;
+    if (!Loader) {
+      console.warn('[zone den] THREE.GLTFLoader unavailable; animal den cave entrances cannot load.');
+      return Promise.resolve(null);
     }
-    if (mouthRect) {
-      for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
-        const u = vi / CX, v = vj / CZ;
-        const inU = u >= mouthRect.u0 && u <= mouthRect.u1;
-        const nearV = Math.max(0, (v - mouthRect.v0) / (1 - mouthRect.v0));
-        if (inU && nearV > 0) Y[vj * VX + vi] *= Math.max(0, 1 - nearV * 1.6);
-      }
-    }
-    const positions = [];
-    for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) positions.push((vi / CX) * colsTiles, Y[vj * VX + vi], (vj / CZ) * rowsTiles);
-    const idx = [];
-    for (let cj = 0; cj < CZ; cj++) for (let ci = 0; ci < CX; ci++) {
-      const v00 = cj * VX + ci, v10 = cj * VX + ci + 1, v01 = (cj + 1) * VX + ci, v11 = (cj + 1) * VX + ci + 1;
-      idx.push(v00, v01, v11, v00, v11, v10);
-    }
-    return { positions, idx, vertexCount: VX * VZ };
+    _caveTemplatePromise = new Promise(resolve => {
+      new Loader().load(CAVE_SMALL_GLB_PATH, gltf => {
+        const scene = gltf.scene || gltf.scenes?.[0];
+        const mesh = scene?.isMesh ? scene : scene?.children?.find(child => child.isMesh);
+        if (!mesh) {
+          console.warn(`[zone den] ${CAVE_SMALL_GLB_PATH} contained no mesh.`);
+          resolve(null);
+          return;
+        }
+        assignCaveUv(mesh.geometry);
+        mesh.geometry.computeBoundingBox();
+        _caveTemplate = mesh;
+        resolve(mesh);
+      }, undefined, error => {
+        console.warn(`[zone den] ${CAVE_SMALL_GLB_PATH} failed to load`, error);
+        resolve(null);
+      });
+    });
+    return _caveTemplatePromise;
   }
 
   function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
     if (!dens || !dens.length) return;
-    const DEN_PEAK_HEIGHT = 2.0, DEN_SINK = 0.5;
-    const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V0 = 0.6;
-    const pos = [], idx = []; let vi = 0, denSalt = 0;
-    for (const den of dens) {
-      const w = den.w || 1, h = den.h || 1;
-      const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
-      const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
-      const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT - DEN_SINK;
-      const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, (denSalt += 97), { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
-      const base = vi;
-      for (let p = 0; p < mound.vertexCount; p++) pos.push(den.x + mound.positions[p * 3], groundY + mound.positions[p * 3 + 1], den.y + mound.positions[p * 3 + 2]);
-      for (const i of mound.idx) idx.push(base + i);
-      vi += mound.vertexCount;
-    }
-    if (!idx.length) return;
-    const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide });
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = true;
-    zScene.add(mesh);
-    deps.markTerrainEdgeId(mesh, deps.terrainCategoryFor(deps.TileType.ROCK));
-    mesh.userData.cameraObstacle = true;
-    console.log(`%c[zone:${mapId}] animal den rock mounds built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+    loadCaveSmallTemplate().then(template => {
+      if (!template) return;
+      const box = template.geometry.boundingBox;
+      const templateWidth = Math.max(1e-4, box.max.x - box.min.x);
+      const templateDepth = Math.max(1e-4, box.max.z - box.min.z);
+      const group = new THREE.Group();
+      group.name = 'animalDenEntrances';
+      for (const den of dens) {
+        const w = den.w || 1, h = den.h || 1;
+        const centerCol = den.x + w / 2, centerRow = den.y + h / 2;
+        const elevTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0;
+        const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
+        // The den's own cavern species (see cavern-generator.js's
+        // pickDenMotherKind) — the exact same deterministic per-den roll
+        // its interior Den-Mother uses, so the entrance prop's color always
+        // matches what's actually inside.
+        const cavernMapId = window.WildlifeSpawn?.denCavernMapId?.(mapId, den.id) || null;
+        const denMotherKind = cavernMapId ? window.CavernGenerator?.pickDenMotherKind?.(cavernMapId) : null;
+        const variant = denCaveVariantFor(denMotherKind);
+        const mesh = template.clone();
+        mesh.material = caveMaterialFor(variant);
+        const scale = (Math.min(w, h) / Math.max(templateWidth, templateDepth)) * DEN_SIZE_SCALE;
+        mesh.scale.set(scale, scale, scale);
+        mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scale, centerRow);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData.cameraObstacle = true;
+        deps.markOutline(mesh);
+        group.add(mesh);
+      }
+      zScene.add(group);
+      console.log(`%c[zone:${mapId}] animal den cave entrances built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+    });
   }
 
   function buildRootTotemMeshes(zScene, zGrid, totems, mapId) {
@@ -146,7 +209,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, buildDenRockMoundGeo, buildAnimalDenMeshes, buildRootTotemMeshes };
+  const api = { init, canonicalRootTotemRecipe, denCaveVariantFor, buildAnimalDenMeshes, buildRootTotemMeshes };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();

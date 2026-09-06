@@ -156,12 +156,11 @@
       if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
       const w = den.w || 1, h = den.h || 1;
       if (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h) continue;
-      // Doorway gap carved into the south wall, mirroring the mesh's own
-      // cut (buildDenRockMoundGeo's MOUTH_U0..U1/MOUTH_V0 in
-      // zone-den-totem-features.js). Without this the footprint box was
-      // fully solid with no way through it at all — mouthAnchor alone
-      // never punched a hole here since it's defined as the tile just
-      // OUTSIDE the footprint, not a tile inside it.
+      // Doorway gap carved into the south wall (30%-70% of the footprint's
+      // width, on its last row) so the footprint box isn't fully solid with
+      // no way through it at all — mouthAnchor alone never punched a hole
+      // here since it's defined as the tile just OUTSIDE the footprint, not
+      // a tile inside it.
       const mouthColStart = den.x + Math.floor(w * 0.3);
       const mouthColEnd = den.x + Math.ceil(w * 0.7) - 1;
       if (row === den.y + h - 1 && col >= mouthColStart && col <= mouthColEnd) continue;
