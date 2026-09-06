@@ -120,8 +120,8 @@ assert.equal(HousePieces.debugRegistryStability().blockedInvalidSaveCount, 1);
 // must repair just the house records from the last-known-good full-layout backup.
 localStorage.setItem(LAYOUT_KEY, JSON.stringify({ version: 3, tiles: [{ c: 9, r: 9, type: 'tilled' }], objects: {} }));
 const recovered = FarmEditor.loadFarmLayout();
-assert.deepEqual(recovered.tiles, [{ c: 9, r: 9, type: 'tilled' }], 'recovery preserves newer non-house farm changes');
-assert.deepEqual(recovered.housePieces.map(piece => piece.id), ['house_starter', 'house_starter_annex'], 'recovery restores house records from backup');
+assert.equal(JSON.stringify(recovered.tiles), JSON.stringify([{ c: 9, r: 9, type: 'tilled' }]), 'recovery preserves newer non-house farm changes');
+assert.equal(JSON.stringify(recovered.housePieces.map(piece => piece.id)), JSON.stringify(['house_starter', 'house_starter_annex']), 'recovery restores house records from backup');
 assert.equal(HousePieces.debugRegistryStability().recoveredBackupCount, 1);
 assert.equal(HousePieces.debugRegistryStability().backupHasStarter, true);
 
