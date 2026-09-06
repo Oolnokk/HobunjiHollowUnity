@@ -21365,6 +21365,7 @@
 
           if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
             window.BanditCamps.updateCompanionPerception(dt);
+            window.BanditCamps.updateRandomEncounters(dt);
             window.BanditCamps.updateCampBanners(dt);
             window.WildlifeSpawn.updateHostileSpawning(dt);
             const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
