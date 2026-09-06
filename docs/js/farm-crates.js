@@ -491,15 +491,22 @@
       },
       withdrawItem(key, qty) {
         if (!deps.hasFarmPermission(inventoryCfg().permissions.withdraw)) return 0;
-        const moved = Math.max(0, Math.min(qty, bin[key] || 0));
+        // Bound the move by how much room is actually left in the pack stack
+        // (not just how much is in the box) — moved is what's both taken out
+        // of the box AND added to the pack below. Clamping only the deposit
+        // side (inventory[key] to maxStack) after already removing the full
+        // qty from bin used to vanish the overflow: it left the box, but the
+        // pack stack was already at/near its cap, so it never arrived there.
+        const maxStack = Number(inventoryCfg().maxStack);
+        const room = Math.max(0, maxStack - (deps.inventory[key] || 0));
+        const moved = Math.max(0, Math.min(qty, bin[key] || 0, room));
         if (moved < 1) return 0;
         bin[key] -= moved;
         if ((pendingSaleCounts[key] || 0) > 0) {
           pendingSaleCounts[key] = Math.max(0, pendingSaleCounts[key] - moved);
           if (pendingSaleCounts[key] < 1) delete pendingSaleCounts[key];
         }
-        const maxStack = Number(inventoryCfg().maxStack);
-        deps.inventory[key] = Math.min(maxStack, (deps.inventory[key] || 0) + moved);
+        deps.inventory[key] = (deps.inventory[key] || 0) + moved;
         syncVisualTransform(occupiedLift());
         return moved;
       },
