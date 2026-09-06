@@ -8101,7 +8101,7 @@
         isFarmEditMode: () => farmEditMode,
         getBoundDesktopEnter: () => getActionForButton('desktop', 'Enter'),
         debugComputeActionButtons: () => computeActionButtons(),
-        getCavernFloor: (mapId) => window.CavernGenerator.generateCavernFloor(mapId),
+        getCavernFloor: (mapId) => window.CavernGenerator.generateCavernFloor(mapId, { fast: true }),
         exitBuilding: () => exitBuilding(),
         toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
         // Runtime grass toggle (see the Settings-tab checkbox and ?hideGrass=1
@@ -9522,15 +9522,12 @@
       // the per-zone mesa-mesh orchestration (buildZoneMesaMeshes/
       // rebuildZoneMesaMeshes), and the rounded boulder-mound bump field
       // (buildRockMoundBumpField/sampleRockMoundBump) now live in
-      // js/zone-plateau-mesa.js — call via window.ZonePlateauMesa.*. The
-      // shared tuning constant stays here since js/zone-den-totem-features.js
-      // also reads it via its own init() deps.
+      // js/zone-plateau-mesa.js — call via window.ZonePlateauMesa.*.
       const ROCK_MOUND_CELLS_PER_TILE = 6;
 
-      // Animal den rock mounds (buildDenRockMoundGeo/buildAnimalDenMeshes)
-      // and root totem meshes (buildRootTotemMeshes) now live in
-      // js/zone-den-totem-features.js — call via
-      // window.ZoneDenTotemFeatures.*.
+      // Animal den cave-entrance meshes (buildAnimalDenMeshes) and root totem
+      // meshes (buildRootTotemMeshes) now live in js/zone-den-totem-features.js
+      // — call via window.ZoneDenTotemFeatures.*.
 
       // Zone waterway meshes (buildWaterfallCurtainMeshes/
       // buildZoneRiverWaterMeshes) now live in js/zone-terrain-features.js
@@ -11894,9 +11891,16 @@
           // one mesh, replacing the flat per-tile floor boxes and flat wall
           // panels every other interior style still uses below.
           if ((mapData.wallStyle === 'cavern' || mapData.wallStyle === 'mine') && mapData.mesh) {
+            // A den's cavern shares the same texture/tint as its own
+            // exterior cave-entrance prop (see zone-den-totem-features.js's
+            // denCaveVariantFor, keyed off this exact mapData.denMotherKind)
+            // rather than mine's fixed stone look — a grehlr den reads as
+            // trench soil throughout, a gar-wolf/uumkao'ii den as farm-cliff
+            // rock throughout.
+            const denCaveVariant = mapData.wallStyle === 'cavern' ? window.ZoneDenTotemFeatures?.denCaveVariantFor?.(mapData.denMotherKind) : null;
             const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh, mapData.wallStyle === 'mine'
               ? { textureUrl: 'assets/textures/carved_smooth.png', color: 0x8a8d91, textureRepeat: 0.42, useLambert: true, emissive: 0x000000 }
-              : undefined);
+              : denCaveVariant ? { textureUrl: denCaveVariant.textureUrl, color: denCaveVariant.color, textureRepeat: 0.35, useLambert: true, emissive: 0x000000 } : undefined);
             _markOutline(cavernMesh);
             bScene.add(cavernMesh);
           } else {
@@ -12118,7 +12122,17 @@
               attackDamage: 10, attackRangePx: TILE * 0.8, attackHalfConeRad: 40 * Math.PI / 180,
               attackStaminaCost: 10, attackCooldownS: 1.3, attacks: ['pounce'], attackTag: 'blunt',
             };
-            for (const spawn of (mapData.creatureSpawns || [])) {
+            // The regular (non-Den-Mother) pack members guarding this
+            // cavern's crawl are mutually exclusive with the SAME den's
+            // exterior pack (spawnPackAtDen/isDenPackAlive in
+            // wildlife-spawn.js) — the pack is either out wandering its
+            // territory or holed up defending the nest, never rendered as
+            // both at once. Doesn't track which individual creature moved
+            // where, just whether the exterior pack (as a whole) is still
+            // alive right now.
+            const exteriorDenKey = window.WildlifeSpawn.denKeyForCavern(mapId);
+            const exteriorPackAlive = exteriorDenKey ? window.WildlifeSpawn.isDenPackAlive(exteriorDenKey) : false;
+            if (!exteriorPackAlive) for (const spawn of (mapData.creatureSpawns || [])) {
               const spawnFamily = window.WildlifeSpawn.denGenotypeFamily(spawn.kind);
               const spawnGenotype = spawnFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, spawnFamily) : null;
               const sx = (spawn.col + 0.5) * TILE, sy = (spawn.row + 0.5) * TILE;
@@ -25448,9 +25462,8 @@
       });
 
       window.ZoneDenTotemFeatures?.init({
-        NORMAL_TOP, PLATEAU_UNIT, TileType, ROCK_MOUND_CELLS_PER_TILE,
-        markTerrainEdgeId: _markTerrainEdgeId,
-        terrainCategoryFor: _terrainCategoryFor,
+        NORMAL_TOP, PLATEAU_UNIT,
+        markOutline: _markOutline,
       });
       {
         const root = window.TownMine?.farmRootTotem?.(COLS, ROWS);

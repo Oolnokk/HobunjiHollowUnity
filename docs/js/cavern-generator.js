@@ -225,7 +225,15 @@
   }
 
   function synthesizeCavernMapData(mapId) {
-    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId);
+    // Same sculptOptions town-mine.js's synthesizeFloorMapData requests
+    // (fast: true — smaller gridN/splineSamples/probe budget, see
+    // generateCavernFloor's sculptOptions branch) so a den's cavern carves
+    // with the exact same generation method/settings a mine floor uses,
+    // rather than the slower high-fidelity defaults. Unlike a mine floor
+    // this still caches per mapId (the default): a den is one fixed lair
+    // tied to a specific world location, not a roguelike floor re-rolled
+    // fresh on every visit.
+    const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow, disconnectedFloorTilesRemoved, mesh } = generateCavernFloor(mapId, { fast: true });
 
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (() => Math.random);
     const decorRng = makeRng(mapId + '_decor');

@@ -812,10 +812,14 @@
     return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
   }
 
-  // Animal den geometry — mirrors game.js's buildAnimalDenMeshes exactly (see
-  // its own comment) so the Map Editor preview and headless watertightness
-  // checks see the same carved-mouth rounded-boulder rock volume the live
-  // game renders.
+  // Animal den geometry — a synthetic carved-mouth rounded-boulder rock
+  // volume matching the den footprint's actual collision shape (see
+  // grid-tile-accessors.js's isAnimalDenCollisionTile: solid except a
+  // south-wall doorway gap), used for the Map Editor preview and headless
+  // watertightness checks. The live game no longer renders this shape
+  // itself (see zone-den-totem-features.js's buildAnimalDenMeshes, which
+  // places a cave_small.glb prop instead) — this generator stays purely to
+  // exercise/preview the footprint's own collision geometry.
   function buildAnimalDenGeometry(dens, zGrid) {
     const pos = [], idx = [], meta = [];
     let vi = 0;
