@@ -11,11 +11,11 @@ const source = fs.readFileSync(SOURCE_PATH, 'utf8'); // Loads the exact source t
 
 const loaderSource = fs.readFileSync(path.join(ROOT, 'docs/js/input-settings-panel.js'), 'utf8'); // Reads the existing runtime-helper bootstrap integration point.
 assert.match(loaderSource, /'js\/ambient-biome-audio\.js'/, 'input settings bootstrap should load the ambience helper after game initialization');
-for (const fileName of ['bgs_nightbugs1.wav', 'bgs_cloudforest.wav', 'bgs_cloudforest_night.wav', 'bgs_river.wav']) {
-  const wavPath = path.join(ROOT, 'docs/assets/audio/sfx/bgs', fileName); // Points at each converted repository asset expected by AUDIO_URLS.
-  const header = fs.readFileSync(wavPath).subarray(0, 12); // Validates the RIFF/WAVE signature without loading the full recordings into memory.
-  assert.equal(header.subarray(0, 4).toString('ascii'), 'RIFF', `${fileName} should be a RIFF file`);
-  assert.equal(header.subarray(8, 12).toString('ascii'), 'WAVE', `${fileName} should be a WAVE file`);
+for (const fileName of ['bgs_nightbugs1.ogg', 'bgs_cloudforest.ogg', 'bgs_cloudforest_night.ogg', 'bgs_river.ogg']) {
+  const oggPath = path.join(ROOT, 'docs/assets/audio/sfx/bgs', fileName); // Points at each converted repository asset expected by AUDIO_URLS.
+  assert.equal(fs.existsSync(oggPath), true, `${fileName} should exist`);
+  const header = fs.readFileSync(oggPath).subarray(0, 4); // Validates the Ogg container signature without loading the full recordings into memory.
+  assert.equal(header.toString('ascii'), 'OggS', `${fileName} should be an Ogg file`);
 }
 
 class FakeAudio {
@@ -141,7 +141,7 @@ vm.runInNewContext(source, context, { filename: SOURCE_PATH });
 const api = context.window.HobunjiAmbientBgs; // Exposes manual updates and diagnostics exactly as mobile runtime does.
 assert.ok(api?.installed, 'ambient helper should install');
 assert.equal(typeof intervalCallback, 'function', 'helper should use one low-frequency timer');
-assert.equal(FakeAudio.instances.length, 2, 'initial load should fetch only the active cloud-forest and river WAVs');
+assert.equal(FakeAudio.instances.length, 2, 'initial load should fetch only the active cloud-forest and river Ogg files');
 
 let snapshot = api.debugSnapshot(); // Captures the initial southern-cloud-forest daytime mix.
 assert.equal(target(snapshot, 'cloudforest'), 0.30, 'cloud forest day ambience should replace generic birds');
@@ -149,7 +149,7 @@ assert.equal(target(snapshot, 'cloudforestNight'), 0, 'night forest ambience sho
 assert.equal(target(snapshot, 'nightbugs'), 0, 'generic nightbugs should not double the cloud-forest bed');
 assert.ok(target(snapshot, 'river') > 0.4, 'river should be loud directly beside water in the cloud forest');
 assert.equal(config.bgs.birdsVolume, 0, 'built-in generic birds should be suppressed in the cloud forest');
-assert.equal(config.bgs.nightbugsVolume, 0, 'built-in old nightbugs should always be handed off to the converted WAV');
+assert.equal(config.bgs.nightbugsVolume, 0, 'built-in old nightbugs should always be handed off to the converted Ogg');
 
 state.night = true;
 api.updateNow();
@@ -157,7 +157,7 @@ snapshot = api.debugSnapshot();
 assert.equal(target(snapshot, 'cloudforest'), 0, 'day forest ambience should fade out at night');
 assert.equal(target(snapshot, 'cloudforestNight'), 0.36, 'night forest ambience should use its authored volume');
 assert.equal(target(snapshot, 'nightbugs'), 0, 'generic bugs should remain suppressed in the cloud forest at night');
-assert.equal(FakeAudio.instances.length, 3, 'night transition should lazily fetch the cloud-forest-night WAV once');
+assert.equal(FakeAudio.instances.length, 3, 'night transition should lazily fetch the cloud-forest-night Ogg file once');
 
 state.area = 'map_western_slope';
 api.updateNow();
@@ -166,7 +166,7 @@ assert.equal(target(snapshot, 'nightbugs'), 0.34, 'generic converted nightbugs s
 assert.equal(target(snapshot, 'cloudforestNight'), 0, 'cloud-forest ambience must not leak to another zone');
 assert.equal(target(snapshot, 'river'), 0, 'river ambience must be restricted to the requested maps');
 assert.equal(config.bgs.birdsVolume, 0.25, 'generic bird volume should be restored immediately outside the cloud forest');
-assert.equal(FakeAudio.instances.length, 4, 'the generic nightbugs WAV should load only when first needed');
+assert.equal(FakeAudio.instances.length, 4, 'the generic nightbugs Ogg file should load only when first needed');
 
 state.area = 'town';
 state.night = false;
