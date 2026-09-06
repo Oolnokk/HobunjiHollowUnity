@@ -7,7 +7,10 @@ const vm = require('node:vm');
 
 const runtimeSource = fs.readFileSync('docs/js/livestock-harvest-staging.js', 'utf8');
 const loaderSource = fs.readFileSync('docs/js/character-action-locks.js', 'utf8');
+const farmSource = fs.readFileSync('docs/js/farm-animals.js', 'utf8');
 assert.match(loaderSource, /livestock-harvest-staging\.js\?v=20260906harvest1/, 'the shared interaction loader includes the harvest staging bridge before gameplay boots');
+assert.match(farmSource, /const HARVEST_TRANSITION_S = 0\.35;/, 'the staging bridge transition duration stays aligned with FarmAnimals');
+assert.match(farmSource, /const HARVEST_ACTIVE_DURATION_S = 2;/, 'the staging bridge active duration stays aligned with FarmAnimals');
 
 const sandbox = {
   console,
