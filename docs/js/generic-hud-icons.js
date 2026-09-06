@@ -23,7 +23,7 @@
   const TEXT_SKIP_SELECTOR = 'script,style,textarea,input,select,option,[data-generic-hud-icon]'; // Used to keep icon substitution out of editable/source-like DOM.
   const X_CONTROL_HINT = /(close|cancel|delete|remove|unequip|unassign|dismiss|clear)/i; // Used to distinguish a semantic × close/remove control from multiplication text.
   const RELATIONSHIPS_TAB_SELECTOR = '[data-mpanel="relationships"]'; // Used to make the Relationships tab a heart-only affordance.
-  const RAPPORT_COLOR = '#ff8fbd'; // Used by the popup +number text so the Rapport event keeps its established pink label.
+  const RAPPORT_COLOR = '#ffd84d'; // Used by the Rapport popup +number so the entire event is visually distinct from normal heart UI.
   const RAPPORT_HEART_COLOR = '#ffd84d'; // Used only by the Rapport gain heart so it cannot be mistaken for a normal relationship/health heart.
   const RAPPORT_RENDER_ORDER = 1200; // Used to keep rapport popups in WorldPopupText's shell-outline-safe overlay band.
   const rapportPopups = []; // Used by the WorldPopupText update extension to animate/dispose active rapport gains.
@@ -333,7 +333,7 @@
     const canvas = document.createElement('canvas'); // Used as the combined heart + number texture.
     canvas.width = 360;
     canvas.height = 112;
-    const context = canvas.getContext('2d'); // Used to draw the yellow heart art and outlined pink number.
+    const context = canvas.getContext('2d'); // Used to draw the yellow heart art and outlined yellow number.
     const iconSize = 76; // Used to keep the heart visually comparable to the popup numeral height.
     const iconX = 16; // Used as the heart's left padding inside the popup texture.
     const iconY = (canvas.height - iconSize) * 0.5; // Used to vertically center the heart beside the number.
