@@ -324,6 +324,13 @@
       || id.includes('burrow');
   }
 
+  function isUndergroundLanternArea(area) {
+    const id = String(area || '').toLowerCase();
+    return id === 'map_i_town_mine_safe'
+      || id.startsWith('map_i_town_mine_f_')
+      || id.startsWith('map_i_den_');
+  }
+
   if (window.RainPlanes) {
     const priorRainInit = window.RainPlanes.init;
     const priorRainUpdate = window.RainPlanes.update;
@@ -334,13 +341,14 @@
     window.RainPlanes.update = function (dt) {
       const result = priorRainUpdate.call(this, dt);
       const scene = skyPolicyDeps?.getActiveScene?.();
+      const area = skyPolicyDeps?.getCurrentArea?.();
+      const playerLanternLight = scene?.getObjectByName?.('mine_player_torch'); // Used here to override game.js's legacy mine-floor-only visibility before the active scene renders.
+      if (playerLanternLight) playerLanternLight.visible = isUndergroundLanternArea(area);
       const skyRoot = scene?.getObjectByName?.('hobunji_dynamic_skydome');
       if (skyRoot) {
-        const area = skyPolicyDeps?.getCurrentArea?.();
         const outside = skyPolicyDeps?.isOutdoorArea?.() !== false;
         skyRoot.visible = outside && !isNoSkyArea(area);
       }
-      const area = skyPolicyDeps?.getCurrentArea?.();
       if (scene?.background?.isColor && isNoSkyArea(area) && area !== 'map_southern_cloud_forest') scene.background.set(0x000000);
       return result;
     };
