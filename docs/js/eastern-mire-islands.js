@@ -11,8 +11,16 @@
   const BASE_RY = 14; // Used as the ordinary island vertical radius in final, 2x-scaled wilderness tiles.
   const CAMP_HALF_SIZE = 6; // Used to clear a 13x13 flat pad around filler-island centers for 9x8 camps plus clearance.
   const INSTALL_POLL_MS = 25; // Used only during boot until WildernessMapGenerator becomes available.
+  const CACHE_EPOCH = 'eastern_mire_archipelago_20260906b'; // Used to invalidate pre-archipelago same-year Tothal caches exactly once per adapter revision.
+  const CACHE_MARKER_KEY = 'hobunji_eastern_mire_cache_epoch'; // Used to avoid re-deleting a valid newly generated Mire cache on every reload.
+  const TOTHAL_CACHE_DB_NAME = 'hobunji-tothal-zone-cache'; // Matches game.js's disposable yearly wilderness cache database.
+  const TOTHAL_CACHE_STORE = 'zones'; // Matches game.js's object-store name for cached generated zones.
+  const FORCE_BUTTON_ID = 'wildlifeShiftBtn'; // Used by the capture-phase debug-button override so a force really regenerates instead of restoring cache.
 
   const WATER_TYPES = new Set(['river', 'stream', 'waterfall', 'trench']); // Used when converting inherited generator water back to dry island surface.
+  let lastStats = null; // Used by the in-game force-shift debug path to prove a fresh archipelago generation actually ran.
+  let installTimer = null; // Used only until the main wilderness generator script is assigned during initial parsing.
+  let forceButtonFixInstalled = false; // Used to ensure the capture-phase Force Tothal Shift override is registered once.
 
   function log(message, level = 'info') {
     const text = `[EasternMireIslands] ${message}`;
@@ -427,6 +435,16 @@
         ry: center.ry,
       })),
     };
+    lastStats = { // Used by the force-shift debug override to report the fresh generated map without needing devtools.
+      seedText,
+      islandCount: centers.length,
+      openCampShelves,
+      campPadSize: CAMP_HALF_SIZE * 2 + 1,
+      causewayTiles,
+      entryLandingTiles,
+      waterRatio: Number(waterRatio.toFixed(4)),
+      maxTier: 3,
+    };
 
     const message = `rebuilt ${centers.length} short 3-tier island(s), ${openCampShelves} clear 13x13 camp pad(s), ${(waterRatio * 100).toFixed(1)}% water, ${causewayTiles} thin route tile(s)`;
     log(message, waterRatio + 0.001 < WATER_TARGET ? 'warn' : 'info');
@@ -486,7 +504,6 @@
     return true;
   }
 
-  let installTimer = null; // Used only until the main wilderness generator script is assigned during initial parsing.
   function ensureInstalled() {
     if (!installGeneratorPatch()) return false;
     if (installTimer !== null && typeof root.clearInterval === 'function') root.clearInterval(installTimer);
@@ -494,13 +511,152 @@
     return true;
   }
 
+  function openTothalCacheDb() {
+    if (!root.indexedDB) return Promise.resolve(null);
+    return new Promise(resolve => {
+      const request = root.indexedDB.open(TOTHAL_CACHE_DB_NAME, 1); // Used to access the same disposable cache game.js reads before deciding whether to call the generator.
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(TOTHAL_CACHE_STORE)) request.result.createObjectStore(TOTHAL_CACHE_STORE);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+  }
+
+  async function easternMireCacheKeys() {
+    const db = await openTothalCacheDb();
+    if (!db) return [];
+    try {
+      return await new Promise(resolve => {
+        const request = db.transaction(TOTHAL_CACHE_STORE, 'readonly').objectStore(TOTHAL_CACHE_STORE).getAllKeys();
+        request.onsuccess = () => resolve((request.result || []).filter(cacheKey => String(cacheKey).endsWith(`_${ZONE_ID}`)));
+        request.onerror = () => resolve([]);
+      });
+    } finally {
+      try { db.close(); } catch (_) {}
+    }
+  }
+
+  async function clearCachedEasternMireLayouts(reason = 'manual') {
+    const db = await openTothalCacheDb();
+    if (!db) {
+      log(`could not open Tothal cache while clearing Eastern Mire (${reason})`, 'warn');
+      return 0;
+    }
+    let keys = [];
+    try {
+      keys = await new Promise(resolve => {
+        const request = db.transaction(TOTHAL_CACHE_STORE, 'readonly').objectStore(TOTHAL_CACHE_STORE).getAllKeys();
+        request.onsuccess = () => resolve((request.result || []).filter(cacheKey => String(cacheKey).endsWith(`_${ZONE_ID}`)));
+        request.onerror = () => resolve([]);
+      });
+      if (keys.length) {
+        await new Promise(resolve => {
+          const transaction = db.transaction(TOTHAL_CACHE_STORE, 'readwrite');
+          const store = transaction.objectStore(TOTHAL_CACHE_STORE);
+          keys.forEach(cacheKey => store.delete(cacheKey));
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => resolve();
+          transaction.onabort = () => resolve();
+        });
+      }
+    } finally {
+      try { db.close(); } catch (_) {}
+    }
+    log(`cleared ${keys.length} cached Eastern Mire layout(s) (${reason})`);
+    return keys.length;
+  }
+
+  async function invalidateOldCacheForThisAdapter() {
+    let marker = null;
+    try { marker = root.localStorage?.getItem(CACHE_MARKER_KEY); } catch (_) {}
+    if (marker === CACHE_EPOCH) return 0;
+    const deleted = await clearCachedEasternMireLayouts(`adapter epoch ${CACHE_EPOCH}`);
+    try { root.localStorage?.setItem(CACHE_MARKER_KEY, CACHE_EPOCH); } catch (_) {}
+    return deleted;
+  }
+
+  async function waitForFreshEasternMireCache(timeoutMs = 90000) {
+    const started = Date.now(); // Used to cap the debug-button wait if generation fails before writing the new cache.
+    while (Date.now() - started < timeoutMs) {
+      if ((await easternMireCacheKeys()).length) return true;
+      await new Promise(resolve => root.setTimeout(resolve, 125));
+    }
+    return false;
+  }
+
+  function installForceShiftButtonFix() {
+    if (forceButtonFixInstalled || typeof document === 'undefined') return;
+    forceButtonFixInstalled = true;
+    document.addEventListener('click', async event => {
+      const button = event.target?.closest?.(`#${FORCE_BUTTON_ID}`);
+      if (!button) return;
+
+      // game.js's normal click handler calls checkTothalShift(true), but that
+      // routine still reads the same-year IndexedDB cache and therefore can
+      // restore the old pre-archipelago workspace without ever calling this
+      // adapter. Capture the click first, clear that cache, and then invoke the
+      // public force hook ourselves. stopImmediatePropagation prevents the old
+      // bubble handler from launching a duplicate shift in parallel.
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const previousText = button.textContent; // Used to restore the debug control after the forced regeneration finishes.
+      button.disabled = true;
+      button.textContent = 'Forcing Mire…';
+      lastStats = null;
+
+      try {
+        await clearCachedEasternMireLayouts('Force Tothal Shift button');
+        const currentArea = root.__climbDebug?.getCurrentArea?.() || root.__wildlifeDebug?.getCurrentArea?.() || null; // Used to decide whether the stale currently-rendered scene must be rebuilt too.
+        if (typeof root.forceTothalShift !== 'function') throw new Error('window.forceTothalShift is unavailable');
+        root.forceTothalShift();
+
+        // checkTothalShift intentionally does not return its internal promise.
+        // enterZone *does* wait on that private promise, so when the player is
+        // already in the Mire this is the safest existing way to wait for the
+        // shift, dispose the dirty old scene, and rebuild it at the new entry.
+        if (currentArea === ZONE_ID && typeof root.__climbDebug?.enterZone === 'function') {
+          await root.__climbDebug.enterZone(ZONE_ID);
+        } else {
+          const cacheWritten = await waitForFreshEasternMireCache();
+          if (!cacheWritten) throw new Error('fresh Eastern Mire cache was not written before timeout');
+        }
+
+        const stats = lastStats;
+        if (stats) {
+          log(`Force Tothal Shift verified fresh Mire: ${(stats.waterRatio * 100).toFixed(1)}% water, ${stats.islandCount} islands, ${stats.openCampShelves} camp pads, max tier ${stats.maxTier}.`);
+        } else {
+          log('Force Tothal Shift finished, but no fresh Eastern Mire generation stats were captured.', 'warn');
+        }
+        root.WildlifeDebugPanel?.render?.();
+      } catch (error) {
+        log(`Force Tothal Shift refresh failed: ${error?.message || error}`, 'error');
+      } finally {
+        button.disabled = false;
+        button.textContent = previousText || 'Force Tothal Shift';
+      }
+    }, true);
+  }
+
   root.EasternMireIslands = Object.freeze({
     ZONE_ID,
+    CACHE_EPOCH,
     applyToWorkspace,
     installGeneratorPatch,
     ensureInstalled,
+    clearCachedLayouts: clearCachedEasternMireLayouts,
+    getLastStats: () => lastStats ? { ...lastStats } : null,
     targetWaterRatio: WATER_TARGET,
   });
+
+  installForceShiftButtonFix();
+  // Fire-and-forget is intentional: this script executes far earlier than the
+  // world-load Tothal check, so the old cache is normally gone long before a
+  // zone lookup can occur. The Force button path separately awaits deletion,
+  // which removes the race entirely for manual testing.
+  invalidateOldCacheForThisAdapter().catch(error => log(`startup cache invalidation failed: ${error?.message || error}`, 'warn'));
 
   if (!ensureInstalled() && typeof root.setInterval === 'function') {
     installTimer = root.setInterval(ensureInstalled, INSTALL_POLL_MS);
