@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Syntax check interaction aim adapter
+      - name: Syntax check fail-safe interaction aim adapter
         run: node --check docs/js/combat/ranged-camera-focus.js
-      - name: Run shared interaction-target regression
+      - name: Run fail-safe shared interaction-target regression
         run: node scripts/test-ranged-camera-focus.js
