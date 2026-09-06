@@ -12,8 +12,8 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-charged-breaker.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  let MIN_READY_S = 0.62;
-  let MAX_CHARGE_S = 1.75;
+  let MIN_READY_S = 1.0;
+  let MAX_CHARGE_S = 2.5;
   // Drained continuously every frame the button is held, on top of the
   // release cost below — running dry mid-charge forces an early release at
   // whatever charge level had been reached so far (see onHoldUpdate/
@@ -41,12 +41,11 @@
   let WINDUP_S = 0.52, STRIKE_S = 0.30;
   let POWER = 1.7;
   let HOLD_S = 1; // post-strike pause before easing back to neutral
-  // Forward leap on release — see game.js's beginCombatLunge. Matched to the
-  // combo's own longest step lunge (Forehand Swing/Short Thrust's 2.0 tiles)
-  // rather than a bespoke bigger number, per the same "barely stronger than
-  // a combo attack" baseline as the damage multipliers above. LUNGE_HOP_UNITS
-  // is a cosmetic vertical arc peak in world-Y units (not pixels).
-  let LUNGE_TILE_MUL = 2.0;
+  // Long committed leap on release — see game.js's beginCombatLunge. The
+  // one-second minimum ready time gives opponents a readable telegraph before
+  // this 5.5-tile gap closer can fire. LUNGE_HOP_UNITS is only the cosmetic
+  // vertical arc peak in world-Y units (not pixels).
+  let LUNGE_TILE_MUL = 5.5;
   let LUNGE_HOP_UNITS = 0.45;
 
   function now() { return performance.now() / 1000; }
@@ -331,7 +330,7 @@
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : vegetationCleared > 0
-              ? `Charged Breaker (${pct}% charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
+              ? `${tech.name}: cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `Charged Breaker (${pct}% charge) connects with nothing.`;
           // silent: same reasoning as combat-combo.js — every swing already
           // has its own weapon swing/impact sfx.
