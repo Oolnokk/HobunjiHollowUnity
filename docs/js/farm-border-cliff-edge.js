@@ -19,8 +19,7 @@
   const ENTRANCE_FLARE = 0.65;
   const CLIFF_RISE = 3.0;
   const CLIFF_UV_PATCH_WORLD_SIZE = 6; // Used to keep the continuous immediate-edge wall from becoming one farm-wide PNG surface.
-  const EDGE_PROFILE_COARSE_SPAN = 3.75; // Used to vary the seam height in broad rock masses instead of one uniform retaining wall.
-  const EDGE_PROFILE_FINE_SPAN = 1.25; // Used to add smaller deterministic breaks between the broad cliff masses.
+  const TOWN_RIDGE_VERTEX_SPAN = 5; // Matches buildTownBorderTerrain's quantized 2.5-world-unit ridge blocks.
 
   let deps = null;
   let buildCount = 0;
@@ -93,32 +92,11 @@
       h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
       return (h / 4294967296 - 0.5) * 0.026;
     };
-    const hash01 = (value, salt) => {
-      let h = (2166136261 ^ Math.imul(value | 0, 374761393) ^ Math.imul(salt | 0, 668265263)) >>> 0;
+    function townRidgeRise(gi, gj) {
+      const qi = Math.round(gi / TOWN_RIDGE_VERTEX_SPAN), qj = Math.round(gj / TOWN_RIDGE_VERTEX_SPAN);
+      let h = (2166136261 ^ (qi * 374761393) ^ (qj * 668265263)) >>> 0;
       h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
-      return h / 4294967296;
-    };
-    const smooth01 = value => value * value * (3 - 2 * value);
-    function edgeNoise(axis, span, salt) {
-      const scaled = axis / span;
-      const cell = Math.floor(scaled), t = smooth01(scaled - cell);
-      const a = hash01(cell, salt), b = hash01(cell + 1, salt);
-      return a + (b - a) * t;
-    }
-    function naturalEdgeRise(gi, gj, outsideSteps) {
-      const vi = gi - BV, vj = gj - BV;
-      const distances = [Math.max(0, -vj), Math.max(0, vi - PVW), Math.max(0, vj - PVH), Math.max(0, -vi)];
-      let side = 0;
-      for (let i = 1; i < distances.length; i++) if (distances[i] > distances[side]) side = i;
-      const axis = (side === 0 || side === 2) ? vi * 0.5 : vj * 0.5;
-      const coarse = edgeNoise(axis, EDGE_PROFILE_COARSE_SPAN, 41 + side * 17);
-      const fine = edgeNoise(axis, EDGE_PROFILE_FINE_SPAN, 113 + side * 29);
-      const brokenCrown = fine < 0.18 ? -0.55 * (1 - fine / 0.18) : 0;
-      const outward = outsideSteps * 0.5;
-      const shoulderNoise = edgeNoise(axis + outward * 0.7, 2.5, 211 + side * 31);
-      const shoulderLift = smooth01(Math.min(1, outward / 5)) * (0.12 + shoulderNoise * 0.62);
-      const terraceLift = Math.floor(Math.max(0, outward - 1 + shoulderNoise * 1.4) / 3.25) * 0.16;
-      return Math.max(1.35, CLIFF_RISE * (0.62 + coarse * 0.55) + (fine - 0.5) * 0.42 + brokenCrown + shoulderLift + terraceLift);
+      return 2.2 + (h >>> 0) / 4294967296 * 3.2;
     }
     const vSteps = (gi, gj) => {
       const vi = gi - BV, vj = gj - BV;
@@ -216,14 +194,8 @@
       const wx = (gi - BV) * 0.5;
       const wz = (gj - BV) * 0.5;
       const outward = Math.max(0, -wz);
-      const entranceNoise = edgeNoise(outward, 3.5, 607) - 0.5;
-      const entranceCenter = ENTRANCE_CENTER_X + entranceNoise * 0.42;
-      const half = ENTRANCE_HALF_WIDTH + ENTRANCE_FLARE * Math.min(1, outward / BORDER_W) + entranceNoise * 0.18;
-      // Preserve the full fixed road clearance even while the surrounding rock
-      // lips wander sideways: shifting the visual centre must not clip either
-      // edge of FarmPathBricks' centred 3.25-unit corridor.
-      const roadSafeHalf = Math.max(ENTRANCE_HALF_WIDTH, half) + Math.abs(entranceCenter - ENTRANCE_CENTER_X);
-      const inEntrance = wz <= 0 && wz >= -BORDER_W && Math.abs(wx - entranceCenter) <= roadSafeHalf;
+      const half = ENTRANCE_HALF_WIDTH + ENTRANCE_FLARE * Math.min(1, outward / BORDER_W);
+      const inEntrance = wz <= 0 && wz >= -BORDER_W && Math.abs(wx - ENTRANCE_CENTER_X) <= half;
       const k = gj * GW + gi;
       if (inEntrance) {
         const target = deps.NORMAL_TOP + hashDisp(gi - BV, gj - BV);
@@ -232,7 +204,7 @@
           clearedEntrance++;
         }
       } else {
-        const rise = naturalEdgeRise(gi, gj, outsideSteps);
+        const rise = townRidgeRise(gi, gj);
         const target = deps.NORMAL_TOP + rise + hashDisp(gi - BV, gj - BV) * 0.35;
         if (outsideSteps <= 1.01) {
           seamRiseMin = Math.min(seamRiseMin, rise);
