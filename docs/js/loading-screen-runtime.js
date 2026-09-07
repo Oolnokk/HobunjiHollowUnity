@@ -20,19 +20,19 @@
     columnSpacing: -0.55, scriptScrollSpeed: 0.017,
   }); // Used for the synchronous first paint before loading-screens.json finishes fetching.
   const FALLBACK_TIPS = Object.freeze([
-    'Health keeps you alive, Stamina pays for effort, and Footing keeps you upright.',
-    'If an action costs more Stamina than you have, it is still allowed, but you become Exhausted and begin spending Black Stamina.',
-    'Taking Footing damage can stagger you. Reaching 0 Footing puts you prone.',
-    'Mastery belongs to the individual tool or weapon you use; it is separate from broad character Skills such as Combat or Farming.',
-    'Combat use awards weapon Mastery when you actually kill an enemy with that weapon, and tougher enemies are worth more.',
-    'A shovel gains Mastery when it exposes buried treasure, not for ordinary digging.',
-    'Motes of Prowess pay for technique choices after the matching Mastery rank opens that level.',
-    'Tap 1 follows your weapon\'s Combo, while Tap 2 is a selectable Quick Attack.',
-    'Hold 1 accepts Offensive Holds; Hold 2 accepts Defensive or Offensive Holds.',
-    'Quick Attack and Held Attack choices are remembered separately for each weapon.',
-    'Ranged weapon Mastery alternates between Basic Ammo choices and Special Ammo slots.',
-    'Every alchemy reagent carries one Humour, one Drive, and one Elemental Magnetism.',
-  ]); // Used only before the Compendium DOM is available; each line is condensed from existing Compendium guidance.
+    { title: 'Resources', text: 'Health keeps you alive, Stamina pays for effort, and Footing keeps you upright.' },
+    { title: 'Exhaustion', text: 'If an action costs more Stamina than you have, it is still allowed, but you become Exhausted and begin spending Black Stamina.' },
+    { title: 'Footing', text: 'Taking Footing damage can stagger you. Reaching 0 Footing puts you prone.' },
+    { title: 'Mastery', text: 'Mastery belongs to the individual tool or weapon you use; it is separate from broad character Skills such as Combat or Farming.' },
+    { title: 'Combat Mastery', text: 'Combat use awards weapon Mastery when you actually kill an enemy with that weapon, and tougher enemies are worth more.' },
+    { title: 'Shovel Mastery', text: 'A shovel gains Mastery when it exposes buried treasure, not for ordinary digging.' },
+    { title: 'Motes of Prowess', text: 'Motes of Prowess pay for technique choices after the matching Mastery rank opens that level.' },
+    { title: 'Attack Controls', text: 'Tap 1 follows your weapon\'s Combo, while Tap 2 is a selectable Quick Attack.' },
+    { title: 'Attack Controls', text: 'Hold 1 accepts Offensive Holds; Hold 2 accepts Defensive or Offensive Holds.' },
+    { title: 'Attack Loadouts', text: 'Quick Attack and Held Attack choices are remembered separately for each weapon.' },
+    { title: 'Ranged Mastery', text: 'Ranged weapon Mastery alternates between Basic Ammo choices and Special Ammo slots.' },
+    { title: 'Alchemy', text: 'Every alchemy reagent carries one Humour, one Drive, and one Elemental Magnetism.' },
+  ]); // Used only before the Compendium DOM is available; each fallback carries the same feature context as its condensed guidance.
 
   const state = {
     configPromise: null,
@@ -63,6 +63,7 @@
     debugTapAt: 0,
     debugVisible: false,
     activeTip: '',
+    activeTipTitle: '', // Used by the loading-screen header and diagnostics to preserve the selected Compendium feature context.
     reason: 'idle',
   }; // Used by rendering, transition coverage, real request progress, and the built-in mobile diagnostics panel.
 
@@ -125,7 +126,9 @@
 .hlsVerticalWord + .hlsVerticalWord{margin-left:var(--script-column-spacing)}
 .hlsVerticalWord{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;font-family:"TankanScript",sans-serif;line-height:.56;color:#fff;white-space:nowrap}
 .hlsVerticalGlyph{display:block;width:1em;height:.56em;line-height:.56em;text-align:center}
-#hlsLore{position:absolute;left:50%;bottom:max(5.5vh,28px);transform:translateX(-50%);width:min(78vw,980px);text-align:center;color:#fff;font-family:"KhymeryyanRoman",serif;line-height:1.24;text-wrap:balance;text-shadow:0 2px 8px rgba(0,0,0,.9)}
+#hlsLoreBlock{position:absolute;left:50%;bottom:max(5.5vh,28px);transform:translateX(-50%);width:min(78vw,980px);text-align:center;color:#fff;font-family:"KhymeryyanRoman",serif;text-shadow:0 2px 8px rgba(0,0,0,.9)}
+#hlsLoreHeader{margin:0 0 .42em;font-size:15px;line-height:1.05;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8fd0ff;text-wrap:balance}
+#hlsLore{line-height:1.24;text-wrap:balance}
 #hlsPercent{position:absolute;right:max(4vw,24px);bottom:max(5.5vh,28px);color:#fff;font-family:"KhymeryyanRoman",serif;font-size:18px;line-height:1;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:auto;user-select:none}
 #hlsDebug{display:none;position:absolute;right:max(4vw,24px);bottom:max(9vh,58px);max-width:min(84vw,440px);padding:9px 11px;border:1px solid rgba(255,255,255,.35);border-radius:7px;background:rgba(0,0,0,.82);color:#eee;font:11px/1.35 monospace;white-space:pre-wrap;text-align:left;text-shadow:none}
 #hlsDebug.visible{display:block}
@@ -147,7 +150,7 @@
     root.innerHTML = `
 <img id="hlsImage" alt="" />
 <div id="hlsScriptViewport"><div id="hlsScriptFloat"><div id="hlsScriptWords"></div></div></div>
-<div id="hlsLore"></div>
+<div id="hlsLoreBlock"><div id="hlsLoreHeader"></div><div id="hlsLore"></div></div>
 <div id="hlsPercent"></div>
 <div id="hlsDebug"></div>
 `;
@@ -159,6 +162,8 @@
       scriptViewport: root.querySelector('#hlsScriptViewport'),
       scriptFloat: root.querySelector('#hlsScriptFloat'),
       scriptWords: root.querySelector('#hlsScriptWords'),
+      loreBlock: root.querySelector('#hlsLoreBlock'),
+      loreHeader: root.querySelector('#hlsLoreHeader'),
       lore: root.querySelector('#hlsLore'),
       percent: root.querySelector('#hlsPercent'),
       debug: root.querySelector('#hlsDebug'),
@@ -192,6 +197,7 @@
       `requests=${state.requestCompleted}/${state.requestStarted}`,
       `visibleFor=${Math.round(state.visible ? nowMs() - state.visibleSince : 0)}ms min=${MIN_VISIBLE_MS}ms`,
       `transitionHook=${state.transitionHookInstalled} dependencyInitHooks=${state.dependencyInitHooks}`,
+      `feature=${state.activeTipTitle || '(none)'}`,
       `tip=${state.activeTip || '(none)'}`,
     ].join('\n');
   }
@@ -246,11 +252,11 @@
       const title = card.querySelector?.('.compendium-entry-title')?.textContent?.trim() || 'Compendium';
       if (/unavailable|diagnostic/i.test(title)) continue;
       const copy = compactTip(card.querySelector?.('.compendium-entry-copy')?.textContent);
-      if (copy.length >= 20) tips.push({ key: `${title}:copy`, text: copy });
+      if (copy.length >= 20) tips.push({ key: `${title}:copy`, title, text: copy });
       const notes = card.querySelectorAll?.('.compendium-notes li') || [];
       for (let index = 0; index < notes.length; index++) {
         const note = compactTip(notes[index]?.textContent);
-        if (note.length >= 20) tips.push({ key: `${title}:note:${index}`, text: note });
+        if (note.length >= 20) tips.push({ key: `${title}:note:${index}`, title, text: note });
       }
     }
     return tips;
@@ -260,12 +266,13 @@
     const canonical = extractCompendiumTips();
     const pool = canonical.length
       ? canonical
-      : FALLBACK_TIPS.map((text, index) => ({ key: `fallback:${index}`, text }));
+      : FALLBACK_TIPS.map((tip, index) => ({ key: `fallback:${index}`, ...tip }));
     const nonRepeat = pool.length > 1 && state.lastTipKey
       ? pool.filter(tip => tip.key !== state.lastTipKey)
       : pool;
-    const tip = nonRepeat[Math.floor(Math.random() * nonRepeat.length)] || pool[0] || { key: 'empty', text: '' };
+    const tip = nonRepeat[Math.floor(Math.random() * nonRepeat.length)] || pool[0] || { key: 'empty', title: 'Compendium', text: '' };
     state.lastTipKey = tip.key;
+    state.activeTipTitle = tip.title || 'Compendium';
     state.activeTip = tip.text;
     return tip.text;
   }
@@ -337,6 +344,11 @@
     if (cursor < source.length) container.appendChild(document.createTextNode(source.slice(cursor)));
   }
 
+  function renderActiveTip(els, text) {
+    els.loreHeader.textContent = state.activeTipTitle || 'Compendium';
+    renderRichTip(els.lore, text);
+  }
+
   function applyEntryAndSettings(config) {
     const els = buildDom();
     const settings = { ...DEFAULT_SETTINGS, ...(config?.settings || {}) };
@@ -345,7 +357,7 @@
     els.image.style.display = hasImage ? '' : 'none';
     if (hasImage && els.image.src !== entry.image) els.image.src = entry.image;
     els.lore.style.fontSize = `${settings.loreSize}px`;
-    renderRichTip(els.lore, state.activeTip || pickTip());
+    renderActiveTip(els, state.activeTip || pickTip());
     renderScript(els, settings, entry.script || 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = settings.scriptSide === 'right' ? '75%' : '25%';
     els.scriptViewport.style.top = `${settings.scriptY}%`;
@@ -456,13 +468,14 @@
     state.requestCompleted = 0;
     state.reason = reason;
     state.activeTip = '';
+    state.activeTipTitle = '';
     const els = buildDom();
     els.root.classList.add('visible');
     renderScript(els, DEFAULT_SETTINGS, 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = '25%';
     els.scriptViewport.style.top = '46%';
     els.lore.style.fontSize = `${DEFAULT_SETTINGS.loreSize}px`;
-    renderRichTip(els.lore, pickTip());
+    renderActiveTip(els, pickTip());
     setProgress(0, 'session-start', true);
     state.lastFrameTime = nowMs();
     if (state.motionRaf) cancelAnimationFrame(state.motionRaf);
@@ -659,6 +672,7 @@
       requestStarted: state.requestStarted,
       requestCompleted: state.requestCompleted,
       area: safeCurrentArea(),
+      activeTipTitle: state.activeTipTitle,
       activeTip: state.activeTip,
       minimumVisibleMs: MIN_VISIBLE_MS,
       transitionHookInstalled: state.transitionHookInstalled,
