@@ -337,7 +337,8 @@
       for (let col = 0; col < deps.COLS; col++) {
         const tile = grid[row][col];
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
-        if (tile.type === deps.TileType.GRASS) {
+        const pavedRoad = window.FarmPathBricks?.suppressesGrassAt?.(col, row); // Keeps billboard grass off visual road tiles without rewriting their saved terrain type.
+        if (tile.type === deps.TileType.GRASS && !pavedRoad) {
           gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
         } else if (tile.type === deps.TileType.WEEDS && !deps.getWeed3D()) {
           wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
@@ -773,5 +774,6 @@
     updateCropMeshes,
     invalidateCropList: _invalidateCropList,
     rebuildWeedTiles: _rebuildWeedTiles,
+    rebuildFarmBillboards: _rebuildFarmBillboards,
   };
 })();
