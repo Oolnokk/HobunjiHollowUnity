@@ -1,0 +1,28 @@
+name: Character presentation regressions
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/maoao-arm-tint-runtime.js'
+      - 'docs/js/shoulder-camera-character-framing.js'
+      - 'docs/js/shoulder-camera-reset-button.js'
+      - 'docs/js/attachment-rig-latest-authored-snapshot.js'
+      - 'scripts/test-maoao-arm-tint-runtime.js'
+      - 'scripts/test-shoulder-camera-character-framing.js'
+      - 'scripts/test-shoulder-camera-reset-button.js'
+      - '.github/workflows/character-presentation-regression.yml'
+
+jobs:
+  character-presentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Mao-ao arm tint regression
+        run: node scripts/test-maoao-arm-tint-runtime.js
+      - name: Shoulder camera character framing regression
+        run: node scripts/test-shoulder-camera-character-framing.js
+      - name: Shoulder camera reset button regression
+        run: node scripts/test-shoulder-camera-reset-button.js
