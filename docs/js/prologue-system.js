@@ -273,11 +273,10 @@
       if (!button || !world || !isIncompleteState(world.prologue)) return;
       const isOwner = selectedCharacter === world.ownerCharacterId; // Used to choose between progress text and the hard owner-only lock presentation.
       const metaEl = button.querySelector?.('.sl-world-meta'); // Used to make prologue progress visible on mobile without opening developer tools.
-      if (metaEl) {
-        metaEl.textContent = isOwner
-          ? `Prologue — ${stageLabel(world.prologue.stage)} · Calendar not started`
-          : '🔒 Prologue in progress · Owner only';
-      }
+      const desiredMeta = isOwner
+        ? `Prologue — ${stageLabel(world.prologue.stage)} · Calendar not started`
+        : '🔒 Prologue in progress · Owner only'; // Used to avoid rewriting identical text and recursively retriggering the childList MutationObserver.
+      if (metaEl && metaEl.textContent !== desiredMeta) metaEl.textContent = desiredMeta;
       if (!isOwner) {
         button.disabled = true;
         button.setAttribute?.('aria-disabled', 'true');
@@ -305,7 +304,7 @@
         button.title = 'The owning character must finish this world’s prologue first.';
         button.style.opacity = '0.58';
         const badge = button.querySelector?.('.sl-world-join-badge'); // Used to replace the misleading + Join affordance with the actual lock state.
-        if (badge) badge.textContent = '🔒 Prologue';
+        if (badge && badge.textContent !== '🔒 Prologue') badge.textContent = '🔒 Prologue';
         annotateWorldButton(button, world, selectedCharacter);
       }
       const selectedWorldButton = document.querySelector?.('[data-sl-world].sl-selected'); // Used to catch an unfinished non-owner world that onboarding auto-selected before this patch ran.
@@ -313,7 +312,7 @@
       const playButton = document.getElementById?.('slPlay'); // Used as the final save-select UI gate in addition to the player-ready runtime gate.
       if (playButton && selectedWorld && isIncompleteState(selectedWorld.prologue) && selectedWorld.ownerCharacterId !== selectedCharacter) {
         playButton.disabled = true;
-        playButton.textContent = '🔒 Owner must finish prologue';
+        if (playButton.textContent !== '🔒 Owner must finish prologue') playButton.textContent = '🔒 Owner must finish prologue';
       }
       maybeResumeCompletedWorld();
     }
