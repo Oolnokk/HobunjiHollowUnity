@@ -18,12 +18,14 @@
       "drivenPartId":"hanging_sign_board",
       "pivot":{"x":0,"y":-0.5,"z":0},
       "axis":{"x":0,"y":0,"z":1},
-      "amplitudeDeg":4.6,
+      "amplitudeDeg":6,
       "maxDeg":18,
       "distance":0.08,
       "speed":1.6,
       "phaseDeg":0,
       "windResponse":1,
+      "axisBias":{"x":1,"z":0.18},
+      "windDirectionDeg":0,
       "connectors":[
         {"anchorOffset":{"x":-0.25,"y":-0.5,"z":0},"drivenOffset":{"x":-0.38,"y":0.5,"z":0},"texture":"textures/wavy_surface.png","color":"#6b4728","radius":0.012,"sides":5,"visible":true},
         {"anchorOffset":{"x":0.25,"y":-0.5,"z":0},"drivenOffset":{"x":0.38,"y":0.5,"z":0},"texture":"textures/wavy_surface.png","color":"#6b4728","radius":0.012,"sides":5,"visible":true}
