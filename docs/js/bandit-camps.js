@@ -528,7 +528,7 @@
   }
 
   async function _spawnAmbushBandit(rec, x, y) {
-    const c = await window.BanditCombat.makeEntity(rec.cfg, 'grunt', rec.tier, x, y, {
+    const c = await spawnConfiguredBandit(rec, 'grunt', x, y, {
       zoneId: rec.zoneId,
       extra: { state: 'idle', isAmbushBandit: true },
     });
@@ -644,10 +644,87 @@
     return choices.length ? choices[Math.floor(deps.rnd() * choices.length)] : null;
   }
 
+  function rollGruntVariant(rec, rank) {
+    const variant = rec.cfg?.gruntVariants?.slagothimBeastmaster; // Used to replace a rare normal grunt with the configured Beastmaster.
+    if (rank !== 'grunt' || !variant) return null;
+    const maxPerCamp = Math.max(0, Number(variant.maxPerCamp ?? 1)); // Used to prevent a camp from accumulating too many pet-backed grunts.
+    if ((rec.beastmastersSpawned || 0) >= maxPerCamp) return null;
+    const chance = deps.clamp(Number(variant.chancePerGrunt) || 0, 0, 1); // Used for the per-grunt variant roll shared by guards, reinforcements, and ambushes.
+    return deps.rnd() < chance ? variant : null;
+  }
+
+  async function spawnBeastmasterCompanion(rec, beastmaster, variant) {
+    const creatureKey = String(variant?.companionCreatureKey || 'dabinggi-hound'); // Used to build the Beastmaster's configured animal without duplicating creature data.
+    const angle = deps.rnd() * Math.PI * 2; // Used to place the hound beside its master rather than directly inside the avatar.
+    const distance = deps.TILE * 0.8; // Used as the small initial master-to-hound separation.
+    const spawnX = beastmaster.x + Math.cos(angle) * distance; // Used for the companion entity's initial world X position.
+    const spawnY = beastmaster.y + Math.sin(angle) * distance; // Used for the companion entity's initial world Y position.
+    const hound = deps.makeCreatureEntity(creatureKey, spawnX, spawnY, { // Used by both AI collections after its faction metadata is applied below.
+      scene: beastmaster.scene,
+      grid: beastmaster.areaGrid,
+      cols: beastmaster.areaCols,
+      rows: beastmaster.areaRows,
+      master: beastmaster,
+      banditCompanion: true,
+      banditCampInstanceId: rec.instance.id,
+      homeX: rec.homeX,
+      homeY: rec.homeY,
+      state: 'idle',
+    });
+    if (!hound) {
+      window.__farmLog?.(`[bandits] ${beastmaster.name || 'Beastmaster'} could not spawn companion "${creatureKey}".`, 'warn');
+      return null;
+    }
+
+    const healthMultiplier = Math.max(0.05, Number(variant.companionHealthMultiplier) || 0.6); // Used to keep the enemy pet below a full player companion's durability.
+    const staminaMultiplier = Math.max(0.05, Number(variant.companionStaminaMultiplier) || 0.7); // Used to limit how often the enemy pet can sustain actions.
+    const damageMultiplier = Math.max(0, Number(variant.companionDamageMultiplier) || 0.4); // Used to keep the pet's occasional real pounce from dominating a grunt encounter.
+    const cooldownMultiplier = Math.max(0.1, Number(variant.companionAttackCooldownMultiplier) || 1.35); // Used to slow the pet's companion-action cadence.
+    const tunedDef = { // Used only by this hound instance so player-owned Dabinggi-hounds keep their normal stats.
+      ...hound.def,
+      hostile: true,
+      maxHealth: Math.max(1, Math.round(hound.def.maxHealth * healthMultiplier)),
+      maxStamina: Math.max(1, Math.round(hound.def.maxStamina * staminaMultiplier)),
+      attackDamage: Math.max(1, Math.round(hound.def.attackDamage * damageMultiplier)),
+      attackCooldownS: hound.def.attackCooldownS * cooldownMultiplier,
+    };
+    hound.def = tunedDef;
+    hound.health = hound.maxHealth = tunedDef.maxHealth;
+    hound.stamina = hound.maxStamina = tunedDef.maxStamina;
+    hound.name = `${beastmaster.name || 'Beastmaster'}'s ${tunedDef.label}`;
+    beastmaster.banditCompanionId = hound.id;
+    deps.hostileObjects.add(hound); // Makes the hound targetable by the player and player-owned companions.
+    deps.companionObjects.add(hound); // Routes movement and attacks through the existing master-following companion AI.
+    rec.gangIds.add(hound.id);
+    window.__farmLog?.(
+      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage).`,
+      'wildlife',
+    );
+    return hound;
+  }
+
+  async function spawnConfiguredBandit(rec, rank, x, y, options = {}) {
+    const variant = rollGruntVariant(rec, rank); // Used to decide whether this ordinary grunt slot becomes a Beastmaster.
+    const speciesId = variant?.speciesId; // Used to force the Beastmaster through the existing Tletingan/Slagothim roster pipeline.
+    const entityCfg = speciesId ? { ...rec.cfg, speciesWeights: { [speciesId]: 1 } } : rec.cfg; // Used only for this variant roll; the camp's normal species weights remain unchanged.
+    const c = await window.BanditCombat.makeEntity(entityCfg, rank, rec.tier, x, y, {
+      ...options,
+      defOverride: variant ? { ...(options.defOverride || {}), label: variant.label || 'Slagothim Beastmaster' } : options.defOverride,
+      extra: {
+        ...(options.extra || {}),
+        banditVariant: variant ? 'slagothimBeastmaster' : null,
+      },
+    });
+    if (!c || !variant) return c;
+    rec.beastmastersSpawned = (rec.beastmastersSpawned || 0) + 1;
+    await spawnBeastmasterCompanion(rec, c, variant);
+    return c;
+  }
+
   async function spawnSimpleHydraBandit(rec, rank, nameOverride, exterior = false) {
     if (rec.zoneId !== deps.getCurrentArea()) return null;
     const point = simpleHydraPoint(rec, exterior);
-    const c = await window.BanditCombat.makeEntity(rec.cfg, rank, rec.tier, point.x, point.y, {
+    const c = await spawnConfiguredBandit(rec, rank, point.x, point.y, {
       zoneId: rec.zoneId,
       extra: {
         homeX: rec.homeX,
@@ -790,6 +867,7 @@
       reinforcementTimer: 0,
       captainSpawned: false,
       captainSpawnInFlight: false,
+      beastmastersSpawned: 0,
     };
     tracked.push(rec);
     _banditCampInstances.set(zoneId, tracked);

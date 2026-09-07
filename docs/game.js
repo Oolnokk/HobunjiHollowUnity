@@ -5292,6 +5292,10 @@
           grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
         }
         for (const c of currentHostilesFrame) {
+          // Beastmaster pets stay in hostileObjects so player targeting and
+          // damage can find them, but companionObjects owns their movement
+          // and attacks so they can follow their bandit master.
+          if (c.banditCompanion) continue;
           // Tucked inside its den for the off-shift/overnight branch below
           // (see the denKey settle branch) — frozen and invisible rather
           // than idling in the open, so no AI/vocalization/stamina tick
@@ -6819,16 +6823,20 @@
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
-          let target = null;
-          for (const h of hostileObjects) {
-            if (h.health <= 0) continue;
-            if (h.areaId !== currentArea) continue;
-            if (h._denHidden) continue;
-            // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
-            // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
-            // fight — companions should ignore them, not treat them as prey.
-            if (h.def?.hostile === false) continue;
-            if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
+          const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
+          const playerNearBanditMaster = Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX; // Used to give the enemy pet the same master-centered alert rule as a player companion.
+          let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
+          if (!isBanditCompanion) {
+            for (const h of hostileObjects) {
+              if (h.health <= 0) continue;
+              if (h.areaId !== currentArea) continue;
+              if (h._denHidden) continue;
+              // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
+              // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
+              // fight — companions should ignore them, not treat them as prey.
+              if (h.def?.hostile === false) continue;
+              if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
+            }
           }
 
           if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
@@ -6840,17 +6848,18 @@
           if (c.treasureCue && !_treasureCueTargetStillBuried(c.treasureCue)) {
             _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
           }
-          if (!target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+          if (!isBanditCompanion && !target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
-          const playerIdle = _isPlayerGenuinelyIdle();
+          const playerIdle = !isBanditCompanion && _isPlayerGenuinelyIdle();
           if (c.watchPlayerIdle && (!playerIdle || distToMaster > FOLLOW_FAR_PX)) _clearCompanionWatchIdle(c, !playerIdle ? 'player became active' : 'follow distance required');
           if (!target && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
             const startChance = 1 - Math.pow(1 - COMPANION_WATCH_IDLE_RATE_PER_SEC, Math.max(0, dt));
             if (rnd() < startChance) _startCompanionWatchIdle(c);
           }
-          if (!c.treasureCue
+          if (!isBanditCompanion
+            && !c.treasureCue
             && !window.Combat?.animalAttacks?.isBusy(c)
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
@@ -6916,7 +6925,9 @@
                       strikeS: BITE_TELEGRAPH_STRIKE_S,
                       onStrike: () => {
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                          damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+                          const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
+                          if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                          else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                           window.AudioSystem?.playCreatureClawHit(c);
                         }
                       },
@@ -6935,7 +6946,7 @@
           } else if (distToMaster > FOLLOW_FAR_PX) {
             moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
-          } else if (_isPlayerFocusedOnHead(c)) {
+          } else if (!isBanditCompanion && _isPlayerFocusedOnHead(c)) {
             // The player is staring right at its head — hold position and
             // let them approach instead of drifting back out to the donut
             // ring or dropping into a separate watch-idle animation.
@@ -26076,6 +26087,7 @@
         hostileObjects,
         companionObjects,
         corpseObjects,
+        makeCreatureEntity,
         isZoneArea: _isZoneArea,
         isDenPackAlive: window.WildlifeSpawn.isDenPackAlive,
         denKeyFor: window.WildlifeSpawn.denKeyFor,
