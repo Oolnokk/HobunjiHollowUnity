@@ -203,3 +203,20 @@
 
   window.LoadingScreenRuntime = Object.freeze({ installed: true, show, hide });
 })();
+
+// Parser-synchronously load the unfinished-zone gate before game.js registers
+// its input handlers. Keeping the gate in its own module avoids coupling Dev Mode
+// policy to loading-screen rendering while preserving the current boot manifest.
+(() => {
+  'use strict';
+  const src = 'js/dev-zone-gate.js?v=20260907a'; // Used as the cache-busted runtime path for the Dev Mode entrance gate.
+  if (window.DevZoneGate?.installed || document.querySelector('script[data-dev-zone-gate]')) return;
+  if (document.readyState === 'loading') {
+    document.write(`<script src="${src}" data-dev-zone-gate="1"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used only if this runtime is injected after initial HTML parsing.
+  script.src = src;
+  script.dataset.devZoneGate = '1';
+  document.head.appendChild(script);
+})();
