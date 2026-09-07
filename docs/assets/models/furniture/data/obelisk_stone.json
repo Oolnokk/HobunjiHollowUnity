@@ -5,8 +5,8 @@
   "notes": "Tall low-poly stone obelisk with a strongly tapered upper shaft.",
   "tileBase": {"visible":true,"tileSize":1,"footprintW":1,"footprintD":1,"y":0,"gridOpacity":0.55},
   "parts": [
-    {"id":"obelisk_base0","kind":"box","name":"Obelisk Wide Plinth","transform":{"x":0,"y":0.06,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.82,"sy":0.12,"sz":0.82},"color":"#625c52","wonkiness":0.008},
-    {"id":"obelisk_base1","kind":"box","name":"Obelisk Raised Base","transform":{"x":0,"y":0.17,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.66,"sy":0.10,"sz":0.66},"color":"#7b7466","topScaleX":0.93,"topScaleZ":0.93,"wonkiness":0.008},
-    {"id":"obelisk_shaft","kind":"legSquare","name":"Tapered Obelisk Shaft","transform":{"x":0,"y":1.23,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.48,"sy":1.98,"sz":0.48},"color":"#7b7466","topScaleX":0.14,"topScaleZ":0.14,"bottomScaleX":1.02,"bottomScaleZ":1.02,"topSkewX":0.015,"topSkewZ":-0.01,"wonkiness":0.016}
+    {"id":"obelisk_base0","kind":"box","name":"Obelisk Wide Plinth","transform":{"x":0,"y":0.06,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.82,"sy":0.12,"sz":0.82},"color":"#625c52","wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"obelisk_base1","kind":"box","name":"Obelisk Raised Base","transform":{"x":0,"y":0.17,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.66,"sy":0.10,"sz":0.66},"color":"#7b7466","topScaleX":0.93,"topScaleZ":0.93,"wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"obelisk_shaft","kind":"legSquare","name":"Tapered Obelisk Shaft","transform":{"x":0,"y":1.23,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.48,"sy":1.98,"sz":0.48},"color":"#7b7466","topScaleX":0.14,"topScaleZ":0.14,"bottomScaleX":1.02,"bottomScaleZ":1.02,"topSkewX":0.015,"topSkewZ":-0.01,"wonkiness":0.016,"materialRole":"stone","materialTexture":"carved_smooth.png"}
   ]
 }

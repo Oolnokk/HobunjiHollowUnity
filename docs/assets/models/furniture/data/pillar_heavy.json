@@ -5,10 +5,10 @@
   "notes": "Chunky squat pillar for gates, halls, retaining walls, and heavy timber framing.",
   "tileBase": {"visible":true,"tileSize":1,"footprintW":1,"footprintD":1,"y":0,"gridOpacity":0.55},
   "parts": [
-    {"id":"pillar_heavy_base","kind":"box","name":"Heavy Footing","transform":{"x":0,"y":0.08,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.90,"sy":0.16,"sz":0.90},"color":"#625c52","topScaleX":0.96,"topScaleZ":0.96,"wonkiness":0.008},
-    {"id":"pillar_heavy_lower","kind":"box","name":"Heavy Lower Block","transform":{"x":0,"y":0.25,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.72,"sy":0.18,"sz":0.72},"color":"#7b7466","topScaleX":0.92,"topScaleZ":0.92,"wonkiness":0.009},
-    {"id":"pillar_heavy_shaft","kind":"legSquare","name":"Heavy Tapered Shaft","transform":{"x":0,"y":0.79,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.60,"sy":0.92,"sz":0.60},"color":"#7b7466","topScaleX":0.88,"topScaleZ":0.88,"bottomScaleX":1.06,"bottomScaleZ":1.06,"wonkiness":0.014},
-    {"id":"pillar_heavy_neck","kind":"box","name":"Heavy Neck Block","transform":{"x":0,"y":1.29,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.68,"sy":0.10,"sz":0.68},"color":"#928a78","wonkiness":0.008},
-    {"id":"pillar_heavy_cap","kind":"box","name":"Heavy Capstone","transform":{"x":0,"y":1.40,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.90,"sy":0.14,"sz":0.90},"color":"#928a78","topScaleX":0.95,"topScaleZ":0.95,"wonkiness":0.008}
+    {"id":"pillar_heavy_base","kind":"box","name":"Heavy Footing","transform":{"x":0,"y":0.08,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.90,"sy":0.16,"sz":0.90},"color":"#625c52","topScaleX":0.96,"topScaleZ":0.96,"wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_heavy_lower","kind":"box","name":"Heavy Lower Block","transform":{"x":0,"y":0.25,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.72,"sy":0.18,"sz":0.72},"color":"#7b7466","topScaleX":0.92,"topScaleZ":0.92,"wonkiness":0.009,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_heavy_shaft","kind":"legSquare","name":"Heavy Tapered Shaft","transform":{"x":0,"y":0.79,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.60,"sy":0.92,"sz":0.60},"color":"#7b7466","topScaleX":0.88,"topScaleZ":0.88,"bottomScaleX":1.06,"bottomScaleZ":1.06,"wonkiness":0.014,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_heavy_neck","kind":"box","name":"Heavy Neck Block","transform":{"x":0,"y":1.29,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.68,"sy":0.10,"sz":0.68},"color":"#928a78","wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_heavy_cap","kind":"box","name":"Heavy Capstone","transform":{"x":0,"y":1.40,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.90,"sy":0.14,"sz":0.90},"color":"#928a78","topScaleX":0.95,"topScaleZ":0.95,"wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"}
   ]
 }

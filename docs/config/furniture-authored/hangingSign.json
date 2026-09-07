@@ -1,0 +1,19 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "hangingSign",
+  "name": "Hanging Store / Tavern Sign",
+  "footprint": {"w": 1, "d": 1},
+  "parts": [
+    {"id":"hanging_sign_post","kind":"beam","name":"Horizontal Sign Post","transform":{"x":0,"y":1.72,"z":0,"rx":0,"ry":0,"rz":0,"sx":1.25,"sy":0.14,"sz":0.14},"color":"#60452c","materialRole":"wood","materialTexture":"carved_smooth.png","topScaleX":1,"topScaleZ":1,"bottomScaleX":1,"bottomScaleZ":1,"wonkiness":0.01},
+    {"id":"hanging_sign_board","kind":"box","name":"Hanging Store / Tavern Board","transform":{"x":0,"y":1.12,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.82,"sy":0.5,"sz":0.08},"color":"#765536","materialRole":"wood","materialTexture":"boards.png","materialRotationDeg":90,"topScaleX":0.97,"topScaleZ":1,"bottomScaleX":1,"bottomScaleZ":1,"wonkiness":0.012}
+  ],
+  "surfaceSettings": {},
+  "seatAnchors": [],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "pieceAnimations": [
+    {"id":"hanging_sign_wind_swing","name":"Hanging Sign Wind Swing","type":"windSwing","enabled":true,"anchorPartId":"hanging_sign_post","drivenPartId":"hanging_sign_board","pivot":{"x":0,"y":-0.5,"z":0},"axis":{"x":0,"y":0,"z":1},"amplitudeDeg":4.6,"maxDeg":18,"distance":0.08,"speed":1.6,"phaseDeg":0,"windResponse":1,"connectors":[{"anchorOffset":{"x":-0.25,"y":-0.5,"z":0},"drivenOffset":{"x":-0.38,"y":0.5,"z":0},"texture":"textures/wavy_surface.png","color":"#6b4728","radius":0.012,"sides":5,"visible":true},{"anchorOffset":{"x":0.25,"y":-0.5,"z":0},"drivenOffset":{"x":0.38,"y":0.5,"z":0},"texture":"textures/wavy_surface.png","color":"#6b4728","radius":0.012,"sides":5,"visible":true}]}
+  ]
+}
