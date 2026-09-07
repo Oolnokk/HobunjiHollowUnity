@@ -1,0 +1,32 @@
+name: Prologue regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/prologue-system.js'
+      - 'docs/js/cutscene-preview-helpers.js'
+      - 'docs/config/cutscenes/prologue-chapter.json'
+      - 'scripts/test-prologue-chapter.js'
+      - '.github/workflows/prologue-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/prologue-system.js'
+      - 'docs/js/cutscene-preview-helpers.js'
+      - 'docs/config/cutscenes/prologue-chapter.json'
+      - 'scripts/test-prologue-chapter.js'
+      - '.github/workflows/prologue-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prologue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run prologue regression
+        run: node scripts/test-prologue-chapter.js
