@@ -19,6 +19,7 @@
   const ENTRANCE_FLARE = 0.65;
   const CLIFF_RISE = 3.0;
   const CLIFF_UV_PATCH_WORLD_SIZE = 6; // Used to keep the continuous immediate-edge wall from becoming one farm-wide PNG surface.
+  const TOWN_RIDGE_VERTEX_SPAN = 5; // Matches buildTownBorderTerrain's quantized 2.5-world-unit ridge blocks.
 
   let deps = null;
   let buildCount = 0;
@@ -31,6 +32,8 @@
     clearedEntranceVertices: 0,
     surfacePipelinePasses: 0,
     surfacePipelineScheduled: 0,
+    seamRiseMin: null,
+    seamRiseMax: null,
     lastError: null,
   };
 
@@ -89,6 +92,12 @@
       h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
       return (h / 4294967296 - 0.5) * 0.026;
     };
+    function townRidgeRise(gi, gj) {
+      const qi = Math.round(gi / TOWN_RIDGE_VERTEX_SPAN), qj = Math.round(gj / TOWN_RIDGE_VERTEX_SPAN);
+      let h = (2166136261 ^ (qi * 374761393) ^ (qj * 668265263)) >>> 0;
+      h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+      return 2.2 + (h >>> 0) / 4294967296 * 3.2;
+    }
     const vSteps = (gi, gj) => {
       const vi = gi - BV, vj = gj - BV;
       const dx = Math.max(0, -vi, vi - PVW), dz = Math.max(0, -vj, vj - PVH);
@@ -178,6 +187,7 @@
     // farm and cliff. The north entrance remains ground-height through the full
     // 18-unit border and widens slightly as it travels outward.
     let raisedInner = 0, clearedEntrance = 0;
+    let seamRiseMin = Infinity, seamRiseMax = -Infinity;
     for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) {
       const outsideSteps = vSteps(gi, gj);
       if (outsideSteps <= 0) continue;
@@ -194,7 +204,12 @@
           clearedEntrance++;
         }
       } else {
-        const target = deps.NORMAL_TOP + CLIFF_RISE + hashDisp(gi - BV, gj - BV) * 0.35;
+        const rise = townRidgeRise(gi, gj);
+        const target = deps.NORMAL_TOP + rise + hashDisp(gi - BV, gj - BV) * 0.35;
+        if (outsideSteps <= 1.01) {
+          seamRiseMin = Math.min(seamRiseMin, rise);
+          seamRiseMax = Math.max(seamRiseMax, rise);
+        }
         if (Y[k] < target) {
           Y[k] = target;
           raisedInner++;
@@ -298,6 +313,8 @@
     stats.rebuiltCliffCells += cliffCells;
     stats.raisedInnerVertices += raisedInner;
     stats.clearedEntranceVertices += clearedEntrance;
+    stats.seamRiseMin = Number.isFinite(seamRiseMin) ? seamRiseMin : null;
+    stats.seamRiseMax = Number.isFinite(seamRiseMax) ? seamRiseMax : null;
     return { baseMesh, cliffMeshes, raisedInner, clearedEntrance, cliffCells };
   }
 
