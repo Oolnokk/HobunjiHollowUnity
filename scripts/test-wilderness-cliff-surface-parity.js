@@ -34,10 +34,7 @@ assert.ok(loader.indexOf('wilderness-cliff-surface-parity.js?v=20260907b') < loa
 
 function color(hex) {
   const normalized = String(hex).replace(/^#/, '').toLowerCase();
-  return {
-    isColor: true,
-    getHexString: () => normalized,
-  };
+  return { isColor: true, getHexString: () => normalized };
 }
 
 class MeshBasicMaterial {
@@ -63,10 +60,7 @@ class MeshLambertMaterial {
 class PlaneGeometry {
   constructor() {
     this.userData = {};
-    this.attributes = {
-      position: { count: 4, itemSize: 3 },
-      uv: { count: 4, itemSize: 2 },
-    };
+    this.attributes = { position: { count: 4, itemSize: 3 }, uv: { count: 4, itemSize: 2 } };
   }
   getAttribute(name) { return this.attributes[name] || null; }
   dispose() { this.disposed = true; }
@@ -83,10 +77,7 @@ class Mesh {
 }
 
 class Scene {
-  constructor() {
-    this.isScene = true;
-    this.children = [];
-  }
+  constructor() { this.isScene = true; this.children = []; }
   add(...objects) {
     this.children.push(...objects);
     for (const object of objects) if (object) object.parent = this;
@@ -101,10 +92,7 @@ function terrainGeometry() {
       hobunjiSurfaceStretch: { version: 1 },
       naturalSurfaceUvMapping: 'world-stretch',
     },
-    attributes: {
-      position: { count: 12, itemSize: 3 },
-      uv: { count: 12, itemSize: 2 },
-    },
+    attributes: { position: { count: 12, itemSize: 3 }, uv: { count: 12, itemSize: 2 } },
     getAttribute(name) { return this.attributes[name] || null; },
   };
 }
@@ -160,12 +148,8 @@ context.window.FacetedNaturalSurfaceShellReduction = { suppressMesh() {} };
 
 vm.runInNewContext(parity, context, { filename: parityPath });
 
-function flushQueued() {
-  while (queued.length) queued.shift()();
-}
+function flushQueued() { while (queued.length) queued.shift()(); }
 
-// Ordinary zone-load plateau path: buildZoneMesaMeshes internally uses a lexical
-// buildPlateauMesa, so this wrapper is what must catch the real returned meshes.
 const initialPlateau = plateauMesh();
 const directPlateau = plateauMesh();
 const rebuiltPlateau = plateauMesh();
@@ -188,39 +172,27 @@ assert.strictEqual(initialPlateau.mesh.userData.naturalSurfaceCliffSlot, 1, 'pla
 assert.ok(mapperCalls.some(call => call.mesh === initialPlateau.mesh && call.options.materialIndex === 1 && call.options.maxPatchWorldSize === 6), 'plateau cliff slot did not use bounded per-surface mapping');
 assert.ok(!('naturalSurfaceUvMapping' in initialPlateau.mesh.geometry.userData), 'legacy whole-mesh UV marker survived final plateau mapping');
 
-// Direct single-mesa API path remains covered too.
 context.window.ZonePlateauMesa.buildPlateauMesa(null, 'map_northern_cliffs');
 flushQueued();
 assert.ok(directPlateau.mesh.material[1].isMeshBasicMaterial && directPlateau.mesh.material[1].map, 'direct plateau build did not receive farm material parity');
 
-// Runtime rebuild returns nothing and uses Scene.add internally; verify the
-// temporary add-capture path still catches and repairs the replacement mesa.
 context.window.ZonePlateauMesa.rebuildZoneMesaMeshes('map_northern_cliffs');
 flushQueued();
 assert.ok(rebuiltPlateau.mesh.material[1].isMeshBasicMaterial && rebuiltPlateau.mesh.material[1].map, 'runtime rebuilt plateau cliff stayed on Lambert/no-map material');
 assert.ok(mapperCalls.some(call => call.mesh === rebuiltPlateau.mesh && call.options.materialIndex === 1), 'runtime rebuilt plateau cliff skipped slot-isolated surface detection');
 
-// Existing PNG but wrong light/tint path: a rock-tagged Lambert mesh with a map
-// must be rebuilt through the canonical farm unlit/white material, not trusted
-// merely because it already has a texture and naturalSurface tag.
 const litMappedRock = singleCliff('rocks', { map: { kind: 'wrong_lit_png' }, hex: '808080' });
 const rockScene = new Scene();
-context.window.ZoneTerrainFeatures = {
-  buildRockFormationMeshes(scene) { scene.add(litMappedRock); },
-};
+context.window.ZoneTerrainFeatures = { buildRockFormationMeshes(scene) { scene.add(litMappedRock); } };
 context.window.ZoneTerrainFeatures.buildRockFormationMeshes(rockScene, null, 10, 10, 'map_northern_cliffs');
 flushQueued();
 assert.ok(litMappedRock.material.isMeshBasicMaterial, 'mapped wilderness rock remained Lambert-lit');
 assert.strictEqual(litMappedRock.material.color.getHexString(), 'ffffff', 'mapped wilderness rock retained a second tint multiplier');
 assert.strictEqual(litMappedRock.material.userData.naturalSurface, 'rocks', 'mapped wilderness rock did not converge on farm rock material semantics');
 
-// Wilderness boundary cliff path: legacy cliff material should also converge on
-// the same farm material before the shared connected-surface detector runs.
 const boundaryCliff = singleCliff('cliffs');
 const borderScene = new Scene();
-context.window.BorderTerrain = {
-  buildZoneBorderTerrain(scene) { scene.add(boundaryCliff); },
-};
+context.window.BorderTerrain = { buildZoneBorderTerrain(scene) { scene.add(boundaryCliff); } };
 context.window.BorderTerrain.buildZoneBorderTerrain(borderScene, 20, 20, 'map_northern_cliffs');
 flushQueued();
 assert.ok(boundaryCliff.material.isMeshBasicMaterial && boundaryCliff.material.map, 'wilderness boundary cliff did not receive farm material parity');
