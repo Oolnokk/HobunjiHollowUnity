@@ -36,10 +36,14 @@
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260905c'],
     // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
-    ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260905a'],
+    ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
+    // Farm paving is separate from cliff rendering: it reuses TerrainGeometry's existing WallBuilder and never writes temporary PATH masks back to the save.
+    ['FarmPathBricks', 'farm-path-bricks.js?v=20260907a'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
+    // Farm edge/cut is intentionally outermost: let the complete normal border + natural-surface stack run first, then replace only that build's farm border meshes and explicitly route the rebuilt stock-topology cliffs back through the same surface mapper.
+    ['FarmBorderCliffEdge', 'farm-border-cliff-edge.js?v=20260907b'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
