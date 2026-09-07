@@ -14,6 +14,14 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  function getCurrentArea() {
+    return deps?.getCurrentArea?.() ?? null;
+  }
+
+  function isBuildingArea(area = getCurrentArea()) {
+    return !!deps?._isBuildingArea?.(area);
+  }
+
   function getActiveCols() {
     const currentArea = deps.getCurrentArea();
     return currentArea === 'interior' ? deps.INTERIOR_COLS
@@ -171,6 +179,8 @@
 
   window.GridTileAccessors = {
     init,
+    getCurrentArea,
+    isBuildingArea,
     getActiveCols,
     getActiveRows,
     getActiveGrid,
