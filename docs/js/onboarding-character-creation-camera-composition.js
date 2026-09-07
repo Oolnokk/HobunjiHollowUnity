@@ -1,4 +1,4 @@
-// Character-creator composition: exact 20° resting turn and a Mao'ao-mid-body camera eye line.
+// Character-creator composition: exact 10° resting turn and a Mao'ao-mid-body camera eye line.
 (() => {
   'use strict';
 
@@ -7,12 +7,12 @@
 
   const PREVIEW_ROOT_NAME = 'OnboardingCharacterPreviewRoot'; // Unique scene node created by the 3D onboarding redesign.
   const LIFE_PATCH_ID = 'hobunjiOnboardingCharacterCreationLifePreview'; // Exposes the current avatar model for face-view anchoring.
-  const TARGET_PREVIEW_YAW_DEG = 20; // Turns the resting preview twenty degrees in the currently selected direction.
+  const TARGET_PREVIEW_YAW_DEG = 10; // Turns the resting preview five degrees back from the earlier +15° composition.
   const MAO_AO_BASE_MODEL_HEIGHT = 0.9; // Runtime PNG-plane fallback width/height used by the creator when config is unavailable.
   const MAO_AO_MALE_RUNTIME_Y = 1.125; // Canonical Full Character Scale Y for Mao'ao male; used only as a fallback.
   const FACE_NECK_OFFSET = 0.13; // Matches the existing species-aware face-view center above the neck joint.
 
-  const yawOffsets = new WeakMap(); // Stores only the delta needed to turn each preview root from its existing default to exactly +20°.
+  const yawOffsets = new WeakMap(); // Stores only the delta needed to turn each preview root from its existing default to exactly +10°.
   let rendererWrapped = false; // Diagnostic state for the onboarding-only WebGLRenderer hook.
 
   function deg(value) {
@@ -36,7 +36,7 @@
     if (!root?.rotation) return 0;
     if (!yawOffsets.has(root)) {
       // Preserve drag behavior: the redesign still owns root.rotation.y; this patch
-      // adds only the fixed delta required to make its first/resting view exactly +20°.
+      // adds only the fixed delta required to make its first/resting view exactly +10°.
       yawOffsets.set(root, deg(TARGET_PREVIEW_YAW_DEG) - Number(root.rotation.y || 0));
     }
     return yawOffsets.get(root) || 0;
