@@ -206,5 +206,5 @@
 // game-only parser-time script, so inject the dedicated runtime synchronously
 // here instead of duplicating those gates in game.js/onboarding.js.
 if (!window.PrologueSystem && document.readyState === 'loading') {
-  document.write('<script src="js/prologue-system.js?v=20260907a"><\\/script>');
+  document.write('<script src="js/prologue-system.js?v=20260907a">' + '</scr' + 'ipt>');
 }
