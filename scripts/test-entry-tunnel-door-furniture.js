@@ -16,6 +16,17 @@ assert.deepStrictEqual(doorData.footprint, { w: 1, d: 1 });
 assert.strictEqual(doorData.parts.length, 2);
 assert(formatSource.includes('entry-tunnel-door-furniture.js?v=20260907b'), 'format-utils must synchronously load the current entry-tunnel door bridge');
 
+const originalDoorTransforms = [ // Used to prove the current asset is 50% of the originally imported door in every spatial dimension.
+  { x: 0, y: 0.8061, z: 0.1031, sx: 1, sy: 0.1579, sz: 1.6449 },
+  { x: 0.2105, y: 0.7712, z: 0.212, sx: 0.504, sy: 0.0999, sz: 0.2232 },
+];
+doorData.parts.forEach((part, index) => {
+  const original = originalDoorTransforms[index];
+  for (const key of ['x', 'y', 'z', 'sx', 'sy', 'sz']) {
+    assert(Math.abs(Number(part.transform[key]) - original[key] * 0.5) < 1e-9, `door part ${index} ${key} must be exactly 50% of the original authored transform`);
+  }
+});
+
 function makeGroup() {
   const group = { // Used as a minimal Three.js Group stand-in for tunnel, building, and door groups.
     children: [],
