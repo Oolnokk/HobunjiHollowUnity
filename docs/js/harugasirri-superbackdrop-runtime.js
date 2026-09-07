@@ -118,8 +118,12 @@
         } catch (error) {
           log(`shade-fill fallback for ${definition.texture}: ${error?.message || error}`, 'warn', 'assets');
         }
-        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(1 / Math.max(0.001, Number(definition.tileSize) || 1), 1 / Math.max(0.001, Number(definition.tileSize) || 1));
+        // Harugasirri is one distant illustrated landmark, not nearby repeating
+        // terrain. Its role geometry supplies normalized 0..1 UVs, so display
+        // each authored PNG exactly once across that whole material region.
+        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.repeat.set(1, 1);
+        texture.offset?.set?.(0, 0);
         if ('encoding' in texture && THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding;
         texture.needsUpdate = true;
         resolve({ texture, shadeFilled });
@@ -158,27 +162,13 @@
   }
 
   function exactFarmCliffMaterial(THREE, definition) {
-    try {
-      const resolved = borderDeps?.resolveCliffMat?.('farm');
-      if (resolved) {
-        const material = resolved.clone();
-        material.fog = false;
-        material.side = THREE.DoubleSide ?? material.side;
-        material.userData = {
-          ...(resolved.userData || {}),
-          ...(material.userData || {}),
-          harugasirriMaterial: true,
-          textureSource: definition.texture,
-          sourceMaterial: 'farm.cliff',
-          textureStatus: 'ready',
-        };
-        material.needsUpdate = true;
-        return material;
-      }
-    } catch (error) {
-      log(`farm cliff resolver fallback: ${error?.message || error}`, 'warn', 'assets');
-    }
-    return makeTintedMaterial(THREE, definition);
+    // Build an independent copy from the same authored farm-cliff definition.
+    // Cloning resolveCliffMat('farm') here can capture its temporary map=null
+    // state before terrain-material config finishes loading, and mutating its
+    // shared Texture repeat would also change the playable farm cliffs.
+    const material = makeTintedMaterial(THREE, definition);
+    material.userData.sourceMaterial = 'farm.cliff-definition';
+    return material;
   }
 
   function localVertex(asset, index) {
@@ -188,15 +178,24 @@
     return [Number(asset.grid.x[col]) || 0, Number(asset.grid.heights[index]) || 0, Number(asset.grid.z[row]) || 0];
   }
 
-  function buildGeometry(THREE, asset, triangles, uvScale) {
+  function buildGeometry(THREE, asset, triangles) {
     const positions = [];
-    const uvs = [];
     for (const face of triangles || []) {
       for (const index of face) {
         const [x, y, z] = localVertex(asset, index);
         positions.push(x, y, z);
-        uvs.push(x * uvScale, z * uvScale);
       }
+    }
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      minX = Math.min(minX, positions[i]); maxX = Math.max(maxX, positions[i]);
+      minZ = Math.min(minZ, positions[i + 2]); maxZ = Math.max(maxZ, positions[i + 2]);
+    }
+    const spanX = Math.max(0.001, maxX - minX);
+    const spanZ = Math.max(0.001, maxZ - minZ);
+    const uvs = [];
+    for (let i = 0; i < positions.length; i += 3) {
+      uvs.push((positions[i] - minX) / spanX, (positions[i + 2] - minZ) / spanZ);
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -281,7 +280,6 @@
     const asset = await loadAsset();
     const THREE = window.THREE;
     if (!THREE) throw new Error('THREE unavailable');
-    const uvScale = Number(asset.runtime?.worldScale) || 12;
     const definitions = { ...FALLBACK_MATERIALS, ...(asset.materials || {}) };
     const materials = {
       cliff: exactFarmCliffMaterial(THREE, definitions.cliff),
@@ -303,13 +301,21 @@
     for (const role of ['cliff', 'snow', 'plateauGrass']) {
       const triangles = asset.triangles[role] || [];
       if (!triangles.length) continue;
-      const mesh = new THREE.Mesh(buildGeometry(THREE, asset, triangles, uvScale), materials[role]);
+      const mesh = new THREE.Mesh(buildGeometry(THREE, asset, triangles), materials[role]);
       mesh.name = `${GROUP_NAME}_${role}`;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       mesh.renderOrder = -20;
       mesh.frustumCulled = true;
-      mesh.userData = { backgroundScenery: true, harugasirriSuperBackdrop: true, materialRole: role };
+      mesh.layers?.enable?.(1);
+      mesh.userData = {
+        backgroundScenery: true,
+        harugasirriSuperBackdrop: true,
+        materialRole: role,
+        textureMapping: 'stretch-to-role-bounds',
+        shellOutline: true,
+        noOutline: false,
+      };
       group.add(mesh);
     }
     stats.buildCount++;

@@ -64,6 +64,7 @@ class Mesh {
     this.receiveShadow = false;
     this.renderOrder = 0;
     this.frustumCulled = true;
+    this.layers = { mask: 1, enable: layer => { this.layers.mask |= (1 << layer); } };
   }
   clone() {
     const copy = new Mesh(this.geometry, this.material);
@@ -73,6 +74,7 @@ class Mesh {
     copy.receiveShadow = this.receiveShadow;
     copy.renderOrder = this.renderOrder;
     copy.frustumCulled = this.frustumCulled;
+    copy.layers.mask = this.layers.mask;
     return copy;
   }
 }
@@ -169,6 +171,11 @@ vm.runInNewContext(source, context);
   for (const child of group.children) {
     assert.equal(child.material.userData.textureStatus, 'loading', 'flat fallback should exist while texture IO is unresolved');
     assert.equal(child.material.side, THREE.DoubleSide, 'backdrop should remain visible regardless of authored winding');
+    assert.equal(child.userData.textureMapping, 'stretch-to-role-bounds', 'each material PNG should stretch once across its role geometry');
+    assert.equal(child.userData.shellOutline, true, 'each backdrop role should opt into the shell-outline pass');
+    assert.equal((child.layers.mask & (1 << 1)) !== 0, true, 'each backdrop mesh should enable shell-outline layer 1');
+    const uv = child.geometry.getAttribute('uv').array;
+    assert(Math.min(...uv) >= 0 && Math.max(...uv) <= 1, 'stretched role UVs must remain normalized to 0..1');
   }
   console.log('PASS Harugasirri runtime attach: scene group appears before texture IO resolves and reports cache count 1.');
 })().catch(error => {
