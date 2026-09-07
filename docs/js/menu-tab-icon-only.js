@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 6) return;
+  if (window.HobunjiMenuTabIcons?.version >= 9) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
@@ -26,15 +26,18 @@
   });
   const TAB_ART = Object.freeze({
     inventory: { base: 'action', file: 'item_select.png', color: '#e3ae61' },
+    crafting: { base: 'generic', file: 'icon_axe.png', color: '#c98a56' },
     farm: { base: 'generic', file: 'icon_wheat.png', color: '#6bc36f' },
     stable: { base: 'generic', file: 'icon_horseshoe.png', color: '#c89461' },
     tasks: { base: 'generic', file: 'icon_journal.png', color: '#e0c56b' },
-    progress: { base: 'generic', file: 'icon_writing_stack.png', color: '#b38bdd' },
+    compendium: { base: 'generic', file: 'icon_writing_stack.png', color: '#f3e7bd', showLabel: true },
+    progress: { base: 'action', file: 'tool_select.png', color: '#b38bdd' },
     map: { base: 'generic', file: 'icon_map.png', color: '#67aee8' },
   });
   const debugState = {
     transformed: 0,
     lastPanel: null,
+    dynamicTabTransforms: 0,
     loadoutRasterReady: false,
     loadoutRasterError: null,
     walletCurrencyIconApplied: false,
@@ -44,6 +47,7 @@
   let loadoutRasterUrl = null; // Used after the two action icons have been composited once.
   let hudGoldAmountNode = null; // Used to preserve the original live HUD amount node if another system rewrites #spGold textContent.
   let hudGoldObserver = null; // Used to repair only event-driven DOM rewrites of the HUD currency readout; no frame loop is added.
+  let menuTabsObserver = null; // Used to transform menu tabs that are inserted after the initial menu icon pass.
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -56,6 +60,10 @@
         justify-content: center;
         min-width: 34px;
         gap: 0;
+      }
+      ${TAB_SELECTOR}[data-mpanel="compendium"] {
+        gap: .35em;
+        padding-inline: 10px;
       }
       ${TAB_SELECTOR} .menu-tab-glyph {
         display: inline-flex;
@@ -429,7 +437,7 @@
   }
 
   function transformTab(tab) {
-    if (!(tab instanceof Element) || tab.dataset.menuTabIconOnly === '2') return false;
+    if (!(tab instanceof Element) || tab.dataset.menuTabIconOnly === '3') return false;
     const panelId = String(tab.dataset.mpanel || ''); // Used to select a dedicated PNG, loadout composite, or the existing emoji fallback.
     const label = visibleLabel(tab); // Used after the visible words are removed so keyboard/screen-reader navigation remains clear.
 
@@ -442,6 +450,7 @@
       tab.replaceChildren(makeLoadoutNode());
     } else if (TAB_ART[panelId]) {
       tab.replaceChildren(makeArtNode(TAB_ART[panelId]));
+      if (TAB_ART[panelId].showLabel) tab.append(label);
     } else {
       const glyph = firstGrapheme(tab.textContent); // Used to retain exactly the tab's existing leading emoji/symbol for untouched tabs.
       if (!glyph) return false;
@@ -450,10 +459,25 @@
 
     tab.setAttribute('aria-label', label);
     tab.title = label;
-    tab.dataset.menuTabIconOnly = '2';
+    tab.dataset.menuTabIconOnly = '3';
     debugState.transformed += 1;
     debugState.lastPanel = panelId || null;
     return true;
+  }
+
+  function installDynamicTabObserver() {
+    if (menuTabsObserver || typeof MutationObserver !== 'function') return;
+    const tabs = document.querySelector('#menuPanel .mp-tabs'); // Used as the narrow parent watched for menu tabs added after startup.
+    if (!tabs) return;
+    menuTabsObserver = new MutationObserver(mutations => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof Element) || !node.matches(TAB_SELECTOR)) continue;
+          if (transformTab(node)) debugState.dynamicTabTransforms += 1;
+        }
+      }
+    }); // Used only for direct tab insertions; icon child rewrites do not retrigger it.
+    menuTabsObserver.observe(tabs, { childList: true });
   }
 
   function transformAll() {
@@ -461,16 +485,19 @@
     applyWalletCurrencyIcon();
     applyHudCurrencyPresentation();
     installHudCurrencyRepair();
+    installDynamicTabObserver();
   }
 
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 6,
+      version: 9,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
+      dynamicTabTransforms: debugState.dynamicTabTransforms,
+      dynamicTabObserverInstalled: Boolean(menuTabsObserver),
       totalTabs: tabs.length,
-      iconOnlyTabs: tabs.filter(tab => tab.dataset.menuTabIconOnly === '2').length,
+      iconOnlyTabs: tabs.filter(tab => tab.dataset.menuTabIconOnly === '3').length,
       labels: Object.fromEntries(tabs.map(tab => [tab.dataset.mpanel || '', tab.getAttribute('aria-label') || ''])),
       customArtPanels: tabs.filter(tab => tab.querySelector('.menu-tab-art')).map(tab => tab.dataset.mpanel || ''),
       relationshipHeartGlowing: !!document.querySelector(`${TAB_SELECTOR}[data-mpanel="relationships"] .relationships-tab-heart`),
@@ -496,6 +523,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 6, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 9, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();
