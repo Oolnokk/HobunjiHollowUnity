@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'docs/js/prologue-system.js'
+      - 'docs/js/character-action-locks.js'
       - 'docs/js/cutscene-preview-helpers.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
       - 'scripts/test-prologue-chapter.js'
@@ -11,6 +12,7 @@ on:
   pull_request:
     paths:
       - 'docs/js/prologue-system.js'
+      - 'docs/js/character-action-locks.js'
       - 'docs/js/cutscene-preview-helpers.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
       - 'scripts/test-prologue-chapter.js'
