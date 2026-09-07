@@ -12,6 +12,9 @@ assert.match(source, /stopImmediatePropagation/, 'unfinished-world startup can b
 assert.match(source, /data-sl-world-join/, 'save-select Join World cards are owner-gated');
 assert.match(source, /__prologueFreezeAccessor/, 'calendar freeze wraps the existing time01 accessor');
 assert.match(source, /finished/, 'cutscene completion, not launch, advances the prologue');
+assert.match(source, /metaEl && metaEl\.textContent !== desiredMeta/, 'world-card status text is idempotent under the save-select MutationObserver');
+assert.match(source, /badge && badge\.textContent !== '🔒 Prologue'/, 'join-badge text is idempotent under the save-select MutationObserver');
+assert.match(source, /playButton\.textContent !== '🔒 Owner must finish prologue'/, 'locked Play text is idempotent under the save-select MutationObserver');
 
 assert.equal(chapter.schema, 'hobunji_prologue_chapter.v1');
 const rescue = chapter.scenes.rescue; // Used to check the opening cutscene's generated Cloud Forest staging contract.
