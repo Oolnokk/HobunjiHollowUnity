@@ -21,11 +21,11 @@
 
   // Entry-tunnel door furniture and authored house rendering share the same
   // buildGroupFromPiece boundary. Load this immediately after the door bridge
-  // so tunnel-contained house-wall fragments lose only their `wall` tag before
-  // WallBuilder receives them, without changing the source piece JSON.
+  // so crossing authored wall quads are carved around tunnel cells before
+  // WallBuilder receives them, without mutating cached source piece JSON.
   (function loadEntryTunnelWallUnmark() {
     if (typeof document === 'undefined') return;
-    const src = 'js/entry-tunnel-wall-unmark.js?v=20260907b'; // Used to cache-bust the corrected tunnel WallBuilder classification bridge.
+    const src = 'js/entry-tunnel-wall-unmark.js?v=20260907c'; // Cache-busts the town-house wall-carving bridge.
     if (window.EntryTunnelWallUnmark || document.querySelector('script[data-entry-tunnel-wall-unmark]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-entry-tunnel-wall-unmark="1"><\/script>`);
