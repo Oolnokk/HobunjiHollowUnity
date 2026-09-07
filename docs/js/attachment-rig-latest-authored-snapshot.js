@@ -15,7 +15,7 @@
     new URL('character-rig-scale-avatar-runtime.js?v=20260905a', base).href,
     new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
     new URL('shoulder-camera-character-framing.js?v=20260907a', base).href,
-    new URL('shoulder-camera-reset-button.js?v=20260907b', base).href,
+    new URL('shoulder-camera-reset-button.js?v=20260907a', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20260904j', base).href,
     new URL('character-scale-comparison.js?v=20260904k', base).href,
