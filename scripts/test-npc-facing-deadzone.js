@@ -37,6 +37,7 @@ assert.equal(refreshed, authoredFacing, 'the authored facing is restored when a 
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(gameSource, /target\.rotY\)\) this\.applyFacingDeadzone/, 'stationary schedule facings use the shared clamp');
-assert.match(gameSource, /walker\.applyFacingDeadzone\(npcTargetRot/, 'dialogue facings use the shared clamp');
+assert.match(gameSource, /walker\.applyFacingDeadzone\(walker\._dialogueBodyRot, 1\)/, 'dialogue body catch-up uses the shared clamp only after head-first aiming resolves it');
+assert.match(gameSource, /NPC_DIALOGUE_BODY_FREE_LOOK_RAD = Math\.PI \/ 3/, 'dialogue keeps the NPC body still inside the player-matched head-look cone');
 
 console.log('stationary NPC facing dead-zone tests passed');
