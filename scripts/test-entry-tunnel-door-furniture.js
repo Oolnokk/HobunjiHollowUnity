@@ -16,15 +16,19 @@ assert.deepStrictEqual(doorData.footprint, { w: 1, d: 1 });
 assert.strictEqual(doorData.parts.length, 2);
 assert(formatSource.includes('entry-tunnel-door-furniture.js?v=20260907b'), 'format-utils must synchronously load the current entry-tunnel door bridge');
 
-const originalDoorTransforms = [ // Used to prove the current asset is 50% of the originally imported door in every spatial dimension.
-  { x: 0, y: 0.8061, z: 0.1031, sx: 1, sy: 0.1579, sz: 1.6449 },
-  { x: 0.2105, y: 0.7712, z: 0.212, sx: 0.504, sy: 0.0999, sz: 0.2232 },
+const previousDoorTransforms = [ // Baseline is the user's prior 50%-of-original door asset.
+  { x: 0, y: 0.40305, z: 0.05155, sx: 0.5, sy: 0.07895, sz: 0.82245 },
+  { x: 0.10525, y: 0.3856, z: 0.106, sx: 0.252, sy: 0.04995, sz: 0.1116 },
 ];
+const requestedScale = 1.15; // User requested every door dimension 15% larger than that baseline.
+const scaledDoorHeight = previousDoorTransforms[0].sz * requestedScale; // Main part is rotated 90° X, so local Z is the visible Y height.
+const requestedLift = scaledDoorHeight * 0.1; // User requested +1/10 of the new door height as Y offset.
 doorData.parts.forEach((part, index) => {
-  const original = originalDoorTransforms[index];
-  for (const key of ['x', 'y', 'z', 'sx', 'sy', 'sz']) {
-    assert(Math.abs(Number(part.transform[key]) - original[key] * 0.5) < 1e-9, `door part ${index} ${key} must be exactly 50% of the original authored transform`);
+  const previous = previousDoorTransforms[index];
+  for (const key of ['x', 'z', 'sx', 'sy', 'sz']) {
+    assert(Math.abs(Number(part.transform[key]) - previous[key] * requestedScale) < 1e-9, `door part ${index} ${key} must be 15% larger than the previous door`);
   }
+  assert(Math.abs(Number(part.transform.y) - (previous.y * requestedScale + requestedLift)) < 1e-9, `door part ${index} y must include the 15% scale plus the requested 10%-height lift`);
 });
 
 function makeGroup() {
