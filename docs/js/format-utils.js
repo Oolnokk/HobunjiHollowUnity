@@ -19,6 +19,24 @@
     document.head.appendChild(script);
   })();
 
+  // Entry-tunnel door furniture and authored house rendering share the same
+  // buildGroupFromPiece boundary. Load this immediately after the door bridge
+  // so tunnel-contained house-wall fragments lose only their `wall` tag before
+  // WallBuilder receives them, without changing the source piece JSON.
+  (function loadEntryTunnelWallUnmark() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/entry-tunnel-wall-unmark.js?v=20260907a'; // Used to cache-bust the tunnel wall-tag bridge independently from the door visual.
+    if (window.EntryTunnelWallUnmark || document.querySelector('script[data-entry-tunnel-wall-unmark]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-entry-tunnel-wall-unmark="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.entryTunnelWallUnmark = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
