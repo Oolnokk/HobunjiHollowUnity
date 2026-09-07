@@ -21,10 +21,11 @@ assert.match(reload, /setTimeout\(\(\) => location\.reload\(\), 0\)/, 'creator c
 assert.match(reload, /api\.loadProfile\?\.\(\)/, 'fresh page must resume from the already-saved player profile');
 assert.match(reload, /document\.dispatchEvent\(new CustomEvent\('hobunjiPlayerReady'/, 'fresh page must deliver the saved profile to normal game listeners');
 
-assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260907charcreator12/, 'female Mashtzarr bridge cache key must include Nashka hairstyle update');
+assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260907charcreator15/, 'female Mashtzarr bridge cache key must include Nashka hairstyle update');
 assert.match(mashtzarr, /NASHKA_ID = 'nashka_khibu'/, 'female Mashtzarr hairstyle source must be Nashka Khibu');
 assert.match(mashtzarr, /hobunji-starter-npc-database\.json/, 'Nashka hairstyle group must come from the canonical starter NPC database');
-assert.match(mashtzarr, /groupPrefixesFromNashka\(nashka\)/, 'Nashka hairstyle cosmetic namespace must be resolved from her authored appearance');
+assert.match(mashtzarr, /buildProfileFromNpcExport\?\.\(nashka\)/, 'Nashka hairstyle group must consider the hairstyle she actually renders with');
+assert.match(mashtzarr, /groupPrefixesFromNashka\(nashka, renderedProfile\)/, 'Nashka hairstyle cosmetic namespace must be resolved from authored/rendered appearance');
 assert.match(mashtzarr, /NpcAvatarPreview\?\.ensurePortraitCosmetics/, 'Nashka group options must come from the canonical runtime portrait cosmetic catalog');
 assert.match(mashtzarr, /mergeHairOptionsIntoFemaleData\(cosmetics, prefixes\)/, 'resolved Nashka hairstyle group must be merged into the playable female Mashtzarr slots');
 
