@@ -25,7 +25,7 @@
   // WallBuilder receives them, without changing the source piece JSON.
   (function loadEntryTunnelWallUnmark() {
     if (typeof document === 'undefined') return;
-    const src = 'js/entry-tunnel-wall-unmark.js?v=20260907a'; // Used to cache-bust the tunnel wall-tag bridge independently from the door visual.
+    const src = 'js/entry-tunnel-wall-unmark.js?v=20260907b'; // Used to cache-bust the corrected tunnel WallBuilder classification bridge.
     if (window.EntryTunnelWallUnmark || document.querySelector('script[data-entry-tunnel-wall-unmark]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-entry-tunnel-wall-unmark="1"><\/script>`);
