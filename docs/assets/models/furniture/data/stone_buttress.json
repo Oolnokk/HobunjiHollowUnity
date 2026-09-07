@@ -1,0 +1,14 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_buttress",
+  "pieceId": "stone_buttress",
+  "notes": "Stepped stone buttress for exterior walls, bridge approaches, and retaining structures.",
+  "tileBase": {"visible":true,"tileSize":1,"footprintW":1,"footprintD":1,"y":0,"gridOpacity":0.55},
+  "parts": [
+    {"id":"buttress_base","kind":"box","name":"Buttress Foundation","transform":{"x":0,"y":0.10,"z":0.08,"rx":0,"ry":0,"rz":0,"sx":0.78,"sy":0.20,"sz":0.90},"color":"#625c52","topScaleX":0.96,"topScaleZ":0.96,"wonkiness":0.010},
+    {"id":"buttress_lower","kind":"box","name":"Lower Buttress Block","transform":{"x":0,"y":0.43,"z":0.08,"rx":0,"ry":0,"rz":0,"sx":0.64,"sy":0.46,"sz":0.74},"color":"#7b7466","topScaleX":0.94,"topScaleZ":0.82,"bottomScaleX":1.02,"bottomScaleZ":1.04,"topSkewZ":-0.05,"wonkiness":0.014},
+    {"id":"buttress_mid","kind":"box","name":"Middle Buttress Block","transform":{"x":0,"y":0.86,"z":-0.02,"rx":0,"ry":0,"rz":0,"sx":0.54,"sy":0.40,"sz":0.56},"color":"#7b7466","topScaleX":0.92,"topScaleZ":0.76,"bottomScaleX":1.02,"bottomScaleZ":1.04,"topSkewZ":-0.07,"wonkiness":0.014},
+    {"id":"buttress_upper","kind":"box","name":"Upper Buttress Block","transform":{"x":0,"y":1.22,"z":-0.13,"rx":0,"ry":0,"rz":0,"sx":0.44,"sy":0.32,"sz":0.40},"color":"#928a78","topScaleX":0.88,"topScaleZ":0.68,"bottomScaleX":1.02,"bottomScaleZ":1.04,"topSkewZ":-0.08,"wonkiness":0.014},
+    {"id":"buttress_cap","kind":"box","name":"Buttress Cap","transform":{"x":0,"y":1.42,"z":-0.22,"rx":0,"ry":0,"rz":0,"sx":0.52,"sy":0.10,"sz":0.34},"color":"#928a78","wonkiness":0.009}
+  ]
+}

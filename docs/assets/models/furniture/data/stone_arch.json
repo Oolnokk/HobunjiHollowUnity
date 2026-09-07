@@ -1,0 +1,17 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_arch",
+  "pieceId": "stone_arch",
+  "notes": "Two stone supports with layered feet/caps, a lintel, and a central keystone.",
+  "tileBase": {"visible":true,"tileSize":1,"footprintW":2,"footprintD":1,"y":0,"gridOpacity":0.55},
+  "parts": [
+    {"id":"arch_left_base","kind":"box","name":"Left Arch Foot","transform":{"x":-0.62,"y":0.07,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.58,"sy":0.14,"sz":0.68},"color":"#625c52","wonkiness":0.009},
+    {"id":"arch_right_base","kind":"box","name":"Right Arch Foot","transform":{"x":0.62,"y":0.07,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.58,"sy":0.14,"sz":0.68},"color":"#625c52","wonkiness":0.009},
+    {"id":"arch_left_shaft","kind":"legSquare","name":"Left Arch Support","transform":{"x":-0.62,"y":0.82,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.40,"sy":1.36,"sz":0.44},"color":"#7b7466","topScaleX":0.92,"topScaleZ":0.92,"bottomScaleX":1.04,"bottomScaleZ":1.04,"wonkiness":0.013},
+    {"id":"arch_right_shaft","kind":"legSquare","name":"Right Arch Support","transform":{"x":0.62,"y":0.82,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.40,"sy":1.36,"sz":0.44},"color":"#7b7466","topScaleX":0.92,"topScaleZ":0.92,"bottomScaleX":1.04,"bottomScaleZ":1.04,"wonkiness":0.013},
+    {"id":"arch_left_cap","kind":"box","name":"Left Arch Capital","transform":{"x":-0.62,"y":1.54,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.56,"sy":0.10,"sz":0.60},"color":"#928a78","wonkiness":0.008},
+    {"id":"arch_right_cap","kind":"box","name":"Right Arch Capital","transform":{"x":0.62,"y":1.54,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.56,"sy":0.10,"sz":0.60},"color":"#928a78","wonkiness":0.008},
+    {"id":"arch_lintel","kind":"box","name":"Stone Arch Lintel","transform":{"x":0,"y":1.68,"z":0,"rx":0,"ry":0,"rz":0,"sx":1.74,"sy":0.18,"sz":0.62},"color":"#928a78","topScaleX":0.96,"topScaleZ":0.96,"wonkiness":0.010},
+    {"id":"arch_keystone","kind":"box","name":"Central Keystone","transform":{"x":0,"y":1.67,"z":0.02,"rx":0,"ry":0,"rz":0,"sx":0.30,"sy":0.28,"sz":0.66},"color":"#7b7466","topScaleX":0.82,"topScaleZ":0.92,"bottomScaleX":1.04,"bottomScaleZ":1.02,"wonkiness":0.008}
+  ]
+}
