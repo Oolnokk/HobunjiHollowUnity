@@ -152,29 +152,37 @@
     const config = await loadConfig();
     if (!config) return mapData;
     const entrance = config.townEntrance; // Used to place both the visual house-system entryway and its matching transition from one record.
+    const entranceDoor = { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }], psCells: [] }; // Used to keep the two-tile mine threshold interactive after authored placement changes.
     mapData.buildings ||= [];
     mapData.transitions ||= [];
     let entranceBuilding = mapData.buildings.find(building => building.id === entrance.buildingId); // Used to upgrade pre-existing saves/workspaces from the temporary entrance piece to the supplied authored one.
     if (!entranceBuilding) {
-      entranceBuilding = {
-        id: entrance.buildingId,
-        label: 'Town Mine',
-        pieceFile: 'config/pieces/mine_entrance.json',
-        gridX: entrance.gridX,
-        gridZ: entrance.gridZ,
-        footprintW: entrance.footprintW,
-        footprintD: entrance.footprintD,
-        rotationDeg: entrance.rotationDeg,
-        rotation: entrance.rotationDeg,
-        doorEntrance: { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }], psCells: [] },
-      };
+      entranceBuilding = { id: entrance.buildingId, label: 'Town Mine' };
       mapData.buildings.push(entranceBuilding);
     }
-    entranceBuilding.pieceFile = 'config/pieces/mine_entrance.json';
-    entranceBuilding.doorEntrance = { bboxW: entrance.footprintW, bboxD: entrance.footprintD, cells: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 }], psCells: [] };
-    if (!mapData.transitions.some(transition => transition.id === 'spot_town_mine')) {
-      mapData.transitions.push({ id: 'spot_town_mine', label: 'Enter Town Mine', col: entrance.doorCol, row: entrance.doorRow, targetMapId: SAFE_ROOM_ID, targetSpotId: '', buildingId: entrance.buildingId });
+    Object.assign(entranceBuilding, {
+      pieceFile: 'config/pieces/mine_entrance.json',
+      gridX: entrance.gridX,
+      gridZ: entrance.gridZ,
+      footprintW: entrance.footprintW,
+      footprintD: entrance.footprintD,
+      rotationDeg: entrance.rotationDeg,
+      rotation: entrance.rotationDeg,
+      doorEntrance: entranceDoor,
+    });
+    let entranceTransition = mapData.transitions.find(transition => transition.id === 'spot_town_mine'); // Used to move an already-authored/cached mine transition along with the entrance instead of only creating missing transitions.
+    if (!entranceTransition) {
+      entranceTransition = { id: 'spot_town_mine' };
+      mapData.transitions.push(entranceTransition);
     }
+    Object.assign(entranceTransition, {
+      label: 'Enter Town Mine',
+      col: entrance.doorCol,
+      row: entrance.doorRow,
+      targetMapId: SAFE_ROOM_ID,
+      targetSpotId: '',
+      buildingId: entrance.buildingId,
+    });
     return mapData;
   }
 
