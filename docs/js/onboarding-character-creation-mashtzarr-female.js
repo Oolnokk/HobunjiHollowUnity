@@ -72,12 +72,14 @@
     return npcRecords(data).find(npc => normalizedNpcKey(npc?.id) === NASHKA_ID || normalizedNpcKey(npc?.name) === NASHKA_ID) || null;
   }
 
-  function groupPrefixesFromNashka(npc) {
-    const cosmetics = npc?.appearance?.cosmetics || {};
+  function groupPrefixesFromNashka(npc, renderedProfile = null) {
     const prefixes = new Set();
+    const savedCosmetics = npc?.appearance?.cosmetics || {};
     for (const slot of HAIR_SLOTS) {
-      const prefix = cosmeticGroupPrefix(cosmetics[slot]);
-      if (prefix) prefixes.add(prefix);
+      const savedPrefix = cosmeticGroupPrefix(savedCosmetics[slot]);
+      if (savedPrefix) prefixes.add(savedPrefix);
+      const renderedPrefix = cosmeticGroupPrefix(renderedProfile?.[slot]?.id);
+      if (renderedPrefix) prefixes.add(renderedPrefix);
     }
     return [...prefixes];
   }
@@ -153,13 +155,18 @@
         const database = await response.json();
         const nashka = nashkaFromDatabase(database);
         if (!nashka) throw new Error('Nashka Khibu is missing from the starter NPC database');
-        const prefixes = groupPrefixesFromNashka(nashka);
-        if (!prefixes.length) throw new Error('Nashka Khibu has no namespaced authored hairstyle cosmetic to identify her group');
 
         const cosmetics = window.NpcAvatarPreview?.ensurePortraitCosmetics
           ? await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' })
           : await window.loadPortraitCosmetics?.('./config/');
         if (!cosmetics) throw new Error('Portrait cosmetics were unavailable while resolving Nashka hairstyle group');
+
+        // Use both the raw saved appearance and the runtime-resolved portrait.
+        // The latter is authoritative when an NPC's saved slot is omitted and
+        // their deterministic random profile supplies the visible hairstyle.
+        const renderedProfile = window.NpcAvatarPreview?.buildProfileFromNpcExport?.(nashka) || null;
+        const prefixes = groupPrefixesFromNashka(nashka, renderedProfile);
+        if (!prefixes.length) throw new Error('Nashka Khibu has no namespaced rendered hairstyle cosmetic to identify her group');
 
         nashkaHairGroups = prefixes;
         const added = mergeHairOptionsIntoFemaleData(cosmetics, prefixes);
