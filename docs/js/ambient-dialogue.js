@@ -246,6 +246,66 @@
   // 2D marker (and expanding back out of it when the speaker returns to view).
   const EDGE_LOCK_DEPTH = 3;
   const EDGE_SCALE = 0.6; // how much smaller the whole chathead+text bubble renders while pinned off-screen
+  const GREETING_HEAD_MAX_YAW_RAD = Math.PI * 65 / 180; // Player-matched physical neck limit used by greeting head tracking.
+  const GREETING_BODY_FREE_LOOK_RAD = Math.PI / 3; // Player-matched 60° head-first range before a greeting turns the body.
+  const GREETING_BODY_CATCHUP_RATE = 6; // Player-matched easing rate used once an addressee leaves the free-look range.
+
+  function angleDiff(target, current) {
+    return Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  }
+
+  function liveGreetingTarget(target) {
+    if (target?.id === 'player') return state.deps?.getPlayerPosition?.() || null;
+    return target?.root?.position || target || null;
+  }
+
+  // Mirrors stationary player mouse-look: the neck follows freely up to 60°,
+  // then the body eases only far enough to keep the addressee at that limit.
+  // The target is resolved every frame, so walking away during a line does not
+  // leave the NPC staring at the spot where the greeting began.
+  function trackGreetingTarget(event, dt) {
+    const walker = event?.faceWalker;
+    const targetPosition = liveGreetingTarget(event?.faceTarget); // Current addressee position used for both body and neck yaw below.
+    if (!walker?.root || !targetPosition || !Number.isFinite(targetPosition.x) || !Number.isFinite(targetPosition.z)) return false;
+    const targetRot = -Math.atan2(targetPosition.z - walker.root.position.z, targetPosition.x - walker.root.position.x) + Math.PI / 2; // Logical world yaw toward the addressee.
+    if (!Number.isFinite(event.greetingBodyRot)) event.greetingBodyRot = Number.isFinite(walker.desiredRot) ? walker.desiredRot : walker.root.rotation.y;
+    const residual = angleDiff(targetRot, event.greetingBodyRot); // Decides whether the head alone can cover the current bearing.
+    let requestedBodyRot = event.greetingBodyRot; // Stays unchanged inside the free-look cone so small greetings never turn the torso.
+    if (!walker.neckJoint?.parent) {
+      requestedBodyRot = targetRot; // Rigid fallback portraits must use their body because they have no independently movable head.
+    } else if (Math.abs(residual) > GREETING_BODY_FREE_LOOK_RAD) {
+      requestedBodyRot = targetRot - Math.max(-GREETING_BODY_FREE_LOOK_RAD, Math.min(GREETING_BODY_FREE_LOOK_RAD, residual));
+    }
+    const bodyTurn = angleDiff(requestedBodyRot, event.greetingBodyRot); // Eased at the same effective catch-up rate as shoulder-camera player look.
+    event.greetingBodyRot += bodyTurn * Math.min(1, GREETING_BODY_CATCHUP_RATE * Math.max(0, Number(dt) || 0));
+    walker.applyFacingDeadzone?.(event.greetingBodyRot, 1);
+
+    if (!walker.neckJoint?.parent) return false;
+    const headYaw = Math.max(-GREETING_HEAD_MAX_YAW_RAD, Math.min(GREETING_HEAD_MAX_YAW_RAD, angleDiff(targetRot, walker.root.rotation.y))); // Final body-relative neck yaw, including the portrait dead-zone's rendered body adjustment.
+    walker.neckJoint.rotation.y = headYaw;
+    walker._greetingLookActive = true; // Used by releaseGreetingLook when this greeting ends.
+    const selfEyeY = walker.root.position.y + (Number(walker.avatarHeight) || 1) * 0.85; // Debug-ray height approximating this humanoid's eyes.
+    const targetEyeY = event.faceTarget?.root
+      ? event.faceTarget.root.position.y + (Number(event.faceTarget.modelHeight) || Number(walker.avatarHeight) || 1) * 0.85
+      : selfEyeY; // Player height is not exposed here, so the diagnostic ray stays horizontal while yaw tracking remains exact.
+    walker._lookAtDebug = {
+      head: { x: walker.root.position.x, y: selfEyeY, z: walker.root.position.z },
+      target: { x: targetPosition.x, y: targetEyeY, z: targetPosition.z },
+      mode: 'ambient-greeting',
+      targetId: event.faceTarget?.id || null,
+      bodyYawDeg: event.greetingBodyRot * 180 / Math.PI,
+      headYawDeg: headYaw * 180 / Math.PI,
+      bodyTurnNeeded: Math.abs(residual) > GREETING_BODY_FREE_LOOK_RAD,
+    };
+    return true;
+  }
+
+  function releaseGreetingLook(walker) {
+    if (!walker?._greetingLookActive) return;
+    walker._greetingLookActive = false;
+    if (!walker._ambientLookActive && walker.neckJoint) walker.neckJoint.rotation.set(0, 0, 0);
+    if (walker._lookAtDebug?.mode === 'ambient-greeting') walker._lookAtDebug = null;
+  }
 
   // Reports whether `anchor` is inside the camera's frustum (with margin);
   // when it isn't, also hands back the camera-relative vector to it so the
@@ -457,6 +517,7 @@
 
   function dispose(event) {
     for (const timer of event.cadenceTimers || []) clearTimeout(timer);
+    if (event.greeting && event.faceWalker) releaseGreetingLook(event.faceWalker);
     event.group.parent?.remove(event.group);
     disposePart(event.textPart);
     if (event.headPart) disposePart(event.headPart);
@@ -638,9 +699,13 @@
       }
       event.group.quaternion.copy(camera.quaternion);
       if (event.faceWalker && event.faceTarget) {
-        const targetPosition = event.faceTarget.root?.position || event.faceTarget;
-        const angle = -Math.atan2(targetPosition.z - event.faceWalker.root.position.z, targetPosition.x - event.faceWalker.root.position.x) + Math.PI / 2;
-        event.faceWalker.applyFacingDeadzone?.(angle, 0.34);
+        if (event.greeting) {
+          trackGreetingTarget(event, dt);
+        } else {
+          const targetPosition = event.faceTarget.root?.position || event.faceTarget;
+          const angle = -Math.atan2(targetPosition.z - event.faceWalker.root.position.z, targetPosition.x - event.faceWalker.root.position.x) + Math.PI / 2;
+          event.faceWalker.applyFacingDeadzone?.(angle, 0.34);
+        }
       }
       const opacity = progress < 0.78 ? 1 : Math.max(0, (1 - progress) / 0.22);
       event.textPart.material.opacity = opacity;
@@ -703,8 +768,6 @@
     state.greeted.add(key);
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
-    const angle = -Math.atan2(target.z - walker.root.position.z, target.x - walker.root.position.x) + Math.PI / 2;
-    walker.applyFacingDeadzone?.(angle, 0.34);
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.
@@ -719,7 +782,9 @@
       durationMs: override ? Math.max(state.settings.durationMs, 5600) : undefined,
       directedAtPlayer: targetId === 'player',
       faceWalker: walker,
-      faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
+      faceTarget: targetId === 'player'
+        ? { id: 'player' }
+        : { id: targetId, root: target.root, modelHeight: target.modelHeight },
     });
     return true;
   }
@@ -742,7 +807,7 @@
       const friends = friendSetFor(walker.rec?.id);
       for (const other of walkers) {
         if (walker === other || !friends.has(other.rec?.id)) continue;
-        if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, x: other.root.position.x, z: other.root.position.z, root: other.root }, now, day)) return;
+        if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, x: other.root.position.x, z: other.root.position.z, root: other.root, modelHeight: other.avatarHeight }, now, day)) return;
       }
     }
   }
