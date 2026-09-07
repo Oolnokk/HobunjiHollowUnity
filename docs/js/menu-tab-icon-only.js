@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 6) return;
+  if (window.HobunjiMenuTabIcons?.version >= 7) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
@@ -26,10 +26,12 @@
   });
   const TAB_ART = Object.freeze({
     inventory: { base: 'action', file: 'item_select.png', color: '#e3ae61' },
+    crafting: { base: 'generic', file: 'icon_axe.png', color: '#c98a56' },
     farm: { base: 'generic', file: 'icon_wheat.png', color: '#6bc36f' },
     stable: { base: 'generic', file: 'icon_horseshoe.png', color: '#c89461' },
     tasks: { base: 'generic', file: 'icon_journal.png', color: '#e0c56b' },
-    progress: { base: 'generic', file: 'icon_writing_stack.png', color: '#b38bdd' },
+    compendium: { base: 'generic', file: 'icon_writing_stack.png', color: '#b38bdd' },
+    progress: { base: 'action', file: 'tool_select.png', color: '#b38bdd' },
     map: { base: 'generic', file: 'icon_map.png', color: '#67aee8' },
   });
   const debugState = {
@@ -466,7 +468,7 @@
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 6,
+      version: 7,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
       totalTabs: tabs.length,
@@ -496,6 +498,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 6, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 7, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();
