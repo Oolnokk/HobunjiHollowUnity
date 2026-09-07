@@ -107,9 +107,9 @@ async function settle(promise) {
   assert.equal(runtime.shouldLoadForTransition(() => enterZone('map_northern_cliffs')), true, 'zone travel should show the loader');
   assert.equal(runtime.shouldLoadForTransition(() => performTravel({ target: 'town' })), true, 'town/farm world travel should show the loader');
 
-  windowStub.GridTileAccessors = { getCurrentArea: () => 'map_i_test_shop' };
-  assert.equal(runtime.shouldLoadForTransition(() => performTravel({ target: 'town' })), false, 'exiting a building must not show the loader');
-  windowStub.GridTileAccessors = { getCurrentArea: () => 'town' };
+  windowStub.GridTileAccessors = { getCurrentArea: () => 'custom_room', isBuildingArea: () => true };
+  assert.equal(runtime.shouldLoadForTransition(() => performTravel({ target: 'town' })), false, 'exiting a building must not show the loader even when its id is nonstandard');
+  windowStub.GridTileAccessors = { getCurrentArea: () => 'town', isBuildingArea: () => false };
 
   let callbackRuns = 0;
   const capturedDeps = {
