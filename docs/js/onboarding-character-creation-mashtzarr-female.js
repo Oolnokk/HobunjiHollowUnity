@@ -27,8 +27,12 @@
   }
 
   function hydratePrivateSpeciesTable(table) {
+    const looksLikeCoreSpeciesTable = table?.['mao-ao']?.label === 'Mao-ao'
+      && table?.tletingan?.label === 'Tletingan'
+      && table?.kenkari?.label === 'Kenkari'
+      && table?.['engh-sho']?.label === 'Engh-sho';
     const mashtzarr = table?.mashtzarr;
-    if (!mashtzarr || mashtzarr.label !== 'Mashtzarr' || !mashtzarr.male || !Array.isArray(mashtzarr.male.slots)) return false;
+    if (!looksLikeCoreSpeciesTable || !mashtzarr || mashtzarr.label !== 'Mashtzarr' || !mashtzarr.male || !Array.isArray(mashtzarr.male.slots)) return false;
 
     // This is deliberately the exact same object, not a partial cosmetic copy:
     // the core therefore builds female Mashtzarr with the same Front/Back/Side
