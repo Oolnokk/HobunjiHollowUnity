@@ -22,6 +22,7 @@ const windowForLoader = {
   GridTileAccessors: { getActiveScene: () => activeScene },
   BorderTerrain: { buildTownBorderTerrain() { return 'town-built'; } },
   __farmLog: message => logs.push(message),
+  addEventListener: (name, handler) => listeners.set(name, handler),
 };
 const documentForLoader = {
   readyState: 'loading',
