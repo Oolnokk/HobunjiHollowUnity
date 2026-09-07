@@ -48,6 +48,7 @@
     new URL('character-scale-comparison.js?v=20260904k', runtimeBase).href,
     new URL('character-scale-comparison-body-input-guard.js?v=20260905b', runtimeBase).href,
     new URL('character-scale-comparison-presentation.js?v=20260905b', runtimeBase).href,
+    new URL('character-scale-portrait-x-authored-defaults.js?v=20260907a', localBase).href,
     new URL('character-scale-portrait-x-offset.js?v=20260907b', localBase).href,
   ];
 
