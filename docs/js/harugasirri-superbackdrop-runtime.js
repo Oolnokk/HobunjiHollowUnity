@@ -98,37 +98,17 @@
     return Number.isFinite(n) ? n : fallback;
   }
 
-  function shadeFilledTexture(THREE, definition) {
-    const textureUrl = resolveDocsPath(definition.texture);
-    return new Promise((resolve, reject) => {
-      new THREE.TextureLoader().load(textureUrl, sourceTexture => {
-        let texture = sourceTexture;
-        let shadeFilled = false;
-        try {
-          const rgb = window.parseHexColor?.(definition.fillColor);
-          if (rgb && typeof window.getShadeFillCanvas === 'function' && typeof window.getPortraitTintingConfig === 'function') {
-            const canvas = window.getShadeFillCanvas(sourceTexture.image, `${textureUrl}|${definition.fillColor}`, {
-              mode: 'shadeFill',
-              rgb: [rgb.r, rgb.g, rgb.b],
-              options: window.getPortraitTintingConfig(),
-            });
-            texture = new THREE.CanvasTexture(canvas);
-            shadeFilled = true;
-          }
-        } catch (error) {
-          log(`shade-fill fallback for ${definition.texture}: ${error?.message || error}`, 'warn', 'assets');
-        }
-        // Harugasirri is one distant illustrated landmark, not nearby repeating
-        // terrain. Its role geometry supplies normalized 0..1 UVs, so display
-        // each authored PNG exactly once across that whole material region.
-        texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-        texture.repeat.set(1, 1);
-        texture.offset?.set?.(0, 0);
-        if ('encoding' in texture && THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding;
-        texture.needsUpdate = true;
-        resolve({ texture, shadeFilled });
-      }, undefined, reject);
-    });
+  function configureStretchedTexture(THREE, texture) {
+    if (!texture) return texture;
+    // Harugasirri is one distant illustrated landmark, not nearby repeating
+    // terrain. Its role geometry supplies normalized 0..1 UVs, so display
+    // each authored PNG exactly once across that whole material region.
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.repeat?.set?.(1, 1);
+    texture.offset?.set?.(0, 0);
+    if ('encoding' in texture && THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding;
+    texture.needsUpdate = true;
+    return texture;
   }
 
   // Geometry must never wait on texture IO. Build a flat material immediately
@@ -148,16 +128,44 @@
       uvTileSize: definition.tileSize,
       textureStatus: 'loading',
     };
-    shadeFilledTexture(THREE, definition).then(loaded => {
-      material.map = loaded.texture;
-      material.color?.setHex?.(loaded.shadeFilled ? 0xffffff : baseColor);
-      material.userData.textureStatus = 'ready';
+    const textureUrl = resolveDocsPath(definition.texture);
+    try {
+      // TextureLoader returns its Texture synchronously. Attach that handle to
+      // the material immediately so a slow image decode can never leave the
+      // live backdrop reporting/rendering as map=none.
+      const immediateTexture = new THREE.TextureLoader().load(textureUrl, sourceTexture => {
+        let texture = sourceTexture;
+        let shadeFilled = false;
+        try {
+          const rgb = window.parseHexColor?.(definition.fillColor);
+          if (rgb && typeof window.getShadeFillCanvas === 'function' && typeof window.getPortraitTintingConfig === 'function') {
+            const canvas = window.getShadeFillCanvas(sourceTexture.image, `${textureUrl}|${definition.fillColor}`, {
+              mode: 'shadeFill',
+              rgb: [rgb.r, rgb.g, rgb.b],
+              options: window.getPortraitTintingConfig(),
+            });
+            texture = new THREE.CanvasTexture(canvas);
+            shadeFilled = true;
+          }
+        } catch (error) {
+          log(`shade-fill fallback for ${definition.texture}: ${error?.message || error}`, 'warn', 'assets');
+        }
+        material.map = configureStretchedTexture(THREE, texture);
+        material.color?.setHex?.(shadeFilled ? 0xffffff : baseColor);
+        material.userData.textureStatus = 'ready';
+        material.needsUpdate = true;
+      }, undefined, error => {
+        stats.materialFallbackCount++;
+        material.userData.textureStatus = 'fallback';
+        log(`texture unavailable for ${definition.texture}; keeping flat fallback: ${error?.message || error}`, 'warn', 'assets');
+      });
+      material.map = configureStretchedTexture(THREE, immediateTexture);
       material.needsUpdate = true;
-    }).catch(error => {
+    } catch (error) {
       stats.materialFallbackCount++;
       material.userData.textureStatus = 'fallback';
       log(`texture unavailable for ${definition.texture}; keeping flat fallback: ${error?.message || error}`, 'warn', 'assets');
-    });
+    }
     return material;
   }
 

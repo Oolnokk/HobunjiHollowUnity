@@ -113,7 +113,14 @@ class Group {
 }
 class TextureLoader {
   // Deliberately never calls success OR failure. Runtime geometry must not wait.
-  load() {}
+  load(url) {
+    return {
+      url,
+      repeat: { set(x, y) { this.x = x; this.y = y; } },
+      offset: { set(x, y) { this.x = x; this.y = y; } },
+      needsUpdate: false,
+    };
+  }
 }
 
 const THREE = {
@@ -126,6 +133,7 @@ const THREE = {
   DoubleSide: 2,
   FrontSide: 0,
   RepeatWrapping: 1000,
+  ClampToEdgeWrapping: 1001,
   sRGBEncoding: 3001,
 };
 const audits = new Map();
@@ -170,6 +178,9 @@ vm.runInNewContext(source, context);
   assert(Math.abs(debug.transform.height - 119.058828) < 1e-6);
   for (const child of group.children) {
     assert.equal(child.material.userData.textureStatus, 'loading', 'flat fallback should exist while texture IO is unresolved');
+    assert(child.material.map, 'TextureLoader\'s synchronous texture handle must be attached before image IO resolves');
+    assert.equal(child.material.map.repeat.x, 1, 'stretched texture must not repeat horizontally');
+    assert.equal(child.material.map.repeat.y, 1, 'stretched texture must not repeat vertically');
     assert.equal(child.material.side, THREE.DoubleSide, 'backdrop should remain visible regardless of authored winding');
     assert.equal(child.userData.textureMapping, 'stretch-to-role-bounds', 'each material PNG should stretch once across its role geometry');
     assert.equal(child.userData.shellOutline, true, 'each backdrop role should opt into the shell-outline pass');
