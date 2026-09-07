@@ -10,8 +10,12 @@
     [16,3],[17,3],[18,3],
     [16,4],[17,4],[18,4],
   ]); // Used only as a visual paving mask when neither painted PATH tiles nor an authored farm route can provide one.
+  const ENTRANCE_CENTER_X = 17.5; // Used to continue the farm road through the matching north-border cliff gap.
+  const ENTRANCE_ROAD_HALF_WIDTH = 1.625; // Used to match TerrainGeometry's established 3.25-unit paved corridor width.
+  const ENTRANCE_BORDER_DEPTH = 18; // Used to carry the road across the complete procedural farm border.
   const RETRY_DELAYS_MS = Object.freeze([0, 80, 220, 600, 1400, 3000]); // Used to bridge parser/init/layout ordering without adding a frame-loop task.
   const patchedApis = new WeakSet(); // Used to avoid wrapping the same module API twice.
+  const grassSuppressionTiles = new Set(); // Used by VegetationCropRendering to omit grass blades beneath the current paved farm corridor.
 
   let terrainDeps = null; // Captured from TerrainGeometry.init; provides the existing path WallBuilder and exact tile enum.
   let vegetationDeps = null; // Captured from VegetationCropRendering.init; provides the current farm grid, scene, and dimensions.
@@ -29,6 +33,7 @@
     paintedPathBuilds: 0,
     visibleChunks: 0,
     visibleInstances: 0,
+    grassSuppressedTiles: 0,
     lastMode: 'not-built',
     lastReason: '',
     lastRouteId: null,
@@ -108,6 +113,33 @@
     return masked;
   }
 
+  function extendThroughNorthGap(splineData) {
+    if (!splineData?.containsPoint || !splineData?.bounds) return splineData;
+    const originalContainsPoint = splineData.containsPoint; // Preserves the authored or tile-locked road inside the playable farm.
+    const originalBounds = splineData.bounds; // Preserves every existing road bound while adding the north-border continuation.
+    return Object.assign({}, splineData, {
+      containsPoint(x, z) {
+        const insideEntranceRoad = z >= -ENTRANCE_BORDER_DEPTH && z <= 1
+          && Math.abs(x - ENTRANCE_CENTER_X) <= ENTRANCE_ROAD_HALF_WIDTH;
+        return insideEntranceRoad || originalContainsPoint(x, z);
+      },
+      bounds: Object.assign({}, originalBounds, {
+        minX: Math.min(originalBounds.minX, ENTRANCE_CENTER_X - ENTRANCE_ROAD_HALF_WIDTH),
+        maxX: Math.max(originalBounds.maxX, ENTRANCE_CENTER_X + ENTRANCE_ROAD_HALF_WIDTH),
+        minZ: Math.min(originalBounds.minZ, -ENTRANCE_BORDER_DEPTH),
+      }),
+    });
+  }
+
+  function updateGrassSuppression(splineData, cols, rows) {
+    grassSuppressionTiles.clear();
+    for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+      if (splineData.containsPoint(col + 0.5, row + 0.5)) grassSuppressionTiles.add(`${col},${row}`);
+    }
+    stats.grassSuppressedTiles = grassSuppressionTiles.size;
+    window.VegetationCropRendering?.rebuildFarmBillboards?.();
+  }
+
   function ensureReady() {
     if (readyPromise) return readyPromise;
     const builder = terrainDeps?.pathWallBuilder; // Existing TerrainGeometry-owned WallBuilder; no second paving renderer/cache is created.
@@ -173,6 +205,8 @@
       mode = 'fixed-entrance-fallback';
     }
     if (!splineData) throw new Error('Farm paving produced no spline/tile corridor even after the fixed entrance fallback');
+    splineData = extendThroughNorthGap(splineData);
+    updateGrassSuppression(splineData, cols, rows);
 
     terrain.registerPathBrickChunks('farm', scene, splineData);
     terrain.updatePathBrickCulling?.('farm', true);
@@ -286,6 +320,7 @@
   window.FarmPathBricks = {
     installed: true,
     rebuild: () => requestBuild('manual-debug-rebuild'),
+    suppressesGrassAt: (col, row) => grassSuppressionTiles.has(`${col},${row}`),
     snapshot: () => ({ ...stats, cachedLayoutRouteCount: cachedLayoutRoutes.length, liveFarmRouteCount: farmRoutes().length }),
   };
 
