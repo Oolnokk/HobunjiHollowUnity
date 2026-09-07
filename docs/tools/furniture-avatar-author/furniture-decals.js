@@ -75,20 +75,51 @@ function surfaceDimensions(group) {
   };
 }
 
-function alphaSafeDecalSource(image) {
+function configureDecalTexture(texture) {
+  texture.format = THREE.RGBAFormat;
+  texture.premultiplyAlpha = false;
+  if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+  else texture.encoding = THREE.sRGBEncoding;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function buildDecalTexturePair(image) {
   const width = Math.max(1, image.naturalWidth || image.width || 1);
   const height = Math.max(1, image.naturalHeight || image.height || 1);
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d', { alpha: true });
-  if (!context) return image;
-  context.clearRect(0, 0, width, height);
-  // Copy RGBA pixels onto a genuinely transparent backing canvas. This keeps
-  // catalog PNG/WebP alpha instead of inheriting an opaque preview background.
-  context.globalCompositeOperation = 'copy';
-  context.drawImage(image, 0, 0, width, height);
-  return canvas;
+  const colorCanvas = document.createElement('canvas');
+  const alphaCanvas = document.createElement('canvas');
+  colorCanvas.width = alphaCanvas.width = width;
+  colorCanvas.height = alphaCanvas.height = height;
+  const colorContext = colorCanvas.getContext('2d', { alpha: true, willReadFrequently: true });
+  const alphaContext = alphaCanvas.getContext('2d', { alpha: false });
+  if (!colorContext || !alphaContext) {
+    return { map: configureDecalTexture(new THREE.Texture(image)), alphaMap: null };
+  }
+
+  colorContext.clearRect(0, 0, width, height);
+  colorContext.drawImage(image, 0, 0, width, height);
+  const colorPixels = colorContext.getImageData(0, 0, width, height);
+  const alphaPixels = alphaContext.createImageData(width, height);
+
+  for (let index = 0; index < colorPixels.data.length; index += 4) {
+    const alpha = colorPixels.data[index + 3];
+    // Color and transparency are intentionally separated. Transparent PNG
+    // pixels often contain black RGB, so the color map must not control alpha.
+    colorPixels.data[index + 3] = 255;
+    alphaPixels.data[index] = alpha;
+    alphaPixels.data[index + 1] = alpha;
+    alphaPixels.data[index + 2] = alpha;
+    alphaPixels.data[index + 3] = 255;
+  }
+
+  colorContext.putImageData(colorPixels, 0, 0);
+  alphaContext.putImageData(alphaPixels, 0, 0);
+  const map = configureDecalTexture(new THREE.CanvasTexture(colorCanvas));
+  const alphaMap = new THREE.CanvasTexture(alphaCanvas);
+  alphaMap.encoding = THREE.LinearEncoding;
+  alphaMap.needsUpdate = true;
+  return { map, alphaMap };
 }
 
 function loadDecalTexture(source) {
@@ -99,14 +130,11 @@ function loadDecalTexture(source) {
     if (/^https?:/i.test(source)) image.crossOrigin = 'anonymous';
     image.decoding = 'async';
     image.onload = () => {
-      const alphaSource = alphaSafeDecalSource(image);
-      const texture = alphaSource === image ? new THREE.Texture(image) : new THREE.CanvasTexture(alphaSource);
-      texture.format = THREE.RGBAFormat;
-      texture.premultiplyAlpha = false;
-      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-      else texture.encoding = THREE.sRGBEncoding;
-      texture.needsUpdate = true;
-      resolve(texture);
+      try {
+        resolve(buildDecalTexturePair(image));
+      } catch (error) {
+        reject(new Error(`Could not preserve decal transparency: ${error.message}`));
+      }
     };
     image.onerror = () => reject(new Error('Could not load decal image.'));
     image.src = source;
@@ -201,10 +229,11 @@ function buildDecalMesh(record) {
     mesh.userData.outline = outline;
   }
 
-  loadDecalTexture(record.imageSource).then(texture => {
+  loadDecalTexture(record.imageSource).then(textures => {
     const live = decalMeshes.get(record.id);
-    if (live?.material && texture) {
-      live.material.map = texture;
+    if (live?.material && textures?.map) {
+      live.material.map = textures.map;
+      live.material.alphaMap = textures.alphaMap || null;
       live.material.needsUpdate = true;
     }
   }).catch(error => log?.(`Decal image failed (${record.imageName || record.id}): ${error.message}`, 'warn'));
