@@ -14,6 +14,7 @@
     'js/combat/ranged-hud-reticle.js',
     'js/fullscreen-toggle.js',
     'js/mobile-combat-zoom.js',
+    'js/ambient-biome-audio.js',
   ];
 
   function ensureRuntimeHelpers() {

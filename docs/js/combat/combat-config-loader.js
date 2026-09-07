@@ -102,7 +102,7 @@
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
     ['js/npc-social-relationship-bridge-v2.js?v=20260906dance1', () => !!window.NpcRapport?.eventDriven],
     ['js/generic-hud-icons.js?v=20260905a', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
-    ['js/menu-tab-icon-only.js?v=20260905a', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
+    ['js/menu-tab-icon-only.js?v=20260907a', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
     ['js/npc-social-seating-bridge.js?v=20260904a', () => !!window.HobunjiNpcSocialSeating],
     ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
