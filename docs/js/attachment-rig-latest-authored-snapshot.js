@@ -1,6 +1,7 @@
 // Bootstrap the sanitized latest-authored rig snapshot, allowlisted Mao-ao
 // shoulder authoring, shared whole-rig scale, runtime head-scale bridge, Pixel
-// Probe character-rig verification, and Full Character Scale workspace.
+// Probe character-rig verification, species-relative Shoulder Cam framing,
+// Mao-ao arm tint correction, and Full Character Scale workspace.
 (() => {
   'use strict';
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
@@ -11,6 +12,8 @@
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('character-rig-scale.js?v=20260904i', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20260905a', base).href,
+    new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
+    new URL('shoulder-camera-character-framing.js?v=20260907a', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20260904j', base).href,
     new URL('character-scale-comparison.js?v=20260904k', base).href,
