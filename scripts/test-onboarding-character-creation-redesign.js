@@ -1,0 +1,34 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const redesign = fs.readFileSync('docs/js/onboarding-character-creation-redesign.js', 'utf8'); // Guards the new creator workflow and runtime preview contracts.
+const entry = fs.readFileSync('docs/onboarding.js', 'utf8'); // Guards the thin bootstrap that preserves the existing onboarding implementation.
+const core = fs.readFileSync('docs/onboarding-core.js', 'utf8'); // Guards that save/profile creation remains in the original core rather than being duplicated.
+
+assert.match(entry, /onboarding-core\.js\?v=20260907charcreator1/, 'onboarding entrypoint must load the preserved core first');
+assert.match(entry, /onboarding-character-creation-redesign\.js\?v=20260907charcreator1/, 'onboarding entrypoint must load the redesign after the core');
+assert.match(core, /window\.HobunjiOnboarding = \{ init, reset, loadProfile, loadSaveMeta \}/, 'preserved onboarding core must still expose the original public API');
+
+for (const required of [
+  'Sloth-folk of the Northern Archipelago',
+  'Natives of the islands of Tletinga-taru and Tletinga-iku',
+  'Oliphanti of the Eastern Highplains',
+  'Tall, agile Yubashi native to the hot rainforests and riverlands of Tanka',
+  'Sailors of the Snow-sea that pools between the twin chains of the Sho-ngyankwani Mountains',
+  'Round parrotfolk of the Southern Archipelago',
+]) assert.ok(redesign.includes(required), `missing requested lore text: ${required}`);
+
+assert.match(redesign, /data-ob-family = 'slagothim'|dataset\.obFamily = 'slagothim'/, 'Slagothim must be a top-level family selection');
+assert.match(redesign, /data-ob-subspecies=\\?"tletingan\\?"/, 'Tletingan must appear as a second-step subspecies');
+assert.match(redesign, /data-ob-subspecies=\\?"nuhongan\\?"[^>]*disabled/, 'Nuhongan must be visibly unavailable');
+assert.match(redesign, /data-ob-subspecies=\\?"longoran\\?"[^>]*disabled/, 'Longoran must be visibly unavailable');
+
+assert.match(redesign, /buildSinglePlaneAvatarModel/, '3D creator must use the gameplay PNG-plane avatar constructor');
+assert.match(redesign, /portraitView: 'behind'/, '3D creator must build the rear character texture');
+assert.match(redesign, /onlyHeadSprite: true/, '3D creator must build the head-only mask for the runtime neck rig');
+assert.match(redesign, /ProceduralLegAnimation\?\.attach/, '3D creator must include runtime procedural feet');
+assert.match(redesign, /proceduralHandParent = group/, '3D creator must use the normal free-hand parent contract');
+assert.match(redesign, /HobunjiCharacterRigScale\.applyToParent/, '3D creator must apply authored runtime species/gender scale');
+assert.match(redesign, /HOBUNJI_ONBOARDING_REDESIGN_STATUS/, '3D creator must expose mobile-friendly diagnostic state');
+
+console.log('onboarding character-creation redesign source checks passed');
