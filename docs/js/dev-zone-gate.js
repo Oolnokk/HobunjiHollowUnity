@@ -6,7 +6,8 @@
   if (window.DevZoneGate?.installed) return;
 
   const BLOCKED_ZONE_IDS = new Set(['map_eastern_mire', 'map_western_slope']); // Used to identify unfinished zone destinations that require Dev Mode.
-  const TRAVEL_ACTION_IDS = Object.freeze(['interact', 'dodge', 'action1', 'action2', 'action3', 'action4']); // Used to match every configured input that can execute a highlighted world transition.
+  const TRAVEL_ACTION_IDS = Object.freeze(['interact', 'dodge', 'action1', 'action2', 'action3', 'action4', 'action5']); // Used to match every configured input that can execute a highlighted world transition.
+  const TRAVEL_BUTTON_IDS = new Set(['dodgeBtn', 'btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']); // Used to match the current five visible action-arch buttons plus the context/dodge button.
   const TOAST_TEXT = 'That zone is under construction.'; // Used for the blocked-entry toast requested for non-dev play.
   const TOAST_MS = 2200; // Used to match the existing game's short toast lifetime.
   let toastTimer = 0; // Used to replace the previous hide timer when the player retries an entrance.
@@ -75,7 +76,7 @@
 
   function pointerIsTravelControl(event) {
     const button = event.target instanceof Element ? event.target.closest('button') : null; // Used to recognize the mobile context/action controls without swallowing menu clicks.
-    return !!button && (button.id === 'dodgeBtn' || /^btnAction\d+$/.test(button.id));
+    return !!button && TRAVEL_BUTTON_IDS.has(button.id);
   }
 
   window.addEventListener('keydown', event => {
