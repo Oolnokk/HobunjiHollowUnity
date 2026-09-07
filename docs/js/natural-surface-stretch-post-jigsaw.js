@@ -160,6 +160,51 @@
 
   installContinuousPerimeterFrameMapper();
 
+  function formatPixelProbePerimeterDiagnostics() {
+    const snapshot = window.HobunjiSurfacePerimeterFrame?.snapshot?.(); // Used to append the exact live mapping counters to copied Pixel Probe reports on mobile.
+    if (!snapshot) return '';
+    const lines = [
+      '',
+      '=== Natural surface perimeter-frame diagnostics ===',
+      `Installed=${!!snapshot.installed} mapping=continuous-detected-surface-perimeter sourcePNGEdge=${(FRAME_SOURCE_EDGE_FRACTION * 100).toFixed(0)}% renderedEdgeBand=${(FRAME_SURFACE_EDGE_FRACTION * 100).toFixed(0)}%`,
+      `Mapper calls: geometry=${snapshot.mapGeometryCalls || 0} mesh=${snapshot.mapMeshCalls || 0} runtimeRemap=${snapshot.remapCalls || 0} legacyPatchCapsIgnored=${snapshot.capHintsIgnored || 0}`,
+      `Frame writes: geometries=${snapshot.warpedGeometries || 0} UVvertices=${snapshot.warpedUvs || 0}`,
+    ]; // Used as a compact self-contained readout that can be pasted back without DevTools.
+    const recent = Array.isArray(snapshot.recent) ? snapshot.recent.slice(-8) : []; // Used to show which connected surfaces were most recently remapped without flooding the report.
+    if (!recent.length) {
+      lines.push('Recent mapped surfaces: none yet — this scene has not sent a rock/cliff surface through the perimeter mapper since load.');
+    } else {
+      lines.push('Recent mapped surfaces:');
+      for (const entry of recent) {
+        lines.push(`  ${entry.label || '(surface)'} surfaces=${entry.patchCount ?? '-'} materialSlot=${entry.materialIndex ?? '*'} warpedUVs=${entry.warpedUvCount ?? 0}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  function installPixelProbePerimeterDiagnostics() {
+    const result = document?.getElementById?.('debugProbeResult'); // Used as Pixel Probe's existing mobile-copy report surface; observing it avoids coupling to Pixel Probe's private raycast closure.
+    if (!result || result.__hobunjiSurfacePerimeterFrameObserver || typeof MutationObserver !== 'function') return false;
+    const marker = '=== Natural surface perimeter-frame diagnostics ==='; // Used to make observer-triggered appends idempotent when textContent itself causes another mutation.
+    const appendDiagnostics = () => {
+      const text = String(result.textContent || ''); // Used as the finished Pixel Probe report after its asynchronous capture completes.
+      if (!text || text.includes(marker) || !text.startsWith('Pixel Probe report')) return;
+      const diagnostics = formatPixelProbePerimeterDiagnostics(); // Used to append only when the perimeter mapper is actually installed.
+      if (diagnostics) result.textContent = text + diagnostics;
+    };
+    const observer = new MutationObserver(() => {
+      if (typeof queueMicrotask === 'function') queueMicrotask(appendDiagnostics);
+      else Promise.resolve().then(appendDiagnostics);
+    }); // Used so the diagnostics are appended after Pixel Probe finishes replacing the report text.
+    observer.observe(result, { childList: true, subtree: true, characterData: true });
+    result.__hobunjiSurfacePerimeterFrameObserver = observer;
+    return true;
+  }
+
+  if (!installPixelProbePerimeterDiagnostics()) {
+    window.addEventListener?.('DOMContentLoaded', installPixelProbePerimeterDiagnostics, { once: true });
+  }
+
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   const terrainRender = rendererProto?.render; // Used as the installed TerrainRenderChunks wrapper we are ordering around.
   if (!rendererProto || typeof terrainRender !== 'function') return;
