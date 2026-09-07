@@ -6,10 +6,11 @@ const camera = fs.readFileSync('docs/js/onboarding-character-creation-camera-com
 const reload = fs.readFileSync('docs/js/onboarding-character-creation-reload-handoff.js', 'utf8');
 const mashtzarr = fs.readFileSync('docs/js/onboarding-character-creation-mashtzarr-female.js', 'utf8');
 
-assert.match(camera, /TARGET_PREVIEW_YAW_DEG = 15\b/, 'creator resting turn must be +15 degrees');
-assert.doesNotMatch(camera, /TARGET_PREVIEW_YAW_DEG = -15\b/, 'old wrong-direction -15 degree resting turn must stay removed');
+assert.match(camera, /TARGET_PREVIEW_YAW_DEG = 20\b/, 'creator resting turn must be +20 degrees');
+assert.doesNotMatch(camera, /TARGET_PREVIEW_YAW_DEG = -20\b/, 'wrong-direction -20 degree resting turn must stay removed');
 assert.match(camera, /camera\.position\.set\(1\.55, midY, 2\.75\)/, 'mid-body camera height must remain intact');
 assert.match(camera, /camera\.lookAt\(0, midY, 0\)/, 'mid-body camera must remain level rather than top-down');
+assert.match(entry, /onboarding-character-creation-camera-composition\.js\?v=20260907charcreator16/, 'onboarding must load the current +20 degree camera composition');
 
 assert.match(entry, /onboarding-character-creation-reload-handoff\.js\?v=20260907charcreator14/, 'onboarding must load the clean-page creator handoff');
 assert.ok(entry.indexOf('onboarding-character-creation-weapon-view-fix.js') < entry.indexOf('onboarding-character-creation-reload-handoff.js'), 'weapon persistence must register before reload interception');
