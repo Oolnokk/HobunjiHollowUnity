@@ -185,7 +185,11 @@
     const next = { ...scaleApi.scaleFor(id.species, id.gender, profile), portraitOffsetX: clamp(Number(percent) / 100) };
     const persisted = hostApi.setRigScale(id.species, id.gender, next) || next;
     const group = window.HobunjiGameplayBackdrop?.getScene?.()?.getObjectByName?.(`FullScalePreview_${id.key}`); // Selected preview updates immediately.
-    if (group) scaleApi.applyToParent(group, id.species, id.gender, persisted, 0);
+    let age = 0; // Existing per-NPC hunch must survive a portrait-only X edit.
+    let npcId = null; // Resolved from the preview model's mobile-visible NPC metadata.
+    group?.traverse?.(node => { if (!npcId && node?.userData?.npcId) npcId = node.userData.npcId; });
+    if (npcId) age = Number(hostApi.npcAgeFor?.(npcId)) || 0;
+    if (group) scaleApi.applyToParent(group, id.species, id.gender, persisted, age);
     saveSoon();
     lastSelection = '';
   }
