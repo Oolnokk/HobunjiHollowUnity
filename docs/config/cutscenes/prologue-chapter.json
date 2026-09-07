@@ -19,7 +19,7 @@
       "entryCol": 4,
       "entryRow": 4,
       "dialogue": [],
-      "notes": "Loads a dedicated authored 10x10 exterior clearing. Only the central 6x6 is walkable; the next ring is solid Cloud Forest underbrush and the outermost ring receives generated Shadewood trees. The Southern Cloud Forest fog profile is applied while the rescue map is active."
+      "notes": "Loads a dedicated authored 10x10 exterior clearing. Only the central 6x6 is walkable; the next ring is solid Cloud Forest underbrush and the outermost ring receives generated Shadewood trees. Southern Cloud Forest scene fog plus its player-centered cloud-fog runtime remain active here. Startup loading is held until this exact 10x10 scene is built, decorated, and has rendered two frames."
     },
     "hunundi_room": {
       "title": "Prologue — Father Hunundi's Room",
