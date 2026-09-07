@@ -23,12 +23,17 @@ assert.match(reload, /setTimeout\(\(\) => location\.reload\(\), 0\)/, 'creator c
 assert.match(reload, /api\.loadProfile\?\.\(\)/, 'fresh page must resume from the already-saved player profile');
 assert.match(reload, /document\.dispatchEvent\(new CustomEvent\('hobunjiPlayerReady'/, 'fresh page must deliver the saved profile to normal game listeners');
 
-assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260907charcreator19/, 'female Mashtzarr bridge cache key must include the direct creator-slot fallback');
+assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260907charcreator20/, 'female Mashtzarr bridge cache key must include the no-facial-hair fallback');
 assert.match(core, /'mashtzarr':[\s\S]{0,1800}slot: 'hairFront'[\s\S]{0,700}slot: 'hairBack'[\s\S]{0,700}slot: 'hairSide'[\s\S]{0,700}slot: 'hairSideL'/, 'male Mashtzarr core data must contain the hairstyle selectors being shared');
 assert.match(mashtzarr, /fallbackMode: 'male-mashtzarr'/, 'female Mashtzarr bridge must declare the male fallback mode');
-assert.match(mashtzarr, /mashtzarr\.female = mashtzarr\.male/, 'female creator data must be the exact male Mashtzarr data object');
+assert.match(mashtzarr, /const femaleSlots = mashtzarr\.male\.slots\.filter\(slot => slot\?\.slot !== 'facialHair'\)/, 'female creator data must inherit male slots except facial hair');
+assert.match(mashtzarr, /const femaleData = \{ \.\.\.mashtzarr\.male, slots: femaleSlots \}/, 'female fallback must keep the rest of the male Mashtzarr creator data');
+assert.match(mashtzarr, /mashtzarr\.female = femaleData/, 'female creator data must use the filtered fallback object');
 assert.match(mashtzarr, /mashtzarr\.genders\.push\('female'\)/, 'female must be a native available gender after the private species table is captured');
-assert.match(mashtzarr, /const hairSlots = mashtzarr\.male\.slots\.filter/, 'fallback diagnostics must verify that actual hair slots were inherited');
+assert.match(mashtzarr, /facialHairAllowed: false/, 'fallback diagnostics must state that female facial hair is forbidden');
+assert.match(mashtzarr, /profile\.facialHair = null/, 'female Mashtzarr random portrait profiles must have facial hair stripped');
+assert.match(mashtzarr, /__hobunjiMashtzarrFemaleNoFacialHair/, 'portrait randomizer guard must install exactly once');
+assert.match(mashtzarr, /const hairSlots = femaleSlots\.filter/, 'fallback diagnostics must verify that actual hair slots remain inherited');
 assert.match(mashtzarr, /const originalEntries = Object\.entries/, 'bridge must capture the core private species table through its normal renderer enumeration');
 assert.match(mashtzarr, /Object\.entries = originalEntries/, 'Object.entries interception must restore itself immediately after capture');
 assert.doesNotMatch(mashtzarr, /Object\.prototype/, 'female fallback must not use the previous Object.prototype getter hack');
