@@ -50,6 +50,15 @@ vm.runInContext(fs.readFileSync('docs/js/town-mine.js', 'utf8'), context);
   const entrance = townMap.buildings.find(building => building.id === 'bldg_town_mine_entry');
   assert.strictEqual(entrance?.pieceFile, 'config/pieces/mine_entrance.json', 'Town should persist the supplied movable mine entrance building');
   assert.ok(townMap.transitions.some(transition => transition.buildingId === entrance.id && transition.targetMapId === safeRoom.id), 'The movable entrance should own the safe-room transition');
+  const decoratedTownMap = await mine.decorateTownMap(JSON.parse(JSON.stringify(townMap))); // Used to verify stale authored-map placement is upgraded from the single authoritative mine config.
+  const decoratedEntrance = decoratedTownMap.buildings.find(building => building.id === config.townEntrance.buildingId); // Used to verify both modern and legacy rotation fields follow the authored entrance placement.
+  const decoratedTransition = decoratedTownMap.transitions.find(transition => transition.id === 'spot_town_mine'); // Used to verify the interaction tile follows the moved doorway instead of remaining at the old map location.
+  assert.strictEqual(decoratedEntrance.gridX, config.townEntrance.gridX, 'Town decoration should synchronize the mine entrance X position');
+  assert.strictEqual(decoratedEntrance.gridZ, config.townEntrance.gridZ, 'Town decoration should synchronize the mine entrance Z position');
+  assert.strictEqual(decoratedEntrance.rotationDeg, config.townEntrance.rotationDeg, 'Town decoration should synchronize the authored rotationDeg');
+  assert.strictEqual(decoratedEntrance.rotation, config.townEntrance.rotationDeg, 'Town decoration should synchronize the legacy rotation field used by older map paths');
+  assert.strictEqual(decoratedTransition.col, config.townEntrance.doorCol, 'Town decoration should move the mine interaction column with the doorway');
+  assert.strictEqual(decoratedTransition.row, config.townEntrance.doorRow, 'Town decoration should move the mine interaction row with the doorway');
   assert.ok(mapIndex.maps.some(map => map.id === safeRoom.id && map.category === 'building_interior'), 'The safe room should be indexed for Map Editor interior sync');
   assert.ok(safeRoom.furniture.some(furniture => furniture.itemKey === 'mineLadderFurniture'), 'The safe-room ladder should be an editable interior fixture');
   assert.strictEqual(mineLadder.key, 'mineLadder', 'The supplied ladder should be available through authored furniture loading');

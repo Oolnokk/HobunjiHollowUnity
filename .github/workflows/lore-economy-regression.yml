@@ -4,6 +4,12 @@ on:
   push:
     paths:
       - 'docs/config/town-mine.json'
+      - 'docs/config/furniture-authored/door.json'
+      - 'docs/config/pieces/mine_entrance.json'
+      - 'docs/config/pieces/hobunjihouse1.json'
+      - 'docs/js/entry-tunnel-door-furniture.js'
+      - 'docs/js/entry-tunnel-wall-unmark.js'
+      - 'docs/js/format-utils.js'
       - 'docs/js/hud-update.js'
       - 'docs/js/general-store.js'
       - 'docs/js/jubmir-shop.js'
@@ -13,6 +19,8 @@ on:
       - 'docs/js/farm-panel.js'
       - 'docs/js/combat/combat-core.js'
       - 'docs/js/barn-incubator.js'
+      - 'scripts/test-entry-tunnel-door-furniture.js'
+      - 'scripts/test-entry-tunnel-wall-unmark.js'
       - 'scripts/test-lore-economy.js'
       - 'scripts/test-town-mine-descent.js'
       - 'scripts/test-economy-progression.js'
@@ -21,6 +29,12 @@ on:
   pull_request:
     paths:
       - 'docs/config/town-mine.json'
+      - 'docs/config/furniture-authored/door.json'
+      - 'docs/config/pieces/mine_entrance.json'
+      - 'docs/config/pieces/hobunjihouse1.json'
+      - 'docs/js/entry-tunnel-door-furniture.js'
+      - 'docs/js/entry-tunnel-wall-unmark.js'
+      - 'docs/js/format-utils.js'
       - 'docs/js/hud-update.js'
       - 'docs/js/general-store.js'
       - 'docs/js/jubmir-shop.js'
@@ -30,6 +44,8 @@ on:
       - 'docs/js/farm-panel.js'
       - 'docs/js/combat/combat-core.js'
       - 'docs/js/barn-incubator.js'
+      - 'scripts/test-entry-tunnel-door-furniture.js'
+      - 'scripts/test-entry-tunnel-wall-unmark.js'
       - 'scripts/test-lore-economy.js'
       - 'scripts/test-town-mine-descent.js'
       - 'scripts/test-economy-progression.js'
@@ -51,6 +67,14 @@ jobs:
           node-version: '20'
       - name: Syntax check lore economy host
         run: node --check docs/js/hud-update.js
+      - name: Syntax check entry tunnel door bridge
+        run: node --check docs/js/entry-tunnel-door-furniture.js
+      - name: Syntax check entry tunnel wall bridge
+        run: node --check docs/js/entry-tunnel-wall-unmark.js
+      - name: Test entry tunnel door furniture
+        run: node scripts/test-entry-tunnel-door-furniture.js
+      - name: Test entry tunnel wall unmarking
+        run: node scripts/test-entry-tunnel-wall-unmark.js
       - name: Test lore economy and gananji copy
         run: node scripts/test-lore-economy.js
       - name: Test town mine descent

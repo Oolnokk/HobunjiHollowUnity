@@ -2,11 +2,12 @@
   'use strict';
 
   // HousePieceGen is loaded immediately before this shared pre-game helper.
-  // Load the door bridge synchronously here so it can wrap the one shared
-  // buildEntryTunnelGroup path before game.js creates any world structures.
+  // Load the door bridge synchronously here so it can wrap both generated
+  // entry tunnels and authored buildGroupFromPiece structures before game.js
+  // creates any world structures.
   (function loadEntryTunnelDoorFurniture() {
     if (typeof document === 'undefined') return;
-    const src = 'js/entry-tunnel-door-furniture.js?v=20260906a'; // Used by this one-time parser-synchronous companion loader.
+    const src = 'js/entry-tunnel-door-furniture.js?v=20260907b'; // Used by this one-time parser-synchronous companion loader.
     if (window.EntryTunnelDoorFurniture || document.querySelector('script[data-entry-tunnel-door-furniture]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-entry-tunnel-door-furniture="1"><\/script>`);
@@ -15,6 +16,24 @@
     const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
     script.src = src;
     script.dataset.entryTunnelDoorFurniture = '1';
+    document.head.appendChild(script);
+  })();
+
+  // Entry-tunnel door furniture and authored house rendering share the same
+  // buildGroupFromPiece boundary. Load this immediately after the door bridge
+  // so crossing authored wall quads are carved around tunnel cells before
+  // WallBuilder receives them, without mutating cached source piece JSON.
+  (function loadEntryTunnelWallUnmark() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/entry-tunnel-wall-unmark.js?v=20260907c'; // Cache-busts the town-house wall-carving bridge.
+    if (window.EntryTunnelWallUnmark || document.querySelector('script[data-entry-tunnel-wall-unmark]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-entry-tunnel-wall-unmark="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.entryTunnelWallUnmark = '1';
     document.head.appendChild(script);
   })();
 
