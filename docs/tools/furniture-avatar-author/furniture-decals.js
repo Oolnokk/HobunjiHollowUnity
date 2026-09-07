@@ -85,41 +85,9 @@ function configureDecalTexture(texture) {
 }
 
 function buildDecalTexturePair(image) {
-  const width = Math.max(1, image.naturalWidth || image.width || 1);
-  const height = Math.max(1, image.naturalHeight || image.height || 1);
-  const colorCanvas = document.createElement('canvas');
-  const alphaCanvas = document.createElement('canvas');
-  colorCanvas.width = alphaCanvas.width = width;
-  colorCanvas.height = alphaCanvas.height = height;
-  const colorContext = colorCanvas.getContext('2d', { alpha: true, willReadFrequently: true });
-  const alphaContext = alphaCanvas.getContext('2d', { alpha: false });
-  if (!colorContext || !alphaContext) {
-    return { map: configureDecalTexture(new THREE.Texture(image)), alphaMap: null };
-  }
-
-  colorContext.clearRect(0, 0, width, height);
-  colorContext.drawImage(image, 0, 0, width, height);
-  const colorPixels = colorContext.getImageData(0, 0, width, height);
-  const alphaPixels = alphaContext.createImageData(width, height);
-
-  for (let index = 0; index < colorPixels.data.length; index += 4) {
-    const alpha = colorPixels.data[index + 3];
-    // Color and transparency are intentionally separated. Transparent PNG
-    // pixels often contain black RGB, so the color map must not control alpha.
-    colorPixels.data[index + 3] = 255;
-    alphaPixels.data[index] = alpha;
-    alphaPixels.data[index + 1] = alpha;
-    alphaPixels.data[index + 2] = alpha;
-    alphaPixels.data[index + 3] = 255;
-  }
-
-  colorContext.putImageData(colorPixels, 0, 0);
-  alphaContext.putImageData(alphaPixels, 0, 0);
-  const map = configureDecalTexture(new THREE.CanvasTexture(colorCanvas));
-  const alphaMap = new THREE.CanvasTexture(alphaCanvas);
-  alphaMap.encoding = THREE.LinearEncoding;
-  alphaMap.needsUpdate = true;
-  return { map, alphaMap };
+  // MeshBasicMaterial reads the alpha channel directly from an RGBA color map.
+  // Keeping the source image avoids tainting a canvas for cross-origin catalog assets.
+  return { map: configureDecalTexture(new THREE.Texture(image)), alphaMap: null };
 }
 
 function loadDecalTexture(source) {
@@ -127,7 +95,8 @@ function loadDecalTexture(source) {
   if (decalTextureCache.has(source)) return decalTextureCache.get(source);
   const promise = new Promise((resolve, reject) => {
     const image = new Image();
-    if (/^https?:/i.test(source)) image.crossOrigin = 'anonymous';
+    // Network-backed catalog paths may resolve cross-origin; request anonymous CORS before src is assigned.
+    if (!/^(?:data|blob):/i.test(source)) image.crossOrigin = 'anonymous';
     image.decoding = 'async';
     image.onload = () => {
       try {
@@ -136,7 +105,7 @@ function loadDecalTexture(source) {
         reject(new Error(`Could not preserve decal transparency: ${error.message}`));
       }
     };
-    image.onerror = () => reject(new Error('Could not load decal image.'));
+    image.onerror = () => reject(new Error('Could not load decal image (network/CORS).'));
     image.src = source;
   }).catch(error => { decalTextureCache.delete(source); throw error; });
   decalTextureCache.set(source, promise);
