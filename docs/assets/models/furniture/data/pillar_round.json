@@ -1,0 +1,14 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "pillar_round",
+  "pieceId": "pillar_round",
+  "notes": "Low-poly round stone column with layered base and capital.",
+  "tileBase": {"visible":true,"tileSize":1,"footprintW":1,"footprintD":1,"y":0,"gridOpacity":0.55},
+  "parts": [
+    {"id":"pillar_round_base0","kind":"disc","name":"Round Stone Plinth","transform":{"x":0,"y":0.05,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.80,"sy":0.10,"sz":0.80},"color":"#625c52","segments":12,"wonkiness":0.004},
+    {"id":"pillar_round_base1","kind":"disc","name":"Round Raised Foot","transform":{"x":0,"y":0.13,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.66,"sy":0.06,"sz":0.66},"color":"#7b7466","segments":12,"topScaleX":0.96,"topScaleZ":0.96,"wonkiness":0.004},
+    {"id":"pillar_round_shaft","kind":"cylinder","name":"Round Tapered Shaft","transform":{"x":0,"y":0.83,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.46,"sy":1.34,"sz":0.46},"color":"#7b7466","segments":10,"topScaleX":0.93,"topScaleZ":0.93,"bottomScaleX":1.05,"bottomScaleZ":1.05,"wonkiness":0.008},
+    {"id":"pillar_round_collar","kind":"disc","name":"Round Neck Collar","transform":{"x":0,"y":1.53,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.60,"sy":0.10,"sz":0.60},"color":"#928a78","segments":12,"wonkiness":0.004},
+    {"id":"pillar_round_cap","kind":"disc","name":"Round Stone Capital","transform":{"x":0,"y":1.66,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.78,"sy":0.16,"sz":0.78},"color":"#928a78","segments":12,"topScaleX":0.95,"topScaleZ":0.95,"wonkiness":0.004}
+  ]
+}
