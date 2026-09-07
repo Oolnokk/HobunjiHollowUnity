@@ -205,9 +205,16 @@
       // game.js's beginCombatLunge/updateMovement).
       deps.beginCombatLunge(deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)), windupS + strikeS, 0, { rangePx, halfConeRad });
 
+      // The pose reaches its authored Strike endpoint only after BOTH the
+      // windup and strike interpolation intervals. Firing gameplay impact at
+      // windupS made the trail/damage read as the strike pose, then the weapon
+      // raced onward for strikeS and froze on its real Strike during Hold —
+      // visually inventing a fourth, unrelated-looking pose in gameplay that
+      // the animation editor (which has no hit event) never showed.
+      const impactAtS = windupS + strikeS;
       busyAction = window.Combat.beginStagedAction({
-        windupS,
-        strikeS,
+        windupS: impactAtS,
+        strikeS: 0,
         recoverS: 0,
         onStrike: () => {
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.

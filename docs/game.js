@@ -19964,24 +19964,24 @@
       // hold phase (sf→hf) dwells exactly at the strike value before easing
       // back to neutral, so an impact reads as a clean hit instead of
       // snapping straight into its recovery.
-      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0) {
+      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
         if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
         if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
         if (progress <= hf) return strikeV;
-        return strikeV + (neutralV - strikeV) * ((progress - hf) / (1.0 - hf));
+        return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / (1.0 - hf));
       }
 
-      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0) {
+      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
         if (combatSwingSequence === 'load') {
           if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
-          return windupV + (neutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
+          return windupV + (returnNeutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
         }
         if (combatSwingSequence === 'fire') {
           if (progress <= sf) return neutralV + (strikeV - neutralV) * (progress / Math.max(0.0001, sf));
           if (progress <= hf) return strikeV;
-          return strikeV + (neutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
+          return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
         }
-        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV);
+        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV, returnNeutralV);
       }
 
       // Each tool style's natural at-rest pose (degrees for angle channels) —
@@ -20101,6 +20101,7 @@
         // ready pose without needing a style-specific pose computation here.
         if (window.Fishing?.readyPose) progress = WF;
 
+        let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {
           // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
           // in the attack-animation editor generically, for any style, the
@@ -20116,17 +20117,32 @@
           const pose = combatSwingPose;
           const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
           const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
+          const returnNeutral = { ...neutral, ...(pose.returnNeutral || {}) };
           toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
           const sign = combatSwingSign;
           const power = combatSwingPower;
           const poseHoldFrac = combatSwingSequenceHoldFrac ?? HF; // Used to preserve authored ranged holds while melee keeps its derived hold.
+          const hasNeutralMirrorSequence = pose.neutralMirrorSign != null || pose.returnNeutralMirrorSign != null;
+          const startMirrorSign = pose.neutralMirrorSign === -1 ? -1 : 1;
+          const returnMirrorSign = pose.returnNeutralMirrorSign === -1 ? -1 : 1;
           const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
           const chan = (ch, mirror = false) => {
             const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
             const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
             const n = neutral[ch] * (mirror ? sign : 1);
-            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n);
+            const rn = returnNeutral[ch] * (mirror ? sign : 1);
+            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n, rn);
           };
+
+          // The hand attachment itself is part of a true midline flip. Keep it
+          // on the attack side through impact, then carry it smoothly across
+          // during recovery. The flat sprite changes handedness at the midpoint
+          // rather than scaling through zero and briefly disappearing.
+          const mirrorBlend = hasNeutralMirrorSequence
+            ? sequencedPoseLerp(progress, WF, SF, poseHoldFrac, sign, sign, startMirrorSign, returnMirrorSign)
+            : 1;
+          const handBaseX = playerToolBaseX * mirrorBlend;
+          posePlaneMirrorSign = hasNeutralMirrorSequence ? (mirrorBlend < 0 ? -1 : 1) : null;
 
           const x = chan('x', true);
           const y = chan('y');
@@ -20147,9 +20163,9 @@
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
           toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
           toolHolder.position.set(
-            playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z,
+            playerMesh.position.x + vRX * (handBaseX + x) + vFX * z,
             playerMesh.position.y + playerToolBaseY + y,
-            playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z
+            playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
 
         } else if (anim === 'ranged') {
@@ -20445,7 +20461,7 @@
               : baseRotZ;
           }
           // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
-          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? combatSwingSign : 1;
+          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? (posePlaneMirrorSign ?? combatSwingSign) : 1;
         }
 
         const activeChargeStage = chargeAction?.stages?.[chargeAction.stage]; // Supplies any stage-specific audio contact point without changing its visual strike endpoint.

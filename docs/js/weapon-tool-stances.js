@@ -267,12 +267,12 @@
   }
 
   // game.js mirrors x/yaw/roll/bodyYaw after interpolating them whenever dirSign
-  // is -1. Pre-unmirror Neutral so both forehand and backhand attacks still start
-  // and end on the exact same combat idle stance visible before the attack.
-  function neutralInputForSign(targetNeutral, sign) {
+  // is -1. Convert a desired visible Neutral handedness back into the input pose
+  // that will produce it after that runtime mirror is applied.
+  function neutralInputForSigns(targetNeutral, visibleSign, runtimeSign) {
     const out = {};
     for (const key of POSE_KEYS) {
-      out[key] = MIRRORED_POSE_KEYS.has(key) ? targetNeutral[key] * sign : targetNeutral[key];
+      out[key] = MIRRORED_POSE_KEYS.has(key) ? targetNeutral[key] * visibleSign * runtimeSign : targetNeutral[key];
     }
     return out;
   }
@@ -287,6 +287,12 @@
     const requestedSign = rawOpts.dirSign === -1 ? -1 : 1;
     // Legacy procedural thrust/chop never used combatSwingSign; preserve that.
     const effectiveSign = authoredPose || anim === 'sweep' ? requestedSign : 1;
+    const alternatesHeavyNeutral = weaponIdleClass(state.itemKey, state.def) === 'heavy';
+    // Heavy swings finish ready on the opposite side. A mirrored/backhand swing
+    // therefore starts mirrored and returns to the regular Heavy idle; a regular
+    // swing does the inverse. Light weapons retain their one-sided idle stance.
+    const startNeutralSign = alternatesHeavyNeutral ? effectiveSign : 1;
+    const returnNeutralSign = alternatesHeavyNeutral ? -effectiveSign : 1;
     const powerValue = Number(rawOpts.power);
     const power = Number.isFinite(powerValue) ? powerValue : 1;
     let windup;
@@ -309,7 +315,10 @@
       // would have reached. power=1 prevents a changed Neutral from rescaling them.
       power: 1,
       pose: {
-        neutral: neutralInputForSign(targetNeutral, effectiveSign),
+        neutral: neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign),
+        returnNeutral: neutralInputForSigns(targetNeutral, returnNeutralSign, effectiveSign),
+        neutralMirrorSign: startNeutralSign,
+        returnNeutralMirrorSign: returnNeutralSign,
         windup,
         strike,
       },

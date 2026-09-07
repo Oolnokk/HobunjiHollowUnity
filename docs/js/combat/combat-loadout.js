@@ -244,7 +244,7 @@
     const existingScript = document.querySelector('script[data-weapon-tool-stances]'); // Prevents duplicate loads if this script is re-evaluated in dev mode.
     if (!existingScript) {
       const script = document.createElement('script'); // Dynamically loads the isolated stance runtime without adding another game.js dependency.
-      script.src = 'js/weapon-tool-stances.js?v=20260814a';
+      script.src = 'js/weapon-tool-stances.js?v=20260907alternatingneutral1';
       script.async = false;
       script.dataset.weaponToolStances = 'true';
       script.onload = initializeStancesIfReady;
