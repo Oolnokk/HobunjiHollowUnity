@@ -2,8 +2,9 @@
 'use strict';
 
 // Regression guard for loading-screen-runtime.js: newer show() calls must win
-// over stale predecessors, explicit hide() must still win, and the live progress
-// API must reach 100 only when that active loading session is completed.
+// over stale predecessors, explicit hide() must still win, the minimum duration
+// stays five seconds, and only world-map transitions (not building entry/exit)
+// request a loading screen.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -42,8 +43,6 @@ function makeEl() {
     },
     querySelectorAll() { return []; },
     set innerHTML(html) {
-      // Minimal stand-in: the runtime reads child nodes back by id, so just
-      // materialize one stub per id instead of depending on a browser parser.
       this.children = Array.from(html.matchAll(/id="([^"]+)"/g)).map(m => { const child = makeEl(); child.id = m[1]; return child; });
     },
   };
@@ -66,8 +65,13 @@ const documentStub = {
   createElement() { return makeEl(); },
 };
 
+const fakeTransitionModule = {
+  init(deps) { this.deps = deps; },
+}; // Used to verify pre-game init interception wraps captured transition dependencies.
+
 const windowStub = {
   document: documentStub,
+  FakeTransitionModule: fakeTransitionModule,
   fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ settings: {}, entries: [{ id: 'a', lore: '', script: '' }] }) }),
   requestAnimationFrame(cb) { rafQueue.push(cb); return rafQueue.length; },
   cancelAnimationFrame() {},
@@ -85,7 +89,7 @@ assert(runtime, 'LoadingScreenRuntime must install');
 
 // Drives both microtasks and queued rAF callbacks until the given promise
 // settles. Timers are intentionally absent from this VM so hide() uses its
-// immediate non-browser fallback rather than making this unit test wait 3 s.
+// immediate non-browser fallback rather than making this unit test wait 5 s.
 async function settle(promise) {
   let settled = false;
   promise.then(() => { settled = true; }, () => { settled = true; });
@@ -97,6 +101,29 @@ async function settle(promise) {
 }
 
 (async () => {
+  assert.equal(runtime.getDebug().minimumVisibleMs, 5000, 'minimum loading-screen duration is five seconds');
+  assert.equal(runtime.shouldLoadForTransition(() => enterBuilding('shop')), false, 'building entry must not show the loader');
+  assert.equal(runtime.shouldLoadForTransition(() => enterInterior('house')), false, 'farm-house interior entry must not show the loader');
+  assert.equal(runtime.shouldLoadForTransition(() => enterZone('map_northern_cliffs')), true, 'zone travel should show the loader');
+  assert.equal(runtime.shouldLoadForTransition(() => performTravel({ target: 'town' })), true, 'town/farm world travel should show the loader');
+
+  windowStub.GridTileAccessors = { getCurrentArea: () => 'map_i_test_shop' };
+  assert.equal(runtime.shouldLoadForTransition(() => performTravel({ target: 'town' })), false, 'exiting a building must not show the loader');
+  windowStub.GridTileAccessors = { getCurrentArea: () => 'town' };
+
+  let callbackRuns = 0;
+  const capturedDeps = {
+    startSceneTransition(callback) { callbackRuns += 1; return callback?.(); },
+  }; // Used to verify modules initialized after the runtime receive the pre-load wrapper, not the stale original reference.
+  fakeTransitionModule.init(capturedDeps);
+  assert.equal(capturedDeps.startSceneTransition.__hobunjiLoadingScreenWrapped, true, 'captured transition dependency is wrapped before module init stores it');
+  const beforeBuilding = runtime.getDebug().generation;
+  capturedDeps.startSceneTransition(() => { if (false) enterBuilding('shop'); });
+  assert.equal(runtime.getDebug().generation, beforeBuilding, 'captured building transition bypasses the loading screen');
+  capturedDeps.startSceneTransition(() => { if (false) enterZone('map_southern_cloud_forest'); });
+  assert.ok(runtime.getDebug().generation > beforeBuilding, 'captured world-map transition starts the loader before its callback');
+  assert.equal(callbackRuns, 2, 'transition wrapper preserves callback execution for both filtered and loaded transitions');
+
   const first = runtime.show();
   for (let i = 0; i < 10; i++) await Promise.resolve();
   const second = runtime.show();
@@ -112,5 +139,5 @@ async function settle(promise) {
   assert.ok(!rootEl.classList.contains('visible'), 'an explicit hide() must still win when it targets the current show()');
   assert.equal(runtime.getProgress(), 100, 'completion drives the displayed percentage to 100');
 
-  console.log('Loading screen runtime race/progress guard passed.');
+  console.log('Loading screen map/building timing, race, and progress guard passed.');
 })().catch(err => { console.error(err); process.exit(1); });
