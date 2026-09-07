@@ -105,7 +105,8 @@
   if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname || '')) return;
   const src = document.currentScript?.src || '';
   const base = src ? new URL('.', src).href : 'js/';
-  const prologue = new URL('prologue-system.js?v=20260907b', base).href; // Loads the world-owner gameplay-map prologue before onboarding/game.js so it can gate entry and capture normal transition deps.
+  const prologueRescueMap = new URL('prologue-rescue-map-runtime.js?v=20260907a', base).href; // Loads first so it can hold the real loading screen and inject the authored rescue map before later map/fog modules initialize.
+  const prologue = new URL('prologue-system.js?v=20260907c', base).href; // Loads the world-owner gameplay-map prologue before onboarding/game.js so it can gate entry and capture normal transition deps.
   const chathead = new URL('animal-chathead-frame.js?v=20260902modular1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
   const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260906harvest1', base).href; // Loads the harvest-only animal staging/approach-suppression bridge before FarmAnimals is assigned.
@@ -121,5 +122,5 @@
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20260903social12', base).href;
   const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20260903social13', base).href;
   const npcSillinessReactionRuntime = new URL('npc-silliness-reaction-runtime.js?v=20260903social16', base).href;
-  document.write(`<script src="${prologue}"><\/script><script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
+  document.write(`<script src="${prologueRescueMap}"><\/script><script src="${prologue}"><\/script><script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
 })();
