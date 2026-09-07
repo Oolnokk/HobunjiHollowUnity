@@ -6,7 +6,7 @@ const entry = fs.readFileSync('docs/onboarding.js', 'utf8'); // Guards the thin 
 const core = fs.readFileSync('docs/onboarding-core.js', 'utf8'); // Guards that save/profile creation remains in the original core rather than being duplicated.
 
 assert.match(entry, /onboarding-core\.js\?v=20260907charcreator1/, 'onboarding entrypoint must load the preserved core first');
-assert.match(entry, /onboarding-character-creation-redesign\.js\?v=20260907charcreator3/, 'onboarding entrypoint must load the integrated redesign after the core');
+assert.match(entry, /onboarding-character-creation-redesign\.js\?v=20260907charcreator4/, 'onboarding entrypoint must load the current integrated redesign after the core');
 assert.doesNotMatch(entry, /runtime-parity/, 'creator behavior must not depend on a separate follow-up script');
 assert.match(core, /makeDefaultState\('mao-ao', 'male'\)/, "fresh character creation must start with Mao'ao selected");
 assert.match(core, /window\.HobunjiOnboarding = \{ init, reset, loadProfile, loadSaveMeta \}/, 'preserved onboarding core must still expose the original public API');
@@ -28,6 +28,21 @@ assert.match(redesign, /data-ob-subspecies="nuhongan" disabled/, 'Nuhongan must 
 assert.match(redesign, /data-ob-subspecies="longoran" disabled/, 'Longoran must be visibly unavailable');
 assert.match(redesign, /renderSpeciesDetails\(overlay, group, tletinganButton\)/, 'creator must render the matching lore beneath the species selector');
 
+assert.match(redesign, /overlayObserver\.observe\(overlay, \{ childList: true \}\)/, 'creator observer must watch only direct core card replacements');
+assert.doesNotMatch(redesign, /overlayObserver\.observe\(overlay, \{[^}]*subtree:\s*true/, 'creator observer must not watch its own nested lore/preview mutations');
+assert.match(redesign, /bodyObserver\.observe\(document\.body, \{ childList: true \}\)/, 'body observer must only detect onboarding overlay mount/unmount');
+
+assert.match(redesign, /randomizeCreationLook\(overlay, speciesId, gender\)/, 'initial/species/gender identity changes must run one generated-look transaction');
+assert.match(redesign, /lastRandomizedIdentity = identityKey/, 'generated look must be keyed by species+gender to avoid rerender loops');
+assert.match(redesign, /primary\[primaryIndex\]\?\.click\(\)/, 'body-color randomization must reuse the core primary swatch handler');
+assert.match(redesign, /secondary\[secondaryIndex\]\?\.click\(\)/, 'body-color randomization must reuse the core secondary swatch handler');
+assert.match(redesign, /querySelectorAll\('\.ob-equip-sel'\)/, 'generated look must use the real Collections clothing selectors');
+assert.match(redesign, /select\.dispatchEvent\(new Event\('change', \{ bubbles: true \}\)\)/, 'generated clothing must pass through the core equipment change handler');
+assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-a'\)/, 'generated outfit must randomize the primary clothing dye');
+assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-b'\)/, 'generated outfit must randomize the secondary clothing dye');
+assert.match(redesign, /collectionsTab\?\.click\(\)/, 'outfit transaction must reuse the core Collections tab/state path');
+assert.match(redesign, /querySelector\('\[data-ob-tab="appearance"\]'\)\?\.click\(\)/, 'outfit transaction must finish back on Appearance');
+
 assert.match(redesign, /buildSinglePlaneAvatarModel/, '3D creator must use the gameplay PNG-plane avatar constructor');
 assert.match(redesign, /portraitView: 'behind'/, '3D creator must build the rear character texture');
 assert.match(redesign, /onlyHeadSprite: true/, '3D creator must build the head-only mask for the runtime neck rig');
@@ -45,10 +60,6 @@ assert.match(redesign, /depthFunc:\s*THREE\.LessDepth/, 'creator shell pass must
 assert.match(redesign, /scene\.overrideMaterial = shellOutlineMaterial/, 'creator must actually render with the runtime shell override material');
 assert.match(redesign, /camera\.layers\.set\(1\)/, 'creator must render the runtime shell layer containing procedural hands and feet');
 assert.match(redesign, /renderer\.autoClearColor = false[\s\S]{0,120}renderer\.autoClearDepth = false/, 'shell pass must preserve the base color/depth buffers like runtime');
-
 assert.match(redesign, /ob-3d-loading/, 'creator must show an in-viewport loading state before the runtime avatar is ready');
-assert.match(redesign, /maybeRandomizeBodyColors/, 'creator must randomize authored body-color swatches on initial entry/species changes');
-assert.match(redesign, /primary\[primaryIndex\]\?\.click\(\)/, 'body-color randomization must reuse the core primary swatch handler');
-assert.match(redesign, /secondary\[secondaryIndex\]\?\.click\(\)/, 'body-color randomization must reuse the core secondary swatch handler');
 
 console.log('onboarding character-creation redesign source checks passed');
