@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8');
+const core = fs.readFileSync('docs/onboarding-core.js', 'utf8');
 const camera = fs.readFileSync('docs/js/onboarding-character-creation-camera-composition.js', 'utf8');
 const reload = fs.readFileSync('docs/js/onboarding-character-creation-reload-handoff.js', 'utf8');
 const mashtzarr = fs.readFileSync('docs/js/onboarding-character-creation-mashtzarr-female.js', 'utf8');
@@ -22,13 +23,17 @@ assert.match(reload, /setTimeout\(\(\) => location\.reload\(\), 0\)/, 'creator c
 assert.match(reload, /api\.loadProfile\?\.\(\)/, 'fresh page must resume from the already-saved player profile');
 assert.match(reload, /document\.dispatchEvent\(new CustomEvent\('hobunjiPlayerReady'/, 'fresh page must deliver the saved profile to normal game listeners');
 
-assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260907charcreator17/, 'female Mashtzarr bridge cache key must include the temporary male fallback');
+assert.match(entry, /onboarding-character-creation-mashtzarr-female\.js\?v=20260907charcreator19/, 'female Mashtzarr bridge cache key must include the direct creator-slot fallback');
+assert.match(core, /'mashtzarr':[\s\S]{0,1800}slot: 'hairFront'[\s\S]{0,700}slot: 'hairBack'[\s\S]{0,700}slot: 'hairSide'[\s\S]{0,700}slot: 'hairSideL'/, 'male Mashtzarr core data must contain the hairstyle selectors being shared');
 assert.match(mashtzarr, /fallbackMode: 'male-mashtzarr'/, 'female Mashtzarr bridge must declare the male fallback mode');
-assert.match(mashtzarr, /value: this\.male/, 'core female Mashtzarr creator data must reuse the working male Mashtzarr data');
+assert.match(mashtzarr, /mashtzarr\.female = mashtzarr\.male/, 'female creator data must be the exact male Mashtzarr data object');
+assert.match(mashtzarr, /mashtzarr\.genders\.push\('female'\)/, 'female must be a native available gender after the private species table is captured');
+assert.match(mashtzarr, /const hairSlots = mashtzarr\.male\.slots\.filter/, 'fallback diagnostics must verify that actual hair slots were inherited');
+assert.match(mashtzarr, /const originalEntries = Object\.entries/, 'bridge must capture the core private species table through its normal renderer enumeration');
+assert.match(mashtzarr, /Object\.entries = originalEntries/, 'Object.entries interception must restore itself immediately after capture');
+assert.doesNotMatch(mashtzarr, /Object\.prototype/, 'female fallback must not use the previous Object.prototype getter hack');
 assert.match(mashtzarr, /gender: 'female', __hobunjiMashtzarrFemaleFallback: true/, 'male portrait fighter must be aliased as a female Mashtzarr candidate');
-assert.match(mashtzarr, /window\.getPortraitFighters = wrapped/, 'temporary fallback must affect normal portrait/profile selection, not only the visible button');
+assert.match(mashtzarr, /window\.getPortraitFighters = wrapped/, 'temporary fallback must affect normal portrait/profile selection');
 assert.doesNotMatch(mashtzarr, /nashka_khibu|hobunji-starter-npc-database/, 'temporary male fallback must not keep the superseded Nashka hairstyle lookup');
-assert.match(mashtzarr, /overlayObserver\.observe\(overlay, \{ childList: true \}\)/, 'female fallback observer must remain direct-child-only');
-assert.doesNotMatch(mashtzarr, /subtree:\s*true/, 'female fallback must not reintroduce recursive creator observers');
 
 console.log('onboarding creator handoff/source checks passed');
