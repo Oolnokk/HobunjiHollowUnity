@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 7) return;
+  if (window.HobunjiMenuTabIcons?.version >= 8) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
@@ -37,6 +37,7 @@
   const debugState = {
     transformed: 0,
     lastPanel: null,
+    dynamicTabTransforms: 0,
     loadoutRasterReady: false,
     loadoutRasterError: null,
     walletCurrencyIconApplied: false,
@@ -46,6 +47,7 @@
   let loadoutRasterUrl = null; // Used after the two action icons have been composited once.
   let hudGoldAmountNode = null; // Used to preserve the original live HUD amount node if another system rewrites #spGold textContent.
   let hudGoldObserver = null; // Used to repair only event-driven DOM rewrites of the HUD currency readout; no frame loop is added.
+  let menuTabsObserver = null; // Used to transform menu tabs that are inserted after the initial menu icon pass.
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -458,19 +460,37 @@
     return true;
   }
 
+  function installDynamicTabObserver() {
+    if (menuTabsObserver || typeof MutationObserver !== 'function') return;
+    const tabs = document.querySelector('#menuPanel .mp-tabs'); // Used as the narrow parent watched for menu tabs added after startup.
+    if (!tabs) return;
+    menuTabsObserver = new MutationObserver(mutations => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof Element) || !node.matches(TAB_SELECTOR)) continue;
+          if (transformTab(node)) debugState.dynamicTabTransforms += 1;
+        }
+      }
+    }); // Used only for direct tab insertions; icon child rewrites do not retrigger it.
+    menuTabsObserver.observe(tabs, { childList: true });
+  }
+
   function transformAll() {
     document.querySelectorAll(TAB_SELECTOR).forEach(transformTab);
     applyWalletCurrencyIcon();
     applyHudCurrencyPresentation();
     installHudCurrencyRepair();
+    installDynamicTabObserver();
   }
 
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 7,
+      version: 8,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
+      dynamicTabTransforms: debugState.dynamicTabTransforms,
+      dynamicTabObserverInstalled: Boolean(menuTabsObserver),
       totalTabs: tabs.length,
       iconOnlyTabs: tabs.filter(tab => tab.dataset.menuTabIconOnly === '2').length,
       labels: Object.fromEntries(tabs.map(tab => [tab.dataset.mpanel || '', tab.getAttribute('aria-label') || ''])),
@@ -498,6 +518,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 7, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 8, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();
