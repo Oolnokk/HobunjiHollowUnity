@@ -1,7 +1,6 @@
 // In-game loading-screen overlay. It is the first painted game surface, then
-// reappears for scene/map transitions. The authored loading-screen entry owns
-// the image/script composition; the prose slot is populated from the canonical
-// player-facing Compendium instead of maintaining a second lore/tutorial copy.
+// reappears for world-map travel. Building entry/exit deliberately keeps the
+// ordinary scene fade instead of showing this loader.
 (() => {
   'use strict';
 
@@ -11,7 +10,10 @@
   const COMPENDIUM_URL = 'js/compendium-ui.js?v=20260907loadingtips1';
   const LORE_FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf';
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf';
-  const MIN_VISIBLE_MS = 3000; // Used by hide() so every boot/map loading screen remains readable for at least three seconds.
+  const MIN_VISIBLE_MS = 5000; // Used by hide() so boot/map loaders stay readable for at least five seconds.
+  const BUILDING_AREA_RE = /^(?:interior|map_i_)/i; // Used to suppress loaders while leaving ordinary authored building interiors.
+  const BUILDING_CALL_RE = /\b(?:enterBuilding|enterInterior|exitBuilding|leaveBuilding|exitInterior|leaveInterior)\b/i; // Used to suppress explicit building entry/exit callbacks.
+  const MAP_CALL_RE = /\b(?:enterZone|performTravel|doTravel|setCurrentArea)\b/; // Used to recognize world-map travel callbacks before their expensive work begins.
   const DEFAULT_SETTINGS = Object.freeze({
     scriptSide: 'left', imageScale: 1, panRange: 7, panSpeed: 0.055,
     manualSpeed: 150, loreSize: 19, scriptSize: 89, scriptY: 46,
@@ -53,9 +55,9 @@
     progressSource: 'idle',
     requestStarted: 0,
     requestCompleted: 0,
-    lastArea: null,
-    areaWatchTimer: null,
     transitionHookTimer: null,
+    transitionHookInstalled: false,
+    dependencyInitHooks: 0,
     bootRetryInstalled: false,
     debugTapCount: 0,
     debugTapAt: 0,
@@ -98,7 +100,7 @@
         existing.addEventListener?.('error', () => resolve(false), { once: true });
         return;
       }
-      const script = document.createElement('script'); // Used to make the canonical Compendium definitions available to the very first loading screen.
+      const script = document.createElement('script'); // Used to make canonical Compendium definitions available to the first loading screen.
       script.src = COMPENDIUM_URL;
       script.async = false;
       script.dataset.hobunjiLoadingCompendium = '1';
@@ -165,7 +167,7 @@
   }
 
   function onPercentDebugTap() {
-    const now = Date.now(); // Used to detect a deliberate five-tap mobile diagnostics gesture without adding permanent debug chrome.
+    const now = Date.now(); // Used to detect a deliberate five-tap diagnostics gesture without permanent debug chrome.
     if (now - state.debugTapAt > 1800) state.debugTapCount = 0;
     state.debugTapAt = now;
     state.debugTapCount += 1;
@@ -173,6 +175,11 @@
     state.debugTapCount = 0;
     state.debugVisible = !state.debugVisible;
     updateDebugPanel();
+  }
+
+  function safeCurrentArea() {
+    try { return window.GridTileAccessors?.getCurrentArea?.() ?? null; }
+    catch (_) { return null; }
   }
 
   function formatDebug() {
@@ -183,6 +190,7 @@
       `progress=${Math.round(state.progress)} source=${state.progressSource}`,
       `requests=${state.requestCompleted}/${state.requestStarted}`,
       `visibleFor=${Math.round(state.visible ? nowMs() - state.visibleSince : 0)}ms min=${MIN_VISIBLE_MS}ms`,
+      `transitionHook=${state.transitionHookInstalled} dependencyInitHooks=${state.dependencyInitHooks}`,
       `tip=${state.activeTip || '(none)'}`,
     ].join('\n');
   }
@@ -434,7 +442,7 @@
   }
 
   function showImmediate(reason = 'map-change') {
-    const previousGeneration = state.generation; // Used to settle any minimum-duration hide promises superseded by this newer loading screen.
+    const previousGeneration = state.generation; // Used to settle any delayed hide promises superseded by a newer loading screen.
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
     state.hideTimer = null;
     if (previousGeneration) resolveHideWaiters(previousGeneration);
@@ -461,15 +469,15 @@
     return myGeneration;
   }
 
-  // Shows synchronously first (so a blocking map build cannot starve the first
-  // paint), then fills authored settings/canonical Compendium copy as their
-  // resources resolve. The returned promise resolves after two paint frames.
+  // Shows synchronously first, then fills authored settings/canonical tip copy
+  // as resources settle. Transition hooks call this BEFORE startSceneTransition
+  // starts fading, so the browser gets frames to paint it before the expensive
+  // world-map callback runs at the black midpoint.
   async function show(options = {}) {
     const reason = typeof options === 'string' ? options : (options?.reason || 'map-change');
     const myGeneration = showImmediate(reason);
     setProgress(4, 'overlay-visible');
-    const resources = Promise.all([ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()]);
-    await resources;
+    await Promise.all([ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()]);
     if (state.generation !== myGeneration || state.finalHiddenGeneration === myGeneration) return;
     setProgress(16, 'loader-resources');
     const config = await state.configPromise;
@@ -498,7 +506,7 @@
 
   function hide(reason = 'map-ready') {
     if (!state.generation) return Promise.resolve();
-    const generation = state.generation; // Used to make a delayed three-second hide harmless if a newer transition starts first.
+    const generation = state.generation; // Used to make a delayed five-second hide harmless if a newer world transition starts first.
     state.reason = reason;
     setProgress(100, 'map-ready');
     const wait = Math.max(0, MIN_VISIBLE_MS - (nowMs() - state.visibleSince));
@@ -513,56 +521,99 @@
     });
   }
 
-  function safeCurrentArea() {
-    try { return window.GridTileAccessors?.getCurrentArea?.() ?? null; }
-    catch (_) { return null; }
+  function callbackSource(callback) {
+    try { return typeof callback === 'function' ? Function.prototype.toString.call(callback) : ''; }
+    catch (_) { return ''; }
   }
 
-  function watchAreaChanges() {
-    if (state.areaWatchTimer || typeof setInterval !== 'function') return;
-    state.areaWatchTimer = setInterval(() => {
-      const area = safeCurrentArea();
-      if (area == null) return;
-      if (state.lastArea == null) { state.lastArea = area; return; }
-      if (area === state.lastArea) return;
-      state.lastArea = area;
-      if (state.visible) return;
-      show({ reason: `area-change:${area}` });
-      hide('area-change-ready');
-    }, 200);
+  function isBuildingArea(area) {
+    return BUILDING_AREA_RE.test(String(area || ''));
+  }
+
+  function shouldLoadForTransition(callback) {
+    const area = safeCurrentArea();
+    if (isBuildingArea(area)) return false; // Exiting an authored building never gets a loading screen.
+    const source = callbackSource(callback);
+    if (!source || BUILDING_CALL_RE.test(source)) return false; // Entering an authored building never gets a loading screen.
+    return MAP_CALL_RE.test(source);
+  }
+
+  function wrapStartSceneTransition(original) {
+    if (typeof original !== 'function' || original.__hobunjiLoadingScreenWrapped) return original;
+    const wrapped = function loadingScreenSceneTransition(callback, ...args) {
+      const useLoader = shouldLoadForTransition(callback); // Used to distinguish world-map travel from ordinary building entry/exit.
+      if (!useLoader) return original.call(this, callback, ...args);
+
+      show({ reason: 'world-map-transition' });
+      const wrappedCallback = typeof callback === 'function'
+        ? function (...callbackArgs) {
+            let result;
+            try { result = callback.apply(this, callbackArgs); }
+            catch (error) { hide('world-map-transition-error'); throw error; }
+            Promise.resolve(result).then(
+              () => hide('world-map-transition-ready'),
+              () => hide('world-map-transition-error'),
+            );
+            return result;
+          }
+        : callback;
+      return original.call(this, wrappedCallback, ...args);
+    };
+    wrapped.__hobunjiLoadingScreenWrapped = true;
+    wrapped.__hobunjiLoadingScreenOriginal = original;
+    return wrapped;
+  }
+
+  function installDependencyInitHooks() {
+    const seen = new Set(); // Used to avoid wrapping aliases that point at the same namespace object.
+    for (const key of Object.getOwnPropertyNames(window)) {
+      let namespace;
+      try { namespace = window[key]; } catch (_) { continue; }
+      if (!namespace || (typeof namespace !== 'object' && typeof namespace !== 'function') || seen.has(namespace)) continue;
+      seen.add(namespace);
+      const originalInit = namespace.init;
+      if (typeof originalInit !== 'function' || originalInit.__hobunjiLoadingDepsWrapped) continue;
+      try {
+        const wrappedInit = function loadingScreenAwareInit(injectedDeps, ...args) {
+          if (injectedDeps?.startSceneTransition && !injectedDeps.startSceneTransition.__hobunjiLoadingScreenWrapped) {
+            injectedDeps.startSceneTransition = wrapStartSceneTransition(injectedDeps.startSceneTransition);
+          }
+          return originalInit.call(this, injectedDeps, ...args);
+        };
+        wrappedInit.__hobunjiLoadingDepsWrapped = true;
+        namespace.init = wrappedInit;
+        state.dependencyInitHooks += 1;
+      } catch (_) {
+        // Some third-party namespaces expose non-writable init methods; skip them.
+      }
+    }
   }
 
   function installTransitionHook() {
-    if (typeof setTimeout !== 'function') return;
-    let attempts = 0; // Used to retry until game.js has declared the central startSceneTransition function.
     const tryInstall = () => {
       const original = window.startSceneTransition;
-      if (typeof original === 'function' && !original.__hobunjiLoadingScreenWrapped) {
-        const wrapped = function loadingScreenSceneTransition(callback, ...args) {
-          show({ reason: 'scene-transition' });
-          const wrappedCallback = typeof callback === 'function'
-            ? function (...callbackArgs) {
-                let result;
-                try { result = callback.apply(this, callbackArgs); }
-                catch (error) { hide('scene-transition-error'); throw error; }
-                Promise.resolve(result).then(
-                  () => hide('scene-transition-ready'),
-                  () => hide('scene-transition-error'),
-                );
-                return result;
-              }
-            : callback;
-          return original.call(this, wrappedCallback, ...args);
-        };
-        wrapped.__hobunjiLoadingScreenWrapped = true;
-        wrapped.__hobunjiLoadingScreenOriginal = original;
-        window.startSceneTransition = wrapped;
-        return;
+      if (typeof original === 'function') {
+        const wrapped = wrapStartSceneTransition(original);
+        if (wrapped !== original || original.__hobunjiLoadingScreenWrapped) {
+          window.startSceneTransition = wrapped;
+          state.transitionHookInstalled = true;
+          state.transitionHookTimer = null;
+          updateDebugPanel();
+          return true;
+        }
       }
-      attempts += 1;
-      if (attempts < 240) state.transitionHookTimer = setTimeout(tryInstall, 50);
+      return false;
     };
-    tryInstall();
+
+    if (tryInstall() || typeof setTimeout !== 'function') return;
+    let attempts = 0; // Used only as a defensive fallback while game.js is still parser-executing.
+    const retry = () => {
+      if (tryInstall()) return;
+      attempts += 1;
+      if (attempts < 240) state.transitionHookTimer = setTimeout(retry, 50);
+    };
+    state.transitionHookTimer = setTimeout(retry, 0);
+    if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', tryInstall, { once: true });
   }
 
   function beginBootScreen() {
@@ -578,13 +629,13 @@
       return;
     }
     show({ reason: 'initial-boot' });
-    const completeBoot = () => hide('initial-boot-ready'); // Used by the real browser load boundary so the boot percentage reaches 100 only when page resources are done.
+    const completeBoot = () => hide('initial-boot-ready'); // Used by the browser load boundary so boot reaches 100 only when page resources are done.
     if (document.readyState === 'complete') completeBoot();
     else window.addEventListener?.('load', completeBoot, { once: true });
   }
 
   installFetchProgressHook();
-  watchAreaChanges();
+  installDependencyInitHooks();
   installTransitionHook();
 
   window.LoadingScreenRuntime = Object.freeze({
@@ -592,6 +643,8 @@
     show,
     hide,
     setProgress,
+    shouldLoadForTransition,
+    installTransitionHook,
     getProgress: () => state.progress,
     getDebug: () => ({
       visible: state.visible,
@@ -604,6 +657,8 @@
       area: safeCurrentArea(),
       activeTip: state.activeTip,
       minimumVisibleMs: MIN_VISIBLE_MS,
+      transitionHookInstalled: state.transitionHookInstalled,
+      dependencyInitHooks: state.dependencyInitHooks,
     }),
     formatDebug,
   });
