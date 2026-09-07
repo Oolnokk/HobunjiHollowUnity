@@ -130,6 +130,10 @@ const gradualMapped = mapper.mapGeometry(foldedVerticalStrip(4, 20)); // Used to
 const gradualReport = gradualMapped.userData.hobunjiSurfaceStretch; // Used to require a gently curving cliff to remain one recognized surface.
 if (gradualReport.patchCount !== 1) throw new Error(`Furniture adjacency should keep 20° local bends connected: ${JSON.stringify(gradualReport)}`);
 
+const boundedMapped = mapper.mapGeometry(foldedVerticalStrip(18, 0), { maxPatchWorldSize: 6 }); // Used to model the new farm-wide continuous immediate cliff wall.
+const boundedReport = boundedMapped.userData.hobunjiSurfaceStretch; // Used to prove a long connected wall receives several full-PNG UV islands without splitting its geometry.
+if (boundedReport.patchCount !== 3 || boundedReport.maxPatchWorldSize !== 6) throw new Error(`Bounded cliff-surface segmentation failed: ${JSON.stringify(boundedReport)}`);
+
 const multiPositions = [
   0, 0, 0, 1, 0, 0, 1, 0, 1,
   0, 0, 0, 1, 0, 1, 0, 0, 1,
@@ -156,4 +160,4 @@ const rebuilt = mapper.mapGeometry(stale); // Used to force regeneration from to
 if (!rebuilt.getAttribute('uv') || rebuilt.getAttribute('uv').count !== rebuilt.getAttribute('position').count) throw new Error('Missing UVs were not regenerated despite a stale v2 signature');
 
 if (!logs.some(entry => entry[2] === 'render')) throw new Error('Expected mobile-visible render diagnostics');
-console.log(JSON.stringify({ texas: texasReport, bent: bentReport, gradual: gradualReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));
+console.log(JSON.stringify({ texas: texasReport, bent: bentReport, gradual: gradualReport, bounded: boundedReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));

@@ -15,7 +15,7 @@
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
     // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
-    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260902a'],
+    ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260907farmcliff1'],
     // A gradual 24° face chain may walk over a rounded ridge, so split upward terrain from cliff-facing triangles before the final side-only unwrap.
     ['NaturalSurfaceCliffRidgeIsolation', 'natural-surface-cliff-ridge-isolation.js?v=20260902a'],
     // Used after every older natural-surface/runtime wrapper so flat fallback textures self-heal and legacy cliff UV repair cannot remain authoritative.
@@ -36,7 +36,7 @@
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260905c'],
     // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
-    ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260905a'],
+    ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],

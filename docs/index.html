@@ -74,7 +74,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20260902mod1"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20260907road1"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -322,7 +322,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260809a"></script>
+  <script src="js/house-pieces.js?v=20260907f"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -546,6 +546,12 @@
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
   <script src="js/border-terrain.js?v=20260807a"></script>
+  <!-- Farm-only road paving and border reshaping. These must be explicit
+       parser-time dependencies after BorderTerrain: loading them indirectly
+       from house-pieces.js ran the cliff adapter before BorderTerrain existed,
+       so the adapter returned without ever wrapping the farm border build. -->
+  <script src="js/farm-path-bricks.js?v=20260907d"></script>
+  <script src="js/farm-border-cliff-edge.js?v=20260907e"></script>
   <!-- Procedural den-cavern floor generation (window.CavernGenerator) —
        pure data generation, no scene-graph/window.* system reads at load
        time (window.WildlifeSpawn/window.__farmLog are read lazily, at
