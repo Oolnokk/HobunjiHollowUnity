@@ -11,7 +11,7 @@
   const LORE_FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf';
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf';
   const MIN_VISIBLE_MS = 5000; // Used by hide() so boot/map loaders stay readable for at least five seconds.
-  const BUILDING_AREA_RE = /^(?:interior|map_i_)/i; // Used to suppress loaders while leaving ordinary authored building interiors.
+  const BUILDING_AREA_RE = /^(?:interior|map_i_)/i; // Used only as a fallback until the canonical building-area accessor is initialized.
   const BUILDING_CALL_RE = /\b(?:enterBuilding|enterInterior|exitBuilding|leaveBuilding|exitInterior|leaveInterior)\b/i; // Used to suppress explicit building entry/exit callbacks.
   const MAP_CALL_RE = /\b(?:enterZone|performTravel|doTravel|setCurrentArea)\b/; // Used to recognize world-map travel callbacks before their expensive work begins.
   const DEFAULT_SETTINGS = Object.freeze({
@@ -527,6 +527,9 @@
   }
 
   function isBuildingArea(area) {
+    try {
+      if (window.GridTileAccessors?.isBuildingArea?.(area)) return true;
+    } catch (_) {}
     return BUILDING_AREA_RE.test(String(area || ''));
   }
 
