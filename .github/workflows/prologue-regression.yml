@@ -4,17 +4,21 @@ on:
   push:
     paths:
       - 'docs/js/prologue-system.js'
+      - 'docs/js/prologue-rescue-map-runtime.js'
       - 'docs/js/character-action-locks.js'
-      - 'docs/js/cutscene-preview-helpers.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
+      - 'docs/config/maps/map_prologue_rescue.json'
+      - 'docs/config/maps/index.json'
       - 'scripts/test-prologue-chapter.js'
       - '.github/workflows/prologue-regression.yml'
   pull_request:
     paths:
       - 'docs/js/prologue-system.js'
+      - 'docs/js/prologue-rescue-map-runtime.js'
       - 'docs/js/character-action-locks.js'
-      - 'docs/js/cutscene-preview-helpers.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
+      - 'docs/config/maps/map_prologue_rescue.json'
+      - 'docs/config/maps/index.json'
       - 'scripts/test-prologue-chapter.js'
       - '.github/workflows/prologue-regression.yml'
   workflow_dispatch:
