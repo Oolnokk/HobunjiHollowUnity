@@ -2,8 +2,10 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const vm = require('vm');
 
 const source = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8');
+const portraitXDefaults = fs.readFileSync('docs/js/character-scale-portrait-x-authored-defaults.js', 'utf8');
 
 assert.match(source, /document\.getElementById\('sourceSha'\)/,
   'rig bootstrap must read the exact repository commit already resolved by Animation Author');
@@ -15,8 +17,31 @@ assert.match(source, /\.\.\/config\/attachment-rig-profiles\.js\?v=20260907repo1
 const exactRigIndex = source.indexOf("../config/attachment-rig-profiles.js?v=20260907repo1");
 const scaleDefaultsIndex = source.indexOf("../config/character-rig-scale-defaults.js?v=20260905d");
 const scaleRuntimeIndex = source.indexOf("character-rig-scale.js?v=20260904i");
+const portraitXDefaultsIndex = source.indexOf("character-scale-portrait-x-authored-defaults.js?v=20260907a");
+const portraitXRuntimeIndex = source.indexOf("character-scale-portrait-x-offset.js?v=20260907b");
 assert(exactRigIndex >= 0 && scaleDefaultsIndex > exactRigIndex && scaleRuntimeIndex > scaleDefaultsIndex,
   'repository rig profiles must load before scale defaults/runtime so controls and preview resolve the same anatomy');
+assert(portraitXDefaultsIndex > scaleRuntimeIndex && portraitXRuntimeIndex > portraitXDefaultsIndex,
+  'authored portrait X defaults must populate the shared profiles before portrait-X runtime/editor support reads them');
+
+const profiles = {
+  'mao-ao::male': { anatomy: {} },
+  'mao-ao::female': { anatomy: {} },
+  'engh-sho::male': { anatomy: {} },
+  'engh-sho::female': { anatomy: {} },
+  'kenkari::male': { anatomy: {} },
+};
+const windowObject = {
+  HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: profiles },
+  HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS: {},
+};
+windowObject.window = windowObject;
+vm.runInNewContext(portraitXDefaults, windowObject, { filename: 'character-scale-portrait-x-authored-defaults.js' });
+assert.strictEqual(profiles['mao-ao::male'].anatomy.portraitOffsetX, -0.08, 'Mao-ao male portrait X must default to -8%');
+assert.strictEqual(profiles['mao-ao::female'].anatomy.portraitOffsetX, -0.04, 'Mao-ao female portrait X must default to -4%');
+assert.strictEqual(profiles['engh-sho::male'].anatomy.portraitOffsetX, -0.07, 'Engh-sho male portrait X must default to -7%');
+assert.strictEqual(profiles['engh-sho::female'].anatomy.portraitOffsetX, -0.04, 'Engh-sho female portrait X must default to -4%');
+assert.strictEqual(profiles['kenkari::male'].anatomy.portraitOffsetX, undefined, 'unrequested species must keep their existing portrait X default');
 
 assert.match(source, /const RIG_DRAFT_KEYS = Object\.freeze\(\[/,
   'manual repository reload must explicitly define the local rig/scale drafts it discards');
