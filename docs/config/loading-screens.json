@@ -7,19 +7,19 @@
     "panRange": 7,
     "panSpeed": 0.055,
     "manualSpeed": 150,
-    "loreSize": 11,
-    "scriptSize": 140,
+    "loreSize": 19,
+    "scriptSize": 89,
     "scriptY": 46,
-    "columnSpacing": 0,
-    "scriptScrollSpeed": 0.02,
-    "loadPercent": 64
+    "columnSpacing": -0.55,
+    "scriptScrollSpeed": 0.017,
+    "loadPercent": 63
   },
   "entries": [
     {
       "id": "sample",
       "name": "Sample loading screen",
       "image": "",
-      "lore": "Lore text appears here in Khymeryyan Roman.",
+      "lore": "",
       "script": "HOBUNJI HOLLOW"
     }
   ]
