@@ -1,13 +1,15 @@
-// Clears the `wall` tag from authored house-face fragments that sit entirely
-// inside an entry-tunnel volume. Geometry stays in place; only WallBuilder's
-// wall classification is suppressed so tunnel interiors do not get a second
-// layer of house-wall bricks/material on top of the tunnel itself.
+// Prevents authored entry-tunnel geometry from being misclassified as house walls.
+// House wall fragments fully inside a tunnel lose their `wall` tag, while tunnel
+// floors/ceilings/caps are reclassified away from `entryTunnel` so HousePieceGen
+// does not feed them into WallBuilder. Actual vertical tunnel shell/frame faces
+// remain `entryTunnel` and continue using the tunnel brick treatment.
 (() => {
   'use strict';
 
   const EPS = 1e-4; // Used for inclusive tunnel-boundary checks on authored grid-aligned faces.
   const REGULAR_TUNNEL_HEIGHT = 1.058; // Fallback used only when an authored tunnel ceiling face is missing.
   const TALL_TUNNEL_HEIGHT = REGULAR_TUNNEL_HEIGHT * 1.5; // Mirrors the House Editor's 150% tall-entry tunnel option.
+  const TUNNEL_SURFACE_TAG = 'entryTunnelSurface'; // Used to keep non-wall tunnel geometry visible without sending it to WallBuilder.
 
   function normalizePiece(piece) {
     return piece?.currentPiece || piece || null;
@@ -91,14 +93,36 @@
     return pointInsideAnyTunnel(center.x, center.y, center.z, tunnels);
   }
 
+  function isVerticalTunnelWallFace(face) {
+    if (face?.tag !== 'entryTunnel') return false;
+    // HousePieceGen historically sent every `entryTunnel` face to WallBuilder,
+    // including generated floors and ceilings. The author marks actual vertical
+    // shell/frame box faces with singular `solidifiedWall`; the floor/ceiling
+    // bookkeeping uses plural `solidifiedWalls` instead. Keep only the former.
+    if (face.solidifiedWall === true || face.doorwayFrame === true) return true;
+    return false;
+  }
+
   function preparePiece(piece) {
     const src = normalizePiece(piece);
     const faces = src?.base?.faces;
     const tunnels = tunnelCellRecords(src);
-    if (!src || !Array.isArray(faces) || !faces.length || !tunnels.length) return { piece, clearedCount: 0 };
+    if (!src || !Array.isArray(faces) || !faces.length || !tunnels.length) {
+      return { piece, clearedCount: 0, suppressedTunnelPanelCount: 0 };
+    }
 
     let clearedCount = 0;
+    let suppressedTunnelPanelCount = 0;
     const nextFaces = faces.map(face => {
+      if (face?.tag === 'entryTunnel' && !isVerticalTunnelWallFace(face)) {
+        suppressedTunnelPanelCount++;
+        return {
+          ...face,
+          tag: TUNNEL_SURFACE_TAG,
+          tunnelWallBuilderSuppressed: true,
+          tunnelWallBuilderOriginalTag: 'entryTunnel',
+        };
+      }
       if (!wallFaceFullyInsideTunnel(face, tunnels)) return face;
       clearedCount++;
       return {
@@ -108,11 +132,13 @@
         tunnelInteriorWallOriginalTag: 'wall',
       };
     });
-    if (!clearedCount) return { piece, clearedCount: 0 };
+    if (!clearedCount && !suppressedTunnelPanelCount) {
+      return { piece, clearedCount: 0, suppressedTunnelPanelCount: 0 };
+    }
 
     const nextSrc = { ...src, base: { ...src.base, faces: nextFaces } }; // Used to avoid mutating cached piece JSON shared by other systems/tools.
     const nextPiece = piece?.currentPiece ? { ...piece, currentPiece: nextSrc } : nextSrc;
-    return { piece: nextPiece, clearedCount };
+    return { piece: nextPiece, clearedCount, suppressedTunnelPanelCount };
   }
 
   function install() {
@@ -122,11 +148,12 @@
     if (original.__entryTunnelWallUnmarkWrapped) return true;
 
     function buildGroupFromPieceWithoutTunnelInteriorWalls(THREE, piece, bldgMinC, bldgMinR, opts) {
-      const prepared = preparePiece(piece); // Used to suppress only fully tunnel-contained wall fragments for this render.
+      const prepared = preparePiece(piece); // Used to suppress tunnel-contained house walls and non-wall tunnel surfaces for this render.
       const group = original.call(this, THREE, prepared.piece, bldgMinC, bldgMinR, opts);
       if (group) {
         group.userData = group.userData || {};
         group.userData.entryTunnelWallFacesUnmarked = prepared.clearedCount; // Used by mobile-safe runtime inspection/debugging.
+        group.userData.entryTunnelNonWallPanelsSuppressed = prepared.suppressedTunnelPanelCount; // Used to prove floors/ceilings stopped reaching WallBuilder.
       }
       return group;
     }
@@ -141,12 +168,14 @@
     return {
       installed: !!window.HousePieceGen?.buildGroupFromPiece?.__entryTunnelWallUnmarkWrapped,
       clearedCount: Number(group?.userData?.entryTunnelWallFacesUnmarked) || 0,
+      suppressedTunnelPanelCount: Number(group?.userData?.entryTunnelNonWallPanelsSuppressed) || 0,
     };
   }
 
   window.EntryTunnelWallUnmark = Object.freeze({
     preparePiece,
     tunnelCellRecords,
+    isVerticalTunnelWallFace,
     debugInfo,
     install,
   });
