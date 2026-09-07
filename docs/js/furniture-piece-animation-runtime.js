@@ -17,6 +17,7 @@
   });
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
+  const finite = (value, fallback=0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const vec = (source, fallback={x:0,y:0,z:0}) => new THREE.Vector3(
     Number.isFinite(Number(source?.x)) ? Number(source.x) : fallback.x,
     Number.isFinite(Number(source?.y)) ? Number(source.y) : fallback.y,
@@ -31,12 +32,12 @@
 
   function normalizeConnector(record={}) {
     return {
-      anchorOffset:{x:Number(record.anchorOffset?.x)||0,y:Number(record.anchorOffset?.y)||0,z:Number(record.anchorOffset?.z)||0},
-      drivenOffset:{x:Number(record.drivenOffset?.x)||0,y:Number(record.drivenOffset?.y)||0,z:Number(record.drivenOffset?.z)||0},
+      anchorOffset:{x:finite(record.anchorOffset?.x),y:finite(record.anchorOffset?.y),z:finite(record.anchorOffset?.z)},
+      drivenOffset:{x:finite(record.drivenOffset?.x),y:finite(record.drivenOffset?.y),z:finite(record.drivenOffset?.z)},
       texture:record.texture || 'textures/wavy_surface.png',
       color:record.color || '#6b4728',
-      radius:Math.max(.002, Number(record.radius)||.012),
-      sides:Math.max(3, Math.min(12, Math.round(Number(record.sides)||5))),
+      radius:Math.max(.002, finite(record.radius,.012)),
+      sides:Math.max(3, Math.min(12, Math.round(finite(record.sides,5)))),
       visible:record.visible !== false,
     };
   }
@@ -49,14 +50,23 @@
       enabled:record.enabled !== false,
       drivenPartId:record.drivenPartId || null,
       anchorPartId:record.anchorPartId || null,
-      pivot:{x:Number(record.pivot?.x)||0,y:Number(record.pivot?.y)||0,z:Number(record.pivot?.z)||0},
-      axis:{x:Number(record.axis?.x)||0,y:Number(record.axis?.y)||0,z:Number(record.axis?.z ?? 1)||0},
+      pivot:{x:finite(record.pivot?.x),y:finite(record.pivot?.y),z:finite(record.pivot?.z)},
+      axis:{x:finite(record.axis?.x),y:finite(record.axis?.y),z:finite(record.axis?.z,1)},
       amplitudeDeg:Number.isFinite(Number(record.amplitudeDeg)) ? Number(record.amplitudeDeg) : 4.6,
       maxDeg:Number.isFinite(Number(record.maxDeg)) ? Math.max(0,Number(record.maxDeg)) : 18,
       distance:Number.isFinite(Number(record.distance)) ? Number(record.distance) : .08,
       speed:Number.isFinite(Number(record.speed)) ? Number(record.speed) : 1.6,
-      phaseDeg:Number(record.phaseDeg)||0,
+      phaseDeg:finite(record.phaseDeg),
       windResponse:Number.isFinite(Number(record.windResponse)) ? Number(record.windResponse) : 1,
+      // Wind Swing only. X bias controls front/back tilt (rotation around X);
+      // Z bias controls side-to-side tilt (rotation around Z).
+      axisBias:{
+        x:clamp(record.axisBias?.x ?? 1,0,4),
+        z:clamp(record.axisBias?.z ?? 1,0,4),
+      },
+      // Furniture-local horizontal wind heading. 0° = +Z (front/back swing),
+      // 90° = +X (side-to-side swing).
+      windDirectionDeg:finite(record.windDirectionDeg),
       connectors:Array.isArray(record.connectors) ? record.connectors.map(normalizeConnector) : [],
     };
   }
@@ -69,7 +79,9 @@
   }
 
   function makeRope(connector, assetBase) {
-    const geometry = new THREE.CylinderGeometry(connector.radius, connector.radius*.94, 1, connector.sides, 1, true);
+    // Closed ends plus a tiny endpoint overlap prevent a visible seam where a
+    // swinging connector meets its beam/board attachment point.
+    const geometry = new THREE.CylinderGeometry(connector.radius, connector.radius*.94, 1, connector.sides, 1, false);
     const sourceUrl=assetUrl(connector.texture, assetBase);
     let shared=sharedRopeTextures.get(sourceUrl);
     if(!shared){shared=new THREE.TextureLoader().load(sourceUrl);shared.wrapS=shared.wrapT=THREE.RepeatWrapping;if('colorSpace' in shared&&THREE.SRGBColorSpace)shared.colorSpace=THREE.SRGBColorSpace;sharedRopeTextures.set(sourceUrl,shared);}
@@ -102,13 +114,15 @@
     group.worldToLocal(tmpB);
     tmpMid.copy(tmpA).add(tmpB).multiplyScalar(.5);
     tmpDir.copy(tmpB).sub(tmpA);
-    const length = Math.max(.001, tmpDir.length());
-    tmpDir.multiplyScalar(1/length);
+    const endpointLength = Math.max(.001, tmpDir.length());
+    tmpDir.multiplyScalar(1/endpointLength);
+    const overlap = Math.max(.004, ropeRecord.connector.radius*1.4);
+    const visualLength = endpointLength + overlap*2;
     rope.position.copy(tmpMid);
     rope.quaternion.setFromUnitVectors(Y_AXIS, tmpDir);
-    rope.scale.set(1,length,1);
+    rope.scale.set(1,visualLength,1);
     if (rope.material?.map) {
-      const repeat = Math.max(1,length/.09);
+      const repeat = Math.max(1,visualLength/.09);
       if (Math.abs(rope.material.map.repeat.y-repeat)>.05) { rope.material.map.repeat.y=repeat; rope.material.map.needsUpdate=true; }
     }
     rope.updateMatrixWorld(true);
@@ -135,18 +149,26 @@
     const snapshot = helper?.liveVegetationWindSnapshot?.();
     const amplitude = Math.max(0,record.amplitudeDeg)*DEG*record.windResponse;
     const limit = Math.max(0,record.maxDeg)*DEG;
-    let x,z;
+    let primary, secondary;
     if (snapshot && helper?.sampleVegetationSway) {
       controller.pivot.getWorldPosition(tmpPos);
       const phase = tmpPos.x*Number(wind.spatialPhaseX)+tmpPos.z*Number(wind.spatialPhaseZ)+record.phaseDeg*DEG;
       const sway = helper.sampleVegetationSway(snapshot,phase,amplitude,wind);
-      x = clamp(sway.x,-limit,limit);
-      z = clamp(sway.z,-limit,limit);
+      primary = sway.z;
+      secondary = sway.x;
     } else {
       const phase = record.phaseDeg*DEG;
-      z = clamp(amplitude*Math.sin(nowSeconds*Number(wind.primaryFrequency)+phase),-limit,limit);
-      x = clamp(amplitude*Number(wind.secondaryAmplitudeRatio)*Math.cos(nowSeconds*Number(wind.secondaryFrequency)+phase*Number(wind.secondaryPhaseMultiplier)),-limit,limit);
+      primary = amplitude*Math.sin(nowSeconds*Number(wind.primaryFrequency)+phase);
+      secondary = amplitude*Number(wind.secondaryAmplitudeRatio)*Math.cos(nowSeconds*Number(wind.secondaryFrequency)+phase*Number(wind.secondaryPhaseMultiplier));
     }
+
+    const heading = record.windDirectionDeg*DEG;
+    const dirX = Math.sin(heading);
+    const dirZ = Math.cos(heading);
+    // Primary sway follows the requested horizontal wind direction. Secondary
+    // sway stays perpendicular so the motion retains the organic Root Totem feel.
+    const x = clamp((primary*dirZ - secondary*dirX)*record.axisBias.x,-limit,limit);
+    const z = clamp((primary*dirX + secondary*dirZ)*record.axisBias.z,-limit,limit);
     return {x,z};
   }
 
@@ -174,6 +196,13 @@
     for (const ropeRecord of controller.ropes) updateRope(controller,ropeRecord);
   }
 
+  function updateControllerForRender(controller, renderer) {
+    const frame = Number(renderer?.info?.render?.frame);
+    if (Number.isFinite(frame) && controller.lastRenderFrame === frame) return;
+    if (Number.isFinite(frame)) controller.lastRenderFrame = frame;
+    updateController(controller,performance.now()/1000);
+  }
+
   function removeControllers(group) {
     const controllers = group?.userData?.pieceAnimationControllers || [];
     for (const controller of controllers) {
@@ -185,6 +214,7 @@
       }
       for (const ropeRecord of controller.ropes || []) {
         const mesh = ropeRecord.mesh;
+        if (mesh && ropeRecord.previousBefore !== undefined) mesh.onBeforeRender = ropeRecord.previousBefore;
         mesh?.parent?.remove(mesh);
         mesh?.geometry?.dispose?.();
         mesh?.material?.map?.dispose?.();
@@ -213,18 +243,24 @@
       const pivot=new THREE.Group();
       pivot.name=`piece_animation_${record.id}_pivot`;
       group.add(pivot);
-      const controller={group,record,driven,anchor,pivot,pivotLocal:vec(record.pivot),axis:axisOf(record.axis),ropes:[],previousBefore:driven.onBeforeRender};
+      const controller={group,record,driven,anchor,pivot,pivotLocal:vec(record.pivot),axis:axisOf(record.axis),ropes:[],previousBefore:driven.onBeforeRender,lastRenderFrame:null};
       basePivotFrame(controller);
       pivot.updateMatrixWorld(true);
       pivot.attach(driven);
       for (const connector of record.connectors) {
         const rope=makeRope(connector,options.assetBase||'assets/');
+        const ropeRecord={connector,mesh:rope,previousBefore:rope.onBeforeRender};
+        rope.onBeforeRender=function furniturePieceAnimationRopeBeforeRender(renderer,...args){
+          ropeRecord.previousBefore?.call(this,renderer,...args);
+          updateControllerForRender(controller,renderer);
+          updateRope(controller,ropeRecord);
+        };
         group.add(rope);
-        controller.ropes.push({connector,mesh:rope});
+        controller.ropes.push(ropeRecord);
       }
-      driven.onBeforeRender=function furniturePieceAnimationBeforeRender(...args){
-        controller.previousBefore?.apply(this,args);
-        updateController(controller,performance.now()/1000);
+      driven.onBeforeRender=function furniturePieceAnimationBeforeRender(renderer,...args){
+        controller.previousBefore?.call(this,renderer,...args);
+        updateControllerForRender(controller,renderer);
       };
       updateController(controller,performance.now()/1000);
       controllers.push(controller);
