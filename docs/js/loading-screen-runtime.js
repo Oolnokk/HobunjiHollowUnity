@@ -121,7 +121,8 @@
 #hlsImage{position:absolute;left:50%;top:48%;width:auto;height:auto;max-width:78vw;max-height:70vh;object-fit:contain;transform-origin:center center;will-change:transform}
 #hlsScriptViewport{position:absolute;top:46%;width:min(42vw,540px);height:min(72vh,880px);overflow:hidden;transform:translate(-50%,-50%)}
 #hlsScriptFloat{position:absolute;left:50%;top:0;will-change:transform}
-#hlsScriptWords{display:flex;flex-direction:row;align-items:flex-start;justify-content:center;gap:0;width:max-content}
+#hlsScriptWords{display:flex;flex-direction:row;align-items:flex-start;justify-content:center;gap:0;width:max-content;--script-column-spacing:0em}
+.hlsVerticalWord + .hlsVerticalWord{margin-left:var(--script-column-spacing)}
 .hlsVerticalWord{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;font-family:"TankanScript",sans-serif;line-height:.56;color:#fff;white-space:nowrap}
 .hlsVerticalGlyph{display:block;width:1em;height:.56em;line-height:.56em;text-align:center}
 #hlsLore{position:absolute;left:50%;bottom:max(5.5vh,28px);transform:translateX(-50%);width:min(78vw,980px);text-align:center;color:#fff;font-family:"KhymeryyanRoman",serif;line-height:1.24;text-wrap:balance;text-shadow:0 2px 8px rgba(0,0,0,.9)}
@@ -203,7 +204,7 @@
 
   function renderScript(els, settings, text) {
     els.scriptWords.innerHTML = '';
-    els.scriptWords.style.setProperty('gap', `${Number(settings.columnSpacing) || 0}em`);
+    els.scriptWords.style.setProperty('--script-column-spacing', `${Number(settings.columnSpacing) || 0}em`);
     const words = String(text || '').trim().split(/\s+/).filter(Boolean);
     for (const word of words) {
       const column = document.createElement('div');
