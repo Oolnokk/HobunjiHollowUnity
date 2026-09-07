@@ -31,7 +31,7 @@
     document.head.appendChild(script);
   })), Promise.resolve());
   if (document.readyState === 'loading' && document.currentScript) {
-    for (const src of urls) document.write(`<script src=\"${src}\"><\\/script>`);
+    for (const src of urls) document.write(`<script src="${src}"><\/script>`);
   } else {
     loadSequentially(urls).catch(error => console.warn('[attachment-rig-bootstrap]', error));
   }
