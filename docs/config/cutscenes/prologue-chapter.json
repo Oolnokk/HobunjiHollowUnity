@@ -15,9 +15,11 @@
     "rescue": {
       "title": "Prologue — The Rescue",
       "kind": "zone",
-      "mapId": "map_southern_cloud_forest",
+      "mapId": "map_prologue_rescue",
+      "entryCol": 4,
+      "entryRow": 4,
       "dialogue": [],
-      "notes": "First-pass map test intentionally uses the complete normal Southern Cloud Forest zone. This lets ordinary generated ground, seasonal grass/materials, cloud-forest fog, vegetation, and loading-screen behavior initialize exactly as they do during gameplay. A dedicated tiny authored prologue map can replace this mapId later without changing the cutscene controller model."
+      "notes": "Loads a dedicated authored 10x10 exterior clearing. Only the central 6x6 is walkable; the next ring is solid Cloud Forest underbrush and the outermost ring receives generated Shadewood trees. The Southern Cloud Forest fog profile is applied while the rescue map is active."
     },
     "hunundi_room": {
       "title": "Prologue — Father Hunundi's Room",
