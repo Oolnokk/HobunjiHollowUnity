@@ -33,6 +33,12 @@
     }),
   });
 
+  const KASA_RANDOM_DYE_IDS = new Set([
+    'dye:CLOTH:brown',
+    'dye:CLOTH:dusty_yellow',
+    'dye:CLOTH:dusty_orange',
+  ]); // Restricts generated Kasa outfits without removing any manual dye choices.
+
   const status = {
     installed: true,
     preview: 'idle',
@@ -40,23 +46,24 @@
     gender: null,
     scale: null,
     lighting: 'game.buildZoneScene',
-    materials: 'runtime avatar materials',
+    materials: 'runtime HobunjiSpritePngSurface / MeshBasicMaterial',
+    rendererOutput: 'runtime r128 LinearEncoding',
     shellOutline: 'runtime layer-1 shell',
     randomizedIdentity: null,
     lastError: null,
   }; // Mobile-visible diagnostics for the creator.
   window.HOBUNJI_ONBOARDING_REDESIGN_STATUS = status;
 
-  let familyOpen = false; // Tracks the Slagothim family step before Tletingan is chosen.
+  let familyOpen = false; // Tracks whether the Slagothim/Tletingan second step is visible.
   let previewScene = null; // Current creator-only Three.js scene.
   let previewBuildGeneration = 0; // Invalidates stale async avatar builds.
-  let lastRenderPromise = Promise.resolve(); // Serializes back/head texture rendering.
+  let lastRenderPromise = Promise.resolve(); // Serializes rear/head portrait rendering.
   let bodyObserver = null; // Watches only for the onboarding overlay being mounted/unmounted.
-  let overlayObserver = null; // Watches only direct overlay-child replacements performed by onboarding-core.
+  let overlayObserver = null; // Watches only direct overlay-card replacement performed by onboarding-core.
   let observedOverlay = null; // Overlay currently owned by overlayObserver.
   let enhanceQueued = false; // Coalesces core rerenders into one enhancement pass.
   let lastRandomizedIdentity = null; // Species+gender key most recently given a generated look.
-  let randomizingLook = false; // Prevents the internal Collections transaction from re-entering itself.
+  let randomizingLook = false; // Prevents the synchronous Collections transaction from re-entering itself.
 
   function normalizeSpecies(value) {
     const raw = String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
@@ -199,9 +206,7 @@
       tletinganButton.before(familyButton);
       familyButton.addEventListener('click', () => {
         familyOpen = true;
-        group.querySelectorAll('[data-ob-species].ob-active').forEach(button => button.classList.remove('ob-active'));
-        familyButton.classList.add('ob-active');
-        renderSpeciesDetails(overlay, group, tletinganButton);
+        tletinganButton.click(); // Slagothim's first/current available subspecies is Tletingan; core owns the real state change.
       });
     }
 
@@ -220,6 +225,10 @@
     return length > 0 ? Math.floor(Math.random() * length) : -1;
   }
 
+  function chooseRandom(array) {
+    return array.length ? array[randomIndex(array.length)] : null;
+  }
+
   function clickRandomBodyColors(overlay) {
     const primary = [...overlay.querySelectorAll('[data-ob-a]')];
     const secondary = [...overlay.querySelectorAll('[data-ob-b]')];
@@ -232,37 +241,75 @@
     secondary[secondaryIndex]?.click();
   }
 
-  function randomizeVisibleClothing(overlay) {
+  function randomizeAppearanceCosmetics(overlay) {
+    for (const select of overlay.querySelectorAll('[data-ob-slot]')) {
+      if (select.disabled || !select.options.length) continue;
+      const option = chooseRandom([...select.options]);
+      if (!option) continue;
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function kasaKindForOption(option) {
+    const haystack = `${option?.value || ''} ${option?.textContent || ''}`.toLowerCase();
+    if (!haystack.includes('kasa')) return null;
+    if (/bowl[-_\s]?kasa|bowlkasa/.test(haystack)) return 'kenkari-bowl-kasa';
+    return 'ordinary-kasa';
+  }
+
+  function randomClothingOptionAllowed(option, speciesId, gender) {
+    const kind = kasaKindForOption(option);
+    if (!kind) return true;
+    if (gender !== 'male') return false;
+    if (kind === 'kenkari-bowl-kasa') return speciesId === 'kenkari';
+    return speciesId === 'tletingan' || speciesId === 'mao-ao';
+  }
+
+  function randomizeVisibleClothing(overlay, speciesId, gender) {
     const selects = [...overlay.querySelectorAll('.ob-equip-sel')].filter(select => !select.disabled);
-    if (!selects.length) return;
+    if (!selects.length) return { kasaSelected: false };
 
     let choseClothing = false;
     const forceable = [];
     for (const select of selects) {
-      const nonEmpty = [...select.options].filter(option => option.value);
-      if (!nonEmpty.length) continue;
-      forceable.push({ select, nonEmpty });
+      const allowed = [...select.options].filter(option => randomClothingOptionAllowed(option, speciesId, gender));
+      const nonEmpty = allowed.filter(option => option.value);
+      if (nonEmpty.length) forceable.push({ select, nonEmpty });
+      if (!allowed.length) continue;
+
       const category = select.dataset.obEquipCat;
-      const pool = category === 'torso' ? nonEmpty : [...select.options];
-      const chosen = pool[randomIndex(pool.length)];
+      const pool = category === 'torso' && nonEmpty.length ? nonEmpty : allowed;
+      const chosen = chooseRandom(pool);
       select.value = chosen?.value || '';
       select.dispatchEvent(new Event('change', { bubbles: true }));
       if (select.value) choseClothing = true;
     }
 
     if (!choseClothing && forceable.length) {
-      const forced = forceable[randomIndex(forceable.length)];
-      const option = forced.nonEmpty[randomIndex(forced.nonEmpty.length)];
+      const forced = chooseRandom(forceable);
+      const option = chooseRandom(forced.nonEmpty);
       forced.select.value = option.value;
       forced.select.dispatchEvent(new Event('change', { bubbles: true }));
     }
+
+    const selectedHat = overlay.querySelector('.ob-equip-sel[data-ob-equip-cat="hat"]')?.selectedOptions?.[0] || null;
+    return { kasaSelected: !!kasaKindForOption(selectedHat) };
   }
 
-  function clickRandomDye(attributeName) {
+  function kasaRandomDyeButtonAllowed(button) {
+    const id = button?.dataset?.obClothDyeA || button?.dataset?.obClothDyeB || '';
+    if (KASA_RANDOM_DYE_IDS.has(id)) return true;
+    const label = String(button?.title || '').trim().toLowerCase();
+    return label === 'brown' || label === 'dusty yellow' || label === 'dusty orange';
+  }
+
+  function clickRandomDye(attributeName, kasaRestricted = false) {
     const overlay = creatorOverlay();
     const buttons = overlay ? [...overlay.querySelectorAll(`[${attributeName}]`)] : [];
     if (!buttons.length) return;
-    buttons[randomIndex(buttons.length)]?.click();
+    const pool = kasaRestricted ? buttons.filter(kasaRandomDyeButtonAllowed) : buttons;
+    chooseRandom(pool)?.click(); // Empty restricted pool means leave the current dye instead of violating the Kasa palette rule.
   }
 
   function randomizeCreationLook(overlay, speciesId, gender) {
@@ -274,14 +321,15 @@
 
     try {
       clickRandomBodyColors(overlay);
+      randomizeAppearanceCosmetics(overlay);
 
       const collectionsTab = overlay.querySelector('[data-ob-tab="collections"]');
       collectionsTab?.click(); // Core rerenders synchronously; all following queries intentionally reacquire the current DOM.
       let current = creatorOverlay();
-      if (current) randomizeVisibleClothing(current);
+      const clothingRoll = current ? randomizeVisibleClothing(current, speciesId, gender) : { kasaSelected: false };
 
-      clickRandomDye('data-ob-cloth-dye-a');
-      clickRandomDye('data-ob-cloth-dye-b');
+      clickRandomDye('data-ob-cloth-dye-a', clothingRoll.kasaSelected);
+      clickRandomDye('data-ob-cloth-dye-b', clothingRoll.kasaSelected);
 
       current = creatorOverlay();
       current?.querySelector('[data-ob-tab="appearance"]')?.click();
@@ -403,7 +451,7 @@
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    if ('outputEncoding' in renderer && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
+    if ('outputEncoding' in renderer && THREE.LinearEncoding !== undefined) renderer.outputEncoding = THREE.LinearEncoding; // Runtime r128 leaves outputEncoding at its LinearEncoding default; the old sRGB override gamma-washed the unlit PNG planes.
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 100);
@@ -662,7 +710,7 @@
     const gender = activeCoreGender(overlay);
     randomizeCreationLook(overlay, speciesId, gender);
 
-    overlay = creatorOverlay(); // The randomization transaction finishes back on Appearance with a fresh core DOM.
+    overlay = creatorOverlay(); // Generated-look transaction finishes back on Appearance with a fresh core DOM.
     if (!overlay) return;
     ensurePreviewShell(overlay);
     enhanceSpeciesWorkflow(overlay);
