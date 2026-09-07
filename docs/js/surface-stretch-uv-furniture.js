@@ -74,24 +74,33 @@
     return clone;
   }
 
-  function collectTriangles(geometry, materialIndex, epsilon) {
+  function collectTriangles(geometry, materialIndex, epsilon, maxPatchWorldSize = null) {
     const position = geometry.getAttribute('position'); // Used to read each non-indexed triangle corner.
     const selected = selectedTriangleSet(geometry, materialIndex); // Used to omit non-cliff triangles on shared plateau geometry.
     const triangleCount = Math.floor(position.count / 3); // Used as the source triangle count in the expanded geometry.
     const triangles = []; // Used by adjacency recognition and UV writing.
     const vertexPositions = new Map(); // Used to retain one representative 3D position for each logical topology vertex.
     const edgeToTriangles = new Map(); // Used to build the same shared-edge adjacency graph as the furniture editor.
+    geometry.computeBoundingBox();
+    const patchOrigin = geometry.boundingBox?.min || new THREE.Vector3(); // Used only by optional bounded natural-surface UV islands.
 
     for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
       if (selected && !selected.has(triangleIndex)) continue;
       const base = triangleIndex * 3; // Used as the first BufferAttribute vertex for this triangle.
-      const keys = [vertexKey(position, base, epsilon), vertexKey(position, base + 1, epsilon), vertexKey(position, base + 2, epsilon)]; // Used to reconstruct shared topology edges.
+      let keys = [vertexKey(position, base, epsilon), vertexKey(position, base + 1, epsilon), vertexKey(position, base + 2, epsilon)]; // Used to reconstruct shared topology edges.
       const a = new THREE.Vector3(position.getX(base), position.getY(base), position.getZ(base)); // Used to calculate the face normal.
       const b = new THREE.Vector3(position.getX(base + 1), position.getY(base + 1), position.getZ(base + 1)); // Used to calculate the face normal.
       const c = new THREE.Vector3(position.getX(base + 2), position.getY(base + 2), position.getZ(base + 2)); // Used to calculate the face normal.
       const cross = new THREE.Vector3().crossVectors(b.clone().sub(a), c.clone().sub(a)); // Used for face area and orientation.
       const twiceArea = cross.length(); // Used as a degeneracy test and later area weight.
       const normal = twiceArea > 1e-10 ? cross.multiplyScalar(1 / twiceArea) : new THREE.Vector3(0, 1, 0); // Used by the furniture-style adjacent-face angle test.
+      if (Number.isFinite(maxPatchWorldSize) && maxPatchWorldSize > 0) {
+        const minX = Math.min(a.x, b.x, c.x), minZ = Math.min(a.z, b.z, c.z); // Keeps both triangles of a generated cliff cell in the same bounded UV region.
+        const patchX = Math.floor((minX - patchOrigin.x + epsilon) / maxPatchWorldSize); // Used to prevent one connected wall from consuming one PNG across its full width.
+        const patchZ = Math.floor((minZ - patchOrigin.z + epsilon) / maxPatchWorldSize); // Used to bound the same surface along its depth without changing positions.
+        const patchSuffix = `@uvpatch:${patchX},${patchZ}`; // Changes adjacency identity only without colliding with edgeKey's separator; rendered cliff geometry remains watertight.
+        keys = keys.map(key => key + patchSuffix);
+      }
       const localIndex = triangles.length; // Used by compact adjacency lists instead of sparse source triangle numbers.
       triangles.push({ triangleIndex, base, keys, normal, area: twiceArea * 0.5 });
 
@@ -404,7 +413,8 @@
     if (!sourceGeometry?.getAttribute?.('position')) return sourceGeometry;
     const splitAngleDeg = Number.isFinite(Number(options.angleToleranceDeg)) ? Math.max(1, Math.min(89, Number(options.angleToleranceDeg))) : DEFAULT_SPLIT_ANGLE_DEG; // Used as the furniture-style adjacent-face split threshold.
     const materialIndex = options.materialIndex == null ? null : Number(options.materialIndex); // Used to isolate only the cliff material slot on a shared grass/cliff mesh.
-    const signature = `surface-island-v2|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}`; // Used to invalidate every older seed/average-normal unwrap automatically.
+    const maxPatchWorldSize = Number.isFinite(Number(options.maxPatchWorldSize)) ? Math.max(0.5, Number(options.maxPatchWorldSize)) : null; // Optional cap used by continuous generated walls that would otherwise become one enormous surface.
+    const signature = `surface-island-v2|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|maxPatch=${maxPatchWorldSize == null ? '*' : maxPatchWorldSize}`; // Used to invalidate every older seed/average-normal unwrap automatically.
     const sourcePosition = sourceGeometry.getAttribute('position'); // Used to validate a cached signature against the actual surviving vertex buffer.
     const sourceUv = sourceGeometry.getAttribute('uv'); // Used to reject stale metadata when downstream code lost the UV attribute.
     const cachedUvValid = !!(sourcePosition && sourceUv?.count === sourcePosition.count && Number(sourceUv.itemSize || 2) >= 2); // Used to trust the v2 signature only when real UV data still exists.
@@ -414,7 +424,7 @@
     const uv = seedUvIfMissing(geometry); // Used as the writable final UV buffer while preserving non-target material coordinates.
     if (!uv) return sourceGeometry;
     const epsilon = chooseQuantizationEpsilon(geometry); // Used to reconstruct shared topology after non-indexing.
-    const topology = collectTriangles(geometry, materialIndex, epsilon); // Used by furniture-style surface recognition and irregular perimeter mapping.
+    const topology = collectTriangles(geometry, materialIndex, epsilon, maxPatchWorldSize); // Used by furniture-style surface recognition and irregular perimeter mapping.
     if (!topology.triangles.length) return sourceGeometry;
     const islands = segmentSurfaceIslands(topology, splitAngleDeg); // Used so each furniture-recognized cliff surface gets its own complete PNG domain.
     let fallbackCount = 0; // Used to summarize malformed/tiny surface fallbacks.
@@ -432,6 +442,7 @@
         segmentation: 'furniture-edge-adjacency',
         angleToleranceDeg: splitAngleDeg,
         materialIndex,
+        maxPatchWorldSize,
         patchCount: islands.length,
         fallbackCount,
         boundaryLoopCount,
