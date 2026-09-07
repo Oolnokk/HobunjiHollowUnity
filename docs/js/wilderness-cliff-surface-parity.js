@@ -57,11 +57,10 @@
     if (!material?.isMeshBasicMaterial || !material.map) return false;
     if (materialSurface(material) !== 'rocks') return false;
     const colorHex = material.color?.isColor ? material.color.getHexString().toLowerCase() : '';
-    // The farm boundary bakes its #808080 rock tint into carved_smooth.png via
-    // the body-sprite tint path, then renders that texture unlit on WHITE.
-    // Requiring white here catches both old Lambert lighting and accidental
-    // second tint multiplication, which are the two ways these cliffs can look
-    // darker/different even when the PNG itself is present.
+    // Farm boundary rock bakes the configured gray into carved_smooth.png, then
+    // renders the tinted PNG on an unlit WHITE MeshBasicMaterial. Requiring
+    // white here catches both the old Lambert-lighting path and accidental
+    // second tint multiplication when a PNG is present but looks too dark.
     return colorHex === 'ffffff';
   }
 
@@ -173,8 +172,8 @@
       delete geometry.userData.hobunjiSurfaceStretch;
       cleared = true;
     }
-    // Older world/face-stretch markers are not authoritative once the same
-    // furniture-style surface detector is about to rebuild the final UVs.
+    // Older whole-mesh world/face mapping cannot remain authoritative once the
+    // furniture-style connected-surface detector is about to rebuild the final UVs.
     if (geometry.userData.naturalSurfaceUvMapping) {
       delete geometry.userData.naturalSurfaceUvMapping;
       cleared = true;
@@ -273,10 +272,10 @@
       };
     }
 
-    // buildZoneMesaMeshes calls its file-local buildPlateauMesa function, not
-    // api.buildPlateauMesa. Wrapping this orchestration layer is therefore
-    // REQUIRED for the ordinary zone-load path; this is the exact path the
-    // Pixel Probe exposed as a still-lit slot-1 #79807c Lambert cliff.
+    // The ordinary zone path calls a file-local buildPlateauMesa from inside
+    // buildZoneMesaMeshes, bypassing wrappers on the exported single-mesa method.
+    // Process the returned meshes here so slot 1 cannot remain the original
+    // resolveTileMat(ROCK) Lambert/no-map material seen by Pixel Probe.
     const originalZoneMesas = api.buildZoneMesaMeshes;
     if (typeof originalZoneMesas === 'function') {
       api.buildZoneMesaMeshes = function (...args) {
@@ -287,10 +286,9 @@
       };
     }
 
-    // rebuildZoneMesaMeshes also calls file-local buildZoneMesaMeshes and
-    // returns nothing. Capture the direct Scene.add calls during that synchronous
-    // rebuild so runtime dig/fill/raise changes cannot regress the cliff slot
-    // back to Lambert after the initial zone-load fix.
+    // rebuildZoneMesaMeshes likewise uses its file-local zone builder and
+    // returns nothing. Capture its direct Scene.add calls so runtime terrain
+    // edits get exactly the same slot-1 material and UV treatment as first load.
     const originalRebuild = api.rebuildZoneMesaMeshes;
     if (typeof originalRebuild === 'function') {
       api.rebuildZoneMesaMeshes = function (...args) {
