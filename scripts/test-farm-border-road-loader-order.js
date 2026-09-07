@@ -12,6 +12,7 @@ const gameIndex = indexSource.indexOf('src="game.js'); // Both adapters must ins
 const roadSource = fs.readFileSync(path.join(__dirname, '../docs/js/farm-path-bricks.js'), 'utf8'); // Road extension and grass-mask contract under test.
 const cliffSource = fs.readFileSync(path.join(__dirname, '../docs/js/farm-border-cliff-edge.js'), 'utf8'); // Post-construction surface-mapping contract under test.
 const vegetationSource = fs.readFileSync(path.join(__dirname, '../docs/js/vegetation-crop-rendering.js'), 'utf8'); // Billboard suppression consumer under test.
+const surfaceMapperSource = fs.readFileSync(path.join(__dirname, '../docs/js/surface-stretch-uv-furniture.js'), 'utf8'); // Bounded connected-surface mapping contract under test.
 
 if (!(borderIndex >= 0 && borderIndex < pathIndex && pathIndex < edgeIndex && edgeIndex < gameIndex)) {
   throw new Error('farm border/road adapters are not loaded directly after BorderTerrain and before game.js');
@@ -25,8 +26,11 @@ for (const expected of ['ENTRANCE_BORDER_DEPTH = 18', 'extendThroughNorthGap(spl
 if (!vegetationSource.includes('!pavedRoad') || !vegetationSource.includes('rebuildFarmBillboards: _rebuildFarmBillboards')) {
   throw new Error('farm grass billboards are not connected to the paved-road suppression mask');
 }
-if (!cliffSource.includes('queueMicrotask(applyFinishedCliffSurfaces)') || !cliffSource.includes("farm-border-immediate-edge:post-create")) {
+if (!cliffSource.includes('queueMicrotask(applyFinishedCliffSurfaces)') || !cliffSource.includes('maxPatchWorldSize: CLIFF_UV_PATCH_WORLD_SIZE')) {
   throw new Error('replacement cliffs are not surface-mapped after construction');
+}
+if (!surfaceMapperSource.includes('@uvpatch:') || !surfaceMapperSource.includes('maxPatchWorldSize')) {
+  throw new Error('surface mapper cannot bound UV islands on a continuous generated cliff');
 }
 
 console.log('PASS farm cliffs map after construction; road crosses the border gap and suppresses underlying grass.');
