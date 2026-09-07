@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const redesign = fs.readFileSync('docs/js/onboarding-character-creation-redesign.js', 'utf8'); // Guards the new creator workflow and runtime preview contracts.
-const parity = fs.readFileSync('docs/js/onboarding-character-creation-runtime-parity.js', 'utf8'); // Guards gameplay lighting, loading feedback, and species color randomization.
+const parity = fs.readFileSync('docs/js/onboarding-character-creation-runtime-parity.js', 'utf8'); // Guards reliable visible hierarchy/lore, gameplay lighting, loading feedback, and species color randomization.
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8'); // Guards the thin bootstrap that preserves the existing onboarding implementation.
 const core = fs.readFileSync('docs/onboarding-core.js', 'utf8'); // Guards that save/profile creation remains in the original core rather than being duplicated.
 
@@ -19,12 +19,19 @@ for (const required of [
   'Tall, agile Yubashi native to the hot rainforests and riverlands of Tanka',
   'Sailors of the Snow-sea that pools between the twin chains of the Sho-ngyankwani Mountains',
   'Round parrotfolk of the Southern Archipelago',
-]) assert.ok(redesign.includes(required), `missing requested lore text: ${required}`);
+]) {
+  assert.ok(redesign.includes(required), `redesign source is missing requested lore text: ${required}`);
+  assert.ok(parity.includes(required), `runtime-visible parity layer is missing requested lore text: ${required}`);
+}
 
-assert.match(redesign, /data-ob-family = 'slagothim'|dataset\.obFamily = 'slagothim'/, 'Slagothim must be a top-level family selection');
-assert.match(redesign, /data-ob-subspecies=\\?"tletingan\\?"/, 'Tletingan must appear as a second-step subspecies');
-assert.match(redesign, /data-ob-subspecies=\\?"nuhongan\\?"[^>]*disabled/, 'Nuhongan must be visibly unavailable');
-assert.match(redesign, /data-ob-subspecies=\\?"longoran\\?"[^>]*disabled/, 'Longoran must be visibly unavailable');
+assert.match(redesign, /data-ob-family = 'slagothim'|dataset\.obFamily = 'slagothim'/, 'original redesign must contain a Slagothim family selection');
+assert.match(redesign, /data-ob-subspecies=\\?"tletingan\\?"/, 'original redesign must contain Tletingan as a second-step subspecies');
+assert.match(parity, /dataset\.obRuntimeFamily = 'slagothim'/, 'runtime parity must directly assert a visible Slagothim top-level button');
+assert.match(parity, /data-ob-runtime-subspecies="tletingan"/, 'runtime parity must directly assert visible Tletingan under Slagothim');
+assert.match(parity, /data-ob-runtime-subspecies="nuhongan" disabled/, 'runtime parity must directly assert disabled Nuhongan under Slagothim');
+assert.match(parity, /data-ob-runtime-subspecies="longoran" disabled/, 'runtime parity must directly assert disabled Longoran under Slagothim');
+assert.match(parity, /tletinganButton\.hidden = true/, 'legacy top-level Tletingan button must be hidden once the Slagothim hierarchy is asserted');
+assert.match(parity, /assertSpeciesWorkflow\(overlay\)/, 'every creator sync must assert the visible hierarchy and descriptions');
 
 assert.match(redesign, /buildSinglePlaneAvatarModel/, '3D creator must use the gameplay PNG-plane avatar constructor');
 assert.match(redesign, /portraitView: 'behind'/, '3D creator must build the rear character texture');
