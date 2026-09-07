@@ -47,6 +47,7 @@
     generation: 0,
     finalHiddenGeneration: 0,
     hideTimer: null,
+    hideWaiters: [],
     visibleSince: 0,
     progress: 0,
     progressSource: 'idle',
@@ -55,6 +56,7 @@
     lastArea: null,
     areaWatchTimer: null,
     transitionHookTimer: null,
+    bootRetryInstalled: false,
     debugTapCount: 0,
     debugTapAt: 0,
     debugVisible: false,
@@ -283,6 +285,13 @@
       ['Restore', 'hlsSystemTerm'], ['Afflict', 'hlsSystemTerm'], ['Greaten', 'hlsSystemTerm'], ['Lighten', 'hlsSystemTerm'],
     ]; // Used to color recurring Compendium vocabulary consistently across arbitrary tip text.
 
+    const pane = document.querySelector?.('#mpCompendium');
+    const vocabularyNodes = pane?.querySelectorAll?.('.compendium-entry-title, .compendium-section-title') || [];
+    for (const node of vocabularyNodes) {
+      const term = String(node?.textContent || '').trim();
+      if (term.length >= 3) rules.push([term, 'hlsSystemTerm']);
+    }
+
     const registry = window.ResourceSystem?.AFFLICTIONS || {};
     for (const definition of Object.values(registry)) {
       const name = String(definition?.name || '').trim();
@@ -307,15 +316,16 @@
     const byTerm = new Map(rules.map(([term, className]) => [term.toLowerCase(), className]));
     const pattern = new RegExp(rules.map(([term]) => escapeRegExp(term)).join('|'), 'gi');
     let cursor = 0;
-    for (const match of String(text || '').matchAll(pattern)) {
-      if (match.index > cursor) container.appendChild(document.createTextNode(String(text).slice(cursor, match.index)));
+    const source = String(text || '');
+    for (const match of source.matchAll(pattern)) {
+      if (match.index > cursor) container.appendChild(document.createTextNode(source.slice(cursor, match.index)));
       const span = document.createElement('span');
       span.className = byTerm.get(match[0].toLowerCase()) || 'hlsSystemTerm';
       span.textContent = match[0];
       container.appendChild(span);
       cursor = match.index + match[0].length;
     }
-    if (cursor < String(text || '').length) container.appendChild(document.createTextNode(String(text).slice(cursor)));
+    if (cursor < source.length) container.appendChild(document.createTextNode(source.slice(cursor)));
   }
 
   function applyEntryAndSettings(config) {
@@ -326,7 +336,7 @@
     els.image.style.display = hasImage ? '' : 'none';
     if (hasImage && els.image.src !== entry.image) els.image.src = entry.image;
     els.lore.style.fontSize = `${settings.loreSize}px`;
-    renderRichTip(els.lore, pickTip());
+    renderRichTip(els.lore, state.activeTip || pickTip());
     renderScript(els, settings, entry.script || 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = settings.scriptSide === 'right' ? '75%' : '25%';
     els.scriptViewport.style.top = `${settings.scriptY}%`;
@@ -353,7 +363,9 @@
     state.requestCompleted += 1;
     const total = Math.max(1, state.requestStarted);
     const ratio = clamp(state.requestCompleted / total, 0, 1);
-    setProgress(22 + ratio * 66, 'network-complete');
+    const eventDrivenProgress = 22 + Math.min(62, state.requestCompleted * 5.5);
+    const ratioProgress = 22 + ratio * 30;
+    setProgress(Math.max(eventDrivenProgress, ratioProgress), 'network-complete');
   }
 
   function installFetchProgressHook() {
@@ -412,16 +424,29 @@
     state.motionRaf = requestAnimationFrame(t => motionTick(t, settings));
   }
 
+  function resolveHideWaiters(generation) {
+    const remaining = [];
+    for (const waiter of state.hideWaiters) {
+      if (waiter.generation === generation) waiter.resolve();
+      else remaining.push(waiter);
+    }
+    state.hideWaiters = remaining;
+  }
+
   function showImmediate(reason = 'map-change') {
-    const myGeneration = ++state.generation;
+    const previousGeneration = state.generation; // Used to settle any minimum-duration hide promises superseded by this newer loading screen.
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
     state.hideTimer = null;
+    if (previousGeneration) resolveHideWaiters(previousGeneration);
+
+    const myGeneration = ++state.generation;
     state.finalHiddenGeneration = 0;
     state.visible = true;
     state.visibleSince = nowMs();
     state.requestStarted = 0;
     state.requestCompleted = 0;
     state.reason = reason;
+    state.activeTip = '';
     const els = buildDom();
     els.root.classList.add('visible');
     renderScript(els, DEFAULT_SETTINGS, 'HOBUNJI HOLLOW');
@@ -458,12 +483,16 @@
   }
 
   function finalizeHide(generation) {
-    if (generation !== state.generation) return;
+    if (generation !== state.generation) {
+      resolveHideWaiters(generation);
+      return;
+    }
     state.finalHiddenGeneration = generation;
     state.visible = false;
     if (state.motionRaf) { cancelAnimationFrame(state.motionRaf); state.motionRaf = null; }
     state.els?.root.classList.remove('visible');
     state.hideTimer = null;
+    resolveHideWaiters(generation);
     updateDebugPanel();
   }
 
@@ -479,10 +508,8 @@
     }
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
     return new Promise(resolve => {
-      state.hideTimer = setTimeout(() => {
-        finalizeHide(generation);
-        resolve();
-      }, wait);
+      state.hideWaiters.push({ generation, resolve });
+      state.hideTimer = setTimeout(() => finalizeHide(generation), wait);
     });
   }
 
@@ -539,7 +566,17 @@
   }
 
   function beginBootScreen() {
-    if (typeof document.readyState !== 'string' || !document.body) return;
+    if (typeof document.readyState !== 'string') return;
+    if (!document.body) {
+      if (!state.bootRetryInstalled) {
+        state.bootRetryInstalled = true;
+        document.addEventListener?.('DOMContentLoaded', () => {
+          state.bootRetryInstalled = false;
+          beginBootScreen();
+        }, { once: true });
+      }
+      return;
+    }
     show({ reason: 'initial-boot' });
     const completeBoot = () => hide('initial-boot-ready'); // Used by the real browser load boundary so the boot percentage reaches 100 only when page resources are done.
     if (document.readyState === 'complete') completeBoot();
