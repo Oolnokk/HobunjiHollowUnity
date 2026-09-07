@@ -7,6 +7,8 @@
   const FRAME_SOURCE_EDGE_FRACTION = 0.16; // Used as the outer 16% of the PNG that stays visually concentrated along detected surface boundaries.
   const FRAME_SURFACE_EDGE_FRACTION = 0.06; // Used as the narrow solved-UV band that receives each protected PNG edge, leaving the center to absorb most stretch.
   const FRAME_DEBUG_HISTORY_LIMIT = 16; // Used to keep mobile-visible perimeter-frame diagnostics bounded.
+  const CROSS_MESH_UV_OWNER = 'plateau-cliff-cross-mesh-v1'; // Used to keep runtime per-mesh repair from splitting a batch-solved plateau cliff back apart.
+  const PLATEAU_CLIFF_MATERIAL_SLOT = 1; // Used by ZonePlateauMesa: slot 0 is the walkable top and slot 1 is the steep cliff surface.
   const frameStats = {
     installed: false,
     mapGeometryCalls: 0,
@@ -15,6 +17,10 @@
     capHintsIgnored: 0,
     warpedGeometries: 0,
     warpedUvs: 0,
+    crossMeshBatches: 0,
+    crossMeshMeshes: 0,
+    crossMeshUvVertices: 0,
+    crossMeshRuntimeSkips: 0,
     successLogs: 0,
     recent: [],
   }; // Used by HobunjiSurfacePerimeterFrame.snapshot() for mobile-visible verification without DevTools.
@@ -58,6 +64,12 @@
       if (end > start) ranges.push([start, end]);
     }
     return ranges;
+  }
+
+  function geometryHasValidUvs(geometry) {
+    const position = geometry?.getAttribute?.('position') || geometry?.attributes?.position; // Used as the authoritative vertex-count reference for cross-mesh ownership.
+    const uv = geometry?.getAttribute?.('uv') || geometry?.attributes?.uv; // Used to avoid preserving a cross-mesh marker after UV data was actually lost.
+    return !!(position && uv && uv.count === position.count && Number(uv.itemSize || 0) >= 2);
   }
 
   function applyPerimeterFrame(geometry, report, force = false, label = '') {
@@ -135,6 +147,10 @@
     if (typeof originalRemap === 'function') {
       mapper.remapNaturalTerrainMesh = function (mesh, label = '') {
         frameStats.remapCalls++;
+        if (mesh?.userData?.naturalSurfaceCrossMeshUvOwner === CROSS_MESH_UV_OWNER && geometryHasValidUvs(mesh.geometry)) {
+          frameStats.crossMeshRuntimeSkips++;
+          return mesh.geometry?.userData?.hobunjiSurfaceStretch || null;
+        }
         const beforeGeometry = mesh?.geometry || null; // Used to distinguish a fresh unwrap from a cached reassertion.
         const report = originalRemap.call(this, mesh, label);
         if (report && mesh?.geometry) applyPerimeterFrame(mesh.geometry, report, mesh.geometry !== beforeGeometry, label || mesh.name || 'runtime-remap');
@@ -160,6 +176,174 @@
 
   installContinuousPerimeterFrameMapper();
 
+  function ensureIndependentPlateauGeometry(mesh) {
+    const source = mesh?.geometry; // Used as the current per-mesh wilderness result after the normal final surface pass.
+    if (!source?.getAttribute?.('position')) return null;
+    const geometry = source.index ? source.toNonIndexed() : source.clone(); // Used so cliff-slot corners can receive cross-mesh UVs without changing grass corners that shared indexed vertices.
+    const position = geometry.getAttribute('position'); // Used as the final per-corner position buffer for this plateau mesh.
+    let uv = geometry.getAttribute('uv'); // Used as the writable per-corner UV buffer; existing grass UVs are preserved when present.
+    if (!uv || uv.count !== position.count || Number(uv.itemSize || 0) < 2) {
+      const seed = new Float32Array(position.count * 2); // Used to restore ZonePlateauMesa's original world-X/Z grass UV convention before cliff-only values overwrite slot 1.
+      for (let index = 0; index < position.count; index++) {
+        seed[index * 2] = position.getX(index);
+        seed[index * 2 + 1] = position.getZ(index);
+      }
+      uv = new THREE.Float32BufferAttribute(seed, 2); // Used to repair the exact Pixel Probe no-UV state without collapsing the plateau-top texture.
+      geometry.setAttribute('uv', uv);
+    }
+    geometry.userData = Object.assign({}, source.userData || {}, geometry.userData || {});
+    delete geometry.userData.hobunjiSurfaceStretchSignature;
+    delete geometry.userData.hobunjiSurfacePerimeterFrameSignature;
+    mesh.geometry = geometry;
+    return geometry;
+  }
+
+  function mapTouchingPlateauCliffBatch(meshes, label = 'plateau-cross-mesh') {
+    const mapper = window.HobunjiSurfaceStretchUV; // Used to run the same shared-edge surface detector once across every touching mesa cliff in the zone.
+    if (typeof mapper?.mapGeometry !== 'function') return false;
+    const candidates = (meshes || []).filter(mesh => mesh?.isMesh && Array.isArray(mesh.material) && mesh.material[PLATEAU_CLIFF_MATERIAL_SLOT] && mesh.geometry); // Used to exclude unrelated meshes captured during a zone rebuild.
+    if (candidates.length < 2) return false;
+
+    const positions = []; // Used as one temporary world-space triangle soup spanning every plateau cliff-slot mesh in this batch.
+    const targets = []; // Used to copy each solved combined UV back to its exact source mesh vertex afterward.
+    const touched = new Map(); // Used to mark each source UV attribute once after all copied writes finish.
+    const point = new THREE.Vector3(); // Reused while transforming local plateau vertices into common world space.
+
+    for (const mesh of candidates) {
+      const geometry = ensureIndependentPlateauGeometry(mesh); // Used to make grass and cliff corners independently writable before cross-mesh solving.
+      const position = geometry?.getAttribute?.('position');
+      const uv = geometry?.getAttribute?.('uv');
+      if (!position || !uv) continue;
+      mesh.updateMatrixWorld?.(true);
+      const ranges = selectedUvRanges(geometry, PLATEAU_CLIFF_MATERIAL_SLOT, position.count); // Used to include only the actual cliff-side material slot.
+      for (const [start, end] of ranges) {
+        for (let index = start; index < end; index++) {
+          point.set(position.getX(index), position.getY(index), position.getZ(index));
+          if (mesh.matrixWorld) point.applyMatrix4(mesh.matrixWorld);
+          positions.push(point.x, point.y, point.z);
+          targets.push({ mesh, geometry, uv, index });
+        }
+      }
+      if (ranges.length) touched.set(mesh, { geometry, uv });
+    }
+    if (targets.length < 6 || targets.length % 3 !== 0) return false;
+
+    const combined = new THREE.BufferGeometry(); // Used only as a temporary cross-mesh topology carrier; never enters the scene.
+    combined.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const mapped = mapper.mapGeometry(combined, { label: `${label}:touching-mesh-batch` }); // Shared position keys now cancel touching mesh seams as internal edges.
+    const mappedUv = mapped?.getAttribute?.('uv');
+    const report = mapped?.userData?.hobunjiSurfaceStretch || null;
+    if (!mappedUv || mappedUv.count !== targets.length || !report) {
+      if (mapped && mapped !== combined) mapped.dispose?.();
+      combined.dispose?.();
+      return false;
+    }
+
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
+      target.uv.setXY(target.index, mappedUv.getX(i), mappedUv.getY(i));
+    }
+    const batchSignature = `cross-mesh-surface-v1|meshes=${touched.size}|surfaces=${report.patchCount}|uvs=${targets.length}`; // Used by runtime repair to recognize this final batch-owned solve.
+    for (const [mesh, state] of touched) {
+      state.uv.needsUpdate = true;
+      state.geometry.userData = Object.assign({}, state.geometry.userData || {}, {
+        hobunjiSurfaceStretchSignature: batchSignature,
+        hobunjiSurfaceStretch: {
+          version: 3,
+          segmentation: 'cross-mesh-furniture-edge-adjacency',
+          angleToleranceDeg: report.angleToleranceDeg,
+          materialIndex: PLATEAU_CLIFF_MATERIAL_SLOT,
+          maxPatchWorldSize: null,
+          patchCount: report.patchCount,
+          fallbackCount: report.fallbackCount,
+          boundaryLoopCount: report.boundaryLoopCount,
+          crossMeshBatch: true,
+          crossMeshCount: touched.size,
+        },
+        hobunjiSurfacePerimeterFrame: Object.assign({}, mapped.userData?.hobunjiSurfacePerimeterFrame || report.perimeterFrame || {}, {
+          mapping: 'continuous-detected-surface-perimeter-cross-mesh',
+          materialIndex: PLATEAU_CLIFF_MATERIAL_SLOT,
+        }),
+      });
+      delete state.geometry.userData.hobunjiSurfacePerimeterFrameSignature; // Combined geometry owns the temporary signature; source meshes use the cross-mesh owner marker instead.
+      mesh.userData = Object.assign({}, mesh.userData || {}, {
+        naturalSurfaceCrossMeshUvOwner: CROSS_MESH_UV_OWNER,
+        naturalSurfaceCrossMeshUvBatch: batchSignature,
+        terrainJigsawIgnore: true,
+      });
+    }
+
+    frameStats.crossMeshBatches++;
+    frameStats.crossMeshMeshes += touched.size;
+    frameStats.crossMeshUvVertices += targets.length;
+    frameStats.recent.push({ label: `${label}:cross-mesh`, patchCount: report.patchCount, materialIndex: PLATEAU_CLIFF_MATERIAL_SLOT, warpedUvCount: targets.length });
+    while (frameStats.recent.length > FRAME_DEBUG_HISTORY_LIMIT) frameStats.recent.shift();
+    debugLog(`${label}: solved ${touched.size} plateau mesh(es) as one shared cliff topology; ${report.patchCount} true connected surface(s), ${targets.length} cliff UV corners written.`);
+
+    if (mapped && mapped !== combined) mapped.dispose?.();
+    combined.dispose?.();
+    return true;
+  }
+
+  function captureSceneMeshes(callback) {
+    const scenePrototype = THREE.Scene?.prototype; // Used to capture rebuilt plateau meshes from rebuildZoneMesaMeshes, whose public method returns no mesh list.
+    const previousAdd = scenePrototype?.add;
+    if (!scenePrototype || typeof previousAdd !== 'function') return { result: callback(), meshes: [] };
+    const meshes = []; // Used as direct Scene.add mesh captures from this exact synchronous rebuild call.
+    function capturingAdd(...objects) {
+      for (const object of objects) if (object?.isMesh) meshes.push(object);
+      return previousAdd.apply(this, objects);
+    }
+    scenePrototype.add = capturingAdd;
+    let result;
+    try { result = callback(); }
+    finally { if (scenePrototype.add === capturingAdd) scenePrototype.add = previousAdd; }
+    return { result, meshes };
+  }
+
+  function schedulePlateauCrossMeshBatch(meshes, label) {
+    const candidates = (meshes || []).filter(mesh => mesh?.isMesh); // Used to freeze the builder result before later unrelated scene additions occur.
+    if (candidates.length < 2) return;
+    const run = () => mapTouchingPlateauCliffBatch(candidates, label); // Used after WildernessCliffSurfaceParity's own per-mesh microtask so this batch solve is authoritative.
+    if (typeof queueMicrotask === 'function') queueMicrotask(run);
+    else Promise.resolve().then(run);
+  }
+
+  function installPlateauCrossMeshBatching() {
+    const api = window.ZonePlateauMesa; // Used as the existing plateau builder after wilderness material/final-pass wrappers are already installed.
+    if (!api || api.__hobunjiCrossMeshCliffUvWrapped) return !!api;
+
+    const previousBuildZoneMesas = api.buildZoneMesaMeshes; // Used to receive the complete initial plateau mesh batch for one zone.
+    if (typeof previousBuildZoneMesas === 'function') {
+      api.buildZoneMesaMeshes = function (...args) {
+        const meshes = previousBuildZoneMesas.apply(this, args) || [];
+        schedulePlateauCrossMeshBatch(meshes, `plateau-zone:${String(args[1] || 'wilderness')}`);
+        return meshes;
+      };
+      api.buildZoneMesaMeshes.__hobunjiCrossMeshCliffUvOriginal = previousBuildZoneMesas;
+    }
+
+    const previousRebuildZoneMesas = api.rebuildZoneMesaMeshes; // Used to keep runtime dig/fill/raise plateau rebuilds on the same cross-mesh UV policy.
+    if (typeof previousRebuildZoneMesas === 'function') {
+      api.rebuildZoneMesaMeshes = function (...args) {
+        const capture = captureSceneMeshes(() => previousRebuildZoneMesas.apply(this, args));
+        schedulePlateauCrossMeshBatch(capture.meshes, `plateau-rebuild:${String(args[0] || 'wilderness')}`);
+        return capture.result;
+      };
+      api.rebuildZoneMesaMeshes.__hobunjiCrossMeshCliffUvOriginal = previousRebuildZoneMesas;
+    }
+
+    api.__hobunjiCrossMeshCliffUvWrapped = true;
+    debugLog('plateau cross-mesh cliff UV batching installed: touching mesa mesh edges are internal UV seams, not PNG borders.');
+    return true;
+  }
+
+  if (!installPlateauCrossMeshBatching()) {
+    const retryPlateauInstall = () => installPlateauCrossMeshBatching(); // Used only for unusual dynamic-load ordering; no recurring frame work.
+    if (typeof queueMicrotask === 'function') queueMicrotask(retryPlateauInstall);
+    window.addEventListener?.('DOMContentLoaded', retryPlateauInstall, { once: true });
+  }
+
   function formatPixelProbePerimeterDiagnostics() {
     const snapshot = window.HobunjiSurfacePerimeterFrame?.snapshot?.(); // Used to append the exact live mapping counters to copied Pixel Probe reports on mobile.
     if (!snapshot) return '';
@@ -167,8 +351,8 @@
       '',
       '=== Natural surface perimeter-frame diagnostics ===',
       `Installed=${!!snapshot.installed} mapping=continuous-detected-surface-perimeter sourcePNGEdge=${(FRAME_SOURCE_EDGE_FRACTION * 100).toFixed(0)}% renderedEdgeBand=${(FRAME_SURFACE_EDGE_FRACTION * 100).toFixed(0)}%`,
-      `Mapper calls: geometry=${snapshot.mapGeometryCalls || 0} mesh=${snapshot.mapMeshCalls || 0} runtimeRemap=${snapshot.remapCalls || 0} legacyPatchCapsIgnored=${snapshot.capHintsIgnored || 0}`,
-      `Frame writes: geometries=${snapshot.warpedGeometries || 0} UVvertices=${snapshot.warpedUvs || 0}`,
+      `Mapper calls: geometry=${snapshot.mapGeometryCalls || 0} mesh=${snapshot.mapMeshCalls || 0} runtimeRemap=${snapshot.remapCalls || 0} legacyPatchCapsIgnored=${snapshot.capHintsIgnored || 0} crossMeshRuntimeSkips=${snapshot.crossMeshRuntimeSkips || 0}`,
+      `Frame writes: geometries=${snapshot.warpedGeometries || 0} UVvertices=${snapshot.warpedUvs || 0} crossMeshBatches=${snapshot.crossMeshBatches || 0} crossMeshMeshes=${snapshot.crossMeshMeshes || 0} crossMeshUVs=${snapshot.crossMeshUvVertices || 0}`,
     ]; // Used as a compact self-contained readout that can be pasted back without DevTools.
     const recent = Array.isArray(snapshot.recent) ? snapshot.recent.slice(-8) : []; // Used to show which connected surfaces were most recently remapped without flooding the report.
     if (!recent.length) {
@@ -317,5 +501,5 @@
     },
   };
 
-  debugLog('installed: Terrain Jigsaw runs first, natural rock/cliff texture+UV repair runs second, spatial chunking runs third, then the frame renders; detected cliff surfaces keep one continuous PNG perimeter frame.');
+  debugLog('installed: Terrain Jigsaw runs first, natural rock/cliff texture+UV repair runs second, spatial chunking runs third, then the frame renders; detected cliff surfaces keep one continuous PNG perimeter frame, including touching plateau meshes.');
 })();
