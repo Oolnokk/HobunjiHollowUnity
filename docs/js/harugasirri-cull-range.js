@@ -11,6 +11,7 @@
   const trackedGroups = new Set();
   const cameraStates = new WeakMap();
   let renderHook = null;
+  let rangeRevision = 0;
   const stats = {
     cameraAdjustments: 0,
     renderHookArms: 0,
@@ -106,7 +107,10 @@
       } catch (_) {}
     }
     if (!found) return null;
-    if (!trackedGroups.has(found)) stats.discoveredRegistrations++;
+    if (!trackedGroups.has(found)) {
+      stats.discoveredRegistrations++;
+      rangeRevision++;
+    }
     trackedGroups.add(found);
     normalizeBackdropRendering(found);
     return found;
@@ -140,13 +144,14 @@
 
     let cameraState = cameraStates.get(camera);
     if (!cameraState) {
-      cameraState = { baselineFar: Math.max(1, Number(camera.far) || 200), lastAppliedFar: null };
+      cameraState = { baselineFar: Math.max(1, Number(camera.far) || 200), lastAppliedFar: null, revision: -1 };
       cameraStates.set(camera, cameraState);
     }
     const targetFar = Math.max(cameraState.baselineFar, MIN_BACKDROP_FAR, required);
     stats.lastRequiredFar = required;
     stats.lastBaselineFar = cameraState.baselineFar;
     stats.lastAppliedFar = targetFar;
+    cameraState.revision = rangeRevision;
 
     if (Math.abs((Number(camera.far) || 0) - targetFar) > 0.5) {
       camera.far = targetFar;
@@ -159,11 +164,10 @@
     return false;
   }
 
-  function restoreRenderHook() {
-    const hook = renderHook;
-    if (!hook) return;
-    if (rendererPrototype.render === hook.wrapped) rendererPrototype.render = hook.previous;
-    renderHook = null;
+  function cameraRangeNeedsCheck(camera) {
+    const state = cameraStates.get(camera);
+    if (!state || state.revision !== rangeRevision) return true;
+    return (Number(camera?.far) || 0) + 0.5 < (Number(state.lastAppliedFar) || 0);
   }
 
   function armRenderHook() {
@@ -173,11 +177,10 @@
     hook.wrapped = function (scene, camera, ...rest) {
       if (sceneHasTrackedBackdrop(scene) && camera?.isPerspectiveCamera) {
         stats.renderHookHits++;
-        ensureCameraRange(scene, camera);
-        // Camera expansion happens before the delegated Three.js render performs
-        // clip/frustum rejection. Restore immediately after the first matching
-        // render so Harugasirri adds no permanent per-frame hook.
-        restoreRenderHook();
+        // The permanent guard itself is intentionally tiny. World-bounds work
+        // only repeats after a transform/attachment revision or if another
+        // system actually lowers the camera range again.
+        if (cameraRangeNeedsCheck(camera)) ensureCameraRange(scene, camera);
       }
       return previous.call(this, scene, camera, ...rest);
     };
@@ -189,7 +192,10 @@
 
   function armScene(group) {
     if (!group) return false;
-    if (!trackedGroups.has(group)) stats.directRegistrations++;
+    if (!trackedGroups.has(group)) {
+      stats.directRegistrations++;
+      rangeRevision++;
+    }
     trackedGroups.add(group);
     normalizeBackdropRendering(group);
     armRenderHook();
@@ -213,6 +219,7 @@
   }
 
   window.addEventListener?.('harugasirri-transform-changed', () => {
+    rangeRevision++;
     for (const group of [...trackedGroups]) {
       if (!group?.parent) {
         trackedGroups.delete(group);

@@ -8,10 +8,15 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(repoRoot, 'docs/js/harugasirri-cull-range.js'), 'utf8');
 const captureSource = fs.readFileSync(path.join(repoRoot, 'docs/js/harugasirri-map-editor-capture-fix.js'), 'utf8');
+const runtimeSource = fs.readFileSync(path.join(repoRoot, 'docs/js/harugasirri-superbackdrop-runtime.js'), 'utf8');
 
 assert.equal(source.includes('requestAnimationFrame('), false, 'Harugasirri render-order/cull guard must not add frame-loop work');
 assert.equal(source.includes('setInterval('), false, 'Harugasirri render-order/cull guard must not poll');
 assert(source.includes('rendererPrototype.render'), 'camera range should use the shared renderer boundary, not Scene.onBeforeRender');
+assert.equal(source.includes('restoreRenderHook'), false,
+  'camera range must remain guarded after the first render because renderer/camera decorators can later restore the stock far plane');
+assert(runtimeSource.includes('child.frustumCulled = false;'),
+  'normal visual refreshes must preserve the explicit Harugasirri culling bypass');
 assert.equal(source.includes('scene.onBeforeRender'), false, 'Scene.onBeforeRender is not a reliable scene-level camera hook');
 assert(source.includes('belongsToRenderScene'), 'range logic must support Harugasirri under an intermediate outdoor root Group');
 assert(source.includes('Object3D?.prototype'), 'ordinary Object3D/Group additions should be a fallback registration path');
@@ -28,7 +33,7 @@ class Sphere {
   constructor() { this.center = new Vector3(); this.radius = 0; }
 }
 class Box3 {
-  setFromObject(object) { this.object = object; return this; }
+  setFromObject(object) { Box3.reads++; this.object = object; return this; }
   isEmpty() { return false; }
   getBoundingSphere(target) {
     // Deliberately require a far plane much larger than the 805u live probe hit.
@@ -37,6 +42,7 @@ class Box3 {
     return target;
   }
 }
+Box3.reads = 0;
 class Object3D {
   constructor() { this.children = []; this.parent = null; }
   add(...objects) {
@@ -109,7 +115,7 @@ assert(meshes.every(mesh => mesh.frustumCulled === false),
   'all three low-poly Harugasirri meshes should bypass ordinary frustum culling');
 assert.equal(group.userData.harugasirriOpaqueGroupOrder, 1);
 assert.notEqual(THREE.WebGLRenderer.prototype.render, baseRender,
-  'direct registration should arm a temporary renderer hook before the next real render');
+  'direct registration should arm the renderer guard before the next real render');
 assert.equal(audits.get('Harugasirri range direct registrations')(), 1,
   'the live attach handoff must be visible in performance snapshots');
 
@@ -125,8 +131,8 @@ const result = renderer.render(scene, camera);
 assert.equal(result, 'rendered');
 assert(camera.far > 900, 'camera far must expand from actual Harugasirri world bounds, not stop at the 512 minimum');
 assert.equal(camera.updates, 1, 'camera projection should update exactly once when its far plane is raised');
-assert.equal(THREE.WebGLRenderer.prototype.render, baseRender,
-  'camera-range renderer hook should restore itself after the first matching render');
+assert.notEqual(THREE.WebGLRenderer.prototype.render, baseRender,
+  'camera-range renderer guard must remain installed after the first matching render');
 assert.equal(renderer.renderCalls, 1, 'the wrapped render must still call the prior renderer exactly once');
 assert.equal(audits.get('Harugasirri frustum bypass meshes')(), 3);
 assert.equal(audits.get('Harugasirri opaque group order')(), 1);
@@ -134,4 +140,18 @@ assert(audits.get('Harugasirri camera far')() > 900);
 assert(audits.get('Harugasirri required camera far')() > 900);
 assert.equal(audits.get('Harugasirri camera range hook hits')(), 1);
 
-console.log('PASS Harugasirri render order/cull range: direct registration works through an intermediate outdoor root, meshes bypass culling, and the one-shot renderer hook expands camera range before clipping.');
+// A later system or map transition may restore the gameplay camera's stock
+// range. The next real render must repair it before Three.js clips geometry.
+camera.far = 200;
+renderer.render(scene, camera);
+assert(camera.far > 900, 'a later camera-range reset must be repaired on the next render');
+assert.equal(camera.updates, 2, 'the projection should update again after an external far-plane reset');
+assert.equal(audits.get('Harugasirri camera range hook hits')(), 2);
+
+const boundsReadsAfterRepair = Box3.reads;
+renderer.render(scene, camera);
+assert.equal(Box3.reads, boundsReadsAfterRepair,
+  'stable frames should use the cached camera requirement instead of traversing backdrop bounds');
+assert.equal(camera.updates, 2, 'stable frames must not rewrite the projection matrix');
+
+console.log('PASS Harugasirri render order/cull range: direct registration works through an intermediate outdoor root, meshes stay outside ordinary culling, and the persistent renderer guard repairs camera range before clipping.');

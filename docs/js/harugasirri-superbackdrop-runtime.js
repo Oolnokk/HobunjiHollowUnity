@@ -251,7 +251,10 @@
         mat.transparent = !!normal.transparent;
         mat.opacity = normal.opacity ?? 1;
         mat.side = normal.side;
-        child.frustumCulled = true;
+        // The horizon mesh is intentionally much larger than the ordinary
+        // gameplay view. Transform refreshes and leaving neon mode must not
+        // undo HarugasirriCullRange's explicit culling bypass.
+        child.frustumCulled = false;
         child.renderOrder = -20;
       }
       mat.needsUpdate = true;
