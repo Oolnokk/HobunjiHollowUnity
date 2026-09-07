@@ -18,6 +18,7 @@
   const ENTRANCE_HALF_WIDTH = 1.75;
   const ENTRANCE_FLARE = 0.65;
   const CLIFF_RISE = 3.0;
+  const CLIFF_UV_PATCH_WORLD_SIZE = 6; // Used to keep the continuous immediate-edge wall from becoming one farm-wide PNG surface.
 
   let deps = null;
   let buildCount = 0;
@@ -284,7 +285,10 @@
         for (const mesh of cliffMeshes) natural?.naturalizeMesh?.(mesh, 'rocks');
       }
       const mapper = window.HobunjiSurfaceStretchUV;
-      for (const mesh of cliffMeshes) mapper?.remapNaturalTerrainMesh?.(mesh, 'farm-border-immediate-edge:post-create');
+      for (const mesh of cliffMeshes) mapper?.mapMesh?.(mesh, {
+        label: 'farm-border-immediate-edge:post-create',
+        maxPatchWorldSize: CLIFF_UV_PATCH_WORLD_SIZE,
+      });
       stats.surfacePipelinePasses++;
     }; // Used once after construction to make the surface mapper authoritative.
     if (typeof queueMicrotask === 'function') queueMicrotask(applyFinishedCliffSurfaces);
@@ -325,6 +329,7 @@
       entranceHalfWidth: ENTRANCE_HALF_WIDTH,
       entranceFlare: ENTRANCE_FLARE,
       cliffRise: CLIFF_RISE,
+      cliffUvPatchWorldSize: CLIFF_UV_PATCH_WORLD_SIZE,
       ...stats,
     }),
   };
