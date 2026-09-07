@@ -37,7 +37,7 @@
     'dye:CLOTH:brown',
     'dye:CLOTH:dusty_yellow',
     'dye:CLOTH:dusty_orange',
-  ]); // Restricts generated Kasa outfits without removing any manual dye choices.
+  ]); // Restricts generated ordinary Kasa outfits without removing any manual dye choices.
 
   const status = {
     installed: true,
@@ -268,7 +268,7 @@
 
   function randomizeVisibleClothing(overlay, speciesId, gender) {
     const selects = [...overlay.querySelectorAll('.ob-equip-sel')].filter(select => !select.disabled);
-    if (!selects.length) return { kasaSelected: false };
+    if (!selects.length) return { kasaSelected: false, kasaKind: null };
 
     let choseClothing = false;
     const forceable = [];
@@ -294,7 +294,8 @@
     }
 
     const selectedHat = overlay.querySelector('.ob-equip-sel[data-ob-equip-cat="hat"]')?.selectedOptions?.[0] || null;
-    return { kasaSelected: !!kasaKindForOption(selectedHat) };
+    const kasaKind = kasaKindForOption(selectedHat);
+    return { kasaSelected: !!kasaKind, kasaKind };
   }
 
   function kasaRandomDyeButtonAllowed(button) {
@@ -309,7 +310,7 @@
     const buttons = overlay ? [...overlay.querySelectorAll(`[${attributeName}]`)] : [];
     if (!buttons.length) return;
     const pool = kasaRestricted ? buttons.filter(kasaRandomDyeButtonAllowed) : buttons;
-    chooseRandom(pool)?.click(); // Empty restricted pool means leave the current dye instead of violating the Kasa palette rule.
+    chooseRandom(pool)?.click(); // Empty restricted pool means leave the current dye instead of violating the ordinary-Kasa palette rule.
   }
 
   function randomizeCreationLook(overlay, speciesId, gender) {
@@ -326,10 +327,11 @@
       const collectionsTab = overlay.querySelector('[data-ob-tab="collections"]');
       collectionsTab?.click(); // Core rerenders synchronously; all following queries intentionally reacquire the current DOM.
       let current = creatorOverlay();
-      const clothingRoll = current ? randomizeVisibleClothing(current, speciesId, gender) : { kasaSelected: false };
+      const clothingRoll = current ? randomizeVisibleClothing(current, speciesId, gender) : { kasaSelected: false, kasaKind: null };
+      const restrictOrdinaryKasaDyes = clothingRoll.kasaKind === 'ordinary-kasa' && (speciesId === 'tletingan' || speciesId === 'mao-ao');
 
-      clickRandomDye('data-ob-cloth-dye-a', clothingRoll.kasaSelected);
-      clickRandomDye('data-ob-cloth-dye-b', clothingRoll.kasaSelected);
+      clickRandomDye('data-ob-cloth-dye-a', restrictOrdinaryKasaDyes);
+      clickRandomDye('data-ob-cloth-dye-b', restrictOrdinaryKasaDyes);
 
       current = creatorOverlay();
       current?.querySelector('[data-ob-tab="appearance"]')?.click();
