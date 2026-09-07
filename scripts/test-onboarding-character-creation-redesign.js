@@ -47,8 +47,9 @@ assert.match(redesign, /if \(gender !== 'male'\) return false;/, 'no female char
 assert.match(redesign, /if \(kind === 'kenkari-bowl-kasa'\) return speciesId === 'kenkari';/, 'Kenkari Bowl-Kasa randomization must be Kenkari-only');
 assert.match(redesign, /return speciesId === 'tletingan' \|\| speciesId === 'mao-ao';/, 'ordinary Kasa randomization must be Tletingan/Mao\'ao-only');
 assert.match(redesign, /filter\(option => randomClothingOptionAllowed\(option, speciesId, gender\)\)/, 'clothing randomization must apply the Kasa eligibility filter without removing manual options');
-assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-a', clothingRoll\.kasaSelected\)/, 'Kasa primary dye randomization must use the restricted palette');
-assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-b', clothingRoll\.kasaSelected\)/, 'Kasa secondary dye randomization must use the restricted palette');
+assert.match(redesign, /const restrictOrdinaryKasaDyes = clothingRoll\.kasaKind === 'ordinary-kasa'[\s\S]{0,120}speciesId === 'tletingan'[\s\S]{0,80}speciesId === 'mao-ao'/, 'ordinary Kasa generated dyes must be restricted only for Tletingan/Mao\'ao');
+assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-a', restrictOrdinaryKasaDyes\)/, 'ordinary Kasa primary dye randomization must use the restricted palette');
+assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-b', restrictOrdinaryKasaDyes\)/, 'ordinary Kasa secondary dye randomization must use the restricted palette');
 
 assert.match(redesign, /buildSinglePlaneAvatarModel/, '3D creator must use the gameplay PNG-plane avatar constructor');
 assert.match(redesign, /portraitView: 'behind'/, '3D creator must build the rear character texture');
