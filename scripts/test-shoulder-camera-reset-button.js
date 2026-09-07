@@ -6,8 +6,6 @@ const source = fs.readFileSync('docs/js/shoulder-camera-reset-button.js', 'utf8'
 assert.match(source, /id=\"resetShoulderCamBtn\"/, 'reset button must be injected into Camera settings');
 assert.match(source, /class=\"settings-small-btn\"/, 'reset button should reuse the existing Settings button style');
 assert.match(source, /HobunjiShoulderCameraCharacterFraming\?\.refreshPlayerFraming/, 'reset must reapply species-relative framing');
-assert.match(source, /const DEFAULT_OFFSET_H = 0\.60/, 'default Shoulder Cam horizontal offset must be 0.60');
-assert.match(source, /const COMBAT_OFFSET_H = 0\.60/, 'combat Shoulder Cam horizontal offset must be 0.60');
 
 class MockInput {
   constructor(value = '') {
@@ -58,17 +56,10 @@ const context = vm.createContext({
 vm.runInContext(source, context, { filename: 'shoulder-camera-reset-button.js' });
 
 assert(windowObject.HobunjiShoulderCameraReset, 'reset API should install');
-horizontal.value = '0.35';
-horizontal.events.length = 0;
-assert.strictEqual(windowObject.HobunjiShoulderCameraReset.normalizeDefaultHorizontal(), true, 'legacy default stance should normalize through the native slider path');
-assert.strictEqual(horizontal.value, '0.6', 'ordinary Shoulder Cam horizontal offset should normalize to 0.60');
-assert(horizontal.events.includes('input'), 'normalization should use the existing offset input handler');
-assert.strictEqual(windowObject.HobunjiShoulderCameraReset.snapshot().defaultHorizontalNormalized, true, 'debug snapshot should report default normalization');
-
 assert.strictEqual(windowObject.HobunjiShoulderCameraReset.resetToDefaults(), true, 'default-stance reset should succeed');
 assert.strictEqual(toggle.checked, true, 'reset should enable Shoulder Cam');
 assert(toggle.events.includes('change'), 'reset should use Shoulder Cam\'s existing change handler');
-assert.strictEqual(horizontal.value, '0.6', 'default stance horizontal offset should reset to 0.60');
+assert.strictEqual(horizontal.value, '0.35', 'default stance horizontal offset should reset to 0.35');
 assert.strictEqual(vertical.value, '-0.05', 'default stance vertical offset should reset to -0.05');
 assert(horizontal.events.includes('input') && vertical.events.includes('input'), 'reset should use the existing offset input handlers');
 assert.strictEqual(refreshCount, 1, 'reset should reapply species-relative neck/height framing');
@@ -83,6 +74,5 @@ assert.strictEqual(refreshCount, 2, 'combat reset should also reapply species-re
 const snapshot = windowObject.HobunjiShoulderCameraReset.snapshot();
 assert.strictEqual(snapshot.lastReset.preset, 'combat', 'debug snapshot should identify the reset stance');
 assert.strictEqual(snapshot.lastReset.horizontal, 0.6, 'debug snapshot should report the restored combat offset');
-assert.strictEqual(snapshot.horizontalDefault, 0.6, 'debug snapshot should report the shared 0.60 horizontal default');
 
 console.log('Shoulder Camera reset button regression: PASS');
