@@ -8,13 +8,16 @@
   let speciesTableCaptured = false; // True once the core's private SPECIES_DATA table has been found and patched.
   let entriesWrapped = false; // Tracks the short-lived Object.entries interception used to reach the private table.
   let portraitFallbackInstalled = false; // Tracks whether female Mashtzarr portraits resolve through the male fighter.
+  let randomizerFallbackInstalled = false; // Tracks the guard that prevents the male fallback fighter from randomly generating facial hair.
 
   const status = {
     fallbackMode: 'male-mashtzarr',
     speciesTableCaptured: false,
     portraitFallbackInstalled: false,
+    randomizerFallbackInstalled: false,
     hairSlotCount: 0,
     hairSlotLabels: [],
+    facialHairAllowed: false,
     lastError: null,
   }; // Mobile-readable status without requiring DevTools.
 
@@ -26,6 +29,17 @@
     return String(fighter?.gender ?? (fighter?.id === 'M' ? 'male' : fighter?.id === 'F' ? 'female' : '')).toLowerCase();
   }
 
+  function isFemaleMashtzarrFallbackFighter(fighter) {
+    return !!fighter?.__hobunjiMashtzarrFemaleFallback
+      || (normalizeSpeciesId(fighter?.speciesId) === 'mashtzarr' && fighterGender(fighter) === 'female');
+  }
+
+  function stripFemaleFacialHair(profile) {
+    if (!profile || !isFemaleMashtzarrFallbackFighter(profile.fighter)) return profile;
+    profile.facialHair = null;
+    return profile;
+  }
+
   function hydratePrivateSpeciesTable(table) {
     const looksLikeCoreSpeciesTable = table?.['mao-ao']?.label === 'Mao-ao'
       && table?.tletingan?.label === 'Tletingan'
@@ -34,14 +48,16 @@
     const mashtzarr = table?.mashtzarr;
     if (!looksLikeCoreSpeciesTable || !mashtzarr || mashtzarr.label !== 'Mashtzarr' || !mashtzarr.male || !Array.isArray(mashtzarr.male.slots)) return false;
 
-    // This is deliberately the exact same object, not a partial cosmetic copy:
-    // the core therefore builds female Mashtzarr with the same Front/Back/Side
-    // Hair selectors, beard selector, and body palette that already work for male.
+    // Reuse the known-good male Mashtzarr data while omitting only facial hair.
+    // Hair controls and the body palette remain the same temporary fallback,
+    // but females cannot select or randomize a beard/moustache cosmetic.
+    const femaleSlots = mashtzarr.male.slots.filter(slot => slot?.slot !== 'facialHair');
+    const femaleData = { ...mashtzarr.male, slots: femaleSlots };
     if (!Array.isArray(mashtzarr.genders)) mashtzarr.genders = ['male'];
     if (!mashtzarr.genders.includes('female')) mashtzarr.genders.push('female');
-    mashtzarr.female = mashtzarr.male;
+    mashtzarr.female = femaleData;
 
-    const hairSlots = mashtzarr.male.slots.filter(slot => String(slot?.slot || '').startsWith('hair'));
+    const hairSlots = femaleSlots.filter(slot => String(slot?.slot || '').startsWith('hair'));
     speciesTableCaptured = true;
     status.speciesTableCaptured = true;
     status.hairSlotCount = hairSlots.length;
@@ -108,21 +124,51 @@
     return true;
   }
 
-  function ensurePortraitFallback() {
-    if (installMalePortraitFallback()) return;
-    requestAnimationFrame(ensurePortraitFallback); // portrait-utils may finish loading after this compatibility layer.
+  function installRandomizerFallback() {
+    const current = window.randomPortraitProfileSeeded;
+    if (typeof current !== 'function') return false;
+    if (current.__hobunjiMashtzarrFemaleNoFacialHair) {
+      randomizerFallbackInstalled = true;
+      status.randomizerFallbackInstalled = true;
+      return true;
+    }
+
+    const wrapped = function randomPortraitProfileSeededWithoutFemaleMashtzarrFacialHair(...args) {
+      const profile = current.apply(this, args);
+      const fighters = args[1];
+      if (Array.isArray(fighters) && fighters.some(isFemaleMashtzarrFallbackFighter)) {
+        stripFemaleFacialHair(profile);
+      }
+      return profile;
+    };
+    wrapped.__hobunjiMashtzarrFemaleNoFacialHair = true;
+    wrapped.__hobunjiOriginalRandomPortraitProfileSeeded = current;
+    window.randomPortraitProfileSeeded = wrapped;
+    randomizerFallbackInstalled = true;
+    status.randomizerFallbackInstalled = true;
+    return true;
+  }
+
+  function ensureRuntimeFallbacks() {
+    const portraitReady = installMalePortraitFallback();
+    const randomizerReady = installRandomizerFallback();
+    if (portraitReady && randomizerReady) return;
+    requestAnimationFrame(ensureRuntimeFallbacks); // portrait-utils may finish loading after this compatibility layer.
   }
 
   installSpeciesTableCapture();
-  ensurePortraitFallback();
+  ensureRuntimeFallbacks();
 
   window[PATCH_ID] = Object.freeze({
     fallbackMode: 'male-mashtzarr',
     hydratePrivateSpeciesTable,
     installMalePortraitFallback,
+    installRandomizerFallback,
+    stripFemaleFacialHair,
     status,
     get speciesTableCaptured() { return speciesTableCaptured; },
     get entriesWrapped() { return entriesWrapped; },
     get portraitFallbackInstalled() { return portraitFallbackInstalled; },
+    get randomizerFallbackInstalled() { return randomizerFallbackInstalled; },
   });
 })();
