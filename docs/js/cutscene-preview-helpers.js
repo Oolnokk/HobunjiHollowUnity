@@ -200,11 +200,3 @@
     cutscenePreviewAngleToward, cutscenePreviewApplyState,
   };
 })();
-
-// PrologueSystem must install before onboarding dispatches hobunjiPlayerReady
-// and before CalendarSystem is assigned. This helper is already the earliest
-// game-only parser-time script, so inject the dedicated runtime synchronously
-// here instead of duplicating those gates in game.js/onboarding.js.
-if (!window.PrologueSystem && document.readyState === 'loading') {
-  document.write('<script src="js/prologue-system.js?v=20260907a">' + '</scr' + 'ipt>');
-}
