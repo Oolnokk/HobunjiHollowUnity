@@ -1,12 +1,12 @@
 // Hobunji Hollow — character-creation workflow redesign.
-// Keeps onboarding-core.js authoritative for saves/state while replacing only the creator presentation.
+// onboarding-core.js remains authoritative for save/profile state; this module owns creator presentation.
 (() => {
   'use strict';
 
   const REDESIGN_ID = 'hobunjiOnboardingCharacterCreationRedesign'; // Prevents duplicate installation.
   if (window[REDESIGN_ID]) return;
 
-  const LORE = Object.freeze({ // Player-facing species and subspecies descriptions.
+  const LORE = Object.freeze({
     slagothim: Object.freeze({
       label: 'Slagothim',
       text: 'Sloth-folk of the Northern Archipelago, and the lifeblood of cross-continental trade. Their people possess an unusual affinity for beasts, impossibly strong backs and the ability to turn completely invisible with sustained stillness. However, without regularly chewing their sacred Koma Leaf, they are cursed to move with the extreme slowness of their tree-dwelling ancestors.',
@@ -33,7 +33,7 @@
     }),
   });
 
-  const status = { // Mobile-visible diagnostics mirrored below the viewport.
+  const status = {
     installed: true,
     preview: 'idle',
     speciesId: null,
@@ -42,18 +42,21 @@
     lighting: 'game.buildZoneScene',
     materials: 'runtime avatar materials',
     shellOutline: 'runtime layer-1 shell',
+    randomizedIdentity: null,
     lastError: null,
-  };
+  }; // Mobile-visible diagnostics for the creator.
   window.HOBUNJI_ONBOARDING_REDESIGN_STATUS = status;
 
-  let familyOpen = false; // Whether the Slagothim second step is currently open.
-  let observer = null; // Re-applies the presentation after onboarding-core replaces innerHTML.
-  let enhanceQueued = false; // Coalesces mutation callbacks.
-  let previewScene = null; // Active Three.js creator scene.
+  let familyOpen = false; // Tracks the Slagothim family step before Tletingan is chosen.
+  let previewScene = null; // Current creator-only Three.js scene.
   let previewBuildGeneration = 0; // Invalidates stale async avatar builds.
-  let lastRenderPromise = Promise.resolve(); // Serializes portrait-derived avatar builds.
-  let lastRandomizedSpecies = null; // Ensures colors reroll once per concrete species selection.
-  let creatorWasVisible = false; // Distinguishes a new character-creation session from tab rerenders.
+  let lastRenderPromise = Promise.resolve(); // Serializes back/head texture rendering.
+  let bodyObserver = null; // Watches only for the onboarding overlay being mounted/unmounted.
+  let overlayObserver = null; // Watches only direct overlay-child replacements performed by onboarding-core.
+  let observedOverlay = null; // Overlay currently owned by overlayObserver.
+  let enhanceQueued = false; // Coalesces core rerenders into one enhancement pass.
+  let lastRandomizedIdentity = null; // Species+gender key most recently given a generated look.
+  let randomizingLook = false; // Prevents the internal Collections transaction from re-entering itself.
 
   function normalizeSpecies(value) {
     const raw = String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
@@ -65,8 +68,12 @@
     return raw === 'female' || raw === 'f' ? 'female' : 'male';
   }
 
+  function overlayElement() {
+    return document.getElementById('ob-overlay');
+  }
+
   function creatorOverlay() {
-    const overlay = document.getElementById('ob-overlay');
+    const overlay = overlayElement();
     return overlay?.querySelector('#ob-portrait-canvas') ? overlay : null;
   }
 
@@ -123,8 +130,7 @@
   }
 
   function speciesDescriptionHtml(entry) {
-    if (!entry) return '';
-    return `<div class="ob-species-description"><strong>${entry.label}</strong>${entry.text}</div>`;
+    return entry ? `<div class="ob-species-description"><strong>${entry.label}</strong>${entry.text}</div>` : '';
   }
 
   function speciesGroup(overlay) {
@@ -133,9 +139,9 @@
   }
 
   function renderSpeciesDetails(overlay, group, tletinganButton) {
-    overlay.querySelectorAll('[data-ob-redesign-details="1"]').forEach(node => node.remove());
+    group.parentElement?.querySelector('[data-ob-redesign-details="1"]')?.remove();
     const currentSpecies = activeCoreSpecies(overlay);
-    const tletinganActive = tletinganButton?.classList.contains('ob-active') || currentSpecies === 'tletingan';
+    const tletinganActive = currentSpecies === 'tletingan' || !!tletinganButton?.classList.contains('ob-active');
     if (tletinganActive) familyOpen = true;
 
     const familyButton = group.querySelector('[data-ob-family="slagothim"]');
@@ -146,8 +152,7 @@
     details.dataset.obRedesignDetails = '1';
 
     if (!showFamily) {
-      const entry = LORE[currentSpecies];
-      if (entry) details.innerHTML = speciesDescriptionHtml(entry);
+      details.innerHTML = speciesDescriptionHtml(LORE[currentSpecies]);
       group.after(details);
       return;
     }
@@ -173,14 +178,13 @@
   }
 
   function enhanceSpeciesWorkflow(overlay) {
-    const group = speciesGroup(overlay); // Anchors directly on the legacy Tletingan control instead of label text.
+    const group = speciesGroup(overlay);
     if (!group) return;
     const tletinganButton = group.querySelector('[data-ob-species="tletingan"]');
     if (!tletinganButton) return;
 
     tletinganButton.hidden = true;
-    const tletinganActive = tletinganButton.classList.contains('ob-active');
-    if (tletinganActive) familyOpen = true;
+    if (tletinganButton.classList.contains('ob-active')) familyOpen = true;
 
     const maoButton = group.querySelector('[data-ob-species="mao-ao"]');
     if (maoButton) maoButton.textContent = "Mao'ao";
@@ -212,19 +216,78 @@
     renderSpeciesDetails(overlay, group, tletinganButton);
   }
 
-  function maybeRandomizeBodyColors(overlay) {
-    const speciesId = activeCoreSpecies(overlay);
-    if (!speciesId || speciesId === lastRandomizedSpecies) return;
+  function randomIndex(length) {
+    return length > 0 ? Math.floor(Math.random() * length) : -1;
+  }
+
+  function clickRandomBodyColors(overlay) {
     const primary = [...overlay.querySelectorAll('[data-ob-a]')];
     const secondary = [...overlay.querySelectorAll('[data-ob-b]')];
     if (!primary.length || !secondary.length) return;
 
-    const primaryIndex = Math.floor(Math.random() * primary.length);
-    let secondaryIndex = Math.floor(Math.random() * secondary.length);
+    const primaryIndex = randomIndex(primary.length);
+    let secondaryIndex = randomIndex(secondary.length);
     if (secondary.length > 1 && secondaryIndex === primaryIndex) secondaryIndex = (secondaryIndex + 1) % secondary.length;
-    lastRandomizedSpecies = speciesId;
     primary[primaryIndex]?.click();
     secondary[secondaryIndex]?.click();
+  }
+
+  function randomizeVisibleClothing(overlay) {
+    const selects = [...overlay.querySelectorAll('.ob-equip-sel')].filter(select => !select.disabled);
+    if (!selects.length) return;
+
+    let choseClothing = false;
+    const forceable = [];
+    for (const select of selects) {
+      const nonEmpty = [...select.options].filter(option => option.value);
+      if (!nonEmpty.length) continue;
+      forceable.push({ select, nonEmpty });
+      const category = select.dataset.obEquipCat;
+      const pool = category === 'torso' ? nonEmpty : [...select.options];
+      const chosen = pool[randomIndex(pool.length)];
+      select.value = chosen?.value || '';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      if (select.value) choseClothing = true;
+    }
+
+    if (!choseClothing && forceable.length) {
+      const forced = forceable[randomIndex(forceable.length)];
+      const option = forced.nonEmpty[randomIndex(forced.nonEmpty.length)];
+      forced.select.value = option.value;
+      forced.select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function clickRandomDye(attributeName) {
+    const overlay = creatorOverlay();
+    const buttons = overlay ? [...overlay.querySelectorAll(`[${attributeName}]`)] : [];
+    if (!buttons.length) return;
+    buttons[randomIndex(buttons.length)]?.click();
+  }
+
+  function randomizeCreationLook(overlay, speciesId, gender) {
+    const identityKey = `${speciesId}::${gender}`;
+    if (randomizingLook || !speciesId || identityKey === lastRandomizedIdentity) return;
+    randomizingLook = true;
+    lastRandomizedIdentity = identityKey; // Set before synthetic rerenders so observer callbacks cannot repeat the transaction.
+    status.randomizedIdentity = identityKey;
+
+    try {
+      clickRandomBodyColors(overlay);
+
+      const collectionsTab = overlay.querySelector('[data-ob-tab="collections"]');
+      collectionsTab?.click(); // Core rerenders synchronously; all following queries intentionally reacquire the current DOM.
+      let current = creatorOverlay();
+      if (current) randomizeVisibleClothing(current);
+
+      clickRandomDye('data-ob-cloth-dye-a');
+      clickRandomDye('data-ob-cloth-dye-b');
+
+      current = creatorOverlay();
+      current?.querySelector('[data-ob-tab="appearance"]')?.click();
+    } finally {
+      randomizingLook = false;
+    }
   }
 
   function setPreviewStatus(text, isError = false) {
@@ -341,6 +404,7 @@
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     if ('outputEncoding' in renderer && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
+
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 100);
     camera.position.set(1.55, 1.08, 2.75);
@@ -445,9 +509,9 @@
   }
 
   function runtimeScaleFor(speciesId, gender) {
-    const apiScale = window.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender);
-    if (apiScale) return apiScale;
-    return window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(speciesId, gender) || { x: 1, y: 1, head: 1, offsetY: 0 };
+    return window.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender)
+      || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(speciesId, gender)
+      || { x: 1, y: 1, head: 1, offsetY: 0 };
   }
 
   function clearAvatarFromPreview(sceneState) {
@@ -463,6 +527,7 @@
   async function buildRuntimeAvatar(frontCanvas, profile, buildGeneration) {
     const overlay = creatorOverlay();
     if (!overlay || !frontCanvas?.isConnected || buildGeneration !== previewBuildGeneration) return;
+
     const sourceCanvas = ensurePreviewShell(overlay);
     const sceneState = previewScene;
     if (!sceneState || !sourceCanvas) return;
@@ -472,6 +537,7 @@
 
     const identity = identityFromProfile(profile, overlay);
     if (!identity.speciesId) throw new Error('Could not resolve the selected species.');
+
     const portraitSize = Math.max(64, Number(frontCanvas.width) || 200);
     const backCanvas = Object.assign(document.createElement('canvas'), { width: portraitSize, height: portraitSize });
     const headCanvas = Object.assign(document.createElement('canvas'), { width: portraitSize, height: portraitSize });
@@ -483,6 +549,7 @@
     const THREE = sceneState.THREE;
     const group = new THREE.Group();
     group.name = `OnboardingPlayerPreview_${identity.speciesId}_${identity.gender}`;
+
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const baseWidth = Number(avatarCfg.worldModelWidth) > 0 ? Number(avatarCfg.worldModelWidth) : 0.9;
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
@@ -505,6 +572,7 @@
     const modelHeight = Number(model.userData.portraitModelHeight) || baseWidth;
     const modelWidth = Number(model.userData.portraitModelWidth) || baseWidth;
     model.position.y = modelHeight / 2;
+
     const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, {
       speciesId: identity.speciesId,
       gender: identity.gender,
@@ -548,6 +616,7 @@
     status.lastError = null;
     setPreviewStatus(`3D preview: loading ${LORE[identity.speciesId]?.label || identity.speciesId || 'character'}…`);
     setPreviewLoading(`Loading ${LORE[identity.speciesId]?.label || identity.speciesId || 'character'} preview…`, 'loading');
+
     lastRenderPromise = lastRenderPromise
       .catch(() => {})
       .then(() => buildRuntimeAvatar(frontCanvas, profile, generation))
@@ -563,7 +632,7 @@
 
   function wrapPortraitRenderer(name) {
     const original = window[name];
-    if (typeof original !== 'function' || original.__hobunjiOnboarding3dWrapped) return;
+    if (typeof original !== 'function' || original.__hobunjiOnboarding3dWrapped) return true;
     const wrapped = function (...args) {
       const [canvas, profile] = args;
       const result = original.apply(this, args);
@@ -576,28 +645,27 @@
     Object.assign(wrapped, original);
     wrapped.__hobunjiOnboarding3dWrapped = true;
     window[name] = wrapped;
+    return true;
   }
 
   function enhanceCreator() {
     enhanceQueued = false;
-    const overlay = creatorOverlay();
+    let overlay = creatorOverlay();
     if (!overlay) {
-      if (creatorWasVisible) lastRandomizedSpecies = null;
-      creatorWasVisible = false;
+      lastRandomizedIdentity = null;
       familyOpen = false;
       if (previewScene?.canvas && !previewScene.canvas.isConnected) disposePreviewScene();
       return;
     }
 
-    if (!creatorWasVisible) {
-      creatorWasVisible = true;
-      lastRandomizedSpecies = null;
-      familyOpen = false;
-    }
-    installStyle();
+    const speciesId = activeCoreSpecies(overlay);
+    const gender = activeCoreGender(overlay);
+    randomizeCreationLook(overlay, speciesId, gender);
+
+    overlay = creatorOverlay(); // The randomization transaction finishes back on Appearance with a fresh core DOM.
+    if (!overlay) return;
     ensurePreviewShell(overlay);
     enhanceSpeciesWorkflow(overlay);
-    maybeRandomizeBodyColors(overlay);
   }
 
   function queueEnhance() {
@@ -606,45 +674,45 @@
     queueMicrotask(enhanceCreator);
   }
 
-  function installObserver() {
-    if (observer) return;
-    if (!document.body) {
-      document.addEventListener('DOMContentLoaded', installObserver, { once: true });
-      return;
-    }
-    observer = new MutationObserver(queueEnhance);
-    observer.observe(document.body, { childList: true, subtree: true });
-    queueEnhance();
+  function attachOverlayObserver() {
+    const overlay = overlayElement();
+    if (overlay === observedOverlay) return;
+    overlayObserver?.disconnect();
+    observedOverlay = overlay;
+    if (!overlay) return;
+
+    overlayObserver = new MutationObserver(() => queueEnhance());
+    overlayObserver.observe(overlay, { childList: true }); // Direct children only: core innerHTML replacements trigger; nested redesign changes do not.
   }
 
-  function installOnboardingInitHook() {
-    const api = window.HobunjiOnboarding;
-    if (!api?.init || api.init.__hobunjiCharacterCreatorRedesignWrapped) return false;
-    const originalInit = api.init.bind(api);
-    const wrappedInit = function (...args) {
-      installObserver();
-      const result = originalInit(...args);
+  function installObservers() {
+    const start = () => {
+      if (bodyObserver) return;
+      bodyObserver = new MutationObserver(() => {
+        attachOverlayObserver();
+        queueEnhance();
+      });
+      bodyObserver.observe(document.body, { childList: true }); // Only detects #ob-overlay mount/unmount at body level.
+      attachOverlayObserver();
       queueEnhance();
-      return result;
     };
-    wrappedInit.__hobunjiCharacterCreatorRedesignWrapped = true;
-    api.init = wrappedInit;
-    return true;
+
+    if (document.body) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
   }
 
   function install() {
     installStyle();
     wrapPortraitRenderer('renderPortraitProfile');
     wrapPortraitRenderer('renderProfile');
-    installObserver();
-    if (!installOnboardingInitHook()) {
-      let attempts = 0;
-      const timer = setInterval(() => {
-        wrapPortraitRenderer('renderPortraitProfile');
-        wrapPortraitRenderer('renderProfile');
-        if (installOnboardingInitHook() || ++attempts >= 200) clearInterval(timer);
-      }, 50);
-    }
+    installObservers();
+
+    let attempts = 0;
+    const timer = setInterval(() => {
+      const a = wrapPortraitRenderer('renderPortraitProfile');
+      const b = wrapPortraitRenderer('renderProfile');
+      if ((a && b) || ++attempts >= 200) clearInterval(timer);
+    }, 50);
   }
 
   window[REDESIGN_ID] = Object.freeze({ install, lore: LORE, status });
