@@ -75,14 +75,36 @@ function surfaceDimensions(group) {
   };
 }
 
+function alphaSafeDecalSource(image) {
+  const width = Math.max(1, image.naturalWidth || image.width || 1);
+  const height = Math.max(1, image.naturalHeight || image.height || 1);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { alpha: true });
+  if (!context) return image;
+  context.clearRect(0, 0, width, height);
+  // Copy RGBA pixels onto a genuinely transparent backing canvas. This keeps
+  // catalog PNG/WebP alpha instead of inheriting an opaque preview background.
+  context.globalCompositeOperation = 'copy';
+  context.drawImage(image, 0, 0, width, height);
+  return canvas;
+}
+
 function loadDecalTexture(source) {
   if (!source) return Promise.resolve(null);
   if (decalTextureCache.has(source)) return decalTextureCache.get(source);
   const promise = new Promise((resolve, reject) => {
     const image = new Image();
+    if (/^https?:/i.test(source)) image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
     image.onload = () => {
-      const texture = new THREE.Texture(image);
-      texture.encoding = THREE.sRGBEncoding;
+      const alphaSource = alphaSafeDecalSource(image);
+      const texture = alphaSource === image ? new THREE.Texture(image) : new THREE.CanvasTexture(alphaSource);
+      texture.format = THREE.RGBAFormat;
+      texture.premultiplyAlpha = false;
+      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+      else texture.encoding = THREE.sRGBEncoding;
       texture.needsUpdate = true;
       resolve(texture);
     };
@@ -138,7 +160,7 @@ function buildDecalMesh(record) {
     color: 0xffffff,
     transparent: true,
     opacity: record.opacity,
-    alphaTest: .01,
+    alphaTest: .001,
     depthWrite: false,
     side: THREE.DoubleSide,
     polygonOffset: true,
