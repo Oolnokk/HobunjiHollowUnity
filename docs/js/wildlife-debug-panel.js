@@ -6,7 +6,37 @@
   // Teleport button. Extracted out of game.js following the same
   // window.<Namespace> + init(deps) pattern as its sibling systems.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+
+  function syncWildlifeTabVisibility() {
+    const tab = document.querySelector('.mp-tab[data-mpanel="wildlife"]'); // Wildlife menu tab; hidden whenever Dev Mode is disabled.
+    if (!tab) return;
+    const devModeToggle = document.getElementById('settingDevMode'); // Existing authoritative Dev Mode checkbox used to decide tab visibility.
+    const devMode = devModeToggle ? devModeToggle.checked : !!deps?.isDevMode?.(); // Falls back to injected game state if the Settings control is unavailable.
+    tab.style.display = devMode ? '' : 'none';
+
+    if (!devMode && tab.classList.contains('active')) {
+      const settingsTab = document.querySelector('.mp-tab[data-mpanel="settings"]'); // Safe visible fallback when Dev Mode is switched off from the Wildlife pane.
+      settingsTab?.click();
+    }
+  }
+
+  function bindDevModeVisibility() {
+    const devModeToggle = document.getElementById('settingDevMode'); // Bound once so Wildlife visibility updates immediately when Dev Mode changes.
+    if (devModeToggle && devModeToggle.dataset.wildlifeTabBound !== '1') {
+      devModeToggle.dataset.wildlifeTabBound = '1';
+      devModeToggle.addEventListener('change', syncWildlifeTabVisibility);
+    }
+    syncWildlifeTabVisibility();
+  }
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindDevModeVisibility, { once: true });
+    } else {
+      bindDevModeVisibility();
+    }
+  }
 
   // "Nest trees should be about as common as gar-wolf dens" is a claim
   // about the CURRENT zone (see wildlife-spawn.js's eligibleNestBranches),
@@ -26,6 +56,7 @@
   }
 
   function renderWildlifeDebugPanel() {
+    syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
     const censusHtml = renderDenNestCensus();
@@ -83,5 +114,5 @@
     container.innerHTML = censusHtml + rows.join('');
   }
 
-  window.WildlifeDebugPanel = { init, render: renderWildlifeDebugPanel };
+  window.WildlifeDebugPanel = { init, render: renderWildlifeDebugPanel, syncVisibility: syncWildlifeTabVisibility };
 })();
