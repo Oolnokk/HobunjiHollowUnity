@@ -32,8 +32,8 @@ if (!cliffSource.includes('queueMicrotask(applyFinishedCliffSurfaces)') || !clif
 if (!surfaceMapperSource.includes('@uvpatch:') || !surfaceMapperSource.includes('maxPatchWorldSize')) {
   throw new Error('surface mapper cannot bound UV islands on a continuous generated cliff');
 }
-for (const expected of ['naturalEdgeRise(gi, gj, outsideSteps)', 'EDGE_PROFILE_COARSE_SPAN = 3.75', 'brokenCrown', 'entranceCenter', 'roadSafeHalf']) {
-  if (!cliffSource.includes(expected)) throw new Error(`missing natural farm-cliff profile contract: ${expected}`);
+for (const expected of ['townRidgeRise(gi, gj)', 'TOWN_RIDGE_VERTEX_SPAN = 5', 'return 2.2 + (h >>> 0) / 4294967296 * 3.2']) {
+  if (!cliffSource.includes(expected)) throw new Error(`missing town-style low-poly farm-cliff profile contract: ${expected}`);
 }
 
 console.log('PASS farm cliffs map after construction; road crosses the border gap and suppresses underlying grass.');
