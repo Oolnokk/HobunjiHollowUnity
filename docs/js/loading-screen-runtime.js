@@ -242,6 +242,19 @@
     return sentence && sentence.length >= 45 ? sentence : `${text.slice(0, 276).trimEnd()}…`;
   }
 
+  function resolveCompendiumTipTitle(card, text) {
+    const source = String(text || '').trim(); // Used to detect explicit inner labels such as "Humour:" before falling back to the card hierarchy.
+    const labeledPrefix = source.match(/^([^:]{2,48}):\s+\S/); // Used to promote a named child concept to the loading-screen header when the tip itself names one.
+    if (labeledPrefix) {
+      const label = labeledPrefix[1].trim(); // Used as the most-specific header for structured Compendium notes.
+      if (!/^(?:Tags|Keywords)$/i.test(label)) return label;
+    }
+    const entryTitle = card.querySelector?.('.compendium-entry-title')?.textContent?.trim() || ''; // Used as the normal per-feature title when no child label is present.
+    const sectionTitle = card.closest?.('.compendium-section')?.querySelector?.('.compendium-section-title')?.textContent?.trim() || ''; // Used to disambiguate broad entry names such as Fishing inside Character Skills.
+    if (/^Character Skills$/i.test(sectionTitle) && entryTitle && !/\bSkill\b/i.test(entryTitle)) return `${entryTitle} Skill`;
+    return entryTitle || sectionTitle || 'Compendium';
+  }
+
   function extractCompendiumTips() {
     try { window.CompendiumUI?.install?.(); } catch (_) {}
     const pane = document.querySelector?.('#mpCompendium');
@@ -252,11 +265,13 @@
       const title = card.querySelector?.('.compendium-entry-title')?.textContent?.trim() || 'Compendium';
       if (/unavailable|diagnostic/i.test(title)) continue;
       const copy = compactTip(card.querySelector?.('.compendium-entry-copy')?.textContent);
-      if (copy.length >= 20) tips.push({ key: `${title}:copy`, title, text: copy });
+      const copyTitle = resolveCompendiumTipTitle(card, copy); // Used so each main card tip carries the narrowest meaningful feature label.
+      if (copy.length >= 20) tips.push({ key: `${title}:copy`, title: copyTitle, text: copy });
       const notes = card.querySelectorAll?.('.compendium-notes li') || [];
       for (let index = 0; index < notes.length; index++) {
         const note = compactTip(notes[index]?.textContent);
-        if (note.length >= 20) tips.push({ key: `${title}:note:${index}`, title, text: note });
+        const noteTitle = resolveCompendiumTipTitle(card, note); // Used so structured child notes can override the broader card title.
+        if (note.length >= 20) tips.push({ key: `${title}:note:${index}`, title: noteTitle, text: note });
       }
     }
     return tips;
