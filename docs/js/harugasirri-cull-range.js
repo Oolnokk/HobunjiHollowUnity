@@ -10,6 +10,7 @@
 
   const trackedGroups = new Set();
   const cameraStates = new WeakMap();
+  const hookedRendererInstances = new WeakSet();
   let renderHook = null;
   let rangeRevision = 0;
   const stats = {
@@ -170,18 +171,44 @@
     return (Number(camera?.far) || 0) + 0.5 < (Number(state.lastAppliedFar) || 0);
   }
 
+  function guardRender(scene, camera) {
+    if (!sceneHasTrackedBackdrop(scene) || !camera?.isPerspectiveCamera) return;
+    stats.renderHookHits++;
+    // The permanent guard itself is intentionally tiny. World-bounds work
+    // only repeats after a transform/attachment revision or if another
+    // system actually lowers the camera range again.
+    if (cameraRangeNeedsCheck(camera)) ensureCameraRange(scene, camera);
+  }
+
+  function hookRendererInstance(renderer) {
+    if (!renderer || hookedRendererInstances.has(renderer) || typeof renderer.render !== 'function') return false;
+    const previous = renderer.render;
+    renderer.render = function harugasirriRangeRender(scene, camera, ...rest) {
+      guardRender(scene, camera);
+      return previous.call(this, scene, camera, ...rest);
+    };
+    hookedRendererInstances.add(renderer);
+    return true;
+  }
+
   function armRenderHook() {
     if (renderHook || typeof rendererPrototype.render !== 'function') return false;
+    let instanceCount = 0;
+    for (const renderer of window.__hobunjiRendererInstances || []) {
+      if (hookRendererInstance(renderer)) instanceCount++;
+    }
+    if (instanceCount > 0) {
+      // Three r128 and several gameplay bridges can leave an own render()
+      // method on the live instance. Hook that authoritative boundary when
+      // available instead of assuming the prototype remains observable.
+      renderHook = { instances: instanceCount };
+      stats.renderHookArms++;
+      return true;
+    }
     const previous = rendererPrototype.render;
     const hook = { previous, wrapped: null };
     hook.wrapped = function (scene, camera, ...rest) {
-      if (sceneHasTrackedBackdrop(scene) && camera?.isPerspectiveCamera) {
-        stats.renderHookHits++;
-        // The permanent guard itself is intentionally tiny. World-bounds work
-        // only repeats after a transform/attachment revision or if another
-        // system actually lowers the camera range again.
-        if (cameraRangeNeedsCheck(camera)) ensureCameraRange(scene, camera);
-      }
+      guardRender(scene, camera);
       return previous.call(this, scene, camera, ...rest);
     };
     renderHook = hook;

@@ -44,6 +44,10 @@
 
     const rendererPrototype = OriginalWebGLRenderer.prototype; // Used as the stable hook surface PlayerBodyTransformComposer wraps next.
     const preexistingPrototypeRender = rendererPrototype.render; // Preserved for Three builds that already expose prototype render().
+    const rendererInstances = window.__hobunjiRendererInstances instanceof Set
+      ? window.__hobunjiRendererInstances
+      : new Set(); // Used by late visual systems that must decorate the actual live r128 renderer after boot.
+    window.__hobunjiRendererInstances = rendererInstances;
 
     if (typeof rendererPrototype.render !== 'function') {
       rendererPrototype.render = function hobunjiBaseRendererRender(...args) {
@@ -63,6 +67,7 @@
         });
         delete instance.render;
       }
+      rendererInstances.add(instance);
       return instance;
     }
 

@@ -29,6 +29,8 @@ for (const modulePath of [
 assert.ok(loader.includes('makeRendererPrototypeHookable'), 'bootstrap adapts r128 renderer instances for the composer hook');
 assert.ok(loader.includes('__hobunjiBaseRendererRender'), 'bootstrap preserves the real instance render implementation');
 assert.ok(loader.includes('delete instance.render'), 'renderer instances no longer shadow the composer prototype hook');
+assert.ok(loader.includes('__hobunjiRendererInstances'),
+  'bootstrap retains the actual renderer instances for late post-bootstrap render decorators');
 assert.ok(
   loader.indexOf('makeRendererPrototypeHookable();') < loader.indexOf("'js/player-body-transform-composer.js"),
   'renderer compatibility is installed before player-body-transform-composer executes'

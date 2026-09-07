@@ -13,6 +13,8 @@ const runtimeSource = fs.readFileSync(path.join(repoRoot, 'docs/js/harugasirri-s
 assert.equal(source.includes('requestAnimationFrame('), false, 'Harugasirri render-order/cull guard must not add frame-loop work');
 assert.equal(source.includes('setInterval('), false, 'Harugasirri render-order/cull guard must not poll');
 assert(source.includes('rendererPrototype.render'), 'camera range should use the shared renderer boundary, not Scene.onBeforeRender');
+assert(source.includes('__hobunjiRendererInstances'),
+  'camera range should prefer the actual registered r128 renderer instance when available');
 assert.equal(source.includes('restoreRenderHook'), false,
   'camera range must remain guarded after the first render because renderer/camera decorators can later restore the stock far plane');
 assert(runtimeSource.includes('child.frustumCulled = false;'),
@@ -77,8 +79,11 @@ class WebGLRenderer {
 const THREE = { Object3D, Scene, Box3, Sphere, WebGLRenderer };
 const listeners = new Map();
 const audits = new Map();
+const renderer = new THREE.WebGLRenderer();
+const baseInstanceRender = renderer.render;
 const windowObj = {
   THREE,
+  __hobunjiRendererInstances: new Set([renderer]),
   addEventListener(name, fn) { listeners.set(name, fn); },
   HobunjiCacheAudit: { register(name, fn) { audits.set(name, fn); } },
 };
@@ -114,8 +119,10 @@ assert.equal(group.renderOrder, 1,
 assert(meshes.every(mesh => mesh.frustumCulled === false),
   'all three low-poly Harugasirri meshes should bypass ordinary frustum culling');
 assert.equal(group.userData.harugasirriOpaqueGroupOrder, 1);
-assert.notEqual(THREE.WebGLRenderer.prototype.render, baseRender,
-  'direct registration should arm the renderer guard before the next real render');
+assert.equal(THREE.WebGLRenderer.prototype.render, baseRender,
+  'the prototype should remain untouched when the actual r128 renderer instance is registered');
+assert.notEqual(renderer.render, baseInstanceRender,
+  'direct registration should arm the actual renderer instance before the next real render');
 assert.equal(audits.get('Harugasirri range direct registrations')(), 1,
   'the live attach handoff must be visible in performance snapshots');
 
@@ -126,13 +133,12 @@ const camera = {
   updates: 0,
   updateProjectionMatrix() { this.updates++; },
 };
-const renderer = new THREE.WebGLRenderer();
 const result = renderer.render(scene, camera);
 assert.equal(result, 'rendered');
 assert(camera.far > 900, 'camera far must expand from actual Harugasirri world bounds, not stop at the 512 minimum');
 assert.equal(camera.updates, 1, 'camera projection should update exactly once when its far plane is raised');
-assert.notEqual(THREE.WebGLRenderer.prototype.render, baseRender,
-  'camera-range renderer guard must remain installed after the first matching render');
+assert.notEqual(renderer.render, baseInstanceRender,
+  'camera-range renderer instance guard must remain installed after the first matching render');
 assert.equal(renderer.renderCalls, 1, 'the wrapped render must still call the prior renderer exactly once');
 assert.equal(audits.get('Harugasirri frustum bypass meshes')(), 3);
 assert.equal(audits.get('Harugasirri opaque group order')(), 1);
