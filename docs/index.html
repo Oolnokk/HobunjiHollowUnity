@@ -322,7 +322,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20260907c"></script>
+  <script src="js/house-pieces.js?v=20260907f"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -551,7 +551,7 @@
        from house-pieces.js ran the cliff adapter before BorderTerrain existed,
        so the adapter returned without ever wrapping the farm border build. -->
   <script src="js/farm-path-bricks.js?v=20260907d"></script>
-  <script src="js/farm-border-cliff-edge.js?v=20260907d"></script>
+  <script src="js/farm-border-cliff-edge.js?v=20260907e"></script>
   <!-- Procedural den-cavern floor generation (window.CavernGenerator) —
        pure data generation, no scene-graph/window.* system reads at load
        time (window.WildlifeSpawn/window.__farmLog are read lazily, at
