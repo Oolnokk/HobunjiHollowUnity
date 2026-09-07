@@ -509,6 +509,7 @@
         if (_dialogueWalker) {
           if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.set(0, 0, 0);
           _dialogueWalker._lookAtDebug = null;
+          delete _dialogueWalker._dialogueBodyRot;
           _dialogueWalker.pause = 0;
           // Resume at the normal schedule speed. Dialogue must not create a
           // temporary catch-up sprint for an NPC who was already in transit.
@@ -9967,6 +9968,9 @@
         return _aimNeckAtWorldPoint(neckJoint, selfRootPosition, selfModelHeight, _dialogueEyeWorldPosition(targetRootPosition, targetModelHeight), maxYawDeg, maxPitchDeg, debugEntity);
       }
 
+      const NPC_DIALOGUE_HEAD_MAX_YAW_DEG = 65; // Player-matched physical neck range used before an NPC dialogue body needs to follow.
+      const NPC_DIALOGUE_BODY_FREE_LOOK_RAD = Math.PI / 3; // Same 60° head-first cone used by ambient greetings and stationary player look.
+
       // Default look-target height (world units above the target tile's own
       // floor) for an authored npcStation `lookAt` that doesn't specify its
       // own `height` — tuned for a low fire/altar rather than another
@@ -10017,7 +10021,16 @@
         player.angle = facingAngle;
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
+        if (!Number.isFinite(walker._dialogueBodyRot)) walker._dialogueBodyRot = Number.isFinite(walker.desiredRot) ? walker.desiredRot : walker.root.rotation.y;
+        const npcBodyResidual = angleDiff(npcTargetRot, walker._dialogueBodyRot); // Decides whether the NPC's neck can reach the player without turning its body.
+        let requestedNpcBodyRot = walker._dialogueBodyRot; // Stays unchanged while the player remains inside the head-first dialogue cone.
+        if (!walker.neckJoint?.parent) {
+          requestedNpcBodyRot = npcTargetRot; // Rigid fallback portraits still face the player with their whole body.
+        } else if (Math.abs(npcBodyResidual) > NPC_DIALOGUE_BODY_FREE_LOOK_RAD) {
+          requestedNpcBodyRot = npcTargetRot - window.FormatUtils.clamp(npcBodyResidual, -NPC_DIALOGUE_BODY_FREE_LOOK_RAD, NPC_DIALOGUE_BODY_FREE_LOOK_RAD);
+        }
+        walker._dialogueBodyRot += angleDiff(requestedNpcBodyRot, walker._dialogueBodyRot) * (cfg.npcFacePlayerLerp ?? 0.28);
+        walker.applyFacingDeadzone(walker._dialogueBodyRot, 1);
         // Eye contact: aims BOTH the NPC's and the player's own neck bone
         // straight at the other's eyes, held for the whole conversation (see
         // _aimNeckAtEyeContact above) — this owns the player's neck bone
@@ -10025,13 +10038,15 @@
         // for exactly this reason, see its own dialogueOpen guard).
         walker.root.updateMatrixWorld(true);
         playerMesh.updateMatrixWorld(true);
-        const maxYawDeg = cfg.npcHeadMaxYawDeg ?? 28;
+        const npcMaxYawDeg = cfg.npcHeadMaxYawDeg ?? NPC_DIALOGUE_HEAD_MAX_YAW_DEG; // Lets the NPC use the full player-matched head-first range.
+        const playerMaxYawDeg = cfg.playerHeadMaxYawDeg ?? 28; // Player already turns toward the NPC above, so its prior conservative eye-contact limit remains sufficient.
         const maxPitchDeg = cfg.npcHeadMaxPitchDeg ?? 24;
         if (walker.neckJoint) {
-          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, maxYawDeg, maxPitchDeg, walker);
+          _aimNeckAtEyeContact(walker.neckJoint, walker.root.position, walker.avatarHeight, playerMesh.position, playerAvatarModelHeight, npcMaxYawDeg, maxPitchDeg, walker);
+          walker._lookAtDebug = { ...(walker._lookAtDebug || {}), mode: 'npc-dialogue', bodyTurnNeeded: Math.abs(npcBodyResidual) > NPC_DIALOGUE_BODY_FREE_LOOK_RAD, bodyYawDeg: THREE.MathUtils.radToDeg(walker._dialogueBodyRot), headYawDeg: THREE.MathUtils.radToDeg(walker.neckJoint.rotation.y), headPitchDeg: THREE.MathUtils.radToDeg(walker.neckJoint.rotation.x) };
         }
         if (playerNeckJoint) {
-          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, maxYawDeg, maxPitchDeg, player);
+          _aimNeckAtEyeContact(playerNeckJoint, playerMesh.position, playerAvatarModelHeight, walker.root.position, walker.avatarHeight, playerMaxYawDeg, maxPitchDeg, player);
         }
       }
 
