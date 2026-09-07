@@ -11,6 +11,7 @@
   const LORE_FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf';
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf';
   const MIN_VISIBLE_MS = 5000; // Used by hide() so boot/map loaders stay readable for at least five seconds.
+  const TIP_ROTATE_MS = 10000; // Used by startTipRotation() so long loading screens show a fresh tip every ten seconds.
   const BUILDING_AREA_RE = /^(?:interior|map_i_)/i; // Used only as a fallback until the canonical building-area accessor is initialized.
   const BUILDING_CALL_RE = /\b(?:enterBuilding|enterInterior|exitBuilding|leaveBuilding|exitInterior|leaveInterior)\b/i; // Used to suppress explicit building entry/exit callbacks.
   const MAP_CALL_RE = /\b(?:enterZone|performTravel|doTravel|setCurrentArea)\b/; // Used to recognize world-map travel callbacks before their expensive work begins.
@@ -42,6 +43,7 @@
     lastTipKey: null,
     visible: false,
     motionRaf: null,
+    tipTimer: null, // Used by startTipRotation()/stopTipRotation() to keep exactly one ten-second tip timer alive per loading session.
     autoPhase: Math.random() * 4,
     scriptScrollPhase: 0,
     lastFrameTime: 0,
@@ -196,6 +198,7 @@
       `progress=${Math.round(state.progress)} source=${state.progressSource}`,
       `requests=${state.requestCompleted}/${state.requestStarted}`,
       `visibleFor=${Math.round(state.visible ? nowMs() - state.visibleSince : 0)}ms min=${MIN_VISIBLE_MS}ms`,
+      `tipRotation=${TIP_ROTATE_MS}ms active=${!!state.tipTimer}`,
       `transitionHook=${state.transitionHookInstalled} dependencyInitHooks=${state.dependencyInitHooks}`,
       `feature=${state.activeTipTitle || '(none)'}`,
       `tip=${state.activeTip || '(none)'}`,
@@ -364,6 +367,24 @@
     renderRichTip(els.lore, text);
   }
 
+  function stopTipRotation() {
+    if (state.tipTimer && typeof clearInterval === 'function') clearInterval(state.tipTimer);
+    state.tipTimer = null;
+  }
+
+  function startTipRotation(generation) {
+    stopTipRotation();
+    if (typeof setInterval !== 'function') return;
+    state.tipTimer = setInterval(() => {
+      if (!state.visible || generation !== state.generation || state.finalHiddenGeneration === generation) {
+        stopTipRotation();
+        return;
+      }
+      renderActiveTip(state.els || buildDom(), pickTip());
+      updateDebugPanel();
+    }, TIP_ROTATE_MS);
+  }
+
   function applyEntryAndSettings(config) {
     const els = buildDom();
     const settings = { ...DEFAULT_SETTINGS, ...(config?.settings || {}) };
@@ -473,6 +494,7 @@
     const previousGeneration = state.generation; // Used to settle any delayed hide promises superseded by a newer loading screen.
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
     state.hideTimer = null;
+    stopTipRotation();
     if (previousGeneration) resolveHideWaiters(previousGeneration);
 
     const myGeneration = ++state.generation;
@@ -491,6 +513,7 @@
     els.scriptViewport.style.top = '46%';
     els.lore.style.fontSize = `${DEFAULT_SETTINGS.loreSize}px`;
     renderActiveTip(els, pickTip());
+    startTipRotation(myGeneration);
     setProgress(0, 'session-start', true);
     state.lastFrameTime = nowMs();
     if (state.motionRaf) cancelAnimationFrame(state.motionRaf);
@@ -526,6 +549,7 @@
     }
     state.finalHiddenGeneration = generation;
     state.visible = false;
+    stopTipRotation();
     if (state.motionRaf) { cancelAnimationFrame(state.motionRaf); state.motionRaf = null; }
     state.els?.root.classList.remove('visible');
     state.hideTimer = null;
@@ -689,6 +713,8 @@
       area: safeCurrentArea(),
       activeTipTitle: state.activeTipTitle,
       activeTip: state.activeTip,
+      tipRotationMs: TIP_ROTATE_MS,
+      tipRotationActive: !!state.tipTimer,
       minimumVisibleMs: MIN_VISIBLE_MS,
       transitionHookInstalled: state.transitionHookInstalled,
       dependencyInitHooks: state.dependencyInitHooks,
