@@ -29,6 +29,7 @@
     raisedInnerVertices: 0,
     clearedEntranceVertices: 0,
     surfacePipelinePasses: 0,
+    surfacePipelineScheduled: 0,
     lastError: null,
   };
 
@@ -269,22 +270,25 @@
     elevStoneSkin(BV, GH - 1 - BV, 0, BV);
     elevStoneSkin(BV, GH - 1 - BV, GW - 1 - BV, GW - 1);
 
-    // Re-enter the existing farm rock pipeline explicitly because this adapter
-    // is intentionally outermost and these meshes were created after the normal
-    // build wrappers returned. That preserves the current surface-island mapper,
-    // authored texture-edge treatment, and shell suppression instead of inventing
-    // a second cliff texturing path.
-    const farmCliff = window.FarmCliffRockOutline;
-    if (farmCliff?.applyRockMaterialAndTextureOutline) {
-      farmCliff.applyRockMaterialAndTextureOutline([baseMesh, ...cliffMeshes]);
+    // Run the established material + surface-detection + one-PNG-per-surface
+    // mapper only after every replacement cliff mesh has been created and added.
+    // Deferring one microtask also places this pass after the complete wrapped
+    // BorderTerrain call stack, so no older synchronous wrapper can overwrite it.
+    stats.surfacePipelineScheduled++;
+    const applyFinishedCliffSurfaces = () => {
+      const farmCliff = window.FarmCliffRockOutline;
+      if (farmCliff?.applyRockMaterialAndTextureOutline) {
+        farmCliff.applyRockMaterialAndTextureOutline([baseMesh, ...cliffMeshes]);
+      } else {
+        const natural = window.NaturalSurfaceMaterials;
+        for (const mesh of cliffMeshes) natural?.naturalizeMesh?.(mesh, 'rocks');
+      }
+      const mapper = window.HobunjiSurfaceStretchUV;
+      for (const mesh of cliffMeshes) mapper?.remapNaturalTerrainMesh?.(mesh, 'farm-border-immediate-edge:post-create');
       stats.surfacePipelinePasses++;
-    } else {
-      const natural = window.NaturalSurfaceMaterials;
-      for (const mesh of cliffMeshes) natural?.naturalizeMesh?.(mesh, 'rocks');
-      stats.surfacePipelinePasses++;
-    }
-    const mapper = window.HobunjiSurfaceStretchUV;
-    for (const mesh of cliffMeshes) mapper?.remapNaturalTerrainMesh?.(mesh, 'farm-border-immediate-edge');
+    }; // Used once after construction to make the surface mapper authoritative.
+    if (typeof queueMicrotask === 'function') queueMicrotask(applyFinishedCliffSurfaces);
+    else Promise.resolve().then(applyFinishedCliffSurfaces);
 
     stats.rebuiltCliffMeshes += cliffMeshes.length;
     stats.rebuiltCliffCells += cliffCells;
