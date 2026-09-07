@@ -5,12 +5,12 @@
   "townEntrance": {
     "buildingId": "bldg_town_mine_entry",
     "gridX": 15,
-    "gridZ": 3,
+    "gridZ": -1,
     "footprintW": 2,
     "footprintD": 2,
     "doorCol": 16,
-    "doorRow": 5,
-    "rotationDeg": 0
+    "doorRow": 1,
+    "rotationDeg": 180
   },
   "oreTierOreKeys": [
     ["copper"],
