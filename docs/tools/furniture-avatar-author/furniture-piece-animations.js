@@ -121,17 +121,17 @@ function renderAnimationUi(){renderAnimationList();renderAnimationEditor();const
 function loadHangingSignPreset(){
   clearFurniture();state.tileBase.footprintW=1;state.tileBase.footprintD=1;
   const post=pushPart('beam',{id:'hanging_sign_post',name:'Horizontal Sign Post',color:'#60452c',materialRole:'wood',materialTexture:'carved_smooth.png',transform:{x:0,y:1.72,z:0,rx:0,ry:0,rz:0,sx:1.25,sy:.14,sz:.14},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.01});
-  const board=pushPart('box',{id:'hanging_sign_board',name:'Hanging Store / Tavern Board',color:'#765536',materialRole:'wood',materialTexture:'boards.png',materialRotationDeg:90,transform:{x:0,y:1.12,z:0,rx:0,ry:0,rz:0,sx:.82,sy:.5,sz:.08},topScaleX:.97,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.012});
+  const board=pushPart('box',{id:'hanging_sign_board',name:'Hanging Store / Tavern Board',color:'#765536',materialRole:'wood',materialTexture:'boards.png',materialRotationDeg:90,transform:{x:-.0863,y:.97,z:0,rx:0,ry:0,rz:0,sx:.7,sy:1.1922,sz:.08},topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1,wonkiness:.012});
   state.pieceAnimations=[normalizeAnimation({
     id:'hanging_sign_wind_swing',name:'Hanging Sign Wind Swing',type:'windSwing',enabled:true,anchorPartId:post.id,drivenPartId:board.id,
-    pivot:{x:0,y:-.5,z:0},axis:{x:0,y:0,z:1},amplitudeDeg:6,maxDeg:18,speed:1.6,phaseDeg:0,windResponse:1,
+    pivot:{x:0,y:-.07,z:0},axis:{x:1,y:0,z:0},amplitudeDeg:6,maxDeg:18,speed:1.6,phaseDeg:0,windResponse:1.7,
     axisBias:{x:1,z:.18},windDirectionDeg:0,
     connectors:[
-      {anchorOffset:{x:-.25,y:-.5,z:0},drivenOffset:{x:-.38,y:.5,z:0},texture:'textures/wavy_surface.png',color:'#6b4728',radius:.012,sides:5,visible:true},
-      {anchorOffset:{x:.25,y:-.5,z:0},drivenOffset:{x:.38,y:.5,z:0},texture:'textures/wavy_surface.png',color:'#6b4728',radius:.012,sides:5,visible:true}
+      {anchorOffset:{x:-.25,y:-.07,z:0},drivenOffset:{x:-.1637,y:.5961,z:0},texture:'textures/wavy_surface.png',color:'#6b4728',radius:.012,sides:5,visible:true},
+      {anchorOffset:{x:.25,y:-.07,z:0},drivenOffset:{x:.3363,y:.5961,z:0},texture:'textures/wavy_surface.png',color:'#6b4728',radius:.012,sides:5,visible:true}
     ]
   })];
-  selectedAnimationId='hanging_sign_wind_swing';rebuildAll();applyEntrySurfaceDefaults({materialRules:{mapping:'stretch'}},[post,board]);rebuildFurnitureMeshes();syncControlsFromState?.();frameFurniture();setEditorMode('animation');renderAnimationUi();queueUndoHistory?.('load hanging sign animation example');log('Loaded hanging store/tavern sign with front-to-back-biased Root-Totem-style wind swing.');
+  selectedAnimationId='hanging_sign_wind_swing';rebuildAll();applyEntrySurfaceDefaults({materialRules:{mapping:'stretch'}},[post,board]);rebuildFurnitureMeshes();syncControlsFromState?.();frameFurniture();setEditorMode('animation');renderAnimationUi();queueUndoHistory?.('load hanging sign animation example');log('Loaded tall vertical-writing hanging sign; ropes are attached to the beam underside and board top.');
 }
 
 function installAnimationTab(){
