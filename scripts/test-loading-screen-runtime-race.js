@@ -16,7 +16,11 @@ const source = fs.readFileSync(path.join(root, 'docs/js/loading-screen-runtime.j
 
 function makeEl() {
   const el = {
-    style: { setProperty() {} },
+    style: {
+      _props: Object.create(null),
+      setProperty(name, value) { this._props[name] = String(value); },
+      getPropertyValue(name) { return this._props[name] || ''; },
+    },
     dataset: {},
     classList: {
       _set: new Set(),
@@ -72,7 +76,7 @@ const fakeTransitionModule = {
 const windowStub = {
   document: documentStub,
   FakeTransitionModule: fakeTransitionModule,
-  fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ settings: {}, entries: [{ id: 'a', lore: '', script: '' }] }) }),
+  fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ settings: { columnSpacing: -0.42 }, entries: [{ id: 'a', lore: '', script: '' }] }) }),
   requestAnimationFrame(cb) { rafQueue.push(cb); return rafQueue.length; },
   cancelAnimationFrame() {},
   performance: { now: () => 0 },
@@ -129,7 +133,10 @@ async function settle(promise) {
   const second = runtime.show();
   await settle(Promise.all([first, second]));
   const rootEl = documentStub.body.children.find(c => c.id === 'hobunjiLoadScreen');
+  const scriptWordsEl = rootEl.querySelector('#hlsScriptWords');
   assert(rootEl.classList.contains('visible'), 'a newer show() must remain visible even if an older stale show() resolves after it');
+  assert.equal(scriptWordsEl.style.getPropertyValue('--script-column-spacing'), '-0.42em', 'authored negative Tankan column spacing must survive config loading');
+  assert.match(source, /\.hlsVerticalWord \+ \.hlsVerticalWord\{margin-left:var\(--script-column-spacing\)\}/, 'runtime stylesheet must apply signed spacing as adjacent-column margin');
   assert(runtime.getProgress() > 0 && runtime.getProgress() < 100, 'a visible unfinished session reports live progress instead of the authored preview percent');
 
   const third = runtime.show();
@@ -139,5 +146,5 @@ async function settle(promise) {
   assert.ok(!rootEl.classList.contains('visible'), 'an explicit hide() must still win when it targets the current show()');
   assert.equal(runtime.getProgress(), 100, 'completion drives the displayed percentage to 100');
 
-  console.log('Loading screen map/building timing, race, and progress guard passed.');
+  console.log('Loading screen map/building timing, Tankan spacing, race, and progress guard passed.');
 })().catch(err => { console.error(err); process.exit(1); });
