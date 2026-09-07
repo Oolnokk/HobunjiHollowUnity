@@ -16,6 +16,7 @@
     new URL('character-scale-comparison.js?v=20260904k', base).href,
     new URL('character-scale-comparison-body-input-guard.js?v=20260905b', base).href,
     new URL('character-scale-comparison-presentation.js?v=20260905b', base).href,
+    new URL('character-scale-portrait-x-offset.js?v=20260907a', base).href,
   ];
   const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
     const script = document.createElement('script');
