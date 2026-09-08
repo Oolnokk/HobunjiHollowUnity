@@ -1,6 +1,7 @@
 // Loading-screen bronze lettering treatment.
-// Khymeryyan Roman and TankanScript keep the item-category-inspired shiny
-// bronze presentation. The Tankan verdigris raster overlay is disabled for now.
+// Khymeryyan Roman uses plain white for readability.
+// TankanScript keeps the item-category-inspired shiny bronze presentation.
+// The Tankan verdigris raster overlay is disabled for now.
 (() => {
   'use strict';
   if (window.LoadingScreenMetalText?.installed) return;
@@ -25,37 +26,36 @@
         --hls-bronze-stroke:${CATEGORY_STROKE};
         --hls-metal-ramp:linear-gradient(
           180deg,
-          #C27A42 0%,
-          #E39A51 20%,
-          #F8D493 41%,
-          #FFF1CE 48%,
-          #E7A35F 57%,
-          #F6C77F 72%,
-          #C98248 100%
+          #E0A36C 0%,
+          #F0BC82 20%,
+          #FBE0AF 41%,
+          #FFF7E4 48%,
+          #F2BE86 57%,
+          #F9D59A 72%,
+          #E7A96F 100%
         );
       }
 
-      /* Khymeryyan Roman is only ~15-19px on the loading screen, so it needs a
-         much thinner outline than the ~89px Tankan script. Apply the metallic
-         fill only to actual text-bearing nodes so the gradient occupies the
-         glyph interiors instead of being clipped on the parent lore container. */
+      /* Khymeryyan Roman is now plain white for readability, while keeping a
+         thin dark outline and shadow so it still reads cleanly on the loading
+         screen background. */
       #hobunjiLoadScreen #hlsLoreHeader,
       #hobunjiLoadScreen #hlsLore,
       #hobunjiLoadScreen #hlsLore *,
       #hobunjiLoadScreen #hlsPercent {
-        color:var(--hls-bronze-metal) !important;
-        background:var(--hls-metal-ramp);
-        -webkit-background-clip:text;
-        background-clip:text;
-        -webkit-text-fill-color:transparent;
+        color:#fff !important;
+        background:none !important;
+        -webkit-background-clip:border-box;
+        background-clip:border-box;
+        -webkit-text-fill-color:#fff !important;
         -webkit-text-stroke:1px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
-        filter:drop-shadow(0 0 7px rgba(246,199,127,.52));
+        filter:none;
       }
 
-      /* TankanScript stays as the live font with the same brighter metallic
-         ramp. Its much larger glyphs keep the full 3px category-style outline. */
+      /* TankanScript stays as the live font. The bronze ramp has been lifted
+         substantially overall, especially in the darker bands. */
       #hobunjiLoadScreen .hlsVerticalWord {
         color:var(--hls-bronze-metal) !important;
         background:var(--hls-metal-ramp);
@@ -65,7 +65,7 @@
         -webkit-text-stroke:3px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
-        filter:drop-shadow(0 0 7px rgba(246,199,127,.52));
+        filter:drop-shadow(0 0 8px rgba(250,213,154,.58));
       }
 
       /* Explicitly suppress any stale overlay nodes left by a hot reload or an
@@ -105,6 +105,7 @@
       verdigrisAmount: VERDIGRIS_AMOUNT,
       loadingDomReady: Boolean(root && scriptWords),
       overlayEnabled: false,
+      loreTextMode: 'white',
     };
   }
 
@@ -119,7 +120,7 @@
     }
     const snapshot = debugSnapshot();
     panel.textContent = [
-      `metalText bronze=${snapshot.bronzeHex}`,
+      `metalText roman=${snapshot.loreTextMode} tankan=bronze`,
       `verdigris=${snapshot.verdigrisHex}@${Math.round(snapshot.verdigrisAmount * 100)}% overlay=off`,
       `loadingDom=${snapshot.loadingDomReady ? 'ready' : 'waiting'}`,
     ].join('\n');
