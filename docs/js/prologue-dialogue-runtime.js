@@ -19,7 +19,7 @@
   const ACTOR_LOG_EVERY = 25; // Rate-limits mobile-visible waiting logs.
 
   let cameraDeps = null; // Used only by post-reveal dialogue targeting/camera changes.
-  let dialogueBridge = null; // Used only by post-reveal active-walker integration.
+  let dialogueBridge = null; // Optional normal-dialogue active-walker integration; prologue presentation no longer blocks on it.
   let chapterPromise = null; // Session cache for prologue chapter JSON.
   let npcDatabasePromise = null; // Session cache for NPC database.
   let actorPreparePromise = null; // Prevents overlapping world-actor construction attempts.
@@ -32,6 +32,7 @@
   let monitorAttempts = 0; // Mobile-readable retry count.
   let targetChanges = 0; // Successful automatic speaker/camera retargets.
   let revealSignals = 0; // Number of actor-readiness checks sent to the map/loader owner.
+  let directPortraitFallbacks = 0; // Counts direct renders into the real dialogue portrait canvas when the normal walker bridge missed init.
   let lastStatus = 'waiting-rescue'; // Mobile-readable setup state.
   let lastError = null; // Most recent setup error.
 
@@ -245,6 +246,28 @@
     return cameraDeps?.cameraConfig?.()?.dialogueMode || 'npcDialogue';
   }
 
+  async function renderSpeakerPortrait(walker) {
+    if (!walker?.profile) return false;
+    if (dialogueBridge && window.DialogueContent?.renderNpcDialoguePortrait) {
+      try {
+        const rendered = await Promise.resolve(window.DialogueContent.renderNpcDialoguePortrait());
+        if (rendered !== false) return true;
+      } catch (_) {}
+    }
+
+    const portraitCanvas = document.getElementById('npcPortraitCanvas'); // Real gameplay dialogue portrait surface used when the ordinary walker bridge missed initialization.
+    if (!portraitCanvas || !window.NpcAvatarPreview?.renderProfileToCanvas) return false;
+    try {
+      await window.NpcAvatarPreview.renderProfileToCanvas(portraitCanvas, walker.profile, { forceEyesOpen: true });
+      directPortraitFallbacks += 1;
+      return true;
+    } catch (error) {
+      lastError = `portrait-fallback:${error?.message || error}`;
+      debugLog(`direct dialogue portrait render failed: ${error?.message || error}`, 'warn');
+      return false;
+    }
+  }
+
   async function showLine(index) {
     if (!session) return false;
     const line = session.lines[index]; // Used to select the next automatic speaker/target.
@@ -277,7 +300,7 @@
     cameraDeps?.setCameraMode?.(dialogueCameraMode());
     cameraDeps?.setCameraTarget?.(root);
     window.DialogueContent?.hideChoiceButtons?.();
-    try { await Promise.resolve(window.DialogueContent?.renderNpcDialoguePortrait?.()); } catch (_) {}
+    await renderSpeakerPortrait(walker);
 
     targetChanges += 1;
     lastStatus = `line-${index + 1}:${line.speakerNpcId}`;
@@ -366,13 +389,16 @@
     if (dialoguePreparePromise) return dialoguePreparePromise;
     if (!actorsReady || currentArea() !== RESCUE_MAP_ID || !rescuePrologueActive()) return false;
 
-    // Dialogue is intentionally post-reveal. Its camera/portrait dependencies
-    // are useful for the cutscene, but they are not map-loading dependencies.
+    // Dialogue is intentionally post-reveal. Camera readiness still matters,
+    // but DialogueContent's injected walker bridge does not: this scripted
+    // sequence owns its line/speaker state and can render its actor profile
+    // directly into the ordinary gameplay dialogue canvas when that bridge
+    // missed initialization order in the live page.
     if (window.__hobunjiPrologueHiddenSetup) {
       lastStatus = 'actors-ready-waiting-map-reveal';
       return false;
     }
-    if (!cameraDeps || !dialogueBridge || !window.DialogueContent) {
+    if (!cameraDeps) {
       lastStatus = 'actors-ready-waiting-dialogue-camera-deps';
       return false;
     }
@@ -401,7 +427,7 @@
         dialogueReady = true;
         lastError = null;
         lastStatus = 'rescue-dialogue-open';
-        debugLog('automatic-speaker dialogue test opened after rescue reveal');
+        debugLog(`automatic-speaker dialogue opened after rescue reveal; walkerBridge=${!!dialogueBridge} portraitFallbacks=${directPortraitFallbacks}`);
         return true;
       } catch (error) {
         lastError = String(error?.message || error);
@@ -449,7 +475,7 @@
       const ready = await prepareRescueDialogue();
       if (!ready && monitorAttempts % ACTOR_LOG_EVERY === 0) {
         debugLog(
-          `actors ready; waiting for post-reveal dialogue (${lastStatus}); camera=${!!cameraDeps} dialogue=${!!dialogueBridge} hidden=${!!window.__hobunjiPrologueHiddenSetup}`,
+          `actors ready; waiting for post-reveal dialogue (${lastStatus}); camera=${!!cameraDeps} walkerBridge=${!!dialogueBridge} hidden=${!!window.__hobunjiPrologueHiddenSetup}`,
           'warn',
         );
       }
@@ -477,7 +503,7 @@
       const gameGetDialogueOpen = source.getDialogueOpen;
       const gameGetDialogueWalker = source.getDialogueWalker;
       const gameCloseNpcDialogue = source.closeNpcDialogue;
-      dialogueBridge = { gameGetDialogueOpen, gameGetDialogueWalker, gameCloseNpcDialogue }; // Used by synthetic walker integration.
+      dialogueBridge = { gameGetDialogueOpen, gameGetDialogueWalker, gameCloseNpcDialogue }; // Optional ordinary portrait/walker integration when initialization order allows it.
 
       const result = originalInit({
         ...source,
@@ -563,6 +589,7 @@
       lineIndex: session?.index ?? null,
       targetChanges,
       revealSignals,
+      directPortraitFallbacks,
       testFinished,
       cameraDepsReady: !!cameraDeps,
       dialogueBridgeReady: !!dialogueBridge,
