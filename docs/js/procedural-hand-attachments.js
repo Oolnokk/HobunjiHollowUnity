@@ -17,6 +17,8 @@
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const IDLE_MEDIAL_YAW_DEG = 90;
   const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied to the right visual around local +Y, the wrist-to-shoulder axis used below.
+  const OUTLINE_OCCLUDER_DEPTH_LAYER = 4; // Used by the game's pre-shell depth replay so the depthWrite-disabled parrot body primitive can still produce a clean shell.
+  const PARROT_BODY_SHELL_Y_PADDING = 0.02; // Keeps the body-coloured shell just beyond the highest keratin digit, before the continuous mesh becomes the portrait-covered wing.
   let showGripGuides = false;
   let gameDeps = null;
 
@@ -252,6 +254,57 @@
     });
   }
 
+  function meshHandRoles(mesh) {
+    const materials = Array.isArray(mesh?.material) ? mesh.material : [mesh?.material]; // Used to classify GLTFLoader's one-mesh-per-material parrot primitives.
+    return materials.filter(Boolean).map(material => material.userData?.hobunjiHandRole || null);
+  }
+
+  function trimmedShellIndexBelowY(THREE, geometry, maxY) {
+    const position = geometry?.getAttribute?.('position'); // Supplies model-local Y values for separating the hand end of the continuous body/wing primitive.
+    const sourceIndex = geometry?.getIndex?.(); // Preserves the full index for colour and portrait-aware depth draws.
+    if (!position?.count || !sourceIndex?.array?.length || !Number.isFinite(maxY)) return null;
+
+    const kept = []; // Becomes the shell-only triangle list used during the inverted-hull render pass.
+    const source = sourceIndex.array;
+    for (let offset = 0; offset + 2 < source.length; offset += 3) {
+      const a = source[offset], b = source[offset + 1], c = source[offset + 2];
+      const centerY = (position.getY(a) + position.getY(b) + position.getY(c)) / 3;
+      if (centerY <= maxY) kept.push(a, b, c);
+    }
+    if (kept.length === 0 || kept.length === source.length) return null;
+
+    const IndexArray = source.constructor; // Retains the GLB's existing Uint16/Uint32 index width.
+    const shellIndex = new THREE.BufferAttribute(new IndexArray(kept), 1); // Swapped in only for this mesh's shell draw by procedural-hand-outline-parity.js.
+    geometry.setAttribute('hobunjiShellIndexStorage', shellIndex); // Keeps the alternate GPU buffer owned by/disposable with this cloned geometry.
+    return shellIndex;
+  }
+
+  function configureParrotBodyShell(THREE, root) {
+    let keratinMaxY = -Infinity; // Derives the hand/wing boundary from the highest modeled keratin digit instead of a hard-coded export coordinate.
+    root?.traverse?.(child => {
+      if (!child?.isMesh || !meshHandRoles(child).includes('keratin')) return;
+      child.geometry?.computeBoundingBox?.();
+      keratinMaxY = Math.max(keratinMaxY, Number(child.geometry?.boundingBox?.max?.y));
+    });
+    if (!Number.isFinite(keratinMaxY)) return null;
+
+    const maxShellY = keratinMaxY + PARROT_BODY_SHELL_Y_PADDING; // Leaves a small overlap above the digits so the hand shell closes beneath the portrait art.
+    let sourceTriangles = 0; // Diagnostic total for the continuous body/wing primitive before shell trimming.
+    let shellTriangles = 0; // Diagnostic total retained around the visible hand after trimming.
+    let trimmedMeshes = 0; // Diagnostic count; the current parrot export contains one body/wing primitive per hand.
+    root?.traverse?.(child => {
+      if (!child?.isMesh || !meshHandRoles(child).includes('body')) return;
+      const sourceIndex = child.geometry?.getIndex?.(); // Counts and preserves the full body/wing colour geometry.
+      const shellIndex = trimmedShellIndexBelowY(THREE, child.geometry, maxShellY); // Contains only the exposed hand end for shell rendering.
+      if (!sourceIndex || !shellIndex) return;
+      child.userData = { ...child.userData, hobunjiShellIndex: shellIndex };
+      sourceTriangles += sourceIndex.count / 3;
+      shellTriangles += shellIndex.count / 3;
+      trimmedMeshes++;
+    });
+    return trimmedMeshes > 0 ? { axis: 'local-y', maxShellY, sourceTriangles, shellTriangles, trimmedMeshes } : null;
+  }
+
   function loaderForThree(THREE) {
     if (typeof THREE?.GLTFLoader === 'function') return Promise.resolve(new THREE.GLTFLoader());
     if (/\/tools\/animation-author\//.test(location.pathname)) {
@@ -321,12 +374,25 @@
         && ownedMaterials.length > 0
         && ownedMaterials.every(material => material?.userData?.hobunjiHandRole === 'body');
       if (isParrotWingMesh) {
-        child.userData = { ...child.userData, hobunjiHandRole: 'body-wing', hobunjiPortraitOccludedWingLayer: true, noOutline: true };
+        // The export combines the visible body-coloured hand and its portrait-covered
+        // wing continuation in one primitive. Keep the colour draw depthWrite-disabled
+        // so clothing wins, but replay that primitive into depth immediately before the
+        // shell pass. Portrait depth blocks the hidden continuation while the exposed
+        // hand writes the depth its inverted shell needs to remain a border, not a fill.
+        child.userData = {
+          ...child.userData,
+          hobunjiHandRole: 'body-wing',
+          hobunjiPortraitOccludedWingLayer: true,
+          hobunjiOutlineOccluderDepthReplay: true,
+        };
+        child.layers.enable(OUTLINE_OCCLUDER_DEPTH_LAYER);
       }
       child.castShadow = true;
       child.receiveShadow = true;
       if (child.userData?.noOutline !== true) child.layers.enable(1);
     });
+    const parrotBodyShellTrim = modelKey === 'parrot' ? configureParrotBodyShell(THREE, clone) : null; // Used by runtime diagnostics to confirm geometry-level clothing protection.
+    if (parrotBodyShellTrim) clone.userData.parrotBodyShellTrim = parrotBodyShellTrim;
     return clone;
   }
 
@@ -365,6 +431,7 @@
     group.userData.canonicalFit = canonicalFit;
     group.userData.authoredOriginPreserved = true;
     group.userData.shoulderAxisTwistDeg = side === 'right' ? RIGHT_SHOULDER_AXIS_TWIST_DEG : 0;
+    group.userData.parrotBodyShellTrim = clone.userData.parrotBodyShellTrim || null;
     markOutline(group);
     return group;
   }
@@ -600,6 +667,7 @@
         disposeObjectResources(root);
       },
       getDebug() {
+        const activeVisual = sockets.right.visual || sockets.left.visual; // Surfaces the currently installed GLB's shell trim in mobile-readable hand diagnostics.
         return {
           speciesId,
           gender,
@@ -614,7 +682,8 @@
           loadError: state.loadError,
           fallbackPoseInput: 'per-side-local-offset',
           rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
-          parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',
+          parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled+pre-shell-depth-replay',
+          parrotBodyShellTrim: activeVisual?.userData?.parrotBodyShellTrim || null,
           bodySurfaceTexture: 'wavy_surface.png',
         };
       },

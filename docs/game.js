@@ -17707,16 +17707,18 @@
           if (Array.isArray(object.material)) {
             for (const material of object.material) {
               if (!material || materialStates.has(material)) continue;
-              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthFunc: material.depthFunc });
               material.colorWrite = false;
               material.depthWrite = true;
+              if (object.userData?.isPngPlane === true) material.depthFunc = THREE.AlwaysDepth;
             }
           } else {
             const material = object.material;
             if (material && !materialStates.has(material)) {
-              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthFunc: material.depthFunc });
               material.colorWrite = false;
               material.depthWrite = true;
+              if (object.userData?.isPngPlane === true) material.depthFunc = THREE.AlwaysDepth;
             }
           }
         });
@@ -17731,6 +17733,7 @@
           for (const [material, state] of materialStates) {
             material.colorWrite = state.colorWrite;
             material.depthWrite = state.depthWrite;
+            material.depthFunc = state.depthFunc;
           }
           materialStates.clear();
         }

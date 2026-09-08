@@ -120,8 +120,16 @@ assert.match(handSource, /side === 'right'.*group\.rotation\.y = THREE\.MathUtil
 assert.match(handSource, /modelKey === 'parrot' && role === 'body'/, 'Kenkari-family modeled wing continuation must be identified independently of its talons');
 assert.match(handSource, /depthWrite: !isParrotWingLayer/, 'portrait clothing must be able to occlude the parrot body-colored wing continuation');
 assert.match(handSource, /ownedMaterials\.every\(material => material\?\.userData\?\.hobunjiHandRole === 'body'\)/, 'the repository GLTFLoader\'s already-separated parrot body primitive must be tagged directly');
-assert.match(handSource, /hobunjiPortraitOccludedWingLayer: true, noOutline: true/, 'portrait-covered wing continuation must retain its occlusion tag and not leak a 3D shell outline through clothing');
+assert.match(handSource, /hobunjiPortraitOccludedWingLayer: true,[\s\S]*hobunjiOutlineOccluderDepthReplay: true,[\s\S]*layers\.enable\(OUTLINE_OCCLUDER_DEPTH_LAYER\)/, 'the body-colored parrot hand must join both shell rendering and the portrait-aware pre-shell depth replay');
+assert.doesNotMatch(handSource, /hobunjiPortraitOccludedWingLayer: true, noOutline: true/, 'the visible body-colored parrot hand must not be excluded from shell rendering with its covered wing continuation');
+assert.match(handSource, /function configureParrotBodyShell[\s\S]*keratinMaxY[\s\S]*trimmedShellIndexBelowY/, 'the continuous parrot body/wing primitive must derive a hand-only shell boundary from its separate keratin digits');
+assert.match(handSource, /hobunjiShellIndexStorage/, 'the alternate shell index must remain owned by the cloned geometry for GPU cleanup');
+assert.match(handSource, /parrotBodyShellTrim: activeVisual/, 'mobile diagnostics must expose the source and retained body-shell triangle counts');
 assert.match(handOutlineSource, /hobunjiPortraitOccludedWingLayer === true\) return false/, 'portrait-occluded wing mesh must stay out of the held-object foreground replay');
+assert.match(handOutlineSource, /return 'occluder-depth'/, 'the parrot body primitive depth replay must be recognized as a secondary hand render pass');
+assert.match(handOutlineSource, /lockedOccluderDepthDraws/, 'mobile diagnostics must confirm that the pre-shell hand depth replay uses the visible hand transform');
+assert.match(handOutlineSource, /passKind === 'shell'.*hobunjiShellIndex/s, 'only the shell pass may swap to the trimmed body-coloured hand index');
+assert.match(handOutlineSource, /restoreIndex.*setIndex/s, 'the full body/wing geometry index must be restored immediately after each shell draw');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
 assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand must use locomotion fallback on one-handed tools');
