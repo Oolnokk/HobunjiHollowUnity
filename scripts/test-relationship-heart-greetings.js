@@ -32,15 +32,15 @@ const renderRelationshipHearts = new Function(
 
 function heartsAt(favor) {
   relationshipState.favor = favor;
-  return [...renderRelationshipHearts({ id: 'test_npc', relationship: true })];
+  return renderRelationshipHearts({ id: 'test_npc', relationship: true });
 }
 
-assert.deepEqual(heartsAt(-5), ['🩶', ...Array(14).fill('🤍')], '-5 starts filling the first heart');
-assert.deepEqual(heartsAt(-1), ['💜', '💜', '💜', '💜', '🩶', ...Array(10).fill('🤍')], '-1 has four completed purple hearts and fills the fifth');
-assert.deepEqual(heartsAt(0), ['💜', '💜', '💜', '💜', '💜', '🩶', ...Array(9).fill('🤍')], 'neutral fills the sixth heart after five negative purple hearts');
-assert.deepEqual(heartsAt(1), ['💜', '💜', '💜', '💜', '💜', '❤️', '🩶', ...Array(8).fill('🤍')], '+1 is exactly one completed red heart');
-assert.deepEqual(heartsAt(2), ['💜', '💜', '💜', '💜', '💜', '❤️', '❤️', '🩶', ...Array(7).fill('🤍')], '+2 is exactly two completed red hearts');
-assert.deepEqual(heartsAt(10), ['💜', '💜', '💜', '💜', '💜', ...Array(10).fill('❤️')], '+10 completes the whole relationship meter');
+assert.equal(heartsAt(-5), `🩶${'🤍'.repeat(14)}`, '-5 starts filling the first heart');
+assert.equal(heartsAt(-1), `💜💜💜💜🩶${'🤍'.repeat(10)}`, '-1 has four completed purple hearts and fills the fifth');
+assert.equal(heartsAt(0), `💜💜💜💜💜🩶${'🤍'.repeat(9)}`, 'neutral fills the sixth heart after five negative purple hearts');
+assert.equal(heartsAt(1), `💜💜💜💜💜❤️🩶${'🤍'.repeat(8)}`, '+1 is exactly one completed red heart');
+assert.equal(heartsAt(2), `💜💜💜💜💜❤️❤️🩶${'🤍'.repeat(7)}`, '+2 is exactly two completed red hearts');
+assert.equal(heartsAt(10), `💜💜💜💜💜${'❤️'.repeat(10)}`, '+10 completes the whole relationship meter');
 
 const greetingBlock = extract(
   ambientSource,
