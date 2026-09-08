@@ -313,6 +313,10 @@
     }
   }
 
+  const DEN_DARKNESS_OVERLAY_ALPHA = 0.82; // Used by the shared night-style canvas overlay so dens stay very dark even though their cliff material is unlit.
+  const MINE_DARKNESS_OVERLAY_ALPHA = 0.90; // Used by mine floors + ladder room to stay darker than dens without changing the unlit town-cliff material itself.
+  const INTERIOR_DARKNESS_OVERLAY_ALPHA = 0.28; // Used by ordinary enclosed building interiors to preserve the existing mild ambient darkness.
+
   let skyPolicyDeps = null;
   function isNoSkyArea(area) {
     const id = String(area || '').toLowerCase();
@@ -324,11 +328,29 @@
       || id.includes('burrow');
   }
 
-  function isUndergroundLanternArea(area) {
+  function isMineArea(area) {
     const id = String(area || '').toLowerCase();
-    return id === 'map_i_town_mine_safe'
-      || id.startsWith('map_i_town_mine_f_')
-      || id.startsWith('map_i_den_');
+    return id === 'map_i_town_mine_safe' || id.startsWith('map_i_town_mine_f_');
+  }
+
+  function isDenArea(area) {
+    return String(area || '').toLowerCase().startsWith('map_i_den_');
+  }
+
+  function enclosedDarknessOverlayAlpha(area) {
+    if (isMineArea(area)) return MINE_DARKNESS_OVERLAY_ALPHA;
+    if (isDenArea(area)) return DEN_DARKNESS_OVERLAY_ALPHA;
+    return INTERIOR_DARKNESS_OVERLAY_ALPHA;
+  }
+
+  function enclosedDarknessKind(area) {
+    if (isMineArea(area)) return 'mine';
+    if (isDenArea(area)) return 'den';
+    return 'interior';
+  }
+
+  function isUndergroundLanternArea(area) {
+    return isMineArea(area) || isDenArea(area);
   }
 
   if (window.RainPlanes) {
@@ -470,8 +492,9 @@
       || (isNoSkyArea(currentArea) && currentArea !== 'map_southern_cloud_forest');
 
     if (enclosed) {
+      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Used to darken unlit cave materials through the same screen overlay that nighttime already uses, instead of reintroducing Three.js lighting.
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
       ctx.fillRect(0, 0, rect.width, rect.height);
       // Enclosed areas still need the carried lantern to clear the darkness layer.
       drawLanternMasksCompat();
@@ -545,6 +568,8 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
+        undergroundDarknessKind: enclosedDarknessKind(debugArea),
+        undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
         renderingMode: 'original-skydome-visibility-only',
         lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
