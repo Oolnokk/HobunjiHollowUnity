@@ -17,6 +17,7 @@
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const IDLE_MEDIAL_YAW_DEG = 90;
   const RIGHT_SHOULDER_AXIS_TWIST_DEG = 180; // Applied to the right visual around local +Y, the wrist-to-shoulder axis used below.
+  const OUTLINE_OCCLUDER_DEPTH_LAYER = 4; // Used by the game's pre-shell depth replay so the depthWrite-disabled parrot body primitive can still produce a clean shell.
   let showGripGuides = false;
   let gameDeps = null;
 
@@ -321,7 +322,18 @@
         && ownedMaterials.length > 0
         && ownedMaterials.every(material => material?.userData?.hobunjiHandRole === 'body');
       if (isParrotWingMesh) {
-        child.userData = { ...child.userData, hobunjiHandRole: 'body-wing', hobunjiPortraitOccludedWingLayer: true, noOutline: true };
+        // The export combines the visible body-coloured hand and its portrait-covered
+        // wing continuation in one primitive. Keep the colour draw depthWrite-disabled
+        // so clothing wins, but replay that primitive into depth immediately before the
+        // shell pass. Portrait depth blocks the hidden continuation while the exposed
+        // hand writes the depth its inverted shell needs to remain a border, not a fill.
+        child.userData = {
+          ...child.userData,
+          hobunjiHandRole: 'body-wing',
+          hobunjiPortraitOccludedWingLayer: true,
+          hobunjiOutlineOccluderDepthReplay: true,
+        };
+        child.layers.enable(OUTLINE_OCCLUDER_DEPTH_LAYER);
       }
       child.castShadow = true;
       child.receiveShadow = true;
@@ -614,7 +626,7 @@
           loadError: state.loadError,
           fallbackPoseInput: 'per-side-local-offset',
           rightShoulderAxisTwistDeg: RIGHT_SHOULDER_AXIS_TWIST_DEG,
-          parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled',
+          parrotBodyLayerPortraitOcclusion: 'depthWrite-disabled+pre-shell-depth-replay',
           bodySurfaceTexture: 'wavy_surface.png',
         };
       },

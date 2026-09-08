@@ -2,10 +2,10 @@
 //
 // Hand placement has a deliberate late pre-render sync: an invisible sentinel updates
 // the hand sockets after toolHolder's render-time stance hook has produced its final
-// matrix. Outline rendering then uses separate shell and material-ID passes, often with
-// scene.autoUpdate=false. Snapshot each hand mesh's already-final matrixWorld directly
-// in the visible draw's onBeforeRender (the same ordering used by feet), then temporarily
-// reuse that exact matrix for every outline override draw. The same meshes
+// matrix. Outline rendering then uses separate occluder-depth, shell, and material-ID
+// passes, often with scene.autoUpdate=false. Snapshot each hand mesh's already-final
+// matrixWorld directly in the visible draw's onBeforeRender (the same ordering used by
+// feet), then temporarily reuse that exact matrix for every secondary draw. The same meshes
 // are also registered with HeldObjectRenderOrder so hands x-ray grass/ground exactly
 // like held tool sprites while ordinary scene occluders still block them.
 (function (global) {
@@ -19,6 +19,7 @@
   const MAX_SNAPSHOT_AGE_MS = 160;
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
+  let lockedOccluderDepthDraws = 0; // Diagnostic count of pre-shell depth replays forced to the captured visible hand matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
   let missedOutlineSnapshots = 0; // Outline draws where no recent visible matrix was available.
@@ -39,7 +40,12 @@
     );
   }
 
-  function outlinePassKind(scene, material) {
+  function secondaryPassKind(scene, camera, material) {
+    if (
+      !scene?.overrideMaterial
+      && material?.colorWrite === false
+      && camera?.layers?.mask === (1 << 4)
+    ) return 'occluder-depth';
     if (!scene?.overrideMaterial) return null;
     if (isShellMaterial(material)) return 'shell';
     if (isMaterialIdMaterial(material)) return 'material-id';
@@ -103,6 +109,7 @@
       // this color-writing draw — not a transform reconstructed after the fact.
       previousBefore?.apply(this, args);
       const scene = args[1];
+      const camera = args[2];
       const material = args[4];
       const now = performance.now();
 
@@ -116,7 +123,7 @@
         return;
       }
 
-      const passKind = outlinePassKind(scene, material);
+      const passKind = secondaryPassKind(scene, camera, material);
       if (!passKind) {
         state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
@@ -148,7 +155,10 @@
       // base->secondary render ordering used by outline-render-performance.js.
       state.restoreStack.push(this.matrixWorld.clone());
       this.matrixWorld.copy(state.visibleMatrixWorld);
-      if (passKind === 'shell') {
+      if (passKind === 'occluder-depth') {
+        rigState.lockedOccluderDepthDraws++;
+        lockedOccluderDepthDraws++;
+      } else if (passKind === 'shell') {
         rigState.lockedShellDraws++;
         lockedShellDraws++;
       } else {
@@ -216,6 +226,7 @@
       hookedMeshes: 0, // Number of current-or-former hand meshes that received matrix-lock hooks.
       heldXrayMeshes: 0, // Hand meshes registered with selective ground/grass x-ray.
       baseMatrixCaptures: 0, // Visible hand draws captured for this hand rig.
+      lockedOccluderDepthDraws: 0, // Pre-shell depth replays that reused the exact visible hand matrix.
       lockedShellDraws: 0, // Shell draws that reused the exact visible hand matrix.
       lockedMaterialIdDraws: 0, // Material-ID draws that reused the exact visible hand matrix.
       missedOutlineSnapshots: 0, // Outline draws without a recent visible matrix to reuse.
@@ -245,6 +256,7 @@
           outlineHookedMeshes: rigState.hookedMeshes,
           heldXrayMeshes: rigState.heldXrayMeshes,
           outlineBaseMatrixCaptures: rigState.baseMatrixCaptures,
+          outlineLockedOccluderDepthDraws: rigState.lockedOccluderDepthDraws,
           outlineLockedShellDraws: rigState.lockedShellDraws,
           outlineLockedMaterialIdDraws: rigState.lockedMaterialIdDraws,
           outlineMissedSnapshots: rigState.missedOutlineSnapshots,
@@ -272,6 +284,7 @@
       return {
         activeRigs: activeRigs.size,
         baseMatrixCaptures,
+        lockedOccluderDepthDraws,
         lockedShellDraws,
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
