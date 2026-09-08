@@ -21,8 +21,8 @@
 
   const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used as the required first prologue area.
   const HUNUNDI_MAP_ID = 'map_i_temple_basement_hunundi'; // Used as the required second prologue area.
-  const RESCUE_ENTRY_COL = 4; // Used to place the player in the authored 6x6 center clearing.
-  const RESCUE_ENTRY_ROW = 4; // Used with RESCUE_ENTRY_COL for the first normal enterZone call.
+  const RESCUE_ENTRY_COL = 12; // Used to place the player near the center of the enlarged 15x15 clearing.
+  const RESCUE_ENTRY_ROW = 12; // Used with RESCUE_ENTRY_COL for the first normal enterZone call.
   const FIRST_ATTEMPT_DELAY_MS = 180; // Used to give PrologueSystem's ordinary transition timer first refusal.
   const RESCUE_RETRY_MS = 120; // Used to retry until async authored zone registration has completed.
   const ROOM_RETRY_MS = 1500; // Used to avoid stacking ordinary fade transitions into Hunundi's room.
