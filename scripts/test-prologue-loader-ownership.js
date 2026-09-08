@@ -29,7 +29,8 @@ const documentStub = {
 
 let persistedState = null; // Brand-new owner begins before PrologueSystem writes rescue state.
 let currentArea = 'farm';
-let dialogueReady = false;
+let actorsReady = false;
+let dialogueReady = false; // Deliberately remains false through loader release.
 let loaderShows = 0;
 let loaderHides = 0;
 const progress = [];
@@ -65,6 +66,7 @@ const windowObject = {
     getActiveScene: () => scene,
   },
   PrologueDialogueRuntime: {
+    isRescueActorsReady: () => actorsReady,
     isRescueStageReady: () => dialogueReady,
   },
   LoadingScreenRuntime: {
@@ -147,24 +149,26 @@ assert.equal(runtime.beginLoadingHold('duplicate-retry'), false);
 assert.equal(runtime.beginLoadingHold('duplicate-retry-2'), false);
 assert.equal(loaderShows, 0, 'retries must not create new loading generations');
 
-// Prologue state arrives and real rescue map becomes active, but actors/dialogue
-// are not ready yet. Map readiness alone must NEVER release the overlay.
+// Map is complete, but scripted world actors are not staged yet. The loader
+// stays up for actor pop-in prevention; dialogue/camera readiness is irrelevant.
 persistedState = { stage: 'rescue', completed: false };
 currentArea = 'map_prologue_rescue';
 runtime.requestRevealCheck();
 assert.equal(runtime.rescueMapReady(), true, 'real 25x25 map/fog/tree setup is ready');
-assert.equal(runtime.rescueRevealReady(), false, 'dialogue readiness is part of the same authoritative reveal gate');
-assert.equal(loaderHides, 0, 'map readiness alone cannot hide');
+assert.equal(runtime.rescueActorsReady(), false, 'scripted world actors are still missing');
+assert.equal(runtime.rescueRevealReady(), false);
+assert.equal(loaderHides, 0, 'map readiness alone cannot hide before actor staging');
 assert.equal(loaderRoot.classList.contains('visible'), true);
-assert.equal(windowObject.__hobunjiPrologueHiddenSetup, true);
 assert.equal(scene.userData.prologueRescueBoundaryTreeCount, 96, 'outer boundary generates 96 Shadewoods');
 
-// Once actor/dialogue runtime reports ready, the SAME owner performs the
-// two-paint barrier and final hide.
-dialogueReady = true;
+// Critical live regression: actors become ready while dialogue/camera remains
+// unavailable. The loader MUST release anyway after its two-paint barrier.
+actorsReady = true;
+dialogueReady = false;
 runtime.requestRevealCheck();
-assert.equal(runtime.rescueRevealReady(), true);
-assert.equal(rafQueue.length, 1, 'combined readiness schedules first paint frame');
+assert.equal(runtime.rescueRevealReady(), true, 'dialogue readiness is not part of map reveal anymore');
+assert.equal(runtime.debugSnapshot().dialogueReady, false, 'test proves release happens with dialogue still unavailable');
+assert.equal(rafQueue.length, 1, 'actor+map readiness schedules first paint frame');
 const first = rafQueue.shift();
 first();
 assert.equal(rafQueue.length, 1, 'first paint schedules second paint frame');
@@ -174,15 +178,16 @@ second();
 Promise.resolve().then(() => Promise.resolve()).then(() => {
   assert.equal(loaderHides, 1, 'single loader owner performs exactly one canonical hide');
   assert.equal(loaderRoot.classList.contains('visible'), false, 'final DOM overlay is actually removed');
-  assert.equal(windowObject.__hobunjiPrologueHiddenSetup, false, 'audio suppression ends only after actual loader removal');
+  assert.equal(windowObject.__hobunjiPrologueHiddenSetup, false, 'audio suppression ends after actual loader removal');
   assert.equal(runtime.debugSnapshot().loaderHeld, false);
   assert.equal(runtime.debugSnapshot().lastReadyArea, 'map_prologue_rescue');
   assert.ok(progress.some(event => event.value === 100 && event.label === 'prologue-ready'));
 
-  assert.equal(source.includes('PrologueDialogueRuntime?.isRescueStageReady'), true, 'map loader must include dialogue readiness in rescue reveal gate');
-  assert.equal(source.includes('window.__hobunjiPrologueHiddenSetup = false'), true, 'map owner must clear hidden-audio state on final release');
+  assert.equal(source.includes('PrologueDialogueRuntime?.isRescueActorsReady'), true, 'map loader gates on actor world-model readiness');
+  assert.equal(source.includes('return rescueMapReady() && rescueActorsReady()'), true, 'rescue reveal must not depend on dialogue/camera readiness');
+  assert.equal(source.includes('window.__hobunjiPrologueHiddenSetup = false'), true, 'map owner clears hidden-audio state on final release');
 
-  console.log('prologue single loading-screen owner regression passed');
+  console.log('prologue actor-gated loading-screen release regression passed');
 }).catch(error => {
   console.error(error);
   process.exitCode = 1;
