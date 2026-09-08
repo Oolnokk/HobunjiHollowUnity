@@ -3,7 +3,7 @@
 
   // Prologue rescue-map adapter.
   //
-  // The rescue scene is a real authored 10x10 exterior map, but it should not
+  // The rescue scene is a real authored 25x25 exterior map, but it should not
   // become a permanent ordinary wilderness destination. This adapter injects
   // that authored map into the town workspace only at runtime, lets the normal
   // zone renderer build its seasonal ground, then layers the Southern Cloud
@@ -17,8 +17,10 @@
   const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used as the dedicated authored first-prologue area.
   const HUNUNDI_MAP_ID = 'map_i_temple_basement_hunundi'; // Used to keep the same loading hold across the second real-map transition.
   const SAVE_META_KEY = 'hobunjiSaveMeta'; // Used to read the current world's persisted prologue stage without reaching into PrologueSystem internals.
-  const RESCUE_COLS = 10; // Used by readiness checks so the loader cannot release onto a fallback/farm scene.
-  const RESCUE_ROWS = 10; // Used with RESCUE_COLS to verify the authored clearing is the active grid.
+  const RESCUE_COLS = 25; // Used by readiness checks so the loader cannot release onto a fallback/farm scene.
+  const RESCUE_ROWS = 25; // Used with RESCUE_COLS to verify the enlarged authored clearing is the active grid.
+  const RESCUE_CENTER_COL = 12; // Used to verify the expanded 15x15 grass center exists before loader release.
+  const RESCUE_CENTER_ROW = 12; // Used with RESCUE_CENTER_COL as a stable interior readiness probe.
   const RESCUE_FOG_COLOR = 0xffffff; // Used to match Southern Cloud Forest's authored white scene fog.
   const RESCUE_FOG_DENSITY = 0.055; // Used to match EXTERIOR_ZONES.map_southern_cloud_forest.
   const WORKSPACE_STUB = Object.freeze({
@@ -254,8 +256,8 @@
     if (!access?.getActiveScene || !access?.getActiveGrid) return false;
     if (access.getActiveCols?.() !== RESCUE_COLS || access.getActiveRows?.() !== RESCUE_ROWS) return false;
     const scene = access.getActiveScene(); // Used as the actual rendered rescue scene receiving fog/boundary foliage.
-    const grid = access.getActiveGrid(); // Used to verify the authored 10x10 map and its non-walkable border exist.
-    if (!scene || !grid?.[4]?.[4]) return false;
+    const grid = access.getActiveGrid(); // Used to verify the authored 25x25 map and its non-walkable border exist.
+    if (!scene || !grid?.[RESCUE_CENTER_ROW]?.[RESCUE_CENTER_COL]) return false;
     applyRescueSceneFog(scene);
     return decorateRescueBoundary(scene, grid);
   }
@@ -324,7 +326,7 @@
     return {
       rescueMapId: RESCUE_MAP_ID,
       rescueSize: `${RESCUE_COLS}x${RESCUE_ROWS}`,
-      walkableClearing: '6x6 (cols/rows 2-7)',
+      walkableClearing: '15x15 (cols/rows 5-19)',
       currentArea: currentArea(),
       stage: state?.stage || null,
       loaderHeld: runtime.loaderHeld,
