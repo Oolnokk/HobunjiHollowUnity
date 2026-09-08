@@ -6,8 +6,17 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/combat/ranged-camera-ray-authority.js', 'utf8');
+const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 assert.doesNotMatch(source, /setInterval\s*\(/, 'ranged authority adds no polling interval');
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(/, 'ranged authority adds no frame loop');
+
+const authorityIndex = loader.indexOf('js/combat/ranged-camera-ray-authority.js?v=20260908cameraauthority1');
+const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=20260906f');
+const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260908cameraauthority1');
+assert(authorityIndex >= 0 && focusIndex > authorityIndex && alignmentIndex > focusIndex,
+  'actual-fire authority loads before ranged focus, while the post-focus combat/lunge bridge loads after it');
+assert.match(loader, /HobunjiRangedCameraRayAuthority\?\.version\) >= 1/,
+  'loader requires the ranged camera ray authority API');
 
 const logs = [];
 const player = { x: 0, y: 0 };
