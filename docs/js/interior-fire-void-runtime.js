@@ -17,13 +17,15 @@
     campfireFurniture: 'campfire',
     bonfireFurniture: 'bonfire',
   });
-  const FIRE_DEFS = Object.freeze({ // Mirrors the actual decorative definitions so an early lookup can never fall through to a gray placeholder cube.
+  const FIRE_DEFS = Object.freeze({ // Mirrors runtime + editor catalog fields so early lookups cannot fall through to a gray placeholder cube.
     campfireFurniture: Object.freeze({
-      name: 'Campfire', icon: '🔥', fw: 1, fd: 1, procKey: 'campfire', color: 0x6d3e20,
+      key: 'campfireFurniture', label: 'Campfire', name: 'Campfire', icon: '🔥', fw: 1, fd: 1,
+      procKey: 'campfire', col: 0x6d3e20, color: 0x6d3e20,
       desc: 'A compact stone-ring campfire using the authored campfire furniture preset.',
     }),
     bonfireFurniture: Object.freeze({
-      name: 'Bonfire', icon: '🔥', fw: 2, fd: 2, procKey: 'bonfire', color: 0x6d3e20,
+      key: 'bonfireFurniture', label: 'Bonfire', name: 'Bonfire', icon: '🔥', fw: 2, fd: 2,
+      procKey: 'bonfire', col: 0x6d3e20, color: 0x6d3e20,
       desc: 'A two-by-two bonfire derived from the authored campfire at double scale.',
     }),
   });
