@@ -39,6 +39,7 @@
   // Settings-tab slider can change these without touching the defaults.
   const layerLive = LAYER_CONFIG.map(cfg => ({ radiusTiles: cfg.defaultRadiusTiles, opacity: cfg.defaultOpacity }));
   const ATMOSPHERE_CONFIG_PATH = './config/atmosphere-lighting.json';
+  const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
   const DEFAULT_TUNING = Object.freeze({
     cloudForest: Object.freeze({
       dayFogColor: '#ffffff',
@@ -49,12 +50,12 @@
       matchBackgroundToFog: true,
     }),
     lantern: Object.freeze({
-      radiusTiles: 3.2,
+      radiusTiles: 2.4,
       clarityRadiusTiles: 0.95,
       centerMaskAlpha: 0.92,
       clarityMaskAlpha: 0.80,
-      softMaskAlpha: 0.18,
-      softTransitionFraction: 0.11,
+      softMaskAlpha: 0.28,
+      softTransitionFraction: 0.18,
     }),
   });
   let tuning = {
@@ -64,6 +65,7 @@
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
   const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const smoothstep01 = value => { const t = clamp01(value); return t * t * (3 - 2 * t); }; // Used by lunarNightWindowStrength() to match the skydome's dusk/dawn easing.
 
   function debugLog(message, level = 'info') {
     const logger = window.__farmLog || console.log;
@@ -240,9 +242,31 @@
     loadAtmosphereTuning();
   }
 
+  function currentMoonIllumination() {
+    const value = window.HobunjiSkyDome?.getDebugState?.().moonIllumination; // Reuses the skydome's existing 28-day lunar-month phase calculation so lighting and the rendered moon cannot disagree.
+    return Number.isFinite(value) ? clamp01(value) : 1;
+  }
+
+  function lunarNightWindowStrength() {
+    const rawHour = Number(window.CalendarSystem?.getHour?.()); // Used to confine lunar darkness to the same dusk-through-dawn window as the skydome.
+    if (!Number.isFinite(rawHour)) return 0;
+    const hour = rawHour < 12 ? rawHour + 24 : rawHour;
+    if (hour < 18) return 0;
+    if (hour < 20) return smoothstep01((hour - 18) / 2);
+    if (hour < 29) return 1;
+    if (hour < 31) return 1 - smoothstep01((hour - 29) / 2);
+    return 0;
+  }
+
+  function currentLunarDarknessAddition() {
+    const newMoonStrength = 1 - currentMoonIllumination(); // Used below so day 14/full moon preserves the existing darkness while the month boundary approaches the new darker target.
+    return GLOBAL_DARKNESS_DELTA * newMoonStrength * lunarNightWindowStrength();
+  }
+
   function getFullDayLighting() {
     const state = window.HobunjiSkyDome?.getLightingState?.() || window.WeatherFX?.getLightingState?.();
-    return state && Number.isFinite(state.r) ? state : { r: 255, g: 255, b: 255, a: 0 };
+    const base = state && Number.isFinite(state.r) ? state : { r: 255, g: 255, b: 255, a: 0 }; // Base full-moon lighting state before lunar darkness is added.
+    return { ...base, a: clamp01(base.a + currentLunarDarknessAddition()) };
   }
 
   function updateFogLighting(activeScene) {
@@ -313,9 +337,9 @@
     }
   }
 
-  const DEN_DARKNESS_OVERLAY_ALPHA = 0.82; // Used by the shared night-style canvas overlay so dens stay very dark even though their cliff material is unlit.
-  const MINE_DARKNESS_OVERLAY_ALPHA = 0.90; // Used by mine floors + ladder room to stay darker than dens without changing the unlit town-cliff material itself.
-  const INTERIOR_DARKNESS_OVERLAY_ALPHA = 0.28; // Used by ordinary enclosed building interiors to preserve the existing mild ambient darkness.
+  const MINE_DARKNESS_OVERLAY_ALPHA = 0.99; // Raised from 0.90 so untouched mine-screen edges retain only about one percent of the rendered image.
+  const DEN_DARKNESS_OVERLAY_ALPHA = clamp01(0.82 + GLOBAL_DARKNESS_DELTA); // Applies the mine's +0.09 darkness change to the previous den level.
+  const INTERIOR_DARKNESS_OVERLAY_ALPHA = clamp01(0.28 + GLOBAL_DARKNESS_DELTA); // Applies the same +0.09 darkness change to ordinary enclosed interiors.
 
   let skyPolicyDeps = null;
   function isNoSkyArea(area) {
@@ -573,6 +597,9 @@
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
         renderingMode: 'original-skydome-visibility-only',
         lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
+        moonIllumination: currentMoonIllumination(),
+        lunarDarknessAddition: currentLunarDarknessAddition(),
+        globalDarknessDelta: GLOBAL_DARKNESS_DELTA,
         configPath: ATMOSPHERE_CONFIG_PATH,
         tuning: {
           cloudForest: { ...tuning.cloudForest },
