@@ -90,12 +90,12 @@
       }
       #hobunjiLoadScreen .hlsBronzeVerdigrisGlyphImage {
         position:absolute;
-        left:50%;
-        top:50%;
+        left:0;
+        top:0;
         max-width:none;
         pointer-events:none;
         user-select:none;
-        transform:translate(-50%,-50%);
+        transform:none;
         filter:drop-shadow(0 2px 5px ${CATEGORY_SHADOW}) drop-shadow(0 0 5px rgba(205,127,50,.34));
       }
 
@@ -199,8 +199,13 @@
     return Number.isFinite(size) && size > 1 ? size : 89;
   }
 
+  function glyphLineHeightPx(glyph, fontSizePx) {
+    const lineHeight = Number.parseFloat(getComputedStyle(glyph).lineHeight); // Used to reproduce the same .56em line box that positions the live Tankan glyph baseline.
+    return Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : fontSizePx * 0.56;
+  }
+
   function glyphCacheKey(character, fontSizePx, scale) {
-    return `${character}|${fontSizePx.toFixed(3)}|${scale.toFixed(2)}|${BRONZE_HEX}|${VERDIGRIS_HEX}|${VERDIGRIS_AMOUNT}|shine2`;
+    return `${character}|${fontSizePx.toFixed(3)}|${scale.toFixed(2)}|${BRONZE_HEX}|${VERDIGRIS_HEX}|${VERDIGRIS_AMOUNT}|shine3`;
   }
 
   function makeGlyphSource(character, fontSizePx, scale, tool) {
@@ -210,14 +215,17 @@
     if (!measureContext) throw new Error('Unable to create Tankan glyph measurement context.');
     measureContext.font = `${renderFontPx}px "TankanScript"`;
     measureContext.textBaseline = 'alphabetic';
-    const metrics = measureContext.measureText(character); // Used to crop the sprite tightly around this Tankan glyph.
-    const left = Math.max(0, Number(metrics.actualBoundingBoxLeft) || 0); // Used to position the glyph so its leftmost stroke stays inside the sprite.
-    const right = Math.max(1, Number(metrics.actualBoundingBoxRight) || metrics.width || renderFontPx); // Used to size the sprite to the measured right edge.
+    const metrics = measureContext.measureText(character); // Used for both tight raster bounds and browser-equivalent advance/baseline placement.
+    const leftBearing = Number(metrics.actualBoundingBoxLeft) || 0; // Signed distance from the text alignment origin to the painted left edge; preserving its sign fixes asymmetric glyph centering.
+    const rightBearing = Number(metrics.actualBoundingBoxRight) || Number(metrics.width) || renderFontPx; // Used with leftBearing to size the tight painted sprite.
     const ascent = Math.max(1, Number(metrics.actualBoundingBoxAscent) || renderFontPx * 0.8); // Used to place the alphabetic baseline without clipping the glyph top.
-    const descent = Math.max(1, Number(metrics.actualBoundingBoxDescent) || renderFontPx * 0.2); // Used to retain any descender pixels below the baseline.
+    const descent = Math.max(0, Number(metrics.actualBoundingBoxDescent) || renderFontPx * 0.2); // Used to retain any descender pixels below the baseline.
+    const advanceWidth = Math.max(0, Number(metrics.width) || rightBearing + leftBearing); // Used to place the raster from the same centered advance box as CSS text-align:center.
+    const fontAscent = Math.max(1, Number(metrics.fontBoundingBoxAscent) || renderFontPx * 0.8); // Used to reconstruct the font baseline inside the CSS line-height box.
+    const fontDescent = Math.max(0, Number(metrics.fontBoundingBoxDescent) || renderFontPx * 0.2); // Used with fontAscent to split CSS leading above/below the font box.
     const externalStroke = GLYPH_STROKE_PX * scale; // Used to reproduce Item Select's 3px black category-heading outline at display scale.
     const padding = Math.ceil(externalStroke + 3 * scale); // Used to keep antialiasing/shadow-safe pixels inside the generated source sprite.
-    const width = Math.max(1, Math.ceil(left + right + padding * 2)); // Used as the source and recolored Tankan sprite width.
+    const width = Math.max(1, Math.ceil(leftBearing + rightBearing + padding * 2)); // Used as the tight source width while retaining signed left-side bearing geometry.
     const height = Math.max(1, Math.ceil(ascent + descent + padding * 2)); // Used as the source and recolored Tankan sprite height.
     const canvas = document.createElement('canvas'); // Used as the #5A8480-hued metallic source sprite consumed by ToolMetalRecolor.
     canvas.width = width;
@@ -242,11 +250,21 @@
     metalGradient.addColorStop(1.00, sourceFillHex(tool, 0.62));
     context.fillStyle = metalGradient;
 
-    const x = padding + left; // Used as the baseline origin that accounts for actualBoundingBoxLeft.
+    const x = padding + leftBearing; // Used so source-canvas x=0 maps back to the real alignment origin minus signed bearing/padding.
     const y = padding + ascent; // Used as the alphabetic baseline that retains measured ascent/descent.
     context.strokeText(character, x, y);
     context.fillText(character, x, y);
-    return canvas;
+    return {
+      canvas,
+      placement: {
+        leftBearing: leftBearing / scale,
+        actualAscent: ascent / scale,
+        advanceWidth: advanceWidth / scale,
+        fontAscent: fontAscent / scale,
+        fontDescent: fontDescent / scale,
+        padding: padding / scale,
+      },
+    };
   }
 
   function recoloredGlyph(character, fontSizePx) {
@@ -259,8 +277,8 @@
     const cached = GLYPH_CACHE.get(cacheKey); // Used to avoid rerunning seeded oxidation for an identical glyph sprite.
     if (cached) return cached;
     const promise = Promise.resolve().then(async () => {
-      const sourceCanvas = makeGlyphSource(character, fontSizePx, scale, tool); // Used as the shiny placeholder-metal sprite passed into the shared recolorer.
-      const sourceUrl = sourceCanvas.toDataURL('image/png'); // Used because ToolMetalRecolor deliberately consumes sprite URLs and already supports data URLs through Image.
+      const source = makeGlyphSource(character, fontSizePx, scale, tool); // Used as the shiny placeholder-metal sprite plus its browser text-layout metrics.
+      const sourceUrl = source.canvas.toDataURL('image/png'); // Used because ToolMetalRecolor deliberately consumes sprite URLs and already supports data URLs through Image.
       const recoloredCanvas = await tool.getRecoloredCanvas(sourceUrl, {
         sourceHex: tool.SOURCE_HEX || FALLBACK_SOURCE_HEX,
         targetHex: BRONZE_HEX,
@@ -271,6 +289,7 @@
         src: recoloredCanvas.toDataURL('image/png'),
         width: recoloredCanvas.width / scale,
         height: recoloredCanvas.height / scale,
+        placement: source.placement,
       };
     });
     GLYPH_CACHE.set(cacheKey, promise);
@@ -278,17 +297,30 @@
     return promise;
   }
 
+  function placeGlyphImage(glyph, image, sprite, fontSizePx) {
+    const glyphRect = glyph.getBoundingClientRect(); // Used to anchor to the actual 1em-wide glyph box authored by LoadingScreenRuntime instead of the tight bitmap center.
+    const lineHeightPx = glyphLineHeightPx(glyph, fontSizePx); // Used as the live CSS line box whose baseline the original font occupies.
+    const placement = sprite.placement; // Used to map tight raster coordinates back to the original text alignment origin and baseline.
+    const fontBoxHeight = placement.fontAscent + placement.fontDescent; // Used to reproduce CSS half-leading around the font metrics box.
+    const baselineY = (lineHeightPx - fontBoxHeight) * 0.5 + placement.fontAscent; // Used as the browser-equivalent alphabetic baseline inside the .56em glyph line box.
+    const alignmentOriginX = (glyphRect.width - placement.advanceWidth) * 0.5; // Used to reproduce text-align:center using the font's advance width, not its painted bounds.
+    const left = alignmentOriginX - placement.leftBearing - placement.padding; // Used to align the tight sprite's left pixel with the original signed glyph bearing.
+    const top = baselineY - placement.actualAscent - placement.padding; // Used to align the tight sprite's top pixel from the original alphabetic baseline.
+    image.style.left = `${left}px`;
+    image.style.top = `${top}px`;
+  }
+
   async function decorateGlyph(glyph) {
     const character = String(glyph.dataset.hlsMetalCharacter || glyph.textContent || ''); // Used to retain the original Tankan character after its text becomes visually transparent.
     if (!character) return;
     glyph.dataset.hlsMetalCharacter = character;
     const fontSizePx = glyphFontSizePx(glyph); // Used to regenerate only if the configured loading-screen script size changed.
-    const desiredKey = `${character}|${fontSizePx.toFixed(3)}|shine2|${VERDIGRIS_AMOUNT}`; // Used to reject stale sprites after a live config/size/material refresh.
+    const desiredKey = `${character}|${fontSizePx.toFixed(3)}|shine3|${VERDIGRIS_AMOUNT}`; // Used to reject stale sprites after a live config/size/material/alignment refresh.
     if (glyph.dataset.hlsMetalAppliedKey === desiredKey && glyph.querySelector('.hlsBronzeVerdigrisGlyphImage')) return;
     if (glyph.dataset.hlsMetalPendingKey === desiredKey) return;
     glyph.dataset.hlsMetalPendingKey = desiredKey;
     try {
-      const sprite = await recoloredGlyph(character, fontSizePx); // Used as the final shiny-bronze + 25%-verdigris Tankan glyph image.
+      const sprite = await recoloredGlyph(character, fontSizePx); // Used as the final shiny-bronze + 25%-verdigris Tankan glyph image with exact font-layout placement metadata.
       if (!glyph.isConnected || glyph.dataset.hlsMetalPendingKey !== desiredKey) return;
       const image = document.createElement('img'); // Used as the transparent-background sprite overlay while the original text remains as accessible/fallback content.
       image.className = 'hlsBronzeVerdigrisGlyphImage';
@@ -297,6 +329,7 @@
       image.src = sprite.src;
       image.style.width = `${sprite.width}px`;
       image.style.height = `${sprite.height}px`;
+      placeGlyphImage(glyph, image, sprite, fontSizePx);
       glyph.querySelector('.hlsBronzeVerdigrisGlyphImage')?.remove();
       glyph.appendChild(image);
       glyph.classList.add('hlsBronzeVerdigrisGlyph');
