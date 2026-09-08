@@ -56,7 +56,10 @@
     const catalog = furniture.CATALOG;
     const campfire = catalog.campfire;
     if (Array.isArray(campfire) && campfire.length && (!Array.isArray(catalog.bonfire) || !catalog.bonfire.length)) {
-      catalog.bonfire = scaleRecipe(campfire, 2); // Prevents the game from seeing an empty group while authored bonfire JSON is still loading.
+      // The authored bonfire still replaces this when its JSON resolves; this
+      // only prevents an empty group from causing the caller's generic cube
+      // fallback during that asynchronous window.
+      catalog.bonfire = scaleRecipe(campfire, 2);
       catalogFallbackInstalled = true;
     }
     for (const [itemKey, visualKey] of Object.entries(FIRE_KEY_ALIASES)) {
