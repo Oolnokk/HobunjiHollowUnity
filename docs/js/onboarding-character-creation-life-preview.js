@@ -38,6 +38,7 @@
   let creatorSyncPending = false; // Coalesces the redesign's synchronous tab/rerender transaction.
   let kasaPolicyBusy = false; // Prevents our Collections round trip from recursively applying itself.
   let lastKasaPolicyIdentity = null; // Applies random-only Kasa dye policy once per generated species/gender identity.
+  let active = true; // Flips false once character creation hands off, stopping the forever RAF loop and body-level observer.
 
   function normalizeSpecies(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
@@ -344,11 +345,21 @@
   }
 
   function lifeFrame(nowMs) {
+    if (!active) return; // Stops rescheduling once character creation has handed off.
     if (life.model?.parent) {
       if (nowMs - life.lastLifeRenderMs >= LIFE_FRAME_MS) repaintLivingPortrait(nowMs);
       placeStarterWeaponHand(); // Runs after the normal free-hand driver so the weapon owns the right hand exactly as gameplay does.
     }
     requestAnimationFrame(lifeFrame);
+  }
+
+  function teardown() {
+    active = false;
+    bodyObserver?.disconnect();
+    bodyObserver = null;
+    overlayObserver?.disconnect();
+    overlayObserver = null;
+    observedOverlay = null;
   }
 
   function scheduleCreatorSync() {
@@ -392,6 +403,10 @@
     wrapAvatarBuilder();
     installObservers();
     requestAnimationFrame(lifeFrame);
+    // hobunjiPlayerReady fires the moment character creation (or save continue)
+    // hands off to gameplay, ~420ms before the overlay actually leaves the DOM.
+    // The delay lets the closing fade still repaint on its way out.
+    document.addEventListener('hobunjiPlayerReady', () => setTimeout(teardown, 500), { once: true });
 
     // The hand/bootstrap scripts are parser-loaded before onboarding, but keep a
     // short retry for cache/race cases where PNGPlaneAvatar is late to publish.

@@ -83,20 +83,22 @@ furniture.buildFurnitureGroup('bonfireFurniture', 0x654321);
 assert.deepStrictEqual(calls.slice(-2).map(call => call[0]), ['campfire', 'bonfire'],
   'item keys must be canonicalized before the visual builder can fall through to a placeholder cube');
 
-const decorativeBridge = vm.runInContext(`(() => {
-  const defs = { basicBedFurniture: {}, chairSimpleFurniture: {}, rugFurniture: {} };
-  return [
-    defs.campfireFurniture?.procKey,
-    defs.bonfireFurniture?.procKey,
-    defs.bonfireFurniture?.fw,
-    defs.bonfireFurniture?.fd,
-    defs.bonfireFurniture?.key,
-    defs.bonfireFurniture?.label,
-    defs.bonfireFurniture?.col,
-  ];
-})()`, context);
-assert.deepStrictEqual(Array.from(decorativeBridge), ['campfire', 'bonfire', 2, 2, 'bonfireFurniture', 'Bonfire', 0x6d3e20],
-  'definition bridge must satisfy both gameplay and Interior Editor catalog fields');
+// The decorative-definition lookup used to be served by an Object.prototype
+// getter/setter installed here (a global-pollution perf issue: every object on
+// the live game page inherited a 'campfireFurniture'/'bonfireFurniture'
+// accessor). It's been replaced by real entries in game.js's own
+// DECORATIVE_FURNITURE_DEFS, so allFurnDefs[f.itemKey] resolves them through
+// ordinary property lookup with no prototype-wide side effects. Confirm those
+// entries exist with the same shape the old bridge used to synthesize.
+const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
+assert(!/Object\.defineProperty\(Object\.prototype,\s*itemKey/.test(source),
+  'interior-fire-void-runtime.js must not patch Object.prototype for fire furniture definitions');
+assert(/campfireFurniture:\s*\{\s*itemKey:\s*'campfireFurniture'.*fw:\s*1,\s*fd:\s*1/.test(gameSource),
+  'game.js DECORATIVE_FURNITURE_DEFS must define a 1x1 campfireFurniture entry');
+assert(/bonfireFurniture:\s*\{\s*itemKey:\s*'bonfireFurniture'.*fw:\s*2,\s*fd:\s*2/.test(gameSource),
+  'game.js DECORATIVE_FURNITURE_DEFS must define a 2x2 bonfireFurniture entry');
+assert(/bonfireFurniture:\s*\{[^}]*fixture:\s*true/.test(gameSource),
+  'authored fire furniture must be excluded from the player-buildable catalog like other game-placed fixtures');
 
 const children = [];
 const scene = {

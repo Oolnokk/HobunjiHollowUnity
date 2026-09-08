@@ -68,6 +68,9 @@
     activeTip: '',
     activeTipTitle: '', // Used by the loading-screen header and diagnostics to preserve the selected Compendium feature context.
     reason: 'idle',
+    tipPoolGeneration: 0, // Generation the cached tip pool/semantic rules below were built for; a mismatch forces one rebuild per loading session instead of one every ten-second tick.
+    tipPoolCache: null,
+    semanticRulesCache: null,
   }; // Used by rendering, transition coverage, real request progress, and the built-in mobile diagnostics panel.
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -300,8 +303,37 @@
     return tips;
   }
 
+  function invalidateTipCacheIfStale() {
+    // The compendium/afflictions registry can't change mid-loading-screen, so
+    // extractCompendiumTips()/semanticRules() only need to run once per
+    // show() generation instead of once every ten-second tip-rotation tick.
+    if (state.tipPoolGeneration !== state.generation) {
+      state.tipPoolGeneration = state.generation;
+      state.tipPoolCache = null;
+      state.semanticRulesCache = null;
+    }
+  }
+
+  function cachedCompendiumTips() {
+    invalidateTipCacheIfStale();
+    if (!state.tipPoolCache) state.tipPoolCache = extractCompendiumTips();
+    return state.tipPoolCache;
+  }
+
+  function cachedSemanticIndex() {
+    invalidateTipCacheIfStale();
+    if (!state.semanticRulesCache) {
+      const rules = semanticRules();
+      state.semanticRulesCache = {
+        byTerm: new Map(rules.map(([term, className]) => [term.toLowerCase(), className])),
+        pattern: new RegExp(rules.map(([term]) => escapeRegExp(term)).join('|'), 'gi'),
+      };
+    }
+    return state.semanticRulesCache;
+  }
+
   function pickTip() {
-    const canonical = extractCompendiumTips();
+    const canonical = cachedCompendiumTips();
     const pool = canonical.length
       ? canonical
       : FALLBACK_TIPS.map((tip, index) => ({ key: `fallback:${index}`, ...tip }));
@@ -366,9 +398,7 @@
 
   function renderRichTip(container, text) {
     container.innerHTML = '';
-    const rules = semanticRules();
-    const byTerm = new Map(rules.map(([term, className]) => [term.toLowerCase(), className]));
-    const pattern = new RegExp(rules.map(([term]) => escapeRegExp(term)).join('|'), 'gi');
+    const { byTerm, pattern } = cachedSemanticIndex();
     let cursor = 0;
     const source = String(text || '');
     for (const match of source.matchAll(pattern)) {
