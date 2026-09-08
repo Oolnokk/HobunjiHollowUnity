@@ -18,6 +18,7 @@ on:
       - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
       - 'scripts/test-prologue-dialogue-runtime.js'
+      - 'scripts/test-prologue-loader-ownership.js'
       - '.github/workflows/prologue-regression.yml'
   pull_request:
     paths:
@@ -36,6 +37,7 @@ on:
       - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
       - 'scripts/test-prologue-dialogue-runtime.js'
+      - 'scripts/test-prologue-loader-ownership.js'
       - '.github/workflows/prologue-regression.yml'
   workflow_dispatch:
 
@@ -52,6 +54,7 @@ jobs:
           node-version: '20'
       - name: Check prologue runtime syntax
         run: |
+          node --check docs/js/prologue-rescue-map-runtime.js
           node --check docs/js/prologue-rescue-zone-compat.js
           node --check docs/js/prologue-safe-area-runtime.js
           node --check docs/js/prologue-startup-entry-bridge.js
@@ -63,3 +66,4 @@ jobs:
           node scripts/test-prologue-safe-area-runtime.js
           node scripts/test-prologue-startup-entry.js
           node scripts/test-prologue-dialogue-runtime.js
+          node scripts/test-prologue-loader-ownership.js
