@@ -6,9 +6,10 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..'); // Used to load the exact committed prologue/runtime/map files under test.
 const prologueSource = fs.readFileSync(path.join(ROOT, 'docs/js/prologue-system.js'), 'utf8'); // Used for persistence/calendar and no-preview assertions.
 const rescueRuntimeSource = fs.readFileSync(path.join(ROOT, 'docs/js/prologue-rescue-map-runtime.js'), 'utf8'); // Used to guard the authored-map/fog/loading adapter contract.
+const rescueCompatSource = fs.readFileSync(path.join(ROOT, 'docs/js/prologue-rescue-zone-compat.js'), 'utf8'); // Used to guard deterministic expansion of the compact 25x25 rescue descriptor.
 const characterLocksSource = fs.readFileSync(path.join(ROOT, 'docs/js/character-action-locks.js'), 'utf8'); // Used to verify rescue bootstrap loads before the main prologue controller.
 const chapter = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/cutscenes/prologue-chapter.json'), 'utf8')); // Used to validate stage-to-real-map authoring semantics.
-const rescueMap = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/maps/map_prologue_rescue.json'), 'utf8')); // Used to validate the tiny authored rescue clearing itself.
+const rescueMap = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/maps/map_prologue_rescue.json'), 'utf8')); // Used to validate the compact authored rescue clearing descriptor.
 const mapIndex = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/maps/index.json'), 'utf8')); // Used to ensure the authored map is resolvable by game.js's indexed-map precedence.
 
 // The prologue must remain a real gameplay-map flow, never the removed
@@ -30,46 +31,29 @@ assert.equal(chapter.cutsceneModel.npcFacing, 'authored-per-beat');
 assert.equal(chapter.cutsceneModel.npcHeadTracking, 'authored-per-beat');
 assert.equal(chapter.stages.rescue.mapId, 'map_prologue_rescue');
 assert.equal(chapter.stages.rescue.kind, 'zone');
-assert.equal(chapter.stages.rescue.entryCol, 4);
-assert.equal(chapter.stages.rescue.entryRow, 4);
+assert.equal(chapter.stages.rescue.entryCol, 12);
+assert.equal(chapter.stages.rescue.entryRow, 12);
 assert.equal(chapter.stages.hunundi_room.mapId, 'map_i_temple_basement_hunundi');
 
-// The rescue map is intentionally tiny: 10x10 total, with only a 6x6 clear
-// center. The surrounding two-tile frame is not part of the walkable scene.
+// The rescue area's linear dimensions are exactly 2.5x the former 10x10 map.
+// The former 6x6 center is likewise scaled to a centered 15x15 clearing; the
+// compact JSON descriptor is expanded into concrete tiles before zone registration.
 assert.equal(rescueMap.schema, 'hobunji_map.v1');
 assert.equal(rescueMap.id, 'map_prologue_rescue');
 assert.equal(rescueMap.category, 'exterior');
-assert(rescueMap.cols <= 10 && rescueMap.rows <= 10, 'rescue map must remain 10x10 or smaller');
-assert.deepEqual(rescueMap.prologueRescue.walkableRect, { c: 2, r: 2, w: 6, h: 6 });
+assert.equal(rescueMap.cols, 25, 'rescue map width must be 2.5x the former 10 tiles');
+assert.equal(rescueMap.rows, 25, 'rescue map height must be 2.5x the former 10 tiles');
+assert.deepEqual(rescueMap.prologueRescue.walkableRect, { c: 5, r: 5, w: 15, h: 15 });
+assert.deepEqual(rescueMap.prologueRescue.underbrushRing, { inset: 1, depth: 4 });
 assert.equal(rescueMap.prologueRescue.fogProfile, 'southern_cloud_forest');
 assert.equal(rescueMap.prologueRescue.noNaturalExits, true);
 assert.equal(rescueMap.transitions.length, 0, 'rescue clearing has no ordinary map exit');
-const tileByKey = new Map(rescueMap.tiles.map(tile => [`${tile.c},${tile.r}`, tile])); // Used to validate every authored coordinate without depending on array order.
-assert.equal(tileByKey.size, rescueMap.cols * rescueMap.rows, 'every rescue-map tile is explicitly authored');
-let grassCount = 0; // Used to prove no generated tree/underbrush tile enters the 6x6 walkable clearing.
-let shrubCount = 0; // Used to prove the entire non-walkable frame is explicitly blocked by vegetation.
-let outerCopseCount = 0; // Used to prove only the outermost ring is designated for Shadewood generation.
-for (let row = 0; row < rescueMap.rows; row++) {
-  for (let col = 0; col < rescueMap.cols; col++) {
-    const tile = tileByKey.get(`${col},${row}`);
-    const inWalkable = col >= 2 && col <= 7 && row >= 2 && row <= 7; // Used as the authored 6x6 center contract.
-    const outermost = col === 0 || row === 0 || col === rescueMap.cols - 1 || row === rescueMap.rows - 1; // Used as the tree-generation ring contract.
-    if (inWalkable) {
-      assert.equal(tile.type, 'grass', `walkable ${col},${row} must remain clear grass`);
-      grassCount++;
-    } else {
-      assert.equal(tile.type, 'shrub', `boundary ${col},${row} must be a solid vegetation tile`);
-      shrubCount++;
-    }
-    if (outermost) {
-      assert.equal(tile.floraKind, 'copse', `outermost ${col},${row} must request copse/tree treatment`);
-      outerCopseCount++;
-    }
-  }
-}
-assert.equal(grassCount, 36, 'walkable rescue clearing is exactly 6x6');
-assert.equal(shrubCount, 64, 'two-tile vegetation frame surrounds the clearing');
-assert.equal(outerCopseCount, 36, 'outermost 10x10 perimeter contains 36 Shadewood tree anchors');
+assert.equal(rescueMap.tiles.length, 0, 'rescue JSON stays compact; zone compat expands its deterministic repeated tile pattern');
+assert.match(rescueCompatSource, /const RESCUE_COLS = 25/, 'transport compatibility uses the enlarged map width');
+assert.match(rescueCompatSource, /const RESCUE_ROWS = 25/, 'transport compatibility uses the enlarged map height');
+assert.match(rescueCompatSource, /const RESCUE_WALKABLE_SIZE = 15/, 'transport compatibility scales the clear center to 15x15');
+assert.match(rescueCompatSource, /function buildRescueTiles\(\)/, 'transport compatibility expands the compact map descriptor before rendering');
+assert.match(rescueCompatSource, /layout\.tiles = buildRescueTiles\(\)/, 'expanded tiles are written into the exact private layout consumed by buildZoneScene');
 
 const rescueIndexEntry = mapIndex.maps.find(entry => entry.id === 'map_prologue_rescue'); // Used to verify _loadTownFromWorkspace can resolve the standalone authored file.
 assert(rescueIndexEntry, 'rescue map is present in config/maps/index.json');
@@ -87,7 +71,8 @@ assert.match(rescueRuntimeSource, /RESCUE_FOG_DENSITY\s*=\s*0\.055/, 'rescue sce
 assert.match(rescueRuntimeSource, /LoadingScreenRuntime\?\.show/, 'prologue starts the existing loading screen instead of a fake cover');
 assert.match(rescueRuntimeSource, /MutationObserver/, 'loader hide attempts are intercepted before an unintended farm paint');
 assert.match(rescueRuntimeSource, /requestAnimationFrame\(\(\) => requestAnimationFrame/, 'loader release waits two rendered frames after map readiness');
-assert.match(rescueRuntimeSource, /getActiveCols\?\.\(\) !== RESCUE_COLS/, 'loader release verifies the authored 10x10 grid, not merely currentArea');
+assert.match(rescueRuntimeSource, /getActiveCols\?\.\(\) !== RESCUE_COLS/, 'loader release verifies the authored 25x25 grid, not merely currentArea');
+assert.match(rescueRuntimeSource, /RESCUE_CENTER_ROW/, 'loader readiness probes the enlarged clearing center rather than an old 10x10 coordinate');
 assert(!rescueRuntimeSource.includes('location.reload'), 'rescue map/loading adapter never reloads the page');
 
 const rescueLoaderPos = characterLocksSource.indexOf('prologue-rescue-map-runtime.js'); // Used to verify the loading/workspace hooks install before PrologueSystem and later gameplay modules.
@@ -116,8 +101,11 @@ const rescueRuntime = rescueWindow.PrologueRescueMapRuntime;
 assert(rescueRuntime, 'PrologueRescueMapRuntime is exported');
 const workspaceOnce = rescueRuntime.augmentTownWorkspace({ maps: [{ id: 'map_hobunji_town' }] }); // Used to verify the rescue map is appended without rewriting the existing workspace.
 const workspaceTwice = rescueRuntime.augmentTownWorkspace(workspaceOnce); // Used to verify repeated/local-override composition is idempotent.
+const workspaceRescue = workspaceOnce.maps.find(map => map.id === 'map_prologue_rescue'); // Used to validate the runtime fallback stub matches the new dimensions.
 assert.equal(workspaceOnce.maps.filter(map => map.id === 'map_prologue_rescue').length, 1);
 assert.equal(workspaceTwice.maps.filter(map => map.id === 'map_prologue_rescue').length, 1);
+assert.equal(workspaceRescue.cols, 25);
+assert.equal(workspaceRescue.rows, 25);
 
 // Preserve the owner gate + calendar behavior from the previous pass.
 const store = new Map(); // Used as the prologue VM's localStorage backing store.
