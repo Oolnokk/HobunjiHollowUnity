@@ -26,6 +26,8 @@
     handRig: null,
   }; // Creator-only visual/equipment state; persisted into the real character only on hobunjiPlayerReady.
 
+  let active = true; // Flips false once character creation hands off, stopping the forever per-frame sync loop.
+
   function baseLife() {
     return window[BASE_PATCH_ID]?.life || null;
   }
@@ -453,6 +455,7 @@
   }
 
   function frame() {
+    if (!active) return; // Stops rescheduling once character creation has handed off.
     syncModelAndWeapon();
     requestAnimationFrame(frame);
   }
@@ -462,6 +465,9 @@
     // Capture phase + parser load order means game/combat consumers receive the
     // selected weapon slot already populated on the same hobunjiPlayerReady event.
     document.addEventListener('hobunjiPlayerReady', persistWeaponSelection, { capture: true });
+    // Separate, later listener: lets the closing fade (~420ms) keep syncing on
+    // its way out, then stops the forever per-frame loop for the rest of the session.
+    document.addEventListener('hobunjiPlayerReady', () => setTimeout(() => { active = false; }, 500), { once: true });
     requestAnimationFrame(frame);
   }
 

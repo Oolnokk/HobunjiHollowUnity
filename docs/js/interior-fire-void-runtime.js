@@ -17,23 +17,10 @@
     campfireFurniture: 'campfire',
     bonfireFurniture: 'bonfire',
   });
-  const FIRE_DEFS = Object.freeze({ // Mirrors runtime + editor catalog fields so early lookups cannot fall through to a gray placeholder cube.
-    campfireFurniture: Object.freeze({
-      key: 'campfireFurniture', label: 'Campfire', name: 'Campfire', icon: '🔥', fw: 1, fd: 1,
-      procKey: 'campfire', col: 0x6d3e20, color: 0x6d3e20,
-      desc: 'A compact stone-ring campfire using the authored campfire furniture preset.',
-    }),
-    bonfireFurniture: Object.freeze({
-      key: 'bonfireFurniture', label: 'Bonfire', name: 'Bonfire', icon: '🔥', fw: 2, fd: 2,
-      procKey: 'bonfire', col: 0x6d3e20, color: 0x6d3e20,
-      desc: 'A two-by-two bonfire derived from the authored campfire at double scale.',
-    }),
-  });
   const VOID_NAME = 'hobunji_interior_unlit_black_void'; // Stable name used to update/reuse one backdrop per loaded interior.
   let buildingSceneMap = null; // The private building-scene map exposed by GridTileAccessors.init.
   let lastVoidMapId = null; // Debug snapshot of the most recently blackened interior.
   let lastFireKey = null; // Debug snapshot of the most recently canonicalized fire furniture key.
-  let definitionBridgeInstalled = false; // Confirms the early decorative-definition compatibility bridge is active.
   let catalogFallbackInstalled = false; // Confirms the bonfire has non-empty immediate procedural geometry.
 
   function canonicalFireKey(key) {
@@ -71,29 +58,6 @@
         set(value) { Object.defineProperty(catalog, itemKey, { configurable: true, enumerable: true, writable: true, value }); },
       });
     }
-  }
-
-  function isDecorativeDefinitionMap(value) {
-    return !!value && typeof value === 'object'
-      && Object.prototype.hasOwnProperty.call(value, 'basicBedFurniture')
-      && Object.prototype.hasOwnProperty.call(value, 'chairSimpleFurniture')
-      && Object.prototype.hasOwnProperty.call(value, 'rugFurniture');
-  }
-
-  function installDecorativeDefinitionBridge() {
-    for (const [itemKey, definition] of Object.entries(FIRE_DEFS)) {
-      if (Object.prototype.hasOwnProperty.call(Object.prototype, itemKey)) continue;
-      Object.defineProperty(Object.prototype, itemKey, {
-        configurable: true,
-        enumerable: false,
-        get() { return isDecorativeDefinitionMap(this) ? definition : undefined; },
-        set(value) {
-          // Preserve ordinary assignment semantics for unrelated objects that genuinely use this property name.
-          Object.defineProperty(this, itemKey, { configurable: true, enumerable: true, writable: true, value });
-        },
-      });
-    }
-    definitionBridgeInstalled = true;
   }
 
   function installFurnitureKeyBridge() {
@@ -180,7 +144,6 @@
   }
 
   installImmediateFireCatalog();
-  installDecorativeDefinitionBridge();
   installFurnitureKeyBridge();
   wrapGridTileAccessorsInit();
   setTimeout(() => { // One bounded retry covers alternate script load order on dev/editor pages.
@@ -192,7 +155,6 @@
   function debugSnapshot() {
     return {
       installed: true,
-      definitionBridgeInstalled,
       catalogFallbackInstalled,
       campfireParts: Array.isArray(furniture.CATALOG?.campfire) ? furniture.CATALOG.campfire.length : 0,
       bonfireParts: Array.isArray(furniture.CATALOG?.bonfire) ? furniture.CATALOG.bonfire.length : 0,

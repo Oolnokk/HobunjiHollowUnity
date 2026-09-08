@@ -14,6 +14,8 @@
 
   const yawOffsets = new WeakMap(); // Stores only the delta needed to turn each preview root from its existing default to exactly +10°.
   let rendererWrapped = false; // Diagnostic state for the onboarding-only WebGLRenderer hook.
+  let active = true; // Flips false once character creation hands off, so the permanent renderer patch and RAF loop stop doing real work.
+  let sharedFaceCamera = null; // One reused PerspectiveCamera for syncFaceViewOrigin's per-frame projection instead of allocating a new one every frame.
 
   function deg(value) {
     return Number(value) * Math.PI / 180;
@@ -57,6 +59,10 @@
 
     const originalRender = proto.render;
     const wrapped = function onboardingMidBodyCameraRender(scene, camera, ...rest) {
+      // Once character creation hands off, `active` goes false and every future
+      // render call (including ordinary gameplay) takes this branch immediately —
+      // no scene lookup — instead of paying for a scene-graph search forever.
+      if (!active) return originalRender.call(this, scene, camera, ...rest);
       const root = scene?.getObjectByName?.(PREVIEW_ROOT_NAME) || null;
       if (!root || !camera?.isCamera) return originalRender.call(this, scene, camera, ...rest);
 
@@ -122,7 +128,10 @@
 
     const width = Math.max(1, shell.clientWidth || 220);
     const height = Math.max(1, shell.clientHeight || 300);
-    const camera = new THREE.PerspectiveCamera(38, width / height, 0.01, 100);
+    // Reused across frames instead of allocated fresh each tick — only its aspect
+    // ratio and pose change frame to frame while the face view is open.
+    const camera = sharedFaceCamera || (sharedFaceCamera = new THREE.PerspectiveCamera(38, width / height, 0.01, 100));
+    camera.aspect = width / height;
     applyCamera(camera);
     camera.updateProjectionMatrix();
     const projected = anchor.project(camera);
@@ -132,6 +141,7 @@
   }
 
   function frame() {
+    if (!active) return; // Stops rescheduling once character creation has handed off — no more work, no more RAF slot.
     installRendererHook();
     syncFaceViewOrigin(); // Runs after the older face-view pass and keeps its crop aligned to the new lower camera.
     const status = window.HOBUNJI_ONBOARDING_REDESIGN_STATUS;
@@ -144,10 +154,18 @@
     requestAnimationFrame(frame);
   }
 
+  // hobunjiPlayerReady fires the moment character creation (or save continue)
+  // hands off to gameplay, ~420ms before the overlay actually leaves the DOM.
+  // The delay lets the closing fade still repaint on its way out.
+  document.addEventListener('hobunjiPlayerReady', () => {
+    setTimeout(() => { active = false; }, 500);
+  }, { once: true });
+
   window[PATCH_ID] = Object.freeze({
     targetYawDeg: TARGET_PREVIEW_YAW_DEG,
     maoAoMidBodyY,
     get rendererWrapped() { return rendererWrapped; },
+    get active() { return active; },
   });
   requestAnimationFrame(frame);
 })();

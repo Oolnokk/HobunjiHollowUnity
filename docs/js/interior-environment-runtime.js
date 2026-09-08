@@ -115,17 +115,19 @@
     return true;
   }
 
+  function applyWallHeightToObject(object, wallHeight) {
+    if (!object?.userData?.hobunjiInteriorWallGroup || !object.scale) return false;
+    const sourceHeight = clamp(object.userData.hobunjiInteriorWallSourceHeight, 0.5, 8, DEFAULT_WALL_HEIGHT);
+    const baseScaleY = Number(object.userData.hobunjiInteriorWallBaseScaleY) || 1;
+    object.scale.y = baseScaleY * wallHeight / sourceHeight;
+    object.updateMatrixWorld?.(true);
+    return true;
+  }
+
   function applyWallHeight(scene, wallHeight) {
     if (!scene?.traverse || !Number.isFinite(wallHeight)) return 0;
     let count = 0;
-    scene.traverse(object => {
-      if (!object?.userData?.hobunjiInteriorWallGroup || !object.scale) return;
-      const sourceHeight = clamp(object.userData.hobunjiInteriorWallSourceHeight, 0.5, 8, DEFAULT_WALL_HEIGHT);
-      const baseScaleY = Number(object.userData.hobunjiInteriorWallBaseScaleY) || 1;
-      object.scale.y = baseScaleY * wallHeight / sourceHeight;
-      object.updateMatrixWorld?.(true);
-      count += 1;
-    });
+    scene.traverse(object => { if (applyWallHeightToObject(object, wallHeight)) count += 1; });
     return count;
   }
 
@@ -233,8 +235,28 @@
     if (!sceneRecord?.scene) return Promise.resolve(null);
     return loadEnvironmentForMap(mapId).then(environment => {
       if (!environment) return null;
-      const wallGroups = environment.wallHeight == null ? 0 : applyWallHeight(sceneRecord.scene, environment.wallHeight);
-      const lights = environment.interiorLighting ? applyLighting(sceneRecord, environment.interiorLighting, mapId) : 0;
+      const needsWallHeight = environment.wallHeight != null;
+      const needsLighting = !!environment.interiorLighting;
+      let wallGroups = 0;
+      let lights = 0;
+      if (needsWallHeight && needsLighting) {
+        // One shared scan instead of two — wall-group rescaling and light
+        // collection are independent checks per node, so a single interior
+        // load pays for one scene.traverse instead of applyWallHeight's and
+        // collectSceneLights's separate walks of the same freshly-built scene.
+        const lightRecords = [];
+        sceneRecord.scene.traverse(object => {
+          if (applyWallHeightToObject(object, environment.wallHeight)) wallGroups += 1;
+          if (object?.isLight) lightRecords.push(captureLight(object));
+        });
+        const record = { sceneRecord, settings: environment.interiorLighting, lights: lightRecords };
+        lightingRecords.set(mapId, record);
+        lights = applyLightingRecord(record);
+        ensureLightingTimer();
+      } else {
+        if (needsWallHeight) wallGroups = applyWallHeight(sceneRecord.scene, environment.wallHeight);
+        if (needsLighting) lights = applyLighting(sceneRecord, environment.interiorLighting, mapId);
+      }
       lastMapId = mapId;
       lastWallGroupCount = wallGroups;
       lastLightCount = lights;

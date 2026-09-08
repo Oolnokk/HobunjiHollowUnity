@@ -2319,6 +2319,13 @@
         alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
         bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
         mineLadder:    { itemKey: 'mineLadderFurniture',    icon: '🪜', name: 'Mine Ladder',          price: 0,  fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'The mine ladder and its construction plans.', fixture: true },
+        // Authored interior fire furniture (see interior-fire-void-runtime.js's
+        // FIRE_KEY_ALIASES/canonicalFireKey, which route these item keys to
+        // ProceduralFurniture's shared 'campfire'/'bonfire' geometry recipes).
+        // Distinct from the portable Campfire Kit above (campfireKitFurniture):
+        // these are placed by an authored interior layout, not bought/carried.
+        campfireFurniture: { itemKey: 'campfireFurniture', icon: '🔥', name: 'Campfire', price: 0, fw: 1, fd: 1, color: 0x6d3e20, area: 'interior', desc: 'A compact stone-ring campfire using the authored campfire furniture preset.', fixture: true },
+        bonfireFurniture:  { itemKey: 'bonfireFurniture',  icon: '🔥', name: 'Bonfire',  price: 0, fw: 2, fd: 2, color: 0x6d3e20, area: 'interior', desc: 'A two-by-two bonfire derived from the authored campfire at double scale.', fixture: true },
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
@@ -21555,12 +21562,6 @@
         // cheap enough (one property read) to just check every frame rather
         // than hunting down every such call site individually.
         if (!cursorlessMouseAimRequested()) releaseShoulderSurfPointerLock();
-        // Same "don't hunt down every mode-switch call site" reasoning as
-        // the Pointer Lock release above — held-item ground x-ray reads as
-        // clarity from the normal top-down view but just looks wrong at
-        // shoulder-surf's close third-person range, so keep it in lockstep
-        // with the camera mode every frame instead.
-        window.HeldObjectRenderOrder?.setEnabled(activeCameraMode !== SHOULDER_SURF_MODE);
         // Eases the camera's actual offset (…_current) toward whichever
         // stance preset applies right now — every frame, not just the
         // instant the stance flips — so drawing/sheathing a weapon (or any
