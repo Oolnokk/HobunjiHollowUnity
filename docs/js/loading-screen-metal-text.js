@@ -1,9 +1,8 @@
 // Loading-screen bronze lettering treatment.
 // Roman text preserves the item-selector category heading's shiny metal
-// presentation while remapping its base hue to bronze. TankanScript additionally
-// rasterizes each glyph as a metallic sprite and sends it through ToolMetalRecolor
-// at exactly 25% oxidation, so verdigris replaces part of the shiny bronze base
-// with the same seeded spread + black boundary logic used by tools.
+// presentation while remapping its base hue to bronze. TankanScript keeps that
+// live shiny text intact and overlays only the 25%-oxidized verdigris pixels +
+// their local black boundary from ToolMetalRecolor, so oxidation acts as a tint.
 (() => {
   'use strict';
   if (window.LoadingScreenMetalText?.installed) return;
@@ -17,6 +16,7 @@
   const CATEGORY_STROKE = 'rgba(0,0,0,.82)'; // Used to mirror the item-category heading's dark SVG stroke.
   const CATEGORY_SHADOW = 'rgba(0,0,0,.8)'; // Used to mirror the item-category heading's 0 2px 5px text shadow.
   const GLYPH_STROKE_PX = 3; // Used when rasterizing Tankan glyph sprites to match the category heading's 3px stroke.
+  const OXIDATION_DIFF_THRESHOLD = 6; // Used to discard unchanged bronze/outer-stroke pixels when extracting the tint-only overlay.
   const GLYPH_CACHE = new Map(); // Used to reuse the same rasterized/recolored Tankan glyph at the same display size.
 
   let rootObserver = null; // Used until LoadingScreenRuntime creates #hobunjiLoadScreen.
@@ -66,8 +66,9 @@
         filter:drop-shadow(0 0 5px rgba(205,127,50,.34));
       }
 
-      /* This is the non-raster fallback. Once the Tankan font and recolorer
-         are ready, each glyph becomes a shiny bronze sprite with 25% verdigris. */
+      /* The shiny Tankan text remains the real visible lettering at all times.
+         Once the recolorer is ready, only a sparse oxidation tint mask is laid
+         over it; no rasterized bronze fill ever replaces the live text. */
       #hobunjiLoadScreen .hlsVerticalWord {
         color:var(--hls-bronze-metal) !important;
         background:var(--hls-metal-ramp);
@@ -81,22 +82,17 @@
       }
       #hobunjiLoadScreen .hlsVerticalGlyph.hlsBronzeVerdigrisGlyph {
         position:relative;
-        color:transparent !important;
-        -webkit-text-fill-color:transparent !important;
-        -webkit-text-stroke:0 transparent;
-        text-shadow:none !important;
-        background:none;
-        filter:none;
       }
       #hobunjiLoadScreen .hlsBronzeVerdigrisGlyphImage {
         position:absolute;
         left:0;
         top:0;
+        z-index:1;
         max-width:none;
         pointer-events:none;
         user-select:none;
         transform:none;
-        filter:drop-shadow(0 2px 5px ${CATEGORY_SHADOW}) drop-shadow(0 0 5px rgba(205,127,50,.34));
+        filter:none;
       }
 
       /* The loading screen already exposes diagnostics by tapping the percent
@@ -205,7 +201,7 @@
   }
 
   function glyphCacheKey(character, fontSizePx, scale) {
-    return `${character}|${fontSizePx.toFixed(3)}|${scale.toFixed(2)}|${BRONZE_HEX}|${VERDIGRIS_HEX}|${VERDIGRIS_AMOUNT}|shine3`;
+    return `${character}|${fontSizePx.toFixed(3)}|${scale.toFixed(2)}|${BRONZE_HEX}|${VERDIGRIS_HEX}|${VERDIGRIS_AMOUNT}|tint1`;
   }
 
   function makeGlyphSource(character, fontSizePx, scale, tool) {
@@ -267,6 +263,40 @@
     };
   }
 
+  function extractOxidationTint(cleanCanvas, oxidizedCanvas) {
+    if (cleanCanvas.width !== oxidizedCanvas.width || cleanCanvas.height !== oxidizedCanvas.height) {
+      throw new Error('Oxidation comparison canvases have mismatched dimensions.');
+    }
+    const width = oxidizedCanvas.width;
+    const height = oxidizedCanvas.height;
+    const cleanContext = cleanCanvas.getContext('2d', { willReadFrequently: true });
+    const oxidizedContext = oxidizedCanvas.getContext('2d', { willReadFrequently: true });
+    if (!cleanContext || !oxidizedContext) throw new Error('Unable to read oxidation comparison canvases.');
+    const clean = cleanContext.getImageData(0, 0, width, height);
+    const oxidized = oxidizedContext.getImageData(0, 0, width, height);
+    const overlay = document.createElement('canvas'); // Contains only pixels changed by oxidation, leaving the shiny live text visible underneath.
+    overlay.width = width;
+    overlay.height = height;
+    const overlayContext = overlay.getContext('2d', { willReadFrequently: true });
+    if (!overlayContext) throw new Error('Unable to create Tankan oxidation tint canvas.');
+    const output = overlayContext.createImageData(width, height);
+
+    for (let i = 0; i < oxidized.data.length; i += 4) {
+      if (!oxidized.data[i + 3]) continue;
+      const difference = Math.abs(oxidized.data[i] - clean.data[i])
+        + Math.abs(oxidized.data[i + 1] - clean.data[i + 1])
+        + Math.abs(oxidized.data[i + 2] - clean.data[i + 2])
+        + Math.abs(oxidized.data[i + 3] - clean.data[i + 3]);
+      if (difference <= OXIDATION_DIFF_THRESHOLD) continue; // Unchanged bronze fill and the original outer black glyph stroke become transparent.
+      output.data[i] = oxidized.data[i];
+      output.data[i + 1] = oxidized.data[i + 1];
+      output.data[i + 2] = oxidized.data[i + 2];
+      output.data[i + 3] = oxidized.data[i + 3];
+    }
+    overlayContext.putImageData(output, 0, 0);
+    return overlay;
+  }
+
   function recoloredGlyph(character, fontSizePx) {
     const tool = window.ToolMetalRecolor; // Used to run the exact tool-sprite verdigris algorithm rather than a loading-screen approximation.
     if (!tool?.getRecoloredCanvas || !tool.rgbToHsv || !tool.hsvToRgb) {
@@ -279,16 +309,20 @@
     const promise = Promise.resolve().then(async () => {
       const source = makeGlyphSource(character, fontSizePx, scale, tool); // Used as the shiny placeholder-metal sprite plus its browser text-layout metrics.
       const sourceUrl = source.canvas.toDataURL('image/png'); // Used because ToolMetalRecolor deliberately consumes sprite URLs and already supports data URLs through Image.
-      const recoloredCanvas = await tool.getRecoloredCanvas(sourceUrl, {
+      const commonOptions = {
         sourceHex: tool.SOURCE_HEX || FALLBACK_SOURCE_HEX,
         targetHex: BRONZE_HEX,
         verdigrisHex: VERDIGRIS_HEX,
-        oxidationAmount: VERDIGRIS_AMOUNT,
-      }); // Used to leak the black-bounded verdigris hue into 25% of the otherwise shiny bronze metal surface.
+      };
+      const [cleanCanvas, oxidizedCanvas] = await Promise.all([
+        tool.getRecoloredCanvas(sourceUrl, { ...commonOptions, oxidationAmount: 0 }),
+        tool.getRecoloredCanvas(sourceUrl, { ...commonOptions, oxidationAmount: VERDIGRIS_AMOUNT }),
+      ]); // Comparing the two exact ToolMetalRecolor results isolates only the 25% verdigris change and its local black boundary.
+      const tintCanvas = extractOxidationTint(cleanCanvas, oxidizedCanvas); // Leaves all unchanged shiny bronze pixels transparent so the live font remains authoritative.
       return {
-        src: recoloredCanvas.toDataURL('image/png'),
-        width: recoloredCanvas.width / scale,
-        height: recoloredCanvas.height / scale,
+        src: tintCanvas.toDataURL('image/png'),
+        width: tintCanvas.width / scale,
+        height: tintCanvas.height / scale,
         placement: source.placement,
       };
     });
@@ -311,18 +345,18 @@
   }
 
   async function decorateGlyph(glyph) {
-    const character = String(glyph.dataset.hlsMetalCharacter || glyph.textContent || ''); // Used to retain the original Tankan character after its text becomes visually transparent.
+    const character = String(glyph.dataset.hlsMetalCharacter || glyph.textContent || ''); // Used to retain the original Tankan character while the oxidation tint image is appended over it.
     if (!character) return;
     glyph.dataset.hlsMetalCharacter = character;
     const fontSizePx = glyphFontSizePx(glyph); // Used to regenerate only if the configured loading-screen script size changed.
-    const desiredKey = `${character}|${fontSizePx.toFixed(3)}|shine3|${VERDIGRIS_AMOUNT}`; // Used to reject stale sprites after a live config/size/material/alignment refresh.
+    const desiredKey = `${character}|${fontSizePx.toFixed(3)}|tint1|${VERDIGRIS_AMOUNT}`; // Used to reject stale sprites after a live config/size/material/alignment refresh.
     if (glyph.dataset.hlsMetalAppliedKey === desiredKey && glyph.querySelector('.hlsBronzeVerdigrisGlyphImage')) return;
     if (glyph.dataset.hlsMetalPendingKey === desiredKey) return;
     glyph.dataset.hlsMetalPendingKey = desiredKey;
     try {
-      const sprite = await recoloredGlyph(character, fontSizePx); // Used as the final shiny-bronze + 25%-verdigris Tankan glyph image with exact font-layout placement metadata.
+      const sprite = await recoloredGlyph(character, fontSizePx); // Used only as the sparse 25%-verdigris tint + local black oxidation boundary; it never replaces the shiny base text.
       if (!glyph.isConnected || glyph.dataset.hlsMetalPendingKey !== desiredKey) return;
-      const image = document.createElement('img'); // Used as the transparent-background sprite overlay while the original text remains as accessible/fallback content.
+      const image = document.createElement('img'); // Used as a transparent oxidation-only overlay while the original live font remains fully visible underneath.
       image.className = 'hlsBronzeVerdigrisGlyphImage';
       image.alt = '';
       image.setAttribute('aria-hidden', 'true');
