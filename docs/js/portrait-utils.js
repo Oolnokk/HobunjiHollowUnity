@@ -351,6 +351,11 @@ function relativeLuminance(r, g, b) {
   return (0.2126 * (Number(r) || 0) + 0.7152 * (Number(g) || 0) + 0.0722 * (Number(b) || 0)) / 255;
 }
 
+function isEffectivelyZeroSaturation(r, g, b) {
+  // A one-byte allowance includes authored near-grays such as #4D4E4D without admitting visibly colored pixels.
+  return Math.max(r, g, b) - Math.min(r, g, b) <= 1;
+}
+
 // Pure HSV math, kept local (rather than shared with sprite-recolor.js's
 // copy) since portrait-utils.js is loaded standalone in several contexts
 // (character-tools, cutscene director, npc preview) with no guaranteed load
@@ -524,7 +529,7 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
   const options = tint.options || getPortraitTintingConfig();
   const cacheKey = [
     sourceKey || img.currentSrc || img.src || 'inline', tint.hue.toFixed(2), tint.sat.toFixed(4),
-    options.preserveNearBlackOutlines, options.outlineThreshold
+    options.preserveNearBlackOutlines, options.outlineThreshold, options.preserveZeroSaturation,
   ].join('|');
   if (options.cacheEnabled && _HUESAT_FILL_CACHE.has(cacheKey)) return _HUESAT_FILL_CACHE.get(cacheKey);
 
@@ -541,6 +546,7 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
     if (a === 0) continue;
     const r = data[i], g = data[i + 1], b = data[i + 2];
     if (options.preserveNearBlackOutlines && relativeLuminance(r, g, b) <= options.outlineThreshold) continue;
+    if (options.preserveZeroSaturation && isEffectivelyZeroSaturation(r, g, b)) continue;
     const v = Math.max(r, g, b) / 255;
     const [nr, ng, nb] = _hsvToRgbPU(tint.hue, tint.sat, v);
     data[i] = clampByte(nr);
@@ -560,7 +566,7 @@ function getShadeFillCanvas(img, sourceKey, tint) {
   const cacheKey = [
     sourceKey || img.currentSrc || img.src || 'inline', tr, tg, tb,
     options.shadowFloor, options.highlightBoost, options.neutralLuminance, options.gamma,
-    options.preserveNearBlackOutlines, options.outlineThreshold,
+    options.preserveNearBlackOutlines, options.outlineThreshold, options.preserveZeroSaturation,
   ].join('|');
   if (options.cacheEnabled && _SHADE_FILL_CACHE.has(cacheKey)) return _SHADE_FILL_CACHE.get(cacheKey);
 
@@ -578,6 +584,7 @@ function getShadeFillCanvas(img, sourceKey, tint) {
     const r = data[i], g = data[i + 1], b = data[i + 2];
     const lum = relativeLuminance(r, g, b);
     if (options.preserveNearBlackOutlines && lum <= options.outlineThreshold) continue;
+    if (options.preserveZeroSaturation && isEffectivelyZeroSaturation(r, g, b)) continue;
     const normalized = Math.pow(Math.max(0, lum) / neutral, options.gamma);
     const shade = Math.max(options.shadowFloor, Math.min(options.highlightBoost, normalized));
     data[i] = clampByte(tr * shade);
@@ -1265,7 +1272,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       : normalizedId.includes('armr') ? baseRightArmLayers
       : normalizedId.includes('torso') ? baseTorsoLayers
       : baseTorsoLayers;
-    target.push({ layer, tint: tintFor(layer.tintSlot || 'A') });
+    const layerTint = tintFor(layer.tintSlot || 'A'); // Tint descriptor customized below only for base-torso grayscale preservation.
+    if (target === baseTorsoLayers && layerTint?.mode !== 'none') {
+      layerTint.options = {
+        ...(layerTint.options || getPortraitTintingConfig()),
+        preserveZeroSaturation: true,
+      };
+    }
+    target.push({ layer, tint: layerTint });
   }
   for (const group of [torsoCosmetic, armCosmetic]) {
     if (!group) continue;
