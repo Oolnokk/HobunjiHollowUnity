@@ -36,7 +36,7 @@
   // in front of every later gameplay/UI listener without changing index.html.
   (function loadTitleScreenRuntime() {
     if (typeof document === 'undefined') return;
-    const src = 'js/title-screen-runtime.js?v=20260908c'; // Cache-busts the title runtime alongside the CORS-safe startup asset policy.
+    const src = 'js/title-screen-runtime.js?v=20260908d'; // Cache-busts the title runtime after input-gate and gameplay-speed cloud fixes.
     if (window.HobunjiTitleScreen || document.querySelector('script[data-hobunji-title-screen]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-title-screen="1"><\/script>`);
