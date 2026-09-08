@@ -77,12 +77,12 @@
     const now = performance.now();
     pruneExpired(now);
     return [...activeLocks.values()].map(lock => ({
-      token,
-      owner: String(options.owner || 'interaction'),
-      reason: String(options.reason || options.owner || 'interaction'),
-      participants,
-      acquiredAt: now,
-      expiresAt: timeoutMs > 0 ? now + timeoutMs : 0,
+      token: lock.token,
+      owner: lock.owner,
+      reason: lock.reason,
+      ageMs: Math.max(0, Math.round(now - lock.acquiredAt)),
+      remainingMs: lock.expiresAt > 0 ? Math.max(0, Math.round(lock.expiresAt - now)) : null,
+      participants: lock.participants.map(entry => ({ id: entry.id, channels: [...entry.channels] })),
     }));
   }
 
