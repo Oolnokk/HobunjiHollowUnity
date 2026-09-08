@@ -1,0 +1,207 @@
+from pathlib import Path
+
+ambient_path = Path('docs/js/ambient-dialogue.js')
+source = ambient_path.read_text()
+
+
+def replace_once(old, new, label):
+    global source
+    if old not in source:
+        raise SystemExit(f'missing ambient block: {label}')
+    source = source.replace(old, new, 1)
+
+
+replace_once("""  function playerGreetingAllowed(walker) {
+    const npcId = walker?.rec?.id; // Used to apply the two NPC-specific minimum relationship thresholds without changing other speakers.
+    const favor = playerGreetingFavor(walker); // Used to compare the current speaker's live favor against their greeting threshold.
+    if (npcId === 'takua_ao_hakaru') return favor >= 1;
+    if (npcId === 'kinami_kunji' && playerGreetingSpeciesId() !== 'mao-ao') return favor >= 2;
+    return true;
+  }
+
+  function playerGreetingMayUseName(walker) {
+    const npcId = walker?.rec?.id; // Used to check the four explicit low-favor naming exceptions.
+    return PLAYER_GREETING_NAME_EXCEPTIONS.has(npcId) || playerGreetingFavor(walker) >= 1;
+  }
+""", """  function playerGreetingPolicy(walker) {
+    const npcId = walker?.rec?.id; // Used to apply the two NPC-specific greeting thresholds and the four actual-name exceptions in one event-time lookup.
+    const favor = playerGreetingFavor(walker); // Used for both greeting eligibility and actual-name eligibility so favor is not fetched twice.
+    const playerSpeciesId = npcId === 'kinami_kunji' ? playerGreetingSpeciesId() : ''; // Used only for Kinami's Mao'ao exception, avoiding a species lookup for every other NPC.
+    let allowed = true; // Used by tryGreeting to decide whether this already-dwelled proximity entry may actually fire.
+    if (npcId === 'takua_ao_hakaru') allowed = favor >= 1;
+    else if (npcId === 'kinami_kunji' && playerSpeciesId !== 'mao-ao') allowed = favor >= 2;
+    return {
+      allowed,
+      mayUseActualName: PLAYER_GREETING_NAME_EXCEPTIONS.has(npcId) || favor >= 1,
+    };
+  }
+""", 'combined player greeting policy')
+
+replace_once("""  function omitResolvedGreetingTargetName(source, targetName) {
+    const name = String(targetName || '').trim(); // Used to identify the already-resolved player nickname embedded by request call-over generators.
+    if (!name) return String(source || '').trim();
+    const escapedName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'); // Used to match the nickname literally even when it contains regular-expression punctuation.
+    return omitGreetingTargetName(String(source || '').replace(new RegExp(escapedName, 'gi'), '{targetName}'));
+  }
+""", """  function rewriteResolvedGreetingTargetName(source, currentName, replacementName = '') {
+    const name = String(currentName || '').trim(); // Used to identify the already-resolved player name embedded by request call-over generators.
+    if (!name) return String(source || '').trim();
+    const escapedName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'); // Used to match the actual name literally even when it contains regular-expression punctuation.
+    const templated = String(source || '').replace(new RegExp(escapedName, 'gi'), '{targetName}'); // Used to convert the baked-in actual name back into the shared greeting placeholder.
+    const replacement = String(replacementName || '').trim(); // Used to preserve an NPC-specific nickname below +1 when one exists.
+    return replacement ? templated.replace(/\\{targetName\\}/g, replacement) : omitGreetingTargetName(templated);
+  }
+""", 'resolved call-over rewrite helper')
+
+replace_once("""  function playerNicknameFor(walker) {
+    const rec = walker?.rec;
+    const pool = nicknamePoolFor(rec);
+    const entry = pickConditionedPoolEntry(pool, rec, walker);
+    if (entry) {
+      const resolved = resolveDialogueNicknameTokens(entry.text, rec, walker).trim();
+      if (resolved) return resolved;
+    }
+    return state.dialogueDeps?.getPlayerData?.()?.nickname || state.deps?.getPlayerName?.() || 'neighbor';
+  }
+""", """  function conditionedPlayerNicknameFor(walker) {
+    const rec = walker?.rec; // Used to find this NPC's conditioned Nicknames phrase pool.
+    const pool = nicknamePoolFor(rec); // Used to preserve authored/conditioned nicknames even when the actual player name is relationship-gated.
+    const entry = pickConditionedPoolEntry(pool, rec, walker); // Used to choose the same context-sensitive nickname normal ambient greetings already use.
+    if (entry) {
+      const resolved = resolveDialogueNicknameTokens(entry.text, rec, walker).trim(); // Used as the low-favor form of address when the nickname pool supplies one.
+      if (resolved) return resolved;
+    }
+    const localNickname = String(window.DialogueContent?.getNpcDlgState?.(rec?.id)?.localNickname || '').trim(); // Used to preserve a dialogue-assigned NPC-specific nickname even without a matching pool entry.
+    const actualName = configuredPlayerGreetingName(); // Used only to avoid treating the player's ordinary configured name as an NPC-specific nickname.
+    return localNickname && localNickname !== actualName ? localNickname : '';
+  }
+
+  function playerNicknameFor(walker) {
+    return conditionedPlayerNicknameFor(walker)
+      || state.dialogueDeps?.getPlayerData?.()?.nickname
+      || state.deps?.getPlayerName?.()
+      || 'neighbor';
+  }
+""", 'conditioned nickname helper')
+
+replace_once("""    const proximityKey = `${speakerId}>${targetId}`; // Used both for the normal dwell timer and for clearing dwell while a relationship-gated player greeting is unavailable.
+    if (targetId === 'player' && !playerGreetingAllowed(walker)) {
+      state.proximity.delete(proximityKey);
+      return false;
+    }
+    const key = greetPairKey(day, speakerId, targetId);
+""", """    const proximityKey = `${speakerId}>${targetId}`; // Used by the existing dwell timer; relationship policy is intentionally deferred until a greeting is otherwise ready to fire.
+    const key = greetPairKey(day, speakerId, targetId);
+""", 'remove policy from recurring proximity scan')
+
+replace_once("""    if (now - enteredAt < 300 || now - state.lastGreetingAt < state.settings.greetingCooldownMs) return false;
+    state.greeted.add(key);
+""", """    if (now - enteredAt < 300 || now - state.lastGreetingAt < state.settings.greetingCooldownMs) return false;
+    const playerPolicy = targetId === 'player' ? playerGreetingPolicy(walker) : null; // Used only after dwell/cooldown say a greeting is ready, never from updateActive/per-frame work.
+    if (playerPolicy && !playerPolicy.allowed) {
+      state.proximity.set(proximityKey, Number.POSITIVE_INFINITY); // Blocks repeated policy evaluation until the player leaves this NPC's greeting radius and the existing distance path clears the entry.
+      return false;
+    }
+    state.greeted.add(key);
+""", 'event-time policy gate')
+
+replace_once("""    const mayUsePlayerName = targetId !== 'player' || playerGreetingMayUseName(walker); // Used to keep ordinary player names and conditioned NPC-specific nicknames out of sub-+1 greetings except for the four authored exceptions.
+    const targetName = mayUsePlayerName ? resolveTargetName(walker, target) : '';
+    const line = override?.text
+      ? (mayUsePlayerName ? override.text : omitResolvedGreetingTargetName(override.text, configuredPlayerGreetingName()))
+      : templateLine(targetName, speakerId, targetId, day, { omitTargetName: !mayUsePlayerName });
+""", """    const mayUseActualPlayerName = !playerPolicy || playerPolicy.mayUseActualName; // Used to suppress only the actual player name below +1; nicknames remain allowed.
+    const lowFavorNickname = targetId === 'player' && !mayUseActualPlayerName ? conditionedPlayerNicknameFor(walker) : ''; // Used only for a greeting that is firing now, never during the recurring proximity scan.
+    const targetName = mayUseActualPlayerName ? resolveTargetName(walker, target) : lowFavorNickname; // Uses an NPC-specific nickname below +1 when available, otherwise leaves the name slot empty.
+    const omitTargetName = targetId === 'player' && !mayUseActualPlayerName && !lowFavorNickname; // Used to clean punctuation only when neither an actual name nor a nickname may be spoken.
+    const line = override?.text
+      ? (mayUseActualPlayerName ? override.text : rewriteResolvedGreetingTargetName(override.text, configuredPlayerGreetingName(), lowFavorNickname))
+      : templateLine(targetName, speakerId, targetId, day, { omitTargetName });
+""", 'preserve nickname while suppressing actual name')
+
+ambient_path.write_text(source)
+
+test_path = Path('scripts/test-relationship-heart-greetings.js')
+test = test_path.read_text()
+
+
+def replace_test(old, new, label):
+    global test
+    if old not in test:
+        raise SystemExit(f'missing test block: {label}')
+    test = test.replace(old, new, 1)
+
+
+replace_test("const playerNickname = 'Ben'; // Used to verify already-resolved pending-request call-over nicknames are removed below +1.\n", "const playerNickname = 'Ben'; // Used as the configured player name when testing low-favor name suppression and request call-over rewriting.\n", 'player name comment')
+
+replace_test("  `${greetingBlock}\\nreturn { playerGreetingAllowed, playerGreetingMayUseName, omitGreetingTargetName, omitResolvedGreetingTargetName };`\n", "  `${greetingBlock}\\nreturn { playerGreetingPolicy, omitGreetingTargetName, rewriteResolvedGreetingTargetName };`\n", 'exported greeting helpers')
+
+replace_test("""favorByNpc.set('takua_ao_hakaru', 0);
+assert.equal(greetingPolicy.playerGreetingAllowed(walker('takua_ao_hakaru')), false, \"Taku'a does not greet below +1\");
+favorByNpc.set('takua_ao_hakaru', 1);
+assert.equal(greetingPolicy.playerGreetingAllowed(walker('takua_ao_hakaru')), true, \"Taku'a greets at +1\");
+
+favorByNpc.set('kinami_kunji', 1);
+playerSpeciesId = 'tletingan';
+assert.equal(greetingPolicy.playerGreetingAllowed(walker('kinami_kunji')), false, 'Kinami does not greet a non-Mao\\'ao player below +2');
+favorByNpc.set('kinami_kunji', 2);
+assert.equal(greetingPolicy.playerGreetingAllowed(walker('kinami_kunji')), true, 'Kinami greets a non-Mao\\'ao player at +2');
+favorByNpc.set('kinami_kunji', 0);
+playerSpeciesId = 'mao-ao';
+assert.equal(greetingPolicy.playerGreetingAllowed(walker('kinami_kunji')), true, \"Kinami's +2 gate does not apply to Mao'ao players\");
+
+playerSpeciesId = 'tletingan';
+favorByNpc.set('gorobi_ginju', 0);
+assert.equal(greetingPolicy.playerGreetingMayUseName(walker('gorobi_ginju')), false, 'ordinary NPCs omit names below +1');
+favorByNpc.set('gorobi_ginju', 1);
+assert.equal(greetingPolicy.playerGreetingMayUseName(walker('gorobi_ginju')), true, 'ordinary NPCs may use names at +1');
+for (const id of ['father_hunundi_hodu', 'teacup_unumanuk', 'spearhead_unumanuk', 'jubmir']) {
+  favorByNpc.set(id, -5);
+  assert.equal(greetingPolicy.playerGreetingMayUseName(walker(id)), true, `${id} remains a low-favor naming exception`);
+}
+""", """favorByNpc.set('takua_ao_hakaru', 0);
+assert.equal(greetingPolicy.playerGreetingPolicy(walker('takua_ao_hakaru')).allowed, false, \"Taku'a does not greet below +1\");
+favorByNpc.set('takua_ao_hakaru', 1);
+assert.equal(greetingPolicy.playerGreetingPolicy(walker('takua_ao_hakaru')).allowed, true, \"Taku'a greets at +1\");
+
+favorByNpc.set('kinami_kunji', 1);
+playerSpeciesId = 'tletingan';
+assert.equal(greetingPolicy.playerGreetingPolicy(walker('kinami_kunji')).allowed, false, 'Kinami does not greet a non-Mao\\'ao player below +2');
+favorByNpc.set('kinami_kunji', 2);
+assert.equal(greetingPolicy.playerGreetingPolicy(walker('kinami_kunji')).allowed, true, 'Kinami greets a non-Mao\\'ao player at +2');
+favorByNpc.set('kinami_kunji', 0);
+playerSpeciesId = 'mao-ao';
+assert.equal(greetingPolicy.playerGreetingPolicy(walker('kinami_kunji')).allowed, true, \"Kinami's +2 gate does not apply to Mao'ao players\");
+
+playerSpeciesId = 'tletingan';
+favorByNpc.set('gorobi_ginju', 0);
+assert.equal(greetingPolicy.playerGreetingPolicy(walker('gorobi_ginju')).mayUseActualName, false, 'ordinary NPCs omit the actual player name below +1');
+favorByNpc.set('gorobi_ginju', 1);
+assert.equal(greetingPolicy.playerGreetingPolicy(walker('gorobi_ginju')).mayUseActualName, true, 'ordinary NPCs may use the actual player name at +1');
+for (const id of ['father_hunundi_hodu', 'teacup_unumanuk', 'spearhead_unumanuk', 'jubmir']) {
+  favorByNpc.set(id, -5);
+  assert.equal(greetingPolicy.playerGreetingPolicy(walker(id)).mayUseActualName, true, `${id} remains a low-favor actual-name exception`);
+}
+""", 'policy assertions')
+
+replace_test("""assert.equal(greetingPolicy.omitResolvedGreetingTargetName('Hey, Ben. You need work?', playerNickname), 'Hey. You need work?', 'resolved request call-over nicknames remove cleanly below +1');
+assert.equal(greetingPolicy.omitResolvedGreetingTargetName('Thank the breath, there you are, Ben.', playerNickname), 'Thank the breath, there you are.', 'trailing resolved request call-over nicknames remove cleanly below +1');
+
+console.log('relationship heart/greeting regression checks passed');
+""", """assert.equal(greetingPolicy.rewriteResolvedGreetingTargetName('Hey, Ben. You need work?', playerNickname, 'Sprout'), 'Hey, Sprout. You need work?', 'resolved request call-overs preserve an NPC-specific nickname below +1');
+assert.equal(greetingPolicy.rewriteResolvedGreetingTargetName('Thank the breath, there you are, Ben.', playerNickname, ''), 'Thank the breath, there you are.', 'resolved request call-overs omit only the actual name when no nickname exists');
+
+const tryGreetingStart = ambientSource.indexOf('function tryGreeting'); // Used to isolate the recurring proximity-scan path for the performance regression check.
+const updateGreetingsStart = ambientSource.indexOf('function updateGreetings', tryGreetingStart); // Used as the end boundary of tryGreeting.
+const tryGreetingSource = ambientSource.slice(tryGreetingStart, updateGreetingsStart); // Used to verify the new relationship work occurs only after the existing dwell/cooldown gate.
+const dwellGateIndex = tryGreetingSource.indexOf('now - enteredAt < 300'); // Used as the existing event-readiness boundary.
+const policyIndex = tryGreetingSource.indexOf('playerGreetingPolicy(walker)'); // Used to ensure favor/species policy lookup is deferred until after dwell/cooldown.
+assert.ok(dwellGateIndex >= 0 && policyIndex > dwellGateIndex, 'relationship policy is not evaluated in the recurring pre-dwell proximity scan');
+assert.match(tryGreetingSource, /Number\\.POSITIVE_INFINITY/, 'blocked relationship gates are memoized until radius exit instead of being re-evaluated every scan');
+assert.match(tryGreetingSource, /conditionedPlayerNicknameFor\\(walker\\)/, 'a firing low-favor greeting still resolves an NPC-specific nickname');
+assert.doesNotMatch(ambientSource.slice(ambientSource.indexOf('function updateActive'), tryGreetingStart), /playerGreetingPolicy|conditionedPlayerNicknameFor/, 'new relationship/name policy work is absent from per-frame updateActive');
+
+console.log('relationship heart/greeting regression checks passed');
+""", 'nickname and performance assertions')
+
+test_path.write_text(test)
