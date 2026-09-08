@@ -112,7 +112,7 @@
   const prologueStartupEntry = new URL('prologue-startup-entry-bridge.js?v=20260907a', base).href; // Captures the same ActionArcUI map-entry deps and retries the actual rescue enterZone call if startup is already rendering farm while the controller is still waiting.
   const chathead = new URL('animal-chathead-frame.js?v=20260902modular1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
-  const prologueDialogue = new URL('prologue-dialogue-runtime.js?v=20260908a', base).href; // Uses the ordinary dialogue shell with staged real NPC walkers to test automatic speaker/name/portrait/camera-target changes.
+  const prologueDialogue = new URL('prologue-dialogue-runtime.js?v=20260908b', base).href; // Builds scripted Jubmir/Spearhead actor instances from the real NPC database while the loader is held, then opens ordinary dialogue with automatic speaker/portrait/camera retargeting.
   const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260906harvest1', base).href; // Loads the harvest-only animal staging/approach-suppression bridge before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20260903social1', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
