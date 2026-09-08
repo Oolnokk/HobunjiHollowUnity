@@ -49,12 +49,12 @@
       matchBackgroundToFog: true,
     }),
     lantern: Object.freeze({
-      radiusTiles: 3.6,
+      radiusTiles: 3.2,
       clarityRadiusTiles: 0.95,
       centerMaskAlpha: 0.92,
       clarityMaskAlpha: 0.80,
-      softMaskAlpha: 0.28,
-      softTransitionFraction: 0.18,
+      softMaskAlpha: 0.18,
+      softTransitionFraction: 0.11,
     }),
   });
   let tuning = {
