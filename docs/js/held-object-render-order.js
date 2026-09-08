@@ -32,6 +32,7 @@
   const HELD_OVERLAY_LAYER = 29;
   const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;
   const HELD_OVERLAY_MASK = (1 << HELD_OVERLAY_LAYER) >>> 0;
+  const DEFAULT_LAYER_MASK = (1 << DEFAULT_LAYER) >>> 0;
   const MASK_ALL = 0xFFFFFFFF >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
 
@@ -56,11 +57,8 @@
   let invariantRepairCount = 0;
   let internalReplay = false;
   let lastDebugSignature = '';
-  // Off in shoulder-surf camera mode (see game.js's settingShoulderSurf
-  // handling) — the ground x-ray reads as clarity from the normal top-down
-  // view but just looks wrong at close third-person range, so that mode
-  // disables it and lets held sprites depth-test against the ground like
-  // everything else.
+  // Gameplay keeps this enabled in every camera mode so a low shoulder-surf
+  // angle cannot bury weapon PNGs beneath terrain or grass planes.
   let enabled = true;
 
   function hasLayer(object, layer) {
@@ -92,13 +90,16 @@
     // Spatial terrain chunks are generated only from whole-zone floor meshes.
     if (object.userData?.terrainRenderChunk === true || object.userData?.terrainRenderChunkSource === true) return true;
 
-    // Farm/town/wilderness floor meshes opt into the terrain material-ID layer,
-    // receive shadows, and do not cast them. This is the same bounded signature
-    // TerrainRenderChunks uses to identify world-floor geometry.
-    if (object.receiveShadow && !object.castShadow && hasLayer(object, MATERIAL_ID_LAYER)) return true;
+    // Farm/town/wilderness floor meshes opt into the terrain material-ID layer
+    // and are attached directly to the scene. Runtime-rebuilt farm tiles cast
+    // shadows as well as receive them, so castShadow cannot distinguish them
+    // from ordinary props. The scene-parent + material-ID signature mirrors
+    // TerrainRenderChunks' own bounded terrain candidate test and excludes
+    // nested hands/furniture that may share wavy_surface.png or layer 3.
+    if (object.parent?.isScene && object.receiveShadow && hasLayer(object, MATERIAL_ID_LAYER)) return true;
 
     // Conservative legacy fallback for untagged floor meshes only.
-    if (object.receiveShadow && !object.castShadow) {
+    if (object.parent?.isScene && object.receiveShadow && !object.castShadow) {
       const name = String(object.name || '').toLowerCase();
       if (/(^|[_-])(ground|terrain|zone_floor|floor|path_network)([_-]|$)/.test(name)) return true;
     }
@@ -329,7 +330,13 @@
 
   function isBaseWorldPass(scene, camera) {
     if (!scene?.isScene || !camera?.isCamera || scene.overrideMaterial) return false;
-    return (Number(camera.layers.mask) >>> 0) === MASK_ALL;
+    const mask = Number(camera.layers.mask) >>> 0; // Used to distinguish the ordinary world draw from dedicated replay/outline layers.
+    // Outlines-on frames normally arrive with every layer enabled, while a
+    // valid outlines-off world draw can use only Three's default layer. The
+    // former MASK_ALL-only check silently bypassed the x-ray on those layer-0
+    // frames. Requiring the default world bit accepts both forms but rejects
+    // shell, material-ID, PNG-depth, held-overlay, and ground-replay passes.
+    return mask === MASK_ALL || !!(mask & DEFAULT_LAYER_MASK);
   }
 
   function hideObjects(objects) {
@@ -525,6 +532,7 @@
   function snapshot() {
     return {
       installed: true,
+      enabled,
       mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
@@ -547,7 +555,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -566,7 +574,9 @@
     snapshot,
     debugLogSnapshot,
     get enabled() { return enabled; },
-    setEnabled(v) { enabled = !!v; },
+    // Retained as a compatibility no-op for the former camera-mode toggle.
+    // Ground/grass x-ray is now an invariant of held weapon presentation.
+    setEnabled() { enabled = true; },
     enforceHeldInvariant() {
       for (const mesh of heldRegistry) enforceHeldMesh(mesh);
     },
