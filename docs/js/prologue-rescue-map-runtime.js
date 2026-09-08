@@ -10,6 +10,8 @@
   // The rescue scene is a real authored 25x25 exterior map. It is injected
   // into the normal map workspace, rendered through the normal zone runtime,
   // then decorated with Southern Cloud Forest fog and Shadewood boundary trees.
+  // Reveal waits for the real map plus scripted NPC WORLD ACTORS. Gameplay
+  // dialogue/camera readiness happens after reveal and can never pin this loader.
   const RESCUE_MAP_ID = 'map_prologue_rescue'; // Dedicated authored first-prologue area.
   const HUNUNDI_MAP_ID = 'map_i_temple_basement_hunundi'; // Existing authored second-stage room.
   const SAVE_META_KEY = 'hobunjiSaveMeta'; // Reads the selected world's persisted prologue stage.
@@ -221,13 +223,13 @@
     } catch (error) {
       debugLog(`loading screen hide failed: ${error?.message || error}`, 'error');
     } finally {
-      // This is the single final DOM removal. No other prologue module owns a
-      // MutationObserver for this class anymore, so nothing can re-add it.
+      // This is the single final DOM removal. Dialogue readiness does not own
+      // this class, so a late dialogue bridge cannot keep the map covered.
       loaderRoot()?.classList.remove('visible');
       window.__hobunjiPrologueHiddenSetup = false;
     }
 
-    debugLog(`${runtime.lastReadyArea || 'prologue map'} fully ready; loading screen released`);
+    debugLog(`${runtime.lastReadyArea || 'prologue map'} map + scripted actors ready; loading screen released`);
     return true;
   }
 
@@ -292,13 +294,13 @@
     return decorateRescueBoundary(scene, grid);
   }
 
-  function rescueDialogueReady() {
-    try { return window.PrologueDialogueRuntime?.isRescueStageReady?.() === true; }
+  function rescueActorsReady() {
+    try { return window.PrologueDialogueRuntime?.isRescueActorsReady?.() === true; }
     catch (_) { return false; }
   }
 
   function rescueRevealReady() {
-    return rescueMapReady() && rescueDialogueReady();
+    return rescueMapReady() && rescueActorsReady();
   }
 
   function genericStageReady(expectedMap) {
@@ -384,7 +386,10 @@
     const area = currentArea();
     const scene = area === RESCUE_MAP_ID ? window.GridTileAccessors?.getActiveScene?.() : null;
     const mapReady = area === RESCUE_MAP_ID ? rescueMapReady() : null;
-    const dialogueReady = area === RESCUE_MAP_ID ? rescueDialogueReady() : null;
+    const actorsReady = area === RESCUE_MAP_ID ? rescueActorsReady() : null;
+    const dialogueReady = area === RESCUE_MAP_ID
+      ? window.PrologueDialogueRuntime?.isRescueStageReady?.() === true
+      : null;
     return {
       rescueMapId: RESCUE_MAP_ID,
       rescueSize: `${RESCUE_COLS}x${RESCUE_ROWS}`,
@@ -396,8 +401,9 @@
       loaderShowCalls: runtime.showCalls,
       releaseAttempts: runtime.releaseAttempts,
       mapReady,
+      actorsReady,
       dialogueReady,
-      revealReady: area === RESCUE_MAP_ID ? !!(mapReady && dialogueReady) : null,
+      revealReady: area === RESCUE_MAP_ID ? !!(mapReady && actorsReady) : null,
       hiddenSetup: !!window.__hobunjiPrologueHiddenSetup,
       lastReadyArea: runtime.lastReadyArea,
       boundaryTrees: scene?.userData?.prologueRescueBoundaryTreeCount ?? 0,
@@ -423,6 +429,7 @@
     augmentTownWorkspace,
     beginLoadingHold,
     rescueMapReady,
+    rescueActorsReady,
     rescueRevealReady,
     requestRevealCheck,
     debugSnapshot,
