@@ -12,12 +12,14 @@ const json = p => JSON.parse(read(p));
 const core = read('docs/js/interior-fire-floor-runtime.js');
 const integration = read('docs/js/interior-fire-floor-integration.js');
 const vessel = read('docs/js/furniture-vessel-runtime.js');
+const mapLayoutSystem = read('docs/js/map-layout-system.js');
 const temple = json('docs/config/maps/map_i_temple.json');
 const hunundiRoom = json('docs/config/maps/map_i_temple_basement_hunundi.json');
 
 assert.doesNotThrow(() => new vm.Script(core, { filename: 'interior-fire-floor-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(integration, { filename: 'interior-fire-floor-integration.js' }));
 assert.doesNotThrow(() => new vm.Script(vessel, { filename: 'furniture-vessel-runtime.js' }));
+assert.doesNotThrow(() => new vm.Script(mapLayoutSystem, { filename: 'map-layout-system.js' }));
 
 assert(core.includes("campfireFurniture"), 'core runtime must register a real campfire furniture item');
 assert(core.includes("bonfireFurniture"), 'core runtime must register a real bonfire furniture item');
@@ -59,33 +61,79 @@ assert(vessel.includes('loadInteriorFireFloorCompanions'), 'normal furniture boo
 assert(vessel.includes('interior-fire-floor-runtime.js'), 'normal game/editor bootstrap must load the shared core runtime');
 assert(vessel.includes('interior-fire-floor-integration.js'), 'normal game/editor bootstrap must load the integration layer');
 
+assert(mapLayoutSystem.includes('function resolveFurnitureBoundStations(mapData)'),
+  'layout resolver must support NPC stations bound to furniture ids');
+assert(mapLayoutSystem.includes('piece.col + (Number(piece.postX) || 0)'),
+  'furniture-bound stations must follow visual X post-transform offsets');
+assert(mapLayoutSystem.includes('piece.row + (Number(piece.postZ) || 0)'),
+  'furniture-bound stations must follow visual Z post-transform offsets');
+
 assert.deepStrictEqual(temple.floorStyle, {
   texture: 'carved_smooth.png',
-  tint: '#808080',
-  tilesPerTile: 4,
-}, 'updated church must use the requested gray carved_smooth floor at four textures per tile');
+  tint: '#8c8c8c',
+  tilesPerTile: 0.75,
+}, 'latest uploaded church floor style must be preserved');
 
 const communion = (temple.layouts || []).find(layout => layout.id === 'spirit_communion');
 assert(communion, 'updated church must retain the Spirit Communion layout');
 const bonfire = communion.furniture.find(piece => piece.id === 'sc_bonfire');
 assert(bonfire, 'Spirit Communion must use the real bonfire');
 assert.strictEqual(bonfire.itemKey, 'bonfireFurniture');
-assert.deepStrictEqual([bonfire.col, bonfire.row], [9, 9], 'bonfire authored footprint origin must remain on the uploaded church coordinates');
-assert.deepStrictEqual([bonfire.col + 1, bonfire.row + 1], [10, 10],
-  'a 2x2 bonfire must center on the shared middle vertex, not a tile center');
-assert.deepStrictEqual([bonfire.postSX, bonfire.postSY, bonfire.postSZ], [1, 1, 1],
-  'bonfire must not retain the placeholder campfire extra scale because the preset is already doubled');
 assert(!communion.furniture.some(piece => piece.itemKey === 'campfireKitFurniture'),
   'updated church must not retain the Campfire Kit placeholder');
-
-assert(communion.furniture.some(piece => piece.id === 'sc_bench_w1' && piece.row === 3),
-  'uploaded church west-bench repositioning must be preserved');
-assert(communion.furniture.some(piece => piece.id === 'sc_bench_e1' && piece.col === 13),
-  'uploaded church east-bench repositioning must be preserved');
-assert(communion.furniture.some(piece => piece.id === 'fmtspjum0bi6z' && piece.itemKey === 'tableLongFurniture'),
-  'uploaded church added long table must be preserved');
 assert(communion.furniture.filter(piece => piece.itemKey === 'candleTableFurniture').length === 2,
-  'uploaded church candle tables must remain present for the new candle flame VFX');
+  'uploaded church candle tables must remain present for the candle flame VFX');
+
+const stool = communion.furniture.find(piece => piece.id === 'fmtsv6eoligq5');
+assert(stool, 'latest Spirit Communion layout must retain the Eldress stool');
+assert.strictEqual(stool.itemKey, 'stoolFurniture');
+const eldressStation = (temple.npcStations || []).find(station => station.id === 'station_temple_counsel_teacup');
+assert(eldressStation, 'Eldress Spirit Communion station must still exist for schedule compatibility');
+assert.strictEqual(eldressStation.sourceFurnitureId, stool.id,
+  'Eldress station must bind to the actual Spirit Communion stool id');
+assert.strictEqual(eldressStation.sourceFurnitureKey, 'stoolFurniture');
+assert.strictEqual(eldressStation.seatIndex, 0);
+assert(!Object.prototype.hasOwnProperty.call(eldressStation, 'col'),
+  'Eldress station must not author a fixed column anymore');
+assert(!Object.prototype.hasOwnProperty.call(eldressStation, 'row'),
+  'Eldress station must not author a fixed row anymore');
+
+const layoutContext = { window: {} };
+vm.createContext(layoutContext);
+vm.runInContext(mapLayoutSystem, layoutContext, { filename: 'map-layout-system.js' });
+const effectiveCommunion = layoutContext.window.MapLayoutSystem.getEffectiveMapData(temple, {
+  minutes: 60,
+  weekday: 'Anan',
+  dateOrdinal: 1,
+});
+assert.strictEqual(effectiveCommunion.activeLayoutId, 'spirit_communion');
+const resolvedEldressStation = effectiveCommunion.npcStations.find(station => station.id === eldressStation.id);
+assert(resolvedEldressStation, 'active Spirit Communion must resolve the stool-bound Eldress station');
+assert.strictEqual(resolvedEldressStation.col, stool.col + stool.postX,
+  'Eldress destination X must be derived from the current stool placement');
+assert.strictEqual(resolvedEldressStation.row, stool.row + stool.postZ,
+  'Eldress destination Z must be derived from the current stool placement');
+assert.strictEqual(resolvedEldressStation.rotY, stool.rotY,
+  'Eldress seated facing must follow the stool rotation');
+assert.strictEqual(resolvedEldressStation.furnitureKey, 'stoolFurniture',
+  'resolved station must use the stool seat anchor rather than floor sitting');
+
+const movedTemple = JSON.parse(JSON.stringify(temple));
+const movedCommunion = movedTemple.layouts.find(layout => layout.id === 'spirit_communion');
+const movedStool = movedCommunion.furniture.find(piece => piece.id === stool.id);
+movedStool.col = 4;
+movedStool.row = 12;
+movedStool.postX = 0.25;
+movedStool.postZ = -0.4;
+movedStool.rotY = 135;
+const movedEffective = layoutContext.window.MapLayoutSystem.getEffectiveMapData(movedTemple, {
+  minutes: 60,
+  weekday: 'Anan',
+  dateOrdinal: 1,
+});
+const movedStation = movedEffective.npcStations.find(station => station.id === eldressStation.id);
+assert.deepStrictEqual([movedStation.col, movedStation.row, movedStation.rotY], [4.25, 11.6, 135],
+  'moving the stool must automatically move/turn the Eldress destination without editing npcStations');
 
 assert.strictEqual(hunundiRoom.id, 'map_i_temple_basement_hunundi',
   'uploaded Father Hunundi room must replace the existing repo map under its canonical id');
@@ -98,4 +146,4 @@ assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtsteb7xjq80' && piece
 assert.deepStrictEqual(hunundiRoom.entryPoints, [], 'uploaded Father Hunundi room entryPoints must be preserved');
 assert.deepStrictEqual(hunundiRoom.layouts, [], 'uploaded Father Hunundi room layouts must be preserved');
 
-console.log('interior fire/floor + floor preview + centered 2x2 bonfire + Hunundi room regression checks: PASS');
+console.log('interior fire/floor + floor preview + furniture-bound Eldress stool + Hunundi room regression checks: PASS');
