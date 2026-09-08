@@ -13,6 +13,7 @@ const core = read('docs/js/interior-fire-floor-runtime.js');
 const integration = read('docs/js/interior-fire-floor-integration.js');
 const vessel = read('docs/js/furniture-vessel-runtime.js');
 const temple = json('docs/config/maps/map_i_temple.json');
+const hunundiRoom = json('docs/config/maps/map_i_temple_basement_hunundi.json');
 
 assert.doesNotThrow(() => new vm.Script(core, { filename: 'interior-fire-floor-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(integration, { filename: 'interior-fire-floor-integration.js' }));
@@ -43,6 +44,16 @@ assert(integration.includes("bonfireFurniture"), 'Interior Editor catalog must e
 assert(integration.includes("biaFloorTexture"), 'Interior Editor must expose the PNG floor texture field');
 assert(integration.includes("biaFloorTint"), 'Interior Editor must expose the floor tint field');
 assert(integration.includes("biaFloorRepeat"), 'Interior Editor must expose textures-per-tile');
+assert(integration.includes('function installEditorFloorMeshBridge()'),
+  'Interior Editor must patch newly rebuilt floor meshes instead of trusting the wall-style-only material cache');
+assert(integration.includes("geometry?.type === 'BoxGeometry'"),
+  'floor preview bridge must narrowly identify the editor floor-tile geometry');
+assert(integration.includes("Math.abs((p?.height ?? 0) - 0.08)"),
+  'floor preview bridge must match the editor floor slab thickness');
+assert(integration.includes("applyFloorStyleToMaterial?.(mat, style, '../../assets/')"),
+  'floor preview bridge must apply the selected floorStyle to the cached shared floor material');
+assert(integration.includes('THREE.Mesh = InteriorFloorAwareMesh'),
+  'floor preview bridge must intercept later rebuilds even though the editor renderer already exists');
 
 assert(vessel.includes('loadInteriorFireFloorCompanions'), 'normal furniture bootstrap must install fire/floor companions');
 assert(vessel.includes('interior-fire-floor-runtime.js'), 'normal game/editor bootstrap must load the shared core runtime');
@@ -76,4 +87,15 @@ assert(communion.furniture.some(piece => piece.id === 'fmtspjum0bi6z' && piece.i
 assert(communion.furniture.filter(piece => piece.itemKey === 'candleTableFurniture').length === 2,
   'uploaded church candle tables must remain present for the new candle flame VFX');
 
-console.log('interior fire/floor + centered 2x2 bonfire regression checks: PASS');
+assert.strictEqual(hunundiRoom.id, 'map_i_temple_basement_hunundi',
+  'uploaded Father Hunundi room must replace the existing repo map under its canonical id');
+assert.strictEqual(hunundiRoom.furniture.length, 7,
+  'updated Father Hunundi room must retain all seven uploaded furniture records');
+assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtst9ykgmqf0' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 9 && piece.row === 9 && piece.rotY === 180),
+  'updated Father Hunundi room must retain the uploaded first added chair');
+assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtsteb7xjq80' && piece.itemKey === 'chairSimpleFurniture' && piece.col === 8 && piece.row === 9 && piece.rotY === 180),
+  'updated Father Hunundi room must retain the uploaded second added chair');
+assert.deepStrictEqual(hunundiRoom.entryPoints, [], 'uploaded Father Hunundi room entryPoints must be preserved');
+assert.deepStrictEqual(hunundiRoom.layouts, [], 'uploaded Father Hunundi room layouts must be preserved');
+
+console.log('interior fire/floor + floor preview + centered 2x2 bonfire + Hunundi room regression checks: PASS');
