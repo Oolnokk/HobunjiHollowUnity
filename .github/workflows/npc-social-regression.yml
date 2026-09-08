@@ -18,6 +18,7 @@ on:
       - 'docs/js/interior-fire-floor-runtime.js'
       - 'docs/js/interior-fire-floor-integration.js'
       - 'docs/js/interior-environment-runtime.js'
+      - 'docs/js/interior-fire-void-runtime.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
@@ -30,6 +31,7 @@ on:
       - 'scripts/test-dance-rapport-rate.js'
       - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-interior-fire-floor.js'
+      - 'scripts/test-interior-fire-void.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
@@ -56,6 +58,7 @@ on:
       - 'docs/js/interior-fire-floor-runtime.js'
       - 'docs/js/interior-fire-floor-integration.js'
       - 'docs/js/interior-environment-runtime.js'
+      - 'docs/js/interior-fire-void-runtime.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
@@ -68,6 +71,7 @@ on:
       - 'scripts/test-dance-rapport-rate.js'
       - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-interior-fire-floor.js'
+      - 'scripts/test-interior-fire-void.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
@@ -106,6 +110,7 @@ jobs:
           node --check docs/js/interior-fire-floor-runtime.js
           node --check docs/js/interior-fire-floor-integration.js
           node --check docs/js/interior-environment-runtime.js
+          node --check docs/js/interior-fire-void-runtime.js
           node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/dialogue-content.js
           node --check docs/js/relationships-panel.js
@@ -119,6 +124,7 @@ jobs:
           node --check scripts/test-dance-rapport-rate.js
           node --check scripts/test-generic-hud-icons.js
           node --check scripts/test-interior-fire-floor.js
+          node --check scripts/test-interior-fire-void.js
           node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-npc-swig-offer-cooldown.js
@@ -132,6 +138,8 @@ jobs:
         run: node scripts/test-generic-hud-icons.js
       - name: Test interior fire, floor, environment, updated church, and civil midnight integration
         run: node scripts/test-interior-fire-floor.js
+      - name: Test interior fire aliases and pure-black unlit void
+        run: node scripts/test-interior-fire-void.js
       - name: Test balanced multi-trait NPC gifting
         run: node scripts/test-npc-gifting-multitrait.js
       - name: Test event-driven Rapport, social gates, dialogue, and wardrobes
