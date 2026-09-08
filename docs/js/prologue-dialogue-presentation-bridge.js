@@ -1,20 +1,15 @@
-// Presentation bridge for the rescue prologue dialogue test.
-//
-// PrologueDialogueRuntime owns scripted speakers/lines, but the actual rendered
-// shoulder-camera orbit/target/input state lives inside game.js. This bridge
-// adapts those private edges through the game's existing injected setters,
-// Shoulder Cam settings listener, and __climbDebug camera functions. The result
-// stays a real player-anchored Shoulder Cam: scripted speakers only choose its
-// look direction; they never become camera anchors.
+// Real Shoulder Cam presentation for the rescue prologue dialogue.
+// Scripted speakers choose only a look direction; the rendered camera remains
+// anchored to the player and ordinary non-prologue dialogue is untouched.
 (() => {
   'use strict';
 
   const RESCUE_MAP_ID = 'map_prologue_rescue';
   const SHOULDER_MODE = 'shoulderSurf';
   const RETRY_MS = 80;
-  const DIALOGUE_DISTANCE_TILES = 1.8; // Noticeable dialogue push-in from the ordinary 2.6-tile shoulder distance.
-  const DIALOGUE_FOV_DEG = 50; // Slightly narrower than ordinary Shoulder Cam (55°) without becoming a detached close-up.
-  const DIALOGUE_FOLLOW_LERP = 1; // Scripted dialogue must not visibly lerp inward from the previous map/camera target.
+  const DIALOGUE_DISTANCE_TILES = 1.8;
+  const DIALOGUE_FOV_DEG = 50;
+  const DIALOGUE_FOLLOW_LERP = 1;
 
   let rawCameraDeps = null;
   let aimDeps = null;
@@ -23,18 +18,18 @@
   let dialogueObserver = null;
   let arcObserver = null;
   let observerRetry = 0;
+  let takeoverActive = false;
+  let savedShoulderConfig = null;
   let recenterCount = 0;
-  let guiReassertions = 0;
   let renderedTargetSnaps = 0;
   let inputBlocks = 0;
   let takeoverStarts = 0;
-  let takeoverActive = false;
-  let savedShoulderConfig = null;
+  let guiReassertions = 0;
   let lastYawRad = null;
   let lastStatus = 'boot';
   let lastError = null;
 
-  function debugLog(message, level = 'info') {
+  function log(message, level = 'info') {
     const logger = window.__farmLog;
     if (typeof logger === 'function') {
       try { logger(`[prologue-presentation] ${message}`, level, 'camera'); return; } catch (_) {}
@@ -42,53 +37,48 @@
     console[level === 'warn' ? 'warn' : level === 'error' ? 'error' : 'log'](`[prologue-presentation] ${message}`);
   }
 
-  function snapshot() {
+  function dialogueState() {
     try { return window.PrologueDialogueRuntime?.debugSnapshot?.() || null; }
     catch (_) { return null; }
   }
 
   function currentArea() {
-    try { return window.GridTileAccessors?.getCurrentArea?.() || snapshot()?.currentArea || null; }
-    catch (_) { return snapshot()?.currentArea || null; }
+    try { return window.GridTileAccessors?.getCurrentArea?.() || dialogueState()?.currentArea || null; }
+    catch (_) { return dialogueState()?.currentArea || null; }
   }
 
-  function prologueSessionActive() {
-    const state = snapshot();
-    return currentArea() === RESCUE_MAP_ID
-      && state?.sessionActive === true
-      && state?.testFinished !== true;
+  function sessionActive() {
+    const state = dialogueState();
+    return currentArea() === RESCUE_MAP_ID && state?.sessionActive === true && state?.testFinished !== true;
   }
 
-  function speakerRoot(npcId = snapshot()?.speakerNpcId) {
+  function speakerRoot(npcId = dialogueState()?.speakerNpcId) {
     const id = String(npcId || '');
     if (!id) return requestedSpeakerTarget?.userData?.prologueActor ? requestedSpeakerTarget : null;
     if (requestedSpeakerTarget?.userData?.prologueNpcId === id) return requestedSpeakerTarget;
     const scene = window.GridTileAccessors?.getActiveScene?.();
-    let found = null;
-    if (scene?.children) {
-      const stack = [...scene.children];
-      while (stack.length && !found) {
-        const node = stack.shift();
-        if (node?.userData?.prologueNpcId === id) found = node;
-        else if (node?.children?.length) stack.push(...node.children);
-      }
+    if (!scene?.children) return null;
+    const stack = [...scene.children];
+    while (stack.length) {
+      const node = stack.shift();
+      if (node?.userData?.prologueNpcId === id) return node;
+      if (node?.children?.length) stack.push(...node.children);
     }
-    return found;
+    return null;
   }
 
   function playerAndTile() {
-    const player = aimDeps?.player || rawCameraDeps?.player || window.__climbDebug?.getPlayer?.() || null;
-    const tile = Number(aimDeps?.TILE ?? rawCameraDeps?.TILE) || 1;
-    return { player, tile };
+    return {
+      player: aimDeps?.player || rawCameraDeps?.player || window.__climbDebug?.getPlayer?.() || null,
+      tile: Number(aimDeps?.TILE ?? rawCameraDeps?.TILE) || 1,
+    };
   }
 
   function yawToward(root) {
     const { player, tile } = playerAndTile();
-    const tx = Number(root?.position?.x);
-    const tz = Number(root?.position?.z);
-    const px = Number(player?.x) / tile;
-    const pz = Number(player?.y) / tile;
-    if (![tx, tz, px, pz].every(Number.isFinite)) return null;
+    const values = [Number(root?.position?.x), Number(root?.position?.z), Number(player?.x) / tile, Number(player?.y) / tile];
+    if (!values.every(Number.isFinite)) return null;
+    const [tx, tz, px, pz] = values;
     return Math.atan2(tz - pz, tx - px);
   }
 
@@ -120,10 +110,11 @@
   function restoreShoulderConfig() {
     if (!savedShoulderConfig) return false;
     const cfg = shoulderConfig();
-    if (!cfg) { savedShoulderConfig = null; return false; }
-    for (const [key, record] of Object.entries(savedShoulderConfig)) {
-      if (record.own) cfg[key] = record.value;
-      else delete cfg[key];
+    if (cfg) {
+      for (const [key, record] of Object.entries(savedShoulderConfig)) {
+        if (record.own) cfg[key] = record.value;
+        else delete cfg[key];
+      }
     }
     savedShoulderConfig = null;
     return true;
@@ -133,20 +124,18 @@
     const toggle = document.getElementById('settingShoulderSurf');
     if (!toggle) return false;
     toggle.checked = true;
-    try {
-      toggle.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    } catch (_) {
-      return false;
-    }
+    try { toggle.dispatchEvent(new Event('change', { bubbles: true })); return true; }
+    catch (_) { return false; }
   }
 
   function snapRenderedCameraToPlayer() {
-    if (!prologueSessionActive()) return false;
+    if (!sessionActive()) return false;
     try {
       rawCameraDeps?.setCameraTarget?.(null);
       rawCameraDeps?.setCameraMode?.(SHOULDER_MODE);
       applyDialogueShoulderConfig();
+      // These are game.js's real closure-private camera helpers exposed by
+      // the existing climb diagnostics bridge, not a second camera system.
       window.__climbDebug?.snapCameraTarget?.();
       window.__climbDebug?.updateCameraPosition?.();
       renderedTargetSnaps += 1;
@@ -159,55 +148,48 @@
   }
 
   function recenterTowardSpeaker(root = speakerRoot()) {
-    if (!root || !prologueSessionActive()) return false;
-    const state = snapshot();
-    const speakerId = state?.speakerNpcId || root?.userData?.prologueNpcId || null;
+    if (!root || !sessionActive()) return false;
+    const speakerId = dialogueState()?.speakerNpcId || root?.userData?.prologueNpcId || null;
     const yaw = yawToward(root);
-    if (!Number.isFinite(yaw)) {
-      lastStatus = 'speaker-yaw-unavailable';
-      return false;
-    }
+    if (!Number.isFinite(yaw)) { lastStatus = 'speaker-yaw-unavailable'; return false; }
 
     const { player } = playerAndTile();
     const priorFacing = Number(rawCameraDeps?.getFacingAngle?.());
     const priorPlayerAngle = Number(player?.angle);
     try {
-      // Shoulder Cam's native setting listener owns cameraAzimuthOffsetDeg.
-      // Feed it the desired speaker bearing only for the synchronous recenter
-      // call, then restore character facing immediately. This rotates the
-      // camera without turning or relocating the player.
+      // The native Shoulder Cam checkbox listener owns cameraAzimuthOffsetDeg.
+      // Temporarily feed it the speaker bearing, then restore character state
+      // synchronously so only the camera rotates.
       if (Number.isFinite(priorFacing)) rawCameraDeps?.setFacingAngle?.(yaw);
       else aimDeps?.setFacingAngle?.(yaw);
       if (player) player.angle = yaw;
-
       rawCameraDeps?.setCameraTarget?.(null);
       rawCameraDeps?.setCameraMode?.(SHOULDER_MODE);
       applyDialogueShoulderConfig();
       const recentered = dispatchShoulderRecenter();
-
       if (Number.isFinite(priorFacing)) rawCameraDeps?.setFacingAngle?.(priorFacing);
       if (player && Number.isFinite(priorPlayerAngle)) player.angle = priorPlayerAngle;
-
       snapRenderedCameraToPlayer();
+
       lastSpeakerNpcId = speakerId;
       lastYawRad = yaw;
       recenterCount += 1;
       lastError = null;
       lastStatus = recentered ? `shoulder-focus:${speakerId || 'speaker'}` : `shoulder-mode:${speakerId || 'speaker'}`;
-      debugLog(`Shoulder Cam focus → ${speakerId || 'speaker'} (${(yaw * 180 / Math.PI).toFixed(1)}°), ${DIALOGUE_DISTANCE_TILES.toFixed(1)} tiles`);
+      log(`Shoulder Cam focus → ${speakerId || 'speaker'} (${(yaw * 180 / Math.PI).toFixed(1)}°), ${DIALOGUE_DISTANCE_TILES.toFixed(1)} tiles`);
       return true;
     } catch (error) {
       if (Number.isFinite(priorFacing)) rawCameraDeps?.setFacingAngle?.(priorFacing);
       if (player && Number.isFinite(priorPlayerAngle)) player.angle = priorPlayerAngle;
       lastError = String(error?.message || error);
       lastStatus = `recenter-error:${lastError}`;
-      debugLog(lastStatus, 'warn');
+      log(lastStatus, 'warn');
       return false;
     }
   }
 
   function beginCameraTakeover() {
-    if (takeoverActive || !prologueSessionActive()) return takeoverActive;
+    if (takeoverActive || !sessionActive()) return takeoverActive;
     takeoverActive = true;
     takeoverStarts += 1;
     applyDialogueShoulderConfig();
@@ -218,7 +200,7 @@
     rawCameraDeps?.setCameraMode?.(SHOULDER_MODE);
     const focused = recenterTowardSpeaker(speakerRoot());
     if (!focused) snapRenderedCameraToPlayer();
-    lastStatus = focused ? lastStatus : 'shoulder-takeover';
+    if (!focused) lastStatus = 'shoulder-takeover';
     return true;
   }
 
@@ -232,20 +214,18 @@
   }
 
   function enforceDialogueGui() {
-    if (!prologueSessionActive()) return false;
+    if (!sessionActive()) return false;
     const dialogue = document.getElementById('npcDialogue');
     if (!dialogue) return false;
     let changed = false;
     if (!dialogue.classList.contains('open')) { dialogue.classList.add('open'); changed = true; }
     if (dialogue.getAttribute?.('aria-hidden') !== 'false') { dialogue.setAttribute('aria-hidden', 'false'); changed = true; }
-
     const arc = document.getElementById('arcContainer');
     if (arc && !arc.classList.contains('arc-hidden')) { arc.classList.add('arc-hidden'); changed = true; }
     const continueBtn = document.getElementById('npcDialogueContinue');
     const leaveBtn = document.getElementById('npcDialogueLeave');
     if (continueBtn?.style?.display === 'none') { continueBtn.style.display = ''; changed = true; }
     if (leaveBtn?.style?.display === 'none') { leaveBtn.style.display = ''; changed = true; }
-
     if (changed) guiReassertions += 1;
     return true;
   }
@@ -271,11 +251,9 @@
   }
 
   function blockCameraInput(event) {
-    if (!prologueSessionActive() || isDialogueUiTarget(event.target)) return;
+    if (!sessionActive() || isDialogueUiTarget(event.target)) return;
     inputBlocks += 1;
-    if (event.cancelable !== false) {
-      try { event.preventDefault(); } catch (_) {}
-    }
+    if (event.cancelable !== false) { try { event.preventDefault(); } catch (_) {} }
     try { event.stopImmediatePropagation(); } catch (_) {}
     try { event.stopPropagation(); } catch (_) {}
   }
@@ -301,15 +279,16 @@
         ...source,
         setCameraMode(mode) {
           const dialogueMode = source.cameraConfig?.()?.dialogueMode || 'npcDialogue';
-          const requested = prologueSessionActive() && mode === dialogueMode ? SHOULDER_MODE : mode;
-          return originalSetCameraMode?.(requested);
+          return originalSetCameraMode?.(sessionActive() && mode === dialogueMode ? SHOULDER_MODE : mode);
         },
         setCameraTarget(target) {
-          if (prologueSessionActive() && target?.userData?.prologueActor) {
+          if (sessionActive() && target?.userData?.prologueActor) {
             requestedSpeakerTarget = target;
             const result = originalSetCameraTarget?.(null);
-            beginCameraTakeover();
-            recenterTowardSpeaker(target);
+            // Initial takeover already focuses the current speaker. Later
+            // targets only need the speaker-change recenter once.
+            if (!takeoverActive) beginCameraTakeover();
+            else recenterTowardSpeaker(target);
             return result;
           }
           return originalSetCameraTarget?.(target);
@@ -361,17 +340,16 @@
   }
 
   function tick() {
-    const active = prologueSessionActive();
-    if (active) {
+    if (sessionActive()) {
       beginCameraTakeover();
       enforceDialogueGui();
       applyDialogueShoulderConfig();
-      const state = snapshot();
+      const state = dialogueState();
       if (state?.speakerNpcId && state.speakerNpcId !== lastSpeakerNpcId) recenterTowardSpeaker(speakerRoot(state.speakerNpcId));
       if (rawCameraDeps?.getCameraMode?.() !== SHOULDER_MODE) rawCameraDeps?.setCameraMode?.(SHOULDER_MODE);
       rawCameraDeps?.setCameraTarget?.(null);
-      // Authoritative rendered-camera fix: discard any stale farm/previous-map
-      // follow target and apply the scripted shoulder zoom every visible frame.
+      // Never inherit the farm/previous-map camera target: lock the actual
+      // rendered follow target to the player's current shoulder every frame.
       snapRenderedCameraToPlayer();
     } else {
       endCameraTakeover();
@@ -386,17 +364,11 @@
   installInputLock();
 
   observerRetry = setInterval(() => {
-    if (installGuiObservers()) {
-      clearInterval(observerRetry);
-      observerRetry = 0;
-    }
+    if (installGuiObservers()) { clearInterval(observerRetry); observerRetry = 0; }
   }, RETRY_MS);
   if (document.readyState !== 'loading') installGuiObservers();
   else document.addEventListener('DOMContentLoaded', installGuiObservers, { once: true });
 
-  // Start after the parser/game bootstrap task so our camera snap runs after
-  // game.js's ordinary per-frame camera update, immediately before the next
-  // visible frame uses the corrected player-anchored shoulder state.
   setTimeout(() => requestAnimationFrame(tick), 0);
 
   window.PrologueDialoguePresentationBridge = Object.freeze({
@@ -404,16 +376,16 @@
     enforceNow: enforceDialogueGui,
     recenterNow: () => recenterTowardSpeaker(speakerRoot()),
     syncCameraNow: () => {
-      if (!prologueSessionActive()) { endCameraTakeover(); return false; }
+      if (!sessionActive()) { endCameraTakeover(); return false; }
       beginCameraTakeover();
       return snapRenderedCameraToPlayer();
     },
     debugSnapshot: () => ({
       version: 2,
       currentArea: currentArea(),
-      sessionActive: prologueSessionActive(),
+      sessionActive: sessionActive(),
       takeoverActive,
-      speakerNpcId: snapshot()?.speakerNpcId || null,
+      speakerNpcId: dialogueState()?.speakerNpcId || null,
       cameraDepsReady: !!rawCameraDeps,
       aimDepsReady: !!aimDeps,
       cameraMode: rawCameraDeps?.getCameraMode?.() || null,
