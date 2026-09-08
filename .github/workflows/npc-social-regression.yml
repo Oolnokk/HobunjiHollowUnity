@@ -10,6 +10,7 @@ on:
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v3.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
+      - 'docs/js/building-interior-runtime-furniture.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
@@ -39,6 +40,7 @@ on:
       - 'docs/js/npc-furniture-wardrobe-bridge-v2.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v3.js'
       - 'docs/js/building-interior-npc-wardrobe-editor.js'
+      - 'docs/js/building-interior-runtime-furniture.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
@@ -82,6 +84,7 @@ jobs:
           node --check docs/js/npc-furniture-wardrobe-bridge-v2.js
           node --check docs/js/npc-furniture-wardrobe-bridge-v3.js
           node --check docs/js/building-interior-npc-wardrobe-editor.js
+          node --check docs/js/building-interior-runtime-furniture.js
           node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/dialogue-content.js
           node --check docs/js/relationships-panel.js

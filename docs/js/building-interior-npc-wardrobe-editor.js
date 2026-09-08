@@ -3,13 +3,27 @@
 
   if (window.BuildingInteriorNpcWardrobeEditor) return;
 
+  const RUNTIME_FURNITURE_BRIDGE_URL = '../../js/building-interior-runtime-furniture.js?v=20260908b'; // Used to keep this editor on the same authored/procedural furniture visual path as gameplay.
+
+  function loadRuntimeFurnitureBridge() {
+    const existing = [...document.scripts].find(script => script.src && script.src.includes('building-interior-runtime-furniture.js')); // Used to avoid duplicate bridge requests if this extension is re-evaluated.
+    if (existing || window.BuildingInteriorRuntimeFurniture) return;
+    const script = document.createElement('script'); // Used to load the editor-only furniture runtime adapter without changing the large interior-author HTML file.
+    script.src = RUNTIME_FURNITURE_BRIDGE_URL;
+    script.async = false;
+    script.dataset.biaRuntimeFurnitureBridge = '1';
+    document.head.appendChild(script);
+  }
+
+  loadRuntimeFurnitureBridge();
+
   const NPC_DATABASE_URL = '../../config/npcs/hobunji-starter-npc-database.json'; // Used to populate the selected furniture's NPC wardrobe owner dropdown.
   const METADATA_KEY = 'npcWardrobeFor'; // Used as the stable map-JSON field consumed by the runtime wardrobe interaction bridge.
   const WALKABLE_ELEVATION_KEY = 'walkableElevation'; // Used by HobunjiWalkableElevation to opt this placed furniture instance into a geometry-derived support box.
   let npcRecords = []; // Used to resolve authored NPC ids into readable names in the furniture inspector.
   let lastSelection = null; // Used by mobile diagnostics and to keep status text meaningful immediately after an editor import rebuild.
   let statusEl = null; // Used to report assignment/import results without requiring console access.
-  let ownerSelect = null; // Used to edit the selected furniture instance's wardrobe owner.
+  let ownerSelect = null; // Used to edit the selected furniture instance's NPC wardrobe owner.
   let applyButton = null; // Used to commit the dropdown value through the editor's own JSON import path.
   let walkableCheckbox = null; // Used to toggle geometry-derived vertical elevation on the selected furniture instance.
   let walkableApplyButton = null; // Used to persist the elevation checkbox through the editor's authoritative JSON import path.
