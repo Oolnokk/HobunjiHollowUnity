@@ -11,6 +11,7 @@ const json = p => JSON.parse(read(p));
 
 const core = read('docs/js/interior-fire-floor-runtime.js');
 const integration = read('docs/js/interior-fire-floor-integration.js');
+const environment = read('docs/js/interior-environment-runtime.js');
 const vessel = read('docs/js/furniture-vessel-runtime.js');
 const mapLayoutSystem = read('docs/js/map-layout-system.js');
 const temple = json('docs/config/maps/map_i_temple.json');
@@ -18,6 +19,7 @@ const hunundiRoom = json('docs/config/maps/map_i_temple_basement_hunundi.json');
 
 assert.doesNotThrow(() => new vm.Script(core, { filename: 'interior-fire-floor-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(integration, { filename: 'interior-fire-floor-integration.js' }));
+assert.doesNotThrow(() => new vm.Script(environment, { filename: 'interior-environment-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(vessel, { filename: 'furniture-vessel-runtime.js' }));
 assert.doesNotThrow(() => new vm.Script(mapLayoutSystem, { filename: 'map-layout-system.js' }));
 
@@ -56,6 +58,26 @@ assert(integration.includes("applyFloorStyleToMaterial?.(mat, style, '../../asse
   'floor preview bridge must apply the selected floorStyle to the cached shared floor material');
 assert(integration.includes('THREE.Mesh = InteriorFloorAwareMesh'),
   'floor preview bridge must intercept later rebuilds even though the editor renderer already exists');
+assert(integration.includes('interior-environment-runtime.js'),
+  'normal game/editor integration must synchronously load the authored environment companion');
+
+assert(environment.includes('const DEFAULT_WALL_HEIGHT = 1.75'),
+  'existing interiors must keep their historical 1.75-tile wall default');
+assert(environment.includes('biaWallHeight') && environment.includes('biaBaseLightLevel')
+  && environment.includes('biaDaylightInfluence') && environment.includes('biaLightRadiusMultiplier'),
+  'Interior Editor must expose wall height, base light, daylight influence, and local-light radius controls');
+assert(environment.includes('hobunjiInteriorWallGroup'),
+  'shared wall groups must be tagged so runtime can apply map-authored height after scene construction');
+assert(environment.includes('WeatherFX?.getLightingState?.()'),
+  'interior daylight influence must follow the same full-day weather/lighting signal as the world');
+assert(environment.includes("light.isPointLight || light.isSpotLight"),
+  'local point and spot light ranges must participate in the authored radius multiplier');
+assert(environment.includes('light.distance = entry.baseDistance * settings.lightRadiusMultiplier'),
+  'local light radius must scale from each source original distance rather than compounding');
+assert(environment.includes("entry.role === 'base'"),
+  'ambient/hemisphere base light must be independently controllable');
+assert(environment.includes("entry.role === 'daylight'"),
+  'directional daylight must be independently controllable');
 
 assert(vessel.includes('loadInteriorFireFloorCompanions'), 'normal furniture bootstrap must install fire/floor companions');
 assert(vessel.includes('interior-fire-floor-runtime.js'), 'normal game/editor bootstrap must load the shared core runtime');
@@ -132,6 +154,13 @@ assert.deepStrictEqual(temple.floorStyle, {
   tint: '#8c8c8c',
   tilesPerTile: 0.75,
 }, 'latest uploaded church floor style must be preserved');
+assert.strictEqual(temple.wallHeight, 3.5,
+  'church walls must be exactly double the historical 1.75-tile height');
+assert.deepStrictEqual(temple.interiorLighting, {
+  baseLightLevel: 0.06,
+  daylightInfluence: 2.4,
+  lightRadiusMultiplier: 2,
+}, 'church must use a near-black base, strong daylight compensation, and doubled local-light radius');
 
 const communion = (temple.layouts || []).find(layout => layout.id === 'spirit_communion');
 assert(communion, 'updated church must retain the Spirit Communion layout');
@@ -205,4 +234,4 @@ assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtsteb7xjq80' && piece
 assert.deepStrictEqual(hunundiRoom.entryPoints, [], 'uploaded Father Hunundi room entryPoints must be preserved');
 assert.deepStrictEqual(hunundiRoom.layouts, [], 'uploaded Father Hunundi room layouts must be preserved');
 
-console.log('interior fire/floor + midnight civil rollover + furniture-bound Eldress stool + Hunundi room regression checks: PASS');
+console.log('interior fire/floor + environment + midnight civil rollover + furniture-bound Eldress stool + Hunundi room regression checks: PASS');
