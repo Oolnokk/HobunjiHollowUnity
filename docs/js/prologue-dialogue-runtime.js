@@ -1,35 +1,64 @@
 (() => {
   'use strict';
 
-  // Gameplay-cutscene dialogue proof of concept.
+  // Scripted gameplay-cutscene dialogue for the prologue rescue stage.
   //
-  // This deliberately uses the ordinary #npcDialogue shell and real live NPC
-  // walkers. The prologue supplies only authored actor positions + an ordered
-  // line list. Advancing a line automatically changes the active walker, name,
-  // portrait, and camera target. It does not move the player and does not call
-  // any NPC look-at/headtracking behavior; those remain future per-beat options.
-  const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used to scope the temporary automatic-speaker test to the first prologue map.
-  const CHAPTER_URL = './config/cutscenes/prologue-chapter.json'; // Used to read authored actor positions and test dialogue lines.
-  const MONITOR_MS = 120; // Used to wait for normal game/NPC/dialogue initialization without racing startup.
+  // Important: scripted cutscene actors are NOT ordinary scheduled NPC walkers.
+  // A real NPC may have no live walker at all when the player is on this private
+  // prologue map. This runtime therefore builds prologue-owned actor instances
+  // directly from the same NPC database + NpcAvatarPreview + PNGPlaneAvatar
+  // pipeline used by normal NPCs/Cutscene Director, stages those actors while the
+  // loading screen is still covering the scene, and then drives the ordinary
+  // #npcDialogue shell with automatic per-line speaker/camera retargeting.
+  const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used to scope actor construction/dialogue to the first prologue stage.
+  const CHAPTER_URL = './config/cutscenes/prologue-chapter.json'; // Used to load authored actor positions and line ordering.
+  const NPC_DATABASE_URL = './config/npcs/hobunji-starter-npc-database.json'; // Used when LocalDBOverrides is unavailable.
+  const SAVE_META_KEY = 'hobunjiSaveMeta'; // Used before PrologueSystem is fully initialized to identify an owner rescue boot.
+  const MONITOR_MS = 80; // Used to keep cleanup/readiness independent of private game.js transition internals.
+  const ACTOR_LOG_EVERY = 25; // Used to rate-limit mobile-visible startup diagnostics.
 
-  let npcDeps = null; // Captured from NpcScheduling.init; supplies the game's real npcWalkers array.
-  let cameraDeps = null; // Captured from FarmAnimals.init; supplies the same camera getters/setters used by other gameplay interactions.
-  let dialogueBridge = null; // Captured from DialogueContent.init; lets the shared portrait renderer see our current speaker as its dialogue walker.
-  let chapterPromise = null; // Caches prologue-chapter.json for the session.
-  let stagedActors = new Map(); // npcId -> saved walker/root state, used to restore the NPC after leaving the rescue map.
-  let session = null; // Active automatic-speaker dialogue test session.
-  let testFinished = false; // Prevents the three-line proof from reopening repeatedly in one rescue-map visit.
-  let monitorTimer = 0; // Holds the single readiness/area monitor interval.
-  let monitorAttempts = 0; // Used by mobile-visible diagnostics when NPC/camera dependencies are late.
-  let targetChanges = 0; // Counts successful automatic speaker/camera-target changes.
-  let lastStatus = 'waiting-rescue'; // Human-readable current state for mobile debugging.
+  let cameraDeps = null; // Captured from FarmAnimals.init; supplies the game's camera mode/target getters and setters.
+  let dialogueBridge = null; // Captured from DialogueContent.init so its portrait renderer can read our synthetic active walker.
+  let chapterPromise = null; // Caches the authored prologue chapter for the session.
+  let npcDatabasePromise = null; // Caches the real NPC database used to build scripted actor instances.
+  let preparePromise = null; // Ensures only one async actor/dialogue setup pipeline runs at a time.
+  let actorInstances = new Map(); // npcId -> { rec, profile, root, walker, frontCanvas, backCanvas } for prologue-owned world actors.
+  let session = null; // Active automatic-speaker dialogue sequence.
+  let stageReady = false; // True only after both actors exist and line 1's dialogue portrait/camera target is primed.
+  let testFinished = false; // Prevents the temporary target test from reopening after all three lines are advanced.
+  let monitorTimer = 0; // Holds the single rescue-stage monitor interval.
+  let monitorAttempts = 0; // Used for debug/status reporting while setup dependencies are late.
+  let targetChanges = 0; // Counts successful automatic speaker changes.
+  let lastStatus = 'waiting-rescue'; // Human-readable state surfaced through debugSnapshot/debugText.
+  let lastError = null; // Stores the most recent actor/dialogue setup failure for mobile debugging.
+
+  // Independent loading-screen hold. PrologueRescueMapRuntime owns map/fog/tree
+  // readiness; this hold overlaps it and prevents that runtime's hide from ever
+  // exposing an actor-less clearing. The final release happens only after actors
+  // + first dialogue target/portrait are ready and have had two paint frames.
+  const loadingHold = {
+    active: false,
+    rootObserver: null,
+    findObserver: null,
+    releaseToken: 0,
+  };
 
   function debugLog(message, level = 'info') {
-    const logger = window.__farmLog; // Reuses the existing in-game log for mobile testing.
+    const logger = window.__farmLog; // Reuses the existing mobile-visible game log instead of requiring devtools.
     if (typeof logger === 'function') {
       try { logger(`[prologue-dialogue] ${message}`, level); return; } catch (_) {}
     }
     console[level === 'warn' ? 'warn' : level === 'error' ? 'error' : 'log'](`[prologue-dialogue] ${message}`);
+  }
+
+  function loadMeta() {
+    const raw = localStorage.getItem(SAVE_META_KEY); // Used only for pre-PrologueSystem owner/stage detection.
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (_) { return null; }
+  }
+
+  function persistedWorldState(worldId) {
+    return (loadMeta()?.worlds || []).find(world => world.id === worldId)?.prologue || null;
   }
 
   function currentArea() {
@@ -38,106 +67,230 @@
   }
 
   function rescuePrologueActive() {
-    const profile = window.__hobunjiPlayerProfile; // Used to bind the test to the currently selected real world/owner.
+    const profile = window.__hobunjiPlayerProfile; // Used to bind actor setup to the selected real owner/world.
     if (!profile?.worldId || !profile?.isWorldOwner) return false;
-    const state = window.PrologueSystem?.getWorldPrologue?.(profile.worldId);
+    const liveState = window.PrologueSystem?.getWorldPrologue?.(profile.worldId);
+    const state = liveState || persistedWorldState(profile.worldId);
+    if (profile.isNewWorld && !state) return true;
     return !!state && !state.completed && state.stage === 'rescue';
+  }
+
+  function loaderRoot() {
+    return document.getElementById('hobunjiLoadScreen');
+  }
+
+  function forceActorLoaderVisible() {
+    if (!loadingHold.active) return;
+    const root = loaderRoot();
+    if (root && !root.classList.contains('visible')) root.classList.add('visible');
+  }
+
+  function observeActorLoaderRoot(root) {
+    if (!root || loadingHold.rootObserver || typeof MutationObserver !== 'function') return;
+    loadingHold.rootObserver = new MutationObserver(forceActorLoaderVisible);
+    loadingHold.rootObserver.observe(root, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  function installActorLoaderObserver() {
+    const root = loaderRoot();
+    if (root) {
+      observeActorLoaderRoot(root);
+      forceActorLoaderVisible();
+      return;
+    }
+    if (loadingHold.findObserver || typeof MutationObserver !== 'function') return;
+    loadingHold.findObserver = new MutationObserver(() => {
+      const found = loaderRoot();
+      if (!found) return;
+      loadingHold.findObserver.disconnect();
+      loadingHold.findObserver = null;
+      observeActorLoaderRoot(found);
+      forceActorLoaderVisible();
+    });
+    loadingHold.findObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  function beginActorLoadingHold(reason = 'prologue-rescue-actors') {
+    if (!loadingHold.active) loadingHold.releaseToken += 1;
+    loadingHold.active = true;
+    installActorLoaderObserver();
+    try {
+      window.LoadingScreenRuntime?.show?.({ reason });
+      window.LoadingScreenRuntime?.setProgress?.(96, 'prologue-actors');
+    } catch (_) {}
+    forceActorLoaderVisible();
+  }
+
+  function finishActorLoadingHoldAfterPaint() {
+    if (!loadingHold.active || !stageReady) return;
+    const token = ++loadingHold.releaseToken; // Used to invalidate a stale release if rescue setup restarts before paint.
+    requestAnimationFrame(() => requestAnimationFrame(async () => {
+      if (!loadingHold.active || token !== loadingHold.releaseToken || !stageReady || currentArea() !== RESCUE_MAP_ID) return;
+      loadingHold.active = false;
+      loadingHold.rootObserver?.disconnect();
+      loadingHold.rootObserver = null;
+      loadingHold.findObserver?.disconnect();
+      loadingHold.findObserver = null;
+      try {
+        window.LoadingScreenRuntime?.setProgress?.(100, 'prologue-actors-ready');
+        await window.LoadingScreenRuntime?.hide?.();
+      } catch (_) {}
+      loaderRoot()?.classList.remove('visible');
+      debugLog('rescue actors + first dialogue target painted; loading screen released');
+    }));
   }
 
   function loadChapter() {
     if (chapterPromise) return chapterPromise;
     chapterPromise = fetch(CHAPTER_URL, { cache: 'no-store' })
       .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`chapter HTTP ${response.status}`);
         return response.json();
       })
       .catch(error => {
+        lastError = `chapter:${error?.message || error}`;
+        lastStatus = 'chapter-load-failed';
         debugLog(`chapter config unavailable: ${error?.message || error}`, 'error');
         return null;
       });
     return chapterPromise;
   }
 
-  function liveWalkers() {
-    return Array.isArray(npcDeps?.npcWalkers) ? npcDeps.npcWalkers : [];
+  function loadNpcDatabase() {
+    if (npcDatabasePromise) return npcDatabasePromise;
+    npcDatabasePromise = (async () => {
+      try {
+        const overridden = window.LocalDBOverrides?.loadDatabase
+          ? await window.LocalDBOverrides.loadDatabase('npcDatabase')
+          : null;
+        if (overridden) return overridden;
+        const response = await fetch(NPC_DATABASE_URL, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`NPC database HTTP ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        lastError = `npc-database:${error?.message || error}`;
+        lastStatus = 'npc-database-load-failed';
+        debugLog(`NPC database unavailable: ${error?.message || error}`, 'error');
+        return null;
+      }
+    })();
+    return npcDatabasePromise;
   }
 
-  function walkerForNpc(npcId) {
-    return liveWalkers().find(walker => String(walker?.rec?.id || '') === String(npcId || '')) || null;
+  function npcRecordsFromDatabase(database) {
+    if (Array.isArray(database)) return database;
+    if (Array.isArray(database?.npcs)) return database.npcs;
+    if (Array.isArray(database?.records)) return database.records;
+    return [];
   }
 
-  function walkerRoot(walker) {
-    return walker?.root || walker?.avatarGroup || walker?.profile?.root || null;
-  }
-
-  function snapshotWalker(walker) {
-    const root = walkerRoot(walker); // Used to restore the ordinary scheduler's actor after the prologue map is left.
-    if (!root) return null;
+  function portraitExportFor(rec) {
     return {
-      walker,
-      parent: root.parent || null,
-      position: { x: root.position?.x || 0, y: root.position?.y || 0, z: root.position?.z || 0 },
-      rotationY: root.rotation?.y || 0,
-      area: walker.area,
-      state: walker.state,
-      pause: walker.pause,
-      path: Array.isArray(walker.path) ? [...walker.path] : walker.path,
-      currentScheduleTarget: walker.currentScheduleTarget,
+      id: rec.id,
+      name: rec.name,
+      appearance: rec.appearance,
+      equippedCosmetics: Array.isArray(rec.equippedCosmetics) ? rec.equippedCosmetics : [],
+      appliedDyes: rec.appliedDyes || {},
     };
   }
 
-  function stageActor(actor, scene) {
-    const npcId = actor?.npcId; // Used as the real NPC walker id rather than a synthetic portrait-only speaker.
-    const walker = walkerForNpc(npcId);
-    const root = walkerRoot(walker);
-    if (!npcId || !walker || !root || !scene) return false;
-    if (!stagedActors.has(npcId)) {
-      const saved = snapshotWalker(walker); // Used exactly once so repeated readiness ticks cannot overwrite the true pre-prologue state.
-      if (!saved) return false;
-      stagedActors.set(npcId, saved);
+  async function buildScriptedActor(actor, scene, npcRecords) {
+    const npcId = String(actor?.npcId || ''); // Used as both database lookup key and stable actor-instance id.
+    if (!npcId || !scene) return null;
+    const existing = actorInstances.get(npcId);
+    if (existing?.root?.parent === scene) return existing;
+
+    const rec = npcRecords.find(candidate => String(candidate?.id || '') === npcId) || null;
+    if (!rec) throw new Error(`NPC record ${npcId} not found`);
+    if (!window.NpcAvatarPreview?.ensurePortraitCosmetics || !window.NpcAvatarPreview?.buildProfileFromNpcExport) {
+      throw new Error('NpcAvatarPreview is not ready');
     }
-    const col = Number(actor.col); // Used as the authored rescue-map actor column.
-    const row = Number(actor.row); // Used as the authored rescue-map actor row.
-    const rotY = Number(actor.rotY); // Used as the authored body yaw; no automatic look-at-player rule is applied.
-    scene.add(root);
-    root.position.set(Number.isFinite(col) ? col + 0.5 : 12.5, 0, Number.isFinite(row) ? row + 0.5 : 12.5);
+    if (!window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel || !window.THREE) {
+      throw new Error('PNGPlaneAvatar/THREE is not ready');
+    }
+
+    await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+    const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(portraitExportFor(rec));
+    if (!profile) throw new Error(`profile build failed for ${npcId}`);
+
+    const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+    const modelWidth = Number(avatarCfg.worldModelWidth) || 0.9; // Used by the same world-avatar sizing path as normal NPC portraits.
+    const portraitSize = Number(avatarCfg.previewPortraitCanvasSize) || 200; // Used for static world front/back textures while dialogue portraits stay live.
+    const frontCanvas = document.createElement('canvas'); // Used as the actor's static front world texture.
+    frontCanvas.width = frontCanvas.height = portraitSize;
+    const backCanvas = document.createElement('canvas'); // Used as the actor's static rear world texture.
+    backCanvas.width = backCanvas.height = portraitSize;
+    await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+    await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+
+    const root = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(window.THREE, frontCanvas, {
+      backCanvas,
+      profile,
+      npcRecord: rec,
+      name: `prologue_actor_${npcId}`,
+      modelWidth,
+      modelHeight: modelWidth,
+      anchorZ: 0,
+      alphaTest: avatarCfg.worldAlphaTest ?? 0.01,
+    });
+    if (!root) throw new Error(`world avatar build failed for ${npcId}`);
+    const avatarHeight = Number(root.userData?.portraitModelHeight) || modelWidth; // Used to ground the portrait exactly like Cutscene Director's real NPC actor preview.
+    const col = Number(actor.col); // Authored actor column in the rescue clearing.
+    const row = Number(actor.row); // Authored actor row in the rescue clearing.
+    const rotY = Number(actor.rotY); // Authored body yaw; no implicit player-facing/headtracking is applied.
+    root.position.set(Number.isFinite(col) ? col + 0.5 : 12.5, avatarHeight / 2, Number.isFinite(row) ? row + 0.5 : 12.5);
     if (Number.isFinite(rotY)) root.rotation.y = rotY;
-    walker.area = RESCUE_MAP_ID;
-    walker.state = 'idle';
-    walker.pause = Infinity;
-    walker.path = [];
-    walker.currentScheduleTarget = null;
-    return true;
+    root.userData ||= {};
+    root.userData.prologueActor = true;
+    root.userData.prologueAuthored = true;
+    root.userData.prologueNpcId = npcId;
+    scene.add(root);
+
+    const walker = {
+      rec,
+      profile,
+      root,
+      avatarGroup: root,
+      avatarFrontCanvas: frontCanvas,
+      avatarBackCanvas: backCanvas,
+      avatarHeight,
+      area: RESCUE_MAP_ID,
+      state: 'idle',
+      pause: Infinity,
+      path: [],
+      currentScheduleTarget: null,
+      scriptedPrologueActor: true,
+    }; // Synthetic dialogue-walker contract: enough for the normal portrait renderer/camera without enrolling this actor in NPC scheduling.
+    const instance = { npcId, rec, profile, root, walker, frontCanvas, backCanvas, avatarHeight };
+    actorInstances.set(npcId, instance);
+    debugLog(`built scripted actor ${rec.name || npcId} at (${root.position.x.toFixed(1)}, ${root.position.z.toFixed(1)})`);
+    return instance;
   }
 
-  function restoreStagedActors() {
-    for (const saved of stagedActors.values()) {
-      const walker = saved.walker;
-      const root = walkerRoot(walker);
-      if (!walker || !root) continue;
-      if (saved.parent?.add) saved.parent.add(root);
-      else root.parent?.remove?.(root);
-      root.position?.set?.(saved.position.x, saved.position.y, saved.position.z);
-      if (root.rotation) root.rotation.y = saved.rotationY;
-      walker.area = saved.area;
-      walker.state = saved.state;
-      walker.pause = saved.pause;
-      walker.path = saved.path;
-      walker.currentScheduleTarget = saved.currentScheduleTarget;
+  function actorForNpc(npcId) {
+    return actorInstances.get(String(npcId || '')) || null;
+  }
+
+  function disposeActors() {
+    for (const instance of actorInstances.values()) {
+      instance.root?.parent?.remove?.(instance.root);
+      try { window.PNGPlaneAvatar?.disposeAvatarModel?.(instance.root); } catch (_) {}
     }
-    stagedActors.clear();
+    actorInstances.clear();
+    stageReady = false;
+    preparePromise = null;
   }
 
   function openDialogueShell() {
     window.WorldPopupText?.clearInteractionPrompts?.();
     document.getElementById('arcContainer')?.classList.add('arc-hidden');
-    const dialogueEl = document.getElementById('npcDialogue'); // Used as the exact ordinary gameplay dialogue surface.
+    const dialogueEl = document.getElementById('npcDialogue'); // Used as the exact normal gameplay dialogue surface.
     dialogueEl?.classList.add('open');
     dialogueEl?.setAttribute('aria-hidden', 'false');
   }
 
   function closeDialogueShell() {
-    const dialogueEl = document.getElementById('npcDialogue'); // Used to close only the shared gameplay shell without invoking ordinary NPC staging teardown.
+    const dialogueEl = document.getElementById('npcDialogue');
     dialogueEl?.classList.remove('open');
     dialogueEl?.setAttribute('aria-hidden', 'true');
     document.getElementById('arcContainer')?.classList.remove('arc-hidden');
@@ -147,35 +300,38 @@
     return cameraDeps?.cameraConfig?.()?.dialogueMode || 'npcDialogue';
   }
 
-  function showLine(index) {
+  async function showLine(index) {
     if (!session) return false;
-    const line = session.lines[index]; // Used as the authored line whose speaker becomes the active dialogue target.
+    const line = session.lines[index]; // Used as the authored line whose speaker becomes the active dialogue target automatically.
     if (!line) return false;
-    const walker = walkerForNpc(line.speakerNpcId);
-    const root = walkerRoot(walker);
+    const actor = actorForNpc(line.speakerNpcId);
+    const walker = actor?.walker;
+    const root = actor?.root;
     if (!walker || !root) {
       lastStatus = `missing-speaker:${line.speakerNpcId || 'unknown'}`;
-      debugLog(`cannot target dialogue speaker ${line.speakerNpcId || 'unknown'}: live walker unavailable`, 'warn');
+      lastError = lastStatus;
+      debugLog(`cannot target dialogue speaker ${line.speakerNpcId || 'unknown'}: scripted actor unavailable`, 'error');
       return false;
     }
+
     session.index = index;
     session.walker = walker;
     session.speakerNpcId = line.speakerNpcId;
-    const rec = walker.rec || { id: line.speakerNpcId, name: line.speakerNpcId };
-    const nameEl = document.getElementById('npcDialogueName'); // Used to visibly prove the speaker changed along with the camera target.
-    const textEl = document.getElementById('npcDialogueText'); // Used as the normal gameplay dialogue text surface; test lines display immediately for fast target testing.
-    const heartsEl = document.getElementById('npcDialogueHearts'); // Used to retain ordinary NPC relationship presentation where available.
-    if (nameEl) nameEl.textContent = rec.name || line.speakerNpcId;
+    const rec = walker.rec;
+    const nameEl = document.getElementById('npcDialogueName'); // Used to visibly prove speaker changes alongside portrait/camera.
+    const textEl = document.getElementById('npcDialogueText'); // Uses the ordinary gameplay dialogue text element.
+    const heartsEl = document.getElementById('npcDialogueHearts');
+    if (nameEl) nameEl.textContent = rec?.name || line.speakerNpcId;
     if (heartsEl) heartsEl.textContent = window.DialogueContent?.renderRelationshipHearts?.(rec) || '';
     window.DialogueContent?.stopNpcDialogueTypewriter?.(false);
     if (textEl) textEl.textContent = String(line.text || '...');
     cameraDeps?.setCameraMode?.(dialogueCameraMode());
     cameraDeps?.setCameraTarget?.(root);
     window.DialogueContent?.hideChoiceButtons?.();
-    Promise.resolve(window.DialogueContent?.renderNpcDialoguePortrait?.()).catch(() => {});
-    targetChanges++;
+    try { await Promise.resolve(window.DialogueContent?.renderNpcDialoguePortrait?.()); } catch (_) {}
+    targetChanges += 1;
     lastStatus = `line-${index + 1}:${line.speakerNpcId}`;
-    debugLog(`line ${index + 1}/${session.lines.length} target → ${rec.name || line.speakerNpcId}`);
+    debugLog(`line ${index + 1}/${session.lines.length} target → ${rec?.name || line.speakerNpcId}`);
     return true;
   }
 
@@ -194,9 +350,9 @@
     return true;
   }
 
-  function advanceDialogueTest() {
+  async function advanceDialogueTest() {
     if (!session) return false;
-    const nextIndex = session.index + 1; // Used to make speaker changes automatic from authored line order, never another NPC click/selection.
+    const nextIndex = session.index + 1; // Automatic target swap follows line metadata; no second NPC interaction is required.
     if (nextIndex >= session.lines.length) {
       closeDialogueTest({ completed: true });
       return true;
@@ -204,70 +360,100 @@
     return showLine(nextIndex);
   }
 
-  async function startDialogueTest() {
-    if (session || testFinished || currentArea() !== RESCUE_MAP_ID || !rescuePrologueActive()) return false;
-    if (!npcDeps || !cameraDeps || !dialogueBridge || !window.DialogueContent) return false;
-    const chapter = await loadChapter(); // Used as the authored source for both temporary actor staging and automatic speaker order.
-    const rescue = chapter?.stages?.rescue;
-    const actors = Array.isArray(rescue?.actors) ? rescue.actors : [];
-    const lines = Array.isArray(rescue?.dialogue) ? rescue.dialogue : [];
-    if (!actors.length || lines.length < 2) {
-      lastStatus = 'missing-authored-test-data';
-      return false;
-    }
-    const scene = window.GridTileAccessors?.getActiveScene?.(); // Used as the already-loaded real rescue gameplay scene receiving the two real NPC roots.
-    if (!scene) return false;
-    const staged = actors.every(actor => stageActor(actor, scene));
-    if (!staged) {
-      lastStatus = 'waiting-live-speakers';
-      return false;
-    }
-    session = {
-      lines,
-      index: -1,
-      walker: null,
-      speakerNpcId: null,
-      prevCameraMode: cameraDeps?.getCameraMode?.(),
-      prevCameraTarget: cameraDeps?.getCameraTarget?.(),
-    };
-    openDialogueShell();
-    lastStatus = 'opening-test';
-    return showLine(0);
+  async function prepareRescueStage() {
+    if (stageReady) return true;
+    if (preparePromise) return preparePromise;
+    if (currentArea() !== RESCUE_MAP_ID || !rescuePrologueActive()) return false;
+    beginActorLoadingHold();
+
+    preparePromise = (async () => {
+      try {
+        if (!cameraDeps || !dialogueBridge || !window.DialogueContent) {
+          lastStatus = 'waiting-dialogue-camera-deps';
+          return false;
+        }
+        const scene = window.GridTileAccessors?.getActiveScene?.(); // Must be the real built rescue gameplay scene; setup never creates another scene.
+        const grid = window.GridTileAccessors?.getActiveGrid?.(); // Used as a basic real-map readiness check before attaching actors.
+        if (!scene || !grid) {
+          lastStatus = 'waiting-rescue-scene';
+          return false;
+        }
+
+        const [chapter, database] = await Promise.all([loadChapter(), loadNpcDatabase()]);
+        const rescue = chapter?.stages?.rescue;
+        const actors = Array.isArray(rescue?.actors) ? rescue.actors : [];
+        const lines = Array.isArray(rescue?.dialogue) ? rescue.dialogue : [];
+        const npcRecords = npcRecordsFromDatabase(database);
+        if (!actors.length || lines.length < 2) throw new Error('authored rescue actor/dialogue data is missing');
+        if (!npcRecords.length) throw new Error('NPC database has no records');
+
+        for (const actor of actors) await buildScriptedActor(actor, scene, npcRecords);
+        if (actorInstances.size < actors.length) throw new Error(`only ${actorInstances.size}/${actors.length} scripted actors built`);
+
+        if (!session && !testFinished) {
+          session = {
+            lines,
+            index: -1,
+            walker: null,
+            speakerNpcId: null,
+            prevCameraMode: cameraDeps?.getCameraMode?.(),
+            prevCameraTarget: cameraDeps?.getCameraTarget?.(),
+          };
+          openDialogueShell();
+          lastStatus = 'priming-first-line';
+          const opened = await showLine(0);
+          if (!opened) throw new Error('first automatic-speaker line could not be primed');
+        }
+
+        stageReady = true;
+        lastError = null;
+        lastStatus = session ? 'rescue-ready-dialogue-open' : 'rescue-ready';
+        debugLog(`rescue stage setup complete with ${actorInstances.size} scripted NPC actors`);
+        finishActorLoadingHoldAfterPaint();
+        return true;
+      } catch (error) {
+        lastError = String(error?.message || error);
+        lastStatus = `setup-error:${lastError}`;
+        debugLog(`rescue actor/dialogue setup failed: ${lastError}`, 'error');
+        return false;
+      } finally {
+        preparePromise = null;
+      }
+    })();
+    return preparePromise;
   }
 
   async function monitor() {
-    monitorAttempts++;
-    if (currentArea() !== RESCUE_MAP_ID || !rescuePrologueActive()) {
+    monitorAttempts += 1;
+    const inRescue = currentArea() === RESCUE_MAP_ID && rescuePrologueActive();
+    if (!inRescue) {
       if (session) closeDialogueTest({ completed: false });
-      if (stagedActors.size) restoreStagedActors();
+      if (actorInstances.size) disposeActors();
+      if (loadingHold.active && !rescuePrologueActive()) {
+        loadingHold.active = false;
+        loadingHold.rootObserver?.disconnect();
+        loadingHold.rootObserver = null;
+        loadingHold.findObserver?.disconnect();
+        loadingHold.findObserver = null;
+      }
       lastStatus = 'waiting-rescue';
       return;
     }
-    if (testFinished || session) return;
-    if (!window.PrologueRescueMapRuntime?.rescueMapReady?.()) {
-      lastStatus = 'waiting-rescue-ready';
-      return;
+    if (!stageReady) {
+      beginActorLoadingHold();
+      const ready = await prepareRescueStage();
+      if (!ready) {
+        forceActorLoaderVisible();
+        if (monitorAttempts % ACTOR_LOG_EVERY === 0) {
+          debugLog(`waiting for rescue actor setup (${lastStatus}); camera=${!!cameraDeps} dialogue=${!!dialogueBridge} actors=${actorInstances.size}`, 'warn');
+        }
+      }
     }
-    const started = await startDialogueTest();
-    if (!started && monitorAttempts % 25 === 0) {
-      debugLog(`waiting to start target test (${lastStatus}); npc=${!!npcDeps} camera=${!!cameraDeps} dialogue=${!!dialogueBridge}`, 'warn');
-    }
-  }
-
-  function wrapNpcScheduling(api) {
-    if (!api?.init || api.__prologueDialogueTargetWrapped) return api;
-    const originalInit = api.init.bind(api); // Preserves scheduler setup while capturing the authoritative npcWalkers array.
-    api.init = function prologueDialogueNpcSchedulingInit(injectedDeps) {
-      npcDeps = injectedDeps || null;
-      return originalInit(injectedDeps);
-    };
-    Object.defineProperty(api, '__prologueDialogueTargetWrapped', { value: true, configurable: true });
-    return api;
   }
 
   function wrapFarmAnimals(api) {
     if (!api?.init || api.__prologueDialogueTargetWrapped) return api;
-    const originalInit = api.init.bind(api); // Preserves FarmAnimals while capturing camera mode/target getters and setters already used by livestock dialogue.
+    const originalInit = api.init.bind(api); // Preserves FarmAnimals while capturing camera integration already used by gameplay dialogue interactions.
     api.init = function prologueDialogueFarmAnimalsInit(injectedDeps) {
       cameraDeps = injectedDeps || null;
       return originalInit(injectedDeps);
@@ -278,12 +464,12 @@
 
   function wrapDialogueContent(api) {
     if (!api?.init || api.__prologueDialogueTargetWrapped) return api;
-    const originalInit = api.init.bind(api); // Usually already contains LivestockDialogue's bridge; this wrapper composes on top of it.
+    const originalInit = api.init.bind(api); // Composes on top of LivestockDialogue's earlier shared-dialogue bridge.
     api.init = function prologueDialogueContentInit(injectedDeps) {
       const source = injectedDeps || {};
-      const gameGetDialogueOpen = source.getDialogueOpen; // Used to preserve ordinary NPC/livestock dialogue detection outside our session.
-      const gameGetDialogueWalker = source.getDialogueWalker; // Used to fall through to ordinary dialogue when no prologue line is active.
-      const gameCloseNpcDialogue = source.closeNpcDialogue; // Used to preserve ordinary close behavior outside our session.
+      const gameGetDialogueOpen = source.getDialogueOpen;
+      const gameGetDialogueWalker = source.getDialogueWalker;
+      const gameCloseNpcDialogue = source.closeNpcDialogue;
       dialogueBridge = { gameGetDialogueOpen, gameGetDialogueWalker, gameCloseNpcDialogue };
       return originalInit({
         ...source,
@@ -297,7 +483,7 @@
   }
 
   function chainGlobal(name, installer) {
-    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Used to chain cleanly onto LivestockDialogue/other early global watchers.
+    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Used to compose safely with earlier parser-time global watchers.
     if (descriptor?.get && descriptor?.set && descriptor.configurable) {
       Object.defineProperty(window, name, {
         configurable: true,
@@ -314,7 +500,7 @@
       return;
     }
     if (window[name]) { installer(window[name]); return; }
-    let stored = null; // Used only if the observed namespace has not been assigned yet.
+    let stored = null; // Used only when the observed namespace has not been assigned yet.
     Object.defineProperty(window, name, {
       configurable: true,
       enumerable: true,
@@ -323,48 +509,54 @@
     });
   }
 
-  document.addEventListener('click', event => {
-    if (!session) return;
-    const id = event.target?.closest?.('#npcDialogueContinue,#npcDialogueLeave')?.id;
-    if (!id) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (id === 'npcDialogueLeave') closeDialogueTest({ completed: true });
-    else advanceDialogueTest();
-  }, true);
+  function onPlayerReady(event) {
+    const profile = event?.detail;
+    if (!profile?.worldId || !profile?.characterId || !profile?.isWorldOwner || window.__hobunjiCutscenePreview) return;
+    const state = persistedWorldState(profile.worldId);
+    if (profile.isNewWorld || (state && !state.completed && state.stage === 'rescue')) beginActorLoadingHold();
+  }
 
-  // Restore the temporarily staged real NPC walkers before the existing test
-  // control moves the player into Hunundi's room.
-  document.addEventListener('click', event => {
-    if (!event.target?.closest?.('#prologueMapFlowContinue')) return;
-    if (session) closeDialogueTest({ completed: true });
-    restoreStagedActors();
-  }, true);
+  function bindDialogueControls() {
+    document.addEventListener('click', event => {
+      if (!session) return;
+      const id = event.target?.closest?.('#npcDialogueContinue,#npcDialogueLeave')?.id;
+      if (!id) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (id === 'npcDialogueLeave') closeDialogueTest({ completed: false });
+      else advanceDialogueTest();
+    }, true);
+  }
 
-  chainGlobal('NpcScheduling', wrapNpcScheduling);
   chainGlobal('FarmAnimals', wrapFarmAnimals);
   chainGlobal('DialogueContent', wrapDialogueContent);
+  document.addEventListener('hobunjiPlayerReady', onPlayerReady, true);
+  bindDialogueControls();
   monitorTimer = setInterval(monitor, MONITOR_MS);
 
   window.PrologueDialogueRuntime = Object.freeze({
-    startDialogueTest,
+    prepareRescueStage,
+    isRescueStageReady: () => stageReady,
     advanceDialogueTest,
     closeDialogueTest,
-    restoreStagedActors,
     debugSnapshot: () => ({
       currentArea: currentArea(),
       rescueActive: rescuePrologueActive(),
-      npcDepsReady: !!npcDeps,
-      cameraDepsReady: !!cameraDeps,
-      dialogueBridgeReady: !!dialogueBridge,
-      stagedNpcIds: [...stagedActors.keys()],
-      active: !!session,
-      lineIndex: session?.index ?? null,
+      stageReady,
+      loadingHoldActive: loadingHold.active,
+      actorsReady: actorInstances.size,
+      actorNpcIds: [...actorInstances.keys()],
+      sessionActive: !!session,
       speakerNpcId: session?.speakerNpcId || null,
+      lineIndex: session?.index ?? null,
       targetChanges,
       testFinished,
+      cameraDepsReady: !!cameraDeps,
+      dialogueBridgeReady: !!dialogueBridge,
       monitorAttempts,
       lastStatus,
+      lastError,
     }),
+    debugText: () => JSON.stringify(window.PrologueDialogueRuntime.debugSnapshot(), null, 2),
   });
 })();
