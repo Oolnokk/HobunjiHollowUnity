@@ -77,12 +77,12 @@
     const now = performance.now();
     pruneExpired(now);
     return [...activeLocks.values()].map(lock => ({
-      token: lock.token,
-      owner: lock.owner,
-      reason: lock.reason,
-      ageMs: Math.max(0, Math.round(now - lock.acquiredAt)),
-      remainingMs: lock.expiresAt > 0 ? Math.max(0, Math.round(lock.expiresAt - now)) : null,
-      participants: lock.participants.map(entry => ({ id: entry.id, channels: [...entry.channels] })),
+      token,
+      owner: String(options.owner || 'interaction'),
+      reason: String(options.reason || options.owner || 'interaction'),
+      participants,
+      acquiredAt: now,
+      expiresAt: timeoutMs > 0 ? now + timeoutMs : 0,
     }));
   }
 
@@ -113,6 +113,7 @@
   const chathead = new URL('animal-chathead-frame.js?v=20260902modular1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
   const prologueDialogue = new URL('prologue-dialogue-runtime.js?v=20260908b', base).href; // Builds scripted Jubmir/Spearhead actor instances from the real NPC database while the loader is held, then opens ordinary dialogue with automatic speaker/portrait/camera retargeting.
+  const prologueDialoguePresentation = new URL('prologue-dialogue-presentation-bridge.js?v=20260908a', base).href; // Keeps synthetic rescue dialogue in Shoulder Cam, rotates that camera toward each speaker, and preserves the ordinary dialogue GUI.
   const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260906harvest1', base).href; // Loads the harvest-only animal staging/approach-suppression bridge before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20260903social1', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
@@ -126,5 +127,5 @@
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20260903social12', base).href;
   const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20260903social13', base).href;
   const npcSillinessReactionRuntime = new URL('npc-silliness-reaction-runtime.js?v=20260903social16', base).href;
-  document.write(`<script src="${prologueRescueMap}"><\/script><script src="${prologueRescueZoneCompat}"><\/script><script src="${prologueSafeArea}"><\/script><script src="${prologue}"><\/script><script src="${prologueStartupEntry}"><\/script><script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${prologueDialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
+  document.write(`<script src="${prologueRescueMap}"><\/script><script src="${prologueRescueZoneCompat}"><\/script><script src="${prologueSafeArea}"><\/script><script src="${prologue}"><\/script><script src="${prologueStartupEntry}"><\/script><script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${prologueDialogue}"><\/script><script src="${prologueDialoguePresentation}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
 })();
