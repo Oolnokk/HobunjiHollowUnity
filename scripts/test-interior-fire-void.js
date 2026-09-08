@@ -11,6 +11,7 @@ assert.doesNotThrow(() => new vm.Script(source, { filename: 'interior-fire-void-
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  setFromMatrixColumn() { this.x = 1; this.y = 0; this.z = 0; return this; }
 }
 class Box3 {
   setFromObject() { this.empty = false; return this; }
@@ -51,13 +52,15 @@ const furniture = {
   CATALOG: { campfire: JSON.parse(JSON.stringify(campfireRecipe)), bonfire: [] },
   buildFurnitureGroup(key, baseColor) { calls.push([key, baseColor]); return { key, children: [{}] }; },
 };
-const GridTileAccessors = { init() {} };
+const GridTileAccessors = { init() {}, isBuildingArea: area => String(area).startsWith('map_i_') };
+let now = 1000;
 const context = {
   window: {
     THREE: { Box3, Vector3, BoxGeometry, MeshBasicMaterial, Mesh, BackSide: 'BackSide' },
     ProceduralFurniture: furniture,
     GridTileAccessors,
   },
+  performance: { now: () => (now += 101) },
   setTimeout(fn) { fn(); return 1; },
   queueMicrotask(fn) { fn(); },
   console,
@@ -114,4 +117,78 @@ assert.strictEqual(backdrop.renderOrder, -10000, 'void must render behind the in
 assert.strictEqual(backdrop.userData.unlitBlack, true);
 assert.strictEqual(backdrop.raycast(), undefined, 'void backdrop must be ignored by interaction rays');
 
-console.log('interior fire item-key + immediate bonfire + pure-black unlit void regression checks: PASS');
+// Enclosed-area recognition intentionally includes authored interiors, mine floors,
+// dens and cavern/burrow aliases while leaving ordinary exterior zones alone.
+assert.strictEqual(api.isEnclosedArea('map_i_temple'), true);
+assert.strictEqual(api.isUndergroundArea('map_i_town_mine_safe'), true);
+assert.strictEqual(api.isUndergroundArea('map_i_town_mine_f_3'), true);
+assert.strictEqual(api.isUndergroundArea('map_i_den_cloudforest_12'), true);
+assert.strictEqual(api.isEnclosedArea('town'), false);
+assert(Math.abs(api.enclosedDarknessAlphaForIllumination(0) - 0.80) < 1e-9,
+  'zero illumination must reach the same darkness ceiling as full night');
+assert(Math.abs(api.enclosedDarknessAlphaForIllumination(1) - 0.28) < 1e-9,
+  'normal authored illumination must preserve the historical 0.28 interior baseline');
+assert(api.enclosedDarknessAlphaForIllumination(0.06) > 0.70,
+  'the temple super-dark base setting must visibly darken unlit character planes too');
+assert(api.enclosedDarknessAlphaForIllumination(2.4) < 0.08,
+  'strong daylight influence must be able to clear most of the enclosed darkness');
+
+// WeatherFX is assigned after this companion in index.html. The bridge must catch
+// that future assignment, survive cloud-forest-fog replacing drawLightingOverlay,
+// and use the same lighting canvas for interiors/mines/dens.
+let upstreamDraws = 0;
+let baseInitCalls = 0;
+context.window.WeatherFX = {
+  init() { baseInitCalls += 1; },
+  drawLightingOverlay() { upstreamDraws += 1; },
+  getLightingState() { return { r: 10, g: 10, b: 40, a: 0.80 }; },
+};
+const capturedInit = context.window.WeatherFX.init;
+context.window.WeatherFX.init = function cloudForestStyleInit(deps) { return capturedInit.call(this, deps); };
+context.window.WeatherFX.drawLightingOverlay = function cloudForestStyleDraw() { upstreamDraws += 1; };
+
+const canvasOps = [];
+const gradient = () => ({ addColorStop(offset, color) { canvasOps.push(['stop', offset, color]); } });
+const lctx = {
+  globalCompositeOperation: 'source-over',
+  fillStyle: '',
+  clearRect(x, y, w, h) { canvasOps.push(['clear', x, y, w, h]); },
+  fillRect(x, y, w, h) { canvasOps.push(['fillRect', this.globalCompositeOperation, this.fillStyle, x, y, w, h]); },
+  createRadialGradient() { return gradient(); },
+  beginPath() {},
+  arc() {},
+  fill() { canvasOps.push(['fill', this.globalCompositeOperation, this.fillStyle]); },
+};
+let currentArea = 'map_i_town_mine_safe';
+const deps = {
+  lctx,
+  camera: { matrixWorld: {} },
+  player: { x: 20, y: 30 },
+  TILE: 10,
+  npcWalkers: [],
+  getPlayerWorldY: () => 0.5,
+  getCurrentArea: () => currentArea,
+  worldToOverlay: (x, y, z) => ({ x: x * 10, y: z * 10, visible: true }),
+  getFurnitureLightSources: () => [{ x: 3, y: 0.5, z: 3, distance: 4, intensity: 1.2, color: { r: 255, g: 120, b: 50 } }],
+  getThreeRect: () => ({ width: 640, height: 360 }),
+  getSceneTransAlpha: () => 0,
+};
+context.window.WeatherFX.init(deps);
+assert.strictEqual(baseInitCalls, 1, 'WeatherFX init capture must preserve the original init chain');
+context.window.WeatherFX.drawLightingOverlay();
+assert.strictEqual(upstreamDraws, 0, 'enclosed mine lighting must replace, not stack on, the older warm overlay');
+assert(canvasOps.some(op => op[0] === 'fillRect' && /^rgba\(0,0,0,0\.[67]/.test(op[2])),
+  'an unconfigured mine must receive near-night black screen-space darkness');
+assert(canvasOps.some(op => op[0] === 'fill' && op[1] === 'destination-out'),
+  'lantern/local lights must punch holes through enclosed darkness');
+
+currentArea = 'town';
+context.window.WeatherFX.drawLightingOverlay();
+assert.strictEqual(upstreamDraws, 1, 'ordinary exterior areas must delegate to the existing WeatherFX/cloud-forest renderer unchanged');
+const debug = api.debugSnapshot();
+assert.strictEqual(debug.enclosedOverlay.weatherBridgeInstalled, true);
+assert.strictEqual(debug.enclosedOverlay.depsCaptured, true);
+assert.strictEqual(debug.enclosedOverlay.lastArea, 'map_i_town_mine_safe');
+assert(debug.enclosedOverlay.lastLocalLights >= 2, 'debug snapshot must report carried lantern + local room light masks');
+
+console.log('interior fire + black void + night-style enclosed overlay lighting regression checks: PASS');
