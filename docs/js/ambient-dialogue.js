@@ -114,13 +114,71 @@
     return state.settings.greetingTemplates;
   }
 
-  function templateLine(targetName, speakerId, targetId, day) {
+  const PLAYER_GREETING_NAME_EXCEPTIONS = new Set([
+    'father_hunundi_hodu',
+    'teacup_unumanuk',
+    'spearhead_unumanuk',
+    'jubmir',
+  ]); // Used to preserve familiar/protective forms of address below +1 favor for the four authored exceptions.
+
+  function playerGreetingFavor(walker) {
+    return Number(window.DialogueContent?.getNpcDlgState?.(walker?.rec?.id)?.favor) || 0;
+  }
+
+  function playerGreetingSpeciesId() {
+    return state.dialogueDeps?.getPlayerData?.()?.appearance?.speciesId
+      || state.deps?.getPlayerSpecies?.()
+      || '';
+  }
+
+  function playerGreetingPolicy(walker) {
+    const npcId = walker?.rec?.id; // Used to apply the two NPC-specific greeting thresholds and the four actual-name exceptions in one event-time lookup.
+    const favor = playerGreetingFavor(walker); // Used for both greeting eligibility and actual-name eligibility so favor is not fetched twice.
+    const playerSpeciesId = npcId === 'kinami_kunji' ? playerGreetingSpeciesId() : ''; // Used only for Kinami's Mao'ao exception, avoiding a species lookup for every other NPC.
+    let allowed = true; // Used by tryGreeting to decide whether this already-dwelled proximity entry may actually fire.
+    if (npcId === 'takua_ao_hakaru') allowed = favor >= 1;
+    else if (npcId === 'kinami_kunji' && playerSpeciesId !== 'mao-ao') allowed = favor >= 2;
+    return {
+      allowed,
+      mayUseActualName: PLAYER_GREETING_NAME_EXCEPTIONS.has(npcId) || favor >= 1,
+    };
+  }
+
+  function omitGreetingTargetName(source) {
+    const stripped = String(source || '') // Used to preserve the authored greeting while removing only the player-name placeholder and punctuation it leaves behind.
+      .replace(/,\s*\{targetName\}/g, '')
+      .replace(/\{targetName\}/g, '')
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .replace(/,\s*([.!?])/g, '$1')
+      .replace(/^\s*[,.;:!?—–-]+\s*/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return stripped || 'Hello!';
+  }
+
+  function configuredPlayerGreetingName() {
+    return state.dialogueDeps?.getPlayerData?.()?.nickname
+      || state.deps?.getPlayerName?.()
+      || '';
+  }
+
+  function rewriteResolvedGreetingTargetName(source, currentName, replacementName = '') {
+    const name = String(currentName || '').trim(); // Used to identify the already-resolved player name embedded by request call-over generators.
+    if (!name) return String(source || '').trim();
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Used to match the actual name literally even when it contains regular-expression punctuation.
+    const templated = String(source || '').replace(new RegExp(escapedName, 'gi'), '{targetName}'); // Used to convert the baked-in actual name back into the shared greeting placeholder.
+    const replacement = String(replacementName || '').trim(); // Used to preserve an NPC-specific nickname below +1 when one exists.
+    return replacement ? templated.replace(/\{targetName\}/g, replacement) : omitGreetingTargetName(templated);
+  }
+
+  function templateLine(targetName, speakerId, targetId, day, options = {}) {
     const values = {
       targetName: String(targetName || 'friend'),
       weekDay: String(state.deps?.getWeekDay?.(day) || 'day'),
       dayPart: String(state.deps?.getDayPart?.() || 'day'),
     }; // Used here and by diagnostics to resolve every supported greeting placeholder.
-    const source = pick(greetingLinesFor(speakerId, targetId), `${speakerId}:${targetId}:${day}`);
+    const pickedSource = pick(greetingLinesFor(speakerId, targetId), `${speakerId}:${targetId}:${day}`); // Used as the unchanged authored greeting before optional low-favor name removal.
+    const source = options.omitTargetName ? omitGreetingTargetName(pickedSource) : pickedSource; // Used for placeholder diagnostics and final greeting interpolation.
     const unresolved = [...source.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)]
       .map(match => match[1]).filter(key => !(key in values));
     if (unresolved.length) state.deps?.debugLog?.(`[ambient-dialogue] Unknown placeholder(s) for ${speakerId}: ${[...new Set(unresolved)].join(', ')}`, 'warn');
@@ -212,15 +270,24 @@
     return out;
   }
 
-  function playerNicknameFor(walker) {
-    const rec = walker?.rec;
-    const pool = nicknamePoolFor(rec);
-    const entry = pickConditionedPoolEntry(pool, rec, walker);
+  function conditionedPlayerNicknameFor(walker) {
+    const rec = walker?.rec; // Used to find this NPC's conditioned Nicknames phrase pool.
+    const pool = nicknamePoolFor(rec); // Used to preserve authored/conditioned nicknames even when the actual player name is relationship-gated.
+    const entry = pickConditionedPoolEntry(pool, rec, walker); // Used to choose the same context-sensitive nickname normal ambient greetings already use.
     if (entry) {
-      const resolved = resolveDialogueNicknameTokens(entry.text, rec, walker).trim();
+      const resolved = resolveDialogueNicknameTokens(entry.text, rec, walker).trim(); // Used as the low-favor form of address when the nickname pool supplies one.
       if (resolved) return resolved;
     }
-    return state.dialogueDeps?.getPlayerData?.()?.nickname || state.deps?.getPlayerName?.() || 'neighbor';
+    const localNickname = String(window.DialogueContent?.getNpcDlgState?.(rec?.id)?.localNickname || '').trim(); // Used to preserve a dialogue-assigned NPC-specific nickname even without a matching pool entry.
+    const actualName = configuredPlayerGreetingName(); // Used only to avoid treating the player's ordinary configured name as an NPC-specific nickname.
+    return localNickname && localNickname !== actualName ? localNickname : '';
+  }
+
+  function playerNicknameFor(walker) {
+    return conditionedPlayerNicknameFor(walker)
+      || state.dialogueDeps?.getPlayerData?.()?.nickname
+      || state.deps?.getPlayerName?.()
+      || 'neighbor';
   }
 
   function resolveTargetName(walker, target) {
@@ -689,10 +756,10 @@
     // so this releases the NPC only after the prior greeting is fully gone.
     if (hasActiveGreetingFor(speakerId)) return false;
     const targetId = target.id;
+    const proximityKey = `${speakerId}>${targetId}`; // Used by the existing dwell timer; relationship policy is intentionally deferred until a greeting is otherwise ready to fire.
     const key = greetPairKey(day, speakerId, targetId);
     if (state.greeted.has(key)) return false;
     const distance = Math.hypot(walker.root.position.x - target.x, walker.root.position.z - target.z);
-    const proximityKey = `${speakerId}>${targetId}`;
     if (distance > state.settings.greetingRadiusTiles) {
       state.proximity.delete(proximityKey);
       return false;
@@ -700,6 +767,11 @@
     const enteredAt = state.proximity.get(proximityKey) ?? now;
     state.proximity.set(proximityKey, enteredAt);
     if (now - enteredAt < 300 || now - state.lastGreetingAt < state.settings.greetingCooldownMs) return false;
+    const playerPolicy = targetId === 'player' ? playerGreetingPolicy(walker) : null; // Used only after dwell/cooldown say a greeting is ready, never from updateActive/per-frame work.
+    if (playerPolicy && !playerPolicy.allowed) {
+      state.proximity.set(proximityKey, Number.POSITIVE_INFINITY); // Blocks repeated policy evaluation until the player leaves this NPC's greeting radius and the existing distance path clears the entry.
+      return false;
+    }
     state.greeted.add(key);
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
@@ -708,8 +780,13 @@
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.
-    const targetName = resolveTargetName(walker, target); // Used so {targetName} follows main-dialogue player nicknames or directional NPC family nicknames.
-    const line = override?.text || templateLine(targetName, speakerId, targetId, day);
+    const mayUseActualPlayerName = !playerPolicy || playerPolicy.mayUseActualName; // Used to suppress only the actual player name below +1; nicknames remain allowed.
+    const lowFavorNickname = targetId === 'player' && !mayUseActualPlayerName ? conditionedPlayerNicknameFor(walker) : ''; // Used only for a greeting that is firing now, never during the recurring proximity scan.
+    const targetName = mayUseActualPlayerName ? resolveTargetName(walker, target) : lowFavorNickname; // Uses an NPC-specific nickname below +1 when available, otherwise leaves the name slot empty.
+    const omitTargetName = targetId === 'player' && !mayUseActualPlayerName && !lowFavorNickname; // Used to clean punctuation only when neither an actual name nor a nickname may be spoken.
+    const line = override?.text
+      ? (mayUseActualPlayerName ? override.text : rewriteResolvedGreetingTargetName(override.text, configuredPlayerGreetingName(), lowFavorNickname))
+      : templateLine(targetName, speakerId, targetId, day, { omitTargetName });
     show(walker.root, line, {
       speakerId,
       profile: walker.profile,

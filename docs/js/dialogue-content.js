@@ -496,7 +496,6 @@
     if (Number.isFinite(holdSeconds) && holdSeconds > 0) return holdSeconds * 1000;
     return Number(window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.durationMs) || 10000;
   }
-
   function dialogueSeatId(walker = deps.getDialogueWalker()) {
     return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
   }
@@ -758,18 +757,16 @@
 
   function renderRelationshipHearts(rec) {
     if (!rec?.relationship) return '';
-    const score = getNpcDlgState(rec.id).favor || 0;
+    const score = Number(getNpcDlgState(rec.id).favor) || 0;
     const clamped = Math.max(-5, Math.min(10, score));
+    const completedSteps = Math.max(0, Math.min(15, Math.floor(clamped + 5))); // Used to map -5..+10 favor onto the 15 visible relationship-heart slots.
     const hearts = [];
-    for (let i = -5; i <= 10; i++) {
-      if (i === 0) continue;
-      if (clamped < 0) {
-        hearts.push(i < 0 && i >= clamped ? '💜' : i < 0 ? '🖤' : '🤍');
-      } else {
-        hearts.push(i <= clamped ? '❤️' : i > 0 ? '🤍' : '');
-      }
+    for (let index = 0; index < 15; index++) {
+      if (index < completedSteps) hearts.push(index < 5 ? '💜' : '❤️');
+      else if (index === completedSteps && completedSteps < 15) hearts.push('🩶');
+      else hearts.push('🤍');
     }
-    return hearts.filter(Boolean).join('');
+    return hearts.join('');
   }
 
   // Clears the active conversation's flow state — called by game.js's

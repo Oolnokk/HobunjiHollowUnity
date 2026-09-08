@@ -20,6 +20,7 @@ on:
       - 'docs/js/interior-environment-runtime.js'
       - 'docs/js/interior-fire-void-runtime.js'
       - 'docs/js/dialogue-content.js'
+      - 'docs/js/ambient-dialogue.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
       - 'docs/js/menu-tab-icon-only.js'
@@ -37,6 +38,7 @@ on:
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
+      - 'scripts/test-relationship-heart-greetings.js'
       - 'scripts/test-world-text-outline-overlay.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
@@ -60,6 +62,7 @@ on:
       - 'docs/js/interior-environment-runtime.js'
       - 'docs/js/interior-fire-void-runtime.js'
       - 'docs/js/dialogue-content.js'
+      - 'docs/js/ambient-dialogue.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
       - 'docs/js/menu-tab-icon-only.js'
@@ -77,6 +80,7 @@ on:
       - 'scripts/test-npc-social-seating.js'
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
+      - 'scripts/test-relationship-heart-greetings.js'
       - 'scripts/test-world-text-outline-overlay.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
@@ -113,6 +117,7 @@ jobs:
           node --check docs/js/interior-fire-void-runtime.js
           node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/dialogue-content.js
+          node --check docs/js/ambient-dialogue.js
           node --check docs/js/relationships-panel.js
           node --check docs/js/generic-hud-icons.js
           node --check docs/js/menu-tab-icon-only.js
@@ -129,6 +134,7 @@ jobs:
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
+          node --check scripts/test-relationship-heart-greetings.js
           node --check scripts/test-world-text-outline-overlay.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
@@ -150,6 +156,8 @@ jobs:
         run: node scripts/test-npc-social-seating.js
       - name: Test placeholder wardrobes and old prompt suppression
         run: node scripts/test-npc-wardrobe-placeholders.js
+      - name: Test relationship heart rendering and greeting gates
+        run: node scripts/test-relationship-heart-greetings.js
       - name: Test world popup final overlay handoff
         run: node scripts/test-world-text-outline-overlay.js
       - name: Generate complete placeholder wardrobe registry
