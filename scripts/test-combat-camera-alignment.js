@@ -7,27 +7,64 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/combat/combat-camera-alignment-bridge.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
+const game = fs.readFileSync('docs/game.js', 'utf8');
+const rangedFocus = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
+const rangedWeapons = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8');
 
 const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=20260906f');
-const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260906a');
+const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260908cameraauthority1');
 const dualRoleIndex = loader.indexOf('js/combat/ranged-dual-role-anim-style.js?v=20260905a');
 assert(focusIndex >= 0 && alignmentIndex > focusIndex && dualRoleIndex > alignmentIndex,
-  'camera alignment bridge loads after ranged focus and before later ranged adapters');
-assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 1/,
-  'loader requires the camera alignment bridge API');
+  'camera authority bridge loads after ranged focus and before later ranged adapters');
+assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 3/,
+  'loader requires the camera authority bridge v3 API');
 assert.doesNotMatch(source, /setInterval\s*\(/, 'alignment bridge adds no polling interval');
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(/, 'alignment bridge adds no animation-frame loop');
 assert.doesNotMatch(source, /\.update\s*=\s*function/, 'alignment bridge does not wrap a per-frame update');
 
-function assertVector(actual, expected, message) {
+// The backwards 4c2756 camera-to-movement convergence must stay gone. Native
+// shoulder movement is already camera-relative, so the rework must not mutate
+// the camera to make its reticle obey a pre-existing player-forward line.
+assert.doesNotMatch(game, /projectShoulderGroundHitToRootForward/,
+  'game no longer projects the reticle onto a player-root-forward line');
+assert.doesNotMatch(game, /_shoulderSurfCameraConvergence/,
+  'game no longer stores or applies shoulder camera convergence');
+assert.match(game,
+  /if \(activeCameraMode === SHOULDER_SURF_MODE && \(ix !== 0 \|\| iy !== 0\)\) \{\s*const aim = cameraFacingAngleRad\(\);/,
+  'ordinary shoulder movement remains camera-authoritative');
+assert.match(game, /const aimDirection = currentPlayerMeleeAimDirection\(\);/,
+  'player lunge setup still has one shared aim-direction boundary for the bridge to correct');
+
+// Ranged focus already owns the right max-range construction: start with the
+// real camera ray, project the attack origin onto it, then walk one configured
+// weapon range farther along that ray. The bridge must preserve that camera
+// origin instead of re-rooting the ray at the muzzle.
+assert.match(rangedFocus, /fallbackRayDistance = Math\.max\(0\.5, alongToAttack \+ range\)/,
+  'ranged focus uses the weapon maximum range along the camera ray');
+assert.match(rangedWeapons, /alongMuzzle \+ def\.rangeTiles/,
+  'ranged weapon fallback keeps configured rangeTiles in its aim solution');
+
+function assertVector(actual, expected, message, epsilon = 1e-9) {
   assert(actual, message);
-  assert.equal(Number(actual.x), Number(expected.x), `${message}: x`);
-  assert.equal(Number(actual.y), Number(expected.y), `${message}: y`);
-  assert.equal(Number(actual.z), Number(expected.z), `${message}: z`);
+  for (const axis of ['x', 'y', 'z']) {
+    assert(Math.abs(Number(actual[axis]) - Number(expected[axis])) <= epsilon,
+      `${message}: ${axis} expected ${expected[axis]}, got ${actual[axis]}`);
+  }
+}
+
+function normalized(v) {
+  const length = Math.hypot(v.x, v.y, v.z);
+  return { x: v.x / length, y: v.y / length, z: v.z / length };
 }
 
 const logs = [];
-const player = { x: 128, y: 192 };
+const player = {
+  x: 128, y: 192,
+  lunging: false,
+  lungeHeightUnits: 1,
+  lungeDirX: 0, lungeDirY: 0,
+  lungeDistancePx: 0, lungeHopUnits: 0, lungeAimPitch: 0,
+};
 const nativeInteractionRay = () => ({
   origin: { x: -4, y: 2.4, z: 3 },
   direction: { x: 4, y: 0, z: 0 }, // deliberately non-normalized; bridge must normalize it.
@@ -40,18 +77,45 @@ const nativeAimRay = () => ({
 let focusPrivateInteractionRay = null;
 let baseRangedDeps = null;
 
-// Emulates ranged-camera-focus's actual dependency contract: prefer the
-// bridge's explicit muzzle-parallel ray for the private surface resolver,
-// then spread the untouched deps (including the real getPlayerInteractionRay)
-// for RangedWeapons itself.
+// Emulates ranged-camera-focus's actual dependency contract. Its compatibility
+// dependency is private to the focus resolver; ordinary interaction semantics
+// remain untouched. The focus resolver then builds its attack ray from the
+// muzzle toward the weapon-range point on this true camera ray.
 function focusLikeRangedInit(injectedDeps) {
   const capturedAimRay = injectedDeps.getPlayerAimRay;
   focusPrivateInteractionRay = injectedDeps.getMuzzleParallelInteractionRay || injectedDeps.getPlayerInteractionRay;
-  const wrappedDeps = {
-    ...injectedDeps,
-    getPlayerAimRay: () => focusPrivateInteractionRay?.() || capturedAimRay?.(),
+  const rangeAimRay = () => {
+    const cameraRay = focusPrivateInteractionRay?.() || capturedAimRay?.();
+    const dir = normalized(cameraRay.direction);
+    const muzzle = {
+      x: injectedDeps.player.x / injectedDeps.TILE,
+      y: injectedDeps.getActorWorldY(injectedDeps.player) + 0.55,
+      z: injectedDeps.player.y / injectedDeps.TILE,
+    };
+    const cameraToMuzzle = {
+      x: muzzle.x - cameraRay.origin.x,
+      y: muzzle.y - cameraRay.origin.y,
+      z: muzzle.z - cameraRay.origin.z,
+    };
+    const alongToMuzzle = cameraToMuzzle.x * dir.x + cameraToMuzzle.y * dir.y + cameraToMuzzle.z * dir.z;
+    const rangeTiles = 9;
+    const rayDistance = Math.max(0.5, alongToMuzzle + rangeTiles);
+    const point = {
+      x: cameraRay.origin.x + dir.x * rayDistance,
+      y: cameraRay.origin.y + dir.y * rayDistance,
+      z: cameraRay.origin.z + dir.z * rayDistance,
+    };
+    return {
+      origin: muzzle,
+      direction: normalized({ x: point.x - muzzle.x, y: point.y - muzzle.y, z: point.z - muzzle.z }),
+      point,
+      rayDistance,
+    };
   };
-  baseRangedDeps = wrappedDeps;
+  baseRangedDeps = {
+    ...injectedDeps,
+    getPlayerAimRay: rangeAimRay,
+  };
   return true;
 }
 
@@ -59,8 +123,8 @@ let combatDeps = null;
 function focusLikeCombatInit(injectedDeps) {
   combatDeps = injectedDeps;
   windowStub.Combat.deps = injectedDeps;
-  // Emulate ranged-camera-focus's post-init replacements which caused the head
-  // to stop following the game's already-correct centered camera callbacks.
+  // Emulate ranged-camera-focus's post-init replacements. The alignment bridge
+  // restores native head/melee callbacks after this initializer returns.
   injectedDeps.getPlayerMeleeAimDirection = () => ({ x: 0, y: 0, z: 1 });
   injectedDeps.getPlayerMeleeAimPitch = () => 0.9;
   return true;
@@ -69,18 +133,19 @@ function focusLikeCombatInit(injectedDeps) {
 const windowStub = {
   __farmLog: message => logs.push(String(message)),
   RangedWeapons: { init: focusLikeRangedInit },
-  Combat: { init: focusLikeCombatInit, deps: null },
+  Combat: {
+    init: focusLikeCombatInit,
+    deps: null,
+    meleeLungeProfile(distancePx, pitch, hopUnits) {
+      return { distancePx, pitch, hopUnits };
+    },
+  },
 };
 
-const context = {
-  window: windowStub,
-  Date,
-  Math,
-  console,
-};
+const context = { window: windowStub, Date, Math, console };
 vm.runInNewContext(source, context, { filename: 'combat-camera-alignment-bridge.js' });
 
-assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 2);
+assert.equal(windowStub.HobunjiCombatCameraAlignment.version, 3);
 assert.equal(windowStub.HobunjiCombatCameraAlignment.debugSnapshot().updateMode,
   'initialization-only-no-frame-hook');
 
@@ -93,14 +158,14 @@ const rangedDeps = {
   getPlayerAimRay: nativeAimRay,
 };
 windowStub.RangedWeapons.init(rangedDeps);
-assert.equal(typeof focusPrivateInteractionRay, 'function', 'focus wrapper captured its private interaction ray');
+assert.equal(typeof focusPrivateInteractionRay, 'function', 'focus wrapper captured its private camera ray');
 assert(baseRangedDeps, 'underlying ranged initializer still receives deps');
 
 const privateRay = focusPrivateInteractionRay();
-assertVector(privateRay.origin, { x: 2, y: 0.8, z: 3 },
-  'focus-private surface ray is rooted at the projectile/muzzle origin');
+assertVector(privateRay.origin, { x: -4, y: 2.4, z: 3 },
+  'focus-private resolver keeps the TRUE camera origin');
 assertVector(privateRay.direction, { x: 1, y: 0, z: 0 },
-  'focus-private surface ray preserves the normalized native camera direction');
+  'focus-private resolver keeps the normalized camera direction');
 
 const ordinaryInteraction = baseRangedDeps.getPlayerInteractionRay();
 assertVector(ordinaryInteraction.origin, { x: -4, y: 2.4, z: 3 },
@@ -108,29 +173,35 @@ assertVector(ordinaryInteraction.origin, { x: -4, y: 2.4, z: 3 },
 assertVector(ordinaryInteraction.direction, { x: 4, y: 0, z: 0 },
   'ordinary world interaction semantics remain untouched');
 
-// This is the key 90-degree-shot regression. A pathological nearby surface at
-// the player's side would previously create muzzle->surface = +Z. With the
-// bridge, ranged-camera-focus can only march along +X from the muzzle, so its
-// eventual getPlayerAimRay remains +X and RangedWeapons cannot feed +Z back into
-// updateShoulderSurfReticleAim/head facing.
 const focusAimRay = baseRangedDeps.getPlayerAimRay();
-assertVector(focusAimRay.origin, { x: 2, y: 0.8, z: 3 }, 'focus aim ray uses muzzle origin');
-assertVector(focusAimRay.direction, { x: 1, y: 0, z: 0 }, 'focus aim ray stays camera-forward');
-const hypotheticalBadSideSurface = { x: 2, y: 0.8, z: 4 };
-const oldBadDirection = {
-  x: hypotheticalBadSideSurface.x - Number(privateRay.origin.x),
-  y: hypotheticalBadSideSurface.y - Number(privateRay.origin.y),
-  z: hypotheticalBadSideSurface.z - Number(privateRay.origin.z),
-};
-assert.deepEqual(oldBadDirection, { x: 0, y: 0, z: 1 }, 'fixture represents the reported right-angle failure');
-assert.equal(Number(focusAimRay.direction.x), 1, 'actual bridged shot/facing direction stays camera-forward');
-assert.equal(Number(focusAimRay.direction.z), 0, 'actual bridged shot/facing direction cannot turn 90 degrees sideways');
+assertVector(focusAimRay.origin, { x: 2, y: 0.8, z: 3 },
+  'actual ranged attack ray starts at the muzzle');
+assert.equal(focusAimRay.rayDistance, 15,
+  'camera target lies one 9-tile weapon range beyond the muzzle projection on the camera ray');
+assertVector(focusAimRay.point, { x: 11, y: 2.4, z: 3 },
+  'ranged target point is the configured maximum-range point along the camera ray');
+assert(focusAimRay.direction.x > 0.98 && focusAimRay.direction.y > 0,
+  'muzzle converges toward that camera-ray range point instead of forcing the camera toward the weapon');
 
 const nativeMeleeDirection = () => ({ x: 0.8, y: 0.1, z: 0.2 });
 const nativeMeleePitch = () => 0.1;
 const meleeDeps = {
+  TILE: 64,
+  player,
+  getPlayerInteractionRay: nativeInteractionRay,
+  getPlayerAimRay: nativeAimRay,
   getPlayerMeleeAimDirection: nativeMeleeDirection,
   getPlayerMeleeAimPitch: nativeMeleePitch,
+  beginCombatLunge(distancePx, durationS, hopUnits) {
+    // Simulate the old target-derived result. The wrapper must replace this
+    // displacement AFTER the native lunge has initialized its state.
+    player.lunging = durationS > 0 && distancePx > 0;
+    player.lungeDirX = 0;
+    player.lungeDirY = 1;
+    player.lungeDistancePx = distancePx;
+    player.lungeHopUnits = hopUnits;
+    player.lungeAimPitch = 0.9;
+  },
 };
 windowStub.Combat.init(meleeDeps);
 assert.equal(combatDeps, meleeDeps, 'underlying Combat.init still receives the original deps object');
@@ -138,19 +209,30 @@ assert.strictEqual(windowStub.Combat.deps.getPlayerMeleeAimDirection, nativeMele
   'native camera-derived melee/head direction is restored after focus initialization');
 assert.strictEqual(windowStub.Combat.deps.getPlayerMeleeAimPitch, nativeMeleePitch,
   'native camera-derived melee/head pitch is restored after focus initialization');
-assertVector(windowStub.Combat.deps.getPlayerMeleeAimDirection(), { x: 0.8, y: 0.1, z: 0.2 },
-  'restored melee/head direction returns the native camera vector');
-assert.equal(windowStub.Combat.deps.getPlayerMeleeAimPitch(), 0.1);
+
+player.lunging = false;
+windowStub.Combat.deps.beginCombatLunge(128, 0.4, 0.3, { rangePx: 96 });
+assert.equal(player.lunging, true, 'native lunge still initializes normally');
+assert.equal(player.lungeDirX, 1, 'lunge horizontal X follows the centered camera ray');
+assert.equal(player.lungeDirY, 0, 'lunge no longer follows a target-derived sideways direction');
+assert.equal(player.lungeAimPitch, 0, 'lunge pitch follows the centered camera ray');
+assert.equal(player.lungeDistancePx, 128, 'camera authority does not change authored lunge distance');
+assert.equal(player.lungeHopUnits, 0.3, 'camera authority preserves authored lunge hop budget');
 
 const debug = windowStub.HobunjiCombatCameraAlignment.debugSnapshot();
 assert.equal(debug.rangedInitWrapped, true);
 assert.equal(debug.combatInitWrapped, true);
-assert.equal(debug.muzzleRayDepsProvided, true, 'bridge handed the focus wrapper its explicit muzzle-parallel dependency');
+assert.equal(debug.cameraRayDepsProvided, true, 'bridge handed focus the true camera-ray dependency');
 assert.equal(debug.nativeMeleeDirectionRestored, true);
 assert.equal(debug.nativeMeleePitchRestored, true);
-assertVector(debug.lastMuzzleRay.direction, { x: 1, y: 0, z: 0 }, 'debug reports camera-forward muzzle ray');
+assert.equal(debug.lungeAuthorityInstalled, true);
+assert.equal(debug.lungeAuthorityCount, 1);
+assert.equal(debug.movementAuthority, 'native-camera-relative-walk-plus-camera-ray-lunge');
+assert.equal(debug.rangedAuthority, 'camera-ray-to-weapon-range');
+assertVector(debug.lastCameraRay.origin, { x: -4, y: 2.4, z: 3 }, 'debug reports true camera origin');
+assertVector(debug.lastLunge.direction, { x: 1, y: 0, z: 0 }, 'debug reports camera-forward lunge');
 assert.equal(debug.lastError, null);
-assert(logs.some(line => line.includes('native camera-facing authority bridge installed')),
+assert(logs.some(line => line.includes('camera/reticle ray authority installed')),
   'bridge installation is visible in the mobile in-game debug log');
 
-console.log('Camera-authoritative combat alignment checks passed.');
+console.log('Camera-authoritative movement/combat alignment checks passed.');

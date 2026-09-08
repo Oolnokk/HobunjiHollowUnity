@@ -1,17 +1,21 @@
-// Initialization-only bridge that keeps the native Shoulder Cam ray authoritative
-// for player facing while allowing ranged-camera-focus to retain its cached 3D
-// surface diagnostics. No update/timer hook lives here.
+// Initialization-only bridge that makes the actual camera/reticle ray the
+// authority for player combat movement and ranged convergence. Walking stays in
+// game.js's native camera-relative path; this module keeps attack lunges on that
+// same camera direction and hands ranged-camera-focus the unmodified camera ray.
 (() => {
   'use strict';
 
-  const VERSION = 2;
+  const VERSION = 3;
   let rangedInitWrapped = false; // Exposed in debugSnapshot() to verify the ranged initialization boundary was patched once.
-  let combatInitWrapped = false; // Exposed in debugSnapshot() to verify native melee camera callbacks are restored once after Combat.init.
-  let muzzleRayDepsProvided = false; // Exposed in debugSnapshot() to verify the explicit muzzle-parallel dependency was handed to the latest ranged init.
+  let combatInitWrapped = false; // Exposed in debugSnapshot() to verify the combat initialization boundary was patched once.
+  let cameraRayDepsProvided = false; // Exposed to verify ranged-camera-focus receives the true camera-origin ray through its compatibility dependency.
   let nativeMeleeDirectionRestored = false; // Records whether Combat's original camera-derived melee direction callback won after initialization.
   let nativeMeleePitchRestored = false; // Records whether Combat's original camera-derived melee pitch callback won after initialization.
-  let lastMuzzleRay = null; // Mobile-readable snapshot of the camera-parallel ray supplied privately to ranged-camera-focus.
-  let lastError = null; // Mobile-readable initialization error without putting failures into a frame loop.
+  let lungeAuthorityInstalled = false; // Records whether beginCombatLunge was wrapped so player displacement follows the camera ray.
+  let lungeAuthorityCount = 0; // Mobile-readable count of lunges whose direction was corrected to the camera ray.
+  let lastCameraRay = null; // Mobile-readable snapshot of the true centered camera ray handed to ranged-camera-focus.
+  let lastLunge = null; // Mobile-readable snapshot of the latest camera-authored lunge direction/profile.
+  let lastError = null; // Mobile-readable initialization/runtime error without putting failures into a frame loop.
 
   function recordError(stage, error) {
     lastError = {
@@ -22,47 +26,29 @@
     window.__farmLog?.(`[combat-camera-alignment] ${stage}: ${lastError.detail}`, 'warn', 'combat');
   }
 
-  function normalizedDirection(raw) {
-    const x = Number(raw?.x), y = Number(raw?.y), z = Number(raw?.z);
-    if (![x, y, z].every(Number.isFinite)) return null;
+  function normalizedRay(raw) {
+    const ox = Number(raw?.origin?.x), oy = Number(raw?.origin?.y), oz = Number(raw?.origin?.z);
+    const x = Number(raw?.direction?.x), y = Number(raw?.direction?.y), z = Number(raw?.direction?.z);
+    if (![ox, oy, oz, x, y, z].every(Number.isFinite)) return null;
     const length = Math.hypot(x, y, z);
     if (!(length > 1e-8)) return null;
-    return { x: x / length, y: y / length, z: z / length };
-  }
-
-  function playerMuzzleOrigin(deps) {
-    const player = deps?.player;
-    const tile = Number(deps?.TILE) || 64;
-    if (!player) return null;
-    let baseY = Number.NaN;
-    try { baseY = Number(deps?.getActorWorldY?.(player)); } catch (_) {}
-    if (!Number.isFinite(baseY)) {
-      try { baseY = Number(deps?.worldSurfaceY?.(Number(player.x) || 0, Number(player.y) || 0)); } catch (_) {}
-    }
-    if (!Number.isFinite(baseY)) baseY = 0;
     return {
-      x: (Number(player.x) || 0) / tile,
-      y: baseY + 0.55,
-      z: (Number(player.y) || 0) / tile,
+      origin: { x: ox, y: oy, z: oz },
+      direction: { x: x / length, y: y / length, z: z / length },
     };
   }
 
-  // ranged-camera-focus privately resolves first surfaces from this ray. Giving
-  // that private resolver the REAL camera direction but a muzzle origin removes
-  // Shoulder Cam parallax from its convergence math: a close floor/wall can no
-  // longer create a 90-degree muzzle-to-surface vector. This is handed to
-  // ranged-camera-focus through its own explicitly-named dependency
-  // (getMuzzleParallelInteractionRay); getPlayerInteractionRay itself is passed
-  // through untouched so ordinary world-focus semantics remain untouched.
-  function muzzleParallelCameraRay(deps, rawInteractionRay, rawAimRay) {
+  function centeredCameraRay(rawInteractionRay, rawAimRay) {
     let raw = null;
     try { raw = rawInteractionRay?.() || rawAimRay?.() || null; }
     catch (error) { recordError('camera-ray', error); }
-    const direction = normalizedDirection(raw?.direction);
-    const origin = playerMuzzleOrigin(deps);
-    if (!direction || !origin) return raw || null;
-    lastMuzzleRay = { origin: { ...origin }, direction: { ...direction } };
-    return { origin, direction };
+    const ray = normalizedRay(raw);
+    if (!ray) return raw || null;
+    lastCameraRay = {
+      origin: { ...ray.origin },
+      direction: { ...ray.direction },
+    };
+    return ray;
   }
 
   function installRangedInitBridge() {
@@ -79,9 +65,15 @@
       const rawAimRay = injectedDeps?.getPlayerAimRay;
       const bridgedDeps = {
         ...injectedDeps,
-        getMuzzleParallelInteractionRay: () => muzzleParallelCameraRay(injectedDeps, rawInteractionRay, rawAimRay),
+        // ranged-camera-focus historically calls this compatibility slot
+        // "muzzle parallel". For camera-authoritative aiming it must now carry
+        // the TRUE centered camera ray, including its camera origin. Focus then
+        // chooses the weapon's maximum-range point along that ray and resolves
+        // the muzzle/attack-origin direction toward it. Re-rooting here would
+        // erase shoulder-camera parallax and put movement back in charge.
+        getMuzzleParallelInteractionRay: () => centeredCameraRay(rawInteractionRay, rawAimRay),
       };
-      muzzleRayDepsProvided = true;
+      cameraRayDepsProvided = true;
       return previousInit.call(this, bridgedDeps);
     }
 
@@ -92,11 +84,73 @@
     return true;
   }
 
+  function installCameraAuthoredLunge(liveDeps, rawInteractionRay, rawAimRay) {
+    const rawLunge = liveDeps?.beginCombatLunge;
+    if (typeof rawLunge !== 'function') return false;
+    if (rawLunge.__hobunjiCameraAuthoredLunge) {
+      lungeAuthorityInstalled = true;
+      return true;
+    }
+
+    function cameraAuthoredLunge(distancePx, durationS, hopUnits = 0, hitTest = null) {
+      const player = liveDeps?.player;
+      const wasLunging = !!player?.lunging;
+      const result = rawLunge.apply(this, arguments);
+      if (!player || wasLunging || !player.lunging) return result;
+
+      try {
+        const ray = centeredCameraRay(rawInteractionRay, rawAimRay);
+        const dx = Number(ray?.direction?.x);
+        const dy = Number(ray?.direction?.y);
+        const dz = Number(ray?.direction?.z);
+        if (![dx, dy, dz].every(Number.isFinite)) return result;
+        const horizontal = Math.hypot(dx, dz);
+        if (!(horizontal > 1e-8)) return result;
+
+        // Lunges are movement, so their ground-plane travel uses the exact same
+        // camera-forward bearing as ordinary shoulder movement. Pitch still
+        // comes from the centered ray so upward/downward attacks keep their
+        // authored leap-distance and hop behavior.
+        const dirX = dx / horizontal;
+        const dirY = dz / horizontal;
+        const pitch = Math.asin(Math.max(-1, Math.min(1, dy)));
+        const profile = window.Combat?.meleeLungeProfile?.(
+          distancePx,
+          pitch,
+          hopUnits,
+          player.lungeHeightUnits,
+        ) || { distancePx, hopUnits, pitch };
+
+        player.lungeDirX = dirX;
+        player.lungeDirY = dirY;
+        player.lungeDistancePx = Math.max(0, Number(profile.distancePx) || 0);
+        player.lungeHopUnits = Math.max(0, Number(profile.hopUnits) || 0);
+        player.lungeAimPitch = Number.isFinite(Number(profile.pitch)) ? Number(profile.pitch) : pitch;
+        lungeAuthorityCount++;
+        lastLunge = {
+          direction: { x: dirX, y: dy, z: dirY },
+          pitchRad: player.lungeAimPitch,
+          distancePx: player.lungeDistancePx,
+          attackRangePx: Number(hitTest?.rangePx) || null,
+        };
+      } catch (error) {
+        recordError('lunge-ray', error);
+      }
+      return result;
+    }
+
+    cameraAuthoredLunge.__hobunjiCameraAuthoredLunge = true;
+    cameraAuthoredLunge.__hobunjiPreviousLunge = rawLunge;
+    liveDeps.beginCombatLunge = cameraAuthoredLunge;
+    lungeAuthorityInstalled = true;
+    return true;
+  }
+
   // ranged-camera-focus decorates melee direction/pitch after the underlying
-  // Combat.init returns. The game already supplies the correct centered-camera
-  // callbacks, and those callbacks also drive head/reticle facing, so restore
-  // them after the focus bridge has installed its hit/range hooks. Actual
-  // player meleeHit direction decoration remains installed separately.
+  // Combat.init returns. The game already supplies the centered-camera
+  // callbacks used by head/body/reticle facing, so restore those callbacks.
+  // Separately wrap beginCombatLunge: a lunge is displacement, therefore its
+  // horizontal direction must be the camera ray rather than a focused target.
   function installCombatInitBridge() {
     const combat = window.Combat;
     const previousInit = combat?.init;
@@ -109,6 +163,8 @@
     function cameraAlignedCombatInit(injectedDeps, ...rest) {
       const nativeDirection = injectedDeps?.getPlayerMeleeAimDirection;
       const nativePitch = injectedDeps?.getPlayerMeleeAimPitch;
+      const rawInteractionRay = injectedDeps?.getPlayerInteractionRay;
+      const rawAimRay = injectedDeps?.getPlayerAimRay;
       const result = previousInit.call(this, injectedDeps, ...rest);
       const liveDeps = window.Combat?.deps || injectedDeps;
       if (liveDeps && typeof nativeDirection === 'function') {
@@ -119,6 +175,7 @@
         liveDeps.getPlayerMeleeAimPitch = nativePitch;
         nativeMeleePitchRestored = true;
       }
+      installCameraAuthoredLunge(liveDeps, rawInteractionRay, rawAimRay);
       return result;
     }
 
@@ -133,7 +190,7 @@
     const rangedOk = installRangedInitBridge();
     const combatOk = installCombatInitBridge();
     if (rangedOk && combatOk) {
-      window.__farmLog?.('[combat-camera-alignment] native camera-facing authority bridge installed.', 'combat');
+      window.__farmLog?.('[combat-camera-alignment] camera/reticle ray authority installed for ranged aim and attack lunges.', 'combat');
     }
     return rangedOk && combatOk;
   }
@@ -145,14 +202,22 @@
       version: VERSION,
       rangedInitWrapped,
       combatInitWrapped,
-      muzzleRayDepsProvided,
+      cameraRayDepsProvided,
       nativeMeleeDirectionRestored,
       nativeMeleePitchRestored,
-      lastMuzzleRay: lastMuzzleRay ? {
-        origin: { ...lastMuzzleRay.origin },
-        direction: { ...lastMuzzleRay.direction },
+      lungeAuthorityInstalled,
+      lungeAuthorityCount,
+      lastCameraRay: lastCameraRay ? {
+        origin: { ...lastCameraRay.origin },
+        direction: { ...lastCameraRay.direction },
+      } : null,
+      lastLunge: lastLunge ? {
+        ...lastLunge,
+        direction: { ...lastLunge.direction },
       } : null,
       lastError: lastError ? { ...lastError } : null,
+      movementAuthority: 'native-camera-relative-walk-plus-camera-ray-lunge',
+      rangedAuthority: 'camera-ray-to-weapon-range',
       updateMode: 'initialization-only-no-frame-hook',
     }),
   };
