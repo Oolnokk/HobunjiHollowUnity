@@ -58,6 +58,7 @@ jobs:
           node-version: '20'
       - name: Check prologue runtime syntax
         run: |
+          node --check docs/js/character-action-locks.js
           node --check docs/js/prologue-rescue-map-runtime.js
           node --check docs/js/prologue-rescue-zone-compat.js
           node --check docs/js/prologue-safe-area-runtime.js
