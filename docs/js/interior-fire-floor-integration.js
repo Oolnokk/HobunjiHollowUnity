@@ -27,6 +27,28 @@
     lastError: null,
   };
 
+  // The environment bridge is deliberately a sibling companion rather than
+  // more code inside the already-broad fire/floor runtime. It owns wallHeight,
+  // base/daylight lighting, local-light radius, and matching editor controls.
+  function loadInteriorEnvironmentCompanion() {
+    if (window.InteriorEnvironmentRuntime || typeof document === 'undefined') return;
+    const currentSrc = document.currentScript?.src || ''; // Resolves correctly from both docs/index.html and the nested Interior Editor.
+    const src = currentSrc
+      ? new URL('interior-environment-runtime.js?v=20260908a', currentSrc).href
+      : 'js/interior-environment-runtime.js?v=20260908a';
+    const alreadyRequested = [...document.scripts].some(script => script.src?.includes('/interior-environment-runtime.js'));
+    if (alreadyRequested) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Late-load fallback for dev pages that append this integration after parsing.
+    script.src = src;
+    script.async = false;
+    document.head.appendChild(script);
+  }
+  loadInteriorEnvironmentCompanion();
+
   function waitForRuntime() {
     const startedAt = performance.now(); // Bounds alternate tool-page load orders instead of polling forever.
     const timer = setInterval(() => {
@@ -58,9 +80,7 @@
       Object.defineProperty(Object.prototype, key, {
         configurable: true,
         enumerable: false,
-        get() {
-          return isInteriorCatalogMap(this) ? entry : undefined;
-        },
+        get() { return isInteriorCatalogMap(this) ? entry : undefined; },
         set(value) {
           // Preserve ordinary assignment semantics for every unrelated object
           // that might genuinely use one of these property names.
@@ -182,9 +202,7 @@
         const style = editorPreviewFloorStyle();
         if (style) {
           const materials = (Array.isArray(material) ? material : [material]).filter(Boolean);
-          for (const mat of materials) {
-            window.InteriorFireFloorRuntime?.applyFloorStyleToMaterial?.(mat, style, '../../assets/');
-          }
+          for (const mat of materials) window.InteriorFireFloorRuntime?.applyFloorStyleToMaterial?.(mat, style, '../../assets/');
           editorState.previewFloorMaterials = materials.length;
           editorState.previewFloorSignature = JSON.stringify(style);
         }
@@ -293,6 +311,7 @@
       bonfireFootprint: { w: 2, d: 2, centerOffset: { x: 1, z: 1 }, anchor: 'center-vertex' },
       editor: { ...editorState },
       core: window.InteriorFireFloorRuntime?.debugSnapshot?.() || null,
+      environment: window.InteriorEnvironmentRuntime?.debugSnapshot?.() || null,
     };
   }
 
