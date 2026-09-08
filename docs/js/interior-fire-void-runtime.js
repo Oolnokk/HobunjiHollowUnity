@@ -126,8 +126,11 @@
       const horizontalSpan = Math.max(size.x || 0, size.z || 0, 20);
       const boxSize = Math.max(240, horizontalSpan * 8); // Large enough that normal interior cameras never see past an edge.
       const boxHeight = Math.max(160, (size.y || 0) * 10 + 40);
+      // This is the actual outside-of-room atmosphere: pure black and
+      // deliberately unlit. Neither ambient/daylight/local lights nor fog can
+      // turn it brown/gray as the church lighting changes.
       const material = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, depthWrite: false });
-      material.fog = false; // Fog would otherwise tint even an unlit black material toward the exterior atmosphere color.
+      material.fog = false;
       material.toneMapped = false;
       backdrop = new THREE.Mesh(new THREE.BoxGeometry(boxSize, boxHeight, boxSize), material);
       backdrop.name = VOID_NAME;
