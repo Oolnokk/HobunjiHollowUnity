@@ -51,6 +51,7 @@ const greetingBlock = extract(
 
 const favorByNpc = new Map(); // Used by the isolated greeting policy to supply live per-NPC favor values.
 let playerSpeciesId = 'tletingan'; // Used by the isolated Kinami policy to switch Mao'ao versus non-Mao'ao behavior.
+const playerNickname = 'Ben'; // Used to verify already-resolved pending-request call-over nicknames are removed below +1.
 const fakeWindow = {
   DialogueContent: {
     getNpcDlgState(npcId) {
@@ -61,10 +62,13 @@ const fakeWindow = {
 const fakeState = {
   dialogueDeps: {
     getPlayerData() {
-      return { appearance: { speciesId: playerSpeciesId } };
+      return { nickname: playerNickname, appearance: { speciesId: playerSpeciesId } };
     },
   },
   deps: {
+    getPlayerName() {
+      return playerNickname;
+    },
     getPlayerSpecies() {
       return playerSpeciesId;
     },
@@ -74,7 +78,7 @@ const fakeState = {
 const greetingPolicy = new Function(
   'window',
   'state',
-  `${greetingBlock}\nreturn { playerGreetingAllowed, playerGreetingMayUseName, omitGreetingTargetName };`
+  `${greetingBlock}\nreturn { playerGreetingAllowed, playerGreetingMayUseName, omitGreetingTargetName, omitResolvedGreetingTargetName };`
 )(fakeWindow, fakeState);
 
 function walker(id) {
@@ -108,5 +112,7 @@ for (const id of ['father_hunundi_hodu', 'teacup_unumanuk', 'spearhead_unumanuk'
 assert.equal(greetingPolicy.omitGreetingTargetName('Hello, {targetName}!'), 'Hello!', 'comma-wrapped target names remove cleanly');
 assert.equal(greetingPolicy.omitGreetingTargetName('{targetName}! Good to see you.'), 'Good to see you.', 'leading target names remove cleanly');
 assert.equal(greetingPolicy.omitGreetingTargetName('Good {dayPart}, {targetName}!'), 'Good {dayPart}!', 'other greeting placeholders remain intact when the player name is removed');
+assert.equal(greetingPolicy.omitResolvedGreetingTargetName('Hey, Ben. You need work?', playerNickname), 'Hey. You need work?', 'resolved request call-over nicknames remove cleanly below +1');
+assert.equal(greetingPolicy.omitResolvedGreetingTargetName('Thank the breath, there you are, Ben.', playerNickname), 'Thank the breath, there you are.', 'trailing resolved request call-over nicknames remove cleanly below +1');
 
 console.log('relationship heart/greeting regression checks passed');
