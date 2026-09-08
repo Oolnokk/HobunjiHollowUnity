@@ -104,6 +104,8 @@
       underbrushRing: { inset: 1, depth: RESCUE_WALKABLE_START - 1 },
       fogProfile: 'southern_cloud_forest',
       noNaturalExits: true,
+      scriptedPrologueArea: true,
+      suppressProceduralPopulation: true,
     };
     layoutNormalized = layout.tiles.length === RESCUE_COLS * RESCUE_ROWS;
     if (layoutNormalized) debugLog(`expanded authored rescue layout to ${RESCUE_COLS}x${RESCUE_ROWS} with a ${RESCUE_WALKABLE_SIZE}x${RESCUE_WALKABLE_SIZE} walkable center`);
@@ -148,6 +150,9 @@
       entryRow: RESCUE_ENTRY_ROW,
       packSpecies: [],
       herbivoreSpecies: [],
+      scriptedPrologueArea: true,
+      suppressProceduralPopulation: true,
+      suppressBanditCamps: true,
     };
   }
 
@@ -191,10 +196,10 @@
     registered = true;
     lastStatus = 'ready';
     clearRetry();
-    debugLog(`registered ${RESCUE_MAP_ID} as a ${RESCUE_COLS}x${RESCUE_ROWS} Cloud Forest zone after its authored layout loaded`);
+    debugLog(`registered ${RESCUE_MAP_ID} as a ${RESCUE_COLS}x${RESCUE_ROWS} scripted Cloud Forest zone after its authored layout loaded`);
     try {
       window.dispatchEvent(new CustomEvent('hobunjiPrologueRescueZoneReady', {
-        detail: { mapId: RESCUE_MAP_ID, cols: RESCUE_COLS, rows: RESCUE_ROWS },
+        detail: { mapId: RESCUE_MAP_ID, cols: RESCUE_COLS, rows: RESCUE_ROWS, suppressProceduralPopulation: true },
       }));
     } catch (_) {}
     window.PrologueStartupEntryBridge?.retryNow?.();
@@ -255,6 +260,7 @@
       layoutNormalized,
       rescueZoneRegistered: !!registry?.[RESCUE_MAP_ID],
       cloudForestProfilePresent: !!registry?.[CLOUD_FOREST_MAP_ID],
+      suppressProceduralPopulation: !!registry?.[RESCUE_MAP_ID]?.suppressProceduralPopulation,
       registered,
       attempts,
       lastStatus,
