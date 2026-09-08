@@ -101,6 +101,7 @@
       visibleCapturedAt: -Infinity,
       restoreStack: [], // Per-render temporary matrix restores for shell/material-ID passes.
       thicknessRestoreStack: [], // Per-render shell-thickness restores so the shared uniform cannot leak.
+      indexRestoreStack: [], // Per-render index restores for body-coloured parrot shells trimmed before the portrait-covered wing.
     };
 
     mesh.onBeforeRender = function handOutlineParityBefore(...args) {
@@ -118,6 +119,7 @@
         state.visibleCapturedAt = now;
         state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
+        state.indexRestoreStack.push(null);
         rigState.baseMatrixCaptures++;
         baseMatrixCaptures++;
         return;
@@ -127,7 +129,16 @@
       if (!passKind) {
         state.restoreStack.push(null);
         state.thicknessRestoreStack.push(null);
+        state.indexRestoreStack.push(null);
         return;
+      }
+
+      const shellIndex = passKind === 'shell' ? this.userData?.hobunjiShellIndex : null; // Restricts only the shell draw; base colour and occluder depth retain the full connected body/wing mesh.
+      if (shellIndex && this.geometry?.index) {
+        state.indexRestoreStack.push(this.geometry.index);
+        this.geometry.setIndex(shellIndex);
+      } else {
+        state.indexRestoreStack.push(null);
       }
 
       const thicknessUniform = passKind === 'shell' ? material?.uniforms?.uThickness : null;
@@ -173,6 +184,8 @@
       previousAfter?.apply(this, args);
       const restoreMatrix = state.restoreStack.pop();
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
+      const restoreIndex = state.indexRestoreStack.pop();
+      if (restoreIndex) this.geometry?.setIndex?.(restoreIndex);
       const thicknessRestore = state.thicknessRestoreStack.pop();
       if (thicknessRestore) {
         thicknessRestore.uniform.value = thicknessRestore.value;
