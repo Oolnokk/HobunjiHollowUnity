@@ -223,13 +223,26 @@ vm.runInContext(source, context, { filename: 'prologue-dialogue-runtime.js' });
   const runtime = windowObject.PrologueDialogueRuntime;
   assert.ok(runtime, 'PrologueDialogueRuntime must export its API');
 
-  // The first several attempts happen before normal camera/dialogue init in the
-  // real browser. They must fail transiently rather than becoming sticky.
-  for (let i = 0; i < 6; i++) {
-    assert.equal(await runtime.prepareRescueStage(), false, `early dependency wait ${i + 1} must be retryable`);
-  }
-  assert.equal(runtime.debugSnapshot().lastStatus, 'waiting-dialogue-camera-deps');
+  // Critical live regression: world actors must build while loading even when
+  // the camera/dialogue systems have NOT initialized yet.
+  assert.equal(await runtime.prepareRescueActors(), true, 'actor staging must not depend on gameplay dialogue/camera init');
+  assert.equal(runtime.isRescueActorsReady(), true);
+  assert.equal(runtime.isRescueStageReady(), false, 'dialogue itself remains unopened while hidden');
+  assert.equal(rescueScene.children.length, 2, 'both scripted actors must exist before reveal');
+  assert.deepEqual([...profileBuildIds].sort(), ['jubmir', 'spearhead_unumanuk']);
+  assert.deepEqual([...worldBuildIds].sort(), ['jubmir', 'spearhead_unumanuk']);
 
+  const jubmirRoot = rescueScene.children.find(child => child.userData?.prologueNpcId === 'jubmir');
+  const spearheadRoot = rescueScene.children.find(child => child.userData?.prologueNpcId === 'spearhead_unumanuk');
+  assert.ok(jubmirRoot);
+  assert.ok(spearheadRoot);
+  assert.deepEqual([jubmirRoot.position.x, jubmirRoot.position.z], [9.5, 12.5]);
+  assert.deepEqual([spearheadRoot.position.x, spearheadRoot.position.z], [15.5, 12.5]);
+  assert.ok(revealChecks >= 1, 'actor readiness must signal the single map/loader owner immediately');
+  assert.ok(progressEvents.some(event => event.label === 'prologue-actors-ready'));
+
+  // While the loader is still covering the map, dialogue must remain closed,
+  // even if its dependencies arrive. This avoids hidden dialogue blips.
   assert.equal(windowObject.FarmAnimals.init(cameraDeps), 'farm-init');
   assert.equal(farmAnimalDeps, cameraDeps, 'FarmAnimals wrapper must preserve the injected dependency object');
   assert.equal(
@@ -240,34 +253,25 @@ vm.runInContext(source, context, { filename: 'prologue-dialogue-runtime.js' });
     }),
     'dialogue-init',
   );
+  assert.equal(await runtime.prepareRescueDialogue(), false, 'dialogue must wait until the loading overlay has actually released');
+  assert.equal(elements.npcDialogue.classList.contains('open'), false);
 
-  assert.equal(await runtime.prepareRescueStage(), true, 'setup succeeds once gameplay dependencies are available');
+  // Simulate the authoritative map loader releasing. Dialogue can now open and
+  // automatic speaker/portrait/camera targeting is tested independently.
+  windowObject.__hobunjiPrologueHiddenSetup = false;
+  assert.equal(await runtime.prepareRescueDialogue(), true, 'dialogue starts after reveal once its dependencies exist');
   assert.equal(runtime.isRescueStageReady(), true);
-  assert.equal(rescueScene.children.length, 2, 'both scripted actors must be created from database records');
-  assert.deepEqual([...profileBuildIds].sort(), ['jubmir', 'spearhead_unumanuk']);
-  assert.deepEqual([...worldBuildIds].sort(), ['jubmir', 'spearhead_unumanuk']);
-
-  const jubmirRoot = rescueScene.children.find(child => child.userData?.prologueNpcId === 'jubmir');
-  const spearheadRoot = rescueScene.children.find(child => child.userData?.prologueNpcId === 'spearhead_unumanuk');
-  assert.ok(jubmirRoot);
-  assert.ok(spearheadRoot);
-  assert.deepEqual([jubmirRoot.position.x, jubmirRoot.position.z], [9.5, 12.5]);
-  assert.deepEqual([spearheadRoot.position.x, spearheadRoot.position.z], [15.5, 12.5]);
-
   assert.equal(elements.npcDialogue.classList.contains('open'), true, 'ordinary dialogue shell must be open');
   assert.equal(elements.npcDialogueName.textContent, 'Jubmir');
   assert.equal(elements.npcDialogueText.textContent, '[Target test] Jubmir speaking.');
   assert.equal(cameraTarget, jubmirRoot);
   assert.equal(dialogueInjectedDeps.getDialogueWalker().rec.id, 'jubmir');
   assert.ok(portraitRenders >= 1);
-  assert.ok(revealChecks >= 1, 'stage readiness must signal the single map/loader owner');
 
-  // Crucial regression: the dialogue runtime must NEVER own the loading screen.
+  // Dialogue runtime must never own the loading screen.
   assert.equal(loaderShows, 0, 'dialogue runtime must not create/restart loading generations');
   assert.equal(loaderHides, 0, 'dialogue runtime must not hide the loading screen');
   assert.equal(runtime.debugSnapshot().loaderOwnedBy, 'PrologueRescueMapRuntime');
-  assert.equal(windowObject.__hobunjiPrologueHiddenSetup, true, 'dialogue readiness must not clear hidden-audio state before actual reveal');
-  assert.ok(progressEvents.some(event => event.label === 'prologue-dialogue-ready'));
 
   assert.equal(await runtime.advanceDialogueTest(), true);
   assert.equal(elements.npcDialogueName.textContent, 'Spearhead Unumanuk');
@@ -294,7 +298,7 @@ vm.runInContext(source, context, { filename: 'prologue-dialogue-runtime.js' });
   assert.equal(source.includes('updateHeadYaw'), false, 'dialogue runtime must not force yaw headtracking');
   assert.equal(source.includes('updateHeadRotation'), false, 'dialogue runtime must not force pitch headtracking');
 
-  console.log('prologue single-loader-owner + automatic dialogue target regression passed');
+  console.log('prologue actor-first reveal + post-reveal automatic dialogue regression passed');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
