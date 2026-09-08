@@ -18,6 +18,13 @@ assert(authorityIndex >= 0 && focusIndex > authorityIndex && alignmentIndex > fo
 assert.match(loader, /HobunjiRangedCameraRayAuthority\?\.version\) >= 1/,
   'loader requires the ranged camera ray authority API');
 
+function assertVector(actual, expected, message) {
+  assert(actual, message);
+  for (const axis of ['x', 'y', 'z']) {
+    assert.equal(Number(actual[axis]), Number(expected[axis]), `${message}: ${axis}`);
+  }
+}
+
 const logs = [];
 const player = { x: 0, y: 0 };
 let baseDeps = null;
@@ -66,10 +73,11 @@ assert(baseDeps, 'underlying RangedWeapons.init receives authoritative deps');
 
 const attackRay = baseDeps.getPlayerAimRay();
 assert(attackRay, 'actual ranged fire receives an attack ray');
-assert.deepEqual(attackRay.origin, { x: 0, y: 0.55, z: 0 }, 'attack ray starts at the muzzle');
+assertVector(attackRay.origin, { x: 0, y: 0.55, z: 0 }, 'attack ray starts at the muzzle');
 assert(attackRay.direction.x > 0.98, 'attack points generally camera-forward');
 assert(attackRay.direction.z > 0, 'shoulder parallax converges toward the camera ray instead of firing parallel');
-assert.notDeepEqual(attackRay.direction, { x: 0, y: 0, z: 1 }, 'near-surface focus ray cannot override actual launch direction');
+assert(!(Number(attackRay.direction.x) === 0 && Number(attackRay.direction.y) === 0 && Number(attackRay.direction.z) === 1),
+  'near-surface focus ray cannot override actual launch direction');
 
 const snapshot = windowStub.HobunjiRangedCameraRayAuthority.snapshot();
 const solution = snapshot.lastSolution;
