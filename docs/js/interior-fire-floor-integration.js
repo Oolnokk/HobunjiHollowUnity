@@ -49,6 +49,29 @@
   }
   loadInteriorEnvironmentCompanion();
 
+  // This narrow sibling resolves fire item-key aliases before the game's
+  // generic furniture placeholder path and installs a pure-black unlit void
+  // around loaded interiors. Keeping it separate makes both corrections easy
+  // to regression-test without widening the floor/environment modules again.
+  function loadInteriorFireVoidCompanion() {
+    if (window.InteriorFireVoidRuntime || typeof document === 'undefined') return;
+    const currentSrc = document.currentScript?.src || ''; // Same sibling-path resolution as the environment companion above.
+    const src = currentSrc
+      ? new URL('interior-fire-void-runtime.js?v=20260908a', currentSrc).href
+      : 'js/interior-fire-void-runtime.js?v=20260908a';
+    const alreadyRequested = [...document.scripts].some(script => script.src?.includes('/interior-fire-void-runtime.js'));
+    if (alreadyRequested) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Late-load fallback for dev/editor surfaces that append this integration post-parse.
+    script.src = src;
+    script.async = false;
+    document.head.appendChild(script);
+  }
+  loadInteriorFireVoidCompanion();
+
   function waitForRuntime() {
     const startedAt = performance.now(); // Bounds alternate tool-page load orders instead of polling forever.
     const timer = setInterval(() => {
@@ -312,6 +335,7 @@
       editor: { ...editorState },
       core: window.InteriorFireFloorRuntime?.debugSnapshot?.() || null,
       environment: window.InteriorEnvironmentRuntime?.debugSnapshot?.() || null,
+      fireVoid: window.InteriorFireVoidRuntime?.debugSnapshot?.() || null,
     };
   }
 
