@@ -8,7 +8,7 @@
     "matchBackgroundToFog": true
   },
   "lantern": {
-    "radiusTiles": 3.6,
+    "radiusTiles": 2.4,
     "clarityRadiusTiles": 0.95,
     "centerMaskAlpha": 0.92,
     "clarityMaskAlpha": 0.8,

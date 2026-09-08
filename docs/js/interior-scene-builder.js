@@ -23,6 +23,19 @@
   // on TerrainPreview for anything except the bump-field math itself.
   const ROCK_MOUND_CELLS_PER_TILE = 6;
 
+  function applyTownCliffMaterial(THREE, mesh, fallbackMaterial) {
+    const natural = root.NaturalSurfaceMaterials; // Used by mine and den cave meshes to share the exact town-border cliff material factory instead of maintaining a separate lit cave material.
+    if (mesh?.isMesh && typeof natural?.naturalizeMesh === 'function') {
+      mesh.material = fallbackMaterial;
+      natural.naturalizeMesh(mesh, 'cliffs');
+      mesh.userData = Object.assign({}, mesh.userData, {
+        interiorCavernMaterialParity: 'town-cliffs',
+      });
+      return mesh.material;
+    }
+    return fallbackMaterial;
+  }
+
   // ── Wall panel derivation — exact port of game.js's buildWallPanelsFromFloorSet ──
   function buildWallPanels(floorSet, exitTileSet, wallHeight) {
     exitTileSet = exitTileSet || new Set();
@@ -145,23 +158,24 @@
     }
     const group = new THREE.Group();
     if (!idx.length) return group;
-    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Used by the authored mine safe room to match the carved_smooth procedural floors.
+    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Used only as the unlit fallback when NaturalSurfaceMaterials is unavailable in a standalone tool.
     if (texture) {
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.repeat.set(options.textureRepeat || .42, options.textureRepeat || .42);
       if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     }
-    const mat = new THREE.MeshLambertMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const fallbackMat = new THREE.MeshBasicMaterial({ color: options.color ?? 0x5f5a56, map: texture, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     if (texture) {
-      const uv = new Float32Array(pos.length / 3 * 2); // Used to project the stone texture consistently across every vertical mine wall orientation.
+      const uv = new Float32Array(pos.length / 3 * 2); // Used to project the fallback stone texture consistently across every vertical mine wall orientation.
       for (let p = 0, u = 0; p < pos.length; p += 3, u += 2) { uv[u] = pos[p] + pos[p + 2]; uv[u + 1] = pos[p + 1]; }
       geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     }
     geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(geo, fallbackMat);
+    applyTownCliffMaterial(THREE, mesh, fallbackMat);
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
     group.add(mesh);
@@ -171,20 +185,16 @@
   // Carved cavern shell — floor, walls, and ceiling as one organic
   // low-poly rock mesh, produced by CavernSculptor's SDF carve + dual
   // contour extraction (see cavern-sculptor.js / cavern-generator.js's
-  // generateCavernFloor) rather than flat per-panel geometry. Same rock
-  // look as the old buildCavernWalls (kept below for anything still using
-  // the flat-panel path) so a den still reads as the same rock throughout.
+  // generateCavernFloor). Mines and dens both use the canonical town-cliff
+  // natural-surface material so their rock color/PNG/light model cannot drift.
   function buildCarvedCavernMesh(THREE, meshData, options = {}) {
     if (!meshData || !meshData.positions || !meshData.positions.length) return new THREE.Group();
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(meshData.positions, 3));
-    // SDF cavern output contains positions/indices only. A textured mine
-    // previously had no UV attribute at all, so every vertex sampled the
-    // texture's same corner texel; if that texel was dark, no practical
-    // amount of torch light could reveal the surface. World-scaled XZ UVs
-    // give the walkable floor the same predictable tiling convention as
-    // town terrain. Cavern walls retain their organic geometry and simply
-    // inherit the nearest floor projection.
+    // Keep fallback UVs for standalone tools that do not load the natural-
+    // surface stack. In the game, NaturalSurfaceMaterials (and its shared
+    // furniture-style surface mapper wrapper) replaces these with the same
+    // connected-surface full-PNG mapping used by town cliffs.
     if (options.textureUrl) {
       const uv = new Float32Array(meshData.positions.length / 3 * 2);
       const uvScale = options.uvScale || 1;
@@ -197,7 +207,7 @@
     const indices = meshData.indices;
     geo.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
     geo.computeVertexNormals();
-    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Used by the town mine to share the exterior carved_smooth stone surface.
+    const texture = options.textureUrl ? new THREE.TextureLoader().load(options.textureUrl) : null; // Used only as an unlit fallback outside the main game's natural-surface stack.
     if (texture) {
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.repeat.set(options.textureRepeat || 0.35, options.textureRepeat || 0.35);
@@ -207,10 +217,9 @@
     // the playable tunnel shell while culling reverse faces seen from solid
     // inter-tunnel pockets. DoubleSide made those pockets look like rooms.
     const materialOptions = { color: options.color ?? 0x5f5a56, map: texture, flatShading: !texture, side: THREE.FrontSide };
-    const mat = options.useLambert
-      ? new THREE.MeshLambertMaterial({ ...materialOptions, emissive: options.emissive ?? 0x000000 })
-      : new THREE.MeshStandardMaterial({ ...materialOptions, roughness: .92, metalness: 0 });
-    const mesh = new THREE.Mesh(geo, mat);
+    const fallbackMat = new THREE.MeshBasicMaterial(materialOptions);
+    const mesh = new THREE.Mesh(geo, fallbackMat);
+    applyTownCliffMaterial(THREE, mesh, fallbackMat);
     mesh.receiveShadow = true;
     mesh.userData.cameraObstacle = true;
     return mesh;
