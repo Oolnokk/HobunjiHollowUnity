@@ -26,19 +26,17 @@
         --hls-bronze-stroke:${CATEGORY_STROKE};
         --hls-metal-ramp:linear-gradient(
           180deg,
-          #E0A36C 0%,
-          #F0BC82 20%,
-          #FBE0AF 41%,
-          #FFF7E4 48%,
-          #F2BE86 57%,
-          #F9D59A 72%,
-          #E7A96F 100%
+          #D79A68 0%,
+          #E39A51 20%,
+          #F8D493 41%,
+          #FFF1CE 48%,
+          #E7A35F 57%,
+          #F6C77F 72%,
+          #DCA06C 100%
         );
       }
 
-      /* Khymeryyan Roman is now plain white for readability, while keeping a
-         thin dark outline and shadow so it still reads cleanly on the loading
-         screen background. */
+      /* Khymeryyan Roman is plain white for maximum readability. */
       #hobunjiLoadScreen #hlsLoreHeader,
       #hobunjiLoadScreen #hlsLore,
       #hobunjiLoadScreen #hlsLore *,
@@ -54,18 +52,31 @@
         filter:none;
       }
 
-      /* TankanScript stays as the live font. The bronze ramp has been lifted
-         substantially overall, especially in the darker bands. */
+      /* The word column only handles layout. The actual metallic fill belongs
+         on each glyph span, because those spans contain the Tankan characters.
+         Applying background-clip:text to the parent column can leave the child
+         text transparent and show mostly the black outline. */
       #hobunjiLoadScreen .hlsVerticalWord {
+        color:inherit !important;
+        background:none !important;
+        -webkit-text-fill-color:initial;
+        -webkit-text-stroke:0 transparent;
+        text-shadow:none !important;
+        filter:none;
+      }
+
+      #hobunjiLoadScreen .hlsVerticalGlyph {
         color:var(--hls-bronze-metal) !important;
         background:var(--hls-metal-ramp);
+        background-size:100% 100%;
+        background-repeat:no-repeat;
         -webkit-background-clip:text;
         background-clip:text;
         -webkit-text-fill-color:transparent;
         -webkit-text-stroke:3px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
-        filter:drop-shadow(0 0 8px rgba(250,213,154,.58));
+        filter:drop-shadow(0 0 7px rgba(246,199,127,.52));
       }
 
       /* Explicitly suppress any stale overlay nodes left by a hot reload or an
@@ -106,6 +117,7 @@
       loadingDomReady: Boolean(root && scriptWords),
       overlayEnabled: false,
       loreTextMode: 'white',
+      tankanGradientTarget: 'glyph',
     };
   }
 
@@ -121,6 +133,7 @@
     const snapshot = debugSnapshot();
     panel.textContent = [
       `metalText roman=${snapshot.loreTextMode} tankan=bronze`,
+      `tankanGradientTarget=${snapshot.tankanGradientTarget}`,
       `verdigris=${snapshot.verdigrisHex}@${Math.round(snapshot.verdigrisAmount * 100)}% overlay=off`,
       `loadingDom=${snapshot.loadingDomReady ? 'ready' : 'waiting'}`,
     ].join('\n');
