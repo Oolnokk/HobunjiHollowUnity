@@ -103,18 +103,56 @@
   // let an author build (clone the base layout, then rearrange it).
   const OVERRIDABLE_KEYS = ['floor', 'colliders', 'vendorZones', 'furniture', 'npcStations', 'decor', 'objects', 'buildings', 'routes'];
 
+  // A station may bind itself to one authored furniture instance instead of
+  // duplicating that furniture's coordinates. Resolution happens only after
+  // the active alternate layout has been applied, so moving/repositioning the
+  // furniture inside a layout automatically moves the NPC destination too.
+  // postX/postZ are folded into the station origin because those editor fields
+  // translate the rendered furniture away from its raw tile coordinate.
+  function resolveFurnitureBoundStations(mapData) {
+    const stations = Array.isArray(mapData?.npcStations) ? mapData.npcStations : null;
+    if (!stations?.some(station => station?.sourceFurnitureId)) return mapData;
+    const furniture = Array.isArray(mapData?.furniture) ? mapData.furniture : [];
+    const byId = new Map();
+    for (const piece of furniture) {
+      const id = String(piece?.id || '');
+      if (id) byId.set(id, piece);
+    }
+    let changed = false;
+    const resolvedStations = stations.map(station => {
+      const sourceId = String(station?.sourceFurnitureId || '');
+      if (!sourceId) return station;
+      const piece = byId.get(sourceId);
+      if (!piece || !Number.isFinite(piece.col) || !Number.isFinite(piece.row)) return station;
+      changed = true;
+      const sourceKey = String(station.sourceFurnitureKey || piece.itemKey || piece.key || '');
+      return {
+        ...station,
+        col: piece.col + (Number(piece.postX) || 0),
+        row: piece.row + (Number(piece.postZ) || 0),
+        rotY: Number.isFinite(piece.rotY) ? piece.rotY : (Number(station.rotY) || 0),
+        sourceFurnitureKey: sourceKey,
+        furnitureKey: station.furnitureKey || sourceKey,
+      };
+    });
+    return changed ? { ...mapData, npcStations: resolvedStations } : mapData;
+  }
+
   // Merges the active layout's overrides onto `mapData`, returning a new
   // object — `mapData` itself (and its `layouts` array) is left untouched so
   // this can be called again later once the calendar/flags have moved on.
   function getEffectiveMapData(mapData, now) {
     if (!mapData) return mapData;
     const layout = resolveActiveLayout(mapData, now);
-    if (!layout) return mapData.activeLayoutId === 'default' ? mapData : { ...mapData, activeLayoutId: 'default' };
+    if (!layout) {
+      const effective = mapData.activeLayoutId === 'default' ? mapData : { ...mapData, activeLayoutId: 'default' };
+      return resolveFurnitureBoundStations(effective);
+    }
     const merged = { ...mapData, activeLayoutId: layout.id };
     for (const key of OVERRIDABLE_KEYS) {
       if (Object.prototype.hasOwnProperty.call(layout, key)) merged[key] = layout[key];
     }
-    return merged;
+    return resolveFurnitureBoundStations(merged);
   }
 
   // Where to place the player after a layout switch (or a fresh entry into a
@@ -146,6 +184,7 @@
 
   window.MapLayoutSystem = {
     resolveActiveLayout,
+    resolveFurnitureBoundStations,
     getEffectiveMapData,
     pickEntryPoint,
     currentSnapshot,
