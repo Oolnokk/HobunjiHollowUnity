@@ -6,7 +6,7 @@
   // gate in front of every later gameplay/UI listener without changing index.html.
   (function loadTitleScreenRuntime() {
     if (typeof document === 'undefined') return;
-    const src = 'js/title-screen-runtime.js?v=20260908a'; // One-time parser-synchronous startup-title runtime.
+    const src = 'js/title-screen-runtime.js?v=20260908b'; // One-time parser-synchronous startup-title runtime.
     if (window.HobunjiTitleScreen || document.querySelector('script[data-hobunji-title-screen]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-title-screen="1"><\/script>`);
