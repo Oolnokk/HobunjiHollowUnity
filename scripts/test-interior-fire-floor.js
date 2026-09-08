@@ -20,14 +20,24 @@ assert.doesNotThrow(() => new vm.Script(vessel, { filename: 'furniture-vessel-ru
 
 assert(core.includes("campfireFurniture"), 'core runtime must register a real campfire furniture item');
 assert(core.includes("bonfireFurniture"), 'core runtime must register a real bonfire furniture item');
+assert(core.includes("name: 'Bonfire', icon: '🔥', fw: 2, fd: 2, procKey: 'bonfire'"),
+  'bonfire runtime definition must have a real 2x2 footprint');
+assert(core.includes('data.footprint = { w: 2, d: 2 }'),
+  'derived authored bonfire data must retain the same 2x2 footprint');
 assert(core.includes('const scale = 2'), 'bonfire must derive from the campfire at exactly double visual scale');
 assert(core.includes("id: 'candle_table_fire'"), 'candle tables must receive the small authored fire emitter');
 assert(core.includes('floorStyle'), 'runtime must support per-map floorStyle data');
 assert(core.includes('tilesPerTile'), 'floor style must expose texture density in textures per tile');
 assert(core.includes('applyFloorStyleToScene'), 'loaded building scenes must receive authored floor style');
 
-assert(integration.includes("BONFIRE_ITEM_KEY = 'bonfireFurniture'"), 'integration must keep bonfire placement centered on one authored tile');
-assert(integration.includes("defs[BONFIRE_ITEM_KEY].fw = 1"), 'bonfire game footprint must remain one tile despite doubled visuals');
+assert(integration.includes("bonfireFurniture: Object.freeze({ key: 'bonfireFurniture', label: 'Bonfire', fw: 2, fd: 2"),
+  'Interior Editor catalog compatibility entry must use the real 2x2 bonfire footprint');
+assert(integration.includes("detail: '2x2 · centered on middle vertex'"),
+  'Interior Editor must describe the bonfire as a centered 2x2 footprint');
+assert(integration.includes("centerOffset: { x: 1, z: 1 }, anchor: 'center-vertex'"),
+  'debug metadata must state the normal 2x2 center-vertex offset');
+assert(!integration.includes('forceBonfireOneTile'), 'integration must never collapse the bonfire back to one tile');
+assert(!integration.includes('defs[BONFIRE_ITEM_KEY].fw = 1'), 'gameplay footprint must not be overridden to one tile');
 assert(integration.includes("campfireFurniture"), 'Interior Editor catalog must expose Campfire');
 assert(integration.includes("bonfireFurniture"), 'Interior Editor catalog must expose Bonfire');
 assert(integration.includes("biaFloorTexture"), 'Interior Editor must expose the PNG floor texture field');
@@ -49,7 +59,9 @@ assert(communion, 'updated church must retain the Spirit Communion layout');
 const bonfire = communion.furniture.find(piece => piece.id === 'sc_bonfire');
 assert(bonfire, 'Spirit Communion must use the real bonfire');
 assert.strictEqual(bonfire.itemKey, 'bonfireFurniture');
-assert.deepStrictEqual([bonfire.col, bonfire.row], [9, 9], 'bonfire must remain centered on the counsel target tile');
+assert.deepStrictEqual([bonfire.col, bonfire.row], [9, 9], 'bonfire authored footprint origin must remain on the uploaded church coordinates');
+assert.deepStrictEqual([bonfire.col + 1, bonfire.row + 1], [10, 10],
+  'a 2x2 bonfire must center on the shared middle vertex, not a tile center');
 assert.deepStrictEqual([bonfire.postSX, bonfire.postSY, bonfire.postSZ], [1, 1, 1],
   'bonfire must not retain the placeholder campfire extra scale because the preset is already doubled');
 assert(!communion.furniture.some(piece => piece.itemKey === 'campfireKitFurniture'),
@@ -64,4 +76,4 @@ assert(communion.furniture.some(piece => piece.id === 'fmtspjum0bi6z' && piece.i
 assert(communion.furniture.filter(piece => piece.itemKey === 'candleTableFurniture').length === 2,
   'uploaded church candle tables must remain present for the new candle flame VFX');
 
-console.log('interior fire/floor + updated church regression checks: PASS');
+console.log('interior fire/floor + centered 2x2 bonfire regression checks: PASS');
