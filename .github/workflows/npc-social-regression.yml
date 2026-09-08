@@ -127,7 +127,7 @@ jobs:
         run: node scripts/test-dance-rapport-rate.js
       - name: Test generic HUD icon replacement and rapport popup integration
         run: node scripts/test-generic-hud-icons.js
-      - name: Test interior fire, floor, and updated church integration
+      - name: Test interior fire, floor, updated church, and civil midnight integration
         run: node scripts/test-interior-fire-floor.js
       - name: Test balanced multi-trait NPC gifting
         run: node scripts/test-npc-gifting-multitrait.js
