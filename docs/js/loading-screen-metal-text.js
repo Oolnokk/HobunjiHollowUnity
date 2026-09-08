@@ -20,6 +20,7 @@
 
   let rootObserver = null; // Used until LoadingScreenRuntime creates #hobunjiLoadScreen.
   let scriptObserver = null; // Used after creation to catch every renderScript() replacement of Tankan glyph spans.
+  let fontStateObserver = null; // Used to notice LoadingScreenRuntime's tankan-font-settled class change without watching every glyph attribute.
   let refreshQueued = false; // Used to collapse mutation/resize bursts into one pre-paint refresh.
   let dependencyRetryTimer = null; // Used when the loading-screen DOM appears before ToolMetalRecolor is ready.
   let processedGlyphs = 0; // Used by the built-in diagnostics panel to report successful verdigris sprites.
@@ -109,6 +110,15 @@
     return `#${channels.map(value => value.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
   }
 
+  function tankanFontLoaded() {
+    try {
+      const faces = document.fonts ? [...document.fonts] : []; // Used to distinguish the real registered Tankan FontFace from a browser fallback with the same requested family name.
+      return faces.some(face => String(face.family || '').replace(/[\"']/g, '') === 'TankanScript' && face.status === 'loaded');
+    } catch (_) {
+      return false;
+    }
+  }
+
   function debugSnapshot() {
     const root = document.getElementById('hobunjiLoadScreen'); // Used to report whether LoadingScreenRuntime has painted its DOM yet.
     const scriptWords = document.getElementById('hlsScriptWords'); // Used to count current Tankan glyphs for mobile diagnostics.
@@ -120,7 +130,7 @@
       verdigrisAmount: VERDIGRIS_AMOUNT,
       toolMetalReady: Boolean(window.ToolMetalRecolor?.getRecoloredCanvas),
       loadingDomReady: Boolean(root && scriptWords),
-      tankanFontReady: Boolean(document.fonts?.check?.('32px "TankanScript"')),
+      tankanFontReady: tankanFontLoaded(),
       glyphs: glyphs.length,
       decoratedGlyphs: glyphs.filter(glyph => glyph.classList.contains('hlsBronzeVerdigrisGlyph')).length,
       processedGlyphs,
@@ -288,8 +298,10 @@
     installStyles();
     const attached = attachRuntime(); // Used to ensure observers/debug UI exist before processing whichever loading session is active.
     if (!attached) return;
-    if (!window.ToolMetalRecolor?.getRecoloredCanvas) scheduleDependencyRetry();
-    else decorateCurrentGlyphs();
+    const root = document.getElementById('hobunjiLoadScreen'); // Used to gate rasterization until LoadingScreenRuntime has settled the custom Tankan font attempt.
+    const tankanSettled = Boolean(root?.classList.contains('tankan-font-settled')); // Used to avoid ever rasterizing the pre-font fallback flash into a cached verdigris sprite.
+    if (!window.ToolMetalRecolor?.getRecoloredCanvas || !tankanSettled) scheduleDependencyRetry();
+    else if (tankanFontLoaded()) decorateCurrentGlyphs();
     updateDebugPanel();
   }
 
@@ -311,6 +323,10 @@
       scriptObserver.observe(scriptWords, { childList: true, subtree: true });
       addEventListener('resize', queueRefresh, { passive: true });
       document.fonts?.ready?.then(queueRefresh).catch(() => {});
+    }
+    if (!fontStateObserver) {
+      fontStateObserver = new MutationObserver(queueRefresh);
+      fontStateObserver.observe(root, { attributes: true, attributeFilter: ['class'] });
     }
     updateDebugPanel();
     return true;
