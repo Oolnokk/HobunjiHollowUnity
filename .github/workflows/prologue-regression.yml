@@ -6,28 +6,36 @@ on:
       - 'docs/js/prologue-system.js'
       - 'docs/js/prologue-rescue-map-runtime.js'
       - 'docs/js/prologue-rescue-zone-compat.js'
+      - 'docs/js/prologue-safe-area-runtime.js'
       - 'docs/js/prologue-startup-entry-bridge.js'
+      - 'docs/js/prologue-dialogue-runtime.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
       - 'docs/config/maps/map_prologue_rescue.json'
       - 'docs/config/maps/index.json'
       - 'scripts/test-prologue-chapter.js'
       - 'scripts/test-prologue-rescue-zone-compat.js'
+      - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
+      - 'scripts/test-prologue-dialogue-runtime.js'
       - '.github/workflows/prologue-regression.yml'
   pull_request:
     paths:
       - 'docs/js/prologue-system.js'
       - 'docs/js/prologue-rescue-map-runtime.js'
       - 'docs/js/prologue-rescue-zone-compat.js'
+      - 'docs/js/prologue-safe-area-runtime.js'
       - 'docs/js/prologue-startup-entry-bridge.js'
+      - 'docs/js/prologue-dialogue-runtime.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
       - 'docs/config/maps/map_prologue_rescue.json'
       - 'docs/config/maps/index.json'
       - 'scripts/test-prologue-chapter.js'
       - 'scripts/test-prologue-rescue-zone-compat.js'
+      - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
+      - 'scripts/test-prologue-dialogue-runtime.js'
       - '.github/workflows/prologue-regression.yml'
   workflow_dispatch:
 
@@ -42,12 +50,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Check prologue transport syntax
+      - name: Check prologue runtime syntax
         run: |
           node --check docs/js/prologue-rescue-zone-compat.js
+          node --check docs/js/prologue-safe-area-runtime.js
           node --check docs/js/prologue-startup-entry-bridge.js
+          node --check docs/js/prologue-dialogue-runtime.js
       - name: Run prologue regression
         run: |
           node scripts/test-prologue-chapter.js
           node scripts/test-prologue-rescue-zone-compat.js
+          node scripts/test-prologue-safe-area-runtime.js
           node scripts/test-prologue-startup-entry.js
+          node scripts/test-prologue-dialogue-runtime.js
