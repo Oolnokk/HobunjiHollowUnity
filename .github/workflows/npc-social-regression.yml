@@ -6,6 +6,7 @@ on:
       - 'docs/config/npcs/social-relations.js'
       - 'docs/config/maps/map_i_temple.json'
       - 'docs/config/maps/map_i_temple_basement_hunundi.json'
+      - 'docs/js/map-layout-system.js'
       - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
@@ -42,6 +43,7 @@ on:
       - 'docs/config/npcs/social-relations.js'
       - 'docs/config/maps/map_i_temple.json'
       - 'docs/config/maps/map_i_temple_basement_hunundi.json'
+      - 'docs/js/map-layout-system.js'
       - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/npc-social-seating-bridge.js'
@@ -90,6 +92,7 @@ jobs:
       - name: Syntax check NPC social modules
         run: |
           node --check docs/config/npcs/social-relations.js
+          node --check docs/js/map-layout-system.js
           node --check docs/js/npc-gifting.js
           node --check docs/js/npc-social-relationship-bridge-v2.js
           node --check docs/js/npc-social-seating-bridge.js
