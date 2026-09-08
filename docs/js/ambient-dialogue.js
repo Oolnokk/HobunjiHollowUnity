@@ -156,6 +156,19 @@
     return stripped || 'Hello!';
   }
 
+  function configuredPlayerGreetingName() {
+    return state.dialogueDeps?.getPlayerData?.()?.nickname
+      || state.deps?.getPlayerName?.()
+      || '';
+  }
+
+  function omitResolvedGreetingTargetName(source, targetName) {
+    const name = String(targetName || '').trim(); // Used to identify the already-resolved player nickname embedded by request call-over generators.
+    if (!name) return String(source || '').trim();
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Used to match the nickname literally even when it contains regular-expression punctuation.
+    return omitGreetingTargetName(String(source || '').replace(new RegExp(escapedName, 'gi'), '{targetName}'));
+  }
+
   function templateLine(targetName, speakerId, targetId, day, options = {}) {
     const values = {
       targetName: String(targetName || 'friend'),
@@ -757,7 +770,9 @@
     // call-over line, so it can't be mistaken for a random ambient greeting.
     const mayUsePlayerName = targetId !== 'player' || playerGreetingMayUseName(walker); // Used to keep ordinary player names and conditioned NPC-specific nicknames out of sub-+1 greetings except for the four authored exceptions.
     const targetName = mayUsePlayerName ? resolveTargetName(walker, target) : '';
-    const line = override?.text || templateLine(targetName, speakerId, targetId, day, { omitTargetName: !mayUsePlayerName });
+    const line = override?.text
+      ? (mayUsePlayerName ? override.text : omitResolvedGreetingTargetName(override.text, configuredPlayerGreetingName()))
+      : templateLine(targetName, speakerId, targetId, day, { omitTargetName: !mayUsePlayerName });
     show(walker.root, line, {
       speakerId,
       profile: walker.profile,
