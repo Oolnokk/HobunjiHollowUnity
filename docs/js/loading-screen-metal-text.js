@@ -1,7 +1,7 @@
 // Loading-screen bronze lettering treatment.
 // Khymeryyan Roman uses plain white for readability.
-// TankanScript keeps the item-category-inspired shiny bronze presentation.
-// The Tankan verdigris raster overlay is disabled for now.
+// TankanScript uses the shiny bronze treatment from the build immediately
+// before the Roman text was switched to white. Verdigris overlay remains off.
 (() => {
   'use strict';
   if (window.LoadingScreenMetalText?.installed) return;
@@ -26,17 +26,17 @@
         --hls-bronze-stroke:${CATEGORY_STROKE};
         --hls-metal-ramp:linear-gradient(
           180deg,
-          #D79A68 0%,
+          #C27A42 0%,
           #E39A51 20%,
           #F8D493 41%,
           #FFF1CE 48%,
           #E7A35F 57%,
           #F6C77F 72%,
-          #DCA06C 100%
+          #C98248 100%
         );
       }
 
-      /* Khymeryyan Roman is plain white for maximum readability. */
+      /* Khymeryyan Roman stays plain white for maximum readability. */
       #hobunjiLoadScreen #hlsLoreHeader,
       #hobunjiLoadScreen #hlsLore,
       #hobunjiLoadScreen #hlsLore *,
@@ -52,24 +52,11 @@
         filter:none;
       }
 
-      /* The word column only handles layout. The actual metallic fill belongs
-         on each glyph span, because those spans contain the Tankan characters.
-         Applying background-clip:text to the parent column can leave the child
-         text transparent and show mostly the black outline. */
+      /* Restore the TankanScript treatment from the build immediately before
+         the Roman text was changed to white. */
       #hobunjiLoadScreen .hlsVerticalWord {
-        color:inherit !important;
-        background:none !important;
-        -webkit-text-fill-color:initial;
-        -webkit-text-stroke:0 transparent;
-        text-shadow:none !important;
-        filter:none;
-      }
-
-      #hobunjiLoadScreen .hlsVerticalGlyph {
         color:var(--hls-bronze-metal) !important;
         background:var(--hls-metal-ramp);
-        background-size:100% 100%;
-        background-repeat:no-repeat;
         -webkit-background-clip:text;
         background-clip:text;
         -webkit-text-fill-color:transparent;
@@ -107,8 +94,8 @@
   }
 
   function debugSnapshot() {
-    const root = document.getElementById('hobunjiLoadScreen'); // Reports whether the loading screen has been built.
-    const scriptWords = document.getElementById('hlsScriptWords'); // Reports whether the Tankan phrase container exists.
+    const root = document.getElementById('hobunjiLoadScreen');
+    const scriptWords = document.getElementById('hlsScriptWords');
     return {
       installed: true,
       bronzeHex: BRONZE_HEX,
@@ -117,12 +104,11 @@
       loadingDomReady: Boolean(root && scriptWords),
       overlayEnabled: false,
       loreTextMode: 'white',
-      tankanGradientTarget: 'glyph',
     };
   }
 
   function updateDebugPanel() {
-    const root = document.getElementById('hobunjiLoadScreen'); // Parent for the loading-screen diagnostics extension.
+    const root = document.getElementById('hobunjiLoadScreen');
     if (!root) return;
     let panel = document.getElementById(DEBUG_ID);
     if (!panel) {
@@ -133,7 +119,6 @@
     const snapshot = debugSnapshot();
     panel.textContent = [
       `metalText roman=${snapshot.loreTextMode} tankan=bronze`,
-      `tankanGradientTarget=${snapshot.tankanGradientTarget}`,
       `verdigris=${snapshot.verdigrisHex}@${Math.round(snapshot.verdigrisAmount * 100)}% overlay=off`,
       `loadingDom=${snapshot.loadingDomReady ? 'ready' : 'waiting'}`,
     ].join('\n');
