@@ -9,6 +9,7 @@ on:
       - 'docs/js/prologue-safe-area-runtime.js'
       - 'docs/js/prologue-startup-entry-bridge.js'
       - 'docs/js/prologue-dialogue-runtime.js'
+      - 'docs/js/prologue-dialogue-presentation-bridge.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
       - 'docs/config/maps/map_prologue_rescue.json'
@@ -18,6 +19,7 @@ on:
       - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
       - 'scripts/test-prologue-dialogue-runtime.js'
+      - 'scripts/test-prologue-dialogue-presentation-bridge.js'
       - 'scripts/test-prologue-loader-ownership.js'
       - '.github/workflows/prologue-regression.yml'
   pull_request:
@@ -28,6 +30,7 @@ on:
       - 'docs/js/prologue-safe-area-runtime.js'
       - 'docs/js/prologue-startup-entry-bridge.js'
       - 'docs/js/prologue-dialogue-runtime.js'
+      - 'docs/js/prologue-dialogue-presentation-bridge.js'
       - 'docs/js/character-action-locks.js'
       - 'docs/config/cutscenes/prologue-chapter.json'
       - 'docs/config/maps/map_prologue_rescue.json'
@@ -37,6 +40,7 @@ on:
       - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
       - 'scripts/test-prologue-dialogue-runtime.js'
+      - 'scripts/test-prologue-dialogue-presentation-bridge.js'
       - 'scripts/test-prologue-loader-ownership.js'
       - '.github/workflows/prologue-regression.yml'
   workflow_dispatch:
@@ -59,6 +63,7 @@ jobs:
           node --check docs/js/prologue-safe-area-runtime.js
           node --check docs/js/prologue-startup-entry-bridge.js
           node --check docs/js/prologue-dialogue-runtime.js
+          node --check docs/js/prologue-dialogue-presentation-bridge.js
       - name: Run prologue regression
         run: |
           node scripts/test-prologue-chapter.js
@@ -66,4 +71,5 @@ jobs:
           node scripts/test-prologue-safe-area-runtime.js
           node scripts/test-prologue-startup-entry.js
           node scripts/test-prologue-dialogue-runtime.js
+          node scripts/test-prologue-dialogue-presentation-bridge.js
           node scripts/test-prologue-loader-ownership.js
