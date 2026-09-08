@@ -35,25 +35,27 @@
         );
       }
 
-      /* Keep the same metallic shine, but lift the dark bands substantially so
-         they remain readable against the loading screen's black background.
-         Highlights are only modestly brighter so the shine retains contrast. */
-      #hobunjiLoadScreen #hlsLoreBlock,
-      #hobunjiLoadScreen #hlsLoreBlock *,
+      /* Khymeryyan Roman is only ~15-19px on the loading screen, so it needs a
+         much thinner outline than the ~89px Tankan script. Apply the metallic
+         fill only to actual text-bearing nodes so the gradient occupies the
+         glyph interiors instead of being clipped on the parent lore container. */
+      #hobunjiLoadScreen #hlsLoreHeader,
+      #hobunjiLoadScreen #hlsLore,
+      #hobunjiLoadScreen #hlsLore *,
       #hobunjiLoadScreen #hlsPercent {
         color:var(--hls-bronze-metal) !important;
         background:var(--hls-metal-ramp);
         -webkit-background-clip:text;
         background-clip:text;
         -webkit-text-fill-color:transparent;
-        -webkit-text-stroke:3px var(--hls-bronze-stroke);
+        -webkit-text-stroke:1px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
         filter:drop-shadow(0 0 6px rgba(240,182,106,.42));
       }
 
       /* TankanScript stays as the live font with the same brightened metallic
-         ramp. No canvas/raster layer is allowed to replace or cover it. */
+         ramp. Its much larger glyphs keep the full 3px category-style outline. */
       #hobunjiLoadScreen .hlsVerticalWord {
         color:var(--hls-bronze-metal) !important;
         background:var(--hls-metal-ramp);
