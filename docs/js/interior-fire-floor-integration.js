@@ -1,6 +1,8 @@
 // Integration layer for InteriorFireFloorRuntime.
-// Keeps the doubled bonfire centered on one authored map tile and adds
-// Interior Editor controls without reaching into the editor's closure-private state.
+// Adds Interior Editor catalog/floor controls while preserving the shared
+// runtime's real furniture footprints. Bonfire is intentionally 2x2, so the
+// editor/game's normal furniture centering formula places its origin on the
+// shared center vertex of the four occupied tiles: (col + 1, row + 1).
 (() => {
   'use strict';
 
@@ -8,10 +10,14 @@
 
   const IS_INTERIOR_EDITOR = /\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname || '');
   const EDITOR_SYNC_MS = 500; // Reconciles Server Layout / Library loads that expose no public editor-state event.
-  const BONFIRE_ITEM_KEY = 'bonfireFurniture'; // Used to keep the doubled visual on the same single target tile as the original campfire.
+  const EDITOR_CATALOG_ENTRIES = Object.freeze({ // Mirrors the shared runtime definitions so the editor's closure-private catOf() gets the correct footprint.
+    campfireFurniture: Object.freeze({ key: 'campfireFurniture', label: 'Campfire', fw: 1, fd: 1, col: 0x6d3e20 }),
+    bonfireFurniture: Object.freeze({ key: 'bonfireFurniture', label: 'Bonfire', fw: 2, fd: 2, col: 0x6d3e20 }),
+  });
   const editorState = { // Used by the visible debug snapshot on mobile.
     installed: false,
     catalogInstalled: false,
+    catalogFootprintBridgeInstalled: false,
     floorControlsInstalled: false,
     lastFloorSignature: null,
     reimports: 0,
@@ -31,48 +37,40 @@
     }, 25);
   }
 
-  function forceBonfireOneTile(data) {
-    if (data?.key === 'bonfire') data.footprint = { w: 1, d: 1 }; // The visual itself is already doubled by InteriorFireFloorRuntime.
-    return data;
+  function isInteriorCatalogMap(value) {
+    // The Building Interior Editor keeps its CATALOG/CMAP inside an IIFE and
+    // exposes no API for extending it. Identify only that exact map shape so
+    // the two non-enumerable compatibility getters below do not change normal
+    // object-property reads anywhere else on the tool page.
+    return !!value && typeof value === 'object'
+      && Object.prototype.hasOwnProperty.call(value, 'basicBedFurniture')
+      && Object.prototype.hasOwnProperty.call(value, 'rugFurniture')
+      && Object.prototype.hasOwnProperty.call(value, 'agingVaseFurniture');
   }
 
-  function installBonfireDataGuard() {
-    const authored = window.AuthoredFurniture;
-    if (!authored?.load || authored.load.__hobunjiBonfireOneTile) return;
-    const originalLoad = authored.load; // Used beneath the footprint-only correction.
-    const originalPeek = authored.peek; // Used beneath the synchronous footprint-only correction.
-    function loadOneTileBonfire(key) {
-      return Promise.resolve(originalLoad.call(this, key)).then(data => forceBonfireOneTile(data));
+  function installEditorCatalogFootprintBridge() {
+    if (!IS_INTERIOR_EDITOR || editorState.catalogFootprintBridgeInstalled) return false;
+    for (const [key, entry] of Object.entries(EDITOR_CATALOG_ENTRIES)) {
+      if (Object.prototype.hasOwnProperty.call(Object.prototype, key)) continue;
+      Object.defineProperty(Object.prototype, key, {
+        configurable: true,
+        enumerable: false,
+        get() {
+          return isInteriorCatalogMap(this) ? entry : undefined;
+        },
+        set(value) {
+          // Preserve ordinary assignment semantics for every unrelated object
+          // that might genuinely use one of these property names.
+          Object.defineProperty(this, key, {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value,
+          });
+        },
+      });
     }
-    loadOneTileBonfire.__hobunjiBonfireOneTile = true;
-    loadOneTileBonfire.__hobunjiBonfireOneTileOriginal = originalLoad;
-    authored.load = loadOneTileBonfire;
-    authored.peek = function peekOneTileBonfire(key) {
-      return forceBonfireOneTile(originalPeek?.call(this, key) || null);
-    };
-  }
-
-  function patchDefinitionDeps(injectedDeps) {
-    const defs = injectedDeps?.DECORATIVE_FURNITURE_DEFS; // The game's placement/scene loader reads footprint from this table.
-    if (defs?.[BONFIRE_ITEM_KEY]) {
-      defs[BONFIRE_ITEM_KEY].fw = 1;
-      defs[BONFIRE_ITEM_KEY].fd = 1;
-      defs[BONFIRE_ITEM_KEY].procKey = 'bonfire';
-    }
-  }
-
-  function wrapInit(namespaceName) {
-    const namespace = window[namespaceName];
-    if (!namespace?.init || namespace.init.__hobunjiBonfireOneTile) return false;
-    const originalInit = namespace.init; // Wraps the core runtime's existing definition-registration init hook.
-    function initWithOneTileBonfire(injectedDeps) {
-      const result = originalInit.call(this, injectedDeps);
-      patchDefinitionDeps(injectedDeps);
-      return result;
-    }
-    initWithOneTileBonfire.__hobunjiBonfireOneTile = true;
-    initWithOneTileBonfire.__hobunjiBonfireOneTileOriginal = originalInit;
-    namespace.init = initWithOneTileBonfire;
+    editorState.catalogFootprintBridgeInstalled = true;
     return true;
   }
 
@@ -102,7 +100,7 @@
     if (!select || !grid) return false;
     const entries = [
       { key: 'campfireFurniture', label: 'Campfire', detail: '1x1' },
-      { key: 'bonfireFurniture', label: 'Bonfire', detail: '1x1 · 2× visual' },
+      { key: 'bonfireFurniture', label: 'Bonfire', detail: '2x2 · centered on middle vertex' },
     ];
     for (const entry of entries) {
       if (![...select.options].some(option => option.value === entry.key)) {
@@ -224,6 +222,7 @@
   function installEditor() {
     if (!IS_INTERIOR_EDITOR || editorState.installed) return false;
     if (!document.getElementById('catSelect') || !document.getElementById('importInput') || !document.getElementById('exportText')) return false;
+    installEditorCatalogFootprintBridge();
     ensureEditorCatalog();
     ensureFloorControls();
     syncEditorFloorFromExport();
@@ -238,20 +237,13 @@
   function debugSnapshot() {
     return {
       installed: true,
-      oneTileBonfire: true,
+      bonfireFootprint: { w: 2, d: 2, centerOffset: { x: 1, z: 1 }, anchor: 'center-vertex' },
       editor: { ...editorState },
       core: window.InteriorFireFloorRuntime?.debugSnapshot?.() || null,
     };
   }
 
   function install() {
-    installBonfireDataGuard();
-    wrapInit('FarmEditor');
-    wrapInit('FarmPanel');
-    setTimeout(() => {
-      wrapInit('FarmEditor');
-      wrapInit('FarmPanel');
-    }, 0);
     if (IS_INTERIOR_EDITOR) {
       const startedAt = performance.now(); // Bounded because the core runtime can arrive before the editor's inline UI initialization.
       const timer = setInterval(() => {
