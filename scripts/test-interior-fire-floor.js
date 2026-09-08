@@ -67,6 +67,65 @@ assert(mapLayoutSystem.includes('piece.col + (Number(piece.postX) || 0)'),
   'furniture-bound stations must follow visual X post-transform offsets');
 assert(mapLayoutSystem.includes('piece.row + (Number(piece.postZ) || 0)'),
   'furniture-bound stations must follow visual Z post-transform offsets');
+assert(mapLayoutSystem.includes('function installCivilMidnightCalendarBridge()'),
+  'layout/calendar bridge must correct the civil date at midnight');
+assert(mapLayoutSystem.includes('RAW_DAY_ROLLOVER_HOUR = 6'),
+  'raw simulation day may remain morning-to-morning while civil dates roll independently');
+
+// Behavioral regression for the exact bug that made midnight-authored layouts
+// one named weekday late. The raw simulation day remains Uung until 06:00,
+// but civil Anan begins at 00:00 and must already be visible to schedules.
+const weekdayNames = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung'];
+const rawCalendar = { day: 7, time01: 0 };
+let representedHour = 23;
+const calendarStub = {
+  init() {},
+  getHour() { return representedHour; },
+  dayOfYear(day = rawCalendar.day) { return day; },
+  yearNumber() { return 1; },
+  aotYearNumber() { return 1154; },
+  weekOfYear(day = rawCalendar.day) { return Math.floor((day - 1) / 7) + 1; },
+  monthIndex() { return 0; },
+  monthNumber() { return 1; },
+  monthName() { return 'Firstrise'; },
+  dayOfMonth(day = rawCalendar.day) { return day; },
+  weekOfSeason() { return 1; },
+  weekdayIndexForCalendarDay(day) { return ((day - 1) % 7 + 7) % 7; },
+  weekdayNameForDay(day = rawCalendar.day) { return weekdayNames[((day - 1) % 7 + 7) % 7]; },
+  currentWeekdayIndex() { return ((rawCalendar.day - 1) % 7 + 7) % 7; },
+  currentWeekdayName() { return weekdayNames[((rawCalendar.day - 1) % 7 + 7) % 7]; },
+  formatCalendarDate(day = rawCalendar.day) { return `${this.weekdayNameForDay(day)} day ${day}`; },
+  formatCalendarDateFull(day = rawCalendar.day) { return `${this.weekdayNameForDay(day)} day ${day}`; },
+  formatCalendarDateTimeFull(day = rawCalendar.day) { return `${this.weekdayNameForDay(day)} day ${day}`; },
+  isCivilYearStart() { return false; },
+  renderCalendarPanel() {},
+  timeDebugSnapshot() { return { rawDay: rawCalendar.day }; },
+};
+const civilContext = { window: { CalendarSystem: calendarStub } };
+vm.createContext(civilContext);
+vm.runInContext(mapLayoutSystem, civilContext, { filename: 'map-layout-system-midnight.js' });
+civilContext.window.CalendarSystem.init({ calendar: rawCalendar });
+assert.strictEqual(civilContext.window.CalendarSystem.currentWeekdayName(), 'Uung',
+  'before midnight the civil weekday must match the raw simulation day');
+representedHour = 1;
+assert.strictEqual(civilContext.window.CalendarSystem.currentWeekdayName(), 'Anan',
+  'at 01:00 the civil weekday must already be the next named day');
+assert.strictEqual(civilContext.window.CalendarSystem.formatCalendarDate(), 'Anan day 8',
+  'HUD date formatting must advance at midnight instead of waiting for 06:00');
+const midnightSnapshot = civilContext.window.MapLayoutSystem.currentSnapshot();
+assert.strictEqual(midnightSnapshot.weekday, 'Anan',
+  'layout conditions must see the civil weekday after midnight');
+assert.strictEqual(midnightSnapshot.minutes, 60,
+  'layout conditions must preserve the represented 01:00 clock time');
+const midnightLayoutMap = {
+  layouts: [{ id: 'midnight_event', priority: 1, conditions: [{ from: '00:00', to: '03:00', days: ['Anan'] }] }],
+};
+assert.strictEqual(civilContext.window.MapLayoutSystem.resolveActiveLayout(midnightLayoutMap)?.id, 'midnight_event',
+  'Anan 00:00-03:00 must activate during the first three hours of displayed Anan');
+rawCalendar.day = 8;
+representedHour = 6;
+assert.strictEqual(civilContext.window.CalendarSystem.currentWeekdayName(), 'Anan',
+  '06:00 raw-day maintenance must not advance the civil weekday a second time');
 
 assert.deepStrictEqual(temple.floorStyle, {
   texture: 'carved_smooth.png',
@@ -146,4 +205,4 @@ assert(hunundiRoom.furniture.some(piece => piece.id === 'fmtsteb7xjq80' && piece
 assert.deepStrictEqual(hunundiRoom.entryPoints, [], 'uploaded Father Hunundi room entryPoints must be preserved');
 assert.deepStrictEqual(hunundiRoom.layouts, [], 'uploaded Father Hunundi room layouts must be preserved');
 
-console.log('interior fire/floor + floor preview + furniture-bound Eldress stool + Hunundi room regression checks: PASS');
+console.log('interior fire/floor + midnight civil rollover + furniture-bound Eldress stool + Hunundi room regression checks: PASS');
