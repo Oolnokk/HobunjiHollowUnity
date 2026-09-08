@@ -1,0 +1,217 @@
+name: Apply relationship heart and greeting patch
+
+on:
+  push:
+    branches:
+      - codex/relationship-heart-greeting-thresholds
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/relationship-heart-greeting-thresholds
+          fetch-depth: 0
+
+      - name: Patch relationship hearts and ambient greetings
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file_path = Path(path)
+              text = file_path.read_text(encoding='utf-8')
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}')
+              file_path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              'docs/js/dialogue-content.js',
+              """  function renderRelationshipHearts(rec) {
+    if (!rec?.relationship) return '';
+    const score = getNpcDlgState(rec.id).favor || 0;
+    const clamped = Math.max(-5, Math.min(10, score));
+    const hearts = [];
+    for (let i = -5; i <= 10; i++) {
+      if (i === 0) continue;
+      if (clamped < 0) {
+        hearts.push(i < 0 && i >= clamped ? '💜' : i < 0 ? '🖤' : '🤍');
+      } else {
+        hearts.push(i <= clamped ? '❤️' : i > 0 ? '🤍' : '');
+      }
+    }
+    return hearts.filter(Boolean).join('');
+  }
+""",
+              """  function renderRelationshipHearts(rec) {
+    if (!rec?.relationship) return '';
+    const score = Number(getNpcDlgState(rec.id).favor) || 0;
+    const clamped = Math.max(-5, Math.min(10, score));
+    const completedSteps = Math.max(0, Math.min(15, Math.floor(clamped + 5))); // Used to map -5..+10 favor onto the 15 visible relationship-heart slots.
+    const hearts = [];
+    for (let index = 0; index < 15; index++) {
+      if (index < completedSteps) hearts.push(index < 5 ? '💜' : '❤️');
+      else if (index === completedSteps && completedSteps < 15) hearts.push('🩶');
+      else hearts.push('🤍');
+    }
+    return hearts.join('');
+  }
+"""
+          )
+
+          replace_once(
+              'docs/js/ambient-dialogue.js',
+              """  function greetingLinesFor(speakerId, targetId) {
+    const authored = state.settings.npcGreetings?.[speakerId];
+    if (targetId === 'player' && authored?.player?.length) return authored.player;
+    if (targetId !== 'player' && authored?.friends?.[targetId]?.length) return authored.friends[targetId];
+    return state.settings.greetingTemplates;
+  }
+
+  function templateLine(targetName, speakerId, targetId, day) {
+    const values = {
+      targetName: String(targetName || 'friend'),
+      weekDay: String(state.deps?.getWeekDay?.(day) || 'day'),
+      dayPart: String(state.deps?.getDayPart?.() || 'day'),
+    }; // Used here and by diagnostics to resolve every supported greeting placeholder.
+    const source = pick(greetingLinesFor(speakerId, targetId), `${speakerId}:${targetId}:${day}`);
+    const unresolved = [...source.matchAll(/\\{([A-Za-z][A-Za-z0-9_]*)\\}/g)]
+      .map(match => match[1]).filter(key => !(key in values));
+    if (unresolved.length) state.deps?.debugLog?.(`[ambient-dialogue] Unknown placeholder(s) for ${speakerId}: ${[...new Set(unresolved)].join(', ')}`, 'warn');
+    return source.replace(/\\{([A-Za-z][A-Za-z0-9_]*)\\}/g, (token, key) => key in values ? values[key] : token);
+  }
+""",
+              """  function greetingLinesFor(speakerId, targetId) {
+    const authored = state.settings.npcGreetings?.[speakerId];
+    if (targetId === 'player' && authored?.player?.length) return authored.player;
+    if (targetId !== 'player' && authored?.friends?.[targetId]?.length) return authored.friends[targetId];
+    return state.settings.greetingTemplates;
+  }
+
+  const PLAYER_GREETING_NAME_EXCEPTIONS = new Set([
+    'father_hunundi_hodu',
+    'teacup_unumanuk',
+    'spearhead_unumanuk',
+    'jubmir',
+  ]); // Used to preserve familiar/protective forms of address below +1 favor for the four authored exceptions.
+
+  function playerGreetingFavor(walker) {
+    return Number(window.DialogueContent?.getNpcDlgState?.(walker?.rec?.id)?.favor) || 0;
+  }
+
+  function playerGreetingSpeciesId() {
+    return state.dialogueDeps?.getPlayerData?.()?.appearance?.speciesId
+      || state.deps?.getPlayerSpecies?.()
+      || '';
+  }
+
+  function playerGreetingAllowed(walker) {
+    const npcId = walker?.rec?.id;
+    const favor = playerGreetingFavor(walker);
+    if (npcId === 'takua_ao_hakaru') return favor >= 1;
+    if (npcId === 'kinami_kunji' && playerGreetingSpeciesId() !== 'mao-ao') return favor >= 2;
+    return true;
+  }
+
+  function playerGreetingMayUseName(walker) {
+    const npcId = walker?.rec?.id;
+    return PLAYER_GREETING_NAME_EXCEPTIONS.has(npcId) || playerGreetingFavor(walker) >= 1;
+  }
+
+  function omitGreetingTargetName(source) {
+    const stripped = String(source || '')
+      .replace(/,\\s*\\{targetName\\}/g, '')
+      .replace(/\\{targetName\\}/g, '')
+      .replace(/\\s+([,.;:!?])/g, '$1')
+      .replace(/,\\s*([.!?])/g, '$1')
+      .replace(/^\\s*[,.;:!?—–-]+\\s*/, '')
+      .replace(/\\s{2,}/g, ' ')
+      .trim();
+    return stripped || 'Hello!';
+  }
+
+  function templateLine(targetName, speakerId, targetId, day, options = {}) {
+    const values = {
+      targetName: String(targetName || 'friend'),
+      weekDay: String(state.deps?.getWeekDay?.(day) || 'day'),
+      dayPart: String(state.deps?.getDayPart?.() || 'day'),
+    }; // Used here and by diagnostics to resolve every supported greeting placeholder.
+    const pickedSource = pick(greetingLinesFor(speakerId, targetId), `${speakerId}:${targetId}:${day}`);
+    const source = options.omitTargetName ? omitGreetingTargetName(pickedSource) : pickedSource;
+    const unresolved = [...source.matchAll(/\\{([A-Za-z][A-Za-z0-9_]*)\\}/g)]
+      .map(match => match[1]).filter(key => !(key in values));
+    if (unresolved.length) state.deps?.debugLog?.(`[ambient-dialogue] Unknown placeholder(s) for ${speakerId}: ${[...new Set(unresolved)].join(', ')}`, 'warn');
+    return source.replace(/\\{([A-Za-z][A-Za-z0-9_]*)\\}/g, (token, key) => key in values ? values[key] : token);
+  }
+"""
+          )
+
+          replace_once(
+              'docs/js/ambient-dialogue.js',
+              """    const targetId = target.id;
+    const key = greetPairKey(day, speakerId, targetId);
+    if (state.greeted.has(key)) return false;
+    const distance = Math.hypot(walker.root.position.x - target.x, walker.root.position.z - target.z);
+    const proximityKey = `${speakerId}>${targetId}`;
+    if (distance > state.settings.greetingRadiusTiles) {
+""",
+              """    const targetId = target.id;
+    const proximityKey = `${speakerId}>${targetId}`; // Used both for the normal dwell timer and for clearing dwell while a relationship-gated player greeting is unavailable.
+    if (targetId === 'player' && !playerGreetingAllowed(walker)) {
+      state.proximity.delete(proximityKey);
+      return false;
+    }
+    const key = greetPairKey(day, speakerId, targetId);
+    if (state.greeted.has(key)) return false;
+    const distance = Math.hypot(walker.root.position.x - target.x, walker.root.position.z - target.z);
+    if (distance > state.settings.greetingRadiusTiles) {
+"""
+          )
+
+          replace_once(
+              'docs/js/ambient-dialogue.js',
+              """    const targetName = resolveTargetName(walker, target); // Used so {targetName} follows main-dialogue player nicknames or directional NPC family nicknames.
+    const line = override?.text || templateLine(targetName, speakerId, targetId, day);
+""",
+              """    const mayUsePlayerName = targetId !== 'player' || playerGreetingMayUseName(walker); // Used to keep ordinary player names and conditioned NPC-specific nicknames out of sub-+1 greetings except for the four authored exceptions.
+    const targetName = mayUsePlayerName ? resolveTargetName(walker, target) : '';
+    const line = override?.text || templateLine(targetName, speakerId, targetId, day, { omitTargetName: !mayUsePlayerName });
+"""
+          )
+
+          dialogue = Path('docs/js/dialogue-content.js').read_text(encoding='utf-8')
+          ambient = Path('docs/js/ambient-dialogue.js').read_text(encoding='utf-8')
+          required = {
+              'docs/js/dialogue-content.js': ['🩶', "index < 5 ? '💜' : '❤️'", 'Math.floor(clamped + 5)'],
+              'docs/js/ambient-dialogue.js': ["npcId === 'takua_ao_hakaru'", "favor >= 2", "playerGreetingSpeciesId() !== 'mao-ao'", 'PLAYER_GREETING_NAME_EXCEPTIONS', 'omitTargetName: !mayUsePlayerName'],
+          }
+          for path, needles in required.items():
+              text = dialogue if path.endswith('dialogue-content.js') else ambient
+              missing = [needle for needle in needles if needle not in text]
+              if missing:
+                  raise SystemExit(f'{path}: missing expected patched markers: {missing}')
+          PY
+
+      - name: Syntax check patched JavaScript
+        run: |
+          node --check docs/js/dialogue-content.js
+          node --check docs/js/ambient-dialogue.js
+
+      - name: Remove temporary workflow and commit patch
+        shell: bash
+        run: |
+          rm .github/workflows/codex-relationship-heart-greeting-patch.yml
+          git config user.name "OpenAI Codex"
+          git config user.email "codex@openai.com"
+          git add docs/js/dialogue-content.js docs/js/ambient-dialogue.js .github/workflows/codex-relationship-heart-greeting-patch.yml
+          git diff --cached --check
+          git commit -m "Refine relationship hearts and greeting thresholds"
+          git push origin HEAD:codex/relationship-heart-greeting-thresholds
