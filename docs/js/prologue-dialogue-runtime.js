@@ -14,7 +14,7 @@
   let dialogueBridge = null; // Captured from DialogueContent.init so portrait rendering can read our synthetic active walker.
   let chapterPromise = null; // Caches the authored prologue chapter for the session.
   let npcDatabasePromise = null; // Caches the real NPC database used to build scripted actors.
-  let preparePromise = null; // Prevents overlapping async actor setup runs.
+  let preparePromise = null; // Prevents overlapping async actor setup runs; cleared after every resolved attempt so readiness can be retried.
   const actorInstances = new Map(); // npcId -> scripted actor instance used by world rendering and dialogue targeting.
   let session = null; // Active automatic-speaker dialogue sequence.
   let stageReady = false; // True only after all scripted actors and the first dialogue target are ready.
@@ -26,8 +26,7 @@
 
   // This is intentionally a single acquisition. Calling LoadingScreenRuntime.show()
   // repeatedly starts a brand-new loading generation, resets progress, and picks a
-  // new tip. The monitor runs every 80 ms, so the old implementation accidentally
-  // restarted the loader on every retry. active=true now makes retries no-ops.
+  // new tip. The monitor runs every 80 ms, so retries must only preserve visibility.
   const loadingHold = {
     active: false,
     rootObserver: null,
@@ -270,7 +269,7 @@
       path: [],
       currentScheduleTarget: null,
       scriptedPrologueActor: true,
-    }; // Synthetic dialogue-walker contract; deliberately never added to npcWalkers.
+    }; // Synthetic dialogue-walker contract; deliberately never added to normal scheduling.
 
     const instance = { npcId, rec, profile, root, walker, frontCanvas, backCanvas, avatarHeight };
     actorInstances.set(npcId, instance);
@@ -335,8 +334,7 @@
     if (nameEl) nameEl.textContent = rec?.name || line.speakerNpcId;
     if (heartsEl) heartsEl.textContent = window.DialogueContent?.renderRelationshipHearts?.(rec) || '';
     window.DialogueContent?.stopNpcDialogueTypewriter?.(false);
-    // Deliberately set the test line directly instead of starting a typewriter;
-    // no dialogue-letter audio should be emitted while setup is hidden.
+    // Set hidden test copy directly: no typewriter/audio runs before reveal.
     if (textEl) textEl.textContent = String(line.text || '...');
     cameraDeps?.setCameraMode?.(dialogueCameraMode());
     cameraDeps?.setCameraTarget?.(root);
@@ -379,7 +377,12 @@
     if (currentArea() !== RESCUE_MAP_ID || !rescuePrologueActive()) return false;
     beginActorLoadingHold();
 
-    preparePromise = (async () => {
+    // Do not clear preparePromise inside the RHS async IIFE: when the no-await
+    // dependency-wait path returns immediately, that cleanup runs before the
+    // assignment itself completes and the resolved-false Promise gets written
+    // back into preparePromise forever. Keep one explicit run and clear it only
+    // after the caller has awaited that exact run.
+    const run = (async () => {
       try {
         if (!cameraDeps || !dialogueBridge || !window.DialogueContent) {
           lastStatus = 'waiting-dialogue-camera-deps';
@@ -429,11 +432,15 @@
         lastStatus = `setup-error:${lastError}`;
         debugLog(`rescue actor/dialogue setup failed: ${lastError}`, 'error');
         return false;
-      } finally {
-        preparePromise = null;
       }
     })();
-    return preparePromise;
+
+    preparePromise = run;
+    try {
+      return await run;
+    } finally {
+      if (preparePromise === run) preparePromise = null;
+    }
   }
 
   async function monitor() {
