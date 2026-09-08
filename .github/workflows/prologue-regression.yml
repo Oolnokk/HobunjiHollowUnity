@@ -19,6 +19,7 @@ on:
       - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
       - 'scripts/test-prologue-dialogue-runtime.js'
+      - 'scripts/test-prologue-dialogue-late-bridge.js'
       - 'scripts/test-prologue-dialogue-presentation-bridge.js'
       - 'scripts/test-prologue-loader-ownership.js'
       - '.github/workflows/prologue-regression.yml'
@@ -40,6 +41,7 @@ on:
       - 'scripts/test-prologue-safe-area-runtime.js'
       - 'scripts/test-prologue-startup-entry.js'
       - 'scripts/test-prologue-dialogue-runtime.js'
+      - 'scripts/test-prologue-dialogue-late-bridge.js'
       - 'scripts/test-prologue-dialogue-presentation-bridge.js'
       - 'scripts/test-prologue-loader-ownership.js'
       - '.github/workflows/prologue-regression.yml'
@@ -72,5 +74,6 @@ jobs:
           node scripts/test-prologue-safe-area-runtime.js
           node scripts/test-prologue-startup-entry.js
           node scripts/test-prologue-dialogue-runtime.js
+          node scripts/test-prologue-dialogue-late-bridge.js
           node scripts/test-prologue-dialogue-presentation-bridge.js
           node scripts/test-prologue-loader-ownership.js
