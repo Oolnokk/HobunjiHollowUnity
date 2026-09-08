@@ -109,6 +109,8 @@ assert.strictEqual(backdrop.material.type, 'MeshBasicMaterial', 'void must use a
 assert.strictEqual(backdrop.material.color.value, 0x000000, 'void must be pure black, not brown');
 assert.strictEqual(backdrop.material.fog, false, 'fog must not tint the black void');
 assert.strictEqual(backdrop.material.toneMapped, false, 'tone mapping must not alter the black void');
+assert.strictEqual(backdrop.material.depthWrite, false, 'void must not write depth over real interior geometry');
+assert.strictEqual(backdrop.renderOrder, -10000, 'void must render behind the interior');
 assert.strictEqual(backdrop.userData.unlitBlack, true);
 assert.strictEqual(backdrop.raycast(), undefined, 'void backdrop must be ignored by interaction rays');
 
