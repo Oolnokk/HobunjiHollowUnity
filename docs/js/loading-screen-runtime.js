@@ -39,6 +39,7 @@
     configPromise: null,
     compendiumPromise: null,
     fontsPromise: null,
+    tankanFontSettled: false, // Used to keep Tankan-script glyphs hidden until their font load attempt settles, preventing a fallback-font flash.
     lastEntryId: null,
     lastTipKey: null,
     visible: false,
@@ -72,13 +73,29 @@
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const nowMs = () => (window.performance?.now?.() ?? Date.now());
 
+  function revealTankanScript() {
+    state.tankanFontSettled = true;
+    state.els?.root.classList.add('tankan-font-settled');
+  }
+
   function ensureFontsLoaded() {
     if (state.fontsPromise) return state.fontsPromise;
-    if (typeof FontFace !== 'function' || !document.fonts) return Promise.resolve(false);
-    state.fontsPromise = Promise.all([
-      new FontFace('KhymeryyanRoman', `url('${LORE_FONT_URL}')`).load().then(font => document.fonts.add(font)).catch(() => {}),
-      new FontFace('TankanScript', `url('${TANKAN_FONT_URL}')`).load().then(font => document.fonts.add(font)).catch(() => {}),
-    ]).then(() => true);
+    if (typeof FontFace !== 'function' || !document.fonts) {
+      revealTankanScript();
+      return Promise.resolve(false);
+    }
+    const loreFontPromise = new FontFace('KhymeryyanRoman', `url('${LORE_FONT_URL}')`).load()
+      .then(font => { document.fonts.add(font); return true; })
+      .catch(() => false); // Used by show() to keep its existing wait for the lore font without blocking Tankan-script reveal on it.
+    const tankanFontPromise = new FontFace('TankanScript', `url('${TANKAN_FONT_URL}')`).load()
+      .then(font => { document.fonts.add(font); return true; })
+      .catch(() => false)
+      .then(loaded => {
+        revealTankanScript();
+        return loaded;
+      }); // Used to reveal the vertical script only after TankanScript is either loaded or has definitively failed.
+    state.fontsPromise = Promise.all([loreFontPromise, tankanFontPromise])
+      .then(results => results.every(Boolean));
     return state.fontsPromise;
   }
 
@@ -122,7 +139,8 @@
 #hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden;pointer-events:none}
 #hobunjiLoadScreen.visible{display:block}
 #hlsImage{position:absolute;left:50%;top:48%;width:auto;height:auto;max-width:78vw;max-height:70vh;object-fit:contain;transform-origin:center center;will-change:transform}
-#hlsScriptViewport{position:absolute;top:46%;width:min(42vw,540px);height:min(72vh,880px);overflow:hidden;transform:translate(-50%,-50%)}
+#hlsScriptViewport{position:absolute;top:46%;width:min(42vw,540px);height:min(72vh,880px);overflow:hidden;transform:translate(-50%,-50%);visibility:hidden}
+#hobunjiLoadScreen.tankan-font-settled #hlsScriptViewport{visibility:visible}
 #hlsScriptFloat{position:absolute;left:50%;top:0;will-change:transform}
 #hlsScriptWords{display:flex;flex-direction:row;align-items:flex-start;justify-content:center;gap:0;width:max-content;--script-column-spacing:0em}
 .hlsVerticalWord + .hlsVerticalWord{margin-left:var(--script-column-spacing)}
@@ -156,6 +174,7 @@
 <div id="hlsPercent"></div>
 <div id="hlsDebug"></div>
 `;
+    if (state.tankanFontSettled) root.classList.add('tankan-font-settled');
     document.body.appendChild(root);
 
     state.els = {
@@ -197,6 +216,7 @@
       `reason=${state.reason} area=${area ?? 'unknown'}`,
       `progress=${Math.round(state.progress)} source=${state.progressSource}`,
       `requests=${state.requestCompleted}/${state.requestStarted}`,
+      `tankanFont=${state.tankanFontSettled ? 'settled' : 'waiting'}`,
       `visibleFor=${Math.round(state.visible ? nowMs() - state.visibleSince : 0)}ms min=${MIN_VISIBLE_MS}ms`,
       `tipRotation=${TIP_ROTATE_MS}ms active=${!!state.tipTimer}`,
       `transitionHook=${state.transitionHookInstalled} dependencyInitHooks=${state.dependencyInitHooks}`,
@@ -710,6 +730,7 @@
       progressSource: state.progressSource,
       requestStarted: state.requestStarted,
       requestCompleted: state.requestCompleted,
+      tankanFontSettled: state.tankanFontSettled,
       area: safeCurrentArea(),
       activeTipTitle: state.activeTipTitle,
       activeTip: state.activeTip,
