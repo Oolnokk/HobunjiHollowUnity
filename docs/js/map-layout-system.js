@@ -16,6 +16,164 @@
   // only by explicit id (editor preview, or a future scripted/flag trigger).
 
   const _flags = new Map(); // session-only world-state flags a quest/event script can set to gate a layout — see setFlag/getFlag.
+  const CIVIL_DAY_ROLLOVER_HOUR = 0; // Player-facing date/weekday rollover; the raw simulation day still performs its morning maintenance at 06:00.
+  const RAW_DAY_ROLLOVER_HOUR = 6; // Existing morning-to-morning simulation boundary used only to interpret the raw calendar.day counter before 06:00.
+
+  // The full-day clock intentionally keeps calendar.day as a 06:00→06:00 raw
+  // simulation counter so crops/weather/livestock can retain their established
+  // morning maintenance tick. Civil dates are different: midnight belongs to
+  // the next named weekday/date. CalendarSystem historically exposed the raw
+  // counter directly, so 00:00–05:59 still displayed yesterday and every
+  // weekday-authored midnight schedule fired one named day late. Install a
+  // narrow public-calendar bridge here (this module loads immediately after
+  // calendar-system.js) so all public date/weekday queries use the civil day
+  // while explicit raw-day arguments keep their old deterministic meaning.
+  function installCivilMidnightCalendarBridge() {
+    const CS = window.CalendarSystem;
+    if (!CS || CS.__civilMidnightBridgeInstalled) return false;
+
+    const originalInit = CS.init;
+    const originals = {
+      dayOfYear: CS.dayOfYear,
+      yearNumber: CS.yearNumber,
+      aotYearNumber: CS.aotYearNumber,
+      weekOfYear: CS.weekOfYear,
+      monthIndex: CS.monthIndex,
+      monthNumber: CS.monthNumber,
+      monthName: CS.monthName,
+      dayOfMonth: CS.dayOfMonth,
+      weekOfSeason: CS.weekOfSeason,
+      weekdayIndexForCalendarDay: CS.weekdayIndexForCalendarDay,
+      weekdayNameForDay: CS.weekdayNameForDay,
+      currentWeekdayIndex: CS.currentWeekdayIndex,
+      currentWeekdayName: CS.currentWeekdayName,
+      formatCalendarDate: CS.formatCalendarDate,
+      formatCalendarDateFull: CS.formatCalendarDateFull,
+      formatCalendarDateTimeFull: CS.formatCalendarDateTimeFull,
+      isCivilYearStart: CS.isCivilYearStart,
+      renderCalendarPanel: CS.renderCalendarPanel,
+      timeDebugSnapshot: CS.timeDebugSnapshot,
+    };
+    let calendar = null; // Captured from CalendarSystem.init; raw morning-to-morning counter used to derive the civil date.
+    let calendarUi = null; // Captured Calendar tab elements used to correct its internally-rendered raw-day highlight before 06:00.
+
+    function representedHour(time01 = calendar?.time01) {
+      const hour = Number(CS.getHour?.(time01));
+      if (!Number.isFinite(hour)) return RAW_DAY_ROLLOVER_HOUR;
+      return ((hour % 24) + 24) % 24;
+    }
+
+    function civilDayFor(rawDay = calendar?.day, time01 = calendar?.time01) {
+      const day = Number(rawDay);
+      if (!Number.isFinite(day)) return rawDay;
+      const hour = representedHour(time01);
+      return day + (hour >= CIVIL_DAY_ROLLOVER_HOUR && hour < RAW_DAY_ROLLOVER_HOUR ? 1 : 0);
+    }
+
+    function wrapDefaultDay(name) {
+      const original = originals[name];
+      if (typeof original !== 'function') return;
+      CS[name] = function (day) {
+        if (arguments.length) return original.call(this, day);
+        return original.call(this, civilDayFor());
+      };
+    }
+
+    for (const name of [
+      'dayOfYear', 'yearNumber', 'aotYearNumber', 'weekOfYear',
+      'monthIndex', 'monthNumber', 'monthName', 'dayOfMonth',
+      'weekOfSeason', 'isCivilYearStart',
+    ]) wrapDefaultDay(name);
+
+    CS.currentWeekdayIndex = function () {
+      return originals.weekdayIndexForCalendarDay.call(this, civilDayFor());
+    };
+    CS.currentWeekdayName = function () {
+      return originals.weekdayNameForDay.call(this, civilDayFor());
+    };
+    CS.formatCalendarDate = function (day) {
+      if (arguments.length) return originals.formatCalendarDate.call(this, day);
+      return originals.formatCalendarDate.call(this, civilDayFor());
+    };
+    CS.formatCalendarDateFull = function (day) {
+      if (arguments.length) return originals.formatCalendarDateFull.call(this, day);
+      return originals.formatCalendarDateFull.call(this, civilDayFor());
+    };
+    CS.formatCalendarDateTimeFull = function (day, time01) {
+      if (!calendar) return originals.formatCalendarDateTimeFull.apply(this, arguments);
+      if (arguments.length === 0) {
+        return originals.formatCalendarDateTimeFull.call(this, civilDayFor(), calendar.time01);
+      }
+      if (arguments.length >= 2) {
+        return originals.formatCalendarDateTimeFull.call(this, civilDayFor(day, time01), time01);
+      }
+      return originals.formatCalendarDateTimeFull.call(this, day);
+    };
+
+    function repairCalendarPanelCivilToday() {
+      if (!calendar || !calendarUi) return;
+      const civilDay = civilDayFor();
+      if (!Number.isFinite(civilDay) || civilDay === calendar.day) return;
+
+      // renderCalendarPanel's private view state starts on raw calendar.day.
+      // Midnight can only move the civil date forward one day, so the only
+      // possible month mismatch is the final raw day of a month/year.
+      const rawMonth = originals.monthIndex.call(CS, calendar.day);
+      const civilMonth = originals.monthIndex.call(CS, civilDay);
+      const rawYear = originals.aotYearNumber.call(CS, calendar.day);
+      const civilYear = originals.aotYearNumber.call(CS, civilDay);
+      if ((civilMonth !== rawMonth || civilYear !== rawYear) && calendarUi.calNextMonth?.click) {
+        calendarUi.calNextMonth.click();
+      }
+
+      if (calendarUi.calToday) calendarUi.calToday.textContent = CS.formatCalendarDateTimeFull();
+      const dayNumber = String(originals.dayOfMonth.call(CS, civilDay));
+      const weekday = originals.weekdayNameForDay.call(CS, civilDay);
+      const buttons = calendarUi.calWeeks?.querySelectorAll?.('.cal-day-btn') || [];
+      for (const button of buttons) {
+        button.classList.remove('today');
+        const spans = button.querySelectorAll?.('span') || [];
+        const weekdayText = spans[0]?.textContent || '';
+        const dayText = button.querySelector?.('.cal-day-num')?.textContent || '';
+        if (weekdayText === weekday && dayText === dayNumber) button.classList.add('today');
+      }
+    }
+
+    CS.renderCalendarPanel = function (...args) {
+      const result = originals.renderCalendarPanel.apply(this, args);
+      repairCalendarPanelCivilToday();
+      return result;
+    };
+
+    CS.timeDebugSnapshot = function (...args) {
+      const snapshot = originals.timeDebugSnapshot.apply(this, args) || {};
+      return {
+        ...snapshot,
+        civilMidnightRollover: true,
+        civilDay: civilDayFor(),
+        rawDayRolloverHour: RAW_DAY_ROLLOVER_HOUR,
+        civilDayRolloverHour: CIVIL_DAY_ROLLOVER_HOUR,
+        representedWeekday: CS.currentWeekdayName(),
+        representedDate: CS.formatCalendarDate(),
+      };
+    };
+
+    CS.init = function (injectedDeps) {
+      calendar = injectedDeps?.calendar || null;
+      calendarUi = {
+        calToday: injectedDeps?.calToday || null,
+        calNextMonth: injectedDeps?.calNextMonth || null,
+        calWeeks: injectedDeps?.calWeeks || null,
+      };
+      return originalInit.call(this, injectedDeps);
+    };
+
+    CS.__civilMidnightBridgeInstalled = true;
+    CS.civilDayForRawDay = civilDayFor;
+    return true;
+  }
+
+  installCivilMidnightCalendarBridge();
 
   function parseTimeMinutes(t) {
     const m = String(t ?? '').match(/^(\d{1,2}):(\d{2})$/);
