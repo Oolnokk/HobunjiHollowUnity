@@ -111,6 +111,8 @@ assert.equal(rescueLayout.prologueRescue.walkableRect.c, 5);
 assert.equal(rescueLayout.prologueRescue.walkableRect.r, 5);
 assert.equal(rescueLayout.prologueRescue.walkableRect.w, 15);
 assert.equal(rescueLayout.prologueRescue.walkableRect.h, 15);
+assert.equal(rescueLayout.prologueRescue.scriptedPrologueArea, true, 'authored rescue layout must explicitly identify itself as a scripted prologue set');
+assert.equal(rescueLayout.prologueRescue.suppressProceduralPopulation, true, 'authored rescue layout must explicitly suppress ordinary wilderness population');
 
 const rescueZone = exteriorZones.map_prologue_rescue; // Session-only zone profile produced after the safe ordering barrier.
 assert.ok(rescueZone, 'rescue must be present in the live EXTERIOR_ZONES registry');
@@ -121,18 +123,24 @@ assert.equal(rescueZone.entryRow, 12);
 assert.equal(rescueZone.fogDensity, exteriorZones.map_southern_cloud_forest.fogDensity, 'Cloud Forest biome profile must be inherited');
 assert.equal(Array.isArray(rescueZone.packSpecies) && rescueZone.packSpecies.length === 0, true, 'prologue clearing must not inherit ordinary Cloud Forest pack spawns');
 assert.equal(Array.isArray(rescueZone.herbivoreSpecies) && rescueZone.herbivoreSpecies.length === 0, true, 'prologue clearing must not inherit ordinary Cloud Forest herbivore spawns');
+assert.equal(rescueZone.scriptedPrologueArea, true, 'live zone profile must stay identifiable as a scripted area');
+assert.equal(rescueZone.suppressProceduralPopulation, true, 'live zone profile must suppress procedural population');
+assert.equal(rescueZone.suppressBanditCamps, true, 'live zone profile must explicitly suppress bandit camps');
 const snapshot = windowObject.PrologueRescueZoneCompat.debugSnapshot(); // Used to confirm mobile diagnostics expose the enlarged layout state.
 assert.equal(snapshot.authoredLayoutPresent, true);
 assert.equal(snapshot.authoredLayoutSize, '25x25');
 assert.equal(snapshot.authoredTileCount, 625);
 assert.equal(snapshot.layoutNormalized, true);
 assert.equal(snapshot.rescueZoneRegistered, true);
+assert.equal(snapshot.suppressProceduralPopulation, true);
 
 const mapLoaderIndex = loaderSource.indexOf('prologue-rescue-map-runtime.js'); // Must inject the authored map before compatibility classification is even possible.
 const compatLoaderIndex = loaderSource.indexOf('prologue-rescue-zone-compat.js'); // Must capture GridTileAccessors before game.js initializes it.
+const safeAreaLoaderIndex = loaderSource.indexOf('prologue-safe-area-runtime.js'); // Must install hostile suppression before normal gameplay systems can populate the new zone.
 const controllerLoaderIndex = loaderSource.indexOf('prologue-system.js'); // Normal prologue controller should run only after transport compatibility is installed.
 const backstopLoaderIndex = loaderSource.indexOf('prologue-startup-entry-bridge.js'); // Retry backstop also consumes the now-valid normal zone path.
 assert.ok(mapLoaderIndex >= 0 && compatLoaderIndex > mapLoaderIndex, 'rescue map adapter must load before rescue zone compatibility');
+assert.ok(safeAreaLoaderIndex > compatLoaderIndex && safeAreaLoaderIndex < controllerLoaderIndex, 'safe-area suppression must install after rescue classification adapter but before prologue transport');
 assert.ok(controllerLoaderIndex > compatLoaderIndex, 'rescue zone compatibility must load before PrologueSystem');
 assert.ok(backstopLoaderIndex > controllerLoaderIndex, 'startup retry bridge must remain after the normal prologue controller');
 
