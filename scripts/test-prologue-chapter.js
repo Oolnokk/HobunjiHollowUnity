@@ -59,7 +59,8 @@ assert.equal(rescueIndexEntry.category, 'exterior');
 
 // Runtime registration/environment contract: append the indexed map to the
 // workspace, reuse Cloud Forest environment systems, and keep ONE authoritative
-// loading hold until map + scripted dialogue are both ready.
+// loading hold until map + scripted NPC WORLD ACTORS are ready. Dialogue/camera
+// readiness is explicitly post-reveal and cannot pin the loading screen.
 assert.match(rescueRuntimeSource, /augmentTownWorkspace/, 'rescue runtime injects the private authored exterior into the normal workspace load');
 assert.match(rescueRuntimeSource, /LocalDBOverrides/, 'workspace injection composes with repo/local database source selection');
 assert.match(rescueRuntimeSource, /CloudForestFog/, 'rescue map extends the existing Cloud Forest fog predicate');
@@ -67,10 +68,11 @@ assert.match(rescueRuntimeSource, /buildShadewoodMesh/, 'outer boundary reuses t
 assert.match(rescueRuntimeSource, /RESCUE_FOG_DENSITY\s*=\s*0\.055/, 'rescue scene uses Southern Cloud Forest fog density');
 assert.match(rescueRuntimeSource, /LoadingScreenRuntime\?\.show/, 'prologue can start the existing loading screen instead of a fake cover');
 assert.match(rescueRuntimeSource, /MutationObserver/, 'authoritative loader hold intercepts premature hide attempts');
-assert.match(rescueRuntimeSource, /requestAnimationFrame\(\(\) => requestAnimationFrame/, 'loader release waits two rendered frames after combined readiness');
+assert.match(rescueRuntimeSource, /requestAnimationFrame\(\(\) => requestAnimationFrame/, 'loader release waits two rendered frames after map+actor readiness');
 assert.match(rescueRuntimeSource, /const cols = Number\(access\.getActiveCols\?\.\(\)\) \|\| grid\[0\]\?\.length \|\| 0/, 'loader size validation falls back to the actual rendered grid if dimension accessors are late');
 assert.match(rescueRuntimeSource, /if \(cols !== RESCUE_COLS \|\| rows !== RESCUE_ROWS\) return false;/, 'loader release still requires the authored 25x25 map, not merely currentArea');
-assert.match(rescueRuntimeSource, /PrologueDialogueRuntime\?\.isRescueStageReady/, 'rescue reveal also requires scripted actors/dialogue readiness');
+assert.match(rescueRuntimeSource, /PrologueDialogueRuntime\?\.isRescueActorsReady/, 'rescue reveal requires scripted NPC world actors to be staged');
+assert.match(rescueRuntimeSource, /return rescueMapReady\(\) && rescueActorsReady\(\)/, 'dialogue/camera readiness is not part of the loader release gate');
 assert.match(rescueRuntimeSource, /RESCUE_CENTER_ROW/, 'loader readiness probes the enlarged clearing center rather than an old 10x10 coordinate');
 assert(!rescueRuntimeSource.includes('location.reload'), 'rescue map/loading adapter never reloads the page');
 
