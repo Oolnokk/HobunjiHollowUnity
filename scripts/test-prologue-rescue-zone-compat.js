@@ -84,8 +84,8 @@ assert.equal(rescueZone.rows, 10);
 assert.equal(rescueZone.entryCol, 4);
 assert.equal(rescueZone.entryRow, 4);
 assert.equal(rescueZone.fogDensity, exteriorZones.map_southern_cloud_forest.fogDensity, 'Cloud Forest biome profile must be inherited');
-assert.deepEqual(rescueZone.packSpecies, [], 'prologue clearing must not inherit ordinary Cloud Forest pack spawns');
-assert.deepEqual(rescueZone.herbivoreSpecies, [], 'prologue clearing must not inherit ordinary Cloud Forest herbivore spawns');
+assert.equal(Array.isArray(rescueZone.packSpecies) && rescueZone.packSpecies.length === 0, true, 'prologue clearing must not inherit ordinary Cloud Forest pack spawns');
+assert.equal(Array.isArray(rescueZone.herbivoreSpecies) && rescueZone.herbivoreSpecies.length === 0, true, 'prologue clearing must not inherit ordinary Cloud Forest herbivore spawns');
 assert.equal(windowObject.PrologueRescueZoneCompat.debugSnapshot().authoredLayoutPresent, true);
 assert.equal(windowObject.PrologueRescueZoneCompat.debugSnapshot().rescueZoneRegistered, true);
 
