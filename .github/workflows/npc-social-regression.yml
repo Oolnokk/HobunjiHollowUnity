@@ -17,6 +17,7 @@ on:
       - 'docs/js/furniture-vessel-runtime.js'
       - 'docs/js/interior-fire-floor-runtime.js'
       - 'docs/js/interior-fire-floor-integration.js'
+      - 'docs/js/interior-environment-runtime.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
@@ -54,6 +55,7 @@ on:
       - 'docs/js/furniture-vessel-runtime.js'
       - 'docs/js/interior-fire-floor-runtime.js'
       - 'docs/js/interior-fire-floor-integration.js'
+      - 'docs/js/interior-environment-runtime.js'
       - 'docs/js/dialogue-content.js'
       - 'docs/js/relationships-panel.js'
       - 'docs/js/generic-hud-icons.js'
@@ -103,6 +105,7 @@ jobs:
           node --check docs/js/furniture-vessel-runtime.js
           node --check docs/js/interior-fire-floor-runtime.js
           node --check docs/js/interior-fire-floor-integration.js
+          node --check docs/js/interior-environment-runtime.js
           node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/dialogue-content.js
           node --check docs/js/relationships-panel.js
@@ -127,7 +130,7 @@ jobs:
         run: node scripts/test-dance-rapport-rate.js
       - name: Test generic HUD icon replacement and rapport popup integration
         run: node scripts/test-generic-hud-icons.js
-      - name: Test interior fire, floor, updated church, and civil midnight integration
+      - name: Test interior fire, floor, environment, updated church, and civil midnight integration
         run: node scripts/test-interior-fire-floor.js
       - name: Test balanced multi-trait NPC gifting
         run: node scripts/test-npc-gifting-multitrait.js
