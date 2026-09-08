@@ -8,16 +8,19 @@
   // map-file layouts for EXTERIOR_ZONES ids because the permanent wilderness
   // zones are procedurally generated. Therefore this adapter waits until the
   // authored rescue layout is already present in the private _zoneLayouts Map,
+  // expands its compact 25x25 rescue descriptor into the complete tile layout,
   // then adds a session-only EXTERIOR_ZONES profile cloned from the Southern
   // Cloud Forest. The existing normal enterZone/buildZoneScene path can then
-  // consume the authored 10x10 layout without ever regenerating or skipping it.
+  // consume the authored rescue layout without ever regenerating or skipping it.
 
   const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used as the authored map that becomes a session-only zone after its layout loads.
   const CLOUD_FOREST_MAP_ID = 'map_southern_cloud_forest'; // Used as the biome/runtime profile cloned for the rescue clearing.
-  const RESCUE_COLS = 10; // Used to override the cloned wilderness dimensions with the authored clearing width.
-  const RESCUE_ROWS = 10; // Used to override the cloned wilderness dimensions with the authored clearing height.
-  const RESCUE_ENTRY_COL = 4; // Used as the normal zone-entry column inside the central walkable clearing.
-  const RESCUE_ENTRY_ROW = 4; // Used as the normal zone-entry row inside the central walkable clearing.
+  const RESCUE_COLS = 25; // Used to override the cloned wilderness dimensions with the enlarged authored clearing width.
+  const RESCUE_ROWS = 25; // Used to override the cloned wilderness dimensions with the enlarged authored clearing height.
+  const RESCUE_ENTRY_COL = 12; // Used as the normal zone-entry column near the center of the enlarged walkable clearing.
+  const RESCUE_ENTRY_ROW = 12; // Used as the normal zone-entry row near the center of the enlarged walkable clearing.
+  const RESCUE_WALKABLE_START = 5; // Used as the first grass column/row after the proportionally enlarged vegetation frame.
+  const RESCUE_WALKABLE_SIZE = 15; // Used to scale the former 6x6 walkable center by 2.5x in each dimension.
   const RETRY_MS = 80; // Used to wait for _loadTownFromWorkspace to finish loading the authored map before classification.
   const LOG_EVERY_ATTEMPTS = 25; // Used to rate-limit mobile-visible diagnostics while waiting on startup dependencies.
   const SAVE_META_KEY = 'hobunjiSaveMeta'; // Used to distinguish an owner rescue from ordinary worlds before polling.
@@ -27,6 +30,7 @@
   let retryTimer = 0; // Holds the single outstanding readiness poll so repeated lifecycle events cannot stack timers.
   let attempts = 0; // Counts readiness checks for mobile diagnostics and regression visibility.
   let registered = false; // Records whether the rescue id has been added to the live EXTERIOR_ZONES object.
+  let layoutNormalized = false; // Records whether the compact authored descriptor has been expanded into the full 25x25 tile array.
   let lastStatus = 'waiting-grid-init'; // Exposes the most recent registration gate through debugSnapshot/debugText.
   let lastLoggedAttempt = 0; // Rate-limits repeated startup wait messages in the existing mobile-visible game log.
 
@@ -61,9 +65,49 @@
     return gridDeps?.EXTERIOR_ZONES || null; // This is the same mutable object referenced by game.js's _isZoneArea/enterZone helpers.
   }
 
+  function authoredLayout() {
+    return gridDeps?._zoneLayouts?.get?.(RESCUE_MAP_ID) || null; // Returns the exact private layout object that buildZoneScene will later consume.
+  }
+
   function authoredLayoutPresent() {
-    const layouts = gridDeps?._zoneLayouts; // This private Map is authoritative proof _loadTownFromWorkspace did not skip the rescue file.
-    return !!layouts?.has?.(RESCUE_MAP_ID);
+    return !!authoredLayout();
+  }
+
+  function buildRescueTiles() {
+    const tiles = []; // Used as the complete row-major tile array assigned to the authored rescue layout before zone registration.
+    const walkableEnd = RESCUE_WALKABLE_START + RESCUE_WALKABLE_SIZE - 1; // Used as the inclusive far edge of the 15x15 grass clearing.
+    for (let row = 0; row < RESCUE_ROWS; row++) {
+      for (let col = 0; col < RESCUE_COLS; col++) {
+        const inWalkable = col >= RESCUE_WALKABLE_START && col <= walkableEnd && row >= RESCUE_WALKABLE_START && row <= walkableEnd; // Selects the proportionally enlarged clear center.
+        if (inWalkable) {
+          tiles.push({ c: col, r: row, type: 'grass', crop: '' });
+          continue;
+        }
+        const outermost = col === 0 || row === 0 || col === RESCUE_COLS - 1 || row === RESCUE_ROWS - 1; // Keeps generated Shadewood anchors on the absolute map perimeter.
+        tiles.push({ c: col, r: row, type: 'shrub', crop: '', floraKind: outermost ? 'copse' : 'bush' });
+      }
+    }
+    return tiles;
+  }
+
+  function normalizeAuthoredLayout() {
+    if (layoutNormalized) return true;
+    const layout = authoredLayout(); // Used as the already-loaded map descriptor being expanded before _isZoneArea can become true.
+    if (!layout) return false;
+    layout.cols = RESCUE_COLS;
+    layout.rows = RESCUE_ROWS;
+    layout.tiles = buildRescueTiles();
+    layout.prologueRescue = {
+      ...(layout.prologueRescue || {}),
+      walkableRect: { c: RESCUE_WALKABLE_START, r: RESCUE_WALKABLE_START, w: RESCUE_WALKABLE_SIZE, h: RESCUE_WALKABLE_SIZE },
+      boundaryTreeRing: { inset: 0, species: 'shadewood' },
+      underbrushRing: { inset: 1, depth: RESCUE_WALKABLE_START - 1 },
+      fogProfile: 'southern_cloud_forest',
+      noNaturalExits: true,
+    };
+    layoutNormalized = layout.tiles.length === RESCUE_COLS * RESCUE_ROWS;
+    if (layoutNormalized) debugLog(`expanded authored rescue layout to ${RESCUE_COLS}x${RESCUE_ROWS} with a ${RESCUE_WALKABLE_SIZE}x${RESCUE_WALKABLE_SIZE} walkable center`);
+    return layoutNormalized;
   }
 
   function clearRetry() {
@@ -120,6 +164,7 @@
     }
     if (!gridDeps) return wait('waiting-grid-init');
     if (!authoredLayoutPresent()) return wait('waiting-authored-layout');
+    if (!normalizeAuthoredLayout()) return wait('waiting-layout-expansion');
 
     const registry = liveZoneRegistry(); // Used only after the authored layout exists so workspace loading cannot mistake it for a generated zone.
     if (!registry) return wait('waiting-zone-registry');
@@ -193,16 +238,21 @@
     attempts = 0;
     lastLoggedAttempt = 0;
     registered = !!liveZoneRegistry()?.[RESCUE_MAP_ID];
+    layoutNormalized = false;
     lastStatus = registered ? 'ready-existing-registration' : 'player-ready';
     if (profileNeedsRescue()) scheduleRetry(0);
   }
 
   function debugSnapshot() {
     const registry = liveZoneRegistry(); // Used to expose classification state without devtools on mobile.
+    const layout = authoredLayout(); // Used to expose the actual expanded layout dimensions on mobile.
     return {
       profileNeedsRescue: profileNeedsRescue(),
       gridDepsReady: !!gridDeps,
-      authoredLayoutPresent: authoredLayoutPresent(),
+      authoredLayoutPresent: !!layout,
+      authoredLayoutSize: layout ? `${layout.cols}x${layout.rows}` : null,
+      authoredTileCount: Array.isArray(layout?.tiles) ? layout.tiles.length : null,
+      layoutNormalized,
       rescueZoneRegistered: !!registry?.[RESCUE_MAP_ID],
       cloudForestProfilePresent: !!registry?.[CLOUD_FOREST_MAP_ID],
       registered,
