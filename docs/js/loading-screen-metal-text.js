@@ -25,13 +25,13 @@
         --hls-bronze-stroke:${CATEGORY_STROKE};
         --hls-metal-ramp:linear-gradient(
           180deg,
-          #A86432 0%,
-          #D0823E 20%,
-          #F4C379 41%,
-          #FFE7B3 48%,
-          #D98B46 57%,
-          #F0B66A 72%,
-          #AD6B36 100%
+          #C27A42 0%,
+          #E39A51 20%,
+          #F8D493 41%,
+          #FFF1CE 48%,
+          #E7A35F 57%,
+          #F6C77F 72%,
+          #C98248 100%
         );
       }
 
@@ -51,10 +51,10 @@
         -webkit-text-stroke:1px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
-        filter:drop-shadow(0 0 6px rgba(240,182,106,.42));
+        filter:drop-shadow(0 0 7px rgba(246,199,127,.52));
       }
 
-      /* TankanScript stays as the live font with the same brightened metallic
+      /* TankanScript stays as the live font with the same brighter metallic
          ramp. Its much larger glyphs keep the full 3px category-style outline. */
       #hobunjiLoadScreen .hlsVerticalWord {
         color:var(--hls-bronze-metal) !important;
@@ -65,7 +65,7 @@
         -webkit-text-stroke:3px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
-        filter:drop-shadow(0 0 6px rgba(240,182,106,.42));
+        filter:drop-shadow(0 0 7px rgba(246,199,127,.52));
       }
 
       /* Explicitly suppress any stale overlay nodes left by a hot reload or an
