@@ -3,34 +3,40 @@
 
   // Scripted gameplay-cutscene dialogue for the prologue rescue stage.
   //
-  // Loader ownership deliberately lives in PrologueRescueMapRuntime. This
-  // module only constructs scripted actors, primes the ordinary gameplay
-  // dialogue surface, and reports readiness. Keeping DOM loader ownership in
-  // one module prevents competing MutationObservers from pinning the overlay.
+  // IMPORTANT: loading-screen ownership lives exclusively in
+  // PrologueRescueMapRuntime. This module has two deliberately separate jobs:
+  // 1) build/stage the real NPC world actors while the rescue map is covered;
+  // 2) start the automatic-speaker gameplay dialogue only after reveal.
+  //
+  // Actor readiness is therefore allowed to release the map loader even when
+  // the gameplay camera/dialogue bridge is late or unavailable. A dialogue
+  // dependency can never strand the game behind a 100% loading screen again.
   const RESCUE_MAP_ID = 'map_prologue_rescue'; // First prologue stage.
   const CHAPTER_URL = './config/cutscenes/prologue-chapter.json'; // Authored actors/line order.
   const NPC_DATABASE_URL = './config/npcs/hobunji-starter-npc-database.json'; // Fallback NPC data source.
   const SAVE_META_KEY = 'hobunjiSaveMeta'; // Early owner/stage detection.
-  const MONITOR_MS = 80; // Retries setup as normal game dependencies initialize.
+  const MONITOR_MS = 80; // Retries actor/dialogue setup as normal game dependencies initialize.
   const ACTOR_LOG_EVERY = 25; // Rate-limits mobile-visible waiting logs.
 
-  let cameraDeps = null; // Captured from FarmAnimals.init for camera mode/target controls.
-  let dialogueBridge = null; // Captured from DialogueContent.init for active-walker integration.
+  let cameraDeps = null; // Used only by post-reveal dialogue targeting/camera changes.
+  let dialogueBridge = null; // Used only by post-reveal active-walker integration.
   let chapterPromise = null; // Session cache for prologue chapter JSON.
   let npcDatabasePromise = null; // Session cache for NPC database.
-  let preparePromise = null; // Prevents overlapping actor-build attempts.
+  let actorPreparePromise = null; // Prevents overlapping world-actor construction attempts.
+  let dialoguePreparePromise = null; // Prevents overlapping post-reveal dialogue-open attempts.
   const actorInstances = new Map(); // npcId -> prologue-owned scripted actor.
   let session = null; // Active automatic-speaker sequence.
-  let stageReady = false; // True after both actors and first speaker/portrait/camera target are ready.
+  let actorsReady = false; // Used by the map loader as its NPC staging readiness gate.
+  let dialogueReady = false; // Used only to report whether the automatic speaker test is open.
   let testFinished = false; // Stops the temporary target test reopening after completion.
   let monitorAttempts = 0; // Mobile-readable retry count.
   let targetChanges = 0; // Successful automatic speaker/camera retargets.
-  let revealSignals = 0; // Number of readiness signals sent to the map/loader owner.
+  let revealSignals = 0; // Number of actor-readiness checks sent to the map/loader owner.
   let lastStatus = 'waiting-rescue'; // Mobile-readable setup state.
   let lastError = null; // Most recent setup error.
 
   function debugLog(message, level = 'info') {
-    const logger = window.__farmLog;
+    const logger = window.__farmLog; // Used by mobile-visible debug output when available.
     if (typeof logger === 'function') {
       try { logger(`[prologue-dialogue] ${message}`, level); return; } catch (_) {}
     }
@@ -38,7 +44,7 @@
   }
 
   function loadMeta() {
-    const raw = localStorage.getItem(SAVE_META_KEY);
+    const raw = localStorage.getItem(SAVE_META_KEY); // Used to identify interrupted owner prologues before PrologueSystem is ready.
     if (!raw) return null;
     try { return JSON.parse(raw); } catch (_) { return null; }
   }
@@ -53,7 +59,7 @@
   }
 
   function rescuePrologueActive() {
-    const profile = window.__hobunjiPlayerProfile;
+    const profile = window.__hobunjiPlayerProfile; // Used to scope scripted actors to the selected owner/world.
     if (!profile?.worldId || !profile?.isWorldOwner) return false;
     const liveState = window.PrologueSystem?.getWorldPrologue?.(profile.worldId);
     const state = liveState || persistedWorldState(profile.worldId);
@@ -61,9 +67,9 @@
     return !!state && !state.completed && state.stage === 'rescue';
   }
 
-  function signalRevealReadiness() {
+  function signalActorReadiness() {
     revealSignals += 1;
-    try { window.LoadingScreenRuntime?.setProgress?.(98, 'prologue-dialogue-ready'); } catch (_) {}
+    try { window.LoadingScreenRuntime?.setProgress?.(98, 'prologue-actors-ready'); } catch (_) {}
     try { window.PrologueRescueMapRuntime?.requestRevealCheck?.(); } catch (_) {}
   }
 
@@ -122,7 +128,7 @@
   }
 
   async function buildScriptedActor(actor, scene, npcRecords) {
-    const npcId = String(actor?.npcId || '');
+    const npcId = String(actor?.npcId || ''); // Used as the stable scripted-actor/database key.
     if (!npcId || !scene) return null;
 
     const existing = actorInstances.get(npcId);
@@ -145,9 +151,9 @@
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const modelWidth = Number(avatarCfg.worldModelWidth) || 0.9;
     const portraitSize = Number(avatarCfg.previewPortraitCanvasSize) || 200;
-    const frontCanvas = document.createElement('canvas'); // World-facing portrait texture.
+    const frontCanvas = document.createElement('canvas'); // Used as the scripted actor's front world texture.
     frontCanvas.width = frontCanvas.height = portraitSize;
-    const backCanvas = document.createElement('canvas'); // Rear-facing portrait texture.
+    const backCanvas = document.createElement('canvas'); // Used as the scripted actor's rear world texture.
     backCanvas.width = backCanvas.height = portraitSize;
 
     await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
@@ -196,7 +202,7 @@
       path: [],
       currentScheduleTarget: null,
       scriptedPrologueActor: true,
-    }; // Synthetic dialogue-walker contract; never enrolled in ordinary scheduling.
+    }; // Synthetic dialogue-walker contract; never enrolled in ordinary NPC scheduling.
 
     const instance = { npcId, rec, profile, root, walker, frontCanvas, backCanvas, avatarHeight };
     actorInstances.set(npcId, instance);
@@ -214,14 +220,16 @@
       try { window.PNGPlaneAvatar?.disposeAvatarModel?.(instance.root); } catch (_) {}
     }
     actorInstances.clear();
-    stageReady = false;
-    preparePromise = null;
+    actorsReady = false;
+    dialogueReady = false;
+    actorPreparePromise = null;
+    dialoguePreparePromise = null;
   }
 
   function openDialogueShell() {
     window.WorldPopupText?.clearInteractionPrompts?.();
     document.getElementById('arcContainer')?.classList.add('arc-hidden');
-    const dialogueEl = document.getElementById('npcDialogue');
+    const dialogueEl = document.getElementById('npcDialogue'); // Uses the ordinary gameplay dialogue shell.
     dialogueEl?.classList.add('open');
     dialogueEl?.setAttribute('aria-hidden', 'false');
   }
@@ -239,7 +247,7 @@
 
   async function showLine(index) {
     if (!session) return false;
-    const line = session.lines[index];
+    const line = session.lines[index]; // Used to select the next automatic speaker/target.
     if (!line) return false;
 
     const actor = actorForNpc(line.speakerNpcId);
@@ -263,8 +271,6 @@
     if (nameEl) nameEl.textContent = rec?.name || line.speakerNpcId;
     if (heartsEl) heartsEl.textContent = window.DialogueContent?.renderRelationshipHearts?.(rec) || '';
 
-    // Cancel any ordinary typewriter before swapping speaker. Test copy is set
-    // directly, so hidden setup never schedules letter blips.
     window.DialogueContent?.stopNpcDialogueTypewriter?.(false);
     if (textEl) textEl.textContent = String(line.text || '...');
 
@@ -284,6 +290,7 @@
     if (!active) return false;
 
     session = null;
+    dialogueReady = false;
     window.DialogueContent?.stopNpcDialogueTypewriter?.(false);
     window.DialogueContent?.hideChoiceButtons?.();
     window.DialogueContent?.resetDialogueState?.();
@@ -298,7 +305,7 @@
 
   async function advanceDialogueTest() {
     if (!session) return false;
-    const nextIndex = session.index + 1;
+    const nextIndex = session.index + 1; // Used to switch speaker automatically from authored line metadata.
     if (nextIndex >= session.lines.length) {
       closeDialogueTest({ completed: true });
       return true;
@@ -306,20 +313,13 @@
     return showLine(nextIndex);
   }
 
-  async function prepareRescueStage() {
-    if (stageReady) return true;
-    if (preparePromise) return preparePromise;
+  async function prepareRescueActors() {
+    if (actorsReady) return true;
+    if (actorPreparePromise) return actorPreparePromise;
     if (currentArea() !== RESCUE_MAP_ID || !rescuePrologueActive()) return false;
-
-    try { window.LoadingScreenRuntime?.setProgress?.(96, 'prologue-actors'); } catch (_) {}
 
     const run = (async () => {
       try {
-        if (!cameraDeps || !dialogueBridge || !window.DialogueContent) {
-          lastStatus = 'waiting-dialogue-camera-deps';
-          return false;
-        }
-
         const scene = window.GridTileAccessors?.getActiveScene?.();
         const grid = window.GridTileAccessors?.getActiveGrid?.();
         if (!scene || !grid) {
@@ -330,9 +330,8 @@
         const [chapter, database] = await Promise.all([loadChapter(), loadNpcDatabase()]);
         const rescue = chapter?.stages?.rescue;
         const actors = Array.isArray(rescue?.actors) ? rescue.actors : [];
-        const lines = Array.isArray(rescue?.dialogue) ? rescue.dialogue : [];
         const npcRecords = npcRecordsFromDatabase(database);
-        if (!actors.length || lines.length < 2) throw new Error('authored rescue actor/dialogue data is missing');
+        if (!actors.length) throw new Error('authored rescue actor data is missing');
         if (!npcRecords.length) throw new Error('NPC database has no records');
 
         for (const actor of actors) await buildScriptedActor(actor, scene, npcRecords);
@@ -340,7 +339,51 @@
           throw new Error(`only ${actorInstances.size}/${actors.length} scripted actors built`);
         }
 
-        if (!session && !testFinished) {
+        actorsReady = true;
+        lastError = null;
+        lastStatus = `rescue-actors-ready:${actorInstances.size}`;
+        debugLog(`rescue actor staging complete with ${actorInstances.size} scripted NPC actors`);
+        signalActorReadiness();
+        return true;
+      } catch (error) {
+        lastError = String(error?.message || error);
+        lastStatus = `actor-setup-error:${lastError}`;
+        debugLog(`rescue actor setup failed: ${lastError}`, 'error');
+        return false;
+      }
+    })();
+
+    actorPreparePromise = run;
+    try {
+      return await run;
+    } finally {
+      if (actorPreparePromise === run) actorPreparePromise = null;
+    }
+  }
+
+  async function prepareRescueDialogue() {
+    if (dialogueReady || testFinished) return dialogueReady || testFinished;
+    if (dialoguePreparePromise) return dialoguePreparePromise;
+    if (!actorsReady || currentArea() !== RESCUE_MAP_ID || !rescuePrologueActive()) return false;
+
+    // Dialogue is intentionally post-reveal. Its camera/portrait dependencies
+    // are useful for the cutscene, but they are not map-loading dependencies.
+    if (window.__hobunjiPrologueHiddenSetup) {
+      lastStatus = 'actors-ready-waiting-map-reveal';
+      return false;
+    }
+    if (!cameraDeps || !dialogueBridge || !window.DialogueContent) {
+      lastStatus = 'actors-ready-waiting-dialogue-camera-deps';
+      return false;
+    }
+
+    const run = (async () => {
+      try {
+        const chapter = await loadChapter();
+        const lines = Array.isArray(chapter?.stages?.rescue?.dialogue) ? chapter.stages.rescue.dialogue : [];
+        if (lines.length < 2) throw new Error('authored rescue dialogue test data is missing');
+
+        if (!session) {
           session = {
             lines,
             index: -1,
@@ -350,31 +393,37 @@
             prevCameraTarget: cameraDeps?.getCameraTarget?.(),
           };
           openDialogueShell();
-          lastStatus = 'priming-first-line';
+          lastStatus = 'priming-first-line-after-reveal';
           const opened = await showLine(0);
           if (!opened) throw new Error('first automatic-speaker line could not be primed');
         }
 
-        stageReady = true;
+        dialogueReady = true;
         lastError = null;
-        lastStatus = session ? 'rescue-ready-dialogue-open' : 'rescue-ready';
-        debugLog(`rescue stage setup complete with ${actorInstances.size} scripted NPC actors`);
-        signalRevealReadiness();
+        lastStatus = 'rescue-dialogue-open';
+        debugLog('automatic-speaker dialogue test opened after rescue reveal');
         return true;
       } catch (error) {
         lastError = String(error?.message || error);
-        lastStatus = `setup-error:${lastError}`;
-        debugLog(`rescue actor/dialogue setup failed: ${lastError}`, 'error');
+        lastStatus = `dialogue-setup-error:${lastError}`;
+        debugLog(`rescue dialogue setup failed: ${lastError}`, 'error');
         return false;
       }
     })();
 
-    preparePromise = run;
+    dialoguePreparePromise = run;
     try {
       return await run;
     } finally {
-      if (preparePromise === run) preparePromise = null;
+      if (dialoguePreparePromise === run) dialoguePreparePromise = null;
     }
+  }
+
+  async function prepareRescueStage() {
+    const ready = await prepareRescueActors(); // Used as the loader-safe portion of rescue setup.
+    if (!ready) return false;
+    void prepareRescueDialogue(); // Best-effort post-reveal dialogue; never blocks actor/map readiness.
+    return true;
   }
 
   async function monitor() {
@@ -388,11 +437,19 @@
       return;
     }
 
-    if (!stageReady) {
-      const ready = await prepareRescueStage();
+    if (!actorsReady) {
+      const ready = await prepareRescueActors();
+      if (!ready && monitorAttempts % ACTOR_LOG_EVERY === 0) {
+        debugLog(`waiting for rescue actors (${lastStatus}); actors=${actorInstances.size}`, 'warn');
+      }
+      return;
+    }
+
+    if (!dialogueReady && !testFinished) {
+      const ready = await prepareRescueDialogue();
       if (!ready && monitorAttempts % ACTOR_LOG_EVERY === 0) {
         debugLog(
-          `waiting for rescue actor setup (${lastStatus}); camera=${!!cameraDeps} dialogue=${!!dialogueBridge} actors=${actorInstances.size}`,
+          `actors ready; waiting for post-reveal dialogue (${lastStatus}); camera=${!!cameraDeps} dialogue=${!!dialogueBridge} hidden=${!!window.__hobunjiPrologueHiddenSetup}`,
           'warn',
         );
       }
@@ -403,9 +460,9 @@
     if (!api?.init || api.__prologueDialogueTargetWrapped) return api;
     const originalInit = api.init.bind(api);
     api.init = function prologueDialogueFarmAnimalsInit(injectedDeps) {
-      cameraDeps = injectedDeps || null;
+      cameraDeps = injectedDeps || null; // Used only for post-reveal speaker camera targeting.
       const result = originalInit(injectedDeps);
-      try { window.PrologueRescueMapRuntime?.requestRevealCheck?.(); } catch (_) {}
+      void prepareRescueDialogue();
       return result;
     };
     Object.defineProperty(api, '__prologueDialogueTargetWrapped', { value: true, configurable: true });
@@ -420,7 +477,7 @@
       const gameGetDialogueOpen = source.getDialogueOpen;
       const gameGetDialogueWalker = source.getDialogueWalker;
       const gameCloseNpcDialogue = source.closeNpcDialogue;
-      dialogueBridge = { gameGetDialogueOpen, gameGetDialogueWalker, gameCloseNpcDialogue };
+      dialogueBridge = { gameGetDialogueOpen, gameGetDialogueWalker, gameCloseNpcDialogue }; // Used by synthetic walker integration.
 
       const result = originalInit({
         ...source,
@@ -428,7 +485,7 @@
         getDialogueWalker: () => session?.walker || gameGetDialogueWalker?.(),
         closeNpcDialogue: () => session ? closeDialogueTest({ completed: false }) : gameCloseNpcDialogue?.(),
       });
-      try { window.PrologueRescueMapRuntime?.requestRevealCheck?.(); } catch (_) {}
+      void prepareRescueDialogue();
       return result;
     };
     Object.defineProperty(api, '__prologueDialogueTargetWrapped', { value: true, configurable: true });
@@ -436,7 +493,7 @@
   }
 
   function chainGlobal(name, installer) {
-    const descriptor = Object.getOwnPropertyDescriptor(window, name);
+    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Used to compose with earlier parser-time wrappers safely.
     if (descriptor?.get && descriptor?.set && descriptor.configurable) {
       Object.defineProperty(window, name, {
         configurable: true,
@@ -458,7 +515,7 @@
       return;
     }
 
-    let stored = null;
+    let stored = null; // Used only until the protected namespace is assigned.
     Object.defineProperty(window, name, {
       configurable: true,
       enumerable: true,
@@ -485,17 +542,21 @@
   setInterval(monitor, MONITOR_MS);
 
   window.PrologueDialogueRuntime = Object.freeze({
+    prepareRescueActors,
+    prepareRescueDialogue,
     prepareRescueStage,
-    isRescueStageReady: () => stageReady,
+    isRescueActorsReady: () => actorsReady,
+    isRescueStageReady: () => dialogueReady,
     advanceDialogueTest,
     closeDialogueTest,
     debugSnapshot: () => ({
       currentArea: currentArea(),
       rescueActive: rescuePrologueActive(),
-      stageReady,
+      actorsReady,
+      dialogueReady,
       loaderOwnedBy: 'PrologueRescueMapRuntime',
       hiddenSetup: !!window.__hobunjiPrologueHiddenSetup,
-      actorsReady: actorInstances.size,
+      actorCount: actorInstances.size,
       actorNpcIds: [...actorInstances.keys()],
       sessionActive: !!session,
       speakerNpcId: session?.speakerNpcId || null,
