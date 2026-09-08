@@ -155,3 +155,22 @@
   script.onerror = () => window.__farmLog?.('[item-arch-original-presentation] module failed to load', 'error');
   document.head.appendChild(script);
 })();
+
+// Loading-screen lettering stays in its own presentation module. This bootstrap
+// runs before ToolMetalRecolor and LoadingScreenRuntime, so the module installs
+// its CSS immediately and waits for those existing dependencies/DOM hooks.
+(() => {
+  'use strict';
+  if (window.LoadingScreenMetalText?.installed || document.querySelector('script[data-loading-screen-metal-text]')) return;
+  const src = 'js/loading-screen-metal-text.js?v=20260908a'; // Used to cache-bust the bronze/verdigris loading-screen treatment independently.
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-loading-screen-metal-text="1" src="${src}"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script'); // Used to load the presentation module if this bootstrap is evaluated after document parsing.
+  script.dataset.loadingScreenMetalText = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[loading-metal-text] module failed to load', 'error');
+  document.head.appendChild(script);
+})();
