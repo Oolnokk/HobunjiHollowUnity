@@ -19,6 +19,9 @@
     catalogInstalled: false,
     catalogFootprintBridgeInstalled: false,
     floorControlsInstalled: false,
+    floorMeshBridgeInstalled: false,
+    previewFloorMaterials: 0,
+    previewFloorSignature: null,
     lastFloorSignature: null,
     reimports: 0,
     lastError: null,
@@ -149,6 +152,55 @@
     if (repeat) repeat.value = normalized?.tilesPerTile ?? 1;
   }
 
+  function editorPreviewFloorStyle() {
+    const authored = normalizedStyle(window.__hobunjiInteriorFloorStyleOverride);
+    if (authored) return authored;
+    const wallStyle = document.getElementById('wallStyle')?.value || '';
+    return window.InteriorFireFloorRuntime?.defaultFloorStyleForWallStyle?.(wallStyle) || null;
+  }
+
+  function isEditorFloorGeometry(geometry) {
+    const p = geometry?.parameters;
+    return geometry?.type === 'BoxGeometry'
+      && Math.abs((p?.width ?? 0) - 1) < 1e-6
+      && Math.abs((p?.height ?? 0) - 0.08) < 1e-6
+      && Math.abs((p?.depth ?? 0) - 1) < 1e-6;
+  }
+
+  function installEditorFloorMeshBridge() {
+    if (!IS_INTERIOR_EDITOR || editorState.floorMeshBridgeInstalled) return false;
+    const THREE = window.THREE;
+    const OriginalMesh = THREE?.Mesh;
+    if (!OriginalMesh || OriginalMesh.__hobunjiInteriorFloorPreviewWrapped) {
+      editorState.floorMeshBridgeInstalled = !!OriginalMesh?.__hobunjiInteriorFloorPreviewWrapped;
+      return editorState.floorMeshBridgeInstalled;
+    }
+
+    function InteriorFloorAwareMesh(geometry, material) {
+      const mesh = new OriginalMesh(geometry, material);
+      if (isEditorFloorGeometry(geometry)) {
+        const style = editorPreviewFloorStyle();
+        if (style) {
+          const materials = (Array.isArray(material) ? material : [material]).filter(Boolean);
+          for (const mat of materials) {
+            window.InteriorFireFloorRuntime?.applyFloorStyleToMaterial?.(mat, style, '../../assets/');
+          }
+          editorState.previewFloorMaterials = materials.length;
+          editorState.previewFloorSignature = JSON.stringify(style);
+        }
+      }
+      return mesh;
+    }
+
+    Object.setPrototypeOf(InteriorFloorAwareMesh, OriginalMesh);
+    InteriorFloorAwareMesh.prototype = OriginalMesh.prototype;
+    InteriorFloorAwareMesh.__hobunjiInteriorFloorPreviewWrapped = true;
+    InteriorFloorAwareMesh.__hobunjiInteriorFloorPreviewOriginal = OriginalMesh;
+    THREE.Mesh = InteriorFloorAwareMesh;
+    editorState.floorMeshBridgeInstalled = true;
+    return true;
+  }
+
   function ensureFloorControls() {
     if (document.getElementById('biaFloorSurfaceSection')) {
       editorState.floorControlsInstalled = true;
@@ -223,6 +275,7 @@
     if (!IS_INTERIOR_EDITOR || editorState.installed) return false;
     if (!document.getElementById('catSelect') || !document.getElementById('importInput') || !document.getElementById('exportText')) return false;
     installEditorCatalogFootprintBridge();
+    installEditorFloorMeshBridge();
     ensureEditorCatalog();
     ensureFloorControls();
     syncEditorFloorFromExport();
