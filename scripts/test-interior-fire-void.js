@@ -85,10 +85,18 @@ assert.deepStrictEqual(calls.slice(-2).map(call => call[0]), ['campfire', 'bonfi
 
 const decorativeBridge = vm.runInContext(`(() => {
   const defs = { basicBedFurniture: {}, chairSimpleFurniture: {}, rugFurniture: {} };
-  return [defs.campfireFurniture?.procKey, defs.bonfireFurniture?.procKey, defs.bonfireFurniture?.fw, defs.bonfireFurniture?.fd];
+  return [
+    defs.campfireFurniture?.procKey,
+    defs.bonfireFurniture?.procKey,
+    defs.bonfireFurniture?.fw,
+    defs.bonfireFurniture?.fd,
+    defs.bonfireFurniture?.key,
+    defs.bonfireFurniture?.label,
+    defs.bonfireFurniture?.col,
+  ];
 })()`, context);
-assert.deepStrictEqual(Array.from(decorativeBridge), ['campfire', 'bonfire', 2, 2],
-  'runtime decorative-definition lookup must recognize both new fire furniture items before scene construction');
+assert.deepStrictEqual(Array.from(decorativeBridge), ['campfire', 'bonfire', 2, 2, 'bonfireFurniture', 'Bonfire', 0x6d3e20],
+  'definition bridge must satisfy both gameplay and Interior Editor catalog fields');
 
 const children = [];
 const scene = {
