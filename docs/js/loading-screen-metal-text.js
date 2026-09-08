@@ -1,17 +1,18 @@
 // Loading-screen bronze lettering treatment.
-// Roman text borrows the item-selector category heading's fill/stroke/shadow
-// presentation. TankanScript additionally rasterizes each glyph as a tiny
-// sprite and sends it through ToolMetalRecolor at exactly 50% oxidation, so
-// its verdigris uses the same seeded spread + black boundary logic as tools.
+// Roman text preserves the item-selector category heading's shiny metal
+// presentation while remapping its base hue to bronze. TankanScript additionally
+// rasterizes each glyph as a metallic sprite and sends it through ToolMetalRecolor
+// at exactly 25% oxidation, so verdigris replaces part of the shiny bronze base
+// with the same seeded spread + black boundary logic used by tools.
 (() => {
   'use strict';
   if (window.LoadingScreenMetalText?.installed) return;
 
   const STYLE_ID = 'loadingScreenMetalTextStyles'; // Used to keep the loading-screen metal presentation idempotent.
   const DEBUG_ID = 'hlsMetalTextDebug'; // Used to extend the loading screen's existing five-tap diagnostics with metal-text state.
-  const BRONZE_HEX = '#CD7F32'; // Used for clean lettering; matches METAL_DEFS.tinBronze from the tool-metal palette.
+  const BRONZE_HEX = '#CD7F32'; // Used as the metallic base hue; matches METAL_DEFS.tinBronze from the tool-metal palette.
   const VERDIGRIS_HEX = '#57B38B'; // Used for Tankan oxidation; matches METAL_DEFS.tinBronze.verdigrisHex.
-  const VERDIGRIS_AMOUNT = 0.5; // Used as ToolMetalRecolor.oxidationAmount for an exact 50% verdigris spread.
+  const VERDIGRIS_AMOUNT = 0.25; // Used as ToolMetalRecolor.oxidationAmount for an exact 25% verdigris spread.
   const FALLBACK_SOURCE_HEX = '#5A8480'; // Used only if ToolMetalRecolor has not exposed its canonical placeholder source color.
   const CATEGORY_STROKE = 'rgba(0,0,0,.82)'; // Used to mirror the item-category heading's dark SVG stroke.
   const CATEGORY_SHADOW = 'rgba(0,0,0,.8)'; // Used to mirror the item-category heading's 0 2px 5px text shadow.
@@ -35,33 +36,57 @@
       #hobunjiLoadScreen {
         --hls-bronze-metal:${BRONZE_HEX};
         --hls-bronze-stroke:${CATEGORY_STROKE};
+        --hls-metal-ramp:linear-gradient(
+          180deg,
+          #744019 0%,
+          #B9692A 20%,
+          #F0B96B 41%,
+          #FFD9A0 48%,
+          #C97830 57%,
+          #E6A353 72%,
+          #87481B 100%
+        );
       }
 
-      /* Match Item Select's category heading: metal fill, black stroke,
-         paint-order equivalent, and the same 0 2px 5px shadow. Semantic tip
-         colors intentionally yield to the requested all-bronze Roman text. */
+      /* Preserve the shiny category-name treatment: the dark outline/shadow
+         stays intact, while the fill is a bronze-hue metallic value ramp rather
+         than a flat color. Semantic tip colors intentionally yield to the
+         requested all-bronze Khymeryyan Roman presentation. */
       #hobunjiLoadScreen #hlsLoreBlock,
       #hobunjiLoadScreen #hlsLoreBlock *,
       #hobunjiLoadScreen #hlsPercent {
         color:var(--hls-bronze-metal) !important;
+        background:var(--hls-metal-ramp);
+        -webkit-background-clip:text;
+        background-clip:text;
+        -webkit-text-fill-color:transparent;
         -webkit-text-stroke:3px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
+        filter:drop-shadow(0 0 5px rgba(205,127,50,.34));
       }
 
       /* This is the non-raster fallback. Once the Tankan font and recolorer
-         are ready, each glyph becomes a real 50%-verdigris sprite below. */
+         are ready, each glyph becomes a shiny bronze sprite with 25% verdigris. */
       #hobunjiLoadScreen .hlsVerticalWord {
         color:var(--hls-bronze-metal) !important;
+        background:var(--hls-metal-ramp);
+        -webkit-background-clip:text;
+        background-clip:text;
+        -webkit-text-fill-color:transparent;
         -webkit-text-stroke:3px var(--hls-bronze-stroke);
         paint-order:stroke fill;
         text-shadow:0 2px 5px ${CATEGORY_SHADOW} !important;
+        filter:drop-shadow(0 0 5px rgba(205,127,50,.34));
       }
       #hobunjiLoadScreen .hlsVerticalGlyph.hlsBronzeVerdigrisGlyph {
         position:relative;
         color:transparent !important;
+        -webkit-text-fill-color:transparent !important;
         -webkit-text-stroke:0 transparent;
         text-shadow:none !important;
+        background:none;
+        filter:none;
       }
       #hobunjiLoadScreen .hlsBronzeVerdigrisGlyphImage {
         position:absolute;
@@ -71,7 +96,7 @@
         pointer-events:none;
         user-select:none;
         transform:translate(-50%,-50%);
-        filter:drop-shadow(0 2px 5px ${CATEGORY_SHADOW});
+        filter:drop-shadow(0 2px 5px ${CATEGORY_SHADOW}) drop-shadow(0 0 5px rgba(205,127,50,.34));
       }
 
       /* The loading screen already exposes diagnostics by tapping the percent
@@ -158,14 +183,14 @@
     ].join('\n');
   }
 
-  function sourceFillHex(tool) {
+  function sourceFillHex(tool, valueScale = 1) {
     const sourceHex = tool.SOURCE_HEX || FALLBACK_SOURCE_HEX; // Used as the hue/saturation that ToolMetalRecolor recognizes as metal.
     const sourceRgb = hexToRgb(sourceHex); // Used to recover the canonical source hue/saturation.
-    const bronzeRgb = hexToRgb(BRONZE_HEX); // Used only to borrow Tin Bronze's authored value/brightness.
-    const sourceHsv = tool.rgbToHsv(...sourceRgb); // Used to keep the placeholder inside the tool recolorer's source-metal mask.
-    const bronzeHsv = tool.rgbToHsv(...bronzeRgb); // Used to make a flat source pixel recolor to the authored bronze brightness rather than the darker placeholder value.
-    const adjustedRgb = tool.hsvToRgb(sourceHsv.h, sourceHsv.s, bronzeHsv.v); // Used as the canvas fill that becomes exactly Tin Bronze after recoloring.
-    return rgbToHex(adjustedRgb);
+    const bronzeRgb = hexToRgb(BRONZE_HEX); // Used only to borrow Tin Bronze's authored brightness baseline.
+    const sourceHsv = tool.rgbToHsv(...sourceRgb); // Used to keep every shine-ramp pixel inside the tool recolorer's source-metal mask.
+    const bronzeHsv = tool.rgbToHsv(...bronzeRgb); // Used as the base value around which the metallic highlight/shadow ramp is built.
+    const value = Math.max(0.08, Math.min(1, bronzeHsv.v * valueScale)); // Used to preserve metallic luminance variation while only the hue is remapped by ToolMetalRecolor.
+    return rgbToHex(tool.hsvToRgb(sourceHsv.h, sourceHsv.s, value));
   }
 
   function glyphFontSizePx(glyph) {
@@ -175,7 +200,7 @@
   }
 
   function glyphCacheKey(character, fontSizePx, scale) {
-    return `${character}|${fontSizePx.toFixed(3)}|${scale.toFixed(2)}|${BRONZE_HEX}|${VERDIGRIS_HEX}|${VERDIGRIS_AMOUNT}`;
+    return `${character}|${fontSizePx.toFixed(3)}|${scale.toFixed(2)}|${BRONZE_HEX}|${VERDIGRIS_HEX}|${VERDIGRIS_AMOUNT}|shine2`;
   }
 
   function makeGlyphSource(character, fontSizePx, scale, tool) {
@@ -194,10 +219,10 @@
     const padding = Math.ceil(externalStroke + 3 * scale); // Used to keep antialiasing/shadow-safe pixels inside the generated source sprite.
     const width = Math.max(1, Math.ceil(left + right + padding * 2)); // Used as the source and recolored Tankan sprite width.
     const height = Math.max(1, Math.ceil(ascent + descent + padding * 2)); // Used as the source and recolored Tankan sprite height.
-    const canvas = document.createElement('canvas'); // Used as the #5A8480-keyed source sprite consumed by ToolMetalRecolor.
+    const canvas = document.createElement('canvas'); // Used as the #5A8480-hued metallic source sprite consumed by ToolMetalRecolor.
     canvas.width = width;
     canvas.height = height;
-    const context = canvas.getContext('2d', { willReadFrequently: true }); // Used to paint the Tankan glyph with the canonical tool placeholder hue.
+    const context = canvas.getContext('2d', { willReadFrequently: true }); // Used to paint the Tankan glyph with a source-hue metallic value ramp.
     if (!context) throw new Error('Unable to create Tankan glyph render context.');
     context.font = `${renderFontPx}px "TankanScript"`;
     context.textBaseline = 'alphabetic';
@@ -206,7 +231,17 @@
     context.lineCap = 'round';
     context.lineWidth = externalStroke;
     context.strokeStyle = CATEGORY_STROKE;
-    context.fillStyle = sourceFillHex(tool);
+
+    const metalGradient = context.createLinearGradient(0, padding, 0, Math.max(padding + 1, height - padding)); // Used to preserve the item's shiny metal value structure while ToolMetalRecolor changes only its hue/saturation.
+    metalGradient.addColorStop(0.00, sourceFillHex(tool, 0.58));
+    metalGradient.addColorStop(0.20, sourceFillHex(tool, 0.86));
+    metalGradient.addColorStop(0.41, sourceFillHex(tool, 1.15));
+    metalGradient.addColorStop(0.48, sourceFillHex(tool, 1.30));
+    metalGradient.addColorStop(0.57, sourceFillHex(tool, 0.82));
+    metalGradient.addColorStop(0.72, sourceFillHex(tool, 1.05));
+    metalGradient.addColorStop(1.00, sourceFillHex(tool, 0.62));
+    context.fillStyle = metalGradient;
+
     const x = padding + left; // Used as the baseline origin that accounts for actualBoundingBoxLeft.
     const y = padding + ascent; // Used as the alphabetic baseline that retains measured ascent/descent.
     context.strokeText(character, x, y);
@@ -224,14 +259,14 @@
     const cached = GLYPH_CACHE.get(cacheKey); // Used to avoid rerunning seeded oxidation for an identical glyph sprite.
     if (cached) return cached;
     const promise = Promise.resolve().then(async () => {
-      const sourceCanvas = makeGlyphSource(character, fontSizePx, scale, tool); // Used as the placeholder-metal sprite passed into the shared recolorer.
+      const sourceCanvas = makeGlyphSource(character, fontSizePx, scale, tool); // Used as the shiny placeholder-metal sprite passed into the shared recolorer.
       const sourceUrl = sourceCanvas.toDataURL('image/png'); // Used because ToolMetalRecolor deliberately consumes sprite URLs and already supports data URLs through Image.
       const recoloredCanvas = await tool.getRecoloredCanvas(sourceUrl, {
         sourceHex: tool.SOURCE_HEX || FALLBACK_SOURCE_HEX,
         targetHex: BRONZE_HEX,
         verdigrisHex: VERDIGRIS_HEX,
         oxidationAmount: VERDIGRIS_AMOUNT,
-      }); // Used to apply the tool system's exact seeded blotch growth, grain, and black verdigris boundary at 50% coverage.
+      }); // Used to leak the black-bounded verdigris hue into 25% of the otherwise shiny bronze metal surface.
       return {
         src: recoloredCanvas.toDataURL('image/png'),
         width: recoloredCanvas.width / scale,
@@ -248,12 +283,12 @@
     if (!character) return;
     glyph.dataset.hlsMetalCharacter = character;
     const fontSizePx = glyphFontSizePx(glyph); // Used to regenerate only if the configured loading-screen script size changed.
-    const desiredKey = `${character}|${fontSizePx.toFixed(3)}`; // Used to reject stale sprites after a live config/size refresh.
+    const desiredKey = `${character}|${fontSizePx.toFixed(3)}|shine2|${VERDIGRIS_AMOUNT}`; // Used to reject stale sprites after a live config/size/material refresh.
     if (glyph.dataset.hlsMetalAppliedKey === desiredKey && glyph.querySelector('.hlsBronzeVerdigrisGlyphImage')) return;
     if (glyph.dataset.hlsMetalPendingKey === desiredKey) return;
     glyph.dataset.hlsMetalPendingKey = desiredKey;
     try {
-      const sprite = await recoloredGlyph(character, fontSizePx); // Used as the final 50%-verdigris Tankan glyph image.
+      const sprite = await recoloredGlyph(character, fontSizePx); // Used as the final shiny-bronze + 25%-verdigris Tankan glyph image.
       if (!glyph.isConnected || glyph.dataset.hlsMetalPendingKey !== desiredKey) return;
       const image = document.createElement('img'); // Used as the transparent-background sprite overlay while the original text remains as accessible/fallback content.
       image.className = 'hlsBronzeVerdigrisGlyphImage';
