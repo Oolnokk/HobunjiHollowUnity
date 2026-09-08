@@ -1,6 +1,23 @@
 (() => {
   'use strict';
 
+  // Install the startup title screen synchronously while the main game page is
+  // still parsing. This keeps the black/title layer and its capture-phase input
+  // gate in front of every later gameplay/UI listener without changing index.html.
+  (function loadTitleScreenRuntime() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/title-screen-runtime.js?v=20260908a'; // One-time parser-synchronous startup-title runtime.
+    if (window.HobunjiTitleScreen || document.querySelector('script[data-hobunji-title-screen]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-title-screen="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.hobunjiTitleScreen = '1';
+    document.head.appendChild(script);
+  })();
+
   // HousePieceGen is loaded immediately before this shared pre-game helper.
   // Load the door bridge synchronously here so it can wrap both generated
   // entry tunnels and authored buildGroupFromPiece structures before game.js
