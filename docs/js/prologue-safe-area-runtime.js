@@ -12,7 +12,7 @@
   let removedHostiles = 0; // Counts non-authored hostile entities removed from the rescue map.
   let banditCallsBlocked = 0; // Counts bandit camp/encounter update calls rejected in the rescue area.
   let wildlifeCallsBlocked = 0; // Counts wildlife spawning ticks rejected in the rescue area.
-  let animalVoiceCallsBlocked = 0; // Counts animal vocalization calls suppressed in the scripted rescue set.
+  let animalVoiceCallsBlocked = 0; // Counts animal vocalization calls suppressed for hidden/procedural rescue creatures.
   let hiddenAudioQueries = 0; // Counts AudioSystem config reads muted while invisible prologue setup is active.
 
   function debugLog(message, level = 'info') {
@@ -127,12 +127,15 @@
 
   function wrapAnimalVocalizations(api) {
     if (!api || api.__prologueSafeAreaWrapped) return api;
-    const guardedMethods = ['tickCreature', 'companionDiscovery', 'threatGrowl', 'warning']; // These are every public path that can initiate/advance animal calls.
+    const guardedMethods = ['tickCreature', 'companionDiscovery', 'threatGrowl', 'warning']; // Public paths that can initiate/advance animal calls.
     for (const name of guardedMethods) {
       const original = typeof api[name] === 'function' ? api[name].bind(api) : null;
       if (!original) continue;
       api[name] = function prologueSafeAnimalVoice(...args) {
-        if (isSuppressedArea()) {
+        const creature = args[0]; // Used to let future intentionally-authored rescue animals speak after the scene is revealed.
+        const blockHidden = hiddenSetupActive() && isSuppressedArea();
+        const blockProcedural = isSuppressedArea() && creature?.prologueAuthored !== true;
+        if (blockHidden || blockProcedural) {
           animalVoiceCallsBlocked++;
           return false;
         }
@@ -150,9 +153,8 @@
       const config = originalGameAudioConfig(...args) || {};
       if (!hiddenSetupActive()) return config;
       hiddenAudioQueries++;
-      // Dialogue letter SFX consult this config on every syllable, and most
-      // creature SFX share the same SFX gain. Return a temporary muted view;
-      // never mutate the user's actual audio settings.
+      // Dialogue-letter SFX and most creature SFX share this gain. Return a
+      // temporary muted view; never mutate the user's actual audio settings.
       return { ...config, sfxVolume: 0 };
     };
     Object.defineProperty(api, '__prologueHiddenAudioWrapped', { value: true, configurable: true });
