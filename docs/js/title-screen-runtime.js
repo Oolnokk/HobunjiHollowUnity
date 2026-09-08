@@ -9,6 +9,7 @@
   const FONT_FAMILY = 'HobunjiTitleRoman'; // Separates title-screen font loading from the loading-screen FontFace name.
   const FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf'; // Existing Khymeryyan Roman font asset.
   const EXIT_MS = 320; // Short fade used after the starting input is consumed.
+  const INPUT_ARM_DELAY_MS = 450; // Ignores navigation/carryover input until the freshly rendered title has been present briefly.
   const GAMEPAD_AXIS_THRESHOLD = 0.72; // Avoids ordinary stick drift counting as the requested starting input.
   const SKY_CANVAS_ID = 'hobunjiTitleSky'; // Identifies the title-only Three.js canvas rendered beneath the logo/prompt.
   const EASTERN_TIME_ZONE = 'America/New_York'; // Supplies the project's Eastern real-world wall clock, including daylight-saving transitions.
@@ -24,7 +25,7 @@
   const SKY_RADIUS = 198; // Matches sky-dome.js so the title camera is literally inside the same-sized shell.
   const CELESTIAL_RADIUS = 197; // Matches gameplay sun/moon placement just inside the opaque sky shell.
   const CLOUD_RADII = Object.freeze([176, 184, 192]); // Matches the three concentric gameplay cloud shells.
-  const CLOUD_SPEEDS = Object.freeze([0.0018, 0.00105, 0.00055]); // Gives the title cloud shells the same relative drift rates as gameplay.
+  const CLOUD_SPEEDS = Object.freeze([0.0018, 0.00105, 0.00055]); // Matches gameplay's normalized cloud-turn rates.
   const CLOUD_COUNTS = Object.freeze([24, 32, 42]); // Seeds each title cloud atlas at the same base density as gameplay.
   const CLEAR_SKY_CLOUD_COVER = 0.34; // Matches sky-dome.js's no-weather fallback cloud cover for this save-independent title view.
   const TITLE_SKY_FOV = 62; // Frames a broad inside-skydome view behind the centered title logo.
@@ -36,7 +37,7 @@
     'touchstart', 'touchend',
     'click', 'contextmenu', 'wheel',
   ]); // Captured before gameplay handlers so the start input cannot leak through to the game.
-  const START_EVENTS = new Set(['keydown', 'pointerdown', 'mousedown', 'touchstart', 'click', 'wheel']); // Events that can dismiss the title screen.
+  const START_EVENTS = new Set(['keydown', 'pointerdown', 'mousedown', 'touchstart']); // Only fresh press-style actions dismiss the title; click/wheel carryover is swallowed but cannot start it.
   const easternFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: EASTERN_TIME_ZONE,
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -46,6 +47,9 @@
 
   let active = true; // Remains true through the fade so follow-up key/pointer events are swallowed too.
   let starting = false; // Prevents duplicate start requests from pointerdown + mousedown + click.
+  let inputArmed = false; // Becomes true only after the short post-load guard period, preventing phantom startup input.
+  let inputArmTimer = 0; // Owns the one-shot title-input arming delay so it can be cancelled on programmatic start.
+  let lastStartSource = null; // Exposes exactly which accepted input dismissed the title for mobile/debug diagnosis.
   let gamepadPollRaf = 0; // Owns the rising-edge controller check independent of the game's controller polling.
   let gamepadPollPrimed = false; // Prevents a button already held during page load from instantly skipping the title screen.
   let gamepadWasDown = false; // Tracks the previous real controller snapshot for rising-edge detection.
@@ -590,7 +594,7 @@
         };
         updateSkyMaterial(THREE, state.skyMaterial, snapshot);
         updateCelestials(THREE, state, snapshot);
-        for (const cloud of state.clouds) cloud.mesh.rotation.y = mod(cloud.mesh.rotation.y + cloud.speed * dt * 60, Math.PI * 2);
+        for (const cloud of state.clouds) cloud.mesh.rotation.y = mod(cloud.mesh.rotation.y + cloud.speed * dt * Math.PI * 2, Math.PI * 2); // Converts gameplay's normalized UV-turn speed to equivalent sphere rotation in radians.
         renderer.render(scene, camera);
         state.raf = requestAnimationFrame(frame);
       };
@@ -627,13 +631,25 @@
     if (event.cancelable) event.preventDefault();
     event.stopPropagation?.();
     event.stopImmediatePropagation?.();
-    if (!starting && START_EVENTS.has(event.type)) beginStart(event.type);
+    const freshTrustedPress = inputArmed
+      && event.isTrusted === true
+      && START_EVENTS.has(event.type)
+      && !(event.type === 'keydown' && event.repeat); // Rejects synthetic/carryover clicks, wheel momentum, and held-key repeats as startup input.
+    if (!starting && freshTrustedPress) beginStart(event.type);
   }
 
   function installEventGate() {
     for (const type of INPUT_EVENTS) {
       window.addEventListener(type, consumeEvent, { capture:true, passive:false });
     }
+  }
+
+  function armInputGate() {
+    if (inputArmTimer) window.clearTimeout(inputArmTimer);
+    inputArmTimer = window.setTimeout(() => {
+      inputArmTimer = 0;
+      if (active && !starting) inputArmed = true;
+    }, INPUT_ARM_DELAY_MS); // Ensures a navigation tap/key cannot leak into the new page and dismiss its title.
   }
 
   function removeEventGate() {
@@ -691,7 +707,7 @@
       gamepadPollPrimed = true;
       gamepadWasDown = isDown;
     } else {
-      if (isDown && !gamepadWasDown && !starting) beginStart('gamepad');
+      if (inputArmed && isDown && !gamepadWasDown && !starting) beginStart('gamepad');
       gamepadWasDown = isDown;
     }
     if (active) gamepadPollRaf = requestAnimationFrame(() => pollGamepad(realGetGamepads));
@@ -700,6 +716,12 @@
   function beginStart(source = 'api') {
     if (!active || starting) return false;
     starting = true;
+    inputArmed = false;
+    lastStartSource = source;
+    if (inputArmTimer) {
+      window.clearTimeout(inputArmTimer);
+      inputArmTimer = 0;
+    }
     document.documentElement.classList.add('hobunji-title-leaving');
     window.dispatchEvent(new CustomEvent('hobunji-title-starting', { detail:{ source } }));
     window.setTimeout(() => {
@@ -722,6 +744,7 @@
   document.documentElement.classList.add('hobunji-title-active');
   startTitleSky();
   installEventGate();
+  armInputGate();
   loadTitleFont();
   const realGetGamepads = installControllerGate(); // Retains the unwrapped browser method for title-only rising-edge polling.
   if (realGetGamepads) gamepadPollRaf = requestAnimationFrame(() => pollGamepad(realGetGamepads));
@@ -734,6 +757,9 @@
     getDebug:() => ({
       active,
       starting,
+      inputArmed,
+      inputArmDelayMs: INPUT_ARM_DELAY_MS,
+      lastStartSource,
       fontSettled,
       controllerGateInstalled,
       gamepadPollPrimed,
