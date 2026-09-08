@@ -1,10 +1,9 @@
 (() => {
   'use strict';
 
-  // The rescue clearing is classified as an EXTERIOR_ZONES area only so it
-  // can use the game's normal zone renderer. It is still a scripted prologue
-  // set, not a wilderness sandbox: no bandit camps, road ambushes, den packs,
-  // nest guards, or other ambient hostile population may be introduced there.
+  // The rescue clearing uses the wilderness renderer but is a scripted set.
+  // Normal procedural population and ambient creature/audio behavior must not
+  // leak into it, especially while the loading screen is still covering setup.
   const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used as the only scripted exterior currently protected by this adapter.
 
   let banditDeps = null; // Captured from BanditCamps.init so already-created camp hostiles can be removed safely.
@@ -13,6 +12,8 @@
   let removedHostiles = 0; // Counts non-authored hostile entities removed from the rescue map.
   let banditCallsBlocked = 0; // Counts bandit camp/encounter update calls rejected in the rescue area.
   let wildlifeCallsBlocked = 0; // Counts wildlife spawning ticks rejected in the rescue area.
+  let animalVoiceCallsBlocked = 0; // Counts animal vocalization calls suppressed in the scripted rescue set.
+  let hiddenAudioQueries = 0; // Counts AudioSystem config reads muted while invisible prologue setup is active.
 
   function debugLog(message, level = 'info') {
     const logger = window.__farmLog; // Reuses the existing mobile-visible log rather than relying on devtools.
@@ -34,15 +35,20 @@
   function isSuppressedArea(area = currentArea()) {
     if (area !== RESCUE_MAP_ID) return false;
     const profileSuppressed = window.PrologueRescueZoneCompat?.debugSnapshot?.()?.suppressProceduralPopulation;
-    return profileSuppressed !== false; // Rescue remains safe even during the tiny registration/readiness window before the flag is readable.
+    return profileSuppressed !== false; // Rescue stays safe during the brief registration/readiness window too.
+  }
+
+  function hiddenSetupActive() {
+    return !!window.__hobunjiPrologueHiddenSetup;
   }
 
   function removeHostilesFrom(deps) {
-    const hostileObjects = deps?.hostileObjects; // Used as the shared hostile entity set populated by both wildlife and bandit systems.
+    const hostileObjects = deps?.hostileObjects; // Shared hostile set used by wildlife/bandit systems.
     if (!hostileObjects?.[Symbol.iterator]) return 0;
     let removed = 0;
     for (const creature of [...hostileObjects]) {
-      if (creature?.areaId !== RESCUE_MAP_ID || creature?.prologueAuthored === true) continue;
+      const creatureArea = creature?.areaId || creature?.area || null; // Covers both canonical areaId and older entity shapes.
+      if (creatureArea !== RESCUE_MAP_ID || creature?.prologueAuthored === true) continue;
       hostileObjects.delete?.(creature);
       try { deps?.despawnCreature?.(creature); } catch (_) {}
       removed++;
@@ -62,7 +68,7 @@
 
   function wrapBanditCamps(api) {
     if (!api?.init || api.__prologueSafeAreaWrapped) return api;
-    const originalInit = api.init.bind(api); // Preserves ordinary BanditCamps initialization while capturing its dependency bag.
+    const originalInit = api.init.bind(api); // Preserves ordinary initialization while capturing its dependency bag.
     const originalEnsure = api.ensureCurrentZoneCamps?.bind(api);
     const originalEncounters = api.updateRandomEncounters?.bind(api);
     const originalTentUpdate = api.updateTentInteraction?.bind(api);
@@ -119,8 +125,42 @@
     return api;
   }
 
+  function wrapAnimalVocalizations(api) {
+    if (!api || api.__prologueSafeAreaWrapped) return api;
+    const guardedMethods = ['tickCreature', 'companionDiscovery', 'threatGrowl', 'warning']; // These are every public path that can initiate/advance animal calls.
+    for (const name of guardedMethods) {
+      const original = typeof api[name] === 'function' ? api[name].bind(api) : null;
+      if (!original) continue;
+      api[name] = function prologueSafeAnimalVoice(...args) {
+        if (isSuppressedArea()) {
+          animalVoiceCallsBlocked++;
+          return false;
+        }
+        return original(...args);
+      };
+    }
+    Object.defineProperty(api, '__prologueSafeAreaWrapped', { value: true, configurable: true });
+    return api;
+  }
+
+  function wrapAudioSystem(api) {
+    if (!api?.gameAudioConfig || api.__prologueHiddenAudioWrapped) return api;
+    const originalGameAudioConfig = api.gameAudioConfig.bind(api); // Preserves the real audio config outside invisible setup.
+    api.gameAudioConfig = function prologueAwareGameAudioConfig(...args) {
+      const config = originalGameAudioConfig(...args) || {};
+      if (!hiddenSetupActive()) return config;
+      hiddenAudioQueries++;
+      // Dialogue letter SFX consult this config on every syllable, and most
+      // creature SFX share the same SFX gain. Return a temporary muted view;
+      // never mutate the user's actual audio settings.
+      return { ...config, sfxVolume: 0 };
+    };
+    Object.defineProperty(api, '__prologueHiddenAudioWrapped', { value: true, configurable: true });
+    return api;
+  }
+
   function chainGlobal(name, wrapper) {
-    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Used to compose with existing early assignment hooks such as LivestockDialogue.
+    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Composes with other early assignment hooks.
     if (descriptor?.get && descriptor?.set && descriptor.configurable) {
       Object.defineProperty(window, name, {
         configurable: true,
@@ -148,6 +188,8 @@
 
   chainGlobal('BanditCamps', wrapBanditCamps);
   chainGlobal('WildlifeSpawn', wrapWildlifeSpawn);
+  chainGlobal('AnimalVocalizations', wrapAnimalVocalizations);
+  chainGlobal('AudioSystem', wrapAudioSystem);
 
   window.PrologueSafeAreaRuntime = Object.freeze({
     RESCUE_MAP_ID,
@@ -156,12 +198,15 @@
     debugSnapshot: () => ({
       currentArea: currentArea(),
       suppressed: isSuppressedArea(),
+      hiddenSetup: hiddenSetupActive(),
       banditDepsReady: !!banditDeps,
       wildlifeDepsReady: !!wildlifeDeps,
       purges,
       removedHostiles,
       banditCallsBlocked,
       wildlifeCallsBlocked,
+      animalVoiceCallsBlocked,
+      hiddenAudioQueries,
     }),
   });
 })();
