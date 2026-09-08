@@ -3,26 +3,22 @@
 
   // Prologue rescue-map adapter.
   //
-  // The rescue scene is a real authored 25x25 exterior map, but it should not
-  // become a permanent ordinary wilderness destination. This adapter injects
-  // that authored map into the town workspace only at runtime, lets the normal
-  // zone renderer build its seasonal ground, then layers the Southern Cloud
-  // Forest's fog and Shadewood boundary generation onto it.
+  // This is the ONLY owner of the prologue loading-screen hold. Other
+  // prologue runtimes report readiness, but they never add/remove the loader's
+  // visible class and never call LoadingScreenRuntime.show()/hide().
   //
-  // It also owns the prologue's visual loading hold. New-world game startup is
-  // still allowed to initialize its real calendar/material/map systems behind
-  // the loading screen, but the loader is not permitted to expose the farm for
-  // even one painted frame before the rescue clearing is fully built.
-
-  const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used as the dedicated authored first-prologue area.
-  const HUNUNDI_MAP_ID = 'map_i_temple_basement_hunundi'; // Used to keep the same loading hold across the second real-map transition.
-  const SAVE_META_KEY = 'hobunjiSaveMeta'; // Used to read the current world's persisted prologue stage without reaching into PrologueSystem internals.
-  const RESCUE_COLS = 25; // Used by readiness checks so the loader cannot release onto a fallback/farm scene.
-  const RESCUE_ROWS = 25; // Used with RESCUE_COLS to verify the enlarged authored clearing is the active grid.
-  const RESCUE_CENTER_COL = 12; // Used to verify the expanded 15x15 grass center exists before loader release.
-  const RESCUE_CENTER_ROW = 12; // Used with RESCUE_CENTER_COL as a stable interior readiness probe.
-  const RESCUE_FOG_COLOR = 0xffffff; // Used to match Southern Cloud Forest's authored white scene fog.
-  const RESCUE_FOG_DENSITY = 0.055; // Used to match EXTERIOR_ZONES.map_southern_cloud_forest.
+  // The rescue scene is a real authored 25x25 exterior map. It is injected
+  // into the normal map workspace, rendered through the normal zone runtime,
+  // then decorated with Southern Cloud Forest fog and Shadewood boundary trees.
+  const RESCUE_MAP_ID = 'map_prologue_rescue'; // Dedicated authored first-prologue area.
+  const HUNUNDI_MAP_ID = 'map_i_temple_basement_hunundi'; // Existing authored second-stage room.
+  const SAVE_META_KEY = 'hobunjiSaveMeta'; // Reads the selected world's persisted prologue stage.
+  const RESCUE_COLS = 25; // Expected authored rescue width.
+  const RESCUE_ROWS = 25; // Expected authored rescue height.
+  const RESCUE_CENTER_COL = 12; // Stable interior readiness probe.
+  const RESCUE_CENTER_ROW = 12; // Stable interior readiness probe.
+  const RESCUE_FOG_COLOR = 0xffffff; // Southern Cloud Forest fog color.
+  const RESCUE_FOG_DENSITY = 0.055; // Southern Cloud Forest fog density.
   const WORKSPACE_STUB = Object.freeze({
     schema: 'hobunji_map.v1',
     id: RESCUE_MAP_ID,
@@ -38,38 +34,39 @@
     buildings: [],
     decor: [],
     furniture: [],
-  }); // Used only to make _loadTownFromWorkspace include this standalone indexed map in resolvedMaps.
+  }); // Allows _loadTownFromWorkspace to discover the standalone indexed map.
 
   const runtime = {
-    profile: null, // Used to scope loader holding to the selected owner/world only.
-    loaderHeld: false, // Used to suppress every attempted loader hide until the expected stage map is paint-ready.
-    loaderReason: '', // Used by mobile/debug output to explain why the loader is still being held.
-    loaderRootObserver: null, // Used to immediately undo class removal before the browser can paint the hidden loader.
-    loaderFindObserver: null, // Used only if the loading-screen DOM has not been constructed yet.
-    monitorTimer: 0, // Used to watch current prologue stage/current area without patching private game.js transition state.
-    readyToken: 0, // Used to invalidate stale two-frame readiness releases after a stage changes.
-    rescueScene: null, // Used to avoid generating the Shadewood boundary twice for one cached rescue scene.
-    lastStage: null, // Used to detect rescue -> Hunundi stage changes and begin the next map hold before exposure.
-    lastReadyArea: null, // Used by debug output to show which fully rendered map most recently released the loader.
+    profile: null, // Selected owner/world used by stage monitoring.
+    loaderHeld: false, // True while this runtime alone owns loader visibility.
+    loaderReason: '', // Mobile-readable reason for the active hold.
+    loaderRootObserver: null, // Reasserts visibility while the authoritative hold is active.
+    loaderFindObserver: null, // Waits for loading-screen DOM creation during early boot.
+    monitorTimer: 0, // Single stage/readiness monitor.
+    readyToken: 0, // Invalidates stale two-frame release attempts.
+    rescueScene: null, // Prevents duplicate boundary generation for a cached scene.
+    lastStage: null, // Detects persisted stage changes.
+    lastReadyArea: null, // Most recently revealed fully-ready prologue map.
+    showCalls: 0, // Diagnostics: prologue-created loader generations.
+    releaseAttempts: 0, // Diagnostics: release requests that reached the paint barrier.
   };
 
   function debugLog(message, level = 'info') {
-    const logger = window.__farmLog; // Used to surface rescue-map diagnostics in the existing mobile-visible log.
+    const logger = window.__farmLog; // Reuses existing mobile-visible logging.
     if (typeof logger === 'function') {
       try { logger(`[prologue-map] ${message}`, level); return; } catch (_) {}
     }
-    console[level === 'error' ? 'error' : 'log'](`[prologue-map] ${message}`);
+    console[level === 'warn' ? 'warn' : level === 'error' ? 'error' : 'log'](`[prologue-map] ${message}`);
   }
 
   function loadMeta() {
-    const raw = localStorage.getItem(SAVE_META_KEY); // Used as the persisted world metadata payload inspected by the loading guard.
+    const raw = localStorage.getItem(SAVE_META_KEY);
     if (!raw) return null;
     try { return JSON.parse(raw); } catch (_) { return null; }
   }
 
   function worldState(worldId) {
-    const meta = loadMeta(); // Used to resolve the selected world's prologue record on every monitor tick.
-    return (meta?.worlds || []).find(world => world.id === worldId)?.prologue || null;
+    return (loadMeta()?.worlds || []).find(world => world.id === worldId)?.prologue || null;
   }
 
   function isIncomplete(state) {
@@ -95,10 +92,10 @@
 
   function wrapLocalDbOverrides(api) {
     if (!api?.loadDatabase || api.__prologueRescueMapWrapped) return api;
-    const originalLoadDatabase = api.loadDatabase.bind(api); // Used to preserve the selected repo/local source before adding the private prologue map stub.
-    const wrapped = Object.assign(Object.create(Object.getPrototypeOf(api) || null), api); // Used as a non-mutating facade even if LocalDBOverrides itself becomes frozen later.
+    const originalLoadDatabase = api.loadDatabase.bind(api);
+    const wrapped = Object.assign(Object.create(Object.getPrototypeOf(api) || null), api);
     wrapped.loadDatabase = async function prologueAwareLoadDatabase(id, ...args) {
-      const data = await originalLoadDatabase(id, ...args); // Used as the normal database result for every source mode.
+      const data = await originalLoadDatabase(id, ...args);
       return id === 'townWorkspace' ? augmentTownWorkspace(data) : data;
     };
     Object.defineProperty(wrapped, '__prologueRescueMapWrapped', { value: true });
@@ -107,14 +104,14 @@
 
   function wrapCloudForestFog(api) {
     if (!api?.init || api.__prologueRescueFogWrapped) return api;
-    const originalInit = api.init.bind(api); // Used to preserve every existing Southern Cloud Forest fog dependency.
-    const wrapped = Object.assign(Object.create(Object.getPrototypeOf(api) || null), api); // Used so the base fog module remains otherwise unchanged.
+    const originalInit = api.init.bind(api);
+    const wrapped = Object.assign(Object.create(Object.getPrototypeOf(api) || null), api);
     wrapped.init = function prologueAwareCloudForestFogInit(deps) {
-      const ordinaryCloudForestCheck = deps?.isCloudForestArea; // Used as the canonical predicate for the real Southern Cloud Forest.
+      const ordinaryCloudForestCheck = deps?.isCloudForestArea;
       return originalInit({
         ...deps,
         isCloudForestArea: () => {
-          let ordinary = false; // Used to preserve normal fog behavior even if its predicate throws during early boot.
+          let ordinary = false;
           try { ordinary = !!ordinaryCloudForestCheck?.(); } catch (_) {}
           return ordinary || currentArea() === RESCUE_MAP_ID;
         },
@@ -129,7 +126,7 @@
       window[name] = wrapper(window[name]);
       return;
     }
-    let value; // Used as transparent backing storage until the later parser-time module assigns this global.
+    let value; // Backing storage until the parser-time module assigns the namespace.
     Object.defineProperty(window, name, {
       configurable: true,
       enumerable: true,
@@ -144,19 +141,25 @@
 
   function forceLoaderVisible() {
     if (!runtime.loaderHeld) return;
-    const root = loaderRoot(); // Used as the actual existing loading-screen surface instead of creating a second fake overlay.
-    if (!root) return;
-    if (!root.classList.contains('visible')) root.classList.add('visible');
+    const root = loaderRoot();
+    if (root && !root.classList.contains('visible')) root.classList.add('visible');
+  }
+
+  function disconnectLoaderObservers() {
+    runtime.loaderRootObserver?.disconnect();
+    runtime.loaderRootObserver = null;
+    runtime.loaderFindObserver?.disconnect();
+    runtime.loaderFindObserver = null;
   }
 
   function observeLoaderRoot(root) {
     if (!root || runtime.loaderRootObserver || typeof MutationObserver !== 'function') return;
-    runtime.loaderRootObserver = new MutationObserver(() => forceLoaderVisible());
+    runtime.loaderRootObserver = new MutationObserver(forceLoaderVisible);
     runtime.loaderRootObserver.observe(root, { attributes: true, attributeFilter: ['class'] });
   }
 
   function installLoaderHoldObserver() {
-    const root = loaderRoot(); // Used to attach the no-farm-flash guard directly to the real loader when already built.
+    const root = loaderRoot();
     if (root) {
       observeLoaderRoot(root);
       forceLoaderVisible();
@@ -164,7 +167,7 @@
     }
     if (runtime.loaderFindObserver || typeof MutationObserver !== 'function') return;
     runtime.loaderFindObserver = new MutationObserver(() => {
-      const found = loaderRoot(); // Used to transfer from the document observer to the narrower class observer once loading-screen-runtime builds its DOM.
+      const found = loaderRoot();
       if (!found) return;
       runtime.loaderFindObserver.disconnect();
       runtime.loaderFindObserver = null;
@@ -175,40 +178,57 @@
   }
 
   function beginLoadingHold(reason) {
+    const nextReason = String(reason || 'prologue-map');
+    if (runtime.loaderHeld) {
+      runtime.loaderReason = nextReason;
+      installLoaderHoldObserver();
+      forceLoaderVisible();
+      return false;
+    }
+
     runtime.loaderHeld = true;
-    runtime.loaderReason = String(reason || 'prologue-map');
+    runtime.loaderReason = nextReason;
     runtime.readyToken += 1;
+    window.__hobunjiPrologueHiddenSetup = true; // Audio suppression remains active until the real DOM overlay is gone.
     installLoaderHoldObserver();
+
     try {
-      window.LoadingScreenRuntime?.show?.({ reason: runtime.loaderReason });
+      const loaderDebug = window.LoadingScreenRuntime?.getDebug?.();
+      if (!loaderDebug?.visible) {
+        runtime.showCalls += 1;
+        window.LoadingScreenRuntime?.show?.({ reason: runtime.loaderReason });
+      }
       window.LoadingScreenRuntime?.setProgress?.(92, 'prologue-map-preparing');
     } catch (error) {
       debugLog(`loading screen show failed: ${error?.message || error}`, 'error');
     }
+
     forceLoaderVisible();
+    return true;
   }
 
   async function releaseLoadingHold(area) {
-    if (!runtime.loaderHeld) return;
-    runtime.loaderHeld = false;
+    if (!runtime.loaderHeld) return false;
+
+    runtime.loaderHeld = false; // Disable reassertion before requesting the canonical hide.
     runtime.loaderReason = '';
     runtime.lastReadyArea = area || currentArea();
-    runtime.loaderRootObserver?.disconnect();
-    runtime.loaderRootObserver = null;
-    runtime.loaderFindObserver?.disconnect();
-    runtime.loaderFindObserver = null;
+    disconnectLoaderObservers();
+
     try {
-      window.LoadingScreenRuntime?.setProgress?.(100, 'prologue-map-ready');
-      await window.LoadingScreenRuntime?.hide?.();
+      window.LoadingScreenRuntime?.setProgress?.(100, 'prologue-ready');
+      await window.LoadingScreenRuntime?.hide?.('prologue-ready');
     } catch (error) {
       debugLog(`loading screen hide failed: ${error?.message || error}`, 'error');
     } finally {
-      // LoadingScreenRuntime may already consider itself hidden because its
-      // boot hide fired while our MutationObserver kept the DOM class alive.
-      // Remove the held class only now, after the intended map has rendered.
+      // This is the single final DOM removal. No other prologue module owns a
+      // MutationObserver for this class anymore, so nothing can re-add it.
       loaderRoot()?.classList.remove('visible');
+      window.__hobunjiPrologueHiddenSetup = false;
     }
+
     debugLog(`${runtime.lastReadyArea || 'prologue map'} fully ready; loading screen released`);
+    return true;
   }
 
   function applyRescueSceneFog(scene) {
@@ -228,13 +248,14 @@
   function decorateRescueBoundary(scene, grid) {
     if (!scene || !grid || runtime.rescueScene === scene || scene.userData?.prologueRescueBoundaryReady) return true;
     if (!window.FoliageGenerator?.buildShadewoodMesh) return false;
-    const generated = []; // Used to keep the dedicated Shadewood boundary identifiable for debug and future cleanup/editing.
+
+    const generated = []; // Identifies boundary trees for debug/future cleanup.
     for (let row = 0; row < RESCUE_ROWS; row++) {
       for (let col = 0; col < RESCUE_COLS; col++) {
         if (!isOutermostTile(col, row)) continue;
-        const tile = grid[row]?.[col]; // Used to guarantee trees are generated only on the authored non-walkable copse ring.
+        const tile = grid[row]?.[col];
         if (!tile || tile.type !== 'shrub') continue;
-        const tree = window.FoliageGenerator.buildShadewoodMesh(col, row); // Reuses the exact Cloud Forest tree generator rather than a prologue-only approximation.
+        const tree = window.FoliageGenerator.buildShadewoodMesh(col, row);
         if (!tree) continue;
         tree.position.set(col + 0.5, 0, row + 0.5);
         tree.userData.prologueBoundaryTree = true;
@@ -242,6 +263,7 @@
         generated.push(tree);
       }
     }
+
     scene.userData ||= {};
     scene.userData.prologueRescueBoundaryReady = true;
     scene.userData.prologueRescueBoundaryTreeCount = generated.length;
@@ -252,14 +274,31 @@
 
   function rescueMapReady() {
     if (currentArea() !== RESCUE_MAP_ID) return false;
-    const access = window.GridTileAccessors; // Used as the authoritative active-area readiness source after normal enterZone completes.
+    const access = window.GridTileAccessors;
     if (!access?.getActiveScene || !access?.getActiveGrid) return false;
-    if (access.getActiveCols?.() !== RESCUE_COLS || access.getActiveRows?.() !== RESCUE_ROWS) return false;
-    const scene = access.getActiveScene(); // Used as the actual rendered rescue scene receiving fog/boundary foliage.
-    const grid = access.getActiveGrid(); // Used to verify the authored 25x25 map and its non-walkable border exist.
-    if (!scene || !grid?.[RESCUE_CENTER_ROW]?.[RESCUE_CENTER_COL]) return false;
+
+    const scene = access.getActiveScene();
+    const grid = access.getActiveGrid();
+    if (!scene || !Array.isArray(grid)) return false;
+
+    // Check both canonical accessors and the actual grid shape. The grid is the
+    // final authority if an accessor is temporarily late during startup.
+    const cols = Number(access.getActiveCols?.()) || grid[0]?.length || 0;
+    const rows = Number(access.getActiveRows?.()) || grid.length || 0;
+    if (cols !== RESCUE_COLS || rows !== RESCUE_ROWS) return false;
+    if (!grid?.[RESCUE_CENTER_ROW]?.[RESCUE_CENTER_COL]) return false;
+
     applyRescueSceneFog(scene);
     return decorateRescueBoundary(scene, grid);
+  }
+
+  function rescueDialogueReady() {
+    try { return window.PrologueDialogueRuntime?.isRescueStageReady?.() === true; }
+    catch (_) { return false; }
+  }
+
+  function rescueRevealReady() {
+    return rescueMapReady() && rescueDialogueReady();
   }
 
   function genericStageReady(expectedMap) {
@@ -271,34 +310,45 @@
     }
   }
 
+  function stageReadyForReveal(expectedMap) {
+    return expectedMap === RESCUE_MAP_ID ? rescueRevealReady() : genericStageReady(expectedMap);
+  }
+
   function releaseAfterPaint(expectedMap) {
-    const token = ++runtime.readyToken; // Used to invalidate this release if another stage/hold begins during the two-frame paint barrier.
+    const token = ++runtime.readyToken;
+    runtime.releaseAttempts += 1;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (token !== runtime.readyToken || !runtime.loaderHeld) return;
-      const ready = expectedMap === RESCUE_MAP_ID ? rescueMapReady() : genericStageReady(expectedMap); // Used to recheck the exact area after both paint opportunities.
-      if (!ready) return;
-      releaseLoadingHold(expectedMap);
+      if (!stageReadyForReveal(expectedMap)) return;
+      void releaseLoadingHold(expectedMap);
     }));
   }
 
   function monitorStage() {
-    const profile = runtime.profile || window.__hobunjiPlayerProfile; // Used to follow only the currently selected real world/character.
+    const profile = runtime.profile || window.__hobunjiPlayerProfile;
     if (!profile?.worldId) return;
-    const state = worldState(profile.worldId); // Used to detect stage advancement performed by PrologueSystem's persistent controller.
-    if (!isIncomplete(state)) {
-      if (runtime.loaderHeld) releaseLoadingHold(currentArea());
+
+    const state = worldState(profile.worldId);
+    const pendingNewOwnerRescue = !state && profile.isNewWorld && profile.isWorldOwner;
+
+    if (!pendingNewOwnerRescue && !isIncomplete(state)) {
+      if (runtime.loaderHeld) void releaseLoadingHold(currentArea());
       runtime.lastStage = state?.stage || 'complete';
       return;
     }
-    const expectedMap = expectedMapForStage(state.stage); // Used as the only map allowed to become visible for this prologue stage.
+
+    const stage = pendingNewOwnerRescue ? 'rescue' : state.stage;
+    const expectedMap = expectedMapForStage(stage);
     if (!expectedMap) return;
-    if (runtime.lastStage !== state.stage) {
-      runtime.lastStage = state.stage;
-      beginLoadingHold(`prologue-${state.stage}`);
+
+    if (runtime.lastStage !== stage) {
+      runtime.lastStage = stage;
+      beginLoadingHold(`prologue-${stage}`);
     }
-    const ready = expectedMap === RESCUE_MAP_ID ? rescueMapReady() : genericStageReady(expectedMap); // Used to keep the loader up through actual map construction, not merely transition start.
+
+    const ready = stageReadyForReveal(expectedMap);
     if (ready && runtime.loaderHeld) releaseAfterPaint(expectedMap);
-    else if (!ready && runtime.loaderHeld) forceLoaderVisible();
+    else if (runtime.loaderHeld) forceLoaderVisible();
   }
 
   function startMonitor() {
@@ -308,29 +358,47 @@
   }
 
   function onPlayerReady(event) {
-    const playerData = event?.detail; // Used to decide synchronously whether boot must remain covered before game.js can paint its default farm scene.
+    const playerData = event?.detail;
     if (!playerData?.worldId || !playerData?.characterId || window.__hobunjiCutscenePreview) return;
+
     runtime.profile = playerData;
-    const state = worldState(playerData.worldId); // Used for interrupted-prologue relogins; brand-new worlds have not been initialized by PrologueSystem yet.
-    const ownerNeedsPrologue = (playerData.isNewWorld && playerData.isWorldOwner) || (playerData.isWorldOwner && isIncomplete(state)); // Used to avoid touching ordinary/existing worlds.
+    const state = worldState(playerData.worldId);
+    const ownerNeedsPrologue =
+      (playerData.isNewWorld && playerData.isWorldOwner)
+      || (playerData.isWorldOwner && isIncomplete(state));
     if (!ownerNeedsPrologue) return;
+
     runtime.lastStage = state?.stage || 'rescue';
     beginLoadingHold(`prologue-${runtime.lastStage}`);
     startMonitor();
   }
 
+  function requestRevealCheck() {
+    monitorStage();
+    return runtime.loaderHeld;
+  }
+
   function debugSnapshot() {
-    const profile = runtime.profile || window.__hobunjiPlayerProfile; // Used to include selected-world context in the mobile-readable snapshot.
-    const state = profile?.worldId ? worldState(profile.worldId) : null; // Used to report the current persisted prologue stage.
-    const scene = currentArea() === RESCUE_MAP_ID ? window.GridTileAccessors?.getActiveScene?.() : null; // Used to expose rescue decoration counts only while relevant.
+    const profile = runtime.profile || window.__hobunjiPlayerProfile;
+    const state = profile?.worldId ? worldState(profile.worldId) : null;
+    const area = currentArea();
+    const scene = area === RESCUE_MAP_ID ? window.GridTileAccessors?.getActiveScene?.() : null;
+    const mapReady = area === RESCUE_MAP_ID ? rescueMapReady() : null;
+    const dialogueReady = area === RESCUE_MAP_ID ? rescueDialogueReady() : null;
     return {
       rescueMapId: RESCUE_MAP_ID,
       rescueSize: `${RESCUE_COLS}x${RESCUE_ROWS}`,
       walkableClearing: '15x15 (cols/rows 5-19)',
-      currentArea: currentArea(),
-      stage: state?.stage || null,
+      currentArea: area,
+      stage: state?.stage || (profile?.isNewWorld ? 'rescue-pending' : null),
       loaderHeld: runtime.loaderHeld,
       loaderReason: runtime.loaderReason,
+      loaderShowCalls: runtime.showCalls,
+      releaseAttempts: runtime.releaseAttempts,
+      mapReady,
+      dialogueReady,
+      revealReady: area === RESCUE_MAP_ID ? !!(mapReady && dialogueReady) : null,
+      hiddenSetup: !!window.__hobunjiPrologueHiddenSetup,
       lastReadyArea: runtime.lastReadyArea,
       boundaryTrees: scene?.userData?.prologueRescueBoundaryTreeCount ?? 0,
       fogDensity: scene?.fog?.density ?? null,
@@ -342,12 +410,11 @@
   installAssignmentHook('CloudForestFog', wrapCloudForestFog);
   document.addEventListener('hobunjiPlayerReady', onPlayerReady, true);
 
-  // Begin the loader before PrologueSystem's temporary Continue button advances
-  // rescue -> Hunundi, so even the second map swap stays visually atomic.
+  // Begin the next hold before the temporary map-flow control advances stage.
   document.addEventListener('click', event => {
     if (!event.target?.closest?.('#prologueMapFlowContinue')) return;
-    const profile = runtime.profile || window.__hobunjiPlayerProfile; // Used to scope this early hold to an actually-active prologue world.
-    const state = profile?.worldId ? worldState(profile.worldId) : null; // Used to avoid showing a loader after the test prologue is already complete.
+    const profile = runtime.profile || window.__hobunjiPlayerProfile;
+    const state = profile?.worldId ? worldState(profile.worldId) : null;
     if (isIncomplete(state)) beginLoadingHold(`prologue-${state.stage}-advance`);
   }, true);
 
@@ -356,6 +423,8 @@
     augmentTownWorkspace,
     beginLoadingHold,
     rescueMapReady,
+    rescueRevealReady,
+    requestRevealCheck,
     debugSnapshot,
   });
 })();
