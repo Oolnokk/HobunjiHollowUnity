@@ -2,46 +2,39 @@
   'use strict';
 
   // Scripted gameplay-cutscene dialogue for the prologue rescue stage.
-  //
-  // Important: scripted cutscene actors are NOT ordinary scheduled NPC walkers.
-  // A real NPC may have no live walker at all when the player is on this private
-  // prologue map. This runtime therefore builds prologue-owned actor instances
-  // directly from the same NPC database + NpcAvatarPreview + PNGPlaneAvatar
-  // pipeline used by normal NPCs/Cutscene Director, stages those actors while the
-  // loading screen is still covering the scene, and then drives the ordinary
-  // #npcDialogue shell with automatic per-line speaker/camera retargeting.
+  // Scripted actors are prologue-owned avatar instances, not scheduled NPC walkers.
   const RESCUE_MAP_ID = 'map_prologue_rescue'; // Used to scope actor construction/dialogue to the first prologue stage.
   const CHAPTER_URL = './config/cutscenes/prologue-chapter.json'; // Used to load authored actor positions and line ordering.
   const NPC_DATABASE_URL = './config/npcs/hobunji-starter-npc-database.json'; // Used when LocalDBOverrides is unavailable.
   const SAVE_META_KEY = 'hobunjiSaveMeta'; // Used before PrologueSystem is fully initialized to identify an owner rescue boot.
-  const MONITOR_MS = 80; // Used to keep cleanup/readiness independent of private game.js transition internals.
+  const MONITOR_MS = 80; // Used to retry setup while normal game dependencies finish initializing.
   const ACTOR_LOG_EVERY = 25; // Used to rate-limit mobile-visible startup diagnostics.
 
-  let cameraDeps = null; // Captured from FarmAnimals.init; supplies the game's camera mode/target getters and setters.
-  let dialogueBridge = null; // Captured from DialogueContent.init so its portrait renderer can read our synthetic active walker.
+  let cameraDeps = null; // Captured from FarmAnimals.init; supplies camera mode/target getters and setters.
+  let dialogueBridge = null; // Captured from DialogueContent.init so portrait rendering can read our synthetic active walker.
   let chapterPromise = null; // Caches the authored prologue chapter for the session.
-  let npcDatabasePromise = null; // Caches the real NPC database used to build scripted actor instances.
-  let preparePromise = null; // Ensures only one async actor/dialogue setup pipeline runs at a time.
-  let actorInstances = new Map(); // npcId -> { rec, profile, root, walker, frontCanvas, backCanvas } for prologue-owned world actors.
+  let npcDatabasePromise = null; // Caches the real NPC database used to build scripted actors.
+  let preparePromise = null; // Prevents overlapping async actor setup runs.
+  const actorInstances = new Map(); // npcId -> scripted actor instance used by world rendering and dialogue targeting.
   let session = null; // Active automatic-speaker dialogue sequence.
-  let stageReady = false; // True only after both actors exist and line 1's dialogue portrait/camera target is primed.
+  let stageReady = false; // True only after all scripted actors and the first dialogue target are ready.
   let testFinished = false; // Prevents the temporary target test from reopening after all three lines are advanced.
-  let monitorTimer = 0; // Holds the single rescue-stage monitor interval.
-  let monitorAttempts = 0; // Used for debug/status reporting while setup dependencies are late.
-  let targetChanges = 0; // Counts successful automatic speaker changes.
-  let lastStatus = 'waiting-rescue'; // Human-readable state surfaced through debugSnapshot/debugText.
-  let lastError = null; // Stores the most recent actor/dialogue setup failure for mobile debugging.
+  let monitorAttempts = 0; // Used for mobile-readable diagnostics.
+  let targetChanges = 0; // Counts successful automatic speaker/camera target changes.
+  let lastStatus = 'waiting-rescue'; // Human-readable setup state exposed through debugSnapshot.
+  let lastError = null; // Most recent actor/dialogue setup error.
 
-  // Independent loading-screen hold. PrologueRescueMapRuntime owns map/fog/tree
-  // readiness; this hold overlaps it and prevents that runtime's hide from ever
-  // exposing an actor-less clearing. The final release happens only after actors
-  // + first dialogue target/portrait are ready and have had two paint frames.
+  // This is intentionally a single acquisition. Calling LoadingScreenRuntime.show()
+  // repeatedly starts a brand-new loading generation, resets progress, and picks a
+  // new tip. The monitor runs every 80 ms, so the old implementation accidentally
+  // restarted the loader on every retry. active=true now makes retries no-ops.
   const loadingHold = {
     active: false,
     rootObserver: null,
     findObserver: null,
     releaseToken: 0,
-  };
+    showCalls: 0,
+  }; // Used to keep the already-existing game loader over actor setup without restarting it.
 
   function debugLog(message, level = 'info') {
     const logger = window.__farmLog; // Reuses the existing mobile-visible game log instead of requiring devtools.
@@ -111,19 +104,34 @@
   }
 
   function beginActorLoadingHold(reason = 'prologue-rescue-actors') {
-    if (!loadingHold.active) loadingHold.releaseToken += 1;
+    if (loadingHold.active) {
+      // Retry ticks may only reassert the DOM class. They must never create a
+      // new LoadingScreenRuntime generation or reset the active tip/progress.
+      installActorLoaderObserver();
+      forceActorLoaderVisible();
+      return false;
+    }
+
     loadingHold.active = true;
+    loadingHold.releaseToken += 1;
+    window.__hobunjiPrologueHiddenSetup = true; // Read by scripted-area audio suppression while setup is still invisible.
     installActorLoaderObserver();
+
     try {
-      window.LoadingScreenRuntime?.show?.({ reason });
+      const loaderDebug = window.LoadingScreenRuntime?.getDebug?.(); // Used to preserve the already-running initial boot loader when possible.
+      if (!loaderDebug?.visible) {
+        loadingHold.showCalls += 1;
+        window.LoadingScreenRuntime?.show?.({ reason });
+      }
       window.LoadingScreenRuntime?.setProgress?.(96, 'prologue-actors');
     } catch (_) {}
     forceActorLoaderVisible();
+    return true;
   }
 
   function finishActorLoadingHoldAfterPaint() {
     if (!loadingHold.active || !stageReady) return;
-    const token = ++loadingHold.releaseToken; // Used to invalidate a stale release if rescue setup restarts before paint.
+    const token = ++loadingHold.releaseToken; // Invalidates stale releases if the stage restarts before paint.
     requestAnimationFrame(() => requestAnimationFrame(async () => {
       if (!loadingHold.active || token !== loadingHold.releaseToken || !stageReady || currentArea() !== RESCUE_MAP_ID) return;
       loadingHold.active = false;
@@ -136,6 +144,7 @@
         await window.LoadingScreenRuntime?.hide?.();
       } catch (_) {}
       loaderRoot()?.classList.remove('visible');
+      window.__hobunjiPrologueHiddenSetup = false;
       debugLog('rescue actors + first dialogue target painted; loading screen released');
     }));
   }
@@ -215,10 +224,10 @@
 
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const modelWidth = Number(avatarCfg.worldModelWidth) || 0.9; // Used by the same world-avatar sizing path as normal NPC portraits.
-    const portraitSize = Number(avatarCfg.previewPortraitCanvasSize) || 200; // Used for static world front/back textures while dialogue portraits stay live.
-    const frontCanvas = document.createElement('canvas'); // Used as the actor's static front world texture.
+    const portraitSize = Number(avatarCfg.previewPortraitCanvasSize) || 200; // Used for static world front/back textures.
+    const frontCanvas = document.createElement('canvas');
     frontCanvas.width = frontCanvas.height = portraitSize;
-    const backCanvas = document.createElement('canvas'); // Used as the actor's static rear world texture.
+    const backCanvas = document.createElement('canvas');
     backCanvas.width = backCanvas.height = portraitSize;
     await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
     await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
@@ -234,7 +243,8 @@
       alphaTest: avatarCfg.worldAlphaTest ?? 0.01,
     });
     if (!root) throw new Error(`world avatar build failed for ${npcId}`);
-    const avatarHeight = Number(root.userData?.portraitModelHeight) || modelWidth; // Used to ground the portrait exactly like Cutscene Director's real NPC actor preview.
+
+    const avatarHeight = Number(root.userData?.portraitModelHeight) || modelWidth; // Used to ground the portrait like other world NPC avatars.
     const col = Number(actor.col); // Authored actor column in the rescue clearing.
     const row = Number(actor.row); // Authored actor row in the rescue clearing.
     const rotY = Number(actor.rotY); // Authored body yaw; no implicit player-facing/headtracking is applied.
@@ -260,7 +270,8 @@
       path: [],
       currentScheduleTarget: null,
       scriptedPrologueActor: true,
-    }; // Synthetic dialogue-walker contract: enough for the normal portrait renderer/camera without enrolling this actor in NPC scheduling.
+    }; // Synthetic dialogue-walker contract; deliberately never added to npcWalkers.
+
     const instance = { npcId, rec, profile, root, walker, frontCanvas, backCanvas, avatarHeight };
     actorInstances.set(npcId, instance);
     debugLog(`built scripted actor ${rec.name || npcId} at (${root.position.x.toFixed(1)}, ${root.position.z.toFixed(1)})`);
@@ -284,7 +295,7 @@
   function openDialogueShell() {
     window.WorldPopupText?.clearInteractionPrompts?.();
     document.getElementById('arcContainer')?.classList.add('arc-hidden');
-    const dialogueEl = document.getElementById('npcDialogue'); // Used as the exact normal gameplay dialogue surface.
+    const dialogueEl = document.getElementById('npcDialogue'); // Uses the ordinary gameplay dialogue surface.
     dialogueEl?.classList.add('open');
     dialogueEl?.setAttribute('aria-hidden', 'false');
   }
@@ -302,7 +313,7 @@
 
   async function showLine(index) {
     if (!session) return false;
-    const line = session.lines[index]; // Used as the authored line whose speaker becomes the active dialogue target automatically.
+    const line = session.lines[index]; // Used as the authored line whose speaker becomes the active target automatically.
     if (!line) return false;
     const actor = actorForNpc(line.speakerNpcId);
     const walker = actor?.walker;
@@ -318,12 +329,14 @@
     session.walker = walker;
     session.speakerNpcId = line.speakerNpcId;
     const rec = walker.rec;
-    const nameEl = document.getElementById('npcDialogueName'); // Used to visibly prove speaker changes alongside portrait/camera.
-    const textEl = document.getElementById('npcDialogueText'); // Uses the ordinary gameplay dialogue text element.
+    const nameEl = document.getElementById('npcDialogueName');
+    const textEl = document.getElementById('npcDialogueText');
     const heartsEl = document.getElementById('npcDialogueHearts');
     if (nameEl) nameEl.textContent = rec?.name || line.speakerNpcId;
     if (heartsEl) heartsEl.textContent = window.DialogueContent?.renderRelationshipHearts?.(rec) || '';
     window.DialogueContent?.stopNpcDialogueTypewriter?.(false);
+    // Deliberately set the test line directly instead of starting a typewriter;
+    // no dialogue-letter audio should be emitted while setup is hidden.
     if (textEl) textEl.textContent = String(line.text || '...');
     cameraDeps?.setCameraMode?.(dialogueCameraMode());
     cameraDeps?.setCameraTarget?.(root);
@@ -372,8 +385,8 @@
           lastStatus = 'waiting-dialogue-camera-deps';
           return false;
         }
-        const scene = window.GridTileAccessors?.getActiveScene?.(); // Must be the real built rescue gameplay scene; setup never creates another scene.
-        const grid = window.GridTileAccessors?.getActiveGrid?.(); // Used as a basic real-map readiness check before attaching actors.
+        const scene = window.GridTileAccessors?.getActiveScene?.(); // Must be the real built rescue gameplay scene.
+        const grid = window.GridTileAccessors?.getActiveGrid?.(); // Basic real-map readiness check before actor attachment.
         if (!scene || !grid) {
           lastStatus = 'waiting-rescue-scene';
           return false;
@@ -435,6 +448,7 @@
         loadingHold.rootObserver = null;
         loadingHold.findObserver?.disconnect();
         loadingHold.findObserver = null;
+        window.__hobunjiPrologueHiddenSetup = false;
       }
       lastStatus = 'waiting-rescue';
       return;
@@ -453,7 +467,7 @@
 
   function wrapFarmAnimals(api) {
     if (!api?.init || api.__prologueDialogueTargetWrapped) return api;
-    const originalInit = api.init.bind(api); // Preserves FarmAnimals while capturing camera integration already used by gameplay dialogue interactions.
+    const originalInit = api.init.bind(api); // Preserves FarmAnimals while capturing camera integration.
     api.init = function prologueDialogueFarmAnimalsInit(injectedDeps) {
       cameraDeps = injectedDeps || null;
       return originalInit(injectedDeps);
@@ -532,7 +546,7 @@
   chainGlobal('DialogueContent', wrapDialogueContent);
   document.addEventListener('hobunjiPlayerReady', onPlayerReady, true);
   bindDialogueControls();
-  monitorTimer = setInterval(monitor, MONITOR_MS);
+  setInterval(monitor, MONITOR_MS);
 
   window.PrologueDialogueRuntime = Object.freeze({
     prepareRescueStage,
@@ -544,6 +558,8 @@
       rescueActive: rescuePrologueActive(),
       stageReady,
       loadingHoldActive: loadingHold.active,
+      loadingShowCalls: loadingHold.showCalls,
+      hiddenSetup: !!window.__hobunjiPrologueHiddenSetup,
       actorsReady: actorInstances.size,
       actorNpcIds: [...actorInstances.keys()],
       sessionActive: !!session,
