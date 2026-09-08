@@ -16,10 +16,10 @@
       "title": "Prologue — The Rescue",
       "kind": "zone",
       "mapId": "map_prologue_rescue",
-      "entryCol": 4,
-      "entryRow": 4,
+      "entryCol": 12,
+      "entryRow": 12,
       "dialogue": [],
-      "notes": "Loads a dedicated authored 10x10 exterior clearing. Only the central 6x6 is walkable; the next ring is solid Cloud Forest underbrush and the outermost ring receives generated Shadewood trees. Southern Cloud Forest scene fog plus its player-centered cloud-fog runtime remain active here. Startup loading is held until this exact 10x10 scene is built, decorated, and has rendered two frames."
+      "notes": "Loads a dedicated authored 25x25 exterior clearing. The central 15x15 is walkable; the surrounding five-tile frame is solid Cloud Forest underbrush and the outermost ring receives generated Shadewood trees. Southern Cloud Forest scene fog plus its player-centered cloud-fog runtime remain active here. Startup loading is held until this exact 25x25 scene is built, decorated, and has rendered two frames."
     },
     "hunundi_room": {
       "title": "Prologue — Father Hunundi's Room",
