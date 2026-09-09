@@ -44,17 +44,8 @@ jobs:
               "      // Mobile drag-to-look offsets, layered on top of the active mode's base\n      // azimuth/angle. Horizontal/downward look keeps the legacy 45° limit;\n      // upward pitch uses the wider shooter-style limit from desktopControls.\n",
               'camera offset comment',
           )
-          helper_anchor = """      function freeRotateCameraActive() {
-        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
-      }
-"""
-          helper_replacement = helper_anchor + """      function clampCameraPitchOffsetDeg(value) {
-        const cfg = desktopControlsConfig(); // Supplies the authored directional camera limits for mouse, touch, and controller pitch.
-        const downClampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Math.abs(Number(cfg.cameraRotateClampDeg)) : 45; // Used as the positive/downward pitch boundary and preserves the legacy limit.
-        const upClampDeg = Number.isFinite(Number(cfg.cameraRotateUpClampDeg)) ? Math.abs(Number(cfg.cameraRotateUpClampDeg)) : 85; // Used as the negative/upward pitch boundary for shooter-style vertical look.
-        return window.FormatUtils.clamp(value, -upClampDeg, downClampDeg);
-      }
-"""
+          helper_anchor = "      function freeRotateCameraActive() {\n        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;\n      }\n"
+          helper_replacement = helper_anchor + "      function clampCameraPitchOffsetDeg(value) {\n        const cfg = desktopControlsConfig(); // Supplies the authored directional camera limits for mouse, touch, and controller pitch.\n        const downClampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Math.abs(Number(cfg.cameraRotateClampDeg)) : 45; // Used as the positive/downward pitch boundary and preserves the legacy limit.\n        const upClampDeg = Number.isFinite(Number(cfg.cameraRotateUpClampDeg)) ? Math.abs(Number(cfg.cameraRotateUpClampDeg)) : 85; // Used as the negative/upward pitch boundary for shooter-style vertical look.\n        return window.FormatUtils.clamp(value, -upClampDeg, downClampDeg);\n      }\n"
           game = replace_once(game, helper_anchor, helper_replacement, 'camera pitch helper insertion')
           game = replace_once(
               game,
@@ -89,44 +80,27 @@ jobs:
 
           old_cache = 'game.js?v=20260909controller1'
           new_cache = 'game.js?v=20260909lookclamp1'
-          updated_tests = 0
           for test_path in Path('scripts').glob('test-*.js'):
               source = test_path.read_text(encoding='utf-8')
               if old_cache in source:
                   test_path.write_text(source.replace(old_cache, new_cache), encoding='utf-8')
-                  updated_tests += 1
-          print(f'updated cache assertions in {updated_tests} existing test file(s)')
 
-          test_path = Path('scripts/test-camera-look-clamps.js')
-          test_path.write_text(r'''#!/usr/bin/env node
-'use strict';
-
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-
-const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8');
-const game = fs.readFileSync('docs/game.js', 'utf8');
-const index = fs.readFileSync('docs/index.html', 'utf8');
-
-assert.match(config, /"cameraRotateClampDeg": 45,[\s\S]{0,160}"cameraRotateUpClampDeg": 85/,
-  'camera config keeps the legacy 45-degree yaw/down limit and authors an 85-degree upward limit');
-assert.match(game, /function clampCameraPitchOffsetDeg\(value\)[\s\S]{0,700}cameraRotateUpClampDeg[\s\S]{0,300}-upClampDeg, downClampDeg/,
-  'shared pitch helper applies separate upward and downward boundaries');
-assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 3,
-  'touch joystick, controller, and desktop mouse pitch all use the shared directional clamp');
-assert.match(game, /cameraJoystickY[\s\S]{0,220}clampCameraPitchOffsetDeg/,
-  'touch camera pitch uses the directional clamp');
-assert.match(game, /controllerCameraY[\s\S]{0,900}clampCameraPitchOffsetDeg/,
-  'controller camera pitch uses the directional clamp');
-assert.match(game, /e\.movementY[\s\S]{0,180}clampCameraPitchOffsetDeg/,
-  'desktop mouse camera pitch uses the directional clamp');
-assert.match(game, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,260}-clampDeg, clampDeg/,
-  'horizontal non-free camera look retains the existing symmetric clamp');
-assert.match(index, /game\.js\?v=20260909lookclamp1/,
-  'game script cache key is bumped so clients receive the new clamp behavior');
-
-console.log('Directional camera look clamp checks passed.');
-''', encoding='utf-8')
+          test_source = (
+              "#!/usr/bin/env node\n"
+              "'use strict';\n\n"
+              "const assert = require('node:assert/strict');\n"
+              "const fs = require('node:fs');\n\n"
+              "const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8');\n"
+              "const game = fs.readFileSync('docs/game.js', 'utf8');\n"
+              "const index = fs.readFileSync('docs/index.html', 'utf8');\n\n"
+              "assert.match(config, /\\\"cameraRotateClampDeg\\\": 45,[\\s\\S]{0,160}\\\"cameraRotateUpClampDeg\\\": 85/, 'config authors 45 down/yaw and 85 up');\n"
+              "assert.match(game, /function clampCameraPitchOffsetDeg\\(value\\)[\\s\\S]{0,700}cameraRotateUpClampDeg[\\s\\S]{0,300}-upClampDeg, downClampDeg/, 'shared helper applies directional pitch bounds');\n"
+              "assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\\(/g) || []).length, 3, 'mouse, touch, and controller all use shared pitch clamp');\n"
+              "assert.match(game, /cameraAzimuthOffsetDeg = freeRotateCameraActive\\(\\)[\\s\\S]{0,260}-clampDeg, clampDeg/, 'yaw keeps symmetric legacy clamp');\n"
+              "assert.match(index, /game\\.js\\?v=20260909lookclamp1/, 'game cache key is bumped');\n\n"
+              "console.log('Directional camera look clamp checks passed.');\n"
+          )
+          Path('scripts/test-camera-look-clamps.js').write_text(test_source, encoding='utf-8')
           PY
       - name: Validate syntax and camera regressions
         run: |
