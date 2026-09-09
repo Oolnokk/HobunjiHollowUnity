@@ -13,10 +13,62 @@
   // after with the getInputBindings getter added once that const exists.
   let deps = null;
   const AUTOMATIC_SELECTION_ACTION_IDS = new Set(['toolSelect', 'itemSelect', 'utilityMenu', 'socialWheel']); // Used to keep held wheel/arch openers out of ordinary gameplay dispatch and reserve their sticks for selector navigation.
+  const CANONICAL_CONTROLLER_DEFAULTS = Object.freeze({
+    interact: 'Button0',
+    dodge: 'Button1',
+    action1: 'RightTrigger',
+    action2: 'LeftTrigger',
+    action3: 'Button2',
+    action4: null,
+    action5: null,
+    action6: null,
+    action7: null,
+    action8: null,
+    swapTarget: null,
+    meleeTargetPrev: 'RightStickLeft',
+    meleeTargetNext: 'RightStickRight',
+    toggleMount: 'Button10',
+    weaponSwitch: 'Button11',
+    utilityMenu: 'Button12',
+    toolSelect: 'Button5',
+    itemPrev: null,
+    itemNext: null,
+    toolPrev: null,
+    toolNext: null,
+    tool1: null,
+    tool2: null,
+    tool4: null,
+    tool5: null,
+    tool6: null,
+    uiOpenMenu: 'Button8',
+    uiConfirm: 'Button0',
+    uiCancel: 'Button1',
+    uiTabPrev: 'Button4',
+    uiTabNext: 'Button5',
+    uiUp: 'Button12',
+    uiDown: 'Button13',
+    uiLeft: 'Button14',
+    uiRight: 'Button15',
+    musicNote1: 'Button2',
+    musicNote2: 'Button0',
+    musicNote3: 'Button1',
+    musicNote4: 'Button3',
+    musicBank1: 'LeftTrigger',
+    musicBank2: 'RightTrigger',
+    musicBank3: 'Button4',
+    musicBank4: 'Button5',
+    musicPause: 'Button9',
+    musicScalePrev: 'Button14',
+    musicScaleNext: 'Button15',
+    meleeAutoTargetToggle: 'Button3',
+    socialWheel: 'Button15',
+    itemSelect: 'Button4',
+  }); // Canonical controller reset/fresh-player layout; kept in one map so legacy authored values cannot drift away from the shipped controller experience.
   const REQUIRED_CONTROLLER_ACTIONS = Object.freeze([
-    { id: 'itemSelect', label: 'Item Select', desktop: null, controller: null, devices: ['controller'], context: 'selection' },
-    { id: 'toggleMount', label: 'Call/Dismiss Mount', desktop: 'KeyV', controller: null },
-  ]); // Used to guarantee Settings always exposes Item Select and Call/Dismiss Mount even when an older config predates those controller rows.
+    { id: 'itemSelect', label: 'Item Select', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.itemSelect, devices: ['controller'], context: 'selection' },
+    { id: 'socialWheel', label: 'Social Actions', desktop: 'Shift+KeyQ', controller: CANONICAL_CONTROLLER_DEFAULTS.socialWheel, context: 'selection' },
+    { id: 'toggleMount', label: 'Call/Dismiss Mount', desktop: 'KeyV', controller: CANONICAL_CONTROLLER_DEFAULTS.toggleMount },
+  ]); // Used to guarantee Settings always exposes controller actions that older authored configs may not contain yet.
   let explicitMountBindingKnown = false; // Used by the legacy-migration repair loop to distinguish an intentional saved mount choice (including Unbound) from a shipped default.
   let explicitMountBinding = null; // Stores the player's last explicit Call/Dismiss Mount controller choice so Social Actions cannot silently erase it later.
   let mountRepairTimer = null; // Keeps one lightweight repair interval alive after game.js supplies the live inputBindings getter.
@@ -45,13 +97,14 @@
     if (Array.isArray(actions)) {
       for (const required of REQUIRED_CONTROLLER_ACTIONS) ensureAction(actions, required);
       for (const action of actions) {
+        if (Object.prototype.hasOwnProperty.call(CANONICAL_CONTROLLER_DEFAULTS, action?.id)) {
+          action.controller = CANONICAL_CONTROLLER_DEFAULTS[action.id]; // Makes fresh-player and reset behavior authoritative even when older config rows still carry obsolete controller values.
+        }
         if (AUTOMATIC_SELECTION_ACTION_IDS.has(action?.id)) action.context = 'selection';
       }
     }
-    if (INPUT_DEFAULTS.controller) {
-      if (!Object.prototype.hasOwnProperty.call(INPUT_DEFAULTS.controller, 'itemSelect')) INPUT_DEFAULTS.controller.itemSelect = null;
-      if (!Object.prototype.hasOwnProperty.call(INPUT_DEFAULTS.controller, 'toggleMount')) INPUT_DEFAULTS.controller.toggleMount = null;
-    }
+    if (!INPUT_DEFAULTS.controller) INPUT_DEFAULTS.controller = {}; // Used as the generated controller-default map consumed by load/reset code.
+    Object.assign(INPUT_DEFAULTS.controller, CANONICAL_CONTROLLER_DEFAULTS);
     if (Array.isArray(INPUT_DEFAULTS.modeShifts)) {
       const kept = removeLegacyControllerModeShift(INPUT_DEFAULTS.modeShifts); // Used to migrate the old LB+right-stick tool/item selector out of shipped defaults in place.
       INPUT_DEFAULTS.modeShifts.splice(0, INPUT_DEFAULTS.modeShifts.length, ...kept);
@@ -88,17 +141,13 @@
         explicitMountBinding = saved.controller.toggleMount ?? null;
       }
       const controller = { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) }; // Used as the live controller map after adding controller actions introduced after an older save was written.
-      if (!Object.prototype.hasOwnProperty.call(controller, 'itemSelect')) controller.itemSelect = null;
-      if (!Object.prototype.hasOwnProperty.call(controller, 'toggleMount')) controller.toggleMount = null;
       return {
         desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
         controller,
         modeShifts: removeLegacyControllerModeShift(Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts),
       };
     } catch (_err) {
-      const controller = { ...INPUT_DEFAULTS.controller }; // Used by the corrupt-save fallback while still guaranteeing the newly bindable controller actions exist.
-      if (!Object.prototype.hasOwnProperty.call(controller, 'itemSelect')) controller.itemSelect = null;
-      if (!Object.prototype.hasOwnProperty.call(controller, 'toggleMount')) controller.toggleMount = null;
+      const controller = { ...INPUT_DEFAULTS.controller }; // Used by the corrupt-save fallback while still guaranteeing the canonical controller layout exists.
       return { desktop: { ...INPUT_DEFAULTS.desktop }, controller, modeShifts: removeLegacyControllerModeShift(INPUT_DEFAULTS.modeShifts) };
     }
   }
