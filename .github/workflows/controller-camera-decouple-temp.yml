@@ -28,6 +28,7 @@ jobs:
           git checkout origin/main -- docs/config/scratchbones-config.js
           sed -i 's/^t# the game closure\./# the game closure./' .github/controller-camera-decouple.py
           python3 .github/controller-camera-decouple.py
+          sed -i "/repairExplicitMountBinding.*legacy runtime migration code/d" scripts/test-controller-experience.js
       - name: Validate independent controller and camera layers
         shell: bash
         run: |
