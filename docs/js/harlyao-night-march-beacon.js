@@ -111,8 +111,8 @@
 
   function worldRadiusPx(beacon, worldY, rect) {
     const visuals = config?.visuals || {};
-    const minPx = Math.max(24, Number(visuals.beaconMinScreenRadiusPx) || 58);
-    const maxPx = Math.max(minPx, Number(visuals.beaconMaxScreenRadiusPx) || 170);
+    const minPx = Math.max(24, Number(visuals.beaconMinScreenRadiusPx) || 96);
+    const maxPx = Math.max(minPx, Number(visuals.beaconMaxScreenRadiusPx) || 220);
     let projectedRadius = 0;
     if (cameraRight && lightingDeps?.camera) {
       cameraRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
@@ -180,8 +180,8 @@
   function drawLobes(ctx, lobes, color, intensity, erase) {
     const rgb = color.replace('#', '');
     const parsed = Number.parseInt(rgb.length === 3 ? rgb.split('').map(ch => ch + ch).join('') : rgb, 16);
-    const r = Number.isFinite(parsed) ? (parsed >> 16) & 255 : 121;
-    const g = Number.isFinite(parsed) ? (parsed >> 8) & 255 : 168;
+    const r = Number.isFinite(parsed) ? (parsed >> 16) & 255 : 176;
+    const g = Number.isFinite(parsed) ? (parsed >> 8) & 255 : 240;
     const b = Number.isFinite(parsed) ? parsed & 255 : 255;
     for (const lobe of lobes) {
       const strength = clamp(intensity * lobe.alpha, 0, 1);
@@ -222,7 +222,7 @@
     const ctx = lightingDeps.lctx;
     const visuals = config.visuals || {};
     const intensity = clamp(Number(visuals.beaconGlowIntensity) || 0.94, 0, 1);
-    const color = visuals.beaconGlowColor || visuals.color || '#79a8ff';
+    const color = visuals.beaconGlowColor || visuals.color || '#b0f0ff';
 
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
@@ -322,9 +322,9 @@
       ...beacon,
       radiusTiles: Math.max(1, Number(visuals.beaconGlowRadiusTiles) || 28),
       intensity: clamp(Number(visuals.beaconGlowIntensity) || 0.94, 0, 1),
-      color: visuals.beaconGlowColor || visuals.color || '#79a8ff',
-      minScreenRadiusPx: Math.max(24, Number(visuals.beaconMinScreenRadiusPx) || 58),
-      maxScreenRadiusPx: Math.max(24, Number(visuals.beaconMaxScreenRadiusPx) || 170),
+      color: visuals.beaconGlowColor || visuals.color || '#b0f0ff',
+      minScreenRadiusPx: Math.max(24, Number(visuals.beaconMinScreenRadiusPx) || 96),
+      maxScreenRadiusPx: Math.max(24, Number(visuals.beaconMaxScreenRadiusPx) || 220),
       edgeMarginPx: Math.max(12, Number(visuals.beaconEdgeMarginPx) || 44),
       screen: lastScreenState,
     };
