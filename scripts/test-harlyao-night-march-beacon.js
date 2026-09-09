@@ -23,16 +23,22 @@ assert(config.visuals.beaconGlowRadiusTiles >= 20, 'army locator keeps a substan
 assert(config.visuals.beaconGlowRadiusTiles > config.visuals.formationGlowRadiusTiles, 'distant beacon radius must exceed the close formation halo');
 assert(config.visuals.beaconGlowIntensity >= 0.9 && config.visuals.beaconGlowIntensity <= 1, 'locator is deliberately strong enough to find');
 assert.equal(config.visuals.beaconShape, 'serpentine', 'army locator uses the requested irregular snake-like silhouette');
-assert(config.visuals.beaconMinScreenRadiusPx >= 48, 'distance cannot shrink the locator below a clearly visible on-screen footprint');
+assert(config.visuals.beaconMinScreenRadiusPx >= 96, 'distance cannot shrink the locator below a large, clearly visible on-screen footprint');
+assert(config.visuals.beaconMaxScreenRadiusPx >= 200, 'nearby locator may grow large enough to remain unmistakable without becoming unbounded');
 assert(config.visuals.beaconMaxScreenRadiusPx >= config.visuals.beaconMinScreenRadiusPx, 'screen locator radius clamp remains valid');
 assert(config.visuals.beaconEdgeMarginPx >= 24, 'off-screen locator stays visibly inset from the viewport edge');
+assert.equal(config.visuals.beaconGlowColor.toLowerCase(), '#b0f0ff', 'army locator uses the authored pale icy-aqua Harlyao ghost shade');
 
 const rootColorMatch = rootTotemConfigSource.match(/colors:\s*\{\s*liquid:\s*'([^']+)'/);
 assert(rootColorMatch, 'Root Totem liquid/glow color should remain authored in root-totem-config');
 const rootColor = rgb(rootColorMatch[1]);
 const beaconColor = rgb(config.visuals.beaconGlowColor);
-const colorDistance = Math.hypot(beaconColor.r - rootColor.r, beaconColor.g - rootColor.g, beaconColor.b - rootColor.b);
-assert(colorDistance >= 70, 'Harlyao locator shade must remain visually distinct from Root Totem mint-blue-green');
+const bodyColor = rgb(config.visuals.color);
+const rootDistance = Math.hypot(beaconColor.r - rootColor.r, beaconColor.g - rootColor.g, beaconColor.b - rootColor.b);
+const bodyDistance = Math.hypot(beaconColor.r - bodyColor.r, beaconColor.g - bodyColor.g, beaconColor.b - bodyColor.b);
+assert(rootDistance >= 70, 'Harlyao locator shade must remain visually distinct from Root Totem mint-blue-green');
+assert(bodyDistance <= 140, 'locator should remain in the same broad spectral family as the Harlyao ghost body rather than becoming an unrelated color');
+assert(beaconColor.g >= 230 && beaconColor.b >= 245 && beaconColor.b > beaconColor.g, 'locator stays a pale icy aqua/cyan rather than Root Totem green-mint');
 assert.notEqual(config.visuals.beaconGlowColor.toLowerCase(), config.visuals.color.toLowerCase(), 'locator gets a unique colder ghost shade while ordinary Harlyao ghosts keep their authored teal');
 
 assert.match(beaconSource, /window\.HarlyaoNightMarch\?\.debugSnapshot/, 'beacon reads existing hourly/live route state instead of simulating a second army');
@@ -85,7 +91,7 @@ assert.deepEqual(
   { x: 195.5, z: 195.5, col: 195, row: 195 },
   'partial final wilderness chunk clamps its locator to the real 200x200 map',
 );
-const edge = testApi.clampOffscreenPoint({ x: 900, y: 250, visible: false }, { width: 400, height: 300 }, 58);
+const edge = testApi.clampOffscreenPoint({ x: 900, y: 250, visible: false }, { width: 400, height: 300 }, 96);
 assert(edge.edge, 'off-screen projected location is explicitly marked as an edge locator');
 assert(edge.x < 400 && edge.x > 200, 'right-side off-screen army produces a visible right-edge cue');
 assert(edge.y > 0 && edge.y < 300, 'edge locator stays within viewport height');
