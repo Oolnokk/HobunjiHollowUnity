@@ -13,6 +13,9 @@ const configSource = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8
 const settingsSource = fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'); // Used to guard controller listening and JSON export controls.
 const musicSource = fs.readFileSync('docs/js/music-minigame.js', 'utf8'); // Used to ensure music buttons resolve semantic actions instead of fixed Gamepad indices.
 const socialSource = fs.readFileSync('docs/js/social-action-wheel.js', 'utf8'); // Used to ensure non-ButtonN bindings work for the social wheel too.
+const bindingsSource = fs.readFileSync('docs/js/input-bindings.js', 'utf8'); // Used to pin selector-action migration and mount-binding preservation behavior.
+const selectorSource = fs.readFileSync('docs/js/controller-selection-ui.js', 'utf8'); // Used to guard automatic both-stick controller ownership for wheels/arches.
+const actionLocksSource = fs.readFileSync('docs/js/character-action-locks.js', 'utf8'); // Used to verify the selector adapter is parser-loaded before gameplay polling can consume the same sticks.
 const context = { window: {} }; // Receives the browser helper namespace for deterministic stick-response tests.
 vm.runInNewContext(helperSource, context);
 const { normalizeStick, pickActiveGamepad, isBindingPressed, getPressedBindingCodes } = context.window.ControllerInput;
@@ -69,6 +72,29 @@ assert.match(musicSource, /controllerButton\(gamepad, 'musicNote1'/, 'music note
 assert.match(musicSource, /controllerButton\(gamepad, 'musicPause'/, 'music pause uses a named configurable action');
 assert.doesNotMatch(musicSource, /controllerButton\(gamepad,\s*\d+/, 'music button actions no longer pass fixed Gamepad indices');
 assert.match(socialSource, /ControllerInput\?\.isBindingPressed\?\.\(pad, openCode\)/, 'social actions accept any supported configured controller binding, not just ButtonN');
+
+assert.match(bindingsSource, /AUTOMATIC_SELECTION_ACTION_IDS = new Set\(\['toolSelect', 'itemSelect', 'utilityMenu', 'socialWheel'\]\)/, 'tool, item, utility, and social selectors are one automatic controller-selection class');
+assert.match(bindingsSource, /id: 'itemSelect',[\s\S]{0,120}label: 'Item Select'/, 'Item Select is guaranteed to exist as a first-class controller action');
+assert.match(bindingsSource, /id: 'toggleMount',[\s\S]{0,120}label: 'Call\/Dismiss Mount'/, 'Call/Dismiss Mount is guaranteed to remain a controller-configurable action');
+assert.match(bindingsSource, /filter\(shift => shift\?\.id !== 'controller-left-bumper'\)/, 'the obsolete held-LB controller selector shift is migrated out of loaded and exported bindings');
+assert.match(bindingsSource, /repairExplicitMountBinding/, 'an explicit saved Call/Dismiss Mount choice is protected from legacy runtime migration code');
+assert.match(bindingsSource, /String\(button\)\.startsWith\('RightStick'\)[\s\S]{0,180}reserved for navigating this wheel or arch/, 'selector opener actions cannot consume the stick directions they automatically own');
+assert.match(bindingsSource, /targetContext === 'selection' && otherContext === 'gameplay'/, 'selector openers conflict with simultaneous gameplay actions instead of double-firing');
+
+assert.match(selectorSource, /toolSelect:[\s\S]{0,100}open: 'openTool'[\s\S]{0,100}step: 'scrollTool'/, 'Tool Select drives the existing shared tool arch');
+assert.match(selectorSource, /itemSelect:[\s\S]{0,100}open: 'openItem'[\s\S]{0,100}step: 'scrollItem'/, 'Item Select drives the existing shared item arch');
+assert.match(selectorSource, /utilityMenu:[\s\S]{0,120}open: 'openUtilities'[\s\S]{0,100}step: 'scrollEntries'/, 'Utility Menu drives the existing shared utility arch');
+assert.match(selectorSource, /socialWheel:[\s\S]{0,80}kind: 'social'/, 'Social Actions is routed through the same automatic selector ownership layer');
+assert.match(selectorSource, /const leftX = axis\(pad, 0\)[\s\S]{0,180}const rightX = axis\(pad, 2\)/, 'both left and right sticks provide horizontal arch navigation');
+assert.match(selectorSource, /const left = \{ x: axis\(pad, 0\), y: axis\(pad, 1\)[\s\S]{0,220}const right = \{ x: axis\(pad, 2\), y: axis\(pad, 3\)/, 'both left and right sticks provide full radial social-wheel navigation');
+assert.match(selectorSource, /!isDown\(pad, state\.openerCode\)[\s\S]{0,120}finishSelection\(true, 'opener released'\)/, 'releasing a selector opener commits the current choice');
+assert.match(selectorSource, /arch\?\.releaseSelection\?\.\(\)/, 'arch commits reuse the existing release-selection path');
+assert.match(selectorSource, /SocialActionWheel\?\.close\?\.\(commit\)/, 'social-wheel commits reuse the existing wheel close/commit path');
+assert.match(selectorSource, /ui\.isActive = wrapped/, 'automatic selector ownership suppresses ordinary gameplay controller polling while a wheel or arch owns the sticks');
+assert.match(selectorSource, /CharacterActionLocks\?\.acquire/, 'held controller selectors also suppress player movement/tools/actions through the shared lock registry');
+assert.match(selectorSource, /showDebug/, 'controller selector ownership has an in-page debug surface for mobile testing');
+assert.match(actionLocksSource, /controller-selection-ui\.js\?v=20260909controller3/, 'the automatic selector adapter is parser-loaded with a cache-busted URL');
+
 assert.match(configSource, /"id": "uiOpenMenu"[\s\S]{0,120}"context": "menu"/, 'menu open/close is authored in controller configuration');
 assert.match(configSource, /"id": "musicNote1"[\s\S]{0,120}"context": "music"/, 'music controls are authored in controller configuration');
 assert.match(configSource, /"id": "meleeAutoTargetToggle"[\s\S]{0,160}"context": "melee"/, 'melee auto-target toggle is authored in controller configuration');
