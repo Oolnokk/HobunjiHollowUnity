@@ -227,7 +227,7 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260829combatsfx2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260909perspectivepoint1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260826alphacrop1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -380,7 +380,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.DebugHitboxes.init(...) during its own setup. -->
-  <script src="js/debug-hitboxes.js?v=20260909perspectivepoint2"></script>
+  <script src="js/debug-hitboxes.js?v=20260909perspectivepoint4"></script>
   <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
        Arena (window.BanditCombatLog) — reads window.BanditCombat/
        window.BanditCamps/window.Combat at capture time (already global by
@@ -2200,7 +2200,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260909perspectivepoint1"></script>
+  <script src="js/pixel-probe.js?v=20260909perspectivepoint2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2311,7 +2311,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260909perspectivepoint4"></script>
+  <script src="game.js?v=20260909perspectivepoint6"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260903a"></script>
   <script>
