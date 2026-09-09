@@ -334,11 +334,42 @@
   let _flowingTrenchTiles = [];        // Used by WeatherFX's trench particle emitter.
   let _townFlowingTrenchTiles = [];    // Same, town-side.
 
-  function _median(values) {
-    if (!values.length) return 0;
-    values.sort((a, b) => a - b); // The sample arrays are throwaway snapshots, so sort in place to avoid an extra full-array copy.
-    const mid = Math.floor(values.length / 2); // Used to select the center weather-level sample after sorting.
-    return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) * 0.5;
+  function _newBaselineSamples() {
+    return {
+      wet: [], // Used to retain only visible-level samples that may participate in a wet median.
+      dryCount: 0, // Used to place the wet sample array at the correct sorted-index offset without storing dry values.
+      total: 0, // Used to choose the median indices and to decide whether preferred terrain samples exist.
+      maxDry: 0, // Used only for the even-sized boundary median where the lower center sample is dry.
+      minWet: Infinity, // Used to skip sorting when every retained wet sample has the same value.
+      maxWet: -Infinity, // Used with minWet to detect a uniform wet sample set.
+    };
+  }
+
+  function _addBaselineSample(samples, water) {
+    samples.total++;
+    if (water < 0.003) {
+      samples.dryCount++;
+      if (water > samples.maxDry) samples.maxDry = water;
+      return;
+    }
+    samples.wet.push(water);
+    if (water < samples.minWet) samples.minWet = water;
+    if (water > samples.maxWet) samples.maxWet = water;
+  }
+
+  function _baselineMedian(samples) {
+    if (!samples.total) return 0;
+    const highIndex = Math.floor(samples.total / 2); // Used as the upper center index in sorted sample order.
+    const lowIndex = Math.floor((samples.total - 1) / 2); // Used as the lower center index for even sample counts.
+    if (highIndex < samples.dryCount) return samples.maxDry; // The whole median lies below visibility; exact sub-threshold rank is visually irrelevant.
+
+    const sampleAt = index => index < samples.dryCount
+      ? samples.maxDry
+      : samples.wet[index - samples.dryCount]; // Used after wet-only sorting to address the logical combined dry+wet order.
+    if (samples.minWet !== samples.maxWet) samples.wet.sort((a, b) => a - b);
+    return samples.total % 2
+      ? sampleAt(highIndex)
+      : (sampleAt(lowIndex) + sampleAt(highIndex)) * 0.5;
   }
 
   // The simulation remains tile-based, but the renderer collector stays sparse:
@@ -353,8 +384,8 @@
     const NORMAL_TOP = deps.getNormalTop();
     const cells = []; // Used by buildMergedWaterMesh; contains only visible dynamic-water cells.
     const flowingTrenches = []; // Used by WeatherFX's trench particle emitter.
-    const preferredBaselineWater = []; // Grass/weeds: used first for the weather-driven global plane.
-    const fallbackBaselineWater = []; // Non-grass ordinary ground used only if no grass/weeds samples exist.
+    const preferredBaselineSamples = _newBaselineSamples(); // Grass/weeds: used first for the weather-driven global plane.
+    const fallbackBaselineSamples = _newBaselineSamples(); // Non-grass ordinary ground used only if no grass/weeds samples exist.
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
@@ -367,9 +398,9 @@
             && tile.type !== TileType.TRENCH && tile.type !== TileType.PADDY
             && Math.abs(baseSurfaceY - NORMAL_TOP) < 0.001) {
           if (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) {
-            preferredBaselineWater.push(tile.water);
+            _addBaselineSample(preferredBaselineSamples, tile.water);
           } else {
-            fallbackBaselineWater.push(tile.water);
+            _addBaselineSample(fallbackBaselineSamples, tile.water);
           }
         }
 
@@ -418,10 +449,10 @@
       }
     }
 
-    const baselineSamples = preferredBaselineWater.length
-      ? preferredBaselineWater
-      : fallbackBaselineWater; // Used once to derive the common weather-level visual baseline.
-    const baselineWater = _median(baselineSamples); // Used as the map-wide baseline water amount for this simulation snapshot.
+    const baselineSamples = preferredBaselineSamples.total
+      ? preferredBaselineSamples
+      : fallbackBaselineSamples; // Used once to derive the common weather-level visual baseline.
+    const baselineWater = _baselineMedian(baselineSamples); // Used as the map-wide baseline water amount for this simulation snapshot.
     const baselineDepth = deps.clamp(baselineWater / deps.MAX_WATER, 0, 1); // Used by the water shader for baseline color/coverage.
     const baseline = { // Used by the inverted renderer as the map-wide weather sheet.
       visible: baselineWater >= 0.003,
