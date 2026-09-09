@@ -17714,18 +17714,26 @@
           if (Array.isArray(object.material)) {
             for (const material of object.material) {
               if (!material || materialStates.has(material)) continue;
-              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthFunc: material.depthFunc });
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc });
               material.colorWrite = false;
               material.depthWrite = true;
-              if (object.userData?.isPngPlane === true) material.depthFunc = THREE.AlwaysDepth;
+              // The replay must obey the completed scene depth. AlwaysDepth let a
+              // player behind furniture overwrite that nearer furniture depth,
+              // so the later black shell appeared through benches and walls.
+              material.depthTest = true;
+              material.depthFunc = THREE.LessEqualDepth;
             }
           } else {
             const material = object.material;
             if (material && !materialStates.has(material)) {
-              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthFunc: material.depthFunc });
+              materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc });
               material.colorWrite = false;
               material.depthWrite = true;
-              if (object.userData?.isPngPlane === true) material.depthFunc = THREE.AlwaysDepth;
+              // The replay must obey the completed scene depth. AlwaysDepth let a
+              // player behind furniture overwrite that nearer furniture depth,
+              // so the later black shell appeared through benches and walls.
+              material.depthTest = true;
+              material.depthFunc = THREE.LessEqualDepth;
             }
           }
         });
@@ -17740,6 +17748,7 @@
           for (const [material, state] of materialStates) {
             material.colorWrite = state.colorWrite;
             material.depthWrite = state.depthWrite;
+            material.depthTest = state.depthTest;
             material.depthFunc = state.depthFunc;
           }
           materialStates.clear();

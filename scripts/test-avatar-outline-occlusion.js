@@ -16,11 +16,14 @@ assert.match(gameSource,
   /function _renderPngPlaneOutlineOccluderDepth\(activeScene\)[\s\S]{0,1400}material\.colorWrite = false;[\s\S]{0,100}material\.depthWrite = true;/,
   'visible PNG silhouettes replay depth without repainting color');
 assert.match(gameSource,
-  /object\.userData\?\.isPngPlane === true\) material\.depthFunc = THREE\.AlwaysDepth;/,
-  'portrait depth must follow its visual render ordering so covered 3D hand shells cannot leak through the body or clothing');
+  /material\.depthTest = true;[\s\S]{0,100}material\.depthFunc = THREE\.LessEqualDepth;/,
+  'PNG avatar depth replay respects nearer furniture, walls, and other scene occluders');
+assert.doesNotMatch(gameSource,
+  /function _renderPngPlaneOutlineOccluderDepth\(activeScene\)[\s\S]{0,2200}THREE\.AlwaysDepth;/,
+  'PNG avatar depth replay must never overwrite nearer scene depth unconditionally');
 assert.match(gameSource,
-  /material\.depthFunc = state\.depthFunc;/,
-  'portrait depth ordering must be restored immediately after the outline-occluder replay');
+  /material\.depthTest = state\.depthTest;[\s\S]{0,100}material\.depthFunc = state\.depthFunc;/,
+  'portrait depth-test state must be restored immediately after the outline-occluder replay');
 assert.match(gameSource,
   /_renderPngPlaneOutlineOccluderDepth\(activeScene\);[\s\S]{0,220}activeScene\.overrideMaterial = shellOutlineMat;/,
   'avatar occlusion depth is written before furniture shell outlines');
