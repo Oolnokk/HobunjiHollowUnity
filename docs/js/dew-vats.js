@@ -26,9 +26,12 @@
   // read through a getter every call.
   let deps = null, COLS, ROWS, TileType;
   const DEW_SHOVEL_SFX_URL = 'assets/audio/sfx/sfx_shovel_dew.mp3'; // Used instead of the ordinary dirt-dig cue while the live shovel reticle is on Uumkao'ii dew.
-  const DEW_ROCK_OPACITY = 0.45; // Used by dew-only rock materials so the boulders read as translucent condensed dew instead of ordinary stone.
+  const DEW_ROCK_OPACITY = 0.8; // Used by dew-only rock materials so the piles remain translucent while reading much denser than the earlier 45% version.
   const DEW_WAVY_TEXTURE = 'assets/textures/wavy_surface.png'; // Used for the dew-only rock surface instead of ordinary ROCK carved_smooth.
   const DEW_UV_MAPPING = 'single-whole-pile-stretch'; // Used by diagnostics and geometry metadata to prove connected-surface island mapping was bypassed.
+  const DEW_SOURCE_BOX_VERTEX_COUNT = 24; // BoxGeometry emits 24 split face vertices; each contiguous block identifies one source stone in the existing ROCK builder.
+  const DEW_ROUND_WIDTH_SEGMENTS = 8; // Horizontal sphere segments used for each dew-only rounded stone proxy; enough to soften silhouette without making piles expensive.
+  const DEW_ROUND_HEIGHT_SEGMENTS = 5; // Vertical sphere segments used with DEW_ROUND_WIDTH_SEGMENTS for the same lightweight rounded proxy.
   let dewShovelSfxPreload = null; // Retains one eagerly loaded element so repeated held-action thrusts start immediately.
   let lastDewShovelSfxDebug = null; // Mobile-readable diagnostic exported below.
   let dewFallbackWavyTexture = null; // Shared only if NaturalSurfaceMaterials is unavailable, avoiding one TextureLoader allocation per pile.
@@ -146,6 +149,93 @@
     ]) delete geometry.userData[key];
   }
 
+  function _mergeDewGeometries(geometries) {
+    let totalVertices = 0; // Used to allocate one exact position buffer for all rounded dew stones in a pile.
+    let totalIndices = 0; // Used to allocate one exact index buffer for the same merged rounded pile.
+    for (const geometry of geometries) {
+      const position = geometry?.getAttribute?.('position'); // Used to count source vertices before copying.
+      if (!position) continue;
+      totalVertices += position.count;
+      totalIndices += geometry.index?.count || position.count;
+    }
+    if (!totalVertices || !totalIndices) return null;
+
+    const positions = new Float32Array(totalVertices * 3); // Final packed positions for the single dew mesh.
+    const IndexArray = totalVertices > 65535 ? Uint32Array : Uint16Array; // Keeps small piles on compact 16-bit indices while remaining safe if geometry grows later.
+    const indices = new IndexArray(totalIndices); // Final packed triangle indices for the single dew mesh.
+    let vertexOffset = 0; // Running destination vertex offset while each rounded stone is appended.
+    let indexOffset = 0; // Running destination index offset for the same merge.
+
+    for (const geometry of geometries) {
+      const position = geometry?.getAttribute?.('position'); // Source rounded-stone positions for this merge step.
+      if (!position) continue;
+      positions.set(position.array, vertexOffset * 3);
+      const sourceIndex = geometry.index; // SphereGeometry is indexed; fallback supports a non-indexed source too.
+      if (sourceIndex) {
+        for (let i = 0; i < sourceIndex.count; i++) indices[indexOffset++] = sourceIndex.getX(i) + vertexOffset;
+      } else {
+        for (let i = 0; i < position.count; i++) indices[indexOffset++] = i + vertexOffset;
+      }
+      vertexOffset += position.count;
+    }
+
+    const merged = new THREE.BufferGeometry(); // Replaces the box-based boulder geometry only for dew rendering.
+    merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    merged.setIndex(new THREE.BufferAttribute(indices, 1));
+    merged.computeVertexNormals();
+    return merged;
+  }
+
+  // The existing ROCK builder produces each stone as one transformed BoxGeometry
+  // (24 face-split vertices) and then merges those boxes. Dew keeps every stone's
+  // authored location/overall bounds, but substitutes a low-poly ellipsoid fitted
+  // to that box's transformed AABB. This gives the pile a genuinely rounded
+  // silhouette instead of merely interpolating normals across a still-boxy mesh.
+  function _roundDewRockGeometry(mesh) {
+    const original = mesh?.geometry; // Existing deterministic ROCK geometry used as the shape/layout source.
+    const position = original?.getAttribute?.('position'); // Used to recover each contiguous BoxGeometry block.
+    if (!position || position.count < DEW_SOURCE_BOX_VERTEX_COUNT || position.count % DEW_SOURCE_BOX_VERTEX_COUNT !== 0) {
+      original?.computeVertexNormals?.();
+      return false;
+    }
+
+    const roundedParts = []; // Temporary ellipsoid geometries, one per source stone, merged below and immediately disposed.
+    const sourceStoneCount = position.count / DEW_SOURCE_BOX_VERTEX_COUNT; // Existing builder's exact stone count recovered from its 24-vertex BoxGeometry blocks.
+    for (let stone = 0; stone < sourceStoneCount; stone++) {
+      let minX = Infinity, minY = Infinity, minZ = Infinity; // Source-stone AABB minimum used to preserve its footprint and height.
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity; // Source-stone AABB maximum used with the minima above.
+      const start = stone * DEW_SOURCE_BOX_VERTEX_COUNT; // First split-face vertex belonging to this source box.
+      const end = start + DEW_SOURCE_BOX_VERTEX_COUNT; // Exclusive end of this source box's vertices.
+      for (let i = start; i < end; i++) {
+        const x = position.getX(i), y = position.getY(i), z = position.getZ(i); // One transformed source-box vertex sampled for the fitted ellipsoid.
+        minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+      }
+      const radiusX = Math.max(1e-4, (maxX - minX) * 0.5); // Ellipsoid X radius fitted exactly to the original stone's transformed bounds.
+      const radiusY = Math.max(1e-4, (maxY - minY) * 0.5); // Ellipsoid Y radius preserving the original stone's height.
+      const radiusZ = Math.max(1e-4, (maxZ - minZ) * 0.5); // Ellipsoid Z radius preserving the original stone's footprint.
+      const centerX = (minX + maxX) * 0.5; // Ellipsoid center inherited from the source stone AABB.
+      const centerY = (minY + maxY) * 0.5; // Vertical center inherited from the source stone AABB.
+      const centerZ = (minZ + maxZ) * 0.5; // Depth center inherited from the source stone AABB.
+      const rounded = new THREE.SphereGeometry(1, DEW_ROUND_WIDTH_SEGMENTS, DEW_ROUND_HEIGHT_SEGMENTS); // Lightweight smooth-looking replacement for this one source box.
+      rounded.scale(radiusX, radiusY, radiusZ);
+      rounded.translate(centerX, centerY, centerZ);
+      roundedParts.push(rounded);
+    }
+
+    const merged = _mergeDewGeometries(roundedParts); // Single mesh keeps draw-call behavior equivalent to the original merged boulder cluster.
+    for (const rounded of roundedParts) rounded.dispose();
+    if (!merged) return false;
+    merged.userData = Object.assign({}, original.userData || {}, {
+      uumkaoiiDewRoundedProxy: true,
+      uumkaoiiDewRoundedStoneCount: sourceStoneCount,
+      uumkaoiiDewRoundedSegments: `${DEW_ROUND_WIDTH_SEGMENTS}x${DEW_ROUND_HEIGHT_SEGMENTS}`,
+    });
+    original.dispose?.();
+    mesh.geometry = merged;
+    return true;
+  }
+
   // One planar projection is stretched exactly once over the bounding box of
   // the complete merged boulder cluster. The two largest pile axes become U/V,
   // so low rock piles normally receive one top-down X/Z image instead of one
@@ -223,7 +313,7 @@
 
   function _restoreDewShellOutline(mesh) {
     if (!mesh?.isMesh) return;
-    mesh.geometry?.computeVertexNormals?.(); // Shell extrusion follows vertex normals; ensure the raw procedural boulder geometry always supplies them.
+    mesh.geometry?.computeVertexNormals?.(); // Shell extrusion follows vertex normals; ensure the rounded procedural dew geometry always supplies smooth normals.
     mesh.userData = Object.assign({}, mesh.userData || {}, {
       uumkaoiiDewRock: true,
       shellOutlineRetainedForDew: true,
@@ -240,6 +330,7 @@
       if (!mesh?.isMesh) return;
       const previousMaterials = Array.isArray(mesh.material) ? mesh.material : (mesh.material ? [mesh.material] : []); // Used to release the raw per-pile stone material after replacing it.
       _clearRockSurfaceMetadata(mesh);
+      _roundDewRockGeometry(mesh);
       _assignSinglePileStretchUv(mesh.geometry);
       mesh.material = _dewMaterialTemplate(colorHex).clone();
       mesh.material.userData = Object.assign({}, mesh.material.userData || {}, {
@@ -309,6 +400,8 @@
     let shellOutlined = 0;
     let depthWriting = 0;
     let singleStretchMapped = 0;
+    let roundedMeshes = 0;
+    let roundedStones = 0;
     let terrainSurfaceTagged = 0;
     for (const group of dewPileMeshes.values()) {
       group.traverse?.(child => {
@@ -318,16 +411,22 @@
         const materials = Array.isArray(child.material) ? child.material : [child.material];
         if (materials.every(material => material?.depthWrite !== false)) depthWriting++;
         if (child.geometry?.userData?.uumkaoiiDewUvMapping === DEW_UV_MAPPING) singleStretchMapped++;
+        if (child.geometry?.userData?.uumkaoiiDewRoundedProxy) {
+          roundedMeshes++;
+          roundedStones += Number(child.geometry.userData.uumkaoiiDewRoundedStoneCount) || 0;
+        }
         if (child.userData?.naturalSurface || materials.some(material => material?.userData?.naturalSurface)) terrainSurfaceTagged++;
       });
     }
     return {
-      mode: 'translucent-existing-rocks',
+      mode: 'translucent-rounded-existing-rocks',
       piles: dewPileMeshes.size,
       meshes,
       shellOutlined,
       depthWriting,
       singleStretchMapped,
+      roundedMeshes,
+      roundedStones,
       terrainSurfaceTagged,
       uvMapping: DEW_UV_MAPPING,
       opacity: DEW_ROCK_OPACITY,
