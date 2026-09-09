@@ -251,10 +251,11 @@
     __test: Object.freeze({ stageForDistance }),
   });
 
-  loadConfig().then(() => install());
-  if (!install() && typeof window.setInterval === 'function') {
+  loadConfig().then(loaded => {
+    if (!loaded) return;
+    if (install() || typeof window.setInterval !== 'function') return;
     const retry = window.setInterval(() => {
       if (install()) window.clearInterval?.(retry);
-    }, 250);
-  }
+    }, 250); // Only needed in dev/tool loading orders where TownMine or Music appears after this module.
+  });
 })();
