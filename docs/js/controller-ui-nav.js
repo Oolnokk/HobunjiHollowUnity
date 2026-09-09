@@ -63,8 +63,8 @@
   function configuredControllerBinding(actionId) {
     const currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller; // Used to prefer the player's saved binding, including an explicit Unbound value.
     if (currentBindings && Object.prototype.hasOwnProperty.call(currentBindings, actionId)) return currentBindings[actionId];
-    const actionDefinition = window.SCRATCHBONES_CONFIG?.game?.input?.actions?.find(action => action.id === actionId); // Used as the shipped fallback before saved bindings have initialized.
-    return actionDefinition?.controller || null;
+    const defaults = window.InputBindings?.getDefaultBindings?.('controller'); // Keeps controller-only action schema/defaults owned by InputBindings.
+    return defaults && Object.prototype.hasOwnProperty.call(defaults, actionId) ? defaults[actionId] : null;
   }
 
   function controllerActionDown(gamepad, actionId) {

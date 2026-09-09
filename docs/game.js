@@ -23646,13 +23646,7 @@
         if (tool) setActiveTool(tool);
       }
       function getActionForButton(device, button, heldShift = null) {
-        if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
-        const bindings = inputBindings[device] || {};
-        return Object.keys(bindings).find(actionId => {
-          if (bindings[actionId] !== button) return false;
-          const actionDefinition = INPUT_DEFAULTS.actions.find(entry => entry.id === actionId); // Used to keep menu/music/melee-context bindings out of generic gameplay dispatch.
-          return (actionDefinition?.context || 'gameplay') === 'gameplay';
-        }) || null;
+        return window.InputBindings?.resolveActionForButton?.(device, button, heldShift) || null;
       }
       function publishControllerStatus(pad, owner = 'gameplay', move = null, look = null) {
         const status = pad ? {
@@ -23802,15 +23796,11 @@
         if ((Number(pad.axes[2]) || 0) >= axisPress) down.add('RightStickRight');
         if ((Number(pad.axes[3]) || 0) <= -axisPress) down.add('RightStickUp');
         if ((Number(pad.axes[3]) || 0) >= axisPress) down.add('RightStickDown');
-        const meleeAutoTargetBinding = inputBindings.controller?.meleeAutoTargetToggle || null; // Used so the melee-only auto-target toggle follows the player's controller configuration instead of a physical R3 constant.
-        if (meleeAutoTargetBinding && down.has(meleeAutoTargetBinding) && meleeWeaponOut()) {
-          if (!gamepadState.previous.has(meleeAutoTargetBinding)) {
-            meleeAutoTargetOn = !meleeAutoTargetOn;
-            manualAutoTarget = null;
-            meleeAutoTargetFreeAim = false;
-            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
-          }
-          down.delete(meleeAutoTargetBinding);
+        if (window.InputBindings?.consumeControllerPress?.('meleeAutoTargetToggle', down, gamepadState.previous, meleeWeaponOut())) {
+          meleeAutoTargetOn = !meleeAutoTargetOn;
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
         }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
@@ -24278,10 +24268,7 @@
         return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
       }
       function clampCameraPitchOffsetDeg(value) {
-        const cfg = desktopControlsConfig(); // Supplies the authored directional camera limits for mouse, touch, and controller pitch.
-        const downClampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Math.abs(Number(cfg.cameraRotateClampDeg)) : 45; // Used as the positive/downward pitch boundary and preserves the legacy limit.
-        const upClampDeg = Number.isFinite(Number(cfg.cameraRotateUpClampDeg)) ? Math.abs(Number(cfg.cameraRotateUpClampDeg)) : 85; // Used as the negative/upward pitch boundary for shooter-style vertical look.
-        return window.FormatUtils.clamp(value, -upClampDeg, downClampDeg);
+        return window.CameraLookClamp.clampPitchOffsetDeg(value, desktopControlsConfig());
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.

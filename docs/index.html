@@ -24,7 +24,7 @@
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20260909controller2"></script>
+  <script src="js/input-bindings.js?v=20260909decouple1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
@@ -110,7 +110,7 @@
   <script src="debug.js?v=20260905cacheaudit2"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260909controller2"></script>
+  <script src="config/scratchbones-config.js?v=20260909controller1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260830mapwaypoint3">
@@ -2244,7 +2244,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260909lookclamp1"></script>
+  <script src="js/fishing-minigame.js?v=20260825interactions1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2252,7 +2252,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20260909controller2"></script>
+  <script src="js/music-minigame.js?v=20260909decouple1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2332,9 +2332,11 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260909controller2"></script>
+  <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
+  <script src="js/camera-look-clamp.js?v=20260909decouple1"></script>
+  <script src="game.js?v=20260909decouple1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20260909controller2"></script>
+  <script src="js/controller-ui-nav.js?v=20260909decouple1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

@@ -8,7 +8,7 @@
 
   const DEFAULTS = Object.freeze({
     desktopOpen: 'Shift+KeyQ',
-    controllerOpen: 'Button13',
+    controllerOpen: 'Button15',
     outerButtonIcon: '☺',
     wheelRadiusPx: 190,
     wheelInnerRadiusPx: 68,
@@ -29,22 +29,6 @@
   const gameConfig = window.SCRATCHBONES_CONFIG?.game || {};
   gameConfig.socialActions = Object.assign({}, DEFAULTS, gameConfig.socialActions || {});
   const cfg = gameConfig.socialActions;
-
-  // D-pad Down used to be the mount default. Social Actions now owns it;
-  // only the untouched old default is cleared so custom mount bindings survive.
-  const inputActions = gameConfig.input?.actions;
-  if (Array.isArray(inputActions)) {
-    const mount = inputActions.find(action => action.id === 'toggleMount');
-    if (mount?.controller === DEFAULTS.controllerOpen) mount.controller = null;
-    if (!inputActions.some(action => action.id === 'socialWheel')) {
-      inputActions.push({
-        id: 'socialWheel',
-        label: 'Social Actions',
-        desktop: cfg.desktopOpen || DEFAULTS.desktopOpen,
-        controller: cfg.controllerOpen || DEFAULTS.controllerOpen,
-      });
-    }
-  }
 
   const DANCE_STYLES = Object.freeze({
     'side-step': Object.freeze({ label: 'Side Step', intensity: 1.00, stepFactor: 1.00 }),
@@ -123,7 +107,11 @@
   }
 
   function binding(device, actionId, fallback = null) {
-    return currentBindings()?.[device]?.[actionId] || fallback;
+    const current = currentBindings()?.[device]; // Preserves an explicit Unbound value instead of falling through to a legacy module default.
+    if (current && Object.prototype.hasOwnProperty.call(current, actionId)) return current[actionId];
+    const defaults = window.InputBindings?.getDefaultBindings?.(device); // Keeps controller action ownership in the binding layer rather than mutating SCRATCHBONES_CONFIG here.
+    if (defaults && Object.prototype.hasOwnProperty.call(defaults, actionId)) return defaults[actionId];
+    return fallback;
   }
 
   function parseDesktopChord(raw) {

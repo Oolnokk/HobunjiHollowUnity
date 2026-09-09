@@ -68,10 +68,28 @@
     { id: 'itemSelect', label: 'Item Select', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.itemSelect, devices: ['controller'], context: 'selection' },
     { id: 'socialWheel', label: 'Social Actions', desktop: 'Shift+KeyQ', controller: CANONICAL_CONTROLLER_DEFAULTS.socialWheel, context: 'selection' },
     { id: 'toggleMount', label: 'Call/Dismiss Mount', desktop: 'KeyV', controller: CANONICAL_CONTROLLER_DEFAULTS.toggleMount },
-  ]); // Used to guarantee Settings always exposes controller actions that older authored configs may not contain yet.
-  let explicitMountBindingKnown = false; // Used by the legacy-migration repair loop to distinguish an intentional saved mount choice (including Unbound) from a shipped default.
-  let explicitMountBinding = null; // Stores the player's last explicit Call/Dismiss Mount controller choice so Social Actions cannot silently erase it later.
-  let mountRepairTimer = null; // Keeps one lightweight repair interval alive after game.js supplies the live inputBindings getter.
+    { id: 'uiOpenMenu', label: 'Menu: Open / Close', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiOpenMenu, devices: ['controller'], context: 'menu' },
+    { id: 'uiConfirm', label: 'Menu: Confirm', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiConfirm, devices: ['controller'], context: 'menu' },
+    { id: 'uiCancel', label: 'Menu: Cancel / Back', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiCancel, devices: ['controller'], context: 'menu' },
+    { id: 'uiTabPrev', label: 'Menu: Previous Tab', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiTabPrev, devices: ['controller'], context: 'menu' },
+    { id: 'uiTabNext', label: 'Menu: Next Tab', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiTabNext, devices: ['controller'], context: 'menu' },
+    { id: 'uiUp', label: 'Menu: Navigate Up', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiUp, devices: ['controller'], context: 'menu' },
+    { id: 'uiDown', label: 'Menu: Navigate Down', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiDown, devices: ['controller'], context: 'menu' },
+    { id: 'uiLeft', label: 'Menu: Navigate Left', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiLeft, devices: ['controller'], context: 'menu' },
+    { id: 'uiRight', label: 'Menu: Navigate Right', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiRight, devices: ['controller'], context: 'menu' },
+    { id: 'musicNote1', label: 'Music: Note 1', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote1, devices: ['controller'], context: 'music' },
+    { id: 'musicNote2', label: 'Music: Note 2', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote2, devices: ['controller'], context: 'music' },
+    { id: 'musicNote3', label: 'Music: Note 3', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote3, devices: ['controller'], context: 'music' },
+    { id: 'musicNote4', label: 'Music: Note 4', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote4, devices: ['controller'], context: 'music' },
+    { id: 'musicBank1', label: 'Music: Bank 1', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank1, devices: ['controller'], context: 'music' },
+    { id: 'musicBank2', label: 'Music: Bank 2', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank2, devices: ['controller'], context: 'music' },
+    { id: 'musicBank3', label: 'Music: Bank 3', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank3, devices: ['controller'], context: 'music' },
+    { id: 'musicBank4', label: 'Music: Bank 4', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank4, devices: ['controller'], context: 'music' },
+    { id: 'musicPause', label: 'Music: Pause', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicPause, devices: ['controller'], context: 'music' },
+    { id: 'musicScalePrev', label: 'Music: Previous Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScalePrev, devices: ['controller'], context: 'music' },
+    { id: 'musicScaleNext', label: 'Music: Next Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScaleNext, devices: ['controller'], context: 'music' },
+    { id: 'meleeAutoTargetToggle', label: 'Melee: Toggle Auto-Target', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.meleeAutoTargetToggle, devices: ['controller'], context: 'melee' },
+  ]); // Controller-only schema is owned here so global gameplay config and unrelated camera work never need to author or migrate these rows.
 
   function removeLegacyControllerModeShift(modeShifts) {
     return (Array.isArray(modeShifts) ? modeShifts : []).filter(shift => shift?.id !== 'controller-left-bumper');
@@ -112,24 +130,9 @@
     }
   }
 
-  function repairExplicitMountBinding() {
-    if (!explicitMountBindingKnown) return false;
-    const bindings = deps?.getInputBindings?.(); // Used to compare the live controller map against the last explicit Settings choice.
-    if (!bindings?.controller || bindings.controller.toggleMount === explicitMountBinding) return false;
-    bindings.controller.toggleMount = explicitMountBinding;
-    localStorage.setItem(deps.INPUT_DEFAULTS.storageKey, JSON.stringify(bindings));
-    return true;
-  }
-
-  function startMountRepairLoop() {
-    if (mountRepairTimer || !deps?.getInputBindings) return;
-    mountRepairTimer = setInterval(repairExplicitMountBinding, 250);
-  }
-
   function init(injectedDeps) {
     deps = injectedDeps;
     patchAutomaticSelectionDefaults(deps?.INPUT_DEFAULTS);
-    startMountRepairLoop();
   }
 
   function loadInputBindings() {
@@ -137,10 +140,6 @@
     patchAutomaticSelectionDefaults(INPUT_DEFAULTS);
     try {
       const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
-      if (saved?.controller && Object.prototype.hasOwnProperty.call(saved.controller, 'toggleMount')) {
-        explicitMountBindingKnown = true;
-        explicitMountBinding = saved.controller.toggleMount ?? null;
-      }
       const controller = { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) }; // Used as the live controller map after adding controller actions introduced after an older save was written.
       return {
         desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
@@ -230,10 +229,6 @@
     const defaultModeShifts = getDefaultModeShifts(device); // Restores only this device's authored shifted bindings alongside its ordinary controls.
     bindings.modeShifts = [...otherModeShifts, ...defaultModeShifts];
 
-    if (device === 'controller') {
-      explicitMountBindingKnown = true;
-      explicitMountBinding = target.toggleMount ?? null;
-    }
     if (!saveInputBindings()) return false;
     for (const actionId of Object.keys(target)) {
       window.dispatchEvent(new CustomEvent('hobunji-input-bindings-changed', {
@@ -242,6 +237,22 @@
     }
     window.dispatchEvent(new CustomEvent('hobunji-input-bindings-reset', { detail: { device } }));
     return true;
+  }
+
+
+  function resolveActionForButton(device, button, heldShift = null) {
+    if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
+    const bindings = getCurrentBindings()?.[device] || {}; // Uses the live map so game.js never needs to know how contextual controller actions are authored.
+    return Object.keys(bindings).find(actionId => bindings[actionId] === button && actionContext(actionId) === 'gameplay') || null;
+  }
+
+  function consumeControllerPress(actionId, down, previous, active = true) {
+    if (!active || !down?.has || !previous?.has) return false;
+    const binding = getCurrentBindings()?.controller?.[actionId] ?? null; // Resolves semantic contextual presses without exposing physical controller codes to gameplay code.
+    if (!binding || !down.has(binding)) return false;
+    const freshPress = !previous.has(binding); // Used so held contextual actions edge-trigger once, matching the old hardcoded R3 behavior.
+    down.delete(binding);
+    return freshPress;
   }
 
   function contextsConflict(targetContext, otherContext) {
@@ -291,16 +302,11 @@
     return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
   }
 
-  window.addEventListener('hobunji-input-bindings-changed', event => {
-    if (event?.detail?.device !== 'controller' || event.detail.actionId !== 'toggleMount') return;
-    explicitMountBindingKnown = true;
-    explicitMountBinding = event.detail.binding ?? null;
-  });
 
   window.InputBindings = {
-    init, loadInputBindings, getCurrentBindings, saveInputBindings, repairExplicitMountBinding,
+    init, loadInputBindings, getCurrentBindings, saveInputBindings,
     resetDeviceToDefaults, getDefaultBindings, getDefaultModeShifts,
     canonicalControllerDefaults: CANONICAL_CONTROLLER_DEFAULTS,
-    bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice,
+    bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice, resolveActionForButton, consumeControllerPress,
   };
 })();

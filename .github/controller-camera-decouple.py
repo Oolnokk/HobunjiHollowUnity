@@ -161,7 +161,7 @@ game = regex_once(
 game_path.write_text(game)
 
 # 5) Camera clamp policy/math is independently testable and no longer lives in
-t# the game closure.
+# the game closure.
 camera_module = """(() => {
   'use strict';
 

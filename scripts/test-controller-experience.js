@@ -9,7 +9,6 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const uiSource = fs.readFileSync('docs/js/controller-ui-nav.js', 'utf8');
 const probeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
-const configSource = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8'); // Used to pin every discrete formerly-hardcoded controller action in authored input config.
 const settingsSource = fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'); // Used to guard controller listening and JSON export controls.
 const musicSource = fs.readFileSync('docs/js/music-minigame.js', 'utf8'); // Used to ensure music buttons resolve semantic actions instead of fixed Gamepad indices.
 const socialSource = fs.readFileSync('docs/js/social-action-wheel.js', 'utf8'); // Used to ensure non-ButtonN bindings work for the social wheel too.
@@ -116,13 +115,23 @@ assert.ok(persistedResets.length >= 2, 'both per-device resets save through loca
 assert.ok(resetEvents.some(event => event.type === 'hobunji-input-bindings-reset' && event.detail?.device === 'desktop'), 'keyboard reset broadcasts a device-specific refresh event');
 assert.ok(resetEvents.some(event => event.type === 'hobunji-input-bindings-reset' && event.detail?.device === 'controller'), 'controller reset broadcasts a device-specific refresh event');
 
-assert.match(gameSource, /pollControllerInput\(\);\s*applyControllerCameraLook\(dt\);\s*updateMeleeAutoTarget\(dt\);/, 'controller camera rotation is applied before movement/combat updates');
-assert.match(gameSource, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,520}cameraAngleOffsetDeg = clampCameraPitchOffsetDeg/, 'right stick updates yaw and uses the shared directional pitch clamp');
+const gameplayCollisionBindings = liveResetBindings.controller; // Exercises contextual dispatch without reaching into game.js internals.
+gameplayCollisionBindings.interact = 'Button0';
+gameplayCollisionBindings.uiConfirm = 'Button0';
+assert.equal(resetApi.resolveActionForButton('controller', 'Button0'), 'interact', 'generic gameplay dispatch ignores same-button menu context actions');
+gameplayCollisionBindings.meleeAutoTargetToggle = 'Button3';
+const contextualDown = new Set(['Button3']);
+assert.equal(resetApi.consumeControllerPress('meleeAutoTargetToggle', contextualDown, new Set(), true), true, 'contextual controller press resolves from the configured binding');
+assert.equal(contextualDown.has('Button3'), false, 'contextual press is consumed before generic gameplay dispatch');
+const heldContextualDown = new Set(['Button3']);
+assert.equal(resetApi.consumeControllerPress('meleeAutoTargetToggle', heldContextualDown, new Set(['Button3']), true), false, 'held contextual binding does not re-edge-trigger');
+assert.equal(heldContextualDown.has('Button3'), false, 'held contextual binding remains consumed while its context owns the input');
+
 assert.match(gameSource, /if \(!gamepadState\.uiOwned\) releaseControllerGameplayInput\('released to menu'\)/, 'opening a menu releases held gameplay actions exactly once');
 assert.match(gameSource, /if \(gamepadState\.primeButtonsOnResume\)[\s\S]{0,500}gamepadState\.previous = new Set\(down\)/, 'the button used to close a menu is primed instead of ghost-firing in gameplay');
 assert.match(gameSource, /gamepadState\.actionByButton\.set\(button, actionId\)[\s\S]{0,700}gamepadState\.actionByButton\.get\(button\)/, 'controller releases remain paired with the action originally pressed across mode-shift changes');
 assert.match(gameSource, /window\.HOBUNJI_CONTROLLER_STATUS = status/, 'controller state is exposed to in-game diagnostics');
-assert.match(gameSource, /inputBindings\.controller\?\.meleeAutoTargetToggle/, 'melee auto-target toggle resolves its configured controller binding');
+assert.match(gameSource, /InputBindings\?\.consumeControllerPress\?\.\('meleeAutoTargetToggle'/, 'gameplay delegates the melee contextual press to the binding API');
 assert.doesNotMatch(gameSource, /down\.has\('Button11'\)/, 'melee auto-target no longer bypasses configuration with a hardcoded R3 check');
 assert.match(probeSource, /Controller: #\$\{controllerDebug\.index\}[\s\S]{0,260}owner=\$\{controllerDebug\.owner\}/, 'Pixel Probe includes controller identity and current input owner');
 assert.match(uiSource, /function adjustFocusedControl\(delta\)/, 'menu sliders, number inputs, and selects are controller-adjustable');
@@ -147,11 +156,12 @@ assert.match(bindingsSource, /AUTOMATIC_SELECTION_ACTION_IDS = new Set\(\['toolS
 assert.match(bindingsSource, /id: 'itemSelect',[\s\S]{0,120}label: 'Item Select'/, 'Item Select is guaranteed to exist as a first-class controller action');
 assert.match(bindingsSource, /id: 'toggleMount',[\s\S]{0,120}label: 'Call\/Dismiss Mount'/, 'Call/Dismiss Mount is guaranteed to remain a controller-configurable action');
 assert.match(bindingsSource, /filter\(shift => shift\?\.id !== 'controller-left-bumper'\)/, 'the obsolete held-LB controller selector shift is migrated out of loaded and exported bindings');
-assert.match(bindingsSource, /repairExplicitMountBinding/, 'an explicit saved Call/Dismiss Mount choice is protected from legacy runtime migration code');
 assert.match(bindingsSource, /function resetDeviceToDefaults\(device\)/, 'binding core exposes one device-isolated defaults reset function');
 assert.match(bindingsSource, /otherModeShifts[\s\S]{0,260}\(shift\.device \|\| 'desktop'\) !== device/, 'device reset preserves the opposite device mode shifts');
 assert.match(bindingsSource, /String\(button\)\.startsWith\('RightStick'\)[\s\S]{0,180}reserved for navigating this wheel or arch/, 'selector opener actions cannot consume the stick directions they automatically own');
 assert.match(bindingsSource, /targetContext === 'selection' && otherContext === 'gameplay'/, 'selector openers conflict with simultaneous gameplay actions instead of double-firing');
+assert.match(bindingsSource, /function resolveActionForButton\(device, button, heldShift = null\)/, 'generic gameplay action resolution is owned by InputBindings');
+assert.match(bindingsSource, /function consumeControllerPress\(actionId, down, previous, active = true\)/, 'contextual controller edge/consumption is owned by InputBindings');
 
 assert.match(selectorSource, /toolSelect:[\s\S]{0,100}open: 'openTool'[\s\S]{0,100}step: 'scrollTool'/, 'Tool Select drives the existing shared tool arch');
 assert.match(selectorSource, /itemSelect:[\s\S]{0,100}open: 'openItem'[\s\S]{0,100}step: 'scrollItem'/, 'Item Select drives the existing shared item arch');
@@ -168,12 +178,12 @@ assert.match(selectorSource, /showDebug/, 'controller selector ownership has an 
 assert.match(actionLocksSource, /controller-selection-ui\.js\?v=20260909controller3/, 'the automatic selector adapter is parser-loaded with a cache-busted URL');
 assert.match(actionLocksSource, /input-default-reset-ui\.js\?v=20260909controller4/, 'the per-device reset-button helper is parser-loaded with a cache-busted URL');
 
-assert.match(configSource, /"id": "uiOpenMenu"[\s\S]{0,120}"context": "menu"/, 'menu open/close is authored in controller configuration');
-assert.match(configSource, /"id": "musicNote1"[\s\S]{0,120}"context": "music"/, 'music controls are authored in controller configuration');
-assert.match(configSource, /"id": "meleeAutoTargetToggle"[\s\S]{0,160}"context": "melee"/, 'melee auto-target toggle is authored in controller configuration');
-assert.match(indexSource, /id="settingControllerLookSensitivity"[\s\S]{0,700}id="settingControllerInvertY"/, 'camera sensitivity and invert-Y settings are present');
-const controllerHelperIndex = indexSource.indexOf('controller-input.js?v=20260909controller2'); // Used to verify parser order without assuming a maximum HTML distance between scripts.
-const gameScriptIndex = indexSource.indexOf('game.js?v=20260909lookclamp1'); // Used with controllerHelperIndex to protect the helper-before-consumer contract.
-assert.ok(controllerHelperIndex >= 0 && gameScriptIndex > controllerHelperIndex, 'shared controller helpers load before the cache-invalidated game script');
+assert.match(bindingsSource, /id: 'uiOpenMenu'[\s\S]{0,180}context: 'menu'/, 'menu open/close schema is owned by the controller binding module');
+assert.match(bindingsSource, /id: 'musicNote1'[\s\S]{0,180}context: 'music'/, 'music controller schema is owned by the controller binding module');
+assert.match(bindingsSource, /id: 'meleeAutoTargetToggle'[\s\S]{0,220}context: 'melee'/, 'melee contextual schema is owned by the controller binding module');
+const controllerHelperIndex = indexSource.indexOf('js/controller-input.js?'); // Parser-order contract is version-agnostic so camera/game cache bumps cannot break this controller test.
+const bindingsHelperIndex = indexSource.indexOf('js/input-bindings.js?');
+const gameScriptIndex = indexSource.indexOf('game.js?');
+assert.ok(controllerHelperIndex >= 0 && bindingsHelperIndex > controllerHelperIndex && gameScriptIndex > bindingsHelperIndex, 'controller helper/binding layers load before game.js');
 
 console.log('Controller experience checks passed.');

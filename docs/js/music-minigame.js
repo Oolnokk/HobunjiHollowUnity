@@ -931,8 +931,8 @@
     const controllerBinding = actionId => {
       const currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller; // Used to preserve explicit Unbound values while still supporting shipped defaults before saved settings exist.
       if (currentBindings && Object.prototype.hasOwnProperty.call(currentBindings, actionId)) return currentBindings[actionId];
-      const actionDefinition = window.SCRATCHBONES_CONFIG?.game?.input?.actions?.find(action => action.id === actionId); // Used as the fallback when no saved binding exists yet.
-      return actionDefinition?.controller || null;
+      const defaults = window.InputBindings?.getDefaultBindings?.('controller'); // Keeps music's controller schema/defaults decoupled from the global gameplay config.
+      return defaults && Object.prototype.hasOwnProperty.call(defaults, actionId) ? defaults[actionId] : null;
     };
     const controllerButton = (gamepad, actionId, key, kind, value) => {
       const bindingCode = controllerBinding(actionId); // Used to route this musical action through the same controller mapping shown in Settings.
