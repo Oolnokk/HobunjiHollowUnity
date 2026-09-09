@@ -8,6 +8,7 @@ on:
       - 'docs/config/species/harlyao.json'
       - 'docs/config/species/index.json'
       - 'docs/js/ghostify.js'
+      - 'docs/js/harlyao-night-march-atmosphere.js'
       - 'docs/js/harlyao-night-march-music.js'
       - 'docs/js/harlyao-night-march-pixel-probe.js'
       - 'docs/js/harlyao-night-march-runtime.js'

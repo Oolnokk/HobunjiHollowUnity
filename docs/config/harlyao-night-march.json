@@ -73,6 +73,10 @@
     "despawnOutsideSharedChunk": true,
     "maleOnlyUntilFemaleHeadArt": true
   },
+  "zoneAtmosphere": {
+    "darknessMultiplier": 2,
+    "entryToast": "The night grows unnaturally dark. A spectral army marches somewhere through the {zone}."
+  },
   "music": {
     "trackUrl": "assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg",
     "ghoulFloorVolumeMultiplier": 2,

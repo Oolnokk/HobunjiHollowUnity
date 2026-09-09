@@ -26,12 +26,14 @@
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
+    // Adds the Harlyao-zone second darkness pass, then re-clears the existing lantern/furniture-light masks. Loads before Ghostify so spectral army glow remains a light source above the extra darkness.
+    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20260909a'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
     ['Ghostify', 'ghostify.js?v=20260909a'],
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260909b'],
-    // Reuses the Ghoul mine-floor track as a zone-level Harlyao proximity cue with long chunk-distance volume lerps.
-    ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260909a'],
+    // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner, with long chunk-distance volume lerps on that same soundtrack element.
+    ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260909b'],
     // Appends route/chunk/visibility/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
     ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260909a'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth

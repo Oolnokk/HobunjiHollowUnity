@@ -8,9 +8,10 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..'); // Repository root used for all production-file assertions below.
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
-const config = JSON.parse(read('docs/config/harlyao-night-march.json')); // Authored nightly route/equipment/visual/music contract under test.
+const config = JSON.parse(read('docs/config/harlyao-night-march.json')); // Authored nightly route/equipment/visual/music/atmosphere contract under test.
 const runtimeSource = read('docs/js/harlyao-night-march-runtime.js'); // Corrected controller that owns hourly chunk-only simulation and observed marching.
-const musicSource = read('docs/js/harlyao-night-march-music.js'); // Ghoul-track proximity mixer layered onto the controller's scheduled/live chunk state.
+const musicSource = read('docs/js/harlyao-night-march-music.js'); // Scheduler-owned exclusive Ghoul-track soundtrack adapter.
+const atmosphereSource = read('docs/js/harlyao-night-march-atmosphere.js'); // Second outdoor darkness pass that preserves existing local light masks.
 const ghostifySource = read('docs/js/ghostify.js'); // Shared spectral material/darkness-lighting helper used by Harlyao.
 const probeSource = read('docs/js/harlyao-night-march-pixel-probe.js'); // Mobile report adapter that exposes route/visibility/provocation/music without console access.
 const loaderSource = read('docs/js/house-pieces.js'); // Parser-time bootstrap currently responsible for loading all Harlyao march support modules.
@@ -37,6 +38,8 @@ assert.equal(config.behavior.maleOnlyUntilFemaleHeadArt, true, 'night army remai
 assert.equal(config.visuals.color.toLowerCase(), '#4fd9c6', 'spectral fill stays blue-green');
 assert(config.visuals.opacity > 0 && config.visuals.opacity < 1, 'spectral body remains semi-transparent');
 assert(config.visuals.emissiveIntensity > 0, 'spectral body emits light visually');
+assert.equal(config.zoneAtmosphere.darknessMultiplier, 2, 'the army zone receives exactly twice the ordinary outdoor darkness treatment');
+assert.match(config.zoneAtmosphere.entryToast, /\{zone\}/, 'entry toast names whichever wilderness zone owns the march that night');
 
 const ghoulTrackMatch = mineSource.match(/GHOUL_BGM_TRACK = \{ url: '([^']+)', volumeMultiplier: ([0-9.]+)/); // Canonical mine-floor track/level must remain the source of truth.
 assert(ghoulTrackMatch, 'TownMine should expose the canonical Ghoul-floor BGM definition');
@@ -50,13 +53,15 @@ for (const gender of ['male', 'female']) {
   assert(species[gender].allowedCosmetics.includes('rugged_poncho'), `${gender} Harlyao must allow the army's rugged poncho`);
 }
 
+assert.match(loaderSource, /\['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere\.js\?v=[^']+'\]/, 'Harlyao zone atmosphere adapter loads in gameplay');
 assert.match(loaderSource, /\['Ghostify', 'ghostify\.js\?v=[^']+'\]/, 'Ghostify loads before the night march');
 assert.match(loaderSource, /\['HarlyaoNightMarch', 'harlyao-night-march-runtime\.js\?v=[^']+'\]/, 'corrected Harlyao controller is the one loaded by gameplay');
-assert.match(loaderSource, /\['HarlyaoNightMarchMusic', 'harlyao-night-march-music\.js\?v=[^']+'\]/, 'proximity music adapter loads with the march runtime');
+assert.match(loaderSource, /\['HarlyaoNightMarchMusic', 'harlyao-night-march-music\.js\?v=[^']+'\]/, 'exclusive soundtrack adapter loads with the march runtime');
 assert.match(loaderSource, /\['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe\.js\?v=[^']+'\]/, 'mobile Pixel Probe bridge loads with the march runtime');
 assert.doesNotMatch(loaderSource, /harlyao-night-march\.js\?v=/, 'superseded first-pass controller must not remain in the loader');
+assert(loaderSource.indexOf("['HarlyaoNightMarchAtmosphere'") < loaderSource.indexOf("['Ghostify'"), 'extra darkness must wrap WeatherFX before Ghostify so spectral glow remains above it');
 assert(loaderSource.indexOf("['Ghostify'") < loaderSource.indexOf("['HarlyaoNightMarch'"), 'Ghostify must load before HarlyaoNightMarch registers its formation glow');
-assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchMusic'"), 'march state must exist before proximity music reads its chunks');
+assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchMusic'"), 'march state must exist before soundtrack proximity reads its chunks');
 assert(loaderSource.indexOf("['HarlyaoNightMarchMusic'") < loaderSource.indexOf("['HarlyaoNightMarchPixelProbe'"), 'music diagnostics must exist before Pixel Probe formats them');
 
 assert.match(runtimeSource, /const hour = Math\.floor\(gameHour\(\)\)/, 'offscreen schedule keys use whole game-hours only');
@@ -73,11 +78,29 @@ assert.match(musicSource, /window\.HarlyaoNightMarch\?\.debugSnapshot/, 'music r
 assert.match(musicSource, /snapshot\?\.liveChunk \|\| snapshot\?\.scheduled\?\.chunk/, 'observed physical army chunk overrides coarse schedule for audible proximity');
 assert.match(musicSource, /Math\.hypot\(player\.cx - army\.cx, player\.cz - army\.cz\)/, 'music proximity is calculated in 2D wilderness-chunk space');
 assert.match(musicSource, /transitionFrom \+ \(transitionTo - transitionFrom\) \* t/, 'volume changes use a real fixed-duration interpolation between stages');
-assert.match(musicSource, /registerFurnitureSfxSource/, 'audible track reuses Music\'s proven looping HTMLAudio/autoplay transport');
-assert.match(musicSource, /SILENT_SCHEDULER_MULTIPLIER = 0/, 'ordinary area BGM is displaced without audibly doubling the same Ghoul cue');
-assert.match(musicSource, /source\.audio\.volume = currentVolume/, 'long-lerped proximity volume is applied after Music\'s generic transport update');
-assert.doesNotMatch(musicSource, /new Audio\(/, 'Harlyao music must not invent a parallel raw Audio transport');
-new vm.Script(musicSource, { filename: 'harlyao-night-march-music.js' }); // Syntax-checks the browser adapter even though its live Audio plumbing is integration-owned.
+assert.match(musicSource, /exclusiveSoundtrack: true/, 'Harlyao track declares itself the exclusive soundtrack owner for the active zone');
+assert.match(musicSource, /return track \? \[track\] : originalTownMineBgm\(area\)/, 'active zone exposes only the Harlyao track to Music area-BGM resolution');
+assert.match(musicSource, /capturedAudio\.loop = true/, 'the Music-created BGM element loops so ambient cues cannot slip between repeats');
+assert.match(musicSource, /type === 'timeupdate'/, 'looping march BGM omits Music natural-end fade watcher so each loop cannot fade itself permanently silent');
+assert.match(musicSource, /proxy\.isPlayerInCombat = \(\) => activeSnapshot\(\) \? false/, 'exclusive march soundtrack cannot be replaced by combat BGM');
+assert.match(musicSource, /entry\?\.file && !entry\?\.url/, 'ambient cues are made ineligible while the exclusive soundtrack owns the zone');
+assert.match(musicSource, /captureSchedulerAudio\(audio\)/, 'proximity gain attaches to the actual scheduler-created BGM element');
+assert.match(musicSource, /musicDeps\.showToast\(message, true\)/, 'entering the active march zone emits the authored informational toast');
+assert.doesNotMatch(musicSource, /registerFurnitureSfxSource/, 'Harlyao song is no longer implemented as a furniture/SFX loop beside the soundtrack');
+assert.doesNotMatch(musicSource, /SILENT_SCHEDULER_MULTIPLIER/, 'silent placeholder BGM workaround has been removed');
+assert.doesNotMatch(musicSource, /source\.audio/, 'no separate audible SFX source remains');
+new vm.Script(musicSource, { filename: 'harlyao-night-march-music.js' });
+
+assert.match(atmosphereSource, /priorDrawLightingOverlay\.apply/, 'army darkness extends the existing WeatherFX lighting authority rather than replacing it');
+assert.match(atmosphereSource, /Math\.round\(multiplier - 1\)/, '2x darkness is implemented as one additional copy of the existing nighttime multiply pass');
+assert.match(atmosphereSource, /ctx\.globalCompositeOperation = 'multiply'/, 'extra army darkness uses the same outdoor multiply treatment');
+assert.match(atmosphereSource, /drawLanternMasks\(\);\s*drawFurnitureLightMasks\(\);/, 'lantern and authored light holes are re-cleared after the extra darkness pass');
+assert.match(atmosphereSource, /destination-out/, 'local light preservation uses the established darkness-mask method');
+assert.match(atmosphereSource, /originalClearRect/, 'adapter detects real 10Hz lighting redraws so darkness never stacks on skipped frames');
+assert.match(atmosphereSource, /getLightningAlpha/, 'lightning is explicitly preserved above the extra darkness');
+assert.match(atmosphereSource, /getSceneTransAlpha/, 'scene fade-to-black is explicitly preserved above the extra darkness');
+assert.doesNotMatch(atmosphereSource, /new window\.THREE\.PointLight/, 'twice-dark atmosphere must not add expensive scene lights');
+new vm.Script(atmosphereSource, { filename: 'harlyao-night-march-atmosphere.js' });
 
 assert.match(ghostifySource, /pixels\.data\[i \+ 3\]/, 'Ghostify preserves source alpha while replacing visible RGB');
 assert.match(ghostifySource, /new THREE\.CanvasTexture\(canvas\)/, 'Ghostify builds an alpha-preserving recolored texture');
