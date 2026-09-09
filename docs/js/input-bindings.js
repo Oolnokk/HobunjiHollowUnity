@@ -45,14 +45,34 @@
   // dispatch on desktop.
   const RESERVED_DESKTOP_CODES = { KeyQ: 'the held Item Wheel' };
 
+  function actionDefinition(actionId) {
+    return deps?.INPUT_DEFAULTS?.actions?.find(action => action.id === actionId) || null;
+  }
+
+  function actionContext(actionId) {
+    return actionDefinition(actionId)?.context || 'gameplay';
+  }
+
+  function supportsDevice(action, device) {
+    return !Array.isArray(action?.devices) || action.devices.includes(device);
+  }
+
+  function getActionsForDevice(device) {
+    return (deps?.INPUT_DEFAULTS?.actions || []).filter(action => supportsDevice(action, device));
+  }
+
   function bindingConflict(device, button, actionId, modeShift = null) {
     if (!button) return '';
     if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
     if (device === 'desktop' && RESERVED_DESKTOP_CODES[button]) return `Reserved for ${RESERVED_DESKTOP_CODES[button]}.`;
     const inputBindings = getCurrentBindings();
     const bindings = inputBindings?.[device] || {};
+    const targetContext = actionContext(actionId); // Used so the same physical control can intentionally mean different things in gameplay, menus, or the music minigame.
     for (const [otherAction, otherButton] of Object.entries(bindings)) {
-      if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
+      if (otherAction === actionId || otherButton !== button) continue;
+      const otherDefinition = actionDefinition(otherAction); // Used to ignore stale/saved bindings that are not applicable to this device.
+      if (otherDefinition && !supportsDevice(otherDefinition, device)) continue;
+      if (actionContext(otherAction) === targetContext) return `Already bound to ${actionLabel(otherAction)}.`;
     }
     if (!modeShift) return '';
     for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
@@ -62,7 +82,7 @@
   }
 
   function actionLabel(id) {
-    return deps.INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
+    return actionDefinition(id)?.label || id;
   }
 
   function buttonLabel(code) {
@@ -81,5 +101,6 @@
 
   window.InputBindings = {
     init, loadInputBindings, getCurrentBindings, saveInputBindings, bindingConflict, actionLabel, buttonLabel,
+    actionContext, getActionsForDevice,
   };
 })();
