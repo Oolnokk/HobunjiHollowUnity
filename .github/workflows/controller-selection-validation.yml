@@ -1,0 +1,28 @@
+name: Controller selection validation
+
+on:
+  push:
+    branches:
+      - codex/controller-listen-json-configurable-inputs
+
+jobs:
+  validate-controller-selection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check controller files
+        run: |
+          node --check docs/js/controller-input.js
+          node --check docs/js/input-bindings.js
+          node --check docs/js/controller-selection-ui.js
+          node --check docs/js/controller-ui-nav.js
+          node --check docs/js/social-action-wheel.js
+          node --check docs/js/character-action-locks.js
+          node --check docs/game.js
+          node --check scripts/test-controller-experience.js
+      - name: Run controller experience regression
+        run: node scripts/test-controller-experience.js
