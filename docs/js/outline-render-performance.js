@@ -26,8 +26,10 @@
 
   const MASK_ALL = 0xFFFFFFFF;
   const MASK_SHELL = (1 << 1) >>> 0;
+  const MASK_TARGET = (1 << 2) >>> 0;
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
+  const TARGET_ALPHA_FILL_LAYER = 30; // Temporary per-draw layer used only to render flat alpha-cutout target cards as filled billboard silhouettes.
   const WORLD_TEXT_OVERLAY_LAYER = 6; // Reserved here to carry depth-disabled world text outside the shell/post-process passes.
   const WORLD_TEXT_RENDER_ORDER_MIN = 1200; // WorldPopupText is 1200/1201; AmbientDialogue text/chatheads are 1210/1211.
   const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
@@ -48,6 +50,11 @@
   let finalWorldTextOverlayPasses = 0; // Debug counter: final canvas draws containing only popup/dialogue text planes.
   let withheldWorldTextBasePasses = 0; // Debug counter: offscreen base draws where text was intentionally reserved for the final overlay.
   let abandonedWorldTextOverlays = 0; // Debug counter: stale pending overlays restored by the next base pass instead of reaching presentation.
+  let targetAlphaCutoutPasses = 0; // Target-outline passes where alpha-cutout parity preparation ran.
+  let targetAlphaCutoutMeshesPrepared = 0; // Alpha-tested meshes given the per-draw target-mask hook.
+  let targetAlphaShaderPatches = 0; // Target ShaderMaterials upgraded to sample source alpha before painting red/green.
+  let targetAlphaFillPasses = 0; // Billboard-style fill draws used for flat alpha-cutout targets such as foliage leaf cards.
+  let targetAlphaFillMeshesDrawn = 0; // Flat target cards included in those fill draws; exposed in mobile render diagnostics.
 
   function makeBucket() {
     return { renders: 0, calls: 0, triangles: 0, points: 0, lines: 0, cpuMs: 0 };
@@ -96,6 +103,14 @@
     ) return 'shell';
 
     if (
+      mask === MASK_TARGET
+      && override?.isShaderMaterial
+      && override.side === THREE.BackSide
+      && override.uniforms?.uThickness
+      && override.uniforms?.uColor
+    ) return 'target';
+
+    if (
       mask === MASK_MATERIAL_ID
       && override?.isShaderMaterial
       && override.uniforms?.uIdColor
@@ -115,7 +130,232 @@
   }
 
   function isSecondaryOutlinePass(pass) {
-    return pass === 'shell' || pass === 'materialId' || pass === 'pngDepth';
+    return pass === 'shell' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth';
+  }
+
+  function materialForGroup(mesh, group) {
+    const materials = Array.isArray(mesh?.material) ? mesh.material : [mesh?.material];
+    const materialIndex = Number.isInteger(group?.materialIndex) ? group.materialIndex : 0;
+    return materials[materialIndex] || materials[0] || null;
+  }
+
+  function isAlphaCutoutMaterial(material) {
+    return !!(
+      material?.map?.isTexture
+      && Number.isFinite(Number(material.alphaTest))
+      && Number(material.alphaTest) > 0
+    );
+  }
+
+  const targetAlphaFillMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(0xff2a1f) },
+      uAlpha: { value: 0.42 },
+      uTargetAlphaMap: { value: null },
+      uTargetAlphaCutoff: { value: 0.5 },
+      uTargetUsesAlphaMap: { value: 0 },
+      uTargetUvTransform: { value: new THREE.Matrix3() },
+    },
+    vertexShader: `
+      uniform mat3 uTargetUvTransform;
+      varying vec2 vTargetUv;
+      void main() {
+        vTargetUv = (uTargetUvTransform * vec3(uv, 1.0)).xy;
+        #ifdef USE_INSTANCING
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        #else
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        #endif
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uAlpha;
+      uniform sampler2D uTargetAlphaMap;
+      uniform float uTargetAlphaCutoff;
+      uniform float uTargetUsesAlphaMap;
+      varying vec2 vTargetUv;
+      void main() {
+        if (uTargetUsesAlphaMap < 0.5) discard;
+        float sourceAlpha = texture2D(uTargetAlphaMap, vTargetUv).a;
+        if (sourceAlpha < uTargetAlphaCutoff) discard;
+        gl_FragColor = vec4(uColor, uAlpha * sourceAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    depthFunc: THREE.LessEqualDepth,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  targetAlphaFillMaterial.userData.hobunjiTargetAlphaAware = true;
+  targetAlphaFillMaterial.userData.hobunjiTargetAlphaFill = true;
+
+  function ensureTargetAlphaAwareShader(material) {
+    if (!material?.isShaderMaterial || !material.uniforms?.uColor || !material.uniforms?.uThickness) return false;
+    material.userData ||= {};
+    if (material.userData.hobunjiTargetAlphaAware === true) return true;
+
+    const thicknessMarker = 'uniform float uThickness;';
+    const mainMarker = 'void main() {';
+    if (!String(material.vertexShader || '').includes(thicknessMarker) || !String(material.vertexShader || '').includes(mainMarker)) return false;
+
+    material.uniforms.uTargetAlphaMap = { value: null };
+    material.uniforms.uTargetAlphaCutoff = { value: 0.5 };
+    material.uniforms.uTargetUsesAlphaMap = { value: 0 };
+    material.uniforms.uTargetUvTransform = { value: new THREE.Matrix3() };
+
+    material.vertexShader = String(material.vertexShader)
+      .replace(
+        thicknessMarker,
+        `${thicknessMarker}\n        uniform mat3 uTargetUvTransform;\n        varying vec2 vTargetUv;`
+      )
+      .replace(
+        mainMarker,
+        `${mainMarker}\n          vTargetUv = (uTargetUvTransform * vec3(uv, 1.0)).xy;`
+      );
+    material.fragmentShader = `
+        uniform vec3 uColor;
+        uniform sampler2D uTargetAlphaMap;
+        uniform float uTargetAlphaCutoff;
+        uniform float uTargetUsesAlphaMap;
+        varying vec2 vTargetUv;
+        void main() {
+          if (uTargetUsesAlphaMap > 0.5) {
+            float sourceAlpha = texture2D(uTargetAlphaMap, vTargetUv).a;
+            if (sourceAlpha < uTargetAlphaCutoff) discard;
+          }
+          gl_FragColor = vec4(uColor, 1.0);
+        }
+      `;
+    material.userData.hobunjiTargetAlphaAware = true;
+    material.needsUpdate = true;
+    targetAlphaShaderPatches++;
+    return true;
+  }
+
+  function installTargetAlphaCutoutHook(mesh) {
+    if (!mesh?.isMesh) return false;
+    mesh.userData ||= {};
+    if (mesh.userData.hobunjiTargetAlphaCutoutHook === true) return false;
+
+    const previousBeforeRender = mesh.onBeforeRender;
+    const previousAfterRender = mesh.onAfterRender;
+
+    mesh.onBeforeRender = function targetAlphaCutoutBeforeRender(...args) {
+      previousBeforeRender?.apply(this, args);
+      const scene = args[1];
+      const overrideMaterial = args[4];
+      const group = args[5];
+      if (!scene?.overrideMaterial || overrideMaterial?.userData?.hobunjiTargetAlphaAware !== true) return;
+
+      const sourceMaterial = materialForGroup(this, group);
+      const alphaMap = sourceMaterial?.map;
+      const alphaCutoff = Number(sourceMaterial?.alphaTest);
+      const useAlphaMap = !!(alphaMap?.isTexture && Number.isFinite(alphaCutoff) && alphaCutoff > 0);
+      const uniforms = overrideMaterial.uniforms;
+      uniforms.uTargetUsesAlphaMap.value = useAlphaMap ? 1 : 0;
+      if (!useAlphaMap) return;
+
+      if (alphaMap.matrixAutoUpdate !== false) alphaMap.updateMatrix?.();
+      uniforms.uTargetAlphaMap.value = alphaMap;
+      uniforms.uTargetAlphaCutoff.value = alphaCutoff;
+      if (alphaMap.matrix?.isMatrix3) uniforms.uTargetUvTransform.value.copy(alphaMap.matrix);
+      else uniforms.uTargetUvTransform.value.identity();
+    };
+
+    mesh.onAfterRender = function targetAlphaCutoutAfterRender(...args) {
+      try {
+        previousAfterRender?.apply(this, args);
+      } finally {
+        const overrideMaterial = args[4];
+        if (overrideMaterial?.userData?.hobunjiTargetAlphaAware === true) {
+          overrideMaterial.uniforms.uTargetUsesAlphaMap.value = 0;
+        }
+      }
+    };
+
+    mesh.userData.hobunjiTargetAlphaCutoutHook = true;
+    return true;
+  }
+
+  function prepareTargetAlphaCutouts(scene, camera) {
+    const targetMaterial = scene?.overrideMaterial;
+    if (!ensureTargetAlphaAwareShader(targetMaterial)) return [];
+
+    let prepared = 0;
+    const fillEntries = [];
+    scene?.traverse?.(object => {
+      if (!object?.isMesh || !object.layers?.test?.(camera.layers)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      if (!materials.some(isAlphaCutoutMaterial)) return;
+      if (installTargetAlphaCutoutHook(object)) prepared++;
+      // FoliageGenerator marks its flat leaf cards noOutline because the
+      // inverted shell is not meaningful on non-volumetric planes. Those are
+      // precisely the target meshes that need the weed-billboard-style fill.
+      if (object.userData?.noOutline === true) {
+        fillEntries.push({ object, originalLayerMask: object.layers.mask });
+      }
+    });
+    targetAlphaCutoutPasses++;
+    targetAlphaCutoutMeshesPrepared += prepared;
+    return fillEntries;
+  }
+
+  function suppressTargetAlphaFillFromShell(entries) {
+    for (const entry of entries || []) entry.object?.layers?.disable?.(2);
+  }
+
+  function restoreTargetAlphaFillLayers(entries) {
+    for (const entry of entries || []) {
+      if (entry.object?.layers) entry.object.layers.mask = entry.originalLayerMask;
+    }
+  }
+
+  function configuredTargetAlphaFillOpacity() {
+    try {
+      const configured = Number(window.Combat?.deps?.combatConfig?.()?.cuttableTargetGlow?.alpha);
+      if (Number.isFinite(configured)) return Math.max(0, Math.min(1, configured));
+    } catch (_) {}
+    return 0.42;
+  }
+
+  function drawTargetAlphaFill(renderer, scene, camera, entries, targetMaterial) {
+    if (!entries?.length) return false;
+    const previousCameraMask = camera.layers.mask; // Restored after selecting only the temporary fill layer.
+    const previousOverride = scene.overrideMaterial; // Restored to the regular red/green target shell material.
+    const previousBackground = scene.background; // Suppressed so an auxiliary fill draw cannot clear or repaint the scene background.
+    const previousAutoClear = renderer.autoClear; // Fill overlays must accumulate over the already-rendered target pass.
+    const shadowMap = renderer.shadowMap;
+    const previousShadowAutoUpdate = !!shadowMap?.autoUpdate;
+    const color = targetMaterial?.uniforms?.uColor?.value;
+
+    try {
+      if (color?.isColor) targetAlphaFillMaterial.uniforms.uColor.value.copy(color);
+      else if (color != null) targetAlphaFillMaterial.uniforms.uColor.value.set(color);
+      targetAlphaFillMaterial.uniforms.uAlpha.value = configuredTargetAlphaFillOpacity();
+      targetAlphaFillMaterial.uniforms.uTargetUsesAlphaMap.value = 0;
+
+      for (const entry of entries) entry.object.layers.set(TARGET_ALPHA_FILL_LAYER);
+      scene.overrideMaterial = targetAlphaFillMaterial;
+      scene.background = null;
+      camera.layers.set(TARGET_ALPHA_FILL_LAYER);
+      renderer.autoClear = false;
+      if (shadowMap?.enabled) shadowMap.autoUpdate = false;
+      originalRender.call(renderer, scene, camera);
+      targetAlphaFillPasses++;
+      targetAlphaFillMeshesDrawn += entries.length;
+      return true;
+    } finally {
+      targetAlphaFillMaterial.uniforms.uTargetUsesAlphaMap.value = 0;
+      if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAutoUpdate;
+      renderer.autoClear = previousAutoClear;
+      camera.layers.mask = previousCameraMask;
+      scene.background = previousBackground;
+      scene.overrideMaterial = previousOverride;
+      restoreTargetAlphaFillLayers(entries);
+    }
   }
 
   // Both WorldPopupText and AmbientDialogue use CanvasTexture planes with depth
@@ -295,7 +535,7 @@
     lastLogAt = now;
 
     if (windowStats.shell?.renders) {
-      const order = ['base', 'pngDepth', 'shell', 'materialId', 'postOrDirect'];
+      const order = ['base', 'pngDepth', 'shell', 'target', 'materialId', 'postOrDirect'];
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
@@ -304,6 +544,8 @@
       if (abandonedWorldTextOverlays) parts.push(`world-text-abandoned ${abandonedWorldTextOverlays}x`);
       if (suppressedMaterialIdPasses) parts.push(`material-seam-blocked ${suppressedMaterialIdPasses}x`);
       if (suppressedCompositeActivations) parts.push(`non-shell-composite-blocked ${suppressedCompositeActivations}x`);
+      if (targetAlphaCutoutPasses) parts.push(`target-alpha ${targetAlphaCutoutPasses}x/${targetAlphaCutoutMeshesPrepared} mesh-hooks/${targetAlphaShaderPatches} shader-patches`);
+      if (targetAlphaFillPasses) parts.push(`target-alpha-fill ${targetAlphaFillPasses}x/${targetAlphaFillMeshesDrawn} meshes`);
       const message = `[outline-perf] ${parts.join(' | ')}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
@@ -331,7 +573,7 @@
       return;
     }
     if (isSecondaryOutlinePass(pass) && reused) {
-      // Keep the sequence open across PNG-depth -> shell -> material-ID.
+      // Keep the sequence open across PNG-depth -> shell -> target -> material-ID.
       return;
     }
     if (reuseSequenceByRenderer.has(renderer)) {
@@ -350,6 +592,19 @@
     if (pass === 'materialId') {
       suppressedMaterialIdPasses++;
       return undefined;
+    }
+
+    let targetAlphaFillEntries = [];
+    let targetMaterial = null;
+    if (pass === 'target') {
+      // Solid branches/trunks keep the existing inverted target shell. Flat
+      // alpha-cutout cards are removed from that shell draw and repainted below
+      // as a double-sided additive alpha-tested overlay, matching the farm weed
+      // billboard highlight rather than trying to make a volumetric hull out of
+      // a plane.
+      targetMaterial = scene?.overrideMaterial || null;
+      targetAlphaFillEntries = prepareTargetAlphaCutouts(scene, camera);
+      suppressTargetAlphaFillFromShell(targetAlphaFillEntries);
     }
 
     if (pass === 'postOrDirect' && suppressNonShellComposite(scene)) {
@@ -403,6 +658,13 @@
         result = originalRender.call(renderer, scene, camera);
       }
 
+      if (pass === 'target' && targetAlphaFillEntries.length) {
+        // Restore the target bit before the temporary layer-30 fill draw so the
+        // mesh returns to exactly the caller-owned layer state when this pass ends.
+        restoreTargetAlphaFillLayers(targetAlphaFillEntries);
+        drawTargetAlphaFill(renderer, scene, camera, targetAlphaFillEntries, targetMaterial);
+      }
+
       const pending = pendingWorldTextOverlayByRenderer.get(renderer);
       if (pass === 'postOrDirect' && pending && !renderer.getRenderTarget?.()) {
         const isOutlineComposite = !!findOutlineCompositeMaterial(scene);
@@ -419,6 +681,7 @@
       // renderer.render(), and auxiliary passes must not be able to delete popup
       // text before the real _postScene/_postCamera composite arrives.
     } finally {
+      restoreTargetAlphaFillLayers(targetAlphaFillEntries);
       if (canReuseBaseState && hadSceneAutoUpdate) scene.autoUpdate = true;
       if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) shadowMap.autoUpdate = true;
     }
@@ -434,6 +697,8 @@
     installed: true,
     nonShellOutlinesSuppressed: true,
     worldTextAboveShell: true,
+    targetAlphaCutoutParity: true,
+    targetAlphaBillboardFill: true,
     worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
     snapshot() {
       return {
@@ -447,8 +712,16 @@
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
         abandonedWorldTextOverlays,
+        targetAlphaCutoutPasses,
+        targetAlphaCutoutMeshesPrepared,
+        targetAlphaShaderPatches,
+        targetAlphaFillPasses,
+        targetAlphaFillMeshesDrawn,
         nonShellOutlinesSuppressed: true,
         worldTextAboveShell: true,
+        targetAlphaCutoutParity: true,
+        targetAlphaBillboardFill: true,
+        targetAlphaFillLayer: TARGET_ALPHA_FILL_LAYER,
         worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
         maxReuseAgeMs: BASE_REUSE_MAX_AGE_MS,
       };

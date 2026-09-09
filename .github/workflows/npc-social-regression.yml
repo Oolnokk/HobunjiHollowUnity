@@ -26,6 +26,7 @@ on:
       - 'docs/js/menu-tab-icon-only.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/navigation-compass.js'
       - 'docs/js/outline-render-performance.js'
       - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
@@ -39,6 +40,8 @@ on:
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/test-relationship-heart-greetings.js'
+      - 'scripts/test-target-outline-alpha-cutout.js'
+      - 'scripts/test-wilderness-map-load-recovery.js'
       - 'scripts/test-world-text-outline-overlay.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
@@ -68,6 +71,7 @@ on:
       - 'docs/js/menu-tab-icon-only.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/navigation-compass.js'
       - 'docs/js/outline-render-performance.js'
       - 'docs/js/world-popup-text.js'
       - 'docs/tools/dialogue-editor/dialogue-editor-state.js'
@@ -81,6 +85,8 @@ on:
       - 'scripts/test-npc-swig-offer-cooldown.js'
       - 'scripts/test-npc-wardrobe-placeholders.js'
       - 'scripts/test-relationship-heart-greetings.js'
+      - 'scripts/test-target-outline-alpha-cutout.js'
+      - 'scripts/test-wilderness-map-load-recovery.js'
       - 'scripts/test-world-text-outline-overlay.js'
       - 'scripts/audit-npc-wardrobe-placeholders.js'
       - 'scripts/generate-placeholder-wardrobes.js'
@@ -123,6 +129,7 @@ jobs:
           node --check docs/js/menu-tab-icon-only.js
           node --check docs/js/panel-ui.js
           node --check docs/js/combat/combat-config-loader.js
+          node --check docs/js/navigation-compass.js
           node --check docs/js/outline-render-performance.js
           node --check docs/js/world-popup-text.js
           node --check docs/tools/dialogue-editor/dialogue-editor-state.js
@@ -135,6 +142,8 @@ jobs:
           node --check scripts/test-npc-swig-offer-cooldown.js
           node --check scripts/test-npc-wardrobe-placeholders.js
           node --check scripts/test-relationship-heart-greetings.js
+          node --check scripts/test-target-outline-alpha-cutout.js
+          node --check scripts/test-wilderness-map-load-recovery.js
           node --check scripts/test-world-text-outline-overlay.js
           node --check scripts/audit-npc-wardrobe-placeholders.js
           node --check scripts/generate-placeholder-wardrobes.js
@@ -158,6 +167,10 @@ jobs:
         run: node scripts/test-npc-wardrobe-placeholders.js
       - name: Test relationship heart rendering and greeting gates
         run: node scripts/test-relationship-heart-greetings.js
+      - name: Test target outline alpha-cutout parity
+        run: node scripts/test-target-outline-alpha-cutout.js
+      - name: Test wilderness map load recovery
+        run: node scripts/test-wilderness-map-load-recovery.js
       - name: Test world popup final overlay handoff
         run: node scripts/test-world-text-outline-overlay.js
       - name: Generate complete placeholder wardrobe registry
