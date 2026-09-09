@@ -2,7 +2,7 @@
 //
 // Harlyao deliberately combines three existing character systems instead of
 // duplicating their authored data:
-//   - Engh-sho body/wardrobe sprite variants and attachment-rig coordinates.
+//   - Engh-sho body/wardrobe sprites, hands/feet, and attachment-rig coordinates.
 //   - Mao-ao body-color ranges.
 //   - Harlyao-specific head sprites, authored separately under the Engh-sho
 //     fighter directories (matching the existing Ghoul special-head pattern).
@@ -10,7 +10,7 @@
   'use strict';
 
   const SPECIES_ID = 'harlyao'; // Used as the runtime/config key for every Harlyao-specific override below.
-  const BODY_SPECIES_ID = 'engh-sho'; // Used whenever Harlyao must resolve Engh-sho-authored body, wardrobe, or rig data.
+  const BODY_SPECIES_ID = 'engh-sho'; // Used whenever Harlyao must resolve Engh-sho-authored body, wardrobe, extremity, or rig data.
   const COLOR_SPECIES_ID = 'mao-ao'; // Used to inherit the live Mao-ao body-color ranges after species configs load.
   const GENDERS = Object.freeze(['male', 'female']); // Used to install both NPC gender variants without duplicating bridge logic.
   const EXPECTED_HEAD_SPRITES = Object.freeze({ // Exposed in mobile diagnostics so missing not-yet-authored head art is obvious.
@@ -36,6 +36,8 @@
     appearanceConfigInstalled: false,
     rigProfilesInstalled: 0,
     rigConfigCorrectionsReapplied: false,
+    handModelInherited: false,
+    footModelInherited: false,
     wardrobeResolverInstalled: false,
     paletteInheritanceInstalled: false,
     armMaskProfilesInstalled: 0,
@@ -53,6 +55,25 @@
     };
     status.appearanceConfigInstalled = true;
     return true;
+  }
+
+  function installExtremityModels() {
+    const handProfiles = window.HobunjiHandModelProfiles; // Shared hand-model registry loaded before the attachment-rig bootstrap in held-action-animations.js.
+    if (handProfiles?.mutate) {
+      handProfiles.mutate(data => {
+        data.speciesModels ||= {};
+        const sourceModel = data.speciesModels[BODY_SPECIES_ID]; // Engh-sho currently maps to the feline hand GLB; copy the mapping instead of hardcoding the model key.
+        if (sourceModel) data.speciesModels[SPECIES_ID] = sourceModel;
+      });
+      status.handModelInherited = !!handProfiles.data?.speciesModels?.[SPECIES_ID];
+    }
+
+    const feet = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet; // Shared procedural-foot config supplies per-species GLBs and material roles.
+    if (feet?.models?.[BODY_SPECIES_ID]) {
+      feet.models[SPECIES_ID] = clone(feet.models[BODY_SPECIES_ID]);
+      status.footModelInherited = true;
+    }
+    return status.handModelInherited || status.footModelInherited;
   }
 
   function removeInheritedWholeRigScale(profile) {
@@ -162,6 +183,7 @@
 
   function install() {
     installAppearanceSpeciesConfig();
+    installExtremityModels();
     installRigProfiles();
     installWardrobeResolver();
     installPaletteInheritance();
@@ -190,7 +212,7 @@
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
-      return `Harlyao: npcOnly=${d.npcOnly} rig=${d.rigProfilesInstalled}/2 paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} armMask=${d.armMaskProfilesInstalled}/2 scale=${d.scaleMultiplier} heads=${d.expectedHeadSprites.male},${d.expectedHeadSprites.female}`;
+      return `Harlyao: npcOnly=${d.npcOnly} rig=${d.rigProfilesInstalled}/2 hands=${d.handModelInherited} feet=${d.footModelInherited} paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} armMask=${d.armMaskProfilesInstalled}/2 scale=${d.scaleMultiplier} heads=${d.expectedHeadSprites.male},${d.expectedHeadSprites.female}`;
     },
   });
 
