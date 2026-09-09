@@ -54,15 +54,18 @@
     }
   }
 
+  function repairExplicitMountBinding() {
+    if (!explicitMountBindingKnown) return false;
+    const bindings = deps?.getInputBindings?.(); // Used to compare the live controller map against the last explicit Settings choice.
+    if (!bindings?.controller || bindings.controller.toggleMount === explicitMountBinding) return false;
+    bindings.controller.toggleMount = explicitMountBinding;
+    localStorage.setItem(deps.INPUT_DEFAULTS.storageKey, JSON.stringify(bindings));
+    return true;
+  }
+
   function startMountRepairLoop() {
     if (mountRepairTimer || !deps?.getInputBindings) return;
-    mountRepairTimer = setInterval(() => {
-      if (!explicitMountBindingKnown) return;
-      const bindings = deps?.getInputBindings?.(); // Used to compare the live controller map against the last explicit Settings choice.
-      if (!bindings?.controller || bindings.controller.toggleMount === explicitMountBinding) return;
-      bindings.controller.toggleMount = explicitMountBinding;
-      localStorage.setItem(deps.INPUT_DEFAULTS.storageKey, JSON.stringify(bindings));
-    }, 250);
+    mountRepairTimer = setInterval(repairExplicitMountBinding, 250);
   }
 
   function init(injectedDeps) {
@@ -137,6 +140,12 @@
     return authored.filter(action => supportsDevice(action, device));
   }
 
+  function contextsConflict(targetContext, otherContext) {
+    if (targetContext === otherContext) return true;
+    return (targetContext === 'selection' && otherContext === 'gameplay')
+      || (targetContext === 'gameplay' && otherContext === 'selection');
+  }
+
   function bindingConflict(device, button, actionId, modeShift = null) {
     if (!button) return '';
     if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
@@ -146,12 +155,12 @@
     }
     const inputBindings = getCurrentBindings();
     const bindings = inputBindings?.[device] || {};
-    const targetContext = actionContext(actionId); // Used so the same physical control can intentionally mean different things in gameplay, menus, or the music minigame.
+    const targetContext = actionContext(actionId); // Used so mutually exclusive menu/music bindings may share controls while held gameplay selectors still conflict with live gameplay actions.
     for (const [otherAction, otherButton] of Object.entries(bindings)) {
       if (otherAction === actionId || otherButton !== button) continue;
       const otherDefinition = actionDefinition(otherAction); // Used to ignore stale/saved bindings that are not applicable to this device.
       if (otherDefinition && !supportsDevice(otherDefinition, device)) continue;
-      if (actionContext(otherAction) === targetContext) return `Already bound to ${actionLabel(otherAction)}.`;
+      if (contextsConflict(targetContext, actionContext(otherAction))) return `Already bound to ${actionLabel(otherAction)}.`;
     }
     if (!modeShift) return '';
     for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
@@ -185,7 +194,7 @@
   });
 
   window.InputBindings = {
-    init, loadInputBindings, getCurrentBindings, saveInputBindings, bindingConflict, actionLabel, buttonLabel,
-    actionContext, getActionsForDevice,
+    init, loadInputBindings, getCurrentBindings, saveInputBindings, repairExplicitMountBinding,
+    bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice,
   };
 })();
