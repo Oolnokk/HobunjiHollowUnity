@@ -32,8 +32,8 @@
     ['Ghostify', 'ghostify.js?v=20260909a'],
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260909b'],
-    // Keeps one oversized cheap spectral halo at the army's scheduled/live chunk even while the twenty soldier entities remain unmaterialized outside that chunk.
-    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260909a'],
+    // Draws one all-distance serpentine spectral locator at the army chunk; off-screen locations clamp to the viewport edge while soldiers remain chunk-LOD'd.
+    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260909b'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
     ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260909c'],
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
