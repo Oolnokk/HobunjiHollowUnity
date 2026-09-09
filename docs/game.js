@@ -14931,17 +14931,20 @@
       publishCharacterViewStatus();
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
+      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 3; // 60° neck allowance used by idle body/root catch-up below.
+      const SHOULDER_SURF_BODY_CATCHUP_RATE = 6; // Effective body turn rate once the idle head-to-root yaw exceeds that allowance.
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
 
-      function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength) {
+      function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength, perspectiveFacing = shoulderPerspectiveFacingAngle()) {
         if (activeCameraMode !== SHOULDER_SURF_MODE) return 'other-camera';
         const meleeAttackActive = player.lunging || (activeTool === 'weapon' && (toolSwingT > 0 || combatSwingHeld)); // Covers travel attacks, ordinary swings, and held melee windups without treating farming-tool animation as combat.
         const rangedAttackActive = activeTool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.(); // Deliberately excludes reload so only an actual shot gives the point body/root authority.
         if (meleeAttackActive || rangedAttackActive) return 'attack';
         if (Number(movementStrength) > 0.001) return 'movement';
+        if (Math.abs(angleDiff(perspectiveFacing, facingAngle)) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) return 'idle-neck-catchup';
         return 'idle-free';
       }
 
@@ -15454,18 +15457,24 @@
           facingAngle = characterViewMode.lockedFacingAngle;
           player.angle = characterViewMode.lockedPlayerAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
-          // The head and attack rays remain camera-authored at all times, but
-          // the physical body/root only inherits that direction while movement
-          // or an actual attack is active. Idle camera orbit therefore cannot
-          // drag the character around or be constrained by its previous yaw;
-          // the body simply keeps the last direction it earned from movement
-          // or combat until either becomes active again.
-          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength); // Central state boundary shared with the on-demand mobile/debug report below.
-          if (perspectiveAuthority !== 'idle-free') {
-            const perspectiveFacing = shoulderPerspectiveFacingAngle();
+          // The head and attack rays remain camera-authored at all times. The
+          // physical body/root inherits that direction immediately during
+          // movement or attacks; while idle it keeps its direction until the
+          // exact head aim would exceed the former 60° independent neck range,
+          // then catches up only enough to restore that allowance. Nothing in
+          // this branch writes camera rotation, so body catch-up cannot restrict
+          // the camera itself.
+          const perspectiveFacing = shoulderPerspectiveFacingAngle(); // Shared point bearing used by direct alignment and the idle neck-limit boundary.
+          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength, perspectiveFacing); // Central state boundary shared with the on-demand mobile/debug report below.
+          if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
             facingAngle = perspectiveFacing;
-            player.angle = perspectiveFacing;
+          } else if (perspectiveAuthority === 'idle-neck-catchup') {
+            const rootFromPointDiff = angleDiff(facingAngle, perspectiveFacing); // Preserves the allowed neck yaw instead of squaring the idle body fully to the point.
+            const targetFacing = perspectiveFacing + window.FormatUtils.clamp(rootFromPointDiff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD); // Nearest body bearing that puts the head back at the independent limit.
+            const catchupDiff = angleDiff(targetFacing, facingAngle); // Drives only the body/root toward the legal boundary at the former catch-up rate.
+            facingAngle += catchupDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
           }
+          player.angle = facingAngle;
           if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
         } else {
           if (controllerLookActive) {

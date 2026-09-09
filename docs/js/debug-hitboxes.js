@@ -377,7 +377,7 @@
     get actors() { return debugSnapshot(); },
     get interactionRay() { return _interactionRaySnapshot(); },
     snapshot: () => ({
-      latestChange: 'Shoulder body/root facing is idle-free and only converges during movement or attacks; Show Interaction Raycast labels that authority beside the convergence guide.',
+      latestChange: 'Shoulder body/root stays idle-free inside the 60° independent neck range, then catches up without restricting the camera; movement and attacks still converge immediately.',
       actors: debugSnapshot(),
       meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
