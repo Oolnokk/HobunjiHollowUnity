@@ -66,6 +66,13 @@
     "formationGlowRadiusTiles": 4.2,
     "formationGlowIntensity": 0.78
   },
+  "behavior": {
+    "neutralState": "harlyaoMarch",
+    "provokeWholeArmy": true,
+    "allowObservedScheduleDrift": true,
+    "despawnOutsideSharedChunk": true,
+    "maleOnlyUntilFemaleHeadArt": true
+  },
   "music": {
     "trackUrl": "assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg",
     "ghoulFloorVolumeMultiplier": 2,
@@ -96,11 +103,5 @@
         "volumeScale": 0.08
       }
     ]
-  },
-  "behavior": {
-    "neutralState": "harlyaoMarch",
-    "provokeWholeArmy": true,
-    "allowObservedScheduleDrift": true,
-    "despawnOutsideSharedChunk": true
   }
 }
