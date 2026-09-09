@@ -52,6 +52,7 @@
   const TEXT_INPUT_TYPES = new Set(['text', 'search', 'email', 'url', 'number', 'password', 'tel', 'date', 'time', 'datetime-local', 'month', 'week']);
 
   const DEADZONE = Number(window.SCRATCHBONES_CONFIG?.game?.input?.gamepadDeadzone) || 0.5;
+  const NAV_PRESS = Number(window.SCRATCHBONES_CONFIG?.game?.input?.axisPressThreshold) || 0.55;
   const REPEAT_INITIAL_MS = 380;
   const REPEAT_RATE_MS = 140;
   const BTN_CONFIRM = 0;   // A
@@ -131,6 +132,8 @@
       if (prevTop) lastFocusedByPanel.set(prevTop, currentTarget);
       if (newTop) activatePanel(newTop);
       else deactivateAll();
+      if (!prevTop && newTop) window.dispatchEvent(new CustomEvent('hobunji-controller-owner-change', { detail: { owner: 'menu' } }));
+      if (prevTop && !newTop) window.dispatchEvent(new CustomEvent('hobunji-controller-owner-change', { detail: { owner: 'gameplay' } }));
     }
   }
 
@@ -249,6 +252,43 @@
     if (best) setFocus(best);
   }
 
+  function dispatchControlChange(control) {
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function adjustFocusedControl(delta) {
+    refreshFocusIfStale();
+    const control = currentTarget;
+    if (!control) return false;
+    if (control.tagName === 'SELECT') {
+      const enabledOptions = Array.from(control.options || []).filter(option => !option.disabled); // Used to keep controller adjustment out of disabled placeholder choices.
+      const current = enabledOptions.indexOf(control.options[control.selectedIndex]);
+      if (!enabledOptions.length) return false;
+      const next = enabledOptions[Math.max(0, Math.min(enabledOptions.length - 1, (current < 0 ? 0 : current) + delta))]; // Used for deterministic left/right select changes without opening a mouse-oriented native picker.
+      if (!next || next === control.options[control.selectedIndex]) return true;
+      control.value = next.value;
+      dispatchControlChange(control);
+      return true;
+    }
+    if (control.tagName === 'INPUT' && (control.type === 'range' || control.type === 'number')) {
+      const step = control.step && control.step !== 'any' ? Number(control.step) : 1; // Used to respect the same granularity mouse/keyboard users receive.
+      const min = control.min === '' ? -Infinity : Number(control.min);
+      const max = control.max === '' ? Infinity : Number(control.max);
+      const next = Math.max(min, Math.min(max, (Number(control.value) || 0) + (Number.isFinite(step) ? step : 1) * delta));
+      control.value = String(next);
+      dispatchControlChange(control);
+      return true;
+    }
+    return false;
+  }
+
+  function moveOrAdjust(dir) {
+    const delta = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+    if (delta && adjustFocusedControl(delta)) return;
+    move(dir);
+  }
+
   // ── activate / cancel / tabs ────────────────────────────────────────
   function activate() {
     const panel = activePanel();
@@ -268,7 +308,11 @@
     const panel = activePanel();
     if (!panel) return;
     const btn = Array.from(panel.querySelectorAll('[data-ctrl-cancel]')).find(isNavTarget);
-    if (btn) btn.click();
+    if (btn) { btn.click(); return; }
+    // Panels added later occasionally omit data-ctrl-cancel. Give B a safe,
+    // universal fallback through the same Escape path their keyboard close
+    // handlers already support rather than leaving controller users trapped.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
   }
 
   function findTabGroup(panel) {
@@ -318,7 +362,7 @@
     const el = ensureHintEl();
     el.classList.toggle('ctrl-nav-hint-bar-visible', true);
     const hasTabs = !!panel.querySelector(TABS_SELECTOR);
-    const hasCancel = !!panel.querySelector('[data-ctrl-cancel]');
+    const hasCancel = true; // B always works: explicit close button first, universal Escape fallback otherwise.
     el.querySelector('.ctrl-nav-hint-tabs').style.display = hasTabs ? '' : 'none';
     const bBtn = el.querySelectorAll('.ctrl-nav-hint')[1];
     if (bBtn) bBtn.style.display = hasCancel ? '' : 'none';
@@ -344,6 +388,7 @@
   let prevButtons = new Set();
   let menuOpenEdge = false;
   let lastReconcileAt = 0;
+  let lastGamepadPollAt = 0; // Used to keep analog right-stick menu scrolling independent of display refresh rate.
   const RECONCILE_POLL_MS = 120;
 
   function pollGamepad(now) {
@@ -363,27 +408,45 @@
     }
     if (!document.hasFocus()) return;
     const pads = navigator.getGamepads?.() || [];
-    const pad = Array.from(pads).find(Boolean);
+    const pad = window.ControllerInput?.pickActiveGamepad?.(pads, pollGamepad.activePadIndex) || Array.from(pads).find(Boolean);
     if (!pad) { prevButtons.clear(); menuOpenEdge = false; return; }
+    pollGamepad.activePadIndex = pad.index; // Keeps navigation on one pad until another receives deliberate input.
     padEverSeen = true;
 
     if (!isActive()) {
       // Nothing to navigate — the only job left is offering a way to open
       // the pause menu at all from a controller with no keyboard nearby.
       const openDown = !!pad.buttons[BTN_OPEN_MENU]?.pressed;
-      if (openDown && !menuOpenEdge) document.getElementById('menuBtn')?.click();
+      if (openDown && !menuOpenEdge) {
+        document.getElementById('menuBtn')?.click();
+        prevButtons = new Set([BTN_OPEN_MENU]); // Prevents the same held View press from immediately closing the menu on its next active frame.
+      } else if (!openDown) prevButtons.clear();
       menuOpenEdge = openDown;
-      prevButtons.clear();
       return;
     }
     menuOpenEdge = false;
 
     now = now || performance.now();
-    const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
-    pollDirection('left', ax <= -DEADZONE || !!pad.buttons[BTN_DPAD_LEFT]?.pressed, now, () => move('left'));
-    pollDirection('right', ax >= DEADZONE || !!pad.buttons[BTN_DPAD_RIGHT]?.pressed, now, () => move('right'));
-    pollDirection('up', ay <= -DEADZONE || !!pad.buttons[BTN_DPAD_UP]?.pressed, now, () => move('up'));
-    pollDirection('down', ay >= DEADZONE || !!pad.buttons[BTN_DPAD_DOWN]?.pressed, now, () => move('down'));
+    const navStick = window.ControllerInput?.normalizeStick?.(pad.axes[0], pad.axes[1], DEADZONE, 1) || { x: pad.axes[0] || 0, y: pad.axes[1] || 0 };
+    const rawAx = Number(pad.axes[0]) || 0, rawAy = Number(pad.axes[1]) || 0; // Used for predictable digital navigation thresholds while navStick remains the diagnostic/analog value.
+    pollDirection('left', rawAx <= -NAV_PRESS || !!pad.buttons[BTN_DPAD_LEFT]?.pressed, now, () => moveOrAdjust('left'));
+    pollDirection('right', rawAx >= NAV_PRESS || !!pad.buttons[BTN_DPAD_RIGHT]?.pressed, now, () => moveOrAdjust('right'));
+    pollDirection('up', rawAy <= -NAV_PRESS || !!pad.buttons[BTN_DPAD_UP]?.pressed, now, () => move('up'));
+    pollDirection('down', rawAy >= NAV_PRESS || !!pad.buttons[BTN_DPAD_DOWN]?.pressed, now, () => move('down'));
+    const scrollStick = window.ControllerInput?.normalizeStick?.(pad.axes[2], pad.axes[3], DEADZONE, 1.3) || { y: 0 };
+    window.dispatchEvent(new CustomEvent('hobunji-controller-ui-snapshot', { detail: { pad, move: navStick, look: scrollStick } })); // Keeps the in-game debug line live while paused gameplay polling is suspended.
+    const scrollDt = lastGamepadPollAt ? Math.min(0.05, Math.max(0, (now - lastGamepadPollAt) / 1000)) : 1 / 60; // Caps resume spikes after a backgrounded tab.
+    lastGamepadPollAt = now;
+    if (Math.abs(scrollStick.y) > 0.02) {
+      const panel = activePanel();
+      let scrollHost = currentTarget;
+      while (scrollHost && scrollHost !== panel && scrollHost.scrollHeight <= scrollHost.clientHeight) scrollHost = scrollHost.parentElement;
+      if (!scrollHost || !panel?.contains(scrollHost) || scrollHost.scrollHeight <= scrollHost.clientHeight) {
+        scrollHost = panel ? Array.from(panel.querySelectorAll('.mp-pane, .settings-pane, .cooking-body')).find(element => element.scrollHeight > element.clientHeight) : null;
+      }
+      scrollHost ||= panel; // Used to scroll the nearest useful menu region with the right stick without scanning every descendant each frame.
+      if (scrollHost) scrollHost.scrollTop += scrollStick.y * 720 * scrollDt;
+    }
 
     const down = new Set();
     pad.buttons.forEach((b, i) => { if (b?.pressed) down.add(i); });
@@ -392,6 +455,7 @@
     if (pressed(BTN_CANCEL)) cancel();
     if (pressed(BTN_TAB_PREV)) cycleTabs(-1);
     if (pressed(BTN_TAB_NEXT)) cycleTabs(1);
+    if (pressed(BTN_OPEN_MENU)) cancel();
     prevButtons = down;
   }
   requestAnimationFrame(pollGamepad);
@@ -408,8 +472,8 @@
     switch (event.key) {
       case 'ArrowUp': move('up'); break;
       case 'ArrowDown': move('down'); break;
-      case 'ArrowLeft': move('left'); break;
-      case 'ArrowRight': move('right'); break;
+      case 'ArrowLeft': moveOrAdjust('left'); break;
+      case 'ArrowRight': moveOrAdjust('right'); break;
       case 'Enter': case ' ': activate(); break;
       case 'Tab': cycleTabs(event.shiftKey ? -1 : 1); break;
       default: return;
@@ -454,7 +518,8 @@
     press(action) {
       reconcileStack();
       switch (action) {
-        case 'up': case 'down': case 'left': case 'right': move(action); break;
+        case 'up': case 'down': move(action); break;
+        case 'left': case 'right': moveOrAdjust(action); break;
         case 'confirm': activate(); break;
         case 'cancel': cancel(); break;
         case 'tabPrev': cycleTabs(-1); break;

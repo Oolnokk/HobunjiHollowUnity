@@ -834,6 +834,13 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const controllerDebug = window.HOBUNJI_CONTROLLER_STATUS; // Published by game.js so controller ownership and raw browser mapping are copyable on mobile.
+    if (controllerDebug) {
+      const axis = stick => `${Number(stick?.x || 0).toFixed(2)},${Number(stick?.y || 0).toFixed(2)}`;
+      lines.push(controllerDebug.connected
+        ? `Controller: #${controllerDebug.index} ${controllerDebug.id} mapping=${controllerDebug.mapping} owner=${controllerDebug.owner} LS=${axis(controllerDebug.move)} RS=${axis(controllerDebug.look)}`
+        : 'Controller: not detected');
+    }
     const objectSfxDebug = window.AudioSystem?.objectSfxDebugSnapshot?.(); // Makes tool-cue preload/lookup state visible without requiring a mobile console.
     if (objectSfxDebug) {
       const lastCue = objectSfxDebug.last;
