@@ -13,10 +13,6 @@
     "male": "assets/fightersprites/engh-sho-m/head_harlyao_m.png",
     "female": "assets/fightersprites/engh-sho-f/head_harlyao_f.png"
   },
-  "headAssetStatus": {
-    "male": "authored",
-    "female": "pending"
-  },
   "male": {
     "allowedCosmetics": [
       "loincloth",
