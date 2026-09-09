@@ -8,12 +8,14 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..'); // Repository root used for all production-file assertions below.
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
-const config = JSON.parse(read('docs/config/harlyao-night-march.json')); // Authored nightly route/equipment/visual contract under test.
+const config = JSON.parse(read('docs/config/harlyao-night-march.json')); // Authored nightly route/equipment/visual/music contract under test.
 const runtimeSource = read('docs/js/harlyao-night-march-runtime.js'); // Corrected controller that owns hourly chunk-only simulation and observed marching.
+const musicSource = read('docs/js/harlyao-night-march-music.js'); // Ghoul-track proximity mixer layered onto the controller's scheduled/live chunk state.
 const ghostifySource = read('docs/js/ghostify.js'); // Shared spectral material/darkness-lighting helper used by Harlyao.
-const probeSource = read('docs/js/harlyao-night-march-pixel-probe.js'); // Mobile report adapter that exposes route/visibility/provocation without console access.
+const probeSource = read('docs/js/harlyao-night-march-pixel-probe.js'); // Mobile report adapter that exposes route/visibility/provocation/music without console access.
 const loaderSource = read('docs/js/house-pieces.js'); // Parser-time bootstrap currently responsible for loading all Harlyao march support modules.
 const species = JSON.parse(read('docs/config/species/harlyao.json')); // Confirms the forced army clothing is legal for either Harlyao gender.
+const mineSource = read('docs/js/town-mine.js'); // Canonical Ghoul-floor music source used to prevent track/level drift.
 
 assert.equal(config.memberCount, 20, 'the travelling army should contain about twenty Harlyao');
 assert.deepEqual(
@@ -35,16 +37,26 @@ assert.equal(config.visuals.color.toLowerCase(), '#4fd9c6', 'spectral fill stays
 assert(config.visuals.opacity > 0 && config.visuals.opacity < 1, 'spectral body remains semi-transparent');
 assert(config.visuals.emissiveIntensity > 0, 'spectral body emits light visually');
 
+const ghoulTrackMatch = mineSource.match(/GHOUL_BGM_TRACK = \{ url: '([^']+)', volumeMultiplier: ([0-9.]+)/); // Canonical mine-floor track/level must remain the source of truth.
+assert(ghoulTrackMatch, 'TownMine should expose the canonical Ghoul-floor BGM definition');
+assert.equal(config.music.trackUrl, ghoulTrackMatch[1], 'Harlyao army reuses the exact Ghoul mine-floor music file');
+assert.equal(config.music.ghoulFloorVolumeMultiplier, Number(ghoulTrackMatch[2]), 'same-chunk Harlyao music uses the exact Ghoul-floor 2x reference level');
+assert(config.music.lerpMs >= 10000, 'proximity stage changes use a deliberately long volume interpolation');
+assert.deepEqual(config.music.stages.map(stage => stage.maxChunkDistance), [0, 1, 2, 4, 7, 999], 'music distance stages are authored in wilderness-chunk space');
+assert.deepEqual(config.music.stages.map(stage => stage.volumeScale), [1, 0.72, 0.48, 0.28, 0.15, 0.08], 'music remains faintly audible throughout the same zone and reaches full Ghoul level in the army chunk');
+
 for (const gender of ['male', 'female']) {
   assert(species[gender].allowedCosmetics.includes('rugged_poncho'), `${gender} Harlyao must allow the army's rugged poncho`);
 }
 
 assert.match(loaderSource, /\['Ghostify', 'ghostify\.js\?v=[^']+'\]/, 'Ghostify loads before the night march');
 assert.match(loaderSource, /\['HarlyaoNightMarch', 'harlyao-night-march-runtime\.js\?v=[^']+'\]/, 'corrected Harlyao controller is the one loaded by gameplay');
+assert.match(loaderSource, /\['HarlyaoNightMarchMusic', 'harlyao-night-march-music\.js\?v=[^']+'\]/, 'proximity music adapter loads with the march runtime');
 assert.match(loaderSource, /\['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe\.js\?v=[^']+'\]/, 'mobile Pixel Probe bridge loads with the march runtime');
 assert.doesNotMatch(loaderSource, /harlyao-night-march\.js\?v=/, 'superseded first-pass controller must not remain in the loader');
 assert(loaderSource.indexOf("['Ghostify'") < loaderSource.indexOf("['HarlyaoNightMarch'"), 'Ghostify must load before HarlyaoNightMarch registers its formation glow');
-assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchPixelProbe'"), 'march state must exist before its Pixel Probe adapter loads');
+assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchMusic'"), 'march state must exist before proximity music reads its chunks');
+assert(loaderSource.indexOf("['HarlyaoNightMarchMusic'") < loaderSource.indexOf("['HarlyaoNightMarchPixelProbe'"), 'music diagnostics must exist before Pixel Probe formats them');
 
 assert.match(runtimeSource, /const hour = Math\.floor\(gameHour\(\)\)/, 'offscreen schedule keys use whole game-hours only');
 assert.match(runtimeSource, /const key = `\$\{day\}:\$\{hour\}`/, 'civil day + whole hour is the coarse simulation cache key');
@@ -53,6 +65,16 @@ assert.match(runtimeSource, /deps\.moveCreatureToward\?\.\(/, 'observed formatio
 assert.match(runtimeSource, /detectHit\(\)/, 'visible formation checks for player provocation');
 assert.match(runtimeSource, /state\.provoked = true/, 'provoking one marcher promotes the whole formation to combat state');
 assert.match(runtimeSource, /Math\.max\(MIN_MARCH_SPEED_TILES_S, Number\(cfg\?\.formation\?\.marchSpeedTilesPerSecond\) \|\| 1\.15\)/, 'observed march speed keeps the authored 1.15 tiles/s instead of an accidental high minimum');
+
+assert.match(musicSource, /window\.HarlyaoNightMarch\?\.debugSnapshot/, 'music reads the existing march state instead of simulating the army independently');
+assert.match(musicSource, /snapshot\?\.liveChunk \|\| snapshot\?\.scheduled\?\.chunk/, 'observed physical army chunk overrides coarse schedule for audible proximity');
+assert.match(musicSource, /Math\.hypot\(player\.cx - army\.cx, player\.cz - army\.cz\)/, 'music proximity is calculated in 2D wilderness-chunk space');
+assert.match(musicSource, /transitionFrom \+ \(transitionTo - transitionFrom\) \* t/, 'volume changes use a real fixed-duration interpolation between stages');
+assert.match(musicSource, /registerFurnitureSfxSource/, 'audible track reuses Music\'s proven looping HTMLAudio/autoplay transport');
+assert.match(musicSource, /SILENT_SCHEDULER_MULTIPLIER = 0/, 'ordinary area BGM is displaced without audibly doubling the same Ghoul cue');
+assert.match(musicSource, /source\.audio\.volume = currentVolume/, 'long-lerped proximity volume is applied after Music\'s generic transport update');
+assert.doesNotMatch(musicSource, /new Audio\(/, 'Harlyao music must not invent a parallel raw Audio transport');
+new vm.Script(musicSource, { filename: 'harlyao-night-march-music.js' }); // Syntax-checks the browser adapter even though its live Audio plumbing is integration-owned.
 
 assert.match(ghostifySource, /pixels\.data\[i \+ 3\]/, 'Ghostify preserves source alpha while replacing visible RGB');
 assert.match(ghostifySource, /new THREE\.CanvasTexture\(canvas\)/, 'Ghostify builds an alpha-preserving recolored texture');
@@ -64,7 +86,7 @@ assert.doesNotMatch(ghostifySource, /new THREE\.PointLight/, 'twenty ghosts must
 
 assert.match(probeSource, /debugProbeResult/, 'march diagnostics append to the existing copyable Pixel Probe result surface');
 assert.match(probeSource, /window\.HarlyaoNightMarch/, 'Pixel Probe adapter reads the controller instead of reimplementing march state');
-assert.match(probeSource, /debugSnapshot\?\.\(\)/, 'Pixel Probe line comes from the structured runtime snapshot');
+assert.match(probeSource, /window\.HarlyaoNightMarchMusic/, 'Pixel Probe also reports proximity music stage and live lerp volume');
 assert.match(probeSource, /MutationObserver/, 'Pixel Probe adapter follows asynchronous report publication on mobile');
 assert.match(probeSource, /scheduled=.*playerChunk=.*liveChunk=.*members=.*visible=.*provoked=.*reason=/, 'copied line carries route, chunk, LOD, population, hostility, and lifecycle reason');
 
