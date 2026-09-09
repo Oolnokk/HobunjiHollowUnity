@@ -30,6 +30,8 @@
     ['Ghostify', 'ghostify.js?v=20260909a'],
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260909b'],
+    // Appends route/chunk/visibility/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
+    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260909a'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
     // post-composite pass disabled depth testing and could wash mist over the player
     // and nearby world geometry even when every cylinder surface was behind them.
