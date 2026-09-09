@@ -54,7 +54,7 @@ const expectedController = {
   meleeAutoTargetToggle: 'Button3',
   socialWheel: 'Button15',
   itemSelect: 'Button4',
-}; // Exact approved controller JSON binding map supplied during controller setup; changing a shipped default must intentionally update this fixture.
+}; // Exact approved controller JSON binding map; changing a shipped default must intentionally update this fixture.
 
 const context = {
   window: { addEventListener() {}, dispatchEvent() {} },
