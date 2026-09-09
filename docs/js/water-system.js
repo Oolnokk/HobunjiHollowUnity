@@ -63,6 +63,7 @@
   // ── Merged water mesh apron constants ──
   const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
   const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
+  const INVERTED_WATER_MIN_WET_FRACTION = 0.25; // Used to keep sparse/dry states on the old sparse collector+renderer path instead of paying baseline-analysis overhead.
 
   // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
   function floorZ(type, depth = 1) {
@@ -372,48 +373,41 @@
       : (sampleAt(lowIndex) + sampleAt(highIndex)) * 0.5;
   }
 
-  // The simulation remains tile-based, but the renderer collector stays sparse:
-  // only actually visible dynamic-water cells are allocated. Missing cells are
-  // interpreted by the inverted renderer as geometry holes, so dry/solid tiles
-  // do not recreate the old full-grid allocation cost merely to describe masks.
-  // The baseline itself comes from ordinary normal-height weather-exposed ground:
-  // grass/weeds are preferred, then other non-paddy/non-trench exposed ground.
+  function _dryRenderBaseline() {
+    return { // Used to route sparse states through the classic renderer without any baseline-analysis pass.
+      visible: false,
+      surfaceY: deps.getNormalTop(),
+      depth: 0,
+      coverage: 0,
+      flowX: 0,
+      flowZ: 0,
+    };
+  }
+
+  // Pass 1 deliberately mirrors the old sparse collector: only actually visible
+  // dynamic-water cells are allocated, and all per-cell flow/cache work is the
+  // same work the classic merged renderer already required. If less than 25%
+  // of the map is wet, we return immediately and never analyze a global baseline.
+  // Dense wet states get a second, lightweight baseline-analysis pass because
+  // those are the states where large rectangle compression can pay for itself.
   function _collectDynamicWaterCells(targetGrid, rows, cols, skipPermanentWater) {
     const TileType = deps.TileType;
     const WATER_UNIT = deps.getWaterUnit();
-    const NORMAL_TOP = deps.getNormalTop();
     const cells = []; // Used by buildMergedWaterMesh; contains only visible dynamic-water cells.
     const flowingTrenches = []; // Used by WeatherFX's trench particle emitter.
-    const preferredBaselineSamples = _newBaselineSamples(); // Grass/weeds: used first for the weather-driven global plane.
-    const fallbackBaselineSamples = _newBaselineSamples(); // Non-grass ordinary ground used only if no grass/weeds samples exist.
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const tile = targetGrid[row][col];
-        const isSolid = deps.isSolid(tile.type);
-        const isPermanent = tile.type === TileType.RIVER || tile.type === TileType.STREAM;
-        const baseSurfaceY = deps.tileSurfaceY(tile.type);
-
-        if (!isSolid && !isPermanent
-            && tile.type !== TileType.TRENCH && tile.type !== TileType.PADDY
-            && Math.abs(baseSurfaceY - NORMAL_TOP) < 0.001) {
-          if (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) {
-            _addBaselineSample(preferredBaselineSamples, tile.water);
-          } else {
-            _addBaselineSample(fallbackBaselineSamples, tile.water);
-          }
-        }
-
-        const visible = !isSolid && tile.water >= 0.003
-          && !(skipPermanentWater && isPermanent);
-        if (!visible) {
+        if (deps.isSolid(tile.type) || tile.water < 0.003
+            || (skipPermanentWater && (tile.type === TileType.RIVER || tile.type === TileType.STREAM))) {
           tile._wCached = false;
           continue;
         }
 
         if (tile.type === TileType.TRENCH && tile.flow) flowingTrenches.push({ col, row });
         const depthFrac = tile.water / deps.MAX_WATER;
-        const surfaceA = baseSurfaceY + tile.water * WATER_UNIT;
+        const surfaceA = deps.tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
         let fx = 0, fz = 0;
         for (const { dc, dr, ax, az } of [
           { dc: 0, dr: 1, ax: 0, az: 1 },
@@ -437,15 +431,31 @@
         tile._wDepth = depthFrac;
         tile._wFlowNX = flowX;
         tile._wFlowNZ = flowZ;
-        cells.push({
-          col, row,
-          surfaceY: surfaceA,
-          depth: depthFrac,
-          coverage: depthFrac,
-          flowX,
-          flowZ,
-          visible: true,
-        });
+        cells.push({ col, row, surfaceY: surfaceA, depth: depthFrac, coverage: depthFrac, flowX, flowZ, visible: true });
+      }
+    }
+
+    const minimumInversionWetCells = Math.ceil(rows * cols * INVERTED_WATER_MIN_WET_FRACTION); // Used to avoid all baseline-analysis overhead when water is sparse.
+    if (cells.length < minimumInversionWetCells) {
+      return { cells, flowingTrenches, baseline: _dryRenderBaseline() };
+    }
+
+    const NORMAL_TOP = deps.getNormalTop();
+    const preferredBaselineSamples = _newBaselineSamples(); // Grass/weeds: used first for the weather-driven global plane.
+    const fallbackBaselineSamples = _newBaselineSamples(); // Non-grass ordinary ground used only if no grass/weeds samples exist.
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const tile = targetGrid[row][col];
+        const isSolid = deps.isSolid(tile.type);
+        const isPermanent = tile.type === TileType.RIVER || tile.type === TileType.STREAM;
+        if (isSolid || isPermanent || tile.type === TileType.TRENCH || tile.type === TileType.PADDY) continue;
+        const baseSurfaceY = deps.tileSurfaceY(tile.type);
+        if (Math.abs(baseSurfaceY - NORMAL_TOP) >= 0.001) continue;
+        if (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) {
+          _addBaselineSample(preferredBaselineSamples, tile.water);
+        } else {
+          _addBaselineSample(fallbackBaselineSamples, tile.water);
+        }
       }
     }
 
