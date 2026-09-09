@@ -66,6 +66,37 @@
     "formationGlowRadiusTiles": 4.2,
     "formationGlowIntensity": 0.78
   },
+  "music": {
+    "trackUrl": "assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg",
+    "ghoulFloorVolumeMultiplier": 2,
+    "lerpMs": 12000,
+    "stages": [
+      {
+        "maxChunkDistance": 0,
+        "volumeScale": 1
+      },
+      {
+        "maxChunkDistance": 1,
+        "volumeScale": 0.72
+      },
+      {
+        "maxChunkDistance": 2,
+        "volumeScale": 0.48
+      },
+      {
+        "maxChunkDistance": 4,
+        "volumeScale": 0.28
+      },
+      {
+        "maxChunkDistance": 7,
+        "volumeScale": 0.15
+      },
+      {
+        "maxChunkDistance": 999,
+        "volumeScale": 0.08
+      }
+    ]
+  },
   "behavior": {
     "neutralState": "harlyaoMarch",
     "provokeWholeArmy": true,
