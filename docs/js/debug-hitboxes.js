@@ -81,6 +81,7 @@
     const p1 = deps.worldToOverlay(a.x, a.y, a.z);
     const p2 = deps.worldToOverlay(b.x, b.y, b.z);
     if (!p1.visible && !p2.visible) return;
+    if (![p1.x, p1.y, p2.x, p2.y].every(Number.isFinite)) return; // Never pass an unprojectable camera-plane point into Canvas2D and abort the game's frame scheduler.
     const octx = deps.octx;
     octx.save();
     octx.globalAlpha = alpha;
@@ -104,7 +105,7 @@
       z: Number(origin.z) + (Number(target.z) - Number(origin.z)) * t,
     };
     const projected = deps.worldToOverlay(labelPoint.x, labelPoint.y, labelPoint.z); // Places the label without piling every name onto the shared endpoint.
-    if (!projected.visible) return;
+    if (!projected.visible || ![projected.x, projected.y].every(Number.isFinite)) return;
     const octx = deps.octx; // Existing overlay canvas receives the ray label.
     octx.save();
     octx.font = '11px monospace';
@@ -280,7 +281,7 @@
     _drawLabeledTargetSegment(origins.ranged, target, DEBUG_RANGED_ATTACK_COLOR, `ranged → point (${Number(state.lastRangedPointErrorDeg || 0).toFixed(1)}°)`, 0.82, true);
 
     const projected = deps.worldToOverlay(target.x, target.y, target.z); // Marks the sole convergence point directly under the screen reticle.
-    if (!projected.visible) return;
+    if (!projected.visible || ![projected.x, projected.y].every(Number.isFinite)) return;
     const octx = deps.octx; // Existing overlay canvas receives the perspective-point marker and label.
     octx.save();
     octx.strokeStyle = DEBUG_PERSPECTIVE_POINT_COLOR;

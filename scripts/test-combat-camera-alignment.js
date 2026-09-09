@@ -45,6 +45,12 @@ assert.match(game,
   /const x = Number\(head\?\.x\) \/ TILE;[\s\S]{0,240}const z = Number\(head\?\.z\) \/ TILE;/,
   'raw-pixel head-cache coordinates are converted before perspective-point projection');
 assert.match(game,
+  /const cameraGuideStartDistance = Math\.max\(0\.11,[\s\S]{0,1800}camera: cameraGuideOrigin/,
+  'debug camera guide starts beyond the near plane instead of projecting the camera origin');
+assert.match(debugHitboxes,
+  /\[p1\.x, p1\.y, p2\.x, p2\.y\]\.every\(Number\.isFinite\)/,
+  'ray overlay rejects non-finite projected endpoints before drawing to Canvas2D');
+assert.match(game,
   /const shoulderHeadDirection = activeCameraMode === SHOULDER_SURF_MODE[\s\S]{0,200}currentPlayerPerspectiveDirection/,
   'player head derives full yaw and pitch from its own origin to the shared point');
 assert.match(game, /playerNeckJoint\.rotation\.order = 'YXZ'/,

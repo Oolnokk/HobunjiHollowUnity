@@ -17126,6 +17126,12 @@
         const velocityLength = Math.hypot(Number(player.vx) || 0, Number(player.vy) || 0); // Normalizes and labels the actual post-acceleration velocity ray.
         const combatAlignment = window.HobunjiCombatCameraAlignment?.debugSnapshot?.() || null; // Supplies the last camera-authored lunge ray.
         const rangedAlignment = window.HobunjiRangedCameraRayAuthority?.snapshot?.() || null; // Supplies the latest muzzle-to-perspective-point attack ray.
+        const cameraGuideStartDistance = Math.max(0.11, (Number(camera.near) || 0.1) + 0.01); // Starts the debug-only camera guide beyond the near plane because projecting the camera's exact origin is undefined.
+        const cameraGuideOrigin = {
+          x: perspective.cameraRay.origin.x + perspective.cameraRay.direction.x * cameraGuideStartDistance,
+          y: perspective.cameraRay.origin.y + perspective.cameraRay.direction.y * cameraGuideStartDistance,
+          z: perspective.cameraRay.origin.z + perspective.cameraRay.direction.z * cameraGuideStartDistance,
+        }; // Visually represents the same camera ray without changing the gameplay ray's exact origin.
 
         return {
           mode: activeCameraMode,
@@ -17136,7 +17142,7 @@
           perspectiveDistanceBeyondPlayer: perspective.distanceBeyondPlayer,
           cameraRay: perspective.cameraRay,
           rayOrigins: {
-            camera: { ...perspective.cameraRay.origin },
+            camera: cameraGuideOrigin,
             head: { ...headOrigin },
             body: { ...bodyOrigin },
             melee: { ...bodyOrigin },
