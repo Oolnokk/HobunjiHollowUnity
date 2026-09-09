@@ -284,9 +284,10 @@
 
   // ── Merged water mesh rendering ─────────────────────────────────
   // The PNG tiles across world X/Z and scrolls as one continuous surface.
-  // Farm/town dynamic water use an inverted representation: one map-wide
-  // weather-baseline plane is shader-masked wherever the simulation differs,
-  // with only those wet exception cells contributing local geometry.
+  // Farm/town dynamic water use an inverted geometry representation: ordinary
+  // weather-level cells are greedily merged into large flat rectangles; dry,
+  // solid, permanent-water, and locally different cells are literal holes,
+  // with wet local deviations appended as exception geometry in the same mesh.
   let mergedWaterMaterial = null;
   function _material() {
     if (!mergedWaterMaterial) {
@@ -303,8 +304,6 @@
     if (!mesh) return null;
     if (sceneObj?.remove) sceneObj.remove(mesh);
     mesh.geometry.dispose();
-    mesh.userData?.waterExceptionMask?.dispose?.();
-    mesh.onBeforeRender = null;
     window.MergedWaterRenderer.clearStats(statKey);
     return null;
   }
@@ -337,26 +336,25 @@
 
   function _median(values) {
     if (!values.length) return 0;
-    const sorted = values.slice().sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) * 0.5;
+    values.sort((a, b) => a - b); // The sample arrays are throwaway snapshots, so sort in place to avoid an extra full-array copy.
+    const mid = Math.floor(values.length / 2); // Used to select the center weather-level sample after sorting.
+    return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) * 0.5;
   }
 
-  // The simulation remains tile-based. For rendering, every map cell is
-  // described once so the shader mask knows where the baseline plane must be
-  // cut out. The baseline itself comes from ordinary normal-height ground:
+  // The simulation remains tile-based, but the renderer collector stays sparse:
+  // only actually visible dynamic-water cells are allocated. Missing cells are
+  // interpreted by the inverted renderer as geometry holes, so dry/solid tiles
+  // do not recreate the old full-grid allocation cost merely to describe masks.
+  // The baseline itself comes from ordinary normal-height weather-exposed ground:
   // grass/weeds are preferred, then other non-paddy/non-trench exposed ground.
-  // Its median water amount is a robust reading of what the current weather is
-  // doing to the map without local irrigation, runoff, or terrain exceptions
-  // dragging the whole visual plane up or down.
   function _collectDynamicWaterCells(targetGrid, rows, cols, skipPermanentWater) {
     const TileType = deps.TileType;
     const WATER_UNIT = deps.getWaterUnit();
     const NORMAL_TOP = deps.getNormalTop();
-    const cells = []; // Used by buildMergedWaterMesh for one simulation snapshot.
+    const cells = []; // Used by buildMergedWaterMesh; contains only visible dynamic-water cells.
     const flowingTrenches = []; // Used by WeatherFX's trench particle emitter.
     const preferredBaselineWater = []; // Grass/weeds: used first for the weather-driven global plane.
-    const fallbackBaselineWater = []; // Other ordinary normal-height ground if no preferred cells exist.
+    const fallbackBaselineWater = []; // Non-grass ordinary ground used only if no grass/weeds samples exist.
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
@@ -368,9 +366,10 @@
         if (!isSolid && !isPermanent
             && tile.type !== TileType.TRENCH && tile.type !== TileType.PADDY
             && Math.abs(baseSurfaceY - NORMAL_TOP) < 0.001) {
-          fallbackBaselineWater.push(tile.water);
           if (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) {
             preferredBaselineWater.push(tile.water);
+          } else {
+            fallbackBaselineWater.push(tile.water);
           }
         }
 
@@ -378,15 +377,6 @@
           && !(skipPermanentWater && isPermanent);
         if (!visible) {
           tile._wCached = false;
-          cells.push({
-            col, row,
-            surfaceY: baseSurfaceY,
-            depth: 0,
-            coverage: 0,
-            flowX: 0,
-            flowZ: 0,
-            visible: false,
-          });
           continue;
         }
 
@@ -430,9 +420,9 @@
 
     const baselineSamples = preferredBaselineWater.length
       ? preferredBaselineWater
-      : fallbackBaselineWater;
-    const baselineWater = _median(baselineSamples);
-    const baselineDepth = deps.clamp(baselineWater / deps.MAX_WATER, 0, 1);
+      : fallbackBaselineWater; // Used once to derive the common weather-level visual baseline.
+    const baselineWater = _median(baselineSamples); // Used as the map-wide baseline water amount for this simulation snapshot.
+    const baselineDepth = deps.clamp(baselineWater / deps.MAX_WATER, 0, 1); // Used by the water shader for baseline color/coverage.
     const baseline = { // Used by the inverted renderer as the map-wide weather sheet.
       visible: baselineWater >= 0.003,
       surfaceY: NORMAL_TOP + baselineWater * WATER_UNIT,
