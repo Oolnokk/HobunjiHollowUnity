@@ -371,12 +371,9 @@
   function prepareNonGroundDepthMaterials(scene) {
     const states = new Map();
     scene.traverseVisible((object) => {
-      // This pass is depth-only, so suppress color on every renderable material,
-      // not just Mesh materials. THREE.Sprite/Line/Points objects are rendered by
-      // the same scene draw and otherwise repaint color after clearDepth(); the
-      // sky-dome moon is a Sprite, which made it show through hidden ground.
-      if (!object?.material) return;
-      const isMesh = !!object.isMesh; // Used below to keep forced cutout depth limited to mesh silhouettes.
+      const isMesh = !!object?.isMesh;
+      const isCelestialSprite = !!object?.isSprite && object.userData?.hobunjiNoOutline === true; // Used here to suppress only the sky-dome sun/moon sprites during this colorless replay.
+      if (!isMesh && !isCelestialSprite) return;
       const forceCutoutDepth = isMesh && hasLayer(object, PNG_OCCLUDER_LAYER);
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
@@ -385,8 +382,8 @@
         // avatar-vs-avatar ordering. For this temporary occlusion buffer only,
         // use the game's existing layer-4 convention and preserve the real
         // alpha-tested silhouette while making it capable of blocking a tool.
-        // Non-mesh renderables keep their authored depthWrite value: they need
-        // color suppressed here, but should not become new depth occluders.
+        // Celestial sprites keep their authored depthWrite=false; only their
+        // accidental second color draw is suppressed during this replay.
         if (isMesh && (forceCutoutDepth || Number(material.alphaTest || 0) > 0)) material.depthWrite = true;
       });
     });
