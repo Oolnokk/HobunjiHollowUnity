@@ -1,0 +1,44 @@
+name: Controller branch sync
+
+on:
+  push:
+    branches:
+      - codex/controller-listen-json-configurable-inputs
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/controller-listen-json-configurable-inputs
+          fetch-depth: 0
+
+      - name: Merge current main into feature branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Validate controller integration
+        run: |
+          node --check docs/js/input-settings-panel.js
+          node --check docs/js/controller-input.js
+          node --check docs/js/controller-ui-nav.js
+          node --check docs/js/input-bindings.js
+          node --check docs/js/music-minigame.js
+          node --check docs/js/social-action-wheel.js
+          node --check docs/game.js
+          node scripts/test-controller-experience.js
+          node scripts/test-held-seed-desktop-capture.js
+
+      - name: Remove temporary workflow and push
+        run: |
+          rm -f .github/workflows/controller-sync-temp.yml
+          git add -A
+          if ! git diff --cached --quiet; then git commit -m "Remove temporary controller sync workflow"; fi
+          git push origin HEAD:codex/controller-listen-json-configurable-inputs
