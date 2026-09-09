@@ -177,6 +177,7 @@
     activeControllerCapture = null;
     if (capture?.frame) cancelAnimationFrame(capture.frame);
     capture?.button?.classList.remove('is-listening');
+    if (capture?.button?.isConnected && capture.idleText) capture.button.textContent = capture.idleText;
   }
 
   function listenForControllerInput(button, onInput, onError) {
@@ -186,7 +187,7 @@
       return;
     }
     const blockedInputs = new Set(); // Used to ignore the A/button press that activated Listen until that physical control is released.
-    const capture = { button, frame: 0 }; // Used by stopControllerCapture() to cancel this exact listening session.
+    const capture = { button, frame: 0, idleText: button.textContent }; // Used by stopControllerCapture() to cancel this exact listening session and restore its normal label.
     activeControllerCapture = capture;
     button.classList.add('is-listening');
     button.textContent = 'Listening…';
@@ -203,6 +204,7 @@
     for (const key of snapshot().activeInputs) blockedInputs.add(key);
     const poll = () => {
       if (activeControllerCapture !== capture) return;
+      if (!button.isConnected || button.getClientRects().length === 0) { stopControllerCapture(); return; }
       const { pads, activeInputs } = snapshot(); // Used to find the first newly pressed supported binding code this frame.
       for (const key of [...blockedInputs]) if (!activeInputs.has(key)) blockedInputs.delete(key);
       for (const pad of pads) {
@@ -232,8 +234,10 @@
     const text = JSON.stringify(payload, null, 2); // Used for readable clipboard output that can be pasted directly into bug reports or config work.
     let copied = false; // Used to choose between the modern Clipboard API and the compatibility fallback.
     try {
-      await navigator.clipboard?.writeText?.(text);
-      copied = true;
+      if (typeof navigator.clipboard?.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
     } catch (_) {}
     if (!copied) {
       const textarea = document.createElement('textarea'); // Used as a clipboard fallback on browsers/pages where navigator.clipboard is unavailable.
@@ -308,7 +312,6 @@
               const conflict = deps.bindingConflict(device, code, action.id); // Used to apply the same collision rules as choosing the code from the dropdown.
               if (conflict) {
                 warn.textContent = conflict;
-                renderInputSettings();
                 return;
               }
               deps.inputBindings.controller[action.id] = code;
@@ -317,7 +320,6 @@
               renderInputSettings();
             }, message => {
               warn.textContent = message;
-              renderInputSettings();
             });
           });
         } else {
