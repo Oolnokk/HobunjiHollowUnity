@@ -245,17 +245,36 @@
     const scene = window.Combat.deps?.getActiveScene?.();
     if (!scene?.isScene) return;
 
-    hideCounterShieldFields(scene);
-
-    const visibleGlowGroups = collectNamedVisible(scene, 'counter-shield-weapon-glow');
-    const liveHolders = new Set();
     const timeS = performance.now() / 1000;
-    for (const genericGlow of visibleGlowGroups) {
-      const holder = genericGlow.parent;
-      if (!holder) continue;
-      liveHolders.add(holder);
-      syncWeaponSilhouette(holder, timeS);
-      genericGlow.visible = false;
+    const liveHolders = new Set();
+    // combat-enemy-telegraph.js already tracks exactly which actors have an
+    // active Counter Shield visual bundle (bounded by live combatant count),
+    // refreshed earlier in this same Combat.update chain — reading that
+    // directly replaces two full scene.traverse() scans (one to force every
+    // field bubble invisible, one to find visible weapon-glow groups) that
+    // ran every frame during all gameplay regardless of whether anyone was
+    // even holding Counter Shield.
+    const activeVisuals = window.Combat.heavyTelegraphVisuals?.activeVisuals?.();
+    if (activeVisuals) {
+      for (const visual of activeVisuals) {
+        if (visual.fieldGroup) visual.fieldGroup.visible = false; // Weapon-glow-only presentation: the hemisphere field itself stays suppressed here every frame.
+        if (!visual.defensive || visual.weaponGlowGroup?.visible === false || !visual.holder) continue;
+        liveHolders.add(visual.holder);
+        syncWeaponSilhouette(visual.holder, timeS);
+        visual.weaponGlowGroup.visible = false;
+      }
+    } else {
+      // Fallback for any page that loads this module without combat-enemy-
+      // telegraph.js's registry (e.g. a standalone tool) — same behavior,
+      // just discovered by scanning the scene instead of a known list.
+      hideCounterShieldFields(scene);
+      for (const genericGlow of collectNamedVisible(scene, 'counter-shield-weapon-glow')) {
+        const holder = genericGlow.parent;
+        if (!holder) continue;
+        liveHolders.add(holder);
+        syncWeaponSilhouette(holder, timeS);
+        genericGlow.visible = false;
+      }
     }
 
     for (const [holder, entry] of silhouetteByHolder) {

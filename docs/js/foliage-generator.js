@@ -1064,7 +1064,8 @@ window.FoliageGenerator = (() => {
       leafTintH: 115, leafTintS: 0.55, leafTintL: 0.35, leafOpacity: 1,
       barkColorHex: 0x4a3b33,
       leafTexture: 'assets/leaves/leaf_1.png',
-      scaleMul: 1
+      scaleMul: 1,
+      variantCount: 8 // Shrub/bush tiles are the densest, closest-to-camera ground clutter in the game (see buildShrubMesh/buildWildernessBushMesh) — more than the tree default so the shared-variant cache doesn't read as obvious repetition.
     },
     // Ported from ASSET_TYPE_DEFAULTS.Stump — trunk + roots, no branches or
     // leaves — scaled up a bit for a "big old stump" read, with a flat cap
@@ -1606,7 +1607,12 @@ window.FoliageGenerator = (() => {
     let variants = _treeVariantCache.get(presetKey);
     if (variants) return variants;
     variants = [];
-    for (let i = 0; i < TREE_VARIANT_COUNT; i++) {
+    // A preset can raise its own variant count above the tree default (see
+    // TREE_PRESETS.bush) — shrubs/bushes are placed far more densely and far
+    // closer to the camera than trees, so 3 shared shapes would read as
+    // obvious repetition where it worked fine for sparser trees.
+    const variantCount = Math.max(1, Number(preset.variantCount) || TREE_VARIANT_COUNT);
+    for (let i = 0; i < variantCount; i++) {
       // Plain `_variant_0/1/2` seed strings happen to be a bad roll for
       // crownedPine specifically: swept 300 candidate seed strings through
       // the real branch-length formula (knotLengthJitter et al — see
@@ -1724,7 +1730,12 @@ window.FoliageGenerator = (() => {
       const seedU32 = xfnv1a(`sh_${col}_${row}`);
       // Legacy farm/town SHRUB tiles now use the foliage-generator's proper
       // Bush preset. Callers retain their existing placement and scale rules.
-      return buildConiferTreeGroup(TREE_PRESETS.bush, seedU32);
+      // Routed through the shared-variant cache (see getTreeVariants) rather
+      // than building full geometry per tile — shrubs are the densest ground
+      // clutter in the game (see the isNativeBuild comment in game.js's
+      // _buildZoneFloorMeshes), so this was by far the worst offender for
+      // per-tile procedural-generation cost during chunk streaming.
+      return buildTreeInstance('bush', TREE_PRESETS.bush, seedU32);
     },
     buildBoulderMesh(col, row) {
       const seedU32 = xfnv1a(`bld_${col}_${row}`);
@@ -1748,11 +1759,11 @@ window.FoliageGenerator = (() => {
     },
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);
-      return buildConiferTreeGroup(TREE_PRESETS.bush, seedU32);
+      return buildTreeInstance('bush', TREE_PRESETS.bush, seedU32);
     },
     buildStumpMesh(col, row) {
       const seedU32 = xfnv1a(`st_${col}_${row}`);
-      return buildConiferTreeGroup(TREE_PRESETS.stump, seedU32);
+      return buildTreeInstance('stump', TREE_PRESETS.stump, seedU32);
     }
   };
 })();

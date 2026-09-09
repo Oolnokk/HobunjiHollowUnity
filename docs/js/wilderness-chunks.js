@@ -216,10 +216,16 @@
     }
 
     unloadOutside(centerCx, centerCz) {
-      for (const [key, record] of [...this.loaded]) {
+      // Map iteration is safe to delete the current entry from mid-loop (per
+      // spec, only entries not yet visited could be affected, and unload()
+      // only ever removes the key currently being visited), so this no
+      // longer needs to spread either Map into a throwaway array first —
+      // this runs every frame the zone is active, not just on chunk-boundary
+      // crossings.
+      for (const [key, record] of this.loaded) {
         if (chebyshev(record.cx, record.cz, centerCx, centerCz) > UNLOAD_RADIUS) this.unload(key);
       }
-      for (const [key, request] of [...this.queue]) {
+      for (const [key, request] of this.queue) {
         if (chebyshev(request.cx, request.cz, centerCx, centerCz) > LOAD_RADIUS) this.queue.delete(key);
       }
     }
@@ -268,6 +274,7 @@
     updateActive(col, row) {
       this.inactiveSeconds = 0;
       this.setCenter(col, row);
+      if (!this.queue.size) return; // Steady state once the neighborhood is fully streamed in — skip the array copy/sort below entirely.
       const queue = [...this.queue.values()]
         .sort((a, b) => a.distance - b.distance || a.cz - b.cz || a.cx - b.cx);
       for (let i = 0; i < Math.min(MAX_STREAM_BUILDS_PER_UPDATE, queue.length); i++) {
