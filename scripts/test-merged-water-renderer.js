@@ -7,6 +7,7 @@ const path = require('node:path');
 const { buildSurfaceData, buildInvertedSurfaceData } = require('../docs/js/merged-water-renderer.js');
 
 const gameSource = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
+const rendererSource = fs.readFileSync(path.join(__dirname, '../docs/js/merged-water-renderer.js'), 'utf8');
 
 function cornersForTile(data, tileIndex) {
   const start = tileIndex * 12;
@@ -55,29 +56,71 @@ const coverage = buildSurfaceData([
 assert.deepEqual(coverage.coverages.slice(0, 4), [1, 1, 1, 1], 'permanent streams can reach the authored 80% maximum independently of color depth');
 assert.deepEqual(coverage.coverages.slice(4, 8), [0.2, 0.2, 0.2, 0.2], 'temporary water defaults coverage to its simulated depth');
 
-const inverted = buildInvertedSurfaceData([
+const invertedCells = [
   { col: 0, row: 0, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
   { col: 1, row: 0, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
   { col: 2, row: 0, surfaceY: 0.35, depth: 0.7, coverage: 0.7, visible: true },
   { col: 0, row: 1, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
   { col: 1, row: 1, surfaceY: 0, depth: 0, coverage: 0, visible: false },
   { col: 2, row: 1, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
-], {
+];
+const invertedOptions = {
   cols: 3,
   rows: 2,
   yOffset: 0,
   baseline: { visible: true, surfaceY: 0.1, depth: 0.2, coverage: 0.2 },
-});
-assert.equal(inverted.positions.length / 3, 8,
-  'inverted water uses four vertices for the whole-map baseline plus four for one wet exception');
-assert.equal(inverted.indices.length / 3, 4,
-  'the baseline and one wet exception remain four triangles in one geometry');
-assert.equal(inverted.mask[2], 255, 'a wet tile above the weather baseline punches a mask hole');
-assert.equal(inverted.mask[4], 255, 'a dry tile punches a mask hole without needing replacement geometry');
-assert.equal(inverted.maskedCellCount, 2, 'only cells differing from the baseline are masked');
+};
+const invertedClassic = buildSurfaceData(invertedCells, invertedOptions);
+const inverted = buildInvertedSurfaceData(invertedCells, invertedOptions);
+assert.equal(inverted.representation, 'baseline-geometry-exceptions', 'wet weather uses the geometry-masked inverted representation');
+assert.equal(inverted.baselineRectangles, 3, 'baseline cells around a dry hole are merged into three large rectangles');
 assert.equal(inverted.exceptionCount, 1, 'only the wet differing cell contributes special geometry');
-assert.deepEqual(inverted.baselines.slice(0, 4), [1, 1, 1, 1], 'the first quad is marked as the global baseline plane');
-assert.deepEqual(inverted.baselines.slice(4), [0, 0, 0, 0], 'exception geometry bypasses the baseline mask');
+assert.equal(inverted.maskedCellCount, 2, 'the wet deviation and dry hole are both omitted from the common baseline');
+assert.equal(inverted.positions.length / 3, 16, 'three baseline rectangles plus one wet exception use four quads total');
+assert.equal(inverted.indices.length / 3, 8, 'four quads remain eight triangles in one geometry');
+assert.ok(inverted.positions.length <= invertedClassic.positions.length,
+  'inverted geometry never exceeds the classic wet-tile vertex count');
+
+const uniformCells = [];
+for (let row = 0; row < 50; row++) {
+  for (let col = 0; col < 60; col++) {
+    uniformCells.push({ col, row, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true });
+  }
+}
+const uniformClassic = buildSurfaceData(uniformCells, { yOffset: 0 });
+const uniformInverted = buildInvertedSurfaceData(uniformCells, {
+  cols: 60,
+  rows: 50,
+  yOffset: 0,
+  baseline: { visible: true, surfaceY: 0.1, depth: 0.2, coverage: 0.2 },
+});
+assert.equal(uniformClassic.positions.length / 3, 12000, 'classic 60x50 water uses four vertices per wet tile');
+assert.equal(uniformInverted.positions.length / 3, 4, 'uniform 60x50 water collapses to one four-vertex baseline rectangle');
+assert.equal(uniformInverted.baselineRectangles, 1);
+assert.equal(uniformInverted.exceptionCount, 0);
+
+const checkerCells = [];
+for (let row = 0; row < 10; row++) {
+  for (let col = 0; col < 10; col++) {
+    const differs = (row + col) % 2 === 1;
+    checkerCells.push({
+      col, row,
+      surfaceY: differs ? 0.35 : 0.1,
+      depth: differs ? 0.7 : 0.2,
+      coverage: differs ? 0.7 : 0.2,
+      visible: true,
+    });
+  }
+}
+const checkerClassic = buildSurfaceData(checkerCells, { yOffset: 0 });
+const checkerInverted = buildInvertedSurfaceData(checkerCells, {
+  cols: 10,
+  rows: 10,
+  yOffset: 0,
+  baseline: { visible: true, surfaceY: 0.1, depth: 0.2, coverage: 0.2 },
+});
+assert.ok(checkerInverted.positions.length <= checkerClassic.positions.length,
+  'checkerboard worst case still cannot exceed classic geometry');
 
 const dryBaseline = buildInvertedSurfaceData([
   { col: 0, row: 0, surfaceY: 0, depth: 0, coverage: 0, visible: false },
@@ -88,9 +131,15 @@ const dryBaseline = buildInvertedSurfaceData([
   yOffset: 0,
   baseline: { visible: false, surfaceY: 0, depth: 0, coverage: 0 },
 });
-assert.equal(dryBaseline.baselineVisible, false, 'dry weather does not create an invisible full-map water plane');
-assert.equal(dryBaseline.positions.length / 3, 4, 'locally retained water still renders as one exception quad during dry weather');
-assert.equal(dryBaseline.exceptionCount, 1);
+assert.equal(dryBaseline.baselineVisible, false, 'dry weather does not create a map-wide water baseline');
+assert.equal(dryBaseline.representation, 'tile-merged', 'dry weather directly retains the classic sparse-water path');
+assert.equal(dryBaseline.positions.length / 3, 4, 'locally retained water still renders as one classic merged tile quad');
+assert.equal(dryBaseline.inversionFallback, true, 'diagnostics show that no baseline compression was attempted while dry');
+
+assert.doesNotMatch(rendererSource, /uExceptionMask|aBaseline|waterExceptionMask/,
+  'inverted water no longer adds a fragment mask texture, baseline shader attribute, or mask-texture ownership');
+assert.doesNotMatch(rendererSource, /texture2D\s*\(\s*uExceptionMask/,
+  'the water fragment shader performs no extra exception-mask texture lookup');
 
 assert.match(gameSource, /if \(!sceneObj\?\.add\) \{[\s\S]*?return null;[\s\S]*?MergedWaterRenderer\.createMesh/,
   'merged water construction waits until its destination scene exists');
