@@ -1,0 +1,25 @@
+name: Controller canonical defaults validation
+
+on:
+  push:
+    branches:
+      - codex/controller-listen-json-configurable-inputs
+
+jobs:
+  validate-controller-defaults:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check controller default files
+        run: |
+          node --check docs/js/input-bindings.js
+          node --check scripts/test-controller-default-layout.js
+          node --check scripts/test-controller-experience.js
+      - name: Run controller experience regression
+        run: node scripts/test-controller-experience.js
+      - name: Verify exact reset layout
+        run: node scripts/test-controller-default-layout.js
