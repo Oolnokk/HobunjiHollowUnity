@@ -300,6 +300,7 @@
   window.InputBindings = {
     init, loadInputBindings, getCurrentBindings, saveInputBindings, repairExplicitMountBinding,
     resetDeviceToDefaults, getDefaultBindings, getDefaultModeShifts,
+    canonicalControllerDefaults: CANONICAL_CONTROLLER_DEFAULTS,
     bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice,
   };
 })();
