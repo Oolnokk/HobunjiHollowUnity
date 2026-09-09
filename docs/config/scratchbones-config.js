@@ -252,6 +252,10 @@ window.SCRATCHBONES_CONFIG = {
       "storageKey": "scratchbones.inputBindings.v1",
       "gamepadDeadzone": 0.24,
       "axisPressThreshold": 0.55,
+      "controllerMoveResponse": 1.25,
+      "controllerLookResponse": 1.45,
+      "controllerLookDegPerSec": 190,
+      "controllerLookVerticalScale": 0.8,
       "touchJoystick": {
         "radius": 56,
         "deadzone": 0.14,
