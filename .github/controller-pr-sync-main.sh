@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+git fetch origin main
+if git merge-base --is-ancestor origin/main HEAD; then
+  echo "Current main is already an ancestor; nothing to sync."
+  exit 0
+fi
+
+git config user.name "github-actions[bot]"
+git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+git merge --no-commit --no-ff origin/main || true
+
+for path in docs/config/scratchbones-config.js docs/game.js docs/index.html scripts/test-controller-experience.js; do
+  if git ls-files -u -- "$path" | grep -q .; then
+    git checkout --ours -- "$path"
+  fi
+done
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+
+def replace_once(text, old, new, label):
+    if new in text:
+        return text
+    if old not in text:
+        raise SystemExit(f"Missing expected source while resolving {label}")
+    return text.replace(old, new, 1)
+
+config_path = Path('docs/config/scratchbones-config.js')
+config = config_path.read_text()
+if '"cameraRotateUpClampDeg": 85' not in config:
+    old = '      "cameraRotateClampDeg": 45,\n'
+    new = old + '      "cameraRotateUpClampDeg": 85, // Used by gameplay pitch so upward look can be wider without loosening downward/yaw limits.\n'
+    if old not in config:
+        raise SystemExit('Missing desktop camera clamp config anchor')
+    config = config.replace(old, new, 1)
+config_path.write_text(config)
+
+game_path = Path('docs/game.js')
+game = game_path.read_text()
+game = replace_once(
+    game,
+    '      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,\n      // not a free-orbit camera.\n',
+    '      // azimuth/angle. Horizontal/downward look keeps the legacy 45° limit;\n      // upward pitch uses the wider shooter-style limit from desktopControls.\n',
+    'camera offset comment',
+)
+game = replace_once(
+    game,
+    '            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);',
+    '            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt);',
+    'touch pitch clamp',
+)
+game = replace_once(
+    game,
+    '        cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt, -clampDeg, clampDeg);',
+    '        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);',
+    'controller pitch clamp',
+)
+old_free = '''      // Every other camera mode nudges a small look-around offset on top of a
+      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
+      // default ±45°) since it's meant to be a peek, not a free orbit. Seated
+      // players and the utility-wheel Character View get genuine 360°
+      // horizontal orbit instead.
+      function freeRotateCameraActive() {
+        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+'''
+new_free = '''      // Every other camera mode nudges a look-around offset on top of a fixed
+      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
+      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated
+      // players and the utility-wheel Character View still get genuine 360°
+      // horizontal orbit instead.
+      function freeRotateCameraActive() {
+        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+      function clampCameraPitchOffsetDeg(value) {
+        const cfg = desktopControlsConfig(); // Supplies the authored directional camera limits for mouse, touch, and controller pitch.
+        const downClampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Math.abs(Number(cfg.cameraRotateClampDeg)) : 45; // Used as the positive/downward pitch boundary and preserves the legacy limit.
+        const upClampDeg = Number.isFinite(Number(cfg.cameraRotateUpClampDeg)) ? Math.abs(Number(cfg.cameraRotateUpClampDeg)) : 85; // Used as the negative/upward pitch boundary for shooter-style vertical look.
+        return window.FormatUtils.clamp(value, -upClampDeg, downClampDeg);
+      }
+'''
+game = replace_once(game, old_free, new_free, 'directional pitch helper')
+game = replace_once(
+    game,
+    '            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);',
+    '            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + e.movementY * degPerPx);',
+    'mouse pitch clamp',
+)
+game_path.write_text(game)
+
+index_path = Path('docs/index.html')
+index = index_path.read_text()
+index, count = re.subn(r'game\.js\?v=[^"\']+', 'game.js?v=20260909lookclamp1', index, count=1)
+if count != 1:
+    raise SystemExit('Expected exactly one game.js cache-key script')
+index_path.write_text(index)
+
+test_path = Path('scripts/test-controller-experience.js')
+test = test_path.read_text()
+old_assert = "assert.match(gameSource, /cameraAzimuthOffsetDeg = freeRotateCameraActive\\(\\)[\\s\\S]{0,420}cameraAngleOffsetDeg = window\\.FormatUtils\\.clamp/, 'right stick updates both camera yaw and pitch');"
+new_assert = "assert.match(gameSource, /cameraAzimuthOffsetDeg = freeRotateCameraActive\\(\\)[\\s\\S]{0,520}cameraAngleOffsetDeg = clampCameraPitchOffsetDeg/, 'right stick updates yaw and uses the shared directional pitch clamp');"
+test = replace_once(test, old_assert, new_assert, 'controller camera regression')
+old_index = "const gameScriptIndex = indexSource.indexOf('game.js?v=20260909controller2'); // Used with controllerHelperIndex to protect the helper-before-consumer contract."
+new_index = "const gameScriptIndex = indexSource.indexOf('game.js?v=20260909lookclamp1'); // Used with controllerHelperIndex to protect the helper-before-consumer contract."
+test = replace_once(test, old_index, new_index, 'game cache regression')
+test_path.write_text(test)
+PY
+
+git add docs/config/scratchbones-config.js docs/game.js docs/index.html scripts/test-controller-experience.js scripts/test-camera-look-clamps.js
+if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+  echo "Unresolved conflicts remain:"
+  git diff --name-only --diff-filter=U
+  exit 1
+fi
+
+node --check docs/game.js
+node --check docs/js/input-bindings.js
+node --check docs/js/controller-selection-ui.js
+node --check scripts/test-controller-experience.js
+node --check scripts/test-controller-default-layout.js
+node --check scripts/test-camera-look-clamps.js
+node scripts/test-controller-experience.js
+node scripts/test-controller-default-layout.js
+node scripts/test-camera-look-clamps.js
+node scripts/test-held-seed-desktop-capture.js
+git diff --cached --check
+
+git commit -m "[sync-main] Merge current main into controller configuration PR"
+git push origin HEAD:codex/controller-listen-json-configurable-inputs
