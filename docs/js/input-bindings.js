@@ -93,18 +93,19 @@
 
   function patchAutomaticSelectionDefaults(INPUT_DEFAULTS) {
     if (!INPUT_DEFAULTS) return;
+    const useCanonicalControllerLayout = INPUT_DEFAULTS.storageKey === 'scratchbones.inputBindings.v1'; // Limits the shipped game layout override to the real game config while allowing isolated tests/tools to supply their own authored defaults.
     const actions = INPUT_DEFAULTS.actions;
     if (Array.isArray(actions)) {
       for (const required of REQUIRED_CONTROLLER_ACTIONS) ensureAction(actions, required);
       for (const action of actions) {
-        if (Object.prototype.hasOwnProperty.call(CANONICAL_CONTROLLER_DEFAULTS, action?.id)) {
+        if (useCanonicalControllerLayout && Object.prototype.hasOwnProperty.call(CANONICAL_CONTROLLER_DEFAULTS, action?.id)) {
           action.controller = CANONICAL_CONTROLLER_DEFAULTS[action.id]; // Makes fresh-player and reset behavior authoritative even when older config rows still carry obsolete controller values.
         }
         if (AUTOMATIC_SELECTION_ACTION_IDS.has(action?.id)) action.context = 'selection';
       }
     }
     if (!INPUT_DEFAULTS.controller) INPUT_DEFAULTS.controller = {}; // Used as the generated controller-default map consumed by load/reset code.
-    Object.assign(INPUT_DEFAULTS.controller, CANONICAL_CONTROLLER_DEFAULTS);
+    if (useCanonicalControllerLayout) Object.assign(INPUT_DEFAULTS.controller, CANONICAL_CONTROLLER_DEFAULTS);
     if (Array.isArray(INPUT_DEFAULTS.modeShifts)) {
       const kept = removeLegacyControllerModeShift(INPUT_DEFAULTS.modeShifts); // Used to migrate the old LB+right-stick tool/item selector out of shipped defaults in place.
       INPUT_DEFAULTS.modeShifts.splice(0, INPUT_DEFAULTS.modeShifts.length, ...kept);
