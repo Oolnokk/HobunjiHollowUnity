@@ -281,8 +281,9 @@
       };
       api.__harlyaoBeaconInitWrapped = true;
     }
-    const originalDraw = api.drawLightingOverlay.bind(api);
-    api.drawLightingOverlay = function harlyaoBeaconLightingOverlay(...args) {
+    const priorDraw = api.drawLightingOverlay;
+    const originalDraw = priorDraw.bind(api);
+    const wrappedDraw = function harlyaoBeaconLightingOverlay(...args) {
       const ctx = lightingDeps?.lctx;
       let redrawn = false;
       let originalClearRect = null;
@@ -299,7 +300,9 @@
       if (redrawn) drawLocatorOverlay();
       return result;
     };
-    api.drawLightingOverlay.__harlyaoBeaconLocatorWrapped = true;
+    Object.assign(wrappedDraw, priorDraw); // Preserve Ghostify/atmosphere wrapper identity markers so their self-checks cannot double-wrap the lighting chain later.
+    wrappedDraw.__harlyaoBeaconLocatorWrapped = true;
+    api.drawLightingOverlay = wrappedDraw;
     weatherInstalled = true;
     return true;
   }
