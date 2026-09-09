@@ -1348,32 +1348,46 @@
   // stomp target * inverse(scaled shoulderGrip) * Small size scale. Keeping
   // the result as one matrix also preserves the vat's non-uniform stomp scale
   // instead of decomposing it into a drifting world-space position.
+  function findAnimal(predicate) {
+    for (const item of deps.animalObjects) if (predicate(item)) return item; // Searches the live Set directly instead of spreading it into a throwaway array first.
+    return undefined;
+  }
+
   function setVatWorkerPose(vatId, targetMatrix, anchorName = 'shoulderGrip') {
     if (!targetMatrix) return null;
-    let animal = [...deps.animalObjects].find(item => item._vatWorkPose?.vatId === vatId);
+    let animal = findAnimal(item => item._vatWorkPose?.vatId === vatId);
     let rec = animal?._vatWorkRecord;
     if (!animal) {
       rec = deps.loadWorldLivestock().find(item => item.assignedVatId === vatId);
-      animal = rec && [...deps.animalObjects].find(item => item.livestockId === rec.id);
+      animal = rec && findAnimal(item => item.livestockId === rec.id);
     }
     if (!rec || !animal) return null;
     if (window.DewVats?.vatCanAccept?.(rec.kind, rec.genotype) !== true) {
       clearVatWorkerPose(vatId);
       return null;
     }
-    const grip = deps.creatureAttachmentAnchor(rec.kind, anchorName, rec.genotype);
-    if (!grip) return null;
-    const sizeScale = window.CreatureGenetics.creatureSizeScale(rec.kind, rec.genotype); // Used to mirror the editor's Small sizeRoot scale in the final pose matrix.
-    const gripRotation = grip.rotationDeg || {};
-    const gripQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-      (gripRotation.x || 0) * Math.PI / 180,
-      (gripRotation.y || 0) * Math.PI / 180,
-      (gripRotation.z || 0) * Math.PI / 180,
-      'XYZ'));
-    const scaledGrip = new THREE.Vector3((grip.x || 0) * sizeScale.x, (grip.y || 0) * sizeScale.y, grip.z || 0); // Used as the editor-equivalent attachment position after size scaling.
-    const gripMatrix = new THREE.Matrix4().compose(scaledGrip, gripQuaternion, new THREE.Vector3(1, 1, 1)).invert(); // Used to align shoulderGrip exactly onto the animated stomp point.
-    const sizeMatrix = new THREE.Matrix4().makeScale(sizeScale.x, sizeScale.y, 1); // Used after grip alignment just like the editor's child sizeRoot.
-    const poseMatrix = targetMatrix.clone().multiply(gripMatrix).multiply(sizeMatrix); // Used directly by _applyVatWorkPose so no target scale/shear is discarded.
+    // The grip/size alignment only depends on this animal's kind/genotype/anchor,
+    // which cannot change while a single vat batch runs (typically 12s+ at 60fps),
+    // so it's computed once per job and reused instead of rebuilding two Matrix4s
+    // (plus a Quaternion/Euler/two Vector3s) on every animation frame.
+    let staticPose = animal._vatWorkStatic;
+    if (!staticPose || staticPose.anchorName !== anchorName) {
+      const grip = deps.creatureAttachmentAnchor(rec.kind, anchorName, rec.genotype);
+      if (!grip) return null;
+      const sizeScale = window.CreatureGenetics.creatureSizeScale(rec.kind, rec.genotype); // Used to mirror the editor's Small sizeRoot scale in the final pose matrix.
+      const gripRotation = grip.rotationDeg || {};
+      const gripQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+        (gripRotation.x || 0) * Math.PI / 180,
+        (gripRotation.y || 0) * Math.PI / 180,
+        (gripRotation.z || 0) * Math.PI / 180,
+        'XYZ'));
+      const scaledGrip = new THREE.Vector3((grip.x || 0) * sizeScale.x, (grip.y || 0) * sizeScale.y, grip.z || 0); // Used as the editor-equivalent attachment position after size scaling.
+      const gripMatrix = new THREE.Matrix4().compose(scaledGrip, gripQuaternion, new THREE.Vector3(1, 1, 1)).invert(); // Used to align shoulderGrip exactly onto the animated stomp point.
+      const sizeMatrix = new THREE.Matrix4().makeScale(sizeScale.x, sizeScale.y, 1); // Used after grip alignment just like the editor's child sizeRoot.
+      staticPose = { anchorName, gripMatrix, sizeMatrix };
+      animal._vatWorkStatic = staticPose;
+    }
+    const poseMatrix = targetMatrix.clone().multiply(staticPose.gripMatrix).multiply(staticPose.sizeMatrix); // Used directly by _applyVatWorkPose so no target scale/shear is discarded.
     if (!animal._vatWorkPose) {
       animal._vatWorkPreviousVisible = animal.avatarRef.group.visible; // Used to restore barn-hidden animals after a completed job.
       animal._vatWorkPreviousMatrixAutoUpdate = animal.avatarRef.group.matrixAutoUpdate; // Used to restore the avatar's ordinary TRS-driven update mode after vat work.
@@ -1395,6 +1409,7 @@
       delete animal._vatWorkPreviousVisible;
       delete animal._vatWorkPreviousMatrixAutoUpdate;
       delete animal._vatWorkRecord;
+      delete animal._vatWorkStatic;
     }
   }
 

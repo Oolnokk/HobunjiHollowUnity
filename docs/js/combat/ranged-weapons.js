@@ -12,6 +12,13 @@
   const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
   const PROJECTILE_PERP_DEAD_DEG = 15; // Used only by projectile PNG facing so arrows turn within tighter windows than animals.
   const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
+  // Reused across calls instead of allocated fresh each time — projectileHit
+  // runs every frame for every live projectile until it hits something or
+  // outranges, and every downstream consumer (segmentHitboxInterval,
+  // NearbyVolumeCollision.segmentHit) only reads start/end's x/y/z, never
+  // retains the object itself, so nothing here needs to survive past one call.
+  const _projectileHitStart = new THREE.Vector3();
+  const _projectileHitEnd = new THREE.Vector3();
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -905,8 +912,8 @@
   }
 
   function projectileHit(p) {
-    const start = new THREE.Vector3(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
-    const end = new THREE.Vector3(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+    const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
+    const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
     const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
     const coverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
     const falloff = projectileFalloffMultiplier(p);

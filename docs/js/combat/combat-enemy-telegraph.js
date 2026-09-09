@@ -517,7 +517,17 @@
     }));
   }
 
-  window.Combat.heavyTelegraphVisuals = { update: updateHeavyAttackPresentation, snapshot }; // Exposes a narrow read-only/debug seam without exposing mutable effect internals.
+  window.Combat.heavyTelegraphVisuals = {
+    update: updateHeavyAttackPresentation,
+    snapshot,
+    // Lets combat-counter-shield.js's weapon-glow-only presentation find the
+    // actors it needs (holder, fieldGroup, weaponGlowGroup, defensive flag)
+    // without scanning the whole scene for named nodes every frame — the
+    // Map itself stays private, this only hands out an iterator over its
+    // existing entries, which updateHeavyAttackPresentation (spliced earlier
+    // in the same Combat.update chain) has already refreshed for this frame.
+    activeVisuals: () => actorVisuals.values(),
+  }; // Exposes a narrow read-only/debug seam without exposing mutable effect internals.
 
   const previousCombatUpdate = window.Combat.update; // Piggybacks the existing combat frame hook instead of starting a second animation loop.
   window.Combat.update = function heavyTelegraphAwareCombatUpdate(dt) {

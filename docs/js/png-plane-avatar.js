@@ -832,25 +832,44 @@
     };
   }
 
+  function hasUsablePortraitRig(candidate) {
+    const rig = candidate?.userData?.neckRig;
+    const skinnedPlane = rig?.skinnedPlane;
+    const sourceCanvas = candidate?.userData?.sourceCanvas;
+    return !!(
+      rig?.available
+      && skinnedPlane?.isSkinnedMesh
+      && skinnedPlane?.skeleton?.bones?.length
+      && sourceCanvas
+      && Number.isFinite(Number(candidate?.userData?.portraitModelWidth))
+      && Number.isFinite(Number(candidate?.userData?.portraitModelHeight))
+    );
+  } // Defines the exact avatar instance data required by the authored source-pixel skinning path.
+
+  // Callers (shoulder-pet surface sampling chief among them) often hold the
+  // outer player root while the PNG avatar group carrying neckRig lives one
+  // or more levels below it, and resolveSkinnedPixelWorldFrame alone re-runs
+  // this resolution 5 times per call (once per tangent-frame sample) every
+  // single frame while a pet is perched. Caching the resolved descendant per
+  // avatarRoot turns that into an O(1) lookup instead of a full subtree
+  // traverse() on every call; the cache self-heals (falls back to a fresh
+  // traverse) if the cached node is ever detached or stops matching the rig
+  // shape, so an avatar rebuild in place can't leave this pointing at a stale
+  // node.
+  const _portraitRootCache = new WeakMap(); // avatarRoot -> resolved descendant with a usable portrait rig.
+
   function resolveSkinnedPortraitRoot(avatarRoot) {
-    const hasUsablePortraitRig = candidate => {
-      const rig = candidate?.userData?.neckRig;
-      const skinnedPlane = rig?.skinnedPlane;
-      const sourceCanvas = candidate?.userData?.sourceCanvas;
-      return !!(
-        rig?.available
-        && skinnedPlane?.isSkinnedMesh
-        && skinnedPlane?.skeleton?.bones?.length
-        && sourceCanvas
-        && Number.isFinite(Number(candidate?.userData?.portraitModelWidth))
-        && Number.isFinite(Number(candidate?.userData?.portraitModelHeight))
-      );
-    }; // Defines the exact avatar instance data required by the authored source-pixel skinning path.
     if (hasUsablePortraitRig(avatarRoot)) return avatarRoot;
+
+    const cached = _portraitRootCache.get(avatarRoot);
+    if (cached && cached.parent && hasUsablePortraitRig(cached)) return cached;
+
     let resolved = null;
     avatarRoot?.traverse?.(candidate => {
       if (!resolved && candidate !== avatarRoot && hasUsablePortraitRig(candidate)) resolved = candidate;
-    }); // Player attachment callers often hold the outer player root while the PNG avatar group carrying neckRig lives below it.
+    });
+    if (resolved) _portraitRootCache.set(avatarRoot, resolved);
+    else _portraitRootCache.delete(avatarRoot);
     return resolved;
   }
 
