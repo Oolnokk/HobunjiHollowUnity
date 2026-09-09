@@ -42,6 +42,9 @@ assert.match(game,
 assert.match(targetingConfig, /"perspectivePointDistanceTiles":\s*160/,
   'shared point stays effectively horizon-distant while remaining inside the 200-unit camera far plane');
 assert.match(game,
+  /const x = Number\(head\?\.x\) \/ TILE;[\s\S]{0,240}const z = Number\(head\?\.z\) \/ TILE;/,
+  'raw-pixel head-cache coordinates are converted before perspective-point projection');
+assert.match(game,
   /const shoulderHeadDirection = activeCameraMode === SHOULDER_SURF_MODE[\s\S]{0,200}currentPlayerPerspectiveDirection/,
   'player head derives full yaw and pitch from its own origin to the shared point');
 assert.match(game, /playerNeckJoint\.rotation\.order = 'YXZ'/,

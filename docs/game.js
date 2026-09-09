@@ -17015,10 +17015,10 @@
             y: player.y,
             mesh: playerMesh,
             avatarModelHeight: playerAvatarModelHeight,
-          }); // Supplies the current species' actual head anchor in the shared world-unit coordinate system.
-          const x = Number(head?.x); // Used as the convergence ray's horizontal origin.
+          }); // Supplies the current species' actual head anchor; raw horizontal pixels are converted at the boundary below.
+          const x = Number(head?.x) / TILE; // CreatureHeadCache returns raw gameplay pixels; convergence consumers require Three.js tile/world units.
           const y = Number(head?.worldY); // Used as the convergence ray's vertical origin.
-          const z = Number(head?.z); // Used as the convergence ray's depth origin.
+          const z = Number(head?.z) / TILE; // Converts the cache's raw gameplay Z pixels at the same shared-unit boundary as X.
           if ([x, y, z].every(Number.isFinite)) return { x, y, z };
         } catch (_) { /* Fall through to the stable portrait-height approximation below. */ }
         return {
