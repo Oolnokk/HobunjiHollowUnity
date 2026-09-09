@@ -14,7 +14,11 @@
       : 'inactive';
     const player = data.playerChunk ? `${data.playerChunk.cx},${data.playerChunk.cz}` : 'none';
     const live = data.liveChunk ? `${data.liveChunk.cx},${data.liveChunk.cz}` : 'none';
-    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} provoked=${!!data.provoked} reason=${data.reason || '-'}`;
+    const music = window.HarlyaoNightMarchMusic?.debugSnapshot?.(); // Adds the proximity-stage/audio lerp state to the same mobile-copyable line.
+    const musicText = music
+      ? ` music=stage${music.stageIndex}/dist${Number.isFinite(music.chunkDistance) ? music.chunkDistance.toFixed(2) : '-'}/vol${Number(music.currentVolume || 0).toFixed(3)}→${Number(music.targetVolume || 0).toFixed(3)}/${music.sourcePlaying ? 'playing' : 'paused'}`
+      : ' music=unavailable';
+    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} provoked=${!!data.provoked} reason=${data.reason || '-'}${musicText}`;
   }
 
   function appendOrReplace(report) {
