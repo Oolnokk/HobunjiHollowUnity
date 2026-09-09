@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = 'config/harlyao-night-march.json'; // Shared march config owns the zone-specific darkness multiplier.
+  const CONFIG_URL = 'config/harlyao-night-march.json'; // Shared march config owns zone darkness plus Terror tuning.
   const FALLBACK_LANTERN = Object.freeze({ radiusTiles: 2.4, clarityRadiusTiles: 0.95, centerMaskAlpha: 0.92, clarityMaskAlpha: 0.80, softMaskAlpha: 0.28, softTransitionFraction: 0.18 }); // Mirrors the unified lighting defaults if atmosphere tuning has not loaded yet.
 
   let config = null; // Parsed march config used to resolve the requested darkness multiplier.
@@ -17,7 +17,7 @@
   async function loadConfig() {
     if (config) return config;
     try {
-      const response = await fetch(CONFIG_URL); // Browser cache normally shares this with the march and music controllers.
+      const response = await fetch(CONFIG_URL); // Browser cache normally shares this with the march/music/Terror controllers.
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       config = await response.json();
       return config;
@@ -38,9 +38,23 @@
     return Math.max(1, Number(config?.zoneAtmosphere?.darknessMultiplier) || 2);
   }
 
+  function terrorDarknessAlpha(area = lightingDeps?.getCurrentArea?.()) {
+    if (!activeSnapshot(area)) return 0;
+    return clamp01(window.HarlyaoTerror?.getDarknessAlpha?.() || 0); // Cached Terror stacks own incremental unlit darkness; no distance math happens in the renderer.
+  }
+
+  function terrorLanternRadiusMultiplier(area = lightingDeps?.getCurrentArea?.()) {
+    if (!activeSnapshot(area)) return 1;
+    return Math.max(0.1, Math.min(1, Number(window.HarlyaoTerror?.getLanternRadiusMultiplier?.()) || 1)); // Six stacks reaches the authored 50% floor.
+  }
+
   function lanternTuning() {
     const live = window.CloudForestFog?.getDebugState?.()?.tuning?.lantern;
-    return live ? { ...FALLBACK_LANTERN, ...live } : FALLBACK_LANTERN; // Uses the same live Settings/config values as the first lighting pass.
+    const base = live ? { ...FALLBACK_LANTERN, ...live } : { ...FALLBACK_LANTERN }; // Uses the same live Settings/config values as the first lighting pass.
+    const radiusMul = terrorLanternRadiusMultiplier(); // Scales both radii together so the lantern falloff profile keeps its authored proportions.
+    base.radiusTiles *= radiusMul;
+    base.clarityRadiusTiles *= radiusMul;
+    return base;
   }
 
   function lightScreenRadius(x, z, y, tiles) {
@@ -57,7 +71,7 @@
 
   function drawLanternMasks() {
     const ctx = lightingDeps.lctx;
-    const tuning = lanternTuning(); // Same player/watch lantern shape used by the unified base pass.
+    const tuning = lanternTuning(); // Player/watch lantern shape with Terror's cached radius multiplier applied.
     const carriers = [{
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
@@ -155,10 +169,17 @@
     ctx.globalCompositeOperation = 'multiply';
     ctx.fillStyle = `rgba(${light.r}, ${light.g}, ${light.b}, ${light.a})`;
     for (let index = 0; index < extraPasses; index++) ctx.fillRect(0, 0, rect.width, rect.height);
+
+    const terrorAlpha = terrorDarknessAlpha(area); // One additional black layer scales linearly with cached Terror stacks.
+    if (terrorAlpha > 0) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = `rgba(0,0,0,${terrorAlpha})`;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
     ctx.globalCompositeOperation = 'source-over';
 
-    // The extra darkness is global first, then the exact same local-light holes are punched back out.
-    // This keeps lanterns/furniture lights at their authored clarity instead of making the light itself twice as dim.
+    // Global darkness is applied first, then local-light holes are punched back out.
+    // Terror narrows only carried/watch lantern radii; furniture/light-source radii remain authored so the added darkness affects unlit regions rather than nerfing every world light.
     drawLanternMasks();
     drawFurnitureLightMasks();
     extraDraws++;
@@ -214,6 +235,9 @@
       active: !!activeSnapshot(area),
       area,
       darknessMultiplier: darknessMultiplier(area),
+      terrorStacks: window.HarlyaoTerror?.getStacks?.() || 0,
+      terrorDarknessAlpha: terrorDarknessAlpha(area),
+      lanternRadiusMultiplier: terrorLanternRadiusMultiplier(area),
       extraDraws,
       preservesLanternMasks: true,
       preservesFurnitureLightMasks: true,
@@ -221,6 +245,6 @@
   }
 
   window.HarlyaoNightMarchAtmosphere = Object.freeze({ install, loadConfig, debugSnapshot }); // Exposed for mobile QA and static regressions.
-  install(); // Must wrap WeatherFX before Ghostify so the spectral formation glow is drawn after this extra darkness pass.
+  install(); // Must wrap WeatherFX before Ghostify so the spectral formation/beacon glow is drawn after this extra darkness pass.
   loadConfig();
 })();

@@ -14,6 +14,7 @@ on:
       - 'docs/js/harlyao-night-march-pixel-probe.js'
       - 'docs/js/harlyao-night-march-runtime.js'
       - 'docs/js/harlyao-species-runtime.js'
+      - 'docs/js/harlyao-terror.js'
       - 'docs/js/house-pieces.js'
       - 'docs/js/maoao-arm-tint-runtime.js'
       - 'docs/js/shoulder-camera-character-framing.js'
@@ -22,6 +23,7 @@ on:
       - 'scripts/test-harlyao-night-march.js'
       - 'scripts/test-harlyao-night-march-beacon.js'
       - 'scripts/test-harlyao-species.js'
+      - 'scripts/test-harlyao-terror.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-shoulder-camera-reset-button.js'
@@ -41,6 +43,8 @@ jobs:
         run: node scripts/test-harlyao-night-march.js
       - name: Harlyao night march beacon regression
         run: node scripts/test-harlyao-night-march-beacon.js
+      - name: Harlyao Terror regression
+        run: node scripts/test-harlyao-terror.js
       - name: Mao-ao arm tint regression
         run: node scripts/test-maoao-arm-tint-runtime.js
       - name: Shoulder camera character framing regression

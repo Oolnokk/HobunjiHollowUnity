@@ -26,16 +26,18 @@
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
-    // Adds the Harlyao-zone second darkness pass, then re-clears the existing lantern/furniture-light masks. Loads before Ghostify so spectral army glow remains a light source above the extra darkness.
-    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20260909a'],
+    // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
+    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20260909b'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
     ['Ghostify', 'ghostify.js?v=20260909a'],
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260909b'],
     // Keeps one oversized cheap spectral halo at the army's scheduled/live chunk even while the twenty soldier entities remain unmaterialized outside that chunk.
     ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260909a'],
-    // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner, with long chunk-distance volume lerps on that same soundtrack element.
-    ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260909b'],
+    // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
+    ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260909c'],
+    // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
+    ['HarlyaoTerror', 'harlyao-terror.js?v=20260909a'],
     // Appends route/chunk/visibility/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
     ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260909a'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth

@@ -14,11 +14,15 @@
       : 'inactive';
     const player = data.playerChunk ? `${data.playerChunk.cx},${data.playerChunk.cz}` : 'none';
     const live = data.liveChunk ? `${data.liveChunk.cx},${data.liveChunk.cz}` : 'none';
-    const music = window.HarlyaoNightMarchMusic?.debugSnapshot?.(); // Adds the proximity-stage/audio lerp state to the same mobile-copyable line.
+    const music = window.HarlyaoNightMarchMusic?.debugSnapshot?.(); // Adds cached proximity/audio lerp state to the same mobile-copyable line.
     const musicText = music
-      ? ` music=stage${music.stageIndex}/dist${Number.isFinite(music.chunkDistance) ? music.chunkDistance.toFixed(2) : '-'}/vol${Number(music.currentVolume || 0).toFixed(3)}→${Number(music.targetVolume || 0).toFixed(3)}/${music.sourcePlaying ? 'playing' : 'paused'}`
+      ? ` music=stage${music.stageIndex}/dist${Number.isFinite(music.chunkDistance) ? music.chunkDistance.toFixed(2) : '-'}/checks${music.distanceChecks ?? '-'}@${music.distanceCheckMs ?? '-'}ms/vol${Number(music.currentVolume || 0).toFixed(3)}→${Number(music.targetVolume || 0).toFixed(3)}/${music.sourcePlaying ? 'playing' : 'paused'}`
       : ' music=unavailable';
-    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} provoked=${!!data.provoked} reason=${data.reason || '-'}${musicText}`;
+    const terror = window.HarlyaoTerror?.debugSnapshot?.(); // Confirms stack-derived movement/darkness/lantern effects without needing desktop devtools.
+    const terrorText = terror
+      ? ` terror=${terror.stacks}/${terror.maxStacks}/move${Number(terror.movementMultiplier || 1).toFixed(3)}/dark${Number(terror.darknessAlpha || 0).toFixed(3)}/lantern${Number(terror.lanternRadiusMultiplier || 1).toFixed(3)}`
+      : ' terror=unavailable';
+    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} provoked=${!!data.provoked} reason=${data.reason || '-'}${musicText}${terrorText}`;
   }
 
   function appendOrReplace(report) {

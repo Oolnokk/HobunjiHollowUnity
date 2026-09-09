@@ -83,6 +83,7 @@
     "trackUrl": "assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg",
     "ghoulFloorVolumeMultiplier": 2,
     "lerpMs": 12000,
+    "distanceCheckMs": 500,
     "stages": [
       { "maxChunkDistance": 0, "volumeScale": 1 },
       { "maxChunkDistance": 1, "volumeScale": 0.72 },
@@ -91,5 +92,14 @@
       { "maxChunkDistance": 7, "volumeScale": 0.15 },
       { "maxChunkDistance": 999, "volumeScale": 0.08 }
     ]
+  },
+  "terror": {
+    "label": "Terror",
+    "icon": "◉",
+    "movementSlowPerStack": 0.03,
+    "darknessAlphaPerStack": 0.045,
+    "maxDarknessAlpha": 0.27,
+    "lanternRadiusMinMultiplier": 0.5,
+    "hudRefreshMs": 500
   }
 }

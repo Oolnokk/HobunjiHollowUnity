@@ -25,8 +25,12 @@
   let transitionTo = 0; // Gain target for the current proximity stage.
   let transitionStartedAt = 0; // performance.now timestamp used by the fixed-duration gain interpolation.
   let transitionKey = 'boot'; // Prevents restarting the same gain interpolation every frame.
-  let stageIndex = -1; // Current authored proximity-stage index for mobile diagnostics.
-  let chunkDistance = null; // Current Euclidean player-to-army distance in wilderness chunks.
+  let stageIndex = -1; // Cached authored proximity-stage index for music and Terror.
+  let chunkDistance = null; // Cached Euclidean player-to-army distance in wilderness chunks.
+  let cachedTargetGain = 0; // Target gain derived only when the slow distance cache refreshes.
+  let proximityKey = 'none'; // Player+army chunk identity used to refresh immediately on actual chunk changes.
+  let lastDistanceCheckAt = -Infinity; // performance.now timestamp of the last Math.hypot proximity calculation.
+  let distanceChecks = 0; // Diagnostic count proving proximity is not recalculated every frame.
   let lastArea = null; // Used to emit the entry toast only when the player actually enters an area.
   let installedTownMine = false; // Tracks the one-time area-BGM resolver wrapper.
   let installedMusic = false; // Tracks the one-time Music scheduler wrapper.
@@ -39,6 +43,7 @@
       const response = await fetch(CONFIG_URL); // Browser cache normally shares this JSON with the march controller and atmosphere adapter.
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       config = await response.json();
+      lastDistanceCheckAt = -Infinity; // Forces one refresh with authored stage/cadence values after startup fallback data.
       return config;
     } catch (error) {
       window.__farmLog?.(`[harlyao-music] config load failed: ${error.message}`, 'warn', 'bgm');
@@ -69,7 +74,7 @@
     const player = snapshot?.playerChunk;
     const army = armyChunk(snapshot);
     if (!player || !army) return Infinity;
-    return Math.hypot(player.cx - army.cx, player.cz - army.cz); // Proximity stages operate in 2D WildernessChunks coordinates.
+    return Math.hypot(player.cx - army.cx, player.cz - army.cz); // This actual distance check is throttled by refreshCachedProximity below.
   }
 
   function stageForDistance(distance) {
@@ -81,12 +86,38 @@
     return { index: Math.max(0, stages.length - 1), ...fallback };
   }
 
-  function targetGainForSnapshot(snapshot) {
+  function distanceCheckMs() {
+    return Math.max(250, Number(config?.music?.distanceCheckMs) || 500);
+  }
+
+  function chunkKey(snapshot) {
+    const player = snapshot?.playerChunk;
+    const army = armyChunk(snapshot);
+    if (!snapshot?.scheduled || !player || !army) return 'inactive';
+    return `${snapshot.scheduled.zoneId}:p${player.cx},${player.cz}:a${army.cx},${army.cz}`;
+  }
+
+  function refreshCachedProximity(snapshot, force = false) {
+    if (!snapshot) {
+      proximityKey = 'inactive';
+      chunkDistance = null;
+      stageIndex = -1;
+      cachedTargetGain = 0;
+      return false;
+    }
+    const now = performance.now();
+    const nextKey = chunkKey(snapshot);
+    const chunkChanged = nextKey !== proximityKey;
+    if (!force && !chunkChanged && now - lastDistanceCheckAt < distanceCheckMs()) return false;
+    proximityKey = nextKey;
+    lastDistanceCheckAt = now;
     chunkDistance = distanceInChunks(snapshot);
     const stage = stageForDistance(chunkDistance);
     stageIndex = stage.index;
     const ghoulMultiplier = Math.max(0, Number(config?.music?.ghoulFloorVolumeMultiplier) || 2); // Matches TownMine's canonical Ghoul-floor 2x reference level.
-    return ghoulMultiplier * Math.max(0, Number(stage.volumeScale) || 0);
+    cachedTargetGain = ghoulMultiplier * Math.max(0, Number(stage.volumeScale) || 0);
+    distanceChecks++;
+    return true;
   }
 
   function interpolatedGain(now = performance.now()) {
@@ -221,11 +252,14 @@
   }
 
   function applyProximity(snapshot) {
-    if (!snapshot) return;
+    if (!snapshot) {
+      refreshCachedProximity(null);
+      return;
+    }
+    const changed = refreshCachedProximity(snapshot);
     const chunk = armyChunk(snapshot);
-    const target = targetGainForSnapshot(snapshot);
-    beginTransition(target, `stage:${snapshot.scheduled.zoneId}:${chunk?.cx},${chunk?.cz}:${stageIndex}`);
-    currentGain = Math.max(0, interpolatedGain());
+    if (changed) beginTransition(cachedTargetGain, `stage:${snapshot.scheduled.zoneId}:${chunk?.cx},${chunk?.cz}:${stageIndex}`);
+    currentGain = Math.max(0, interpolatedGain()); // Smooth audio gain still updates per frame; only the expensive distance/stage calculation is throttled.
     if (capturedAudio) {
       capturedAudio.loop = true; // makeGameAudio initializes loop=false; set it after Music has created the scheduler-owned element.
       applyCapturedVolume();
@@ -263,8 +297,10 @@
       if (!snapshot && capturedAudio?.paused) {
         capturedAudio = null;
         schedulerRawVolume = 0;
-        stageIndex = -1;
-        chunkDistance = null;
+        currentGain = 0;
+        transitionFrom = 0;
+        transitionTo = 0;
+        transitionKey = 'inactive';
       }
       return result;
     };
@@ -293,6 +329,9 @@
       playerChunk: snapshot?.playerChunk || null,
       chunkDistance,
       stageIndex,
+      stageCount: (config?.music?.stages || FALLBACK_STAGES).length,
+      distanceCheckMs: distanceCheckMs(),
+      distanceChecks,
       schedulerRawVolume,
       currentGain,
       targetGain: transitionTo,
@@ -313,9 +352,9 @@
     formatDebug: () => {
       const data = debugSnapshot();
       const army = data.armyChunk ? `${data.armyChunk.cx},${data.armyChunk.cz}` : 'none';
-      return `Harlyao music: owner=${data.ownerId} scheduler=${data.schedulerOwned} exclusive=${data.exclusive} area=${data.area || '-'} army=${army} distChunks=${Number.isFinite(data.chunkDistance) ? data.chunkDistance.toFixed(2) : '-'} stage=${data.stageIndex} volume=${Number(data.currentVolume || 0).toFixed(3)} gain=${data.currentGain.toFixed(3)}→${data.targetGain.toFixed(3)} loop=${data.loop} playing=${data.sourcePlaying}`;
+      return `Harlyao music: owner=${data.ownerId} scheduler=${data.schedulerOwned} exclusive=${data.exclusive} area=${data.area || '-'} army=${army} distChunks=${Number.isFinite(data.chunkDistance) ? data.chunkDistance.toFixed(2) : '-'} stage=${data.stageIndex} checks=${data.distanceChecks}@${data.distanceCheckMs}ms volume=${Number(data.currentVolume || 0).toFixed(3)} gain=${data.currentGain.toFixed(3)}→${data.targetGain.toFixed(3)} loop=${data.loop} playing=${data.sourcePlaying}`;
     },
-    __test: Object.freeze({ stageForDistance }),
+    __test: Object.freeze({ stageForDistance, chunkKey }),
   });
 
   install(); // Main parser path must wrap Music.init before game.js injects dependencies; providers remain inactive until config finishes loading.
