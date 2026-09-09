@@ -78,30 +78,12 @@
     "ghoulFloorVolumeMultiplier": 2,
     "lerpMs": 12000,
     "stages": [
-      {
-        "maxChunkDistance": 0,
-        "volumeScale": 1
-      },
-      {
-        "maxChunkDistance": 1,
-        "volumeScale": 0.72
-      },
-      {
-        "maxChunkDistance": 2,
-        "volumeScale": 0.48
-      },
-      {
-        "maxChunkDistance": 4,
-        "volumeScale": 0.28
-      },
-      {
-        "maxChunkDistance": 7,
-        "volumeScale": 0.15
-      },
-      {
-        "maxChunkDistance": 999,
-        "volumeScale": 0.08
-      }
+      { "maxChunkDistance": 0, "volumeScale": 1 },
+      { "maxChunkDistance": 1, "volumeScale": 0.72 },
+      { "maxChunkDistance": 2, "volumeScale": 0.48 },
+      { "maxChunkDistance": 4, "volumeScale": 0.28 },
+      { "maxChunkDistance": 7, "volumeScale": 0.15 },
+      { "maxChunkDistance": 999, "volumeScale": 0.08 }
     ]
   }
 }
