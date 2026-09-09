@@ -11,7 +11,8 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const config = JSON.parse(read('docs/config/harlyao-night-march.json')); // Authored nightly route/equipment/visual contract under test.
 const runtimeSource = read('docs/js/harlyao-night-march-runtime.js'); // Corrected controller that owns hourly chunk-only simulation and observed marching.
 const ghostifySource = read('docs/js/ghostify.js'); // Shared spectral material/darkness-lighting helper used by Harlyao.
-const loaderSource = read('docs/js/house-pieces.js'); // Parser-time bootstrap currently responsible for loading both reusable runtime modules.
+const probeSource = read('docs/js/harlyao-night-march-pixel-probe.js'); // Mobile report adapter that exposes route/visibility/provocation without console access.
+const loaderSource = read('docs/js/house-pieces.js'); // Parser-time bootstrap currently responsible for loading all Harlyao march support modules.
 const species = JSON.parse(read('docs/config/species/harlyao.json')); // Confirms the forced army clothing is legal for either Harlyao gender.
 
 assert.equal(config.memberCount, 20, 'the travelling army should contain about twenty Harlyao');
@@ -40,8 +41,10 @@ for (const gender of ['male', 'female']) {
 
 assert.match(loaderSource, /\['Ghostify', 'ghostify\.js\?v=[^']+'\]/, 'Ghostify loads before the night march');
 assert.match(loaderSource, /\['HarlyaoNightMarch', 'harlyao-night-march-runtime\.js\?v=[^']+'\]/, 'corrected Harlyao controller is the one loaded by gameplay');
+assert.match(loaderSource, /\['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe\.js\?v=[^']+'\]/, 'mobile Pixel Probe bridge loads with the march runtime');
 assert.doesNotMatch(loaderSource, /harlyao-night-march\.js\?v=/, 'superseded first-pass controller must not remain in the loader');
 assert(loaderSource.indexOf("['Ghostify'") < loaderSource.indexOf("['HarlyaoNightMarch'"), 'Ghostify must load before HarlyaoNightMarch registers its formation glow');
+assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchPixelProbe'"), 'march state must exist before its Pixel Probe adapter loads');
 
 assert.match(runtimeSource, /const hour = Math\.floor\(gameHour\(\)\)/, 'offscreen schedule keys use whole game-hours only');
 assert.match(runtimeSource, /const key = `\$\{day\}:\$\{hour\}`/, 'civil day + whole hour is the coarse simulation cache key');
@@ -58,6 +61,12 @@ assert.match(ghostifySource, /material\.emissive\.copy\(color\)/, 'lit materials
 assert.match(ghostifySource, /registerGlowSource/, 'Ghostify exposes reusable formation/object glow registration');
 assert.match(ghostifySource, /destination-out/, 'spectral glow clears the existing darkness overlay like lanterns do');
 assert.doesNotMatch(ghostifySource, /new THREE\.PointLight/, 'twenty ghosts must not become twenty real Three.js lights');
+
+assert.match(probeSource, /debugProbeResult/, 'march diagnostics append to the existing copyable Pixel Probe result surface');
+assert.match(probeSource, /window\.HarlyaoNightMarch/, 'Pixel Probe adapter reads the controller instead of reimplementing march state');
+assert.match(probeSource, /debugSnapshot\?\.\(\)/, 'Pixel Probe line comes from the structured runtime snapshot');
+assert.match(probeSource, /MutationObserver/, 'Pixel Probe adapter follows asynchronous report publication on mobile');
+assert.match(probeSource, /scheduled=.*playerChunk=.*liveChunk=.*members=.*visible=.*provoked=.*reason=/, 'copied line carries route, chunk, LOD, population, hostility, and lifecycle reason');
 
 const context = {
   console,
