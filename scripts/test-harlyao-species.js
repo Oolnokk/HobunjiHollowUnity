@@ -43,12 +43,30 @@ const cosmetics = {
     F: { A: { source: 'mao-female' } },
   },
 }; // Used to prove Harlyao points at the same canonical Mao-ao range objects rather than copies.
+const handProfileData = {
+  speciesModels: { 'engh-sho': 'feline', 'mao-ao': 'feline' },
+  speciesScaleOverrides: {},
+}; // Used to prove Harlyao resolves the same hand GLB family as Engh-sho while retaining its own scale key.
 const windowObject = {
   SCRATCHBONES_CONFIG: {
     game: {
       appearanceEditor: { species: {} },
       portrait: {},
+      assets: {
+        pngPlaneAvatar: {
+          proceduralFeet: {
+            models: {
+              'engh-sho': { glb: 'assets/models/feet/foot_feline.glb', materialRoles: { 'Mat 1': 'body' } },
+            },
+            footScale: { default: 1 },
+          },
+        },
+      },
     },
+  },
+  HobunjiHandModelProfiles: {
+    data: handProfileData,
+    mutate(mutator) { mutator(this.data); },
   },
   HOBUNJI_ATTACHMENT_RIG_PROFILES: {
     characters: {
@@ -73,6 +91,16 @@ vm.runInContext(runtimeSource, context, { filename: 'harlyao-species-runtime.js'
 
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species.harlyao.npcOnly, true);
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species.harlyao.playerSelectable, false);
+assert.equal(windowObject.HobunjiHandModelProfiles.data.speciesModels.harlyao, 'feline');
+assert.deepEqual(
+  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models.harlyao,
+  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models['engh-sho'],
+);
+assert.notEqual(
+  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models.harlyao,
+  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models['engh-sho'],
+  'Harlyao foot model config must be cloned so future per-species edits cannot mutate Engh-sho',
+);
 assert.equal(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao::male'].species, 'harlyao');
 assert.notEqual(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao::male'], windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['engh-sho::male']);
 assert.equal(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao::male'].anatomy.portraitScale, 0.95);
@@ -105,6 +133,8 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
 
   const debug = windowObject.HobunjiHarlyaoSpecies.debugSnapshot();
   assert.equal(debug.rigProfilesInstalled, 2);
+  assert.equal(debug.handModelInherited, true);
+  assert.equal(debug.footModelInherited, true);
   assert.equal(debug.wardrobeResolverInstalled, true);
   assert.equal(debug.paletteInheritanceInstalled, true);
   assert.equal(debug.armMaskProfilesInstalled, 2);
