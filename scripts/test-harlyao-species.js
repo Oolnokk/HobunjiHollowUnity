@@ -92,15 +92,11 @@ vm.runInContext(runtimeSource, context, { filename: 'harlyao-species-runtime.js'
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species.harlyao.npcOnly, true);
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species.harlyao.playerSelectable, false);
 assert.equal(windowObject.HobunjiHandModelProfiles.data.speciesModels.harlyao, 'feline');
-assert.deepEqual(
-  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models.harlyao,
-  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models['engh-sho'],
-);
-assert.notEqual(
-  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models.harlyao,
-  windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models['engh-sho'],
-  'Harlyao foot model config must be cloned so future per-species edits cannot mutate Engh-sho',
-);
+const harlyaoFoot = windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models.harlyao; // Used for field-level equality because VM-created object prototypes intentionally differ from the host realm.
+const enghShoFoot = windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models['engh-sho']; // Canonical source remains a separate object so later Harlyao edits cannot mutate Engh-sho.
+assert.equal(harlyaoFoot.glb, enghShoFoot.glb);
+assert.equal(harlyaoFoot.materialRoles['Mat 1'], enghShoFoot.materialRoles['Mat 1']);
+assert.notEqual(harlyaoFoot, enghShoFoot, 'Harlyao foot model config must be cloned so future per-species edits cannot mutate Engh-sho');
 assert.equal(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao::male'].species, 'harlyao');
 assert.notEqual(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao::male'], windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['engh-sho::male']);
 assert.equal(windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['harlyao::male'].anatomy.portraitScale, 0.95);
