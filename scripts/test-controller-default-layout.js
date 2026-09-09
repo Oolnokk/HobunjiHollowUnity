@@ -97,7 +97,7 @@ assert.deepEqual(
   'pressing Reset Controller to Defaults produces the approved controller JSON binding map exactly',
 );
 assert.deepEqual(
-  live.modeShifts.filter(shift => (shift.device || 'desktop') === 'controller'),
+  JSON.parse(JSON.stringify(live.modeShifts.filter(shift => (shift.device || 'desktop') === 'controller'))),
   [],
   'pressing Reset Controller to Defaults leaves no controller mode shifts',
 );
