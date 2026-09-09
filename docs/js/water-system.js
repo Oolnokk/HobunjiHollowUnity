@@ -63,6 +63,7 @@
   // ── Merged water mesh apron constants ──
   const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
   const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
+  const INVERTED_WATER_MIN_WET_FRACTION = 0.25; // Used to keep sparse/dry states on the old sparse collector+renderer path instead of paying baseline-analysis overhead.
 
   // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
   function floorZ(type, depth = 1) {
@@ -283,9 +284,11 @@
   }
 
   // ── Merged water mesh rendering ─────────────────────────────────
-  // The PNG tiles across world X/Z and scrolls as one continuous surface,
-  // like the shared rain-plane texture. Per-vertex depth and flow retain
-  // simulation tint/detail without returning to one material per tile.
+  // The PNG tiles across world X/Z and scrolls as one continuous surface.
+  // Farm/town dynamic water use an inverted geometry representation: ordinary
+  // weather-level cells are greedily merged into large flat rectangles; dry,
+  // solid, permanent-water, and locally different cells are literal holes,
+  // with wet local deviations appended as exception geometry in the same mesh.
   let mergedWaterMaterial = null;
   function _material() {
     if (!mergedWaterMaterial) {
@@ -332,16 +335,67 @@
   let _flowingTrenchTiles = [];        // Used by WeatherFX's trench particle emitter.
   let _townFlowingTrenchTiles = [];    // Same, town-side.
 
-  // Update merged water surfaces each frame. The simulation remains a
-  // per-tile grid. This collector translates its current state into one
-  // batch of height/depth/flow vertices only when a sim tick marks the
-  // area dirty; the render fast path merely advances the shared texture
-  // uniform.
+  function _newBaselineSamples() {
+    return {
+      wet: [], // Used to retain only visible-level samples that may participate in a wet median.
+      dryCount: 0, // Used to place the wet sample array at the correct sorted-index offset without storing dry values.
+      total: 0, // Used to choose the median indices and to decide whether preferred terrain samples exist.
+      maxDry: 0, // Used only for the even-sized boundary median where the lower center sample is dry.
+      minWet: Infinity, // Used to skip sorting when every retained wet sample has the same value.
+      maxWet: -Infinity, // Used with minWet to detect a uniform wet sample set.
+    };
+  }
+
+  function _addBaselineSample(samples, water) {
+    samples.total++;
+    if (water < 0.003) {
+      samples.dryCount++;
+      if (water > samples.maxDry) samples.maxDry = water;
+      return;
+    }
+    samples.wet.push(water);
+    if (water < samples.minWet) samples.minWet = water;
+    if (water > samples.maxWet) samples.maxWet = water;
+  }
+
+  function _baselineMedian(samples) {
+    if (!samples.total) return 0;
+    const highIndex = Math.floor(samples.total / 2); // Used as the upper center index in sorted sample order.
+    const lowIndex = Math.floor((samples.total - 1) / 2); // Used as the lower center index for even sample counts.
+    if (highIndex < samples.dryCount) return samples.maxDry; // The whole median lies below visibility; exact sub-threshold rank is visually irrelevant.
+
+    const sampleAt = index => index < samples.dryCount
+      ? samples.maxDry
+      : samples.wet[index - samples.dryCount]; // Used after wet-only sorting to address the logical combined dry+wet order.
+    if (samples.minWet !== samples.maxWet) samples.wet.sort((a, b) => a - b);
+    return samples.total % 2
+      ? sampleAt(highIndex)
+      : (sampleAt(lowIndex) + sampleAt(highIndex)) * 0.5;
+  }
+
+  function _dryRenderBaseline() {
+    return { // Used to route sparse states through the classic renderer without any baseline-analysis pass.
+      visible: false,
+      surfaceY: deps.getNormalTop(),
+      depth: 0,
+      coverage: 0,
+      flowX: 0,
+      flowZ: 0,
+    };
+  }
+
+  // Pass 1 deliberately mirrors the old sparse collector: only actually visible
+  // dynamic-water cells are allocated, and all per-cell flow/cache work is the
+  // same work the classic merged renderer already required. If less than 25%
+  // of the map is wet, we return immediately and never analyze a global baseline.
+  // Dense wet states get a second, lightweight baseline-analysis pass because
+  // those are the states where large rectangle compression can pay for itself.
   function _collectDynamicWaterCells(targetGrid, rows, cols, skipPermanentWater) {
     const TileType = deps.TileType;
     const WATER_UNIT = deps.getWaterUnit();
-    const cells = []; // Used by buildMergedWaterMesh for one simulation snapshot.
+    const cells = []; // Used by buildMergedWaterMesh; contains only visible dynamic-water cells.
     const flowingTrenches = []; // Used by WeatherFX's trench particle emitter.
+
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const tile = targetGrid[row][col];
@@ -377,10 +431,48 @@
         tile._wDepth = depthFrac;
         tile._wFlowNX = flowX;
         tile._wFlowNZ = flowZ;
-        cells.push({ col, row, surfaceY: surfaceA, depth: depthFrac, flowX, flowZ });
+        cells.push({ col, row, surfaceY: surfaceA, depth: depthFrac, coverage: depthFrac, flowX, flowZ, visible: true });
       }
     }
-    return { cells, flowingTrenches };
+
+    const minimumInversionWetCells = Math.ceil(rows * cols * INVERTED_WATER_MIN_WET_FRACTION); // Used to avoid all baseline-analysis overhead when water is sparse.
+    if (cells.length < minimumInversionWetCells) {
+      return { cells, flowingTrenches, baseline: _dryRenderBaseline() };
+    }
+
+    const NORMAL_TOP = deps.getNormalTop();
+    const preferredBaselineSamples = _newBaselineSamples(); // Grass/weeds: used first for the weather-driven global plane.
+    const fallbackBaselineSamples = _newBaselineSamples(); // Non-grass ordinary ground used only if no grass/weeds samples exist.
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const tile = targetGrid[row][col];
+        const isSolid = deps.isSolid(tile.type);
+        const isPermanent = tile.type === TileType.RIVER || tile.type === TileType.STREAM;
+        if (isSolid || isPermanent || tile.type === TileType.TRENCH || tile.type === TileType.PADDY) continue;
+        const baseSurfaceY = deps.tileSurfaceY(tile.type);
+        if (Math.abs(baseSurfaceY - NORMAL_TOP) >= 0.001) continue;
+        if (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) {
+          _addBaselineSample(preferredBaselineSamples, tile.water);
+        } else {
+          _addBaselineSample(fallbackBaselineSamples, tile.water);
+        }
+      }
+    }
+
+    const baselineSamples = preferredBaselineSamples.total
+      ? preferredBaselineSamples
+      : fallbackBaselineSamples; // Used once to derive the common weather-level visual baseline.
+    const baselineWater = _baselineMedian(baselineSamples); // Used as the map-wide baseline water amount for this simulation snapshot.
+    const baselineDepth = deps.clamp(baselineWater / deps.MAX_WATER, 0, 1); // Used by the water shader for baseline color/coverage.
+    const baseline = { // Used by the inverted renderer as the map-wide weather sheet.
+      visible: baselineWater >= 0.003,
+      surfaceY: NORMAL_TOP + baselineWater * WATER_UNIT,
+      depth: baselineDepth,
+      coverage: baselineDepth,
+      flowX: 0,
+      flowZ: 0,
+    };
+    return { cells, flowingTrenches, baseline };
   }
 
   // The shallow decorative puddle apron is also one merged draw call. Its
@@ -422,6 +514,10 @@
       farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
       farmWaterMesh = buildMergedWaterMesh(scene, snapshot.cells, {
         name: 'farm_merged_dynamic_water', statKey: 'farm dynamic',
+        inverted: true,
+        cols: deps.COLS,
+        rows: deps.ROWS,
+        baseline: snapshot.baseline,
       });
       farmFarAquiferMesh = _disposeMergedWaterMesh(scene, farmFarAquiferMesh, 'farm south apron');
       farmFarAquiferMesh = _buildFarAquiferApron(deps.COLS, deps.ROWS, _farSouthLevel(), scene, 'farm south apron');
@@ -445,6 +541,10 @@
       townWaterMesh = _disposeMergedWaterMesh(townScene, townWaterMesh, 'town dynamic');
       townWaterMesh = buildMergedWaterMesh(townScene, snapshot.cells, {
         name: 'town_merged_dynamic_water', statKey: 'town dynamic',
+        inverted: true,
+        cols: TCOLS,
+        rows: TROWS,
+        baseline: snapshot.baseline,
       });
       townFarAquiferMesh = _disposeMergedWaterMesh(townScene, townFarAquiferMesh, 'town south apron');
       townFarAquiferMesh = _buildFarAquiferApron(TCOLS, TROWS, deps.getTownSouthLevel(), townScene, 'town south apron');
