@@ -33,7 +33,7 @@ assert.equal(pickActiveGamepad([null, idlePreferred, null], 0).index, 0, 'sparse
 assert.equal(pickActiveGamepad([null, undefined], 0), null, 'empty browser gamepad slots report no active controller');
 
 assert.match(gameSource, /pollControllerInput\(\);\s*applyControllerCameraLook\(dt\);\s*updateMeleeAutoTarget\(dt\);/, 'controller camera rotation is applied before movement/combat updates');
-assert.match(gameSource, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,420}cameraAngleOffsetDeg = window\.FormatUtils\.clamp/, 'right stick updates both camera yaw and pitch');
+assert.match(gameSource, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,520}cameraAngleOffsetDeg = clampCameraPitchOffsetDeg/, 'right stick updates yaw and uses the shared directional pitch clamp');
 assert.match(gameSource, /if \(!gamepadState\.uiOwned\) releaseControllerGameplayInput\('released to menu'\)/, 'opening a menu releases held gameplay actions exactly once');
 assert.match(gameSource, /if \(gamepadState\.primeButtonsOnResume\)[\s\S]{0,500}gamepadState\.previous = new Set\(down\)/, 'the button used to close a menu is primed instead of ghost-firing in gameplay');
 assert.match(gameSource, /gamepadState\.actionByButton\.set\(button, actionId\)[\s\S]{0,700}gamepadState\.actionByButton\.get\(button\)/, 'controller releases remain paired with the action originally pressed across mode-shift changes');
@@ -44,7 +44,7 @@ assert.match(uiSource, /scrollStick[\s\S]{0,900}scrollTop \+=/, 'right stick scr
 assert.match(uiSource, /hobunji-controller-owner-change[\s\S]{0,180}owner: 'menu'/, 'menu ownership is announced even while the gameplay loop is paused');
 assert.match(indexSource, /id="settingControllerLookSensitivity"[\s\S]{0,700}id="settingControllerInvertY"/, 'camera sensitivity and invert-Y settings are present');
 const controllerHelperIndex = indexSource.indexOf('controller-input.js?v=20260909controller1'); // Used to verify parser order without assuming a maximum HTML distance between scripts.
-const gameScriptIndex = indexSource.indexOf('game.js?v=20260909controller1'); // Used with controllerHelperIndex to protect the helper-before-consumer contract.
+const gameScriptIndex = indexSource.indexOf('game.js?v=20260909lookclamp1'); // Used with controllerHelperIndex to protect the helper-before-consumer contract.
 assert.ok(controllerHelperIndex >= 0 && gameScriptIndex > controllerHelperIndex, 'shared controller helpers load before the cache-invalidated game script');
 
 console.log('Controller experience checks passed.');
