@@ -65,6 +65,8 @@ assert.match(runtimeSource, /deps\.moveCreatureToward\?\.\(/, 'observed formatio
 assert.match(runtimeSource, /detectHit\(\)/, 'visible formation checks for player provocation');
 assert.match(runtimeSource, /state\.provoked = true/, 'provoking one marcher promotes the whole formation to combat state');
 assert.match(runtimeSource, /Math\.max\(MIN_MARCH_SPEED_TILES_S, Number\(cfg\?\.formation\?\.marchSpeedTilesPerSecond\) \|\| 1\.15\)/, 'observed march speed keeps the authored 1.15 tiles/s instead of an accidental high minimum');
+assert.match(runtimeSource, /const gender = 'male';/, 'night army roster stays male-only while only the male Harlyao head is authored');
+assert.doesNotMatch(runtimeSource, /index % 2 \? 'female' : 'male'/, 'night army must not alternate female marchers back in yet');
 
 assert.match(musicSource, /window\.HarlyaoNightMarch\?\.debugSnapshot/, 'music reads the existing march state instead of simulating the army independently');
 assert.match(musicSource, /snapshot\?\.liveChunk \|\| snapshot\?\.scheduled\?\.chunk/, 'observed physical army chunk overrides coarse schedule for audible proximity');
