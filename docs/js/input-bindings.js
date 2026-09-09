@@ -25,6 +25,10 @@
     return (Array.isArray(modeShifts) ? modeShifts : []).filter(shift => shift?.id !== 'controller-left-bumper');
   }
 
+  function cloneModeShift(shift) {
+    return { ...shift, bindings: { ...(shift?.bindings || {}) } }; // Used by per-device resets so authored defaults never share mutable nested binding objects with live Settings state.
+  }
+
   function ensureAction(actions, definition) {
     if (!Array.isArray(actions) || !definition?.id) return null;
     let action = actions.find(entry => entry?.id === definition.id) || null; // Reuses the authored action object whenever the project already defines it.
@@ -140,6 +144,56 @@
     return authored.filter(action => supportsDevice(action, device));
   }
 
+  function getDefaultBindings(device) {
+    if (device !== 'desktop' && device !== 'controller') return null;
+    patchAutomaticSelectionDefaults(deps?.INPUT_DEFAULTS);
+    const defaults = {}; // Used as a fresh device-only binding map so Reset never mutates the authored config object itself.
+    for (const action of getActionsForDevice(device)) {
+      const authoredValue = Object.prototype.hasOwnProperty.call(action || {}, device) ? action[device] : undefined; // Used so runtime-authored migrations such as Social Actions/Call Mount win over an older precomputed map.
+      const mappedValue = deps?.INPUT_DEFAULTS?.[device]?.[action.id]; // Used as the fallback for actions whose defaults are generated outside the authored action row.
+      defaults[action.id] = authoredValue !== undefined ? authoredValue : (mappedValue ?? null);
+    }
+    for (const [actionId, binding] of Object.entries(deps?.INPUT_DEFAULTS?.[device] || {})) {
+      if (!Object.prototype.hasOwnProperty.call(defaults, actionId)) defaults[actionId] = binding ?? null;
+    }
+    return defaults;
+  }
+
+  function getDefaultModeShifts(device) {
+    if (device !== 'desktop' && device !== 'controller') return [];
+    patchAutomaticSelectionDefaults(deps?.INPUT_DEFAULTS);
+    return removeLegacyControllerModeShift(deps?.INPUT_DEFAULTS?.modeShifts)
+      .filter(shift => (shift.device || 'desktop') === device)
+      .map(cloneModeShift);
+  }
+
+  function resetDeviceToDefaults(device) {
+    if (device !== 'desktop' && device !== 'controller') return false;
+    const bindings = getCurrentBindings(); // Used as the mutable live binding object so the opposite device can remain completely untouched.
+    const defaults = getDefaultBindings(device); // Used to replace only the selected keyboard/controller map with authored defaults.
+    if (!bindings || !defaults) return false;
+    const target = bindings[device] || (bindings[device] = {}); // Used in place so any subsystem holding the existing per-device object sees reset values immediately.
+    for (const actionId of Object.keys(target)) delete target[actionId];
+    Object.assign(target, defaults);
+
+    const otherModeShifts = removeLegacyControllerModeShift(bindings.modeShifts).filter(shift => (shift.device || 'desktop') !== device).map(cloneModeShift); // Preserves custom/default mode shifts belonging to the other device.
+    const defaultModeShifts = getDefaultModeShifts(device); // Restores only this device's authored shifted bindings alongside its ordinary controls.
+    bindings.modeShifts = [...otherModeShifts, ...defaultModeShifts];
+
+    if (device === 'controller') {
+      explicitMountBindingKnown = true;
+      explicitMountBinding = target.toggleMount ?? null;
+    }
+    if (!saveInputBindings()) return false;
+    for (const actionId of Object.keys(target)) {
+      window.dispatchEvent(new CustomEvent('hobunji-input-bindings-changed', {
+        detail: { device, actionId, binding: target[actionId] ?? null },
+      }));
+    }
+    window.dispatchEvent(new CustomEvent('hobunji-input-bindings-reset', { detail: { device } }));
+    return true;
+  }
+
   function contextsConflict(targetContext, otherContext) {
     if (targetContext === otherContext) return true;
     return (targetContext === 'selection' && otherContext === 'gameplay')
@@ -195,6 +249,7 @@
 
   window.InputBindings = {
     init, loadInputBindings, getCurrentBindings, saveInputBindings, repairExplicitMountBinding,
+    resetDeviceToDefaults, getDefaultBindings, getDefaultModeShifts,
     bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice,
   };
 })();
