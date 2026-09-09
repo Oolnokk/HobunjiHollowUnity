@@ -29,6 +29,8 @@ const idlePreferred = { index: 0, connected: true, axes: [0, 0], buttons: [] };
 const activeSecond = { index: 1, connected: true, axes: [0.8, 0], buttons: [] };
 assert.equal(pickActiveGamepad([idlePreferred, activeSecond], 0).index, 1, 'deliberate input can take ownership from an idle preferred pad');
 assert.equal(pickActiveGamepad([idlePreferred, activeSecond], 1).index, 1, 'active preferred pad keeps ownership');
+assert.equal(pickActiveGamepad([null, idlePreferred, null], 0).index, 0, 'sparse browser gamepad slots are ignored safely');
+assert.equal(pickActiveGamepad([null, undefined], 0), null, 'empty browser gamepad slots report no active controller');
 
 assert.match(gameSource, /pollControllerInput\(\);\s*applyControllerCameraLook\(dt\);\s*updateMeleeAutoTarget\(dt\);/, 'controller camera rotation is applied before movement/combat updates');
 assert.match(gameSource, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,420}cameraAngleOffsetDeg = window\.FormatUtils\.clamp/, 'right stick updates both camera yaw and pitch');

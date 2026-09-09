@@ -21,7 +21,7 @@
   }
 
   function pickActiveGamepad(gamepads, preferredIndex = null, takeoverThreshold = 0.35) {
-    const connected = Array.from(gamepads || []).filter(gamepad => gamepad?.connected !== false);
+    const connected = Array.from(gamepads || []).filter(gamepad => gamepad && gamepad.connected !== false);
     if (!connected.length) return null;
     const preferred = connected.find(gamepad => gamepad.index === preferredIndex) || null; // Used to prevent ownership flicker between idle connected pads.
     const contender = connected.reduce((best, gamepad) => activityScore(gamepad) > activityScore(best) ? gamepad : best, connected[0]); // Used to support hot switching when another pad receives deliberate input.
