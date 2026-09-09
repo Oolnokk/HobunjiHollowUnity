@@ -6,8 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { buildSurfaceData, buildInvertedSurfaceData } = require('../docs/js/merged-water-renderer.js');
 
-const gameSource = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
 const rendererSource = fs.readFileSync(path.join(__dirname, '../docs/js/merged-water-renderer.js'), 'utf8');
+const waterSystemSource = fs.readFileSync(path.join(__dirname, '../docs/js/water-system.js'), 'utf8');
 
 function cornersForTile(data, tileIndex) {
   const start = tileIndex * 12;
@@ -123,7 +123,6 @@ assert.ok(checkerInverted.positions.length <= checkerClassic.positions.length,
   'checkerboard worst case still cannot exceed classic geometry');
 
 const dryBaseline = buildInvertedSurfaceData([
-  { col: 0, row: 0, surfaceY: 0, depth: 0, coverage: 0, visible: false },
   { col: 1, row: 0, surfaceY: -0.2, depth: 0.45, coverage: 0.45, visible: true },
 ], {
   cols: 2,
@@ -140,10 +139,22 @@ assert.doesNotMatch(rendererSource, /uExceptionMask|aBaseline|waterExceptionMask
   'inverted water no longer adds a fragment mask texture, baseline shader attribute, or mask-texture ownership');
 assert.doesNotMatch(rendererSource, /texture2D\s*\(\s*uExceptionMask/,
   'the water fragment shader performs no extra exception-mask texture lookup');
+assert.match(waterSystemSource,
+  /if \(!visible\) \{\s*tile\._wCached = false;\s*continue;\s*\}/,
+  'dry, solid, and skipped permanent cells stay absent from the dynamic-water snapshot instead of allocating mask placeholders');
+assert.doesNotMatch(waterSystemSource,
+  /cells\.push\(\{[\s\S]{0,220}?visible:\s*false/,
+  'the collector never allocates invisible per-tile records');
+assert.match(waterSystemSource,
+  /function _newBaselineSamples\(\)[\s\S]{0,900}?dryCount:[\s\S]{0,900}?wet:\s*\[\]/,
+  'baseline sampling counts dry cells separately and retains only wet values that can affect a visible median');
+assert.match(waterSystemSource,
+  /function _baselineMedian\(samples\)[\s\S]{0,900}?highIndex < samples\.dryCount[\s\S]{0,900}?samples\.wet\.sort/,
+  'baseline median bypasses wet-sample sorting when the median is wholly below the visibility threshold');
 
-assert.match(gameSource, /if \(!sceneObj\?\.add\) \{[\s\S]*?return null;[\s\S]*?MergedWaterRenderer\.createMesh/,
+assert.match(waterSystemSource, /if \(!sceneObj\?\.add\) \{[\s\S]*?return null;[\s\S]*?MergedWaterRenderer\.createMesh/,
   'merged water construction waits until its destination scene exists');
-assert.match(gameSource, /function updateTownWaterMeshes\(\) \{[\s\S]*?if \(!townScene\) return;[\s\S]*?if \(_townWaterSimDirty\)/,
+assert.match(waterSystemSource, /function updateTownWaterMeshes\(\) \{[\s\S]*?if \(!townScene\) return;[\s\S]*?if \(_townWaterSimDirty\)/,
   'town water keeps its dirty flag until the town scene is available');
 
 console.log('merged water renderer tests passed');
