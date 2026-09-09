@@ -16,6 +16,11 @@
   const DEBUG_INTERACTION_HIT_COLOR = '#fff566';
   const DEBUG_INTERACTION_HOSTILE_COLOR = '#ff5c5c';
   const DEBUG_HEAD_LOOK_COLOR = '#c98bff';
+  const DEBUG_PERSPECTIVE_POINT_COLOR = '#fff566'; // Shared reticle-under point where every player/camera guide terminates.
+  const DEBUG_MOVEMENT_RAY_COLOR = '#55ff7a'; // Camera-to-perspective-point guide drawn by the interaction-ray toggle.
+  const DEBUG_BODY_AIM_COLOR = '#54a7ff'; // Body/movement/melee/lunge convergence guide.
+  const DEBUG_MELEE_AIM_COLOR = '#ff5cf4'; // Melee/lunge label color at the shared body-origin guide.
+  const DEBUG_RANGED_ATTACK_COLOR = '#ff6b35'; // Muzzle-to-perspective-point convergence guide.
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -76,6 +81,7 @@
     const p1 = deps.worldToOverlay(a.x, a.y, a.z);
     const p2 = deps.worldToOverlay(b.x, b.y, b.z);
     if (!p1.visible && !p2.visible) return;
+    if (![p1.x, p1.y, p2.x, p2.y].every(Number.isFinite)) return; // Never pass an unprojectable camera-plane point into Canvas2D and abort the game's frame scheduler.
     const octx = deps.octx;
     octx.save();
     octx.globalAlpha = alpha;
@@ -86,6 +92,31 @@
     octx.moveTo(p1.x, p1.y);
     octx.lineTo(p2.x, p2.y);
     octx.stroke();
+    octx.restore();
+  }
+
+  function _drawLabeledTargetSegment(origin, target, color, label, labelT, dashed = false) {
+    if (!origin || !target) return;
+    const t = Math.max(0.05, Math.min(0.95, Number(labelT) || 0.5)); // Separates labels along otherwise-overlapping convergent guides.
+    _drawDebugSegment3D(origin, target, color, dashed, 2, 0.9);
+    const labelPoint = { // Anchors each label at its own fraction of the one origin-to-target segment.
+      x: Number(origin.x) + (Number(target.x) - Number(origin.x)) * t,
+      y: Number(origin.y) + (Number(target.y) - Number(origin.y)) * t,
+      z: Number(origin.z) + (Number(target.z) - Number(origin.z)) * t,
+    };
+    const projected = deps.worldToOverlay(labelPoint.x, labelPoint.y, labelPoint.z); // Places the label without piling every name onto the shared endpoint.
+    if (!projected.visible || ![projected.x, projected.y].every(Number.isFinite)) return;
+    const octx = deps.octx; // Existing overlay canvas receives the ray label.
+    octx.save();
+    octx.font = '11px monospace';
+    octx.textBaseline = 'middle';
+    const width = octx.measureText(label).width; // Sizes the dark backing behind the mobile-readable label.
+    octx.globalAlpha = 0.82;
+    octx.fillStyle = '#070b12';
+    octx.fillRect(projected.x + 5, projected.y - 8, width + 6, 16);
+    octx.globalAlpha = 1;
+    octx.fillStyle = color;
+    octx.fillText(label, projected.x + 8, projected.y);
     octx.restore();
   }
 
@@ -228,6 +259,46 @@
     octx.restore();
   }
 
+  function _movementAlignmentSnapshot() {
+    if (!deps.getShowInteractionRaycast?.()) return null;
+    try { return deps.getPlayerMovementAlignmentDebug?.() || null; }
+    catch (error) {
+      return { error: String(error?.message || error) };
+    }
+  }
+
+  function _drawPlayerMovementAlignmentRays() {
+    const state = _movementAlignmentSnapshot(); // Supplies every independently-authored player/camera ray for this frame.
+    if (!state || state.error) return;
+    const target = state.perspectivePoint; // One finite point on the center ray, projected directly beneath the reticle.
+    const origins = state.rayOrigins || {}; // Real camera/head/body/muzzle origins whose guides all terminate at target.
+    if (!target) return;
+
+    _drawLabeledTargetSegment(origins.camera, target, DEBUG_MOVEMENT_RAY_COLOR, 'camera', 0.18);
+    _drawLabeledTargetSegment(origins.head, target, DEBUG_HEAD_LOOK_COLOR, `head → point (${Number(state.headPointErrorDeg || 0).toFixed(1)}°)`, 0.34, true);
+    _drawLabeledTargetSegment(origins.body, target, DEBUG_BODY_AIM_COLOR, `body/movement → point (${Number(state.bodyPointErrorDeg || 0).toFixed(1)}°)`, 0.52);
+    _drawLabeledTargetSegment(origins.melee, target, DEBUG_MELEE_AIM_COLOR, `melee/lunge → point (${Number(state.meleePointErrorDeg || 0).toFixed(1)}°)`, 0.68, true);
+    _drawLabeledTargetSegment(origins.ranged, target, DEBUG_RANGED_ATTACK_COLOR, `ranged → point (${Number(state.lastRangedPointErrorDeg || 0).toFixed(1)}°)`, 0.82, true);
+
+    const projected = deps.worldToOverlay(target.x, target.y, target.z); // Marks the sole convergence point directly under the screen reticle.
+    if (!projected.visible || ![projected.x, projected.y].every(Number.isFinite)) return;
+    const octx = deps.octx; // Existing overlay canvas receives the perspective-point marker and label.
+    octx.save();
+    octx.strokeStyle = DEBUG_PERSPECTIVE_POINT_COLOR;
+    octx.fillStyle = DEBUG_PERSPECTIVE_POINT_COLOR;
+    octx.lineWidth = 2.5;
+    octx.beginPath();
+    octx.arc(projected.x, projected.y, 9, 0, Math.PI * 2);
+    octx.moveTo(projected.x - 13, projected.y);
+    octx.lineTo(projected.x + 13, projected.y);
+    octx.moveTo(projected.x, projected.y - 13);
+    octx.lineTo(projected.x, projected.y + 13);
+    octx.stroke();
+    octx.font = '12px monospace';
+    octx.fillText('shared perspective point', projected.x + 15, projected.y - 12);
+    octx.restore();
+  }
+
   // Draws one head→target segment for any entity carrying a
   // `_lookAtDebug` cache (see game.js's _setLookAtDebug/_aimNeckAtEyeContact
   // and combat-bandit.js's _updateBanditLookAtTarget) — every head-look
@@ -275,6 +346,7 @@
       _drawMeleeColliders();
     }
     _drawInteractionRaycast();
+    _drawPlayerMovementAlignmentRays();
     _drawHeadLookRaycasts();
   }
 
@@ -305,7 +377,7 @@
     get actors() { return debugSnapshot(); },
     get interactionRay() { return _interactionRaySnapshot(); },
     snapshot: () => ({
-      latestChange: 'Show Hitboxes now draws only real elevated Box3 and melee pie-prism volumes; interaction-ray visualization has its own toggle.',
+      latestChange: 'Show Interaction Raycast now draws camera, head, body/movement, melee/lunge, and ranged guides converging on one 3D perspective point beneath the reticle.',
       actors: debugSnapshot(),
       meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
@@ -314,6 +386,7 @@
         heightWorld: collider.halfHeightWorld * 2,
       })),
       interactionRay: _interactionRaySnapshot(),
+      movementAlignment: _movementAlignmentSnapshot(),
     }),
   };
 })();

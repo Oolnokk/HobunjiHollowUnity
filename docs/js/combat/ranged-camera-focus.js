@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 6;
+  const VERSION = 7;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_DISTANCE_TILES = 1.55; // Used to pull only the native shoulder-camera distance inward while a ranged weapon is ready.
   const DEFAULT_FOCUS_HORIZONTAL_OFFSET_TILES = 0.18; // Used as the ranged-focus-only horizontal shoulder preset until the player authors another value.
@@ -36,6 +36,7 @@
   let rawRangedGetPlayerAimRay = null; // Stores the original camera aim ray as a last-resort fallback.
   let rawRangedGetPlayerInteractionRay = null; // Stores the original centered 3D interaction ray as the common player-intent ray.
   let rawRangedGetPlayerAimPitch = null; // Stores original vertical look pitch for fallback before a resolved target exists.
+  let rawGetPlayerPerspectiveTarget = null; // Stores the game-owned finite reticle point shared by ranged poses and melee aim.
   let rawMeleeAimDirection = null; // Stores original melee aim direction for fail-safe fallback.
   let rawMeleeAimPitch = null; // Stores original melee pitch for fail-safe fallback.
   let rawMeleeHit = null; // Stores original Combat.meleeHit so only player direction is decorated.
@@ -387,6 +388,37 @@
     };
   }
 
+  function sharedPerspectiveAimTarget(attackOrigin, metadata = {}) {
+    try {
+      const rawTarget = rawGetPlayerPerspectiveTarget?.() || combatDeps()?.getPlayerPerspectiveTarget?.(); // Reads the one game-owned point without performing a scene raycast.
+      const point = vectorFrom(rawTarget?.point || rawTarget); // Converts the shared endpoint into this module's Three.js vector language.
+      if (!point || !attackOrigin) return null;
+      let direction = point.clone().sub(attackOrigin); // Re-roots the same endpoint at the actual melee or projectile origin.
+      if (direction.lengthSq() < 1e-8) return null;
+      direction.normalize();
+      const rayOrigin = vectorFrom(rawTarget?.cameraRay?.origin); // Preserves the screen-center source ray for mobile diagnostics.
+      const rayDirection = vectorFrom(rawTarget?.cameraRay?.direction); // Preserves the screen-center direction for mobile diagnostics.
+      const target = {
+        ...metadata,
+        source: 'shared-perspective-point',
+        maxRangeWorld: Number(metadata.rangeTiles) || 0,
+        rayOrigin,
+        rayDirection,
+        attackOrigin,
+        point,
+        direction,
+        rayDistance: Number(rawTarget?.rayDistance) || distanceBetween(rayOrigin, point),
+        attackDistance: distanceBetween(attackOrigin, point),
+        surfaceName: null,
+      }; // Same shape as the legacy surface resolver so pose/collision consumers need no parallel path.
+      lastResolvedAimTarget = plainAimTarget(target);
+      return target;
+    } catch (error) {
+      noteAimError('shared-perspective-target', error);
+      return null;
+    }
+  }
+
   function resolveInteractionAimTarget(maxRangeWorld, attackOrigin, metadata = {}) {
     const ray = rawInteractionRay();
     const scene = activeScene();
@@ -472,6 +504,8 @@
       const rangeTiles = Number(def?.rangeTiles);
       const origin = playerProjectileOrigin(rangedAimDeps || combatDeps());
       if (!itemKey || !origin || !Number.isFinite(rangeTiles) || rangeTiles <= 0) return null;
+      const sharedTarget = sharedPerspectiveAimTarget(origin, { mode: 'ranged', itemKey, rangeTiles }); // Keeps ranged pose/launch convergence on the same endpoint as the head and lunge.
+      if (sharedTarget) return sharedTarget;
       return resolveInteractionAimTarget(rangeTiles, origin, { mode: 'ranged', itemKey, rangeTiles });
     } catch (error) {
       noteAimError('ranged-target', error);
@@ -521,6 +555,13 @@
       const rangePx = currentMeleeRangePx();
       const tile = Number(deps.TILE) || 64;
       const rangeTiles = Math.max(0.05, rangePx / tile);
+      const sharedTarget = sharedPerspectiveAimTarget(origin, {
+        mode: 'melee',
+        itemKey: deps.currentWeaponKey?.() || null,
+        rangeTiles,
+        rangePx,
+      }); // Uses attack reach only for collision; the visual target point itself remains common and range-independent.
+      if (sharedTarget) return sharedTarget;
       return resolveInteractionAimTarget(rangeTiles, origin, {
         mode: 'melee',
         itemKey: deps.currentWeaponKey?.() || null,
@@ -629,6 +670,7 @@
       // itself always stays the real camera-centered ray for ordinary consumers.
       rawRangedGetPlayerInteractionRay = injectedDeps?.getMuzzleParallelInteractionRay || injectedDeps?.getPlayerInteractionRay || null;
       rawRangedGetPlayerAimPitch = injectedDeps?.getPlayerAimPitch || null;
+      rawGetPlayerPerspectiveTarget = injectedDeps?.getPlayerPerspectiveTarget || null;
       const rawTriggerRangedWeaponVisual = injectedDeps?.triggerRangedWeaponVisual;
       const wrappedDeps = {
         ...injectedDeps,
@@ -1045,7 +1087,9 @@
       meleeRangeCaptureInstalled,
       verticalStanceInstalled,
       cameraMutation: 'native-shoulder-camera-only',
-      aimAlignment: 'shared-3d-interaction-target-native-camera',
+      aimAlignment: rawGetPlayerPerspectiveTarget
+        ? 'shared-perspective-point-native-camera'
+        : 'shared-3d-interaction-target-native-camera',
       aimUpdateMode: 'change-driven-persistent-cache',
       interactionAimTarget: lastResolvedAimTarget ? { ...lastResolvedAimTarget } : null,
       activeMeleeRange: activeMeleeRange ? { ...activeMeleeRange } : null,
