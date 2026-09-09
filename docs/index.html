@@ -18,10 +18,13 @@
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
+  <!-- Shared radial-deadzone and active-pad helpers used by both gameplay
+       and menu controller polling. Must load before game.js. -->
+  <script src="js/controller-input.js?v=20260909controller2"></script>
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20260902mod1"></script>
+  <script src="js/input-bindings.js?v=20260909decouple1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
@@ -107,7 +110,7 @@
   <script src="debug.js?v=20260905cacheaudit2"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260909perspectivepoint2"></script>
+  <script src="config/scratchbones-config.js?v=20260909controller1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260830mapwaypoint3">
@@ -227,7 +230,7 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260829combatsfx2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260909perspectivepoint1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260826alphacrop1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -380,7 +383,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.DebugHitboxes.init(...) during its own setup. -->
-  <script src="js/debug-hitboxes.js?v=20260909perspectivepoint2"></script>
+  <script src="js/debug-hitboxes.js?v=20260909perspectivepoint4"></script>
   <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
        Arena (window.BanditCombatLog) — reads window.BanditCombat/
        window.BanditCamps/window.Combat at capture time (already global by
@@ -523,7 +526,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20260807a"></script>
+  <script src="js/input-settings-panel.js?v=20260909controller2"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -1587,10 +1590,28 @@
           <div class="settings-row settings-row--stacked">
             <div class="settings-label">
               <div class="settings-name">Controller Bindings</div>
-              <div class="settings-desc">Gamepads activate while this window is focused and stop driving input when focus is lost.</div>
+              <div class="settings-desc">Left stick moves, right stick rotates the camera, View opens the menu, and gamepads release all input when focus is lost.</div>
             </div>
             <div class="input-bindings-grid" id="controllerInputBindings"></div>
+            <div class="settings-desc" id="controllerInputStatus" role="status" aria-live="polite">Controller: not detected</div>
           </div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Controller Camera Sensitivity</div>
+              <div class="settings-desc">Right-stick camera turn speed</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingControllerLookSensitivity" min="50" max="200" step="5" value="100" style="align-self:center">
+              <span id="settingControllerLookSensitivityValue" class="settings-slider-value">100%</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Invert Controller Camera Y</div>
+              <div class="settings-desc">Reverse right-stick vertical camera movement</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingControllerInvertY"><span class="toggle-slider"></span></span>
+          </label>
           <div class="settings-row settings-row--stacked">
             <div class="settings-label">
               <div class="settings-name">Held Mode Shifts</div>
@@ -2200,7 +2221,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260909perspectivepoint1"></script>
+  <script src="js/pixel-probe.js?v=20260909controller1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2231,7 +2252,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20260815b"></script>
+  <script src="js/music-minigame.js?v=20260909decouple1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2311,9 +2332,11 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260909perspectivepoint4"></script>
+  <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
+  <script src="js/camera-look-clamp.js?v=20260909decouple1"></script>
+  <script src="game.js?v=20260909decouple1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20260903a"></script>
+  <script src="js/controller-ui-nav.js?v=20260909decouple1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

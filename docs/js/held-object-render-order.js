@@ -371,8 +371,10 @@
   function prepareNonGroundDepthMaterials(scene) {
     const states = new Map();
     scene.traverseVisible((object) => {
-      if (!object?.isMesh) return;
-      const forceCutoutDepth = hasLayer(object, PNG_OCCLUDER_LAYER);
+      const isMesh = !!object?.isMesh;
+      const isCelestialSprite = !!object?.isSprite && object.userData?.hobunjiNoOutline === true; // Used here to suppress only the sky-dome sun/moon sprites during this colorless replay.
+      if (!isMesh && !isCelestialSprite) return;
+      const forceCutoutDepth = isMesh && hasLayer(object, PNG_OCCLUDER_LAYER);
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
         material.colorWrite = false;
@@ -380,7 +382,9 @@
         // avatar-vs-avatar ordering. For this temporary occlusion buffer only,
         // use the game's existing layer-4 convention and preserve the real
         // alpha-tested silhouette while making it capable of blocking a tool.
-        if (forceCutoutDepth || Number(material.alphaTest || 0) > 0) material.depthWrite = true;
+        // Celestial sprites keep their authored depthWrite=false; only their
+        // accidental second color draw is suppressed during this replay.
+        if (isMesh && (forceCutoutDepth || Number(material.alphaTest || 0) > 0)) material.depthWrite = true;
       });
     });
     return states;

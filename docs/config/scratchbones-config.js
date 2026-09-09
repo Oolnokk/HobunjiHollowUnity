@@ -244,6 +244,7 @@ window.SCRATCHBONES_CONFIG = {
       "tapWindowMs": 350,
       "cameraRotateDegPerPx": 0.15,
       "cameraRotateClampDeg": 45,
+      "cameraRotateUpClampDeg": 85, // Used by gameplay pitch so upward look can be wider without loosening downward/yaw limits.
       "wheelZoomStep": 0.05,
       "wheelZoomMin": 0.75,
       "wheelZoomMax": 2.5
@@ -252,6 +253,10 @@ window.SCRATCHBONES_CONFIG = {
       "storageKey": "scratchbones.inputBindings.v1",
       "gamepadDeadzone": 0.24,
       "axisPressThreshold": 0.55,
+      "controllerMoveResponse": 1.25,
+      "controllerLookResponse": 1.45,
+      "controllerLookDegPerSec": 190,
+      "controllerLookVerticalScale": 0.8,
       "touchJoystick": {
         "radius": 56,
         "deadzone": 0.14,

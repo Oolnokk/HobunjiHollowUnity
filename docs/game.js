@@ -601,6 +601,11 @@
       const CAMERA_JOYSTICK_DEADZONE = 0.14;
       const CAMERA_JOYSTICK_RESPONSE = 0.82;
       const CAMERA_JOYSTICK_DEG_PER_SEC = 150; // turn rate at full deflection
+      const _controllerInputCfg = window.SCRATCHBONES_CONFIG?.game?.input || {}; // Used by both stick response curves and right-stick camera rotation.
+      const CONTROLLER_MOVE_RESPONSE = Number(_controllerInputCfg.controllerMoveResponse) || 1.25;
+      const CONTROLLER_LOOK_RESPONSE = Number(_controllerInputCfg.controllerLookResponse) || 1.45;
+      const CONTROLLER_LOOK_DEG_PER_SEC = Number(_controllerInputCfg.controllerLookDegPerSec) || 190;
+      const CONTROLLER_LOOK_VERTICAL_SCALE = Number(_controllerInputCfg.controllerLookVerticalScale) || 0.8;
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
       const FLOW_SOURCE_ROW = 0;
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
@@ -8597,8 +8602,8 @@
       let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
-      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
-      // not a free-orbit camera.
+      // azimuth/angle. Horizontal/downward look keeps the legacy 45° limit;
+      // upward pitch uses the wider shooter-style limit from desktopControls.
       let cameraAzimuthOffsetDeg = 0;
       let cameraAngleOffsetDeg   = 0;
       // Reused every frame by occlusionSafeCameraPosition — a fresh
@@ -14931,10 +14936,22 @@
       publishCharacterViewStatus();
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
+      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 3; // 60° neck allowance used by idle body/root catch-up below.
+      const SHOULDER_SURF_BODY_CATCHUP_RATE = 6; // Effective body turn rate once the idle head-to-root yaw exceeds that allowance.
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
+
+      function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength, perspectiveFacing = shoulderPerspectiveFacingAngle()) {
+        if (activeCameraMode !== SHOULDER_SURF_MODE) return 'other-camera';
+        const meleeAttackActive = player.lunging || (activeTool === 'weapon' && (toolSwingT > 0 || combatSwingHeld)); // Covers travel attacks, ordinary swings, and held melee windups without treating farming-tool animation as combat.
+        const rangedAttackActive = activeTool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.(); // Deliberately excludes reload so only an actual shot gives the point body/root authority.
+        if (meleeAttackActive || rangedAttackActive) return 'attack';
+        if (Number(movementStrength) > 0.001) return 'movement';
+        if (Math.abs(angleDiff(perspectiveFacing, facingAngle)) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) return 'idle-neck-catchup';
+        return 'idle-free';
+      }
 
       // Mouse-look: on desktop, facing tracks the mouse cursor in world space.
       // After MOUSE_IDLE_MS of no mouse movement, reverts to input-direction facing.
@@ -14943,6 +14960,11 @@
       let mouseLookActive  = false;
       let controllerLookAngle = -Math.PI / 2;
       let controllerLookActive = false;
+      let controllerCameraX = 0, controllerCameraY = 0; // Radial-deadzone right-stick values consumed by applyControllerCameraLook each frame.
+      const CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY = 'scratchbones.controllerLookSensitivity.v1';
+      const CONTROLLER_INVERT_Y_STORAGE_KEY = 'scratchbones.controllerInvertY.v1';
+      let s_controllerLookSensitivity = window.FormatUtils.clamp(Number(localStorage.getItem(CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY)) || 1, 0.5, 2); // Multiplies the authored right-stick camera turn rate.
+      let s_controllerInvertY = localStorage.getItem(CONTROLLER_INVERT_Y_STORAGE_KEY) === '1'; // Reverses only controller pitch; mouse and touch keep their own conventions.
       let lastMouseMoveTime = 0;
       const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
@@ -15445,17 +15467,25 @@
           facingAngle = characterViewMode.lockedFacingAngle;
           player.angle = characterViewMode.lockedPlayerAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
-          // The camera is authoritative whether moving or standing still.
-          // Forward/back/strafe input must not steer the camera, and the
-          // character's previous physical direction must not constrain camera
-          // rotation through a stationary free-look dead zone. The logical
-          // body is derived directly from the perspective point; perpClamp may
-          // still choose the nearest render-safe billboard angle later, but
-          // that visual accommodation never feeds back into camera/aim state.
-          const camFacing = shoulderPerspectiveFacingAngle();
-          facingAngle = camFacing;
-          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+          // The head and attack rays remain camera-authored at all times. The
+          // physical body/root inherits that direction immediately during
+          // movement or attacks; while idle it keeps its direction until the
+          // exact head aim would exceed the former 60° independent neck range,
+          // then catches up only enough to restore that allowance. Nothing in
+          // this branch writes camera rotation, so body catch-up cannot restrict
+          // the camera itself.
+          const perspectiveFacing = shoulderPerspectiveFacingAngle(); // Shared point bearing used by direct alignment and the idle neck-limit boundary.
+          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength, perspectiveFacing); // Central state boundary shared with the on-demand mobile/debug report below.
+          if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
+            facingAngle = perspectiveFacing;
+          } else if (perspectiveAuthority === 'idle-neck-catchup') {
+            const rootFromPointDiff = angleDiff(facingAngle, perspectiveFacing); // Preserves the allowed neck yaw instead of squaring the idle body fully to the point.
+            const targetFacing = perspectiveFacing + window.FormatUtils.clamp(rootFromPointDiff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD); // Nearest body bearing that puts the head back at the independent limit.
+            const catchupDiff = angleDiff(targetFacing, facingAngle); // Drives only the body/root toward the legal boundary at the former catch-up rate.
+            facingAngle += catchupDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
+          }
           player.angle = facingAngle;
+          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
         } else {
           if (controllerLookActive) {
             const diff = angleDiff(controllerLookAngle, facingAngle);
@@ -17137,6 +17167,7 @@
           mode: activeCameraMode,
           cameraFreeRotate: freeRotateCameraActive(),
           cameraAzimuthOffsetDeg,
+          bodyPerspectiveAuthority: shoulderBodyPerspectiveAuthority(),
           perspectivePoint: { ...perspective.point },
           perspectiveRayDistance: perspective.rayDistance,
           perspectiveDistanceBeyondPlayer: perspective.distanceBeyondPlayer,
@@ -21647,6 +21678,7 @@
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
+          applyControllerCameraLook(dt);
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
           const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
@@ -21813,7 +21845,7 @@
             // Shift-drag/plain-mouselook convention just below (+movementY
             // pitches the same way), whereas the raw touch delta this knob
             // is built from reads the other way for vertical.
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt);
           }
         }
         if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
@@ -23386,7 +23418,7 @@
       window.InputBindings.init({ INPUT_DEFAULTS });
       const inputBindings = window.InputBindings.loadInputBindings();
       window.InputBindings.init({ INPUT_DEFAULTS, getInputBindings: () => inputBindings });
-      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), actionByButton: new Map(), activeShift: null, hadPad: false, activePadIndex: null, uiOwned: false, primeButtonsOnResume: false, statusText: '' };
       const CONTROLLER_INPUT_OPTIONS = [
         'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
         'LeftTrigger', 'RightTrigger',
@@ -23614,9 +23646,57 @@
         if (tool) setActiveTool(tool);
       }
       function getActionForButton(device, button, heldShift = null) {
-        if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
-        const bindings = inputBindings[device] || {};
-        return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
+        return window.InputBindings?.resolveActionForButton?.(device, button, heldShift) || null;
+      }
+      function publishControllerStatus(pad, owner = 'gameplay', move = null, look = null) {
+        const status = pad ? {
+          connected: true,
+          index: pad.index,
+          id: String(pad.id || 'Gamepad'),
+          mapping: pad.mapping || 'unknown',
+          owner,
+          move: { x: move?.x || 0, y: move?.y || 0 },
+          look: { x: look?.x || 0, y: look?.y || 0 },
+        } : { connected: false, index: null, id: null, mapping: null, owner: 'none', move: { x: 0, y: 0 }, look: { x: 0, y: 0 } }; // Mobile-accessible snapshot used by Settings and Pixel Probe reports.
+        window.HOBUNJI_CONTROLLER_STATUS = status;
+        const rounded = value => Math.abs(value) < 0.005 ? '0.00' : value.toFixed(2);
+        const nextText = pad
+          ? `Controller: ${status.id.slice(0, 42)} · ${owner} · LS ${rounded(status.move.x)}, ${rounded(status.move.y)} · RS ${rounded(status.look.x)}, ${rounded(status.look.y)}`
+          : 'Controller: not detected';
+        if (nextText === gamepadState.statusText) return;
+        gamepadState.statusText = nextText;
+        const statusEl = document.getElementById('controllerInputStatus'); // Used to diagnose browser mappings without a developer console.
+        if (statusEl) statusEl.textContent = nextText;
+      }
+      function releaseControllerGameplayInput(reason = 'released') {
+        for (const button of gamepadState.previous) {
+          const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
+          if (actionId) runInputAction(actionId, 'release');
+        }
+        gamepadState.previous.clear();
+        gamepadState.actionByButton.clear();
+        gamepadState.activeShift = null;
+        input.x = 0; input.y = 0;
+        controllerCameraX = 0; controllerCameraY = 0;
+        controllerLookActive = false;
+        window.__farmLog?.(`[controller] gameplay input ${reason}`, 'input');
+      }
+      function applyControllerCameraLook(dt) {
+        const magnitude = Math.hypot(controllerCameraX, controllerCameraY); // Used to distinguish live camera input from an idle stick without a second deadzone pass.
+        if (magnitude <= 0.001 || !cameraDragAllowed() || window.ControllerUI?.isActive?.()) {
+          controllerLookActive = false;
+          return;
+        }
+        const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
+        const turnRate = CONTROLLER_LOOK_DEG_PER_SEC * s_controllerLookSensitivity; // Used for frame-rate-independent right-stick yaw and pitch.
+        cameraAzimuthOffsetDeg = freeRotateCameraActive()
+          ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt)
+          : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt, -clampDeg, clampDeg);
+        const pitchDirection = s_controllerInvertY ? -1 : 1; // Applied only to controller Y so changing this setting cannot invert touch or mouse input.
+        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);
+        controllerLookAngle = cameraFacingAngleRad();
+        targetAimAngle = controllerLookAngle;
+        controllerLookActive = true;
       }
       function pollControllerInput() {
         if (!gamepadState.focused) return;
@@ -23629,64 +23709,82 @@
         // behind it). Clearing the edge-tracking sets avoids a ghost
         // "release" firing once this resumes polling after the panel closes.
         if (window.ControllerUI?.isActive?.()) {
-          gamepadState.previous.clear();
-          gamepadState.activeShift = null;
+          if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
+          gamepadState.uiOwned = true;
+          const menuPad = window.ControllerInput?.pickActiveGamepad?.(navigator.getGamepads?.() || [], gamepadState.activePadIndex) || null;
+          if (menuPad) gamepadState.activePadIndex = menuPad.index;
+          publishControllerStatus(menuPad, 'menu');
           return;
         }
+        gamepadState.uiOwned = false;
         const pads = navigator.getGamepads?.() || [];
-        const pad = Array.from(pads).find(Boolean);
+        const pad = window.ControllerInput?.pickActiveGamepad?.(pads, gamepadState.activePadIndex) || Array.from(pads).find(Boolean);
         if (!pad) {
           // Only clear movement input on an actual gamepad disconnect, not every
           // frame — otherwise this stomps the touch joystick (and keyboard) on
           // any device with no gamepad, which is virtually all mobile devices.
-          if (gamepadState.hadPad) { input.x = 0; input.y = 0; }
+          if (gamepadState.hadPad) releaseControllerGameplayInput('released on disconnect');
           gamepadState.hadPad = false;
+          gamepadState.activePadIndex = null;
+          publishControllerStatus(null);
           return;
         }
+        const padChanged = !gamepadState.hadPad || gamepadState.activePadIndex !== pad.index; // Used to prime edges when a controller connects or deliberate input switches pads.
         gamepadState.hadPad = true;
+        gamepadState.activePadIndex = pad.index;
+        if (padChanged) gamepadState.primeButtonsOnResume = true;
         const dz = INPUT_DEFAULTS.deadzone;
-        const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
-        const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
-        const rx = Math.abs(pad.axes[2] || 0) >= dz ? pad.axes[2] : 0;
-        const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
+        const move = window.ControllerInput.normalizeStick(pad.axes[0], pad.axes[1], dz, CONTROLLER_MOVE_RESPONSE); // Radial response avoids per-axis diagonal distortion.
+        const look = window.ControllerInput.normalizeStick(pad.axes[2], pad.axes[3], dz, CONTROLLER_LOOK_RESPONSE); // Drives the camera unless a contextual selector owns it below.
+        const ax = move.x, ay = move.y, rx = look.x, ry = look.y;
         input.x = ax; input.y = ay;
-        controllerLookActive = Math.hypot(rx, ry) >= dz;
-        if (window._desktopSelectionArc?.entryMenuOpen?.() && !rangedAmmoAction2Press.held && !potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          controllerLookActive = false;
-          const now = performance.now();
-          if (now - (pollControllerInput._selectionArchMovedAt || 0) >= 220) {
-            pollControllerInput._selectionArchMovedAt = now;
-            const axis = Math.abs(rx) >= Math.abs(ry) ? rx : ry; // Dominant right-stick direction advances the shared arch.
-            window._desktopSelectionArc.scrollEntries(axis < 0 ? -1 : 1);
+        controllerCameraX = rx; controllerCameraY = ry;
+        controllerLookActive = false;
+        if (move.magnitude > 0.001 || look.magnitude > 0.001) lastInputDevice = 'controller';
+        let rightStickOwner = 'camera'; // Reported in Settings and used to keep contextual right-stick actions from rotating the camera too.
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !rangedAmmoAction2Press.held && !potionAction3Press.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - (pollControllerInput._selectionArchMovedAt || 0) >= 220) {
+              pollControllerInput._selectionArchMovedAt = now;
+              const axis = Math.abs(rx) >= Math.abs(ry) ? rx : ry; // Dominant right-stick direction advances the shared arch.
+              window._desktopSelectionArc.scrollEntries(axis < 0 ? -1 : 1);
+            }
           }
         }
         if (window.AlchemyFlasks?.aiming) {
-          controllerLookActive = false;
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'flask aim';
           window.AlchemyFlasks.setTargetFromVector(rx, ry, Math.min(1, Math.hypot(rx, ry)));
         }
-        if (controllerLookActive) {
-          controllerLookAngle = Math.atan2(ry, rx);
-          targetAimAngle = controllerLookAngle;
-        }
-        if (rangedAmmoAction2Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          const now = performance.now();
-          if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
-            rangedAmmoAction2Press.lastScrollAt = now;
-            window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+        if (rangedAmmoAction2Press.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'ammo selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
+              rangedAmmoAction2Press.lastScrollAt = now;
+              window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+            }
           }
         }
-        if (potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          const now = performance.now();
-          if (now - potionAction3Press.lastScrollAt >= 220) {
-            potionAction3Press.lastScrollAt = now;
-            window._desktopSelectionArc?.scrollEntries((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+        if (potionAction3Press.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - potionAction3Press.lastScrollAt >= 220) {
+              potionAction3Press.lastScrollAt = now;
+              window._desktopSelectionArc?.scrollEntries((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+            }
           }
         }
-        if (toolSelectPress.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          const now = performance.now();
-          if (now - toolSelectPress.lastScrollAt >= 220) {
-            toolSelectPress.lastScrollAt = now;
-            window._desktopSelectionArc?.scrollTool((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+        if (toolSelectPress.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'tool selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - toolSelectPress.lastScrollAt >= 220) {
+              toolSelectPress.lastScrollAt = now;
+              window._desktopSelectionArc?.scrollTool((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+            }
           }
         }
         const down = new Set();
@@ -23694,42 +23792,75 @@
         if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
         if ((pad.buttons[7]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('RightTrigger');
         const axisPress = INPUT_DEFAULTS.axisPressThreshold;
-        if (rx <= -axisPress) down.add('RightStickLeft');
-        if (rx >= axisPress) down.add('RightStickRight');
-        if (ry <= -axisPress) down.add('RightStickUp');
-        if (ry >= axisPress) down.add('RightStickDown');
-        // Right-stick click (Button11 — R3) toggles melee auto-target
-        // while a melee weapon is out, taking over from its default
-        // weaponSwitch binding for exactly that window (weaponSwitch still
-        // works normally the rest of the time, and via its other bindings/
-        // the action-bar button even then).
-        if (down.has('Button11') && meleeWeaponOut()) {
-          if (!gamepadState.previous.has('Button11')) {
-            meleeAutoTargetOn = !meleeAutoTargetOn;
-            manualAutoTarget = null;
-            meleeAutoTargetFreeAim = false;
-            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
-          }
-          down.delete('Button11');
+        if ((Number(pad.axes[2]) || 0) <= -axisPress) down.add('RightStickLeft');
+        if ((Number(pad.axes[2]) || 0) >= axisPress) down.add('RightStickRight');
+        if ((Number(pad.axes[3]) || 0) <= -axisPress) down.add('RightStickUp');
+        if ((Number(pad.axes[3]) || 0) >= axisPress) down.add('RightStickDown');
+        if (window.InputBindings?.consumeControllerPress?.('meleeAutoTargetToggle', down, gamepadState.previous, meleeWeaponOut())) {
+          meleeAutoTargetOn = !meleeAutoTargetOn;
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
         }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
-        if (heldShift) controllerLookActive = false;
+        if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
+        if (meleeAutoTargetOn && meleeWeaponOut()) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'target cycle'; }
+        if (gamepadState.primeButtonsOnResume) {
+          // A menu-closing B/View press must not become a fresh gameplay
+          // Dodge/action press on the very next frame. Seed edge state from
+          // the still-held snapshot; ordinary releases clear it naturally.
+          gamepadState.previous = new Set(down);
+          gamepadState.actionByButton.clear();
+          gamepadState.activeShift = heldShift || null;
+          gamepadState.primeButtonsOnResume = false;
+          publishControllerStatus(pad, rightStickOwner === 'camera' ? 'gameplay' : rightStickOwner, move, look);
+          return;
+        }
         for (const button of down) {
           if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
           const actionId = getActionForButton('controller', button, heldShift);
-          if (actionId) { lastInputDevice = 'controller'; runInputAction(actionId, 'press'); }
+          if (actionId) {
+            gamepadState.actionByButton.set(button, actionId); // Pairs release with the action pressed even if a held mode shift changes first.
+            lastInputDevice = 'controller';
+            runInputAction(actionId, 'press');
+          }
         }
         for (const button of gamepadState.previous) {
           if (down.has(button)) continue;
-          const actionId = getActionForButton('controller', button, gamepadState.activeShift);
+          const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
           if (actionId) runInputAction(actionId, 'release');
+          gamepadState.actionByButton.delete(button);
         }
         gamepadState.previous = down;
         gamepadState.activeShift = heldShift || null;
+        publishControllerStatus(pad, rightStickOwner === 'camera' ? 'gameplay' : rightStickOwner, move, look);
       }
       window.addEventListener('focus', () => { gamepadState.focused = true; });
-      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
+      window.addEventListener('blur', () => { gamepadState.focused = false; releaseControllerGameplayInput('released on blur'); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; releaseControllerGameplayInput('released while hidden'); } });
+      window.addEventListener('gamepaddisconnected', event => {
+        if (event.gamepad?.index === gamepadState.activePadIndex) {
+          releaseControllerGameplayInput('released on disconnect event');
+          gamepadState.activePadIndex = null;
+          gamepadState.hadPad = false;
+          publishControllerStatus(null);
+        }
+      });
+      window.addEventListener('hobunji-controller-owner-change', event => {
+        const owner = event.detail?.owner;
+        if (owner === 'menu') {
+          if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
+          gamepadState.uiOwned = true;
+        } else if (owner === 'gameplay') {
+          gamepadState.uiOwned = false;
+          gamepadState.primeButtonsOnResume = true;
+        }
+      });
+      window.addEventListener('hobunji-controller-ui-snapshot', event => {
+        const pad = event.detail?.pad || null;
+        if (pad) gamepadState.activePadIndex = pad.index;
+        publishControllerStatus(pad, 'menu', event.detail?.move, event.detail?.look);
+      });
 
       // Settings tab's input-binding rows now live in
       // js/input-settings-panel.js — call via window.InputSettingsPanel.render().
@@ -23746,6 +23877,25 @@
         saveInputBindings: window.InputBindings.saveInputBindings,
       });
       window.InputSettingsPanel.render();
+      const controllerSensitivityEl = document.getElementById('settingControllerLookSensitivity');
+      const controllerSensitivityValueEl = document.getElementById('settingControllerLookSensitivityValue');
+      const controllerInvertYEl = document.getElementById('settingControllerInvertY');
+      function renderControllerLookSettings() {
+        if (controllerSensitivityEl) controllerSensitivityEl.value = String(Math.round(s_controllerLookSensitivity * 100));
+        if (controllerSensitivityValueEl) controllerSensitivityValueEl.textContent = `${Math.round(s_controllerLookSensitivity * 100)}%`;
+        if (controllerInvertYEl) controllerInvertYEl.checked = s_controllerInvertY;
+      }
+      controllerSensitivityEl?.addEventListener('input', event => {
+        s_controllerLookSensitivity = window.FormatUtils.clamp((Number(event.target.value) || 100) / 100, 0.5, 2);
+        localStorage.setItem(CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY, String(s_controllerLookSensitivity));
+        renderControllerLookSettings();
+      });
+      controllerInvertYEl?.addEventListener('change', event => {
+        s_controllerInvertY = event.target.checked;
+        localStorage.setItem(CONTROLLER_INVERT_Y_STORAGE_KEY, s_controllerInvertY ? '1' : '0');
+      });
+      renderControllerLookSettings();
+      publishControllerStatus(null);
       window.MusicMinigame?.renderNoteKeySettings();
       window.MusicMinigame?.renderPatternLoadoutSettings();
       window.MusicMinigame?.renderFreeplayKeySettings();
@@ -24109,13 +24259,16 @@
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
       }
-      // Every other camera mode nudges a small look-around offset on top of a
-      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
-      // default ±45°) since it's meant to be a peek, not a free orbit. Seated
-      // players and the utility-wheel Character View get genuine 360°
+      // Every other camera mode nudges a look-around offset on top of a fixed
+      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
+      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated
+      // players and the utility-wheel Character View still get genuine 360°
       // horizontal orbit instead.
       function freeRotateCameraActive() {
         return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+      function clampCameraPitchOffsetDeg(value) {
+        return window.CameraLookClamp.clampPitchOffsetDeg(value, desktopControlsConfig());
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -24331,7 +24484,7 @@
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
               : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + e.movementY * degPerPx);
             updateCameraPosition();
             return;
           }

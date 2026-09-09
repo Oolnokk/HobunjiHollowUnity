@@ -60,18 +60,31 @@ assert.match(game, /hobunjiPerspectiveAimLocked/,
 assert.match(bodyComposer, /const renderedYaw = perspectiveAimLocked\s*\? requestedYaw\s*:\s*THREE\.MathUtils\.clamp/,
   'render-time neck limiting preserves exact shared-point aim while retaining limits elsewhere');
 assert.match(game,
-  /const camFacing = shoulderPerspectiveFacingAngle\(\);\s*facingAngle = camFacing;/,
-  'stationary and moving body facing derive directly from the shared point without lag');
-assert.doesNotMatch(game, /SHOULDER_SURF_BODY_FREE_LOOK_RAD/,
-  'stationary physical facing no longer imposes a free-look dead zone on camera-authored rotation');
+  /function shoulderBodyPerspectiveAuthority[\s\S]{0,900}activeTool === 'weapon'[\s\S]{0,900}isPlayerAttacking[\s\S]{0,900}return 'idle-neck-catchup'[\s\S]{0,300}return 'idle-free'/,
+  'one body/root authority boundary distinguishes attacks, movement, idle neck catch-up, and idle free-look');
+assert.match(game,
+  /const perspectiveAuthority = shoulderBodyPerspectiveAuthority\(inputStrength, perspectiveFacing\);[\s\S]{0,500}perspectiveAuthority === 'movement'[\s\S]{0,300}perspectiveAuthority === 'attack'[\s\S]{0,300}facingAngle = perspectiveFacing;/,
+  'movement or attack aims both logical character and physical root at the shared point');
+assert.match(game,
+  /SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math\.PI \/ 3/,
+  'idle body preserves the former 60-degree independent neck allowance');
+assert.match(game,
+  /perspectiveAuthority === 'idle-neck-catchup'[\s\S]{0,1200}SHOULDER_SURF_BODY_CATCHUP_RATE \* dt/,
+  'idle body stays independent inside 60 degrees and catches up only after the head exceeds that range');
+assert.match(rangedWeapons, /isPlayerAttacking: \(\) => playerAction\?\.kind === 'fire'/,
+  'ranged body authority distinguishes a shot from a reload');
+assert.match(game, /Nothing in[\s\S]{0,120}writes camera rotation/,
+  'idle neck-limit catch-up is explicitly isolated from unrestricted camera rotation');
 assert.match(game,
   /getPlayerMovementAlignmentDebug: currentPlayerMovementAlignmentDebug/,
   'raycast debug receives the complete player movement-alignment snapshot');
 for (const label of ['camera', 'head → point', 'body/movement → point', 'melee/lunge → point', 'ranged → point', 'shared perspective point']) {
   assert(debugHitboxes.includes(label), `raycast overlay labels ${label}`);
 }
-assert.match(pixelProbe, /Perspective point:.*cameraRay=.*beyondPlayer=/,
-  'mobile Pixel Probe reports the one 3D target and configured horizon distance');
+assert.match(pixelProbe, /Perspective point:.*cameraRay=.*beyondPlayer=.*bodyRoot=/,
+  'mobile Pixel Probe reports the one 3D target, horizon distance, and current body/root authority');
+assert.match(debugHitboxes, /body\/movement → point.*bodyPerspectiveAuthority/,
+  'raycast overlay labels whether body/root convergence is idle-free, movement-, or attack-driven');
 assert.match(pixelProbe, /Point convergence errors: head=.*bodyYaw=.*melee=.*lastLunge=.*lastRanged=/,
   'mobile Pixel Probe reports consumer-to-point errors directly');
 assert.doesNotMatch(debugHitboxes, /requestAnimationFrame\s*\(|setInterval\s*\(/,

@@ -834,6 +834,13 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const controllerDebug = window.HOBUNJI_CONTROLLER_STATUS; // Published by game.js so controller ownership and raw browser mapping are copyable on mobile.
+    if (controllerDebug) {
+      const axis = stick => `${Number(stick?.x || 0).toFixed(2)},${Number(stick?.y || 0).toFixed(2)}`;
+      lines.push(controllerDebug.connected
+        ? `Controller: #${controllerDebug.index} ${controllerDebug.id} mapping=${controllerDebug.mapping} owner=${controllerDebug.owner} LS=${axis(controllerDebug.move)} RS=${axis(controllerDebug.look)}`
+        : 'Controller: not detected');
+    }
     const objectSfxDebug = window.AudioSystem?.objectSfxDebugSnapshot?.(); // Makes tool-cue preload/lookup state visible without requiring a mobile console.
     if (objectSfxDebug) {
       const lastCue = objectSfxDebug.last;
@@ -929,7 +936,7 @@
         lines.push(`Movement rays: debug error=${movementAlignment.error}`);
       } else {
         const point = movementAlignment.perspectivePoint; // Displays the one camera-ray point every current player aim consumer shares.
-        lines.push(`Perspective point: (${Number(point?.x || 0).toFixed(2)}, ${Number(point?.y || 0).toFixed(2)}, ${Number(point?.z || 0).toFixed(2)}) cameraRay=${Number(movementAlignment.perspectiveRayDistance || 0).toFixed(2)}u beyondPlayer=${Number(movementAlignment.perspectiveDistanceBeyondPlayer || 0).toFixed(2)}u freeRotate=${movementAlignment.cameraFreeRotate ? 'yes' : 'NO'}`);
+        lines.push(`Perspective point: (${Number(point?.x || 0).toFixed(2)}, ${Number(point?.y || 0).toFixed(2)}, ${Number(point?.z || 0).toFixed(2)}) cameraRay=${Number(movementAlignment.perspectiveRayDistance || 0).toFixed(2)}u beyondPlayer=${Number(movementAlignment.perspectiveDistanceBeyondPlayer || 0).toFixed(2)}u freeRotate=${movementAlignment.cameraFreeRotate ? 'yes' : 'NO'} bodyRoot=${movementAlignment.bodyPerspectiveAuthority || '-'}`);
         lines.push(`Point convergence errors: head=${Number(movementAlignment.headPointErrorDeg || 0).toFixed(2)}° bodyYaw=${Number(movementAlignment.bodyPointErrorDeg || 0).toFixed(2)}° melee=${Number(movementAlignment.meleePointErrorDeg || 0).toFixed(2)}° lastLunge=${Number(movementAlignment.lastLungePointErrorDeg || 0).toFixed(2)}° lastRanged=${Number(movementAlignment.lastRangedPointErrorDeg || 0).toFixed(2)}° speed=${Number(movementAlignment.velocitySpeedPxS || 0).toFixed(1)}px/s`);
       }
     }

@@ -276,7 +276,7 @@
 
     _drawLabeledTargetSegment(origins.camera, target, DEBUG_MOVEMENT_RAY_COLOR, 'camera', 0.18);
     _drawLabeledTargetSegment(origins.head, target, DEBUG_HEAD_LOOK_COLOR, `head → point (${Number(state.headPointErrorDeg || 0).toFixed(1)}°)`, 0.34, true);
-    _drawLabeledTargetSegment(origins.body, target, DEBUG_BODY_AIM_COLOR, `body/movement → point (${Number(state.bodyPointErrorDeg || 0).toFixed(1)}°)`, 0.52);
+    _drawLabeledTargetSegment(origins.body, target, DEBUG_BODY_AIM_COLOR, `body/movement → point (${Number(state.bodyPointErrorDeg || 0).toFixed(1)}°, ${state.bodyPerspectiveAuthority || 'unknown'})`, 0.52);
     _drawLabeledTargetSegment(origins.melee, target, DEBUG_MELEE_AIM_COLOR, `melee/lunge → point (${Number(state.meleePointErrorDeg || 0).toFixed(1)}°)`, 0.68, true);
     _drawLabeledTargetSegment(origins.ranged, target, DEBUG_RANGED_ATTACK_COLOR, `ranged → point (${Number(state.lastRangedPointErrorDeg || 0).toFixed(1)}°)`, 0.82, true);
 
@@ -377,7 +377,7 @@
     get actors() { return debugSnapshot(); },
     get interactionRay() { return _interactionRaySnapshot(); },
     snapshot: () => ({
-      latestChange: 'Show Interaction Raycast now draws camera, head, body/movement, melee/lunge, and ranged guides converging on one 3D perspective point beneath the reticle.',
+      latestChange: 'Shoulder body/root stays idle-free inside the 60° independent neck range, then catches up without restricting the camera; movement and attacks still converge immediately.',
       actors: debugSnapshot(),
       meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
