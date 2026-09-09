@@ -62,11 +62,11 @@
     style.id = STYLE_ID;
     style.textContent = `
       .cal-day-btn.harlyao-march-date{position:relative;overflow:visible}
-      .harlyao-cal-marker{position:absolute;right:4px;bottom:3px;width:9px;height:9px;border-radius:50%;border:1px solid rgba(193,255,245,.9);background:rgba(79,217,198,.72);box-shadow:0 0 5px rgba(79,217,198,.95),0 0 10px rgba(79,217,198,.62);pointer-events:none}
-      .cal-day-btn.harlyao-march-selected{outline:1px solid rgba(79,217,198,.95);box-shadow:inset 0 0 14px rgba(79,217,198,.16),0 0 9px rgba(79,217,198,.22)}
-      #${DETAIL_ID}{margin:7px 0 8px;padding:7px 10px;border-left:2px solid rgba(79,217,198,.82);background:rgba(25,71,68,.18);color:#c8fff5;font-size:12px;line-height:1.4;text-shadow:0 1px 3px rgba(0,0,0,.85)}
-      #${DETAIL_ID} .harlyao-cal-detail-date{color:rgba(230,255,251,.68);margin-right:5px}
-      #${DETAIL_ID} .harlyao-cal-detail-route{color:#effffb}
+      .harlyao-cal-marker{position:absolute;right:4px;bottom:3px;width:9px;height:9px;border-radius:50%;border:1px solid rgba(216,228,255,.95);background:rgba(121,168,255,.78);box-shadow:0 0 5px rgba(121,168,255,.98),0 0 10px rgba(121,168,255,.66);pointer-events:none}
+      .cal-day-btn.harlyao-march-selected{outline:1px solid rgba(121,168,255,.95);box-shadow:inset 0 0 14px rgba(121,168,255,.18),0 0 9px rgba(121,168,255,.24)}
+      #${DETAIL_ID}{margin:7px 0 8px;padding:7px 10px;border-left:2px solid rgba(121,168,255,.86);background:rgba(34,48,91,.20);color:#dbe5ff;font-size:12px;line-height:1.4;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+      #${DETAIL_ID} .harlyao-cal-detail-date{color:rgba(232,238,255,.70);margin-right:5px}
+      #${DETAIL_ID} .harlyao-cal-detail-route{color:#f4f7ff}
     `;
     document.head.appendChild(style);
   }
