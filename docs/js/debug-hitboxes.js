@@ -16,6 +16,14 @@
   const DEBUG_INTERACTION_HIT_COLOR = '#fff566';
   const DEBUG_INTERACTION_HOSTILE_COLOR = '#ff5c5c';
   const DEBUG_HEAD_LOOK_COLOR = '#c98bff';
+  const DEBUG_MOVEMENT_RAY_COLOR = '#55ff7a'; // Camera-authored movement direction drawn by the interaction-ray toggle.
+  const DEBUG_GROUND_AIM_COLOR = '#ff9f43'; // Height-sensitive ground focus retained only for tile selection.
+  const DEBUG_LOGICAL_BODY_COLOR = '#54a7ff'; // Character-facing state before billboard/render transforms.
+  const DEBUG_RENDERED_BODY_COLOR = '#2d6bff'; // Visible body direction after perp/pose yaw.
+  const DEBUG_VELOCITY_COLOR = '#ffffff'; // Actual post-acceleration ground velocity.
+  const DEBUG_MELEE_AIM_COLOR = '#ff5cf4'; // Current melee aim, including legitimate focused-target convergence.
+  const DEBUG_LUNGE_COLOR = '#ffe45c'; // Last camera-authored lunge direction.
+  const DEBUG_RANGED_ATTACK_COLOR = '#ff6b35'; // Latest muzzle-to-camera-ray ranged attack direction.
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -86,6 +94,33 @@
     octx.moveTo(p1.x, p1.y);
     octx.lineTo(p2.x, p2.y);
     octx.stroke();
+    octx.restore();
+  }
+
+  function _drawLabeledDirection(origin, direction, length, color, label, dashed = false) {
+    if (!origin || !direction) return;
+    const dx = Number(direction.x), dy = Number(direction.y), dz = Number(direction.z); // Converted below into the labeled normalized endpoint.
+    const magnitude = Math.hypot(dx, dy, dz); // Rejects invalid/zero rays and normalizes valid ones.
+    if (![dx, dy, dz, magnitude].every(Number.isFinite) || magnitude < 1e-8) return;
+    const endpoint = { // Used by both the projected segment and its screen-space label.
+      x: origin.x + dx / magnitude * length,
+      y: origin.y + dy / magnitude * length,
+      z: origin.z + dz / magnitude * length,
+    };
+    _drawDebugSegment3D(origin, endpoint, color, dashed, 2, 0.95);
+    const projected = deps.worldToOverlay(endpoint.x, endpoint.y, endpoint.z); // Anchors the label at the ray tip on the overlay canvas.
+    if (!projected.visible) return;
+    const octx = deps.octx; // Existing overlay canvas receives the ray label.
+    octx.save();
+    octx.font = '11px monospace';
+    octx.textBaseline = 'middle';
+    const width = octx.measureText(label).width; // Sizes the dark backing behind the mobile-readable label.
+    octx.globalAlpha = 0.82;
+    octx.fillStyle = '#070b12';
+    octx.fillRect(projected.x + 5, projected.y - 8, width + 6, 16);
+    octx.globalAlpha = 1;
+    octx.fillStyle = color;
+    octx.fillText(label, projected.x + 8, projected.y);
     octx.restore();
   }
 
@@ -228,6 +263,43 @@
     octx.restore();
   }
 
+  function _movementAlignmentSnapshot() {
+    if (!deps.getShowInteractionRaycast?.()) return null;
+    try { return deps.getPlayerMovementAlignmentDebug?.() || null; }
+    catch (error) {
+      return { error: String(error?.message || error) };
+    }
+  }
+
+  function _drawPlayerMovementAlignmentRays() {
+    const state = _movementAlignmentSnapshot(); // Supplies every independently-authored player/camera ray for this frame.
+    if (!state || state.error) return;
+    const playerCenter = _actorHitbox(deps.player)?.center || new THREE.Vector3( // Shared origin keeps angular disagreements visually obvious.
+      deps.player.x / deps.TILE,
+      _debugGroundY(deps.player.x, deps.player.y) + 0.45,
+      deps.player.y / deps.TILE,
+    );
+    const origin = _plainPoint(playerCenter); // Plain point reused by each labeled overlay ray.
+
+    // Different lengths keep coincident correct rays readable instead of one
+    // color completely covering the others. The orange ray is the old,
+    // height-sensitive player-to-ground bearing retained only for tile focus.
+    _drawLabeledDirection(origin, state.movementDirection, 3.4, DEBUG_MOVEMENT_RAY_COLOR, 'movement/camera ray');
+    _drawLabeledDirection(origin, state.groundAimDirection, 3.0, DEBUG_GROUND_AIM_COLOR, `ground aim ${Number(state.groundAimSkewDeg || 0).toFixed(1)}°`, true);
+    _drawLabeledDirection(origin, state.meleeAimDirection, 2.85, DEBUG_MELEE_AIM_COLOR, 'melee aim', true);
+    _drawLabeledDirection(origin, state.lastLungeDirection, 2.72, DEBUG_LUNGE_COLOR, 'last lunge', true);
+    _drawLabeledDirection(origin, state.rangedAttackDirection, 2.58, DEBUG_RANGED_ATTACK_COLOR, 'ranged attack', true);
+    _drawLabeledDirection(origin, state.logicalBodyDirection, 2.6, DEBUG_LOGICAL_BODY_COLOR, 'logical body');
+    _drawLabeledDirection(origin, state.renderedBodyDirection, 2.25, DEBUG_RENDERED_BODY_COLOR, 'rendered body');
+    _drawLabeledDirection(origin, state.headDirection, 1.9, DEBUG_HEAD_LOOK_COLOR, 'rendered head', true);
+    if (state.velocityDirection) {
+      _drawLabeledDirection(origin, state.velocityDirection, 1.5, DEBUG_VELOCITY_COLOR, `velocity ${Number(state.velocitySpeedPxS || 0).toFixed(1)}px/s`, true);
+    }
+    if (state.groundReticle) {
+      _drawDebugSegment3D(origin, state.groundReticle, DEBUG_GROUND_AIM_COLOR, true, 1.25, 0.7);
+    }
+  }
+
   // Draws one head→target segment for any entity carrying a
   // `_lookAtDebug` cache (see game.js's _setLookAtDebug/_aimNeckAtEyeContact
   // and combat-bandit.js's _updateBanditLookAtTarget) — every head-look
@@ -275,6 +347,7 @@
       _drawMeleeColliders();
     }
     _drawInteractionRaycast();
+    _drawPlayerMovementAlignmentRays();
     _drawHeadLookRaycasts();
   }
 
@@ -305,7 +378,7 @@
     get actors() { return debugSnapshot(); },
     get interactionRay() { return _interactionRaySnapshot(); },
     snapshot: () => ({
-      latestChange: 'Show Hitboxes now draws only real elevated Box3 and melee pie-prism volumes; interaction-ray visualization has its own toggle.',
+      latestChange: 'Show Interaction Raycast now separates camera/movement, ground focus, logical body, rendered body, rendered head, and velocity rays.',
       actors: debugSnapshot(),
       meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
@@ -314,6 +387,7 @@
         heightWorld: collider.halfHeightWorld * 2,
       })),
       interactionRay: _interactionRaySnapshot(),
+      movementAlignment: _movementAlignmentSnapshot(),
     }),
   };
 })();

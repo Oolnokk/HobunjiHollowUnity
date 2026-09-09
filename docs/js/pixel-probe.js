@@ -923,6 +923,16 @@
         ? `Interaction ray: ${interactionRay.targetType || 'target'}${interactionRay.targetId ? ':' + interactionRay.targetId : ''} at ${Number(interactionRay.distanceWorld).toFixed(2)}u${interactionRay.hostile ? ' (attack precedence)' : ''}`
         : `Interaction ray: no 3D hit in ${Number(interactionRay.distanceWorld).toFixed(0)}u`);
     }
+    const movementAlignment = hitboxDebug?.movementAlignment; // Toggle-gated camera/body/head ray snapshot rendered as copyable mobile text below.
+    if (movementAlignment) {
+      if (movementAlignment.error) {
+        lines.push(`Movement rays: debug error=${movementAlignment.error}`);
+      } else {
+        const framing = movementAlignment.cameraFraming; // Explains species-height inputs when the ground-focus ray diverges from camera authority.
+        lines.push(`Movement rays: camera=${Number(movementAlignment.movementAngleDeg).toFixed(1)}° groundAim=${Number(movementAlignment.groundAimAngleDeg).toFixed(1)}° skew=${Number(movementAlignment.groundAimSkewDeg).toFixed(1)}° logicalBody=${Number(movementAlignment.logicalBodyAngleDeg).toFixed(1)}° renderedBody=${Number(movementAlignment.renderedBodyAngleDeg).toFixed(1)}° head=${Number(movementAlignment.headAngleDeg).toFixed(1)}° head↔camera=${Number(movementAlignment.headCameraYawDeltaDeg).toFixed(1)}° speed=${Number(movementAlignment.velocitySpeedPxS || 0).toFixed(1)}px/s freeRotate=${movementAlignment.cameraFreeRotate ? 'yes' : 'NO'} azimuthOffset=${Number(movementAlignment.cameraAzimuthOffsetDeg || 0).toFixed(1)}°`);
+        lines.push(`Shoulder ray inputs: H=${Number(movementAlignment.shoulderOffsetTiles?.horizontal || 0).toFixed(3)} V=${Number(movementAlignment.shoulderOffsetTiles?.vertical || 0).toFixed(3)} species=${framing?.speciesId || '-'} neckY=${Number(framing?.neckHeightTiles || 0).toFixed(3)} targetY=${Number(framing?.resolvedTargetYOffsetTiles || 0).toFixed(3)} distance=${Number(framing?.resolvedDistanceTiles || 0).toFixed(3)}`);
+      }
+    }
     const meleeDebug = window.__melee3DDebug?.snapshot?.(); // Exposes pitched melee acceptance and trail state without desktop developer tools.
     if (meleeDebug) {
       const result = meleeDebug.lastResult;

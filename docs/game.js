@@ -3562,19 +3562,15 @@
           playerNeckJoint.rotation.y = characterViewMode.lockedNeckY;
           return;
         }
-        // Shoulder-surf: the head locks onto the shared aim point
-        // (mouseLookAngle — see updateShoulderSurfReticleAim's screen-center
-        // raycast) rather than the camera's own raw azimuth. Those two agree
-        // when the camera looks straight at the player, but a horizontal
-        // camera-offset slide points the camera at a spot beside the player
-        // instead — using the raycast's actual ground target keeps the head
-        // (and the body catch-up / WASD-relative movement below, which read
-        // the same value) aimed at what's really in front of the reticle
-        // instead of visibly disagreeing with it. Same facingAngle-
-        // convention-to-world-yaw conversion the default case below applies
-        // to player.angle, just fed the shared aim angle instead.
+        // Shoulder-surf: the head follows the true centered camera ray — the
+        // same stable direction ordinary forward movement and attack lunges
+        // use. mouseLookAngle remains the player-to-GROUND-reticle bearing for
+        // tile interaction, but it is not a safe facing authority: lowering a
+        // species-relative camera target moves that ground intersection closer
+        // to the player, which lets the fixed shoulder offset skew the bearing
+        // sharply sideways (most visibly on the shorter Kenkari rig).
         const targetWorldYaw = activeCameraMode === SHOULDER_SURF_MODE
-          ? -mouseLookAngle + Math.PI / 2
+          ? -shoulderCameraRayFacingAngle() + Math.PI / 2
           : sitInteraction?.phase === 'active'
             ? activeCameraAzimuthRad()
             : -player.angle + Math.PI / 2;
@@ -4426,12 +4422,12 @@
       // by RangedWeapons.init's getPlayerAimAngle (below) and
       // updateToolMesh's ranged pose branch, which rotates the hands/tool
       // to face this instantly rather than waiting on the body. Shoulder-
-      // surf mode always uses the raycast-derived shared aim point
-      // (mouseLookAngle, same one the head/reticle use); the ordinary
-      // camera falls back to whatever auto-target lock (if any) is
-      // steering facing, then to plain body facing.
+      // surf mode uses the centered camera ray's horizontal direction; the
+      // ground-intersection bearing remains separate and serves only tile
+      // focus. The ordinary camera falls back to whatever auto-target lock
+      // (if any) is steering facing, then to plain body facing.
       function currentPlayerAimAngle() {
-        if (activeCameraMode === SHOULDER_SURF_MODE) return mouseLookAngle;
+        if (activeCameraMode === SHOULDER_SURF_MODE) return shoulderCameraRayFacingAngle();
         const target = findAutoTarget();
         return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
       }
@@ -8603,6 +8599,21 @@
       // that back through this gives exactly facingAngle again.
       function cameraFacingAngleRad() {
         return angleDiff(-activeCameraAzimuthRad() - Math.PI / 2, 0);
+      }
+      // Exact horizontal bearing of the centered Shoulder Cam ray. This is
+      // normally identical to cameraFacingAngleRad(), but reading the actual
+      // camera ray keeps facing correct if camera collision/framing ever moves
+      // the final camera away from its ideal azimuth. Used by movement, body,
+      // head, and combat-facing consumers; ground tile targeting deliberately
+      // keeps its separate player-to-ground-intersection bearing.
+      function shoulderCameraRayFacingAngle() {
+        const ray = currentPlayerAimRay(); // Supplies the live centered camera direction used by every shoulder-authority consumer.
+        const dx = Number(ray?.direction?.x); // Used with dz to project the camera ray onto the movement plane.
+        const dz = Number(ray?.direction?.z); // Used with dx to project the camera ray onto the movement plane.
+        if (Number.isFinite(dx) && Number.isFinite(dz) && Math.hypot(dx, dz) > 1e-8) {
+          return Math.atan2(dz, dx);
+        }
+        return cameraFacingAngleRad();
       }
       // Billboard sprites go edge-on (and effectively disappear) when rotated
       // perpendicular to the camera's current viewing axis. perpClamp's dead zones
@@ -14893,16 +14904,6 @@
       publishCharacterViewStatus();
       const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
       const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
-      // Shoulder-surf's body/camera coupling: while STANDING STILL, the body
-      // is free to lag the (mouse-driven) camera by up to this much before
-      // it starts turning to catch up — a comfortable human neck's
-      // horizontal rotation range, not the full "look over your shoulder"
-      // 90° a real shoulder/torso twist could reach. While MOVING, the body
-      // instead straightens all the way out to match the camera exactly
-      // (see the FACING section below) — a real person squares up to their
-      // direction of travel rather than continuing to crane their neck.
-      const SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math.PI / 3; // 60°
-      const SHOULDER_SURF_BODY_CATCHUP_RATE = 6; // rad/sec effective turn rate once past the free-look range
       const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
       let cardinalHoldTimer = 0;
       let lastMoveAngle = -Math.PI / 2;
@@ -15283,24 +15284,23 @@
         }
 
         // Shoulder-surf: rotate the final (already cardinal-biased) local
-        // move vector into world space relative to the direction the camera
-        // is actually facing (cameraFacingAngleRad()) instead of leaving it
+        // move vector into world space relative to the true centered camera
+        // ray (shoulderCameraRayFacingAngle()) instead of leaving it
         // on world-fixed axes, so "forward" always means "toward wherever
         // the camera is looking," like a standard third-person action
-        // camera. Deliberately NOT mouseLookAngle (the shared aim point head
-        // yaw/body catch-up use, a bearing toward a specific ground spot):
-        // that's fine for orientation, which just re-aims every frame, but
-        // using it here would feed the player's own position back into the
+        // camera. Deliberately NOT mouseLookAngle (the tile-focus bearing
+        // toward a specific ground spot): using it here would feed the
+        // player's own position back into the
         // "forward" direction itself — walking toward a close reticle point
         // swings its bearing as you approach and pass it, so "forward" would
         // spin (even flip outright) mid-stride instead of holding steady.
-        // cameraFacingAngleRad() is a pure direction with no such point to
+        // The camera ray is a pure direction with no such point to
         // pass, so it can't destabilize this way. Deliberately last, after
         // cardinal bias: biasing this vector toward world cardinals instead
         // of the player's actual local forward/strafe axes would visibly
         // skew the intended camera-relative direction.
         if (activeCameraMode === SHOULDER_SURF_MODE && (ix !== 0 || iy !== 0)) {
-          const aim = cameraFacingAngleRad();
+          const aim = shoulderCameraRayFacingAngle();
           const s = Math.sin(aim), c = Math.cos(aim);
           const rIx = -ix * s - iy * c;
           const rIy =  ix * c - iy * s;
@@ -15399,31 +15399,16 @@
           facingAngle = characterViewMode.lockedFacingAngle;
           player.angle = characterViewMode.lockedPlayerAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
-          // The body doesn't chase raw movement DIRECTION here (that's what
-          // every other mode does below) — moving camera-relative already
-          // means walking backward/strafing shouldn't spin the character to
-          // face sideways. It does fully square up to the shared aim point
-          // (mouseLookAngle, same one the head and reticle use — see
-          // updateShoulderSurfReticleAim) the instant there's any movement
-          // input though — a real person straightens their neck out to walk
-          // instead of continuing to crane it sideways. Only while standing
-          // still is the body left free to lag that aim point (up to a
-          // comfortable neck-rotation range), turning just enough to stay
-          // within it — the over-the-shoulder body/camera coupling
-          // described where the constants are declared above.
-          const camFacing = mouseLookAngle;
-          if (inputStrength > 0.001) {
-            const diff = angleDiff(camFacing, facingAngle);
-            facingAngle += diff * Math.min(1, FACING_LERP * dt);
-            lastMoveAngle = Math.atan2(iy, ix);
-          } else {
-            const diff = angleDiff(facingAngle, camFacing);
-            if (Math.abs(diff) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) {
-              const targetFacing = camFacing + window.FormatUtils.clamp(diff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
-              const turnDiff = angleDiff(targetFacing, facingAngle);
-              facingAngle += turnDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
-            }
-          }
+          // The camera is authoritative whether moving or standing still.
+          // Forward/back/strafe input must not steer the camera, and the
+          // character's previous physical direction must not constrain camera
+          // rotation through a stationary free-look dead zone. The logical
+          // body is derived directly from the centered camera ray; perpClamp may
+          // still choose the nearest render-safe billboard angle later, but
+          // that visual accommodation never feeds back into camera/aim state.
+          const camFacing = shoulderCameraRayFacingAngle();
+          facingAngle = camFacing;
+          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
           player.angle = facingAngle;
         } else {
           if (controllerLookActive) {
@@ -16983,6 +16968,79 @@
         return {
           origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z },
           direction: { x: ray.direction.x, y: ray.direction.y, z: ray.direction.z },
+        };
+      }
+
+      // Dev-only, on-demand snapshot consumed by Show Interaction Raycast.
+      // It exposes every distinct direction that can make the player appear
+      // misaligned without adding work to the normal frame loop.
+      function currentPlayerMovementAlignmentDebug() {
+        const cameraRay = currentPlayerAimRay() || currentPlayerInteractionRay(); // Drawn from the real camera and used to derive the authoritative movement bearing.
+        const movementAngle = activeCameraMode === SHOULDER_SURF_MODE // Used by the green movement ray and the numeric camera-angle report.
+          ? shoulderCameraRayFacingAngle()
+          : facingAngle;
+        const playerGroundY = _playerGroundY(); // Defines the same player-height plane used by shoulder tile targeting.
+        let groundReticle = null; // Filled with the old height-sensitive camera-ray/ground intersection for the orange diagnostic.
+        const rayDy = Number(cameraRay?.direction?.y); // Used to solve distance from the camera ray down to player ground.
+        const rayOy = Number(cameraRay?.origin?.y); // Used to solve distance from the camera ray down to player ground.
+        if (cameraRay?.origin && cameraRay?.direction && Number.isFinite(rayDy) && Math.abs(rayDy) > 1e-8 && Number.isFinite(rayOy)) {
+          const distance = (playerGroundY - rayOy) / rayDy; // Locates the actual ground reticle along the camera ray.
+          if (Number.isFinite(distance) && distance >= 0) {
+            groundReticle = {
+              x: Number(cameraRay.origin.x) + Number(cameraRay.direction.x) * distance,
+              y: playerGroundY,
+              z: Number(cameraRay.origin.z) + Number(cameraRay.direction.z) * distance,
+            };
+          }
+        }
+
+        const composerYaw = window.PlayerBodyTransformComposer?.resolvedYawDeltaRad?.() || 0; // Adds weapon/pose body yaw to the blue rendered-body/head rays.
+        const renderedBodyYaw = playerMesh.rotation.y + composerYaw; // Converts the stored billboard yaw into its actual next-render yaw.
+        const renderedBodyAngle = angleDiff(-renderedBodyYaw + Math.PI / 2, 0); // Reported in the game's logical XZ facing convention.
+        const bodyQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), renderedBodyYaw); // Used to reconstruct the visible head's world direction.
+        const neckQuaternion = playerNeckJoint // Used with bodyQuaternion to include the physical neck limit in the purple head ray.
+          ? new THREE.Quaternion().setFromEuler(playerNeckJoint.rotation)
+          : new THREE.Quaternion();
+        const headDirection = new THREE.Vector3(0, 0, 1) // Local portrait-front vector transformed into the visible head ray.
+          .applyQuaternion(bodyQuaternion.multiply(neckQuaternion))
+          .normalize();
+        const headAngle = Math.atan2(headDirection.z, headDirection.x); // Compared numerically with the camera ray to enforce the fixed visual anchor.
+        const velocityLength = Math.hypot(Number(player.vx) || 0, Number(player.vy) || 0); // Normalizes and labels the actual post-acceleration velocity ray.
+        const directionForAngle = angle => ({ x: Math.cos(angle), y: 0, z: Math.sin(angle) }); // Converts logical game angles into overlay ray vectors.
+        const meleeAimDirection = currentPlayerMeleeAimDirection(); // Reveals when a focused hostile legitimately converges combat away from the plain camera ray.
+        const combatAlignment = window.HobunjiCombatCameraAlignment?.debugSnapshot?.() || null; // Supplies the last camera-authored lunge ray.
+        const rangedAlignment = window.HobunjiRangedCameraRayAuthority?.snapshot?.() || null; // Supplies the latest muzzle-to-max-range attack ray.
+
+        return {
+          mode: activeCameraMode,
+          cameraFreeRotate: freeRotateCameraActive(),
+          cameraAzimuthOffsetDeg,
+          cameraRay,
+          groundReticle,
+          movementDirection: directionForAngle(movementAngle),
+          groundAimDirection: directionForAngle(mouseLookAngle),
+          meleeAimDirection,
+          lastLungeDirection: combatAlignment?.lastLunge?.direction || null,
+          rangedAttackDirection: rangedAlignment?.lastSolution?.attackDirection || null,
+          logicalBodyDirection: directionForAngle(facingAngle),
+          renderedBodyDirection: directionForAngle(renderedBodyAngle),
+          headDirection: { x: headDirection.x, y: headDirection.y, z: headDirection.z },
+          velocityDirection: velocityLength > 1e-8
+            ? { x: player.vx / velocityLength, y: 0, z: player.vy / velocityLength }
+            : null,
+          movementAngleDeg: THREE.MathUtils.radToDeg(movementAngle),
+          groundAimAngleDeg: THREE.MathUtils.radToDeg(mouseLookAngle),
+          groundAimSkewDeg: THREE.MathUtils.radToDeg(angleDiff(mouseLookAngle, movementAngle)),
+          logicalBodyAngleDeg: THREE.MathUtils.radToDeg(facingAngle),
+          renderedBodyAngleDeg: THREE.MathUtils.radToDeg(renderedBodyAngle),
+          headAngleDeg: THREE.MathUtils.radToDeg(headAngle),
+          headCameraYawDeltaDeg: THREE.MathUtils.radToDeg(angleDiff(headAngle, movementAngle)),
+          velocitySpeedPxS: velocityLength,
+          shoulderOffsetTiles: {
+            horizontal: s_shoulderSurfOffsetH_current,
+            vertical: s_shoulderSurfOffsetV_current,
+          },
+          cameraFraming: window.HobunjiShoulderCameraCharacterFraming?.snapshot?.() || null,
         };
       }
 
@@ -25679,7 +25737,7 @@
           const kb = getKeyboardVector();
           const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
           if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
-          const aim = cameraFacingAngleRad();
+          const aim = shoulderCameraRayFacingAngle();
           const sin = Math.sin(aim), cos = Math.cos(aim);
           return {
             x: -move.x * sin - move.y * cos,
@@ -25717,6 +25775,7 @@
         getShowInteractionRaycast: () => s_showInteractionRaycast,
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
+        getPlayerMovementAlignmentDebug: currentPlayerMovementAlignmentDebug,
         refreshInteractionFocusDebug: window.DenNestSystem.refreshInteractionFocusDebug,
         creatureHitboxHalfSizePx,
       });

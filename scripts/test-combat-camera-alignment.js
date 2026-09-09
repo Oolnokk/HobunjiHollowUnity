@@ -10,6 +10,8 @@ const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8')
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const rangedFocus = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const rangedWeapons = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8');
+const debugHitboxes = fs.readFileSync('docs/js/debug-hitboxes.js', 'utf8'); // Verifies every alignment ray is exposed through the existing interaction-ray overlay.
+const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Verifies the same disagreement is readable on mobile without developer tools.
 
 const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=20260906f');
 const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260908cameraauthority1');
@@ -30,8 +32,31 @@ assert.doesNotMatch(game, /projectShoulderGroundHitToRootForward/,
 assert.doesNotMatch(game, /_shoulderSurfCameraConvergence/,
   'game no longer stores or applies shoulder camera convergence');
 assert.match(game,
-  /if \(activeCameraMode === SHOULDER_SURF_MODE && \(ix !== 0 \|\| iy !== 0\)\) \{\s*const aim = cameraFacingAngleRad\(\);/,
-  'ordinary shoulder movement remains camera-authoritative');
+  /if \(activeCameraMode === SHOULDER_SURF_MODE && \(ix !== 0 \|\| iy !== 0\)\) \{\s*const aim = shoulderCameraRayFacingAngle\(\);/,
+  'ordinary shoulder movement follows the true centered camera ray');
+assert.match(game,
+  /function shoulderCameraRayFacingAngle\(\)[\s\S]{0,500}currentPlayerAimRay\(\)/,
+  'shared shoulder bearing is derived from the actual camera ray');
+assert.match(game,
+  /const targetWorldYaw = activeCameraMode === SHOULDER_SURF_MODE\s*\? -shoulderCameraRayFacingAngle\(\) \+ Math\.PI \/ 2/,
+  'player head follows camera authority rather than the height-sensitive ground bearing');
+assert.match(game,
+  /const camFacing = shoulderCameraRayFacingAngle\(\);\s*facingAngle = camFacing;/,
+  'stationary and moving body facing derive directly from camera authority without lag');
+assert.doesNotMatch(game, /SHOULDER_SURF_BODY_FREE_LOOK_RAD/,
+  'stationary physical facing no longer imposes a free-look dead zone on camera-authored rotation');
+assert.match(game,
+  /getPlayerMovementAlignmentDebug: currentPlayerMovementAlignmentDebug/,
+  'raycast debug receives the complete player movement-alignment snapshot');
+for (const label of ['movement/camera ray', 'ground aim', 'melee aim', 'last lunge', 'ranged attack', 'logical body', 'rendered body', 'rendered head', 'velocity']) {
+  assert(debugHitboxes.includes(label), `raycast overlay labels ${label}`);
+}
+assert.match(pixelProbe, /Movement rays: camera=.*groundAim=.*skew=.*logicalBody=.*renderedBody=/,
+  'mobile Pixel Probe reports the same movement/body ray separation numerically');
+assert.match(pixelProbe, /head↔camera=/,
+  'mobile Pixel Probe reports the head-to-camera-ray anchor delta directly');
+assert.doesNotMatch(debugHitboxes, /requestAnimationFrame\s*\(|setInterval\s*\(/,
+  'expanded ray debug adds no independent frame loop or polling timer');
 assert.match(game, /const aimDirection = currentPlayerMeleeAimDirection\(\);/,
   'player lunge setup still has one shared aim-direction boundary for the bridge to correct');
 
