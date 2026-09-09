@@ -44,7 +44,7 @@ assert.match(uiSource, /scrollStick[\s\S]{0,900}scrollTop \+=/, 'right stick scr
 assert.match(uiSource, /hobunji-controller-owner-change[\s\S]{0,180}owner: 'menu'/, 'menu ownership is announced even while the gameplay loop is paused');
 assert.match(indexSource, /id="settingControllerLookSensitivity"[\s\S]{0,700}id="settingControllerInvertY"/, 'camera sensitivity and invert-Y settings are present');
 const controllerHelperIndex = indexSource.indexOf('controller-input.js?v=20260909controller1'); // Used to verify parser order without assuming a maximum HTML distance between scripts.
-const gameScriptIndex = indexSource.indexOf('game.js?v=20260909controller1'); // Used with controllerHelperIndex to protect the helper-before-consumer contract.
+const gameScriptIndex = indexSource.indexOf('game.js?v=20260909lookclamp1'); // Used with controllerHelperIndex to protect the helper-before-consumer contract.
 assert.ok(controllerHelperIndex >= 0 && gameScriptIndex > controllerHelperIndex, 'shared controller helpers load before the cache-invalidated game script');
 
 console.log('Controller experience checks passed.');
