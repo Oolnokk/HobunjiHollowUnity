@@ -1,0 +1,71 @@
+{
+  "schema": "hobunji_gameplay_cutscene_chapter.v2",
+  "version": 2,
+  "cutsceneModel": {
+    "mapRuntime": "normal-gameplay",
+    "dialogueSurface": "npcDialogue",
+    "playerMovement": "locked",
+    "playerRepositioning": "authored-only",
+    "speakerSelection": "automatic-per-line",
+    "npcFacing": "authored-per-beat",
+    "npcHeadTracking": "authored-per-beat",
+    "notes": "A cutscene is normal gameplay with scripted control layered on top. Dialogue uses the ordinary gameplay dialogue UI, automatically swaps the active speaker from line metadata, never moves the player unless a beat explicitly asks for it, and never makes NPCs face/headtrack the player unless authored."
+  },
+  "stages": {
+    "rescue": {
+      "title": "Prologue — The Rescue",
+      "kind": "zone",
+      "mapId": "map_prologue_rescue",
+      "entryCol": 12,
+      "entryRow": 12,
+      "actors": [
+        {
+          "npcId": "jubmir",
+          "col": 9,
+          "row": 12,
+          "rotY": 1.5707963267948966,
+          "headTracking": "none"
+        },
+        {
+          "npcId": "spearhead_unumanuk",
+          "col": 15,
+          "row": 12,
+          "rotY": -1.5707963267948966,
+          "headTracking": "none"
+        }
+      ],
+      "dialogue": [
+        {
+          "speakerNpcId": "jubmir",
+          "text": "[Target test] Jubmir speaking.",
+          "cameraTarget": "speaker",
+          "headTracking": "none"
+        },
+        {
+          "speakerNpcId": "spearhead_unumanuk",
+          "text": "[Target test] Spearhead speaking.",
+          "cameraTarget": "speaker",
+          "headTracking": "none"
+        },
+        {
+          "speakerNpcId": "jubmir",
+          "text": "[Target test] Jubmir again.",
+          "cameraTarget": "speaker",
+          "headTracking": "none"
+        }
+      ],
+      "dialogueTest": {
+        "autoStart": true,
+        "purpose": "Verify that one gameplay dialogue sequence automatically retargets name, portrait, and camera from Jubmir to Spearhead and back without moving the player or forcing NPC headtracking."
+      },
+      "notes": "Loads a dedicated authored 25x25 exterior clearing. The central 15x15 is walkable; the surrounding five-tile frame is solid Cloud Forest underbrush and the outermost ring receives generated Shadewood trees. Southern Cloud Forest scene fog plus its player-centered cloud-fog runtime remain active here. Normal wilderness population is suppressed because this is a scripted prologue set, not a sandbox wilderness zone. Startup loading is held until this exact 25x25 scene is built, decorated, and has rendered two frames. The current dialogue lines are explicit temporary target-test copy, not final prologue writing."
+    },
+    "hunundi_room": {
+      "title": "Prologue — Father Hunundi's Room",
+      "kind": "building",
+      "mapId": "map_i_temple_basement_hunundi",
+      "dialogue": [],
+      "notes": "Loads Father Hunundi's existing authored room through the ordinary building/interior runtime. Dialogue is intentionally empty during the map-flow pass."
+    }
+  }
+}

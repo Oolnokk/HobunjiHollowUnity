@@ -1,0 +1,23 @@
+{
+  "schema": "hobunji_map.v1",
+  "id": "map_prologue_rescue",
+  "name": "Prologue — Cloud Forest Rescue Clearing",
+  "category": "exterior",
+  "cols": 25,
+  "rows": 25,
+  "tiles": [],
+  "transitions": [],
+  "npcStations": [],
+  "npcPaths": [],
+  "routes": [],
+  "buildings": [],
+  "decor": [],
+  "furniture": [],
+  "prologueRescue": {
+    "walkableRect": {"c":5,"r":5,"w":15,"h":15},
+    "boundaryTreeRing": {"inset":0,"species":"shadewood"},
+    "underbrushRing": {"inset":1,"depth":4},
+    "fogProfile": "southern_cloud_forest",
+    "noNaturalExits": true
+  }
+}
