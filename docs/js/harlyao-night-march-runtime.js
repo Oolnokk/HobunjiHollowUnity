@@ -179,7 +179,7 @@
   }
 
   function roster(index) {
-    const gender = index % 2 ? 'female' : 'male'; // Even deterministic gender distribution without persistent random data.
+    const gender = 'male'; // Army remains male-only until matching female Harlyao head art exists.
     const cosmetics = [...(cfg?.equipment?.forcedCosmetics || ['rugged_poncho'])]; // Every marcher wears the rugged poncho.
     return {
       name: `Harlyao Marcher ${index + 1}`,
