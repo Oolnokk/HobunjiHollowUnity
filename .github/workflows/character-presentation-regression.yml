@@ -10,6 +10,7 @@ on:
       - 'docs/js/ghostify.js'
       - 'docs/js/harlyao-night-march-atmosphere.js'
       - 'docs/js/harlyao-night-march-beacon.js'
+      - 'docs/js/harlyao-night-march-calendar.js'
       - 'docs/js/harlyao-night-march-music.js'
       - 'docs/js/harlyao-night-march-pixel-probe.js'
       - 'docs/js/harlyao-night-march-runtime.js'
@@ -20,6 +21,7 @@ on:
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
+      - 'scripts/test-harlyao-calendar-markers.js'
       - 'scripts/test-harlyao-night-march.js'
       - 'scripts/test-harlyao-night-march-beacon.js'
       - 'scripts/test-harlyao-species.js'
@@ -45,6 +47,8 @@ jobs:
         run: node scripts/test-harlyao-night-march-beacon.js
       - name: Harlyao Terror regression
         run: node scripts/test-harlyao-terror.js
+      - name: Harlyao calendar marker regression
+        run: node scripts/test-harlyao-calendar-markers.js
       - name: Mao-ao arm tint regression
         run: node scripts/test-maoao-arm-tint-runtime.js
       - name: Shoulder camera character framing regression
