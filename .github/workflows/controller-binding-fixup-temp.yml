@@ -1,0 +1,111 @@
+name: Controller binding fixup
+
+on:
+  push:
+    branches:
+      - codex/controller-listen-json-configurable-inputs
+
+permissions:
+  contents: write
+
+jobs:
+  fixup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/controller-listen-json-configurable-inputs
+          fetch-depth: 0
+
+      - name: Fix capture edge cases and cache keys
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'Expected source not found in {path}: {old[:140]!r}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          settings = 'docs/js/input-settings-panel.js'
+          replace_once(
+              settings,
+              """    capture?.button?.classList.remove('is-listening');\n  }""",
+              """    capture?.button?.classList.remove('is-listening');\n    if (capture?.button?.isConnected && capture.idleText) capture.button.textContent = capture.idleText;\n  }""",
+          )
+          replace_once(
+              settings,
+              """    const capture = { button, frame: 0 }; // Used by stopControllerCapture() to cancel this exact listening session.""",
+              """    const capture = { button, frame: 0, idleText: button.textContent }; // Used by stopControllerCapture() to cancel this exact listening session and restore its normal label.""",
+          )
+          replace_once(
+              settings,
+              """    const poll = () => {\n      if (activeControllerCapture !== capture) return;\n      const { pads, activeInputs } = snapshot();""",
+              """    const poll = () => {\n      if (activeControllerCapture !== capture) return;\n      if (!button.isConnected || button.getClientRects().length === 0) { stopControllerCapture(); return; }\n      const { pads, activeInputs } = snapshot();""",
+          )
+          replace_once(
+              settings,
+              """    try {\n      await navigator.clipboard?.writeText?.(text);\n      copied = true;\n    } catch (_) {}""",
+              """    try {\n      if (typeof navigator.clipboard?.writeText === 'function') {\n        await navigator.clipboard.writeText(text);\n        copied = true;\n      }\n    } catch (_) {}""",
+          )
+          replace_once(
+              settings,
+              """              if (conflict) {\n                warn.textContent = conflict;\n                renderInputSettings();\n                return;\n              }""",
+              """              if (conflict) {\n                warn.textContent = conflict;\n                return;\n              }""",
+          )
+          replace_once(
+              settings,
+              """            }, message => {\n              warn.textContent = message;\n              renderInputSettings();\n            });""",
+              """            }, message => {\n              warn.textContent = message;\n            });""",
+          )
+
+          index = Path('docs/index.html')
+          index_text = index.read_text(encoding='utf-8')
+          cache_replacements = {
+              'config/scratchbones-config.js?v=20260909controller1': 'config/scratchbones-config.js?v=20260909controller2',
+              'js/controller-input.js?v=20260909controller1': 'js/controller-input.js?v=20260909controller2',
+              'js/input-bindings.js?v=20260902mod1': 'js/input-bindings.js?v=20260909controller2',
+              'js/input-settings-panel.js?v=20260807a': 'js/input-settings-panel.js?v=20260909controller2',
+              'js/music-minigame.js?v=20260815b': 'js/music-minigame.js?v=20260909controller2',
+              'game.js?v=20260909controller1': 'game.js?v=20260909controller2',
+              'js/controller-ui-nav.js?v=20260909controller1': 'js/controller-ui-nav.js?v=20260909controller2',
+          }
+          for old, new in cache_replacements.items():
+              if old not in index_text:
+                  raise SystemExit(f'Expected cache key not found in docs/index.html: {old}')
+              index_text = index_text.replace(old, new, 1)
+          index.write_text(index_text, encoding='utf-8')
+
+          loader = Path('docs/js/character-action-locks.js')
+          loader_text = loader.read_text(encoding='utf-8')
+          old_social = "social-action-wheel.js?v=20260903social1"
+          new_social = "social-action-wheel.js?v=20260909controller2"
+          if old_social not in loader_text:
+              raise SystemExit('Expected social-action-wheel cache key not found')
+          loader.write_text(loader_text.replace(old_social, new_social, 1), encoding='utf-8')
+          PY
+
+      - name: Validate controller changes
+        run: |
+          node --check docs/js/input-settings-panel.js
+          node --check docs/js/controller-input.js
+          node --check docs/js/controller-ui-nav.js
+          node --check docs/js/input-bindings.js
+          node --check docs/js/music-minigame.js
+          node --check docs/js/social-action-wheel.js
+          node --check docs/game.js
+          node scripts/test-controller-experience.js
+          node scripts/test-held-seed-desktop-capture.js
+
+      - name: Remove temporary workflow and commit
+        run: |
+          rm -f .github/workflows/controller-binding-fixup-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Harden controller binding capture and validation"
+          git push origin HEAD:codex/controller-listen-json-configurable-inputs
