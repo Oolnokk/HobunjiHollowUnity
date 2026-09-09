@@ -30,6 +30,7 @@
       "fine_hood",
       "tankan_tunic",
       "bandolier1",
+      "rugged_poncho",
       "fine_poncho"
     ],
     "cosmeticWeights": {
@@ -45,6 +46,7 @@
       },
       "overwear": {
         "none": 0,
+        "rugged_poncho": 65,
         "fine_poncho": 35
       }
     },
@@ -139,6 +141,7 @@
       "fine_hood",
       "tankan_tunic",
       "bandolier1",
+      "rugged_poncho",
       "fine_poncho"
     ],
     "cosmeticWeights": {
@@ -154,6 +157,7 @@
       },
       "overwear": {
         "none": 0,
+        "rugged_poncho": 65,
         "fine_poncho": 35
       }
     },
