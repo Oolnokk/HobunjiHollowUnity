@@ -8602,8 +8602,8 @@
       let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
-      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
-      // not a free-orbit camera.
+      // azimuth/angle. Horizontal/downward look keeps the legacy 45° limit;
+      // upward pitch uses the wider shooter-style limit from desktopControls.
       let cameraAzimuthOffsetDeg = 0;
       let cameraAngleOffsetDeg   = 0;
       // Reused every frame by occlusionSafeCameraPosition — a fresh
@@ -21845,7 +21845,7 @@
             // Shift-drag/plain-mouselook convention just below (+movementY
             // pitches the same way), whereas the raw touch delta this knob
             // is built from reads the other way for vertical.
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt);
           }
         }
         if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
@@ -23699,7 +23699,7 @@
           ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt)
           : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt, -clampDeg, clampDeg);
         const pitchDirection = s_controllerInvertY ? -1 : 1; // Applied only to controller Y so changing this setting cannot invert touch or mouse input.
-        cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt, -clampDeg, clampDeg);
+        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);
         controllerLookAngle = cameraFacingAngleRad();
         targetAimAngle = controllerLookAngle;
         controllerLookActive = true;
@@ -24269,13 +24269,19 @@
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
       }
-      // Every other camera mode nudges a small look-around offset on top of a
-      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
-      // default ±45°) since it's meant to be a peek, not a free orbit. Seated
-      // players and the utility-wheel Character View get genuine 360°
+      // Every other camera mode nudges a look-around offset on top of a fixed
+      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
+      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated
+      // players and the utility-wheel Character View still get genuine 360°
       // horizontal orbit instead.
       function freeRotateCameraActive() {
         return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+      function clampCameraPitchOffsetDeg(value) {
+        const cfg = desktopControlsConfig(); // Supplies the authored directional camera limits for mouse, touch, and controller pitch.
+        const downClampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Math.abs(Number(cfg.cameraRotateClampDeg)) : 45; // Used as the positive/downward pitch boundary and preserves the legacy limit.
+        const upClampDeg = Number.isFinite(Number(cfg.cameraRotateUpClampDeg)) ? Math.abs(Number(cfg.cameraRotateUpClampDeg)) : 85; // Used as the negative/upward pitch boundary for shooter-style vertical look.
+        return window.FormatUtils.clamp(value, -upClampDeg, downClampDeg);
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -24491,7 +24497,7 @@
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
               : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + e.movementY * degPerPx);
             updateCameraPosition();
             return;
           }

@@ -244,6 +244,7 @@ window.SCRATCHBONES_CONFIG = {
       "tapWindowMs": 350,
       "cameraRotateDegPerPx": 0.15,
       "cameraRotateClampDeg": 45,
+      "cameraRotateUpClampDeg": 85, // Used by gameplay pitch so upward look can be wider without loosening downward/yaw limits.
       "wheelZoomStep": 0.05,
       "wheelZoomMin": 0.75,
       "wheelZoomMax": 2.5
