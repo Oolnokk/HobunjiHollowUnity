@@ -27,10 +27,12 @@
   let deps = null, COLS, ROWS, TileType;
   const DEW_SHOVEL_SFX_URL = 'assets/audio/sfx/sfx_shovel_dew.mp3'; // Used instead of the ordinary dirt-dig cue while the live shovel reticle is on Uumkao'ii dew.
   const DEW_ROCK_OPACITY = 0.45; // Used by dew-only rock materials so the boulders read as translucent condensed dew instead of ordinary stone.
-  const DEW_WAVY_TEXTURE = 'assets/textures/wavy_surface.png'; // Used by the fallback renderer and diagnostics; the normal path reaches the same texture through the existing trunk natural-surface style.
+  const DEW_WAVY_TEXTURE = 'assets/textures/wavy_surface.png'; // Used for the dew-only rock surface instead of ordinary ROCK carved_smooth.
+  const DEW_UV_MAPPING = 'single-whole-pile-stretch'; // Used by diagnostics and geometry metadata to prove connected-surface island mapping was bypassed.
   let dewShovelSfxPreload = null; // Retains one eagerly loaded element so repeated held-action thrusts start immediately.
   let lastDewShovelSfxDebug = null; // Mobile-readable diagnostic exported below.
   let dewFallbackWavyTexture = null; // Shared only if NaturalSurfaceMaterials is unavailable, avoiding one TextureLoader allocation per pile.
+  const dewMaterialTemplateCache = new Map(); // colorHex -> shared template material; per-pile meshes clone it so disposal remains local.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -128,9 +130,101 @@
     return tex;
   }
 
+  function _clearRockSurfaceMetadata(mesh) {
+    if (!mesh?.isMesh) return;
+    mesh.userData = Object.assign({}, mesh.userData || {});
+    for (const key of [
+      'naturalSurface', 'naturalSurfaceCliffSlot', 'wildernessLegacyRockSurface',
+      'naturalizedAtSceneAdd', 'facetedSurfaceTextureOutline', 'shellOutlineDisabledReason',
+    ]) delete mesh.userData[key];
+    const geometry = mesh.geometry;
+    if (!geometry) return;
+    geometry.userData = Object.assign({}, geometry.userData || {});
+    for (const key of [
+      'naturalSurfaceUvMapping', 'hobunjiSurfaceStretchSignature', 'hobunjiSurfaceStretch',
+      'hobunjiSurfacePerimeterFrameSignature', 'hobunjiSurfacePerimeterFrame',
+    ]) delete geometry.userData[key];
+  }
+
+  // One planar projection is stretched exactly once over the bounding box of
+  // the complete merged boulder cluster. The two largest pile axes become U/V,
+  // so low rock piles normally receive one top-down X/Z image instead of one
+  // image per connected face/surface island. No connected-surface detector is
+  // involved and the texture remains ClampToEdge, so it cannot tile/repeat.
+  function _assignSinglePileStretchUv(geometry) {
+    const pos = geometry?.getAttribute?.('position');
+    if (!pos) return false;
+    geometry.computeBoundingBox?.();
+    const box = geometry.boundingBox;
+    if (!box) return false;
+    const axes = [
+      { key: 'x', min: box.min.x, span: Math.max(1e-5, box.max.x - box.min.x) },
+      { key: 'y', min: box.min.y, span: Math.max(1e-5, box.max.y - box.min.y) },
+      { key: 'z', min: box.min.z, span: Math.max(1e-5, box.max.z - box.min.z) },
+    ].sort((a, b) => b.span - a.span);
+    const uAxis = axes[0]; // Used to span the longest whole-pile dimension across texture U.
+    const vAxis = axes[1]; // Used to span the second-longest whole-pile dimension across texture V.
+    const coord = (axis, index) => axis.key === 'x' ? pos.getX(index) : axis.key === 'y' ? pos.getY(index) : pos.getZ(index);
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      uv[i * 2] = (coord(uAxis, i) - uAxis.min) / uAxis.span;
+      uv[i * 2 + 1] = (coord(vAxis, i) - vAxis.min) / vAxis.span;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.attributes.uv.needsUpdate = true;
+    geometry.userData = Object.assign({}, geometry.userData || {}, {
+      uumkaoiiDewUvMapping: DEW_UV_MAPPING,
+      uumkaoiiDewUvAxes: `${uAxis.key}${vAxis.key}`,
+    });
+    return true;
+  }
+
+  // NaturalSurfaceMaterials already owns the exact wavy_surface body-style
+  // tint path. Build that material on a disposable proxy instead of passing the
+  // actual dew geometry through naturalizeMesh: doing so prevents terrain's
+  // connected-surface runtime from ever seeing/replacing the dew pile UVs.
+  function _dewMaterialTemplate(colorHex) {
+    if (dewMaterialTemplateCache.has(colorHex)) return dewMaterialTemplateCache.get(colorHex);
+    const source = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: DEW_ROCK_OPACITY,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.FrontSide,
+    });
+    let template = null;
+    const naturalSurfaces = window.NaturalSurfaceMaterials;
+    if (naturalSurfaces?.naturalizeMesh) {
+      const proxyGeometry = new THREE.BoxGeometry(1, 1, 1); // Used only to obtain the canonical wavy_surface material without mutating dew geometry.
+      const proxy = new THREE.Mesh(proxyGeometry, source);
+      naturalSurfaces.naturalizeMesh(proxy, 'trunks', 'planar-stretch');
+      template = proxy.material === source ? source : proxy.material.clone();
+      if (proxy.material !== source) source.dispose();
+      proxyGeometry.dispose();
+    } else {
+      template = source;
+      template.map = _fallbackWavyTexture();
+    }
+    template.transparent = true;
+    template.opacity = DEW_ROCK_OPACITY;
+    template.depthWrite = true; // The game's later inverted-shell pass needs the visible dew surface in the base depth buffer to leave only the expanded silhouette exposed.
+    template.depthTest = true;
+    template.side = THREE.FrontSide;
+    template.userData = Object.assign({}, template.userData || {}, {
+      uumkaoiiDewRockMaterial: true,
+      uumkaoiiDewTexture: DEW_WAVY_TEXTURE,
+    });
+    delete template.userData.naturalSurface; // Keeps NaturalSurfaceStretchRuntime from treating dew as terrain and reasserting connected-surface UV islands.
+    template.needsUpdate = true;
+    dewMaterialTemplateCache.set(colorHex, template);
+    return template;
+  }
+
   function _restoreDewShellOutline(mesh) {
     if (!mesh?.isMesh) return;
-    mesh.userData = Object.assign({}, mesh.userData, {
+    mesh.geometry?.computeVertexNormals?.(); // Shell extrusion follows vertex normals; ensure the raw procedural boulder geometry always supplies them.
+    mesh.userData = Object.assign({}, mesh.userData || {}, {
       uumkaoiiDewRock: true,
       shellOutlineRetainedForDew: true,
     });
@@ -140,65 +234,36 @@
     mesh.layers?.enable(1);
   }
 
-  // Reuses the game's actual deterministic ROCK-tile boulder cluster, then
-  // swaps only this dew instance onto the existing wavy_surface natural-
-  // surface treatment. Using the "trunks" style is deliberate: it is the
-  // canonical wavy_surface + body-sprite-tint path, while a planar mapping
-  // override keeps that texture stretched across rock faces instead of
-  // cylindrical wrapping. The ordinary boulder wrapper initially marks the
-  // geometry as a faceted ROCK and suppresses its shell; dew immediately
-  // clears those suppression flags and re-enables layer 1 after restyling.
   function _styleDewBoulder(root, colorHex) {
     let styledMeshes = 0;
     root?.traverse?.(mesh => {
       if (!mesh?.isMesh) return;
-      const source = new THREE.MeshBasicMaterial({
-        color: colorHex,
-        transparent: true,
-        opacity: DEW_ROCK_OPACITY,
-        depthWrite: false,
-        depthTest: true,
-        side: THREE.FrontSide,
+      const previousMaterials = Array.isArray(mesh.material) ? mesh.material : (mesh.material ? [mesh.material] : []); // Used to release the raw per-pile stone material after replacing it.
+      _clearRockSurfaceMetadata(mesh);
+      _assignSinglePileStretchUv(mesh.geometry);
+      mesh.material = _dewMaterialTemplate(colorHex).clone();
+      mesh.material.userData = Object.assign({}, mesh.material.userData || {}, {
+        uumkaoiiDewRockMaterial: true,
+        uumkaoiiDewTexture: DEW_WAVY_TEXTURE,
       });
-      mesh.material = source;
-
-      const naturalSurfaces = window.NaturalSurfaceMaterials;
-      if (naturalSurfaces?.naturalizeMesh) {
-        naturalSurfaces.naturalizeMesh(mesh, 'trunks', 'planar-stretch');
-        if (mesh.material !== source) source.dispose();
-      } else {
-        mesh.material = new THREE.MeshBasicMaterial({
-          map: _fallbackWavyTexture(),
-          color: colorHex,
-          transparent: true,
-          opacity: DEW_ROCK_OPACITY,
-          depthWrite: false,
-          depthTest: true,
-          side: THREE.FrontSide,
-        });
-        source.dispose();
-      }
-
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const dewMaterials = materials.map(material => {
-        const clone = material.clone();
-        clone.transparent = true;
-        clone.opacity = DEW_ROCK_OPACITY;
-        clone.depthWrite = false;
-        clone.userData = Object.assign({}, clone.userData, {
-          uumkaoiiDewRockMaterial: true,
-          uumkaoiiDewTexture: DEW_WAVY_TEXTURE,
-        });
-        clone.needsUpdate = true;
-        return clone;
-      });
-      mesh.material = Array.isArray(mesh.material) ? dewMaterials : dewMaterials[0];
+      mesh.material.transparent = true;
+      mesh.material.opacity = DEW_ROCK_OPACITY;
+      mesh.material.depthWrite = true;
+      mesh.material.needsUpdate = true;
+      for (const material of previousMaterials) material?.dispose?.();
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       _restoreDewShellOutline(mesh);
       styledMeshes++;
     });
     return styledMeshes;
+  }
+
+  function _buildRawDewBoulder(col, row) {
+    const foliage = window.FoliageGenerator;
+    const wrappedBuild = foliage?.buildBoulderMesh; // Current public builder may be wrapped by faceted-natural-surface-shell-reduction.
+    const rawBuild = wrappedBuild?.__hobunjiFacetedSurfaceShellOriginal || wrappedBuild; // Used to bypass ordinary ROCK surface-island mapping + shell suppression specifically for dew.
+    return typeof rawBuild === 'function' ? rawBuild.call(foliage, col, row) : null;
   }
 
   function spawnMesh(col, row, colorKey) {
@@ -208,7 +273,7 @@
     const key = col + ',' + row;
     removeMesh(col, row);
 
-    const group = window.FoliageGenerator?.buildBoulderMesh?.(col, row);
+    const group = _buildRawDewBoulder(col, row);
     if (!group) {
       window.__farmLog?.(`[dew-render] unable to build existing ROCK geometry at ${key}; FoliageGenerator.buildBoulderMesh unavailable`, 'render');
       return;
@@ -222,7 +287,13 @@
       dewColorKey: colorKey,
       dewStyledMeshCount: styledMeshes,
     });
+    delete group.userData.noOutline;
+    group.layers?.enable(1);
     deps.getScene().add(group);
+    // Scene/Object3D add is wrapped by several terrain fixups. Reassert shell
+    // enrollment after those synchronous wrappers finish so no ordinary-rock
+    // suppression can win after dew styling.
+    group.traverse?.(child => { if (child?.isMesh) _restoreDewShellOutline(child); });
     dewPileMeshes.set(key, group);
   }
 
@@ -236,11 +307,18 @@
   function dewVisualDebugSnapshot() {
     let meshes = 0;
     let shellOutlined = 0;
+    let depthWriting = 0;
+    let singleStretchMapped = 0;
+    let terrainSurfaceTagged = 0;
     for (const group of dewPileMeshes.values()) {
       group.traverse?.(child => {
         if (!child?.isMesh) return;
         meshes++;
         if ((child.layers?.mask & (1 << 1)) !== 0 && !child.userData?.noOutline) shellOutlined++;
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        if (materials.every(material => material?.depthWrite !== false)) depthWriting++;
+        if (child.geometry?.userData?.uumkaoiiDewUvMapping === DEW_UV_MAPPING) singleStretchMapped++;
+        if (child.userData?.naturalSurface || materials.some(material => material?.userData?.naturalSurface)) terrainSurfaceTagged++;
       });
     }
     return {
@@ -248,6 +326,10 @@
       piles: dewPileMeshes.size,
       meshes,
       shellOutlined,
+      depthWriting,
+      singleStretchMapped,
+      terrainSurfaceTagged,
+      uvMapping: DEW_UV_MAPPING,
       opacity: DEW_ROCK_OPACITY,
       texture: DEW_WAVY_TEXTURE,
       fallbackTextureLoaded: !!dewFallbackWavyTexture,
@@ -263,9 +345,9 @@
       if (child.geometry) child.geometry.dispose();
       const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
       for (const material of materials) material.dispose?.();
-      // Material maps come from NaturalSurfaceMaterials' shared texture cache
-      // (or _fallbackWavyTexture), so only the per-pile material clones are
-      // disposed here; disposing their map would break every other user.
+      // Material maps come from the shared dew material template cache (or
+      // _fallbackWavyTexture), so only per-pile material clones are disposed;
+      // disposing their map would break every other pile of that color.
     });
     dewPileMeshes.delete(key);
   }
