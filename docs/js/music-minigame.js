@@ -925,14 +925,21 @@
 
     const controllerPollGeneration = (window.__hobunjiHostedControllerPollGeneration || 0) + 1;
     window.__hobunjiHostedControllerPollGeneration = controllerPollGeneration;
-    let controllerPrevButtons = [];
+    let controllerPrevButtons = new Map(); // Used to edge-track semantic music actions after controller remapping.
     let controllerAutoPickSector = -1;
     let controllerRightStickActive = false;
-    const controllerButton = (gamepad, index, key, kind, value) => {
-      const pressed = (gamepad.buttons[index]?.value || 0) > (kind === 'bank' ? 0.28 : 0.55);
-      const wasPressed = Boolean(controllerPrevButtons[index]);
+    const controllerBinding = actionId => {
+      const currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller; // Used to preserve explicit Unbound values while still supporting shipped defaults before saved settings exist.
+      if (currentBindings && Object.prototype.hasOwnProperty.call(currentBindings, actionId)) return currentBindings[actionId];
+      const defaults = window.InputBindings?.getDefaultBindings?.('controller'); // Keeps music's controller schema/defaults decoupled from the global gameplay config.
+      return defaults && Object.prototype.hasOwnProperty.call(defaults, actionId) ? defaults[actionId] : null;
+    };
+    const controllerButton = (gamepad, actionId, key, kind, value) => {
+      const bindingCode = controllerBinding(actionId); // Used to route this musical action through the same controller mapping shown in Settings.
+      const pressed = window.ControllerInput?.isBindingPressed?.(gamepad, bindingCode, { triggerThreshold: kind === 'bank' ? 0.28 : 0.55, buttonThreshold: 0.55, stickThreshold: 0.55 }) || false;
+      const wasPressed = Boolean(controllerPrevButtons.get(actionId)); // Used to emit one note/bank/tap edge per configured press.
       if (pressed === wasPressed) return;
-      controllerPrevButtons[index] = pressed;
+      controllerPrevButtons.set(actionId, pressed);
       const sourceId = `host-gp-${key}`;
       if (kind === 'note') {
         if (pressed) {
@@ -973,7 +980,7 @@
       if (window.__hobunjiHostedControllerPollGeneration !== controllerPollGeneration) return;
       if (activeInputLayout !== 'controller') {
         if (hostedControllerSources.size || controllerRightStickActive) releaseHostedControllerInputs();
-        controllerPrevButtons = [];
+        controllerPrevButtons = new Map();
         controllerAutoPickSector = -1;
         requestAnimationFrame(pollHostedController);
         return;
@@ -981,23 +988,23 @@
       const gamepad = [...(navigator.getGamepads?.() || [])].find(Boolean);
       if (!gamepad) {
         if (hostedControllerSources.size || controllerRightStickActive) releaseHostedControllerInputs();
-        controllerPrevButtons = [];
+        controllerPrevButtons = new Map();
         controllerAutoPickSector = -1;
         requestAnimationFrame(pollHostedController);
         return;
       }
 
-      controllerButton(gamepad, 2, 'x', 'note', 0);
-      controllerButton(gamepad, 0, 'a', 'note', 1);
-      controllerButton(gamepad, 1, 'b', 'note', 2);
-      controllerButton(gamepad, 3, 'y', 'note', 3);
-      controllerButton(gamepad, 6, 'lt', 'bank', 'lt');
-      controllerButton(gamepad, 7, 'rt', 'bank', 'rt');
-      controllerButton(gamepad, 4, 'lb', 'bank', 'lb');
-      controllerButton(gamepad, 5, 'rb', 'bank', 'rb');
-      controllerButton(gamepad, 9, 'start', 'tap', 'pause');
-      controllerButton(gamepad, 14, 'dpad-left', 'tap', 'scale-prev');
-      controllerButton(gamepad, 15, 'dpad-right', 'tap', 'scale-next');
+      controllerButton(gamepad, 'musicNote1', 'note-1', 'note', 0);
+      controllerButton(gamepad, 'musicNote2', 'note-2', 'note', 1);
+      controllerButton(gamepad, 'musicNote3', 'note-3', 'note', 2);
+      controllerButton(gamepad, 'musicNote4', 'note-4', 'note', 3);
+      controllerButton(gamepad, 'musicBank1', 'bank-1', 'bank', 'lt');
+      controllerButton(gamepad, 'musicBank2', 'bank-2', 'bank', 'rt');
+      controllerButton(gamepad, 'musicBank3', 'bank-3', 'bank', 'lb');
+      controllerButton(gamepad, 'musicBank4', 'bank-4', 'bank', 'rb');
+      controllerButton(gamepad, 'musicPause', 'pause', 'tap', 'pause');
+      controllerButton(gamepad, 'musicScalePrev', 'scale-prev', 'tap', 'scale-prev');
+      controllerButton(gamepad, 'musicScaleNext', 'scale-next', 'tap', 'scale-next');
 
       const lxRaw = Number(gamepad.axes[0]) || 0;
       const lyRaw = Number(gamepad.axes[1]) || 0;

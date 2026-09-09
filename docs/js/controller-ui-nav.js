@@ -55,12 +55,22 @@
   const NAV_PRESS = Number(window.SCRATCHBONES_CONFIG?.game?.input?.axisPressThreshold) || 0.55;
   const REPEAT_INITIAL_MS = 380;
   const REPEAT_RATE_MS = 140;
-  const BTN_CONFIRM = 0;   // A
-  const BTN_CANCEL = 1;    // B
-  const BTN_TAB_PREV = 4;  // LB
-  const BTN_TAB_NEXT = 5;  // RB
-  const BTN_OPEN_MENU = 8; // Back/Select — unbound in gameplay, free for this
-  const BTN_DPAD_UP = 12, BTN_DPAD_DOWN = 13, BTN_DPAD_LEFT = 14, BTN_DPAD_RIGHT = 15;
+  const UI_ACTIONS = Object.freeze({
+    open: 'uiOpenMenu', confirm: 'uiConfirm', cancel: 'uiCancel', tabPrev: 'uiTabPrev', tabNext: 'uiTabNext',
+    up: 'uiUp', down: 'uiDown', left: 'uiLeft', right: 'uiRight',
+  }); // Used to keep every discrete menu action routed through the configurable controller binding layer.
+
+  function configuredControllerBinding(actionId) {
+    const currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller; // Used to prefer the player's saved binding, including an explicit Unbound value.
+    if (currentBindings && Object.prototype.hasOwnProperty.call(currentBindings, actionId)) return currentBindings[actionId];
+    const defaults = window.InputBindings?.getDefaultBindings?.('controller'); // Keeps controller-only action schema/defaults owned by InputBindings.
+    return defaults && Object.prototype.hasOwnProperty.call(defaults, actionId) ? defaults[actionId] : null;
+  }
+
+  function controllerActionDown(gamepad, actionId) {
+    const bindingCode = configuredControllerBinding(actionId); // Used to resolve this menu action without relying on a physical Gamepad button index.
+    return window.ControllerInput?.isBindingPressed?.(gamepad, bindingCode, { stickThreshold: NAV_PRESS }) || false;
+  }
 
   // ── visibility ──────────────────────────────────────────────────────
   // Panels in this game hide themselves three different ways (display:none
@@ -413,13 +423,19 @@
     pollGamepad.activePadIndex = pad.index; // Keeps navigation on one pad until another receives deliberate input.
     padEverSeen = true;
 
+    if (window.InputSettingsPanel?.isControllerListening?.()) {
+      prevButtons.clear();
+      menuOpenEdge = false;
+      return;
+    }
+
     if (!isActive()) {
       // Nothing to navigate — the only job left is offering a way to open
       // the pause menu at all from a controller with no keyboard nearby.
-      const openDown = !!pad.buttons[BTN_OPEN_MENU]?.pressed;
+      const openDown = controllerActionDown(pad, UI_ACTIONS.open); // Used to let the configured Menu Open/Close action own this edge instead of a fixed View/Share button.
       if (openDown && !menuOpenEdge) {
         document.getElementById('menuBtn')?.click();
-        prevButtons = new Set([BTN_OPEN_MENU]); // Prevents the same held View press from immediately closing the menu on its next active frame.
+        prevButtons = new Set([UI_ACTIONS.open]); // Prevents the same held configured open press from immediately closing the menu on its next active frame.
       } else if (!openDown) prevButtons.clear();
       menuOpenEdge = openDown;
       return;
@@ -429,10 +445,10 @@
     now = now || performance.now();
     const navStick = window.ControllerInput?.normalizeStick?.(pad.axes[0], pad.axes[1], DEADZONE, 1) || { x: pad.axes[0] || 0, y: pad.axes[1] || 0 };
     const rawAx = Number(pad.axes[0]) || 0, rawAy = Number(pad.axes[1]) || 0; // Used for predictable digital navigation thresholds while navStick remains the diagnostic/analog value.
-    pollDirection('left', rawAx <= -NAV_PRESS || !!pad.buttons[BTN_DPAD_LEFT]?.pressed, now, () => moveOrAdjust('left'));
-    pollDirection('right', rawAx >= NAV_PRESS || !!pad.buttons[BTN_DPAD_RIGHT]?.pressed, now, () => moveOrAdjust('right'));
-    pollDirection('up', rawAy <= -NAV_PRESS || !!pad.buttons[BTN_DPAD_UP]?.pressed, now, () => move('up'));
-    pollDirection('down', rawAy >= NAV_PRESS || !!pad.buttons[BTN_DPAD_DOWN]?.pressed, now, () => move('down'));
+    pollDirection('left', rawAx <= -NAV_PRESS || controllerActionDown(pad, UI_ACTIONS.left), now, () => moveOrAdjust('left'));
+    pollDirection('right', rawAx >= NAV_PRESS || controllerActionDown(pad, UI_ACTIONS.right), now, () => moveOrAdjust('right'));
+    pollDirection('up', rawAy <= -NAV_PRESS || controllerActionDown(pad, UI_ACTIONS.up), now, () => move('up'));
+    pollDirection('down', rawAy >= NAV_PRESS || controllerActionDown(pad, UI_ACTIONS.down), now, () => move('down'));
     const scrollStick = window.ControllerInput?.normalizeStick?.(pad.axes[2], pad.axes[3], DEADZONE, 1.3) || { y: 0 };
     window.dispatchEvent(new CustomEvent('hobunji-controller-ui-snapshot', { detail: { pad, move: navStick, look: scrollStick } })); // Keeps the in-game debug line live while paused gameplay polling is suspended.
     const scrollDt = lastGamepadPollAt ? Math.min(0.05, Math.max(0, (now - lastGamepadPollAt) / 1000)) : 1 / 60; // Caps resume spikes after a backgrounded tab.
@@ -448,15 +464,14 @@
       if (scrollHost) scrollHost.scrollTop += scrollStick.y * 720 * scrollDt;
     }
 
-    const down = new Set();
-    pad.buttons.forEach((b, i) => { if (b?.pressed) down.add(i); });
-    const pressed = i => down.has(i) && !prevButtons.has(i);
-    if (pressed(BTN_CONFIRM)) activate();
-    if (pressed(BTN_CANCEL)) cancel();
-    if (pressed(BTN_TAB_PREV)) cycleTabs(-1);
-    if (pressed(BTN_TAB_NEXT)) cycleTabs(1);
-    if (pressed(BTN_OPEN_MENU)) cancel();
-    prevButtons = down;
+    const downActions = new Set(Object.values(UI_ACTIONS).filter(actionId => controllerActionDown(pad, actionId))); // Used as semantic edge state so remapping never depends on physical Gamepad indices.
+    const actionPressed = actionId => downActions.has(actionId) && !prevButtons.has(actionId); // Used to edge-trigger menu actions once per configured press.
+    if (actionPressed(UI_ACTIONS.confirm)) activate();
+    if (actionPressed(UI_ACTIONS.cancel)) cancel();
+    if (actionPressed(UI_ACTIONS.tabPrev)) cycleTabs(-1);
+    if (actionPressed(UI_ACTIONS.tabNext)) cycleTabs(1);
+    if (actionPressed(UI_ACTIONS.open)) cancel();
+    prevButtons = downActions;
   }
   requestAnimationFrame(pollGamepad);
 
