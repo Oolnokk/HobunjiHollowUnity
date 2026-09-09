@@ -64,7 +64,9 @@
     "opacity": 0.56,
     "emissiveIntensity": 1.35,
     "formationGlowRadiusTiles": 4.2,
-    "formationGlowIntensity": 0.78
+    "formationGlowIntensity": 0.78,
+    "beaconGlowRadiusTiles": 28,
+    "beaconGlowIntensity": 0.72
   },
   "behavior": {
     "neutralState": "harlyaoMarch",
