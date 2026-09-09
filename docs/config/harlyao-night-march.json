@@ -67,9 +67,9 @@
     "formationGlowIntensity": 0.78,
     "beaconGlowRadiusTiles": 28,
     "beaconGlowIntensity": 0.94,
-    "beaconGlowColor": "#79a8ff",
-    "beaconMinScreenRadiusPx": 58,
-    "beaconMaxScreenRadiusPx": 170,
+    "beaconGlowColor": "#b0f0ff",
+    "beaconMinScreenRadiusPx": 96,
+    "beaconMaxScreenRadiusPx": 220,
     "beaconEdgeMarginPx": 44,
     "beaconShape": "serpentine"
   },
