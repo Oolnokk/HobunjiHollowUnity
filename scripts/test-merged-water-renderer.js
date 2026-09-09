@@ -4,7 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { buildSurfaceData } = require('../docs/js/merged-water-renderer.js');
+const { buildSurfaceData, buildInvertedSurfaceData } = require('../docs/js/merged-water-renderer.js');
 
 const gameSource = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
 
@@ -54,6 +54,43 @@ const coverage = buildSurfaceData([
 ], { yOffset: 0 });
 assert.deepEqual(coverage.coverages.slice(0, 4), [1, 1, 1, 1], 'permanent streams can reach the authored 80% maximum independently of color depth');
 assert.deepEqual(coverage.coverages.slice(4, 8), [0.2, 0.2, 0.2, 0.2], 'temporary water defaults coverage to its simulated depth');
+
+const inverted = buildInvertedSurfaceData([
+  { col: 0, row: 0, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
+  { col: 1, row: 0, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
+  { col: 2, row: 0, surfaceY: 0.35, depth: 0.7, coverage: 0.7, visible: true },
+  { col: 0, row: 1, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
+  { col: 1, row: 1, surfaceY: 0, depth: 0, coverage: 0, visible: false },
+  { col: 2, row: 1, surfaceY: 0.1, depth: 0.2, coverage: 0.2, visible: true },
+], {
+  cols: 3,
+  rows: 2,
+  yOffset: 0,
+  baseline: { visible: true, surfaceY: 0.1, depth: 0.2, coverage: 0.2 },
+});
+assert.equal(inverted.positions.length / 3, 8,
+  'inverted water uses four vertices for the whole-map baseline plus four for one wet exception');
+assert.equal(inverted.indices.length / 3, 4,
+  'the baseline and one wet exception remain four triangles in one geometry');
+assert.equal(inverted.mask[2], 255, 'a wet tile above the weather baseline punches a mask hole');
+assert.equal(inverted.mask[4], 255, 'a dry tile punches a mask hole without needing replacement geometry');
+assert.equal(inverted.maskedCellCount, 2, 'only cells differing from the baseline are masked');
+assert.equal(inverted.exceptionCount, 1, 'only the wet differing cell contributes special geometry');
+assert.deepEqual(inverted.baselines.slice(0, 4), [1, 1, 1, 1], 'the first quad is marked as the global baseline plane');
+assert.deepEqual(inverted.baselines.slice(4), [0, 0, 0, 0], 'exception geometry bypasses the baseline mask');
+
+const dryBaseline = buildInvertedSurfaceData([
+  { col: 0, row: 0, surfaceY: 0, depth: 0, coverage: 0, visible: false },
+  { col: 1, row: 0, surfaceY: -0.2, depth: 0.45, coverage: 0.45, visible: true },
+], {
+  cols: 2,
+  rows: 1,
+  yOffset: 0,
+  baseline: { visible: false, surfaceY: 0, depth: 0, coverage: 0 },
+});
+assert.equal(dryBaseline.baselineVisible, false, 'dry weather does not create an invisible full-map water plane');
+assert.equal(dryBaseline.positions.length / 3, 4, 'locally retained water still renders as one exception quad during dry weather');
+assert.equal(dryBaseline.exceptionCount, 1);
 
 assert.match(gameSource, /if \(!sceneObj\?\.add\) \{[\s\S]*?return null;[\s\S]*?MergedWaterRenderer\.createMesh/,
   'merged water construction waits until its destination scene exists');
