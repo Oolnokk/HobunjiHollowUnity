@@ -29,7 +29,7 @@
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
     ['Ghostify', 'ghostify.js?v=20260909a'],
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
-    ['HarlyaoNightMarch', 'harlyao-night-march.js?v=20260909a'],
+    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260909b'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
     // post-composite pass disabled depth testing and could wash mist over the player
     // and nearby world geometry even when every cylinder surface was behind them.
@@ -48,7 +48,7 @@
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823a'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260823a'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
     [null, 'house-pieces-registry-stability.js?v=20260906a'],
