@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260906f[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 6/, 'loader requires change-driven shared-target v6');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260909perspectivepoint1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 7/, 'loader requires shared perspective-target v7');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
@@ -347,6 +347,33 @@ assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, true);
 thrownCharge = null;
 windowStub.RangedWeapons.update(1 / 60);
 assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'releasing thrown weapon ends tight focus');
+
+// The shoulder game now supplies one finite point. When present, ranged pose
+// and melee aim must reuse it directly and skip the legacy surface resolver.
+activeTool = 'ranged';
+equipped = 'crossbow';
+loaded = true;
+const perspectivePoint = { x: 18, y: 4.25, z: -2 }; // Exact endpoint expected from every re-rooted combat ray below.
+const scansBeforePerspectivePoint = windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts; // Proves the new point path adds no raycast work.
+windowStub.RangedWeapons.init({
+  ...deps,
+  getPlayerAvatarGroup: () => avatarRoot,
+  getEquippedRangedKey: () => equipped,
+  getPlayerPerspectiveTarget: () => ({
+    point: perspectivePoint,
+    cameraRay: { origin: interactionOrigin, direction: interactionDirection },
+    rayDistance: 24,
+  }),
+  triggerRangedWeaponVisual: (durationS, options) => { lastRangedVisual = { durationS, options }; },
+});
+const perspectiveTarget = windowStub.HobunjiRangedCameraFocus.interactionAimTarget(); // Current ranged target should be the injected point regardless of weapon range.
+assert.equal(perspectiveTarget.source, 'shared-perspective-point');
+assert.equal(perspectiveTarget.point.x, perspectivePoint.x);
+assert.equal(perspectiveTarget.point.y, perspectivePoint.y);
+assert.equal(perspectiveTarget.point.z, perspectivePoint.z);
+assert.equal(windowStub.HobunjiRangedCameraFocus.aimPerformance().surfaceRaycasts, scansBeforePerspectivePoint,
+  'shared perspective point requires no scene raycast or per-frame resolver');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().aimAlignment, 'shared-perspective-point-native-camera');
 
 activeTool = 'weapon';
 equipped = 'crossbow';

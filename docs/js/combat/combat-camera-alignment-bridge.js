@@ -1,18 +1,19 @@
 // Initialization-only bridge that makes the actual camera/reticle ray the
-// authority for player combat movement and ranged convergence. Walking stays in
-// game.js's native camera-relative path; this module keeps attack lunges on that
-// same camera direction and hands ranged-camera-focus the unmodified camera ray.
+// authority for the one finite perspective point beneath the reticle. Walking
+// stays in game.js's native point-relative path; this module keeps attack lunges
+// converged on that same endpoint and preserves the unmodified camera ray.
 (() => {
   'use strict';
 
-  const VERSION = 3;
+  const VERSION = 4;
   let rangedInitWrapped = false; // Exposed in debugSnapshot() to verify the ranged initialization boundary was patched once.
   let combatInitWrapped = false; // Exposed in debugSnapshot() to verify the combat initialization boundary was patched once.
   let cameraRayDepsProvided = false; // Exposed to verify ranged-camera-focus receives the true camera-origin ray through its compatibility dependency.
+  let perspectiveTargetDepsProvided = false; // Exposed to verify combat/ranged wrappers receive the shared finite reticle point.
   let nativeMeleeDirectionRestored = false; // Records whether Combat's original camera-derived melee direction callback won after initialization.
   let nativeMeleePitchRestored = false; // Records whether Combat's original camera-derived melee pitch callback won after initialization.
-  let lungeAuthorityInstalled = false; // Records whether beginCombatLunge was wrapped so player displacement follows the camera ray.
-  let lungeAuthorityCount = 0; // Mobile-readable count of lunges whose direction was corrected to the camera ray.
+  let lungeAuthorityInstalled = false; // Records whether beginCombatLunge was wrapped so player displacement converges on the perspective point.
+  let lungeAuthorityCount = 0; // Mobile-readable count of lunges corrected toward the shared perspective point.
   let lastCameraRay = null; // Mobile-readable snapshot of the true centered camera ray handed to ranged-camera-focus.
   let lastLunge = null; // Mobile-readable snapshot of the latest camera-authored lunge direction/profile.
   let lastError = null; // Mobile-readable initialization/runtime error without putting failures into a frame loop.
@@ -51,6 +52,19 @@
     return ray;
   }
 
+  function perspectivePoint(liveDeps) {
+    try {
+      const target = liveDeps?.getPlayerPerspectiveTarget?.(); // Game-owned shared endpoint used by every player aim consumer.
+      const x = Number(target?.point?.x ?? target?.x); // Perspective point X validated for lunge convergence.
+      const y = Number(target?.point?.y ?? target?.y); // Perspective point Y carrying lunge verticality.
+      const z = Number(target?.point?.z ?? target?.z); // Perspective point Z validated for lunge convergence.
+      if ([x, y, z].every(Number.isFinite)) return { x, y, z };
+    } catch (error) {
+      recordError('perspective-point', error);
+    }
+    return null;
+  }
+
   function installRangedInitBridge() {
     const ranged = window.RangedWeapons;
     const previousInit = ranged?.init;
@@ -67,13 +81,13 @@
         ...injectedDeps,
         // ranged-camera-focus historically calls this compatibility slot
         // "muzzle parallel". For camera-authoritative aiming it must now carry
-        // the TRUE centered camera ray, including its camera origin. Focus then
-        // chooses the weapon's maximum-range point along that ray and resolves
-        // the muzzle/attack-origin direction toward it. Re-rooting here would
-        // erase shoulder-camera parallax and put movement back in charge.
+        // the TRUE centered camera ray, including its camera origin. Focus uses
+        // that for compatibility/surface fallbacks, while the explicit shared
+        // perspective dependency remains the primary finite aim endpoint.
         getMuzzleParallelInteractionRay: () => centeredCameraRay(rawInteractionRay, rawAimRay),
       };
       cameraRayDepsProvided = true;
+      perspectiveTargetDepsProvided = typeof injectedDeps?.getPlayerPerspectiveTarget === 'function';
       return previousInit.call(this, bridgedDeps);
     }
 
@@ -99,21 +113,33 @@
       if (!player || wasLunging || !player.lunging) return result;
 
       try {
-        const ray = centeredCameraRay(rawInteractionRay, rawAimRay);
-        const dx = Number(ray?.direction?.x);
-        const dy = Number(ray?.direction?.y);
-        const dz = Number(ray?.direction?.z);
+        const point = perspectivePoint(liveDeps); // Preferred endpoint shared with the head, body, melee, and ranged muzzle.
+        const tile = Number(liveDeps?.TILE) || 64; // Converts the player's logical pixel coordinates into the point's world units.
+        const baseY = Number(liveDeps?.getActorWorldY?.(player)); // Uses the same live player elevation supplied to ranged projectile origins.
+        const origin = {
+          x: (Number(player.x) || 0) / tile,
+          y: (Number.isFinite(baseY) ? baseY : 0) + 0.55,
+          z: (Number(player.y) || 0) / tile,
+        }; // Real lunge/body origin from which the shared point is viewed.
+        const ray = point ? null : centeredCameraRay(rawInteractionRay, rawAimRay); // Compatibility fallback for older callers without the point dependency.
+        const dx = point ? point.x - origin.x : Number(ray?.direction?.x);
+        const dy = point ? point.y - origin.y : Number(ray?.direction?.y);
+        const dz = point ? point.z - origin.z : Number(ray?.direction?.z);
         if (![dx, dy, dz].every(Number.isFinite)) return result;
-        const horizontal = Math.hypot(dx, dz);
+        const vectorLength = Math.hypot(dx, dy, dz); // Normalizes the complete 3D origin-to-point ray before splitting travel/pitch.
+        if (!(vectorLength > 1e-8)) return result;
+        const nx = dx / vectorLength; // Normalized X used for ground travel and debug.
+        const ny = dy / vectorLength; // Normalized Y used by vertical lunge profile logic.
+        const nz = dz / vectorLength; // Normalized Z used for ground travel and debug.
+        const horizontal = Math.hypot(nx, nz);
         if (!(horizontal > 1e-8)) return result;
 
-        // Lunges are movement, so their ground-plane travel uses the exact same
-        // camera-forward bearing as ordinary shoulder movement. Pitch still
-        // comes from the centered ray so upward/downward attacks keep their
-        // authored leap-distance and hop behavior.
-        const dirX = dx / horizontal;
-        const dirY = dz / horizontal;
-        const pitch = Math.asin(Math.max(-1, Math.min(1, dy)));
+        // Lunges are movement, so their ground-plane travel uses the point's
+        // player-relative bearing. Pitch comes from that same origin-to-point
+        // vector so upward/downward attacks keep their verticality.
+        const dirX = nx / horizontal;
+        const dirY = nz / horizontal;
+        const pitch = Math.asin(Math.max(-1, Math.min(1, ny)));
         const profile = window.Combat?.meleeLungeProfile?.(
           distancePx,
           pitch,
@@ -128,7 +154,10 @@
         player.lungeAimPitch = Number.isFinite(Number(profile.pitch)) ? Number(profile.pitch) : pitch;
         lungeAuthorityCount++;
         lastLunge = {
-          direction: { x: dirX, y: dy, z: dirY },
+          direction: { x: nx, y: ny, z: nz },
+          targetPoint: point ? { ...point } : null,
+          targetSource: point ? 'shared-perspective-point' : 'camera-ray-fallback',
+          pointErrorDeg: 0,
           pitchRad: player.lungeAimPitch,
           distancePx: player.lungeDistancePx,
           attackRangePx: Number(hitTest?.rangePx) || null,
@@ -147,10 +176,10 @@
   }
 
   // ranged-camera-focus decorates melee direction/pitch after the underlying
-  // Combat.init returns. The game already supplies the centered-camera
+  // Combat.init returns. The game already supplies the perspective-point
   // callbacks used by head/body/reticle facing, so restore those callbacks.
-  // Separately wrap beginCombatLunge: a lunge is displacement, therefore its
-  // horizontal direction must be the camera ray rather than a focused target.
+  // Separately wrap beginCombatLunge so its horizontal and vertical components
+  // converge on the same point instead of a focused actor or parallel ray.
   function installCombatInitBridge() {
     const combat = window.Combat;
     const previousInit = combat?.init;
@@ -190,7 +219,7 @@
     const rangedOk = installRangedInitBridge();
     const combatOk = installCombatInitBridge();
     if (rangedOk && combatOk) {
-      window.__farmLog?.('[combat-camera-alignment] camera/reticle ray authority installed for ranged aim and attack lunges.', 'combat');
+      window.__farmLog?.('[combat-camera-alignment] shared perspective-point authority installed for ranged aim and attack lunges.', 'combat');
     }
     return rangedOk && combatOk;
   }
@@ -203,6 +232,7 @@
       rangedInitWrapped,
       combatInitWrapped,
       cameraRayDepsProvided,
+      perspectiveTargetDepsProvided,
       nativeMeleeDirectionRestored,
       nativeMeleePitchRestored,
       lungeAuthorityInstalled,
@@ -214,10 +244,11 @@
       lastLunge: lastLunge ? {
         ...lastLunge,
         direction: { ...lastLunge.direction },
+        targetPoint: lastLunge.targetPoint ? { ...lastLunge.targetPoint } : null,
       } : null,
       lastError: lastError ? { ...lastError } : null,
-      movementAuthority: 'native-camera-relative-walk-plus-camera-ray-lunge',
-      rangedAuthority: 'camera-ray-to-weapon-range',
+      movementAuthority: 'native-player-to-perspective-point-walk-and-lunge',
+      rangedAuthority: 'muzzle-to-shared-perspective-point',
       updateMode: 'initialization-only-no-frame-hook',
     }),
   };

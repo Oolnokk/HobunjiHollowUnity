@@ -1,15 +1,15 @@
 // Ranged fire authority installed BEFORE ranged-camera-focus wraps RangedWeapons.init.
 // The focus module may choose nearer surfaces for UI/focus purposes, but the actual
-// projectile launch direction always converges from the muzzle to the point where
-// the centered camera ray crosses the equipped weapon's maximum horizontal range.
+// projectile launch direction always converges from the muzzle to the one finite
+// perspective point placed on the centered camera ray beneath the reticle.
 (() => {
   'use strict';
 
-  const VERSION = 1;
+  const VERSION = 2;
   const EPSILON = 1e-8;
   let installed = false; // Exposed in snapshot() so device diagnostics can verify the pre-focus init boundary was wrapped.
   let initialized = false; // Exposed in snapshot() after the real RangedWeapons.init receives the camera-authoritative aim callback.
-  let lastSolution = null; // Mobile-readable record of the latest camera-ray/max-range solution used by actual ranged fire.
+  let lastSolution = null; // Mobile-readable record of the latest muzzle-to-perspective-point solution used by actual ranged fire.
   let lastError = null; // Mobile-readable error record without adding a polling/update loop.
 
   function recordError(stage, error) {
@@ -57,6 +57,16 @@
     };
   }
 
+  function sharedPerspectivePoint(deps) {
+    try {
+      const target = deps?.getPlayerPerspectiveTarget?.(); // Game-owned source of the one point shared by head, body, melee, lunge, and ranged fire.
+      return finiteVector(target?.point || target);
+    } catch (error) {
+      recordError('perspective-point', error);
+      return null;
+    }
+  }
+
   // Finds the FAR forward intersection between the camera ray and a horizontal
   // circle centered on the muzzle whose radius is the weapon's authored
   // rangeTiles. RangedWeapons.shotSegment also defines projectile reach in
@@ -98,7 +108,17 @@
     const rangeTiles = Number(window.RangedWeapons?.config?.[itemKey]?.rangeTiles);
     if (!cameraRay || !muzzle || !itemKey || !(rangeTiles > 0)) return raw || null;
 
-    let point = maxRangePointOnCameraRay(cameraRay, muzzle, rangeTiles);
+    let point = sharedPerspectivePoint(deps); // Preferred endpoint: identical to the one used by the head/body/melee/lunge consumers.
+    const targetSource = point ? 'shared-perspective-point' : 'camera-ray-range-fallback'; // Mobile debug identifies whether the shared game callback was available.
+    if (point) {
+      point.rayDistance = Math.hypot(
+        point.x - cameraRay.origin.x,
+        point.y - cameraRay.origin.y,
+        point.z - cameraRay.origin.z,
+      );
+    } else {
+      point = maxRangePointOnCameraRay(cameraRay, muzzle, rangeTiles);
+    }
     if (!point) {
       // Extreme near-vertical/away-facing fallback: still use a point on the
       // camera ray rather than changing the camera or reverting to body facing.
@@ -120,6 +140,7 @@
     lastSolution = {
       itemKey,
       rangeTiles,
+      targetSource,
       cameraRay: {
         origin: { ...cameraRay.origin },
         direction: { ...cameraRay.direction },
@@ -128,6 +149,7 @@
       targetPoint: { x: point.x, y: point.y, z: point.z },
       cameraRayDistance: point.rayDistance,
       attackDirection: { ...direction },
+      pointErrorDeg: 0,
       horizontalTargetDistance: Math.hypot(point.x - muzzle.x, point.z - muzzle.z),
     };
     return attackRay;
@@ -157,7 +179,7 @@
     cameraRayAuthorityInit.__hobunjiPreviousInit = previousInit;
     ranged.init = cameraRayAuthorityInit;
     installed = true;
-    window.__farmLog?.('[ranged-camera-ray-authority] actual ranged fire now converges on the weapon max-range point along the camera ray.', 'combat');
+    window.__farmLog?.('[ranged-camera-ray-authority] actual ranged fire now converges on the shared perspective point beneath the reticle.', 'combat');
     return true;
   }
 
@@ -180,7 +202,7 @@
         attackDirection: { ...lastSolution.attackDirection },
       } : null,
       lastError: lastError ? { ...lastError } : null,
-      authority: 'muzzle-to-max-range-point-on-camera-ray',
+      authority: 'muzzle-to-shared-perspective-point',
       updateMode: 'initialization-only-no-frame-hook',
     }),
   };

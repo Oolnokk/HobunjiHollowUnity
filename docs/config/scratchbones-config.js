@@ -259,6 +259,7 @@ window.SCRATCHBONES_CONFIG = {
       },
       "targeting": {
         "orbitRadiusTiles": 0.62,
+        "perspectivePointDistanceTiles": 24,
         "inputAimDeadzone": 0.08
       },
       "actions": [

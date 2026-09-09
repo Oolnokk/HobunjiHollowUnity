@@ -16,14 +16,11 @@
   const DEBUG_INTERACTION_HIT_COLOR = '#fff566';
   const DEBUG_INTERACTION_HOSTILE_COLOR = '#ff5c5c';
   const DEBUG_HEAD_LOOK_COLOR = '#c98bff';
-  const DEBUG_MOVEMENT_RAY_COLOR = '#55ff7a'; // Camera-authored movement direction drawn by the interaction-ray toggle.
-  const DEBUG_GROUND_AIM_COLOR = '#ff9f43'; // Height-sensitive ground focus retained only for tile selection.
-  const DEBUG_LOGICAL_BODY_COLOR = '#54a7ff'; // Character-facing state before billboard/render transforms.
-  const DEBUG_RENDERED_BODY_COLOR = '#2d6bff'; // Visible body direction after perp/pose yaw.
-  const DEBUG_VELOCITY_COLOR = '#ffffff'; // Actual post-acceleration ground velocity.
-  const DEBUG_MELEE_AIM_COLOR = '#ff5cf4'; // Current melee aim, including legitimate focused-target convergence.
-  const DEBUG_LUNGE_COLOR = '#ffe45c'; // Last camera-authored lunge direction.
-  const DEBUG_RANGED_ATTACK_COLOR = '#ff6b35'; // Latest muzzle-to-camera-ray ranged attack direction.
+  const DEBUG_PERSPECTIVE_POINT_COLOR = '#fff566'; // Shared reticle-under point where every player/camera guide terminates.
+  const DEBUG_MOVEMENT_RAY_COLOR = '#55ff7a'; // Camera-to-perspective-point guide drawn by the interaction-ray toggle.
+  const DEBUG_BODY_AIM_COLOR = '#54a7ff'; // Body/movement/melee/lunge convergence guide.
+  const DEBUG_MELEE_AIM_COLOR = '#ff5cf4'; // Melee/lunge label color at the shared body-origin guide.
+  const DEBUG_RANGED_ATTACK_COLOR = '#ff6b35'; // Muzzle-to-perspective-point convergence guide.
 
   function playerModelWidthTiles() {
     return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
@@ -97,18 +94,16 @@
     octx.restore();
   }
 
-  function _drawLabeledDirection(origin, direction, length, color, label, dashed = false) {
-    if (!origin || !direction) return;
-    const dx = Number(direction.x), dy = Number(direction.y), dz = Number(direction.z); // Converted below into the labeled normalized endpoint.
-    const magnitude = Math.hypot(dx, dy, dz); // Rejects invalid/zero rays and normalizes valid ones.
-    if (![dx, dy, dz, magnitude].every(Number.isFinite) || magnitude < 1e-8) return;
-    const endpoint = { // Used by both the projected segment and its screen-space label.
-      x: origin.x + dx / magnitude * length,
-      y: origin.y + dy / magnitude * length,
-      z: origin.z + dz / magnitude * length,
+  function _drawLabeledTargetSegment(origin, target, color, label, labelT, dashed = false) {
+    if (!origin || !target) return;
+    const t = Math.max(0.05, Math.min(0.95, Number(labelT) || 0.5)); // Separates labels along otherwise-overlapping convergent guides.
+    _drawDebugSegment3D(origin, target, color, dashed, 2, 0.9);
+    const labelPoint = { // Anchors each label at its own fraction of the one origin-to-target segment.
+      x: Number(origin.x) + (Number(target.x) - Number(origin.x)) * t,
+      y: Number(origin.y) + (Number(target.y) - Number(origin.y)) * t,
+      z: Number(origin.z) + (Number(target.z) - Number(origin.z)) * t,
     };
-    _drawDebugSegment3D(origin, endpoint, color, dashed, 2, 0.95);
-    const projected = deps.worldToOverlay(endpoint.x, endpoint.y, endpoint.z); // Anchors the label at the ray tip on the overlay canvas.
+    const projected = deps.worldToOverlay(labelPoint.x, labelPoint.y, labelPoint.z); // Places the label without piling every name onto the shared endpoint.
     if (!projected.visible) return;
     const octx = deps.octx; // Existing overlay canvas receives the ray label.
     octx.save();
@@ -274,30 +269,33 @@
   function _drawPlayerMovementAlignmentRays() {
     const state = _movementAlignmentSnapshot(); // Supplies every independently-authored player/camera ray for this frame.
     if (!state || state.error) return;
-    const playerCenter = _actorHitbox(deps.player)?.center || new THREE.Vector3( // Shared origin keeps angular disagreements visually obvious.
-      deps.player.x / deps.TILE,
-      _debugGroundY(deps.player.x, deps.player.y) + 0.45,
-      deps.player.y / deps.TILE,
-    );
-    const origin = _plainPoint(playerCenter); // Plain point reused by each labeled overlay ray.
+    const target = state.perspectivePoint; // One finite point on the center ray, projected directly beneath the reticle.
+    const origins = state.rayOrigins || {}; // Real camera/head/body/muzzle origins whose guides all terminate at target.
+    if (!target) return;
 
-    // Different lengths keep coincident correct rays readable instead of one
-    // color completely covering the others. The orange ray is the old,
-    // height-sensitive player-to-ground bearing retained only for tile focus.
-    _drawLabeledDirection(origin, state.movementDirection, 3.4, DEBUG_MOVEMENT_RAY_COLOR, 'movement/camera ray');
-    _drawLabeledDirection(origin, state.groundAimDirection, 3.0, DEBUG_GROUND_AIM_COLOR, `ground aim ${Number(state.groundAimSkewDeg || 0).toFixed(1)}°`, true);
-    _drawLabeledDirection(origin, state.meleeAimDirection, 2.85, DEBUG_MELEE_AIM_COLOR, 'melee aim', true);
-    _drawLabeledDirection(origin, state.lastLungeDirection, 2.72, DEBUG_LUNGE_COLOR, 'last lunge', true);
-    _drawLabeledDirection(origin, state.rangedAttackDirection, 2.58, DEBUG_RANGED_ATTACK_COLOR, 'ranged attack', true);
-    _drawLabeledDirection(origin, state.logicalBodyDirection, 2.6, DEBUG_LOGICAL_BODY_COLOR, 'logical body');
-    _drawLabeledDirection(origin, state.renderedBodyDirection, 2.25, DEBUG_RENDERED_BODY_COLOR, 'rendered body');
-    _drawLabeledDirection(origin, state.headDirection, 1.9, DEBUG_HEAD_LOOK_COLOR, 'rendered head', true);
-    if (state.velocityDirection) {
-      _drawLabeledDirection(origin, state.velocityDirection, 1.5, DEBUG_VELOCITY_COLOR, `velocity ${Number(state.velocitySpeedPxS || 0).toFixed(1)}px/s`, true);
-    }
-    if (state.groundReticle) {
-      _drawDebugSegment3D(origin, state.groundReticle, DEBUG_GROUND_AIM_COLOR, true, 1.25, 0.7);
-    }
+    _drawLabeledTargetSegment(origins.camera, target, DEBUG_MOVEMENT_RAY_COLOR, 'camera', 0.18);
+    _drawLabeledTargetSegment(origins.head, target, DEBUG_HEAD_LOOK_COLOR, `head → point (${Number(state.headPointErrorDeg || 0).toFixed(1)}°)`, 0.34, true);
+    _drawLabeledTargetSegment(origins.body, target, DEBUG_BODY_AIM_COLOR, `body/movement → point (${Number(state.bodyPointErrorDeg || 0).toFixed(1)}°)`, 0.52);
+    _drawLabeledTargetSegment(origins.melee, target, DEBUG_MELEE_AIM_COLOR, `melee/lunge → point (${Number(state.meleePointErrorDeg || 0).toFixed(1)}°)`, 0.68, true);
+    _drawLabeledTargetSegment(origins.ranged, target, DEBUG_RANGED_ATTACK_COLOR, `ranged → point (${Number(state.lastRangedPointErrorDeg || 0).toFixed(1)}°)`, 0.82, true);
+
+    const projected = deps.worldToOverlay(target.x, target.y, target.z); // Marks the sole convergence point directly under the screen reticle.
+    if (!projected.visible) return;
+    const octx = deps.octx; // Existing overlay canvas receives the perspective-point marker and label.
+    octx.save();
+    octx.strokeStyle = DEBUG_PERSPECTIVE_POINT_COLOR;
+    octx.fillStyle = DEBUG_PERSPECTIVE_POINT_COLOR;
+    octx.lineWidth = 2.5;
+    octx.beginPath();
+    octx.arc(projected.x, projected.y, 9, 0, Math.PI * 2);
+    octx.moveTo(projected.x - 13, projected.y);
+    octx.lineTo(projected.x + 13, projected.y);
+    octx.moveTo(projected.x, projected.y - 13);
+    octx.lineTo(projected.x, projected.y + 13);
+    octx.stroke();
+    octx.font = '12px monospace';
+    octx.fillText('shared perspective point', projected.x + 15, projected.y - 12);
+    octx.restore();
   }
 
   // Draws one head→target segment for any entity carrying a
@@ -378,7 +376,7 @@
     get actors() { return debugSnapshot(); },
     get interactionRay() { return _interactionRaySnapshot(); },
     snapshot: () => ({
-      latestChange: 'Show Interaction Raycast now separates camera/movement, ground focus, logical body, rendered body, rendered head, and velocity rays.',
+      latestChange: 'Show Interaction Raycast now draws camera, head, body/movement, melee/lunge, and ranged guides converging on one 3D perspective point beneath the reticle.',
       actors: debugSnapshot(),
       meleeColliders: (window.Combat?.debugMeleeColliders?.() || []).map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
