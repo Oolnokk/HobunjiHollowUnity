@@ -39,7 +39,7 @@
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
     ['HarlyaoTerror', 'harlyao-terror.js?v=20260909a'],
     // Decorates Calendar day cells with the nightly route and reveals zone/direction details when a marked date is clicked.
-    ['HarlyaoNightMarchCalendar', 'harlyao-night-march-calendar.js?v=20260909a'],
+    ['HarlyaoNightMarchCalendar', 'harlyao-night-march-calendar.js?v=20260909b'],
     // Appends route/chunk/visibility/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
     ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260909a'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
