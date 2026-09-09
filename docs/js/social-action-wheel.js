@@ -834,11 +834,6 @@ ${outerRules}
     commitSelection();
   }
 
-  function buttonIndex(code) {
-    const match = /^Button(\d+)$/.exec(String(code || ''));
-    return match ? Number(match[1]) : -1;
-  }
-
   function pollGamepads() {
     installRigHooks();
     installRenderHook();
@@ -846,29 +841,26 @@ ${outerRules}
     const pads = navigator.getGamepads?.() || [];
     for (const pad of pads) {
       if (!pad) continue;
-      const previous = state.priorGamepad.get(pad.index) || [];
-      const current = pad.buttons.map(button => !!button?.pressed);
-      const openCode = binding('controller', 'socialWheel', cfg.controllerOpen || DEFAULTS.controllerOpen);
-      const dodgeCode = binding('controller', 'dodge', 'Button1');
-      const openIndex = buttonIndex(openCode);
-      const dodgeIndex = buttonIndex(dodgeCode);
+      const previousActions = state.priorGamepad.get(pad.index) || { open: false, dodge: false }; // Used to edge-track semantic wheel actions independently of their physical bindings.
+      const openCode = binding('controller', 'socialWheel', cfg.controllerOpen || DEFAULTS.controllerOpen); // Used to honor the player's current Social Actions binding.
+      const dodgeCode = binding('controller', 'dodge', 'Button1'); // Used to honor the player's current cancel/dodge binding.
+      const openNow = window.ControllerInput?.isBindingPressed?.(pad, openCode) || false; // Used so triggers and right-stick directional bindings work in addition to ButtonN codes.
+      const dodgeNow = window.ControllerInput?.isBindingPressed?.(pad, dodgeCode) || false; // Used to cancel the wheel/dance through any supported configured controller input.
 
-      const openNow = openIndex >= 0 && current[openIndex];
-      const openBefore = openIndex >= 0 && previous[openIndex];
-      if (openNow && !openBefore) openWheel('controller', false);
+      if (openNow && !previousActions.open) openWheel('controller', false);
 
       if (state.open && state.openSource === 'controller') {
         const x = Number(pad.axes?.[0]) || 0;
         const y = Number(pad.axes?.[1]) || 0;
         selectFromVector(x, y);
-        if (!openNow && openBefore) commitSelection();
+        if (!openNow && previousActions.open) commitSelection();
       }
 
-      if ((state.open || state.dance) && dodgeIndex >= 0 && current[dodgeIndex] && !previous[dodgeIndex]) {
+      if ((state.open || state.dance) && dodgeNow && !previousActions.dodge) {
         cancelWheelOrDance('dodge');
       }
 
-      state.priorGamepad.set(pad.index, current);
+      state.priorGamepad.set(pad.index, { open: openNow, dodge: dodgeNow });
     }
 
     requestAnimationFrame(pollGamepads);

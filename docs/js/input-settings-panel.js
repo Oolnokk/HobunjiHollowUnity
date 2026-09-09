@@ -170,23 +170,125 @@
     notifyBindingChanged(device, actionId);
   }
 
+  let activeControllerCapture = null; // Used to ensure only one Settings row can listen to the gamepad at a time.
+
+  function stopControllerCapture() {
+    const capture = activeControllerCapture; // Used to cancel the current animation-frame listener without leaving menu navigation suppressed.
+    activeControllerCapture = null;
+    if (capture?.frame) cancelAnimationFrame(capture.frame);
+    capture?.button?.classList.remove('is-listening');
+  }
+
+  function listenForControllerInput(button, onInput, onError) {
+    stopControllerCapture();
+    if (!window.ControllerInput?.getPressedBindingCodes || typeof navigator.getGamepads !== 'function') {
+      onError?.('Controller input listening is unavailable in this browser.');
+      return;
+    }
+    const blockedInputs = new Set(); // Used to ignore the A/button press that activated Listen until that physical control is released.
+    const capture = { button, frame: 0 }; // Used by stopControllerCapture() to cancel this exact listening session.
+    activeControllerCapture = capture;
+    button.classList.add('is-listening');
+    button.textContent = 'Listening…';
+
+    const snapshot = () => {
+      const activeInputs = new Set(); // Used to distinguish newly pressed controls from controls that were already held when listening began.
+      const pads = Array.from(navigator.getGamepads?.() || []).filter(Boolean); // Used to support whichever connected controller the player actually presses.
+      for (const pad of pads) {
+        for (const code of window.ControllerInput.getPressedBindingCodes(pad)) activeInputs.add(`${pad.index}:${code}`);
+      }
+      return { pads, activeInputs };
+    };
+
+    for (const key of snapshot().activeInputs) blockedInputs.add(key);
+    const poll = () => {
+      if (activeControllerCapture !== capture) return;
+      const { pads, activeInputs } = snapshot(); // Used to find the first newly pressed supported binding code this frame.
+      for (const key of [...blockedInputs]) if (!activeInputs.has(key)) blockedInputs.delete(key);
+      for (const pad of pads) {
+        for (const code of window.ControllerInput.getPressedBindingCodes(pad)) {
+          const key = `${pad.index}:${code}`; // Used to keep identical buttons on two connected controllers from sharing edge state.
+          if (blockedInputs.has(key)) continue;
+          stopControllerCapture();
+          onInput(code);
+          return;
+        }
+      }
+      capture.frame = requestAnimationFrame(poll);
+    };
+    capture.frame = requestAnimationFrame(poll);
+  }
+
+  function deviceActions(device) {
+    const actions = window.InputBindings?.getActionsForDevice?.(device); // Used to hide controller-only contextual actions from the keyboard section.
+    return Array.isArray(actions) ? actions : deps.INPUT_DEFAULTS.actions;
+  }
+
+  async function copyControlsJson(device, button, warning) {
+    const actions = deviceActions(device); // Used to export exactly the controls represented by this Settings section.
+    const bindings = Object.fromEntries(actions.map(action => [action.id, deps.inputBindings?.[device]?.[action.id] ?? null])); // Used as the portable action-to-input map copied to the clipboard.
+    const modeShifts = (deps.inputBindings.modeShifts || []).filter(shift => (shift.device || 'desktop') === device).map(shift => ({ ...shift, bindings: { ...(shift.bindings || {}) } })); // Used to include device-specific shifted controls in the same JSON export.
+    const payload = { version: 1, device: device === 'desktop' ? 'keyboard' : 'controller', bindings, modeShifts }; // Used as the stable exported JSON envelope.
+    const text = JSON.stringify(payload, null, 2); // Used for readable clipboard output that can be pasted directly into bug reports or config work.
+    let copied = false; // Used to choose between the modern Clipboard API and the compatibility fallback.
+    try {
+      await navigator.clipboard?.writeText?.(text);
+      copied = true;
+    } catch (_) {}
+    if (!copied) {
+      const textarea = document.createElement('textarea'); // Used as a clipboard fallback on browsers/pages where navigator.clipboard is unavailable.
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try { copied = document.execCommand('copy'); } catch (_) { copied = false; }
+      textarea.remove();
+    }
+    if (warning) warning.textContent = copied ? '' : 'Clipboard access failed; copy controls from the browser prompt.';
+    if (!copied) window.prompt?.('Copy controls JSON', text);
+    const normalLabel = device === 'desktop' ? 'Copy Keyboard Controls JSON' : 'Copy Controller Controls JSON'; // Used to restore the export button label after the success acknowledgement.
+    button.textContent = copied ? 'Copied!' : normalLabel;
+    if (copied) setTimeout(() => { if (button.isConnected) button.textContent = normalLabel; }, 1200);
+  }
+
+  function appendJsonCopyControl(el, device) {
+    const row = document.createElement('div'); // Used to keep the JSON export directly beneath the corresponding keyboard/controller binding list.
+    row.className = 'input-binding-row';
+    const spacer = document.createElement('span'); // Used to preserve the existing binding-row alignment without adding a new stylesheet rule.
+    const button = document.createElement('button'); // Used to copy this device's complete controls into JSON.
+    button.type = 'button';
+    button.className = 'settings-small-btn';
+    button.textContent = device === 'desktop' ? 'Copy Keyboard Controls JSON' : 'Copy Controller Controls JSON';
+    const warning = document.createElement('div'); // Used to surface clipboard failures in-game on mobile without requiring the console.
+    warning.className = 'input-binding-warning';
+    button.addEventListener('click', () => copyControlsJson(device, button, warning));
+    row.append(spacer, button, warning);
+    el.appendChild(row);
+  }
+
   function renderInputSettings() {
     const desktopEl = document.getElementById('desktopInputBindings');
     const controllerEl = document.getElementById('controllerInputBindings');
     const shiftsEl = document.getElementById('modeShiftList');
     function renderDevice(el, device) {
       if (!el) return;
+      if (device === 'controller') stopControllerCapture();
       el.innerHTML = '';
-      for (const action of deps.INPUT_DEFAULTS.actions) {
+      for (const action of deviceActions(device)) {
         const row = document.createElement('div'); row.className = 'input-binding-row';
         if (ACTION_BUTTON_IDS.has(action.id)) {
           row.classList.add('action-button-binding');
           row.dataset.actionSlot = action.id.slice('action'.length); // Used for inspection/debugging and future Settings styling without inferring from label text.
           row.title = 'Controls the matching visible gameplay action button.';
         }
-        row.innerHTML = `<span class="settings-name">${actionDisplayLabel(action)}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${deps.buttonLabel(deps.inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
-        const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
+        const controllerControls = '<span class="input-controller-bind-controls" style="display:flex;gap:6px;align-items:center"><select class="settings-select"></select><button type="button" class="settings-small-btn input-controller-listen-btn">Listen</button></span>'; // Used to pair manual selection with physical controller capture for every controller action.
+        row.innerHTML = `<span class="settings-name">${actionDisplayLabel(action)}</span>${device === 'controller' ? controllerControls : `<button type="button" class="input-bind-btn">${deps.buttonLabel(deps.inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
+        const control = device === 'controller' ? row.querySelector('select') : row.querySelector('.input-bind-btn'); // Used as the actual binding value control for this action row.
+        const warn = row.querySelector('.input-binding-warning'); // Used for conflicts and capture errors that must be visible without devtools.
         if (device === 'controller') {
+          const listenButton = row.querySelector('.input-controller-listen-btn'); // Used to capture the next physical controller input for this action.
           control.add(new Option('Unbound', ''));
           deps.CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(deps.buttonLabel(code), code)));
           control.value = deps.inputBindings.controller[action.id] || '';
@@ -200,6 +302,23 @@
               warn.textContent = '';
               saveBindingChange(device, action.id);
             }
+          });
+          listenButton.addEventListener('click', () => {
+            listenForControllerInput(listenButton, code => {
+              const conflict = deps.bindingConflict(device, code, action.id); // Used to apply the same collision rules as choosing the code from the dropdown.
+              if (conflict) {
+                warn.textContent = conflict;
+                renderInputSettings();
+                return;
+              }
+              deps.inputBindings.controller[action.id] = code;
+              warn.textContent = '';
+              saveBindingChange(device, action.id);
+              renderInputSettings();
+            }, message => {
+              warn.textContent = message;
+              renderInputSettings();
+            });
           });
         } else {
           control.addEventListener('click', () => {
@@ -231,6 +350,7 @@
         }
         el.appendChild(row);
       }
+      appendJsonCopyControl(el, device);
     }
     renderDevice(desktopEl, 'desktop'); renderDevice(controllerEl, 'controller');
     if (shiftsEl) {
@@ -249,7 +369,7 @@
           const bRow = document.createElement('div'); bRow.className = 'mode-shift-row';
           bRow.innerHTML = `<span class="settings-name">${deps.buttonLabel(button)}</span><select class="settings-select"></select><span class="input-binding-warning"></span><button type="button" class="settings-small-btn">Remove</button>`;
           const select = bRow.children[1];
-          deps.INPUT_DEFAULTS.actions.forEach(action => select.add(new Option(actionDisplayLabel(action), action.id)));
+          deviceActions(shift.device || 'desktop').forEach(action => select.add(new Option(actionDisplayLabel(action), action.id)));
           select.value = actionId;
           select.addEventListener('change', e => { shift.bindings[button] = e.target.value; deps.saveInputBindings(); renderInputSettings(); });
           bRow.children[3].addEventListener('click', () => { delete shift.bindings[button]; deps.saveInputBindings(); renderInputSettings(); });
@@ -258,14 +378,20 @@
         const add = document.createElement('button'); add.type = 'button'; add.className = 'settings-small-btn'; add.textContent = 'Add Shifted Binding';
         add.addEventListener('click', () => {
           add.classList.add('is-listening'); add.textContent = 'Press shifted input…';
+          const actionId = deviceActions(shift.device || 'desktop')[0]?.id || 'interact'; // Used as the initial action for a newly captured shifted binding until the row dropdown changes it.
+          const applyBinding = button => {
+            const conflict = deps.bindingConflict(shift.device || 'desktop', button, actionId, shift); // Used to keep shifted controller capture under the same conflict rules as ordinary bindings.
+            if (!conflict) { shift.bindings = shift.bindings || {}; shift.bindings[button] = actionId; deps.saveInputBindings(); }
+            renderInputSettings();
+          };
+          if ((shift.device || 'desktop') === 'controller') {
+            listenForControllerInput(add, applyBinding, () => renderInputSettings());
+            return;
+          }
           const once = ev => {
             ev.preventDefault();
-            const manual = window.prompt?.('Input code (examples: RightStickLeft, RightTrigger, Button0)') || '';
-            const button = manual.trim() || ev.code;
-            const actionId = deps.INPUT_DEFAULTS.actions[0]?.id || 'interact';
-            const conflict = deps.bindingConflict(shift.device || 'desktop', button, actionId, shift);
-            if (!conflict) { shift.bindings = shift.bindings || {}; shift.bindings[button] = actionId; deps.saveInputBindings(); }
-            window.removeEventListener('keydown', once, true); renderInputSettings();
+            window.removeEventListener('keydown', once, true);
+            applyBinding(ev.code);
           };
           window.addEventListener('keydown', once, true);
         });
@@ -275,5 +401,5 @@
     }
   }
 
-  window.InputSettingsPanel = { init, render: renderInputSettings };
+  window.InputSettingsPanel = { init, render: renderInputSettings, isControllerListening: () => !!activeControllerCapture };
 })();

@@ -23648,7 +23648,11 @@
       function getActionForButton(device, button, heldShift = null) {
         if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
         const bindings = inputBindings[device] || {};
-        return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
+        return Object.keys(bindings).find(actionId => {
+          if (bindings[actionId] !== button) return false;
+          const actionDefinition = INPUT_DEFAULTS.actions.find(entry => entry.id === actionId); // Used to keep menu/music/melee-context bindings out of generic gameplay dispatch.
+          return (actionDefinition?.context || 'gameplay') === 'gameplay';
+        }) || null;
       }
       function publishControllerStatus(pad, owner = 'gameplay', move = null, look = null) {
         const status = pad ? {
@@ -23798,19 +23802,15 @@
         if ((Number(pad.axes[2]) || 0) >= axisPress) down.add('RightStickRight');
         if ((Number(pad.axes[3]) || 0) <= -axisPress) down.add('RightStickUp');
         if ((Number(pad.axes[3]) || 0) >= axisPress) down.add('RightStickDown');
-        // Right-stick click (Button11 — R3) toggles melee auto-target
-        // while a melee weapon is out, taking over from its default
-        // weaponSwitch binding for exactly that window (weaponSwitch still
-        // works normally the rest of the time, and via its other bindings/
-        // the action-bar button even then).
-        if (down.has('Button11') && meleeWeaponOut()) {
-          if (!gamepadState.previous.has('Button11')) {
+        const meleeAutoTargetBinding = inputBindings.controller?.meleeAutoTargetToggle || null; // Used so the melee-only auto-target toggle follows the player's controller configuration instead of a physical R3 constant.
+        if (meleeAutoTargetBinding && down.has(meleeAutoTargetBinding) && meleeWeaponOut()) {
+          if (!gamepadState.previous.has(meleeAutoTargetBinding)) {
             meleeAutoTargetOn = !meleeAutoTargetOn;
             manualAutoTarget = null;
             meleeAutoTargetFreeAim = false;
             showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
           }
-          down.delete('Button11');
+          down.delete(meleeAutoTargetBinding);
         }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
