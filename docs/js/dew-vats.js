@@ -6,10 +6,10 @@
   // the same way a crop is tile data — not a worldObjects entry — because
   // it needs to participate in the shovel dig/fill/raise gate exactly like
   // WEEDS/SHRUB/ROCK already do. dewPileMeshes tracks the purely-visual
-  // billboard per tile in parallel, the same "tile data now, mesh
-  // separately" split game.js's saveFarmLayout/applyFarmLayoutObjects use
-  // for crops vs. their procedural meshes. Assigning a housed uumkao'ii to
-  // a placed squeezing vat redirects its dew straight into squeezed
+  // translucent boulder cluster per tile in parallel, the same "tile data
+  // now, mesh separately" split game.js's saveFarmLayout/applyFarmLayoutObjects
+  // use for crops vs. their procedural meshes. Assigning a housed uumkao'ii
+  // to a placed squeezing vat redirects its dew straight into squeezed
   // milk/curds every cooldown cycle instead of dropping a pile that has to
   // be dug up — see assignToVat/autoSqueezeAtVat.
   //
@@ -26,8 +26,11 @@
   // read through a getter every call.
   let deps = null, COLS, ROWS, TileType;
   const DEW_SHOVEL_SFX_URL = 'assets/audio/sfx/sfx_shovel_dew.mp3'; // Used instead of the ordinary dirt-dig cue while the live shovel reticle is on Uumkao'ii dew.
+  const DEW_ROCK_OPACITY = 0.45; // Used by dew-only rock materials so the boulders read as translucent condensed dew instead of ordinary stone.
+  const DEW_WAVY_TEXTURE = 'assets/textures/wavy_surface.png'; // Used by the fallback renderer and diagnostics; the normal path reaches the same texture through the existing trunk natural-surface style.
   let dewShovelSfxPreload = null; // Retains one eagerly loaded element so repeated held-action thrusts start immediately.
   let lastDewShovelSfxDebug = null; // Mobile-readable diagnostic exported below.
+  let dewFallbackWavyTexture = null; // Shared only if NaturalSurfaceMaterials is unavailable, avoiding one TextureLoader allocation per pile.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -99,7 +102,7 @@
   }
 
   // ── Dew piles ──────────────────────────────────────────────────────
-  const dewPileMeshes = new Map(); // "col,row" -> THREE.Group
+  const dewPileMeshes = new Map(); // "col,row" -> THREE.Group containing the dew boulder cluster for that tile.
 
   function canPlaceAt(col, row) {
     const grid = deps.getGrid();
@@ -111,95 +114,144 @@
     return true;
   }
 
-  // Tinted-and-faded cheese.png canvas for a given dew color, cached by
-  // color so multiple piles sharing a color (the common case — every
-  // uumkao'ii on a farm today drops the same UUMKAOII_DEFAULT_DEW_COLOR)
-  // only pay the load/recolor cost once. Recolored via
-  // CreatureGeneticsRender's own shade-fill tint (the same technique
-  // that colors gar-wolf/dabinggi-hound fur patterns), not
-  // SpriteRecolor's HSV replace, per spec — then every non-outline
-  // pixel is faded to 20% opacity (80% transparency) so it reads as a
-  // glassy dew droplet rather than a flat opaque sticker, while the
-  // outline ink itself (recolorPixels' own near-black protection
-  // threshold) stays fully opaque so the shape still reads clearly.
-  const _dewSpriteTintCache = new Map(); // colorHex(number) -> Promise<{canvas, bottomRatio}>
-  function _tintedDewSpriteCanvas(colorHex) {
-    if (_dewSpriteTintCache.has(colorHex)) return _dewSpriteTintCache.get(colorHex);
-    const promise = new Promise((resolve, reject) => {
-      if (!window.CreatureGeneticsRender) { reject(new Error('CreatureGeneticsRender unavailable')); return; }
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
-        const ctx = c.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, c.width, c.height);
-        const px = imgData.data;
-        const rgb = window.CreatureGeneticsRender.hexToRgb('#' + colorHex.toString(16).padStart(6, '0'));
-        window.CreatureGeneticsRender.recolorPixels(px, rgb, null);
-        for (let i = 0; i < px.length; i += 4) {
-          if (px[i + 3] === 0) continue;
-          const lum = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
-          if (lum <= 0.08) continue; // outline ink stays fully opaque
-          px[i + 3] = Math.round(px[i + 3] * 0.2);
-        }
-        ctx.putImageData(imgData, 0, 0);
-        const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
-        const bottomRatio = bounds ? (bounds.bottom + 1) / img.naturalHeight : 1;
-        resolve({ canvas: c, bottomRatio });
-      };
-      img.onerror = () => reject(new Error('Failed to load cheese.png'));
-      img.src = 'assets/objectsprites/cheese.png';
-    });
-    _dewSpriteTintCache.set(colorHex, promise);
-    return promise;
+  function _fallbackWavyTexture() {
+    if (dewFallbackWavyTexture) return dewFallbackWavyTexture;
+    const tex = new THREE.TextureLoader().load(DEW_WAVY_TEXTURE);
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    if ('colorSpace' in tex && THREE.SRGBColorSpace != null) tex.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in tex && THREE.sRGBEncoding != null) tex.encoding = THREE.sRGBEncoding;
+    tex.userData = Object.assign({}, tex.userData, { uumkaoiiDewSharedWavyTexture: true });
+    dewFallbackWavyTexture = tex;
+    return tex;
   }
 
-  // Rendered as a single upright plane (front-facing convention, like a
-  // character/NPC — cheese.png is a single icon-style sprite, not a
-  // side-view creature profile) rather than the animal system's crossed
-  // front/back planes, camera-relative dead-zone rotated the same way
-  // (perpClamp/cameraRelativePerps) since it's static — never moving, so
-  // there's no "oscillate while moving" case to handle, just settle
-  // broadside and freeze like an idle character. Grounded so the
-  // sprite's own lowest opaque pixel (not the raw image rectangle's
-  // bottom edge) sits exactly on the tile surface, the same
-  // opaque-bounds-scan technique creature planes use.
+  function _restoreDewShellOutline(mesh) {
+    if (!mesh?.isMesh) return;
+    mesh.userData = Object.assign({}, mesh.userData, {
+      uumkaoiiDewRock: true,
+      shellOutlineRetainedForDew: true,
+    });
+    delete mesh.userData.noOutline;
+    delete mesh.userData.facetedSurfaceTextureOutline;
+    delete mesh.userData.shellOutlineDisabledReason;
+    mesh.layers?.enable(1);
+  }
+
+  // Reuses the game's actual deterministic ROCK-tile boulder cluster, then
+  // swaps only this dew instance onto the existing wavy_surface natural-
+  // surface treatment. Using the "trunks" style is deliberate: it is the
+  // canonical wavy_surface + body-sprite-tint path, while a planar mapping
+  // override keeps that texture stretched across rock faces instead of
+  // cylindrical wrapping. The ordinary boulder wrapper initially marks the
+  // geometry as a faceted ROCK and suppresses its shell; dew immediately
+  // clears those suppression flags and re-enables layer 1 after restyling.
+  function _styleDewBoulder(root, colorHex) {
+    let styledMeshes = 0;
+    root?.traverse?.(mesh => {
+      if (!mesh?.isMesh) return;
+      const source = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: DEW_ROCK_OPACITY,
+        depthWrite: false,
+        depthTest: true,
+        side: THREE.FrontSide,
+      });
+      mesh.material = source;
+
+      const naturalSurfaces = window.NaturalSurfaceMaterials;
+      if (naturalSurfaces?.naturalizeMesh) {
+        naturalSurfaces.naturalizeMesh(mesh, 'trunks', 'planar-stretch');
+        if (mesh.material !== source) source.dispose();
+      } else {
+        mesh.material = new THREE.MeshBasicMaterial({
+          map: _fallbackWavyTexture(),
+          color: colorHex,
+          transparent: true,
+          opacity: DEW_ROCK_OPACITY,
+          depthWrite: false,
+          depthTest: true,
+          side: THREE.FrontSide,
+        });
+        source.dispose();
+      }
+
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const dewMaterials = materials.map(material => {
+        const clone = material.clone();
+        clone.transparent = true;
+        clone.opacity = DEW_ROCK_OPACITY;
+        clone.depthWrite = false;
+        clone.userData = Object.assign({}, clone.userData, {
+          uumkaoiiDewRockMaterial: true,
+          uumkaoiiDewTexture: DEW_WAVY_TEXTURE,
+        });
+        clone.needsUpdate = true;
+        return clone;
+      });
+      mesh.material = Array.isArray(mesh.material) ? dewMaterials : dewMaterials[0];
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      _restoreDewShellOutline(mesh);
+      styledMeshes++;
+    });
+    return styledMeshes;
+  }
+
   function spawnMesh(col, row, colorKey) {
     const grid = deps.getGrid();
+    const tile = grid[row]?.[col];
+    if (!tile) return;
     const key = col + ',' + row;
     removeMesh(col, row);
-    const group = new THREE.Group();
-    group.position.set(col + 0.5, deps.tileSurfaceY(grid[row][col].type), row + 0.5);
-    group.userData.perpState = {};
+
+    const group = window.FoliageGenerator?.buildBoulderMesh?.(col, row);
+    if (!group) {
+      window.__farmLog?.(`[dew-render] unable to build existing ROCK geometry at ${key}; FoliageGenerator.buildBoulderMesh unavailable`, 'render');
+      return;
+    }
+
+    const colorHex = deps.ITEM_DEFS[deps.dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
+    const styledMeshes = _styleDewBoulder(group, colorHex);
+    group.position.set(col + 0.5, deps.tileSurfaceY(tile.type), row + 0.5);
+    group.userData = Object.assign({}, group.userData, {
+      uumkaoiiDewRock: true,
+      dewColorKey: colorKey,
+      dewStyledMeshCount: styledMeshes,
+    });
     deps.getScene().add(group);
     dewPileMeshes.set(key, group);
-    const colorHex = deps.ITEM_DEFS[deps.dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
-    _tintedDewSpriteCanvas(colorHex).then(({ canvas, bottomRatio }) => {
-      if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const targetH = 0.7; // large enough to read clearly on a tile
-      const targetW = targetH * (canvas.width / canvas.height);
-      const geo = new THREE.PlaneGeometry(targetW, targetH);
-      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide, depthWrite: false });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.y = targetH / 2 + deps.creaturePlaneGroundOffset(targetH, bottomRatio);
-      group.add(mesh);
-    }).catch(() => {});
   }
 
-  // Called every frame (farm only — dew piles only ever exist there) to
-  // keep every standing dew sprite broadside to the camera within its
-  // own dead-zone-freeze state, exactly like an idle character.
+  // Retained as a public per-frame hook because game.js already calls it.
+  // Dew is now true 3D boulder geometry, so unlike the old billboard sprite
+  // it must remain world-oriented and no camera-facing rotation is required.
   function updateMeshRotations(dt) {
+    void dt;
+  }
+
+  function dewVisualDebugSnapshot() {
+    let meshes = 0;
+    let shellOutlined = 0;
     for (const group of dewPileMeshes.values()) {
-      const lookTarget = deps.nearestAngleAmong(group.rotation.y, deps.cameraRelativePerps());
-      const { effectiveTarget, snapTo } = deps.perpClamp(group.userData.perpState, lookTarget, deps.cameraRelativePerps());
-      if (snapTo !== null) group.rotation.y = effectiveTarget;
-      else group.rotation.y += deps.angleDiff(effectiveTarget, group.rotation.y) * 0.18;
+      group.traverse?.(child => {
+        if (!child?.isMesh) return;
+        meshes++;
+        if ((child.layers?.mask & (1 << 1)) !== 0 && !child.userData?.noOutline) shellOutlined++;
+      });
     }
+    return {
+      mode: 'translucent-existing-rocks',
+      piles: dewPileMeshes.size,
+      meshes,
+      shellOutlined,
+      opacity: DEW_ROCK_OPACITY,
+      texture: DEW_WAVY_TEXTURE,
+      fallbackTextureLoaded: !!dewFallbackWavyTexture,
+    };
   }
 
   function removeMesh(col, row) {
@@ -209,7 +261,11 @@
     deps.getScene().remove(group);
     group.traverse(child => {
       if (child.geometry) child.geometry.dispose();
-      if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
+      const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      for (const material of materials) material.dispose?.();
+      // Material maps come from NaturalSurfaceMaterials' shared texture cache
+      // (or _fallbackWavyTexture), so only the per-pile material clones are
+      // disposed here; disposing their map would break every other user.
     });
     dewPileMeshes.delete(key);
   }
@@ -412,5 +468,6 @@
     retargetAssignments,
     autoSqueezeAtVat,
     dewShovelSfxDebugSnapshot,
+    dewVisualDebugSnapshot,
   };
 })();
