@@ -139,15 +139,18 @@ assert.doesNotMatch(rendererSource, /uExceptionMask|aBaseline|waterExceptionMask
   'inverted water no longer adds a fragment mask texture, baseline shader attribute, or mask-texture ownership');
 assert.doesNotMatch(rendererSource, /texture2D\s*\(\s*uExceptionMask/,
   'the water fragment shader performs no extra exception-mask texture lookup');
-assert.match(waterSystemSource,
-  /if \(!visible\) \{\s*tile\._wCached = false;\s*continue;\s*\}/,
-  'dry, solid, and skipped permanent cells stay absent from the dynamic-water snapshot instead of allocating mask placeholders');
 assert.doesNotMatch(waterSystemSource,
   /cells\.push\(\{[\s\S]{0,220}?visible:\s*false/,
   'the collector never allocates invisible per-tile records');
 assert.match(waterSystemSource,
-  /function _newBaselineSamples\(\)[\s\S]{0,900}?dryCount:[\s\S]{0,900}?wet:\s*\[\]/,
-  'baseline sampling counts dry cells separately and retains only wet values that can affect a visible median');
+  /INVERTED_WATER_MIN_WET_FRACTION = 0\.25/,
+  'sparse water has an explicit density gate before baseline analysis');
+assert.match(waterSystemSource,
+  /const minimumInversionWetCells = Math\.ceil\(rows \* cols \* INVERTED_WATER_MIN_WET_FRACTION\);[\s\S]{0,280}?cells\.length < minimumInversionWetCells[\s\S]{0,280}?_dryRenderBaseline\(\)/,
+  'the sparse collector returns directly to the classic path before allocating baseline samples');
+assert.match(waterSystemSource,
+  /function _newBaselineSamples\(\)[\s\S]{0,900}?wet:\s*\[\][\s\S]{0,900}?dryCount:/,
+  'dense-state baseline sampling counts dry cells separately and retains only wet values that can affect a visible median');
 assert.match(waterSystemSource,
   /function _baselineMedian\(samples\)[\s\S]{0,900}?highIndex < samples\.dryCount[\s\S]{0,900}?samples\.wet\.sort/,
   'baseline median bypasses wet-sample sorting when the median is wholly below the visibility threshold');
