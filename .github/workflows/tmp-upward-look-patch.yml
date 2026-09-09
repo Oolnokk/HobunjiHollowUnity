@@ -1,0 +1,148 @@
+name: Temporary upward-look clamp patch
+
+on:
+  push:
+    branches:
+      - codex/increase-upward-look-clamp
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Apply directional camera pitch clamp
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          config_path = Path('docs/config/scratchbones-config.js')
+          config = config_path.read_text(encoding='utf-8')
+          config = replace_once(
+              config,
+              '      "cameraRotateDegPerPx": 0.15,\n      "cameraRotateClampDeg": 45,\n      "wheelZoomStep": 0.05,',
+              '      "cameraRotateDegPerPx": 0.15,\n      "cameraRotateClampDeg": 45,\n      "cameraRotateUpClampDeg": 85, // Used by gameplay pitch so upward look can be wider without loosening downward/yaw limits.\n      "wheelZoomStep": 0.05,',
+              'desktop camera config',
+          )
+          config_path.write_text(config, encoding='utf-8')
+
+          game_path = Path('docs/game.js')
+          game = game_path.read_text(encoding='utf-8')
+          game = replace_once(
+              game,
+              "      // Mobile drag-to-look offsets, layered on top of the active mode's base\n      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,\n      // not a free-orbit camera.\n",
+              "      // Mobile drag-to-look offsets, layered on top of the active mode's base\n      // azimuth/angle. Horizontal/downward look keeps the legacy 45° limit;\n      // upward pitch uses the wider shooter-style limit from desktopControls.\n",
+              'camera offset comment',
+          )
+          helper_anchor = """      function freeRotateCameraActive() {
+        return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+"""
+          helper_replacement = helper_anchor + """      function clampCameraPitchOffsetDeg(value) {
+        const cfg = desktopControlsConfig(); // Supplies the authored directional camera limits for mouse, touch, and controller pitch.
+        const downClampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Math.abs(Number(cfg.cameraRotateClampDeg)) : 45; // Used as the positive/downward pitch boundary and preserves the legacy limit.
+        const upClampDeg = Number.isFinite(Number(cfg.cameraRotateUpClampDeg)) ? Math.abs(Number(cfg.cameraRotateUpClampDeg)) : 85; // Used as the negative/upward pitch boundary for shooter-style vertical look.
+        return window.FormatUtils.clamp(value, -upClampDeg, downClampDeg);
+      }
+"""
+          game = replace_once(game, helper_anchor, helper_replacement, 'camera pitch helper insertion')
+          game = replace_once(
+              game,
+              '            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);',
+              '            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt);',
+              'touch camera pitch clamp',
+          )
+          game = replace_once(
+              game,
+              '        cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt, -clampDeg, clampDeg);',
+              '        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);',
+              'controller camera pitch clamp',
+          )
+          game = replace_once(
+              game,
+              '            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);',
+              '            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + e.movementY * degPerPx);',
+              'mouse camera pitch clamp',
+          )
+          game = replace_once(
+              game,
+              "      // Every other camera mode nudges a small look-around offset on top of a\n      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,\n      // default ±45°) since it's meant to be a peek, not a free orbit. Seated\n      // players and the utility-wheel Character View get genuine 360°\n      // horizontal orbit instead.\n",
+              "      // Every other camera mode nudges a look-around offset on top of a fixed\n      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by\n      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated\n      // players and the utility-wheel Character View still get genuine 360°\n      // horizontal orbit instead.\n",
+              'camera clamp behavior comment',
+          )
+          game_path.write_text(game, encoding='utf-8')
+
+          index_path = Path('docs/index.html')
+          index = index_path.read_text(encoding='utf-8')
+          index = replace_once(index, 'game.js?v=20260909controller1', 'game.js?v=20260909lookclamp1', 'game cache key')
+          index_path.write_text(index, encoding='utf-8')
+
+          old_cache = 'game.js?v=20260909controller1'
+          new_cache = 'game.js?v=20260909lookclamp1'
+          updated_tests = 0
+          for test_path in Path('scripts').glob('test-*.js'):
+              source = test_path.read_text(encoding='utf-8')
+              if old_cache in source:
+                  test_path.write_text(source.replace(old_cache, new_cache), encoding='utf-8')
+                  updated_tests += 1
+          print(f'updated cache assertions in {updated_tests} existing test file(s)')
+
+          test_path = Path('scripts/test-camera-look-clamps.js')
+          test_path.write_text(r'''#!/usr/bin/env node
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8');
+const game = fs.readFileSync('docs/game.js', 'utf8');
+const index = fs.readFileSync('docs/index.html', 'utf8');
+
+assert.match(config, /"cameraRotateClampDeg": 45,[\s\S]{0,160}"cameraRotateUpClampDeg": 85/,
+  'camera config keeps the legacy 45-degree yaw/down limit and authors an 85-degree upward limit');
+assert.match(game, /function clampCameraPitchOffsetDeg\(value\)[\s\S]{0,700}cameraRotateUpClampDeg[\s\S]{0,300}-upClampDeg, downClampDeg/,
+  'shared pitch helper applies separate upward and downward boundaries');
+assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 3,
+  'touch joystick, controller, and desktop mouse pitch all use the shared directional clamp');
+assert.match(game, /cameraJoystickY[\s\S]{0,220}clampCameraPitchOffsetDeg/,
+  'touch camera pitch uses the directional clamp');
+assert.match(game, /controllerCameraY[\s\S]{0,900}clampCameraPitchOffsetDeg/,
+  'controller camera pitch uses the directional clamp');
+assert.match(game, /e\.movementY[\s\S]{0,180}clampCameraPitchOffsetDeg/,
+  'desktop mouse camera pitch uses the directional clamp');
+assert.match(game, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,260}-clampDeg, clampDeg/,
+  'horizontal non-free camera look retains the existing symmetric clamp');
+assert.match(index, /game\.js\?v=20260909lookclamp1/,
+  'game script cache key is bumped so clients receive the new clamp behavior');
+
+console.log('Directional camera look clamp checks passed.');
+''', encoding='utf-8')
+          PY
+      - name: Validate syntax and camera regressions
+        run: |
+          node --check docs/game.js
+          node --check docs/config/scratchbones-config.js
+          node --check scripts/test-camera-look-clamps.js
+          node scripts/test-camera-look-clamps.js
+          node scripts/test-controller-experience.js
+          node scripts/test-shoulder-camera-character-framing.js
+          node scripts/test-combat-camera-alignment.js
+          git diff --check
+      - name: Commit patch and remove temporary workflow
+        run: |
+          rm .github/workflows/tmp-upward-look-patch.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Increase upward camera look clamp"
+          git push
