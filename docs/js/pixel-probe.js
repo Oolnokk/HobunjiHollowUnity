@@ -929,7 +929,7 @@
         lines.push(`Movement rays: debug error=${movementAlignment.error}`);
       } else {
         const point = movementAlignment.perspectivePoint; // Displays the one camera-ray point every current player aim consumer shares.
-        lines.push(`Perspective point: (${Number(point?.x || 0).toFixed(2)}, ${Number(point?.y || 0).toFixed(2)}, ${Number(point?.z || 0).toFixed(2)}) cameraRay=${Number(movementAlignment.perspectiveRayDistance || 0).toFixed(2)}u beyondPlayer=${Number(movementAlignment.perspectiveDistanceBeyondPlayer || 0).toFixed(2)}u freeRotate=${movementAlignment.cameraFreeRotate ? 'yes' : 'NO'}`);
+        lines.push(`Perspective point: (${Number(point?.x || 0).toFixed(2)}, ${Number(point?.y || 0).toFixed(2)}, ${Number(point?.z || 0).toFixed(2)}) cameraRay=${Number(movementAlignment.perspectiveRayDistance || 0).toFixed(2)}u beyondPlayer=${Number(movementAlignment.perspectiveDistanceBeyondPlayer || 0).toFixed(2)}u freeRotate=${movementAlignment.cameraFreeRotate ? 'yes' : 'NO'} bodyRoot=${movementAlignment.bodyPerspectiveAuthority || '-'}`);
         lines.push(`Point convergence errors: head=${Number(movementAlignment.headPointErrorDeg || 0).toFixed(2)}° bodyYaw=${Number(movementAlignment.bodyPointErrorDeg || 0).toFixed(2)}° melee=${Number(movementAlignment.meleePointErrorDeg || 0).toFixed(2)}° lastLunge=${Number(movementAlignment.lastLungePointErrorDeg || 0).toFixed(2)}° lastRanged=${Number(movementAlignment.lastRangedPointErrorDeg || 0).toFixed(2)}° speed=${Number(movementAlignment.velocitySpeedPxS || 0).toFixed(1)}px/s`);
       }
     }

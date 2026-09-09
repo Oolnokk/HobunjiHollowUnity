@@ -14936,6 +14936,15 @@
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
 
+      function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength) {
+        if (activeCameraMode !== SHOULDER_SURF_MODE) return 'other-camera';
+        const meleeAttackActive = player.lunging || (activeTool === 'weapon' && (toolSwingT > 0 || combatSwingHeld)); // Covers travel attacks, ordinary swings, and held melee windups without treating farming-tool animation as combat.
+        const rangedAttackActive = activeTool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.(); // Deliberately excludes reload so only an actual shot gives the point body/root authority.
+        if (meleeAttackActive || rangedAttackActive) return 'attack';
+        if (Number(movementStrength) > 0.001) return 'movement';
+        return 'idle-free';
+      }
+
       // Mouse-look: on desktop, facing tracks the mouse cursor in world space.
       // After MOUSE_IDLE_MS of no mouse movement, reverts to input-direction facing.
       const MOUSE_IDLE_MS  = 1800;  // ms before reverting to input-direction mode
@@ -15445,17 +15454,19 @@
           facingAngle = characterViewMode.lockedFacingAngle;
           player.angle = characterViewMode.lockedPlayerAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
-          // The camera is authoritative whether moving or standing still.
-          // Forward/back/strafe input must not steer the camera, and the
-          // character's previous physical direction must not constrain camera
-          // rotation through a stationary free-look dead zone. The logical
-          // body is derived directly from the perspective point; perpClamp may
-          // still choose the nearest render-safe billboard angle later, but
-          // that visual accommodation never feeds back into camera/aim state.
-          const camFacing = shoulderPerspectiveFacingAngle();
-          facingAngle = camFacing;
+          // The head and attack rays remain camera-authored at all times, but
+          // the physical body/root only inherits that direction while movement
+          // or an actual attack is active. Idle camera orbit therefore cannot
+          // drag the character around or be constrained by its previous yaw;
+          // the body simply keeps the last direction it earned from movement
+          // or combat until either becomes active again.
+          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength); // Central state boundary shared with the on-demand mobile/debug report below.
+          if (perspectiveAuthority !== 'idle-free') {
+            const perspectiveFacing = shoulderPerspectiveFacingAngle();
+            facingAngle = perspectiveFacing;
+            player.angle = perspectiveFacing;
+          }
           if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
-          player.angle = facingAngle;
         } else {
           if (controllerLookActive) {
             const diff = angleDiff(controllerLookAngle, facingAngle);
@@ -17137,6 +17148,7 @@
           mode: activeCameraMode,
           cameraFreeRotate: freeRotateCameraActive(),
           cameraAzimuthOffsetDeg,
+          bodyPerspectiveAuthority: shoulderBodyPerspectiveAuthority(),
           perspectivePoint: { ...perspective.point },
           perspectiveRayDistance: perspective.rayDistance,
           perspectiveDistanceBeyondPlayer: perspective.distanceBeyondPlayer,
