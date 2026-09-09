@@ -33,6 +33,7 @@ assert.deepEqual(config.equipment.weaponShapes, ['daggerSword', 'hatchet', 'fish
 assert.equal(config.activeHours.start, 0, 'march starts at civil midnight');
 assert.equal(config.activeHours.end, 6, 'march disappears at 06:00');
 assert.equal(config.activeHours.coarseStepHours, 1, 'offscreen route state advances only once per game hour');
+assert.equal(config.behavior.maleOnlyUntilFemaleHeadArt, true, 'night army remains explicitly male-only until female head art exists');
 assert.equal(config.visuals.color.toLowerCase(), '#4fd9c6', 'spectral fill stays blue-green');
 assert(config.visuals.opacity > 0 && config.visuals.opacity < 1, 'spectral body remains semi-transparent');
 assert(config.visuals.emissiveIntensity > 0, 'spectral body emits light visually');
