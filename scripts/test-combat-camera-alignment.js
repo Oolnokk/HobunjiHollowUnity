@@ -13,6 +13,7 @@ const rangedWeapons = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8'
 const debugHitboxes = fs.readFileSync('docs/js/debug-hitboxes.js', 'utf8'); // Verifies every alignment ray is exposed through the existing interaction-ray overlay.
 const pixelProbe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Verifies the same disagreement is readable on mobile without developer tools.
 const bodyComposer = fs.readFileSync('docs/js/player-body-transform-composer.js', 'utf8'); // Verifies the final render boundary cannot re-clamp an exact shared-point head aim.
+const targetingConfig = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8'); // Verifies the common endpoint remains horizon-distant rather than visually close to the player.
 
 const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1');
 const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1');
@@ -38,6 +39,8 @@ assert.match(game,
 assert.match(game,
   /function currentPlayerPerspectiveTarget\(\)[\s\S]{0,4200}point:[\s\S]{0,300}cameraRay:/,
   'one finite perspective target is placed directly on the actual center camera ray');
+assert.match(targetingConfig, /"perspectivePointDistanceTiles":\s*160/,
+  'shared point stays effectively horizon-distant while remaining inside the 200-unit camera far plane');
 assert.match(game,
   /const shoulderHeadDirection = activeCameraMode === SHOULDER_SURF_MODE[\s\S]{0,200}currentPlayerPerspectiveDirection/,
   'player head derives full yaw and pitch from its own origin to the shared point');

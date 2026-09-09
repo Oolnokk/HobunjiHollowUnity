@@ -14963,7 +14963,7 @@
       const _shoulderSurfReticleRaycaster = new THREE.Raycaster();
       const _shoulderSurfReticleGroundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const _shoulderSurfReticleWorld = new THREE.Vector3();
-      const DEFAULT_PERSPECTIVE_POINT_DISTANCE_TILES = 24; // Fallback distance beyond the player used when the targeting config omits the horizon-style convergence point.
+      const DEFAULT_PERSPECTIVE_POINT_DISTANCE_TILES = 160; // Far-plane-safe fallback that makes the shared point behave like a horizon target when custom config omits it.
       // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
       const _edRay = new THREE.Raycaster();
       const _edNDC = new THREE.Vector2();
