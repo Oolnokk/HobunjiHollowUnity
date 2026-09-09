@@ -1,0 +1,60 @@
+name: Temporary controller camera decoupling
+
+on:
+  push:
+    branches:
+      - codex/controller-listen-json-configurable-inputs
+
+permissions:
+  contents: write
+
+jobs:
+  decouple:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/controller-listen-json-configurable-inputs
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply decoupling patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout origin/main -- docs/config/scratchbones-config.js
+          sed -i 's/^t# the game closure\./# the game closure./' .github/controller-camera-decouple.py
+          python3 .github/controller-camera-decouple.py
+      - name: Validate independent controller and camera layers
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check docs/game.js
+          node --check docs/js/input-bindings.js
+          node --check docs/js/controller-ui-nav.js
+          node --check docs/js/music-minigame.js
+          node --check docs/js/social-action-wheel.js
+          node --check docs/js/camera-look-clamp.js
+          node --check scripts/test-controller-experience.js
+          node --check scripts/test-controller-default-layout.js
+          node --check scripts/test-camera-look-clamps.js
+          node scripts/test-controller-experience.js
+          node scripts/test-controller-default-layout.js
+          node scripts/test-camera-look-clamps.js
+          node scripts/test-held-seed-desktop-capture.js
+          git diff --exit-code origin/main -- docs/config/scratchbones-config.js
+          ! grep -q '"id": "uiOpenMenu"' docs/config/scratchbones-config.js
+          ! grep -q 'clampCameraPitchOffsetDeg' scripts/test-controller-experience.js
+          git diff --check
+      - name: Commit decoupled implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs scripts .github/controller-camera-decouple.py
+          git commit -m "Decouple controller bindings from camera look policy"
+          git push origin HEAD:codex/controller-listen-json-configurable-inputs
