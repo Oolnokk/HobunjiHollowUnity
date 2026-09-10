@@ -1,10 +1,9 @@
 // Controller-held selection UI adapter.
 //
-// Tool Select, Item Select, Utility Menu, and Social Actions are semantic
-// opener actions. Holding one temporarily gives BOTH analog sticks to the
-// opened selector: horizontal motion steps corner arches, while full radial
-// motion selects the centered Social Actions wheel. Releasing the opener
-// commits. No authored mode-shift binding is required.
+// Tool Select and Item Select distinguish a tap from a hold: tapping recalls
+// the last-selected tool/item, while holding opens the selector. Utility Menu
+// and Social Actions keep their existing held-selector behavior. Once a selector
+// is open, either analog stick can navigate it and release commits.
 (() => {
   'use strict';
 
@@ -14,6 +13,8 @@
   const WHEEL_DEADZONE = 0.28;
   const REPEAT_INITIAL_MS = 330;
   const REPEAT_RATE_MS = 135;
+  const TAP_HOLD_THRESHOLD_MS = 350; // Used only by Tool Select / Item Select to match the pointer buttons' tap-vs-hold timing.
+  const TAP_RECALL_ACTION_IDS = new Set(['toolSelect', 'itemSelect']); // Used to keep tap recall scoped to the two selectors requested by the player.
   const SELECTORS = Object.freeze({
     toolSelect: Object.freeze({ kind: 'tool', open: 'openTool', step: 'scrollTool' }),
     itemSelect: Object.freeze({ kind: 'item', open: 'openItem', step: 'scrollItem' }),
@@ -28,6 +29,10 @@
     openerCode: null,
     padIndex: null,
     lock: null,
+    pendingAction: null,
+    pendingCode: null,
+    pendingPadIndex: null,
+    pendingStartedAt: 0,
     lastArchDirection: 0,
     nextRepeatAt: 0,
     preferredPadIndex: null,
@@ -94,6 +99,45 @@
     const arch = sharedArch();
     if (!arch || typeof arch[selector.open] !== 'function') return false;
     arch[selector.open]();
+    return true;
+  }
+
+  function recallTappedSelection(actionId) {
+    const arch = sharedArch(); // Used to recall through the same selector state that pointer/desktop input already owns.
+    if (!arch) return false;
+    if (actionId === 'toolSelect') {
+      if (typeof arch.recallLastTool !== 'function') return false;
+      arch.recallLastTool();
+      state.lastInput = 'toolSelect tap recalled last tool';
+      return true;
+    }
+    if (actionId === 'itemSelect') {
+      if (typeof arch.openItem !== 'function' || typeof arch.releaseSelection !== 'function') return false;
+      arch.openItem();
+      arch.releaseSelection(); // Opening selects the remembered active item; immediate release equips it without leaving the arch open.
+      state.lastInput = 'itemSelect tap recalled last item';
+      return true;
+    }
+    return false;
+  }
+
+  function clearPending(reason = 'cleared') {
+    if (!state.pendingAction) return false;
+    state.lastInput = `${state.pendingAction} pending ${reason}`;
+    state.pendingAction = null;
+    state.pendingCode = null;
+    state.pendingPadIndex = null;
+    state.pendingStartedAt = 0;
+    return true;
+  }
+
+  function beginPendingTapHold(actionId, pad, openerCode, now) {
+    if (!pad || !openerCode || !TAP_RECALL_ACTION_IDS.has(actionId)) return false;
+    state.pendingAction = actionId;
+    state.pendingCode = openerCode;
+    state.pendingPadIndex = pad.index;
+    state.pendingStartedAt = Number(now) || performance.now();
+    state.lastInput = `${actionId} press pending tap/hold`;
     return true;
   }
 
@@ -220,6 +264,32 @@
     return null;
   }
 
+  function updatePendingTapHold(frame, pad) {
+    if (!state.pendingAction) return false;
+    if (state.pendingPadIndex !== null && pad.index !== state.pendingPadIndex) {
+      clearPending('cancelled (controller changed)');
+      return true;
+    }
+    if (menuIsActive() || musicOwnsController()) {
+      clearPending(`cancelled (${menuIsActive() ? 'menu opened' : 'music opened'})`);
+      return true;
+    }
+    if (!isDown(frame, state.pendingCode)) {
+      const actionId = state.pendingAction; // Used after clearPending() so a release can still execute the intended recall action.
+      clearPending('released as tap');
+      recallTappedSelection(actionId);
+      return true;
+    }
+    if (frame.now - state.pendingStartedAt >= TAP_HOLD_THRESHOLD_MS) {
+      const actionId = state.pendingAction; // Used to transfer the exact pending action into the existing held-selector path.
+      const openerCode = state.pendingCode; // Used to keep release paired with the physical binding that began this gesture.
+      clearPending('promoted to hold');
+      if (!beginSelection(actionId, pad, openerCode)) state.lastInput = `${actionId} hold failed to open`;
+      return true;
+    }
+    return true;
+  }
+
   // One slot in ControllerInput's shared loop instead of a private rAF. The
   // pad, its per-code analog values and the press/release edges were all
   // resolved once for this frame before we were called.
@@ -227,6 +297,7 @@
     const pad = frame.pad;
     if (!pad) {
       if (state.activeAction) finishSelection(false, 'controller disconnected');
+      if (state.pendingAction) clearPending('cancelled (controller disconnected)');
       return; // Nothing below can do anything without a pad.
     }
 
@@ -246,10 +317,18 @@
       return;
     }
 
+    if (state.pendingAction) {
+      updatePendingTapHold(frame, pad);
+      return;
+    }
+
     if (!menuIsActive() && !musicOwnsController()) {
       state.preferredPadIndex = pad.index;
-      const pressed = firstPressedSelector(frame); // Opens selectors directly from their configured action rather than a separate shifted-direction binding table.
-      if (pressed) beginSelection(pressed.actionId, pad, pressed.code);
+      const pressed = firstPressedSelector(frame); // Resolves semantic selector ownership from the player's current configured binding.
+      if (pressed) {
+        if (TAP_RECALL_ACTION_IDS.has(pressed.actionId)) beginPendingTapHold(pressed.actionId, pad, pressed.code, frame.now);
+        else beginSelection(pressed.actionId, pad, pressed.code);
+      }
     }
   }
 
@@ -259,6 +338,10 @@
       kind: state.kind,
       openerCode: state.openerCode,
       padIndex: state.padIndex,
+      pendingAction: state.pendingAction,
+      pendingCode: state.pendingCode,
+      pendingPadIndex: state.pendingPadIndex,
+      pendingAgeMs: state.pendingAction ? Math.max(0, Math.round((performance.now?.() || 0) - state.pendingStartedAt)) : 0,
       preferredPadIndex: state.preferredPadIndex,
       lastStickSource: state.lastStickSource,
       lastInput: state.lastInput,
@@ -270,7 +353,8 @@
 
   function showDebug() {
     const snapshot = debugSnapshot(); // Used to provide an in-page/mobile-friendly diagnostic without requiring the browser console.
-    const text = `Controller selector: ${snapshot.activeAction || 'idle'} | pad=${snapshot.padIndex ?? '-'} | stick=${snapshot.lastStickSource} | ${snapshot.lastInput}`;
+    const selectorState = snapshot.activeAction || (snapshot.pendingAction ? `${snapshot.pendingAction}:pending` : 'idle'); // Used to expose tap-vs-hold state in the existing one-line debug toast.
+    const text = `Controller selector: ${selectorState} | pad=${snapshot.padIndex ?? snapshot.pendingPadIndex ?? '-'} | stick=${snapshot.lastStickSource} | ${snapshot.lastInput}`;
     const existing = document.getElementById('controllerSelectionDebugToast'); // Reused between taps so debug output never accumulates DOM nodes.
     const output = existing || document.createElement('output');
     output.id = 'controllerSelectionDebugToast';
@@ -282,7 +366,12 @@
     return text;
   }
 
-  window.addEventListener('blur', () => { if (state.activeAction) finishSelection(false, 'window blur'); });
+  function cancelSelection(reason = 'external cancel') {
+    if (state.pendingAction) return clearPending(reason);
+    return finishSelection(false, reason);
+  }
+
+  window.addEventListener('blur', () => { cancelSelection('window blur'); });
 
   unsubscribe = window.ControllerInput?.subscribe?.(
     'controller-selection-ui', onControllerFrame, window.ControllerInput.PRIORITY.selection,
@@ -290,8 +379,8 @@
 
   window.ControllerSelectionUI = {
     installed: true,
-    get active() { return Boolean(state.activeAction); },
-    cancel: () => finishSelection(false, 'external cancel'),
+    get active() { return Boolean(state.activeAction || state.pendingAction); },
+    cancel: () => cancelSelection('external cancel'),
     getDebug: debugSnapshot,
     showDebug,
   };
