@@ -95,6 +95,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     <h1>MAP EDITOR</h1>
     <span class="pill" id="activeMapPill">no map</span>
     <button class="sec" id="upToParentBtn" style="display:none">⬆ Parent map</button>
+    <button class="sec" id="openInterior3dBtn" style="display:none">🏠 Open in 3D Interior Editor</button>
     <div id="topbar-right">
       <span class="pill" id="liveConnection">○ Game not connected</span>
       <button class="ok" id="reflectBtn">↻ Reflect in Game</button>
@@ -535,7 +536,12 @@ const DECOR = {
   tableLong:{icon:'🍽️',label:'Long Table',fw:4,fd:1,area:'interior'}, tableRound:{icon:'🍽️',label:'Round Table',fw:2,fd:2,area:'interior'},
   tableSmall:{icon:'🍽️',label:'Small Table',fw:1,fd:1,area:'interior'}, wardrobe:{icon:'🚪',label:'Tall Wardrobe',fw:2,fd:1,area:'interior'},
   washTub:{icon:'🛁',label:'Copper Wash Tub',fw:1,fd:1,area:'any'},
-  counter:{icon:'🏪',label:'Shop Counter',fw:3,fd:1,area:'interior'}
+  statue:{icon:'🗿',label:'Weathered Statue',fw:1,fd:1,area:'any'},
+  counter:{icon:'🏪',label:'Shop Counter',fw:3,fd:1,area:'interior'},
+  nestBranch:{icon:'🪺',label:'Branch Nest',fw:1,fd:1,area:'any'}, nest:{icon:'🪺',label:'Nest',fw:2,fd:2,area:'any'},
+  alchemyTable:{icon:'⚗️',label:'Alchemy Table',fw:1,fd:1,area:'interior'}, bulletinBoard:{icon:'📋',label:'Bulletin Board',fw:1,fd:1,area:'interior'},
+  mineLadder:{icon:'🪜',label:'Mine Ladder',fw:1,fd:1,area:'interior'}, campfire:{icon:'🔥',label:'Campfire',fw:1,fd:1,area:'any'},
+  feedGrinder:{icon:'⚙️',label:'Feed Grinder',fw:1,fd:1,area:'interior'}, trough:{icon:'🪣',label:'Feed Trough',fw:1,fd:1,area:'interior'}
 };
 
 // Shared routes and transition spots are supported on BOTH map categories.
@@ -785,6 +791,10 @@ recomputeAllElevations();
 window._mapEditorBridge = {
   getWorkspace: () => ws,
   importBuildingInterior: data => importBuildingInterior(data),
+  exportActiveBuildingInterior: () => {
+    const map = activeMap();
+    return isInteriorMap(map) ? buildBuildingInteriorMapV1(map) : null;
+  },
   focusStation: (mapId, stationId) => {
     if (!mapId || !mapById(mapId)) return false;
     ws.activeId = mapId;
@@ -1074,6 +1084,7 @@ function saveWorkspace() {
   _saveT = setTimeout(() => { try { localStorage.setItem(WS_KEY, JSON.stringify(ws)); } catch(_) {} }, 300);
 }
 function activeMap() { return ws.maps.find(m => m.id === ws.activeId) || ws.maps[0]; }
+function isInteriorMap(map) { return map?.category === 'interior' || map?.category === 'building_interior'; }
 function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
 
 // ── Alternate layouts: decor seam ────────────────────────────────────────────
@@ -2302,8 +2313,11 @@ function renderPalette() {
     else html = Object.keys(PROCESSORS).map(k =>
       `<button class="sec palBtn ${brush.furniture===k?'act':''}" data-pal="furniture" data-val="${k}">${PROCESSORS[k].icon} ${PROCESSORS[k].label}</button>`).join('');
   } else if (mode === 'decor') {
-    const want = (m.category === 'interior' || m.category === 'building_interior') ? ['interior','any'] : ['farm','any'];
-    html = Object.keys(DECOR).filter(k => want.includes(DECOR[k].area)).map(k =>
+    // Map authoring is not inventory placement: exterior town/zone scenes may
+    // intentionally use beds, tables, shop fixtures, or other pieces whose
+    // player-facing placement rule says "interior". Show the complete catalog
+    // here; the area flag remains metadata for gameplay placement systems.
+    html = Object.keys(DECOR).map(k =>
       `<button class="sec palBtn ${brush.decor===k?'act':''}" data-pal="decor" data-val="${k}">${DECOR[k].icon} ${DECOR[k].label} <span class="muted" style="margin-left:auto">${DECOR[k].fw}×${DECOR[k].fd}</span></button>`).join('');
   } else if (mode === 'path') {
     html = `<button class="ok" id="newPathBtn" style="width:100%;margin-bottom:6px">+ New route</button>` +
@@ -3651,6 +3665,7 @@ function fillSettings() {
   const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
   $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · tier ${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;
   $('upToParentBtn').style.display = (m.isSubmap && mapById(m.parentMapId)) ? '' : 'none';
+  $('openInterior3dBtn').style.display = isInteriorMap(m) ? '' : 'none';
   $('floorTemplateBtn').style.display = (m.category === 'interior' || m.category === 'building_interior') ? '' : 'none';
   refreshLiveControls();
 }
@@ -4608,6 +4623,21 @@ $('upToParentBtn').addEventListener('click', () => {
   activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
   activeEntryId = null; editingLayoutId = null;
   updateAll(); fitView();
+});
+$('openInterior3dBtn').addEventListener('click', () => {
+  const map = activeMap();
+  if (!isInteriorMap(map)) { setStatus('Open an interior map first.'); return; }
+  const interior = buildBuildingInteriorMapV1(map); // Carries the live unsaved 2D workspace state into the richer author schema.
+  let handedToHub = false;
+  try {
+    handedToHub = window.parent !== window && !!window.parent.openBuildingInteriorEditor?.(map.id, interior);
+  } catch (_) { /* Standalone/cross-origin tools use the mirrored handoff below. */ }
+  if (!handedToHub) {
+    _mapLiveEndpoint.send({ type: 'open-interior-author', requestId: window.MapLivePreview.requestId('interior-open'), interior }, { mirror: true });
+    const editorWindow = window.open('../building-interior-author/index.html', 'hobunji-building-interior-author');
+    if (!editorWindow) { setStatus('Popup blocked — allow the 3D Interior Editor window, then try again.'); return; }
+  }
+  setStatus(`Opening ${map.name || map.id} in the 3D Interior Editor.`);
 });
 $('newPlateauGroupBtn').addEventListener('click', () => {
   pushUndo();

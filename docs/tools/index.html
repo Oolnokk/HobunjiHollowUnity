@@ -340,17 +340,21 @@ document.getElementById('npc-search').addEventListener('input', e => {
 loadNpcDb();
 
 // ── Hub bridge: map editor → Interior Editor ─────────────────────────────────
-window.addEventListener('message', e => {
-  if (!e.data || e.data.type !== 'openBuildingInterior') return;
-  const mapId = e.data.mapId;
+window.openBuildingInteriorEditor = function(mapId, mapData) {
   switchToTab('building-interior-author');
   const iframe = document.getElementById('if-building-interior-author');
   const tryBridge = (attempts=0) => {
     const bridge = iframe.contentWindow?._biaBridge;
+    if (mapData && bridge?.loadData) { bridge.loadData(mapData, 'Map Editor'); return; }
     if (bridge?.loadFromServer) { bridge.loadFromServer(mapId); return; }
     if (attempts < 20) setTimeout(() => tryBridge(attempts + 1), 300);
   };
   tryBridge();
+  return true;
+};
+window.addEventListener('message', e => {
+  if (!e.data || e.data.type !== 'openBuildingInterior') return;
+  window.openBuildingInteriorEditor(e.data.mapId, e.data.mapData);
 });
 
 // ── Hub bridge: Schedule Editor → Map Editor (jump to a rule's station) ──────

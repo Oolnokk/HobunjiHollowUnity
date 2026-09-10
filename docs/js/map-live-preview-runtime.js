@@ -10,7 +10,7 @@
   let editorWindow = null; // Named standalone editor window, reused rather than opening duplicate tabs.
   let transformControl = null; // Runtime placement gizmo, attached only to outdoor decor/processing furniture.
   let selectedPlacement = null; // {ref,node,basePosition}; mirrors edits back into the Map Editor workspace.
-  let gameplayLock = null; // Shared movement/tool/action lock held only while a gizmo handle is dragged.
+  let gameplayLock = null; // Shared movement/tool/action lock held for the complete placement-edit session.
   let transformSendTimer = null;
   const raycaster = new THREE.Raycaster(); // Shared picker raycaster; created once instead of per pointer event.
 
@@ -81,12 +81,7 @@
     transformControl.setMode('translate');
     transformControl.addEventListener('dragging-changed', event => {
       window.__mapEditorGizmoDragging = !!event.value;
-      if (event.value && !gameplayLock) {
-        gameplayLock = window.CharacterActionLocks?.acquire?.({ owner: 'map-editor-gizmo', reason: 'Adjusting a map placement', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
-      } else if (!event.value) {
-        gameplayLock?.release?.(); gameplayLock = null;
-        sendPlacementTransform(true);
-      }
+      if (!event.value) sendPlacementTransform(true);
       refreshPanel();
     });
     transformControl.addEventListener('objectChange', () => sendPlacementTransform(false));
@@ -107,6 +102,7 @@
     basePosition.x -= ref.postX || 0; basePosition.y -= ref.postY || 0; basePosition.z -= ref.postZ || 0;
     selectedPlacement = { ref: { ...ref }, node, basePosition };
     window.__mapEditorGizmoActive = true;
+    gameplayLock = gameplayLock || window.CharacterActionLocks?.acquire?.({ owner: 'map-editor-gizmo', reason: 'Adjusting a map placement', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     control.attach(node);
     refreshPanel();
   }
@@ -181,7 +177,7 @@
     const gizmoSection = document.getElementById('mapEditGizmoSection');
     if (gizmoSection) gizmoSection.style.display = selectedPlacement ? '' : 'none';
     const gizmoLabel = document.getElementById('mapEditGizmoSelection');
-    if (gizmoLabel && selectedPlacement) gizmoLabel.textContent = `${selectedPlacement.ref.kind} · ${placementIdentity(selectedPlacement.ref)}${window.__mapEditorGizmoDragging ? ' · controls paused' : ''}`;
+    if (gizmoLabel && selectedPlacement) gizmoLabel.textContent = `${selectedPlacement.ref.kind} · ${placementIdentity(selectedPlacement.ref)} · controls paused`;
     const arenaRow = document.getElementById('mapEditArenaTools');
     if (arenaRow) arenaRow.style.display = deps?.getCurrentArea?.() === deps?.DEV_ARENA_ZONE_ID ? '' : 'none';
   }
@@ -243,17 +239,22 @@
     const ndc = { x: ((event.clientX - rect.left) / rect.width) * 2 - 1, y: -((event.clientY - rect.top) / rect.height) * 2 + 1 };
     raycaster.setFromCamera(ndc, deps.camera);
     const hits = raycaster.intersectObjects(deps.getActiveScene()?.children || [], true);
+    let blockedHit = null;
+    let terrainHit = null;
     for (const hit of hits) {
       const owner = logicalOwner(hit.object);
-      if (owner?.type === 'blocked') { setStatus(owner.label, false); return; }
       if (owner?.type === 'selection') { navigateToRef(owner.ref, owner.node); return; }
-      if (hit.object.userData?.mapEditorTerrain || hit.object.userData?.terrainEdgeId != null) {
-        const point = hit.point;
-        navigateToRef({ kind: 'tile', col: Math.floor(point.x), row: Math.floor(point.z) });
-        return;
-      }
+      if (owner?.type === 'blocked' && !blockedHit) blockedHit = owner;
+      if ((hit.object.userData?.mapEditorTerrain || hit.object.userData?.terrainEdgeId != null) && !terrainHit) terrainHit = hit;
     }
-    setStatus('Nothing editable was hit. Click to Select is ready to try again.', false);
+    // Prefer authored placements anywhere under the pointer over terrain or a
+    // player/NPC plane in front of them; sprite planes otherwise made nearby
+    // furniture feel impossible to select.
+    if (terrainHit) {
+      navigateToRef({ kind: 'tile', col: Math.floor(terrainHit.point.x), row: Math.floor(terrainHit.point.z) });
+      return;
+    }
+    setStatus(blockedHit?.label || `Nothing editable was hit (${hits.length} ray hits). Click to Select is ready to try again.`, false);
   }
 
   function navigateToRef(ref, node = null) {
@@ -268,10 +269,15 @@
       layoutId: ref.layoutId ?? descriptor.layoutId,
       selection,
     };
-    openEditor(request);
+    // Keep the pointer workflow in the game. An already-open Map Editor follows
+    // this selection, while the pending navigation is retained for the explicit
+    // Open Map Editor button instead of stealing focus during gizmo use.
+    window.MapLivePreview.savePendingNavigation(request);
+    endpoint.send(request);
     if (node && ['decor', 'furniture'].includes(selection.kind)) attachPlacement({ ...ref, layoutId: request.layoutId }, node);
     else detachPlacement();
-    setStatus(`Selected ${selection.kind}${selection.id ? ` ${selection.id}` : selection.col != null ? ` ${selection.col},${selection.row}` : ''} in Map Editor.`);
+    const syncNote = editorConnected ? 'Map Editor synchronized.' : 'Open Map Editor to persist this session edit.';
+    setStatus(`Selected ${selection.kind}${selection.id ? ` ${selection.id}` : selection.col != null ? ` ${selection.col},${selection.row}` : ''}. ${syncNote}`);
   }
 
   async function handleReflect(message) {
@@ -306,6 +312,10 @@
       editorConnected = true;
       refreshPanel();
       endpoint.send({ type: 'game-state', map: currentDescriptor(), revision });
+      return;
+    }
+    if (message.type === 'placement-transform-result' && message.status === 'applied') {
+      setStatus('Placement updated in Map Editor.');
       return;
     }
     if (message.type === 'reflect-request') handleReflect(message);

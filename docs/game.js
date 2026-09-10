@@ -23788,7 +23788,7 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
-        if (window.__mapEditorGizmoDragging) return;
+        if (window.__mapEditorGizmoActive) return;
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;
@@ -23953,7 +23953,7 @@
           gamepadState.hadPad = false;
           return;
         }
-        if (window.__mapEditorGizmoDragging) {
+        if (window.__mapEditorGizmoActive) {
           input.x = 0; input.y = 0; controllerLookActive = false;
           gamepadState.previous.clear(); gamepadState.activeShift = null;
           return;
@@ -24077,7 +24077,7 @@
       let _shiftDownAt = null;
       let _shiftDragged = false;
       window.addEventListener('keydown', (event) => {
-        if (window.__mapEditorGizmoDragging) { event.preventDefault(); return; }
+        if (window.__mapEditorGizmoActive) { event.preventDefault(); return; }
         const key = event.key.toLowerCase();
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
@@ -24308,7 +24308,7 @@
 
       // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
       function handleGameWheel(e, heldOnly = false) {
-        if (window.__mapEditorGizmoDragging) { e.preventDefault(); return true; }
+        if (window.__mapEditorGizmoActive) { e.preventDefault(); return true; }
         if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
         // Shift+wheel cycles melee auto-target's lock orbitally around the
@@ -24425,7 +24425,7 @@
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
-          && !window.__mapEditorGizmoDragging;
+          && !window.__mapEditorGizmoActive;
       }
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
@@ -24603,7 +24603,7 @@
           if (desktopWeaponPointerSlots.has(0) && (Number(e.buttons) & 1) === 0) {
             finishDesktopMouseAction({ button: 0, pointerType: 'mouse' });
           }
-          if (window.__mapEditorGizmoDragging) return;
+          if (window.__mapEditorGizmoActive) return;
           // A floating menu (the pause/inventory menu incl. its Alchemy tab,
           // the cooking hearth/campfire modal via setInteractionBlocked, or
           // the utilities wheel/an entries arc like potion/ammo select) owns

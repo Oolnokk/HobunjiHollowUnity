@@ -60,10 +60,20 @@ assert.match(indexHtml, /id="mapEditBtn"[\s\S]*style="display:none;"/, 'off-farm
 assert.match(runtimeSource, /area === 'farm'.*Farm editing uses the in-game Farm Editor/, 'runtime explicitly leaves farm authoring to Farm Editor');
 assert.match(runtimeSource, /mapSnapshot: generated \? deps\.exportGeneratedMap/, 'procedural zones export a session snapshot to the editor');
 assert.match(editorHtml, /id="reflectBtn">↻ Reflect in Game/, 'Map Editor exposes Reflect in Game');
+assert.match(editorHtml, /id="openInterior3dBtn"/, 'Map Editor exposes a direct 3D Interior Editor handoff');
+assert.match(editorHtml, /type: 'open-interior-author'/, 'Map Editor mirrors unsaved interior data into a standalone 3D editor');
 assert.match(editorHtml, /new THREE\.TransformControls/, 'Map Editor 3D view exposes placement transform controls');
 assert.match(editorHtml, /spawnPreviewPlacements\(group, merged\)/, 'Map Editor 3D view renders decor and processing furniture');
+assert.match(editorHtml, /html = Object\.keys\(DECOR\)\.map\(k =>/, 'Map Editor exposes the complete decor catalog on exterior maps');
+for (const key of ['statue', 'nestBranch', 'nest', 'alchemyTable', 'bulletinBoard', 'mineLadder', 'campfire', 'feedGrinder', 'trough']) {
+  assert.match(editorHtml, new RegExp(`${key}:\\{`), `Map Editor catalog includes ${key}`);
+}
 assert.match(interiorEditorHtml, /id="updateMapEditorBtn"/, '3D Interior Editor can update the 2D Map Editor workspace');
+assert.match(interiorEditorHtml, /loadData: function\(data, source\)/, '3D Interior Editor accepts live data from the tools hub');
 assert.match(runtimeSource, /CharacterActionLocks\?\.acquire/, 'runtime gizmo uses the shared gameplay action lock');
+assert.match(runtimeSource, /controls paused/, 'runtime gizmo reports that controls remain paused for the edit session');
+assert.match(runtimeSource, /endpoint\.send\(request\);[\s\S]*attachPlacement/, 'in-game selection syncs without forcing focus into the Map Editor window');
+assert.match(gameSource, /if \(window\.__mapEditorGizmoActive\)/, 'game input is suppressed for the complete gizmo session');
 assert.match(runtimeSource, /type: 'placement-transform'/, 'runtime gizmo mirrors transforms into the Map Editor workspace');
 assert.match(townZoneSource, /postSX.*postScale/, 'outdoor runtime decor consumes per-axis placement scale');
 assert.match(editorHtml, /isFarmEditorMap\(rootId\)/, 'Map Editor rejects reflection for the linked farm root');

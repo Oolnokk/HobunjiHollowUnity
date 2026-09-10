@@ -453,8 +453,15 @@ var state = {
   dragFurn: null,
   dragOff: null,
 };
+function loadInteriorData(data, source){
+  if(!data || data.schema!=='hobunji_building_interior.v1') return false;
+  pushUndo(); state.interior=JSON.parse(JSON.stringify(data)); afterLoad();
+  log('Loaded "'+(data.name||data.id||'interior')+'" from '+(source||'Map Editor')+'.');
+  return true;
+}
 var mapEditorEndpoint=window.MapLivePreview.createEndpoint('interior-author',function(message){
   if(message.type==='interior-author-result'&&message.status==='applied') log('Map Editor updated. Use Reflect in Game there to rebuild the running scene.');
+  if(message.type==='open-interior-author') loadInteriorData(message.interior,'Map Editor');
 });
 
 function updateMapEditor(){
@@ -1505,8 +1512,11 @@ initTC();
 afterLoad();
 animate();
 log('Building Interior Editor ready.');
+var latestMapEditorMessage=mapEditorEndpoint.readLatest(); // Receives an unsaved map sent just before a standalone editor window opened.
+if(latestMapEditorMessage&&latestMapEditorMessage.type==='open-interior-author') loadInteriorData(latestMapEditorMessage.interior,'Map Editor');
 // Hub bridge — lets the parent dev-tools hub load a server map into this editor
 window._biaBridge = {
+  loadData: function(data, source) { return loadInteriorData(data, source || 'hub'); },
   loadFromServer: function(mapId) {
     fetch('../../config/maps/' + mapId + '.json')
       .then(function(r) { return r.json(); })
