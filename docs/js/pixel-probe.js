@@ -948,7 +948,11 @@
         : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
     }
     const held = deps.getHeldObjectDebug?.();
-    if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
+    if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${held.drinkPhase}@${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
+    if (held?.heldItemActionInput?.active) {
+      const hold = held.heldItemActionInput;
+      lines.push(`Held-item hold input: key=${hold.key || '-'} armed=${hold.armed ? 'yes' : 'no'} downFor=${hold.downForS.toFixed(2)}s/${hold.holdThresholdS.toFixed(2)}s`);
+    }
     if (held?.actionArch?.length) {
       const archState = held.actionArch.map(button => `${button.id}=${button.hidden ? 'hidden' : (button.action || 'empty')}${button.blocked ? '/blocked' : ''}`).join(' ');
       lines.push(`Mobile action arch: ${archState}`);

@@ -14,7 +14,7 @@ const bridge = source('docs/js/inventory-action-metadata-bridge.js'); // Used to
 
 const queueComment = game.indexOf('All other actions are queued to fire at the start of the strike phase'); // Used to locate useActiveAction's generic pendingAction path.
 const pendingAssignment = game.indexOf('pendingAction = {', queueComment); // Used to prove ordinary non-immediate actions are still queued for tool animation timing.
-const itemModeReturn = game.indexOf("if (heldMode === 'item' || _heldDrinkAnimT > 0)"); // Used to locate the held-item early return that strands those queued crop actions.
+const itemModeReturn = game.indexOf("if (heldMode === 'item' || _heldDrinkPhase)"); // Used to locate the held-item early return that strands those queued crop actions.
 assert.ok(queueComment >= 0 && pendingAssignment > queueComment && itemModeReturn >= 0,
   'fixture retains the generic strike queue and held-item tool-update early return that caused the crop deadlock');
 

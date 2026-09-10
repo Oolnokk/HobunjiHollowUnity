@@ -543,6 +543,10 @@
       style: 'primary',
       allowed: true,
       swigFraction: swigs ? `${swigs.remaining}/${swigs.total}` : null,
+      // Food/drink use the shared press/hold/cancel/arm/release drink-style
+      // windup (see held-item-action-input.js); raw reagents and recipe
+      // scrolls stay immediate item actions.
+      holdToCommit: held.kind === 'drink' || held.kind === 'food',
     };
   }
 
@@ -598,45 +602,28 @@
     return true;
   }
 
-  function consumeHeldItem() {
-    if (performance.now() < consumeLockUntil) return false;
+  // Commit-only mutation for held food/drink, called exactly once at the
+  // drink-style animation's strike frame (see beginHeldItemAction below).
+  // Revalidates the held item/key fresh rather than trusting whatever was
+  // true back when the press began — the player could have switched stacks,
+  // spent the last one elsewhere, or lost the selection entirely mid-hold.
+  function commitHeldConsumable(expectedKey) {
     const held = getHeldConsumable();
-    if (!held) return false;
+    if (!held || held.key !== expectedKey || (held.kind !== 'drink' && held.kind !== 'food')) {
+      itemDeps?.showToast?.('Nothing to consume.', false);
+      return null;
+    }
     const { key, def, inventory } = held;
 
     if (held.kind === 'drink') {
-      let result = null; // Filled exactly once at the authored drink strike.
-      const applyDrink = () => {
-        if (result) return result;
-        result = window.AlchemySystem?.drinkPotion?.(key);
-        if (!result) return null;
-        itemDeps.showToast?.(result.message, result.ok !== false);
-        itemDeps.refreshItemScroll?.();
-        itemDeps.buildInventoryGrid?.();
-        itemDeps.refreshActionBar?.();
-        itemDeps.saveMemberWorldData?.();
-        return result;
-      };
-      const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key, applyDrink)) || 0; // Existing liquor animation path.
-      if (!(animationMs > 0)) applyDrink();
-      consumeLockUntil = performance.now() + Math.max(180, animationMs);
-      return true;
-    }
-
-    if (held.kind === 'rawReagent') {
-      const result = window.AlchemySystem?.consumeRawReagent?.(key);
-      itemDeps.showToast?.(result?.message || 'Could not eat that reagent.', result?.ok !== false);
-      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
-      consumeLockUntil = performance.now() + 180;
-      return true;
-    }
-
-    if (held.kind === 'recipe') {
-      const result = window.AlchemySystem?.readRecipeItem?.(key);
-      itemDeps.showToast?.(result?.message || 'Could not read that recipe.', result?.ok !== false);
-      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
-      consumeLockUntil = performance.now() + 180;
-      return true;
+      const result = window.AlchemySystem?.drinkPotion?.(key);
+      if (!result) return null;
+      itemDeps.showToast?.(result.message, result.ok !== false);
+      itemDeps.refreshItemScroll?.();
+      itemDeps.buildInventoryGrid?.();
+      itemDeps.refreshActionBar?.();
+      itemDeps.saveMemberWorldData?.();
+      return result;
     }
 
     inventory[key]--;
@@ -659,6 +646,83 @@
     itemDeps.buildInventoryGrid?.();
     itemDeps.refreshActionBar?.();
     itemDeps.saveMemberWorldData?.();
+    return { ok: true };
+  }
+
+  // Locks out a fresh begin() until the drink animation's strike-to-neutral
+  // recovery tail has had time to finish playing, so releasing right after
+  // commit can't stomp the still-recovering pose with a brand-new one.
+  function lockAfterHeldConsumeCommit() {
+    const animation = window.HeldActionAnimations?.drink;
+    const strikeFrac = Number(animation?.strikeFrac) || 0.62;
+    const durationS = Number(animation?.durationS) || 0.95;
+    const tailMs = Math.max(0, 1 - strikeFrac) * durationS * 1000;
+    consumeLockUntil = performance.now() + Math.max(180, tailMs);
+  }
+
+  // Recipe-scroll reading and raw-reagent consumption are immediate item
+  // actions rather than drink-style windups — shared by both the primary
+  // begin() path and the legacy immediate fallback below. Returns null if
+  // `held` isn't one of these two kinds.
+  function commitImmediateIfReagentOrRecipe(held) {
+    if (held.kind === 'rawReagent') {
+      const result = window.AlchemySystem?.consumeRawReagent?.(held.key);
+      itemDeps.showToast?.(result?.message || 'Could not eat that reagent.', result?.ok !== false);
+    } else if (held.kind === 'recipe') {
+      const result = window.AlchemySystem?.readRecipeItem?.(held.key);
+      itemDeps.showToast?.(result?.message || 'Could not read that recipe.', result?.ok !== false);
+    } else {
+      return null;
+    }
+    itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
+    consumeLockUntil = performance.now() + 180;
+    return true;
+  }
+
+  // Begins the held-item action on press. Recipe reading and raw-reagent
+  // consumption stay immediate, exactly as before — only food/drink route
+  // through the shared press/hold/cancel/arm/release windup (see
+  // held-item-action-input.js), committing once at its strike frame via
+  // commitHeldConsumable above.
+  function beginHeldItemAction() {
+    if (performance.now() < consumeLockUntil) return false;
+    const held = getHeldConsumable();
+    if (!held) return false;
+
+    const immediate = commitImmediateIfReagentOrRecipe(held);
+    if (immediate != null) return immediate;
+
+    const key = held.key;
+    const commit = () => {
+      commitHeldConsumable(key);
+      lockAfterHeldConsumeCommit();
+    };
+    const descriptor = {
+      startVisual() {
+        const started = itemDeps.beginHeldDrinkAnimation?.(key, commit);
+        if (!started) commit(); // Animation unavailable — degrade to immediate consumption.
+      },
+      resumeVisual() { itemDeps.continueHeldDrinkAnimation?.(); },
+      cancelVisual() { itemDeps.cancelHeldDrinkAnimation?.(); },
+      abortVisual() { itemDeps.abortHeldDrinkAnimation?.(); },
+    };
+    if (!window.HeldItemActionInput) { descriptor.startVisual(); return true; } // Degrade gracefully if the controller failed to load.
+    return window.HeldItemActionInput.begin(key, descriptor);
+  }
+
+  // Immediate compatibility fallback with no press/hold/release semantics
+  // at all — for a caller with no natural press/release pairing (a stray
+  // programmatic dispatch, an unbound legacy key that only ever fires once).
+  // Ordinary player input never reaches this: it's claimed by
+  // beginHeldItemAction's hold controller path first, so this can't
+  // double-consume or leave an item stuck mid-hold with nothing to release it.
+  function consumeHeldItemImmediate() {
+    if (performance.now() < consumeLockUntil) return false;
+    const held = getHeldConsumable();
+    if (!held) return false;
+    const immediate = commitImmediateIfReagentOrRecipe(held);
+    if (immediate != null) return immediate;
+    commitHeldConsumable(held.key);
     consumeLockUntil = performance.now() + 180;
     return true;
   }
@@ -704,7 +768,8 @@
   else window.addEventListener('load', startPostFrameLoop, { once: true });
 
   window.HobunjiDrunkGameplayBridge = {
-    consumeHeldItem,
+    beginHeldItemAction,
+    consumeHeldItemImmediate,
     consumeBottleSwig,
     getHeldItemAction,
     getBottleSwigStatus,

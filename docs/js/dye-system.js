@@ -170,16 +170,16 @@
   }
 
   function patchHeldActions(api) {
-    if (!api?.getHeldItemAction || !api?.consumeHeldItem || api.__dyeItemsPatched) return;
+    if (!api?.getHeldItemAction || !api?.beginHeldItemAction || api.__dyeItemsPatched) return;
     const getAction = api.getHeldItemAction.bind(api); // Used to preserve food, drink, alchemy, and technique-scroll actions when no dye is held.
-    const consume = api.consumeHeldItem.bind(api); // Used as the fallback mutation path for every non-dye consumable.
+    const begin = api.beginHeldItemAction.bind(api); // Used as the fallback mutation path for every non-dye consumable.
     api.getHeldItemAction = () => {
       const held = heldMysteryDye(); // Used to expose mystery dye through the same configurable Item Action 1 path as other consumables.
       return held
         ? { icon: held.def.icon || '🎨', label: `Use ${held.def.label || 'Mystery Dye'}`, action: 'consume_held_item', style: 'primary', allowed: true }
         : getAction();
     };
-    api.consumeHeldItem = () => heldMysteryDye() ? consumeHeldMysteryDye() : consume();
+    api.beginHeldItemAction = () => heldMysteryDye() ? consumeHeldMysteryDye() : begin();
     api.__dyeItemsPatched = true;
   }
 
