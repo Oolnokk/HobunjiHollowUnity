@@ -566,9 +566,13 @@
     };
   }
 
-  function offerNpcSwig(walker) {
+  // Shared core behind offerNpcSwig (the equipped-bottle action button) and
+  // offerNpcDrinkFromInventory (the seated same-table "Offer Drink" wheel
+  // entry, which finds a bottle in inventory without requiring it to be the
+  // currently-equipped held item — see findAvailableDrinkBottles/drinkByKey
+  // below). Both just resolve a different `held` descriptor and hand it here.
+  function performNpcDrinkOffer(walker, held) {
     if (performance.now() < consumeLockUntil) return false;
-    const held = getHeldAlcohol();
     const npcId = walker?.rec?.id;
     if (!held || !npcId || isNpcBlackedOut(npcId)) return false;
     const response = window.AmbientDialogue?.resolveAlcoholOffer?.(walker) || { accepted: true };
@@ -600,6 +604,42 @@
     itemDeps?.saveMemberWorldData?.();
     consumeLockUntil = performance.now() + Math.max(180, animationMs);
     return true;
+  }
+
+  function offerNpcSwig(walker) {
+    return performNpcDrinkOffer(walker, getHeldAlcohol());
+  }
+
+  // Resolves an alcoholic bottle by key straight from inventory, independent
+  // of whatever item (if any) is currently equipped/held — the seated
+  // same-table Offer Drink flow searches the whole inventory for available
+  // bottles rather than requiring the player to have one equipped first.
+  function drinkByKey(key) {
+    const inventory = itemDeps?.inventory;
+    const def = itemDeps?.getItemDef?.(key);
+    if (!key || !inventory || !def || !isAlcoholDef(def) || !(Number(inventory[key]) > 0)) return null;
+    return { key, def, inventory, kind: 'drink' };
+  }
+
+  // Every alcoholic bottle currently in inventory with at least one swig
+  // available, regardless of what's equipped — feeds the seated Offer Drink
+  // wheel entry's item-branch when more than one kind is on hand.
+  function findAvailableDrinkBottles() {
+    const inventory = itemDeps?.inventory;
+    if (!inventory || !itemDeps?.getItemDef) return [];
+    const out = [];
+    for (const key of Object.keys(inventory)) {
+      if (!(Number(inventory[key]) > 0)) continue;
+      const def = itemDeps.getItemDef(key);
+      if (!def || !isAlcoholDef(def)) continue;
+      const status = getBottleSwigStatus(key, def, inventory);
+      if (status) out.push({ key, def, status });
+    }
+    return out;
+  }
+
+  function offerNpcDrinkFromInventory(walker, itemKey) {
+    return performNpcDrinkOffer(walker, drinkByKey(itemKey));
   }
 
   // Commit-only mutation for held food/drink, called exactly once at the
@@ -775,6 +815,8 @@
     getBottleSwigStatus,
     getNpcSwigOfferAction,
     offerNpcSwig,
+    findAvailableDrinkBottles,
+    offerNpcDrinkFromInventory,
     isFood,
     isPotionOrDrink,
     isAlcoholDef,

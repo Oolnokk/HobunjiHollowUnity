@@ -60,7 +60,6 @@
   let _selectedPassageHours = 1; // Used by duration controls and the live target-date preview.
   let _timePassageLock = null; // CharacterActionLocks handle held while the open modal/transition owns player input.
   let _passagePreviewTimer = 0; // Interval id used to keep the modal's current-time line live while open.
-  let _syncingSeatedWait = false; // MutationObserver recursion guard while injecting Action 2's seated Wait button.
   let _seatedWaitPointerId = null; // Mouse pointer currently armed to open seated Wait on release.
   let _seatedWaitContextMenuTimer = 0; // Clears the short browser-context-menu suppression window after a seated right-click.
   const _interceptedDesktopHolds = { // Used to preserve E/Q tap-vs-hold selection behavior while Sleep/Wait intercept those keys.
@@ -350,7 +349,6 @@
   function installTimePassageRuntime() {
     buildTimePassageUi();
     installActionInterceptors();
-    installSeatedWaitAction();
   }
 
   function buildTimePassageUi() {
@@ -693,11 +691,13 @@
   }
 
   function isSeatedReady() {
-    const stand = document.getElementById('btnAction1'); // Used as the authoritative DOM signal that game.js's private sitInteraction is active.
-    return !!stand
-      && !stand.classList.contains('abt-hidden')
-      && stand.dataset.action === 'obj_stand'
-      && !stand.classList.contains('blocked');
+    // Seated control scheme moved Stand off of Action 1 (Dodge stands the
+    // player up now — see game.js's performContextAction), so sniffing
+    // btnAction1's dataset.action for 'obj_stand' would silently go dark the
+    // moment that changed. window.__hobunjiFurnitureDebug.isSeatedActive is
+    // game.js's real sitInteraction.phase === 'active' state instead of an
+    // inference from whichever slot currently renders Stand.
+    return !!window.__hobunjiFurnitureDebug?.isSeatedActive?.();
   }
 
   function desktopTapWindowMs() {
@@ -849,49 +849,14 @@
     }, true);
   }
 
-  function installSeatedWaitAction() {
-    const stack = document.getElementById('actionStack') || document.body; // Mutation root used to notice game.js refreshing the seated action arch.
-    if (!stack || stack.dataset.calendarWaitObserved === '1') return;
-    stack.dataset.calendarWaitObserved = '1';
-    const observer = new MutationObserver(() => { // Keeps Action 2 present after game.js re-renders its private sitInteraction-only Stand layout.
-      if (_syncingSeatedWait) return;
-      queueMicrotask(syncSeatedWaitButton);
-    });
-    observer.observe(stack, { subtree: true, childList: true, attributes: true, characterData: true });
-    syncSeatedWaitButton();
-  }
-
-  function syncSeatedWaitButton() {
-    if (_syncingSeatedWait) return;
-    const stand = document.getElementById('btnAction1'); // Existing seated Stand slot used as the private sitInteraction proxy.
-    const wait = document.getElementById('btnAction2'); // Existing Action 2 slot repurposed only while the Stand proxy is present.
-    if (!stand || !wait) return;
-    _syncingSeatedWait = true;
-    try {
-      const seated = !stand.classList.contains('abt-hidden') && stand.dataset.action === 'obj_stand'; // Used to decide whether Wait should occupy Action 2.
-      if (seated) {
-        const blocked = stand.classList.contains('blocked'); // Keeps Wait disabled during the seat-in transition exactly when Stand is disabled.
-        const keyBadge = window.matchMedia?.('(pointer: fine)')?.matches ? '<span class="abt-key">[Q]</span>' : ''; // Desktop-only badge matching the existing arch format.
-        const waitHtml = `${keyBadge}<span class="abt-icon">⏳</span><span class="abt-label">Wait</span>`; // Avoids unnecessary DOM rewrites when game.js has not replaced the injected slot.
-        if (wait.dataset.timePassageInjected !== '1') wait.dataset.timePassageInjected = '1';
-        if (wait.dataset.action !== 'calendar_wait') wait.dataset.action = 'calendar_wait';
-        if (wait.classList.contains('abt-hidden')) wait.classList.remove('abt-hidden');
-        if (wait.classList.contains('blocked') !== blocked) wait.classList.toggle('blocked', blocked);
-        if (wait.innerHTML !== waitHtml) wait.innerHTML = waitHtml;
-      } else if (wait.dataset.timePassageInjected === '1') {
-        // If game.js has already repopulated the slot with a real action,
-        // leave that fresh content alone and only clear our marker.
-        if (wait.dataset.action === 'calendar_wait') {
-          wait.classList.add('abt-hidden');
-          delete wait.dataset.action;
-          wait.innerHTML = '';
-        }
-        delete wait.dataset.timePassageInjected;
-      }
-    } finally {
-      _syncingSeatedWait = false;
-    }
-  }
+  // installSeatedWaitAction/syncSeatedWaitButton (removed) used to force a
+  // synthetic 'calendar_wait' button into Action 2's DOM slot by watching
+  // for game.js to re-render the seated-only action arch, since the old
+  // seated scheme showed nothing but Stand and Wait had nowhere real to
+  // live. The seated control scheme now gives Wait a real Action 3 slot
+  // (see computeActionButtons' sitInteraction branch in game.js), so it's
+  // rendered the same way as every other action-bar button instead of being
+  // grafted on afterward — nothing needs to re-inject or restore it here.
 
   function timeDebugSnapshot() {
     const nextShiftDay = nextCivilYearStartDay(); // Raw day used by the next-Tothal-Shift debug fields below.

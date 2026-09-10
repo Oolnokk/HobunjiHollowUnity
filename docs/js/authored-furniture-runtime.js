@@ -462,12 +462,33 @@
     return data && Array.isArray(data.seatAnchors) ? data.seatAnchors.length : 0;
   }
 
+  // Raw authored tabletop/surface placement records (docs/tools/furniture-
+  // avatar-author's itemPlacements — furniture surface + u/v/normal + grid
+  // cell + rotation/scale + item identity), previously loaded and then
+  // silently dropped by this module since only seatAnchors/parts/warps were
+  // ever read back out of the authored JSON. Resolving a record's u/v into a
+  // world position requires the piece's per-surface geometric frame (basis
+  // vectors + bounds), which the authoring tool derives on the fly from mesh
+  // geometry (getSurfaceWorldFrame) and does not currently serialize into
+  // this JSON — so this accessor exposes the authored records themselves
+  // (e.g. for finding "is there an authored placement on this piece at all"
+  // or reading its itemKey/gridCell) without yet being able to place a mesh
+  // at its exact authored surface position. A caller that only needs "a
+  // reasonable point on this furniture" should fall back to the piece's own
+  // footprint/anchor instead of guessing at the surface frame.
+  function itemPlacements(data) {
+    return data && Array.isArray(data.itemPlacements)
+      ? data.itemPlacements.map(record => JSON.parse(JSON.stringify(record)))
+      : [];
+  }
+
   window.AuthoredFurniture = {
     load,
     peek,
     buildGroup,
     seatAnchorFor,
     seatCount,
+    itemPlacements,
     applyWarp,
     resetWarp,
     stompWarpMotion,

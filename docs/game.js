@@ -355,9 +355,18 @@
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
-        activeCameraMode   = npcDialogueCameraMode();
-        activeCameraTarget = walker.root;
-        beginNpcDialogueStaging(walker);
+        // A seated conversation (cross-table Talk) keeps the seated camera
+        // and position exactly as they are — walking the player up next to
+        // the NPC (beginNpcDialogueStaging) would stand them up out of
+        // their seat in everything but name, and the seated camera already
+        // free-looks toward whoever the player aimed at to start this
+        // conversation. Only a standing conversation gets the normal
+        // dialogue camera + walk-into-position staging.
+        if (!sitInteraction || sitInteraction.phase !== 'active') {
+          activeCameraMode   = npcDialogueCameraMode();
+          activeCameraTarget = walker.root;
+          beginNpcDialogueStaging(walker);
+        }
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
@@ -514,8 +523,14 @@
           // temporary catch-up sprint for an NPC who was already in transit.
           _dialogueWalker = null;
         }
-        enterDefaultCameraMode();
-        activeCameraTarget = null;
+        // A seated conversation never switched into the dialogue camera
+        // mode in the first place (see openNpcDialogue) — the seated camera
+        // stayed put the whole time, so leave it alone here too instead of
+        // yanking the still-seated player into the standing default mode.
+        if (!sitInteraction || sitInteraction.phase !== 'active') {
+          enterDefaultCameraMode();
+          activeCameraTarget = null;
+        }
         dialogueZoomPointers.clear();
         dialoguePinchDistance = null;
         if (dialogueZoomConfig().resetOnDialogueClose) resetDialogueCameraZoom();
@@ -8415,12 +8430,56 @@
 
       function performContextAction() {
         if (player.climbing || player.dodging) return;
+        // Dodge is the seated control scheme's cancel/interrupt input: it
+        // closes the seated NPC interaction wheel if one's open (see
+        // SeatedSocialInteractions), otherwise stands the player up — the
+        // same contextual/cancel role this input already plays below
+        // (forward-dodge climbs a tree, sideways dodge is still an evasive
+        // dodge) rather than a second dedicated Stand button on the bar.
+        if (window.SeatedSocialInteractions?.isOpen?.()) { window.SeatedSocialInteractions.cancel(); return; }
+        // A cross-table Talk (dialogueOpen while seated — see openNpcDialogue)
+        // must be closed first: updateSitInteraction never runs while
+        // dialogueOpen is true (see the movement dispatcher's own
+        // dialogueOpen-before-sitInteraction ordering), so starting the
+        // stand-up transition here would leave phase stuck at 'out' with the
+        // seated camera frozen in place until the conversation ends anyway.
+        if (sitInteraction) { if (sitInteraction.phase === 'active' && !dialogueOpen) endSitInteraction(); return; }
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
         // Climbing is now the forward-dodge context action. Sideways/backward
         // dodges remain ordinary evasive movement and cannot grab a nearby tree.
         const climb = window.ClimbSystem.getClimbTarget();
         if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
+      }
+
+      // ── Seated Action 1: tap Talk, hold locks focus + opens the seated
+      // NPC interaction wheel ─────────────────────────────────────────────
+      // A bespoke tap/hold gate rather than the ordinary holdToCommit path
+      // (isHoldToCommitAction/beginHeldItemActionDescriptor) — that path's
+      // release always hands off to window.HeldItemActionInput, which owns
+      // the food/drink windup animation state machine and isn't a fit for
+      // "hold opens a menu instead of firing the tap action". Both the
+      // touch/mouse button (applyAbt, below) and the keyboard/gamepad
+      // dispatcher share this one timer so a hold can't be started twice.
+      let _seatedTalkHoldTimer = 0;
+      let _seatedTalkHoldOpened = false;
+      function beginSeatedTalkHold() {
+        if (_seatedTalkHoldTimer || sitInteraction?.phase !== 'active') return;
+        _seatedTalkHoldOpened = false;
+        _seatedTalkHoldTimer = setTimeout(() => {
+          _seatedTalkHoldTimer = 0;
+          if (sitInteraction?.phase !== 'active') return;
+          _seatedTalkHoldOpened = !!window.SeatedSocialInteractions?.openWheel?.();
+        }, desktopTapWindowMs());
+      }
+      // Returns true when the hold matured into the wheel opening (the
+      // caller should suppress its own tap-fire), false for an ordinary
+      // short tap (the caller should fire Talk as usual).
+      function endSeatedTalkHold() {
+        if (_seatedTalkHoldTimer) { clearTimeout(_seatedTalkHoldTimer); _seatedTalkHoldTimer = 0; }
+        const opened = _seatedTalkHoldOpened;
+        _seatedTalkHoldOpened = false;
+        return opened;
       }
 
       // Combat-ability movement: a short forward step/leap toward the aim
@@ -8717,6 +8776,33 @@
       const dialogueZoomPointers = new Map();
       let dialoguePinchDistance = null;
       let nearbyNpcWalker    = null;
+      // The NPC the seated free-look camera is currently pointed at — a
+      // genuinely camera/reticle-based target, unlike nearbyNpcWalker above
+      // (which is player-facing-cone + fixed proximity, meaningless once
+      // seated free-look decouples the camera from the pinned seated
+      // facingAngle — see updateSitInteraction). Recomputed every frame in
+      // updateNpcWalkers, only while actually seated.
+      let seatedFocusWalker  = null;
+      const SEATED_FOCUS_MAX_DISTANCE_TILES = 6;
+      const SEATED_FOCUS_MAX_CONE_DEG = 55;
+      function recomputeSeatedFocusWalker() {
+        if (!sitInteraction || sitInteraction.phase !== 'active') return null;
+        const lookAngle = cameraFacingAngleRad();
+        const px = player.x / TILE, pz = player.y / TILE;
+        let best = null, bestScore = -Infinity;
+        for (const w of npcWalkers) {
+          if (!w?.root || w.area !== currentArea) continue;
+          const dx = w.root.position.x - px, dz = w.root.position.z - pz;
+          const dist = Math.hypot(dx, dz);
+          if (dist < 0.2 || dist > SEATED_FOCUS_MAX_DISTANCE_TILES) continue;
+          const angleTo = Math.atan2(dz, dx);
+          const deviationDeg = Math.abs(angleDiff(angleTo, lookAngle)) * 180 / Math.PI;
+          if (deviationDeg > SEATED_FOCUS_MAX_CONE_DEG) continue;
+          const score = -deviationDeg - dist * 4; // Prefer whoever's most centered in view, then closest.
+          if (score > bestScore) { bestScore = score; best = w; }
+        }
+        return best;
+      }
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       let _pendingSpotTransition = null; // spot the player is currently standing on; awaits input to fire
       // ── Town zone ──────────────────────────────────────────────────
@@ -10102,9 +10188,15 @@
         const playerWorldZ = player.y / TILE;
         const npcX = walker.root.position.x;
         const npcZ = walker.root.position.z;
-        const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
-        facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
-        player.angle = facingAngle;
+        // A seated player's facing is pinned to the seat's own facing (see
+        // updateSitInteraction) — turn the NPC to face them as usual, but
+        // leave the player's body facing alone instead of slowly rotating
+        // them out of their seated pose to square up with the table.
+        if (!sitInteraction || sitInteraction.phase !== 'active') {
+          const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
+          facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
+          player.angle = facingAngle;
+        }
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
         walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
@@ -11294,6 +11386,7 @@
 
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
+        const previousSeatedFocusWalker = seatedFocusWalker;
         for (const w of npcWalkers) { w.update(dt); _tickNpcPortraitLife(w, dt); }
         _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
@@ -11304,7 +11397,8 @@
           if (d < closestDist) { closestDist = d; closest = w; }
         }
         nearbyNpcWalker = closest;
-        if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
+        seatedFocusWalker = recomputeSeatedFocusWalker();
+        if (previousNearbyNpcWalker !== nearbyNpcWalker || previousSeatedFocusWalker !== seatedFocusWalker) refreshActionBar();
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -16710,7 +16804,15 @@
 
       function useActiveAction() {
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
-        if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
+        if (sitInteraction) {
+          // A cross-table Talk still needs the ordinary dialogue-advance
+          // tap (see the standing dialogueOpen branch just below) — seated
+          // dialogue only suppresses camera/staging (see openNpcDialogue),
+          // not the dialogue UI itself.
+          if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
+          window.SeatedSocialInteractions?.dispatchAction?.(activeAction);
+          return;
+        }
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
@@ -20169,6 +20271,28 @@
         log: (message, level) => window.__farmLog?.(message, level),
       });
 
+      window.SeatedSocialInteractions?.init?.({
+        actionLocks: window.CharacterActionLocks,
+        playerParticipantId: PLAYER_ACTION_LOCK_ID,
+        // Deferred call — desktopTapWindowMs is declared further down this
+        // same closure (const, not a hoisted function), so a bare reference
+        // here would read it before its own declaration ran.
+        holdMs: () => desktopTapWindowMs(),
+        isSeatedActive: () => !!sitInteraction && sitInteraction.phase === 'active',
+        getFocusedWalker: () => seatedFocusWalker,
+        isNpcAtPlayersTable,
+        hasEmptySeatAtPlayersTable: () => !!findEmptySeatAtPlayersTable(),
+        isNpcBlackedOut: npcId => window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(npcId) || false,
+        openNpcDialogue,
+        getDialogueOpen: () => dialogueOpen,
+        findAvailableDrinkBottles: () => window.HobunjiDrunkGameplayBridge?.findAvailableDrinkBottles?.() || [],
+        offerDrinkToNpc: (walker, itemKey) => window.HobunjiDrunkGameplayBridge?.offerNpcDrinkFromInventory?.(walker, itemKey) || false,
+        recordNpcMemory: (npcId, kind) => window.DialogueContent?.recordNpcMemory?.(npcId, kind),
+        refreshActionBar,
+        showToast,
+        log: (message, level) => window.__farmLog?.(message, level),
+      });
+
       function updateHeldItemHolder(dt = 0) {
         const item = getActiveInventoryItem();
         if (_heldDrinkPhase && _heldItemPlane) {
@@ -22535,12 +22659,78 @@
       const _climbPromptAnchor = new THREE.Object3D();
       _climbPromptAnchor.name = 'climb_prompt_anchor';
 
-      function computeActionButtons() {
-        // Sitting overrides every other action — Stand is the only way out,
-        // same tier as fishing/dialogue below.
-        if (sitInteraction) {
-          return [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }];
+      // ── Seated "same table" detection ───────────────────────────────────
+      // A chair/seat station carries no explicit "which table" reference of
+      // its own (see registerChairNpcStation — every sittable piece is just
+      // its own one-seat station), and tables (tableLong/tableRound/
+      // tableSmall/candleTable) are ordinary un-authored decorative
+      // furniture with no seat/placement metadata linking them to nearby
+      // chairs either. "Same table" is inferred the way a real dining room
+      // reads it instead: the nearest table-shaped piece close enough to
+      // both seats' footprints, the same table furniture instance counting
+      // for both. Tables are interior-only furniture (see
+      // DECORATIVE_FURNITURE_DEFS), so this is naturally a no-op anywhere
+      // else (farm-placed stools, say).
+      const TABLE_FURNITURE_KEYS = new Set(['tableLong', 'tableRound', 'tableSmall', 'candleTable']);
+      const SAME_TABLE_MARGIN_TILES = 1.6;
+      function findInteriorFurnitureObjectAt(area, col, row) {
+        return interiorFurnitureObjects.find(o => o.area === area && o.col === col && o.row === row) || null;
+      }
+      function nearestTableFurnitureForSeat(area, col, row, fw, fd) {
+        const seatCx = col + fw / 2, seatCz = row + fd / 2;
+        let best = null, bestDist = Infinity;
+        for (const obj of interiorFurnitureObjects) {
+          if (obj.area !== area || !TABLE_FURNITURE_KEYS.has(obj.key)) continue;
+          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+          const tableCx = obj.col + size.fw / 2, tableCz = obj.row + size.fd / 2;
+          const dist = Math.hypot(seatCx - tableCx, seatCz - tableCz);
+          const reach = Math.max(fw, fd) / 2 + Math.max(size.fw, size.fd) / 2 + SAME_TABLE_MARGIN_TILES;
+          if (dist <= reach && dist < bestDist) { bestDist = dist; best = obj; }
         }
+        return best;
+      }
+      function playerSeatTable() {
+        if (!sitInteraction) return null;
+        const chairObj = findInteriorFurnitureObjectAt(currentArea, sitInteraction.col, sitInteraction.row);
+        const size = decorativeFurnitureSize(sitInteraction.furnitureKey, chairObj?.rotYDeg || 0);
+        return nearestTableFurnitureForSeat(currentArea, sitInteraction.col, sitInteraction.row, size.fw, size.fd);
+      }
+      function npcSeatTable(walker) {
+        const station = walker?._seatedStationKey ? npcStationsById.get(walker._seatedStationKey) : null;
+        if (!station || !Number.isFinite(station.c) || !Number.isFinite(station.r)) return null;
+        const size = decorativeFurnitureSize(station.furnitureKey, station.rotY || 0);
+        return nearestTableFurnitureForSeat(station.area, station.c, station.r, size.fw, size.fd);
+      }
+      function isNpcAtPlayersTable(walker) {
+        const playerTable = playerSeatTable();
+        return !!playerTable && playerTable === npcSeatTable(walker);
+      }
+      // Any chair station (other than the player's own) that shares the
+      // player's table and currently has no NPC seated in it — used only to
+      // decide whether "Ask to Sit With Me" is worth offering at all, since
+      // that action is a social gesture rather than real NPC pathing (see
+      // js/seated-npc-interactions.js's own note on that scope).
+      function findEmptySeatAtPlayersTable() {
+        const playerTable = playerSeatTable();
+        if (!playerTable || !sitInteraction) return null;
+        for (const station of npcStationsById.values()) {
+          if (station.area !== currentArea || !station.roles?.includes('sit')) continue;
+          if (station.c === sitInteraction.col && station.r === sitInteraction.row) continue; // the player's own seat
+          const size = decorativeFurnitureSize(station.furnitureKey, station.rotY || 0);
+          if (nearestTableFurnitureForSeat(station.area, station.c, station.r, size.fw, size.fd) !== playerTable) continue;
+          if (!npcWalkers.some(w => w._seatedStationKey === station.id)) return station;
+        }
+        return null;
+      }
+
+      function computeActionButtons() {
+        // Sitting overrides every other action, same tier as fishing/
+        // dialogue below — but unlike the plain "Stand is the only way out"
+        // arch this used to show, the seated control scheme gives Action 1
+        // Talk (tap) / the seated NPC wheel (hold), Action 2 the best
+        // contextual shortcut, and Action 3 Wait; Dodge stands the player up
+        // (see performContextAction) instead of a dedicated Stand button.
+        if (sitInteraction) return window.SeatedSocialInteractions?.computeActionButtons?.() || [];
         // Fishing gets its own arc buttons instead of the harpoon's normal
         // "Fish" one (which would just call beginFishingCast() again and
         // silently restart the round) — the bottom-center #actionPrompt
@@ -22964,11 +23154,15 @@
         // The dodge button is climbing's only real trigger, so it's the
         // one that should visually say so — swaps to the climb/climb-down
         // icon+label while a target's in reach, back to the plain dodge
-        // icon otherwise.
+        // icon otherwise. Same idea for the seated control scheme: Dodge is
+        // also the only way to stand back up (see performContextAction), so
+        // it says so instead of staying silently labeled "Dodge" the whole
+        // time someone's seated.
         if (dodgeBtn) {
           const icon = dodgeBtn.querySelector('.abt-icon'), label = dodgeBtn.querySelector('.abt-label');
-          if (icon) icon.textContent = climbBtn ? climbBtn.icon : '💨';
-          if (label) label.textContent = climbBtn ? climbBtn.label : 'Dodge';
+          const seatedStand = !climbBtn && sitInteraction?.phase === 'active';
+          if (icon) icon.textContent = climbBtn ? climbBtn.icon : (seatedStand ? '🧍' : '💨');
+          if (label) label.textContent = climbBtn ? climbBtn.label : (seatedStand ? 'Stand' : 'Dodge');
         }
 
         if (!needsRebuild) return;
@@ -23007,6 +23201,7 @@
             let _heldItemPress = false; // true while a holdToCommit action (consume_held_item / processor insertion) is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
+            let _seatedTalkPress = false; // true while this press is the seated Action 1 tap/hold gate (see beginSeatedTalkHold).
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -23103,6 +23298,11 @@
                 actionHeldDown = true;
                 _heldItemPress = beginHeldItemActionDescriptor(act);
                 if (!_heldItemPress) _abtFire(); // Couldn't begin a hold — fall back to the immediate dispatcher.
+              } else if (sitInteraction?.phase === 'active' && act === 'seated_talk') {
+                activeAction = act;
+                actionHeldDown = true;
+                _seatedTalkPress = true;
+                beginSeatedTalkHold();
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
@@ -23188,6 +23388,7 @@
               } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
                 else if (_heldItemPress) window.HeldItemActionInput?.release();
+                else if (_seatedTalkPress && endSeatedTalkHold()) { /* hold matured into the wheel opening — suppress the Talk tap */ }
                 else _abtFire();
               }
               _heldItemPress = false;
@@ -23200,6 +23401,7 @@
               _flaskGesture = false;
               _flaskCanceled = false;
               _pressSlot = null;
+              _seatedTalkPress = false;
             }
 
             el.addEventListener('pointerup', _abtUp);
@@ -23701,6 +23903,7 @@
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
       const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
+      const seatedTalkKeyboardPresses = new Set(); // Pairs the seated Action 1 tap/hold gate's keyboard/controller press with its release — see beginSeatedTalkHold.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
@@ -23791,6 +23994,10 @@
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
           if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
+          if (seatedTalkKeyboardPresses.delete(actionId)) {
+            if (!endSeatedTalkHold()) runActionButtonAtSlot(1); // Short tap — fire Talk now (hold path already handled the wheel).
+            return;
+          }
           return;
         }
         if (window.Fishing?.state?.active) {
@@ -23821,6 +24028,12 @@
             const started = beginHeldItemActionDescriptor(btn.action);
             if (started) heldItemActionPresses.add(actionId);
             else runActionButtonAtSlot(slot); // Couldn't begin a hold (e.g. controller unavailable) — fall back to the immediate dispatcher.
+            return;
+          }
+          if (slot === 1 && sitInteraction?.phase === 'active' && btn?.action === 'seated_talk' && btn.allowed !== false) {
+            actionHeldDown = true;
+            seatedTalkKeyboardPresses.add(actionId);
+            beginSeatedTalkHold();
             return;
           }
           runActionButtonAtSlot(slot);
@@ -24829,6 +25042,13 @@
         place: placeDecorativeFurniture,
         sit: beginSitInteraction,
         endSit: endSitInteraction,
+        // Real seated state for other modules (e.g. calendar-system.js's
+        // seated Wait shortcuts) that need to know whether the player is
+        // actually sitting right now — see isSeatedReady there, which used
+        // to infer this by sniffing btnAction1's dataset.action for
+        // 'obj_stand' and broke the moment Stand moved off Action 1 (Dodge
+        // stands the player up now — see performContextAction).
+        isSeatedActive: () => !!sitInteraction && sitInteraction.phase === 'active',
         get sitState() { return sitInteraction; },
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
@@ -26626,6 +26846,7 @@
         calendar,
         clampInventoryStack,
         getActiveInventoryItem,
+        getItemDef: itemKey => ITEM_DEFS[itemKey],
         getHeldMode: () => heldMode,
         canPlayNpcDrinkInteraction: (...args) => window.NpcDrinkInteraction?.canPlay?.(...args) || false,
         playNpcDrinkInteraction: (...args) => window.NpcDrinkInteraction?.play?.(...args) || 0,

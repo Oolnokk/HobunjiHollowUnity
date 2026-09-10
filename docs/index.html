@@ -207,6 +207,17 @@
   <script src="onboarding.js?v=20260910review1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
+  <!-- Blackout timing/safety, drunken movement inertia, held food/drink
+       consumption, and NPC swig-offer adapters (window.HobunjiDrunkGameplayBridge).
+       Requires window.ResourceSystem to already exist at load time (its own
+       top-level guard checks for it), so this must load after resource-system.js
+       above — it was previously missing a <script> tag here entirely, which
+       silently no-op'd every alcohol/food/drink action-bar feature. -->
+  <script src="js/alcohol-gameplay-bridge.js?v=20260910seated1"></script>
+  <!-- Seated control scheme: Action 1 tap-Talk/hold-wheel, contextual
+       Action 2, same-table Offer Drink — game.js supplies camera/seat/
+       table-detection adapters. -->
+  <script src="js/seated-npc-interactions.js?v=20260910seated1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
   <script src="js/combat/combat-core.js?v=20260825melee3"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
