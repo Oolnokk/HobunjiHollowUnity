@@ -82,12 +82,13 @@
     return !!(state?.def && Array.isArray(state.def.sprites?.run) && state.def.sprites.run.length);
   }
 
+  // Read-only: this runs per creature per animation frame, so it must not write
+  // back into the shared CREATURE_DB definition. Species registered after
+  // Mounts.init simply fall through to the baseline here instead of being
+  // lazily patched, which also keeps an authored override actually overridable.
   function creatureGaitRate(state) {
-    const def = state?.def; // Actual runtime species definition carried by every creature entity.
-    if (!def) return DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND;
-    if (state?.creatureKey === 'grehlr') def.gaitCyclesPerSecond = 6; // Grehlr is explicitly authored at six complete gait cycles / contacts per second.
-    if (!(Number(def.gaitCyclesPerSecond) > 0)) def.gaitCyclesPerSecond = DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND; // Lazily covers species registered after Mounts.init too.
-    return Number(def.gaitCyclesPerSecond);
+    const authored = Number(state?.def?.gaitCyclesPerSecond); // Authored per-species override when the definition carries one.
+    return authored > 0 ? authored : DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND;
   }
 
   function creatureMotionSpeedPxS(state, distPx) {
@@ -188,8 +189,7 @@
     let configuredSpecies = 0; // Mobile-readable count proving that the real runtime species table received the baseline.
     for (const [speciesKey, def] of Object.entries(deps?.CREATURE_DB || {})) {
       if (!Array.isArray(def?.sprites?.run) || !def.sprites.run.length) continue;
-      if (!(Number(def.gaitCyclesPerSecond) > 0)) def.gaitCyclesPerSecond = DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND;
-      if (speciesKey === 'grehlr') def.gaitCyclesPerSecond = 6; // Explicit Grehlr authoring: exactly six complete gait cycles / step contacts per second.
+      if (!(Number(def.gaitCyclesPerSecond) > 0)) def.gaitCyclesPerSecond = DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND; // One-time seeding at init; creatureGaitRate never writes here.
       configuredSpecies++;
     }
 

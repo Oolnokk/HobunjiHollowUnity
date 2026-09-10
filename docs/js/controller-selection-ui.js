@@ -54,13 +54,20 @@
     return Boolean(code && window.ControllerInput?.isBindingPressed?.(pad, code, { stickThreshold: STICK_PRESS }));
   }
 
+  const padScratch = []; // Reused every frame so the poll loop below allocates nothing while idle.
+
   function connectedPads() {
-    return Array.from(navigator.getGamepads?.() || []).filter(pad => pad && pad.connected !== false);
+    padScratch.length = 0;
+    const raw = navigator.getGamepads?.();
+    for (let i = 0; i < (raw?.length || 0); i++) {
+      const pad = raw[i];
+      if (pad && pad.connected !== false) padScratch.push(pad);
+    }
+    return padScratch;
   }
 
-  function choosePad() {
-    const pads = connectedPads(); // Used to preserve the controller already navigating a selector even if another connected pad twitches.
-    if (state.padIndex !== null) return pads.find(pad => pad.index === state.padIndex) || null;
+  function choosePad(pads) {
+    if (state.padIndex !== null) return pads.find(pad => pad.index === state.padIndex) || null; // Preserves the controller already navigating a selector even if another connected pad twitches.
     const picked = window.ControllerInput?.pickActiveGamepad?.(pads, state.preferredPadIndex, 0.35) || pads[0] || null;
     if (picked) state.preferredPadIndex = picked.index;
     return picked;
@@ -246,9 +253,15 @@
 
   function poll(now = performance.now()) {
     installControllerUiOwnerGate();
-    window.InputBindings?.repairExplicitMountBinding?.();
 
-    const pad = choosePad(); // Used for both opener-edge detection and navigation so a held selector cannot jump controllers midway through the gesture.
+    const pads = connectedPads(); // Empty on every frame of a keyboard/touch session, which is the common case.
+    if (!pads.length) {
+      if (state.activeAction) finishSelection(false, 'controller disconnected');
+      frameHandle = requestAnimationFrame(poll);
+      return; // Nothing below can do anything without a pad; skip binding lookups and menu-state queries entirely.
+    }
+
+    const pad = choosePad(pads); // Used for both opener-edge detection and navigation so a held selector cannot jump controllers midway through the gesture.
     if (state.activeAction) {
       if (!pad) {
         finishSelection(false, 'controller disconnected');

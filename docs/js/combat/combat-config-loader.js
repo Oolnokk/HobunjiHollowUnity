@@ -77,7 +77,7 @@
 
   const modules = [
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
-    ['js/player-body-transform-composer.js?v=20260909perspectivepoint1', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-transform-composer.js?v=20260910review1', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
     ['js/fine-hood-trim-head-facing.js?v=20260824b', () => !!window.HobunjiFineHoodTrimHeadFacing],
     ['js/front-hat-head-facing.js?v=20260830flip2', () => !!window.HobunjiFrontHatHeadFacing],

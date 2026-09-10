@@ -175,7 +175,7 @@ assert.match(selectorSource, /SocialActionWheel\?\.close\?\.\(commit\)/, 'social
 assert.match(selectorSource, /ui\.isActive = wrapped/, 'automatic selector ownership suppresses ordinary gameplay controller polling while a wheel or arch owns the sticks');
 assert.match(selectorSource, /CharacterActionLocks\?\.acquire/, 'held controller selectors also suppress player movement/tools/actions through the shared lock registry');
 assert.match(selectorSource, /showDebug/, 'controller selector ownership has an in-page debug surface for mobile testing');
-assert.match(actionLocksSource, /controller-selection-ui\.js\?v=20260909controller3/, 'the automatic selector adapter is parser-loaded with a cache-busted URL');
+assert.match(actionLocksSource, /controller-selection-ui\.js\?v=20260910review1/, 'the automatic selector adapter is parser-loaded with a cache-busted URL');
 assert.match(actionLocksSource, /input-default-reset-ui\.js\?v=20260909controller4/, 'the per-device reset-button helper is parser-loaded with a cache-busted URL');
 
 assert.match(bindingsSource, /id: 'uiOpenMenu'[\s\S]{0,180}context: 'menu'/, 'menu open/close schema is owned by the controller binding module');

@@ -110,7 +110,7 @@
   const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260906harvest1', base).href; // Loads the harvest-only animal staging/approach-suppression bridge before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20260909decouple1', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
-  const controllerSelectionUi = new URL('controller-selection-ui.js?v=20260909controller3', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.
+  const controllerSelectionUi = new URL('controller-selection-ui.js?v=20260910review1', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.
   const inputDefaultsResetUi = new URL('input-default-reset-ui.js?v=20260909controller4', base).href; // Adds independent keyboard/controller Reset to Defaults buttons after the Settings binding lists render.
   const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260903social8', base).href;
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
