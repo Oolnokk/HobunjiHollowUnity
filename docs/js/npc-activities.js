@@ -279,8 +279,13 @@
     resolveDestination(ctx) {
       if (!ctx.walker) return invalidContent('chat requires an existing walker');
       const partnerId = ctx.opportunityPartnerId;
-      const partner = partnerId ? deps.findNpcWalker(partnerId) : null;
-      if (!partner) return unavailable('no available chat partner nearby');
+      // 'player' is a real accepted partner id (see npc-activity-planner.js's
+      // livePlayerInvitationTo — the seated control scheme's Call Over wheel
+      // entry) but has no npcWalker of its own to look up; the invitation's
+      // meeting point already carries everything needed to walk there.
+      const isPlayer = partnerId === 'player';
+      const partner = !isPlayer && partnerId ? deps.findNpcWalker(partnerId) : null;
+      if (!isPlayer && !partner) return unavailable('no available chat partner nearby');
       // A live invitation (design doc §29) fixes one shared meeting point
       // both sides resolve toward, instead of each independently walking
       // toward wherever the other currently happens to be (which could
@@ -295,12 +300,14 @@
       // Both sides agree on opposite offsets without negotiating which one
       // to take by comparing ids the same way on both ends — deterministic
       // and symmetric, so they land facing each other instead of stacking.
-      const side = String(ctx.npcId) < String(partnerId) ? 1 : -1;
+      // The player never resolves a matching 'chat' of their own, so this
+      // just needs a stable, deterministic side for them, same as any id.
+      const side = isPlayer || String(ctx.npcId) < String(partnerId) ? 1 : -1;
       const offset = pickDeterministic([[side * 0.75, 0.35], [side * 0.75, -0.35]], ctx.npcId, ctx.now?.day, `chat:${partnerId}`);
       return ready({
         area, c: Math.floor(baseX + offset[0]), r: Math.floor(baseZ + offset[1]),
         pose: 'stand', id: `chat-with-${partnerId}`, activity: ctx.beat.activityLabel || 'chatting',
-      }, meet ? `chatting with ${partner.rec?.name || partnerId} (invited)` : `chatting with ${partner.rec?.name || partnerId}`);
+      }, isPlayer ? 'chatting with the player (invited)' : (meet ? `chatting with ${partner.rec?.name || partnerId} (invited)` : `chatting with ${partner.rec?.name || partnerId}`));
     },
   });
 

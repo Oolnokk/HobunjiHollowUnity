@@ -48,6 +48,16 @@ assert.match(game, /function isNpcAtPlayersTable\(walker\)/,
 assert.match(game, /if \(!sitInteraction \|\| sitInteraction\.phase !== 'active'\) \{\s*\n\s*activeCameraMode\s*=\s*npcDialogueCameraMode\(\);\s*\n\s*activeCameraTarget = walker\.root;\s*\n\s*beginNpcDialogueStaging\(walker\);\s*\n\s*\}/,
   'a seated conversation must not switch camera mode or walk the player into standing dialogue staging');
 
+// Call Over / Ask to Sit With Me go through the real NPC Activity Planner
+// invitation system (see scripts/test-npc-activity-planner.js's "O" section
+// for the planner-side behavior), not a forced schedule override.
+assert.match(game, /inviteNpcOver: walker => !!window\.NpcActivityPlanner\?\.invitePlayerChat\?\.\(/,
+  'Call Over proposes a real player-chat invitation instead of a cosmetic-only gesture');
+assert.match(game, /inviteNpcToSeat: walker => \{[\s\S]{0,300}invitePlayerToSeat/,
+  'Ask to Sit With Me proposes a real seat invitation at the specific empty station found via findEmptySeatAtPlayersTable');
+assert.match(game, /window\.NpcActivityPlanner\.init\(\{[\s\S]{0,300}resolveNpcStationTarget,/,
+  'the planner needs resolveNpcStationTarget to validate a player seat-invitation before offering it as a free-time opportunity');
+
 // ── authored-furniture-runtime.js exposes itemPlacements ────────────────
 assert.match(authoredFurniture, /function itemPlacements\(data\)/,
   'the authored furniture runtime should expose itemPlacements instead of silently dropping them');
@@ -180,6 +190,8 @@ assert.match(authoredFurniture, /function itemPlacements\(data\)/,
       openNpcDialogue: walker => dialogueOpens.push(walker),
       findAvailableDrinkBottles: () => [],
       offerDrinkToNpc: () => true,
+      inviteNpcOver: () => true,
+      inviteNpcToSeat: () => true,
       recordNpcMemory: (id, kind) => memories.push([id, kind]),
       refreshActionBar: () => { refreshCount++; },
       showToast: (msg, ok) => toasts.push([msg, ok]),
@@ -279,11 +291,38 @@ assert.match(authoredFurniture, /function itemPlacements\(data\)/,
   }
   {
     const walker = { rec: { id: 'sloomi', name: 'Sloomi' } };
-    const deps = makeDeps({ getFocusedWalker: () => walker });
+    const invited = [];
+    const deps = makeDeps({ getFocusedWalker: () => walker, inviteNpcOver: w => { invited.push(w); return true; } });
     const mod = freshModule(deps);
     mod.dispatchAction('seated_call_over');
     assert.equal(deps._debug.memories.length, 1);
     assert.equal(deps._debug.memories[0][0], 'sloomi');
+    assert.deepEqual(invited, [walker], 'Call Over issues a real invitation through deps.inviteNpcOver, not just a toast');
+    assert.equal(deps._debug.toasts[0][1], true, 'a successful invite reports success');
+  }
+  {
+    // The NPC's planner never has to actually accept for this call to
+    // succeed cleanly — inviteNpcOver returning false (e.g. offer already
+    // expired/replaced) should degrade to an honest "didn't work" toast,
+    // not throw.
+    const walker = { rec: { id: 'sloomi', name: 'Sloomi' } };
+    const deps = makeDeps({ getFocusedWalker: () => walker, inviteNpcOver: () => false });
+    const mod = freshModule(deps);
+    mod.dispatchAction('seated_call_over');
+    assert.equal(deps._debug.toasts[0][1], false);
+  }
+  {
+    const walker = { rec: { id: 'sloomi', name: 'Sloomi' } };
+    const invited = [];
+    const deps = makeDeps({
+      getFocusedWalker: () => walker,
+      hasEmptySeatAtPlayersTable: () => true,
+      inviteNpcToSeat: w => { invited.push(w); return true; },
+    });
+    const mod = freshModule(deps);
+    mod.dispatchAction('seated_ask_to_sit');
+    assert.deepEqual(invited, [walker], 'Ask to Sit With Me issues a real seat invitation through deps.inviteNpcToSeat');
+    assert.equal(deps._debug.toasts[0][1], true);
   }
 
   // Wheel lifecycle: open acquires a lock and includes Offer Drink only when

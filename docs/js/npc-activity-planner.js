@@ -199,6 +199,39 @@
     return inv;
   }
 
+  // ── Player-issued invitations ────────────────────────────────────────
+  // The exact same "propose an opportunity, the invited NPC's own next
+  // planner tick decides whether it's actually worth accepting" shape as
+  // pendingInvitations above, extended to a non-NPC inviter — the seated
+  // control scheme's Call Over ('chat') and Ask to Sit With Me ('seat')
+  // wheel entries (see docs/js/seated-npc-interactions.js) go through here
+  // rather than forcing walker.currentScheduleTarget directly, so an NPC
+  // who's mid-obligation (topBeat.obligation is 'critical', or their sit/
+  // chat opportunity just scores lower than something else going on) is
+  // free to just not come, same as any other free-time opportunity — and an
+  // unanswered invitation expires on its own instead of leaving a stuck
+  // override to clean up.
+  const pendingPlayerInvitations = new Map(); // npcId -> { kind: 'chat'|'seat', x, z, area, stationId, createdAtMs }
+  const PLAYER_INVITATION_TTL_MS = 8000; // A little longer than the NPC-to-NPC TTL — a player deciding what to do next isn't on the same tight loop as another NPC's own planner tick.
+  function livePlayerInvitationTo(npcId) {
+    const inv = pendingPlayerInvitations.get(npcId);
+    if (!inv || nowMs() - inv.createdAtMs > PLAYER_INVITATION_TTL_MS) return null;
+    return inv;
+  }
+  function invitePlayerChat(npcId, x, z, area) {
+    if (!npcId || !Number.isFinite(x) || !Number.isFinite(z) || !area) return false;
+    pendingPlayerInvitations.set(npcId, { kind: 'chat', x, z, area, createdAtMs: nowMs() });
+    return true;
+  }
+  function invitePlayerToSeat(npcId, stationId, area) {
+    if (!npcId || !stationId || !area) return false;
+    pendingPlayerInvitations.set(npcId, { kind: 'seat', stationId, area, createdAtMs: nowMs() });
+    return true;
+  }
+  function clearPlayerInvitation(npcId) {
+    return pendingPlayerInvitations.delete(npcId);
+  }
+
   function runFreeTime(ctx, opts = {}) {
     const { npcId, walker } = ctx;
     const day = ctx.now?.day;
@@ -259,6 +292,29 @@
           candidates.push({
             key: 'chat', partnerId: incoming.fromId, meetingPoint: incoming,
             score: FREE_TIME_BASE.chat + 15 + (personality.sociability ?? 0.5) * 6 + relationshipBonus(ctx.rec, incoming.fromId) + rep + seedNoise(npcId, day, 'chat-accept'),
+          });
+        }
+      }
+
+      // The player invited ME — Call Over ('chat') or Ask to Sit With Me
+      // ('seat'), same bonus-on-top-of-normal-scoring treatment as an
+      // incoming NPC chat invitation above, so it's a real accept/decline
+      // through this NPC's own free-time scoring (an obligated/otherwise-
+      // busy NPC can still just not come) rather than a forced override.
+      const playerInvite = livePlayerInvitationTo(npcId);
+      if (playerInvite?.area === walker.area) {
+        if (playerInvite.kind === 'seat') {
+          const station = deps.resolveNpcStationTarget?.(playerInvite.stationId);
+          if (station && !window.NpcActivities.isStationOccupied(station, ctx)) {
+            candidates.push({
+              key: 'sit', stationId: playerInvite.stationId,
+              score: FREE_TIME_BASE.sit + 18 + (personality.sociability ?? 0.5) * 6 + seedNoise(npcId, day, 'player-seat-invite'),
+            });
+          }
+        } else if (playerInvite.kind === 'chat') {
+          candidates.push({
+            key: 'chat', partnerId: 'player', meetingPoint: playerInvite,
+            score: FREE_TIME_BASE.chat + 15 + (personality.sociability ?? 0.5) * 6 + seedNoise(npcId, day, 'player-chat-invite'),
           });
         }
       }
@@ -472,5 +528,8 @@
     };
   }
 
-  window.NpcActivityPlanner = { init, resolveNpcTarget, runFreeTime, debugSnapshot };
+  window.NpcActivityPlanner = {
+    init, resolveNpcTarget, runFreeTime, debugSnapshot,
+    invitePlayerChat, invitePlayerToSeat, clearPlayerInvitation, livePlayerInvitationTo,
+  };
 })();

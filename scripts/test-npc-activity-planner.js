@@ -68,7 +68,7 @@ function makeWalker(rec, area, x, z, extra) {
 }
 
 Activities.init({ resolveNpcStationTarget, findStationsByRole, isBuildingArea, buildingScenes, loadBuildingScene, normalizeNpcArea, findNpcWalker, listNpcWalkersInArea });
-Planner.init({ calendar: { day: 14, time01: 0.5 }, getCurrentArea: () => mockCurrentArea, findNpcWalker, listNpcWalkersInArea, findStationsByRole });
+Planner.init({ calendar: { day: 14, time01: 0.5 }, getCurrentArea: () => mockCurrentArea, findNpcWalker, listNpcWalkersInArea, findStationsByRole, resolveNpcStationTarget });
 Stimuli.init({ getPlayerPosition: () => mockPlayerPos, getCurrentArea: () => mockCurrentArea });
 let mockCurrentArea = 'town';
 let mockPlayerPos = { x: 0, z: 0 };
@@ -397,6 +397,62 @@ let mockPlayerPos = { x: 0, z: 0 };
   // the other's original (8+ tile away) position — proving real coordination, not two unilateral guesses.
   const dist = Math.hypot(aRes.c - bRes.c, aRes.r - bRes.r);
   assert(dist <= 4, `A and B should land near the same shared meeting point (dist=${dist}), not each other's original ~8.5-tile-apart spots`);
+}
+
+// ── O: player-issued invitations — the seated control scheme's Call Over /
+// Ask to Sit With Me (docs/js/seated-npc-interactions.js) go through this
+// exact same "propose, and the invited NPC's own next planner tick decides"
+// pathway as the NPC-to-NPC invitation above, just with 'player' as a
+// non-walker inviter. ──
+{
+  // O1: a seat invitation to a real, currently-empty station is accepted.
+  stationsById.set('table_seat_1', { id: 'table_seat_1', label: 'Chair', area: 'tavern', c: 5, r: 5, pose: 'sit', roles: ['sit'] });
+  const seatedRec = { id: 'seat_invitee' };
+  const seatedWalker = makeWalker(seatedRec, 'tavern', 8, 8);
+  walkers.push(seatedWalker);
+  mockCurrentArea = 'tavern';
+  assert(Planner.invitePlayerToSeat('seat_invitee', 'table_seat_1', 'tavern'));
+  const seatRes = Planner.resolveNpcTarget(seatedRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(seatRes.stationId, 'table_seat_1', 'the invited NPC accepts the specific seat the player pointed at, not just any free-time seat');
+  assert.equal(seatRes.obligation, 'leisure');
+
+  // O2: the same invitation, but the seat is already taken by someone else — never accepted, no matter how long it stays "live".
+  Planner.clearPlayerInvitation('seat_invitee');
+  const occupantRec = { id: 'seat_occupant' };
+  walkers.push(makeWalker(occupantRec, 'tavern', 5, 5, { currentScheduleTarget: { stationId: 'table_seat_1' } }));
+  assert(Planner.invitePlayerToSeat('seat_invitee', 'table_seat_1', 'tavern'));
+  const blockedRes = Planner.resolveNpcTarget(seatedRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.notEqual(blockedRes.stationId, 'table_seat_1', 'an already-occupied seat is never handed out just because it was invited to');
+
+  // O3: an invitation to a nonexistent station is simply ignored, not an error.
+  Planner.clearPlayerInvitation('seat_invitee');
+  assert(Planner.invitePlayerToSeat('seat_invitee', 'no_such_station', 'tavern'));
+  const missingRes = Planner.resolveNpcTarget(seatedRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert(missingRes, 'a bogus station id in the invitation still resolves to *something* (falls through to ordinary free time), never a bare null');
+  assert.notEqual(missingRes.stationId, 'no_such_station');
+
+  // O4: Call Over ('chat') walks the NPC toward the player's position, not another NPC.
+  Planner.clearPlayerInvitation('seat_invitee');
+  assert(Planner.invitePlayerChat('seat_invitee', 20, 20, 'tavern'));
+  const chatRes = Planner.resolveNpcTarget(seatedRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(chatRes.id, 'chat-with-player');
+  assert(/invited/.test(chatRes.plannerReason || ''));
+  const distFromPlayer = Math.hypot(chatRes.c - 20, chatRes.r - 20);
+  assert(distFromPlayer <= 2, `Call Over should land the NPC right next to the invited point (dist=${distFromPlayer})`);
+
+  // O5: an obligated (critical) NPC ignores a player invitation entirely, same as it ignores every other free-time opportunity.
+  Planner.clearPlayerInvitation('seat_invitee');
+  const busyRec = { id: 'busy_invitee', agenda: [{ id: 'quest', activity: 'idle', obligation: 'critical', window: ['00:00', '23:59'] }] };
+  walkers.push(makeWalker(busyRec, 'tavern', 1, 1));
+  assert(Planner.invitePlayerToSeat('busy_invitee', 'table_seat_1', 'tavern'));
+  const busyRes = Planner.resolveNpcTarget(busyRec, { legacyResolve: () => null, hasExistingWalker: true });
+  assert.equal(busyRes.obligation, 'critical', 'a critical obligation is never dropped for an invitation — it never even reaches free-time scoring');
+
+  // O6: clearPlayerInvitation actually removes a live invitation (O4's chat invite reused here since O5 already cleared seat_invitee's).
+  assert(Planner.invitePlayerChat('seat_invitee', 1, 1, 'tavern'));
+  assert(Planner.livePlayerInvitationTo('seat_invitee'), 'sanity: the invitation is live immediately after being made');
+  assert(Planner.clearPlayerInvitation('seat_invitee'), 'clearPlayerInvitation reports whether it actually removed something');
+  assert.equal(Planner.livePlayerInvitationTo('seat_invitee'), null, 'a cleared invitation is gone, not just expired-but-still-present');
 }
 
 console.log('npc activity planner tests passed');

@@ -18,14 +18,17 @@
 // interiorFurnitureObjects and the NPC station registry, both private to
 // that closure. This module only consumes the yes/no answer.
 //
-// Call Over / Ask to Sit With Me are deliberately scoped to a lightweight
-// social gesture (a toast + a small memory/rapport touch) rather than real
-// NPC pathing. Actually rerouting a scheduled NPC's destination at runtime
-// (walker.currentScheduleTarget) would need to survive
-// resolveNpcScheduleTarget re-evaluating that NPC's authored schedule rules
-// on its own cadence (see js/npc-scheduling.js), which has no supported
-// "temporary override, then restore" hook today — building one safely is a
-// larger, separate change, not a small addition to bolt on here.
+// Call Over / Ask to Sit With Me are real invitations through the NPC
+// Activity Planner's free-time opportunity scoring (deps.inviteNpcOver/
+// inviteNpcToSeat — see npc-activity-planner.js's pendingPlayerInvitations),
+// the same "propose, and the invited NPC's own next planner tick decides"
+// mechanism already used for NPC-to-NPC chat invites. An NPC only actually
+// comes if their own scoring picks it as the best thing to do right now —
+// an obligated NPC can (and should) just not show up, and an unanswered
+// invitation expires on its own. This is deliberately not a forced
+// walker.currentScheduleTarget override, which has no supported "temporarily
+// override, then restore" hook and would fight the planner's own replanning
+// every tick.
 (() => {
   'use strict';
 
@@ -99,13 +102,19 @@
   function callOver(walker) {
     close();
     deps?.recordNpcMemory?.(walker.rec?.id, 'called-over');
-    deps?.showToast?.(`You wave ${npcDisplayName(walker)} over — they smile and nod.`, true);
+    const invited = !!deps?.inviteNpcOver?.(walker);
+    deps?.showToast?.(invited
+      ? `You wave ${npcDisplayName(walker)} over.`
+      : `${npcDisplayName(walker)} doesn't seem to notice.`, invited);
   }
 
   function askToSitWithMe(walker) {
     close();
     deps?.recordNpcMemory?.(walker.rec?.id, 'asked-to-sit');
-    deps?.showToast?.(`You ask ${npcDisplayName(walker)} to join you. They consider it.`, true);
+    const invited = !!deps?.inviteNpcToSeat?.(walker);
+    deps?.showToast?.(invited
+      ? `You ask ${npcDisplayName(walker)} to join you.`
+      : 'There\'s no open seat at your table right now.', invited);
   }
 
   function offerDrink(walker, itemKey) {

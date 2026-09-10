@@ -10629,6 +10629,7 @@
         findNpcWalker,
         listNpcWalkersInArea,
         findStationsByRole,
+        resolveNpcStationTarget,
       });
       window.NpcSocialStimuli.init({
         getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
@@ -20287,6 +20288,20 @@
         getDialogueOpen: () => dialogueOpen,
         findAvailableDrinkBottles: () => window.HobunjiDrunkGameplayBridge?.findAvailableDrinkBottles?.() || [],
         offerDrinkToNpc: (walker, itemKey) => window.HobunjiDrunkGameplayBridge?.offerNpcDrinkFromInventory?.(walker, itemKey) || false,
+        // Call Over / Ask to Sit With Me are real invitations through the
+        // NPC Activity Planner's free-time opportunity scoring (see
+        // npc-activity-planner.js's pendingPlayerInvitations) — an NPC only
+        // actually comes if their own next planner tick picks it as the
+        // best thing to do, exactly like an NPC-to-NPC chat invite. This is
+        // deliberately NOT a forced walker.currentScheduleTarget override:
+        // the scheduler has no supported "temporarily override, then
+        // restore" hook, and the planner's own accept/decline scoring is
+        // the actual sanctioned mechanism for "come over here" requests.
+        inviteNpcOver: walker => !!window.NpcActivityPlanner?.invitePlayerChat?.(walker?.rec?.id, player.x / TILE, player.y / TILE, currentArea),
+        inviteNpcToSeat: walker => {
+          const station = findEmptySeatAtPlayersTable();
+          return !!station && !!window.NpcActivityPlanner?.invitePlayerToSeat?.(walker?.rec?.id, station.id, station.area);
+        },
         recordNpcMemory: (npcId, kind) => window.DialogueContent?.recordNpcMemory?.(npcId, kind),
         refreshActionBar,
         showToast,
