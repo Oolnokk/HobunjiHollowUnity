@@ -445,13 +445,35 @@
     const meshes = [];
     deps.zoneDecorFurnitureGroups.set(mapId, meshes);
 
+    const applyPlacementTransform = (object, record, baseY) => {
+      const uniform = record.postScale != null ? record.postScale : 1;
+      object.position.x += record.postX || 0;
+      object.position.y = baseY + (record.postY || 0);
+      object.position.z += record.postZ || 0;
+      object.rotation.y = (record.rotY || 0) * Math.PI / 180;
+      object.scale.set(record.postSX ?? uniform, record.postSY ?? uniform, record.postSZ ?? uniform);
+    };
+
     for (const d of decorDefs) {
       const result = deps.makeDecorativeFurnitureMesh(d.col, d.row, d.key, scene, mapId);
       if (!result) continue;
       const y = deps.NORMAL_TOP + (d.elevTier || 0) * deps.PLATEAU_UNIT;
-      result.mesh.position.y += y;
-      if (result.light) result.light.position.y += y;
-      result.mesh.userData.mapEditorRef = { mapId, kind: 'decor', id: d.id || null, key: d.key, col: d.col, row: d.row };
+      applyPlacementTransform(result.mesh, d, y);
+      if (result.light) {
+        result.light.position.x += d.postX || 0;
+        result.light.position.y += y + (d.postY || 0);
+        result.light.position.z += d.postZ || 0;
+      }
+      result.mesh.userData.mapEditorRef = { mapId, kind: 'decor', id: d.id || null, key: d.key, col: d.col, row: d.row,
+        postX: d.postX || 0, postY: d.postY || 0, postZ: d.postZ || 0, rotY: d.rotY || 0,
+        postSX: d.postSX ?? d.postScale ?? 1, postSY: d.postSY ?? d.postScale ?? 1, postSZ: d.postSZ ?? d.postScale ?? 1 };
+      result.mesh.userData.mapEditorAux = {
+        light: result.light || null,
+        lightOffset: result.light ? result.light.position.clone().sub(result.mesh.position) : null,
+        sfxSource: result.sfxSource || null,
+        sfxOffsetX: result.sfxSource ? result.sfxSource.x - result.mesh.position.x : 0,
+        sfxOffsetZ: result.sfxSource ? result.sfxSource.z - result.mesh.position.z : 0,
+      };
       meshes.push(result.mesh);
     }
     for (const f of furnitureDefs) {
@@ -460,12 +482,16 @@
       const group = deps.buildFurnitureVisual(f.key, def.color || 0x888888);
       const y = deps.NORMAL_TOP + (f.elevTier || 0) * deps.PLATEAU_UNIT;
       group.position.set(f.col + 0.5, y, f.row + 0.5);
+      applyPlacementTransform(group, f, y);
       deps.markOutline(group);
       deps.markFurnitureEdgeId(group);
-      group.userData.mapEditorRef = { mapId, kind: 'furniture', id: f.id || null, key: f.key, col: f.col, row: f.row };
+      group.userData.mapEditorRef = { mapId, kind: 'furniture', id: f.id || null, key: f.key, col: f.col, row: f.row,
+        postX: f.postX || 0, postY: f.postY || 0, postZ: f.postZ || 0, rotY: f.rotY || 0,
+        postSX: f.postSX ?? f.postScale ?? 1, postSY: f.postSY ?? f.postScale ?? 1, postSZ: f.postSZ ?? f.postScale ?? 1 };
       scene.add(group);
       meshes.push(group);
-      window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, window.Music?.resolveFurnitureSfx(def));
+      const sfxSource = window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
+      group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
     deps.debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }

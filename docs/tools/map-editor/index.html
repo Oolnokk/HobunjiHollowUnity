@@ -62,6 +62,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #canvas3d{display:none;width:100%;height:100%;touch-action:none;background:var(--bg)}
 #canvas3d.active{display:block}
 #canvas2d.hidden3d{display:none}
+#gizmo3dBar{position:absolute;right:10px;top:10px;z-index:20;display:none;gap:5px;align-items:center;padding:6px;background:rgba(7,16,26,.9);border:1px solid var(--border);border-radius:10px}
+#gizmo3dBar.show{display:flex}
+#gizmo3dBar button{padding:5px 8px;font-size:11px}
+#gizmo3dSelection{max-width:210px;overflow:hidden;text-overflow:ellipsis}
 #hud{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none;max-width:calc(100% - 16px)}
 #validateList{max-height:220px;overflow-y:auto}
 .vIssue{border-radius:6px;padding:5px 7px;margin-bottom:4px;font-size:11px;line-height:1.4}
@@ -369,6 +373,13 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     <div id="view">
       <canvas id="canvas2d"></canvas>
       <canvas id="canvas3d"></canvas>
+      <div id="gizmo3dBar">
+        <span class="pill" id="gizmo3dSelection">Click decor or furniture</span>
+        <button class="sec act" id="gizmo3dTranslate">Move</button>
+        <button class="sec" id="gizmo3dRotate">Rotate</button>
+        <button class="sec" id="gizmo3dScale">Scale</button>
+        <button class="sec" id="gizmo3dClear">Done</button>
+      </div>
       <div id="hud">
         <span class="pill" id="modePill">Mode: pan</span>
         <span class="pill" id="cursorPill">—</span>
@@ -405,10 +416,12 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/building-door.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/GLTFLoader.js"></script>
 <script src="../../js/WallBuilder.js"></script>
 <script src="../../js/HousePieceGen.js"></script>
 <script src="../../js/terrain-preview.js"></script>
+<script src="../../js/procedural-furniture.js"></script>
 <script>
 (() => {
 'use strict';
@@ -602,6 +615,13 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
       spawnRow: Number.isFinite(exit.spawnRow) ? exit.spawnRow : 0
     }))
   );
+  const decorRecord = furniture => {
+    const out = JSON.parse(JSON.stringify(furniture));
+    out.key = String(out.itemKey || out.key || '').replace(/Furniture$/, '');
+    delete out.itemKey;
+    if (!out.id) out.id = uid('decor');
+    return out;
+  };
   return {
     schema: 'hobunji_map.v1',
     id: entry.id || mapData.id || uid('map'),
@@ -612,7 +632,14 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
     rivers: [],
     npcPaths: Array.isArray(mapData.npcPaths) ? mapData.npcPaths : [],
     transitions,
-    objects: {}, furniture: [], decor: [], buildings: [], npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+    objects: {}, furniture: [], decor: (mapData.furniture || []).map(decorRecord), buildings: [], npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+    entryPoints: JSON.parse(JSON.stringify(mapData.entryPoints || [])),
+    layouts: (mapData.layouts || []).map(layout => {
+      const out = JSON.parse(JSON.stringify(layout));
+      out.decor = (out.furniture || []).map(decorRecord);
+      delete out.furniture;
+      return out;
+    }),
     buildingInteriorBase: JSON.parse(JSON.stringify(mapData))
   };
 }
@@ -653,6 +680,21 @@ function buildBuildingInteriorMapV1(m) {
   base.exits = Array.from(generated.values());
   base.routes = (m.routes || []).map(p => ({ id: p.id, label: p.label, nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
   base.npcStations = (m.npcStations || []).map(st => ({ id: st.id, label: st.label || st.id, col: st.col, row: st.row, rotY: st.rotY || 0, pose: st.pose || 'stand', toolKey: st.toolKey || '', toolIntervalSec: st.toolIntervalSec || 0, toolAnimStyle: st.toolAnimStyle || '', wanderRadiusTiles: st.wanderRadiusTiles || 0, wanderMode: st.wanderMode === 'shape' ? 'shape' : 'radius', wanderShapeTiles: Array.isArray(st.wanderShapeTiles) ? st.wanderShapeTiles : [] }));
+  const furnitureRecord = decor => {
+    const out = JSON.parse(JSON.stringify(decor));
+    out.itemKey = String(out.key || out.itemKey || '');
+    if (!out.itemKey.endsWith('Furniture')) out.itemKey += 'Furniture';
+    delete out.key;
+    return out;
+  };
+  base.furniture = (m.decor || []).map(furnitureRecord);
+  base.entryPoints = JSON.parse(JSON.stringify(m.entryPoints || []));
+  base.layouts = (m.layouts || []).map(layout => {
+    const out = JSON.parse(JSON.stringify(layout));
+    out.furniture = (out.decor || []).map(furnitureRecord);
+    delete out.decor;
+    return out;
+  });
   base.npcPaths = (m.npcPaths || []).map(p => ({ id: p.id, label: p.label, npcId: p.npcId || '', nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
   return base;
 }
@@ -715,6 +757,22 @@ function computeMapDiff(m) {
 }
 
 let ws = loadWorkspace();
+function ensurePlacementIds() {
+  for (const map of ws.maps || []) {
+    if (map.category === 'building_interior' && !map.decor?.length && map.buildingInteriorBase?.furniture?.length) {
+      map.decor = map.buildingInteriorBase.furniture.map(furniture => {
+        const item = JSON.parse(JSON.stringify(furniture));
+        item.key = String(item.itemKey || item.key || '').replace(/Furniture$/, '');
+        delete item.itemKey;
+        return item;
+      });
+    }
+    for (const item of map.furniture || []) if (!item.id) item.id = uid('furn');
+    for (const item of map.decor || []) if (!item.id) item.id = uid('decor');
+    for (const layout of map.layouts || []) for (const item of layout.decor || []) if (!item.id) item.id = uid('decor');
+  }
+}
+ensurePlacementIds();
 migrateSubmapAnchors();
 sanitizePlateauGaps();
 ws.maps.forEach(captureBaseline);
@@ -726,6 +784,7 @@ recomputeAllElevations();
 // specific rule's station so it can be seen/edited in place.
 window._mapEditorBridge = {
   getWorkspace: () => ws,
+  importBuildingInterior: data => importBuildingInterior(data),
   focusStation: (mapId, stationId) => {
     if (!mapId || !mapById(mapId)) return false;
     ws.activeId = mapId;
@@ -736,6 +795,20 @@ window._mapEditorBridge = {
     return true;
   },
 };
+
+function importBuildingInterior(data) {
+  if (!data || data.schema !== 'hobunji_building_interior.v1' || !data.id) return false;
+  const incoming = buildingInteriorToWorkspaceMap(data, { id: data.id, name: data.name });
+  const existing = ws.maps.findIndex(map => map.id === incoming.id);
+  if (existing >= 0) ws.maps[existing] = incoming; else ws.maps.push(incoming);
+  ws.activeId = incoming.id;
+  editingLayoutId = null;
+  ensurePlacementIds();
+  captureBaseline(incoming);
+  updateAll();
+  setStatus(`Updated from 3D Interior Editor: ${incoming.name}. Reflect in Game when ready.`);
+  return true;
+}
 
 // ── Running-game live preview bridge ────────────────────────────────────────
 let _liveGameConnected = false;
@@ -773,7 +846,11 @@ function liveSelectionLocation(map, selection) {
   else if (selection?.kind === 'station') record = (map.npcStations || []).find(item => item.id === selection.id);
   else if (selection?.kind === 'entry') record = (map.entryPoints || []).find(item => item.id === selection.id);
   else if (selection?.kind === 'decor') record = activeDecor(map).find(item => (selection.id && item.id === selection.id) || (!selection.id && item.key === selection.key && item.col === selection.col && item.row === selection.row));
-  else if (selection?.kind === 'furniture') record = (map.furniture || []).find(item => (selection.id && item.id === selection.id) || ((!selection.id || !item.id) && (item.key === selection.key || item.itemKey === selection.itemKey) && item.col === selection.col && item.row === selection.row));
+  else if (selection?.kind === 'furniture') {
+    const records = map.category === 'building_interior' ? activeDecor(map) : (map.furniture || []);
+    const wantedKey = String(selection.key || selection.itemKey || '').replace(/Furniture$/, '');
+    record = records.find(item => (selection.id && item.id === selection.id) || ((!selection.id || !item.id) && String(item.key || item.itemKey || '').replace(/Furniture$/, '') === wantedKey && item.col === selection.col && item.row === selection.row));
+  }
   if (!record) return null;
   return { col: record.col ?? record.gridX, row: record.row ?? record.gridZ };
 }
@@ -804,7 +881,7 @@ function focusLiveSelection(message) {
   else if (selection.kind === 'station') { activeStationId = selection.id || null; setMode('station'); }
   else if (selection.kind === 'entry') { activeEntryId = selection.id || null; setMode('entry'); }
   else if (selection.kind === 'decor') setMode('decor');
-  else if (selection.kind === 'furniture') setMode('furniture');
+  else if (selection.kind === 'furniture') setMode(map.category === 'building_interior' ? 'decor' : 'furniture');
   else setMode('tile');
   updateAll();
   const location = liveSelectionLocation(map, selection);
@@ -845,6 +922,31 @@ function reflectInGame() {
 }
 
 function handleLiveMessage(message) {
+  if (message.type === 'interior-author-update') {
+    if (importBuildingInterior(message.interior)) {
+      _mapLiveEndpoint.send({ type: 'interior-author-result', requestId: message.requestId, mapId: message.interior.id, status: 'applied' });
+    }
+    return;
+  }
+  if (message.type === 'placement-transform') {
+    const map = mapById(message.mapId);
+    const selection = message.selection || {};
+    const layout = message.layoutId && message.layoutId !== 'default' ? (map?.layouts || []).find(item => item.id === message.layoutId) : null;
+    const records = selection.kind === 'decor' ? (layout?.decor || map?.decor || [])
+      : selection.kind === 'furniture' ? (map?.category === 'building_interior' ? (layout?.decor || map?.decor || []) : (map?.furniture || [])) : [];
+    const record = records.find(item => (selection.id && item.id === selection.id)
+      || (!selection.id && (item.key || item.itemKey) === String(selection.key || selection.itemKey || '').replace(/Furniture$/, '') && item.col === selection.col && item.row === selection.row));
+    if (record && message.transform) {
+      Object.assign(record, message.transform);
+      delete record.postScale;
+      ws.activeId = map.id;
+      editingLayoutId = layout?.id || null;
+      draw(); refreshPreview(); saveWorkspace();
+      setStatus(`Live gizmo updated ${selection.kind} ${selection.id}.`);
+      _mapLiveEndpoint.send({ type: 'placement-transform-result', requestId: message.requestId, status: 'applied', mapId: map.id });
+    }
+    return;
+  }
   if (message.type === 'game-ready' || message.type === 'game-state') {
     _liveGameConnected = true;
     refreshLiveControls();
@@ -3137,13 +3239,13 @@ function applyAt(tile) {
   } else if (mode === 'object' && m.category === 'exterior') {
     m.objects[brush.object] = [c, r];
   } else if (mode === 'furniture' && m.category === 'exterior') {
-    if (!m.furniture.some(f => f.col === c && f.row === r)) m.furniture.push({ key: brush.furniture, col: c, row: r });
+    if (!m.furniture.some(f => f.col === c && f.row === r)) m.furniture.push({ id: uid('furn'), key: brush.furniture, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
   } else if (mode === 'decor') {
     const info = DECOR[brush.decor];
     const decorArr = activeDecor(m);
     if (info && c + info.fw <= m.cols && r + info.fd <= m.rows
         && !decorArr.some(d => overlaps(d, c, r, info.fw, info.fd))) {
-      decorArr.push({ key: brush.decor, col: c, row: r });
+      decorArr.push({ id: uid('decor'), key: brush.decor, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
     }
   } else if (mode === 'entry') {
     if (!activeEntryId) { setStatus('Select (or create) an entry point first.'); return; }
@@ -3602,7 +3704,17 @@ function init3D() {
   controls.enableDamping = true;
   const group = new THREE.Group();
   scene.add(group);
-  three3d = { renderer, scene, camera, controls, group };
+  const transform = new THREE.TransformControls(camera, renderer.domElement);
+  transform.setMode('translate');
+  transform.addEventListener('dragging-changed', event => {
+    controls.enabled = !event.value;
+    if (event.value) pushUndo();
+    else if (_3dSelected) { sync3DTransformToRecord(); saveWorkspace(); refreshPreview(); }
+  });
+  transform.addEventListener('objectChange', sync3DTransformToRecord);
+  scene.add(transform);
+  three3d = { renderer, scene, camera, controls, transform, group, placementMeshes: new Map() };
+  canvas3d.addEventListener('pointerdown', pick3DPlacement);
 
   function tick() {
     three3d.raf = requestAnimationFrame(tick);
@@ -3611,6 +3723,57 @@ function init3D() {
   }
   tick();
   return true;
+}
+
+let _3dSelected = null; // Stable {mapId,layoutId,kind,id}; survives preview rebuilds.
+
+function active3DRecord() {
+  if (!_3dSelected) return null;
+  const map = mapById(_3dSelected.mapId);
+  if (!map) return null;
+  const layout = _3dSelected.layoutId ? (map.layouts || []).find(item => item.id === _3dSelected.layoutId) : null;
+  const records = _3dSelected.kind === 'decor' ? (layout?.decor || map.decor || []) : (map.furniture || []);
+  return records.find(item => item.id === _3dSelected.id) || null;
+}
+
+function set3DGizmoMode(mode) {
+  three3d?.transform?.setMode(mode);
+  for (const [id, value] of [['gizmo3dTranslate','translate'],['gizmo3dRotate','rotate'],['gizmo3dScale','scale']]) $(id)?.classList.toggle('act', value === mode);
+}
+
+function select3DPlacement(ref) {
+  _3dSelected = ref || null;
+  const mesh = ref && three3d?.placementMeshes?.get(`${ref.kind}:${ref.id}`);
+  if (mesh) three3d.transform.attach(mesh); else three3d?.transform?.detach();
+  const record = active3DRecord();
+  $('gizmo3dSelection').textContent = record ? `${ref.kind}: ${DECOR[record.key]?.label || PROCESSORS[record.key]?.label || record.key}` : 'Click decor or furniture';
+}
+
+function pick3DPlacement(event) {
+  if (!three3d || three3d.transform.dragging) return;
+  const rect = canvas3d.getBoundingClientRect();
+  const mouse = new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+  const ray = new THREE.Raycaster(); ray.setFromCamera(mouse, three3d.camera);
+  const hits = ray.intersectObjects([...three3d.placementMeshes.values()], true);
+  let node = hits[0]?.object;
+  while (node && !node.userData?.placementRef) node = node.parent;
+  if (node?.userData?.placementRef) select3DPlacement(node.userData.placementRef);
+}
+
+function sync3DTransformToRecord() {
+  const record = active3DRecord();
+  const mesh = _3dSelected && three3d?.placementMeshes?.get(`${_3dSelected.kind}:${_3dSelected.id}`);
+  const base = mesh?.userData?.placementBase;
+  if (!record || !mesh || !base) return;
+  record.postX = +(mesh.position.x - base.x).toFixed(3);
+  record.postY = +(mesh.position.y - base.y).toFixed(3);
+  record.postZ = +(mesh.position.z - base.z).toFixed(3);
+  record.rotY = +(mesh.rotation.y * 180 / Math.PI).toFixed(1);
+  record.postSX = +Math.max(.05, mesh.scale.x).toFixed(3);
+  record.postSY = +Math.max(.05, mesh.scale.y).toFixed(3);
+  record.postSZ = +Math.max(.05, mesh.scale.z).toFixed(3);
+  delete record.postScale;
+  draw();
 }
 
 function resize3D() {
@@ -3728,6 +3891,8 @@ function rebuild3D() {
   _3dDirty = false;
   const myGen = ++_3dBuildGeneration;
   const { group } = three3d;
+  three3d.transform.detach();
+  three3d.placementMeshes.clear();
   while (group.children.length) {
     const o = group.children.pop();
     // Terrain materials are cached/reused across rebuilds now (see
@@ -3873,9 +4038,42 @@ function rebuild3D() {
   // rebuild; falls back to the old placeholder box per-building on
   // fetch/parse/build failure.
   spawnPreviewBuildings(group, merged, myGen);
+  spawnPreviewPlacements(group, merged);
 
   three3d.controls.target.set(merged.cols/2, 0, merged.rows/2);
   three3d.camera.lookAt(three3d.controls.target);
+}
+
+function spawnPreviewPlacements(group, merged) {
+  if (!window.ProceduralFurniture) return;
+  const map = activeMap();
+  const offset = mapWorldInfo(map);
+  const layoutId = editingLayoutId || null;
+  const add = (kind, record) => {
+    const key = record.key || record.itemKey;
+    const info = kind === 'decor' ? DECOR[key] : PROCESSORS[key];
+    if (!info || !record.id) return;
+    const fw = info.fw || 1, fd = info.fd || 1;
+    const cx = offset.offsetC + record.col + fw / 2;
+    const cz = offset.offsetR + record.row + fd / 2;
+    const tier = Number(map.elevation) || 0;
+    const baseY = TerrainPreview.NORMAL_TOP + tier * TerrainPreview.PLATEAU_UNIT
+      + TerrainPreview.sampleVisualHeight(merged.visualHeights, cx, cz, merged.cols, merged.rows);
+    const color = kind === 'decor' ? 0x8b6540 : 0x888888;
+    const mesh = window.ProceduralFurniture.buildFurnitureGroup(key, color);
+    const scale = record.postScale != null ? record.postScale : 1;
+    mesh.position.set(cx + (record.postX || 0), baseY + (record.postY || 0), cz + (record.postZ || 0));
+    mesh.rotation.y = (record.rotY || 0) * Math.PI / 180;
+    mesh.scale.set(record.postSX ?? scale, record.postSY ?? scale, record.postSZ ?? scale);
+    const ref = { mapId: map.id, layoutId: kind === 'decor' ? layoutId : null, kind, id: record.id };
+    mesh.userData.placementRef = ref;
+    mesh.userData.placementBase = { x: cx, y: baseY, z: cz };
+    group.add(mesh);
+    three3d.placementMeshes.set(`${kind}:${record.id}`, mesh);
+  };
+  for (const record of map.furniture || []) add('furniture', record);
+  for (const record of activeDecor(map)) add('decor', record);
+  if (_3dSelected?.mapId === map.id) select3DPlacement(_3dSelected);
 }
 
 // Footprint placeholder box, lifted to the building's anchor tile's resolved
@@ -3997,6 +4195,7 @@ function toggle3D(show) {
   const willShow = show !== undefined ? show : !canvas3d.classList.contains('active');
   canvas3d.classList.toggle('active', willShow);
   canvas.classList.toggle('hidden3d', willShow);
+  $('gizmo3dBar').classList.toggle('show', willShow);
   if (willShow) {
     if (!init3D()) {
       canvas3d.classList.remove('active');
@@ -4734,6 +4933,10 @@ $('delLayoutBtn').addEventListener('click', () => {
 });
 
 $('toggle3dBtn').addEventListener('click', () => toggle3D());
+$('gizmo3dTranslate').addEventListener('click', () => set3DGizmoMode('translate'));
+$('gizmo3dRotate').addEventListener('click', () => set3DGizmoMode('rotate'));
+$('gizmo3dScale').addEventListener('click', () => set3DGizmoMode('scale'));
+$('gizmo3dClear').addEventListener('click', () => select3DPlacement(null));
 $('validateBtn').addEventListener('click', runValidation);
 $('copyValidationBtn').addEventListener('click', copyValidationReport);
 $('quickCheckBtn').addEventListener('click', runQuickCheck);
@@ -4930,6 +5133,8 @@ async function loadBuildingInteriorMaps() {
 resizeCanvas(); updateAll(); fitView();
 const _pendingLiveNavigation = window.MapLivePreview.consumePendingNavigation();
 if (_pendingLiveNavigation) focusLiveSelection(_pendingLiveNavigation);
+const _latestLiveMessage = _mapLiveEndpoint.readLatest();
+if (_latestLiveMessage?.type === 'interior-author-update') handleLiveMessage(_latestLiveMessage);
 _mapLiveEndpoint.send({ type: 'editor-ready', mapId: activeMap()?.id, layoutId: editingLayoutId || 'default' });
 loadAudioCueIndexes();
 loadBuildingInteriorMaps();

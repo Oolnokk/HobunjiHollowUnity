@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20260809a"></script>
   <script src="js/HousePieceGen.js?v=20260809a"></script>
@@ -783,6 +784,17 @@
         <button class="fed-action-btn" id="mapEditOpenBtn">Open Map Editor</button>
         <button class="fed-action-btn" id="mapEditPickBtn">🎯 Click to Select</button>
         <button class="fed-action-btn" id="mapEditDebugBtn">Copy Reflection Debug</button>
+      </div>
+      <div class="fed-section" id="mapEditGizmoSection" style="display:none;">
+        <div class="fed-label">Selected placement</div>
+        <strong id="mapEditGizmoSelection">—</strong>
+        <div class="fed-grid" style="margin-top:7px">
+          <button class="fed-btn fed-active" id="mapEditGizmoTranslate">Move</button>
+          <button class="fed-btn" id="mapEditGizmoRotate">Rotate</button>
+          <button class="fed-btn" id="mapEditGizmoScale">Scale</button>
+          <button class="fed-btn" id="mapEditGizmoDone">Done</button>
+        </div>
+        <div class="map-edit-detail">Gameplay controls pause only while a gizmo handle is being dragged.</div>
       </div>
       <div class="fed-section" id="mapEditArenaTools" style="display:none;">
         <div class="fed-label">Testing Arena</div>

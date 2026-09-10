@@ -8,6 +8,10 @@
   let revision = 0; // Last applied live-preview revision.
   let lastResult = null; // Latest reflection/navigation diagnostic shown in the Map Edit panel.
   let editorWindow = null; // Named standalone editor window, reused rather than opening duplicate tabs.
+  let transformControl = null; // Runtime placement gizmo, attached only to outdoor decor/processing furniture.
+  let selectedPlacement = null; // {ref,node,basePosition}; mirrors edits back into the Map Editor workspace.
+  let gameplayLock = null; // Shared movement/tool/action lock held only while a gizmo handle is dragged.
+  let transformSendTimer = null;
   const raycaster = new THREE.Raycaster(); // Shared picker raycaster; created once instead of per pointer event.
 
   function init(injectedDeps) {
@@ -68,6 +72,89 @@
     if (panel) panel.style.display = 'none';
     document.getElementById('mapEditBtn')?.classList.remove('fed-open');
     disarmPicker();
+    if (selectedPlacement) detachPlacement();
+  }
+
+  function ensureTransformControl() {
+    if (transformControl || !THREE.TransformControls) return transformControl;
+    transformControl = new THREE.TransformControls(deps.camera, deps.renderer.domElement);
+    transformControl.setMode('translate');
+    transformControl.addEventListener('dragging-changed', event => {
+      window.__mapEditorGizmoDragging = !!event.value;
+      if (event.value && !gameplayLock) {
+        gameplayLock = window.CharacterActionLocks?.acquire?.({ owner: 'map-editor-gizmo', reason: 'Adjusting a map placement', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
+      } else if (!event.value) {
+        gameplayLock?.release?.(); gameplayLock = null;
+        sendPlacementTransform(true);
+      }
+      refreshPanel();
+    });
+    transformControl.addEventListener('objectChange', () => sendPlacementTransform(false));
+    return transformControl;
+  }
+
+  function placementIdentity(ref) {
+    return ref.id || `${ref.key || ''}@${ref.col},${ref.row}`;
+  }
+
+  function attachPlacement(ref, node) {
+    if (!['decor', 'furniture'].includes(ref?.kind) || !node) { detachPlacement(); return; }
+    const control = ensureTransformControl();
+    if (!control) { setStatus('Transform gizmo unavailable: TransformControls did not load.', false); return; }
+    control.parent?.remove(control);
+    deps.getActiveScene()?.add(control);
+    const basePosition = node.position.clone();
+    basePosition.x -= ref.postX || 0; basePosition.y -= ref.postY || 0; basePosition.z -= ref.postZ || 0;
+    selectedPlacement = { ref: { ...ref }, node, basePosition };
+    window.__mapEditorGizmoActive = true;
+    control.attach(node);
+    refreshPanel();
+  }
+
+  function detachPlacement() {
+    clearTimeout(transformSendTimer);
+    transformControl?.detach();
+    gameplayLock?.release?.(); gameplayLock = null;
+    window.__mapEditorGizmoDragging = false;
+    window.__mapEditorGizmoActive = false;
+    selectedPlacement = null;
+    refreshPanel();
+  }
+
+  function setGizmoMode(mode) {
+    ensureTransformControl()?.setMode(mode);
+    for (const [id, value] of [['mapEditGizmoTranslate','translate'],['mapEditGizmoRotate','rotate'],['mapEditGizmoScale','scale']]) {
+      document.getElementById(id)?.classList.toggle('fed-active', value === mode);
+    }
+  }
+
+  function placementTransform() {
+    if (!selectedPlacement) return null;
+    const { node, basePosition } = selectedPlacement;
+    const aux = node.userData?.mapEditorAux;
+    if (aux?.light && aux.lightOffset) aux.light.position.copy(node.position).add(aux.lightOffset);
+    if (aux?.sfxSource) {
+      aux.sfxSource.x = node.position.x + (aux.sfxOffsetX || 0);
+      aux.sfxSource.z = node.position.z + (aux.sfxOffsetZ || 0);
+    }
+    return {
+      postX: +(node.position.x - basePosition.x).toFixed(3), postY: +(node.position.y - basePosition.y).toFixed(3), postZ: +(node.position.z - basePosition.z).toFixed(3),
+      rotY: +(node.rotation.y * 180 / Math.PI).toFixed(1),
+      postSX: +Math.max(.05, node.scale.x).toFixed(3), postSY: +Math.max(.05, node.scale.y).toFixed(3), postSZ: +Math.max(.05, node.scale.z).toFixed(3),
+    };
+  }
+
+  function sendPlacementTransform(immediate) {
+    if (!selectedPlacement) return;
+    const send = () => endpoint.send({
+      type: 'placement-transform', requestId: window.MapLivePreview.requestId('gizmo'),
+      mapId: selectedPlacement.ref.mapId || currentDescriptor().mapId,
+      layoutId: selectedPlacement.ref.layoutId || currentDescriptor().layoutId || 'default',
+      selection: { kind: selectedPlacement.ref.kind, id: selectedPlacement.ref.id, key: selectedPlacement.ref.key, col: selectedPlacement.ref.col, row: selectedPlacement.ref.row },
+      transform: placementTransform(),
+    });
+    clearTimeout(transformSendTimer);
+    if (immediate) send(); else transformSendTimer = setTimeout(send, 45);
   }
 
   function setStatus(text, ok = true) {
@@ -91,6 +178,10 @@
     }
     if (result) result.textContent = lastResult?.text || 'No live reflection yet.';
     if (generated) generated.style.display = descriptor.generated ? '' : 'none';
+    const gizmoSection = document.getElementById('mapEditGizmoSection');
+    if (gizmoSection) gizmoSection.style.display = selectedPlacement ? '' : 'none';
+    const gizmoLabel = document.getElementById('mapEditGizmoSelection');
+    if (gizmoLabel && selectedPlacement) gizmoLabel.textContent = `${selectedPlacement.ref.kind} · ${placementIdentity(selectedPlacement.ref)}${window.__mapEditorGizmoDragging ? ' · controls paused' : ''}`;
     const arenaRow = document.getElementById('mapEditArenaTools');
     if (arenaRow) arenaRow.style.display = deps?.getCurrentArea?.() === deps?.DEV_ARENA_ZONE_ID ? '' : 'none';
   }
@@ -155,7 +246,7 @@
     for (const hit of hits) {
       const owner = logicalOwner(hit.object);
       if (owner?.type === 'blocked') { setStatus(owner.label, false); return; }
-      if (owner?.type === 'selection') { navigateToRef(owner.ref); return; }
+      if (owner?.type === 'selection') { navigateToRef(owner.ref, owner.node); return; }
       if (hit.object.userData?.mapEditorTerrain || hit.object.userData?.terrainEdgeId != null) {
         const point = hit.point;
         navigateToRef({ kind: 'tile', col: Math.floor(point.x), row: Math.floor(point.z) });
@@ -165,7 +256,7 @@
     setStatus('Nothing editable was hit. Click to Select is ready to try again.', false);
   }
 
-  function navigateToRef(ref) {
+  function navigateToRef(ref, node = null) {
     const descriptor = currentDescriptor();
     const selection = { ...ref };
     delete selection.mapId;
@@ -178,6 +269,8 @@
       selection,
     };
     openEditor(request);
+    if (node && ['decor', 'furniture'].includes(selection.kind)) attachPlacement({ ...ref, layoutId: request.layoutId }, node);
+    else detachPlacement();
     setStatus(`Selected ${selection.kind}${selection.id ? ` ${selection.id}` : selection.col != null ? ` ${selection.col},${selection.row}` : ''} in Map Editor.`);
   }
 
@@ -192,6 +285,7 @@
       reply(request, { status: 'rejected', warnings: [`Revision ${request.revision} is not newer than applied revision ${revision}.`], applyMode: 'none' });
       return;
     }
+    if (selectedPlacement) detachPlacement();
     try {
       const result = await deps.applyReflection(request);
       revision = request.revision;
@@ -234,9 +328,13 @@
     document.getElementById('mapEditOpenBtn')?.addEventListener('click', () => openEditor());
     document.getElementById('mapEditPickBtn')?.addEventListener('click', armPicker);
     document.getElementById('mapEditDebugBtn')?.addEventListener('click', copyDebug);
+    document.getElementById('mapEditGizmoTranslate')?.addEventListener('click', () => setGizmoMode('translate'));
+    document.getElementById('mapEditGizmoRotate')?.addEventListener('click', () => setGizmoMode('rotate'));
+    document.getElementById('mapEditGizmoScale')?.addEventListener('click', () => setGizmoMode('scale'));
+    document.getElementById('mapEditGizmoDone')?.addEventListener('click', detachPlacement);
     document.getElementById('mapEditArenaSpawnBtn')?.addEventListener('click', () => deps.openArenaSpawner());
     document.getElementById('mapEditPickCancelBtn')?.addEventListener('click', disarmPicker);
-    window.addEventListener('keydown', event => { if (event.key === 'Escape' && armed) disarmPicker(); });
+    window.addEventListener('keydown', event => { if (event.key === 'Escape') { if (armed) disarmPicker(); else if (selectedPlacement) detachPlacement(); } });
   }
 
   window.MapLivePreviewRuntime = {
@@ -247,6 +345,6 @@
     closePanel,
     armPicker,
     disarmPicker,
-    getDebugState: () => ({ editorConnected, armed, revision, lastResult, map: currentDescriptor() }),
+    getDebugState: () => ({ editorConnected, armed, gizmoDragging: !!window.__mapEditorGizmoDragging, selectedPlacement: selectedPlacement?.ref || null, revision, lastResult, map: currentDescriptor() }),
   };
 })();

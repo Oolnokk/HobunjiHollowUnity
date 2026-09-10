@@ -12099,6 +12099,7 @@
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             let renderedFurniture = null;
+            let furnitureSfxSource = null;
             if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
               const model = buildFurnitureVisual(furnitureKey, color);
               renderedFurniture = model;
@@ -12108,7 +12109,7 @@
               _markOutline(model);
               _markFurnitureEdgeId(model);
               bScene.add(model);
-              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
+              furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
               registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
@@ -12125,17 +12126,28 @@
               _markOutline(ph);
               _markFurnitureEdgeId(ph);
               bScene.add(ph);
-              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
+              furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
               id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
+              postX: f.postX || 0, postY: f.postY || 0, postZ: f.postZ || 0, rotY: f.rotY || 0,
+              postSX: scX, postSY: scY, postSZ: scZ,
             };
             // Building-map furniture bypasses makeDecorativeFurnitureMesh,
             // so add its configured lamp/candle light explicitly here.
+            let furnitureLight = null;
             if (def?.light) {
-              bScene.add(makeFurniturePointLight(def.light, bx, by + (def.light.height || 0.6), bz));
+              furnitureLight = makeFurniturePointLight(def.light, bx, by + (def.light.height || 0.6), bz);
+              bScene.add(furnitureLight);
             }
+            renderedFurniture.userData.mapEditorAux = {
+              light: furnitureLight,
+              lightOffset: furnitureLight ? furnitureLight.position.clone().sub(renderedFurniture.position) : null,
+              sfxSource: furnitureSfxSource,
+              sfxOffsetX: furnitureSfxSource ? furnitureSfxSource.x - renderedFurniture.position.x : 0,
+              sfxOffsetZ: furnitureSfxSource ? furnitureSfxSource.z - renderedFurniture.position.z : 0,
+            };
             // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
             // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
             // a custom interaction registered at this instance's actual
@@ -23776,6 +23788,7 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.__mapEditorGizmoDragging) return;
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;
@@ -23940,6 +23953,11 @@
           gamepadState.hadPad = false;
           return;
         }
+        if (window.__mapEditorGizmoDragging) {
+          input.x = 0; input.y = 0; controllerLookActive = false;
+          gamepadState.previous.clear(); gamepadState.activeShift = null;
+          return;
+        }
         gamepadState.hadPad = true;
         const dz = INPUT_DEFAULTS.deadzone;
         const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
@@ -24059,6 +24077,7 @@
       let _shiftDownAt = null;
       let _shiftDragged = false;
       window.addEventListener('keydown', (event) => {
+        if (window.__mapEditorGizmoDragging) { event.preventDefault(); return; }
         const key = event.key.toLowerCase();
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
@@ -24289,6 +24308,7 @@
 
       // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
       function handleGameWheel(e, heldOnly = false) {
+        if (window.__mapEditorGizmoDragging) { e.preventDefault(); return true; }
         if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
         // Shift+wheel cycles melee auto-target's lock orbitally around the
@@ -24404,7 +24424,8 @@
       let _cameraJoystickTargetCyclePast = false; // edge-detect state for melee auto-target cycling, see gameLoop's joystick consumption
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
-          && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
+          && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
+          && !window.__mapEditorGizmoDragging;
       }
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
@@ -24497,7 +24518,7 @@
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (menuOpen || farmEditMode || e.shiftKey) return;
+          if (menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
             const weaponSlot = weaponActionSlot(mouseAction);
@@ -24582,6 +24603,7 @@
           if (desktopWeaponPointerSlots.has(0) && (Number(e.buttons) & 1) === 0) {
             finishDesktopMouseAction({ button: 0, pointerType: 'mouse' });
           }
+          if (window.__mapEditorGizmoDragging) return;
           // A floating menu (the pause/inventory menu incl. its Alchemy tab,
           // the cooking hearth/campfire modal via setInteractionBlocked, or
           // the utilities wheel/an entries arc like potion/ammo select) owns

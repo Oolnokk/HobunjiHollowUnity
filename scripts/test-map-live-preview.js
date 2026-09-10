@@ -8,7 +8,9 @@ const protocolSource = fs.readFileSync('docs/js/map-live-preview.js', 'utf8');
 const runtimeSource = fs.readFileSync('docs/js/map-live-preview-runtime.js', 'utf8');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const editorHtml = fs.readFileSync('docs/tools/map-editor/index.html', 'utf8');
+const interiorEditorHtml = fs.readFileSync('docs/tools/building-interior-author/index.html', 'utf8');
 const indexHtml = fs.readFileSync('docs/index.html', 'utf8');
+const townZoneSource = fs.readFileSync('docs/js/town-zone-buildings.js', 'utf8');
 
 assert.doesNotThrow(() => new Function(protocolSource), 'shared live-preview protocol parses');
 assert.doesNotThrow(() => new Function(runtimeSource), 'runtime live-preview controller parses');
@@ -16,6 +18,9 @@ assert.doesNotThrow(() => new Function(runtimeSource), 'runtime live-preview con
 const inlineScripts = [...editorHtml.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
   .map(match => match[1]).filter(source => source.trim());
 inlineScripts.forEach((source, index) => assert.doesNotThrow(() => new Function(source), `Map Editor inline script ${index + 1} parses`));
+const interiorInlineScripts = [...interiorEditorHtml.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+  .map(match => match[1]).filter(source => source.trim());
+interiorInlineScripts.forEach((source, index) => assert.doesNotThrow(() => new Function(source), `Interior Editor inline script ${index + 1} parses`));
 
 const listeners = {};
 const storage = new Map();
@@ -55,6 +60,12 @@ assert.match(indexHtml, /id="mapEditBtn"[\s\S]*style="display:none;"/, 'off-farm
 assert.match(runtimeSource, /area === 'farm'.*Farm editing uses the in-game Farm Editor/, 'runtime explicitly leaves farm authoring to Farm Editor');
 assert.match(runtimeSource, /mapSnapshot: generated \? deps\.exportGeneratedMap/, 'procedural zones export a session snapshot to the editor');
 assert.match(editorHtml, /id="reflectBtn">↻ Reflect in Game/, 'Map Editor exposes Reflect in Game');
+assert.match(editorHtml, /new THREE\.TransformControls/, 'Map Editor 3D view exposes placement transform controls');
+assert.match(editorHtml, /spawnPreviewPlacements\(group, merged\)/, 'Map Editor 3D view renders decor and processing furniture');
+assert.match(interiorEditorHtml, /id="updateMapEditorBtn"/, '3D Interior Editor can update the 2D Map Editor workspace');
+assert.match(runtimeSource, /CharacterActionLocks\?\.acquire/, 'runtime gizmo uses the shared gameplay action lock');
+assert.match(runtimeSource, /type: 'placement-transform'/, 'runtime gizmo mirrors transforms into the Map Editor workspace');
+assert.match(townZoneSource, /postSX.*postScale/, 'outdoor runtime decor consumes per-axis placement scale');
 assert.match(editorHtml, /isFarmEditorMap\(rootId\)/, 'Map Editor rejects reflection for the linked farm root');
 assert.match(gameSource, /player\.x = playerBefore\.x; player\.y = playerBefore\.y/, 'scene rebuild restores exact player position');
 assert.match(gameSource, /_detachLivePreviewResidents/, 'scene rebuild detaches and preserves runtime residents');
