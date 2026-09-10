@@ -11,6 +11,10 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const config = JSON.parse(read('docs/config/harlyao-night-march.json'));
 const beaconSource = read('docs/js/harlyao-night-march-beacon.js');
 const runtimeSource = read('docs/js/harlyao-night-march-runtime.js');
+const ghostSource = read('docs/js/ghostify.js');
+const atmosphereSource = read('docs/js/harlyao-night-march-atmosphere.js');
+const cloudFogSource = read('docs/js/cloud-forest-fog.js');
+const banditCampsSource = read('docs/js/bandit-camps.js');
 const loaderSource = read('docs/js/house-pieces.js');
 const rootTotemConfigSource = read('docs/config/root-totem-config.js');
 
@@ -59,11 +63,34 @@ assert.doesNotMatch(beaconSource, /moveCreatureToward/, 'beacon module itself ha
 assert.match(runtimeSource, /if \(!sameChunk\(playerChunk\(\), chunk\)\) return;/, 'actual army entities remain absent until the player enters the same chunk as the locator');
 assert.match(runtimeSource, /else materialize\(s, chunk\)/, 'crossing into the locator chunk still triggers normal army materialization');
 
+// CloudForestFog intentionally replaces the base WeatherFX lighting renderer after
+// the Harlyao scripts parse. The Harlyao wrappers must therefore repair around the
+// final renderer rather than trusting a one-time installed boolean.
+assert.match(cloudFogSource, /window\.WeatherFX\.drawLightingOverlay = drawUnifiedLightingOverlay/, 'CloudForestFog remains the later full-day lighting authority that motivated this regression');
+assert.match(atmosphereSource, /__harlyaoNightMarchAtmosphereWrapped/, 'Harlyao atmosphere marks the current draw-chain wrapper so it can detect replacement');
+assert.doesNotMatch(atmosphereSource, /if \(installed\) return true/, 'atmosphere no longer permanently trusts a stale install flag after a later renderer replacement');
+assert.match(ghostSource, /HarlyaoNightMarchAtmosphere\?\.install\?\.\(api\)/, 'Ghostify repair pass reinstalls Harlyao darkness beneath the spectral glow');
+assert.match(ghostSource, /Object\.assign\(wrappedDraw, priorDraw\)/, 'Ghostify carries lower lighting-chain identity markers through its wrapper');
+assert.match(ghostSource, /HarlyaoNightMarchBeacon\?\.ensureWeatherBridge\?\.\(\)/, 'Ghostify repair pass restores the all-distance locator as the outermost Harlyao layer');
+assert.match(beaconSource, /api\.drawLightingOverlay\.__harlyaoBeaconLocatorWrapped/, 'beacon tests the current renderer chain instead of a historical install state');
+assert.doesNotMatch(beaconSource, /if \(weatherInstalled\) return true/, 'beacon can reattach after CloudForestFog replaces its earlier wrapper');
+assert.match(beaconSource, /Object\.assign\(wrappedDraw, priorDraw\)/, 'beacon preserves atmosphere/Ghostify markers while becoming the outermost draw layer');
+
+// Ordinary local lights should stop advertising themselves from across a zone.
+assert.match(ghostSource, /LOCAL_LIGHT_VIEW_MAX_TILES = 6/, 'ordinary furniture-light overlays have a hard six-tile maximum visibility range');
+assert.match(ghostSource, /Math\.hypot\(x - playerX, z - playerZ\) <= viewRange/, 'local-light overlay visibility is actually gated by player-to-source world distance');
+assert.match(rootTotemConfigSource, /intensity:0\.85, distance:1\.8, decay:1\.7/, 'Root Totem bottle light range is reduced to 1.8 tiles');
+assert.match(rootTotemConfigSource, /intensity:1\.25,distance:2\.4,decay:1\.7/, 'Root Totem basin light range is reduced to 2.4 tiles');
+assert.match(banditCampsSource, /new THREE\.PointLight\(0xff7722, 1\.4, 3\.5\)/, 'bandit campfire real PointLight range is halved to 3.5 tiles');
+
 assert.match(loaderSource, /\['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon\.js\?v=[^']+'\]/, 'persistent locator adapter loads in gameplay');
 assert(loaderSource.indexOf("['Ghostify'") < loaderSource.indexOf("['HarlyaoNightMarchBeacon'"), 'Ghostify/lighting bridge exists before the locator adapter');
 assert(loaderSource.indexOf("['HarlyaoNightMarch'") < loaderSource.indexOf("['HarlyaoNightMarchBeacon'"), 'march route state exists before the locator reads it');
 
 new vm.Script(beaconSource, { filename: 'harlyao-night-march-beacon.js' });
+new vm.Script(ghostSource, { filename: 'ghostify.js' });
+new vm.Script(atmosphereSource, { filename: 'harlyao-night-march-atmosphere.js' });
+new vm.Script(banditCampsSource, { filename: 'bandit-camps.js' });
 
 const context = {
   console,
