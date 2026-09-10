@@ -671,7 +671,7 @@
       let primary = null;
       if (pathGeo) {
         // Regular ground (grass) under the path — the paved brick
-        // surface (see \"Path: paved brick surface\" / registerPathBrickChunks
+        // surface (see "Path: paved brick surface" / registerPathBrickChunks
         // for 'farm') overlays ordinary ground rather than a separately-
         // colored path patch, same treatment as the town path.
         const m = new THREE.Mesh(pathGeo, deps.resolveTileMat('farm', TileType.GRASS));
