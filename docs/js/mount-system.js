@@ -10,7 +10,7 @@
   // is handed over once via init(). See window.Combat's init(deps) call in
   // game.js for the sibling precedent.
   let deps = null;
-  const DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND = 4; // Baseline for every runtime animal species with a run sprite unless that species authors an override.
+  const DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND = 6; // Baseline for every runtime animal species with a run sprite unless that species authors an override.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -85,7 +85,7 @@
   function creatureGaitRate(state) {
     const def = state?.def; // Actual runtime species definition carried by every creature entity.
     if (!def) return DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND;
-    if (state?.creatureKey === 'grehlr') def.gaitCyclesPerSecond = 4; // Grehlr is explicitly authored at four complete gait cycles / contacts per second.
+    if (state?.creatureKey === 'grehlr') def.gaitCyclesPerSecond = 6; // Grehlr is explicitly authored at six complete gait cycles / contacts per second.
     if (!(Number(def.gaitCyclesPerSecond) > 0)) def.gaitCyclesPerSecond = DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND; // Lazily covers species registered after Mounts.init too.
     return Number(def.gaitCyclesPerSecond);
   }
@@ -189,7 +189,7 @@
     for (const [speciesKey, def] of Object.entries(deps?.CREATURE_DB || {})) {
       if (!Array.isArray(def?.sprites?.run) || !def.sprites.run.length) continue;
       if (!(Number(def.gaitCyclesPerSecond) > 0)) def.gaitCyclesPerSecond = DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND;
-      if (speciesKey === 'grehlr') def.gaitCyclesPerSecond = 4; // Explicit Grehlr authoring: exactly four complete gait cycles / step contacts per second.
+      if (speciesKey === 'grehlr') def.gaitCyclesPerSecond = 6; // Explicit Grehlr authoring: exactly six complete gait cycles / step contacts per second.
       configuredSpecies++;
     }
 
