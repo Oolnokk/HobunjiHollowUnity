@@ -132,14 +132,14 @@
       vUv = uv;
       #ifdef USE_INSTANCING
         vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        vec4 randomOrigin = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
       #else
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vec4 randomOrigin = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
       #endif
-      // Stable per-blade pseudo-random value from its (fixed) ground
-      // position — used by the fragment shader to thin the tuft count
-      // seasonally (Deadgrass/Coldmuck) without touching the instance
-      // buffer itself, so density can change with a single uniform.
-      vRandom = fract(sin(dot(worldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
+      // Use the instance bottom origin for seasonal density so this value is
+      // constant across the whole plane instead of becoming an interpolated mask.
+      vRandom = fract(sin(dot(randomOrigin.xz, vec2(12.9898, 78.233))) * 43758.5453);
       float topFactor = uv.y;
       float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
       float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
