@@ -18,7 +18,8 @@
   let deps = null; // Captured from BanditCombat.init; used for current-area, map dimensions, and terrain-height sampling.
   let lightingDeps = null; // Captured from WeatherFX.init for the canonical overlay canvas/camera/world projection.
   let config = null; // Parsed Harlyao march config used by the distance-independent locator.
-  let weatherInstalled = false; // Guards the one WeatherFX draw wrapper.
+  let weatherInstalled = false; // Mirrors whether the CURRENT WeatherFX draw chain still carries our marker.
+  let weatherDrawInstalls = 0; // Mobile-visible count of initial install plus any repair after a later renderer replacement.
   let lastLocatorDrawAt = 0; // Keeps the locator on the lighting overlay's low-frequency cadence.
   let lastScreenState = null; // Mobile-visible diagnostics from the most recent rendered locator.
   const projectedScratch = window.THREE ? new window.THREE.Vector3() : null;
@@ -272,7 +273,6 @@
 
   function installWeatherBridge(api = window.WeatherFX) {
     if (!api || typeof api.drawLightingOverlay !== 'function') return false;
-    if (weatherInstalled) return true;
     if (typeof api.init === 'function' && !api.__harlyaoBeaconInitWrapped) {
       const originalInit = api.init.bind(api);
       api.init = function harlyaoBeaconWeatherInit(injected) {
@@ -281,6 +281,11 @@
       };
       api.__harlyaoBeaconInitWrapped = true;
     }
+    if (api.drawLightingOverlay.__harlyaoBeaconLocatorWrapped) {
+      weatherInstalled = true;
+      return true;
+    }
+
     const priorDraw = api.drawLightingOverlay;
     const originalDraw = priorDraw.bind(api);
     const wrappedDraw = function harlyaoBeaconLightingOverlay(...args) {
@@ -300,10 +305,11 @@
       if (redrawn) drawLocatorOverlay();
       return result;
     };
-    Object.assign(wrappedDraw, priorDraw); // Preserve Ghostify/atmosphere wrapper identity markers so their self-checks cannot double-wrap the lighting chain later.
+    Object.assign(wrappedDraw, priorDraw); // Carries lower-layer identity markers through the outer locator wrapper.
     wrappedDraw.__harlyaoBeaconLocatorWrapped = true;
     api.drawLightingOverlay = wrappedDraw;
     weatherInstalled = true;
+    weatherDrawInstalls++;
     return true;
   }
 
@@ -318,7 +324,8 @@
       configReady: !!config,
       depsReady: !!deps,
       lightingReady: !!lightingDeps,
-      installed: weatherInstalled,
+      installed: !!window.WeatherFX?.drawLightingOverlay?.__harlyaoBeaconLocatorWrapped,
+      weatherDrawInstalls,
       ...beacon,
       radiusTiles: Math.max(1, Number(visuals.beaconGlowRadiusTiles) || 28),
       intensity: clamp(Number(visuals.beaconGlowIntensity) || 0.94, 0, 1),
