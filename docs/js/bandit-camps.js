@@ -309,7 +309,7 @@
           mesh.position.set(center.x / deps.TILE, y, center.y / deps.TILE);
           deps.markOutline(mesh);
           zi.scene.add(mesh);
-          const light = new THREE.PointLight(0xff7722, 1.4, 7);
+          const light = new THREE.PointLight(0xff7722, 1.4, 3.5);
           light.position.set(center.x / deps.TILE, y + 0.45, center.y / deps.TILE);
           light.userData.furnitureLightMask = true;
           zi.scene.add(light);
@@ -441,9 +441,6 @@
       } else if (info.kind === 'den') {
         if (!deps.isDenPackAlive(info.denKey)) {
           _perceivedThreats.delete(key);
-          // A den is a lasting geographic discovery even while its current
-          // pack is dead and waiting to respawn; only a Tothal Shift moves
-          // it and expires the saved marker.
         }
       }
     }
@@ -455,10 +452,6 @@
       if ((c.master || deps.player) !== deps.player) continue;
       const rangePx = _companionPerceptionRangePx(c);
       const label = c.name || c.def?.label || 'Your companion';
-
-      // Bandit camps are no longer sensed by proximity — see
-      // revealCampFromTracking, triggered by winning a random road ambush
-      // (updateRandomEncounters), for how a companion now finds them.
 
       for (const den of (layout?.dens || [])) {
         const denKey = deps.denKeyFor(deps.getCurrentArea(), den);
@@ -475,20 +468,10 @@
     }
   }
 
-  // ── Random road ambush (Skyrim-style random encounter) ─────────────
-  // While the player is actually travelling through a wilderness zone, a
-  // periodic low-probability roll can drop a pair of bandits on them —
-  // the same "random encounter zone" idea Skyrim uses on its overworld
-  // roads: no fixed trigger point, just a timed chance check gated on
-  // the player being out in the world and moving. Winning the fight is
-  // what tips the player's companion off to the source camp; the camp
-  // stays hidden until then.
   const ENCOUNTER_CHECK_INTERVAL_S = 5;
   const ENCOUNTER_CHANCE_PER_CHECK = 0.05;
   const ENCOUNTER_COOLDOWN_S = 100;
   const ENCOUNTER_MOVE_SPEED_MIN_PXS = 5;
-  // Kept inside a grunt's ~6.2-tile aggroRangePx (see combat-bandit.js) so
-  // the pair notices and closes in right away instead of standing idle.
   const ENCOUNTER_MIN_SPAWN_TILES = 4;
   const ENCOUNTER_MAX_SPAWN_TILES = 6;
   const ENCOUNTER_NEARBY_HOSTILE_TILES = 16;
@@ -496,7 +479,7 @@
 
   let _encounterCheckAccum = 0;
   let _encounterCooldownRemaining = 0;
-  let _activeAmbush = null; // { campRec, banditIds: Set<id> }
+  let _activeAmbush = null;
 
   function _ambushSourceCamp(zoneId) {
     const candidates = (_banditCampInstances.get(zoneId) || [])
@@ -576,9 +559,6 @@
         if (_activeAmbush.banditIds.has(c.id) && c.health > 0) { anyAlive = true; break; }
       }
       _activeAmbush.elapsedS += dt;
-      // No victory reveal past the timeout — either the player fled or the
-      // pair leashed back to idle; the tracks go cold instead of blocking
-      // every future roll forever.
       if (!anyAlive) _resolveAmbushVictory(_activeAmbush);
       if (!anyAlive || _activeAmbush.elapsedS >= ENCOUNTER_MAX_ACTIVE_S) {
         _activeAmbush = null;
@@ -611,9 +591,6 @@
     _tryStartRoadAmbush(zoneId);
   }
 
-  // ── Simple hydra camp sequence ────────────────────────────────────
-  // One exterior guard is active at a time. Each non-captain death can
-  // produce one delayed replacement; the captain is reserved for the end.
   const SIMPLE_HYDRA_DELAY_S = 5;
   const SIMPLE_HYDRA_DEFAULT_BURN_S = 8;
 
@@ -645,21 +622,21 @@
   }
 
   function rollGruntVariant(rec, rank) {
-    const variant = rec.cfg?.gruntVariants?.slagothimBeastmaster; // Used to replace a rare normal grunt with the configured Beastmaster.
+    const variant = rec.cfg?.gruntVariants?.slagothimBeastmaster;
     if (rank !== 'grunt' || !variant) return null;
-    const maxPerCamp = Math.max(0, Number(variant.maxPerCamp ?? 1)); // Used to prevent a camp from accumulating too many pet-backed grunts.
+    const maxPerCamp = Math.max(0, Number(variant.maxPerCamp ?? 1));
     if ((rec.beastmastersSpawned || 0) >= maxPerCamp) return null;
-    const chance = deps.clamp(Number(variant.chancePerGrunt) || 0, 0, 1); // Used for the per-grunt variant roll shared by guards, reinforcements, and ambushes.
+    const chance = deps.clamp(Number(variant.chancePerGrunt) || 0, 0, 1);
     return deps.rnd() < chance ? variant : null;
   }
 
   async function spawnBeastmasterCompanion(rec, beastmaster, variant) {
-    const creatureKey = String(variant?.companionCreatureKey || 'dabinggi-hound'); // Used to build the Beastmaster's configured animal without duplicating creature data.
-    const angle = deps.rnd() * Math.PI * 2; // Used to place the hound beside its master rather than directly inside the avatar.
-    const distance = deps.TILE * 0.8; // Used as the small initial master-to-hound separation.
-    const spawnX = beastmaster.x + Math.cos(angle) * distance; // Used for the companion entity's initial world X position.
-    const spawnY = beastmaster.y + Math.sin(angle) * distance; // Used for the companion entity's initial world Y position.
-    const hound = deps.makeCreatureEntity(creatureKey, spawnX, spawnY, { // Used by both AI collections after its faction metadata is applied below.
+    const creatureKey = String(variant?.companionCreatureKey || 'dabinggi-hound');
+    const angle = deps.rnd() * Math.PI * 2;
+    const distance = deps.TILE * 0.8;
+    const spawnX = beastmaster.x + Math.cos(angle) * distance;
+    const spawnY = beastmaster.y + Math.sin(angle) * distance;
+    const hound = deps.makeCreatureEntity(creatureKey, spawnX, spawnY, {
       scene: beastmaster.scene,
       grid: beastmaster.areaGrid,
       cols: beastmaster.areaCols,
@@ -676,11 +653,11 @@
       return null;
     }
 
-    const healthMultiplier = Math.max(0.05, Number(variant.companionHealthMultiplier) || 0.6); // Used to keep the enemy pet below a full player companion's durability.
-    const staminaMultiplier = Math.max(0.05, Number(variant.companionStaminaMultiplier) || 0.7); // Used to limit how often the enemy pet can sustain actions.
-    const damageMultiplier = Math.max(0, Number(variant.companionDamageMultiplier) || 0.4); // Used to keep the pet's occasional real pounce from dominating a grunt encounter.
-    const cooldownMultiplier = Math.max(0.1, Number(variant.companionAttackCooldownMultiplier) || 1.35); // Used to slow the pet's companion-action cadence.
-    const tunedDef = { // Used only by this hound instance so player-owned Dabinggi-hounds keep their normal stats.
+    const healthMultiplier = Math.max(0.05, Number(variant.companionHealthMultiplier) || 0.6);
+    const staminaMultiplier = Math.max(0.05, Number(variant.companionStaminaMultiplier) || 0.7);
+    const damageMultiplier = Math.max(0, Number(variant.companionDamageMultiplier) || 0.4);
+    const cooldownMultiplier = Math.max(0.1, Number(variant.companionAttackCooldownMultiplier) || 1.35);
+    const tunedDef = {
       ...hound.def,
       hostile: true,
       maxHealth: Math.max(1, Math.round(hound.def.maxHealth * healthMultiplier)),
@@ -693,8 +670,8 @@
     hound.stamina = hound.maxStamina = tunedDef.maxStamina;
     hound.name = `${beastmaster.name || 'Beastmaster'}'s ${tunedDef.label}`;
     beastmaster.banditCompanionId = hound.id;
-    deps.hostileObjects.add(hound); // Makes the hound targetable by the player and player-owned companions.
-    deps.companionObjects.add(hound); // Routes movement and attacks through the existing master-following companion AI.
+    deps.hostileObjects.add(hound);
+    deps.companionObjects.add(hound);
     rec.gangIds.add(hound.id);
     window.__farmLog?.(
       `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage).`,
@@ -704,9 +681,9 @@
   }
 
   async function spawnConfiguredBandit(rec, rank, x, y, options = {}) {
-    const variant = rollGruntVariant(rec, rank); // Used to decide whether this ordinary grunt slot becomes a Beastmaster.
-    const speciesId = variant?.speciesId; // Used to force the Beastmaster through the existing Tletingan/Slagothim roster pipeline.
-    const entityCfg = speciesId ? { ...rec.cfg, speciesWeights: { [speciesId]: 1 } } : rec.cfg; // Used only for this variant roll; the camp's normal species weights remain unchanged.
+    const variant = rollGruntVariant(rec, rank);
+    const speciesId = variant?.speciesId;
+    const entityCfg = speciesId ? { ...rec.cfg, speciesWeights: { [speciesId]: 1 } } : rec.cfg;
     const c = await window.BanditCombat.makeEntity(entityCfg, rank, rec.tier, x, y, {
       ...options,
       defOverride: variant ? { ...(options.defOverride || {}), label: variant.label || 'Slagothim Beastmaster' } : options.defOverride,
@@ -979,19 +956,15 @@
       .finally(() => _banditZoneWorkInFlight.delete(zoneId));
   }
 
-  // ── Tent hold actions: loot, then burn ────────────────────────────
-
   const BANDIT_TENT_HOLD_S = 4;
   function banditTentNearPx() { return deps.TILE * 1.7; }
   let _banditTentHoldT = 0;
   let _banditTentHoldId = null;
-  let _banditTentHoldInterrupted = false; // Prevents a damaging hit from auto-restarting the same still-held interaction; cleared on release.
+  let _banditTentHoldInterrupted = false;
   let _tentActionHudEl = null;
   let _tentActionLabelEl = null;
   let _tentActionFillEl = null;
 
-  // This module loads in <head>, before index.html creates the HUD nodes.
-  // Resolve them lazily on first use instead of permanently caching null.
   function ensureTentActionHud() {
     _tentActionHudEl ||= document.getElementById('tentActionHud');
     _tentActionLabelEl ||= document.getElementById('tentActionLabel');
@@ -1042,23 +1015,21 @@
   }
 
   function aimedBanditTent(zoneId) {
-    // Candidate tents are limited to the existing interaction radius before
-    // the 3D focus pass, keeping ray arbitration cheap across large camps.
     const nearby = _banditZoneTents(zoneId).filter(obj => {
       if (obj.destroyed) return false;
       const center = banditTentCenterPx(obj);
       return Math.hypot(deps.player.x - center.x, deps.player.y - center.y) <= banditTentNearPx();
     });
     if (!nearby.length) return null;
-    const ray = deps.getPlayerInteractionRay?.() || deps.getPlayerAimRay?.(); // Current centered world-interaction ray used to determine what the player is looking at.
+    const ray = deps.getPlayerInteractionRay?.() || deps.getPlayerAimRay?.();
     if (!ray || !window.RangedWeapons?.focusCandidates) return null;
-    const candidates = nearby.map(obj => ({ // World-space tent boxes presented to the shared focus/hostile arbitration.
+    const candidates = nearby.map(obj => ({
       type: 'bandit-tent', id: obj.id, data: obj,
       box: banditTentInteractionBox(zoneId, obj),
     }));
-    const focus = window.RangedWeapons.focusCandidates(candidates, 24); // Closest visible candidate under the centered reticle.
+    const focus = window.RangedWeapons.focusCandidates(candidates, 24);
     if (!focus?.candidate?.data) return null;
-    const hostile = window.RangedWeapons.focusedHostile?.(24); // A nearer hostile keeps Action 1 reserved for combat.
+    const hostile = window.RangedWeapons.focusedHostile?.(24);
     if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
     window.DebugHitboxes?.noteInteractionFocus?.(focus);
     return focus.candidate.data;
@@ -1096,7 +1067,7 @@
       : 'Nothing worth taking in the tent.', true);
   }
 
-    function finishBurnBanditTent(zoneId, obj) {
+  function finishBurnBanditTent(zoneId, obj) {
     obj.burning = false;
     obj.destroyed = true;
     const view = _banditZoneViews.get(zoneId);
@@ -1138,8 +1109,6 @@
     }
     const zoneId = deps.getCurrentArea();
     const tent = deps.isZoneArea(zoneId) ? aimedBanditTent(zoneId) : null;
-    // Match Drenkirra nest-taking: only the aimed context action may advance
-    // the hold, and releasing or changing actions cancels its progress.
     const actionHeldDown = deps.getActionHeldDown();
     if (!actionHeldDown) _banditTentHoldInterrupted = false;
     const looting = !!tent?.interactable?.lootable;
@@ -1167,8 +1136,6 @@
     if (looting) lootBanditTent(zoneId, tent);
     else burnBanditTent(zoneId, tent);
   }
-
-  // ── Corpse loot ───────────────────────────────────────────────────
 
   function grantBanditLoot(gained) {
     const parts = [];
