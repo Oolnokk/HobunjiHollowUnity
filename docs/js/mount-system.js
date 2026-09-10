@@ -138,7 +138,7 @@
       return;
     }
 
-    const cycleDistancePx = deps.TILE * MOUNT_STRIDE_TILES; // Physical ground distance represented by one complete run-frame cycle.
+    const cycleDistancePx = Math.max(0.001, deps.TILE * MOUNT_STRIDE_TILES); // Physical ground distance represented by one complete run-frame cycle; guarded against bad TILE data.
     const frameDistancePx = cycleDistancePx / runFrames.length; // Ground distance between adjacent animation frames; 0.9 tiles for today's two-frame mounts.
     const accumulatedPx = (m._mountGaitDistancePx || 0) + Math.max(0, distPx); // Carries sub-frame actual travel forward until a visual frame boundary is crossed.
     const frameAdvances = Math.floor(accumulatedPx / frameDistancePx); // Number of animation transitions required by this tick's real movement.
