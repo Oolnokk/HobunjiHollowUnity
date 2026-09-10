@@ -296,7 +296,7 @@
     cuttableBillboardGlowMat.uniforms.uColor.value.set(deps.combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
     cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(deps.combatConfig().cuttableTargetGlow?.alpha) || 0.42;
     const dummy = new THREE.Object3D();
-    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, 0, 0.75, 0.5);
+    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, 0, 0.75, 0.75);
     cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -342,7 +342,7 @@
         if (tile.type === deps.TileType.GRASS && !pavedRoad) {
           gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
         } else if (tile.type === deps.TileType.WEEDS && !deps.getWeed3D()) {
-          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY, 0.75, 0.5);
+          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY, 0.75, 0.75);
         }
       }
     }
@@ -625,7 +625,7 @@
           const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
           if (wm) {
             wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
-            wm.scale.set(0.75, 0.5, 0.75); // Weed-only width/height reduction; keeps placement and density unchanged.
+            wm.scale.set(0.75, 0.75, 0.75); // Weed-only width/height reduction; keeps placement and density unchanged.
             vegGroup.add(wm);
           }
         }
@@ -671,7 +671,7 @@
       let primary = null;
       if (pathGeo) {
         // Regular ground (grass) under the path — the paved brick
-        // surface (see "Path: paved brick surface" / registerPathBrickChunks
+        // surface (see \"Path: paved brick surface\" / registerPathBrickChunks
         // for 'farm') overlays ordinary ground rather than a separately-
         // colored path patch, same treatment as the town path.
         const m = new THREE.Mesh(pathGeo, deps.resolveTileMat('farm', TileType.GRASS));
