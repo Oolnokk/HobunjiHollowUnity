@@ -2,9 +2,10 @@
 //
 // Adds two deliberately separate text treatments to gameplay arch controls:
 // 1) a short centered meaning label over non-attack item/tool/utility icons;
-// 2) the live configured keyboard/controller binding at the icon's lower-right,
-//    positioned like a downward/rightward exponent. The centered label uses the
-//    same white-text + heavy black cutout-outline language as combo numerals.
+// 2) the live configured binding for the player's last-used input device at
+//    the icon's lower-right, positioned like a downward/rightward exponent.
+//    The centered label uses the same white-text + heavy black cutout-outline
+//    language as combo numerals.
 (() => {
   'use strict';
 
@@ -53,6 +54,8 @@
 
   let refreshQueued = false; // Coalesces action-bar rebuilds and remap events into one animation-frame decoration pass.
   let observer = null; // Exposed in diagnostics so mobile testing can confirm dynamic action-bar rebuilds are being watched.
+  let lastRenderedInputDevice = null; // Used to refresh lower-right bindings only when the game's canonical last-input device actually changes.
+  let inputDeviceWatcherStarted = false; // Prevents duplicate requestAnimationFrame device watchers if install paths are re-entered.
 
   function injectStyles() {
     if (document.getElementById('archButtonLabelStyles')) return;
@@ -71,8 +74,8 @@
         user-select:none;
         -webkit-user-select:none;
         color:#fff;
-        font-family:'DM Mono','KhymeryyanRomanLetters+Numbers',monospace;
-        font-weight:800;
+        font-family:'KhymeryyanRomanLetters+Numbers',sans-serif;
+        font-weight:normal;
         line-height:1;
         white-space:nowrap;
         paint-order:stroke fill;
@@ -91,13 +94,13 @@
         overflow:hidden;
         text-align:center;
         text-overflow:clip;
-        font-size:clamp(6px, calc(0.155 * var(--col)), 9px);
+        font-size:clamp(10.5px, calc(0.27125 * var(--col)), 15.75px);
         letter-spacing:-0.055em;
         -webkit-text-stroke:2.8px rgba(0,0,0,.96);
         text-shadow:0 0 2px #000, 0 0 3px #000;
       }
-      .arch-meaning-label.long { font-size:clamp(5.5px, calc(0.135 * var(--col)), 8px); }
-      .arch-meaning-label.very-long { font-size:clamp(5px, calc(0.115 * var(--col)), 7px); letter-spacing:-0.085em; }
+      .arch-meaning-label.long { font-size:clamp(9.625px, calc(0.23625 * var(--col)), 14px); }
+      .arch-meaning-label.very-long { font-size:clamp(8.75px, calc(0.20125 * var(--col)), 12.25px); letter-spacing:-0.085em; }
 
       /* Mirrored counterpart to a top-right exponent: the binding hangs from
          the lower-right edge of the icon/button instead of sitting underneath. */
@@ -109,7 +112,7 @@
         overflow:hidden;
         text-overflow:clip;
         text-align:right;
-        font-size:clamp(5.5px, calc(0.125 * var(--col)), 8px);
+        font-size:clamp(9.625px, calc(0.21875 * var(--col)), 14px);
         letter-spacing:-0.07em;
         -webkit-text-stroke:2.3px rgba(0,0,0,.96);
         text-shadow:0 0 2px #000, 0 0 3px #000;
@@ -178,11 +181,18 @@
     return labels[code] || String(code).replace(/^Button/, 'B').toUpperCase();
   }
 
+  function currentInputDevice() {
+    const canonical = window.ActionPromptUI?.getLastInputDevice?.(); // Reuses game.js's keyboard/mouse/touch/controller switching state instead of maintaining a second detector here.
+    if (canonical === 'controller' || canonical === 'desktop' || canonical === 'touch') return canonical;
+    return window.matchMedia?.('(pointer: fine)')?.matches ? 'desktop' : 'touch';
+  }
+
   function bindingText(actionId) {
     if (!actionId) return '';
-    const desktop = compactDesktopBinding(bindingFor('desktop', actionId)); // Shown first so keyboard-only players retain the familiar left-to-right reading order.
-    const controller = compactControllerBinding(bindingFor('controller', actionId)); // Shown alongside desktop when both inputs are configured.
-    return [desktop, controller].filter(Boolean).join('·') || '—';
+    const device = currentInputDevice(); // Controls which single configured binding is shown in the lower-right badge.
+    if (device === 'touch') return '';
+    if (device === 'controller') return compactControllerBinding(bindingFor('controller', actionId)) || '—';
+    return compactDesktopBinding(bindingFor('desktop', actionId)) || '—';
   }
 
   function bindingActionForButton(button) {
@@ -278,6 +288,21 @@
     requestAnimationFrame(refresh);
   }
 
+  function watchInputDevice() {
+    const device = currentInputDevice();
+    if (device !== lastRenderedInputDevice) {
+      lastRenderedInputDevice = device;
+      queueRefresh();
+    }
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(watchInputDevice);
+  }
+
+  function startInputDeviceWatcher() {
+    if (inputDeviceWatcherStarted || typeof requestAnimationFrame !== 'function') return;
+    inputDeviceWatcherStarted = true;
+    requestAnimationFrame(watchInputDevice);
+  }
+
   function debugSnapshot() {
     return [...document.querySelectorAll(DECORATED_SELECTOR)].map(button => ({
       id: button.id || null,
@@ -286,6 +311,7 @@
       meaning: button.querySelector?.(':scope > .arch-meaning-label')?.textContent || null,
       bindingAction: button.dataset?.archBindingAction || null,
       binding: button.querySelector?.(':scope > .arch-input-binding')?.textContent || null,
+      inputDevice: currentInputDevice(),
     }));
   }
 
@@ -302,6 +328,7 @@
       attributes: true,
       attributeFilter: ['data-action', 'data-combat-slot', 'aria-label', 'class', 'title'],
     });
+    startInputDeviceWatcher();
     queueRefresh();
   }
 
@@ -309,6 +336,7 @@
     installed: true,
     refresh: queueRefresh,
     getDebug: debugSnapshot,
+    getInputDevice: currentInputDevice,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
