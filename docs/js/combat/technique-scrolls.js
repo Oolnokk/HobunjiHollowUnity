@@ -218,14 +218,14 @@
   }
 
   function patchHeldActions(api) {
-    if (!api?.getHeldItemAction || !api?.consumeHeldItem || api.__techniqueScrollsPatched) return;
+    if (!api?.getHeldItemAction || !api?.beginHeldItemAction || api.__techniqueScrollsPatched) return;
     const getAction = api.getHeldItemAction.bind(api); // Used for every ordinary food/drink item after scroll detection gets first refusal.
-    const consume = api.consumeHeldItem.bind(api); // Used for every ordinary food/drink consumption after scroll detection gets first refusal.
+    const begin = api.beginHeldItemAction.bind(api); // Used for every ordinary food/drink consumption after scroll detection gets first refusal.
     api.getHeldItemAction = () => {
       const held = heldScroll(); // Used to expose scroll reading through the already-configurable Item Action 1 path.
       return held ? { icon: held.def.icon || '📜', label: `Read ${held.def.label}`, action: 'consume_held_item', style: 'primary', allowed: true } : getAction();
     };
-    api.consumeHeldItem = () => heldScroll() ? consumeScroll() : consume();
+    api.beginHeldItemAction = () => heldScroll() ? consumeScroll() : begin();
     api.__techniqueScrollsPatched = true;
   }
 

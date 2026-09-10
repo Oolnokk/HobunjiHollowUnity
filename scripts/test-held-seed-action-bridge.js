@@ -14,7 +14,7 @@ const game = source('docs/game.js'); // Used to pin the hidden-tool early-return
 const bridge = source('docs/js/held-seed-action-bridge.js'); // Used to verify held seeds dispatch independently of the hidden tool strike loop.
 const loader = source('docs/js/combat/combat-config-loader.js'); // Used to verify the bridge loads after planting metadata and before consumers.
 
-const itemModeReturn = game.indexOf("if (heldMode === 'item' || _heldDrinkAnimT > 0)"); // Used to locate the item-held early return in updateToolMesh().
+const itemModeReturn = game.indexOf("if (heldMode === 'item' || _heldDrinkPhase)"); // Used to locate the item-held early return in updateToolMesh().
 const pendingStrike = game.indexOf('if (pendingAction && !strikeFired && progress >= SF)', itemModeReturn); // Used to prove pending actions fire later in the same tool-only update path.
 assert.ok(itemModeReturn >= 0 && pendingStrike > itemModeReturn,
   'held item mode returns before the hidden tool strike can fire a queued action');

@@ -2673,15 +2673,24 @@
               const outDef = job.outputs[0];
               return [{ icon: outDef.icon, label: `Collect ${outDef.label}`, action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }];
             }
-            const active = getActiveInventoryItem();
+            // Insertion eligibility requires the ingredient to actually be
+            // the held item (heldMode === 'item'), not merely whatever
+            // stack getActiveInventoryItem() happens to still be reporting
+            // as selected — a selected-but-not-held stack (e.g. the player
+            // switched back to a tool) must not qualify.
+            const active = heldMode === 'item' ? getActiveInventoryItem() : null;
             const outputs = active ? window.ItemProcessing.getProcessingOutputs(def.method, active.key) : null;
             const output = outputs ? outputs[0] : null;
+            const allowed = Boolean(output && (inventory[active.key] || 0) > 0);
             return [{
               icon: output ? def.icon : '…',
               label: output ? window.ItemProcessing.processButtonLabel(def.method, active.key, output) : window.ItemProcessing.methodIdleLabel(def.method),
               action: 'obj_process_' + furnitureKey,
               style: output ? 'primary' : 'secondary',
-              allowed: Boolean(output && (inventory[active.key] || 0) > 0),
+              allowed,
+              // Insertion (unlike collection/aging-pickup above) goes through
+              // the shared drink-style hold windup — see held-item-action-input.js.
+              holdToCommit: allowed,
             }];
           },
           onAction(action) {
@@ -2697,6 +2706,11 @@
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
+            // Same held-not-merely-selected eligibility as getButtons() above
+            // — re-checked here (not just there) because this is the actual
+            // mutation gate, reached both by the immediate compatibility
+            // fallback and by the hold controller's strike-time commit.
+            if (heldMode !== 'item') return { ok: false, message: def.name + ' needs a held ingredient.' };
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
             const outputs = window.ItemProcessing.getProcessingOutputs(def.method, active.key);
@@ -2720,6 +2734,22 @@
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
             return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+          },
+          // Cheap non-mutating precheck for the held-item hold controller's
+          // press — mirrors getButtons()'s eligibility without touching
+          // inventory/job state. The actual mutation happens at the drink-
+          // style animation's strike frame via onAction(action) above, which
+          // re-validates everything itself (held item, job state, and the
+          // ItemProcessing result) from scratch rather than trusting this.
+          beginHeldInsertion() {
+            if (job) return { ok: false, message: `${def.name} is busy right now.` };
+            if (heldMode !== 'item') return { ok: false, message: def.name + ' needs a held ingredient.' };
+            const active = getActiveInventoryItem();
+            if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
+            const outputs = window.ItemProcessing.getProcessingOutputs(def.method, active.key);
+            if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
+            if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
+            return { ok: true, itemKey: active.key };
           },
           reset() {
             window.FarmAnimals?.clearVatWorkerPose?.(this.id);
@@ -16660,6 +16690,24 @@
         return { ok: false, message: 'No action handler found.' };
       }
 
+      // Resolves the interactable object an obj_* action targets — shared by
+      // useActiveAction's immediate dispatch and the held-item hold
+      // controller's deferred processor-insertion descriptor (see
+      // beginHeldItemActionDescriptor) so both agree on exactly which
+      // object a press/strike is aimed at.
+      function resolveObjActionTarget(action) {
+        const _r = getReticleTile();
+        // worldObjects is farm-scene-only (see its declaration) — interior
+        // interactables (e.g. a bed) live in interiorFurnitureObjects
+        // instead, via getInteriorInteractableAt. Ordinary building/town
+        // furniture has no interaction at all — only the handful
+        // registered in _buildingInteractables (e.g. the Alchemy Table,
+        // and now sittable furniture — see the mapData.furniture loader).
+        return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
+          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
+          : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
+      }
+
       function useActiveAction() {
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
@@ -16674,7 +16722,12 @@
         }
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
-          window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
+          // Compatibility fallback only — ordinary press/hold/release input
+          // is claimed at the action-button/controller dispatch layer (see
+          // isHoldToCommitAction/beginHeldItemActionDescriptor below) before
+          // it ever reaches this immediate dispatcher, so this can't
+          // double-consume what the hold controller already started.
+          window.HobunjiDrunkGameplayBridge?.consumeHeldItemImmediate?.();
           refreshActionBar();
           return;
         }
@@ -16892,16 +16945,7 @@
           return;
         }
         if (activeAction.startsWith('obj_')) {
-          const _r = getReticleTile();
-          // worldObjects is farm-scene-only (see its declaration) — interior
-          // interactables (e.g. a bed) live in interiorFurnitureObjects
-          // instead, via getInteriorInteractableAt. Ordinary building/town
-          // furniture has no interaction at all — only the handful
-          // registered in _buildingInteractables (e.g. the Alchemy Table,
-          // and now sittable furniture — see the mapData.furniture loader).
-          const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
-            : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
-            : getCorpseObjectForAction(activeAction, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
+          const _o = resolveObjActionTarget(activeAction);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -19978,14 +20022,22 @@
       _markPngPlane(heldItemHolder);
 
       let _heldItemPlane = null, _heldItemKey = null;
-      // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
-      let _heldDrinkAnimT = 0;
-      let _heldDrinkApply = null; // Used to apply a potion at the authored drink strike instead of button press.
-      let _heldDrinkApplied = false; // Used to guarantee one consumption callback per drink animation.
+      // Phase state machine driven by beginHeldDrinkAnimation/continueHeldDrinkAnimation/
+      // cancelHeldDrinkAnimation/abortHeldDrinkAnimation (see below), themselves driven
+      // by window.HeldItemActionInput's press/hold/cancel/arm/release timing:
+      //   null            — idle, not animating.
+      //   'toWindup'      — playing forward from neutral, pauses itself at windupFrac.
+      //   'pausedAtWindup'— holding at the authored windup pose, waiting for release.
+      //   'toStrike'      — playing forward toward strike/recovery; commits once at strikeFrac.
+      //   'canceling'     — easing back to neutral (tap released before the hold armed); never commits.
+      let _heldDrinkPhase = null;
+      let _heldDrinkProgress = 0; // 0..1 forward progress through the authored drink animation.
+      let _heldDrinkApply = null; // Used to apply the held-item effect at the authored drink strike.
+      let _heldDrinkApplied = false; // Used to guarantee at most one commit callback per drink animation.
       let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
       let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
       let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
-      // Full duration used to normalize the drink countdown into animation progress.
+      // Full authored duration in seconds, used to convert dt into animation progress.
       let _heldDrinkAnimDuration = 0;
 
       function heldActionPoseAt(animation, progress) {
@@ -20016,23 +20068,59 @@
         playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
       }
 
-      function triggerHeldDrinkAnimation(itemKey, applyAtStrike = null) {
+      // Begins the shared drink-style windup animation on press. Plays forward
+      // from neutral and pauses itself exactly at the authored windup pose —
+      // see updateHeldItemHolder's _heldDrinkPhase handling below. Call
+      // continueHeldDrinkAnimation() once the hold is released after arming
+      // (window.HeldItemActionInput's HOLD_THRESHOLD_S) to let it continue
+      // through to strike/commit, or cancelHeldDrinkAnimation() on an early
+      // tap release to ease back to neutral without ever committing.
+      function beginHeldDrinkAnimation(itemKey, applyAtStrike = null) {
         const animation = window.HeldActionAnimations?.drink;
         if (!animation) {
           window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
-          return 0;
+          return false;
         }
         // Consumption calls this before the next render update, so retain the
         // plane that was visibly held instead of rebuilding from a newly
         // selected stack after the consumed item reaches zero.
-        if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
+        if (!_heldItemPlane || _heldItemKey !== itemKey) return false;
         _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
-        _heldDrinkAnimT = _heldDrinkAnimDuration;
+        _heldDrinkProgress = 0;
+        _heldDrinkPhase = 'toWindup';
         _heldDrinkApply = typeof applyAtStrike === 'function' ? applyAtStrike : null;
         _heldDrinkApplied = false;
         heldItemHolder.visible = true;
-        window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
-        return Math.round(_heldDrinkAnimDuration * 1000);
+        window.__farmLog?.(`[held-item] drink begin: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
+        return true;
+      }
+
+      // Release after the hold armed: let the animation continue from
+      // wherever it currently is (the authored windup pose if it caught up
+      // and paused there, or wherever it had reached if release arrives
+      // before windup is even reached) through to strike/commit/recovery.
+      function continueHeldDrinkAnimation() {
+        if (_heldDrinkPhase === 'toWindup' || _heldDrinkPhase === 'pausedAtWindup') _heldDrinkPhase = 'toStrike';
+      }
+
+      // Release before the hold armed (a tap): ease back to neutral without
+      // ever committing the held-item effect.
+      function cancelHeldDrinkAnimation() {
+        if (!_heldDrinkPhase || _heldDrinkPhase === 'canceling') return;
+        _heldDrinkPhase = 'canceling';
+        _heldDrinkApply = null;
+        _heldDrinkApplied = true; // Belt-and-suspenders: guarantees the strike checks below can never fire the commit callback.
+      }
+
+      // Forced loss of input ownership (blur, menu opened mid-hold,
+      // controller ownership handed to a menu, ...): snap back to neutral
+      // immediately rather than easing. Must never commit.
+      function abortHeldDrinkAnimation() {
+        if (!_heldDrinkPhase) return;
+        _heldDrinkPhase = null;
+        _heldDrinkProgress = 0;
+        _heldDrinkApply = null;
+        _heldDrinkApplied = true;
       }
 
       function getPlayerDrinkSourceTransform(itemKey, neutralPose) {
@@ -20083,21 +20171,40 @@
 
       function updateHeldItemHolder(dt = 0) {
         const item = getActiveInventoryItem();
-        const drinkAnimating = _heldDrinkAnimT > 0 && !!_heldItemPlane;
-        if (drinkAnimating) {
-          _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
-          const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
-          applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
-          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+        if (_heldDrinkPhase && _heldItemPlane) {
+          const animation = window.HeldActionAnimations.drink;
+          const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
+          const rate = Math.max(0, dt) / durationS;
+          if (_heldDrinkPhase === 'canceling') {
+            _heldDrinkProgress = Math.max(0, _heldDrinkProgress - rate);
+            applyHeldDrinkPose(animation, _heldDrinkProgress);
+            heldItemHolder.visible = true;
+            if (_heldDrinkProgress <= 0) _heldDrinkPhase = null;
+            return;
+          }
+          if (_heldDrinkPhase === 'pausedAtWindup') {
+            applyHeldDrinkPose(animation, _heldDrinkProgress);
+            heldItemHolder.visible = true;
+            return;
+          }
+          // 'toWindup' or 'toStrike' — both advance progress forward; only
+          // their ceiling differs (toWindup stops itself at windupFrac).
+          const windupFrac = window.FormatUtils.clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+          const ceiling = _heldDrinkPhase === 'toWindup' ? windupFrac : 1;
+          _heldDrinkProgress = Math.min(ceiling, _heldDrinkProgress + rate);
+          applyHeldDrinkPose(animation, _heldDrinkProgress);
+          if (_heldDrinkPhase === 'toStrike' && !_heldDrinkApplied && _heldDrinkProgress >= (animation.strikeFrac || 0.62)) {
             _heldDrinkApplied = true;
             _heldDrinkApply?.();
           }
-          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
-            _heldDrinkApplied = true;
-            _heldDrinkApply?.();
-          }
-          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
           heldItemHolder.visible = true;
+          if (_heldDrinkPhase === 'toWindup' && _heldDrinkProgress >= ceiling - 1e-6) {
+            _heldDrinkPhase = 'pausedAtWindup';
+          } else if (_heldDrinkPhase === 'toStrike' && _heldDrinkProgress >= 1) {
+            if (!_heldDrinkApplied) { _heldDrinkApplied = true; _heldDrinkApply?.(); }
+            _heldDrinkPhase = null;
+            _heldDrinkApply = null;
+          }
           return;
         }
         const throwAnimation = window.HeldActionAnimations?.throwFlask;
@@ -20177,8 +20284,10 @@
           heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
           heldItemVisible: !!heldItemHolder.visible,
           heldItemKey: _heldItemKey,
-          drinkAnimating: _heldDrinkAnimT > 0,
-          drinkProgress: _heldDrinkAnimDuration > 0 ? 1 - _heldDrinkAnimT / _heldDrinkAnimDuration : 0,
+          drinkAnimating: !!_heldDrinkPhase,
+          drinkPhase: _heldDrinkPhase,
+          drinkProgress: _heldDrinkProgress,
+          heldItemActionInput: window.HeldItemActionInput?.getDebug?.() || { active: false },
           characterActionLocks: window.CharacterActionLocks?.getDebug?.() || [],
           npcDrinkInteractions: window.NpcDrinkInteraction?.getDebug?.() || [],
           actionArch,
@@ -20261,7 +20370,7 @@
         // its use actions), show the held-item chest plane instead of
         // whatever tool/weapon is equipped; the tool mesh comes back the
         // moment the player returns to tool mode.
-        if (heldMode === 'item' || _heldDrinkAnimT > 0) {
+        if (heldMode === 'item' || _heldDrinkPhase) {
           toolHolder.visible = false;
           updateHeldItemHolder(dt);
           return;
@@ -21921,6 +22030,7 @@
         // Ordinary interiors still omit combat/reticle updates below; this
         // visual pass does not enable farm or combat actions there.
         updateToolMesh(dt);
+        window.HeldItemActionInput?.update();
         // Combat and targeting remain limited to exterior maps and den caverns.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateCombatConeTrail();
@@ -22894,6 +23004,7 @@
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
+            let _heldItemPress = false; // true while a holdToCommit action (consume_held_item / processor insertion) is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             const DRAG_THRESH = 10;
@@ -22987,6 +23098,11 @@
                 activeAction = act;
                 actionHeldDown = true;
                 _abtFire();
+              } else if (act && !el.classList.contains('abt-hidden') && isHoldToCommitAction(act)) {
+                activeAction = act;
+                actionHeldDown = true;
+                _heldItemPress = beginHeldItemActionDescriptor(act);
+                if (!_heldItemPress) _abtFire(); // Couldn't begin a hold — fall back to the immediate dispatcher.
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
@@ -23017,6 +23133,10 @@
                 if (_selectorArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
                 return;
               }
+              // Held-item hold-to-commit actions (eating/drinking/inserting)
+              // target whatever the reticle was aimed at on press — no
+              // drag-to-aim for these, unlike farm tools.
+              if (_heldItemPress) return;
               // With a weapon equipped, action buttons are tap/hold only — dragging
               // must never act like a directional stick, otherwise a thumb wobbling
               // mid-hold reads as an aim-drag, cancels the pending hold ability, and
@@ -23067,8 +23187,10 @@
                 if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
               } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
+                else if (_heldItemPress) window.HeldItemActionInput?.release();
                 else _abtFire();
               }
+              _heldItemPress = false;
               _drag = false;
               _chargeFiredOnPress = false;
               _selectorArcOpen = false;
@@ -23459,6 +23581,66 @@
       // below), since that's the only place an actual button-down edge is
       // detected rather than just continuous stick state.
 
+      // Begins the shared drink-style hold for a processor-insertion action
+      // (obj_process_<furnitureKey> while a valid held ingredient targets an
+      // idle processor — see makeProcessingFurniture's beginHeldInsertion/
+      // onAction). Companion to HobunjiDrunkGameplayBridge.beginHeldItemAction
+      // for consume_held_item; both are driven the same way by
+      // beginHeldItemActionDescriptor below.
+      function beginHeldProcessorInsertion(action) {
+        const target = resolveObjActionTarget(action);
+        const precheck = target?.beginHeldInsertion?.();
+        if (!precheck?.ok) {
+          if (precheck?.message) showToast(precheck.message, false);
+          return false;
+        }
+        const itemKey = precheck.itemKey;
+        const applyInsertion = () => {
+          // Re-resolve fresh at strike — the target processor, held item,
+          // and its job state can all have changed during the hold. This is
+          // the same onAction(action) the immediate fallback dispatch uses,
+          // which itself fully revalidates before mutating anything.
+          const freshTarget = resolveObjActionTarget(action);
+          const res = freshTarget ? freshTarget.onAction(action) : { ok: false, message: 'No object here.' };
+          lastActionMessage = res.message;
+          showToast(res.message, res.ok !== false);
+          if (res.ok !== false) saveMemberWorldData();
+        };
+        const descriptor = {
+          startVisual() {
+            const started = beginHeldDrinkAnimation(itemKey, applyInsertion);
+            if (!started) applyInsertion(); // Animation unavailable — degrade to immediate insertion.
+          },
+          resumeVisual() { continueHeldDrinkAnimation(); },
+          cancelVisual() { cancelHeldDrinkAnimation(); },
+          abortVisual() { abortHeldDrinkAnimation(); },
+        };
+        if (!window.HeldItemActionInput) { descriptor.startVisual(); return true; } // Degrade gracefully if the controller failed to load.
+        return window.HeldItemActionInput.begin(itemKey, descriptor);
+      }
+
+      // Single dispatch point deciding which held-item action controller
+      // descriptor a given holdToCommit action begins — kept generic here
+      // (game.js knows nothing about consumable rules or processor recipes)
+      // while the actual gameplay logic stays owned by
+      // HobunjiDrunkGameplayBridge (food/drink) and makeProcessingFurniture
+      // (processor insertion) respectively.
+      function beginHeldItemActionDescriptor(action) {
+        if (action === 'consume_held_item') return !!window.HobunjiDrunkGameplayBridge?.beginHeldItemAction?.();
+        if (action.startsWith('obj_process_')) return beginHeldProcessorInsertion(action);
+        return false;
+      }
+
+      // Whether `action` currently resolves to a button marked holdToCommit
+      // (see getButtons() on consume_held_item's provider and on
+      // makeProcessingFurniture's processor insertion button) — i.e. whether
+      // ordinary press/release input for it must be claimed by the held-item
+      // hold controller instead of firing immediately.
+      function isHoldToCommitAction(action) {
+        if (!action) return false;
+        return !!computeActionButtons().find(b => b.action === action)?.holdToCommit;
+      }
+
       window.ActionPromptUI.init({ getLastInputDevice: () => lastInputDevice, inputBindings });
       // Resolve the action currently rendered in the physical arch button.
       // The visible stack is split into tool/item rows, so computeActionButtons()
@@ -23518,6 +23700,7 @@
         return { slot, button };
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
+      const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
@@ -23606,7 +23789,8 @@
           if (actionId === 'action1') actionHeldDown = false;
           if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
-          if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
+          if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
+          if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
           return;
         }
         if (window.Fishing?.state?.active) {
@@ -23629,7 +23813,19 @@
           return;
         }
         const actionSlot = /^action(\d+)$/.exec(actionId);
-        if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
+        if (actionSlot) {
+          const slot = Number(actionSlot[1]);
+          const btn = actionButtonForPhysicalSlot(slot);
+          if (btn?.holdToCommit && btn.allowed !== false) {
+            if (actionId === 'action1') actionHeldDown = true;
+            const started = beginHeldItemActionDescriptor(btn.action);
+            if (started) heldItemActionPresses.add(actionId);
+            else runActionButtonAtSlot(slot); // Couldn't begin a hold (e.g. controller unavailable) — fall back to the immediate dispatcher.
+            return;
+          }
+          runActionButtonAtSlot(slot);
+          return;
+        }
         if (actionId === 'dodge') { performContextAction(); return; }
         if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
         if (actionId === 'swapTarget') {
@@ -24370,6 +24566,7 @@
       // different mouse button — or binding any other action to a mouse
       // button at all — actually takes effect.
       const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse button with the combat slot released below.
+      const desktopHeldItemMousePresses = new Set(); // Pairs action1's direct-viewport-click press with its release for holdToCommit actions.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
@@ -24392,7 +24589,17 @@
             }
           }
           if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'press'); return; }
-          if (mouseAction === 'action1') { actionHeldDown = true; useActiveAction(); return; }
+          if (mouseAction === 'action1') {
+            actionHeldDown = true;
+            if (isHoldToCommitAction(activeAction)) {
+              const started = beginHeldItemActionDescriptor(activeAction);
+              if (started) desktopHeldItemMousePresses.add(e.button);
+              else useActiveAction(); // Couldn't begin a hold — fall back to the immediate dispatcher.
+            } else {
+              useActiveAction();
+            }
+            return;
+          }
           if (mouseAction) runInputAction(mouseAction, 'press'); // Any other action bound to a mouse button (e.g. a side button bound to Dodge).
         });
       }
@@ -24422,7 +24629,11 @@
           }
         }
         if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
-        if (mouseAction === 'action1') { actionHeldDown = false; return; }
+        if (mouseAction === 'action1') {
+          actionHeldDown = false;
+          if (desktopHeldItemMousePresses.delete(e.button)) window.HeldItemActionInput?.release();
+          return;
+        }
         if (mouseAction) runInputAction(mouseAction, 'release');
       }
       // Capture release before action-arch/backdrop handlers can consume a
@@ -24443,6 +24654,11 @@
           desktopWeaponPointerSlots.delete(button);
           if (slot === 1) actionHeldDown = false;
           window.Combat?.input?.abortPress?.(slot);
+        }
+        for (const button of [...desktopHeldItemMousePresses]) {
+          desktopHeldItemMousePresses.delete(button);
+          actionHeldDown = false;
+          window.HeldItemActionInput?.abort();
         }
       }, true);
 
@@ -26428,7 +26644,17 @@
         getDeliveryLog: () => deliveryLog,
         getPendingOrders: () => pendingOrders,
         getMenuOpen: () => menuOpen,
-        triggerHeldDrinkAnimation,
+        beginHeldDrinkAnimation,
+        continueHeldDrinkAnimation,
+        cancelHeldDrinkAnimation,
+        abortHeldDrinkAnimation,
+      });
+
+      // A held-item action mid-hold must not survive losing input ownership
+      // to a menu/dialogue/pause — abort back to neutral rather than leaving
+      // it stuck armed with nothing left to release it.
+      window.HeldItemActionInput?.init({
+        isBlocked: () => menuOpen || dialogueOpen || paused,
       });
 
       window.ProceduralTasks?.init({

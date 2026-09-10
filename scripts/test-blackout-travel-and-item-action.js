@@ -21,12 +21,18 @@ const pixelProbe = source('docs/js/pixel-probe.js');
 
 assert.doesNotMatch(alcohol, /\['Space', 'Enter', 'KeyE'\]/,
   'consumption must not intercept literal desktop keys');
-assert.doesNotMatch(alcohol, /btn\(\?:Item\)\?Action\[1-5\][\s\S]{0,200}consumeHeldItem/,
+assert.doesNotMatch(alcohol, /btn\(\?:Item\)\?Action\[1-5\][\s\S]{0,200}beginHeldItemAction/,
   'consumption must not intercept action-button pointer events outside normal dispatch');
 assert.match(alcohol, /getHeldItemAction[\s\S]*?action: 'consume_held_item'/,
   'the alcohol bridge exposes a semantic consumable action');
+assert.match(alcohol, /holdToCommit: held\.kind === 'drink' \|\| held\.kind === 'food'/,
+  'only food/drink route through the hold controller — raw reagents and recipe scrolls stay immediate');
 assert.match(alcohol, /const heldMode = itemDeps\?\.getHeldMode\?\.\(\);[\s\S]*?heldMode !== 'item'/,
   'consumable eligibility uses synchronous held mode instead of waiting for a rendered plane');
+assert.match(alcohol, /function beginHeldItemAction\(\)[\s\S]*?window\.HeldItemActionInput\.begin\(key, descriptor\)/,
+  'pressing a held food/drink action begins the shared hold controller rather than consuming immediately');
+assert.match(alcohol, /function consumeHeldItemImmediate\(\)[\s\S]*?commitHeldConsumable\(held\.key\)/,
+  'the immediate path is kept only as a compatibility fallback for non-held/programmatic dispatch');
 
 assert.match(game, /getHeldItemAction\?\.\(\);\s*if \(!flaskActions\.length && consumeAction\) btns\.unshift\(consumeAction\);/,
   'a held consumable occupies item action slot 1');
@@ -42,10 +48,39 @@ assert.match(game, /window\.FarmCrates\?\.init\(\{[\s\S]*?getHeldMode: \(\) => h
   'the consumable bridge receives the current semantic held mode');
 assert.match(game, /const actionButtonKey = btns\.map[\s\S]*?\|\$\{actionButtonKey\}`/,
   'the action-bar cache invalidates when a dynamic item action appears');
-assert.match(game, /activeAction === 'consume_held_item'[\s\S]*?consumeHeldItem\?\.\(\)/,
-  'normal action dispatch consumes the selected item');
+// Normal held-item input (touch/desktop-keyboard-via-router/controller/direct
+// mouse click) no longer mutates on the first dispatch edge — it is claimed
+// by the generic held-item hold controller on press and only commits once,
+// at the drink-style animation's strike frame. useActiveAction's own
+// consume_held_item branch survives only as an immediate compatibility
+// fallback for a caller with no natural press/release pairing.
+assert.match(game, /activeAction === 'consume_held_item'[\s\S]{0,60}Compatibility fallback only[\s\S]{0,400}?consumeHeldItemImmediate\?\.\(\)/,
+  'the immediate dispatcher only ever runs as a documented fallback, not the primary path');
+assert.match(game, /function beginHeldItemActionDescriptor\(action\)[\s\S]*?beginHeldItemAction[\s\S]*?beginHeldProcessorInsertion/,
+  'a single generic dispatch point decides which hold-controller descriptor a holdToCommit action begins');
+assert.match(game, /function isHoldToCommitAction\(action\)[\s\S]*?holdToCommit/,
+  'holdToCommit eligibility is read from whichever button currently occupies the pressed slot');
+assert.match(game, /isHoldToCommitAction\(act\)[\s\S]*?_heldItemPress = beginHeldItemActionDescriptor\(act\)/,
+  'the mobile/desktop action-button pointer path claims a holdToCommit press before it can fall through to immediate dispatch');
+assert.match(game, /else if \(_heldItemPress\) window\.HeldItemActionInput\?\.release\(\);/,
+  'releasing a claimed action-button press resolves through the hold controller instead of firing immediately');
+assert.match(game, /const actionSlot = \/\^action\(\\d\+\)\$\/\.exec\(actionId\);[\s\S]{0,50}if \(actionSlot\) \{[\s\S]{0,200}holdToCommit/,
+  'controller press/release for a holdToCommit slot routes through the hold controller too');
+assert.match(game, /heldItemActionPresses\.delete\(actionId\)[\s\S]{0,60}window\.HeldItemActionInput\?\.release\(\)/,
+  'a controller release only resolves the hold controller for the exact action that began it');
 assert.match(game, /\^action\(\\d\+\)\$[\s\S]*?runActionButtonAtSlot/,
   'configurable action bindings continue to route by semantic slot');
+
+// Processor insertion (obj_process_<furnitureKey>) shares the same
+// press/hold/cancel/arm/release contract instead of firing on tap.
+assert.match(game, /holdToCommit: allowed,/,
+  'a processor insertion button is marked holdToCommit; collection/aging buttons are not');
+assert.match(game, /heldMode === 'item' \? getActiveInventoryItem\(\) : null;[\s\S]{0,200}getProcessingOutputs/,
+  'processor eligibility requires the ingredient to actually be the held item, not merely the selected stack');
+assert.match(game, /if \(heldMode !== 'item'\) return \{ ok: false, message: def\.name \+ ' needs a held ingredient\.' \};/,
+  'the processor mutation gate itself re-checks held-not-merely-selected eligibility at commit time');
+assert.match(game, /beginHeldInsertion\(\) \{[\s\S]*?return \{ ok: true, itemKey: active\.key \};/,
+  'the processor exposes a non-mutating precheck the hold controller can call on press');
 assert.match(game, /function runInteractAction\(\)[\s\S]*?action === 'consume_held_item'[\s\S]*?!isItemAction\(b\.action\)/,
   'Interact excludes consume, plant, place, and harvest item actions');
 assert.match(game, /if \(key === 'e' && isDesktop\)[\s\S]*?if \(!wasHeld\) runInteractAction\(\);/,
