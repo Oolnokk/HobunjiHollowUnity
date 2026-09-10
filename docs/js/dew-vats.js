@@ -176,7 +176,7 @@
     for (let segment = 0; segment < DEW_MOUND_RADIAL_SEGMENTS; segment++) {
       const current = firstRing + segment; // Current first-ring vertex around the crown.
       const next = firstRing + (segment + 1) % DEW_MOUND_RADIAL_SEGMENTS; // Next first-ring vertex, wrapping at the seam.
-      indices.push(0, next, current); // Winding faces the crown triangles outward/upward.
+      indices.push(0, current, next); // Winding faces the crown triangles outward/upward.
     }
 
     for (let ring = 0; ring < DEW_MOUND_RING_SEGMENTS - 1; ring++) {
@@ -186,7 +186,7 @@
         const nextSegment = (segment + 1) % DEW_MOUND_RADIAL_SEGMENTS; // Wraps each ring strip cleanly at 360°.
         const u0 = upperStart + segment, u1 = upperStart + nextSegment; // Adjacent upper-ring vertices.
         const l0 = lowerStart + segment, l1 = lowerStart + nextSegment; // Matching lower-ring vertices.
-        indices.push(u0, u1, l0, u1, l1, l0); // Two outward-facing triangles per ring cell.
+        indices.push(u0, l0, u1, u1, l0, l1); // Two outward-facing triangles per ring cell.
       }
     }
 
@@ -196,7 +196,7 @@
     for (let segment = 0; segment < DEW_MOUND_RADIAL_SEGMENTS; segment++) {
       const current = baseStart + segment; // Current base perimeter vertex.
       const next = baseStart + (segment + 1) % DEW_MOUND_RADIAL_SEGMENTS; // Next base perimeter vertex around the closed cap.
-      indices.push(current, next, baseCenter); // Winding points the sealed underside downward/outward.
+      indices.push(current, baseCenter, next); // Winding points the sealed underside downward/outward.
     }
 
     const geometry = new THREE.BufferGeometry(); // One mesh/one connected silhouette replaces the previous multi-stone proxy cluster.
