@@ -33,11 +33,9 @@
     preferredPadIndex: null,
     lastStickSource: 'none',
     lastInput: 'ready',
-    ownerGateInstalled: false,
   }; // Exposed through getDebug() so controller selection can be diagnosed without browser devtools.
 
-  let controllerUiBaseIsActive = null; // Keeps ControllerUI's real menu-state query available after we extend its gameplay ownership gate.
-  let frameHandle = 0; // Owns the single requestAnimationFrame polling loop for held selector inputs.
+  let unsubscribe = null; // Handle for this module's slot in ControllerInput's shared frame loop.
 
   function currentControllerBindings() {
     return window.InputBindings?.getCurrentBindings?.()?.controller || null;
@@ -50,48 +48,19 @@
     return action?.controller || null;
   }
 
-  function isDown(pad, code) {
-    return Boolean(code && window.ControllerInput?.isBindingPressed?.(pad, code, { stickThreshold: STICK_PRESS }));
+  // The shared frame already evaluated every binding code once, so this is a
+  // set lookup rather than a fresh analog read per action per frame.
+  function isDown(frame, code) {
+    return Boolean(code && frame.isDown(code, { stickThreshold: STICK_PRESS }));
   }
 
-  const padScratch = []; // Reused every frame so the poll loop below allocates nothing while idle.
-
-  function connectedPads() {
-    padScratch.length = 0;
-    const raw = navigator.getGamepads?.();
-    for (let i = 0; i < (raw?.length || 0); i++) {
-      const pad = raw[i];
-      if (pad && pad.connected !== false) padScratch.push(pad);
-    }
-    return padScratch;
-  }
-
-  function choosePad(pads) {
-    if (state.padIndex !== null) return pads.find(pad => pad.index === state.padIndex) || null; // Preserves the controller already navigating a selector even if another connected pad twitches.
-    const picked = window.ControllerInput?.pickActiveGamepad?.(pads, state.preferredPadIndex, 0.35) || pads[0] || null;
-    if (picked) state.preferredPadIndex = picked.index;
-    return picked;
-  }
-
-  function installControllerUiOwnerGate() {
-    const ui = window.ControllerUI;
-    if (!ui?.isActive || ui.isActive.__controllerSelectionOwnerGate) return;
-    const original = ui.isActive.bind(ui); // Used by menuIsActive() so selector ownership never disguises a genuinely open menu from this adapter.
-    const wrapped = function controllerSelectionOwnerGate() {
-      return Boolean(state.activeAction) || original();
-    };
-    wrapped.__controllerSelectionOwnerGate = true;
-    wrapped.__controllerSelectionOwnerGateOriginal = original;
-    ui.isActive = wrapped;
-    controllerUiBaseIsActive = original;
-    state.ownerGateInstalled = true;
-  }
-
+  // ControllerUI.isActive is now asked plainly. This module used to REPLACE it
+  // with a wrapper that also returned true while a selector was held, so that
+  // gameplay dispatch would stand down -- which meant every other consumer was
+  // told a menu was open when none was. Gameplay now consults
+  // ControllerInput.gameplaySuspended() instead, and this stays a plain read.
   function menuIsActive() {
-    if (controllerUiBaseIsActive) return Boolean(controllerUiBaseIsActive());
-    const current = window.ControllerUI?.isActive;
-    if (!current || current.__controllerSelectionOwnerGate) return false;
-    return Boolean(current.call(window.ControllerUI));
+    return Boolean(window.ControllerUI?.isActive?.());
   }
 
   function musicOwnsController() {
@@ -140,7 +109,7 @@
     state.lastStickSource = 'none';
     state.lastInput = `${actionId} opened`;
     acquireGameplayLock(actionId);
-    window.dispatchEvent(new CustomEvent('hobunji-controller-owner-change', { detail: { owner: `selection:${selector.kind}` } }));
+    window.ControllerInput?.setOwner?.(`selection:${selector.kind}`); // Declares ownership centrally; the registry emits the owner-change event.
     return true;
   }
 
@@ -162,7 +131,7 @@
     state.nextRepeatAt = 0;
     state.lastStickSource = 'none';
     releaseGameplayLock();
-    window.dispatchEvent(new CustomEvent('hobunji-controller-owner-change', { detail: { owner: menuIsActive() ? 'menu' : 'gameplay' } }));
+    window.ControllerInput?.setOwner?.(menuIsActive() ? 'menu' : 'gameplay'); // Hands the pad back to whichever consumer should own it next.
     return true;
   }
 
@@ -203,7 +172,7 @@
     return result !== false;
   }
 
-  function updateArch(pad, now) {
+  function updateArch(frame, pad, now) {
     const direction = strongestHorizontalDirection(pad); // Used as a digital left/right channel for every corner arch regardless of which stick supplied it.
     if (!direction) {
       state.lastArchDirection = 0;
@@ -243,43 +212,45 @@
     dispatchSocialVector(strongestStick(pad));
   }
 
-  function firstPressedSelector(pad) {
+  function firstPressedSelector(frame) {
     for (const actionId of SELECTOR_ACTION_IDS) {
       const code = bindingFor(actionId); // Used to pair the semantic action with its current physical opener without hardcoded bumper/D-pad knowledge.
-      if (isDown(pad, code)) return { actionId, code };
+      if (isDown(frame, code)) return { actionId, code };
     }
     return null;
   }
 
-  function poll(now = performance.now()) {
-    installControllerUiOwnerGate();
-
-    const pads = connectedPads(); // Empty on every frame of a keyboard/touch session, which is the common case.
-    if (!pads.length) {
+  // One slot in ControllerInput's shared loop instead of a private rAF. The
+  // pad, its per-code analog values and the press/release edges were all
+  // resolved once for this frame before we were called.
+  function onControllerFrame(frame) {
+    const pad = frame.pad;
+    if (!pad) {
       if (state.activeAction) finishSelection(false, 'controller disconnected');
-      frameHandle = requestAnimationFrame(poll);
-      return; // Nothing below can do anything without a pad; skip binding lookups and menu-state queries entirely.
+      return; // Nothing below can do anything without a pad.
     }
 
-    const pad = choosePad(pads); // Used for both opener-edge detection and navigation so a held selector cannot jump controllers midway through the gesture.
     if (state.activeAction) {
-      if (!pad) {
-        finishSelection(false, 'controller disconnected');
+      // A held gesture stays pinned to the pad that started it.
+      if (state.padIndex !== null && pad.index !== state.padIndex) {
+        finishSelection(false, 'controller changed');
       } else if (menuIsActive() || musicOwnsController()) {
         finishSelection(false, menuIsActive() ? 'menu opened' : 'music opened');
-      } else if (!isDown(pad, state.openerCode)) {
+      } else if (!isDown(frame, state.openerCode)) {
         finishSelection(true, 'opener released');
       } else if (state.kind === 'social') {
         updateSocial(pad);
       } else {
-        updateArch(pad, now);
+        updateArch(frame, pad, frame.now);
       }
-    } else if (pad && !menuIsActive() && !musicOwnsController()) {
-      const pressed = firstPressedSelector(pad); // Used to open selectors directly from their configured action rather than from a separate shifted-direction binding table.
-      if (pressed) beginSelection(pressed.actionId, pad, pressed.code);
+      return;
     }
 
-    frameHandle = requestAnimationFrame(poll);
+    if (!menuIsActive() && !musicOwnsController()) {
+      state.preferredPadIndex = pad.index;
+      const pressed = firstPressedSelector(frame); // Opens selectors directly from their configured action rather than a separate shifted-direction binding table.
+      if (pressed) beginSelection(pressed.actionId, pad, pressed.code);
+    }
   }
 
   function debugSnapshot() {
@@ -291,7 +262,7 @@
       preferredPadIndex: state.preferredPadIndex,
       lastStickSource: state.lastStickSource,
       lastInput: state.lastInput,
-      ownerGateInstalled: state.ownerGateInstalled,
+      sharedFrameSubscribed: !!unsubscribe,
       menuActive: menuIsActive(),
       bindings: Object.fromEntries(SELECTOR_ACTION_IDS.map(actionId => [actionId, bindingFor(actionId)])),
     };
@@ -313,6 +284,10 @@
 
   window.addEventListener('blur', () => { if (state.activeAction) finishSelection(false, 'window blur'); });
 
+  unsubscribe = window.ControllerInput?.subscribe?.(
+    'controller-selection-ui', onControllerFrame, window.ControllerInput.PRIORITY.selection,
+  ) || null;
+
   window.ControllerSelectionUI = {
     installed: true,
     get active() { return Boolean(state.activeAction); },
@@ -320,6 +295,4 @@
     getDebug: debugSnapshot,
     showDebug,
   };
-
-  frameHandle = requestAnimationFrame(poll);
 })();

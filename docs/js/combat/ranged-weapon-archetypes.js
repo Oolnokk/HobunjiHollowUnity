@@ -463,17 +463,6 @@
   }
   function mouseCode(button) { return `Mouse${Number(button) || 0}`; }
 
-  function gamepadBindingDown(binding) {
-    const pads = navigator.getGamepads?.() || [];
-    const pad = [...pads].find(Boolean);
-    if (!pad || !binding) return false;
-    const buttonMatch = /^Button(\d+)$/.exec(binding);
-    if (buttonMatch) return !!pad.buttons?.[Number(buttonMatch[1])]?.pressed;
-    if (binding === 'LeftTrigger') return !!pad.buttons?.[6]?.pressed;
-    if (binding === 'RightTrigger') return !!pad.buttons?.[7]?.pressed;
-    return false;
-  }
-
   function installInputBridge() {
     if (inputBridgeInstalled || typeof window === 'undefined') return;
     inputBridgeInstalled = true;
@@ -510,14 +499,16 @@
       if (thrownCharge && desktopBindingFor('action1') === event.code) releaseThrownCharge('desktop-keyup');
     }, true);
 
-    const pollControllerRelease = () => {
-      if (thrownCharge && thrownCharge.source === 'ranged-action') {
-        const binding = controllerBindingFor('action1');
-        if (binding && !gamepadBindingDown(binding)) releaseThrownCharge('controller-release');
-      }
-      requestAnimationFrame(pollControllerRelease);
+    // Watches for the held throw button coming back up. This used to be its
+    // own requestAnimationFrame loop calling navigator.getGamepads() and
+    // decoding binding codes with a private partial copy of ControllerInput's
+    // decoder (buttons and triggers only, no right-stick codes).
+    const pollControllerRelease = (frame) => {
+      if (!thrownCharge || thrownCharge.source !== 'ranged-action') return;
+      const binding = controllerBindingFor('action1');
+      if (binding && !frame.isDown(binding)) releaseThrownCharge('controller-release');
     };
-    requestAnimationFrame(pollControllerRelease);
+    window.ControllerInput?.subscribe?.('ranged-thrown-charge', pollControllerRelease, 50);
   }
 
   function bootstrap() {

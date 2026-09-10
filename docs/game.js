@@ -23723,17 +23723,22 @@
         // dialogue choice AND triggering runInteractAction() on the world
         // behind it). Clearing the edge-tracking sets avoids a ghost
         // "release" firing once this resumes polling after the panel closes.
-        if (window.ControllerUI?.isActive?.()) {
+        // ControllerInput.gameplaySuspended() is the explicit replacement for
+        // the old arrangement, where controller-selection-ui.js REPLACED
+        // ControllerUI.isActive with a wrapper that also returned true while a
+        // held selector owned the sticks -- telling every consumer a menu was
+        // open when none was. Menus still answer through isActive(); held
+        // selectors and the music minigame now declare ownership directly.
+        if (window.ControllerUI?.isActive?.() || window.ControllerInput?.gameplaySuspended?.()) {
           if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
           gamepadState.uiOwned = true;
-          const menuPad = window.ControllerInput?.pickActiveGamepad?.(navigator.getGamepads?.() || [], gamepadState.activePadIndex) || null;
+          const menuPad = window.ControllerInput?.frame?.()?.pad || null; // Already resolved once this frame by the shared polling authority.
           if (menuPad) gamepadState.activePadIndex = menuPad.index;
-          publishControllerStatus(menuPad, 'menu');
+          publishControllerStatus(menuPad, window.ControllerInput?.owner === 'gameplay' ? 'menu' : (window.ControllerInput?.owner || 'menu'));
           return;
         }
         gamepadState.uiOwned = false;
-        const pads = navigator.getGamepads?.() || [];
-        const pad = window.ControllerInput?.pickActiveGamepad?.(pads, gamepadState.activePadIndex) || Array.from(pads).find(Boolean);
+        const pad = window.ControllerInput?.frame?.()?.pad || null; // One shared snapshot per frame instead of a second getGamepads() pass here.
         if (!pad) {
           // Only clear movement input on an actual gamepad disconnect, not every
           // frame — otherwise this stomps the touch joystick (and keyboard) on

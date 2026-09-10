@@ -20,7 +20,7 @@
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
   <!-- Shared radial-deadzone and active-pad helpers used by both gameplay
        and menu controller polling. Must load before game.js. -->
-  <script src="js/controller-input.js?v=20260909controller2"></script>
+  <script src="js/controller-input.js?v=20260910controller1"></script>
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
@@ -136,7 +136,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260821alchemy1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20260910review1"></script>
+  <script src="js/character-action-locks.js?v=20260910controller1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -254,7 +254,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260910review1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260910controller1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2252,7 +2252,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20260910review1"></script>
+  <script src="js/music-minigame.js?v=20260910controller1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2334,9 +2334,9 @@
   </script>
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260909decouple1"></script>
-  <script src="game.js?v=20260910review1"></script>
+  <script src="game.js?v=20260910controller1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20260909decouple1"></script>
+  <script src="js/controller-ui-nav.js?v=20260910controller1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
