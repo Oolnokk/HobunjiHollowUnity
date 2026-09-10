@@ -81,26 +81,27 @@
         paint-order:stroke fill;
         -webkit-font-smoothing:antialiased;
         text-rendering:geometricPrecision;
+        overflow:visible;
       }
 
       /* Visually matches the combo numeral's destination-out halo: the broad,
          dark stroke covers/cuts through whatever PNG/SVG/emoji sits beneath,
          then the white glyph is painted on top. */
       .arch-meaning-label {
-        left:4%;
-        right:4%;
+        left:50%;
+        right:auto;
         top:50%;
-        transform:translateY(-50%);
-        overflow:hidden;
+        width:max-content;
+        max-width:none;
+        transform:translate(-50%, -50%);
         text-align:center;
-        text-overflow:clip;
-        font-size:clamp(10.5px, calc(0.27125 * var(--col)), 15.75px);
+        font-size:clamp(18.375px, calc(0.4746875 * var(--col)), 27.5625px);
         letter-spacing:-0.055em;
         -webkit-text-stroke:2.8px rgba(0,0,0,.96);
         text-shadow:0 0 2px #000, 0 0 3px #000;
       }
-      .arch-meaning-label.long { font-size:clamp(9.625px, calc(0.23625 * var(--col)), 14px); }
-      .arch-meaning-label.very-long { font-size:clamp(8.75px, calc(0.20125 * var(--col)), 12.25px); letter-spacing:-0.085em; }
+      .arch-meaning-label.long { font-size:clamp(16.84375px, calc(0.4134375 * var(--col)), 24.5px); }
+      .arch-meaning-label.very-long { font-size:clamp(15.3125px, calc(0.3521875 * var(--col)), 21.4375px); letter-spacing:-0.085em; }
 
       /* Mirrored counterpart to a top-right exponent: the binding hangs from
          the lower-right edge of the icon/button instead of sitting underneath. */
@@ -108,21 +109,22 @@
         right:1%;
         bottom:1%;
         transform:translate(30%, 30%);
-        max-width:92%;
-        overflow:hidden;
-        text-overflow:clip;
+        width:max-content;
+        max-width:none;
         text-align:right;
-        font-size:clamp(9.625px, calc(0.21875 * var(--col)), 14px);
+        font-size:clamp(16.84375px, calc(0.3828125 * var(--col)), 24.5px);
         letter-spacing:-0.07em;
         -webkit-text-stroke:2.3px rgba(0,0,0,.96);
         text-shadow:0 0 2px #000, 0 0 3px #000;
       }
 
+      #toolSelect,
+      #actionStack,
       #toolSelect button,
       #dodgeBtn,
       #actionStack button,
       #btnAmmoSelect,
-      #potionBtn { overflow:visible; }
+      #potionBtn { overflow:visible !important; }
     `;
     document.head.appendChild(style);
   }
