@@ -30,7 +30,7 @@
   let mountRushOutT = 0;
   let mountRushInT = 0;
   const mountRenderSync = { active: false, beforeXzDriftTiles: 0, afterXzDriftTiles: 0, verticalCorrectionTiles: 0 }; // Used by Pixel Probe to expose rider/carrier render drift on mobile.
-  const mountFootstepDebug = { emitted: 0, surfaceKey: null, lastDistancePx: 0, lastVolumeScale: 0, lastAtMs: 0 }; // Exposed through window.Mounts.footstepDebug for console-free regression checks.
+  const mountFootstepDebug = { emitted: 0, surfaceKey: null, lastDistancePx: 0, lastVolumeScale: 0, lastAtMs: 0, lastTransition: null, nativeLayers: 0 }; // Exposed through window.Mounts.footstepDebug for console-free gait/audio checks.
 
   // A rush-in/out transition well beyond the camera's visible range, so
   // "calling" a mount reads as it charging in from off-screen rather than
@@ -40,12 +40,22 @@
   const MOUNT_DESPAWN_DIST_TILES = 9;
   const MOUNT_SPAWN_DIST_TILES = 9;
   const MOUNT_TRANSITION_S = 0.35; // how long the rider's lerp on/off the mount takes
-  // Mount footfalls deliberately bypass the companion quiet multiplier:
-  // the animal plus rider should sound substantially heavier than a person
-  // on foot. A 3x scale reaches the native recording ceiling beside the
-  // listener while summon/dismiss steps are still distance-attenuated below.
-  const MOUNT_FOOTSTEP_VOLUME_SCALE = 3.0;
-  const MOUNT_FOOTSTEP_STRIDE_TILES = 0.9; // Used by tickMountedFootsteps so galloping remains forceful without machine-gunning the shared recordings.
+  // One full mount gait cycle now covers 1.8 tiles: exactly double the old
+  // 0.9-tile independent audio cadence. The audible foot plant is authored
+  // as run1 -> run2, so the sound is emitted by that animation transition
+  // itself instead of a second, free-running footstep accumulator.
+  const MOUNT_STRIDE_TILES = 1.8; // Used by updateMountedGait to set the physical distance of one complete run animation cycle.
+  // game.js's updateCreatureAnimFrame internally advances a run frame every
+  // 30 px. Mounts retain that renderer/compositor rather than duplicating it;
+  // this matching value lets updateMountedGait feed it one exact frame step
+  // whenever the mount-specific, TILE-scaled gait says a transition occurred.
+  const CREATURE_RUN_FRAME_STRIDE_PX = 30; // Must match game.js RUN_FRAME_STRIDE_PX; used only when injecting mount frame advances.
+  // Two native layers are intentional. A single recorded footstep tops out
+  // at HTMLAudioElement volume=1, so merely raising the old 3x multiplier to
+  // 6x could be silently clamped. Two simultaneous 3x layers provide the
+  // requested second doubling while staying on the proven native-audio path.
+  const MOUNT_FOOTSTEP_VOLUME_SCALE = 6.0; // Total mount impact scale split across MOUNT_FOOTSTEP_NATIVE_LAYERS in emitMountFootstep.
+  const MOUNT_FOOTSTEP_NATIVE_LAYERS = 2; // Used by emitMountFootstep to exceed one native element's volume ceiling without WebAudio routing.
   // Momentum: a stationary mount can pivot quickly, but the faster it's
   // already moving the more sluggishly it can turn — trading maneuverability
   // for the speed a mount gives you (see updateMountedMovement).
@@ -58,38 +68,94 @@
     return area === 'farm' || area === 'town' || deps._isZoneArea(area);
   }
 
-  // Mounted movement replaces game.js's ordinary player movement update, so
-  // the normal player-footstep cadence never sees the distance traveled by
-  // the carrier. Drive the shared AudioSystem directly from ACTUAL mount
-  // displacement after collision resolution. The private cadence object is
-  // intentionally separate from the creature footstep accumulator so a
-  // companion/wildlife tick cannot steal or duplicate a ridden stride.
-  function tickMountedFootsteps(m, distPx) {
-    const audio = window.AudioSystem; // Shared surface/water routing and pooled recorded-footstep playback used below.
-    if (!audio || !(distPx > 0)) return;
-    const cadence = m._mountFootstepCadence || (m._mountFootstepCadence = {}); // Ridden-mount-only distance accumulator passed to AudioSystem.footstepAdvance.
-    const stridePx = deps.TILE * MOUNT_FOOTSTEP_STRIDE_TILES; // Physical spacing between audible mount footfalls.
-    if (!audio.footstepAdvance(cadence, distPx, stridePx)) return;
+  function resetMountedGait(m) {
+    if (!m) return;
+    m._mountGaitDistancePx = 0; // Accumulates actual post-collision travel until updateMountedGait advances the next run frame.
+    m._mountFallbackFootstepCadence = null; // Used only by one-frame mount sprites that have no run1 -> run2 transition to key audio from.
+    m.runFrameDistPx = 0;
+    m.runFrame = 0;
+    m._animLastX = m.x; // Keeps game.js's generic animation distance accumulator from independently advancing the mount gait.
+    m._animLastY = m.y; // Paired with _animLastX above; updateMountedGait owns mounted run-frame distance instead.
+  }
 
+  function emitMountFootstep(m, distPx, transition = 'run1->run2') {
+    const audio = window.AudioSystem; // Shared surface/water routing and pooled recorded-footstep playback used below.
+    if (!audio) return;
     const distanceToPlayer = Math.hypot(m.x - deps.player.x, m.y - deps.player.y); // Used to fade summon/dismiss hoofbeats while ridden steps stay at the listener.
     const earshotPx = Math.max(deps.TILE, Number(audio.FOOTSTEP_EARSHOT_PX) || deps.TILE * 9); // Same audible radius used by creature footsteps.
     if (distanceToPlayer > earshotPx) return;
     const falloff = mountRideState === 'mounted' ? 1 : Math.max(0, 1 - distanceToPlayer / earshotPx); // Ridden mount is the listener's carrier; off-rider transitions attenuate normally.
-    const volumeScale = MOUNT_FOOTSTEP_VOLUME_SCALE * falloff; // Passed directly to AudioSystem instead of the companion 0.7 quiet scale.
-    if (volumeScale <= 0.002) return;
+    const totalVolumeScale = MOUNT_FOOTSTEP_VOLUME_SCALE * falloff; // Total requested impact before splitting across native layers.
+    if (totalVolumeScale <= 0.002) return;
+    const perLayerVolumeScale = totalVolumeScale / MOUNT_FOOTSTEP_NATIVE_LAYERS; // Each layer stays at the old 3x peak when ridden, giving a real 2x summed impact.
     const panRangePx = Math.max(deps.TILE, Number(audio.FOOTSTEP_PAN_RANGE_PX) || deps.TILE * 5); // Mirrors ordinary creature left/right footstep panning.
     const pan = mountRideState === 'mounted' ? 0 : deps.clamp((m.x - deps.player.x) / panRangePx, -1, 1); // Ridden footsteps stay centered; approaching/departing mounts pan in world X.
     const tile = audio.footstepTileAt(m.areaId, m.x, m.y, m.areaGrid); // Supplies both surface type and standing-water depth to the shared footstep mixer.
     const surfaceKey = audio.footstepSurfaceKey(m.areaId, tile?.type ?? null); // Stored in mount-specific debug state so mobile testing can prove the route used.
 
-    audio.playFootstepSfx(m.areaId, tile, volumeScale, pan);
+    for (let layer = 0; layer < MOUNT_FOOTSTEP_NATIVE_LAYERS; layer++) {
+      audio.playFootstepSfx(m.areaId, tile, perLayerVolumeScale, pan);
+    }
     mountFootstepDebug.emitted++;
     mountFootstepDebug.lastDistancePx = distPx;
-    mountFootstepDebug.lastVolumeScale = volumeScale;
+    mountFootstepDebug.lastVolumeScale = totalVolumeScale;
     mountFootstepDebug.lastAtMs = Math.round(performance.now());
+    mountFootstepDebug.lastTransition = transition;
+    mountFootstepDebug.nativeLayers = MOUNT_FOOTSTEP_NATIVE_LAYERS;
     if (surfaceKey !== mountFootstepDebug.surfaceKey) {
       mountFootstepDebug.surfaceKey = surfaceKey;
-      window.__farmLog?.(`[mount-footstep] surface=${surfaceKey} volumeScale=${volumeScale.toFixed(2)} strideTiles=${MOUNT_FOOTSTEP_STRIDE_TILES.toFixed(2)}`, 'audio');
+      window.__farmLog?.(`[mount-footstep] surface=${surfaceKey} transition=${transition} volumeScale=${totalVolumeScale.toFixed(2)} layers=${MOUNT_FOOTSTEP_NATIVE_LAYERS} strideTiles=${MOUNT_STRIDE_TILES.toFixed(2)}`, 'audio');
+    }
+  }
+
+  // Mount animation and mount footstep audio deliberately share one gait.
+  // Actual post-collision distance advances the run-frame cycle; the sound
+  // fires only when that cycle crosses run1 -> run2, which is the authored
+  // ground-contact frame. For the normal two-frame mount sprites, each frame
+  // therefore lasts 0.9 tiles and successive audible contacts are 1.8 tiles
+  // apart. Future N-frame run cycles still cover exactly the same 1.8 tiles.
+  function updateMountedGait(m, dt, moving, distPx) {
+    const runFrames = m.def?.sprites?.run || []; // Determines frame count and whether an authored run1 -> run2 contact exists.
+    if (!moving) {
+      resetMountedGait(m);
+      deps.updateCreatureAnimFrame(m, dt, false);
+      return;
+    }
+
+    if (runFrames.length < 2) {
+      // Uumkao'ii currently has only one run sprite, so there literally is no
+      // run1 -> run2 boundary to listen to. Keep it audible using the same
+      // 1.8-tile physical stride until that species gets a second run frame.
+      m._animLastX = m.x; // Prevents generic 30px run advancement from creating an unrelated hidden phase for the one-frame fallback.
+      m._animLastY = m.y; // Paired with _animLastX above for the one-frame fallback.
+      deps.updateCreatureAnimFrame(m, dt, true);
+      const audio = window.AudioSystem; // Supplies the existing distance-accumulator helper for the no-transition fallback only.
+      if (!audio || !(distPx > 0)) return;
+      const cadence = m._mountFallbackFootstepCadence || (m._mountFallbackFootstepCadence = {}); // Stores one-frame fallback stride progress between movement ticks.
+      if (audio.footstepAdvance(cadence, distPx, deps.TILE * MOUNT_STRIDE_TILES)) {
+        emitMountFootstep(m, distPx, 'single-run-frame-fallback');
+      }
+      return;
+    }
+
+    const cycleDistancePx = deps.TILE * MOUNT_STRIDE_TILES; // Physical ground distance represented by one complete run-frame cycle.
+    const frameDistancePx = cycleDistancePx / runFrames.length; // Ground distance between adjacent animation frames; 0.9 tiles for today's two-frame mounts.
+    const accumulatedPx = (m._mountGaitDistancePx || 0) + Math.max(0, distPx); // Carries sub-frame actual travel forward until a visual frame boundary is crossed.
+    const frameAdvances = Math.floor(accumulatedPx / frameDistancePx); // Number of animation transitions required by this tick's real movement.
+    m._mountGaitDistancePx = accumulatedPx - frameAdvances * frameDistancePx;
+    const startFrame = Number.isInteger(m.runFrame) ? ((m.runFrame % runFrames.length) + runFrames.length) % runFrames.length : 0; // Frame before the injected transitions; used to identify run1 -> run2 contacts.
+
+    if (frameAdvances > 0) {
+      m.runFrameDistPx = (m.runFrameDistPx || 0) + frameAdvances * CREATURE_RUN_FRAME_STRIDE_PX;
+    }
+    m._animLastX = m.x; // Makes generic updateCreatureAnimFrame consume only the injected mount gait distance above, not actual movement a second time.
+    m._animLastY = m.y; // Paired with _animLastX above so mount gait has exactly one distance authority.
+    deps.updateCreatureAnimFrame(m, dt, true);
+
+    for (let step = 0; step < frameAdvances; step++) {
+      const fromFrame = (startFrame + step) % runFrames.length; // Visual frame being left by this specific injected transition.
+      const toFrame = (fromFrame + 1) % runFrames.length; // Visual frame entered by this specific injected transition.
+      if (fromFrame === 0 && toFrame === 1) emitMountFootstep(m, distPx, 'run1->run2');
     }
   }
 
@@ -138,11 +204,14 @@
     mountAngle = deps.player.angle;
     mountCurrentSpeedPxS = 0;
     mountRushInT = 0;
+    resetMountedGait(mount);
     mountFootstepDebug.emitted = 0;
     mountFootstepDebug.surfaceKey = null;
     mountFootstepDebug.lastDistancePx = 0;
     mountFootstepDebug.lastVolumeScale = 0;
     mountFootstepDebug.lastAtMs = 0;
+    mountFootstepDebug.lastTransition = null;
+    mountFootstepDebug.nativeLayers = 0;
   }
 
   function beginDismissMount() {
@@ -198,13 +267,13 @@
 
     if (mountRideState === 'rushingIn') {
       mountRushInT += dt;
-      const stepStartX = m.x, stepStartY = m.y; // Used after moveCreatureToward to drive audible cadence from distance actually covered.
+      const stepStartX = m.x, stepStartY = m.y; // Used after moveCreatureToward to drive gait from distance actually covered.
       const moving = deps.moveCreatureToward(m, deps.player.x, deps.player.y, MOUNT_RUSH_SPEED_PX, dt);
-      tickMountedFootsteps(m, Math.hypot(m.x - stepStartX, m.y - stepStartY));
+      const movedPx = Math.hypot(m.x - stepStartX, m.y - stepStartY); // Actual summon-run displacement supplied to the shared mount gait.
       const aim = Math.atan2(deps.player.y - m.y, deps.player.x - m.x);
       m.facing = aim;
       deps.updateCreatureMesh(m, dt, aim);
-      deps.updateCreatureAnimFrame(m, dt, moving);
+      updateMountedGait(m, dt, moving, movedPx);
       // Falls back to a flat timeout if the mount's dash toward the player
       // gets blocked by terrain partway — otherwise a cornered mount would
       // never arrive at all.
@@ -223,7 +292,7 @@
       deps.player.y = mountTransitionFromY + (m.y - mountTransitionFromY) * mountTransitionT;
       deps.player.vx = 0; deps.player.vy = 0;
       deps.updateCreatureMesh(m, dt, m.facing);
-      deps.updateCreatureAnimFrame(m, dt, false);
+      updateMountedGait(m, dt, false, 0);
       if (mountTransitionT >= 1) mountRideState = 'mounted';
       return;
     }
@@ -242,7 +311,7 @@
       deps.player.y = mountTransitionFromY + (mountDismountTargetY - mountTransitionFromY) * mountTransitionT;
       deps.player.vx = 0; deps.player.vy = 0;
       deps.updateCreatureMesh(m, dt, m.facing);
-      deps.updateCreatureAnimFrame(m, dt, false);
+      updateMountedGait(m, dt, false, 0);
       if (mountTransitionT >= 1) {
         mountRideState = 'rushingOut';
         mountRushOutAngle = m.facing + Math.PI;
@@ -255,11 +324,11 @@
       mountRushOutT += dt;
       const targetX = m.x + Math.cos(mountRushOutAngle) * deps.TILE * 2;
       const targetY = m.y + Math.sin(mountRushOutAngle) * deps.TILE * 2;
-      const stepStartX = m.x, stepStartY = m.y; // Used after moveCreatureToward to fade real departing footfalls rather than infer them from input.
+      const stepStartX = m.x, stepStartY = m.y; // Used after moveCreatureToward to drive departing gait from actual distance.
       const moving = deps.moveCreatureToward(m, targetX, targetY, MOUNT_RUSH_SPEED_PX, dt);
-      tickMountedFootsteps(m, Math.hypot(m.x - stepStartX, m.y - stepStartY));
+      const movedPx = Math.hypot(m.x - stepStartX, m.y - stepStartY); // Actual dismiss-run displacement supplied to the shared mount gait.
       deps.updateCreatureMesh(m, dt, mountRushOutAngle);
-      deps.updateCreatureAnimFrame(m, dt, moving);
+      updateMountedGait(m, dt, moving, movedPx);
       // Falls back to a flat timeout if the dash direction happens to run
       // straight into a wall/map edge — otherwise a cornered mount would
       // never reach the despawn distance and would sit there forever.
@@ -318,7 +387,7 @@
     m.areaId = deps.getCurrentArea();
     m.x = deps.player.x; m.y = deps.player.y;
     m.vx = 0; m.vy = 0;
-    if (m._mountFootstepCadence) m._mountFootstepCadence.footstepAccum = 0;
+    resetMountedGait(m);
     mountFootstepDebug.surfaceKey = null;
     const col = deps.clamp(Math.floor(m.x / deps.TILE), 0, m.areaCols - 1);
     const row = deps.clamp(Math.floor(m.y / deps.TILE), 0, m.areaRows - 1);
@@ -394,7 +463,7 @@
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt);
     }
 
-    const stepStartX = m.x, stepStartY = m.y; // Used after collision resolution so audible hoofbeats represent actual traveled distance only.
+    const stepStartX = m.x, stepStartY = m.y; // Used after collision resolution so gait represents actual traveled distance only.
     if (mountCurrentSpeedPxS > 0.01) {
       const desiredX = m.x + Math.cos(mountAngle) * mountCurrentSpeedPxS * dt;
       const desiredY = m.y + Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
@@ -407,11 +476,11 @@
       if (deps.canPlayerOccupy(nextX, m.y)) m.x = nextX; else mountCurrentSpeedPxS *= 0.4;
       if (deps.canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= 0.4;
     }
-    tickMountedFootsteps(m, Math.hypot(m.x - stepStartX, m.y - stepStartY));
+    const movedPx = Math.hypot(m.x - stepStartX, m.y - stepStartY); // Actual mounted displacement that advances both run animation and contact audio.
     m.facing = mountAngle;
     deps.player.x = m.x; deps.player.y = m.y;
     deps.player.vx = 0; deps.player.vy = 0; // the mount is what's moving — the rider's own velocity stays inert
-    deps.updateCreatureAnimFrame(m, dt, mountCurrentSpeedPxS > 5);
+    updateMountedGait(m, dt, mountCurrentSpeedPxS > 5, movedPx);
 
     // Facing: independent of the mount's heading via right-stick/mouse-look
     // (identical to the on-foot system in game.js's updateMovement), easing
