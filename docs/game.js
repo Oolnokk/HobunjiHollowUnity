@@ -3575,7 +3575,7 @@
           return;
         }
         const shoulderHeadDirection = activeCameraMode === SHOULDER_SURF_MODE
-          ? currentPlayerPerspectiveDirection(playerPerspectiveOriginWorld())
+          ? currentPlayerPerspectiveDirection()
           : null; // Used below to keep the head's complete yaw/pitch ray fixed on the shared perspective point.
         const shoulderHeadFacing = shoulderHeadDirection
           ? Math.atan2(shoulderHeadDirection.z, shoulderHeadDirection.x)
@@ -4457,7 +4457,7 @@
       const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
       function currentPlayerAimPitch() {
         if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const direction = currentPlayerPerspectiveDirection(playerPerspectiveOriginWorld()); // Carries the shared point's real verticality into ranged poses and launch pitch.
+          const direction = currentPlayerPerspectiveDirection(); // Carries the shared point's real verticality into ranged poses and launch pitch (origin defaults to the head anchor).
           if (direction) {
             return window.FormatUtils.clamp(
               Math.asin(window.FormatUtils.clamp(direction.y, -1, 1)),
@@ -4482,7 +4482,7 @@
       // otherwise the camera/facing yaw and pitch remain authoritative.
       function currentPlayerMeleeAimDirection() {
         if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const perspectiveDirection = currentPlayerPerspectiveDirection(playerPerspectiveOriginWorld()); // Makes melee and lunge elevation converge on the same point as the head and muzzle.
+          const perspectiveDirection = currentPlayerPerspectiveDirection(); // Makes melee and lunge elevation converge on the same point as the head and muzzle.
           if (perspectiveDirection) return perspectiveDirection;
         }
         const focused = window.RangedWeapons?.focusedHostile?.(24);
@@ -17062,7 +17062,22 @@
       // distance is measured beyond the player rather than from the camera, so
       // zoom/framing changes do not pull the convergence point closer or push
       // it farther away. Every head/body/combat origin aims at `point`.
+      // Memoized per frame against `lastTime`, exactly like _currentPlayerLookRay
+      // above. This is a pure function of camera + player state, but head aim,
+      // body facing, aim angle, aim pitch, melee direction, the lunge update and
+      // ranged-camera-focus all ask for it independently — without this it ran
+      // its raycaster setFromCamera and CreatureHeadCache lookup eight to twelve
+      // times a frame for an identical answer. Consumers only ever read the
+      // result, so handing out the same object is safe.
+      let _cachedPerspectiveTarget = null;
+      let _cachedPerspectiveTargetAt = -1;
       function currentPlayerPerspectiveTarget() {
+        if (_cachedPerspectiveTargetAt === lastTime) return _cachedPerspectiveTarget;
+        _cachedPerspectiveTargetAt = lastTime;
+        _cachedPerspectiveTarget = _computePlayerPerspectiveTarget();
+        return _cachedPerspectiveTarget;
+      }
+      function _computePlayerPerspectiveTarget() {
         const rawRay = currentPlayerAimRay() || currentPlayerInteractionRay(); // Provides the exact screen-center line on which the shared point must remain.
         const ox = Number(rawRay?.origin?.x); // Camera-ray origin X used to place the point.
         const oy = Number(rawRay?.origin?.y); // Camera-ray origin Y used to place the point.
@@ -23708,17 +23723,22 @@
         // dialogue choice AND triggering runInteractAction() on the world
         // behind it). Clearing the edge-tracking sets avoids a ghost
         // "release" firing once this resumes polling after the panel closes.
-        if (window.ControllerUI?.isActive?.()) {
+        // ControllerInput.gameplaySuspended() is the explicit replacement for
+        // the old arrangement, where controller-selection-ui.js REPLACED
+        // ControllerUI.isActive with a wrapper that also returned true while a
+        // held selector owned the sticks -- telling every consumer a menu was
+        // open when none was. Menus still answer through isActive(); held
+        // selectors and the music minigame now declare ownership directly.
+        if (window.ControllerUI?.isActive?.() || window.ControllerInput?.gameplaySuspended?.()) {
           if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
           gamepadState.uiOwned = true;
-          const menuPad = window.ControllerInput?.pickActiveGamepad?.(navigator.getGamepads?.() || [], gamepadState.activePadIndex) || null;
+          const menuPad = window.ControllerInput?.frame?.()?.pad || null; // Already resolved once this frame by the shared polling authority.
           if (menuPad) gamepadState.activePadIndex = menuPad.index;
-          publishControllerStatus(menuPad, 'menu');
+          publishControllerStatus(menuPad, window.ControllerInput?.owner === 'gameplay' ? 'menu' : (window.ControllerInput?.owner || 'menu'));
           return;
         }
         gamepadState.uiOwned = false;
-        const pads = navigator.getGamepads?.() || [];
-        const pad = window.ControllerInput?.pickActiveGamepad?.(pads, gamepadState.activePadIndex) || Array.from(pads).find(Boolean);
+        const pad = window.ControllerInput?.frame?.()?.pad || null; // One shared snapshot per frame instead of a second getGamepads() pass here.
         if (!pad) {
           // Only clear movement input on an actual gamepad disconnect, not every
           // frame — otherwise this stomps the touch joystick (and keyboard) on

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8'); // Guards parser-load order for the post-life creator fix.
 const source = fs.readFileSync('docs/js/onboarding-character-creation-weapon-view-fix.js', 'utf8'); // Guards random starter weapon, hand ownership, persistence, and adaptive face view.
 
-assert.match(entry, /onboarding-character-creation-weapon-view-fix\.js\?v=20260907charcreator7/, 'onboarding must load the weapon/view fix after the life preview');
+assert.match(entry, /onboarding-character-creation-weapon-view-fix\.js\?v=20260910review1/, 'onboarding must load the weapon/view fix after the life preview');
 assert.match(entry, /lifePreviewUrl[\s\S]*weaponViewFixUrl/, 'weapon/view fix must parser-load after the living preview module');
 
 for (const itemKey of ['hoe_nativeCopper', 'hatchet_nativeCopper', 'fishingspear_nativeCopper', 'pickshovel_nativeCopper']) {

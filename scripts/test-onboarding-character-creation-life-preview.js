@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const entry = fs.readFileSync('docs/onboarding.js', 'utf8'); // Guards that the post-redesign life module is actually parser-loaded.
 const life = fs.readFileSync('docs/js/onboarding-character-creation-life-preview.js', 'utf8'); // Guards runtime-life, view, Kasa, and starter-weapon contracts.
 
-assert.match(entry, /onboarding-character-creation-life-preview\.js\?v=20260907charcreator6/, 'onboarding must load the creator life-preview module after the redesign');
+assert.match(entry, /onboarding-character-creation-life-preview\.js\?v=20260910review1/, 'onboarding must load the creator life-preview module after the redesign');
 assert.match(entry, /coreUrl[\s\S]*redesignUrl[\s\S]*lifePreviewUrl/, 'creator life additions must load after onboarding core and integrated redesign');
 
 for (const dyeId of ['dye:CLOTH:brown', 'dye:CLOTH:dusty_yellow', 'dye:CLOTH:dusty_orange']) {

@@ -18,11 +18,23 @@
   let saveSelectPortraitGearSyncFailures = 0; // Exposed in debug so a bad legacy clothing record can be diagnosed without breaking save selection.
   let savePortraitCosmeticsPromise = null; // Reuses the portrait cosmetics index while canonical gear variants are resolved.
 
+  let metaRawCache = null; // Last raw hobunjiSaveMeta string this module parsed.
+  let metaValueCache = null; // Parsed result for metaRawCache, reused until the stored string actually changes.
+
+  // refresh() runs on every coalesced document.body mutation for the whole
+  // session, and several helpers below each want the metadata. Parsing the
+  // full save blob per call made that a per-frame JSON.parse during ordinary
+  // gameplay, so the parse is memoized against the raw string it came from.
   function readMeta() {
     try {
       const raw = localStorage.getItem(META_KEY);
-      return raw ? JSON.parse(raw) : null;
+      if (raw === metaRawCache) return metaValueCache;
+      metaRawCache = raw;
+      metaValueCache = raw ? JSON.parse(raw) : null;
+      return metaValueCache;
     } catch {
+      metaRawCache = null;
+      metaValueCache = null;
       return null;
     }
   }
@@ -75,8 +87,9 @@
 
   function syncSaveSelectDates() {
     const overlay = document.getElementById('ob-overlay'); // Existing save-selection DOM that onboarding-core replaces on every selection change.
+    if (!overlay) return; // Checked before touching storage so ordinary gameplay frames do no save-metadata work at all.
     const meta = readMeta(); // Fresh metadata lets folder/cloud restores immediately show their own per-world calendar snapshots.
-    if (!overlay || !Array.isArray(meta?.worlds)) return;
+    if (!Array.isArray(meta?.worlds)) return;
     for (const card of overlay.querySelectorAll('[data-sl-world], [data-sl-world-join]')) {
       const worldId = card.getAttribute('data-sl-world') || card.getAttribute('data-sl-world-join') || ''; // Existing world id carried by both owned and joinable cards.
       const world = meta.worlds.find(entry => String(entry?.id || '') === worldId); // Persisted world record supplying this card's actual saved date.

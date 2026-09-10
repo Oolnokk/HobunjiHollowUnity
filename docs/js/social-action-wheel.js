@@ -822,36 +822,36 @@ ${outerRules}
     commitSelection();
   }
 
-  function pollGamepads() {
+  // One slot in ControllerInput's shared frame loop. This used to walk every
+  // entry navigator.getGamepads() returned; it now follows the single active
+  // pad the authority resolves, which is the same pad gameplay, menus and the
+  // held selectors all act on.
+  function pollGamepads(frame) {
     installRigHooks();
     installRenderHook();
 
-    const pads = navigator.getGamepads?.() || [];
-    for (const pad of pads) {
-      if (!pad) continue;
-      const previousActions = state.priorGamepad.get(pad.index) || { open: false, dodge: false }; // Used to edge-track semantic wheel actions independently of their physical bindings.
-      const openCode = binding('controller', 'socialWheel', cfg.controllerOpen || DEFAULTS.controllerOpen); // Used to honor the player's current Social Actions binding.
-      const dodgeCode = binding('controller', 'dodge', 'Button1'); // Used to honor the player's current cancel/dodge binding.
-      const openNow = window.ControllerInput?.isBindingPressed?.(pad, openCode) || false; // Used so triggers and right-stick directional bindings work in addition to ButtonN codes.
-      const dodgeNow = window.ControllerInput?.isBindingPressed?.(pad, dodgeCode) || false; // Used to cancel the wheel/dance through any supported configured controller input.
+    const pad = frame.pad;
+    if (!pad) return;
+    const previousActions = state.priorGamepad.get(pad.index) || { open: false, dodge: false }; // Used to edge-track semantic wheel actions independently of their physical bindings.
+    const openCode = binding('controller', 'socialWheel', cfg.controllerOpen || DEFAULTS.controllerOpen); // Used to honor the player's current Social Actions binding.
+    const dodgeCode = binding('controller', 'dodge', 'Button1'); // Used to honor the player's current cancel/dodge binding.
+    const openNow = Boolean(openCode) && frame.isDown(openCode); // Triggers and right-stick directional bindings work in addition to ButtonN codes.
+    const dodgeNow = Boolean(dodgeCode) && frame.isDown(dodgeCode); // Cancels the wheel/dance through any supported configured controller input.
 
-      if (openNow && !previousActions.open) openWheel('controller', false);
+    if (openNow && !previousActions.open) openWheel('controller', false);
 
-      if (state.open && state.openSource === 'controller') {
-        const x = Number(pad.axes?.[0]) || 0;
-        const y = Number(pad.axes?.[1]) || 0;
-        selectFromVector(x, y);
-        if (!openNow && previousActions.open) commitSelection();
-      }
-
-      if ((state.open || state.dance) && dodgeNow && !previousActions.dodge) {
-        cancelWheelOrDance('dodge');
-      }
-
-      state.priorGamepad.set(pad.index, { open: openNow, dodge: dodgeNow });
+    if (state.open && state.openSource === 'controller') {
+      const x = Number(pad.axes?.[0]) || 0;
+      const y = Number(pad.axes?.[1]) || 0;
+      selectFromVector(x, y);
+      if (!openNow && previousActions.open) commitSelection();
     }
 
-    requestAnimationFrame(pollGamepads);
+    if ((state.open || state.dance) && dodgeNow && !previousActions.dodge) {
+      cancelWheelOrDance('dodge');
+    }
+
+    state.priorGamepad.set(pad.index, { open: openNow, dodge: dodgeNow });
   }
 
   function bindMobileDodge() {
@@ -903,7 +903,7 @@ ${outerRules}
       updateDebug();
     }, 1000);
 
-    requestAnimationFrame(pollGamepads);
+    window.ControllerInput?.subscribe?.('social-action-wheel', pollGamepads, window.ControllerInput.PRIORITY.socialWheel);
   }
 
   window.SocialActionWheel = {

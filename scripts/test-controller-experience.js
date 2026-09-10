@@ -136,7 +136,15 @@ assert.doesNotMatch(gameSource, /down\.has\('Button11'\)/, 'melee auto-target no
 assert.match(probeSource, /Controller: #\$\{controllerDebug\.index\}[\s\S]{0,260}owner=\$\{controllerDebug\.owner\}/, 'Pixel Probe includes controller identity and current input owner');
 assert.match(uiSource, /function adjustFocusedControl\(delta\)/, 'menu sliders, number inputs, and selects are controller-adjustable');
 assert.match(uiSource, /scrollStick[\s\S]{0,900}scrollTop \+=/, 'right stick scrolls long menu panes');
-assert.match(uiSource, /hobunji-controller-owner-change[\s\S]{0,180}owner: 'menu'/, 'menu ownership is announced even while the gameplay loop is paused');
+// Menu ownership is still announced while the gameplay loop is paused, but it
+// is now declared through ControllerInput's registry, which emits the same
+// hobunji-controller-owner-change event, instead of each module dispatching it.
+assert.match(uiSource, /ControllerInput\?\.setOwner\?\.\('menu'\)/, 'the menu navigator declares menu ownership');
+assert.match(
+  fs.readFileSync('docs/js/controller-input.js', 'utf8'),
+  /function setOwner[\s\S]{0,400}hobunji-controller-owner-change/,
+  'the ownership registry still emits the owner-change event gameplay listens for',
+);
 assert.match(uiSource, /UI_ACTIONS = Object\.freeze\([\s\S]{0,300}uiOpenMenu/, 'menu confirm/cancel/tab/navigation actions are semantic configurable bindings');
 assert.doesNotMatch(uiSource, /BTN_CONFIRM|BTN_CANCEL|BTN_TAB_PREV|BTN_TAB_NEXT|BTN_OPEN_MENU|BTN_DPAD_/, 'universal menu navigation no longer carries physical button constants');
 assert.match(settingsSource, /listenForControllerInput/, 'controller rows can capture the next physical controller input');
@@ -147,10 +155,14 @@ assert.match(resetUiSource, /Reset Keyboard to Defaults/, 'keyboard Settings sec
 assert.match(resetUiSource, /Reset Controller to Defaults/, 'controller Settings section exposes its own Reset to Defaults button');
 assert.match(resetUiSource, /resetDeviceToDefaults/, 'both Settings reset buttons delegate to the shared device-isolated reset API');
 assert.match(resetUiSource, /window\.InputSettingsPanel\?\.render\?\.\(\)/, 'a successful reset immediately refreshes the visible binding rows');
-assert.match(musicSource, /controllerButton\(gamepad, 'musicNote1'/, 'music note buttons use named configurable actions');
-assert.match(musicSource, /controllerButton\(gamepad, 'musicPause'/, 'music pause uses a named configurable action');
-assert.doesNotMatch(musicSource, /controllerButton\(gamepad,\s*\d+/, 'music button actions no longer pass fixed Gamepad indices');
-assert.match(socialSource, /ControllerInput\?\.isBindingPressed\?\.\(pad, openCode\)/, 'social actions accept any supported configured controller binding, not just ButtonN');
+// Asserted on the action argument rather than the source-parameter name, which
+// changed from a raw Gamepad to the shared ControllerInput frame.
+assert.match(musicSource, /controllerButton\(\w+, 'musicNote1'/, 'music note buttons use named configurable actions');
+assert.match(musicSource, /controllerButton\(\w+, 'musicPause'/, 'music pause uses a named configurable action');
+assert.doesNotMatch(musicSource, /controllerButton\(\w+,\s*\d+/, 'music button actions no longer pass fixed Gamepad indices');
+// The wheel now reads the shared frame's per-code values, which run through the
+// same ControllerInput decoder, so triggers and right-stick codes still resolve.
+assert.match(socialSource, /frame\.isDown\(openCode\)/, 'social actions accept any supported configured controller binding, not just ButtonN');
 
 assert.match(bindingsSource, /AUTOMATIC_SELECTION_ACTION_IDS = new Set\(\['toolSelect', 'itemSelect', 'utilityMenu', 'socialWheel'\]\)/, 'tool, item, utility, and social selectors are one automatic controller-selection class');
 assert.match(bindingsSource, /id: 'itemSelect',[\s\S]{0,120}label: 'Item Select'/, 'Item Select is guaranteed to exist as a first-class controller action');
@@ -169,13 +181,18 @@ assert.match(selectorSource, /utilityMenu:[\s\S]{0,120}open: 'openUtilities'[\s\
 assert.match(selectorSource, /socialWheel:[\s\S]{0,80}kind: 'social'/, 'Social Actions is routed through the same automatic selector ownership layer');
 assert.match(selectorSource, /const leftX = axis\(pad, 0\)[\s\S]{0,180}const rightX = axis\(pad, 2\)/, 'both left and right sticks provide horizontal arch navigation');
 assert.match(selectorSource, /const left = \{ x: axis\(pad, 0\), y: axis\(pad, 1\)[\s\S]{0,220}const right = \{ x: axis\(pad, 2\), y: axis\(pad, 3\)/, 'both left and right sticks provide full radial social-wheel navigation');
-assert.match(selectorSource, /!isDown\(pad, state\.openerCode\)[\s\S]{0,120}finishSelection\(true, 'opener released'\)/, 'releasing a selector opener commits the current choice');
+assert.match(selectorSource, /!isDown\(frame, state\.openerCode\)[\s\S]{0,120}finishSelection\(true, 'opener released'\)/, 'releasing a selector opener commits the current choice');
 assert.match(selectorSource, /arch\?\.releaseSelection\?\.\(\)/, 'arch commits reuse the existing release-selection path');
 assert.match(selectorSource, /SocialActionWheel\?\.close\?\.\(commit\)/, 'social-wheel commits reuse the existing wheel close/commit path');
-assert.match(selectorSource, /ui\.isActive = wrapped/, 'automatic selector ownership suppresses ordinary gameplay controller polling while a wheel or arch owns the sticks');
+// Gameplay polling still stands down while a wheel or arch owns the sticks, but
+// via the explicit ownership registry rather than by replacing ControllerUI's
+// isActive() with a wrapper that told every consumer a menu was open.
+assert.doesNotMatch(selectorSource, /ui\.isActive = wrapped/, 'selector ownership must not be implemented by patching ControllerUI.isActive');
+assert.match(selectorSource, /ControllerInput\?\.setOwner\?\.\(`selection:/, 'held selectors declare ownership through the shared registry');
+assert.match(gameSource, /ControllerInput\?\.gameplaySuspended\?\.\(\)/, 'automatic selector ownership suppresses ordinary gameplay controller polling while a wheel or arch owns the sticks');
 assert.match(selectorSource, /CharacterActionLocks\?\.acquire/, 'held controller selectors also suppress player movement/tools/actions through the shared lock registry');
 assert.match(selectorSource, /showDebug/, 'controller selector ownership has an in-page debug surface for mobile testing');
-assert.match(actionLocksSource, /controller-selection-ui\.js\?v=20260909controller3/, 'the automatic selector adapter is parser-loaded with a cache-busted URL');
+assert.match(actionLocksSource, /controller-selection-ui\.js\?v=20260910controller1/, 'the automatic selector adapter is parser-loaded with a cache-busted URL');
 assert.match(actionLocksSource, /input-default-reset-ui\.js\?v=20260909controller4/, 'the per-device reset-button helper is parser-loaded with a cache-busted URL');
 
 assert.match(bindingsSource, /id: 'uiOpenMenu'[\s\S]{0,180}context: 'menu'/, 'menu open/close schema is owned by the controller binding module');

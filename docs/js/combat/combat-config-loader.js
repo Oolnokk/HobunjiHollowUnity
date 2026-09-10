@@ -77,7 +77,7 @@
 
   const modules = [
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
-    ['js/player-body-transform-composer.js?v=20260909perspectivepoint1', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-transform-composer.js?v=20260910review1', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
     ['js/fine-hood-trim-head-facing.js?v=20260824b', () => !!window.HobunjiFineHoodTrimHeadFacing],
     ['js/front-hat-head-facing.js?v=20260830flip2', () => !!window.HobunjiFrontHatHeadFacing],
@@ -107,7 +107,7 @@
     ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
     ['js/combat/enemy-weapon-stances.js?v=20260903a', () => !!window.EnemyWeaponStances],
-    ['js/combat/ranged-weapon-archetypes.js?v=20260905b', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 2],
+    ['js/combat/ranged-weapon-archetypes.js?v=20260910controller1', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 2],
     ['js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 2],
     ['js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 7],
     ['js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
