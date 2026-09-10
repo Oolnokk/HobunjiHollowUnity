@@ -72,7 +72,7 @@ windowStub.FarmCrates.init({
 
 const bridge = windowStub.HobunjiDrunkGameplayBridge;
 assert.deepEqual(JSON.parse(JSON.stringify(bridge.getBottleSwigStatus('wine', wine, inventory))),
-  { key: 'wine', remaining: 4, total: 4, bottleCount: 2 });
+  { key: 'wine', remaining: 4, total: 4, stars: 3, bottleCount: 2 });
 assert.equal(bridge.consumeBottleSwig('wine', wine, inventory).remaining, 3,
   'the first swig leaves the bottle in inventory with three servings');
 assert.equal(inventory.wine, 2, 'a partial bottle does not decrement the stack');
