@@ -18,6 +18,8 @@ button.warn{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
 button.bad{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
 button.act{outline:2px solid var(--acc);outline-offset:1px}
 button.restricted{opacity:.45}
+#liveConnection.connected{color:var(--ok);border-color:rgba(52,211,153,.42)}
+#reflectBtn:disabled{opacity:.45;cursor:not-allowed}
 input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;outline:none}
 textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.35}
 label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
@@ -81,6 +83,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
 <script src="../../js/panel-ui.js"></script>
+<script src="../../js/map-live-preview.js?v=20260909a"></script>
 </head>
 <body>
 <div id="shell">
@@ -89,7 +92,9 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     <span class="pill" id="activeMapPill">no map</span>
     <button class="sec" id="upToParentBtn" style="display:none">⬆ Parent map</button>
     <div id="topbar-right">
-      <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
+      <span class="pill" id="liveConnection">○ Game not connected</span>
+      <button class="ok" id="reflectBtn">↻ Reflect in Game</button>
+      <button class="sec" id="playBtn">🎮 Open Game</button>
       <button class="sec" id="undoBtn">↶ Undo</button>
       <button class="sec" id="redoBtn">↷ Redo</button>
       <button class="sec" id="exportMapBtn">⬇ Map JSON</button>
@@ -452,6 +457,7 @@ document.addEventListener('click', e => {
 const GAME = {
   layoutKey: 'hobunji_farm_layout_v3',
   townKey:   'hobunji_town_v1',
+  workspaceOverrideKey: 'hobunji_game_workspace_override_v1',
   farm: { cols: 36, rows: 26 },
   house: { col: 26, row: 2, w: 5, d: 4, doorCol: 28, doorRow: 6 },
   interior: { cols: 6, rows: 6, entry: [2,4], exit: [2,5] },
@@ -730,6 +736,141 @@ window._mapEditorBridge = {
     return true;
   },
 };
+
+// ── Running-game live preview bridge ────────────────────────────────────────
+let _liveGameConnected = false;
+let _liveRevision = 0;
+let _liveSelection = null;
+const _liveAcknowledgedMaps = new Map();
+
+function liveRootMapId(mapId) {
+  return window.MapLivePreview.rootMapId(ws, mapId);
+}
+
+function isFarmEditorMap(mapId) {
+  return liveRootMapId(mapId) === ws.gameLink.exteriorId;
+}
+
+function refreshLiveControls() {
+  const connection = $('liveConnection');
+  const button = $('reflectBtn');
+  if (connection) {
+    connection.textContent = _liveGameConnected ? '● Game connected' : '○ Game not connected';
+    connection.classList.toggle('connected', _liveGameConnected);
+  }
+  if (button) {
+    const farm = isFarmEditorMap(activeMap()?.id);
+    button.disabled = farm;
+    button.title = farm ? 'Farm editing stays in the in-game Farm Editor.' : 'Apply this workspace snapshot to the running game without reloading it.';
+  }
+}
+
+function liveSelectionLocation(map, selection) {
+  if (Number.isFinite(selection?.col) && Number.isFinite(selection?.row)) return { col: selection.col, row: selection.row };
+  let record = null;
+  if (selection?.kind === 'building') record = (map.buildings || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'spot') record = (map.transitions || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'station') record = (map.npcStations || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'entry') record = (map.entryPoints || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'decor') record = activeDecor(map).find(item => (selection.id && item.id === selection.id) || (!selection.id && item.key === selection.key && item.col === selection.col && item.row === selection.row));
+  else if (selection?.kind === 'furniture') record = (map.furniture || []).find(item => (selection.id && item.id === selection.id) || ((!selection.id || !item.id) && (item.key === selection.key || item.itemKey === selection.itemKey) && item.col === selection.col && item.row === selection.row));
+  if (!record) return null;
+  return { col: record.col ?? record.gridX, row: record.row ?? record.gridZ };
+}
+
+function focusLiveSelection(message) {
+  if (!message?.mapId) return false;
+  if (message.mapSnapshot) {
+    const incoming = message.mapSnapshot;
+    const normalized = {
+      ...makeMap(incoming.name || incoming.id, incoming.category || 'exterior', incoming.cols || 1, incoming.rows || 1),
+      ...JSON.parse(JSON.stringify(incoming)),
+      tiles: normalizeWorkspaceTiles(incoming.tiles),
+    };
+    const index = ws.maps.findIndex(map => map.id === incoming.id);
+    if (index >= 0) ws.maps[index] = normalized;
+    else ws.maps.push(normalized);
+    captureBaseline(normalized);
+  }
+  const map = mapById(message.mapId);
+  if (!map) { setStatus(`Running game requested unknown map ${message.mapId}.`); return false; }
+  ws.activeId = map.id;
+  editingLayoutId = message.layoutId && message.layoutId !== 'default' && (map.layouts || []).some(layout => layout.id === message.layoutId)
+    ? message.layoutId : null;
+  activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null; activeStationId = null; activeEntryId = null; _selectedBuildingId = null;
+  const selection = message.selection || { kind: 'tile', col: 0, row: 0 };
+  if (selection.kind === 'building') { _selectedBuildingId = selection.id || null; setMode('building'); }
+  else if (selection.kind === 'spot') { activeSpotId = selection.id || null; setMode('spot'); }
+  else if (selection.kind === 'station') { activeStationId = selection.id || null; setMode('station'); }
+  else if (selection.kind === 'entry') { activeEntryId = selection.id || null; setMode('entry'); }
+  else if (selection.kind === 'decor') setMode('decor');
+  else if (selection.kind === 'furniture') setMode('furniture');
+  else setMode('tile');
+  updateAll();
+  const location = liveSelectionLocation(map, selection);
+  if (location) {
+    const rect = canvas.getBoundingClientRect();
+    cam.x = rect.width / 2 - (location.col + viewOffset.c + 0.5) * cam.zoom;
+    cam.y = rect.height / 2 - (location.row + viewOffset.r + 0.5) * cam.zoom;
+    _liveSelection = { ...selection, ...location, expiresAt: performance.now() + 2200 };
+    draw();
+    setTimeout(() => { if (_liveSelection?.expiresAt <= performance.now()) { _liveSelection = null; draw(); } }, 2300);
+  }
+  setStatus(`Focused from game: ${map.name}${editingLayoutId ? ` · ${editingLayoutId}` : ''}${location ? ` · ${location.col},${location.row}` : ''}.`);
+  return true;
+}
+
+function liveChangedSections(rootId) {
+  const maps = ws.maps.filter(map => liveRootMapId(map.id) === rootId);
+  const changed = new Set();
+  for (const map of maps) {
+    window.MapLivePreview.classifyMapChanges(_liveAcknowledgedMaps.get(map.id), map).forEach(section => changed.add(section));
+  }
+  return [...changed];
+}
+
+function reflectInGame() {
+  const map = activeMap();
+  const rootId = liveRootMapId(map.id);
+  if (isFarmEditorMap(rootId)) { setStatus('Farm editing uses the in-game Farm Editor.'); return; }
+  const requestId = window.MapLivePreview.requestId('reflect');
+  const changedSections = liveChangedSections(rootId);
+  _liveRevision = Math.max(_liveRevision + 1, Date.now());
+  _mapLiveEndpoint.send({
+    type: 'reflect-request', requestId, revision: _liveRevision, mapId: rootId,
+    layoutId: editingLayoutId || 'default', changedSections,
+    workspace: window.MapLivePreview.clone(ws), generated: !!map.liveGeneratedInstance,
+  }, { mirror: true });
+  setStatus(`Reflection r${_liveRevision} sent${changedSections.length ? ` (${changedSections.join(', ')})` : ' (no detected changes)'}.`);
+}
+
+function handleLiveMessage(message) {
+  if (message.type === 'game-ready' || message.type === 'game-state') {
+    _liveGameConnected = true;
+    refreshLiveControls();
+    return;
+  }
+  if (message.type === 'navigate') {
+    _liveGameConnected = true;
+    focusLiveSelection(message);
+    _mapLiveEndpoint.send({ type: 'editor-state', requestId: message.requestId, mapId: message.mapId });
+    refreshLiveControls();
+    return;
+  }
+  if (message.type === 'reflect-result') {
+    _liveGameConnected = true;
+    if (message.status === 'applied') {
+      ws.maps.filter(map => liveRootMapId(map.id) === message.mapId).forEach(map => _liveAcknowledgedMaps.set(map.id, window.MapLivePreview.clone(map)));
+      setStatus(`✓ Game applied r${message.revision} · ${message.applyMode}${message.warnings?.length ? ` · ${message.warnings.join(' ')}` : ''}`);
+    } else {
+      setStatus(`Game ${message.status || 'rejected'} r${message.revision}: ${(message.warnings || ['Unknown error']).join(' ')}`);
+    }
+    refreshLiveControls();
+  }
+}
+
+const _mapLiveEndpoint = window.MapLivePreview.createEndpoint('editor', handleLiveMessage);
+window._mapEditorBridge.focusRuntimeSelection = focusLiveSelection;
 
 function normalizeWorkspaceTileRecord(t) {
   if (!t || typeof t !== 'object') return null;
@@ -2910,6 +3051,14 @@ function draw() {
       ctx.font = `${Math.floor(z*0.5)}px system-ui`;
     }
   });
+  if (_liveSelection && _liveSelection.expiresAt > performance.now()) {
+    const p = w2s(_liveSelection.col + 0.5, _liveSelection.row + 0.5);
+    const pulse = 0.38 + 0.12 * Math.sin(performance.now() / 90);
+    ctx.save();
+    ctx.strokeStyle = '#ffffff'; ctx.fillStyle = `rgba(106,167,255,${pulse})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(8, z * 0.48), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
   ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 }
 
@@ -3401,6 +3550,7 @@ function fillSettings() {
   $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · tier ${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;
   $('upToParentBtn').style.display = (m.isSubmap && mapById(m.parentMapId)) ? '' : 'none';
   $('floorTemplateBtn').style.display = (m.category === 'interior' || m.category === 'building_interior') ? '' : 'none';
+  refreshLiveControls();
 }
 
 function refreshPreview() {
@@ -4324,19 +4474,13 @@ $('showBaseChk').addEventListener('change', draw);
 $('loadFromGameBtn').addEventListener('click', loadFromGame);
 
 $('playBtn').addEventListener('click', () => {
-  if (!ws.gameLink.exteriorId) { setStatus('Pick a Farm map in Game Link first.'); return; }
-  const layout = buildFarmLayoutV3();
   try {
-    localStorage.setItem(GAME.layoutKey, JSON.stringify(layout));
-    let townMsg = '';
-    if (ws.gameLink.townId) {
-      const tl = buildTownLayout();
-      if (tl) { localStorage.setItem(GAME.townKey, JSON.stringify(tl)); townMsg = ` + town (${tl.tiles.length} tiles)`; }
-    }
-    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor, ${layout.routes.length} routes, ${layout.transitions.length} spots${townMsg} → game`);
+    localStorage.setItem(GAME.workspaceOverrideKey, JSON.stringify(ws));
+    setStatus('Opening game with a one-shot workspace snapshot. Farm data was not overwritten.');
     window.open(GAME.gamePath, '_blank');
   } catch(e) { setStatus('Failed: ' + e.message); }
 });
+$('reflectBtn').addEventListener('click', reflectInGame);
 
 $('exportMapBtn').addEventListener('click', () => {
   const m = activeMap();
@@ -4784,6 +4928,9 @@ async function loadBuildingInteriorMaps() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 resizeCanvas(); updateAll(); fitView();
+const _pendingLiveNavigation = window.MapLivePreview.consumePendingNavigation();
+if (_pendingLiveNavigation) focusLiveSelection(_pendingLiveNavigation);
+_mapLiveEndpoint.send({ type: 'editor-ready', mapId: activeMap()?.id, layoutId: editingLayoutId || 'default' });
 loadAudioCueIndexes();
 loadBuildingInteriorMaps();
 loadTerrainMaterials();

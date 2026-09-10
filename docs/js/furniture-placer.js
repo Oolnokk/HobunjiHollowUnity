@@ -51,7 +51,8 @@
     // Takes the farm editor pencil's own slot by default (empty for
     // virtually every player, since dev mode is off) — only shifts one
     // slot over while dev mode is on and that slot is actually occupied.
-    btn.classList.toggle('fp-shifted', deps.isDevMode());
+    const devSlotOccupied = deps.isDevMode() && (area === 'farm' || document.getElementById('mapEditBtn')?.style.display !== 'none'); // Keeps normal furniture UI clear of either contextual dev editor button.
+    btn.classList.toggle('fp-shifted', devSlotOccupied);
     if (!show && _open) toggle();
   }
 

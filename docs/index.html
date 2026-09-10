@@ -441,7 +441,11 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20260809b"></script>
+  <script src="js/town-zone-buildings.js?v=20260909livepreview1"></script>
+  <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
+       game.js so its private scene state can be injected during setup. -->
+  <script src="js/map-live-preview.js?v=20260909a"></script>
+  <script src="js/map-live-preview-runtime.js?v=20260909a"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -451,7 +455,7 @@
        its own setup, and reads window.DevSpawner.DEV_ARENA_ZONE_ID/
        .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
        window.BanditCamps at that same call-time point. -->
-  <script src="js/dev-spawner.js?v=20260807a"></script>
+  <script src="js/dev-spawner.js?v=20260909livepreview1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped alternative to scrolling the hotbar to a decor item:
        picking a row here just calls selectItemForPlacement(itemKey), the
@@ -459,7 +463,7 @@
        drives, so all placement validation/consumption logic lives in one
        place. Must load before game.js, which calls
        window.FurniturePlacer.init(...) during its own setup. -->
-  <script src="js/furniture-placer.js?v=20260809c"></script>
+  <script src="js/furniture-placer.js?v=20260909livepreview1"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -674,6 +678,10 @@
        farm, for its owner; see _refreshEditorButtonVisibility -->
   <button id="farmEditBtn" aria-label="Toggle farm editor" title="Farm Editor" onclick="window._farmEditor?.toggle()" style="display:none;">✏️</button>
 
+  <!-- Off-farm Dev Mode map-authoring bridge. It deliberately occupies the
+       farm pencil's slot only where the Farm Editor is inapplicable. -->
+  <button id="mapEditBtn" aria-label="Toggle map editor bridge" title="Map Edit" style="display:none;">🗺️</button>
+
   <!-- Dev Testing Arena creature-spawner toggle — same top-right slot as the
        farm editor pencil, shown only while standing in the Testing Arena -->
   <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window.DevSpawner?.toggle()" style="display:none;">🐾</button>
@@ -754,6 +762,42 @@
         <button class="fed-action-btn fed-danger" onclick="window._farmEditor?.clearLayout()">🗑 Clear Saved</button>
       </div>
     </div>
+  </div>
+
+  <!-- Runtime-side half of the live Map Editor workflow. Authoring stays in
+       tools/map-editor; this panel identifies the active runtime map/layout. -->
+  <div id="mapEditPanel" style="display:none;" aria-label="Map editor bridge">
+    <div class="fed-header">
+      <span>🗺️ Map Edit</span>
+      <button class="fed-close" id="mapEditCloseBtn" title="Close Map Edit">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div class="fed-section map-edit-summary">
+        <div class="fed-label">Current runtime map</div>
+        <strong id="mapEditMapName">No editable map</strong>
+        <div class="map-edit-detail">Active layout: <span id="mapEditLayout">Base</span></div>
+        <div id="mapEditConnection" class="map-edit-connection">○ Map Editor not connected</div>
+        <div id="mapEditGeneratedWarning" class="map-edit-warning" style="display:none;">LIVE GENERATED INSTANCE — changes are session previews and may be replaced by a Tothal Shift.</div>
+      </div>
+      <div class="fed-section fed-actions map-edit-actions">
+        <button class="fed-action-btn" id="mapEditOpenBtn">Open Map Editor</button>
+        <button class="fed-action-btn" id="mapEditPickBtn">🎯 Click to Select</button>
+        <button class="fed-action-btn" id="mapEditDebugBtn">Copy Reflection Debug</button>
+      </div>
+      <div class="fed-section" id="mapEditArenaTools" style="display:none;">
+        <div class="fed-label">Testing Arena</div>
+        <button class="fed-action-btn" id="mapEditArenaSpawnBtn">🐾 Creature Spawner</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Latest bridge result</div>
+        <div id="mapEditLastResult" class="map-edit-result">No live reflection yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="mapEditPickHint" style="display:none;position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:80;background:rgba(10,14,10,.94);border:1px solid rgba(90,220,140,.55);border-radius:10px;padding:8px 14px;font-size:12px;color:#b7f7ce;align-items:center;gap:10px;">
+    <span>Click/tap something to edit • Esc to cancel</span>
+    <button id="mapEditPickCancelBtn" style="font:inherit;font-size:11px;padding:2px 8px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);border-radius:6px;color:#f87171;cursor:pointer">Cancel</button>
   </div>
 
   <!-- Dev Testing Arena spawn menu -->
@@ -2311,7 +2355,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260909perspectivepoint6"></script>
+  <script src="game.js?v=20260909livepreview1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260903a"></script>
   <script>

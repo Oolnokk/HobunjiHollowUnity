@@ -149,6 +149,7 @@
   // cycle is skipped entirely. Failed preload keeps the previous fallback.
   let _townBuildingsGlbUpgradePending = false;
   // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
+  let _townSpawnGeneration = 0; // Invalidates async piece loads when live reflection replaces the town scene.
   function spawnTownBuildings() {
     const townScene = deps.getTownScene();
     const townBuildingDefs = deps.getTownBuildingDefs();
@@ -157,6 +158,7 @@
       deps.debugLog('HousePieceGen not loaded — skipping town buildings', 'warn');
       return;
     }
+    const generation = ++_townSpawnGeneration;
 
     // Dispose previous groups
     for (const entry of deps.getTownBuildingGroups()) {
@@ -185,6 +187,7 @@
     }));
 
     Promise.all([_ensureStructureAssets(), pieceLoads]).then(([structureReady, results]) => {
+      if (generation !== _townSpawnGeneration) return;
       const townScene2 = deps.getTownScene();
       if (!townScene2) return;
       const townMap = deps.getTownZone();
@@ -206,6 +209,7 @@
             rotationDeg: bldg.rotationDeg || 0, elevationY,
           });
         }
+        g.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
         townScene2.add(g);
         groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
 
@@ -288,6 +292,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           _townBuildingsGlbUpgradePending = false;
+          if (generation !== _townSpawnGeneration) return;
           _applyBuildingGlbTints();
           const townScene3 = deps.getTownScene();
           if (!townScene3) return;
@@ -310,6 +315,7 @@
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
               rotationDeg: bldg.rotationDeg || 0, elevationY,
             });
+            g.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
             townScene3.add(g);
             upgraded.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
           }
@@ -326,6 +332,7 @@
   // piece-JSON geometry, lifted to their anchor tile's discrete plateau tier
   // plus the same subtle visual-height sample used by terrain. Buildings stay
   // rigid/level: only the whole group's Y origin moves.
+  const _zoneSpawnGeneration = new Map(); // Per-zone invalidation for async live-reflection rebuilds.
   function spawnZoneBuildings(mapId) {
     const zoneData = deps.zoneLayouts.get(mapId);
     const buildingDefs = zoneData?.buildings || [];
@@ -335,6 +342,8 @@
       return;
     }
     if (deps.zoneBuildingGroups.has(mapId)) return; // already spawned for this zone scene
+    const generation = (_zoneSpawnGeneration.get(mapId) || 0) + 1;
+    _zoneSpawnGeneration.set(mapId, generation);
 
     const groups = [];
     deps.zoneBuildingGroups.set(mapId, groups);
@@ -355,6 +364,7 @@
     }));
 
     Promise.all([_ensureStructureAssets(), pieceLoads]).then(([structureReady, results]) => {
+      if (_zoneSpawnGeneration.get(mapId) !== generation) return;
       const scene = deps.zoneScenes.get(mapId)?.scene;
       if (!scene) return;
 
@@ -371,6 +381,7 @@
             rotationDeg: bldg.rotationDeg || 0, elevationY,
           });
         }
+        g.userData.mapEditorRef = { mapId, kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
         scene.add(g);
         groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
       }
@@ -385,6 +396,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           deps.zoneBuildingsGlbUpgradePending.delete(mapId);
+          if (_zoneSpawnGeneration.get(mapId) !== generation) return;
           _applyBuildingGlbTints();
           const scene2 = deps.zoneScenes.get(mapId)?.scene;
           if (!scene2) return;
@@ -405,6 +417,7 @@
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
               rotationDeg: bldg.rotationDeg || 0, elevationY,
             });
+            g.userData.mapEditorRef = { mapId, kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
             scene2.add(g);
             groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
           }
@@ -438,6 +451,7 @@
       const y = deps.NORMAL_TOP + (d.elevTier || 0) * deps.PLATEAU_UNIT;
       result.mesh.position.y += y;
       if (result.light) result.light.position.y += y;
+      result.mesh.userData.mapEditorRef = { mapId, kind: 'decor', id: d.id || null, key: d.key, col: d.col, row: d.row };
       meshes.push(result.mesh);
     }
     for (const f of furnitureDefs) {
@@ -448,6 +462,7 @@
       group.position.set(f.col + 0.5, y, f.row + 0.5);
       deps.markOutline(group);
       deps.markFurnitureEdgeId(group);
+      group.userData.mapEditorRef = { mapId, kind: 'furniture', id: f.id || null, key: f.key, col: f.col, row: f.row };
       scene.add(group);
       meshes.push(group);
       window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, window.Music?.resolveFurnitureSfx(def));
