@@ -235,16 +235,22 @@
       cuttableBillboardGlowMat = new THREE.ShaderMaterial({
         uniforms: {
           uGrassTex: { value: tex },
+          uTime: grassBillboardMat.uniforms.uTime, // Shared so the selection highlight sways in exact lockstep with the weed cards.
+          uStrength: grassBillboardMat.uniforms.uStrength, // Shared so wind amplitude cannot drift between weed and highlight.
+          uDensity: grassBillboardMat.uniforms.uDensity, // Shared so seasonally hidden weed planes are also omitted from the highlight.
           uColor: { value: new THREE.Color(deps.combatConfig().cuttableTargetGlow?.color || '#ff2a1f') },
           uAlpha: { value: Number(deps.combatConfig().cuttableTargetGlow?.alpha) || 0.42 }
         },
         vertexShader: _grassBillVert,
         fragmentShader: `
           uniform sampler2D uGrassTex;
+          uniform float uDensity;
           uniform vec3 uColor;
           uniform float uAlpha;
           varying vec2 vUv;
+          varying float vRandom;
           void main() {
+            if (vRandom > uDensity) discard;
             vec4 texel = texture2D(uGrassTex, vUv);
             if (texel.a < 0.5) discard;
             gl_FragColor = vec4(uColor, uAlpha * texel.a);
@@ -306,8 +312,10 @@
     }
     cuttableBillboardGlowMat.uniforms.uColor.value.set(deps.combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
     cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(deps.combatConfig().cuttableTargetGlow?.alpha) || 0.42;
+    const tile = deps.getGrid()?.[row]?.[col]; // Used here to match the selected weed billboard's elevation tier exactly.
+    const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT; // Passed into the same billboard transform helper used by the visible weed.
     const dummy = new THREE.Object3D();
-    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, 0, 0.75, 0.75, WEED_PAIR_TILT);
+    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, tierY, 0.75, 0.75, WEED_PAIR_TILT);
     cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
   }
 
