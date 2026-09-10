@@ -112,6 +112,7 @@
     g.translate(0, 0.5, 0);
     return g;
   })();
+  const WEED_PAIR_TILT = THREE.MathUtils.degToRad(20); // Used by weed billboard pairs to splay their tops 40° total from one bottom origin.
 
   const _grassBillVert = `
     uniform float uTime;
@@ -259,10 +260,10 @@
     });
   }
 
-  // Fills 14 crosses (28 blades) worth of instance matrices for one tile
-  // into `mesh` starting at `startIdx`; widthMul/heightMul optionally reshape
-  // only the requested caller while preserving the shared random blade sizes.
-  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0, widthMul = 1, heightMul = 1) {
+  // Fills 14 billboard pairs (28 planes) worth of instance matrices for one tile.
+  // pairTiltRad=0 preserves the normal perpendicular grass cross; a nonzero
+  // value gives both planes one yaw/origin and opposite local-X tilts.
+  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0, widthMul = 1, heightMul = 1, pairTiltRad = 0) {
     const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
     const baseY = deps.tileSurfaceY(deps.TileType.GRASS) + yOffset;
     let idx = startIdx;
@@ -275,14 +276,24 @@
       const px  = col + 0.5 + ox, pz = row + 0.5 + oz;
 
       dummy.position.set(px, baseY, pz);
-      dummy.rotation.set(0, rot, 0);
       dummy.scale.set(w, h, 1);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(idx++, dummy.matrix);
+      if (pairTiltRad) {
+        dummy.rotation.set(pairTiltRad, rot, 0, 'YXZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
 
-      dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(idx++, dummy.matrix);
+        dummy.rotation.set(-pairTiltRad, rot, 0, 'YXZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
+      } else {
+        dummy.rotation.set(0, rot, 0, 'XYZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
+
+        dummy.rotation.set(0, rot + Math.PI * 0.5, 0, 'XYZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
+      }
     }
     return idx;
   }
@@ -296,7 +307,7 @@
     cuttableBillboardGlowMat.uniforms.uColor.value.set(deps.combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
     cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(deps.combatConfig().cuttableTargetGlow?.alpha) || 0.42;
     const dummy = new THREE.Object3D();
-    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, 0, 0.75, 0.75);
+    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, 0, 0.75, 0.75, WEED_PAIR_TILT);
     cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -342,7 +353,7 @@
         if (tile.type === deps.TileType.GRASS && !pavedRoad) {
           gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
         } else if (tile.type === deps.TileType.WEEDS && !deps.getWeed3D()) {
-          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY, 0.75, 0.75);
+          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY, 0.75, 0.75, WEED_PAIR_TILT);
         }
       }
     }
