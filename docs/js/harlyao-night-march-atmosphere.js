@@ -1,23 +1,23 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = 'config/harlyao-night-march.json'; // Shared march config owns zone darkness plus Terror tuning.
-  const FALLBACK_LANTERN = Object.freeze({ radiusTiles: 2.4, clarityRadiusTiles: 0.95, centerMaskAlpha: 0.92, clarityMaskAlpha: 0.80, softMaskAlpha: 0.28, softTransitionFraction: 0.18 }); // Mirrors the unified lighting defaults if atmosphere tuning has not loaded yet.
+  const CONFIG_URL = 'config/harlyao-night-march.json';
+  const FALLBACK_LANTERN = Object.freeze({ radiusTiles: 2.4, clarityRadiusTiles: 0.95, centerMaskAlpha: 0.92, clarityMaskAlpha: 0.80, softMaskAlpha: 0.28, softTransitionFraction: 0.18 });
 
-  let config = null; // Parsed march config used to resolve the requested darkness multiplier.
-  let lightingDeps = null; // WeatherFX dependencies used to redraw the exact existing lantern and furniture-light holes after the extra darkness pass.
-  let installed = false; // Prevents duplicate WeatherFX wrappers in dynamic/dev loading orders.
-  let priorWeatherInit = null; // Preserves the unified WeatherFX init chain.
-  let priorDrawLightingOverlay = null; // Preserves CloudForestFog's current full-day lighting authority.
-  let cameraRight = null; // Reused Three.js vector for camera-relative screen-radius projection.
-  let extraDraws = 0; // Mobile diagnostics count actual extra darkness redraws rather than game-loop calls.
+  let config = null;
+  let lightingDeps = null;
+  let installed = false;
+  let priorDrawLightingOverlay = null;
+  let cameraRight = null;
+  let extraDraws = 0;
+  let drawInstalls = 0;
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
 
   async function loadConfig() {
     if (config) return config;
     try {
-      const response = await fetch(CONFIG_URL); // Browser cache normally shares this with the march/music/Terror controllers.
+      const response = await fetch(CONFIG_URL);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       config = await response.json();
       return config;
@@ -28,7 +28,7 @@
   }
 
   function activeSnapshot(area = lightingDeps?.getCurrentArea?.()) {
-    const snapshot = window.HarlyaoNightMarch?.debugSnapshot?.(); // One authoritative nightly route source; no duplicate schedule math here.
+    const snapshot = window.HarlyaoNightMarch?.debugSnapshot?.();
     if (!snapshot?.scheduled || snapshot.scheduled.zoneId !== area) return null;
     return snapshot;
   }
@@ -40,25 +40,25 @@
 
   function terrorDarknessAlpha(area = lightingDeps?.getCurrentArea?.()) {
     if (!activeSnapshot(area)) return 0;
-    return clamp01(window.HarlyaoTerror?.getDarknessAlpha?.() || 0); // Cached Terror stacks own incremental unlit darkness; no distance math happens in the renderer.
+    return clamp01(window.HarlyaoTerror?.getDarknessAlpha?.() || 0);
   }
 
   function terrorLanternRadiusMultiplier(area = lightingDeps?.getCurrentArea?.()) {
     if (!activeSnapshot(area)) return 1;
-    return Math.max(0.1, Math.min(1, Number(window.HarlyaoTerror?.getLanternRadiusMultiplier?.()) || 1)); // Six stacks reaches the authored 50% floor.
+    return Math.max(0.1, Math.min(1, Number(window.HarlyaoTerror?.getLanternRadiusMultiplier?.()) || 1));
   }
 
   function lanternTuning() {
     const live = window.CloudForestFog?.getDebugState?.()?.tuning?.lantern;
-    const base = live ? { ...FALLBACK_LANTERN, ...live } : { ...FALLBACK_LANTERN }; // Uses the same live Settings/config values as the first lighting pass.
-    const radiusMul = terrorLanternRadiusMultiplier(); // Scales both radii together so the lantern falloff profile keeps its authored proportions.
+    const base = live ? { ...FALLBACK_LANTERN, ...live } : { ...FALLBACK_LANTERN };
+    const radiusMul = terrorLanternRadiusMultiplier();
     base.radiusTiles *= radiusMul;
     base.clarityRadiusTiles *= radiusMul;
     return base;
   }
 
   function lightScreenRadius(x, z, y, tiles) {
-    if (!cameraRight) cameraRight = new window.THREE.Vector3(); // Allocated once after THREE exists.
+    if (!cameraRight) cameraRight = new window.THREE.Vector3();
     cameraRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
     const center = lightingDeps.worldToOverlay(x, y, z);
     const edge = lightingDeps.worldToOverlay(
@@ -71,7 +71,7 @@
 
   function drawLanternMasks() {
     const ctx = lightingDeps.lctx;
-    const tuning = lanternTuning(); // Player/watch lantern shape with Terror's cached radius multiplier applied.
+    const tuning = lanternTuning();
     const carriers = [{
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
@@ -104,7 +104,7 @@
 
   function drawFurnitureLightMasks() {
     const ctx = lightingDeps.lctx;
-    const visible = []; // Stores projected real light sources so the existing warm glow can be redrawn after clearing the extra darkness.
+    const visible = [];
     for (const light of (lightingDeps.getFurnitureLightSources?.() || [])) {
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
       if (!center.visible) continue;
@@ -145,9 +145,9 @@
   }
 
   function currentOutdoorLighting() {
-    const base = window.HobunjiSkyDome?.getLightingState?.() || window.WeatherFX?.getLightingState?.(); // Same full-day color source used by CloudForestFog's unified base pass.
+    const base = window.HobunjiSkyDome?.getLightingState?.() || window.WeatherFX?.getLightingState?.();
     if (!base || !Number.isFinite(Number(base.a))) return null;
-    const lunarAddition = Number(window.CloudForestFog?.getDebugState?.()?.lunarDarknessAddition) || 0; // Preserves the existing lunar-phase darkness adjustment.
+    const lunarAddition = Number(window.CloudForestFog?.getDebugState?.()?.lunarDarknessAddition) || 0;
     return {
       r: Number(base.r) || 0,
       g: Number(base.g) || 0,
@@ -161,25 +161,22 @@
     const multiplier = darknessMultiplier(area);
     if (multiplier <= 1) return;
     const light = currentOutdoorLighting();
-    if (!light || light.a < 0.09) return; // March hours are nighttime; never duplicate daytime screen-brightening behavior.
+    if (!light || light.a < 0.09) return;
 
     const ctx = lightingDeps.lctx;
     const rect = lightingDeps.getThreeRect();
-    const extraPasses = Math.max(1, Math.round(multiplier - 1)); // A multiplier of 2 means one additional copy of the exact existing darkness pass.
+    const extraPasses = Math.max(1, Math.round(multiplier - 1));
     ctx.globalCompositeOperation = 'multiply';
     ctx.fillStyle = `rgba(${light.r}, ${light.g}, ${light.b}, ${light.a})`;
     for (let index = 0; index < extraPasses; index++) ctx.fillRect(0, 0, rect.width, rect.height);
 
-    const terrorAlpha = terrorDarknessAlpha(area); // One additional black layer scales linearly with cached Terror stacks.
+    const terrorAlpha = terrorDarknessAlpha(area);
     if (terrorAlpha > 0) {
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = `rgba(0,0,0,${terrorAlpha})`;
       ctx.fillRect(0, 0, rect.width, rect.height);
     }
     ctx.globalCompositeOperation = 'source-over';
-
-    // Global darkness is applied first, then local-light holes are punched back out.
-    // Terror narrows only carried/watch lantern radii; furniture/light-source radii remain authored so the added darkness affects unlit regions rather than nerfing every world light.
     drawLanternMasks();
     drawFurnitureLightMasks();
     extraDraws++;
@@ -188,7 +185,7 @@
   function drawWithRedrawDetection(...args) {
     if (!lightingDeps?.lctx) return priorDrawLightingOverlay.apply(this, args);
     const ctx = lightingDeps.lctx;
-    const originalClearRect = ctx.clearRect; // CloudForestFog starts every real 10Hz lighting redraw with clearRect; observing it avoids stacking extra darkness on skipped frames.
+    const originalClearRect = ctx.clearRect;
     let redrew = false;
     try {
       ctx.clearRect = function harlyaoObservedClearRect(...clearArgs) {
@@ -206,24 +203,37 @@
 
     const area = lightingDeps.getCurrentArea?.();
     if (!activeSnapshot(area)) return result;
-    if ((Number(lightingDeps.getLightningAlpha?.()) || 0) > 0) return result; // Lightning should remain a flash on top of darkness, not be immediately multiplied back down.
-    if ((Number(lightingDeps.getSceneTransAlpha?.()) || 0) > 0) return result; // Never punch lantern holes through a fade-to-black transition.
+    if ((Number(lightingDeps.getLightningAlpha?.()) || 0) > 0) return result;
+    if ((Number(lightingDeps.getSceneTransAlpha?.()) || 0) > 0) return result;
     applyExtraDarkness();
     return result;
   }
 
   function install(api = window.WeatherFX) {
-    if (installed) return true;
     if (!api || typeof api.init !== 'function' || typeof api.drawLightingOverlay !== 'function') return false;
-    priorWeatherInit = api.init;
-    priorDrawLightingOverlay = api.drawLightingOverlay;
-    api.init = function harlyaoAtmosphereInit(injectedDeps) {
-      lightingDeps = injectedDeps;
-      return priorWeatherInit.call(this, injectedDeps);
-    };
-    api.drawLightingOverlay = drawWithRedrawDetection;
+
+    if (!api.__harlyaoNightMarchAtmosphereInitWrapped) {
+      const originalInit = api.init;
+      api.init = function harlyaoAtmosphereInit(injectedDeps) {
+        lightingDeps = injectedDeps;
+        return originalInit.call(this, injectedDeps);
+      };
+      api.__harlyaoNightMarchAtmosphereInitWrapped = true;
+    }
+
+    if (!api.drawLightingOverlay.__harlyaoNightMarchAtmosphereWrapped) {
+      priorDrawLightingOverlay = api.drawLightingOverlay;
+      const wrappedDraw = function harlyaoAtmosphereLightingOverlay(...args) {
+        return drawWithRedrawDetection.apply(this, args);
+      };
+      Object.assign(wrappedDraw, priorDrawLightingOverlay);
+      wrappedDraw.__harlyaoNightMarchAtmosphereWrapped = true;
+      api.drawLightingOverlay = wrappedDraw;
+      drawInstalls++;
+    }
+
     api.__harlyaoNightMarchAtmosphere = true;
-    installed = true;
+    installed = !!api.drawLightingOverlay.__harlyaoNightMarchAtmosphereWrapped;
     return true;
   }
 
@@ -231,7 +241,7 @@
     const area = lightingDeps?.getCurrentArea?.() || null;
     return {
       configReady: !!config,
-      installed,
+      installed: !!window.WeatherFX?.drawLightingOverlay?.__harlyaoNightMarchAtmosphereWrapped,
       active: !!activeSnapshot(area),
       area,
       darknessMultiplier: darknessMultiplier(area),
@@ -239,12 +249,13 @@
       terrorDarknessAlpha: terrorDarknessAlpha(area),
       lanternRadiusMultiplier: terrorLanternRadiusMultiplier(area),
       extraDraws,
+      drawInstalls,
       preservesLanternMasks: true,
       preservesFurnitureLightMasks: true,
     };
   }
 
-  window.HarlyaoNightMarchAtmosphere = Object.freeze({ install, loadConfig, debugSnapshot }); // Exposed for mobile QA and static regressions.
-  install(); // Must wrap WeatherFX before Ghostify so the spectral formation/beacon glow is drawn after this extra darkness pass.
+  window.HarlyaoNightMarchAtmosphere = Object.freeze({ install, loadConfig, debugSnapshot });
+  install();
   loadConfig();
 })();
