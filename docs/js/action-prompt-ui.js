@@ -15,6 +15,10 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  function getLastInputDevice() {
+    return deps?.getLastInputDevice?.() || null;
+  } // Shared by HUD affordances that need to mirror the same canonical last-input state as world action prompts.
+
   let actionPromptEls = null;
   function buildActionPromptDom() {
     if (actionPromptEls) return;
@@ -45,7 +49,7 @@
   // icon already shown for that action in the tool arch (see e.g. the
   // harpoon's 🎣 fallback in _openToolArc).
   function actionPromptGlyph(actionId, touchIcon) {
-    const lastInputDevice = deps.getLastInputDevice();
+    const lastInputDevice = getLastInputDevice();
     if (lastInputDevice === 'controller') return window.InputBindings.buttonLabel(deps.inputBindings.controller[actionId]);
     if (lastInputDevice === 'touch') return touchIcon || '👆';
     return window.InputBindings.buttonLabel(deps.inputBindings.desktop[actionId]);
@@ -64,7 +68,7 @@
     // button's actual equipped-tool sprite instead of a plain emoji —
     // callers only ever pass static developer strings here, never
     // untrusted input, so this is safe.
-    const lastInputDevice = deps.getLastInputDevice();
+    const lastInputDevice = getLastInputDevice();
     actionPromptEls.btn.innerHTML = lastInputDevice === 'touch' ? `${glyph} ${verb}` : `[${glyph}] ${verb}`;
     actionPromptEls.btn.onpointerup = (e) => { e.stopPropagation(); onPress?.(); };
     if (cancelText && onCancel) {
@@ -99,6 +103,6 @@
   }
 
   window.ActionPromptUI = {
-    init, buildActionPromptDom, actionPromptGlyph, actionPromptColor, showActionPrompt, hideActionPrompt,
+    init, getLastInputDevice, buildActionPromptDom, actionPromptGlyph, actionPromptColor, showActionPrompt, hideActionPrompt,
   };
 })();
