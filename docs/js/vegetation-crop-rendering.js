@@ -260,16 +260,17 @@
   }
 
   // Fills 14 crosses (28 blades) worth of instance matrices for one tile
-  // into `mesh` starting at `startIdx`; returns the next free index.
-  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0) {
+  // into `mesh` starting at `startIdx`; widthMul/heightMul optionally reshape
+  // only the requested caller while preserving the shared random blade sizes.
+  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0, widthMul = 1, heightMul = 1) {
     const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
     const baseY = deps.tileSurfaceY(deps.TileType.GRASS) + yOffset;
     let idx = startIdx;
     for (let b = 0; b < 14; b++) {
       const ox  = (rand() - 0.5) * 0.9;
       const oz  = (rand() - 0.5) * 0.9;
-      const w   = (0.16 + rand() * 0.10) * sizeMul;
-      const h   = (0.22 + rand() * 0.14) * sizeMul;
+      const w   = (0.16 + rand() * 0.10) * sizeMul * widthMul;
+      const h   = (0.22 + rand() * 0.14) * sizeMul * heightMul;
       const rot = rand() * Math.PI;
       const px  = col + 0.5 + ox, pz = row + 0.5 + oz;
 
@@ -295,7 +296,7 @@
     cuttableBillboardGlowMat.uniforms.uColor.value.set(deps.combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
     cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(deps.combatConfig().cuttableTargetGlow?.alpha) || 0.42;
     const dummy = new THREE.Object3D();
-    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0);
+    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, 0, 0.75, 0.5);
     cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -341,7 +342,7 @@
         if (tile.type === deps.TileType.GRASS && !pavedRoad) {
           gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
         } else if (tile.type === deps.TileType.WEEDS && !deps.getWeed3D()) {
-          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
+          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY, 0.75, 0.5);
         }
       }
     }
@@ -624,6 +625,7 @@
           const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
           if (wm) {
             wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
+            wm.scale.set(0.75, 0.5, 0.75); // Weed-only width/height reduction; keeps placement and density unchanged.
             vegGroup.add(wm);
           }
         }
