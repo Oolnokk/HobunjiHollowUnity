@@ -75,6 +75,15 @@
       postAim: record.postAim || null,
       tileSubdivisionApplied: true,
       tileSubdivisionCenterDisplacement: subdivisionY,
+      // Recognized by the Map Live Preview click-to-select raycast
+      // (logicalOwner in map-live-preview-runtime.js checks for any
+      // truthy mapEditorRef) so clicking a sign in-game reports its
+      // identity instead of silently missing. kind is deliberately not
+      // 'decor'/'furniture': these placements live in the static
+      // town-sign-furniture-config.js file, not a map's workspace
+      // decor/furniture array, so there is nothing for the drag gizmo
+      // to write a transform back to.
+      mapEditorRef: { mapId: 'map_hobunji_town', kind: 'townSign', id: record.id || null, key: record.key, col: record.col, row: record.row },
     };
     deps.markOutline?.(group);
     deps.markFurnitureEdgeId?.(group);

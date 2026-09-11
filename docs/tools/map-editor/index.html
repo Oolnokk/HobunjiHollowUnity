@@ -1781,9 +1781,11 @@ let _stationPaintMode = false; // painting the active station's wanderShapeTiles
 let _stationPaintRadius = 1; // brush size (tiles) for station shape painting — 1 keeps the original single-tile toggle-on-click behavior
 let activeRampId = null;   // ramp being extended in ramp mode
 let activeRampNodeIndex = null; // selected node index in active ramp
+let selectedPlacement = null; // {kind:'decor'|'furniture', id} clicked in decor/furniture mode — Delete/Backspace removes it (see applyAt/handleDeleteKey)
 
 function setMode(m) {
   mode = m;
+  selectedPlacement = null;
   document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.classList.toggle('act', b.dataset.mode === m));
   $('modePill').textContent = `Mode: ${m}`;
   renderPalette();
@@ -3013,7 +3015,9 @@ function draw() {
   (m.furniture || []).forEach(f => {
     const info = PROCESSORS[f.key]; if (!info) return;
     const p = w2s(f.col, f.row);
-    ctx.fillStyle = 'rgba(202,164,94,.4)'; ctx.fillRect(p.x+1, p.y+1, z-2, z-2);
+    const isSel = selectedPlacement?.kind === 'furniture' && selectedPlacement.id === f.id;
+    ctx.fillStyle = isSel ? 'rgba(250,204,21,.5)' : 'rgba(202,164,94,.4)'; ctx.fillRect(p.x+1, p.y+1, z-2, z-2);
+    if (isSel) { ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.strokeRect(p.x+1, p.y+1, z-2, z-2); ctx.lineWidth = 1; }
     if (z > 9) ctx.fillText(info.icon, p.x + z/2, p.y + z/2);
   });
   // Decor (with footprints) — from the currently-edited layout if one is
@@ -3022,9 +3026,11 @@ function draw() {
   activeDecor(m).forEach(d => {
     const info = DECOR[d.key]; if (!info) return;
     const p = w2s(d.col, d.row);
-    ctx.fillStyle = 'rgba(167,139,250,.35)'; ctx.fillRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
-    ctx.strokeStyle = 'rgba(167,139,250,.7)'; ctx.lineWidth = 1;
+    const isSel = selectedPlacement?.kind === 'decor' && selectedPlacement.id === d.id;
+    ctx.fillStyle = isSel ? 'rgba(250,204,21,.45)' : 'rgba(167,139,250,.35)'; ctx.fillRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
+    ctx.strokeStyle = isSel ? '#facc15' : 'rgba(167,139,250,.7)'; ctx.lineWidth = isSel ? 2 : 1;
     ctx.strokeRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
+    ctx.lineWidth = 1;
     if (z > 9) ctx.fillText(info.icon, p.x + info.fw*z/2, p.y + info.fd*z/2);
   });
   // Shared routes
@@ -3253,13 +3259,27 @@ function applyAt(tile) {
   } else if (mode === 'object' && m.category === 'exterior') {
     m.objects[brush.object] = [c, r];
   } else if (mode === 'furniture' && m.category === 'exterior') {
-    if (!m.furniture.some(f => f.col === c && f.row === r)) m.furniture.push({ id: uid('furn'), key: brush.furniture, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
+    // Clicking an already-placed piece selects it (Delete/Backspace removes
+    // it — see handleDeleteKey) instead of silently doing nothing; clicking
+    // an empty cell places a new one, same as before.
+    const existingFurniture = m.furniture.find(f => f.col === c && f.row === r);
+    if (existingFurniture) {
+      selectedPlacement = { kind: 'furniture', id: existingFurniture.id };
+      setStatus(`Selected ${PROCESSORS[existingFurniture.key]?.label || existingFurniture.key} at (${c},${r}). Press Delete to remove.`);
+    } else {
+      m.furniture.push({ id: uid('furn'), key: brush.furniture, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
+      selectedPlacement = null;
+    }
   } else if (mode === 'decor') {
     const info = DECOR[brush.decor];
     const decorArr = activeDecor(m);
-    if (info && c + info.fw <= m.cols && r + info.fd <= m.rows
-        && !decorArr.some(d => overlaps(d, c, r, info.fw, info.fd))) {
+    const existingDecor = decorArr.find(d => overlaps(d, c, r, 1, 1));
+    if (existingDecor) {
+      selectedPlacement = { kind: 'decor', id: existingDecor.id };
+      setStatus(`Selected ${DECOR[existingDecor.key]?.label || existingDecor.key} at (${existingDecor.col},${existingDecor.row}). Press Delete to remove.`);
+    } else if (info && c + info.fw <= m.cols && r + info.fd <= m.rows) {
       decorArr.push({ id: uid('decor'), key: brush.decor, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
+      selectedPlacement = null;
     }
   } else if (mode === 'entry') {
     if (!activeEntryId) { setStatus('Select (or create) an entry point first.'); return; }
@@ -3382,10 +3402,11 @@ function applyAt(tile) {
     }
     else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
-    const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }
+    const fi = m.furniture.findIndex(f => f.col===c && f.row===r);
+    if (fi >= 0) { if (m.furniture[fi].id === selectedPlacement?.id) selectedPlacement = null; m.furniture.splice(fi,1); did = true; }
     const decorArr = activeDecor(m);
     const di = decorArr.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
-    if (di >= 0) { decorArr.splice(di,1); did = true; }
+    if (di >= 0) { if (decorArr[di].id === selectedPlacement?.id) selectedPlacement = null; decorArr.splice(di,1); did = true; }
     ((m.routes || []).concat(m.npcPaths || [])).forEach(p => {
       for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
     });
@@ -3612,7 +3633,28 @@ canvas.addEventListener('wheel', e => {
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || (e.shiftKey && e.code === 'KeyZ'))) { e.preventDefault(); redo(); }
+  if ((e.code === 'Delete' || e.code === 'Backspace') && selectedPlacement && !isTypingTarget(e.target)) {
+    e.preventDefault();
+    deleteSelectedPlacement();
+  }
 });
+function isTypingTarget(el) {
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
+function deleteSelectedPlacement() {
+  if (!selectedPlacement) return;
+  const m = activeMap();
+  if (selectedPlacement.kind === 'furniture') {
+    const idx = m.furniture.findIndex(f => f.id === selectedPlacement.id);
+    if (idx >= 0) { m.furniture.splice(idx, 1); setStatus('Furniture deleted.'); }
+  } else if (selectedPlacement.kind === 'decor') {
+    const decorArr = activeDecor(m);
+    const idx = decorArr.findIndex(d => d.id === selectedPlacement.id);
+    if (idx >= 0) { decorArr.splice(idx, 1); setStatus('Decor deleted.'); }
+  }
+  selectedPlacement = null;
+  draw(); refreshPreview(); saveWorkspace();
+}
 
 // ── Map management UI ────────────────────────────────────────────────────────
 // Depth-first ordering: each submap is listed right after its parent (and its
@@ -3641,7 +3683,7 @@ function renderMapList() {
   }).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
     ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
-    activeEntryId = null; editingLayoutId = null;
+    activeEntryId = null; editingLayoutId = null; selectedPlacement = null;
     updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);

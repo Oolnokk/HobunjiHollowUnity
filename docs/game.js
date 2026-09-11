@@ -2361,6 +2361,11 @@
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
         'feedGrinder', 'trough', 'campfire', 'mineLadder',
+        // Town business signs (see town-sign-furniture-config.js/-runtime.js).
+        // Without these, buildFurnitureVisual falls back to
+        // ProceduralFurniture, which has no recipe for either key and
+        // silently returns an empty group — the signs never render at all.
+        'generalStoreSign', 'innSign',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -11776,7 +11781,7 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -11852,6 +11857,7 @@
         if (_townSceneBuilt && townScene && !options.deferTownSceneRefresh) {
           _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
           window.TownZoneBuildings.spawnTownBuildings();
+          window.TownZoneBuildings.spawnTownDecorFurniture();
         }
       }
 
@@ -13711,6 +13717,7 @@
         // Generate 3D buildings from rock-tile clusters
         _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
         window.TownZoneBuildings.spawnTownBuildings();
+        window.TownZoneBuildings.spawnTownDecorFurniture();
 
         debugLog('buildTownScene complete');
       }
