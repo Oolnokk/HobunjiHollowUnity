@@ -18,7 +18,7 @@
   const OVERRIDE_KEY_PREFIX = 'hobunji_local_db_override_v1_';
   const NPC_SCHEDULE_OVERRIDES_PATH = 'config/npcs/schedule-overrides.json'; // Runtime-authored schedule corrections kept out of game.js and the giant NPC database.
   const NPC_PLAYER_NICKNAME_OVERRIDES_PATH = 'config/npcs/player-nickname-overrides.json'; // Small reviewed copy fixes for generated-feeling player-address entries.
-  const NPC_SPECIES_OVERRIDES_PATH = 'config/npcs/species-overrides.json'; // Reviewed named-NPC species corrections composed into every NPC database source.
+  const NPC_SPECIES_OVERRIDES_PATH = 'config/npcs/species-overrides.json'; // Reviewed named-NPC species/avatar corrections composed into every NPC database source.
   const CREATURE_BESTIARY_PATH = 'config/creatures/hobunji-creature-bestiary.json'; // Supplies selectable animal species plus runtime model metadata to the named-animal bridge.
   const NPC_SCHEDULE_WEEKDAYS = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used to expand presence-dependent schedule choices deterministically at load time.
   const LOCAL_DB_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Resolves docs-root resources correctly from nested authoring tools.
@@ -82,10 +82,10 @@
     const data = _readEnvelope(id)?.data ?? null; // Fresh parsed local override returned to the requesting editor/runtime.
     if (id !== 'npcDatabase' || !data) return data;
     if (npcSpeciesOverridesCache) {
-      _applyNpcSpeciesOverridesInPlace(data, npcSpeciesOverridesCache); // Corrects stale saved animal species before a caller imports the override when metadata is already ready.
+      _applyNpcSpeciesOverridesInPlace(data, npcSpeciesOverridesCache); // Corrects stale saved animal species/avatar data before a caller imports the override when metadata is already ready.
     } else if (NATIVE_FETCH) {
       _loadNpcSpeciesOverrides().then(overrides => {
-        if (overrides) _applyNpcSpeciesOverridesInPlace(data, overrides); // Mutates the same object Character Studio imported, so old local Banubu/Hiki records self-migrate in memory without replacing user data.
+        if (overrides) _applyNpcSpeciesOverridesInPlace(data, overrides); // Mutates the same object Character Studio imported, so old local named-animal records self-migrate in memory without replacing unrelated user data.
       }).catch(() => {});
     }
     return data;
@@ -118,12 +118,34 @@
 
   function _applyNpcSpeciesOverridesInPlace(npcDatabase, speciesOverrides) {
     if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
-    const overrides = speciesOverrides?.npcs; // Reviewed npcId -> authoritative species entries applied below.
+    const overrides = speciesOverrides?.npcs; // Reviewed npcId -> authoritative species/avatar entries applied below.
     if (!overrides || typeof overrides !== 'object') return npcDatabase;
     for (const npc of npcDatabase.npcs) {
       const override = overrides[npc?.id]; // Named correction for this record, if one is explicitly reviewed.
       const species = normalizeNpcSpeciesId(override?.species); // Canonical species id shared by NPC identity, dialogue, portrait, and world rendering.
       if (!species) continue;
+
+      const avatarExport = override?.avatarExport;
+      if (avatarExport && typeof avatarExport === 'object' && !Array.isArray(avatarExport)) {
+        const authoredAppearance = avatarExport.appearance && typeof avatarExport.appearance === 'object' && !Array.isArray(avatarExport.appearance)
+          ? JSON.parse(JSON.stringify(avatarExport.appearance))
+          : null; // Exact Character Studio appearance supplied by the reviewed sidecar, when present.
+        if (authoredAppearance) npc.appearance = authoredAppearance;
+        if (Object.prototype.hasOwnProperty.call(avatarExport, 'equippedCosmetics')) {
+          npc.equippedCosmetics = JSON.parse(JSON.stringify(avatarExport.equippedCosmetics ?? []));
+        }
+        if (Object.prototype.hasOwnProperty.call(avatarExport, 'appliedDyes')) {
+          npc.appliedDyes = JSON.parse(JSON.stringify(avatarExport.appliedDyes ?? {}));
+        }
+        npc.avatarEditor = {
+          ...(npc.avatarEditor || {}),
+          sourceFormat: 'npc_avatar_editor_export',
+          rawExport: JSON.parse(JSON.stringify(avatarExport)),
+        }; // Prevents stale raw avatar exports from winning over the newly-authored repo default in Character Studio.
+        const authoredGender = String(authoredAppearance?.gender || '').trim();
+        if (authoredGender) npc.gender = authoredGender;
+      }
+
       npc.species = species;
       npc.appearance = { ...(npc.appearance || {}), speciesId: species };
       if (override?.kind === 'animal') {
@@ -228,10 +250,10 @@
       const response = await priorFetch.call(this, input, init); // Original network response preserved when composition is irrelevant or unavailable.
       if (!_isNpcDatabaseRequest(input) || !response?.ok || typeof Response === 'undefined') return response;
       try {
-        const overrides = await _loadNpcSpeciesOverrides(); // Reviewed species overlay applied even when Character Studio deliberately bypasses local overrides.
+        const overrides = await _loadNpcSpeciesOverrides(); // Reviewed species/avatar overlay applied even when Character Studio deliberately bypasses local overrides.
         if (!overrides) return response;
         const data = await response.clone().json(); // Clone keeps the original response recoverable if JSON/composition fails.
-        const composed = applyNpcSpeciesOverrides(data, overrides); // Corrects Banubu/Hiki-hiki before the editor/game ever sees the records.
+        const composed = applyNpcSpeciesOverrides(data, overrides); // Corrects named-animal species and authored avatar defaults before the editor/game ever sees the records.
         const headers = typeof Headers !== 'undefined' ? new Headers(response.headers) : undefined; // Carries normal response metadata without stale body length.
         headers?.delete?.('content-length');
         headers?.set?.('content-type', 'application/json');
@@ -241,7 +263,7 @@
           headers,
         });
       } catch (error) {
-        console.warn('[LocalDBOverrides] Could not compose NPC species into direct database fetch:', error);
+        console.warn('[LocalDBOverrides] Could not compose NPC species/avatar overrides into direct database fetch:', error);
         return response;
       }
     };
@@ -572,9 +594,9 @@
     if (id !== 'npcDatabase') return data;
     let composed = data; // Used to carry independent species, schedule, nickname, and shop composition forward even if any optional source fails.
     try {
-      composed = applyNpcSpeciesOverrides(composed, await _loadNpcSpeciesOverrides()); // Makes npc.species authoritative before any downstream dialogue/avatar consumer sees the record.
+      composed = applyNpcSpeciesOverrides(composed, await _loadNpcSpeciesOverrides()); // Makes npc.species and reviewed avatar defaults authoritative before any downstream dialogue/avatar consumer sees the record.
     } catch (error) {
-      console.warn('[LocalDBOverrides] Could not compose NPC species overrides:', error);
+      console.warn('[LocalDBOverrides] Could not compose NPC species/avatar overrides:', error);
     }
     try {
       const resp = await fetch(NPC_SCHEDULE_OVERRIDES_PATH); // Used to load small repo-authored schedule corrections independently of local database selection.
