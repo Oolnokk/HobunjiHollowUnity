@@ -87,6 +87,33 @@ new vm.Script(ghostSource, { filename: 'ghostify.js' });
 new vm.Script(atmosphereSource, { filename: 'harlyao-night-march-atmosphere.js' });
 new vm.Script(banditCampsSource, { filename: 'bandit-camps.js' });
 
+const chainContext = {
+  console,
+  performance: { now: () => 0 },
+  fetch: async () => ({ ok: true, json: async () => config }),
+  window: {
+    WeatherFX: { init() {}, drawLightingOverlay() {} },
+    BanditCombat: { init() {} },
+    HarlyaoNightMarch: { debugSnapshot: () => null },
+    setInterval: () => 0,
+    clearInterval: () => {},
+    __farmLog: () => {},
+  },
+};
+vm.runInNewContext(atmosphereSource, chainContext, { filename: 'harlyao-night-march-atmosphere.js' });
+vm.runInNewContext(ghostSource, chainContext, { filename: 'ghostify.js' });
+vm.runInNewContext(beaconSource, chainContext, { filename: 'harlyao-night-march-beacon.js' });
+let chainDraw = chainContext.window.WeatherFX.drawLightingOverlay;
+assert(chainDraw.__harlyaoNightMarchAtmosphereWrapped, 'initial lighting chain contains the Harlyao darkness layer');
+assert(chainDraw.__hobunjiGhostifyWrapped, 'initial lighting chain contains the Ghostify glow layer');
+assert(chainDraw.__harlyaoBeaconLocatorWrapped, 'initial lighting chain contains the locator as the outer layer');
+chainContext.window.WeatherFX.drawLightingOverlay = function simulatedCloudForestReplacement() {};
+chainContext.window.Ghostify.installWeatherBridge(chainContext.window.WeatherFX);
+chainDraw = chainContext.window.WeatherFX.drawLightingOverlay;
+assert(chainDraw.__harlyaoNightMarchAtmosphereWrapped, 'repair reinstalls Harlyao darkness after a later renderer replacement');
+assert(chainDraw.__hobunjiGhostifyWrapped, 'repair reinstalls Ghostify after a later renderer replacement');
+assert(chainDraw.__harlyaoBeaconLocatorWrapped, 'repair reinstalls the all-distance locator after a later renderer replacement');
+
 const context = {
   console,
   performance: { now: () => 0 },
