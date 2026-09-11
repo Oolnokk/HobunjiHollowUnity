@@ -36,6 +36,12 @@ context.window.HobunjiRoofClimb = {
       runtimeDepsSource: 'Combat.deps fallback',
       runtimePlayerReady: true,
       climbDepsCaptured: false,
+      climbHooksCurrent: true,
+      liveMethods: {
+        getClimbTarget: 'roofAwareGetClimbTarget',
+        startClimb: 'roofAwareStartClimb',
+        updateClimb: 'roofAwareUpdateClimb',
+      },
     };
   },
 };
@@ -99,6 +105,8 @@ assert(report.some(line => line.includes('Entrance-adjacent exclusion: DISABLED'
 assert(report.some(line => line.includes('nearest structural wall to PLAYER')));
 assert(report.some(line => line.includes('camera ray not required')));
 assert(report.some(line => line.includes('Roof runtime: source=Combat.deps fallback')));
+assert(report.some(line => line.includes('hooks=current')));
+assert(report.some(line => line.includes('Roof live methods: get=roofAwareGetClimbTarget start=roofAwareStartClimb update=roofAwareUpdateClimb')));
 assert(report.some(line => line.includes('Climb popup/action bridge: popupPatched=yes')));
 assert(report.some(line => line.includes('targetBridge=yes current=yes visible=yes target=roof actionable=yes')));
 console.log('roof climb pixel probe tests passed');
