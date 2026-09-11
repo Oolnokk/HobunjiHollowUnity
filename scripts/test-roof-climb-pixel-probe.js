@@ -10,12 +10,15 @@ const wall = { id: 'wall', vertices: [
 ]};
 const meta = { walls:[wall], roofs:[{id:'roof'}], entrance:{x:1,z:0.5} };
 let group = null;
+let liveTarget = {
+  type: 'roof', wallFaceId: 'wall', playerWallDistance: 1,
+  wallPoint: { x: 1, y: 1, z: 0 },
+  endWorldX: 1, endWorldZ: 0.5, endSurfaceY: 2,
+};
 const context = {
   console,
   window: {},
-  THREE: {
-    Raycaster: class { setFromCamera() { this.ray = { origin:{x:1,y:1,z:-5}, direction:{x:0,y:0,z:1} }; } },
-  },
+  THREE: { Raycaster: class {} },
   MutationObserver: class { observe() {} },
   document: {
     readyState: 'complete',
@@ -26,7 +29,8 @@ const context = {
 context.window.window = context.window;
 context.window.GridTileAccessors = { getActiveScene: () => ({ traverse(fn) { if (group) fn(group); } }) };
 context.window.HobunjiRoofClimb = {
-  roofSurfaceYAt(_meta, x, z) { return x >= 0 && x <= 2 && z >= 0 && z <= 2 ? 2 : null; },
+  getRoofClimbTarget() { return liveTarget; },
+  getDebug() { return { lastBlockReason: liveTarget ? null : 'no valid structural roof climb target' }; },
 };
 context.window.HousePieceGen = {
   buildGroupFromPiece() { return { userData: { hobunjiRoofClimbStructure: { ...meta } } }; },
@@ -40,28 +44,40 @@ assert.strictEqual(group.userData.hobunjiRoofClimbStructure.entrance, null, 'new
 context.window.PixelProbe = { init() {} };
 context.window.PixelProbe.init({ player, TILE: 48, renderer: {domElement:{}}, camera:{} });
 const api = context.window.HobunjiRoofClimbProbe;
-let result = api.evaluateRay({ origin:{x:1,y:1,z:-5}, direction:{x:0,y:0,z:1} });
-assert.strictEqual(result.climbable, true, 'near direct structural wall with roof is climbable');
-assert.strictEqual(result.wallFaceId, 'wall');
 
+let result = api.evaluateRay({ origin:{x:100,y:100,z:100}, direction:{x:1,y:0,z:0} });
+assert.strictEqual(result.climbable, true, 'camera ray is irrelevant when the live player-proximity resolver has a roof target');
+assert.strictEqual(result.wallFaceId, 'wall');
+assert.strictEqual(result.selectionModel, 'nearest-player-wall');
+
+// Legacy entrance metadata is cleared and does not change climbability.
 group.userData.hobunjiRoofClimbStructure.entrance = {x:1,z:0.5};
-result = api.evaluateRay({ origin:{x:1,y:1,z:-5}, direction:{x:0,y:0,z:1} });
-assert.strictEqual(result.climbable, true, 'entrance adjacency remains disabled even on legacy metadata');
+result = api.evaluateRay(null);
+assert.strictEqual(result.climbable, true, 'entrance adjacency remains disabled');
 assert.strictEqual(group.userData.hobunjiRoofClimbStructure.entrance, null, 'legacy entrance metadata is cleared');
 
+// When the live climb resolver has no target, diagnostics report the player's
+// nearest structural-wall distance rather than claiming the pixel ray missed.
+liveTarget = null;
 player.y = -240;
-result = api.evaluateRay({ origin:{x:1,y:1,z:-5}, direction:{x:0,y:0,z:1} });
+result = api.evaluateRay({ origin:{x:1,y:1,z:-1}, direction:{x:0,y:0,z:1} });
 assert.strictEqual(result.climbable, false, 'far player cannot climb');
+assert.match(result.reason, /too far from player|no valid structural roof climb target/);
 player.y = -48;
-
-result = api.evaluateRay({ origin:{x:1,y:1,z:-5}, direction:{x:0.9,y:0,z:0.1} });
-assert.strictEqual(result.climbable, false, 'glancing probe is rejected');
+liveTarget = {
+  type: 'roof', wallFaceId: 'wall', playerWallDistance: 1,
+  wallPoint: { x: 1, y: 1, z: 0 },
+  endWorldX: 1, endWorldZ: 0.5, endSurfaceY: 2,
+};
 
 context.window.Mounts.rideState = 'mounted';
-result = api.evaluateRay({ origin:{x:1,y:1,z:-5}, direction:{x:0,y:0,z:1} });
+result = api.evaluateRay(null);
 assert.strictEqual(result.climbable, false, 'mounted state is reported as not climbable');
 assert.strictEqual(result.reason, 'player is mounted');
+context.window.Mounts.rideState = 'none';
 
-const report = api.reportLines('Pixel Probe report\nArea: town   CSS(100,100) framebuffer(100,100)');
+const report = api.reportLines('Pixel Probe report\nArea: town');
 assert(report.some(line => line.includes('Entrance-adjacent exclusion: DISABLED')));
+assert(report.some(line => line.includes('nearest structural wall to PLAYER')));
+assert(report.some(line => line.includes('camera ray not required')));
 console.log('roof climb pixel probe tests passed');
