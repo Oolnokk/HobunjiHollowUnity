@@ -1,0 +1,48 @@
+name: Named animal NPC regression
+
+on:
+  push:
+    paths:
+      - 'docs/config/npcs/species-overrides.json'
+      - 'docs/config/creatures/hobunji-creature-bestiary.json'
+      - 'docs/js/local-db-overrides.js'
+      - 'docs/js/named-animal-npc.js'
+      - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/npc-avatar-preview-utils.js'
+      - 'docs/js/png-plane-avatar.js'
+      - 'docs/tools/character-studio/index.html'
+      - 'scripts/test-named-animal-npc-species.js'
+      - '.github/workflows/named-animal-npc-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/config/npcs/species-overrides.json'
+      - 'docs/config/creatures/hobunji-creature-bestiary.json'
+      - 'docs/js/local-db-overrides.js'
+      - 'docs/js/named-animal-npc.js'
+      - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/npc-avatar-preview-utils.js'
+      - 'docs/js/png-plane-avatar.js'
+      - 'docs/tools/character-studio/index.html'
+      - 'scripts/test-named-animal-npc-species.js'
+      - '.github/workflows/named-animal-npc-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check named animal NPC modules
+        run: |
+          node --check docs/js/local-db-overrides.js
+          node --check docs/js/named-animal-npc.js
+          node --check scripts/test-named-animal-npc-species.js
+      - name: Test named animal NPC species integration
+        run: node scripts/test-named-animal-npc-species.js
