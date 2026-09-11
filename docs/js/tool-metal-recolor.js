@@ -219,6 +219,64 @@
     return mask;
   }
 
+  // Renders a caller-authored removal pattern (see pattern-authoring.js) into
+  // a same-size binary mask: 1 where the pattern's motif paints, i.e. where
+  // verdigris should be stripped back to bare metal. Purely geometric — it
+  // knows nothing about metal/verdigris, just stamps a black motif image
+  // across a transparent raster per the placement fields the editor wrote.
+  function buildAuthoredClearedMask(width, height, patternDef, motifImg) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    const scale = Math.max(0.05, Number(patternDef.scale) || 1);
+    const mw = Math.max(1, (motifImg.naturalWidth || motifImg.width || 1) * scale);
+    const mh = Math.max(1, (motifImg.naturalHeight || motifImg.height || 1) * scale);
+    const spacing = Math.max(0, Number(patternDef.spacing) || 0);
+    const stepX = mw + spacing;
+    const stepY = mh + spacing;
+    const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
+    const fieldRad = ((Number(patternDef.patternRotationDeg) || 0) * Math.PI) / 180;
+
+    function stampAt(gx, gy, flip) {
+      ctx.save();
+      ctx.translate(gx, gy);
+      ctx.rotate(motifRad + (flip ? Math.PI : 0));
+      ctx.drawImage(motifImg, -mw / 2, -mh / 2, mw, mh);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(width / 2 + (Number(patternDef.translateX) || 0), height / 2 + (Number(patternDef.translateY) || 0));
+    ctx.rotate(fieldRad);
+    if (patternDef.tiling) {
+      // Cover a diagonal-sized field so the whole-pattern rotation never
+      // leaves an unstamped corner uncovered once it's rotated back over
+      // the sprite's actual (axis-aligned) bounds.
+      const diag = Math.hypot(width, height);
+      const cols = Math.ceil(diag / stepX) + 2;
+      const rows = Math.ceil(diag / stepY) + 2;
+      for (let ry = -rows; ry <= rows; ry++) {
+        for (let rx = -cols; rx <= cols; rx++) {
+          const flip = !!patternDef.alternate && (((rx + ry) % 2 + 2) % 2 !== 0);
+          stampAt(rx * stepX, ry * stepY, flip);
+        }
+      }
+    } else {
+      stampAt(0, 0, false);
+    }
+    ctx.restore();
+
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    const mask = new Uint8Array(width * height);
+    for (let p = 0, i = 0; i < pixels.length; i += 4, p++) {
+      if (pixels[i + 3] > 16) mask[p] = 1;
+    }
+    return mask;
+  }
+
   function buildOxidationOutlineMask(oxidationMask, metalMask, width, height, outlineWidth) {
     const outline = new Uint8Array(oxidationMask.length);
     if (!outlineWidth) return outline;
@@ -323,16 +381,32 @@
       });
     }
 
-    const amount = clamp01(opts.oxidationAmount);
-    if (!amount || !verdigrisHsv || !opts.verdigrisHex) {
+    const authoredPattern = opts.authoredPattern;
+    const motifImg = opts.motifImage;
+
+    if (!verdigrisHsv || !opts.verdigrisHex || (!authoredPattern && !clamp01(opts.oxidationAmount))) {
       debugLog(opts, 'oxidation skipped', {
-        oxidationAmount: amount,
+        oxidationAmount: clamp01(opts.oxidationAmount),
         hasVerdigrisColor: !!opts.verdigrisHex,
+        hasAuthoredPattern: !!authoredPattern,
       });
       return imageData;
     }
 
-    const oxidationMask = buildOxidationMask(metalMask, width, height, amount, opts);
+    let oxidationMask;
+    if (authoredPattern && motifImg) {
+      // Authored mode is the inverse of the procedural growth above: the
+      // player has painted where verdigris is stripped back to bare metal,
+      // not where it grows, so everything else on the metal mask stays
+      // oxidized (this only ever runs on an already mastery-5/fully-grown
+      // tool — see toolVerdigrisPatternEligible in game.js).
+      const clearedMask = buildAuthoredClearedMask(width, height, authoredPattern, motifImg);
+      oxidationMask = new Uint8Array(metalMask.length);
+      for (let p = 0; p < metalMask.length; p++) oxidationMask[p] = metalMask[p] && !clearedMask[p] ? 1 : 0;
+      debugLog(opts, 'authored pattern mask applied', { clearedPixels: clearedMask.reduce((a, v) => a + v, 0) });
+    } else {
+      oxidationMask = buildOxidationMask(metalMask, width, height, clamp01(opts.oxidationAmount), opts);
+    }
     const outlineMask = buildOxidationOutlineMask(
       oxidationMask,
       metalMask,
@@ -425,6 +499,12 @@
     const saturationMode = opts.saturationMode || 'target';
     const sourceHex = opts.sourceHex || SOURCE_HEX;
     const oxidationAmount = clamp01(opts.oxidationAmount);
+    // A caller-authored removal pattern (see pattern-authoring.js) replaces
+    // the procedural growth entirely — its full definition (motif image
+    // included) has to be part of the cache key since it isn't reducible to
+    // a single scalar the way oxidationAmount is.
+    const authoredPattern = opts.authoredPattern || null;
+    const authoredPatternKey = authoredPattern ? JSON.stringify(authoredPattern) : '';
     const requestInfo = {
       spritePath,
       sourceHex,
@@ -452,6 +532,7 @@
       saturationTolerance,
       alphaMin,
       saturationMode,
+      authoredPatternKey,
     ].join('|');
 
     debugLog(opts, 'recolor request', requestInfo);
@@ -464,7 +545,11 @@
     debugLog(opts, 'canvas cache miss', { spritePath, oxidationAmount });
     if (debugEnabled(opts)) console.trace('[ToolMetalRecolor] request caller');
 
-    return loadImage(spritePath, opts).then(img => {
+    const motifLoad = authoredPattern?.motifDataUrl
+      ? loadImage(authoredPattern.motifDataUrl, opts)
+      : Promise.resolve(null);
+
+    return Promise.all([loadImage(spritePath, opts), motifLoad]).then(([img, motifImg]) => {
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth || img.width || 1;
       canvas.height = img.naturalHeight || img.height || 1;
@@ -483,6 +568,8 @@
         saturationTolerance,
         alphaMin,
         saturationMode,
+        authoredPattern,
+        motifImage: motifImg,
       });
       ctx.putImageData(imageData, 0, 0);
       _canvasCache.set(cacheKey, canvas);
