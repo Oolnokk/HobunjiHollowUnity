@@ -6,30 +6,31 @@ const fs = require('node:fs');
 
 const source = fs.readFileSync('docs/game.js', 'utf8');
 const farmSource = fs.readFileSync('docs/js/farm-animals.js', 'utf8');
+const headCacheSource = fs.readFileSync('docs/js/creature-head-cache.js', 'utf8');
 
 assert.match(source,
   /const livestockLookCandidate = def\.hostile === false[\s\S]{0,180}LIVESTOCK_LOOK_RANGE_PX/,
   'passive livestock get a bounded approach-range face-look candidate');
 assert.match(source,
-  /if \(def\.hostile === false\)[\s\S]{0,700}_updateCreatureLookAtFace\(c, targetPlayer, dt\)[\s\S]{0,220}_restoreCompanionHead\(c, dt\)/,
+  /if \(def\.hostile === false[\s\S]{0,60}\)[\s\S]{0,700}_updateCreatureLookAtFace\(c, targetPlayer, entityDt\)[\s\S]{0,220}_restoreCompanionHead\(c, entityDt\)/,
   'livestock look at the player while nearby and restore their head when the player leaves');
 assert.match(source,
-  /function _updateCreatureLookAtFace\(c, master, dt\)[\s\S]{0,620}_updateCompanionHeadRotation\(c, pitchDeg, dt\)/,
+  /function _updateCreatureLookAtFace\(c, master, dt\)[\s\S]{0,800}_updateCompanionHeadRotation\(c, pitchDeg, dt\)/,
   'livestock and companion gaze drives the authored head rotation toward the face target');
 assert.match(source,
   /function _playerFaceTarget\(master = player\)/,
   'all player-facing animal behavior targets the character face height rather than the feet');
-assert.match(source,
+assert.match(headCacheSource,
   /worldY: floorY \+ modelHeight \* PLAYER_FACE_HEIGHT_RATIO/,
   'the shared face target carries the portrait face height');
 assert.match(source,
-  /getPlayerFaceTarget: \(\) => \(\{[\s\S]{0,220}worldY: playerMesh\.position\.y \+ \(Number\(playerAvatarModelHeight\) \|\| 0\.9\) \* PLAYER_FACE_HEIGHT_RATIO/,
+  /getPlayerFaceTarget: \(\) => \{[\s\S]{0,220}CreatureHeadCache\.getHeadWorld\(player, 'player'/,
   'the farm loop receives the player face target in tile/world coordinates');
 assert.match(farmSource,
   /const LIVESTOCK_LOOK_RANGE_TILES = 3\.75[\s\S]{0,1800}function _farmAnimalFaceLook\(animal, dt\)/,
   'farm livestock has its own bounded approach gaze instead of relying on hostile wildlife');
 assert.match(farmSource,
-  /function _farmAnimalFaceLook\(animal, dt\)[\s\S]{0,1100}animal\.avatarRef\.updateHeadRotation\(pitchDeg, dt\)[\s\S]{0,300}return -Math\.atan2\(dz, dx\) \+ Math\.PI \/ 2/,
+  /function _farmAnimalFaceLook\(animal, dt\)[\s\S]{0,1700}animal\.avatarRef\.updateHeadRotation\(pitchDeg, dt\)[\s\S]{0,500}return -Math\.atan2\(dz, dx\) \+ Math\.PI \/ 2/,
   'farm livestock turns its body and authored head toward the player face');
 assert.match(farmSource,
   /function _farmAnimalLookTarget\(animal, dt, idle\)[\s\S]{0,320}_restoreFarmAnimalHead\(animal, dt\)/,

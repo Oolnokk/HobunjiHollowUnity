@@ -9,23 +9,25 @@ const cookingStyles = fs.readFileSync('docs/cooking-ui.css', 'utf8');
 const author = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8');
 const probe = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 
-assert(index.includes('id="btnUnequipHeld"'), 'mobile put-away button is missing');
+// The dedicated put-away button (btnUnequipHeld) was removed; dequip is now
+// a tap on toolBtn/itemBtn while a tool/item is already held (see
+// action-arc-ui.js's putAwayHeldEquipment(), wired to those buttons'
+// pointerup handlers when deps.getHeldMode() === 'tool'/'item').
 assert(game.includes("if (key === 'z')"), 'Z put-away shortcut is missing');
 assert(game.includes("heldMode = 'none'"), 'hands-free held mode is missing');
 assert(game.includes("heldMode !== 'tool' || activeTool !== 'weapon'"), 'hands-free mode can still route weapon input');
 assert(game.includes("actionId === 'action2' && heldMode === 'tool' && activeTool === 'ranged'"), 'hands-free mode can still route ranged ammo input');
 
-const outerArchOrder = ['btnUnequipHeld', 'btnWeaponSwitch', 'toolBtn', 'itemBtn', 'btnCallMount']
+const outerArchOrder = ['btnWeaponSwitch', 'toolBtn', 'itemBtn', 'btnCallMount']
   .map((id) => index.indexOf(`id="${id}"`));
-assert(outerArchOrder.every((position, i) => position >= 0 && (i === 0 || position > outerArchOrder[i - 1])), 'outer arch DOM order is not put-away, weapon, tool, item, mount');
+assert(outerArchOrder.every((position, i) => position >= 0 && (i === 0 || position > outerArchOrder[i - 1])), 'outer arch DOM order is not weapon, tool, item, mount');
 assert(index.indexOf('cooking-ui.css') > index.indexOf('style.css'), 'post-base HUD overrides must load after style.css');
 
 const expectedAngles = {
-  btnUnequipHeld: '165deg',
-  btnWeaponSwitch: '155deg',
-  toolBtn: '145deg',
-  itemBtn: '135deg',
-  btnCallMount: '125deg',
+  btnWeaponSwitch: '165deg',
+  toolBtn: '155deg',
+  itemBtn: '145deg',
+  btnCallMount: '135deg',
 };
 const outerArchStyles = `${styles}\n${cookingStyles}`;
 for (const [id, angle] of Object.entries(expectedAngles)) {

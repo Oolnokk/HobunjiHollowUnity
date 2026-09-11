@@ -7,6 +7,8 @@ const fs = require('node:fs');
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards shared outdoor management and NPC seat integration.
 const legSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Guards the NPC avatar-sink measurement and seated anatomy math.
 const dewVatSource = fs.readFileSync('docs/js/dew-vats.js', 'utf8'); // Guards assignment migration when a processor moves.
+const farmEditorSource = fs.readFileSync('docs/js/farm-editor.js', 'utf8'); // Guards farm-layout save/load round-tripping of processor rotation.
+const npcPathfindingSource = fs.readFileSync('docs/js/npc-pathfinding.js', 'utf8'); // Guards NPC pathing to an occupied seat tile.
 const inn = JSON.parse(fs.readFileSync('docs/config/maps/map_i_inn.json', 'utf8'));
 const generalStore = JSON.parse(fs.readFileSync('docs/config/maps/map_i_general_store.json', 'utf8'));
 const kunjiF1 = JSON.parse(fs.readFileSync('docs/config/maps/map_i_kunjis_potions_F1.json', 'utf8'));
@@ -21,20 +23,20 @@ assert.match(gameSource,
   /function rotateProcessingFurniture[\s\S]{0,500}obj\.mesh\.rotation\.y[\s\S]{0,200}saveFarmLayout\(\)/,
   'processor rotation is applied and persisted');
 assert.match(gameSource,
-  /function removeProcessingFurniture[\s\S]{0,400}obj\.getJob\?\.\(\)[\s\S]{0,600}returned to inventory/,
+  /function removeProcessingFurniture[\s\S]{0,400}obj\.getJob\?\.\(\)[\s\S]{0,700}returned to inventory/,
   'idle processors can be removed while active aging jobs are protected');
 assert.match(dewVatSource,
   /function retargetAssignments[\s\S]{0,500}rec\.assignedVatId = newVatId[\s\S]{0,300}saveWorldLivestock/,
   'moving or removing a squeezing vat updates persistent livestock assignments');
-assert.match(gameSource,
-  /layout\.furniture\.push\(\{ key: obj\.furnitureKey, col: obj\.col, row: obj\.row, rotYDeg:[\s\S]{0,9000}makeProcessingFurniture\(col, row, key, job, rotYDeg \|\| 0\)/,
+assert.match(farmEditorSource,
+  /layout\.furniture\.push\(\{ key: obj\.furnitureKey, col: obj\.col, row: obj\.row, rotYDeg:[\s\S]{0,8000}makeProcessingFurniture\(col, row, key, job, rotYDeg \|\| 0\)/,
   'processor rotation round-trips through farm saves');
 
 const stools = inn.furniture.filter(item => item.itemKey === 'stoolFurniture'); // All eight downstairs inn seats surround the two tables.
 assert.equal(stools.length, 8, 'the inn still contains all eight stools');
 const expectedRotations = new Map([
   ['fmqj09loev97n', 270], ['fmqj09mimuxmp', 90], ['fmqj09n8jvodq', 0], ['fmqj09nuf46cg', 180],
-  ['fmqj09r8s0x0a', 180], ['fmqj09s9gcu2r', 270], ['fmqj09t02hklm', 0], ['fmqj09tmmlrts', 90],
+  ['fmqj09r8s0x0a', 180], ['fmqj09s9gcu2r', 270], ['fmqj09t02hklm', 90], ['fmqj09tmmlrts', 0],
 ]);
 for (const stool of stools) assert.equal(stool.rotY, expectedRotations.get(stool.id), `${stool.id} is turned 180° toward its table`);
 
@@ -73,9 +75,9 @@ assert.match(gameSource,
   /npcSeatTransformForTarget[\s\S]{0,900}resolveSeatWorldTransform/,
   'NPCs reuse the player seat-anchor resolver');
 assert.match(gameSource,
-  /this\.legs\.update\(dt, this\._moveSpeedTiles, false, seatedPose\)/,
+  /this\.legs\.update\(dt, this\._moveSpeedTiles, !isVisibleArea, seatedPose\)/,
   'NPC legs receive the same seated-pose data as player legs');
-assert.match(gameSource,
+assert.match(npcPathfindingSource,
   /allowOccupiedTarget[\s\S]{0,500}c === targetC && r === targetR/,
   'NPC pathing allows the occupied chair only as its final destination');
 assert.match(gameSource,

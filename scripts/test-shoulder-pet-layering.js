@@ -20,9 +20,15 @@ const layeringSource = source.slice(layeringStart, layeringEnd); // Keeps the re
 
 const makeHarness = new Function('initialFront', 'initialBack', `
   const PLAYER_FRONT_PLANE_RENDER_ORDER = 2;
+  const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
   const SHOULDER_PET_PLANE_RENDER_ORDER = 6;
+  const PLAYER_OVER_SHOULDER_PET_RENDER_ORDER = 8;
   let _playerAvatarFrontMaterial = initialFront;
   let _playerAvatarBackMaterial = initialBack;
+  let _playerAvatarFrontMesh = null;
+  let _playerAvatarBackMesh = null;
+  let s_disableShoulderFrontXray = false;
+  let s_frontSpriteXrayThroughShoulderPet = false;
   ${layeringSource}
   return {
     updatePetLayering,

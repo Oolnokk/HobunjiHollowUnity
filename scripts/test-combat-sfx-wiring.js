@@ -86,7 +86,9 @@ context.window.AudioSystem.init({
   isRealMediaError: () => false,
   markAudioUrlFailed: () => {},
 });
-assert.equal(FakeAudio.loads, 12, 'each configured low-latency combat cue should fill its two-voice pool');
+// 6 combat cues x 2-voice pool, plus the 3 runtime-owned hard-footstep
+// recordings (always preloaded regardless of config) x their own 2-voice pool.
+assert.equal(FakeAudio.loads, 18, 'each configured low-latency combat cue should fill its two-voice pool');
 
 context.window.AudioSystem.playWeaponSlashSfx(undefined, 0);
 let debug = context.window.AudioSystem.combatSfxDebugSnapshot();

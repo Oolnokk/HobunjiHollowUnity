@@ -21,9 +21,13 @@
   // off-screen toward the player. 'mountingUp': the mount has arrived and
   // the player is lerping up onto it. 'mounted': steady-state riding —
   // movement input steers the mount (see updateMountedMovement) instead of
-  // the player. 'dismountingDown': the player is lerping back off the
-  // mount. 'rushingOut': the (now riderless) mount is dashing away
-  // off-screen before despawning.
+  // the player. 'climbLeap': a scripted crouch-and-leap crossing a cliff
+  // face the dismounted climb system would otherwise lerp the player across
+  // (see startClimbLeap/updateClimbLeap) — steering is suppressed the same
+  // way mountingUp/dismountingDown suppress it, but the mount (and pinned
+  // rider) keep rendering exactly as they do in 'mounted'. 'dismountingDown':
+  // the player is lerping back off the mount. 'rushingOut': the (now
+  // riderless) mount is dashing away off-screen before despawning.
   let mountRideState = 'none';
   let mountRideEntity = null;
   let mountAngle = 0;              // the mount's own heading; momentum-turned in updateMountedMovement
@@ -34,6 +38,11 @@
   let mountRushOutAngle = 0;
   let mountRushOutT = 0;
   let mountRushInT = 0;
+  // Leap state lives on the mount entity itself as `_climbLeap` (mirroring
+  // the existing `onBranch`/`branchSurfaceY` per-entity override pattern) so
+  // game.js's updateCreatureMesh can read `_climbLeap.surfaceY` directly,
+  // the same way it already reads `onBranch`'s branchSurfaceY — see its
+  // `surfY` ternary.
   const mountRenderSync = { active: false, beforeXzDriftTiles: 0, afterXzDriftTiles: 0, verticalCorrectionTiles: 0 }; // Used by Pixel Probe to expose rider/carrier render drift on mobile.
   const mountFootstepDebug = { emitted: 0, surfaceKey: null, lastDistancePx: 0, lastVolumeScale: 0, lastAtMs: 0, lastTransition: null, nativeLayers: 0, gaitHz: DEFAULT_ANIMAL_GAIT_CYCLES_PER_SECOND }; // Exposed through window.Mounts.footstepDebug for console-free gait/audio checks.
 
@@ -45,6 +54,22 @@
   const MOUNT_DESPAWN_DIST_TILES = 9;
   const MOUNT_SPAWN_DIST_TILES = 9;
   const MOUNT_TRANSITION_S = 0.35; // how long the rider's lerp on/off the mount takes
+
+  // A mounted cliff crossing: basically Pounce's own windup/uncrouch/leap
+  // shape (see combat-animal-attacks.js) applied to the mount instead of a
+  // hostile — crouch in place, spring up, then fly the same start->landing
+  // path a dismounted wall climb would cross on foot. The vertical arc rides
+  // on top of the authored elevation change (see updateClimbLeap) rather
+  // than a fixed height, so a tall plateau reads as a bigger leap than a
+  // single ledge.
+  const MOUNT_CLIMB_LEAP_WINDUP_S = 0.32;
+  const MOUNT_CLIMB_LEAP_UNCROUCH_S = 0.12;
+  const MOUNT_CLIMB_LEAP_CROUCH_SCALE_Y = 0.72;
+  const MOUNT_CLIMB_LEAP_BASE_S = 0.45;   // flight duration for a single-tile wall; extended a bit per extra wall tile below
+  const MOUNT_CLIMB_LEAP_MAX_S = 0.85;
+  const MOUNT_CLIMB_LEAP_PER_WALL_TILE_S = 0.1;
+  const MOUNT_CLIMB_LEAP_MIN_ARC_UNITS = 0.35;
+  const MOUNT_CLIMB_LEAP_ARC_FRACTION = 0.45; // extra rise above the straight elevation change, as a fraction of that change
 
   // Two native layers are intentional. A single recorded footstep tops out
   // at HTMLAudioElement volume=1, so merely raising the old 3x multiplier to
@@ -335,12 +360,93 @@
     mountDismountTargetY = mountRideEntity.y + Math.sin(sideAngle) * deps.TILE * 0.6;
   }
 
+  // Called from ClimbSystem.startClimb when a 'wall' (cliff) climb target is
+  // found while steadily mounted. Reuses the exact same start tile ->
+  // climb.landCol/landRow landing tile a dismounted climb would cross, so
+  // the mount lands exactly where the player's own feet would have.
+  function startClimbLeap(climb) {
+    const m = mountRideEntity;
+    if (mountRideState !== 'mounted' || !m || climb?.type !== 'wall') return false;
+    const currentArea = deps.getCurrentArea();
+    const grid = deps.getActiveGrid();
+    const startCol = deps.clamp(Math.floor(m.x / deps.TILE), 0, deps.getActiveCols() - 1);
+    const startRow = deps.clamp(Math.floor(m.y / deps.TILE), 0, deps.getActiveRows() - 1);
+    const startTile = grid[startRow]?.[startCol];
+    const landTile = grid[climb.landRow]?.[climb.landCol];
+    if (!startTile || !landTile) return false;
+    const angle = Math.atan2(climb.dir.y, climb.dir.x);
+    const surfaceStartY = deps.tileSurfaceYInArea(startTile, currentArea);
+    const surfaceEndY = deps.tileSurfaceYInArea(landTile, currentArea);
+    const lock = window.CharacterActionLocks?.acquire?.({
+      owner: 'mount-climb-leap',
+      reason: 'leaping the cliff face on mount-back',
+      participants: ['player'],
+      channels: ['movement', 'tools', 'actions'],
+    }) || null;
+    m._climbLeap = {
+      stage: 'windup', t: 0,
+      startX: m.x, startY: m.y,
+      endX: (climb.landCol + 0.5) * deps.TILE, endY: (climb.landRow + 0.5) * deps.TILE,
+      surfaceStartY, surfaceEndY, surfaceY: surfaceStartY,
+      leapDurationS: deps.clamp(MOUNT_CLIMB_LEAP_BASE_S + (climb.wallTiles || 0) * MOUNT_CLIMB_LEAP_PER_WALL_TILE_S, MOUNT_CLIMB_LEAP_BASE_S, MOUNT_CLIMB_LEAP_MAX_S),
+      lock,
+    };
+    mountRideState = 'climbLeap';
+    mountAngle = angle;
+    m.facing = angle;
+    m.vx = 0; m.vy = 0;
+    mountCurrentSpeedPxS = 0;
+    deps.setFacingAngle(angle);
+    deps.player.angle = angle;
+    window.__farmLog?.(`[mount] climb-leap started wallTiles=${climb.wallTiles}`, 'wildlife');
+    return true;
+  }
+
+  function updateClimbLeap(dt) {
+    const m = mountRideEntity;
+    const leap = m?._climbLeap;
+    if (!m || !leap) { if (m) { m._climbLeap = null; mountRideState = 'mounted'; } else mountRideState = 'none'; return; }
+    leap.t += dt;
+
+    if (leap.stage === 'windup') {
+      const t = deps.clamp(leap.t / MOUNT_CLIMB_LEAP_WINDUP_S, 0, 1);
+      m.scaleY = 1 - (1 - MOUNT_CLIMB_LEAP_CROUCH_SCALE_Y) * (1 - Math.pow(1 - t, 3));
+      if (t >= 1) { leap.stage = 'uncrouch'; leap.t = 0; }
+    } else if (leap.stage === 'uncrouch') {
+      const t = deps.clamp(leap.t / MOUNT_CLIMB_LEAP_UNCROUCH_S, 0, 1);
+      m.scaleY = MOUNT_CLIMB_LEAP_CROUCH_SCALE_Y + (1 - MOUNT_CLIMB_LEAP_CROUCH_SCALE_Y) * (1 - Math.pow(1 - t, 3));
+      if (t >= 1) { m.scaleY = 1; leap.stage = 'leap'; leap.t = 0; }
+    } else {
+      const t = deps.clamp(leap.t / leap.leapDurationS, 0, 1);
+      const eased = 1 - Math.pow(1 - t, 2); // quick launch, settles into the landing
+      m.x = leap.startX + (leap.endX - leap.startX) * eased;
+      m.y = leap.startY + (leap.endY - leap.startY) * eased;
+      leap.surfaceY = leap.surfaceStartY + (leap.surfaceEndY - leap.surfaceStartY) * eased;
+      const archUnits = Math.max(MOUNT_CLIMB_LEAP_MIN_ARC_UNITS, Math.abs(leap.surfaceEndY - leap.surfaceStartY) * MOUNT_CLIMB_LEAP_ARC_FRACTION);
+      m._banditLungeHopCurrent = archUnits * Math.sin(Math.min(1, t) * Math.PI); // shared creature-renderer arc slot, see combat-animal-attacks.js's own use for Pounce
+      if (t >= 1) {
+        m.x = leap.endX; m.y = leap.endY;
+        leap.surfaceY = leap.surfaceEndY;
+        m._banditLungeHopCurrent = 0;
+        leap.lock?.release?.();
+        m._climbLeap = null;
+        mountRideState = 'mounted';
+        window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.().climbStep);
+      }
+    }
+
+    m.vx = 0; m.vy = 0;
+    deps.player.x = m.x; deps.player.y = m.y;
+    deps.player.vx = 0; deps.player.vy = 0;
+    deps.updateCreatureMesh(m, dt, m.facing);
+  }
+
   function updateMountRide(dt) {
     deps.btnCallMount?.classList.toggle('active', mountRideState !== 'none');
     if (mountRideState === 'none') return;
     const m = mountRideEntity;
     if (!m || m.health <= 0) {
-      if (m) { deps.despawnCreature(m); deps.companionObjects.delete(m); }
+      if (m) { m._climbLeap?.lock?.release?.(); deps.despawnCreature(m); deps.companionObjects.delete(m); }
       mountRideState = 'none'; mountRideEntity = null;
       return;
     }
@@ -348,6 +454,7 @@
     if (!mountAllowedInArea(currentArea)) {
       // Covers rushing, mounting, mounted, and dismissing states alike; no
       // mount mesh is ever relocated into an interior scene.
+      m._climbLeap?.lock?.release?.();
       deps.despawnCreature(m);
       deps.companionObjects.delete(m);
       mountRideState = 'none'; mountRideEntity = null;
@@ -408,6 +515,11 @@
       return;
     }
 
+    if (mountRideState === 'climbLeap') {
+      updateClimbLeap(dt);
+      return;
+    }
+
     if (mountRideState === 'dismountingDown') {
       mountTransitionT = Math.min(1, mountTransitionT + dt / MOUNT_TRANSITION_S);
       deps.player.x = mountTransitionFromX + (mountDismountTargetX - mountTransitionFromX) * mountTransitionT;
@@ -450,7 +562,10 @@
   function pinMountedRiderMesh(riderMesh, seatLift = 0) {
     const m = mountRideEntity;
     const carrierPosition = m?.avatarRef?.group?.position;
-    if (mountRideState !== 'mounted' || !carrierPosition || !riderMesh?.position) {
+    // 'climbLeap' keeps rendering exactly like 'mounted' — the rider stays
+    // pinned to the mount's carrier mesh (crouch squash and leap arc
+    // included) throughout the crossing, same as steady riding.
+    if ((mountRideState !== 'mounted' && mountRideState !== 'climbLeap') || !carrierPosition || !riderMesh?.position) {
       mountRenderSync.active = false;
       return false;
     }
@@ -589,6 +704,7 @@
     updateMountRide,
     updateMountedMovement,
     pinMountedRiderMesh,
+    startClimbLeap,
     get rideState() { return mountRideState; },
     get rideEntity() { return mountRideEntity; },
     get renderSync() { return { ...mountRenderSync }; },

@@ -20,8 +20,8 @@ assert.equal(clampPitchOffsetDeg(-30, { cameraRotateClampDeg: 45, cameraRotateUp
 assert.match(game, /function clampCameraPitchOffsetDeg\(value\) \{[\s\S]{0,180}CameraLookClamp\.clampPitchOffsetDeg\(value, desktopControlsConfig\(\)\)/, 'game.js only bridges camera state into the isolated clamp module');
 assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 3, 'mouse, touch, and controller all share the thin camera bridge');
 assert.match(game, /cameraAzimuthOffsetDeg = freeRotateCameraActive\(\)[\s\S]{0,260}-clampDeg, clampDeg/, 'yaw keeps symmetric legacy clamp');
-const helperIndex = index.indexOf('<script src=\"js/camera-look-clamp.js?v=20260909decouple1\"></script>');
-const gameIndex = index.indexOf('<script src=\"game.js?v=20260910controller1\"></script>');
+const helperIndex = index.search(/<script src="js\/camera-look-clamp\.js\?v=\d+\w*"><\/script>/);
+const gameIndex = index.search(/<script src="game\.js\?v=\d+\w*"><\/script>/);
 assert.ok(helperIndex >= 0 && gameIndex > helperIndex, 'camera clamp module loads before game.js without depending on controller module versions');
 
 console.log('Directional camera look clamp checks passed.');

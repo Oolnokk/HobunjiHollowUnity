@@ -16,13 +16,16 @@ const recolorSource = fs.readFileSync(path.join(root, 'docs/js/sprite-recolor.js
 const pixelProbe = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
 // Stylesheet checks below guard the mobile outer-arch position against badge CSS overrides.
 const style = fs.readFileSync(path.join(root, 'docs/style.css'), 'utf8');
+const itemProcessing = fs.readFileSync(path.join(root, 'docs/js/item-processing.js'), 'utf8');
+const hudUpdate = fs.readFileSync(path.join(root, 'docs/js/hud-update.js'), 'utf8');
+const actionArcUi = fs.readFileSync(path.join(root, 'docs/js/action-arc-ui.js'), 'utf8');
 
 assert.match(recolorSource, /CreatureGeneticsRender\?\.recolorPixels[\s\S]*?CreatureGeneticsRender\.recolorPixels/,
   'direct whole-sprite fills still delegate to the animal shade-fill recolorer');
-assert.match(recolorSource, /img\.crossOrigin = 'anonymous';[\s\S]*?img\.src = spritePath/,
+assert.match(recolorSource, /img\.crossOrigin\s*=\s*'anonymous';[\s\S]*?img\.src\s*=\s*spritePath/,
   'item sprites use the animal loader CORS mode before canvas pixel readback');
 assert.match(recolorSource,
-  /function loadFishCatalogForGame\(\)[\s\S]*?typeof document === 'undefined'/,
+  /function loadFishCatalogForGame\(\)[\s\S]*?typeof document\s*===\s*'undefined'/,
   'fish catalog bootstrap stays inert when rendering helpers run without a browser DOM');
 
 const recolorContext = { window: {} };
@@ -44,16 +47,16 @@ assert.equal(Math.max(...keyedPixels.slice(0, 3)), 0xD7,
 assert.equal(Math.max(...keyedPixels.slice(4, 7)), 0x8F,
   'the dark recolored fill retains its source HSV value');
 
-assert.match(game,
+assert.match(itemProcessing,
   /function normalizeAlcoholItemDef[\s\S]*?def\.spriteIcon = 'bottle_wine\.png';[\s\S]*?def\.spriteColor = mixedIngredientColor/,
   'all alcohol definitions normalize to an ingredient-colored wine bottle');
-assert.match(game, /heftroot: 0xF0D15A/,
+assert.match(itemProcessing, /heftroot: 0xF0D15A/,
   'heftroot vodka uses the ripe heftroot gold as its ingredient color');
 assert.match(combatCore, /heftrootVodka[\s\S]*?spriteColor: 0xF0D15A/,
   'the canonical combat vodka fallback uses the same ripe heftroot gold');
 
 for (const ingredient of ['berryKey', 'inputKey']) {
-  assert.match(game, new RegExp(`ingredientKeys: \\[${ingredient}\\]`),
+  assert.match(itemProcessing, new RegExp(`ingredientKeys: \\[${ingredient}\\]`),
     `alcohol recipes retain their ${ingredient} source for color mixing`);
 }
 
@@ -69,8 +72,8 @@ assert.match(game,
 assert.match(game,
   /SpriteRecolor\.getRecoloredCanvas\(spritePath,[\s\S]*?plane\.scale\.y = canvas\.height/,
   'held authored item sprites preserve their recolor and source aspect ratio');
-assert.match(game,
-  /function refreshItemScroll[\s\S]*?applyItemSpriteIcon\(itemIcon, ITEM_DEFS\[curr\.key\], curr\.key\)[\s\S]*?applyItemSpriteIcon\(iBtnEl, ITEM_DEFS\[curr\.key\], curr\.key\)/,
+assert.match(hudUpdate,
+  /function refreshItemScroll[\s\S]*?applyItemSpriteIcon\(deps\.itemIcon, deps\.ITEM_DEFS\[curr\.key\], curr\.key\)[\s\S]*?applyItemSpriteIcon\(iBtnEl, deps\.ITEM_DEFS\[curr\.key\], curr\.key\)/,
   'the current-item HUD and item button upgrade alcohol emoji to the bottle sprite');
 assert.match(game,
   /style\.backgroundImage = `url\("\$\{spritePath\}"\)`;[\s\S]*?if \(!window\.SpriteRecolor\)/,
@@ -87,11 +90,11 @@ assert.match(iconRenderer, /itemSpriteState = 'fallback'[\s\S]*?itemSpriteError 
   'failed mobile icon recolors retain their exact Pixel Probe diagnostic');
 assert.match(pixelProbe, /Item sprite recolor error:/,
   'Pixel Probe prints the captured item-sprite failure on mobile');
-assert.match(game,
-  /kh-item-icon[\s\S]*?applyItemSpriteIcon\(keyHudEl\.querySelector\('\.kh-item-icon'\), ITEM_DEFS\[item\.key\], item\.key\)/,
+assert.match(hudUpdate,
+  /kh-item-icon[\s\S]*?applyItemSpriteIcon\(deps\.keyHudEl\.querySelector\('\.kh-item-icon'\), deps\.ITEM_DEFS\[item\.key\], item\.key\)/,
   'the desktop keyboard HUD upgrades alcohol emoji to the bottle sprite');
-assert.match(game,
-  /slots\.push\(\{ type:'item',[^\n]*key:stacks\[[^\n]*[\s\S]*?applyItemSpriteIcon\(iconEl, ITEM_DEFS\[s\.key\], s\.key\)/,
+assert.match(actionArcUi,
+  /slots\.push\(\{ type:'item',[^\n]*key:stacks\[[^\n]*[\s\S]*?applyItemSpriteIcon\(iconEl, deps\.ITEM_DEFS\[s\.key\], s\.key\)/,
   'the item-selection arc upgrades alcohol emoji to the bottle sprite');
 assert.match(style, /#itemBtn\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?var\(--ar2\)/,
   'the item-selection button remains absolutely positioned on the outer arch');
@@ -102,7 +105,7 @@ assert.match(game,
   'held authored items start with their PNG rather than an emoji while recoloring');
 
 for (const term of ['beer', 'ale', 'mead', 'cider']) {
-  assert(game.includes(`'${term}'`), `${term} is recognized by the visual alcohol classifier`);
+  assert(itemProcessing.includes(`'${term}'`), `${term} is recognized by the visual alcohol classifier`);
   assert(combatCore.includes(`"${term}"`), `${term} is recognized by the drinking alcohol classifier`);
 }
 

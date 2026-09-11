@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const context = { console, Math }; // Supplies the browser-style globals used by the genetics module.
+const context = { console, Math, addEventListener() {} }; // Supplies the browser-style globals used by the genetics module.
 context.window = context;
 context.globalThis = context;
 vm.createContext(context);

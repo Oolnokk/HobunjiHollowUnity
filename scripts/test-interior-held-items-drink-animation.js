@@ -18,7 +18,7 @@ const heldItemActionInput = source('docs/js/held-item-action-input.js');
 const loader = source('docs/js/combat/combat-config-loader.js');
 
 const context = {
-  window: {}, console, URL, Promise,
+  window: { addEventListener: () => {} }, console, URL, Promise,
   location: { href: 'https://example.test/docs/index.html', pathname: '/docs/index.html' },
   document: { currentScript: { src: 'https://example.test/docs/js/held-action-animations.js' }, readyState: 'loading', write: () => {} },
 };
@@ -49,7 +49,7 @@ assert.match(game, /function enterInterior[\s\S]*?interiorScene\.add\(toolHolder
   'the farmhouse interior attaches held tools');
 assert.match(game, /function exitBuilding[\s\S]*?fromScene\.remove\(toolHolder\)/,
   'building exit removes the tool holder from its old scene');
-assert.match(game, /updateToolMesh\(dt\);\s*\/\/ Combat and targeting remain limited[\s\S]*?if \(currentArea === 'farm'/,
+assert.match(game, /updateToolMesh\(dt\);[\s\S]{0,120}\/\/ Combat and targeting remain limited[\s\S]*?if \(currentArea === 'farm'/,
   'held-object animation runs everywhere without enabling ordinary-interior combat');
 
 // Begin/cancel/hold/release/strike semantics replace the old one-shot

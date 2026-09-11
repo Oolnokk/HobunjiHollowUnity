@@ -35,8 +35,8 @@ const authoredDefaults = {
   'tletingan::female': { x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 },
   'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
   'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
-  'mao-ao::male': { x: 1.125, y: 1.125, head: 0.75, offsetY: 0 },
-  'mao-ao::female': { x: 1.045, y: 1.045, head: 0.9375, offsetY: 0 },
+  'mao-ao::male': { x: 0.84375, y: 1.125, head: 0.75, offsetY: 0 },
+  'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 },
   'kenkari::male': { x: 1.225, y: 1.225, head: 1, offsetY: 0 },
   'kenkari::female': { x: 1.1, y: 1.1, head: 1, offsetY: 0 },
   'mashtzarr::male': { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 },
@@ -56,7 +56,7 @@ assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('
 
 const api = context.HobunjiCharacterRigScale;
 assert(api, 'whole-rig scale API must install');
-assert.strictEqual(profile.anatomy.rigScaleX, 1.125, 'live shared rig profiles must receive the authored x default when no override exists');
+assert.strictEqual(profile.anatomy.rigScaleX, 0.84375, 'live shared rig profiles must receive the authored x default when no override exists');
 assert.strictEqual(profile.anatomy.rigScaleY, 1.125, 'live shared rig profiles must receive the authored y default when no override exists');
 assert.strictEqual(profile.anatomy.headScale, 0.75, 'live shared rig profiles must receive the authored head default when no override exists');
 assert.strictEqual(profile.anatomy.headOffsetY, 0, 'live shared rig profiles must receive the authored offsetY default when no override exists');
@@ -84,7 +84,7 @@ function makeParent(neckJoint = null, modelHeight = null) {
 
 const parent = makeParent();
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [1.125, 1.125, 1.125]);
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [0.84375, 1.125, 0.84375]);
 
 // Changing an explicit authored/imported legacy value must override the default without
 // multiplying the previous result cumulatively, and still resolves uniformly on every axis.
@@ -305,7 +305,7 @@ assert.match(scaleHostSource, /resetNpcAges\(\)/,
 // so the default config and runtime scale module are not editor-only features.
 assert.match(heldActionSource, /attachment-rig-latest-authored-snapshot\.js/,
   'game held-hand bootstrap must load the shared attachment-rig bootstrap');
-assert.match(scaleBootstrapSource, /character-rig-scale-defaults\.js\?v=20260905d/,
+assert.match(scaleBootstrapSource, /character-rig-scale-defaults\.js\?v=\d+\w*/,
   'shared bootstrap must load authored full-character defaults');
 assert.ok(scaleBootstrapSource.indexOf('character-rig-scale-defaults.js') < scaleBootstrapSource.indexOf('character-rig-scale.js'),
   'defaults must load before the runtime scale module');

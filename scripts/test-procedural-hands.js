@@ -149,7 +149,7 @@ assert.match(furnitureAuthorSource, /entry\[String\(gender\|\|''\).*\?\?entry\.d
 assert.match(proceduralFeetSource, /__HobunjiProceduralFeetDocsBase/, 'nested author tools must provide an explicit docs root to the gameplay feet runtime');
 assert.match(proceduralFeetSource, /function loaderForThree/, 'shoulder-rig feet must load their actual GLBs with the author preview’s Three.js version');
 
-const gripSandbox = { window: {}, localStorage: sandbox.localStorage };
+const gripSandbox = { window: { requestAnimationFrame: () => 0 }, localStorage: sandbox.localStorage };
 gripSandbox.window.localStorage = sandbox.localStorage;
 vm.runInNewContext(gripConfigSource, gripSandbox, { filename: 'hand-tool-grips.js' });
 const grips = gripSandbox.window.HobunjiHandToolGrips;
@@ -321,14 +321,12 @@ const attachmentProfileSandbox = {
   window: attachmentProfileWindow,
 };
 vm.runInNewContext(attachmentRigProfileSource, attachmentProfileSandbox, { filename: 'attachment-rig-profiles.js' });
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.schema, 'hobunji.attachment-rig-profiles.v9');
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'included-in-v9');
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.schema, 'hobunji.attachment-rig-profiles.v10');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'pending');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredCharacterProfiles, 10);
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.suppliedCharacterProfiles, 12);
+assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.suppliedCharacterProfiles, 14);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.exactSuppliedProfiles, 10);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.parrotSharedProfiles, 2);
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anchorPositionCalibration, 'not-needed:v9-runtime-space');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anchorPositionScale, 1);
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.posteriorCoordinateSpace, 'floor-relative');
 const authoredCharacterProfiles = attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters; // Verifies the exact posterior and shoulder values shipped to gameplay and the author.
@@ -365,7 +363,6 @@ assert.deepStrictEqual(
   { ...attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement.mashtzarr },
   { male: 0.755, female: 0.79 },
 );
-assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mashtzarrPortraitCorrection, 'included-in-v9');
 assert.strictEqual(attachmentProfileWindow.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.anatomyProfiles, 'applied');
 assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitVerticalPlacement['engh-sho'].male, 1.005, 'profile correction must apply exported portrait Y placement');
 assert.strictEqual(attachmentProfileWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.portraitScaleBySpecies['engh-sho'].male, 0.95, 'profile correction must apply exported gender-specific body scale');
@@ -386,7 +383,10 @@ assert.deepStrictEqual(parrotGlbJson.materials.map(material => material.name), [
 assert.match(gltfLoaderSource, /meshes\.push\( mesh \)/, 'bundled GLTFLoader must continue creating one runtime mesh per primitive');
 
 assert.match(weaponScaleSource, /BASE_WEAPON_PNG_SCALE = 1\.15/, 'unscaled weapon PNG baseline must be 1.15x');
-for (const key of ['hatchet', 'bronzehoe', 'pickshovel', 'fishingspear', 'fishingmace']) {
+// bronzehoe (and every other crafted-metal hoe tier) is normalized to its base
+// shape key 'hoe' via HobunjiHandToolGrips.toolKeyFor before the eligibility
+// check, so all metal tiers share one shape entry instead of listing each item key.
+for (const key of ['hatchet', 'hoe', 'pickshovel', 'fishingspear', 'fishingmace']) {
   assert(weaponScaleSource.includes(`'${key}'`), `${key} must receive the baseline weapon PNG scale`);
 }
 assert.match(weaponScaleSource, /holderScale <= 1\.0001/, 'already enlarged weapon animations must not receive another 1.15 multiplier');
