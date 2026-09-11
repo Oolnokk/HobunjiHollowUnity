@@ -54,6 +54,23 @@
     document.head.appendChild(script);
   })();
 
+  // Roof climbing must see the post-entry-carve authored structure planes, but
+  // must install before climb-system.js so its final wrapper can capture the
+  // existing climb animation before game.js initializes it.
+  (function loadRoofClimb() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/roof-climb.js?v=20260911roofclimb1'; // Cache-busts structural wall/roof climbing behavior.
+    if (window.HobunjiRoofClimb || document.querySelector('script[data-hobunji-roof-climb]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-roof-climb="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiRoofClimb = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
@@ -78,7 +95,7 @@
     context.arcTo(x + width, y, x + width, y + height, radius);
     context.arcTo(x + width, y + height, x, y + height, radius);
     context.arcTo(x, y + height, x, y, radius);
-    context.arcTo(x, y, x + width, y, radius);
+    context.arcTo(x, y, x + radius, y, radius);
     context.closePath();
   }
 
