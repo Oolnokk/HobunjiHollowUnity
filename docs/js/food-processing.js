@@ -39,6 +39,227 @@
     shadewoodNuts: Object.freeze({ key: 'shadewoodNutOil', label: 'Shadewood Nut Oil', color: 0x8F6A3F }),
   }); // Used to produce distinct oils instead of collapsing both trees into generic Nut Oil.
 
+  const EXPANDED_MEAL_RECIPES = Object.freeze([
+    {
+      id: 'hearthPancakes',
+      name: 'Hearth Griddle Cakes',
+      description: 'Flour, egg, and white milk cooked into simple pancakes or griddle cakes.',
+      baseOutputName: 'Hearth Griddle Cakes',
+      slots: [
+        { id: 'flour', label: 'Flour', accepts: ['flour'], required: true },
+        { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
+        { id: 'milk', label: 'White Milk', accepts: ['whiteMilk'], required: true },
+      ],
+      outputTags: ['Meal', 'Breakfast', 'Griddle'],
+    },
+    {
+      id: 'sweetCustard',
+      name: 'Sweet Custard',
+      description: 'Egg, white milk, and something sweet cooked down into a soft custard.',
+      baseOutputName: 'Sweet Custard',
+      slots: [
+        { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
+        { id: 'milk', label: 'White Milk', accepts: ['whiteMilk'], required: true },
+        { id: 'sweetPaste', label: 'Sweet Paste', accepts: ['sweetPaste'], required: true },
+      ],
+      outputTags: ['Meal', 'Dessert', 'Sweet'],
+    },
+    {
+      id: 'eggToast',
+      name: 'Egg Toast',
+      description: 'Bread and egg fried together with cooking fat; somewhere between egg-on-toast and French toast.',
+      baseOutputName: 'Egg Toast',
+      slots: [
+        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
+        { id: 'fat', label: 'Oil / Butter', accepts: ['oil', 'butter'], required: true },
+      ],
+      outputTags: ['Meal', 'Breakfast', 'Fried'],
+    },
+    {
+      id: 'cheeseToast',
+      name: 'Cheese Toast',
+      description: 'Bread, cheese, and butter toasted together into a simple grilled-cheese-style meal.',
+      baseOutputName: 'Cheese Toast',
+      slots: [
+        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'cheese', label: 'Cheese', accepts: ['cheese'], required: true },
+        { id: 'butter', label: 'Butter / Margarine', accepts: ['butter'], required: true },
+      ],
+      outputTags: ['Meal', 'Comfort', 'Toasted'],
+    },
+    {
+      id: 'savorySandwich',
+      name: 'Savory Sandwich',
+      description: 'Bread with a protein, vegetables, and a sauce or pungent spread.',
+      baseOutputName: 'Savory Sandwich',
+      slots: [
+        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'protein', label: 'Meat / Poultry / Fish', accepts: ['meat', 'poultry', 'fish', 'mollusk'], required: true },
+        { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
+        { id: 'sauce', label: 'Sauce / Spread', accepts: ['sauce', 'mayonnaise', 'pungentPaste'], required: true },
+      ],
+      outputTags: ['Meal', 'Bread', 'Portable'],
+    },
+    {
+      id: 'gardenSalad',
+      name: 'Garden Salad',
+      description: 'Fresh vegetables dressed with oil and herbs or spice.',
+      baseOutputName: 'Garden Salad',
+      slots: [
+        { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
+        { id: 'oil', label: 'Oil', accepts: ['oil'], required: true },
+        { id: 'herb', label: 'Herb / Spice', accepts: ['herb', 'spice'], required: true },
+      ],
+      outputTags: ['Meal', 'Fresh', 'Vegetable'],
+    },
+    {
+      id: 'vegetableSoup',
+      name: 'Vegetable Soup',
+      description: 'Vegetables simmered with a broth base and herbs or spice.',
+      baseOutputName: 'Vegetable Soup',
+      slots: [
+        { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
+        { id: 'broth', label: 'Broth Base', accepts: ['brothBase'], required: true },
+        { id: 'herb', label: 'Herb / Spice', accepts: ['herb', 'spice'], required: true },
+      ],
+      outputTags: ['Meal', 'Soup', 'Vegetable'],
+    },
+    {
+      id: 'roastDinner',
+      name: 'Roast Dinner',
+      description: 'A meat or poultry roast with a root or starch, vegetables, and seasoning.',
+      baseOutputName: 'Roast Dinner',
+      slots: [
+        { id: 'protein', label: 'Meat / Poultry', accepts: ['meat', 'poultry'], required: true },
+        { id: 'starch', label: 'Root / Starch Vegetable', accepts: ['starchVegetable'], required: true },
+        { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
+        { id: 'spice', label: 'Spice / Herb', accepts: ['spice', 'herb'], required: true },
+      ],
+      outputTags: ['Meal', 'Roasted', 'Heavy'],
+    },
+    {
+      id: 'breakfastHash',
+      name: 'Breakfast Hash',
+      description: 'A fried hash of starch, egg, meat or poultry, and vegetables.',
+      baseOutputName: 'Breakfast Hash',
+      slots: [
+        { id: 'starch', label: 'Root / Starch Vegetable', accepts: ['starchVegetable'], required: true },
+        { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
+        { id: 'protein', label: 'Meat / Poultry', accepts: ['meat', 'poultry'], required: true },
+        { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
+      ],
+      outputTags: ['Meal', 'Breakfast', 'Skillet'],
+    },
+    {
+      id: 'savorySkewers',
+      name: 'Savory Skewers',
+      description: 'Seasoned chunks of meat or poultry cooked with vegetables on skewers.',
+      baseOutputName: 'Savory Skewers',
+      slots: [
+        { id: 'protein', label: 'Meat / Poultry', accepts: ['meat', 'poultry'], required: true },
+        { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
+        { id: 'spice', label: 'Spice / Herb', accepts: ['spice', 'herb'], required: true },
+      ],
+      outputTags: ['Meal', 'Roasted', 'Portable'],
+    },
+    {
+      id: 'fishStew',
+      name: 'Fish Stew',
+      description: 'Fish or mollusk simmered in broth with vegetables and seasoning.',
+      baseOutputName: 'Fish Stew',
+      slots: [
+        { id: 'fish', label: 'Fish / Mollusk', accepts: ['fish', 'mollusk'], required: true },
+        { id: 'broth', label: 'Broth Base', accepts: ['brothBase'], required: true },
+        { id: 'veg', label: 'Vegetable', accepts: ['vegetable'], required: true },
+        { id: 'spice', label: 'Spice / Herb', accepts: ['spice', 'herb'], required: true },
+      ],
+      outputTags: ['Meal', 'Stew', 'Seafood'],
+    },
+    {
+      id: 'sweetBreadPudding',
+      name: 'Sweet Bread Pudding',
+      description: 'Bread baked with egg, milk or sweet liquid, and a sweet paste.',
+      baseOutputName: 'Sweet Bread Pudding',
+      slots: [
+        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
+        { id: 'liquid', label: 'White Milk / Sweet Liquid', accepts: ['whiteMilk', 'sweetLiquid'], required: true },
+        { id: 'sweetPaste', label: 'Sweet Paste', accepts: ['sweetPaste'], required: true },
+      ],
+      outputTags: ['Meal', 'Dessert', 'Baked', 'Sweet'],
+    },
+    {
+      id: 'hearthFlatbread',
+      name: 'Topped Flatbread',
+      description: 'Bread toasted with cheese, a savory sauce, and a vegetable or spice topping; broadly pizza-like.',
+      baseOutputName: 'Topped Flatbread',
+      slots: [
+        { id: 'bread', label: 'Bread', accepts: ['bread'], required: true },
+        { id: 'cheese', label: 'Cheese', accepts: ['cheese'], required: true },
+        { id: 'sauce', label: 'Sauce / Pungent Paste', accepts: ['sauce', 'pungentPaste'], required: true },
+        { id: 'topping', label: 'Vegetable / Spice', accepts: ['vegetable', 'spice'], required: true },
+      ],
+      outputTags: ['Meal', 'Bread', 'Toasted'],
+    },
+    {
+      id: 'stuffedDumplings',
+      name: 'Stuffed Dumplings',
+      description: 'Flour dough wrapped around a meat, poultry, or vegetable filling with seasoning.',
+      baseOutputName: 'Stuffed Dumplings',
+      slots: [
+        { id: 'flour', label: 'Flour', accepts: ['flour'], required: true },
+        { id: 'filling', label: 'Meat / Poultry / Vegetable', accepts: ['meat', 'poultry', 'vegetable'], required: true },
+        { id: 'seasoning', label: 'Spice / Pungent Paste', accepts: ['spice', 'pungentPaste'], required: true },
+      ],
+      outputTags: ['Meal', 'Dough', 'Stuffed'],
+    },
+    {
+      id: 'fishCakes',
+      name: 'Fish Cakes',
+      description: 'Fish or mollusk bound with a root or starch and egg, then cooked into cakes.',
+      baseOutputName: 'Fish Cakes',
+      slots: [
+        { id: 'fish', label: 'Fish / Mollusk', accepts: ['fish', 'mollusk'], required: true },
+        { id: 'starch', label: 'Root / Starch Vegetable', accepts: ['starchVegetable'], required: true },
+        { id: 'egg', label: 'Egg', accepts: ['egg'], required: true },
+      ],
+      outputTags: ['Meal', 'Seafood', 'Fried'],
+    },
+    {
+      id: 'fruitFritters',
+      name: 'Fruit Fritters',
+      description: 'Fruit coated in flour, fried in cooking fat, and finished with something sweet.',
+      baseOutputName: 'Fruit Fritters',
+      slots: [
+        { id: 'fruit', label: 'Fruit', accepts: ['fruit'], required: true },
+        { id: 'flour', label: 'Flour', accepts: ['flour'], required: true },
+        { id: 'fat', label: 'Oil / Butter', accepts: ['oil', 'butter'], required: true },
+        { id: 'sweetPaste', label: 'Sweet Paste', accepts: ['sweetPaste'], required: true },
+      ],
+      outputTags: ['Meal', 'Dessert', 'Fried', 'Sweet'],
+    },
+  ]); // Used by the cooking-data overlay to fill common real-world meal archetype gaps with existing ingredient families.
+
+  const EXPANDED_MEAL_NAME_RULES = Object.freeze({
+    hearthPancakes: { pattern: '{flour} Griddle Cakes', namedSlots: ['flour'] },
+    sweetCustard: { pattern: '{sweetPaste} Custard', namedSlots: ['sweetPaste'] },
+    eggToast: { pattern: '{egg} Egg Toast', namedSlots: ['egg'] },
+    cheeseToast: { pattern: '{cheese} Toast', namedSlots: ['cheese'] },
+    savorySandwich: { pattern: '{protein} Sandwich', namedSlots: ['protein'] },
+    gardenSalad: { pattern: '{veg} Salad', namedSlots: ['veg'] },
+    vegetableSoup: { pattern: '{veg} Soup', namedSlots: ['veg'] },
+    roastDinner: { pattern: '{protein} Roast Dinner', namedSlots: ['protein'] },
+    breakfastHash: { pattern: '{protein} {starch} Hash', namedSlots: ['protein', 'starch'] },
+    savorySkewers: { pattern: '{protein} Skewers', namedSlots: ['protein'] },
+    fishStew: { pattern: '{fish} Stew', namedSlots: ['fish'] },
+    sweetBreadPudding: { pattern: '{sweetPaste} Bread Pudding', namedSlots: ['sweetPaste'] },
+    hearthFlatbread: { pattern: '{cheese} Flatbread', namedSlots: ['cheese'] },
+    stuffedDumplings: { pattern: '{filling} Dumplings', namedSlots: ['filling'] },
+    fishCakes: { pattern: '{fish} Cakes', namedSlots: ['fish'] },
+    fruitFritters: { pattern: '{fruit} Fritters', namedSlots: ['fruit'] },
+  }); // Used by cooking-system.js's existing ingredient-led naming path for the expanded meals.
+
   let processingDeps = null; // Captures ItemProcessing.init dependencies so churn eligibility can inspect live item metadata.
 
   function normalizedValues(values) {
@@ -234,9 +455,22 @@
     return { ...definition, amount: baseAmount + bonusAmount, bonusAmount, stars };
   }
 
+  function installExpandedMealRecipes(data) {
+    if (!Array.isArray(data?.recipes)) return;
+    const existingRecipeIds = new Set(data.recipes.map(recipe => recipe.id)); // Used to make repeated runtime-hook installation idempotent.
+    EXPANDED_MEAL_RECIPES.forEach(recipe => {
+      if (!existingRecipeIds.has(recipe.id)) data.recipes.push(recipe);
+    });
+    data.identityNameRules ||= {};
+    Object.entries(EXPANDED_MEAL_NAME_RULES).forEach(([recipeId, rule]) => {
+      if (!data.identityNameRules[recipeId]) data.identityNameRules[recipeId] = rule;
+    });
+  }
+
   function installCookingDataOverlay() {
     const data = window.HobunjiCookingData;
     if (!data?.items) return;
+    installExpandedMealRecipes(data);
     const legacy = data.items.denaturedStinkOil; // Used as the metadata source while migrating the old prototype ingredient in place.
     if (legacy && !data.items.stinkButter) {
       data.items.stinkButter = {
@@ -388,7 +622,7 @@
   }
 
   function diagnosticsText() {
-    return `Stations: ${SQUEEZING_VAT.name}, ${BUTTER_CHURN.name}\nTree nut sources: ${Object.values(TREE_NUTS_BY_AREA).map(entry => entry.label).join(', ')}\nVat fats: nut oils, species lards, species fish oils\nChurn: white milk → butter; oil → margarine; stink oil → stink butter`;
+    return `Stations: ${SQUEEZING_VAT.name}, ${BUTTER_CHURN.name}\nExpanded meals: ${EXPANDED_MEAL_RECIPES.length}\nTree nut sources: ${Object.values(TREE_NUTS_BY_AREA).map(entry => entry.label).join(', ')}\nVat fats: nut oils, species lards, species fish oils\nChurn: white milk → butter; oil → margarine; stink oil → stink butter`;
   }
 
   window.HobunjiFoodProcessing = {
