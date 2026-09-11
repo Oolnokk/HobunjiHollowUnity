@@ -36,7 +36,7 @@
   let lastPlayerY = null;
   let lastPostAt = performance.now();
   let consumeLockUntil = 0;
-  let bottleSwigs = {}; // Persisted by game.js; stores the remaining swigs in each stack's currently open bottle.
+  let bottleSwigs = {}; // Persisted by game.js; stores { remaining, total, stars } for each stack's currently open bottle.
   let npcAlcoholState = {}; // Persisted by game.js; stores NPC sobriety and no-teleport blackout deadlines.
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -53,12 +53,29 @@
     return Math.max(1, Math.round(Number(def?.swigsPerBottle) || DEFAULT_SWIGS_PER_BOTTLE));
   }
 
+  function bottleQualityFallback(def) {
+    return Math.max(1, Math.min(5, Number(def?.cookingDefaultStars) || 3));
+  }
+
+  // Reads (without consuming) the quality tier a freshly opened bottle of
+  // `key` would draw from — the same lowest-first policy every other
+  // automatic/ordinary consumption uses, so opening a bottle can't quietly
+  // reach for the player's best stock. The exact unit is only actually
+  // removed from the quality bucket once the bottle is finished (see
+  // consumeBottleSwig) so a save/reload mid-bottle can't lose track of it.
+  function peekBottleStars(key, def) {
+    const tracked = Number(window.CookingSystem?.peekLowestQuality?.(key));
+    return Number.isFinite(tracked) ? Math.max(1, Math.min(5, Math.round(tracked))) : bottleQualityFallback(def);
+  }
+
   function getBottleSwigStatus(key, def, inventory = itemDeps?.inventory) {
     if (!key || !isAlcoholDef(def) || !(Number(inventory?.[key]) > 0)) return null;
     const total = swigsPerBottle(def);
-    const saved = Math.round(Number(bottleSwigs[key]));
-    const remaining = Number.isFinite(saved) && saved > 0 && saved <= total ? saved : total;
-    return { key, remaining, total, bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)) };
+    const saved = bottleSwigs[key];
+    const savedRemaining = Math.round(Number(saved?.remaining));
+    const remaining = Number.isFinite(savedRemaining) && savedRemaining > 0 && savedRemaining <= total ? savedRemaining : total;
+    const stars = Number.isFinite(Number(saved?.stars)) ? Math.max(1, Math.min(5, Math.round(Number(saved.stars)))) : peekBottleStars(key, def);
+    return { key, remaining, total, stars, bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)) };
   }
 
   function consumeBottleSwig(key, def, inventory = itemDeps?.inventory) {
@@ -67,40 +84,64 @@
     const remaining = status.remaining - 1;
     let bottleFinished = false;
     if (remaining <= 0) {
-      inventory[key] = Math.max(0, (Number(inventory[key]) || 0) - 1);
-      itemDeps?.clampInventoryStack?.(key);
+      // The final swig removes the exact quality unit this bottle was
+      // opened from — never a fresh lowest-first pick — so a bottle's stars
+      // can't drift if the player's stock composition changed mid-bottle.
+      const consumed = window.CookingSystem?.consumeQuality?.(key, status.stars, 1);
+      if (!consumed) {
+        inventory[key] = Math.max(0, (Number(inventory[key]) || 0) - 1);
+        itemDeps?.clampInventoryStack?.(key);
+      }
       delete bottleSwigs[key];
       bottleFinished = true;
     } else {
-      bottleSwigs[key] = remaining;
+      bottleSwigs[key] = { remaining, total: status.total, stars: status.stars };
     }
     return {
       ok: true,
       bottleFinished,
       remaining: bottleFinished && (Number(inventory[key]) || 0) > 0 ? status.total : Math.max(0, remaining),
       total: status.total,
+      stars: status.stars,
       bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)),
     };
   }
 
   function serializeBottleSwigs() {
     return Object.fromEntries(Object.entries(bottleSwigs)
-      .filter(([key, remaining]) => (!itemDeps?.inventory || Number(itemDeps.inventory[key]) > 0)
-        && Number.isFinite(Number(remaining)) && Number(remaining) > 0)
-      .map(([key, remaining]) => [key, Math.round(Number(remaining))]));
+      .filter(([key, value]) => (!itemDeps?.inventory || Number(itemDeps.inventory[key]) > 0)
+        && Number.isFinite(Number(value?.remaining)) && Number(value.remaining) > 0)
+      .map(([key, value]) => [key, {
+        remaining: Math.round(Number(value.remaining)),
+        total: Math.max(1, Math.round(Number(value.total)) || DEFAULT_SWIGS_PER_BOTTLE),
+        stars: Math.max(1, Math.min(5, Math.round(Number(value.stars)) || 3)),
+      }]));
   }
 
   function restoreBottleSwigs(saved) {
-    bottleSwigs = saved && typeof saved === 'object' && !Array.isArray(saved)
-      ? serializeSwigObject(saved)
-      : {};
+    bottleSwigs = {};
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      Object.entries(saved).forEach(([key, value]) => {
+        // Legacy save shape: a plain remaining-swig count with no tracked
+        // quality — fall back to this item's default star rating so an
+        // in-progress bottle from before this system still opens cleanly.
+        if (typeof value === 'number' || typeof value === 'string') {
+          const remaining = Math.round(Number(value));
+          if (Number.isFinite(remaining) && remaining > 0) {
+            bottleSwigs[key] = { remaining, total: DEFAULT_SWIGS_PER_BOTTLE, stars: bottleQualityFallback(itemDeps?.ITEM_DEFS?.[key]) };
+          }
+          return;
+        }
+        const remaining = Math.round(Number(value?.remaining));
+        if (!Number.isFinite(remaining) || remaining <= 0) return;
+        bottleSwigs[key] = {
+          remaining,
+          total: Math.max(1, Math.round(Number(value.total)) || DEFAULT_SWIGS_PER_BOTTLE),
+          stars: Math.max(1, Math.min(5, Math.round(Number(value.stars)) || bottleQualityFallback(itemDeps?.ITEM_DEFS?.[key]))),
+        };
+      });
+    }
     return serializeBottleSwigs();
-  }
-
-  function serializeSwigObject(source) {
-    return Object.fromEntries(Object.entries(source || {})
-      .filter(([, remaining]) => Number.isFinite(Number(remaining)) && Number(remaining) > 0)
-      .map(([key, remaining]) => [key, Math.max(1, Math.round(Number(remaining)))]));
   }
 
   function absoluteGameMinute() {
@@ -543,6 +584,10 @@
       style: 'primary',
       allowed: true,
       swigFraction: swigs ? `${swigs.remaining}/${swigs.total}` : null,
+      // Food/drink use the shared press/hold/cancel/arm/release drink-style
+      // windup (see held-item-action-input.js); raw reagents and recipe
+      // scrolls stay immediate item actions.
+      holdToCommit: held.kind === 'drink' || held.kind === 'food',
     };
   }
 
@@ -598,45 +643,28 @@
     return true;
   }
 
-  function consumeHeldItem() {
-    if (performance.now() < consumeLockUntil) return false;
+  // Commit-only mutation for held food/drink, called exactly once at the
+  // drink-style animation's strike frame (see beginHeldItemAction below).
+  // Revalidates the held item/key fresh rather than trusting whatever was
+  // true back when the press began — the player could have switched stacks,
+  // spent the last one elsewhere, or lost the selection entirely mid-hold.
+  function commitHeldConsumable(expectedKey) {
     const held = getHeldConsumable();
-    if (!held) return false;
+    if (!held || held.key !== expectedKey || (held.kind !== 'drink' && held.kind !== 'food')) {
+      itemDeps?.showToast?.('Nothing to consume.', false);
+      return null;
+    }
     const { key, def, inventory } = held;
 
     if (held.kind === 'drink') {
-      let result = null; // Filled exactly once at the authored drink strike.
-      const applyDrink = () => {
-        if (result) return result;
-        result = window.AlchemySystem?.drinkPotion?.(key);
-        if (!result) return null;
-        itemDeps.showToast?.(result.message, result.ok !== false);
-        itemDeps.refreshItemScroll?.();
-        itemDeps.buildInventoryGrid?.();
-        itemDeps.refreshActionBar?.();
-        itemDeps.saveMemberWorldData?.();
-        return result;
-      };
-      const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key, applyDrink)) || 0; // Existing liquor animation path.
-      if (!(animationMs > 0)) applyDrink();
-      consumeLockUntil = performance.now() + Math.max(180, animationMs);
-      return true;
-    }
-
-    if (held.kind === 'rawReagent') {
-      const result = window.AlchemySystem?.consumeRawReagent?.(key);
-      itemDeps.showToast?.(result?.message || 'Could not eat that reagent.', result?.ok !== false);
-      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
-      consumeLockUntil = performance.now() + 180;
-      return true;
-    }
-
-    if (held.kind === 'recipe') {
-      const result = window.AlchemySystem?.readRecipeItem?.(key);
-      itemDeps.showToast?.(result?.message || 'Could not read that recipe.', result?.ok !== false);
-      itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
-      consumeLockUntil = performance.now() + 180;
-      return true;
+      const result = window.AlchemySystem?.drinkPotion?.(key);
+      if (!result) return null;
+      itemDeps.showToast?.(result.message, result.ok !== false);
+      itemDeps.refreshItemScroll?.();
+      itemDeps.buildInventoryGrid?.();
+      itemDeps.refreshActionBar?.();
+      itemDeps.saveMemberWorldData?.();
+      return result;
     }
 
     inventory[key]--;
@@ -659,6 +687,83 @@
     itemDeps.buildInventoryGrid?.();
     itemDeps.refreshActionBar?.();
     itemDeps.saveMemberWorldData?.();
+    return { ok: true };
+  }
+
+  // Locks out a fresh begin() until the drink animation's strike-to-neutral
+  // recovery tail has had time to finish playing, so releasing right after
+  // commit can't stomp the still-recovering pose with a brand-new one.
+  function lockAfterHeldConsumeCommit() {
+    const animation = window.HeldActionAnimations?.drink;
+    const strikeFrac = Number(animation?.strikeFrac) || 0.62;
+    const durationS = Number(animation?.durationS) || 0.95;
+    const tailMs = Math.max(0, 1 - strikeFrac) * durationS * 1000;
+    consumeLockUntil = performance.now() + Math.max(180, tailMs);
+  }
+
+  // Recipe-scroll reading and raw-reagent consumption are immediate item
+  // actions rather than drink-style windups — shared by both the primary
+  // begin() path and the legacy immediate fallback below. Returns null if
+  // `held` isn't one of these two kinds.
+  function commitImmediateIfReagentOrRecipe(held) {
+    if (held.kind === 'rawReagent') {
+      const result = window.AlchemySystem?.consumeRawReagent?.(held.key);
+      itemDeps.showToast?.(result?.message || 'Could not eat that reagent.', result?.ok !== false);
+    } else if (held.kind === 'recipe') {
+      const result = window.AlchemySystem?.readRecipeItem?.(held.key);
+      itemDeps.showToast?.(result?.message || 'Could not read that recipe.', result?.ok !== false);
+    } else {
+      return null;
+    }
+    itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.refreshActionBar?.(); itemDeps.saveMemberWorldData?.();
+    consumeLockUntil = performance.now() + 180;
+    return true;
+  }
+
+  // Begins the held-item action on press. Recipe reading and raw-reagent
+  // consumption stay immediate, exactly as before — only food/drink route
+  // through the shared press/hold/cancel/arm/release windup (see
+  // held-item-action-input.js), committing once at its strike frame via
+  // commitHeldConsumable above.
+  function beginHeldItemAction() {
+    if (performance.now() < consumeLockUntil) return false;
+    const held = getHeldConsumable();
+    if (!held) return false;
+
+    const immediate = commitImmediateIfReagentOrRecipe(held);
+    if (immediate != null) return immediate;
+
+    const key = held.key;
+    const commit = () => {
+      commitHeldConsumable(key);
+      lockAfterHeldConsumeCommit();
+    };
+    const descriptor = {
+      startVisual() {
+        const started = itemDeps.beginHeldDrinkAnimation?.(key, commit);
+        if (!started) commit(); // Animation unavailable — degrade to immediate consumption.
+      },
+      resumeVisual() { itemDeps.continueHeldDrinkAnimation?.(); },
+      cancelVisual() { itemDeps.cancelHeldDrinkAnimation?.(); },
+      abortVisual() { itemDeps.abortHeldDrinkAnimation?.(); },
+    };
+    if (!window.HeldItemActionInput) { descriptor.startVisual(); return true; } // Degrade gracefully if the controller failed to load.
+    return window.HeldItemActionInput.begin(key, descriptor);
+  }
+
+  // Immediate compatibility fallback with no press/hold/release semantics
+  // at all — for a caller with no natural press/release pairing (a stray
+  // programmatic dispatch, an unbound legacy key that only ever fires once).
+  // Ordinary player input never reaches this: it's claimed by
+  // beginHeldItemAction's hold controller path first, so this can't
+  // double-consume or leave an item stuck mid-hold with nothing to release it.
+  function consumeHeldItemImmediate() {
+    if (performance.now() < consumeLockUntil) return false;
+    const held = getHeldConsumable();
+    if (!held) return false;
+    const immediate = commitImmediateIfReagentOrRecipe(held);
+    if (immediate != null) return immediate;
+    commitHeldConsumable(held.key);
     consumeLockUntil = performance.now() + 180;
     return true;
   }
@@ -704,7 +809,8 @@
   else window.addEventListener('load', startPostFrameLoop, { once: true });
 
   window.HobunjiDrunkGameplayBridge = {
-    consumeHeldItem,
+    beginHeldItemAction,
+    consumeHeldItemImmediate,
     consumeBottleSwig,
     getHeldItemAction,
     getBottleSwigStatus,

@@ -201,6 +201,10 @@
     let skillSpeed = 1 + normalizedPower(skillKey) * 0.5; // Used as the skill-owned action baseline before temporary alchemy modifiers.
     if (skillKey === 'foraging') skillSpeed = 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1 + foodStacks('foraging') * 0.02; // Increase Foraging Speed perk.
     else if (skillKey === 'mining') skillSpeed = 1 + (window.PerkSystem?.rank('mining', 'increaseMiningSpeed') || 0) * 0.1 + foodStacks('mining') * 0.02; // Increase Mining Speed perk; five ranks preserve the former +50% cap.
+    // Farmhand adds on top of Farming's existing automatic level-based speed
+    // curve (unlike Foraging/Mining, which replace theirs outright) so an
+    // existing save's dig/plant/harvest pacing never regresses.
+    else if (skillKey === 'farming') skillSpeed = 1 + normalizedPower('farming') * 0.5 + (window.PerkSystem?.rank('farming', 'farmhand') || 0) * 0.06 + foodStacks('farming') * 0.02;
     const strengthWorkSpeed = ['foraging', 'mining', 'farming'].includes(skillKey) ? (window.AlchemySystem?.getWorkSpeedMultiplier?.() || 1) : 1; // Used to apply Strength only to chop, mine, and dig actions.
     return skillSpeed * strengthWorkSpeed;
   }
@@ -244,7 +248,60 @@
 
   function qualityPower(skillKey) {
     const perkId = QUALITY_PERKS[skillKey];
-    return perkId ? Math.min(1, (window.PerkSystem?.rank(skillKey, perkId) || 0) * 0.2 + foodStacks(skillKey) * 0.02) : normalizedPower(skillKey);
+    if (perkId) return Math.min(1, (window.PerkSystem?.rank(skillKey, perkId) || 0) * 0.2 + foodStacks(skillKey) * 0.02);
+    if (skillKey === 'farming') {
+      // Farming keeps its original automatic level-based quality curve (see
+      // the comment above bonusYieldChance) so the new Selective Harvest
+      // perk only ever adds on top of it rather than nerfing existing saves.
+      const perkBonus = (window.PerkSystem?.rank('farming', 'selectiveHarvest') || 0) * 0.1;
+      return Math.min(1.5, normalizedPower('farming') + perkBonus);
+    }
+    return normalizedPower(skillKey);
+  }
+
+  // ── Processing-quality resolution (Farming perk tree, docs/js/perk-system.js) ──
+  // Output quality evolves from the input's own tracked quality rather than
+  // being rerolled from scratch: every processing action rolls at most one
+  // star of change from the input. Quick presses (mash/squeeze/grind/churn)
+  // mostly preserve quality; preservation (dry/smoke) is slightly harder to
+  // improve; aging (barrel/vase) has the best odds of turning good
+  // ingredients into something better — see docs/js/game.js's
+  // PROCESSING_METHOD_CLASSES for the method → class mapping.
+  const PROCESSING_BASE_WEIGHTS = {
+    quick: { down: 0.15, up: 0.15 },
+    preservation: { down: 0.25, up: 0.20 },
+    aging: { down: 0.20, up: 0.35 },
+  };
+
+  let lastProcessingRoll = null; // Mobile-visible diagnostics — see processingDiagnosticsText(), rendered by CookingSystem's debug panel.
+
+  function rollProcessingQuality(inputStars, methodClass = 'quick') {
+    const random = deps?.random || Math.random; // Used so tests can inject deterministic rolls.
+    const safeInput = Math.max(1, Math.min(5, Math.round(Number(inputStars) || 3)));
+    const base = PROCESSING_BASE_WEIGHTS[methodClass] || PROCESSING_BASE_WEIGHTS.quick;
+    const artisan = window.PerkSystem?.rank('farming', 'artisan') || 0; // 0-5, applies to every processing method.
+    const careful = window.PerkSystem?.rank('farming', 'carefulBatches') || 0; // 0-3, raises the floor.
+    const cellarmaster = methodClass === 'aging' ? (window.PerkSystem?.rank('farming', 'cellarmaster') || 0) : 0; // 0-5, aging specialist.
+    const preserver = methodClass === 'preservation' ? (window.PerkSystem?.rank('farming', 'preserver') || 0) : 0; // 0-5, preservation specialist.
+    const specialist = Math.max(cellarmaster, preserver);
+    let down = base.down - artisan * 0.03 - specialist * 0.03 - careful * 0.05;
+    let up = base.up + artisan * 0.025 + specialist * 0.035;
+    if (methodClass === 'quick' && careful >= 3) down = 0; // Careful Batches R3: ordinary quick-processing never lowers quality.
+    if (safeInput >= 5 && artisan >= 5) down = 0; // Artisan R5: ★★★★★ inputs can never lose quality.
+    down = Math.max(0, down);
+    up = Math.max(0, up);
+    const same = Math.max(0, 1 - down - up);
+    const roll = random() * (down + same + up);
+    const delta = roll < down ? -1 : roll < down + same ? 0 : 1;
+    const outputStars = Math.max(1, Math.min(5, safeInput + delta));
+    lastProcessingRoll = { methodClass, inputStars: safeInput, outputStars, delta: outputStars - safeInput, farmingLevel: level('farming'), artisan, careful, cellarmaster, preserver };
+    return outputStars;
+  }
+
+  function processingDiagnosticsText() {
+    if (!lastProcessingRoll) return '';
+    const r = lastProcessingRoll;
+    return `PROCESSING\nMethod class: ${r.methodClass}\nInput: ${r.inputStars}★\nFarming level: ${r.farmingLevel}\nArtisan: ${r.artisan}  Careful Batches: ${r.careful}  Cellarmaster: ${r.cellarmaster}  Preserver: ${r.preserver}\nQuality delta: ${r.delta > 0 ? '+' : ''}${r.delta}\nOutput: ${r.outputStars}★`;
   }
 
   function rollQuality(skillKey) {
@@ -313,6 +370,8 @@
     rareFishWeightMultiplier,
     craftIngredientSaveChance,
     rollQuality,
+    rollProcessingQuality,
+    processingDiagnosticsText,
     starRatingText,
     render,
     snapshot: persist,

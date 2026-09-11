@@ -158,7 +158,7 @@
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fishing-events.js','fishing-events','20260826gullet2');
+    parserOrderedScript('fishing-events.js','fishing-events','20260910manuals1');
   }
   function loadAmphibiousFishingForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;

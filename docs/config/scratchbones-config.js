@@ -74,6 +74,14 @@ window.SCRATCHBONES_CONFIG = {
         "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
       },
       "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
+      // Daytime roaming cycle: choose a genuinely distant station, travel
+      // there without changing targets, then remain there before repeating.
+      "wander": {
+        "radiusTiles": 6,
+        "minTravelTiles": 3,
+        "waitMinSeconds": 10,
+        "waitMaxSeconds": 15
+      },
       // Diet classification, used by barn troughs to decide which fodder
       // (plantFodder/meatFodder) a housed animal will actually eat —
       // predator: meatFodder only, prey: plantFodder only, omnivore: either.
@@ -244,6 +252,7 @@ window.SCRATCHBONES_CONFIG = {
       "tapWindowMs": 350,
       "cameraRotateDegPerPx": 0.15,
       "cameraRotateClampDeg": 45,
+      "cameraRotateUpClampDeg": 85, // Used by gameplay pitch so upward look can be wider without loosening downward/yaw limits.
       "wheelZoomStep": 0.05,
       "wheelZoomMin": 0.75,
       "wheelZoomMax": 2.5
@@ -252,6 +261,10 @@ window.SCRATCHBONES_CONFIG = {
       "storageKey": "scratchbones.inputBindings.v1",
       "gamepadDeadzone": 0.24,
       "axisPressThreshold": 0.55,
+      "controllerMoveResponse": 1.25,
+      "controllerLookResponse": 1.45,
+      "controllerLookDegPerSec": 190,
+      "controllerLookVerticalScale": 0.8,
       "touchJoystick": {
         "radius": 56,
         "deadzone": 0.14,

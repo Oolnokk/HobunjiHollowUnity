@@ -18,7 +18,7 @@ function makeCanvas() {
 
 const context = { // Browser-like global used to evaluate the PNG avatar helper without Three.js.
   console,
-  document: { createElement: tag => tag === 'canvas' ? makeCanvas() : null },
+  document: { createElement: tag => tag === 'canvas' ? makeCanvas() : null, readyState: 'complete', getElementById: () => null },
 };
 context.window = context;
 context.globalThis = context;

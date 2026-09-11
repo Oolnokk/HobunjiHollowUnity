@@ -7,6 +7,7 @@
   const CLOCK_FULL_DAY_TARGET_SECONDS = 1008; // Used by the outer time01 accessor to preserve the existing ~42 real seconds per represented game hour across all 24 hours.
   const EXTRA_NATURAL_TIME_SCALE = CLOCK_OLD_TARGET_SECONDS / CLOCK_FULL_DAY_TARGET_SECONDS; // Applied before CalendarSystem's existing 3/7 natural-time scale so the combined scale becomes 2/7.
   const DAY_ROLLOVER_HOUR = 6;
+  const CELESTIAL_AZIMUTH_OFFSET_U = -0.25; // Used by both celestial paths to rotate the shared north↔south UV trajectory onto the game's east→south→west compass axes.
   // Gameplay camera far=200. A camera-centered sphere larger than that gets its
   // forward cap clipped into a perfect screen-locked circle. Keep only the
   // opaque sky shell safely inside the far plane; preserve celestial distance.
@@ -114,14 +115,14 @@
     const h = hour < 6 ? hour + 24 : hour; // Used to keep the sun's trajectory continuous instead of snapping after 22:00.
     const t = clamp((h - 6) / 14, 0, 1);
     const altitude = Math.max(0, Math.sin(Math.PI * t));
-    return { u: mod(0.76 - 0.52 * t, 1), v: clamp(0.40 + altitude * 0.48, 0.36, 0.92) };
+    return { u: mod(0.76 - 0.52 * t + CELESTIAL_AZIMUTH_OFFSET_U, 1), v: clamp(0.40 + altitude * 0.48, 0.36, 0.92) };
   }
 
   function moonUvForHour(hour = getHour()) {
     const h = hour < 12 ? hour + 24 : hour; // Used to unwrap the 18:00→06:00 moon arc so it peaks near midnight.
     const t = clamp((h - 18) / 12, 0, 1);
     const altitude = Math.max(0, Math.sin(Math.PI * t));
-    return { u: mod(0.76 - 0.52 * t, 1), v: clamp(0.40 + altitude * 0.45, 0.36, 0.89) };
+    return { u: mod(0.76 - 0.52 * t + CELESTIAL_AZIMUTH_OFFSET_U, 1), v: clamp(0.40 + altitude * 0.45, 0.36, 0.89) };
   }
 
   function celestialOpacity(kind, hour = getHour()) {
@@ -382,7 +383,7 @@
   }
 
   function getDebugState() {
-    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true };
+    return { initialized: !!deps, assetsReady, activeScene: activeScene?.name || activeScene?.uuid || null, hour: getHour(), rawDay: deps?.calendar?.day ?? null, dayOfMonth: lunarDay(), moonPhase: lunarPhaseName(), moonIllumination: lunarIllumination(), stars: starVisibility(), cloudCover: currentCloudCover(), cloudBucket: currentCloudBucket(), effectiveDaySeconds: CLOCK_FULL_DAY_TARGET_SECONDS, dayRolloverHour: DAY_ROLLOVER_HOUR, clockHookReady: !!clockDeps, skyRadius: SKY_RADIUS, celestialRadius: CELESTIAL_RADIUS, cameraFar: deps?.camera?.far ?? null, oversizedCelestialGlowDisabled: false, celestialNoOutline: true, celestialAzimuthOffsetU: CELESTIAL_AZIMUTH_OFFSET_U, sunUv: sunUvForHour(), moonUv: moonUvForHour() };
   }
 
   installClockHook(); installWeatherHook(); installRainHook();

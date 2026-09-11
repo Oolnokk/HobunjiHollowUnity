@@ -925,14 +925,24 @@
 
     const controllerPollGeneration = (window.__hobunjiHostedControllerPollGeneration || 0) + 1;
     window.__hobunjiHostedControllerPollGeneration = controllerPollGeneration;
-    let controllerPrevButtons = [];
+    let controllerPrevButtons = new Map(); // Used to edge-track semantic music actions after controller remapping.
     let controllerAutoPickSector = -1;
     let controllerRightStickActive = false;
-    const controllerButton = (gamepad, index, key, kind, value) => {
-      const pressed = (gamepad.buttons[index]?.value || 0) > (kind === 'bank' ? 0.28 : 0.55);
-      const wasPressed = Boolean(controllerPrevButtons[index]);
+    const controllerBinding = actionId => {
+      const currentBindings = window.InputBindings?.getCurrentBindings?.()?.controller; // Used to preserve explicit Unbound values while still supporting shipped defaults before saved settings exist.
+      if (currentBindings && Object.prototype.hasOwnProperty.call(currentBindings, actionId)) return currentBindings[actionId];
+      const defaults = window.InputBindings?.getDefaultBindings?.('controller'); // Keeps music's controller schema/defaults decoupled from the global gameplay config.
+      return defaults && Object.prototype.hasOwnProperty.call(defaults, actionId) ? defaults[actionId] : null;
+    };
+    const controllerButton = (frame, actionId, key, kind, value) => {
+      const bindingCode = controllerBinding(actionId); // Used to route this musical action through the same controller mapping shown in Settings.
+      // Banks keep their responsive analog-trigger threshold; everything else
+      // uses the ordinary digital one. Read from the frame's shared per-code
+      // values rather than re-deriving them from the raw Gamepad each call.
+      const pressed = Boolean(bindingCode) && frame.isDown(bindingCode, { triggerThreshold: kind === 'bank' ? 0.28 : 0.55, buttonThreshold: 0.55, stickThreshold: 0.55 });
+      const wasPressed = Boolean(controllerPrevButtons.get(actionId)); // Used to emit one note/bank/tap edge per configured press.
       if (pressed === wasPressed) return;
-      controllerPrevButtons[index] = pressed;
+      controllerPrevButtons.set(actionId, pressed);
       const sourceId = `host-gp-${key}`;
       if (kind === 'note') {
         if (pressed) {
@@ -969,35 +979,34 @@
       }
     };
 
-    const pollHostedController = () => {
-      if (window.__hobunjiHostedControllerPollGeneration !== controllerPollGeneration) return;
-      if (activeInputLayout !== 'controller') {
-        if (hostedControllerSources.size || controllerRightStickActive) releaseHostedControllerInputs();
-        controllerPrevButtons = [];
-        controllerAutoPickSector = -1;
-        requestAnimationFrame(pollHostedController);
+    let unsubscribeHostedController = null; // Slot in ControllerInput's shared frame loop for this hosted session.
+    const pollHostedController = (frame) => {
+      // A newer hosted session supersedes this one: drop out of the shared
+      // loop entirely rather than staying registered as a dead no-op.
+      if (window.__hobunjiHostedControllerPollGeneration !== controllerPollGeneration) {
+        unsubscribeHostedController?.();
+        unsubscribeHostedController = null;
         return;
       }
-      const gamepad = [...(navigator.getGamepads?.() || [])].find(Boolean);
+      const gamepad = activeInputLayout === 'controller' ? frame.pad : null;
       if (!gamepad) {
         if (hostedControllerSources.size || controllerRightStickActive) releaseHostedControllerInputs();
-        controllerPrevButtons = [];
+        controllerPrevButtons = new Map();
         controllerAutoPickSector = -1;
-        requestAnimationFrame(pollHostedController);
         return;
       }
 
-      controllerButton(gamepad, 2, 'x', 'note', 0);
-      controllerButton(gamepad, 0, 'a', 'note', 1);
-      controllerButton(gamepad, 1, 'b', 'note', 2);
-      controllerButton(gamepad, 3, 'y', 'note', 3);
-      controllerButton(gamepad, 6, 'lt', 'bank', 'lt');
-      controllerButton(gamepad, 7, 'rt', 'bank', 'rt');
-      controllerButton(gamepad, 4, 'lb', 'bank', 'lb');
-      controllerButton(gamepad, 5, 'rb', 'bank', 'rb');
-      controllerButton(gamepad, 9, 'start', 'tap', 'pause');
-      controllerButton(gamepad, 14, 'dpad-left', 'tap', 'scale-prev');
-      controllerButton(gamepad, 15, 'dpad-right', 'tap', 'scale-next');
+      controllerButton(frame, 'musicNote1', 'note-1', 'note', 0);
+      controllerButton(frame, 'musicNote2', 'note-2', 'note', 1);
+      controllerButton(frame, 'musicNote3', 'note-3', 'note', 2);
+      controllerButton(frame, 'musicNote4', 'note-4', 'note', 3);
+      controllerButton(frame, 'musicBank1', 'bank-1', 'bank', 'lt');
+      controllerButton(frame, 'musicBank2', 'bank-2', 'bank', 'rt');
+      controllerButton(frame, 'musicBank3', 'bank-3', 'bank', 'lb');
+      controllerButton(frame, 'musicBank4', 'bank-4', 'bank', 'rb');
+      controllerButton(frame, 'musicPause', 'pause', 'tap', 'pause');
+      controllerButton(frame, 'musicScalePrev', 'scale-prev', 'tap', 'scale-prev');
+      controllerButton(frame, 'musicScaleNext', 'scale-next', 'tap', 'scale-next');
 
       const lxRaw = Number(gamepad.axes[0]) || 0;
       const lyRaw = Number(gamepad.axes[1]) || 0;
@@ -1023,9 +1032,10 @@
         controllerRightStickActive = false;
         bridge.releaseRightStick();
       }
-      requestAnimationFrame(pollHostedController);
     };
-    requestAnimationFrame(pollHostedController);
+    unsubscribeHostedController = window.ControllerInput?.subscribe?.(
+      'music-minigame', pollHostedController, window.ControllerInput.PRIORITY.music,
+    ) || null;
 
     // Right stick (strum) still uses a drag gesture — a single up/down
     // flick, not a 4-way pick, so it stays discoverable without a gamepad.

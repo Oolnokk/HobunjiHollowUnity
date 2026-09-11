@@ -8,7 +8,7 @@
 
   const DEFAULTS = Object.freeze({
     desktopOpen: 'Shift+KeyQ',
-    controllerOpen: 'Button13',
+    controllerOpen: 'Button15',
     outerButtonIcon: '☺',
     wheelRadiusPx: 190,
     wheelInnerRadiusPx: 68,
@@ -29,22 +29,6 @@
   const gameConfig = window.SCRATCHBONES_CONFIG?.game || {};
   gameConfig.socialActions = Object.assign({}, DEFAULTS, gameConfig.socialActions || {});
   const cfg = gameConfig.socialActions;
-
-  // D-pad Down used to be the mount default. Social Actions now owns it;
-  // only the untouched old default is cleared so custom mount bindings survive.
-  const inputActions = gameConfig.input?.actions;
-  if (Array.isArray(inputActions)) {
-    const mount = inputActions.find(action => action.id === 'toggleMount');
-    if (mount?.controller === DEFAULTS.controllerOpen) mount.controller = null;
-    if (!inputActions.some(action => action.id === 'socialWheel')) {
-      inputActions.push({
-        id: 'socialWheel',
-        label: 'Social Actions',
-        desktop: cfg.desktopOpen || DEFAULTS.desktopOpen,
-        controller: cfg.controllerOpen || DEFAULTS.controllerOpen,
-      });
-    }
-  }
 
   const DANCE_STYLES = Object.freeze({
     'side-step': Object.freeze({ label: 'Side Step', intensity: 1.00, stepFactor: 1.00 }),
@@ -123,7 +107,11 @@
   }
 
   function binding(device, actionId, fallback = null) {
-    return currentBindings()?.[device]?.[actionId] || fallback;
+    const current = currentBindings()?.[device]; // Preserves an explicit Unbound value instead of falling through to a legacy module default.
+    if (current && Object.prototype.hasOwnProperty.call(current, actionId)) return current[actionId];
+    const defaults = window.InputBindings?.getDefaultBindings?.(device); // Keeps controller action ownership in the binding layer rather than mutating SCRATCHBONES_CONFIG here.
+    if (defaults && Object.prototype.hasOwnProperty.call(defaults, actionId)) return defaults[actionId];
+    return fallback;
   }
 
   function parseDesktopChord(raw) {
@@ -834,44 +822,36 @@ ${outerRules}
     commitSelection();
   }
 
-  function buttonIndex(code) {
-    const match = /^Button(\d+)$/.exec(String(code || ''));
-    return match ? Number(match[1]) : -1;
-  }
-
-  function pollGamepads() {
+  // One slot in ControllerInput's shared frame loop. This used to walk every
+  // entry navigator.getGamepads() returned; it now follows the single active
+  // pad the authority resolves, which is the same pad gameplay, menus and the
+  // held selectors all act on.
+  function pollGamepads(frame) {
     installRigHooks();
     installRenderHook();
 
-    const pads = navigator.getGamepads?.() || [];
-    for (const pad of pads) {
-      if (!pad) continue;
-      const previous = state.priorGamepad.get(pad.index) || [];
-      const current = pad.buttons.map(button => !!button?.pressed);
-      const openCode = binding('controller', 'socialWheel', cfg.controllerOpen || DEFAULTS.controllerOpen);
-      const dodgeCode = binding('controller', 'dodge', 'Button1');
-      const openIndex = buttonIndex(openCode);
-      const dodgeIndex = buttonIndex(dodgeCode);
+    const pad = frame.pad;
+    if (!pad) return;
+    const previousActions = state.priorGamepad.get(pad.index) || { open: false, dodge: false }; // Used to edge-track semantic wheel actions independently of their physical bindings.
+    const openCode = binding('controller', 'socialWheel', cfg.controllerOpen || DEFAULTS.controllerOpen); // Used to honor the player's current Social Actions binding.
+    const dodgeCode = binding('controller', 'dodge', 'Button1'); // Used to honor the player's current cancel/dodge binding.
+    const openNow = Boolean(openCode) && frame.isDown(openCode); // Triggers and right-stick directional bindings work in addition to ButtonN codes.
+    const dodgeNow = Boolean(dodgeCode) && frame.isDown(dodgeCode); // Cancels the wheel/dance through any supported configured controller input.
 
-      const openNow = openIndex >= 0 && current[openIndex];
-      const openBefore = openIndex >= 0 && previous[openIndex];
-      if (openNow && !openBefore) openWheel('controller', false);
+    if (openNow && !previousActions.open) openWheel('controller', false);
 
-      if (state.open && state.openSource === 'controller') {
-        const x = Number(pad.axes?.[0]) || 0;
-        const y = Number(pad.axes?.[1]) || 0;
-        selectFromVector(x, y);
-        if (!openNow && openBefore) commitSelection();
-      }
-
-      if ((state.open || state.dance) && dodgeIndex >= 0 && current[dodgeIndex] && !previous[dodgeIndex]) {
-        cancelWheelOrDance('dodge');
-      }
-
-      state.priorGamepad.set(pad.index, current);
+    if (state.open && state.openSource === 'controller') {
+      const x = Number(pad.axes?.[0]) || 0;
+      const y = Number(pad.axes?.[1]) || 0;
+      selectFromVector(x, y);
+      if (!openNow && previousActions.open) commitSelection();
     }
 
-    requestAnimationFrame(pollGamepads);
+    if ((state.open || state.dance) && dodgeNow && !previousActions.dodge) {
+      cancelWheelOrDance('dodge');
+    }
+
+    state.priorGamepad.set(pad.index, { open: openNow, dodge: dodgeNow });
   }
 
   function bindMobileDodge() {
@@ -923,7 +903,7 @@ ${outerRules}
       updateDebug();
     }, 1000);
 
-    requestAnimationFrame(pollGamepads);
+    window.ControllerInput?.subscribe?.('social-action-wheel', pollGamepads, window.ControllerInput.PRIORITY.socialWheel);
   }
 
   window.SocialActionWheel = {

@@ -14,6 +14,7 @@ class BufferGeometry {
   constructor() { this.attributes = {}; }
   setAttribute(name, value) { this.attributes[name] = value; }
   computeBoundingSphere() {}
+  setDrawRange(start, count) { this.drawRange = { start, count }; }
 }
 class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; } }
 class PointsMaterial { constructor(options) { Object.assign(this, options); } }
@@ -37,7 +38,11 @@ WebGLRenderer.prototype.render = function(scene) {
     cropRot: crop?.rotation.y,
     actorRot: actor?.rotation.y,
     sparkleVisible: sparkles?.visible,
-    sparkleCoords: sparkles?.geometry?.attributes?.position?.array?.length || 0,
+    // The position buffer is capacity-allocated (grows in powers of two, see
+    // ensurePointCapacity) and trimmed to the active portion via
+    // geometry.setDrawRange, so the *active* coordinate count is
+    // drawRange.count * 3, not the raw (possibly over-allocated) array length.
+    sparkleCoords: (sparkles?.geometry?.drawRange?.count ?? 0) * 3,
   });
   return true;
 };
@@ -69,30 +74,36 @@ const actor = {
 }; // Used to ensure half-tile animated character-like Groups never get treated as crops.
 scene.children.push(crop, actor);
 
-const context = { window: { THREE }, performance: { now: () => now }, Date, Math, Number, Float32Array };
+const context = { window: { THREE }, performance: { now: () => now }, Date, Math, Number, Float32Array, queueMicrotask };
 vm.runInNewContext(source, context);
 const renderer = new THREE.WebGLRenderer();
 
-renderer.render(scene, {});
-assert.equal(draws.at(-1).cropRot, 10, 'first observation does not guess that a static crop is ripe');
+(async () => {
+  renderer.render(scene, {});
+  assert.equal(draws.at(-1).cropRot, 10, 'first observation does not guess that a static crop is ripe');
 
-now += 16;
-crop.rotation.y = 10.01;
-crop.position.y = 0.55;
-actor.rotation.y = 2.02;
-renderer.render(scene, {});
-assert.equal(draws.at(-1).cropRot, 0, 'detected ripe crop is drawn without the game.js rotation');
-assert.ok(Math.abs(draws.at(-1).cropY - 0.54) < 1e-9, 'detected ripe crop is drawn at the learned bob midpoint');
-assert.equal(draws.at(-1).actorRot, 2.02, 'unmarked animated groups are not neutralized as crops');
-assert.equal(draws.at(-1).sparkleVisible, true, 'detected ripe crop enables the shared sparkle cue');
-assert.equal(draws.at(-1).sparkleCoords, 12, 'four sparkles create four xyz triplets for one ripe crop');
-assert.equal(crop.rotation.y, 10.01, 'game-owned ripe rotation is restored immediately after drawing');
-assert.equal(crop.position.y, 0.55, 'game-owned ripe bob position is restored immediately after drawing');
+  now += 100; // Scene discovery is throttled to 10 Hz (DISCOVERY_INTERVAL_MS); must clear that gate for the second scan to re-observe this crop.
+  crop.rotation.y = 10.01;
+  crop.position.y = 0.55;
+  actor.rotation.y = 2.02;
+  // scanValidThisTurn only resets inside a queued microtask (queueTurnReset);
+  // flush it so the second render actually re-runs scene discovery instead of
+  // reusing the first scan's (not-yet-ripe) cached result.
+  await new Promise(resolve => setImmediate(resolve));
+  renderer.render(scene, {});
+  assert.equal(draws.at(-1).cropRot, 0, 'detected ripe crop is drawn without the game.js rotation');
+  assert.ok(Math.abs(draws.at(-1).cropY - 0.54) < 1e-9, 'detected ripe crop is drawn at the learned bob midpoint');
+  assert.equal(draws.at(-1).actorRot, 2.02, 'unmarked animated groups are not neutralized as crops');
+  assert.equal(draws.at(-1).sparkleVisible, true, 'detected ripe crop enables the shared sparkle cue');
+  assert.equal(draws.at(-1).sparkleCoords, 12, 'four sparkles create four xyz triplets for one ripe crop');
+  assert.equal(crop.rotation.y, 10.01, 'game-owned ripe rotation is restored immediately after drawing');
+  assert.equal(crop.position.y, 0.55, 'game-owned ripe bob position is restored immediately after drawing');
 
-const billboardIndex = loader.indexOf('crop-billboard-presentation.js'); // Used to preserve current sizing/clustering/flood anchoring before the ripe presentation wrapper installs.
-const readyIndex = loader.indexOf('crop-ready-presentation.js?v=20260815a');
-const metadataIndex = loader.indexOf('inventory-action-metadata-bridge.js');
-assert.ok(billboardIndex >= 0 && readyIndex > billboardIndex && metadataIndex > readyIndex,
-  'ripe sparkle presentation loads after current crop presentation and before unrelated inventory metadata');
+  const billboardIndex = loader.indexOf('crop-billboard-presentation.js'); // Used to preserve current sizing/clustering/flood anchoring before the ripe presentation wrapper installs.
+  const readyIndex = loader.search(/crop-ready-presentation\.js\?v=\d+\w*/);
+  const metadataIndex = loader.indexOf('inventory-action-metadata-bridge.js');
+  assert.ok(billboardIndex >= 0 && readyIndex > billboardIndex && metadataIndex > readyIndex,
+    'ripe sparkle presentation loads after current crop presentation and before unrelated inventory metadata');
 
-console.log('ripe crop sparkle presentation tests passed');
+  console.log('ripe crop sparkle presentation tests passed');
+})();

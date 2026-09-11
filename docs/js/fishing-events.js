@@ -546,7 +546,7 @@
 
   function rollTreasureBundle() {
     if (!treasureDeps?.getLootPools || !treasureDeps?.rnd) return null;
-    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, recipeItemKey: null, clothing: null }; // Used as the exact buried-chest-shaped reward bundle granted by Gullet retrieval.
+    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, recipeItemKey: null, combatManualKey: null, clothing: null }; // Used as the exact buried-chest-shaped reward bundle granted by Gullet retrieval.
     if (rollTreasureChance('metalBars', 1)) bundle.metalKeys = rollTreasureMetalKeys();
     if (rollTreasureChance('mysteryDye', 1)) bundle.dyeItemKeys = rollTreasureDyeItemKeys();
     if (rollTreasureChance('gold', 0.7)) {
@@ -562,6 +562,9 @@
       const chosen = recipes[Math.floor(treasureDeps.rnd() * recipes.length)]; // Used as the treasure's random authored reaction.
       if (chosen && treasureDeps.rnd() < 0.25) bundle.recipeItemKey = window.AlchemySystem.ensureRecipeScrollItemDef(chosen.id);
       else if (chosen) bundle.potionKey = window.AlchemySystem.ensureRecipeItemDef(chosen.id, Math.floor(treasureDeps.rnd() * 3));
+    }
+    if (rollTreasureChance('combatManual', 0.08)) {
+      bundle.combatManualKey = window.TechniqueScrolls?.rollManualKey?.({ random: treasureDeps.rnd }) || null; // Used as the same rare manual roll as buried chests.
     }
     if (rollTreasureChance('clothing', 0.25) && window.DyeSystem?.getCatalog) {
       const catalog = window.DyeSystem.getCatalog(); // Used as the same live dye catalog as buried chest clothing.
@@ -611,6 +614,10 @@
     if (bundle.recipeItemKey) {
       treasureDeps.inventory[bundle.recipeItemKey] = Math.min(99, (treasureDeps.inventory[bundle.recipeItemKey] || 0) + 1);
       parts.push(`${treasureDeps.ITEM_DEFS?.[bundle.recipeItemKey]?.icon || '📜'} ${treasureDeps.ITEM_DEFS?.[bundle.recipeItemKey]?.label || 'Alchemy Recipe'}`);
+    }
+    if (bundle.combatManualKey) {
+      treasureDeps.inventory[bundle.combatManualKey] = Math.min(99, (treasureDeps.inventory[bundle.combatManualKey] || 0) + 1);
+      parts.push(`${treasureDeps.ITEM_DEFS?.[bundle.combatManualKey]?.icon || '📕'} ${treasureDeps.ITEM_DEFS?.[bundle.combatManualKey]?.label || 'Combat Manual'}`);
     }
     if (bundle.clothing) {
       const packClothing = treasureDeps.getPackClothing?.(); // Used as the existing clothing inventory target for rolled treasure garments.

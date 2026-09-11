@@ -601,6 +601,11 @@
       const CAMERA_JOYSTICK_DEADZONE = 0.14;
       const CAMERA_JOYSTICK_RESPONSE = 0.82;
       const CAMERA_JOYSTICK_DEG_PER_SEC = 150; // turn rate at full deflection
+      const _controllerInputCfg = window.SCRATCHBONES_CONFIG?.game?.input || {}; // Used by both stick response curves and right-stick camera rotation.
+      const CONTROLLER_MOVE_RESPONSE = Number(_controllerInputCfg.controllerMoveResponse) || 1.25;
+      const CONTROLLER_LOOK_RESPONSE = Number(_controllerInputCfg.controllerLookResponse) || 1.45;
+      const CONTROLLER_LOOK_DEG_PER_SEC = Number(_controllerInputCfg.controllerLookDegPerSec) || 190;
+      const CONTROLLER_LOOK_VERTICAL_SCALE = Number(_controllerInputCfg.controllerLookVerticalScale) || 0.8;
       const ACTION_FX_LIMIT = 90; // used by spawnActionParticles()/updateActionParticles() to cap mobile effects.
       const FLOW_SOURCE_ROW = 0;
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
@@ -2550,20 +2555,48 @@
       const PROCESS_BURST_S = 1.2;
 
       function consumeProcessingInput(inputKey) {
-        const trackedStars = window.CookingSystem?.consumeBestQuality?.(inputKey, 1); // Used to consume the same quality bucket as the inventory unit.
+        // Ordinary automatic processing consumes the player's worst-quality
+        // stock first so a stray press/churn/age can't quietly burn through
+        // a prize-quality unit; Cooking's own deliberate Auto-fill-best stays
+        // on consumeBestQuality (see CookingSystem.consumeBestQuality).
+        const trackedStars = window.CookingSystem?.consumeLowestQuality?.(inputKey, 1);
         if (trackedStars) return trackedStars;
         inventory[inputKey]--;
         clampInventoryStack(inputKey);
         return Math.max(1, Math.min(5, Number(ITEM_DEFS[inputKey]?.cookingDefaultStars) || 3));
       }
 
-      function addProcessedOutputs(outputs, inputStars) {
+      // Maps each processing method onto the craftsmanship identity
+      // SkillSystem.rollProcessingQuality uses to weight its ±1 quality roll
+      // (see docs/js/skill-system.js) — quick presses mostly preserve
+      // quality, preservation is slightly harder to improve, and aging has
+      // the best odds of turning good ingredients into something better.
+      const PROCESSING_METHOD_CLASSES = {
+        mashing: 'quick', squeezing: 'quick', grinding: 'quick', churning: 'quick',
+        drying: 'preservation', smoking: 'preservation',
+        barrelAging: 'aging', vaseAging: 'aging',
+      };
+
+      function addProcessedOutputs(outputs, inputStars, methodId) {
+        const methodClass = PROCESSING_METHOD_CLASSES[methodId] || 'quick';
+        // Output quality evolves from the input's actual quality rather than
+        // being rerolled from scratch — see the processing-quality-resolution
+        // design in SkillSystem.rollProcessingQuality.
+        const outputStars = window.SkillSystem?.rollProcessingQuality?.(inputStars, methodClass) ?? inputStars;
+        // Efficient Processing (Farming perk): a modest chance for one extra
+        // unit of each output from the same batch without consuming another
+        // ingredient — capped well below Bountiful Harvest's rate since
+        // processed goods are already economically amplified by quality.
+        const efficientProcessingRank = window.PerkSystem?.rank('farming', 'efficientProcessing') || 0;
+        const bonusChance = Math.min(0.15, efficientProcessingRank * 0.03);
+        const bonusUnit = bonusChance > 0 && (window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0;
         outputs.forEach(output => {
           window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
-          inventory[output.key] = Math.min(99, previousCount + 1);
-          window.CookingSystem?.recordItemQuality?.(output.key, inputStars, inventory[output.key] - previousCount); // Used to carry the source stars through pressing, grinding, drying, and aging.
+          inventory[output.key] = Math.min(99, previousCount + 1 + bonusUnit);
+          window.CookingSystem?.recordItemQuality?.(output.key, outputStars, inventory[output.key] - previousCount);
         });
+        return outputStars;
       }
 
       function makeProcessingFurniture(col, row, furnitureKey, savedJob, rotYDeg = 0) {
@@ -2614,13 +2647,13 @@
           if (job?.kind !== 'timed') return;
           const finished = job;
           job = null;
-          addProcessedOutputs(finished.outputs, finished.inputStars);
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method);
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
           window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(outputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
         }
         function updateVfx(dt) {
           if (!authoredVfx) return;
@@ -2668,15 +2701,24 @@
               const outDef = job.outputs[0];
               return [{ icon: outDef.icon, label: `Collect ${outDef.label}`, action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }];
             }
-            const active = getActiveInventoryItem();
+            // Insertion eligibility requires the ingredient to actually be
+            // the held item (heldMode === 'item'), not merely whatever
+            // stack getActiveInventoryItem() happens to still be reporting
+            // as selected — a selected-but-not-held stack (e.g. the player
+            // switched back to a tool) must not qualify.
+            const active = heldMode === 'item' ? getActiveInventoryItem() : null;
             const outputs = active ? window.ItemProcessing.getProcessingOutputs(def.method, active.key) : null;
             const output = outputs ? outputs[0] : null;
+            const allowed = Boolean(output && (inventory[active.key] || 0) > 0);
             return [{
               icon: output ? def.icon : '…',
               label: output ? window.ItemProcessing.processButtonLabel(def.method, active.key, output) : window.ItemProcessing.methodIdleLabel(def.method),
               action: 'obj_process_' + furnitureKey,
               style: output ? 'primary' : 'secondary',
-              allowed: Boolean(output && (inventory[active.key] || 0) > 0),
+              allowed,
+              // Insertion (unlike collection/aging-pickup above) goes through
+              // the shared drink-style hold windup — see held-item-action-input.js.
+              holdToCommit: allowed,
             }];
           },
           onAction(action) {
@@ -2687,11 +2729,16 @@
               const outputs = job.outputs;
               const inputStars = job.inputStars;
               job = null;
-              addProcessedOutputs(outputs, inputStars);
+              const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
               window.FarmEditor.saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
+            // Same held-not-merely-selected eligibility as getButtons() above
+            // — re-checked here (not just there) because this is the actual
+            // mutation gate, reached both by the immediate compatibility
+            // fallback and by the hold controller's strike-time commit.
+            if (heldMode !== 'item') return { ok: false, message: def.name + ' needs a held ingredient.' };
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
             const outputs = window.ItemProcessing.getProcessingOutputs(def.method, active.key);
@@ -2711,10 +2758,26 @@
                 ? { ok: true, message: `${def.icon} Started squeezing 1 ${inputLabel}; the batch will finish in ${Math.round(started.durationS)} seconds.` }
                 : started;
             }
-            addProcessedOutputs(outputs, inputStars);
+            const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
-            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+          },
+          // Cheap non-mutating precheck for the held-item hold controller's
+          // press — mirrors getButtons()'s eligibility without touching
+          // inventory/job state. The actual mutation happens at the drink-
+          // style animation's strike frame via onAction(action) above, which
+          // re-validates everything itself (held item, job state, and the
+          // ItemProcessing result) from scratch rather than trusting this.
+          beginHeldInsertion() {
+            if (job) return { ok: false, message: `${def.name} is busy right now.` };
+            if (heldMode !== 'item') return { ok: false, message: def.name + ' needs a held ingredient.' };
+            const active = getActiveInventoryItem();
+            if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
+            const outputs = window.ItemProcessing.getProcessingOutputs(def.method, active.key);
+            if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
+            if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
+            return { ok: true, itemKey: active.key };
           },
           reset() {
             window.FarmAnimals?.clearVatWorkerPose?.(this.id);
@@ -3570,7 +3633,7 @@
           return;
         }
         const shoulderHeadDirection = activeCameraMode === SHOULDER_SURF_MODE
-          ? currentPlayerPerspectiveDirection(playerPerspectiveOriginWorld())
+          ? currentPlayerPerspectiveDirection()
           : null; // Used below to keep the head's complete yaw/pitch ray fixed on the shared perspective point.
         const shoulderHeadFacing = shoulderHeadDirection
           ? Math.atan2(shoulderHeadDirection.z, shoulderHeadDirection.x)
@@ -4452,7 +4515,7 @@
       const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
       function currentPlayerAimPitch() {
         if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const direction = currentPlayerPerspectiveDirection(playerPerspectiveOriginWorld()); // Carries the shared point's real verticality into ranged poses and launch pitch.
+          const direction = currentPlayerPerspectiveDirection(); // Carries the shared point's real verticality into ranged poses and launch pitch (origin defaults to the head anchor).
           if (direction) {
             return window.FormatUtils.clamp(
               Math.asin(window.FormatUtils.clamp(direction.y, -1, 1)),
@@ -4477,7 +4540,7 @@
       // otherwise the camera/facing yaw and pitch remain authoritative.
       function currentPlayerMeleeAimDirection() {
         if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const perspectiveDirection = currentPlayerPerspectiveDirection(playerPerspectiveOriginWorld()); // Makes melee and lunge elevation converge on the same point as the head and muzzle.
+          const perspectiveDirection = currentPlayerPerspectiveDirection(); // Makes melee and lunge elevation converge on the same point as the head and muzzle.
           if (perspectiveDirection) return perspectiveDirection;
         }
         const focused = window.RangedWeapons?.focusedHostile?.(24);
@@ -4862,8 +4925,15 @@
         const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
         // A creature stationed onBranch (see wildlife-spawn.js's Nestmother
         // spawn) uses that branch's own height instead of terrain-follow —
-        // same override the player gets while climbing/on a branch.
-        const surfY = c.onBranch ? c.branchSurfaceY : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
+        // same override the player gets while climbing/on a branch. A mount
+        // mid-climb-leap (see mount-system.js's startClimbLeap/updateClimbLeap)
+        // gets the same treatment for the same reason the player's own
+        // climbSurfaceY exists: it's mid-crossing through impassable incline
+        // tiles, so a raw tile lookup would pop between the cliff base and
+        // landing the instant the crossing tile flips underneath it.
+        const surfY = c.onBranch ? c.branchSurfaceY
+          : c._climbLeap ? c._climbLeap.surfaceY
+          : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const grp = c.avatarRef.group;
         // scaleY (driven by attacks like Pounce, default 1) squashes the
         // sprite plane vertically around its own bottom edge rather than its
@@ -8469,6 +8539,8 @@
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
+      const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
+      const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
       window._npcWalkers = npcWalkers;
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
       // dialogueOpen/_dialogueWalker are read/written both here (camera/
@@ -8597,8 +8669,8 @@
       let activeCameraMode   = defaultCameraModeKey();
       let activeCameraTarget = null;
       // Mobile drag-to-look offsets, layered on top of the active mode's base
-      // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
-      // not a free-orbit camera.
+      // azimuth/angle. Horizontal/downward look keeps the legacy 45° limit;
+      // upward pitch uses the wider shooter-style limit from desktopControls.
       let cameraAzimuthOffsetDeg = 0;
       let cameraAngleOffsetDeg   = 0;
       // Reused every frame by occlusionSafeCameraPosition — a fresh
@@ -10402,10 +10474,13 @@
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
         for (const rec of dbNpcs) {
+          if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
-          if (!target) { deferred.push(rec); continue; }
+          if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
+          if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
           try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
           catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
+          finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
         }
         console.log(`[NPC] Spawned ${npcWalkers.length}/${dbNpcs.length} walkers. inspect: window._npcWalkers`);
         console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
@@ -10434,10 +10509,13 @@
         setTimeout(async () => {
           const stillDeferred = [];
           for (const rec of records) {
+            if (npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
             const target = resolveNpcScheduleTarget(rec);
             if (!target) { stillDeferred.push(rec); continue; }
+            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
             try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
             catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
+            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
           if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
@@ -10898,6 +10976,10 @@
             }
             this._prevScheduleActivity = scheduleActivity;
             if (!target) return;
+            if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
+              despawnNpcVisitor(this); // Used to remove a recurring visitor only after they physically reach the authored exit.
+              return;
+            }
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
                 // May be several hops away (e.g. town → a building → one of its
@@ -11128,6 +11210,41 @@
         return walker;
       }
 
+      function despawnNpcVisitor(walker) {
+        const index = npcWalkers.indexOf(walker); // Used to remove exactly this completed departure without touching another NPC.
+        if (index < 0) return false;
+        walker.root?.parent?.remove?.(walker.root);
+        walker.root?._npcScene?.remove?.(walker.root);
+        walker.legs?.dispose?.();
+        walker.root?.traverse?.(object => {
+          object.geometry?.dispose?.();
+          const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []; // Used to release this visitor avatar's per-spawn GPU materials.
+          materials.forEach(material => { material.map?.dispose?.(); material.dispose?.(); });
+        });
+        npcWalkers.splice(index, 1);
+        window.__farmLog?.(`[schedule] ${walker.rec?.id || 'visitor'} despawned at ${walker.currentScheduleTarget?.label || 'visitor exit'}`, 'info');
+        return true;
+      }
+
+      let visitorArrivalCheckT = 0; // Used to throttle recurring visitor arrival checks to twice per second.
+      function updateNpcVisitorArrivals(dt) {
+        visitorArrivalCheckT -= dt;
+        if (visitorArrivalCheckT > 0) return;
+        visitorArrivalCheckT = 0.5;
+        for (const rec of scheduledNpcRecords.values()) {
+          if (!rec?.visitorPresence || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
+          const target = resolveNpcScheduleTarget(rec); // Used to return the entrance only while one of this visitor's windows is active.
+          if (!target?.visitorArrival) continue;
+          visitorSpawnPending.add(rec.id);
+          makeNpcWalker(rec, target).then(walker => {
+            if (!walker) return;
+            npcWalkers.push(walker);
+            window.__farmLog?.(`[schedule] ${rec.id} spawned at ${target.label || 'visitor entrance'} for arrival`, 'info');
+          }).catch(error => console.warn(`[NPC] ${rec.id} visitor arrival failed`, error))
+            .finally(() => visitorSpawnPending.delete(rec.id));
+        }
+      }
+
       // Fires once the screen is fully black on a player area transition.
       // Any NPC who was already mid-transit between the same two areas (i.e.
       // their goal-based schedule has them leaving exactly where the player
@@ -11263,7 +11380,8 @@
 
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        for (const w of npcWalkers) { w.update(dt); _tickNpcPortraitLife(w, dt); }
+        updateNpcVisitorArrivals(dt);
+        for (const w of [...npcWalkers]) { w.update(dt); if (npcWalkers.includes(w)) _tickNpcPortraitLife(w, dt); }
         _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
@@ -14572,6 +14690,50 @@
         window.EquipmentPanel.buildPackClothingSection();
       }
 
+      // Only items that can actually carry tracked quality query
+      // CookingSystem/the alcohol bridge — querying an untracked item (wood,
+      // seeds, gold, tools) would lazily fabricate a default-3-star bucket
+      // for it via reconcileQuality's migration fallback, which is meant
+      // for real quality-bearing stacks, not a passive detail-panel view.
+      function isQualityTrackedItem(def) {
+        if (!def) return false;
+        if (def.cat === 'crop' || def.cat === 'processed' || def.isCookedFood) return true;
+        if (def.cookingDefaultStars != null || def.cookingCategories?.length) return true;
+        if (window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)) return true;
+        const tags = (def.tags || []).map(t => String(t).toLowerCase());
+        return tags.includes('meat') || tags.includes('fish');
+      }
+
+      function starGlyphs(stars) {
+        const safe = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
+        return '★'.repeat(safe) + '☆'.repeat(5 - safe);
+      }
+
+      // Deliberately vague, non-numeric quality language — especially for
+      // alcohol, where the tooltip must never hint at blackout mechanics
+      // (no hop counts, no "teleports N zones"; see combat-core.js).
+      const QUALITY_DESCRIPTORS = { 1: 'Rough', 2: 'Ordinary', 3: 'Fine', 4: 'Excellent', 5: 'Exceptional' };
+
+      function qualityDisplayForItem(key, def) {
+        if (!isQualityTrackedItem(def)) return '';
+        if (window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)) {
+          const bottle = window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(key, def, inventory);
+          if (bottle) {
+            const stars = Math.max(1, Math.min(5, Math.round(bottle.stars)));
+            return `${starGlyphs(stars)} ${QUALITY_DESCRIPTORS[stars]} · ${bottle.remaining}/${bottle.total} open`;
+          }
+        }
+        const entries = window.CookingSystem?.availableQualityEntries?.(key) || [];
+        return entries.map(entry => `${starGlyphs(entry.stars)} ${QUALITY_DESCRIPTORS[entry.stars]} ×${entry.count}`).join('  ·  ');
+      }
+
+      function itemDescriptionWithFlavor(def) {
+        // Vague flavor only — no destination preview, no hop/zone numbers.
+        return window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)
+          ? `${def.desc} Better-made drink tends to produce rather more adventurous blackouts.`
+          : def.desc;
+      }
+
       function selectInventoryItem(key, skipGridUpdate) {
         const def   = ITEM_DEFS[key];
         const count = inventory[key] || 0;
@@ -14595,8 +14757,9 @@
         applyItemSpriteIcon(iiIconEl, def, key);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
+        set('iiQuality', qualityDisplayForItem(key, def));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
-        set('iiDesc',  def.desc);
+        set('iiDesc',  itemDescriptionWithFlavor(def));
 
         const actEl = document.getElementById('iiActions');
         if (actEl) {
@@ -15243,6 +15406,11 @@
       let mouseLookActive  = false;
       let controllerLookAngle = -Math.PI / 2;
       let controllerLookActive = false;
+      let controllerCameraX = 0, controllerCameraY = 0; // Radial-deadzone right-stick values consumed by applyControllerCameraLook each frame.
+      const CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY = 'scratchbones.controllerLookSensitivity.v1';
+      const CONTROLLER_INVERT_Y_STORAGE_KEY = 'scratchbones.controllerInvertY.v1';
+      let s_controllerLookSensitivity = window.FormatUtils.clamp(Number(localStorage.getItem(CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY)) || 1, 0.5, 2); // Multiplies the authored right-stick camera turn rate.
+      let s_controllerInvertY = localStorage.getItem(CONTROLLER_INVERT_Y_STORAGE_KEY) === '1'; // Reverses only controller pitch; mouse and touch keep their own conventions.
       let lastMouseMoveTime = 0;
       const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
       const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
@@ -16079,11 +16247,16 @@
         if (!tile.crop) return { ok: false, message: 'Nothing to harvest here.' };
         if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
         const data = cropData[tile.crop];
-        inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
+        // Bountiful Harvest (Farming perk): a chance for one extra crop unit
+        // from the same harvest, capped well below Foraging/Mining's yield
+        // perks since processed goods already amplify quality economically.
+        const bonusChance = Math.min(0.3, (window.PerkSystem?.rank('farming', 'bountifulHarvest') || 0) * 0.06);
+        const amount = 1 + ((window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0);
+        inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + amount);
         const stars = window.LootRolling.rollItemStars('farming');
-        window.CookingSystem.recordItemQuality(data.cropKey, stars, 1);
+        window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
-        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}!`;
+        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
         tile.crop = CropType.NONE;
         tile.cropAge = 0;
         tile.cropReady = false;
@@ -16938,6 +17111,24 @@
         return { ok: false, message: 'No action handler found.' };
       }
 
+      // Resolves the interactable object an obj_* action targets — shared by
+      // useActiveAction's immediate dispatch and the held-item hold
+      // controller's deferred processor-insertion descriptor (see
+      // beginHeldItemActionDescriptor) so both agree on exactly which
+      // object a press/strike is aimed at.
+      function resolveObjActionTarget(action) {
+        const _r = getReticleTile();
+        // worldObjects is farm-scene-only (see its declaration) — interior
+        // interactables (e.g. a bed) live in interiorFurnitureObjects
+        // instead, via getInteriorInteractableAt. Ordinary building/town
+        // furniture has no interaction at all — only the handful
+        // registered in _buildingInteractables (e.g. the Alchemy Table,
+        // and now sittable furniture — see the mapData.furniture loader).
+        return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
+          : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
+          : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
+      }
+
       function useActiveAction() {
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
@@ -16952,7 +17143,12 @@
         }
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
-          window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
+          // Compatibility fallback only — ordinary press/hold/release input
+          // is claimed at the action-button/controller dispatch layer (see
+          // isHoldToCommitAction/beginHeldItemActionDescriptor below) before
+          // it ever reaches this immediate dispatcher, so this can't
+          // double-consume what the hold controller already started.
+          window.HobunjiDrunkGameplayBridge?.consumeHeldItemImmediate?.();
           refreshActionBar();
           return;
         }
@@ -17170,16 +17366,7 @@
           return;
         }
         if (activeAction.startsWith('obj_')) {
-          const _r = getReticleTile();
-          // worldObjects is farm-scene-only (see its declaration) — interior
-          // interactables (e.g. a bed) live in interiorFurnitureObjects
-          // instead, via getInteriorInteractableAt. Ordinary building/town
-          // furniture has no interaction at all — only the handful
-          // registered in _buildingInteractables (e.g. the Alchemy Table,
-          // and now sittable furniture — see the mapData.furniture loader).
-          const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
-            : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
-            : getCorpseObjectForAction(activeAction, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
+          const _o = resolveObjActionTarget(activeAction);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
           showToast(_res.message, _res.ok !== false);
@@ -17340,7 +17527,22 @@
       // distance is measured beyond the player rather than from the camera, so
       // zoom/framing changes do not pull the convergence point closer or push
       // it farther away. Every head/body/combat origin aims at `point`.
+      // Memoized per frame against `lastTime`, exactly like _currentPlayerLookRay
+      // above. This is a pure function of camera + player state, but head aim,
+      // body facing, aim angle, aim pitch, melee direction, the lunge update and
+      // ranged-camera-focus all ask for it independently — without this it ran
+      // its raycaster setFromCamera and CreatureHeadCache lookup eight to twelve
+      // times a frame for an identical answer. Consumers only ever read the
+      // result, so handing out the same object is safe.
+      let _cachedPerspectiveTarget = null;
+      let _cachedPerspectiveTargetAt = -1;
       function currentPlayerPerspectiveTarget() {
+        if (_cachedPerspectiveTargetAt === lastTime) return _cachedPerspectiveTarget;
+        _cachedPerspectiveTargetAt = lastTime;
+        _cachedPerspectiveTarget = _computePlayerPerspectiveTarget();
+        return _cachedPerspectiveTarget;
+      }
+      function _computePlayerPerspectiveTarget() {
         const rawRay = currentPlayerAimRay() || currentPlayerInteractionRay(); // Provides the exact screen-center line on which the shared point must remain.
         const ox = Number(rawRay?.origin?.x); // Camera-ray origin X used to place the point.
         const oy = Number(rawRay?.origin?.y); // Camera-ray origin Y used to place the point.
@@ -20241,14 +20443,22 @@
       _markPngPlane(heldItemHolder);
 
       let _heldItemPlane = null, _heldItemKey = null;
-      // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
-      let _heldDrinkAnimT = 0;
-      let _heldDrinkApply = null; // Used to apply a potion at the authored drink strike instead of button press.
-      let _heldDrinkApplied = false; // Used to guarantee one consumption callback per drink animation.
+      // Phase state machine driven by beginHeldDrinkAnimation/continueHeldDrinkAnimation/
+      // cancelHeldDrinkAnimation/abortHeldDrinkAnimation (see below), themselves driven
+      // by window.HeldItemActionInput's press/hold/cancel/arm/release timing:
+      //   null            — idle, not animating.
+      //   'toWindup'      — playing forward from neutral, pauses itself at windupFrac.
+      //   'pausedAtWindup'— holding at the authored windup pose, waiting for release.
+      //   'toStrike'      — playing forward toward strike/recovery; commits once at strikeFrac.
+      //   'canceling'     — easing back to neutral (tap released before the hold armed); never commits.
+      let _heldDrinkPhase = null;
+      let _heldDrinkProgress = 0; // 0..1 forward progress through the authored drink animation.
+      let _heldDrinkApply = null; // Used to apply the held-item effect at the authored drink strike.
+      let _heldDrinkApplied = false; // Used to guarantee at most one commit callback per drink animation.
       let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
       let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
       let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
-      // Full duration used to normalize the drink countdown into animation progress.
+      // Full authored duration in seconds, used to convert dt into animation progress.
       let _heldDrinkAnimDuration = 0;
 
       function heldActionPoseAt(animation, progress) {
@@ -20279,23 +20489,59 @@
         playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
       }
 
-      function triggerHeldDrinkAnimation(itemKey, applyAtStrike = null) {
+      // Begins the shared drink-style windup animation on press. Plays forward
+      // from neutral and pauses itself exactly at the authored windup pose —
+      // see updateHeldItemHolder's _heldDrinkPhase handling below. Call
+      // continueHeldDrinkAnimation() once the hold is released after arming
+      // (window.HeldItemActionInput's HOLD_THRESHOLD_S) to let it continue
+      // through to strike/commit, or cancelHeldDrinkAnimation() on an early
+      // tap release to ease back to neutral without ever committing.
+      function beginHeldDrinkAnimation(itemKey, applyAtStrike = null) {
         const animation = window.HeldActionAnimations?.drink;
         if (!animation) {
           window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
-          return 0;
+          return false;
         }
         // Consumption calls this before the next render update, so retain the
         // plane that was visibly held instead of rebuilding from a newly
         // selected stack after the consumed item reaches zero.
-        if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
+        if (!_heldItemPlane || _heldItemKey !== itemKey) return false;
         _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
-        _heldDrinkAnimT = _heldDrinkAnimDuration;
+        _heldDrinkProgress = 0;
+        _heldDrinkPhase = 'toWindup';
         _heldDrinkApply = typeof applyAtStrike === 'function' ? applyAtStrike : null;
         _heldDrinkApplied = false;
         heldItemHolder.visible = true;
-        window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
-        return Math.round(_heldDrinkAnimDuration * 1000);
+        window.__farmLog?.(`[held-item] drink begin: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
+        return true;
+      }
+
+      // Release after the hold armed: let the animation continue from
+      // wherever it currently is (the authored windup pose if it caught up
+      // and paused there, or wherever it had reached if release arrives
+      // before windup is even reached) through to strike/commit/recovery.
+      function continueHeldDrinkAnimation() {
+        if (_heldDrinkPhase === 'toWindup' || _heldDrinkPhase === 'pausedAtWindup') _heldDrinkPhase = 'toStrike';
+      }
+
+      // Release before the hold armed (a tap): ease back to neutral without
+      // ever committing the held-item effect.
+      function cancelHeldDrinkAnimation() {
+        if (!_heldDrinkPhase || _heldDrinkPhase === 'canceling') return;
+        _heldDrinkPhase = 'canceling';
+        _heldDrinkApply = null;
+        _heldDrinkApplied = true; // Belt-and-suspenders: guarantees the strike checks below can never fire the commit callback.
+      }
+
+      // Forced loss of input ownership (blur, menu opened mid-hold,
+      // controller ownership handed to a menu, ...): snap back to neutral
+      // immediately rather than easing. Must never commit.
+      function abortHeldDrinkAnimation() {
+        if (!_heldDrinkPhase) return;
+        _heldDrinkPhase = null;
+        _heldDrinkProgress = 0;
+        _heldDrinkApply = null;
+        _heldDrinkApplied = true;
       }
 
       function getPlayerDrinkSourceTransform(itemKey, neutralPose) {
@@ -20346,21 +20592,40 @@
 
       function updateHeldItemHolder(dt = 0) {
         const item = getActiveInventoryItem();
-        const drinkAnimating = _heldDrinkAnimT > 0 && !!_heldItemPlane;
-        if (drinkAnimating) {
-          _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
-          const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
-          applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
-          if (!_heldDrinkApplied && progress >= (window.HeldActionAnimations.drink.strikeFrac || 0.62)) {
+        if (_heldDrinkPhase && _heldItemPlane) {
+          const animation = window.HeldActionAnimations.drink;
+          const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
+          const rate = Math.max(0, dt) / durationS;
+          if (_heldDrinkPhase === 'canceling') {
+            _heldDrinkProgress = Math.max(0, _heldDrinkProgress - rate);
+            applyHeldDrinkPose(animation, _heldDrinkProgress);
+            heldItemHolder.visible = true;
+            if (_heldDrinkProgress <= 0) _heldDrinkPhase = null;
+            return;
+          }
+          if (_heldDrinkPhase === 'pausedAtWindup') {
+            applyHeldDrinkPose(animation, _heldDrinkProgress);
+            heldItemHolder.visible = true;
+            return;
+          }
+          // 'toWindup' or 'toStrike' — both advance progress forward; only
+          // their ceiling differs (toWindup stops itself at windupFrac).
+          const windupFrac = window.FormatUtils.clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+          const ceiling = _heldDrinkPhase === 'toWindup' ? windupFrac : 1;
+          _heldDrinkProgress = Math.min(ceiling, _heldDrinkProgress + rate);
+          applyHeldDrinkPose(animation, _heldDrinkProgress);
+          if (_heldDrinkPhase === 'toStrike' && !_heldDrinkApplied && _heldDrinkProgress >= (animation.strikeFrac || 0.62)) {
             _heldDrinkApplied = true;
             _heldDrinkApply?.();
           }
-          if (_heldDrinkAnimT <= 0 && !_heldDrinkApplied) {
-            _heldDrinkApplied = true;
-            _heldDrinkApply?.();
-          }
-          if (_heldDrinkAnimT <= 0) _heldDrinkApply = null;
           heldItemHolder.visible = true;
+          if (_heldDrinkPhase === 'toWindup' && _heldDrinkProgress >= ceiling - 1e-6) {
+            _heldDrinkPhase = 'pausedAtWindup';
+          } else if (_heldDrinkPhase === 'toStrike' && _heldDrinkProgress >= 1) {
+            if (!_heldDrinkApplied) { _heldDrinkApplied = true; _heldDrinkApply?.(); }
+            _heldDrinkPhase = null;
+            _heldDrinkApply = null;
+          }
           return;
         }
         const throwAnimation = window.HeldActionAnimations?.throwFlask;
@@ -20440,8 +20705,10 @@
           heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
           heldItemVisible: !!heldItemHolder.visible,
           heldItemKey: _heldItemKey,
-          drinkAnimating: _heldDrinkAnimT > 0,
-          drinkProgress: _heldDrinkAnimDuration > 0 ? 1 - _heldDrinkAnimT / _heldDrinkAnimDuration : 0,
+          drinkAnimating: !!_heldDrinkPhase,
+          drinkPhase: _heldDrinkPhase,
+          drinkProgress: _heldDrinkProgress,
+          heldItemActionInput: window.HeldItemActionInput?.getDebug?.() || { active: false },
           characterActionLocks: window.CharacterActionLocks?.getDebug?.() || [],
           npcDrinkInteractions: window.NpcDrinkInteraction?.getDebug?.() || [],
           actionArch,
@@ -20524,7 +20791,7 @@
         // its use actions), show the held-item chest plane instead of
         // whatever tool/weapon is equipped; the tool mesh comes back the
         // moment the player returns to tool mode.
-        if (heldMode === 'item' || _heldDrinkAnimT > 0) {
+        if (heldMode === 'item' || _heldDrinkPhase) {
           toolHolder.visible = false;
           updateHeldItemHolder(dt);
           return;
@@ -21956,6 +22223,7 @@
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
+          applyControllerCameraLook(dt);
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
           const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
@@ -22122,7 +22390,7 @@
             // Shift-drag/plain-mouselook convention just below (+movementY
             // pitches the same way), whereas the raw touch delta this knob
             // is built from reads the other way for vertical.
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt);
           }
         }
         if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
@@ -22183,6 +22451,7 @@
         // Ordinary interiors still omit combat/reticle updates below; this
         // visual pass does not enable farm or combat actions there.
         updateToolMesh(dt);
+        window.HeldItemActionInput?.update();
         // Combat and targeting remain limited to exterior maps and den caverns.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateCombatConeTrail();
@@ -22900,10 +23169,12 @@
               ? Math.max(branch.baseWorldY ?? 0, branch.tipWorldY ?? 0) + 0.4
               : (activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 1.2);
             _climbPromptAnchor.position.set(anchorX / TILE, anchorWorldY, anchorY / TILE);
+            const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none';
+            const climbLabel = climbTarget.type === 'branchJumpDown' ? 'Climb Down' : 'Climb Tree';
             btns.push({
               icon: climbTarget.type === 'branchJumpDown' ? '🪂' : '🧗',
-              label: climbTarget.type === 'branchJumpDown' ? 'Climb Down' : 'Climb Tree',
-              action: 'climb_branch', style: 'secondary', allowed: true,
+              label: climbAllowed ? climbLabel : 'Dismount to Climb',
+              action: 'climb_branch', style: 'secondary', allowed: climbAllowed,
               worldInteraction: true, promptRoot: _climbPromptAnchor,
             });
           }
@@ -23156,6 +23427,7 @@
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
+            let _heldItemPress = false; // true while a holdToCommit action (consume_held_item / processor insertion) is mid-press
             let _selectorHoldTimer = null, _selectorArcOpen = false, _selectorKind = null; // Ammo and potions both require a sustained original input and commit on its release.
             let _flaskGesture = false, _flaskCanceled = false; // Used by mobile hold-drag-release flask aiming.
             const DRAG_THRESH = 10;
@@ -23249,6 +23521,11 @@
                 activeAction = act;
                 actionHeldDown = true;
                 _abtFire();
+              } else if (act && !el.classList.contains('abt-hidden') && isHoldToCommitAction(act)) {
+                activeAction = act;
+                actionHeldDown = true;
+                _heldItemPress = beginHeldItemActionDescriptor(act);
+                if (!_heldItemPress) _abtFire(); // Couldn't begin a hold — fall back to the immediate dispatcher.
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
@@ -23279,6 +23556,10 @@
                 if (_selectorArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
                 return;
               }
+              // Held-item hold-to-commit actions (eating/drinking/inserting)
+              // target whatever the reticle was aimed at on press — no
+              // drag-to-aim for these, unlike farm tools.
+              if (_heldItemPress) return;
               // With a weapon equipped, action buttons are tap/hold only — dragging
               // must never act like a directional stick, otherwise a thumb wobbling
               // mid-hold reads as an aim-drag, cancels the pending hold ability, and
@@ -23329,8 +23610,10 @@
                 if (!_flaskCanceled && window.AlchemyFlasks?.aiming) window.AlchemyFlasks.confirmThrow();
               } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
+                else if (_heldItemPress) window.HeldItemActionInput?.release();
                 else _abtFire();
               }
+              _heldItemPress = false;
               _drag = false;
               _chargeFiredOnPress = false;
               _selectorArcOpen = false;
@@ -23695,7 +23978,7 @@
       window.InputBindings.init({ INPUT_DEFAULTS });
       const inputBindings = window.InputBindings.loadInputBindings();
       window.InputBindings.init({ INPUT_DEFAULTS, getInputBindings: () => inputBindings });
-      const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
+      const gamepadState = { focused: document.hasFocus(), previous: new Set(), actionByButton: new Map(), activeShift: null, hadPad: false, activePadIndex: null, uiOwned: false, primeButtonsOnResume: false, statusText: '' };
       const CONTROLLER_INPUT_OPTIONS = [
         'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
         'LeftTrigger', 'RightTrigger',
@@ -23720,6 +24003,66 @@
       // Controller presses are marked in pollControllerInput() itself (see
       // below), since that's the only place an actual button-down edge is
       // detected rather than just continuous stick state.
+
+      // Begins the shared drink-style hold for a processor-insertion action
+      // (obj_process_<furnitureKey> while a valid held ingredient targets an
+      // idle processor — see makeProcessingFurniture's beginHeldInsertion/
+      // onAction). Companion to HobunjiDrunkGameplayBridge.beginHeldItemAction
+      // for consume_held_item; both are driven the same way by
+      // beginHeldItemActionDescriptor below.
+      function beginHeldProcessorInsertion(action) {
+        const target = resolveObjActionTarget(action);
+        const precheck = target?.beginHeldInsertion?.();
+        if (!precheck?.ok) {
+          if (precheck?.message) showToast(precheck.message, false);
+          return false;
+        }
+        const itemKey = precheck.itemKey;
+        const applyInsertion = () => {
+          // Re-resolve fresh at strike — the target processor, held item,
+          // and its job state can all have changed during the hold. This is
+          // the same onAction(action) the immediate fallback dispatch uses,
+          // which itself fully revalidates before mutating anything.
+          const freshTarget = resolveObjActionTarget(action);
+          const res = freshTarget ? freshTarget.onAction(action) : { ok: false, message: 'No object here.' };
+          lastActionMessage = res.message;
+          showToast(res.message, res.ok !== false);
+          if (res.ok !== false) saveMemberWorldData();
+        };
+        const descriptor = {
+          startVisual() {
+            const started = beginHeldDrinkAnimation(itemKey, applyInsertion);
+            if (!started) applyInsertion(); // Animation unavailable — degrade to immediate insertion.
+          },
+          resumeVisual() { continueHeldDrinkAnimation(); },
+          cancelVisual() { cancelHeldDrinkAnimation(); },
+          abortVisual() { abortHeldDrinkAnimation(); },
+        };
+        if (!window.HeldItemActionInput) { descriptor.startVisual(); return true; } // Degrade gracefully if the controller failed to load.
+        return window.HeldItemActionInput.begin(itemKey, descriptor);
+      }
+
+      // Single dispatch point deciding which held-item action controller
+      // descriptor a given holdToCommit action begins — kept generic here
+      // (game.js knows nothing about consumable rules or processor recipes)
+      // while the actual gameplay logic stays owned by
+      // HobunjiDrunkGameplayBridge (food/drink) and makeProcessingFurniture
+      // (processor insertion) respectively.
+      function beginHeldItemActionDescriptor(action) {
+        if (action === 'consume_held_item') return !!window.HobunjiDrunkGameplayBridge?.beginHeldItemAction?.();
+        if (action.startsWith('obj_process_')) return beginHeldProcessorInsertion(action);
+        return false;
+      }
+
+      // Whether `action` currently resolves to a button marked holdToCommit
+      // (see getButtons() on consume_held_item's provider and on
+      // makeProcessingFurniture's processor insertion button) — i.e. whether
+      // ordinary press/release input for it must be claimed by the held-item
+      // hold controller instead of firing immediately.
+      function isHoldToCommitAction(action) {
+        if (!action) return false;
+        return !!computeActionButtons().find(b => b.action === action)?.holdToCommit;
+      }
 
       window.ActionPromptUI.init({ getLastInputDevice: () => lastInputDevice, inputBindings });
       // Resolve the action currently rendered in the physical arch button.
@@ -23780,6 +24123,7 @@
         return { slot, button };
       }
       const visibleWeaponContextPresses = new Set(); // Used to pair a context override's press/release without sending an unmatched release into Combat.input.
+      const heldItemActionPresses = new Set(); // Pairs a holdToCommit action's press with its release even if the arch's displayed button changes mid-hold.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
       const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
@@ -23869,7 +24213,8 @@
           if (actionId === 'action1') actionHeldDown = false;
           if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
-          if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
+          if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
+          if (heldItemActionPresses.delete(actionId)) { window.HeldItemActionInput?.release(); return; }
           return;
         }
         if (window.Fishing?.state?.active) {
@@ -23892,7 +24237,19 @@
           return;
         }
         const actionSlot = /^action(\d+)$/.exec(actionId);
-        if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
+        if (actionSlot) {
+          const slot = Number(actionSlot[1]);
+          const btn = actionButtonForPhysicalSlot(slot);
+          if (btn?.holdToCommit && btn.allowed !== false) {
+            if (actionId === 'action1') actionHeldDown = true;
+            const started = beginHeldItemActionDescriptor(btn.action);
+            if (started) heldItemActionPresses.add(actionId);
+            else runActionButtonAtSlot(slot); // Couldn't begin a hold (e.g. controller unavailable) — fall back to the immediate dispatcher.
+            return;
+          }
+          runActionButtonAtSlot(slot);
+          return;
+        }
         if (actionId === 'dodge') { performContextAction(); return; }
         if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
         if (actionId === 'swapTarget') {
@@ -23924,9 +24281,57 @@
         if (tool) setActiveTool(tool);
       }
       function getActionForButton(device, button, heldShift = null) {
-        if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
-        const bindings = inputBindings[device] || {};
-        return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
+        return window.InputBindings?.resolveActionForButton?.(device, button, heldShift) || null;
+      }
+      function publishControllerStatus(pad, owner = 'gameplay', move = null, look = null) {
+        const status = pad ? {
+          connected: true,
+          index: pad.index,
+          id: String(pad.id || 'Gamepad'),
+          mapping: pad.mapping || 'unknown',
+          owner,
+          move: { x: move?.x || 0, y: move?.y || 0 },
+          look: { x: look?.x || 0, y: look?.y || 0 },
+        } : { connected: false, index: null, id: null, mapping: null, owner: 'none', move: { x: 0, y: 0 }, look: { x: 0, y: 0 } }; // Mobile-accessible snapshot used by Settings and Pixel Probe reports.
+        window.HOBUNJI_CONTROLLER_STATUS = status;
+        const rounded = value => Math.abs(value) < 0.005 ? '0.00' : value.toFixed(2);
+        const nextText = pad
+          ? `Controller: ${status.id.slice(0, 42)} · ${owner} · LS ${rounded(status.move.x)}, ${rounded(status.move.y)} · RS ${rounded(status.look.x)}, ${rounded(status.look.y)}`
+          : 'Controller: not detected';
+        if (nextText === gamepadState.statusText) return;
+        gamepadState.statusText = nextText;
+        const statusEl = document.getElementById('controllerInputStatus'); // Used to diagnose browser mappings without a developer console.
+        if (statusEl) statusEl.textContent = nextText;
+      }
+      function releaseControllerGameplayInput(reason = 'released') {
+        for (const button of gamepadState.previous) {
+          const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
+          if (actionId) runInputAction(actionId, 'release');
+        }
+        gamepadState.previous.clear();
+        gamepadState.actionByButton.clear();
+        gamepadState.activeShift = null;
+        input.x = 0; input.y = 0;
+        controllerCameraX = 0; controllerCameraY = 0;
+        controllerLookActive = false;
+        window.__farmLog?.(`[controller] gameplay input ${reason}`, 'input');
+      }
+      function applyControllerCameraLook(dt) {
+        const magnitude = Math.hypot(controllerCameraX, controllerCameraY); // Used to distinguish live camera input from an idle stick without a second deadzone pass.
+        if (magnitude <= 0.001 || !cameraDragAllowed() || window.ControllerUI?.isActive?.()) {
+          controllerLookActive = false;
+          return;
+        }
+        const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
+        const turnRate = CONTROLLER_LOOK_DEG_PER_SEC * s_controllerLookSensitivity; // Used for frame-rate-independent right-stick yaw and pitch.
+        cameraAzimuthOffsetDeg = freeRotateCameraActive()
+          ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt)
+          : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt, -clampDeg, clampDeg);
+        const pitchDirection = s_controllerInvertY ? -1 : 1; // Applied only to controller Y so changing this setting cannot invert touch or mouse input.
+        cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + controllerCameraY * pitchDirection * turnRate * CONTROLLER_LOOK_VERTICAL_SCALE * dt);
+        controllerLookAngle = cameraFacingAngleRad();
+        targetAimAngle = controllerLookAngle;
+        controllerLookActive = true;
       }
       function pollControllerInput() {
         if (!gamepadState.focused) return;
@@ -23938,19 +24343,30 @@
         // dialogue choice AND triggering runInteractAction() on the world
         // behind it). Clearing the edge-tracking sets avoids a ghost
         // "release" firing once this resumes polling after the panel closes.
-        if (window.ControllerUI?.isActive?.()) {
-          gamepadState.previous.clear();
-          gamepadState.activeShift = null;
+        // ControllerInput.gameplaySuspended() is the explicit replacement for
+        // the old arrangement, where controller-selection-ui.js REPLACED
+        // ControllerUI.isActive with a wrapper that also returned true while a
+        // held selector owned the sticks -- telling every consumer a menu was
+        // open when none was. Menus still answer through isActive(); held
+        // selectors and the music minigame now declare ownership directly.
+        if (window.ControllerUI?.isActive?.() || window.ControllerInput?.gameplaySuspended?.()) {
+          if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
+          gamepadState.uiOwned = true;
+          const menuPad = window.ControllerInput?.frame?.()?.pad || null; // Already resolved once this frame by the shared polling authority.
+          if (menuPad) gamepadState.activePadIndex = menuPad.index;
+          publishControllerStatus(menuPad, window.ControllerInput?.owner === 'gameplay' ? 'menu' : (window.ControllerInput?.owner || 'menu'));
           return;
         }
-        const pads = navigator.getGamepads?.() || [];
-        const pad = Array.from(pads).find(Boolean);
+        gamepadState.uiOwned = false;
+        const pad = window.ControllerInput?.frame?.()?.pad || null; // One shared snapshot per frame instead of a second getGamepads() pass here.
         if (!pad) {
           // Only clear movement input on an actual gamepad disconnect, not every
           // frame — otherwise this stomps the touch joystick (and keyboard) on
           // any device with no gamepad, which is virtually all mobile devices.
-          if (gamepadState.hadPad) { input.x = 0; input.y = 0; }
+          if (gamepadState.hadPad) releaseControllerGameplayInput('released on disconnect');
           gamepadState.hadPad = false;
+          gamepadState.activePadIndex = null;
+          publishControllerStatus(null);
           return;
         }
         if (window.__mapEditorGizmoActive) {
@@ -23958,50 +24374,62 @@
           gamepadState.previous.clear(); gamepadState.activeShift = null;
           return;
         }
+        const padChanged = !gamepadState.hadPad || gamepadState.activePadIndex !== pad.index; // Used to prime edges when a controller connects or deliberate input switches pads.
         gamepadState.hadPad = true;
+        gamepadState.activePadIndex = pad.index;
+        if (padChanged) gamepadState.primeButtonsOnResume = true;
         const dz = INPUT_DEFAULTS.deadzone;
-        const ax = Math.abs(pad.axes[0] || 0) >= dz ? pad.axes[0] : 0;
-        const ay = Math.abs(pad.axes[1] || 0) >= dz ? pad.axes[1] : 0;
-        const rx = Math.abs(pad.axes[2] || 0) >= dz ? pad.axes[2] : 0;
-        const ry = Math.abs(pad.axes[3] || 0) >= dz ? pad.axes[3] : 0;
+        const move = window.ControllerInput.normalizeStick(pad.axes[0], pad.axes[1], dz, CONTROLLER_MOVE_RESPONSE); // Radial response avoids per-axis diagonal distortion.
+        const look = window.ControllerInput.normalizeStick(pad.axes[2], pad.axes[3], dz, CONTROLLER_LOOK_RESPONSE); // Drives the camera unless a contextual selector owns it below.
+        const ax = move.x, ay = move.y, rx = look.x, ry = look.y;
         input.x = ax; input.y = ay;
-        controllerLookActive = Math.hypot(rx, ry) >= dz;
-        if (window._desktopSelectionArc?.entryMenuOpen?.() && !rangedAmmoAction2Press.held && !potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          controllerLookActive = false;
-          const now = performance.now();
-          if (now - (pollControllerInput._selectionArchMovedAt || 0) >= 220) {
-            pollControllerInput._selectionArchMovedAt = now;
-            const axis = Math.abs(rx) >= Math.abs(ry) ? rx : ry; // Dominant right-stick direction advances the shared arch.
-            window._desktopSelectionArc.scrollEntries(axis < 0 ? -1 : 1);
+        controllerCameraX = rx; controllerCameraY = ry;
+        controllerLookActive = false;
+        if (move.magnitude > 0.001 || look.magnitude > 0.001) lastInputDevice = 'controller';
+        let rightStickOwner = 'camera'; // Reported in Settings and used to keep contextual right-stick actions from rotating the camera too.
+        if (window._desktopSelectionArc?.entryMenuOpen?.() && !rangedAmmoAction2Press.held && !potionAction3Press.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - (pollControllerInput._selectionArchMovedAt || 0) >= 220) {
+              pollControllerInput._selectionArchMovedAt = now;
+              const axis = Math.abs(rx) >= Math.abs(ry) ? rx : ry; // Dominant right-stick direction advances the shared arch.
+              window._desktopSelectionArc.scrollEntries(axis < 0 ? -1 : 1);
+            }
           }
         }
         if (window.AlchemyFlasks?.aiming) {
-          controllerLookActive = false;
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'flask aim';
           window.AlchemyFlasks.setTargetFromVector(rx, ry, Math.min(1, Math.hypot(rx, ry)));
         }
-        if (controllerLookActive) {
-          controllerLookAngle = Math.atan2(ry, rx);
-          targetAimAngle = controllerLookAngle;
-        }
-        if (rangedAmmoAction2Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          const now = performance.now();
-          if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
-            rangedAmmoAction2Press.lastScrollAt = now;
-            window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+        if (rangedAmmoAction2Press.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'ammo selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
+              rangedAmmoAction2Press.lastScrollAt = now;
+              window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+            }
           }
         }
-        if (potionAction3Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          const now = performance.now();
-          if (now - potionAction3Press.lastScrollAt >= 220) {
-            potionAction3Press.lastScrollAt = now;
-            window._desktopSelectionArc?.scrollEntries((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+        if (potionAction3Press.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'potion selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - potionAction3Press.lastScrollAt >= 220) {
+              potionAction3Press.lastScrollAt = now;
+              window._desktopSelectionArc?.scrollEntries((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+            }
           }
         }
-        if (toolSelectPress.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
-          const now = performance.now();
-          if (now - toolSelectPress.lastScrollAt >= 220) {
-            toolSelectPress.lastScrollAt = now;
-            window._desktopSelectionArc?.scrollTool((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+        if (toolSelectPress.held) {
+          controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'tool selection';
+          if (look.rawMagnitude >= INPUT_DEFAULTS.axisPressThreshold) {
+            const now = performance.now();
+            if (now - toolSelectPress.lastScrollAt >= 220) {
+              toolSelectPress.lastScrollAt = now;
+              window._desktopSelectionArc?.scrollTool((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+            }
           }
         }
         const down = new Set();
@@ -24009,42 +24437,75 @@
         if ((pad.buttons[6]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('LeftTrigger');
         if ((pad.buttons[7]?.value || 0) >= INPUT_DEFAULTS.axisPressThreshold) down.add('RightTrigger');
         const axisPress = INPUT_DEFAULTS.axisPressThreshold;
-        if (rx <= -axisPress) down.add('RightStickLeft');
-        if (rx >= axisPress) down.add('RightStickRight');
-        if (ry <= -axisPress) down.add('RightStickUp');
-        if (ry >= axisPress) down.add('RightStickDown');
-        // Right-stick click (Button11 — R3) toggles melee auto-target
-        // while a melee weapon is out, taking over from its default
-        // weaponSwitch binding for exactly that window (weaponSwitch still
-        // works normally the rest of the time, and via its other bindings/
-        // the action-bar button even then).
-        if (down.has('Button11') && meleeWeaponOut()) {
-          if (!gamepadState.previous.has('Button11')) {
-            meleeAutoTargetOn = !meleeAutoTargetOn;
-            manualAutoTarget = null;
-            meleeAutoTargetFreeAim = false;
-            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
-          }
-          down.delete('Button11');
+        if ((Number(pad.axes[2]) || 0) <= -axisPress) down.add('RightStickLeft');
+        if ((Number(pad.axes[2]) || 0) >= axisPress) down.add('RightStickRight');
+        if ((Number(pad.axes[3]) || 0) <= -axisPress) down.add('RightStickUp');
+        if ((Number(pad.axes[3]) || 0) >= axisPress) down.add('RightStickDown');
+        if (window.InputBindings?.consumeControllerPress?.('meleeAutoTargetToggle', down, gamepadState.previous, meleeWeaponOut())) {
+          meleeAutoTargetOn = !meleeAutoTargetOn;
+          manualAutoTarget = null;
+          meleeAutoTargetFreeAim = false;
+          showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
         }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
-        if (heldShift) controllerLookActive = false;
+        if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
+        if (meleeAutoTargetOn && meleeWeaponOut()) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'target cycle'; }
+        if (gamepadState.primeButtonsOnResume) {
+          // A menu-closing B/View press must not become a fresh gameplay
+          // Dodge/action press on the very next frame. Seed edge state from
+          // the still-held snapshot; ordinary releases clear it naturally.
+          gamepadState.previous = new Set(down);
+          gamepadState.actionByButton.clear();
+          gamepadState.activeShift = heldShift || null;
+          gamepadState.primeButtonsOnResume = false;
+          publishControllerStatus(pad, rightStickOwner === 'camera' ? 'gameplay' : rightStickOwner, move, look);
+          return;
+        }
         for (const button of down) {
           if (gamepadState.previous.has(button) || button === heldShift?.button) continue;
           const actionId = getActionForButton('controller', button, heldShift);
-          if (actionId) { lastInputDevice = 'controller'; runInputAction(actionId, 'press'); }
+          if (actionId) {
+            gamepadState.actionByButton.set(button, actionId); // Pairs release with the action pressed even if a held mode shift changes first.
+            lastInputDevice = 'controller';
+            runInputAction(actionId, 'press');
+          }
         }
         for (const button of gamepadState.previous) {
           if (down.has(button)) continue;
-          const actionId = getActionForButton('controller', button, gamepadState.activeShift);
+          const actionId = gamepadState.actionByButton.get(button) || getActionForButton('controller', button, gamepadState.activeShift);
           if (actionId) runInputAction(actionId, 'release');
+          gamepadState.actionByButton.delete(button);
         }
         gamepadState.previous = down;
         gamepadState.activeShift = heldShift || null;
+        publishControllerStatus(pad, rightStickOwner === 'camera' ? 'gameplay' : rightStickOwner, move, look);
       }
       window.addEventListener('focus', () => { gamepadState.focused = true; });
-      window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
+      window.addEventListener('blur', () => { gamepadState.focused = false; releaseControllerGameplayInput('released on blur'); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; releaseControllerGameplayInput('released while hidden'); } });
+      window.addEventListener('gamepaddisconnected', event => {
+        if (event.gamepad?.index === gamepadState.activePadIndex) {
+          releaseControllerGameplayInput('released on disconnect event');
+          gamepadState.activePadIndex = null;
+          gamepadState.hadPad = false;
+          publishControllerStatus(null);
+        }
+      });
+      window.addEventListener('hobunji-controller-owner-change', event => {
+        const owner = event.detail?.owner;
+        if (owner === 'menu') {
+          if (!gamepadState.uiOwned) releaseControllerGameplayInput('released to menu');
+          gamepadState.uiOwned = true;
+        } else if (owner === 'gameplay') {
+          gamepadState.uiOwned = false;
+          gamepadState.primeButtonsOnResume = true;
+        }
+      });
+      window.addEventListener('hobunji-controller-ui-snapshot', event => {
+        const pad = event.detail?.pad || null;
+        if (pad) gamepadState.activePadIndex = pad.index;
+        publishControllerStatus(pad, 'menu', event.detail?.move, event.detail?.look);
+      });
 
       // Settings tab's input-binding rows now live in
       // js/input-settings-panel.js — call via window.InputSettingsPanel.render().
@@ -24061,6 +24522,25 @@
         saveInputBindings: window.InputBindings.saveInputBindings,
       });
       window.InputSettingsPanel.render();
+      const controllerSensitivityEl = document.getElementById('settingControllerLookSensitivity');
+      const controllerSensitivityValueEl = document.getElementById('settingControllerLookSensitivityValue');
+      const controllerInvertYEl = document.getElementById('settingControllerInvertY');
+      function renderControllerLookSettings() {
+        if (controllerSensitivityEl) controllerSensitivityEl.value = String(Math.round(s_controllerLookSensitivity * 100));
+        if (controllerSensitivityValueEl) controllerSensitivityValueEl.textContent = `${Math.round(s_controllerLookSensitivity * 100)}%`;
+        if (controllerInvertYEl) controllerInvertYEl.checked = s_controllerInvertY;
+      }
+      controllerSensitivityEl?.addEventListener('input', event => {
+        s_controllerLookSensitivity = window.FormatUtils.clamp((Number(event.target.value) || 100) / 100, 0.5, 2);
+        localStorage.setItem(CONTROLLER_LOOK_SENSITIVITY_STORAGE_KEY, String(s_controllerLookSensitivity));
+        renderControllerLookSettings();
+      });
+      controllerInvertYEl?.addEventListener('change', event => {
+        s_controllerInvertY = event.target.checked;
+        localStorage.setItem(CONTROLLER_INVERT_Y_STORAGE_KEY, s_controllerInvertY ? '1' : '0');
+      });
+      renderControllerLookSettings();
+      publishControllerStatus(null);
       window.MusicMinigame?.renderNoteKeySettings();
       window.MusicMinigame?.renderPatternLoadoutSettings();
       window.MusicMinigame?.renderFreeplayKeySettings();
@@ -24427,13 +24907,16 @@
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
           && !window.__mapEditorGizmoActive;
       }
-      // Every other camera mode nudges a small look-around offset on top of a
-      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
-      // default ±45°) since it's meant to be a peek, not a free orbit. Seated
-      // players and the utility-wheel Character View get genuine 360°
+      // Every other camera mode nudges a look-around offset on top of a fixed
+      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
+      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated
+      // players and the utility-wheel Character View still get genuine 360°
       // horizontal orbit instead.
       function freeRotateCameraActive() {
         return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+      function clampCameraPitchOffsetDeg(value) {
+        return window.CameraLookClamp.clampPitchOffsetDeg(value, desktopControlsConfig());
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -24515,6 +24998,7 @@
       // different mouse button — or binding any other action to a mouse
       // button at all — actually takes effect.
       const desktopWeaponPointerSlots = new Map(); // Pairs each physical mouse button with the combat slot released below.
+      const desktopHeldItemMousePresses = new Set(); // Pairs action1's direct-viewport-click press with its release for holdToCommit actions.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
@@ -24537,7 +25021,17 @@
             }
           }
           if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'press'); return; }
-          if (mouseAction === 'action1') { actionHeldDown = true; useActiveAction(); return; }
+          if (mouseAction === 'action1') {
+            actionHeldDown = true;
+            if (isHoldToCommitAction(activeAction)) {
+              const started = beginHeldItemActionDescriptor(activeAction);
+              if (started) desktopHeldItemMousePresses.add(e.button);
+              else useActiveAction(); // Couldn't begin a hold — fall back to the immediate dispatcher.
+            } else {
+              useActiveAction();
+            }
+            return;
+          }
           if (mouseAction) runInputAction(mouseAction, 'press'); // Any other action bound to a mouse button (e.g. a side button bound to Dodge).
         });
       }
@@ -24567,7 +25061,11 @@
           }
         }
         if (mouseAction === 'action2' && heldMode === 'tool' && activeTool === 'ranged') { runInputAction('action2', 'release'); return; }
-        if (mouseAction === 'action1') { actionHeldDown = false; return; }
+        if (mouseAction === 'action1') {
+          actionHeldDown = false;
+          if (desktopHeldItemMousePresses.delete(e.button)) window.HeldItemActionInput?.release();
+          return;
+        }
         if (mouseAction) runInputAction(mouseAction, 'release');
       }
       // Capture release before action-arch/backdrop handlers can consume a
@@ -24588,6 +25086,11 @@
           desktopWeaponPointerSlots.delete(button);
           if (slot === 1) actionHeldDown = false;
           window.Combat?.input?.abortPress?.(slot);
+        }
+        for (const button of [...desktopHeldItemMousePresses]) {
+          desktopHeldItemMousePresses.delete(button);
+          actionHeldDown = false;
+          window.HeldItemActionInput?.abort();
         }
       }, true);
 
@@ -24650,7 +25153,7 @@
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
               : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + e.movementY * degPerPx);
             updateCameraPosition();
             return;
           }
@@ -26421,6 +26924,13 @@
         calendar,
         inventory,
         player,
+        // Collected animal-good quality/XP — previously missing here, so
+        // collectResource()'s Farming roll/heart bonus/XP award all
+        // silently no-op via optional chaining (see docs/js/farm-animals.js).
+        rollItemStars: window.LootRolling.rollItemStars,
+        starRatingText: window.LootRolling.starRatingText,
+        recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
+        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
         // Farm livestock has its own tile-space update loop, so give it the
         // same explicit face target used by companion/wildlife gaze.  The
         // horizontal point is in farm tiles; worldY is the player's actual
@@ -26600,7 +27110,17 @@
         getDeliveryLog: () => deliveryLog,
         getPendingOrders: () => pendingOrders,
         getMenuOpen: () => menuOpen,
-        triggerHeldDrinkAnimation,
+        beginHeldDrinkAnimation,
+        continueHeldDrinkAnimation,
+        cancelHeldDrinkAnimation,
+        abortHeldDrinkAnimation,
+      });
+
+      // A held-item action mid-hold must not survive losing input ownership
+      // to a menu/dialogue/pause — abort back to neutral rather than leaving
+      // it stuck armed with nothing left to release it.
+      window.HeldItemActionInput?.init({
+        isBlocked: () => menuOpen || dialogueOpen || paused,
       });
 
       window.ProceduralTasks?.init({

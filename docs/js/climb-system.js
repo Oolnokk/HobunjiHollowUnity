@@ -238,6 +238,16 @@
   function startClimb(climb) {
     const mountRideState = deps.getMountRideState?.() || 'none'; // Used to keep scripted climbing mutually exclusive with every mount transition phase.
     if (mountRideState !== 'none') {
+      // A cliff (wall) climb while steadily mounted becomes a scripted mount
+      // leap instead of requiring a dismount — see Mounts.startClimbLeap,
+      // which carries the mount+rider from the same start/landing tiles a
+      // dismounted climb would use. Branch climbing still always requires
+      // dismounting first; a mount has no business up a tree.
+      if (climb.type === 'wall' && mountRideState === 'mounted' && window.Mounts?.startClimbLeap?.(climb)) {
+        climbSafetyDebug.lastBlockReason = null;
+        climbSafetyDebug.lastBlockRideState = 'none';
+        return true;
+      }
       climbSafetyDebug.lastBlockReason = 'mounted';
       climbSafetyDebug.lastBlockRideState = mountRideState;
       climbSafetyDebug.lastBlockAt = Date.now();

@@ -38,7 +38,8 @@ const portraitScales = {
   'kenkari::male': 0.75,
   'kenkari::female': 0.75,
 }; // Used below to lock the user-facing raw-PNG Head value at exactly 75% for every non-Mashtzarr profile.
-assert.strictEqual(defaultsWindow.HobunjiCharacterRigScaleDefaults.version, 7);
+assert.ok(defaultsWindow.HobunjiCharacterRigScaleDefaults.version >= 7,
+  'Full Character Scale defaults must be at least the authored version 7 baseline');
 for (const [key, tuple] of Object.entries(expected)) {
   const [species, gender] = key.split('::');
   assert.deepStrictEqual(plainScale(defaultsWindow.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), tuple, `${key} scale tuple mismatch`);

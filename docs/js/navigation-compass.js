@@ -1,6 +1,85 @@
 (() => {
   'use strict';
 
+  const navigationCompassScriptUrl = document.currentScript?.src || ''; // Used to resolve a cache-busted wilderness-map retry beside this already-loaded module.
+  const wildernessMapFallbackState = { deps: null, retryStarted: false, retryFinished: false, messages: new Set() }; // Used to preserve game init state and avoid duplicate recovery diagnostics while the required map module is unavailable.
+
+  function reportWildernessMapLoadIssue(message, level = 'warn') {
+    if (wildernessMapFallbackState.messages.has(message)) return;
+    wildernessMapFallbackState.messages.add(message);
+    const text = `[wilderness-map-load] ${message}`; // Used by the in-game debug log and console so mobile reports identify the missing dependency directly.
+    if (typeof window.__farmLog === 'function') window.__farmLog(text, level);
+    else (level === 'error' ? console.error : console.warn)(text);
+  }
+
+  function retryWildernessMapModule(fallback) {
+    if (wildernessMapFallbackState.retryStarted || window.WildernessMap !== fallback) return;
+    wildernessMapFallbackState.retryStarted = true;
+    const baseUrl = navigationCompassScriptUrl
+      ? new URL('.', navigationCompassScriptUrl)
+      : new URL('js/', document.baseURI); // Used to retry from the same runtime directory even when the game is hosted below a nested path.
+    const retryScript = document.createElement('script'); // Used for one cache-busted recovery attempt after the parser-time wilderness-map script was missed.
+    retryScript.src = new URL('wilderness-map.js?v=20260909loadretry1', baseUrl).href;
+    retryScript.async = true;
+    retryScript.onload = () => {
+      wildernessMapFallbackState.retryFinished = true;
+      const recovered = window.WildernessMap; // Used to distinguish the real module installed by the retry from the temporary fallback namespace.
+      if (!recovered || recovered === fallback || typeof recovered.init !== 'function') {
+        window.WildernessMap = fallback;
+        reportWildernessMapLoadIssue('Retry loaded but did not install window.WildernessMap; fog-of-war and map waypoints remain disabled for this session.', 'error');
+        return;
+      }
+      if (wildernessMapFallbackState.deps) {
+        try {
+          recovered.init(wildernessMapFallbackState.deps);
+        } catch (error) {
+          window.WildernessMap = fallback;
+          reportWildernessMapLoadIssue(`Retry installed WildernessMap but init failed: ${error?.message || error}`, 'error');
+          return;
+        }
+      }
+      reportWildernessMapLoadIssue('Recovered wilderness-map.js after the parser-time module was unavailable.');
+    };
+    retryScript.onerror = () => {
+      wildernessMapFallbackState.retryFinished = true;
+      reportWildernessMapLoadIssue('wilderness-map.js was unavailable at boot and the cache-busted retry also failed; continuing without fog-of-war/map waypoints instead of stopping gameplay.', 'error');
+    };
+    document.head.appendChild(retryScript);
+  }
+
+  function installWildernessMapFallback() {
+    if (window.WildernessMap) return false;
+    let fallback = null; // Used by every fallback method to request the same one-shot module recovery without capturing a not-yet-assigned object.
+    fallback = {
+      __loadFallback: true,
+      init(injectedDeps) {
+        wildernessMapFallbackState.deps = injectedDeps || wildernessMapFallbackState.deps;
+        reportWildernessMapLoadIssue('Required wilderness-map.js namespace was missing before game initialization; retrying the module instead of allowing the render loop to crash.', 'error');
+        retryWildernessMapModule(fallback);
+      },
+      updateFogAroundPlayer() { retryWildernessMapModule(fallback); },
+      renderMapPanel() { retryWildernessMapModule(fallback); },
+      setWaypoint() { retryWildernessMapModule(fallback); },
+      clearWaypoint() {},
+      clearWaypointForThreat() {},
+      rememberDiscoveredThreat() {},
+      forgetDiscoveredThreat() {},
+      reconcileDiscoveredCamps() {},
+      getDiscoveredThreats: () => ({}),
+      getCompassWaypoint: () => null,
+      getDebug: () => ({
+        unavailable: true,
+        retryStarted: wildernessMapFallbackState.retryStarted,
+        retryFinished: wildernessMapFallbackState.retryFinished,
+      }),
+    };
+    window.WildernessMap = fallback;
+    retryWildernessMapModule(fallback);
+    return true;
+  }
+
+  installWildernessMapFallback();
+
   const HALF_VIEW_RAD = Math.PI * 0.62; // Used to map a wide 223-degree bearing window across the compass strip.
   const UPDATE_INTERVAL_MS = 33; // Used to keep bearing motion smooth while avoiding redundant work above 30 Hz.
   const CARDINALS = Object.freeze([

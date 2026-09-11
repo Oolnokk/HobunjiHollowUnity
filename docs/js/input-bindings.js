@@ -12,19 +12,143 @@
   // loadInputBindings() to bootstrap `inputBindings`), then again right
   // after with the getInputBindings getter added once that const exists.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  const AUTOMATIC_SELECTION_ACTION_IDS = new Set(['toolSelect', 'itemSelect', 'utilityMenu', 'socialWheel']); // Used to keep held wheel/arch openers out of ordinary gameplay dispatch and reserve their sticks for selector navigation.
+  const CANONICAL_CONTROLLER_DEFAULTS = Object.freeze({
+    interact: 'Button0',
+    dodge: 'Button1',
+    action1: 'RightTrigger',
+    action2: 'LeftTrigger',
+    action3: 'Button2',
+    action4: null,
+    action5: null,
+    action6: null,
+    action7: null,
+    action8: null,
+    swapTarget: null,
+    meleeTargetPrev: 'RightStickLeft',
+    meleeTargetNext: 'RightStickRight',
+    toggleMount: 'Button10',
+    weaponSwitch: 'Button11',
+    utilityMenu: 'Button12',
+    toolSelect: 'Button5',
+    itemPrev: null,
+    itemNext: null,
+    toolPrev: null,
+    toolNext: null,
+    tool1: null,
+    tool2: null,
+    tool4: null,
+    tool5: null,
+    tool6: null,
+    uiOpenMenu: 'Button8',
+    uiConfirm: 'Button0',
+    uiCancel: 'Button1',
+    uiTabPrev: 'Button4',
+    uiTabNext: 'Button5',
+    uiUp: 'Button12',
+    uiDown: 'Button13',
+    uiLeft: 'Button14',
+    uiRight: 'Button15',
+    musicNote1: 'Button2',
+    musicNote2: 'Button0',
+    musicNote3: 'Button1',
+    musicNote4: 'Button3',
+    musicBank1: 'LeftTrigger',
+    musicBank2: 'RightTrigger',
+    musicBank3: 'Button4',
+    musicBank4: 'Button5',
+    musicPause: 'Button9',
+    musicScalePrev: 'Button14',
+    musicScaleNext: 'Button15',
+    meleeAutoTargetToggle: 'Button3',
+    socialWheel: 'Button15',
+    itemSelect: 'Button4',
+  }); // Canonical controller reset/fresh-player layout; kept in one map so legacy authored values cannot drift away from the shipped controller experience.
+  const REQUIRED_CONTROLLER_ACTIONS = Object.freeze([
+    { id: 'itemSelect', label: 'Item Select', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.itemSelect, devices: ['controller'], context: 'selection' },
+    { id: 'socialWheel', label: 'Social Actions', desktop: 'Shift+KeyQ', controller: CANONICAL_CONTROLLER_DEFAULTS.socialWheel, context: 'selection' },
+    { id: 'toggleMount', label: 'Call/Dismiss Mount', desktop: 'KeyV', controller: CANONICAL_CONTROLLER_DEFAULTS.toggleMount },
+    { id: 'uiOpenMenu', label: 'Menu: Open / Close', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiOpenMenu, devices: ['controller'], context: 'menu' },
+    { id: 'uiConfirm', label: 'Menu: Confirm', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiConfirm, devices: ['controller'], context: 'menu' },
+    { id: 'uiCancel', label: 'Menu: Cancel / Back', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiCancel, devices: ['controller'], context: 'menu' },
+    { id: 'uiTabPrev', label: 'Menu: Previous Tab', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiTabPrev, devices: ['controller'], context: 'menu' },
+    { id: 'uiTabNext', label: 'Menu: Next Tab', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiTabNext, devices: ['controller'], context: 'menu' },
+    { id: 'uiUp', label: 'Menu: Navigate Up', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiUp, devices: ['controller'], context: 'menu' },
+    { id: 'uiDown', label: 'Menu: Navigate Down', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiDown, devices: ['controller'], context: 'menu' },
+    { id: 'uiLeft', label: 'Menu: Navigate Left', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiLeft, devices: ['controller'], context: 'menu' },
+    { id: 'uiRight', label: 'Menu: Navigate Right', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiRight, devices: ['controller'], context: 'menu' },
+    { id: 'musicNote1', label: 'Music: Note 1', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote1, devices: ['controller'], context: 'music' },
+    { id: 'musicNote2', label: 'Music: Note 2', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote2, devices: ['controller'], context: 'music' },
+    { id: 'musicNote3', label: 'Music: Note 3', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote3, devices: ['controller'], context: 'music' },
+    { id: 'musicNote4', label: 'Music: Note 4', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicNote4, devices: ['controller'], context: 'music' },
+    { id: 'musicBank1', label: 'Music: Bank 1', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank1, devices: ['controller'], context: 'music' },
+    { id: 'musicBank2', label: 'Music: Bank 2', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank2, devices: ['controller'], context: 'music' },
+    { id: 'musicBank3', label: 'Music: Bank 3', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank3, devices: ['controller'], context: 'music' },
+    { id: 'musicBank4', label: 'Music: Bank 4', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank4, devices: ['controller'], context: 'music' },
+    { id: 'musicPause', label: 'Music: Pause', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicPause, devices: ['controller'], context: 'music' },
+    { id: 'musicScalePrev', label: 'Music: Previous Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScalePrev, devices: ['controller'], context: 'music' },
+    { id: 'musicScaleNext', label: 'Music: Next Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScaleNext, devices: ['controller'], context: 'music' },
+    { id: 'meleeAutoTargetToggle', label: 'Melee: Toggle Auto-Target', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.meleeAutoTargetToggle, devices: ['controller'], context: 'melee' },
+  ]); // Controller-only schema is owned here so global gameplay config and unrelated camera work never need to author or migrate these rows.
+
+  function removeLegacyControllerModeShift(modeShifts) {
+    return (Array.isArray(modeShifts) ? modeShifts : []).filter(shift => shift?.id !== 'controller-left-bumper');
+  }
+
+  function cloneModeShift(shift) {
+    return { ...shift, bindings: { ...(shift?.bindings || {}) } }; // Used by per-device resets so authored defaults never share mutable nested binding objects with live Settings state.
+  }
+
+  function ensureAction(actions, definition) {
+    if (!Array.isArray(actions) || !definition?.id) return null;
+    let action = actions.find(entry => entry?.id === definition.id) || null; // Reuses the authored action object whenever the project already defines it.
+    if (!action) {
+      action = { ...definition };
+      actions.push(action);
+    }
+    return action;
+  }
+
+  function patchAutomaticSelectionDefaults(INPUT_DEFAULTS) {
+    if (!INPUT_DEFAULTS) return;
+    const useCanonicalControllerLayout = INPUT_DEFAULTS.storageKey === 'scratchbones.inputBindings.v1'; // Limits the shipped game layout override to the real game config while allowing isolated tests/tools to supply their own authored defaults.
+    const actions = INPUT_DEFAULTS.actions;
+    if (Array.isArray(actions)) {
+      for (const required of REQUIRED_CONTROLLER_ACTIONS) ensureAction(actions, required);
+      for (const action of actions) {
+        if (useCanonicalControllerLayout && Object.prototype.hasOwnProperty.call(CANONICAL_CONTROLLER_DEFAULTS, action?.id)) {
+          action.controller = CANONICAL_CONTROLLER_DEFAULTS[action.id]; // Makes fresh-player and reset behavior authoritative even when older config rows still carry obsolete controller values.
+        }
+        if (AUTOMATIC_SELECTION_ACTION_IDS.has(action?.id)) action.context = 'selection';
+      }
+    }
+    if (!INPUT_DEFAULTS.controller) INPUT_DEFAULTS.controller = {}; // Used as the generated controller-default map consumed by load/reset code.
+    if (useCanonicalControllerLayout) Object.assign(INPUT_DEFAULTS.controller, CANONICAL_CONTROLLER_DEFAULTS);
+    if (Array.isArray(INPUT_DEFAULTS.modeShifts)) {
+      const kept = removeLegacyControllerModeShift(INPUT_DEFAULTS.modeShifts); // Used to migrate the old LB+right-stick tool/item selector out of shipped defaults in place.
+      INPUT_DEFAULTS.modeShifts.splice(0, INPUT_DEFAULTS.modeShifts.length, ...kept);
+    }
+  }
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    patchAutomaticSelectionDefaults(deps?.INPUT_DEFAULTS);
+  }
 
   function loadInputBindings() {
     const INPUT_DEFAULTS = deps.INPUT_DEFAULTS;
+    patchAutomaticSelectionDefaults(INPUT_DEFAULTS);
     try {
       const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
+      const controller = { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) }; // Used as the live controller map after adding controller actions introduced after an older save was written.
       return {
         desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
-        controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
-        modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
+        controller,
+        modeShifts: removeLegacyControllerModeShift(Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts),
       };
     } catch (_err) {
-      return { desktop: { ...INPUT_DEFAULTS.desktop }, controller: { ...INPUT_DEFAULTS.controller }, modeShifts: INPUT_DEFAULTS.modeShifts };
+      const controller = { ...INPUT_DEFAULTS.controller }; // Used by the corrupt-save fallback while still guaranteeing the canonical controller layout exists.
+      return { desktop: { ...INPUT_DEFAULTS.desktop }, controller, modeShifts: removeLegacyControllerModeShift(INPUT_DEFAULTS.modeShifts) };
     }
   }
 
@@ -35,6 +159,7 @@
   function saveInputBindings() {
     const bindings = getCurrentBindings();
     if (!bindings) return false;
+    bindings.modeShifts = removeLegacyControllerModeShift(bindings.modeShifts); // Prevents an imported/old runtime copy from re-saving the obsolete LB selector shift.
     localStorage.setItem(deps.INPUT_DEFAULTS.storageKey, JSON.stringify(bindings));
     return true;
   }
@@ -45,14 +170,112 @@
   // dispatch on desktop.
   const RESERVED_DESKTOP_CODES = { KeyQ: 'the held Item Wheel' };
 
+  function actionDefinition(actionId) {
+    return deps?.INPUT_DEFAULTS?.actions?.find(action => action.id === actionId)
+      || REQUIRED_CONTROLLER_ACTIONS.find(action => action.id === actionId)
+      || null;
+  }
+
+  function actionContext(actionId) {
+    if (AUTOMATIC_SELECTION_ACTION_IDS.has(actionId)) return 'selection';
+    return actionDefinition(actionId)?.context || 'gameplay';
+  }
+
+  function supportsDevice(action, device) {
+    return !Array.isArray(action?.devices) || action.devices.includes(device);
+  }
+
+  function getActionsForDevice(device) {
+    const authored = [...(deps?.INPUT_DEFAULTS?.actions || [])]; // Used as the Settings/export action list before controller-only compatibility rows are appended.
+    for (const required of REQUIRED_CONTROLLER_ACTIONS) {
+      if (!authored.some(action => action?.id === required.id)) authored.push(required);
+    }
+    return authored.filter(action => supportsDevice(action, device));
+  }
+
+  function getDefaultBindings(device) {
+    if (device !== 'desktop' && device !== 'controller') return null;
+    patchAutomaticSelectionDefaults(deps?.INPUT_DEFAULTS);
+    const defaults = {}; // Used as a fresh device-only binding map so Reset never mutates the authored config object itself.
+    for (const action of getActionsForDevice(device)) {
+      const authoredValue = Object.prototype.hasOwnProperty.call(action || {}, device) ? action[device] : undefined; // Used so runtime-authored migrations such as Social Actions/Call Mount win over an older precomputed map.
+      const mappedValue = deps?.INPUT_DEFAULTS?.[device]?.[action.id]; // Used as the fallback for actions whose defaults are generated outside the authored action row.
+      defaults[action.id] = authoredValue !== undefined ? authoredValue : (mappedValue ?? null);
+    }
+    for (const [actionId, binding] of Object.entries(deps?.INPUT_DEFAULTS?.[device] || {})) {
+      if (!Object.prototype.hasOwnProperty.call(defaults, actionId)) defaults[actionId] = binding ?? null;
+    }
+    return defaults;
+  }
+
+  function getDefaultModeShifts(device) {
+    if (device !== 'desktop' && device !== 'controller') return [];
+    patchAutomaticSelectionDefaults(deps?.INPUT_DEFAULTS);
+    return removeLegacyControllerModeShift(deps?.INPUT_DEFAULTS?.modeShifts)
+      .filter(shift => (shift.device || 'desktop') === device)
+      .map(cloneModeShift);
+  }
+
+  function resetDeviceToDefaults(device) {
+    if (device !== 'desktop' && device !== 'controller') return false;
+    const bindings = getCurrentBindings(); // Used as the mutable live binding object so the opposite device can remain completely untouched.
+    const defaults = getDefaultBindings(device); // Used to replace only the selected keyboard/controller map with authored defaults.
+    if (!bindings || !defaults) return false;
+    const target = bindings[device] || (bindings[device] = {}); // Used in place so any subsystem holding the existing per-device object sees reset values immediately.
+    for (const actionId of Object.keys(target)) delete target[actionId];
+    Object.assign(target, defaults);
+
+    const otherModeShifts = removeLegacyControllerModeShift(bindings.modeShifts).filter(shift => (shift.device || 'desktop') !== device).map(cloneModeShift); // Preserves custom/default mode shifts belonging to the other device.
+    const defaultModeShifts = getDefaultModeShifts(device); // Restores only this device's authored shifted bindings alongside its ordinary controls.
+    bindings.modeShifts = [...otherModeShifts, ...defaultModeShifts];
+
+    if (!saveInputBindings()) return false;
+    for (const actionId of Object.keys(target)) {
+      window.dispatchEvent(new CustomEvent('hobunji-input-bindings-changed', {
+        detail: { device, actionId, binding: target[actionId] ?? null },
+      }));
+    }
+    window.dispatchEvent(new CustomEvent('hobunji-input-bindings-reset', { detail: { device } }));
+    return true;
+  }
+
+
+  function resolveActionForButton(device, button, heldShift = null) {
+    if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
+    const bindings = getCurrentBindings()?.[device] || {}; // Uses the live map so game.js never needs to know how contextual controller actions are authored.
+    return Object.keys(bindings).find(actionId => bindings[actionId] === button && actionContext(actionId) === 'gameplay') || null;
+  }
+
+  function consumeControllerPress(actionId, down, previous, active = true) {
+    if (!active || !down?.has || !previous?.has) return false;
+    const binding = getCurrentBindings()?.controller?.[actionId] ?? null; // Resolves semantic contextual presses without exposing physical controller codes to gameplay code.
+    if (!binding || !down.has(binding)) return false;
+    const freshPress = !previous.has(binding); // Used so held contextual actions edge-trigger once, matching the old hardcoded R3 behavior.
+    down.delete(binding);
+    return freshPress;
+  }
+
+  function contextsConflict(targetContext, otherContext) {
+    if (targetContext === otherContext) return true;
+    return (targetContext === 'selection' && otherContext === 'gameplay')
+      || (targetContext === 'gameplay' && otherContext === 'selection');
+  }
+
   function bindingConflict(device, button, actionId, modeShift = null) {
     if (!button) return '';
     if (modeShift && button === modeShift.button) return 'Shifted input cannot use its held mode-shift button.';
     if (device === 'desktop' && RESERVED_DESKTOP_CODES[button]) return `Reserved for ${RESERVED_DESKTOP_CODES[button]}.`;
+    if (device === 'controller' && AUTOMATIC_SELECTION_ACTION_IDS.has(actionId) && String(button).startsWith('RightStick')) {
+      return 'Stick directions are reserved for navigating this wheel or arch while its opener is held.';
+    }
     const inputBindings = getCurrentBindings();
     const bindings = inputBindings?.[device] || {};
+    const targetContext = actionContext(actionId); // Used so mutually exclusive menu/music bindings may share controls while held gameplay selectors still conflict with live gameplay actions.
     for (const [otherAction, otherButton] of Object.entries(bindings)) {
-      if (otherAction !== actionId && otherButton === button) return `Already bound to ${actionLabel(otherAction)}.`;
+      if (otherAction === actionId || otherButton !== button) continue;
+      const otherDefinition = actionDefinition(otherAction); // Used to ignore stale/saved bindings that are not applicable to this device.
+      if (otherDefinition && !supportsDevice(otherDefinition, device)) continue;
+      if (contextsConflict(targetContext, actionContext(otherAction))) return `Already bound to ${actionLabel(otherAction)}.`;
     }
     if (!modeShift) return '';
     for (const [otherButton, otherAction] of Object.entries(modeShift.bindings || {})) {
@@ -62,7 +285,7 @@
   }
 
   function actionLabel(id) {
-    return deps.INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
+    return actionDefinition(id)?.label || id;
   }
 
   function buttonLabel(code) {
@@ -79,7 +302,11 @@
     return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
   }
 
+
   window.InputBindings = {
-    init, loadInputBindings, getCurrentBindings, saveInputBindings, bindingConflict, actionLabel, buttonLabel,
+    init, loadInputBindings, getCurrentBindings, saveInputBindings,
+    resetDeviceToDefaults, getDefaultBindings, getDefaultModeShifts,
+    canonicalControllerDefaults: CANONICAL_CONTROLLER_DEFAULTS,
+    bindingConflict, actionLabel, buttonLabel, actionContext, getActionsForDevice, resolveActionForButton, consumeControllerPress,
   };
 })();

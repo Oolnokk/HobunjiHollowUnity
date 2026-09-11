@@ -44,22 +44,22 @@ assert.match(source,
   /const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7/,
   'the whole-body curiosity lean stays subtle and scale-stable');
 assert.match(source,
-  /state\.targetPitchDeg = side \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
+  /state\.targetYawDeg = side \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
   'curiosity applies the separate head turn in the same direction as its body glance');
 assert.match(source,
   /const SHOULDER_PET_CURIOUS_WAIT_MIN_S = 3\.4/,
   'shoulder-pet glances have a cooldown so the 250ms instrumentation scan always installs before the first observation');
 assert.match(rigSource,
-  /\["drenkirra"[\s\S]{0,180}\[0\.01,-0\.11914729549653388,-0\.001096892109713506\]/,
+  /\['drenkirra'[\s\S]{0,180}\[0\.01,-0\.11914729549653388,-0\.001096892109713506\]/,
   'Drenkirra uses the supplied shoulderGrip');
 assert.match(rigSource,
-  /\["uumkaoii"[\s\S]{0,180}\[0\.01,-0\.3636087789187775,-0\.18395679109723\]/,
+  /\['uumkaoii'[\s\S]{0,180}\[0\.01,-0\.3636087789187775,-0\.18395679109723\]/,
   'Uumkaoii uses the supplied shoulderGrip');
 assert.match(rigSource,
-  /\["kenkari::female"[\s\S]{0,100}\[-0\.12331214301269552,0\.2212216457140902,0\]/,
+  /\['kenkari::female'[\s\S]{0,100}\[-0\.12331214301269552,0\.2212216457140902,0\]/,
   'Kenkari female uses the supplied shoulderPerch');
 assert.match(rigSource,
-  /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari' \}\)[\s\S]{0,7000}characters\[aliasKey\] = characters\[sourceKey\]/,
+  /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)[\s\S]{0,15000}characters\[aliasKey\] = characters\[sourceKey\]/,
   'Rakakoan still shares Kenkari transform objects instead of owning independent perch transforms');
 assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,500}Curiosity: phase=/,

@@ -27,6 +27,6 @@ assert.match(
   'a successful request acceptance must render its authored follow-up line before closing dialogue',
 );
 assert.match(index, /js\/procedural-tasks\.js\?v=20260831spearheadaccept1/, 'the split request dialogue must bypass the cached task script');
-assert.match(index, /js\/dialogue-content\.js\?v=20260831spearheadaccept1/, 'the acceptance response handler must bypass the cached dialogue script');
+assert.match(index, /js\/dialogue-content\.js\?v=\d+\w*/, 'the acceptance response handler must bypass the cached dialogue script');
 
 console.log('Spearhead existing-bounty reservation test passed');

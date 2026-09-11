@@ -112,6 +112,7 @@
     g.translate(0, 0.5, 0);
     return g;
   })();
+  const WEED_PAIR_TILT = THREE.MathUtils.degToRad(20); // Used by weed billboard pairs to splay their tops 40° total from one bottom origin.
 
   const _grassBillVert = `
     uniform float uTime;
@@ -131,14 +132,14 @@
       vUv = uv;
       #ifdef USE_INSTANCING
         vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        vec4 randomOrigin = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
       #else
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vec4 randomOrigin = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
       #endif
-      // Stable per-blade pseudo-random value from its (fixed) ground
-      // position — used by the fragment shader to thin the tuft count
-      // seasonally (Deadgrass/Coldmuck) without touching the instance
-      // buffer itself, so density can change with a single uniform.
-      vRandom = fract(sin(dot(worldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
+      // Use the instance bottom origin for seasonal density so this value is
+      // constant across the whole plane instead of becoming an interpolated mask.
+      vRandom = fract(sin(dot(randomOrigin.xz, vec2(12.9898, 78.233))) * 43758.5453);
       float topFactor = uv.y;
       float phase = worldPos.x * 1.7 + worldPos.z * 2.3;
       float sway  = sin(uTime * 1.8 + phase) * uStrength * topFactor;
@@ -234,16 +235,22 @@
       cuttableBillboardGlowMat = new THREE.ShaderMaterial({
         uniforms: {
           uGrassTex: { value: tex },
+          uTime: grassBillboardMat.uniforms.uTime, // Shared so the selection highlight sways in exact lockstep with the weed cards.
+          uStrength: grassBillboardMat.uniforms.uStrength, // Shared so wind amplitude cannot drift between weed and highlight.
+          uDensity: grassBillboardMat.uniforms.uDensity, // Shared so seasonally hidden weed planes are also omitted from the highlight.
           uColor: { value: new THREE.Color(deps.combatConfig().cuttableTargetGlow?.color || '#ff2a1f') },
           uAlpha: { value: Number(deps.combatConfig().cuttableTargetGlow?.alpha) || 0.42 }
         },
         vertexShader: _grassBillVert,
         fragmentShader: `
           uniform sampler2D uGrassTex;
+          uniform float uDensity;
           uniform vec3 uColor;
           uniform float uAlpha;
           varying vec2 vUv;
+          varying float vRandom;
           void main() {
+            if (vRandom > uDensity) discard;
             vec4 texel = texture2D(uGrassTex, vUv);
             if (texel.a < 0.5) discard;
             gl_FragColor = vec4(uColor, uAlpha * texel.a);
@@ -259,29 +266,40 @@
     });
   }
 
-  // Fills 14 crosses (28 blades) worth of instance matrices for one tile
-  // into `mesh` starting at `startIdx`; returns the next free index.
-  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0) {
+  // Fills 14 billboard pairs (28 planes) worth of instance matrices for one tile.
+  // pairTiltRad=0 preserves the normal perpendicular grass cross; a nonzero
+  // value gives both planes one yaw/origin and opposite local-X tilts.
+  function _fillBillboardInstances(mesh, dummy, startIdx, col, row, sizeMul, yOffset = 0, widthMul = 1, heightMul = 1, pairTiltRad = 0) {
     const rand  = _mbRng(((col * 31337 + row * 1009) >>> 0));
     const baseY = deps.tileSurfaceY(deps.TileType.GRASS) + yOffset;
     let idx = startIdx;
     for (let b = 0; b < 14; b++) {
       const ox  = (rand() - 0.5) * 0.9;
       const oz  = (rand() - 0.5) * 0.9;
-      const w   = (0.16 + rand() * 0.10) * sizeMul;
-      const h   = (0.22 + rand() * 0.14) * sizeMul;
+      const w   = (0.16 + rand() * 0.10) * sizeMul * widthMul;
+      const h   = (0.22 + rand() * 0.14) * sizeMul * heightMul;
       const rot = rand() * Math.PI;
       const px  = col + 0.5 + ox, pz = row + 0.5 + oz;
 
       dummy.position.set(px, baseY, pz);
-      dummy.rotation.set(0, rot, 0);
       dummy.scale.set(w, h, 1);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(idx++, dummy.matrix);
+      if (pairTiltRad) {
+        dummy.rotation.set(pairTiltRad, rot, 0, 'YXZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
 
-      dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(idx++, dummy.matrix);
+        dummy.rotation.set(-pairTiltRad, rot, 0, 'YXZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
+      } else {
+        dummy.rotation.set(0, rot, 0, 'XYZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
+
+        dummy.rotation.set(0, rot + Math.PI * 0.5, 0, 'XYZ');
+        dummy.updateMatrix();
+        mesh.setMatrixAt(idx++, dummy.matrix);
+      }
     }
     return idx;
   }
@@ -294,8 +312,10 @@
     }
     cuttableBillboardGlowMat.uniforms.uColor.value.set(deps.combatConfig().cuttableTargetGlow?.color || '#ff2a1f');
     cuttableBillboardGlowMat.uniforms.uAlpha.value = Number(deps.combatConfig().cuttableTargetGlow?.alpha) || 0.42;
+    const tile = deps.getGrid()?.[row]?.[col]; // Used here to match the selected weed billboard's elevation tier exactly.
+    const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT; // Passed into the same billboard transform helper used by the visible weed.
     const dummy = new THREE.Object3D();
-    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0);
+    cuttableBillboardGlowMesh.count = _fillBillboardInstances(cuttableBillboardGlowMesh, dummy, 0, col, row, 2.0, tierY, 0.75, 0.75, WEED_PAIR_TILT);
     cuttableBillboardGlowMesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -341,7 +361,7 @@
         if (tile.type === deps.TileType.GRASS && !pavedRoad) {
           gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
         } else if (tile.type === deps.TileType.WEEDS && !deps.getWeed3D()) {
-          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY);
+          wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY, 0.75, 0.75, WEED_PAIR_TILT);
         }
       }
     }
@@ -624,6 +644,7 @@
           const wm = window.FoliageGenerator.buildWeedsMesh(col * 50 + p, row * 50 + p);
           if (wm) {
             wm.position.set((rng() - 0.5) * 0.8, 0, (rng() - 0.5) * 0.8);
+            wm.scale.set(0.75, 0.75, 0.75); // Weed-only width/height reduction; keeps placement and density unchanged.
             vegGroup.add(wm);
           }
         }

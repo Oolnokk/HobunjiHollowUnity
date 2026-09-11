@@ -92,6 +92,27 @@
     return true;
   }
 
+  const VISITOR_WEEKDAYS = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used to compare recurring visitor windows on one canonical Sunday-first week.
+  function visitorWeekMinute(day, time) {
+    const dayIndex = VISITOR_WEEKDAYS.indexOf(day); // Used to place an authored weekday on the weekly visitor timeline.
+    const minute = parseNpcTimeMinutes(time); // Used to place the authored arrival/departure clock time on that day.
+    return dayIndex >= 0 && minute !== null ? dayIndex * 1440 + minute : null;
+  }
+  function getVisitorPresence(rec) {
+    const presence = rec?.visitorPresence; // Used as the optional recurring lifecycle authored by schedule-overrides.json.
+    if (!presence?.entrance || !Array.isArray(presence.visits)) return null;
+    const dayIndex = VISITOR_WEEKDAYS.indexOf(window.CalendarSystem.currentWeekdayName()); // Used to locate the current game time within the visitor week.
+    const current = dayIndex * 1440 + currentGameMinutes(); // Used to test all authored visit windows without date-specific state.
+    const activeVisit = presence.visits.find(visit => {
+      const arrival = visitorWeekMinute(visit.arrivalDay, visit.arrivalTime);
+      let departure = visitorWeekMinute(visit.departureDay, visit.departureTime); // Used as the exclusive visit endpoint.
+      if (arrival === null || departure === null) return false;
+      if (departure <= arrival) departure += 7 * 1440;
+      return (current >= arrival && current < departure) || (current + 7 * 1440 >= arrival && current + 7 * 1440 < departure);
+    }) || null;
+    return { active: !!activeVisit, visit: activeVisit, entrance: presence.entrance };
+  }
+
   function hashNpcIdToIndex(id, mod) {
     let h = 0;
     const s = String(id || '');
@@ -305,6 +326,17 @@
   // planner module didn't load for any reason, so a missing/broken script
   // tag degrades to exactly today's behavior rather than breaking every NPC.
   function resolveNpcScheduleTarget(rec) {
+    const visitor = getVisitorPresence(rec); // Used to make visitor absence override agenda/free-time fallbacks.
+    if (visitor) {
+      const hasWalker = hasExistingNpcWalker(rec); // Used to distinguish an arrival spawn from an existing visitor's departure walk.
+      const entrance = {
+        area: deps.normalizeNpcArea(visitor.entrance.mapId || visitor.entrance.area || 'town'),
+        c: visitor.entrance.c, r: visitor.entrance.r,
+        label: visitor.entrance.label || 'Visitor entrance',
+      };
+      if (!visitor.active) return hasWalker ? { ...entrance, activity: 'departing town', visitorDeparture: true } : null;
+      if (!hasWalker) return { ...entrance, activity: 'arriving in town', visitorArrival: true };
+    }
     if (!window.NpcActivityPlanner) return resolveLegacyNpcScheduleTarget(rec);
     return window.NpcActivityPlanner.resolveNpcTarget(rec, {
       legacyResolve: resolveLegacyNpcScheduleTarget,
@@ -393,6 +425,7 @@
     registerNpcStations,
     resolveNpcStationTarget,
     findStationsByRole,
+    getVisitorPresence,
     resolveNpcScheduleTarget,
     // The unwrapped original resolver, exposed for the Agenda/Activity
     // Planner's own "legacyScheduleActivity" activity and for tests —

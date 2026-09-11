@@ -108,8 +108,11 @@
   const chathead = new URL('animal-chathead-frame.js?v=20260902modular1', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
   const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20260906harvest1', base).href; // Loads the harvest-only animal staging/approach-suppression bridge before FarmAnimals is assigned.
-  const social = new URL('social-action-wheel.js?v=20260903social1', base).href;
+  const social = new URL('social-action-wheel.js?v=20260910controller1', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
+  const controllerSelectionUi = new URL('controller-selection-ui.js?v=20260910controller1', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.
+  const archButtonLabels = new URL('arch-button-labels.js?v=20260910archlabels1', base).href; // Adds centered non-attack meanings plus live lower-right configured-input subscripts to gameplay arch icons.
+  const inputDefaultsResetUi = new URL('input-default-reset-ui.js?v=20260909controller4', base).href; // Adds independent keyboard/controller Reset to Defaults buttons after the Settings binding lists render.
   const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260903social8', base).href;
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
@@ -120,5 +123,5 @@
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20260903social12', base).href;
   const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20260903social13', base).href;
   const npcSillinessReactionRuntime = new URL('npc-silliness-reaction-runtime.js?v=20260903social16', base).href;
-  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
+  document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${controllerSelectionUi}"><\/script><script src="${archButtonLabels}"><\/script><script src="${inputDefaultsResetUi}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script>`);
 })();

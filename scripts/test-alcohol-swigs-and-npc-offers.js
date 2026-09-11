@@ -61,7 +61,10 @@ windowStub.FarmCrates.init({
   getHeldMode: () => 'item',
   getActiveInventoryItem: () => wine,
   clampInventoryStack: key => { if (inventory[key] <= 0) delete inventory[key]; },
-  triggerHeldDrinkAnimation: () => 0,
+  beginHeldDrinkAnimation: () => false,
+  continueHeldDrinkAnimation() {},
+  cancelHeldDrinkAnimation() {},
+  abortHeldDrinkAnimation() {},
   canPlayNpcDrinkInteraction: () => true,
   playNpcDrinkInteraction: (walker, key, onDrink) => { onDrink(); return 180; },
   showToast() {}, refreshItemScroll() {}, buildInventoryGrid() {}, refreshActionBar() {}, saveMemberWorldData() {},
@@ -69,7 +72,7 @@ windowStub.FarmCrates.init({
 
 const bridge = windowStub.HobunjiDrunkGameplayBridge;
 assert.deepEqual(JSON.parse(JSON.stringify(bridge.getBottleSwigStatus('wine', wine, inventory))),
-  { key: 'wine', remaining: 4, total: 4, bottleCount: 2 });
+  { key: 'wine', remaining: 4, total: 4, stars: 3, bottleCount: 2 });
 assert.equal(bridge.consumeBottleSwig('wine', wine, inventory).remaining, 3,
   'the first swig leaves the bottle in inventory with three servings');
 assert.equal(inventory.wine, 2, 'a partial bottle does not decrement the stack');
@@ -97,7 +100,7 @@ assert.match(game, /getNpcSwigOfferAction[\s\S]*?npc_offer_alcohol_swig/,
   'nearby NPC actions include the contextual held-bottle offer');
 assert.match(bridgeSource, /playNpcDrinkInteraction[\s\S]*?applyNpcSwig/,
   'accepted offers defer NPC sobriety application to synchronized drink playback');
-assert.match(popup, /function syncInteractionPrompts[\s\S]*?worldInteractions\.length > 1[\s\S]*?setInteractionPrompts/,
+assert.match(popup, /function syncInteractionPrompts[\s\S]*?worldInteractions\.length > 0[\s\S]*?setInteractionPrompts/,
   'the popup module selects and labels contextual or multiple world interactions');
 assert.match(game, /WorldPopupText\?\.syncInteractionPrompts/,
   'game.js delegates prompt-list synchronization instead of implementing it');
@@ -107,7 +110,7 @@ assert(drunk.includes('drunkLossProvider') && drunk.includes('drunkBodyRoot'),
   'NPC leg rigs reuse the player drunken gait and body-sway layer');
 assert.match(npcCharacterState, /movementSpeedMultiplier[\s\S]*?setBlackoutPose[\s\S]*?state = 'alcohol-blackout'/,
   'the NPC state module slows locomotion and holds a zero-sobriety NPC prone');
-assert.doesNotMatch(game, /function applyAlcoholSwigBadge|worldInteractions\.length > 1|isNpcBlackedOut/,
+assert.doesNotMatch(game, /function applyAlcoholSwigBadge|worldInteractions\.length > 0|isNpcBlackedOut/,
   'alcohol badge, prompt selection, and blackout implementations stay out of game.js');
 assert.equal(config.npcAlcoholOffers.default.acceptMode, 'always', 'all NPCs accept by default in this pass');
 assert.match(ambient, /resolveAlcoholOffer[\s\S]*?acceptMode/,

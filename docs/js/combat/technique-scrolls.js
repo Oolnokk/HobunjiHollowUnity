@@ -20,6 +20,7 @@
     2: { none: 25, quickAttack: 45, defensiveHold: 15, offensiveHold: 15 },
     3: { none: 10, quickAttack: 35, defensiveHold: 0, offensiveHold: 55 },
   }; // Used for each scroll tier's overall success chance and technique-family preference.
+  const MANUAL_PREFIX = 'combatManual'; // Used to give every slottable technique one deterministic inventory key.
 
   let itemDeps = null; // Used for scroll inventory, selected-item actions, UI refreshes, and saves.
   let bountyDeps = null; // Used to detect the exact bounty transition that deserves a scroll reward.
@@ -61,6 +62,20 @@
     CATS.forEach(cat => categoryTechniques(cat).forEach(def => map.set(def.id, def)));
     return [...map.values()];
   }
+  function manualKeyForAbility(abilityId) {
+    const id = String(abilityId || ''); // Used to form the stable save/inventory key for this ability's manual.
+    return id ? MANUAL_PREFIX + id[0].toUpperCase() + id.slice(1) : '';
+  }
+  function manualForAbility(abilityId) {
+    const def = ability(abilityId); // Used to derive the manual label from the live combat ability registry.
+    if (!def || !isTechnique(def)) return null;
+    return {
+      key: manualKeyForAbility(abilityId), abilityId,
+      icon: '📕', label: `${def.label || abilityId} Combat Manual`,
+      desc: `Read to permanently learn ${def.label || abilityId}.`,
+    };
+  }
+  function allManuals() { return allTechniques().map(def => manualForAbility(def.id)).filter(Boolean); }
 
   function rollTechniqueUnlock(scrollTier) {
     const tier = Math.max(1, Math.min(3, Math.floor(Number(scrollTier) || 1))); // Used to select the requested scroll outcome row.
@@ -163,6 +178,11 @@
       deps.ITEM_DEFS[scroll.key] = { ...old, icon: old.icon || scroll.icon, label: old.label || scroll.label, cat: old.cat || 'material', sellPrice: old.sellPrice ?? 0, tags: [...new Set([...(old.tags || []), 'Technique Scroll', 'Combat', 'Consumable'])], desc: old.desc || scroll.desc, techniqueScrollTier: tier };
       if (!deps.inventoryItems.some(entry => entry.key === scroll.key)) deps.inventoryItems.push({ key: scroll.key, icon: scroll.icon, label: scroll.label.toUpperCase(), max: 99 });
     });
+    allManuals().forEach(manual => {
+      const old = deps.ITEM_DEFS[manual.key] || {}; // Used to preserve authored art/economy overrides for this specific manual.
+      deps.ITEM_DEFS[manual.key] = { ...old, icon: old.icon || manual.icon, label: old.label || manual.label, cat: old.cat || 'material', sellPrice: old.sellPrice ?? 35, tags: [...new Set([...(old.tags || []), 'Combat Manual', 'Combat', 'Consumable'])], desc: old.desc || manual.desc, combatManualAbilityId: manual.abilityId };
+      if (!deps.inventoryItems.some(entry => entry.key === manual.key)) deps.inventoryItems.push({ key: manual.key, icon: manual.icon, label: manual.label.toUpperCase(), max: 99 });
+    });
     window.HobunjiInventoryActionMetadataBridge?.refresh?.();
   }
   function captureItemDeps(deps) {
@@ -187,6 +207,14 @@
     const tier = Number(active?.techniqueScrollTier || itemDeps?.ITEM_DEFS?.[active?.key]?.techniqueScrollTier) || 0; // Used to recognize registered scrolls after inventory metadata enrichment.
     if (tier < 1 || tier > 3 || !(Number(itemDeps?.inventory?.[active?.key]) > 0)) return null;
     return { key: active.key, tier, def: itemDeps.ITEM_DEFS?.[active.key] || active };
+  }
+  function heldManual() {
+    if (itemDeps?.getHeldMode?.() != null && itemDeps.getHeldMode() !== 'item') return null;
+    const active = itemDeps?.getActiveInventoryItem?.(); // Used as the authoritative selected manual stack.
+    const abilityId = active?.combatManualAbilityId || itemDeps?.ITEM_DEFS?.[active?.key]?.combatManualAbilityId; // Used to resolve the exact ability this manual teaches.
+    const manual = manualForAbility(abilityId);
+    if (!manual || manual.key !== active?.key || !(Number(itemDeps?.inventory?.[manual.key]) > 0)) return null;
+    return { ...manual, def: itemDeps.ITEM_DEFS?.[manual.key] || manual };
   }
   function refreshInventory() {
     itemDeps?.refreshItemScroll?.(); itemDeps?.buildInventoryGrid?.(); itemDeps?.refreshActionBar?.(); itemDeps?.saveMemberWorldData?.();
@@ -216,16 +244,47 @@
     lastEvent = { type: 'consume', tier: held.tier, motes: held.tier, learnedId: learnedId || null, at: Date.now() };
     return true;
   }
+  function consumeManual() {
+    const held = heldManual(); // Used to validate the selected stack immediately before reading it.
+    if (!held) return false;
+    if (isUnlocked(held.abilityId)) {
+      itemDeps?.showToast?.(`${held.label}: ${ability(held.abilityId)?.label || held.abilityId} is already learned.`, false);
+      return false;
+    }
+    itemDeps.inventory[held.key] = Math.max(0, Number(itemDeps.inventory[held.key]) - 1);
+    itemDeps.clampInventoryStack?.(held.key);
+    const learned = unlockAbility(held.abilityId, held.label); // Used as the same authoritative persisted unlock path as Technique Scroll discoveries.
+    if (!learned) return false;
+    itemDeps.showToast?.(`📕 Read ${held.label}. Learned ${ability(held.abilityId)?.label || held.abilityId}!`, true);
+    refreshInventory();
+    lastEvent = { type: 'manual-consume', abilityId: held.abilityId, manualKey: held.key, at: Date.now() };
+    return true;
+  }
+  function rollManualKey({ preferLocked = false, random = Math.random } = {}) {
+    const manuals = allManuals(); // Used as the complete specific-manual loot pool for every current slottable technique.
+    const candidates = preferLocked ? manuals.filter(manual => !unlocked.has(manual.abilityId)) : manuals;
+    const pool = candidates.length ? candidates : manuals;
+    if (!pool.length) return null;
+    const index = Math.min(pool.length - 1, Math.floor(Math.max(0, Math.min(0.999999, Number(random()) || 0)) * pool.length)); // Used to choose one manual without depending on global RNG in seeded loot callers.
+    return pool[index].key;
+  }
+  function ensureManualItemDef(abilityId) {
+    const manual = manualForAbility(abilityId); // Used by shops to resolve authored manual goods against the live ability registry.
+    if (manual && itemDeps) registerItems(itemDeps);
+    return manual ? itemDeps?.ITEM_DEFS?.[manual.key] || manual : null;
+  }
 
   function patchHeldActions(api) {
-    if (!api?.getHeldItemAction || !api?.consumeHeldItem || api.__techniqueScrollsPatched) return;
+    if (!api?.getHeldItemAction || !api?.beginHeldItemAction || api.__techniqueScrollsPatched) return;
     const getAction = api.getHeldItemAction.bind(api); // Used for every ordinary food/drink item after scroll detection gets first refusal.
-    const consume = api.consumeHeldItem.bind(api); // Used for every ordinary food/drink consumption after scroll detection gets first refusal.
+    const begin = api.beginHeldItemAction.bind(api); // Used for every ordinary food/drink consumption after scroll detection gets first refusal.
     api.getHeldItemAction = () => {
+      const manual = heldManual(); // Used to expose exact manual reading through the configurable Item Action 1 path.
+      if (manual) return { icon: manual.def.icon || '📕', label: isUnlocked(manual.abilityId) ? `${ability(manual.abilityId)?.label || manual.abilityId} already learned` : `Read ${manual.label}`, action: 'consume_held_item', style: 'primary', allowed: !isUnlocked(manual.abilityId) };
       const held = heldScroll(); // Used to expose scroll reading through the already-configurable Item Action 1 path.
       return held ? { icon: held.def.icon || '📜', label: `Read ${held.def.label}`, action: 'consume_held_item', style: 'primary', allowed: true } : getAction();
     };
-    api.consumeHeldItem = () => heldScroll() ? consumeScroll() : consume();
+    api.beginHeldItemAction = () => heldManual() ? consumeManual() : heldScroll() ? consumeScroll() : begin();
     api.__techniqueScrollsPatched = true;
   }
 
@@ -338,10 +397,11 @@
 
   window.TechniqueScrolls = {
     SCROLLS, SOURCE_WEIGHTS, UNLOCK_WEIGHTS, isUnlocked, unlockAbility, rollScrollTier, rollTechniqueUnlock, grantScroll, consumeScroll, consumeTechniqueScroll: consumeScroll,
+    manualKeyForAbility, manualForAbility, allManuals, ensureManualItemDef, rollManualKey, consumeManual,
     getUnlockedTechniqueIds: () => [...unlocked].sort(),
     getDebug() {
       const all = allTechniques(); // Used to expose learned/locked state and scroll inventory through existing mobile debug inspection.
-      return { ready: !!itemDeps, unlocked: [...unlocked].sort(), locked: all.filter(def => !unlocked.has(def.id)).map(def => ({ id: def.id, label: def.label, category: def.category })), scrollCounts: Object.fromEntries(Object.entries(SCROLLS).map(([tier, s]) => [tier, Number(itemDeps?.inventory?.[s.key]) || 0])), lastEvent: lastEvent && { ...lastEvent } };
+      return { ready: !!itemDeps, unlocked: [...unlocked].sort(), locked: all.filter(def => !unlocked.has(def.id)).map(def => ({ id: def.id, label: def.label, category: def.category })), manuals: allManuals().map(manual => ({ ...manual, count: Number(itemDeps?.inventory?.[manual.key]) || 0, learned: unlocked.has(manual.abilityId) })), scrollCounts: Object.fromEntries(Object.entries(SCROLLS).map(([tier, s]) => [tier, Number(itemDeps?.inventory?.[s.key]) || 0])), lastEvent: lastEvent && { ...lastEvent } };
     },
     devGrantScroll(tier) { return window.Combat?.deps?.isDevMode?.() ? !!grantScroll(tier, 'Dev debug') : false; },
   };

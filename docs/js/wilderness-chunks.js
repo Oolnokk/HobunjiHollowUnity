@@ -221,7 +221,9 @@
       // only ever removes the key currently being visited), so this no
       // longer needs to spread either Map into a throwaway array first —
       // this runs every frame the zone is active, not just on chunk-boundary
-      // crossings.
+      // crossings. That holds only while the onChunkUnloaded callback unload()
+      // invokes does not itself add to or remove from this.loaded; a consumer
+      // that ever needs to must take a snapshot here instead.
       for (const [key, record] of this.loaded) {
         if (chebyshev(record.cx, record.cz, centerCx, centerCz) > UNLOAD_RADIUS) this.unload(key);
       }

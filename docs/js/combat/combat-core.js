@@ -533,9 +533,25 @@
   const DRUNK_FOOTING_ID = "drunkenFooting";
   const DRUNK_HEALTH_ID = "drunkenHealth";
   const DRUNK_RECOVERY_PER_SEC = 0.02;
-  const BLACKOUT_LOCAL_LIMIT_PERCENT = 25;
   const BLACKOUT_MIN_SKIP_MINUTES = 30;
   const BLACKOUT_MINUTES_PER_PERCENT = 10;
+  // Skipped calendar time gets diminishing returns above this many minutes
+  // and a hard cap beyond that, so an uncapped Footing deficit (which can
+  // run into the hundreds of percent) can't skip an absurd number of
+  // calendar days — the raw deficit itself is never capped, only this
+  // downstream time-skip consequence (see skipBlackoutTime).
+  const BLACKOUT_TIME_SOFT_CAP_MINUTES = 720;
+  const BLACKOUT_TIME_HARD_CAP_MINUTES = 1440;
+  // Wander score (deficit × alcohol-quality travel multiplier) at or below
+  // which a blackout keeps the player on the same map — distance and time
+  // are deliberately separate knobs (see triggerBlackout/performBlackoutTravel).
+  const WANDER_LOCAL_LIMIT = 25;
+  // Alcohol quality's two secondary effects: gentler on drunkenHealth, and a
+  // stronger pull toward "how far did I wander" rather than "how hurt am I."
+  // Alcohol TYPE (footing/health above) still controls how intoxicating a
+  // drink is at all — quality only refines what happens once you're drunk.
+  const HEALTH_QUALITY_MULTIPLIERS = { 1: 1.25, 2: 1.10, 3: 1.00, 4: 0.85, 5: 0.70 };
+  const WANDER_QUALITY_MULTIPLIERS = { 1: 0.60, 2: 0.80, 3: 1.00, 4: 1.45, 5: 2.10 };
   const ALCOHOL_TAGS = new Set(["alcohol", "wine", "sake", "vodka", "nectar", "airag", "liquor", "spirit", "spirits", "beer", "ale", "mead", "cider"]);
   const INN_DRINKS = [
     { key: "needlegrainSake", buyPrice: 32 },
@@ -829,7 +845,13 @@
         inventory[key]--;
         alchemyDeps?.clampInventoryStack?.(key);
       }
-      const result = RS.addDrunkenness(player, profile.footing, profile.health, { source: key, label: def?.label || key });
+      // Alcohol type controls how intoxicating a drink is (footing, unchanged
+      // here); alcohol quality controls how refined it is — better bottles
+      // are gentler on drunkenHealth and produce more adventurous blackouts
+      // (see HEALTH_QUALITY_MULTIPLIERS and triggerBlackout's stars param).
+      const stars = Math.max(1, Math.min(5, Math.round(Number(serving?.stars) || 3)));
+      const healthAmount = profile.health * (HEALTH_QUALITY_MULTIPLIERS[stars] || 1);
+      const result = RS.addDrunkenness(player, profile.footing, healthAmount, { source: key, label: def?.label || key, stars });
       lastDrink = {
         key, label: def?.label || key,
         footingAdded: result.footingAdded,
@@ -946,6 +968,76 @@
     return candidates.length ? candidates[Math.floor(gameRandom() * candidates.length)] : null;
   }
 
+  // Wakes the player up somewhere genuinely random in the destination zone
+  // for high wander scores, instead of always landing near its authored
+  // entrance/last-visited spot. Purely geometric: it samples a handful of
+  // random walkable points and keeps whichever sits farthest from the map
+  // edges (a stand-in for "deep in the zone" with zero content awareness —
+  // no POI/quest/loot/landmark lookups of any kind; see getDebug().poiQueries).
+  function chooseDeepRandomTile(grid, cols, rows, attempts = 12) {
+    let best = null, bestEdgeDist = -1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const col = Math.floor(gameRandom() * cols);
+      const row = Math.floor(gameRandom() * rows);
+      if (!isBlackoutWalkable(grid, col, row)) continue;
+      const edgeDist = Math.min(col, cols - 1 - col, row, rows - 1 - row);
+      if (edgeDist > bestEdgeDist) { bestEdgeDist = edgeDist; best = { col, row }; }
+    }
+    return best;
+  }
+
+  function chooseDestinationTile(grid, cols, rows, anchor, radius, biasInterior) {
+    if (biasInterior) {
+      const deep = chooseDeepRandomTile(grid, cols, rows);
+      if (deep) return deep;
+    }
+    return chooseWalkableTile(grid, cols, rows, anchor, radius);
+  }
+
+  // Blackout severity (raw, uncapped Footing-deficit percent) determines how
+  // bad the blackout was; wander score determines how far the unconscious
+  // player's random walk carried them. Alcohol TYPE never affects distance —
+  // only alcohol QUALITY does (see WANDER_QUALITY_MULTIPLIERS).
+  function wanderScoreForBlackout(severityPercent, stars) {
+    const multiplier = WANDER_QUALITY_MULTIPLIERS[Math.max(1, Math.min(5, Math.round(Number(stars) || 3)))] || 1;
+    return Math.max(0, Number(severityPercent) || 0) * multiplier;
+  }
+
+  // How many exterior-zone edges the random walk crosses. The upper band
+  // tapers off rather than growing without bound — the wilderness graph is
+  // small, so "potentially anywhere" saturates instead of looping forever
+  // even against a triple-digit-percent deficit.
+  function hopRangeForWanderScore(score) {
+    if (score <= WANDER_LOCAL_LIMIT) return [0, 0];
+    if (score <= 55) return [0, 1];
+    if (score <= 100) return [1, 2];
+    if (score <= 170) return [2, 3];
+    if (score <= 250) return [3, 4];
+    const extra = Math.min(4, Math.floor((score - 250) / 150));
+    return [4 + extra, 6 + extra];
+  }
+
+  // A pure random walk over the existing exterior adjacency graph — no
+  // content scoring of any kind, just geography. Only blocks immediate
+  // A→B→A backtracking (and only when an alternative actually exists);
+  // revisiting an earlier zone later in a longer walk is fine.
+  function randomWalkPath(startArea, hops) {
+    const path = [startArea];
+    let current = startArea;
+    let previous = null;
+    for (let i = 0; i < hops; i++) {
+      const neighbors = exteriorAdjacency(current);
+      const choices = neighbors.filter(area => area !== previous);
+      const pool = choices.length ? choices : neighbors;
+      if (!pool.length) break;
+      const next = pool[Math.floor(gameRandom() * pool.length)];
+      previous = current;
+      current = next;
+      path.push(current);
+    }
+    return path;
+  }
+
   function addPlayerToScene(scene) {
     if (!scene || !devDeps) return;
     scene.add(devDeps.playerMesh); scene.add(devDeps.playerGroundShadow);
@@ -954,9 +1046,17 @@
     scene.add(devDeps.reticleWavyGroup);
   }
 
-  function skipBlackoutTime(deficitPercent) {
+  function skipBlackoutTime(severityPercent) {
     if (!calendarDeps?.calendar) return 0;
-    const skippedMinutes = Math.max(BLACKOUT_MIN_SKIP_MINUTES, Math.round(deficitPercent * BLACKOUT_MINUTES_PER_PERCENT));
+    const linear = Math.max(BLACKOUT_MIN_SKIP_MINUTES, severityPercent * BLACKOUT_MINUTES_PER_PERCENT);
+    // Diminishing returns above the soft cap, then a hard ceiling — severity
+    // keeps mattering for wander distance even past this point, it just
+    // stops mattering for how long the skipped nap gets (see the constants'
+    // block comment above).
+    const softened = linear <= BLACKOUT_TIME_SOFT_CAP_MINUTES
+      ? linear
+      : BLACKOUT_TIME_SOFT_CAP_MINUTES + (linear - BLACKOUT_TIME_SOFT_CAP_MINUTES) * 0.15;
+    const skippedMinutes = Math.min(BLACKOUT_TIME_HARD_CAP_MINUTES, Math.round(softened));
     const morning = Number(calendarDeps.MORNING_HOUR) || 6;
     const night = Number(calendarDeps.NIGHT_HOUR) || 22;
     const playableMinutesPerDay = Math.max(60, (night - morning) * 60);
@@ -970,18 +1070,21 @@
     return skippedMinutes;
   }
 
-  function performBlackoutTravel(deficitPercent) {
+  function performBlackoutTravel(severityPercent, stars) {
     if (!devDeps) return null;
     const currentArea = devDeps.getCurrentArea();
     const baseExterior = inferredExteriorForArea(currentArea);
-    const crossesMap = deficitPercent > BLACKOUT_LOCAL_LIMIT_PERCENT;
-    const adjacent = exteriorAdjacency(baseExterior);
-    const targetArea = crossesMap && adjacent.length
-      ? adjacent[Math.floor(gameRandom() * adjacent.length)]
-      : baseExterior;
-    const radius = crossesMap
-      ? Math.max(1, Math.ceil(deficitPercent - BLACKOUT_LOCAL_LIMIT_PERCENT))
-      : Math.max(1, Math.ceil(deficitPercent));
+    const score = wanderScoreForBlackout(severityPercent, stars);
+    const [minHops, maxHops] = hopRangeForWanderScore(score);
+    const requestedHops = minHops + Math.floor(gameRandom() * (maxHops - minHops + 1));
+    const path = randomWalkPath(baseExterior, requestedHops);
+    const targetArea = path[path.length - 1];
+    const crossesMap = targetArea !== baseExterior;
+    const radius = Math.max(1, Math.round(Math.max(severityPercent, score) / 8));
+    // Only bias toward the zone's interior once the walk has actually left
+    // the starting map — staying local should still land near the player's
+    // own anchor, not teleport them to a random corner of the same map.
+    const biasInterior = crossesMap && score > 170;
 
     const doTravel = () => {
       const fromScene = devDeps.getActiveScene?.();
@@ -1003,7 +1106,7 @@
       const anchor = !crossesMap && lastExteriorAnchor?.area === targetArea
         ? { col: lastExteriorAnchor.col, row: lastExteriorAnchor.row }
         : fallbackAnchorForArea(targetArea, cols, rows);
-      const tile = chooseWalkableTile(grid, cols, rows, anchor, radius) || anchor;
+      const tile = chooseDestinationTile(grid, cols, rows, anchor, radius, biasInterior) || anchor;
       const tileSize = Number(devDeps.TILE) || 1;
       devDeps.player.x = (tile.col + 0.5) * tileSize;
       devDeps.player.y = (tile.row + 0.5) * tileSize;
@@ -1011,21 +1114,25 @@
       devDeps._snapCameraTarget?.();
       addPlayerToScene(devDeps.getActiveScene?.());
       devDeps.refreshActionBar?.();
-      return { fromArea: currentArea, baseExterior, targetArea, radius, tile };
+      return { fromArea: currentArea, baseExterior, targetArea, radius, tile, path, requestedHops, actualHops: path.length - 1, score };
     };
 
     let immediateResult = null;
     if (typeof devDeps.startSceneTransition === "function") {
       devDeps.startSceneTransition(() => { immediateResult = doTravel(); });
     } else immediateResult = doTravel();
-    return { requestedFromArea: currentArea, baseExterior, targetArea, radius, immediateResult };
+    return { requestedFromArea: currentArea, baseExterior, targetArea, radius, path, requestedHops, score, immediateResult, poiQueries: 0 };
   }
 
-  function triggerBlackout(deficitPercent, source = "alcohol") {
-    const effectivePercent = Math.max(1, Number(deficitPercent) || 0);
+  function triggerBlackout(severityPercent, source = "alcohol", stars = 3) {
+    // Raw, uncapped Footing-deficit percent — kept exact (not clamped) so
+    // diagnostics can report e.g. "286%" and the wander-score calculation
+    // below sees the true severity even well past 100%.
+    const effectivePercent = Math.max(1, Number(severityPercent) || 0);
+    const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
     const skippedMinutes = skipBlackoutTime(effectivePercent);
-    const travel = performBlackoutTravel(effectivePercent);
-    lastBlackout = { source, deficitPercent: effectivePercent, skippedMinutes, travel, at: performance.now() };
+    const travel = performBlackoutTravel(effectivePercent, safeStars);
+    lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes, travel, at: performance.now() };
     devDeps?.showToast?.(`🍺 Blackout — ${skippedMinutes} minutes passed.`, true);
     return lastBlackout;
   }
@@ -1044,7 +1151,7 @@
     const rawDeficitPercent = maxFooting > 0 ? overflowPoints / maxFooting * 100 : 0;
     const blackout = reachedFull || overflowPoints > 0;
     const deficitPercent = blackout ? Math.max(1, rawDeficitPercent) : 0;
-    if (blackout && entity === window.Combat?.deps?.player) triggerBlackout(deficitPercent, opts.source || "alcohol");
+    if (blackout && entity === window.Combat?.deps?.player) triggerBlackout(deficitPercent, opts.source || "alcohol", opts.stars);
     return { footingAdded, healthAdded, overflowPoints, deficitPercent, blackout };
   };
 
@@ -1144,19 +1251,26 @@
         drunkenHealth: getDrunk(player, DRUNK_HEALTH_ID),
         effectiveFootingMax: player ? RS.getEffectiveMax(player, "footing") : 0,
         recoveryPerSecond: DRUNK_RECOVERY_PER_SEC,
-        sameMapDeficitLimitPercent: BLACKOUT_LOCAL_LIMIT_PERCENT,
+        wanderScoreLocalLimit: WANDER_LOCAL_LIMIT,
+        blackoutTimeSoftCapMinutes: BLACKOUT_TIME_SOFT_CAP_MINUTES,
+        blackoutTimeHardCapMinutes: BLACKOUT_TIME_HARD_CAP_MINUTES,
+        // Blackout destinations are picked purely from grid geometry/collision
+        // — never from POIs, quests, loot, forageables, or discovered-map
+        // state. This field is the mechanically-auditable proof of that.
+        poiQueries: 0,
         lastDrink, lastBlackout, lastExteriorAnchor
       };
     },
-    forceDrink(profile = "vodka") {
+    forceDrink(profile = "vodka", stars = 3) {
       const player = window.Combat?.deps?.player;
       if (!player) return null;
       const fake = profile === "sake" ? { footing: 24, health: 11 }
         : profile === "wine" ? { footing: 20, health: 9 }
         : { footing: 32, health: 14 };
-      return RS.addDrunkenness(player, fake.footing, fake.health, { source: `debug:${profile}` });
+      const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
+      return RS.addDrunkenness(player, fake.footing, fake.health * (HEALTH_QUALITY_MULTIPLIERS[safeStars] || 1), { source: `debug:${profile}`, stars: safeStars });
     },
-    triggerBlackout(percent) { return triggerBlackout(percent, "debug"); },
+    triggerBlackout(percent, stars) { return triggerBlackout(percent, "debug", stars); },
     clear() {
       const player = window.Combat?.deps?.player;
       if (!player) return;

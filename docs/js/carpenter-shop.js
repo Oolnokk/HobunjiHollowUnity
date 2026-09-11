@@ -13,7 +13,13 @@
   // loads. Barn additions deliberately stay in their own shop-stock pool so
   // they never leak into the farmhouse deed catalog/editor.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    // food-processing.js loads before this module but game.js initializes the
+    // shop before DOMContentLoaded. Register processing blueprints here so a
+    // deferred wrapper can never miss the carpenter's real production init.
+    window.HobunjiFoodProcessing?.ensureBlueprint?.(injectedDeps?.FURNITURE_BLUEPRINT_CATALOG);
+    deps = injectedDeps;
+  }
 
   function _barnAdditions() {
     return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions || {};

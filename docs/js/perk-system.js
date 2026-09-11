@@ -41,6 +41,7 @@
     alchemy: [4, 7],
     foraging: [6, 10],
     fishing: [6, 12],
+    farming: [8, 16],
   };
 
   const TREES = {
@@ -105,10 +106,30 @@
       { id: 'weakRockSense', name: 'Weak Rock Sense', tier: 1, maxRank: 5, desc: r => `Breaking a mine rock has an additional ${r * 1.5}% chance to reveal the way down.` },
       { id: 'collapsingBlows', name: 'Collapsing Blows', tier: 1, maxRank: 5, desc: r => `Killing a mine enemy has an additional ${r * 3}% chance to expose weak rock beneath it.` },
     ],
+    // Tier 1: better/more of what you grow, added on top of Farming's
+    // existing automatic level-based quality curve (see SkillSystem.
+    // qualityPower) so specializing here never nerfs an existing save.
+    // Tier 2: processing craftsmanship — how well a farmer's own goods hold
+    // up (or improve) when pressed, ground, or churned (see SkillSystem.
+    // rollProcessingQuality). Tier 3: artisan specialties for the two
+    // slow "long" processing methods — the most specialized, build-defining
+    // perks in the tree.
+    farming: [
+      { id: 'selectiveHarvest', name: 'Selective Harvest', tier: 1, maxRank: 5, desc: r => `Crop and animal-product quality rolls are noticeably better, on top of Farming's existing bonus (rank ${r}/5).` },
+      { id: 'bountifulHarvest', name: 'Bountiful Harvest', tier: 1, maxRank: 5, desc: r => `Chance of an additional harvested crop is increased ${r * 6}%.` },
+      { id: 'husbandry', name: 'Husbandry', tier: 1, maxRank: 5, desc: r => `A well-cared-for animal's hearts push its product quality even further (rank ${r}/5).` },
+      { id: 'farmhand', name: 'Farmhand', tier: 1, maxRank: 5, desc: r => `Digging, planting, and harvesting are faster, on top of Farming's existing bonus (rank ${r}/5).` },
+      { id: 'artisan', name: 'Artisan', tier: 2, maxRank: 5, desc: r => `Processing craftsmanship is shifted toward preserving or improving quality (rank ${r}/5)${r >= 5 ? ' — ★★★★★ inputs can never lose quality' : ''}.` },
+      { id: 'carefulBatches', name: 'Careful Batches', tier: 2, maxRank: 3, desc: r => `Improves the minimum processing result (rank ${r}/3)${r >= 3 ? ' — ordinary quick-processing never lowers quality' : ''}.` },
+      { id: 'efficientProcessing', name: 'Efficient Processing', tier: 2, maxRank: 5, desc: r => `Chance to produce an extra processed unit without consuming another ingredient is increased ${r * 3}%.` },
+      { id: 'workingAnimals', name: 'Working Animals', tier: 2, maxRank: 3, desc: r => `Animal-operated processing (assigned squeezing-vat livestock) draws on that animal's own hearts instead of behaving like an anonymous machine (rank ${r}/3).` },
+      { id: 'cellarmaster', name: 'Cellarmaster', tier: 3, maxRank: 5, desc: r => `Barrel/vase aging is noticeably more likely to improve quality (rank ${r}/5).` },
+      { id: 'preserver', name: 'Preserver', tier: 3, maxRank: 5, desc: r => `Drying/smoking is noticeably more likely to preserve or improve quality (rank ${r}/5).` },
+    ],
   };
 
   let deps = null;
-  const ranks = { combat: {}, alchemy: {}, foraging: {}, fishing: {}, mining: {} }; // skillKey -> perkId -> rank
+  const ranks = { combat: {}, alchemy: {}, foraging: {}, fishing: {}, mining: {}, farming: {} }; // skillKey -> perkId -> rank
 
   function init(injectedDeps = {}) { deps = injectedDeps; render(); }
 
@@ -212,6 +233,7 @@
     foraging: { label: 'Foraging', icon: '🌿' },
     fishing: { label: 'Fishing', icon: '🎣' },
     mining: { label: 'Mining', icon: '⛏️' },
+    farming: { label: 'Farming', icon: '🌾' },
   };
   const openTrees = new Set();
 

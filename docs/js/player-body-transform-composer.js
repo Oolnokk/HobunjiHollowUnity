@@ -120,7 +120,16 @@
   // camera because the camera sits at activeCameraAzimuthRad(). Once that
   // direction is outside the neck range, adding PI reverses it to the
   // direction the camera itself is FACING. The same ±65° hard limit is then
-  // applied to that fallback as well, so neither branch can overtwist.
+  // applied to that fallback as well.
+  //
+  // CAVEAT: shoulder-surf sets hobunjiPerspectiveAimLocked and bypasses the
+  // limit entirely so the head stays exactly on the shared perspective point.
+  // In steady state game.js's idle body catch-up keeps the residual inside 60°,
+  // but that catch-up is rate-limited (SHOULDER_SURF_BODY_CATCHUP_RATE), so a
+  // fast idle camera flick CAN show the head past 65° for a few frames before
+  // the body squares up. If that transient ever reads as an overtwist on
+  // screen, clamp the locked branch here rather than reintroducing a second
+  // aim authority upstream.
   function applyPlayerNeckYawLimit(renderDebug) {
     const neckJoint = currentPlayerNeckJoint();
     if (!neckJoint) return;

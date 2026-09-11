@@ -19,10 +19,13 @@
   <!-- Movement virtual-joystick handlers extracted out of game.js; uses
        window.FormatUtils.clamp, so must load after it and before game.js. -->
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
+  <!-- Shared radial-deadzone and active-pad helpers used by both gameplay
+       and menu controller polling. Must load before game.js. -->
+  <script src="js/controller-input.js?v=20260910controller1"></script>
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20260902mod1"></script>
+  <script src="js/input-bindings.js?v=20260909decouple1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
@@ -75,7 +78,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20260907road1"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20260910review1"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -108,7 +111,7 @@
   <script src="debug.js?v=20260905cacheaudit2"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260909perspectivepoint2"></script>
+  <script src="config/scratchbones-config.js?v=20260909controller1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
   <link rel="stylesheet" href="style.css?v=20260830mapwaypoint3">
@@ -125,7 +128,7 @@
   <script src="js/portrait-utils.js?v=20260830flip2"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
-  <script src="js/png-plane-avatar.js?v=20260830flip2"></script>
+  <script src="js/png-plane-avatar.js?v=20260910review1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -134,7 +137,7 @@
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260821alchemy1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20260811a"></script>
+  <script src="js/character-action-locks.js?v=20260910controller1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20260811a"></script>
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -142,7 +145,7 @@
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
-  <script src="js/leg-bones.js?v=20260816a"></script>
+  <script src="js/leg-bones.js?v=20260910review1"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/procedural-leg-animation.js?v=20260821e"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
@@ -166,7 +169,7 @@
        (game.js) and farm livestock (farm-animals.js). -->
   <script src="js/creature-blink.js?v=20260828blink1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20260712d"></script>
+  <script src="js/foliage-generator.js?v=20260910review1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20260902mineladder1"></script>
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
@@ -187,7 +190,7 @@
        to localStorage and have the game load that instead of the repo file,
        toggled from the onboarding save-select screen. Loaded before anything
        that calls loadDatabase() (combat-config-loader.js, game.js, onboarding.js). -->
-  <script src="js/local-db-overrides.js?v=20260727a"></script>
+  <script src="js/local-db-overrides.js?v=20260910jubmir1"></script>
   <!-- Item trait vocabulary/computation (window.ItemTraits) — see
        docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
        exists; consumed by npc-gifting.js and tools/item-database-editor. -->
@@ -199,10 +202,10 @@
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20260904a"></script>
+  <script src="js/local-save-folder.js?v=20260910review1"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260728b">
-  <script src="onboarding.js?v=20260811b"></script>
+  <script src="onboarding.js?v=20260910review1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
@@ -213,14 +216,14 @@
        resource-system.js/combat-core.js. -->
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
-  <script src="js/combat/combat-enemy-telegraph.js?v=20260712d"></script>
+  <script src="js/combat/combat-enemy-telegraph.js?v=20260910review1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
   <script src="js/combat/combat-loadout.js?v=20260907alternatingneutral1"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260831heavyhold2"></script>
   <script src="js/combat/combat-combo.js?v=20260907strikehold1"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260829combatsfx1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260910review1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260829combatsfx1"></script>
   <script src="js/combat/combat-flurry.js?v=20260829combatsfx1"></script>
@@ -252,7 +255,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260830portraitflip2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260910controller1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -293,14 +296,14 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20260826treasure2"></script>
+  <script src="js/wild-treasure.js?v=20260910manuals1"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260905cacheaudit1"></script>
+  <script src="js/farm-animals.js?v=20260910review1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -348,13 +351,13 @@
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
   <script src="js/reagent-plants.js?v=20260811a"></script>
-  <!-- Jubmir the traveling trader: daily one-off egg stock (window.JubmirShop)
+  <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
        call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.JubmirShop.init(...) during its own setup. -->
-  <script src="js/jubmir-shop.js?v=20260807a"></script>
+  <script src="js/jubmir-shop.js?v=20260910manuals1"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -393,7 +396,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=branchfalldefense2"></script>
+  <script src="js/climb-system.js?v=20260911mountleap1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -478,7 +481,7 @@
        createInitialGrid() call (which itself calls recomputeWater()
        synchronously to settle day-one water levels), well before most of
        the other window.<Namespace>.init(...) calls below. -->
-  <script src="js/water-system.js?v=20260815a"></script>
+  <script src="js/water-system.js?v=20260910review1"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load
@@ -528,7 +531,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20260807a"></script>
+  <script src="js/input-settings-panel.js?v=20260909controller2"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
@@ -584,7 +587,7 @@
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
-  <script src="js/merged-water-renderer.js?v=20260809d"></script>
+  <script src="js/merged-water-renderer.js?v=20260910review1"></script>
   <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
        (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -609,7 +612,7 @@
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
-  <script src="js/wilderness-chunks.js?v=20260826audit1"></script>
+  <script src="js/wilderness-chunks.js?v=20260910review1"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -1012,6 +1015,7 @@
             <div class="ii-icon-wrap"><span class="ii-icon" id="iiIcon"></span></div>
             <div class="ii-name"    id="iiName"></div>
             <div class="ii-price"   id="iiPrice"></div>
+            <div class="ii-quality" id="iiQuality"></div>
             <div class="ii-tags"    id="iiTags"></div>
             <div class="ii-desc"    id="iiDesc"></div>
             <div class="ii-actions" id="iiActions"></div>
@@ -1643,10 +1647,28 @@
           <div class="settings-row settings-row--stacked">
             <div class="settings-label">
               <div class="settings-name">Controller Bindings</div>
-              <div class="settings-desc">Gamepads activate while this window is focused and stop driving input when focus is lost.</div>
+              <div class="settings-desc">Left stick moves, right stick rotates the camera, View opens the menu, and gamepads release all input when focus is lost.</div>
             </div>
             <div class="input-bindings-grid" id="controllerInputBindings"></div>
+            <div class="settings-desc" id="controllerInputStatus" role="status" aria-live="polite">Controller: not detected</div>
           </div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Controller Camera Sensitivity</div>
+              <div class="settings-desc">Right-stick camera turn speed</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="range" id="settingControllerLookSensitivity" min="50" max="200" step="5" value="100" style="align-self:center">
+              <span id="settingControllerLookSensitivityValue" class="settings-slider-value">100%</span>
+            </div>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Invert Controller Camera Y</div>
+              <div class="settings-desc">Reverse right-stick vertical camera movement</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingControllerInvertY"><span class="toggle-slider"></span></span>
+          </label>
           <div class="settings-row settings-row--stacked">
             <div class="settings-label">
               <div class="settings-name">Held Mode Shifts</div>
@@ -2230,12 +2252,12 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20260908c"></script>
+  <script src="js/tool-icon-render.js?v=20260910review1"></script>
   <script src="js/sprite-recolor.js?v=20260815a"></script>
   <script src="js/tool-metal-recolor.js?v=20260719a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260816b"></script>
+  <script src="js/mount-system.js?v=20260911mountleap1"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
   <script src="js/audio-system.js?v=20260830flaskcues1"></script>
@@ -2256,7 +2278,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260909perspectivepoint2"></script>
+  <script src="js/pixel-probe.js?v=20260909controller1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2269,7 +2291,7 @@
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
-  <script src="js/loading-screen-runtime.js?v=20260904a"></script>
+  <script src="js/loading-screen-runtime.js?v=20260910review1"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/ambient-dialogue.js?v=20260831syllable4"></script>
@@ -2287,7 +2309,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20260815b"></script>
+  <script src="js/music-minigame.js?v=20260910controller1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2305,7 +2327,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20260902a"></script>
+  <script src="js/npc-scheduling.js?v=20260910jubmir1"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -2367,9 +2389,11 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260909livepreview1"></script>
+  <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
+  <script src="js/camera-look-clamp.js?v=20260909decouple1"></script>
+  <script src="game.js?v=20260911livepreview2"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20260903a"></script>
+  <script src="js/controller-ui-nav.js?v=20260910controller1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

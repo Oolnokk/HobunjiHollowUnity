@@ -279,9 +279,17 @@
     const moved = Math.min(available, requested);
     if (moved < 1) return { moved: 0, earned: 0 };
     const price = Math.max(0, Number(deps.BASE_PRICES[key]) || 0);
-    const earned = moved * price;
-    deps.inventory[key] -= moved;
-    deps.clampInventoryStack(key);
+    // Sells the player's worst-quality stock first so a stray sale can't
+    // quietly liquidate a prize-quality unit, and prices each consumed
+    // quality tier separately so star quality is actually worth something.
+    const consumed = window.CookingSystem?.consumeQualityByPolicy?.(key, moved, 'lowest');
+    const earned = consumed
+      ? consumed.groups.reduce((sum, group) => sum + Math.round(group.amount * price * window.CookingSystem.valueMultiplierForStars(group.stars)), 0)
+      : moved * price;
+    if (!consumed) {
+      deps.inventory[key] -= moved;
+      deps.clampInventoryStack(key);
+    }
     deps.inventory.gold = (deps.inventory.gold || 0) + earned;
     deps.buildInventoryGrid();
     deps.refreshItemScroll();
