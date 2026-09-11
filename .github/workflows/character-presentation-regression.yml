@@ -7,9 +7,12 @@ on:
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
+      - 'docs/js/character-scale-portrait-x-offset.js'
+      - 'docs/js/character-scale-portrait-x-game-runtime.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-shoulder-camera-reset-button.js'
+      - 'scripts/test-animation-author-repository-rig-reload.js'
       - '.github/workflows/character-presentation-regression.yml'
 
 jobs:
@@ -26,3 +29,5 @@ jobs:
         run: node scripts/test-shoulder-camera-character-framing.js
       - name: Shoulder camera reset button regression
         run: node scripts/test-shoulder-camera-reset-button.js
+      - name: Animation Author repository rig reload + gameplay portrait X regression
+        run: node scripts/test-animation-author-repository-rig-reload.js
