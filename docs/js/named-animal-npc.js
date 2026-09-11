@@ -375,14 +375,17 @@
 
   function saveStudioCreatureGenotype(kind, genotype) {
     const field = document.getElementById('appearanceJson');
-    if (!field) return;
+    if (!field) return false;
     const appearance = { ...safeJson(field.value, {}) };
     appearance.speciesId = kind;
     appearance.creatureKind = kind;
     appearance.avatarType = 'animal';
     appearance.creatureGenotype = normalizeCreatureGenotype(kind, genotype);
-    field.value = JSON.stringify(appearance, null, 2);
+    const next = JSON.stringify(appearance, null, 2);
+    if (field.value === next) return false; // Avoid synthetic input/redraw cycles when the normalized genotype did not actually change.
+    field.value = next;
     field.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
   }
 
   function ensureCreatureRendererMetadata() {
@@ -642,11 +645,11 @@
         const optional = Object.prototype.hasOwnProperty.call(layer || {}, 'enabled');
         return creatureLayerRow(patternId, titleCasePattern(patternId), layer?.color || '#ffffff', layer?.enabled !== false, optional);
       }).join('');
-      saveStudioCreatureGenotype(kind, genotype);
+      // Rendering the tab is intentionally read-only. Persist only from actual pattern/color input handlers above.
       const source = await composeCreatureStudioFrame(kind, genotype);
       if (generation !== studioAppearanceGeneration) return;
       fitImageToCanvas(canvas, source);
-      if (status) status.textContent = `${creature?.label || kind} · ${(spec?.patterns || []).length} species pattern${(spec?.patterns || []).length === 1 ? '' : 's'} · saved live to this NPC`;
+      if (status) status.textContent = `${creature?.label || kind} · ${(spec?.patterns || []).length} species pattern${(spec?.patterns || []).length === 1 ? '' : 's'} · changes save live to this NPC`;
     } catch (error) {
       debugState.lastError = `animal appearance failed: ${error?.message || error}`;
       if (status) status.textContent = `Animal appearance failed: ${error?.message || error}`;
