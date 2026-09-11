@@ -11,6 +11,7 @@
   const RAGDOLL_DIRECTION = 'front'; // Used as the canonical breakThrow blend pole for non-hit fall presentation.
 
   let updateHookInstalled = false; // Used to ensure ClimbSystem.updateClimb is wrapped only once.
+  let installRetryRaf = 0; // Used to retry installation if parser ordering leaves ClimbSystem unavailable for one frame.
   let lastDebug = {
     active: false,
     motionModel: 'scripted-horizontal + gravity-vertical',
@@ -115,7 +116,11 @@
     // with no initialized Combat player during parser boot this cannot start a fall.
     window.HobunjiPlateauFalls?.probe?.();
     const system = window.ClimbSystem;
-    if (!system?.updateClimb || system.updateClimb.__hobunjiGravityRagdollFall) return false;
+    if (!system?.updateClimb) return false;
+    if (system.updateClimb.__hobunjiGravityRagdollFall) {
+      updateHookInstalled = true;
+      return true;
+    }
     const previousUpdateClimb = system.updateClimb.bind(system); // Used for normal climbs and for the one authoritative landing tick.
     function gravityRagdollFallUpdate(dt) {
       const player = playerEntity();
@@ -127,6 +132,18 @@
     system.updateClimb = gravityRagdollFallUpdate;
     updateHookInstalled = true;
     return true;
+  }
+
+  function ensureUpdateHook() {
+    if (installUpdateHook()) return true;
+    if (installRetryRaf || typeof window.requestAnimationFrame !== 'function') return false;
+    const retry = () => {
+      installRetryRaf = 0;
+      if (installUpdateHook()) return;
+      installRetryRaf = window.requestAnimationFrame(retry);
+    };
+    installRetryRaf = window.requestAnimationFrame(retry);
+    return false;
   }
 
   function installProbeReportHook() {
@@ -151,16 +168,16 @@
     else install();
   }
 
-  installUpdateHook();
+  ensureUpdateHook();
   installProbeReportHook();
 
   window.HobunjiGravityRagdollFalls = Object.freeze({
     gravityWorldPerSec2: GRAVITY_WORLD_S2,
     ragdollBank: RAGDOLL_BANK,
     gravityDuration,
-    installUpdateHook,
+    installUpdateHook: ensureUpdateHook,
     getDebug() {
-      return { ...lastDebug, updateHookInstalled };
+      return { ...lastDebug, updateHookInstalled, installRetryPending: !!installRetryRaf };
     },
   });
 })();
