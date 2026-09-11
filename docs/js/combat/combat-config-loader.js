@@ -116,7 +116,7 @@
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260911plateaufall1', () => !!window.HobunjiFootingDamageRecovery],
-    ['js/gravity-ragdoll-fall-bridge.js?v=20260911gravityfall1', () => !!window.HobunjiGravityRagdollFalls],
+    ['js/gravity-ragdoll-fall-bridge.js?v=20260911gravityfall2', () => !!window.HobunjiGravityRagdollFalls],
     ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
     ['js/combat/combat-grehlr-stink.js?v=20260822a', () => !!window.HobunjiGrehlrStink],
     ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
