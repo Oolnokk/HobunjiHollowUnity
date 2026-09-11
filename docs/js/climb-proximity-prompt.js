@@ -179,7 +179,7 @@
       const alreadyHasWorldInteraction = buttons.some(button => button?.worldInteraction);
       const candidate = options.enabled === false || alreadyHasClimb ? null : resolveCandidate();
 
-      if (!candidate || alreadyHasWorldInteraction) {
+      if (!candidate) {
         lastDebug = {
           visible: alreadyHasClimb,
           targetType: alreadyHasClimb ? 'existing-game-climb-row' : null,
@@ -187,9 +187,7 @@
           label: alreadyHasClimb ? 'existing climb row' : null,
           reason: alreadyHasClimb
             ? 'game.js already supplied the climb interaction row'
-            : alreadyHasWorldInteraction
-              ? 'another world interaction owns the popup list'
-              : 'no nearby climb candidate',
+            : 'no nearby climb candidate',
         };
         return original(options);
       }
@@ -204,13 +202,23 @@
         worldInteraction: true,
       });
       promptInputs.push(inputDescriptor());
-      const root = ensureAnchor(candidate) || options.root;
+      // WorldPopupText intentionally presents all simultaneous interactions as
+      // one stacked list. If another interaction already owns that list, keep
+      // its root and add Climb as another row; otherwise anchor the list at the
+      // climbable surface itself.
+      const root = alreadyHasWorldInteraction
+        ? options.root
+        : (ensureAnchor(candidate) || options.root);
       lastDebug = {
         visible: true,
         targetType: candidate.type || null,
         actionable: !!candidate.actionable,
         label,
-        reason: candidate.actionable ? 'real ClimbSystem target' : 'nearby climbable surface',
+        reason: alreadyHasWorldInteraction
+          ? 'climb row shares existing world interaction list'
+          : candidate.actionable
+            ? 'real ClimbSystem target'
+            : 'nearby climbable surface',
       };
       return original({ ...options, buttons, promptInputs, root });
     }
