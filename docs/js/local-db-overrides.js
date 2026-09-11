@@ -78,7 +78,18 @@
   }
 
   function hasOverride(id) { return !!_readEnvelope(id); }
-  function getOverride(id) { return _readEnvelope(id)?.data ?? null; }
+  function getOverride(id) {
+    const data = _readEnvelope(id)?.data ?? null; // Fresh parsed local override returned to the requesting editor/runtime.
+    if (id !== 'npcDatabase' || !data) return data;
+    if (npcSpeciesOverridesCache) {
+      _applyNpcSpeciesOverridesInPlace(data, npcSpeciesOverridesCache); // Corrects stale saved animal species before a caller imports the override when metadata is already ready.
+    } else if (NATIVE_FETCH) {
+      _loadNpcSpeciesOverrides().then(overrides => {
+        if (overrides) _applyNpcSpeciesOverridesInPlace(data, overrides); // Mutates the same object Character Studio imported, so old local Banubu/Hiki records self-migrate in memory without replacing user data.
+      }).catch(() => {});
+    }
+    return data;
+  }
 
   function setOverride(id, dataObj) {
     if (!dbById(id)) throw new Error('Unknown database id: ' + id);
@@ -105,12 +116,11 @@
     return String(value || '').trim().toLowerCase().replace(/_/g, '-');
   }
 
-  function applyNpcSpeciesOverrides(npcDatabase, speciesOverrides) {
+  function _applyNpcSpeciesOverridesInPlace(npcDatabase, speciesOverrides) {
     if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
     const overrides = speciesOverrides?.npcs; // Reviewed npcId -> authoritative species entries applied below.
     if (!overrides || typeof overrides !== 'object') return npcDatabase;
-    const merged = JSON.parse(JSON.stringify(npcDatabase)); // Non-mutating copy keeps imported/local source data independently recoverable.
-    for (const npc of merged.npcs) {
+    for (const npc of npcDatabase.npcs) {
       const override = overrides[npc?.id]; // Named correction for this record, if one is explicitly reviewed.
       const species = normalizeNpcSpeciesId(override?.species); // Canonical species id shared by NPC identity, dialogue, portrait, and world rendering.
       if (!species) continue;
@@ -126,7 +136,13 @@
         if (npc.appearance.avatarType === 'animal') delete npc.appearance.avatarType;
       }
     }
-    return merged;
+    return npcDatabase;
+  }
+
+  function applyNpcSpeciesOverrides(npcDatabase, speciesOverrides) {
+    if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
+    const merged = JSON.parse(JSON.stringify(npcDatabase)); // Non-mutating copy keeps imported/local source data independently recoverable for normal composition callers.
+    return _applyNpcSpeciesOverridesInPlace(merged, speciesOverrides);
   }
 
   async function _loadNpcSpeciesOverrides() {
