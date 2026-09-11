@@ -25,6 +25,7 @@ on:
       - 'scripts/test-harlyao-calendar-markers.js'
       - 'scripts/test-harlyao-night-march.js'
       - 'scripts/test-harlyao-night-march-beacon.js'
+      - 'scripts/test-harlyao-night-march-spawn-placement.js'
       - 'scripts/test-harlyao-species.js'
       - 'scripts/test-harlyao-terror.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
@@ -47,6 +48,8 @@ jobs:
         run: node scripts/test-harlyao-night-march.js
       - name: Harlyao night march beacon regression
         run: node scripts/test-harlyao-night-march-beacon.js
+      - name: Harlyao spawn and elevation regression
+        run: node scripts/test-harlyao-night-march-spawn-placement.js
       - name: Harlyao Terror regression
         run: node scripts/test-harlyao-terror.js
       - name: Harlyao calendar marker regression
