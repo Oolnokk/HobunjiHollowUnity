@@ -4,7 +4,7 @@
 
   const META_KEY = 'hobunjiRoofClimbStructure';
   const ROOF_STATE_KEY = '__hobunjiRoofSurface';
-  const MAX_WALL_LOOK_DISTANCE = 2.2; // Used to keep roof climbing a close wall interaction rather than a long-range reticle hit.
+  const MAX_PLAYER_WALL_DISTANCE = 1.75; // Used to keep roof climbing close to the player; camera distance is invalid in shoulder view.
   const DIRECT_WALL_DOT_MIN = 0.62; // Used to reject glancing/edge-on wall looks even if the ray clips a wall triangle.
   const ENTRANCE_CLEARANCE_WORLD = 1.35; // Used to suppress roof climbing beside the building entrance.
   const ROOF_SAMPLE_OFFSETS = [0.28, 0.5, 0.75, 1.0, 1.25]; // Used to find a stable roof landing point just behind the hit wall plane.
@@ -208,6 +208,13 @@
     return Math.hypot(point.x - entrance.x, point.z - entrance.z) <= ENTRANCE_CLEARANCE_WORLD;
   }
 
+  function playerHorizontalDistanceToPoint(point) {
+    const player = climbDeps?.player;
+    const tile = Number(climbDeps?.TILE) || 1;
+    if (!player || !finite(player.x) || !finite(player.y) || !finite(point?.x) || !finite(point?.z)) return Infinity;
+    return Math.hypot(Number(point.x) - Number(player.x) / tile, Number(point.z) - Number(player.y) / tile);
+  }
+
   function nearestStructureWallHit() {
     const ray = interactionRay();
     const origin = ray?.origin, rawDirection = ray?.direction;
@@ -225,13 +232,21 @@
         if (directness < DIRECT_WALL_DOT_MIN) continue;
         for (const triangle of faceTriangles(wall)) {
           const hit = rayTriangle(origin, direction, triangle[0], triangle[1], triangle[2]);
-          if (!hit || hit.t > MAX_WALL_LOOK_DISTANCE || (best && hit.t >= best.distance)) continue;
-          best = { ...entry, wall, point: hit.point, distance: hit.t, directness };
+          if (!hit) continue;
+          const playerDistance = playerHorizontalDistanceToPoint(hit.point);
+          if (!Number.isFinite(playerDistance) || playerDistance > MAX_PLAYER_WALL_DISTANCE || (best && hit.t >= best.distance)) continue;
+          best = { ...entry, wall, point: hit.point, distance: hit.t, playerDistance, directness };
         }
       }
     }
     if (!best) { debugState.lastBlockReason = 'no close direct structural wall'; return null; }
-    debugState.lastWallHit = { x: best.point.x, y: best.point.y, z: best.point.z, distance: best.distance };
+    debugState.lastWallHit = {
+      x: best.point.x,
+      y: best.point.y,
+      z: best.point.z,
+      cameraDistance: best.distance,
+      playerDistance: best.playerDistance,
+    };
     if (entranceTooClose(best.meta, best.point)) { debugState.lastBlockReason = 'entrance adjacent'; return null; }
     return best;
   }
