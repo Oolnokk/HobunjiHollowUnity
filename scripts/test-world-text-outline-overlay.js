@@ -37,7 +37,34 @@ Renderer.prototype.render = function render(scene, camera) {
   this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target });
 };
 
-const THREE = { WebGLRenderer: Renderer, BackSide: 'back-side' };
+class Color {
+  constructor(value) { this.value = value; this.isColor = true; }
+  copy(other) { this.value = other?.value; return this; }
+  set(value) { this.value = value; return this; }
+}
+class Matrix3 {
+  constructor() { this.isMatrix3 = true; }
+  copy() { return this; }
+  identity() { return this; }
+}
+class ShaderMaterial {
+  constructor(options = {}) {
+    Object.assign(this, options);
+    this.isShaderMaterial = true;
+    this.userData = {}; // Used by outline-render-performance.js to tag its shared alpha-aware target materials.
+  }
+}
+
+const THREE = {
+  WebGLRenderer: Renderer,
+  BackSide: 'back-side',
+  DoubleSide: 'double-side',
+  LessEqualDepth: 'less-equal-depth',
+  AdditiveBlending: 'additive-blending',
+  Color,
+  Matrix3,
+  ShaderMaterial,
+};
 let clock = 0;
 const performanceStub = { now: () => ++clock };
 const documentStub = {
