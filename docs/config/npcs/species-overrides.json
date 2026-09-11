@@ -1,0 +1,14 @@
+{
+  "schema": "hobunji_npc_species_overrides.v1",
+  "note": "Small reviewed corrections for named NPCs whose authoritative species is a creature rather than a humanoid portrait species. Applied after either repo or local NPC database load; legacy chathead ID mappings remain fallback-only for older data.",
+  "npcs": {
+    "banubu": {
+      "species": "grehlr",
+      "kind": "animal"
+    },
+    "hiki_hiki": {
+      "species": "drenkirra",
+      "kind": "animal"
+    }
+  }
+}
