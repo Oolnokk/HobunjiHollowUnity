@@ -118,7 +118,7 @@
     ['js/climb-runtime-deps-capture.js?v=20260911climbdeps1', () => !!window.HobunjiClimbRuntimeDepsCapture],
     ['js/footing-damage-recovery-bridge.js?v=20260911plateaufall1', () => !!window.HobunjiFootingDamageRecovery],
     ['js/gravity-ragdoll-fall-bridge.js?v=20260911gravityfall2', () => !!window.HobunjiGravityRagdollFalls],
-    ['js/climb-proximity-prompt.js?v=20260911climbprompt3', () => !!window.HobunjiClimbPrompt],
+    ['js/climb-proximity-prompt.js?v=20260911climbprompt4', () => !!window.HobunjiClimbPrompt],
     ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
     ['js/combat/combat-grehlr-stink.js?v=20260822a', () => !!window.HobunjiGrehlrStink],
     ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
