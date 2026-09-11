@@ -76,7 +76,7 @@
   // every later building spawn receives the same entrance-neutral metadata.
   (function loadRoofClimbPixelProbe() {
     if (typeof document === 'undefined') return;
-    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe2'; // Cache-busts player-proximity climb diagnostics and entrance-adjacency disable.
+    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe3'; // Cache-busts runtime-source-aware climb diagnostics and entrance-adjacency disable.
     if (window.HobunjiRoofClimbProbe || document.querySelector('script[data-hobunji-roof-climb-probe]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-roof-climb-probe="1"><\/script>`);
@@ -127,7 +127,7 @@
     context.beginPath();
     context.moveTo(x + radius, y);
     context.arcTo(x + width, y, x + width, y + height, radius);
-    context.arcTo(x + width, y + height, x, y + height, radius);
+    context.arcTo(x + width, y + height, x, y, radius);
     context.arcTo(x, y + height, x, y, radius);
     context.arcTo(x, y, x + radius, y, radius);
     context.closePath();
@@ -149,7 +149,7 @@
   function toolEmoji(tool) {
     const equipped = deps.equipmentSlots[tool];
     if (equipped && deps.TOOL_ITEM_DEFS[equipped]) return deps.TOOL_ITEM_DEFS[equipped].icon;
-    return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
+    return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹 Ranged', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
   }
 
   function toolName(tool) {
