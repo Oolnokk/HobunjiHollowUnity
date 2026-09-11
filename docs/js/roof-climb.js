@@ -4,10 +4,9 @@
 
   const META_KEY = 'hobunjiRoofClimbStructure';
   const ROOF_STATE_KEY = '__hobunjiRoofSurface';
-  const MAX_PLAYER_WALL_DISTANCE = 1.75; // Used to keep roof climbing close to the player; camera distance is invalid in shoulder view.
-  const DIRECT_WALL_DOT_MIN = 0.62; // Used to reject glancing/edge-on wall looks even if the ray clips a wall triangle.
-  const ENTRANCE_CLEARANCE_WORLD = 1.35; // Used to suppress roof climbing beside the building entrance.
-  const ROOF_SAMPLE_OFFSETS = [0.28, 0.5, 0.75, 1.0, 1.25]; // Used to find a stable roof landing point just behind the hit wall plane.
+  const MAX_PLAYER_WALL_DISTANCE = 1.75; // Used to make standing beside a structural wall sufficient for building climbing.
+  const ENTRANCE_CLEARANCE_WORLD = 1.35; // Legacy metadata guard; the companion probe bridge clears entrance exclusions at runtime.
+  const ROOF_SAMPLE_OFFSETS = [0.28, 0.5, 0.75, 1.0, 1.25]; // Used to find a stable roof landing point just behind the nearest wall plane.
   const ROOF_WALK_SPEED_PX_S = 90; // Used by the roof movement override; matches the existing branch walking speed.
   const ROOF_KNOCKBACK_DUR_S = 0.18; // Used to mirror ordinary/branch knockback travel time.
   const EPS = 1e-6;
@@ -120,7 +119,7 @@
         roofs: planes.roofs,
         entrance: resolveEntrance(piece, bldgMinC, bldgMinR, opts || {}),
         buildingId: opts?.buildingId || null,
-      }; // Used by the runtime climb ray; visual brick/shingle child meshes are intentionally ignored.
+      }; // Used by proximity climb targeting; visual brick/shingle child meshes are intentionally ignored.
       return group;
     }
 
@@ -133,26 +132,8 @@
 
   function vecSub(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
   function cross(a, b) { return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x }; }
-  function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
   function length(v) { return Math.hypot(v.x, v.y, v.z); }
   function normalize(v) { const len = length(v); return len > EPS ? { x: v.x / len, y: v.y / len, z: v.z / len } : { x: 0, y: 0, z: 0 }; }
-
-  function rayTriangle(origin, direction, a, b, c) {
-    const edge1 = vecSub(b, a), edge2 = vecSub(c, a);
-    const h = cross(direction, edge2);
-    const det = dot(edge1, h);
-    if (Math.abs(det) < EPS) return null;
-    const invDet = 1 / det;
-    const s = vecSub(origin, a);
-    const u = invDet * dot(s, h);
-    if (u < -EPS || u > 1 + EPS) return null;
-    const q = cross(s, edge1);
-    const v = invDet * dot(direction, q);
-    if (v < -EPS || u + v > 1 + EPS) return null;
-    const t = invDet * dot(edge2, q);
-    if (t <= EPS) return null;
-    return { t, point: { x: origin.x + direction.x * t, y: origin.y + direction.y * t, z: origin.z + direction.z * t } };
-  }
 
   function faceTriangles(face) {
     const v = face?.vertices || [];
@@ -208,60 +189,121 @@
     return Math.hypot(point.x - entrance.x, point.z - entrance.z) <= ENTRANCE_CLEARANCE_WORLD;
   }
 
-  function playerHorizontalDistanceToPoint(point) {
-    const player = climbDeps?.player;
-    const tile = Number(climbDeps?.TILE) || 1;
-    if (!player || !finite(player.x) || !finite(player.y) || !finite(point?.x) || !finite(point?.z)) return Infinity;
-    return Math.hypot(Number(point.x) - Number(player.x) / tile, Number(point.z) - Number(player.y) / tile);
+  function closestPointOnSegment2D(px, pz, a, b) {
+    const ax = Number(a?.x) || 0;
+    const ay = Number(a?.y) || 0;
+    const az = Number(a?.z) || 0;
+    const bx = Number(b?.x) || 0;
+    const by = Number(b?.y) || 0;
+    const bz = Number(b?.z) || 0;
+    const dx = bx - ax;
+    const dz = bz - az;
+    const lenSq = dx * dx + dz * dz;
+    const t = lenSq > EPS ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / lenSq)) : 0;
+    const x = ax + dx * t;
+    const z = az + dz * t;
+    return { x, y: ay + (by - ay) * t, z, distance: Math.hypot(px - x, pz - z) };
+  }
+
+  function closestPointOnWall2D(px, pz, wall) {
+    const vertices = Array.isArray(wall?.vertices) ? wall.vertices : [];
+    if (vertices.length < 2) return null;
+    let best = null;
+    for (let index = 0; index < vertices.length; index++) {
+      const candidate = closestPointOnSegment2D(px, pz, vertices[index], vertices[(index + 1) % vertices.length]);
+      if (!best || candidate.distance < best.distance) best = candidate;
+    }
+    return best;
   }
 
   function nearestStructureWallHit() {
-    const ray = interactionRay();
-    const origin = ray?.origin, rawDirection = ray?.direction;
-    if (!origin || !rawDirection) { debugState.lastBlockReason = 'no interaction ray'; return null; }
-    const direction = normalize({ x: Number(rawDirection.x) || 0, y: Number(rawDirection.y) || 0, z: Number(rawDirection.z) || 0 });
-    if (length(direction) < EPS) { debugState.lastBlockReason = 'empty interaction ray'; return null; }
+    const player = climbDeps?.player;
+    const tile = Number(climbDeps?.TILE) || 1;
+    if (!player || !finite(player.x) || !finite(player.y)) {
+      debugState.lastBlockReason = 'player position unavailable';
+      return null;
+    }
+    const px = Number(player.x) / tile;
+    const pz = Number(player.y) / tile;
     let best = null;
+
     for (const entry of activeStructureMetas()) {
       for (const wall of entry.meta.walls) {
-        const normal = wallHorizontalNormal(wall);
-        if (!normal) continue;
-        const horizontalLookLen = Math.hypot(direction.x, direction.z);
-        if (horizontalLookLen < EPS) continue;
-        const directness = Math.abs((direction.x / horizontalLookLen) * normal.x + (direction.z / horizontalLookLen) * normal.z);
-        if (directness < DIRECT_WALL_DOT_MIN) continue;
-        for (const triangle of faceTriangles(wall)) {
-          const hit = rayTriangle(origin, direction, triangle[0], triangle[1], triangle[2]);
-          if (!hit) continue;
-          const playerDistance = playerHorizontalDistanceToPoint(hit.point);
-          if (!Number.isFinite(playerDistance) || playerDistance > MAX_PLAYER_WALL_DISTANCE || (best && hit.t >= best.distance)) continue;
-          best = { ...entry, wall, point: hit.point, distance: hit.t, playerDistance, directness };
+        const point = closestPointOnWall2D(px, pz, wall);
+        if (!point || point.distance > MAX_PLAYER_WALL_DISTANCE) continue;
+        if (best && point.distance >= best.playerDistance) continue;
+        let dx = point.x - px;
+        let dz = point.z - pz;
+        let dirLen = Math.hypot(dx, dz);
+        if (dirLen < EPS) {
+          const ray = interactionRay();
+          dx = Number(ray?.direction?.x) || 0;
+          dz = Number(ray?.direction?.z) || 0;
+          dirLen = Math.hypot(dx, dz);
         }
+        if (dirLen < EPS) {
+          const normal = wallHorizontalNormal(wall);
+          dx = Number(normal?.x) || 0;
+          dz = Number(normal?.z) || 0;
+          dirLen = Math.hypot(dx, dz);
+        }
+        const inwardDir = dirLen > EPS ? { x: dx / dirLen, z: dz / dirLen } : null;
+        if (!inwardDir) continue;
+        best = {
+          ...entry,
+          wall,
+          point: { x: point.x, y: point.y, z: point.z },
+          playerDistance: point.distance,
+          inwardDir,
+        };
       }
     }
-    if (!best) { debugState.lastBlockReason = 'no close direct structural wall'; return null; }
+
+    if (!best) {
+      debugState.lastBlockReason = `no structural wall within ${MAX_PLAYER_WALL_DISTANCE.toFixed(2)} tiles of player`;
+      debugState.lastWallHit = null;
+      return null;
+    }
     debugState.lastWallHit = {
       x: best.point.x,
       y: best.point.y,
       z: best.point.z,
-      cameraDistance: best.distance,
+      cameraDistance: null,
       playerDistance: best.playerDistance,
+      selectionModel: 'nearest-player-wall',
     };
     if (entranceTooClose(best.meta, best.point)) { debugState.lastBlockReason = 'entrance adjacent'; return null; }
     return best;
   }
 
   function findRoofLanding(hit) {
+    const directions = [];
+    const addDirection = dir => {
+      const dx = Number(dir?.x) || 0;
+      const dz = Number(dir?.z) || 0;
+      const len = Math.hypot(dx, dz);
+      if (len < EPS) return;
+      const normalized = { x: dx / len, z: dz / len };
+      if (directions.some(existing => Math.abs(existing.x - normalized.x) < 1e-4 && Math.abs(existing.z - normalized.z) < 1e-4)) return;
+      directions.push(normalized);
+    };
+
+    // The player-to-wall direction is the normal case: continue through the
+    // nearest wall into the building. The opposite/camera directions are safe
+    // fallbacks for corner cases where the closest wall point lies exactly on
+    // a concave/cross-gable boundary.
+    addDirection(hit?.inwardDir);
+    addDirection(hit?.inwardDir ? { x: -hit.inwardDir.x, z: -hit.inwardDir.z } : null);
     const ray = interactionRay();
-    const dx = Number(ray?.direction?.x) || 0, dz = Number(ray?.direction?.z) || 0;
-    const len = Math.hypot(dx, dz);
-    if (len < EPS) return null;
-    const nx = dx / len, nz = dz / len;
-    for (const offset of ROOF_SAMPLE_OFFSETS) {
-      const x = hit.point.x + nx * offset;
-      const z = hit.point.z + nz * offset;
-      const y = roofSurfaceYAt(hit.meta, x, z);
-      if (Number.isFinite(y)) return { x, y, z, dir: { x: nx, y: nz } };
+    addDirection({ x: ray?.direction?.x, z: ray?.direction?.z });
+
+    for (const dir of directions) {
+      for (const offset of ROOF_SAMPLE_OFFSETS) {
+        const x = hit.point.x + dir.x * offset;
+        const z = hit.point.z + dir.z * offset;
+        const y = roofSurfaceYAt(hit.meta, x, z);
+        if (Number.isFinite(y)) return { x, y, z, dir: { x: dir.x, y: dir.z } };
+      }
     }
     return null;
   }
@@ -272,7 +314,7 @@
     const hit = nearestStructureWallHit();
     if (!hit) return null;
     const landing = findRoofLanding(hit);
-    if (!landing) { debugState.lastBlockReason = 'wall has no reachable authored roof plane'; return null; }
+    if (!landing) { debugState.lastBlockReason = 'nearby wall has no reachable authored roof plane'; return null; }
     const startSurfaceY = Number(climbDeps?.worldSurfaceY?.(player.x, player.y));
     if (Number.isFinite(startSurfaceY) && landing.y <= startSurfaceY + 0.12) {
       debugState.lastBlockReason = 'roof is not above player';
@@ -288,9 +330,17 @@
       startSurfaceY: Number.isFinite(startSurfaceY) ? startSurfaceY : 0,
       dir: landing.dir,
       wallFaceId: hit.wall.id,
+      wallPoint: { ...hit.point },
+      playerWallDistance: hit.playerDistance,
     };
     debugState.lastBlockReason = null;
-    debugState.lastCandidate = { wallFaceId: hit.wall.id, endWorldX: landing.x, endWorldZ: landing.z, endSurfaceY: landing.y };
+    debugState.lastCandidate = {
+      wallFaceId: hit.wall.id,
+      playerWallDistance: hit.playerDistance,
+      endWorldX: landing.x,
+      endWorldZ: landing.z,
+      endSurfaceY: landing.y,
+    };
     return target;
   }
 
