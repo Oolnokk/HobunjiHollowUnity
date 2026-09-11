@@ -21,6 +21,7 @@ assert.match(localDb, /CREATURE_BESTIARY_PATH/, 'animal species choices must com
 assert.match(localDb, /_installNpcDatabaseFetchComposition\(\)/, 'Character Studio direct repo fetches must receive the same species composition');
 assert.match(localDb, /HobunjiNpcSpeciesRegistry/, 'runtime/editor must share one creature species registry');
 assert.match(localDb, /named-animal-npc\.js/, 'the shared named-animal bridge must load anywhere LocalDBOverrides is loaded');
+assert.match(localDb, /document\.write\([\s\S]*named-animal-npc/, 'normal parser-time boot must load the bridge synchronously before later game scripts');
 
 assert.match(studio, /id="npcSpecies"/, 'Character Studio must retain the existing npcSpecies field id for bridge compatibility');
 assert.match(namedAnimal, /npcSpeciesChoices/, 'Character Studio species field must gain a selectable datalist');
@@ -29,6 +30,8 @@ assert.match(namedAnimal, /appearance\.creatureKind = kind/, 'animal selections 
 assert.match(namedAnimal, /appearance\.avatarType = 'animal'/, 'animal selections must explicitly mark the non-humanoid avatar route');
 assert.match(namedAnimal, /options\.fromInput === true/, 'ordinary humanoid appearance may only be rewritten after an explicit Species-field edit');
 assert.match(namedAnimal, /MutationObserver[\s\S]*syncStudioSpecies\(\)/, 'selection refreshes must re-check animal identity without forcing humanoid appearance variants');
+assert.match(namedAnimal, /watchGlobalAssignment\('NpcAvatarPreview'\)/, 'NPC profile API assignment must install the animal bridge before callers can use it');
+assert.match(namedAnimal, /watchGlobalAssignment\('PNGPlaneAvatar'\)/, 'PNG-plane API assignment must install the animal world-model bridge before callers can use it');
 assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'named animal NPC world models must reuse the existing animal plane builder');
 assert.match(namedAnimal, /CreatureGeneticsRender/, 'named animal previews must reuse the shared creature genetics renderer when available');
 assert.match(namedAnimal, /__namedAnimalNpcDebug/, 'mobile/dev diagnostics must expose named animal NPC bridge state');
