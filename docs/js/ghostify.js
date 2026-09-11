@@ -11,8 +11,6 @@
   const DEFAULT_OPACITY = 0.56;
   const DEFAULT_EMISSIVE_INTENSITY = 1.35;
   const GLOW_REFRESH_MS = 100;
-  const LOCAL_LIGHT_VIEW_MIN_TILES = 3.5;
-  const LOCAL_LIGHT_VIEW_MAX_TILES = 6;
   const originalMaterials = new WeakMap();
   const generatedMaterials = new WeakMap();
   const ghostRoots = new WeakMap();
@@ -240,27 +238,6 @@
     ctx.restore();
   }
 
-  function installLocalLightVisibility(injectedDeps) {
-    if (!injectedDeps || injectedDeps.__hobunjiLocalLightVisibility || typeof injectedDeps.getFurnitureLightSources !== 'function') return;
-    const original = injectedDeps.getFurnitureLightSources;
-    injectedDeps.getFurnitureLightSources = function localFurnitureLightSources(...args) {
-      const lights = original.apply(this, args) || [];
-      const tile = Math.max(0.000001, Number(injectedDeps.TILE) || 1);
-      const playerX = Number(injectedDeps.player?.x) / tile;
-      const playerZ = Number(injectedDeps.player?.y) / tile;
-      if (!Number.isFinite(playerX) || !Number.isFinite(playerZ)) return lights;
-      return lights.filter(light => {
-        const x = Number(light?.x);
-        const z = Number(light?.z);
-        if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
-        const authoredRange = Math.max(0, Number(light?.distance) || 0);
-        const viewRange = clamp(authoredRange, LOCAL_LIGHT_VIEW_MIN_TILES, LOCAL_LIGHT_VIEW_MAX_TILES);
-        return Math.hypot(x - playerX, z - playerZ) <= viewRange;
-      });
-    };
-    injectedDeps.__hobunjiLocalLightVisibility = true;
-  }
-
   function installWeatherBridge(api = window.WeatherFX) {
     if (!api) return false;
 
@@ -273,7 +250,6 @@
       const originalInit = api.init.bind(api);
       api.init = function ghostifyWeatherInit(injectedDeps) {
         lightingDeps = injectedDeps;
-        installLocalLightVisibility(injectedDeps);
         return originalInit(injectedDeps);
       };
       api.__hobunjiGhostifyInitWrapped = true;
@@ -324,12 +300,11 @@
     restore,
     registerGlowSource,
     installWeatherBridge,
-    constants: Object.freeze({ DEFAULT_COLOR, DEFAULT_OPACITY, DEFAULT_EMISSIVE_INTENSITY, LOCAL_LIGHT_VIEW_MIN_TILES, LOCAL_LIGHT_VIEW_MAX_TILES }),
+    constants: Object.freeze({ DEFAULT_COLOR, DEFAULT_OPACITY, DEFAULT_EMISSIVE_INTENSITY }),
     debugSnapshot: () => ({
       glowProviders: glowProviders.size,
       lightingCaptured: !!lightingDeps,
       weatherWrapped: !!window.WeatherFX?.drawLightingOverlay?.__hobunjiGhostifyWrapped,
-      localLightViewTiles: [LOCAL_LIGHT_VIEW_MIN_TILES, LOCAL_LIGHT_VIEW_MAX_TILES],
     }),
   });
 
