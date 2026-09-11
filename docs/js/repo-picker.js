@@ -249,3 +249,31 @@
   });
   document.head.appendChild(script);
 }());
+
+(function loadCharacterStudioAnimalAppearance() {
+  const path = location.pathname.replace(/\/+$/, ''); // Used to keep this enhancement scoped to Character Studio instead of every RepoPicker consumer.
+  if (!/\/tools\/character-studio(?:\/index\.html)?$/.test(path)) return;
+  if (document.querySelector('script[data-character-studio-animal-appearance]')) return;
+
+  const current = document.currentScript; // Resolves every animal/fey module beside repo-picker.js regardless of hosting prefix/commit URL.
+  const moduleUrl = (name, version) => current?.src ? new URL(`${name}?v=${version}`, current.src).href : `../../js/${name}?v=${version}`;
+  const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
+  const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260905feyhat1');
+  const source = moduleUrl('character-studio-animal-appearance.js', '20260905animalnpc1');
+  const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260905feyhat1');
+
+  function appendModule(src, dataKey, errorLabel) {
+    if (document.querySelector(`script[data-${dataKey}]`)) return;
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.setAttribute(`data-${dataKey}`, '1');
+    script.addEventListener('error', () => console.error(`Could not load ${errorLabel}`));
+    document.head.appendChild(script);
+  }
+
+  appendModule(headwearSource, 'character-studio-animal-headwear', 'animal-npc-headwear.js for Character Studio');
+  appendModule(bridgeSource, 'character-studio-animal-profile-bridge', 'animal-chathead-frame.js for Character Studio');
+  appendModule(source, 'character-studio-animal-appearance', 'character-studio-animal-appearance.js');
+  appendModule(extrasSource, 'character-studio-animal-fey-extras', 'character-studio-animal-fey-extras.js');
+}());
