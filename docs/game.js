@@ -8273,6 +8273,7 @@
         awardMotesOfProwess,
         spendMotesOfProwess,
         gearInventory: () => gearInventory,
+        inventory: () => inventory, // Console debug access to bag/gold — not Proxy-guarded the way gearInventory.toolMastery is (see mastery-policy.js), so direct writes (e.g. inventory.gold += 100) work fine from here.
         combatSwingAfflictionIds: () => combatSwingAfflictionIds,
         combatSwingCone: () => combatSwingCone,
         toolMeshMap: () => toolMeshMap,
