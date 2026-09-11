@@ -76,7 +76,7 @@
   // every later building spawn receives the same entrance-neutral metadata.
   (function loadRoofClimbPixelProbe() {
     if (typeof document === 'undefined') return;
-    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe3'; // Cache-busts runtime-source-aware climb diagnostics and entrance-adjacency disable.
+    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe4'; // Cache-busts popup/action-aware climb diagnostics and entrance-adjacency disable.
     if (window.HobunjiRoofClimbProbe || document.querySelector('script[data-hobunji-roof-climb-probe]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-roof-climb-probe="1"><\/script>`);
@@ -93,7 +93,7 @@
   // Load before climb-system.js so this bridge can capture its init dependencies.
   (function loadPlateauFallLiveBridge() {
     if (typeof document === 'undefined') return;
-    const src = 'js/plateau-fall-live-bridge.js?v=20260911plateaufalllive1'; // Cache-busts fresh-input plateau fall detection and diagnostics.
+    const src = 'js/plateau-fall-live-bridge.js?v=20260911plateaufalllive2'; // Cache-busts fallback-aware fresh-input plateau fall detection and diagnostics.
     if (window.HobunjiPlateauFallLive || document.querySelector('script[data-hobunji-plateau-fall-live]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-plateau-fall-live="1"><\/script>`);
