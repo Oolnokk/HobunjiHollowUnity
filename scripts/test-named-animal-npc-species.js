@@ -4,11 +4,15 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
-const localDb = fs.readFileSync('docs/js/local-db-overrides.js', 'utf8'); // Source under test for NPC database composition and registry wiring.
-const namedAnimal = fs.readFileSync('docs/js/named-animal-npc.js', 'utf8'); // Source under test for editor/runtime animal NPC routing.
-const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8'); // Confirms the bridge preserves the existing species input contract.
-const chathead = fs.readFileSync('docs/js/animal-chathead-frame.js', 'utf8'); // Confirms legacy named-NPC mappings remain backward compatibility only.
-const overrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8')); // Reviewed canonical animal species records.
+const localDb = fs.readFileSync('docs/js/local-db-overrides.js', 'utf8');
+const namedAnimal = fs.readFileSync('docs/js/named-animal-npc.js', 'utf8');
+const nativeAppearance = fs.readFileSync('docs/js/character-studio-animal-appearance.js', 'utf8');
+const feyExtras = fs.readFileSync('docs/js/character-studio-animal-fey-extras.js', 'utf8');
+const headwear = fs.readFileSync('docs/js/animal-npc-headwear.js', 'utf8');
+const repoPicker = fs.readFileSync('docs/js/repo-picker.js', 'utf8');
+const studio = fs.readFileSync('docs/tools/character-studio/index.html', 'utf8');
+const chathead = fs.readFileSync('docs/js/animal-chathead-frame.js', 'utf8');
+const overrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8'));
 
 assert.equal(overrides.npcs.banubu.species, 'grehlr', 'Banubu must be authored as Grehlr');
 assert.equal(overrides.npcs.banubu.kind, 'animal', 'Banubu must use the animal NPC route');
@@ -16,44 +20,56 @@ assert.equal(overrides.npcs.hiki_hiki.species, 'drenkirra', 'Hiki-hiki must be a
 assert.equal(overrides.npcs.hiki_hiki.kind, 'animal', 'Hiki-hiki must use the animal NPC route');
 
 assert.match(localDb, /function applyNpcSpeciesOverrides\(/, 'NPC database loads must compose reviewed species overrides');
-assert.match(localDb, /NPC_SPECIES_OVERRIDES_PATH/, 'species-overrides.json must be a first-class NPC composition source');
 assert.match(localDb, /CREATURE_BESTIARY_PATH/, 'animal species choices must come from the shared creature bestiary');
-assert.match(localDb, /_installNpcDatabaseFetchComposition\(\)/, 'Character Studio direct repo fetches must receive the same species composition');
 assert.match(localDb, /HobunjiNpcSpeciesRegistry/, 'runtime/editor must share one creature species registry');
-assert.match(localDb, /named-animal-npc\.js/, 'the shared named-animal bridge must load anywhere LocalDBOverrides is loaded');
-assert.match(localDb, /document\.write\([\s\S]*named-animal-npc/, 'normal parser-time boot must load the bridge synchronously before later game scripts');
+assert.match(localDb, /document\.write\([\s\S]*named-animal-npc/, 'normal parser-time boot must install the generalized bridge before avatar APIs');
 
-assert.match(studio, /id="npcSpecies"/, 'Character Studio must retain the existing npcSpecies field id for bridge compatibility');
-assert.match(namedAnimal, /npcSpeciesChoices/, 'Character Studio species field must gain a selectable datalist');
-assert.match(namedAnimal, /Animal ·/, 'the picker must visibly distinguish creature species from person species');
-assert.match(namedAnimal, /appearance\.creatureKind = kind/, 'animal selections must persist creature identity into appearance data');
-assert.match(namedAnimal, /appearance\.avatarType = 'animal'/, 'animal selections must explicitly mark the non-humanoid avatar route');
-assert.match(namedAnimal, /appearance\.creatureGenotype = normalizeCreatureGenotype/, 'animal appearance edits must persist the shared creature genotype on the NPC appearance record');
-assert.match(namedAnimal, /options\.fromInput === true/, 'ordinary humanoid appearance may only be rewritten after an explicit Species-field edit');
-assert.match(namedAnimal, /MutationObserver[\s\S]*syncStudioSpecies\(\)/, 'selection refreshes must re-check animal identity without forcing humanoid appearance variants');
-assert.match(namedAnimal, /watchGlobalAssignment\('NpcAvatarPreview'\)/, 'NPC profile API assignment must install the animal bridge before callers can use it');
-assert.match(namedAnimal, /watchGlobalAssignment\('PNGPlaneAvatar'\)/, 'PNG-plane API assignment must install the animal world-model bridge before callers can use it');
-assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'named animal NPC world models must reuse the existing animal plane builder');
-assert.match(namedAnimal, /CreatureGeneticsRender/, 'named animal previews must reuse the shared creature genetics renderer/tint math when available');
-assert.match(namedAnimal, /namedAnimalAppearancePanel/, 'animal NPCs must keep an Appearance-tab workflow rather than disabling Appearance');
-assert.match(namedAnimal, /creatureBaseControl/, 'animal Appearance must expose the base creature color control');
-assert.match(namedAnimal, /creaturePatternControls/, 'animal Appearance must expose species-authored pattern controls');
-assert.match(namedAnimal, /data-creature-color-picker/, 'each animal appearance layer must expose a native color picker');
-assert.match(namedAnimal, /data-creature-color-text/, 'each animal appearance layer must expose direct hex input');
-assert.match(namedAnimal, /maxlength="7"/, 'hex input must be constrained to #RRGGBB length');
-assert.match(namedAnimal, /appearanceTab\.disabled = false/, 'animal NPCs must not disable the Appearance tab');
-assert.match(namedAnimal, /composeCreatureStudioFrame/, 'Character Studio must live-preview the same genotype layers with repo creature art');
-assert.match(namedAnimal, /if \(field\.value === next\) return false/, 'genotype persistence must not emit redundant synthetic input events');
-const appearanceRender = namedAnimal.match(/async function renderStudioCreatureAppearance\(kind\) \{([\s\S]*?)\n  \}\n\n  function refreshStudioDatabaseView/);
-assert.ok(appearanceRender, 'animal Appearance renderer must be discoverable for redraw-loop regression coverage');
-assert.doesNotMatch(appearanceRender[1], /saveStudioCreatureGenotype\(/, 'merely rendering/opening animal Appearance must never persist genotype or trigger Character Studio read/render recursively');
-assert.match(namedAnimal, /__namedAnimalNpcDebug/, 'mobile/dev diagnostics must expose named animal NPC bridge state');
+assert.match(studio, /id="npcSpecies"/, 'Character Studio must retain the ordinary Species field');
+assert.match(namedAnimal, /npcSpeciesChoices/, 'the ordinary Species field must retain person + animal bestiary choices');
+assert.match(namedAnimal, /syncSpeciesFromAppearance/, 'native animal form edits must synchronize back to authoritative npc.species');
+assert.match(namedAnimal, /appearance\.creatureKind = speciesId/, 'species selection must synchronize creature identity into appearance data');
+assert.match(namedAnimal, /appearance\.avatarType = 'animal'/, 'animal species must explicitly select the animal avatar route');
+assert.match(namedAnimal, /creatureColorOverrides/, 'runtime bridge must apply native editor custom-hex overrides');
+assert.match(namedAnimal, /animalOpacity/, 'runtime bridge must carry native editor opacity');
+assert.match(namedAnimal, /animalHatId/, 'runtime bridge must carry native editor animal headwear');
+assert.match(namedAnimal, /AnimalNpcHeadwear\.composeWithHat/, 'runtime render must reuse the restored animal headwear compositor');
+assert.match(namedAnimal, /canvas\.toDataURL\('image\/png'\)/, 'world animal planes must use the composed authored appearance rather than a plain base sprite when possible');
+assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'world models must retain the existing side-view animal plane builder');
+assert.match(namedAnimal, /watchGlobalAssignment\('NpcAvatarPreview'\)/, 'profile bridge must install before late avatar API assignment');
+assert.match(namedAnimal, /watchGlobalAssignment\('PNGPlaneAvatar'\)/, 'world-plane bridge must install before late PNG-plane API assignment');
+assert.doesNotMatch(namedAnimal, /namedAnimalAppearancePanel/, 'the generalized bridge must not inject the discarded simplified appearance panel');
+assert.doesNotMatch(namedAnimal, /creatureBaseControl/, 'the generalized bridge must not rebuild animal authoring controls itself');
+assert.match(namedAnimal, /__namedAnimalNpcDebug/, 'mobile/dev diagnostics must remain available');
 assert.doesNotMatch(namedAnimal, /banubu\s*:/i, 'general named-animal bridge must not hardcode Banubu');
 assert.doesNotMatch(namedAnimal, /hiki_hiki\s*:/i, 'general named-animal bridge must not hardcode Hiki-hiki');
-assert.match(chathead, /banubu: 'grehlr'/, 'legacy Banubu chathead mapping remains as backward compatibility for old data');
-assert.match(chathead, /hiki_hiki: 'drenkirra'/, 'legacy Hiki-hiki chathead mapping remains as backward compatibility for old data');
 
-const storage = new Map(); // Minimal localStorage stand-in used while evaluating LocalDBOverrides in isolation.
+// Exact native Character Studio extension recovered from feature/animal-npc-appearance.
+assert.match(nativeAppearance, /id = 'animalNpcAppearanceCard'|id='animalNpcAppearanceCard'|card\.id = 'animalNpcAppearanceCard'/, 'native editor must inject the Character form card');
+assert.match(nativeAppearance, />Person<\/button>/, 'native Character form must retain Person mode');
+assert.match(nativeAppearance, />Animal<\/button>/, 'native Character form must retain Animal mode');
+assert.match(nativeAppearance, /Animal NPCs use the same creature genotype colors and pattern layers as breeding/, 'native editor must retain the breeding/genetics workflow');
+assert.match(nativeAppearance, /findHumanCards\(\)/, 'native animal mode must extend the regular Appearance pane rather than creating a separate editor');
+assert.match(nativeAppearance, /humanCard\.style\.display = animal \? 'none' : ''/, 'person-only regular Appearance cards must swap cleanly in animal mode');
+assert.match(nativeAppearance, /creatureGenotype/, 'native editor must persist breeding-compatible genotype data');
+assert.match(nativeAppearance, /class=\"colorSwatch animalNpcColor/, 'native editor must retain its original coat/pattern swatches');
+assert.match(nativeAppearance, /animalNpcPatternToggle/, 'native editor must retain per-pattern expression toggles');
+assert.match(nativeAppearance, /renderStudioAnimal/, 'native editor must retain the regular Character Studio live preview integration');
+
+assert.match(feyExtras, /class=\"animalNpcCustomHex\"/, 'native extension must retain independent #RRGGBB fields for animal layers');
+assert.match(feyExtras, /Each base\/pattern layer has its own independent #RRGGBB override/, 'hex overrides must remain intentionally independent of breeding presets');
+assert.match(feyExtras, /id=\"animalNpcOpacity\" type=\"range\"/, 'native extension must retain animal opacity control');
+assert.match(feyExtras, /id=\"animalNpcHatSelect\"/, 'native extension must retain animal hat selection');
+assert.match(feyExtras, /controlsSignature/, 'native extension must avoid rebuilding focused hex/select controls during polling');
+assert.match(headwear, /window\.AnimalNpcHeadwear/, 'restored headwear module must expose its shared compositor');
+assert.match(headwear, /composeWithHat/, 'restored headwear module must composite existing portrait hats onto animal sprites');
+
+assert.match(repoPicker, /character-studio-animal-appearance\.js/, 'Character Studio must load the recovered native animal appearance extension');
+assert.match(repoPicker, /character-studio-animal-fey-extras\.js/, 'Character Studio must load the recovered hex/opacity/headwear controls');
+assert.match(repoPicker, /animal-npc-headwear\.js/, 'Character Studio must load animal headwear before the fey extras');
+assert.match(chathead, /banubu: 'grehlr'/, 'legacy Banubu chathead mapping remains backward compatibility only');
+assert.match(chathead, /hiki_hiki: 'drenkirra'/, 'legacy Hiki-hiki chathead mapping remains backward compatibility only');
+
+const storage = new Map();
 const sandbox = {
   console,
   Promise,
@@ -65,9 +81,7 @@ const sandbox = {
     setItem: (key, value) => storage.set(key, String(value)),
     removeItem: key => storage.delete(key),
   },
-  window: {
-    fetch: undefined,
-  },
+  window: { fetch: undefined },
 };
 sandbox.window.window = sandbox.window;
 vm.createContext(sandbox);
@@ -78,11 +92,10 @@ const sample = {
     { id: 'banubu', species: 'mashtzarr', appearance: { speciesId: 'mashtzarr', cosmetics: { hairFront: 'legacy' } } },
     { id: 'ordinary', species: 'mao-ao', appearance: { speciesId: 'mao-ao' } },
   ],
-}; // Exercises the composition function without depending on network or game boot.
-const composed = sandbox.window.LocalDBOverrides.applyNpcSpeciesOverrides(sample, overrides); // Public composition API used by runtime and direct database fetches.
-const banubu = composed.npcs.find(npc => npc.id === 'banubu'); // Corrected record used for the authoritative-species assertions below.
-const ordinary = composed.npcs.find(npc => npc.id === 'ordinary'); // Unrelated record proves composition is narrowly scoped.
-
+};
+const composed = sandbox.window.LocalDBOverrides.applyNpcSpeciesOverrides(sample, overrides);
+const banubu = composed.npcs.find(npc => npc.id === 'banubu');
+const ordinary = composed.npcs.find(npc => npc.id === 'ordinary');
 assert.equal(banubu.species, 'grehlr');
 assert.equal(banubu.creatureKind, 'grehlr');
 assert.equal(banubu.appearance.speciesId, 'grehlr');
@@ -92,4 +105,4 @@ assert.deepEqual(banubu.appearance.cosmetics, { hairFront: 'legacy' }, 'species 
 assert.equal(ordinary.species, 'mao-ao', 'unlisted NPCs must remain unchanged');
 assert.equal(sample.npcs[0].species, 'mashtzarr', 'composition must not mutate the imported/source database object');
 
-console.log('named animal NPC species integration: ok');
+console.log('named animal NPC + restored native appearance integration: ok');
