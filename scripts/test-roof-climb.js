@@ -6,10 +6,12 @@ const assert = require('assert');
   const path = require('path');
   const code = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'roof-climb.js'), 'utf8');
   const probeCode = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'roof-climb-pixel-probe.js'), 'utf8');
+  const actualHousePiece = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'docs', 'config', 'pieces', 'hobunjihouse1.json'), 'utf8'));
   let group = null;
   const scene = { traverse(fn) { if (group) fn(group); } };
-  // Shoulder camera is deliberately far behind the nearby player. Roof-climb
-  // proximity must be measured from the player, not from this ray origin.
+  // Camera direction deliberately varies below. Building climbing should now be
+  // driven by the player's distance to authored structural walls, not by a
+  // precise camera-ray triangle hit.
   let ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0, y: 0, z: 1 } };
   let input = { x: 0, y: 0 };
   let mountState = 'none';
@@ -90,24 +92,26 @@ const assert = require('assert');
   system.init(deps);
 
   let target = system.getClimbTarget();
-  assert(target && target.type === 'roof', 'nearby player can climb even when shoulder camera ray starts far behind');
+  assert(target && target.type === 'roof', 'nearby player gets a building climb target');
   assert.strictEqual(target.wallFaceId, 'wall-south');
   assert(Math.abs(target.endSurfaceY - 2) < 1e-6, 'landing uses authored roof plane height');
   let debug = context.window.HobunjiRoofClimb.getDebug();
-  assert(debug.lastWallHit.cameraDistance > 2.2, 'test actually covers the old camera-distance failure');
   assert(debug.lastWallHit.playerDistance < 1.75, 'accepted wall is close to the player');
+  assert.strictEqual(debug.lastWallHit.selectionModel, 'nearest-player-wall');
 
-  // Inverse case: a camera ray can be close to the wall while the player is
-  // too far away; that must not create a remote climb target.
+  // Camera aim no longer gates building climbing. A wildly glancing ray or no
+  // ray at all still works while the player is physically beside the wall.
+  ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0.9, y: 0, z: 0.1 } };
+  assert(system.getClimbTarget()?.type === 'roof', 'glancing camera aim does not cancel a nearby building climb');
+  ray = null;
+  assert(system.getClimbTarget()?.type === 'roof', 'building climbing does not require an interaction ray');
+
+  // Inverse case: camera location/aim cannot create a remote climb target when
+  // the player is physically too far from the structure.
   player.y = -240;
   ray = { origin: { x: 1, y: 1, z: -1 }, direction: { x: 0, y: 0, z: 1 } };
   assert.strictEqual(system.getClimbTarget(), null, 'camera proximity cannot climb a wall when the player is far away');
   player.y = -48;
-  ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0, y: 0, z: 1 } };
-
-  ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0.9, y: 0, z: 0.1 } };
-  assert.strictEqual(system.getClimbTarget(), null, 'glancing look is rejected');
-  ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0, y: 0, z: 1 } };
   target = system.getClimbTarget();
 
   mountState = 'mounted';
@@ -138,6 +142,23 @@ const assert = require('assert');
   kb = system.resolveBranchKnockback(player, 0, player.y, 1000);
   assert.strictEqual(kb.fell, true);
   assert.strictEqual(player.onBranch, null);
+
+  // Regression against the actual town-house export. Its frustum walls and
+  // sloped/cross-gable roof are materially different from the simple square
+  // fixture above, so this catches transform/landing mistakes the old test did not.
+  group = context.window.HousePieceGen.buildGroupFromPiece({}, actualHousePiece, 10, 10, { elevationY: 0, rotationDeg: 0 });
+  assert(group.userData.hobunjiRoofClimbStructure?.walls?.length > 0, 'real Hobunji house receives structural wall metadata');
+  assert(group.userData.hobunjiRoofClimbStructure?.roofs?.length > 0, 'real Hobunji house receives authored roof metadata');
+  player.onBranch = null;
+  player.climbing = false;
+  player.prone = false;
+  player.x = 13 * 48;
+  player.y = 9.3 * 48; // 0.7 tile north of the real house's north structural wall.
+  ray = null;
+  target = system.getClimbTarget();
+  assert(target && target.type === 'roof', 'actual Hobunji house is climbable from beside its structural wall');
+  assert(target.playerWallDistance <= 1.75, 'real-house target obeys the same player proximity limit');
+  assert(target.endSurfaceY > 0, 'real-house target resolves a positive authored roof landing height');
 
   debug = context.window.HobunjiRoofClimb.getDebug();
   assert.strictEqual(debug.structureWrapperInstalled, true);
