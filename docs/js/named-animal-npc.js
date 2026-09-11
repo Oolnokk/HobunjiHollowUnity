@@ -318,6 +318,12 @@
     }
   }
 
+  function refreshStudioDatabaseView() {
+    const redrawField = document.getElementById('npcName'); // Existing Character Studio input already drives read()+renderDb(), so a no-op input event safely redraws all cards after async local-override migration.
+    if (!redrawField || typeof Event === 'undefined') return;
+    redrawField.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   function refreshStudioSpeciesOptions() {
     const input = document.getElementById('npcSpecies'); // Existing species field remains an input so Character Studio's read/fill code stays untouched.
     const list = document.getElementById('npcSpeciesChoices'); // Datalist supplies tap-friendly selectable person/animal species without rejecting future ids.
@@ -390,6 +396,7 @@
     registry()?.ready?.then(() => {
       refreshStudioSpeciesOptions();
       syncStudioSpecies();
+      queueMicrotask(refreshStudioDatabaseView); // Redraws the complete NPC list after any stale local override objects have been migrated in place.
     }).catch(error => { debugState.lastError = `species registry failed: ${error?.message || error}`; });
     setTimeout(() => { refreshStudioSpeciesOptions(); syncStudioSpecies(); }, 0);
     setTimeout(refreshStudioSpeciesOptions, 1000);
