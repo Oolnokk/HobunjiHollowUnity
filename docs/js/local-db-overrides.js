@@ -18,7 +18,15 @@
   const OVERRIDE_KEY_PREFIX = 'hobunji_local_db_override_v1_';
   const NPC_SCHEDULE_OVERRIDES_PATH = 'config/npcs/schedule-overrides.json'; // Runtime-authored schedule corrections kept out of game.js and the giant NPC database.
   const NPC_PLAYER_NICKNAME_OVERRIDES_PATH = 'config/npcs/player-nickname-overrides.json'; // Small reviewed copy fixes for generated-feeling player-address entries.
+  const NPC_SPECIES_OVERRIDES_PATH = 'config/npcs/species-overrides.json'; // Reviewed named-NPC species/avatar corrections composed into every NPC database source.
+  const CREATURE_BESTIARY_PATH = 'config/creatures/hobunji-creature-bestiary.json'; // Supplies selectable animal species plus runtime model metadata to the named-animal bridge.
   const NPC_SCHEDULE_WEEKDAYS = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used to expand presence-dependent schedule choices deterministically at load time.
+  const LOCAL_DB_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Resolves docs-root resources correctly from nested authoring tools.
+  const NATIVE_FETCH = typeof window.fetch === 'function' ? window.fetch.bind(window) : null; // Bypasses the narrow NPC-database fetch wrapper when loading composition metadata itself.
+  let npcSpeciesOverridesPromise = null; // Deduplicates species-overrides.json requests shared by game and Character Studio.
+  let npcSpeciesOverridesCache = null; // Synchronous lookup source used by the species picker after the reviewed data loads.
+  let creatureBestiaryPromise = null; // Deduplicates bestiary loading for named-animal runtime/editor consumers.
+  let creatureBestiaryCache = null; // Stores the parsed creature list used by the public species registry.
 
   // The set of repo-tracked JSON databases this system knows how to
   // override. `repoPath` is relative to docs/ (same base every other fetch
@@ -70,7 +78,18 @@
   }
 
   function hasOverride(id) { return !!_readEnvelope(id); }
-  function getOverride(id) { return _readEnvelope(id)?.data ?? null; }
+  function getOverride(id) {
+    const data = _readEnvelope(id)?.data ?? null; // Fresh parsed local override returned to the requesting editor/runtime.
+    if (id !== 'npcDatabase' || !data) return data;
+    if (npcSpeciesOverridesCache) {
+      _applyNpcSpeciesOverridesInPlace(data, npcSpeciesOverridesCache); // Corrects stale saved animal species/avatar data before a caller imports the override when metadata is already ready.
+    } else if (NATIVE_FETCH) {
+      _loadNpcSpeciesOverrides().then(overrides => {
+        if (overrides) _applyNpcSpeciesOverridesInPlace(data, overrides); // Mutates the same object Character Studio imported, so old local named-animal records self-migrate in memory without replacing unrelated user data.
+      }).catch(() => {});
+    }
+    return data;
+  }
 
   function setOverride(id, dataObj) {
     if (!dbById(id)) throw new Error('Unknown database id: ' + id);
@@ -85,6 +104,188 @@
       const env = _readEnvelope(d.id);
       return { id: d.id, label: d.label, hasOverride: !!env, savedAt: env?.savedAt || null };
     });
+  }
+
+  function _docsResourceUrl(path) {
+    if (!LOCAL_DB_SCRIPT_URL || typeof URL === 'undefined') return path;
+    try { return new URL('../' + String(path || '').replace(/^\/+/, ''), LOCAL_DB_SCRIPT_URL).href; }
+    catch { return path; }
+  }
+
+  function normalizeNpcSpeciesId(value) {
+    return String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  }
+
+  function _applyNpcSpeciesOverridesInPlace(npcDatabase, speciesOverrides) {
+    if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
+    const overrides = speciesOverrides?.npcs; // Reviewed npcId -> authoritative species/avatar entries applied below.
+    if (!overrides || typeof overrides !== 'object') return npcDatabase;
+    for (const npc of npcDatabase.npcs) {
+      const override = overrides[npc?.id]; // Named correction for this record, if one is explicitly reviewed.
+      const species = normalizeNpcSpeciesId(override?.species); // Canonical species id shared by NPC identity, dialogue, portrait, and world rendering.
+      if (!species) continue;
+
+      const avatarExport = override?.avatarExport;
+      if (avatarExport && typeof avatarExport === 'object' && !Array.isArray(avatarExport)) {
+        const authoredAppearance = avatarExport.appearance && typeof avatarExport.appearance === 'object' && !Array.isArray(avatarExport.appearance)
+          ? JSON.parse(JSON.stringify(avatarExport.appearance))
+          : null; // Exact Character Studio appearance supplied by the reviewed sidecar, when present.
+        if (authoredAppearance) npc.appearance = authoredAppearance;
+        if (Object.prototype.hasOwnProperty.call(avatarExport, 'equippedCosmetics')) {
+          npc.equippedCosmetics = JSON.parse(JSON.stringify(avatarExport.equippedCosmetics ?? []));
+        }
+        if (Object.prototype.hasOwnProperty.call(avatarExport, 'appliedDyes')) {
+          npc.appliedDyes = JSON.parse(JSON.stringify(avatarExport.appliedDyes ?? {}));
+        }
+        npc.avatarEditor = {
+          ...(npc.avatarEditor || {}),
+          sourceFormat: 'npc_avatar_editor_export',
+          rawExport: JSON.parse(JSON.stringify(avatarExport)),
+        }; // Prevents stale raw avatar exports from winning over the newly-authored repo default in Character Studio.
+        const authoredGender = String(authoredAppearance?.gender || '').trim();
+        if (authoredGender) npc.gender = authoredGender;
+      }
+
+      npc.species = species;
+      npc.appearance = { ...(npc.appearance || {}), speciesId: species };
+      if (override?.kind === 'animal') {
+        npc.creatureKind = species;
+        npc.appearance.creatureKind = species;
+        npc.appearance.avatarType = 'animal';
+      } else {
+        delete npc.creatureKind;
+        delete npc.appearance.creatureKind;
+        if (npc.appearance.avatarType === 'animal') delete npc.appearance.avatarType;
+      }
+    }
+    return npcDatabase;
+  }
+
+  function applyNpcSpeciesOverrides(npcDatabase, speciesOverrides) {
+    if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
+    const merged = JSON.parse(JSON.stringify(npcDatabase)); // Non-mutating copy keeps imported/local source data independently recoverable for normal composition callers.
+    return _applyNpcSpeciesOverridesInPlace(merged, speciesOverrides);
+  }
+
+  async function _loadNpcSpeciesOverrides() {
+    if (npcSpeciesOverridesCache) return npcSpeciesOverridesCache;
+    if (npcSpeciesOverridesPromise) return npcSpeciesOverridesPromise;
+    if (!NATIVE_FETCH) return null;
+    npcSpeciesOverridesPromise = NATIVE_FETCH(_docsResourceUrl(NPC_SPECIES_OVERRIDES_PATH))
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        npcSpeciesOverridesCache = data;
+        return data;
+      })
+      .catch(error => {
+        console.warn('[LocalDBOverrides] Could not load NPC species overrides:', error);
+        return null;
+      })
+      .finally(() => { npcSpeciesOverridesPromise = null; });
+    return npcSpeciesOverridesPromise;
+  }
+
+  async function _loadCreatureBestiary() {
+    if (creatureBestiaryCache) return creatureBestiaryCache;
+    if (creatureBestiaryPromise) return creatureBestiaryPromise;
+    if (!NATIVE_FETCH) return null;
+    creatureBestiaryPromise = NATIVE_FETCH(_docsResourceUrl(CREATURE_BESTIARY_PATH))
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        creatureBestiaryCache = data;
+        return data;
+      })
+      .catch(error => {
+        console.warn('[LocalDBOverrides] Could not load creature bestiary for NPC species:', error);
+        return null;
+      })
+      .finally(() => { creatureBestiaryPromise = null; });
+    return creatureBestiaryPromise;
+  }
+
+  function _creatureFor(speciesId) {
+    const id = normalizeNpcSpeciesId(speciesId); // Canonical lookup key used against the mirrored creature bestiary.
+    return (creatureBestiaryCache?.creatures || []).find(creature => normalizeNpcSpeciesId(creature?.id) === id) || null;
+  }
+
+  function _isCreatureSpecies(speciesId) {
+    return !!_creatureFor(speciesId);
+  }
+
+  function _listCreatures() {
+    return Array.isArray(creatureBestiaryCache?.creatures) ? [...creatureBestiaryCache.creatures] : [];
+  }
+
+  function _overrideForNpc(npcId) {
+    return npcSpeciesOverridesCache?.npcs?.[npcId] || null;
+  }
+
+  function _assetUrl(path) {
+    return path ? _docsResourceUrl(path) : '';
+  }
+
+  const npcSpeciesRegistryReady = Promise.all([_loadNpcSpeciesOverrides(), _loadCreatureBestiary()]); // Lets runtime/editor bridges wait until animal ids and metadata are available.
+
+  function _isNpcDatabaseRequest(input) {
+    const raw = typeof input === 'string' ? input : input?.url; // Fetch input normalized so both Request objects and string URLs are supported.
+    if (!raw || typeof URL === 'undefined') return false;
+    try {
+      const href = typeof location !== 'undefined' ? location.href : LOCAL_DB_SCRIPT_URL; // Base URL used for relative Character Studio/game fetches.
+      return new URL(raw, href).pathname.endsWith('/config/npcs/hobunji-starter-npc-database.json');
+    } catch {
+      return String(raw).replace(/\\/g, '/').endsWith('config/npcs/hobunji-starter-npc-database.json');
+    }
+  }
+
+  function _installNpcDatabaseFetchComposition() {
+    const priorFetch = window.fetch; // Existing fetch implementation retained for every request except the repo NPC database JSON.
+    if (typeof priorFetch !== 'function' || priorFetch.__hobunjiNpcSpeciesComposition) return;
+    const wrappedFetch = async function fetchWithNpcSpeciesComposition(input, init) {
+      const response = await priorFetch.call(this, input, init); // Original network response preserved when composition is irrelevant or unavailable.
+      if (!_isNpcDatabaseRequest(input) || !response?.ok || typeof Response === 'undefined') return response;
+      try {
+        const overrides = await _loadNpcSpeciesOverrides(); // Reviewed species/avatar overlay applied even when Character Studio deliberately bypasses local overrides.
+        if (!overrides) return response;
+        const data = await response.clone().json(); // Clone keeps the original response recoverable if JSON/composition fails.
+        const composed = applyNpcSpeciesOverrides(data, overrides); // Corrects named-animal species and authored avatar defaults before the editor/game ever sees the records.
+        const headers = typeof Headers !== 'undefined' ? new Headers(response.headers) : undefined; // Carries normal response metadata without stale body length.
+        headers?.delete?.('content-length');
+        headers?.set?.('content-type', 'application/json');
+        return new Response(JSON.stringify(composed), {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      } catch (error) {
+        console.warn('[LocalDBOverrides] Could not compose NPC species/avatar overrides into direct database fetch:', error);
+        return response;
+      }
+    };
+    wrappedFetch.__hobunjiNpcSpeciesComposition = true;
+    wrappedFetch.__hobunjiNpcSpeciesOriginal = priorFetch;
+    window.fetch = wrappedFetch;
+  }
+
+  function _installNamedAnimalNpcModule() {
+    if (typeof document === 'undefined' || !LOCAL_DB_SCRIPT_URL) return;
+    if (document.querySelector('script[data-hobunji-named-animal-npc="1"]')) return;
+    const moduleUrl = new URL('named-animal-npc.js', LOCAL_DB_SCRIPT_URL).href; // Shared bridge URL resolved next to local-db-overrides.js in docs/js/.
+    if (document.readyState === 'loading' && typeof document.write === 'function') {
+      document.write(`<script src="${moduleUrl}" data-hobunji-named-animal-npc="1"><\/script>`); // Parser-synchronous load guarantees global assignment hooks exist before later avatar/game scripts execute.
+      return;
+    }
+    const script = document.createElement('script'); // Fallback for tools/pages that load LocalDBOverrides after document parsing has completed.
+    script.src = moduleUrl;
+    script.async = false;
+    script.dataset.hobunjiNamedAnimalNpc = '1';
+    script.onerror = () => console.warn('[LocalDBOverrides] Could not load named-animal-npc.js');
+    (document.head || document.documentElement)?.appendChild(script);
   }
 
   // Loads one database without any cross-database post-processing. Used by
@@ -391,7 +592,12 @@
   async function loadDatabase(id) {
     const data = await _loadRawDatabase(id); // Used as the selected raw local/repo database before optional composition.
     if (id !== 'npcDatabase') return data;
-    let composed = data; // Used to carry independent schedule, nickname, and shop composition forward even if any optional source fails.
+    let composed = data; // Used to carry independent species, schedule, nickname, and shop composition forward even if any optional source fails.
+    try {
+      composed = applyNpcSpeciesOverrides(composed, await _loadNpcSpeciesOverrides()); // Makes npc.species and reviewed avatar defaults authoritative before any downstream dialogue/avatar consumer sees the record.
+    } catch (error) {
+      console.warn('[LocalDBOverrides] Could not compose NPC species/avatar overrides:', error);
+    }
     try {
       const resp = await fetch(NPC_SCHEDULE_OVERRIDES_PATH); // Used to load small repo-authored schedule corrections independently of local database selection.
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -423,5 +629,20 @@
     applyShopDialogueAccess,
     applyNpcScheduleOverrides,
     applyNpcPlayerNicknameOverrides,
+    applyNpcSpeciesOverrides,
   };
+
+  window.HobunjiNpcSpeciesRegistry = {
+    ready: npcSpeciesRegistryReady,
+    normalizeSpeciesId: normalizeNpcSpeciesId,
+    creatureFor: _creatureFor,
+    isCreatureSpecies: _isCreatureSpecies,
+    listCreatures: _listCreatures,
+    overrideForNpc: _overrideForNpc,
+    assetUrl: _assetUrl,
+    applyNpcSpeciesOverrides,
+  };
+
+  _installNpcDatabaseFetchComposition();
+  _installNamedAnimalNpcModule();
 })();
