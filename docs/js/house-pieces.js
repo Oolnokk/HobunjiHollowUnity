@@ -31,17 +31,17 @@
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
     ['Ghostify', 'ghostify.js?v=20260909a'],
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
-    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260909b'],
-    // Draws one all-distance serpentine spectral locator at the army chunk; off-screen locations clamp to the viewport edge while soldiers remain chunk-LOD'd.
-    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260909b'],
+    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
+    // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.
+    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260911a'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
     ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260909c'],
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
     ['HarlyaoTerror', 'harlyao-terror.js?v=20260909a'],
     // Decorates Calendar day cells with the nightly route and reveals zone/direction details when a marked date is clicked.
     ['HarlyaoNightMarchCalendar', 'harlyao-night-march-calendar.js?v=20260909b'],
-    // Appends route/chunk/visibility/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
-    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260909a'],
+    // Appends route/chunk/build/placement/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
+    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260911a'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
     // post-composite pass disabled depth testing and could wash mist over the player
     // and nearby world geometry even when every cylinder surface was behind them.
