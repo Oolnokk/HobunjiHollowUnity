@@ -128,12 +128,14 @@
     const result = evaluateRay(null);
     const debug = result.debug || {};
     const prompt = promptDebug();
+    const methods = debug.liveMethods || {};
     const lines = [
       '',
       SECTION,
       'Entrance-adjacent exclusion: DISABLED',
       'Targeting model: nearest structural wall to PLAYER (camera ray not required)',
-      `Roof runtime: source=${debug.runtimeDepsSource || 'unknown'} player=${debug.runtimePlayerReady ? 'ready' : 'missing'} climbInitCapture=${debug.climbDepsCaptured ? 'yes' : 'no'}`,
+      `Roof runtime: source=${debug.runtimeDepsSource || 'unknown'} player=${debug.runtimePlayerReady ? 'ready' : 'missing'} climbInitCapture=${debug.climbDepsCaptured ? 'yes' : 'no'} hooks=${debug.climbHooksCurrent ? 'current' : 'missing/stale'}`,
+      `Roof live methods: get=${methods.getClimbTarget || window.ClimbSystem?.getClimbTarget?.name || '-'} start=${methods.startClimb || window.ClimbSystem?.startClimb?.name || '-'} update=${methods.updateClimb || window.ClimbSystem?.updateClimb?.name || '-'}`,
       `Climb popup/action bridge: popupPatched=${prompt.popupPatched ? 'yes' : 'no'} targetBridge=${prompt.climbTargetBridgePatched ? 'yes' : 'no'} current=${prompt.climbTargetBridgeCurrent ? 'yes' : 'no'} visible=${prompt.visible ? 'yes' : 'no'} target=${prompt.targetType || '-'} actionable=${prompt.actionable ? 'yes' : 'no'} source=${prompt.targetSource || '-'} reason=${prompt.reason || '-'}`,
     ];
     const nearest = result.nearestWall;
