@@ -3,10 +3,29 @@ name: Character presentation regressions
 on:
   pull_request:
     paths:
+      - 'docs/config/character-rig-scale-defaults.js'
+      - 'docs/config/harlyao-night-march.json'
+      - 'docs/config/species/harlyao.json'
+      - 'docs/config/species/index.json'
+      - 'docs/js/ghostify.js'
+      - 'docs/js/harlyao-night-march-atmosphere.js'
+      - 'docs/js/harlyao-night-march-beacon.js'
+      - 'docs/js/harlyao-night-march-calendar.js'
+      - 'docs/js/harlyao-night-march-music.js'
+      - 'docs/js/harlyao-night-march-pixel-probe.js'
+      - 'docs/js/harlyao-night-march-runtime.js'
+      - 'docs/js/harlyao-species-runtime.js'
+      - 'docs/js/harlyao-terror.js'
+      - 'docs/js/house-pieces.js'
       - 'docs/js/maoao-arm-tint-runtime.js'
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
+      - 'scripts/test-harlyao-calendar-markers.js'
+      - 'scripts/test-harlyao-night-march.js'
+      - 'scripts/test-harlyao-night-march-beacon.js'
+      - 'scripts/test-harlyao-species.js'
+      - 'scripts/test-harlyao-terror.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-shoulder-camera-reset-button.js'
@@ -20,6 +39,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Harlyao species regression
+        run: node scripts/test-harlyao-species.js
+      - name: Harlyao night march regression
+        run: node scripts/test-harlyao-night-march.js
+      - name: Harlyao night march beacon regression
+        run: node scripts/test-harlyao-night-march-beacon.js
+      - name: Harlyao Terror regression
+        run: node scripts/test-harlyao-terror.js
+      - name: Harlyao calendar marker regression
+        run: node scripts/test-harlyao-calendar-markers.js
       - name: Mao-ao arm tint regression
         run: node scripts/test-maoao-arm-tint-runtime.js
       - name: Shoulder camera character framing regression

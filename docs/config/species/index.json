@@ -11,6 +11,11 @@
       "path": "./ghoul.json"
     },
     {
+      "speciesId": "harlyao",
+      "label": "Harlyao",
+      "path": "./harlyao.json"
+    },
+    {
       "speciesId": "tletingan",
       "label": "Tletingan",
       "path": "./tletingan.json"

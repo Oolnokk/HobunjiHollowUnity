@@ -60,7 +60,7 @@
         ropeAmplitudeDegAtCalm:4.6, ropeSwingMaxDeg:18, bottleAmplitudeScale:0.32, bottlePhaseLag:0.22, bottleSwingMaxDeg:8,
       },
       light: {
-        enabled:true, color:'#7fe7c4', intensity:0.85, distance:3.2, decay:1.7,
+        enabled:true, color:'#7fe7c4', intensity:0.85, distance:1.8, decay:1.7,
         weatherOverlayMask:true, offset:{x:0,y:-0.02,z:0},
       },
     },
@@ -69,7 +69,7 @@
       liquidPartFlag:'lifeTotemFontLiquid',
       material:{model:'unlit',opacity:0.78,depthWrite:false,transparent:true},
       light:{
-        enabled:true,color:'#7fe7c4',intensity:1.25,distance:4.2,decay:1.7,
+        enabled:true,color:'#7fe7c4',intensity:1.25,distance:2.4,decay:1.7,
         weatherOverlayMask:true,offset:{x:0,y:0.08,z:0},
       },
     },

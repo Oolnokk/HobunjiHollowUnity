@@ -1,0 +1,110 @@
+{
+  "schema": "hobunji_harlyao_night_march.v1",
+  "description": "A single spectral Harlyao army traverses one wilderness zone per civil day from midnight until 06:00. Offscreen state is chunk-only; full humanoid entities exist only while the player shares the army chunk.",
+  "memberCount": 20,
+  "activeHours": {
+    "start": 0,
+    "end": 6,
+    "coarseStepHours": 1
+  },
+  "routesClockwise": [
+    {
+      "zoneId": "map_northern_cliffs",
+      "label": "Northern Cliffs",
+      "axis": "x",
+      "direction": 1,
+      "directionLabel": "west-to-east"
+    },
+    {
+      "zoneId": "map_eastern_mire",
+      "label": "Eastern Mire",
+      "axis": "z",
+      "direction": 1,
+      "directionLabel": "north-to-south"
+    },
+    {
+      "zoneId": "map_southern_cloud_forest",
+      "label": "Southern Cloud Forest",
+      "axis": "x",
+      "direction": -1,
+      "directionLabel": "east-to-west"
+    },
+    {
+      "zoneId": "map_western_slope",
+      "label": "Western Slope",
+      "axis": "z",
+      "direction": -1,
+      "directionLabel": "south-to-north"
+    }
+  ],
+  "routeLane": {
+    "crossAxisFraction": 0.5,
+    "edgePaddingTiles": 2
+  },
+  "formation": {
+    "columns": 4,
+    "rows": 5,
+    "lateralSpacingTiles": 1.35,
+    "longitudinalSpacingTiles": 1.2,
+    "marchSpeedTilesPerSecond": 1.15
+  },
+  "equipment": {
+    "forcedCosmetics": [
+      "rugged_poncho"
+    ],
+    "weaponShapes": [
+      "daggerSword",
+      "hatchet",
+      "fishingspear"
+    ],
+    "weaponMetalKey": "nativeCopper"
+  },
+  "visuals": {
+    "color": "#4fd9c6",
+    "opacity": 0.56,
+    "emissiveIntensity": 1.35,
+    "formationGlowRadiusTiles": 4.2,
+    "formationGlowIntensity": 0.78,
+    "beaconGlowRadiusTiles": 28,
+    "beaconGlowIntensity": 0.94,
+    "beaconGlowColor": "#b0f0ff",
+    "beaconMinScreenRadiusPx": 96,
+    "beaconMaxScreenRadiusPx": 220,
+    "beaconEdgeMarginPx": 44,
+    "beaconShape": "serpentine"
+  },
+  "behavior": {
+    "neutralState": "harlyaoMarch",
+    "provokeWholeArmy": true,
+    "allowObservedScheduleDrift": true,
+    "despawnOutsideSharedChunk": true,
+    "maleOnlyUntilFemaleHeadArt": true
+  },
+  "zoneAtmosphere": {
+    "darknessMultiplier": 2,
+    "entryToast": "The night grows unnaturally dark. A spectral army marches somewhere through the {zone}."
+  },
+  "music": {
+    "trackUrl": "assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg",
+    "ghoulFloorVolumeMultiplier": 2,
+    "lerpMs": 12000,
+    "distanceCheckMs": 500,
+    "stages": [
+      { "maxChunkDistance": 0, "volumeScale": 1 },
+      { "maxChunkDistance": 1, "volumeScale": 0.72 },
+      { "maxChunkDistance": 2, "volumeScale": 0.48 },
+      { "maxChunkDistance": 4, "volumeScale": 0.28 },
+      { "maxChunkDistance": 7, "volumeScale": 0.15 },
+      { "maxChunkDistance": 999, "volumeScale": 0.08 }
+    ]
+  },
+  "terror": {
+    "label": "Terror",
+    "icon": "◉",
+    "movementSlowPerStack": 0.03,
+    "darknessAlphaPerStack": 0.045,
+    "maxDarknessAlpha": 0.27,
+    "lanternRadiusMinMultiplier": 0.5,
+    "hudRefreshMs": 500
+  }
+}
