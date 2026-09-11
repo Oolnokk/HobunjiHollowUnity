@@ -16,6 +16,7 @@ class Object3D {
 const TILE = 64;
 const grid = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => ({ type: 'grass', elevTier: 0, incline: false })));
 let target = null;
+let directRoofTarget = null;
 let branches = [];
 let rideState = 'none';
 let lastSync = null;
@@ -60,6 +61,9 @@ const window = {
     getClimbTarget() { return target; },
     debugBranchesFor() { return branches.slice(); },
   },
+  HobunjiRoofClimb: {
+    getRoofClimbTarget() { return directRoofTarget; },
+  },
   WorldPopupText: popup,
 };
 window.window = window;
@@ -89,6 +93,24 @@ assert.deepEqual(lastSync.promptInputs[0], { actionId: 'dodge', label: 'Space', 
 assert.equal(lastSync.root.name, 'climb_world_interaction_prompt_anchor');
 assert.equal(lastSync.root.position.x, 2.5);
 assert.equal(lastSync.root.position.z, 1.5);
+assert.equal(Prompt.getDebug().climbTargetBridgeCurrent, true, 'live ClimbSystem target path is hardened after prompt sync');
+
+// Regression for the live probe failure: the dedicated roof resolver can find
+// a valid building target even if ClimbSystem.getClimbTarget itself returns null.
+// The popup must still show Climb Building, and the ordinary game action must
+// receive that same roof target through ClimbSystem afterward.
+target = null;
+directRoofTarget = {
+  type: 'roof',
+  wallPoint: { x: 2.25, y: 0.7, z: 1.5 },
+  wallFaceId: 'fallback-house-wall',
+};
+lastSync = null;
+window.WorldPopupText.syncInteractionPrompts({ buttons: [], promptInputs: [], root: null, enabled: true });
+assert.equal(lastSync.buttons[0].label, 'Climb Building', 'direct roof fallback still produces the normal building climb row');
+assert.equal(Prompt.getDebug().targetSource, 'ClimbSystem target');
+assert.equal(window.ClimbSystem.getClimbTarget(), directRoofTarget, 'game action path receives the same fallback roof target');
+directRoofTarget = null;
 
 // game.js already supplies branch climb rows when it has an exact branch
 // target. The bridge must defer to that existing row instead of duplicating it.
@@ -104,6 +126,11 @@ assert.equal(lastSync.root.name, 'existing-branch-root');
 
 // The existing interaction popup is a stacked list, so a climb row can coexist
 // with Enter/Talk/etc. without inventing another popup surface.
+target = {
+  type: 'roof',
+  wallPoint: { x: 2.5, y: 0.8, z: 1.5 },
+  wallFaceId: 'house-wall',
+};
 lastSync = null;
 window.WorldPopupText.syncInteractionPrompts({
   buttons: [{ action: 'talk', label: 'Talk', worldInteraction: true }],
