@@ -127,16 +127,56 @@
     return true;
   }
 
-  function consumeBestQuality(key, amount = 1) {
-    const requested = Math.max(1, Math.floor(Number(amount) || 1)); // Used to keep processor consumption on whole inventory units.
+  const VALUE_MULTIPLIERS = { 1: 0.70, 2: 0.85, 3: 1.00, 4: 1.25, 5: 1.60 }; // Used to make star quality worth something everywhere an item is priced.
+
+  function valueMultiplierForStars(stars) {
+    const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
+    return VALUE_MULTIPLIERS[safeStars] || 1;
+  }
+
+  function peekLowestQuality(key) {
+    const bucket = reconcileQuality(key); // Used so callers can preview quality without consuming it (e.g. opening a fresh bottle).
+    const tier = [1, 2, 3, 4, 5].find(stars => (bucket[stars] || 0) > 0);
+    return tier || Math.max(1, Math.min(5, Number(deps.ITEM_DEFS[key]?.cookingDefaultStars) || 3));
+  }
+
+  // Consumes `amount` units of `key`, filling from the requested end of the
+  // quality range first ('lowest' protects the player's best stock for
+  // ordinary/automatic consumption; 'highest' matches Cooking's deliberate
+  // Auto-fill-best behavior). Returns the consumed { stars, amount } groups
+  // (a stack can span multiple tiers) or null if not enough stock exists.
+  function consumeQualityGroups(key, amount = 1, policy = 'lowest') {
+    const requested = Math.max(1, Math.floor(Number(amount) || 1));
     if ((deps.inventory[key] || 0) < requested) return null;
-    const consumedStars = []; // Used to report the quality that a processor should transfer to its outputs.
-    for (let index = 0; index < requested; index++) {
-      const best = availableQualityEntries(key)[0]; // Used to match cooking's existing best-quality-first selection rule.
-      if (!best || !consumeQuality(key, best.stars, 1)) return null;
-      consumedStars.push(best.stars);
+    const order = policy === 'highest' ? [5, 4, 3, 2, 1] : [1, 2, 3, 4, 5];
+    let remaining = requested;
+    const groups = [];
+    for (const stars of order) {
+      if (remaining <= 0) break;
+      const have = Math.max(0, Number(reconcileQuality(key)[stars]) || 0);
+      if (!have) continue;
+      const take = Math.min(have, remaining);
+      if (!consumeQuality(key, stars, take)) continue;
+      groups.push({ stars, amount: take });
+      remaining -= take;
     }
-    return Math.max(1, Math.min(5, Math.round(consumedStars.reduce((sum, stars) => sum + stars, 0) / consumedStars.length)));
+    return remaining > 0 ? null : groups;
+  }
+
+  function consumeQualityByPolicy(key, amount = 1, policy = 'lowest') {
+    const groups = consumeQualityGroups(key, amount, policy);
+    if (!groups) return null;
+    const totalAmount = groups.reduce((sum, group) => sum + group.amount, 0);
+    const stars = Math.max(1, Math.min(5, Math.round(groups.reduce((sum, group) => sum + group.stars * group.amount, 0) / totalAmount)));
+    return { stars, groups };
+  }
+
+  function consumeBestQuality(key, amount = 1) {
+    return consumeQualityByPolicy(key, amount, 'highest')?.stars ?? null;
+  }
+
+  function consumeLowestQuality(key, amount = 1) {
+    return consumeQualityByPolicy(key, amount, 'lowest')?.stars ?? null;
   }
 
   function ingredientCandidates(slot) {
@@ -410,7 +450,8 @@
     if (!output) return;
     const tracked = Object.values(qualityBuckets).reduce((sum, bucket) => sum + Object.values(bucket).reduce((inner, count) => inner + (Number(count) || 0), 0), 0); // Used for mobile-visible state verification.
     const processingDiagnostics = window.HobunjiFoodProcessing?.diagnosticsText?.() || 'Processing module: unavailable'; // Used to expose vat/source wiring on mobile without developer tools.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}`;
+    const lastProcessing = window.SkillSystem?.processingDiagnosticsText?.(); // Used to make the most recent processing-quality roll auditable on mobile — see SkillSystem.rollProcessingQuality.
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}`;
   }
 
   function render() {
@@ -458,5 +499,6 @@
   window.CookingSystem = {
     init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
+    consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars,
   };
 })();

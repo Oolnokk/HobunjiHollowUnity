@@ -384,11 +384,24 @@
   // vat never accidentally clears its valid livestock assignment.
   function autoSqueezeAtVat(vatId, colorKey) {
     const vat = findVatById(vatId);
-    if (!vat || !assignedWorkerForVat(vatId)) return false;
+    const worker = assignedWorkerForVat(vatId);
+    if (!vat || !worker) return false;
     _guardSqueezingVatStart(vat);
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;
-    const stars = deps.rollItemStars('farming'); // Used to make automatically squeezed animal goods inherit Farming-driven quality.
+    const baseStars = deps.rollItemStars('farming'); // Used to make automatically squeezed animal goods inherit Farming-driven quality.
+    // Working Animals (Farming perk): without it, an assigned vat worker is
+    // just an anonymous machine — only with the perk does that specific
+    // animal's own hearts start nudging the vat's output, mirroring the
+    // direct-collection heart bonus in farm-animals.js's collectResource.
+    const workingAnimalsRank = window.PerkSystem?.rank('farming', 'workingAnimals') || 0; // 0-3
+    let stars = baseStars;
+    if (workingAnimalsRank > 0) {
+      const hearts = Number.isFinite(worker.heartLevel) ? worker.heartLevel : (window.FarmAnimals?.HEART_DEFAULT ?? 2);
+      const heartMax = window.FarmAnimals?.HEART_MAX ?? 5;
+      const heartStars = Math.round((hearts - 2.5) / (heartMax / 2) * (workingAnimalsRank / 3));
+      stars = Math.max(1, Math.min(5, baseStars + heartStars));
+    }
     const result = vat.startTimedJob?.({ outputs, inputStars: stars, inputLabel: `${colorKey} dew`, source: 'livestock' });
     if (result?.busy) return 'busy';
     return result?.ok ? 'started' : false;

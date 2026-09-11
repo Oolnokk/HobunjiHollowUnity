@@ -2555,20 +2555,48 @@
       const PROCESS_BURST_S = 1.2;
 
       function consumeProcessingInput(inputKey) {
-        const trackedStars = window.CookingSystem?.consumeBestQuality?.(inputKey, 1); // Used to consume the same quality bucket as the inventory unit.
+        // Ordinary automatic processing consumes the player's worst-quality
+        // stock first so a stray press/churn/age can't quietly burn through
+        // a prize-quality unit; Cooking's own deliberate Auto-fill-best stays
+        // on consumeBestQuality (see CookingSystem.consumeBestQuality).
+        const trackedStars = window.CookingSystem?.consumeLowestQuality?.(inputKey, 1);
         if (trackedStars) return trackedStars;
         inventory[inputKey]--;
         clampInventoryStack(inputKey);
         return Math.max(1, Math.min(5, Number(ITEM_DEFS[inputKey]?.cookingDefaultStars) || 3));
       }
 
-      function addProcessedOutputs(outputs, inputStars) {
+      // Maps each processing method onto the craftsmanship identity
+      // SkillSystem.rollProcessingQuality uses to weight its ±1 quality roll
+      // (see docs/js/skill-system.js) — quick presses mostly preserve
+      // quality, preservation is slightly harder to improve, and aging has
+      // the best odds of turning good ingredients into something better.
+      const PROCESSING_METHOD_CLASSES = {
+        mashing: 'quick', squeezing: 'quick', grinding: 'quick', churning: 'quick',
+        drying: 'preservation', smoking: 'preservation',
+        barrelAging: 'aging', vaseAging: 'aging',
+      };
+
+      function addProcessedOutputs(outputs, inputStars, methodId) {
+        const methodClass = PROCESSING_METHOD_CLASSES[methodId] || 'quick';
+        // Output quality evolves from the input's actual quality rather than
+        // being rerolled from scratch — see the processing-quality-resolution
+        // design in SkillSystem.rollProcessingQuality.
+        const outputStars = window.SkillSystem?.rollProcessingQuality?.(inputStars, methodClass) ?? inputStars;
+        // Efficient Processing (Farming perk): a modest chance for one extra
+        // unit of each output from the same batch without consuming another
+        // ingredient — capped well below Bountiful Harvest's rate since
+        // processed goods are already economically amplified by quality.
+        const efficientProcessingRank = window.PerkSystem?.rank('farming', 'efficientProcessing') || 0;
+        const bonusChance = Math.min(0.15, efficientProcessingRank * 0.03);
+        const bonusUnit = bonusChance > 0 && (window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0;
         outputs.forEach(output => {
           window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
-          inventory[output.key] = Math.min(99, previousCount + 1);
-          window.CookingSystem?.recordItemQuality?.(output.key, inputStars, inventory[output.key] - previousCount); // Used to carry the source stars through pressing, grinding, drying, and aging.
+          inventory[output.key] = Math.min(99, previousCount + 1 + bonusUnit);
+          window.CookingSystem?.recordItemQuality?.(output.key, outputStars, inventory[output.key] - previousCount);
         });
+        return outputStars;
       }
 
       function makeProcessingFurniture(col, row, furnitureKey, savedJob, rotYDeg = 0) {
@@ -2619,13 +2647,13 @@
           if (job?.kind !== 'timed') return;
           const finished = job;
           job = null;
-          addProcessedOutputs(finished.outputs, finished.inputStars);
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method);
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
           window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(outputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
         }
         function updateVfx(dt) {
           if (!authoredVfx) return;
@@ -2701,10 +2729,10 @@
               const outputs = job.outputs;
               const inputStars = job.inputStars;
               job = null;
-              addProcessedOutputs(outputs, inputStars);
+              const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
               window.FarmEditor.saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+              return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
             // Same held-not-merely-selected eligibility as getButtons() above
             // — re-checked here (not just there) because this is the actual
@@ -2730,10 +2758,10 @@
                 ? { ok: true, message: `${def.icon} Started squeezing 1 ${inputLabel}; the batch will finish in ${Math.round(started.durationS)} seconds.` }
                 : started;
             }
-            addProcessedOutputs(outputs, inputStars);
+            const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
-            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
           },
           // Cheap non-mutating precheck for the held-item hold controller's
           // press — mirrors getButtons()'s eligibility without touching
@@ -14367,6 +14395,50 @@
         window.EquipmentPanel.buildPackClothingSection();
       }
 
+      // Only items that can actually carry tracked quality query
+      // CookingSystem/the alcohol bridge — querying an untracked item (wood,
+      // seeds, gold, tools) would lazily fabricate a default-3-star bucket
+      // for it via reconcileQuality's migration fallback, which is meant
+      // for real quality-bearing stacks, not a passive detail-panel view.
+      function isQualityTrackedItem(def) {
+        if (!def) return false;
+        if (def.cat === 'crop' || def.cat === 'processed' || def.isCookedFood) return true;
+        if (def.cookingDefaultStars != null || def.cookingCategories?.length) return true;
+        if (window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)) return true;
+        const tags = (def.tags || []).map(t => String(t).toLowerCase());
+        return tags.includes('meat') || tags.includes('fish');
+      }
+
+      function starGlyphs(stars) {
+        const safe = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
+        return '★'.repeat(safe) + '☆'.repeat(5 - safe);
+      }
+
+      // Deliberately vague, non-numeric quality language — especially for
+      // alcohol, where the tooltip must never hint at blackout mechanics
+      // (no hop counts, no "teleports N zones"; see combat-core.js).
+      const QUALITY_DESCRIPTORS = { 1: 'Rough', 2: 'Ordinary', 3: 'Fine', 4: 'Excellent', 5: 'Exceptional' };
+
+      function qualityDisplayForItem(key, def) {
+        if (!isQualityTrackedItem(def)) return '';
+        if (window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)) {
+          const bottle = window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(key, def, inventory);
+          if (bottle) {
+            const stars = Math.max(1, Math.min(5, Math.round(bottle.stars)));
+            return `${starGlyphs(stars)} ${QUALITY_DESCRIPTORS[stars]} · ${bottle.remaining}/${bottle.total} open`;
+          }
+        }
+        const entries = window.CookingSystem?.availableQualityEntries?.(key) || [];
+        return entries.map(entry => `${starGlyphs(entry.stars)} ${QUALITY_DESCRIPTORS[entry.stars]} ×${entry.count}`).join('  ·  ');
+      }
+
+      function itemDescriptionWithFlavor(def) {
+        // Vague flavor only — no destination preview, no hop/zone numbers.
+        return window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)
+          ? `${def.desc} Better-made drink tends to produce rather more adventurous blackouts.`
+          : def.desc;
+      }
+
       function selectInventoryItem(key, skipGridUpdate) {
         const def   = ITEM_DEFS[key];
         const count = inventory[key] || 0;
@@ -14390,8 +14462,9 @@
         applyItemSpriteIcon(iiIconEl, def, key);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
+        set('iiQuality', qualityDisplayForItem(key, def));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
-        set('iiDesc',  def.desc);
+        set('iiDesc',  itemDescriptionWithFlavor(def));
 
         const actEl = document.getElementById('iiActions');
         if (actEl) {
@@ -15879,11 +15952,16 @@
         if (!tile.crop) return { ok: false, message: 'Nothing to harvest here.' };
         if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
         const data = cropData[tile.crop];
-        inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
+        // Bountiful Harvest (Farming perk): a chance for one extra crop unit
+        // from the same harvest, capped well below Foraging/Mining's yield
+        // perks since processed goods already amplify quality economically.
+        const bonusChance = Math.min(0.3, (window.PerkSystem?.rank('farming', 'bountifulHarvest') || 0) * 0.06);
+        const amount = 1 + ((window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0);
+        inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + amount);
         const stars = window.LootRolling.rollItemStars('farming');
-        window.CookingSystem.recordItemQuality(data.cropKey, stars, 1);
+        window.CookingSystem.recordItemQuality(data.cropKey, stars, amount);
         window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
-        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}!`;
+        const msg = `Harvested ${window.LootRolling.starRatingText(stars)} ${data.emoji} ${data.label}${amount > 1 ? ` ×${amount}` : ''}!`;
         tile.crop = CropType.NONE;
         tile.cropAge = 0;
         tile.cropReady = false;
@@ -26513,6 +26591,13 @@
         calendar,
         inventory,
         player,
+        // Collected animal-good quality/XP — previously missing here, so
+        // collectResource()'s Farming roll/heart bonus/XP award all
+        // silently no-op via optional chaining (see docs/js/farm-animals.js).
+        rollItemStars: window.LootRolling.rollItemStars,
+        starRatingText: window.LootRolling.starRatingText,
+        recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
+        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
         // Farm livestock has its own tile-space update loop, so give it the
         // same explicit face target used by companion/wildlife gaze.  The
         // horizontal point is in farm tiles; worldY is the player's actual

@@ -36,7 +36,7 @@
   let lastPlayerY = null;
   let lastPostAt = performance.now();
   let consumeLockUntil = 0;
-  let bottleSwigs = {}; // Persisted by game.js; stores the remaining swigs in each stack's currently open bottle.
+  let bottleSwigs = {}; // Persisted by game.js; stores { remaining, total, stars } for each stack's currently open bottle.
   let npcAlcoholState = {}; // Persisted by game.js; stores NPC sobriety and no-teleport blackout deadlines.
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -53,12 +53,29 @@
     return Math.max(1, Math.round(Number(def?.swigsPerBottle) || DEFAULT_SWIGS_PER_BOTTLE));
   }
 
+  function bottleQualityFallback(def) {
+    return Math.max(1, Math.min(5, Number(def?.cookingDefaultStars) || 3));
+  }
+
+  // Reads (without consuming) the quality tier a freshly opened bottle of
+  // `key` would draw from — the same lowest-first policy every other
+  // automatic/ordinary consumption uses, so opening a bottle can't quietly
+  // reach for the player's best stock. The exact unit is only actually
+  // removed from the quality bucket once the bottle is finished (see
+  // consumeBottleSwig) so a save/reload mid-bottle can't lose track of it.
+  function peekBottleStars(key, def) {
+    const tracked = Number(window.CookingSystem?.peekLowestQuality?.(key));
+    return Number.isFinite(tracked) ? Math.max(1, Math.min(5, Math.round(tracked))) : bottleQualityFallback(def);
+  }
+
   function getBottleSwigStatus(key, def, inventory = itemDeps?.inventory) {
     if (!key || !isAlcoholDef(def) || !(Number(inventory?.[key]) > 0)) return null;
     const total = swigsPerBottle(def);
-    const saved = Math.round(Number(bottleSwigs[key]));
-    const remaining = Number.isFinite(saved) && saved > 0 && saved <= total ? saved : total;
-    return { key, remaining, total, bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)) };
+    const saved = bottleSwigs[key];
+    const savedRemaining = Math.round(Number(saved?.remaining));
+    const remaining = Number.isFinite(savedRemaining) && savedRemaining > 0 && savedRemaining <= total ? savedRemaining : total;
+    const stars = Number.isFinite(Number(saved?.stars)) ? Math.max(1, Math.min(5, Math.round(Number(saved.stars)))) : peekBottleStars(key, def);
+    return { key, remaining, total, stars, bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)) };
   }
 
   function consumeBottleSwig(key, def, inventory = itemDeps?.inventory) {
@@ -67,40 +84,64 @@
     const remaining = status.remaining - 1;
     let bottleFinished = false;
     if (remaining <= 0) {
-      inventory[key] = Math.max(0, (Number(inventory[key]) || 0) - 1);
-      itemDeps?.clampInventoryStack?.(key);
+      // The final swig removes the exact quality unit this bottle was
+      // opened from — never a fresh lowest-first pick — so a bottle's stars
+      // can't drift if the player's stock composition changed mid-bottle.
+      const consumed = window.CookingSystem?.consumeQuality?.(key, status.stars, 1);
+      if (!consumed) {
+        inventory[key] = Math.max(0, (Number(inventory[key]) || 0) - 1);
+        itemDeps?.clampInventoryStack?.(key);
+      }
       delete bottleSwigs[key];
       bottleFinished = true;
     } else {
-      bottleSwigs[key] = remaining;
+      bottleSwigs[key] = { remaining, total: status.total, stars: status.stars };
     }
     return {
       ok: true,
       bottleFinished,
       remaining: bottleFinished && (Number(inventory[key]) || 0) > 0 ? status.total : Math.max(0, remaining),
       total: status.total,
+      stars: status.stars,
       bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)),
     };
   }
 
   function serializeBottleSwigs() {
     return Object.fromEntries(Object.entries(bottleSwigs)
-      .filter(([key, remaining]) => (!itemDeps?.inventory || Number(itemDeps.inventory[key]) > 0)
-        && Number.isFinite(Number(remaining)) && Number(remaining) > 0)
-      .map(([key, remaining]) => [key, Math.round(Number(remaining))]));
+      .filter(([key, value]) => (!itemDeps?.inventory || Number(itemDeps.inventory[key]) > 0)
+        && Number.isFinite(Number(value?.remaining)) && Number(value.remaining) > 0)
+      .map(([key, value]) => [key, {
+        remaining: Math.round(Number(value.remaining)),
+        total: Math.max(1, Math.round(Number(value.total)) || DEFAULT_SWIGS_PER_BOTTLE),
+        stars: Math.max(1, Math.min(5, Math.round(Number(value.stars)) || 3)),
+      }]));
   }
 
   function restoreBottleSwigs(saved) {
-    bottleSwigs = saved && typeof saved === 'object' && !Array.isArray(saved)
-      ? serializeSwigObject(saved)
-      : {};
+    bottleSwigs = {};
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      Object.entries(saved).forEach(([key, value]) => {
+        // Legacy save shape: a plain remaining-swig count with no tracked
+        // quality — fall back to this item's default star rating so an
+        // in-progress bottle from before this system still opens cleanly.
+        if (typeof value === 'number' || typeof value === 'string') {
+          const remaining = Math.round(Number(value));
+          if (Number.isFinite(remaining) && remaining > 0) {
+            bottleSwigs[key] = { remaining, total: DEFAULT_SWIGS_PER_BOTTLE, stars: bottleQualityFallback(itemDeps?.ITEM_DEFS?.[key]) };
+          }
+          return;
+        }
+        const remaining = Math.round(Number(value?.remaining));
+        if (!Number.isFinite(remaining) || remaining <= 0) return;
+        bottleSwigs[key] = {
+          remaining,
+          total: Math.max(1, Math.round(Number(value.total)) || DEFAULT_SWIGS_PER_BOTTLE),
+          stars: Math.max(1, Math.min(5, Math.round(Number(value.stars)) || bottleQualityFallback(itemDeps?.ITEM_DEFS?.[key]))),
+        };
+      });
+    }
     return serializeBottleSwigs();
-  }
-
-  function serializeSwigObject(source) {
-    return Object.fromEntries(Object.entries(source || {})
-      .filter(([, remaining]) => Number.isFinite(Number(remaining)) && Number(remaining) > 0)
-      .map(([key, remaining]) => [key, Math.max(1, Math.round(Number(remaining)))]));
   }
 
   function absoluteGameMinute() {
