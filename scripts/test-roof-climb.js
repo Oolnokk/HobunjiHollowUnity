@@ -3,7 +3,9 @@ const vm = require('vm');
 const assert = require('assert');
 
 (async () => {
-  const code = fs.readFileSync(require('path').join(__dirname, '..', 'docs', 'js', 'roof-climb.js'), 'utf8');
+  const path = require('path');
+  const code = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'roof-climb.js'), 'utf8');
+  const probeCode = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'roof-climb-pixel-probe.js'), 'utf8');
   let group = null;
   const scene = { traverse(fn) { if (group) fn(group); } };
   // Shoulder camera is deliberately far behind the nearby player. Roof-climb
@@ -27,12 +29,19 @@ const assert = require('assert');
     ] },
   };
 
-  const context = { console, queueMicrotask, window: {} };
+  const context = {
+    console,
+    queueMicrotask,
+    window: {},
+    document: { readyState: 'complete', getElementById: () => null, addEventListener() {} },
+    MutationObserver: class { observe() {} },
+    THREE: { Raycaster: class {} },
+  };
   context.window.window = context.window;
   context.window.EntryTunnelWallUnmark = { preparePiece: p => ({ piece: p }) };
   context.window.BuildingDoor = {
     resolveDoorEntrance: () => ({ cells: [{x:0,y:0}], bboxW: 1, bboxD: 1, psCells: [] }),
-    doorWorldFromBuilding: () => ({ col: 9, row: 9 }),
+    doorWorldFromBuilding: () => ({ col: 1, row: 0 }),
   };
   context.window.GridTileAccessors = { getActiveScene: () => scene };
   context.window.HousePieceGen = {
@@ -40,6 +49,7 @@ const assert = require('assert');
   };
   vm.createContext(context);
   vm.runInContext(code, context);
+  vm.runInContext(probeCode, context);
 
   group = context.window.HousePieceGen.buildGroupFromPiece({}, piece, 0, 0, { elevationY: 0, rotationDeg: 0 });
   const meta = group.userData.hobunjiRoofClimbStructure;
@@ -47,6 +57,8 @@ const assert = require('assert');
   assert.strictEqual(meta.source, 'authored-structure-planes');
   assert.strictEqual(meta.walls.length, 1, 'only authored wall plane registered');
   assert.strictEqual(meta.roofs.length, 1, 'only authored roof plane registered');
+  assert.strictEqual(meta.entrance, null, 'entrance adjacency exclusion is disabled at building creation');
+  assert.strictEqual(meta.entranceClimbExclusionDisabled, true);
 
   const original = {
     init(deps) { this._deps = deps; },
@@ -92,10 +104,6 @@ const assert = require('assert');
   assert.strictEqual(system.getClimbTarget(), null, 'camera proximity cannot climb a wall when the player is far away');
   player.y = -48;
   ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0, y: 0, z: 1 } };
-
-  meta.entrance = { x: 1, z: 0.5 };
-  assert.strictEqual(system.getClimbTarget(), null, 'entrance-adjacent wall is not climbable');
-  meta.entrance = { x: 9.5, z: 9.5 };
 
   ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0.9, y: 0, z: 0.1 } };
   assert.strictEqual(system.getClimbTarget(), null, 'glancing look is rejected');
