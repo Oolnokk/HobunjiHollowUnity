@@ -115,6 +115,7 @@
     ['js/combat/ranged-dual-role-anim-style.js?v=20260905a', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 1],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
+    ['js/climb-runtime-deps-capture.js?v=20260911climbdeps1', () => !!window.HobunjiClimbRuntimeDepsCapture],
     ['js/footing-damage-recovery-bridge.js?v=20260911plateaufall1', () => !!window.HobunjiFootingDamageRecovery],
     ['js/gravity-ragdoll-fall-bridge.js?v=20260911gravityfall2', () => !!window.HobunjiGravityRagdollFalls],
     ['js/climb-proximity-prompt.js?v=20260911climbprompt3', () => !!window.HobunjiClimbPrompt],
