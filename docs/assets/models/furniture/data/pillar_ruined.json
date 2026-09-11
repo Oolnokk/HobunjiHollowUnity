@@ -5,10 +5,10 @@
   "notes": "Broken stone pillar with a short surviving shaft and toppled fragments around its base.",
   "tileBase": {"visible":true,"tileSize":1,"footprintW":2,"footprintD":1,"y":0,"gridOpacity":0.55},
   "parts": [
-    {"id":"pillar_ruined_base0","kind":"box","name":"Cracked Wide Plinth","transform":{"x":-0.30,"y":0.055,"z":0,"rx":0,"ry":0,"rz":-1.5,"sx":0.78,"sy":0.11,"sz":0.78},"color":"#625c52","wonkiness":0.024},
-    {"id":"pillar_ruined_base1","kind":"box","name":"Cracked Raised Foot","transform":{"x":-0.30,"y":0.145,"z":0,"rx":0,"ry":0,"rz":1.2,"sx":0.62,"sy":0.07,"sz":0.62},"color":"#7b7466","wonkiness":0.022},
-    {"id":"pillar_ruined_shaft","kind":"legSquare","name":"Broken Pillar Stump","transform":{"x":-0.30,"y":0.58,"z":0,"rx":0,"ry":0,"rz":2.5,"sx":0.44,"sy":0.80,"sz":0.44},"color":"#7b7466","topScaleX":0.83,"topScaleZ":0.92,"bottomScaleX":1.04,"bottomScaleZ":1.04,"topSkewX":0.05,"topSkewZ":-0.03,"wonkiness":0.035},
-    {"id":"pillar_ruined_chunk0","kind":"box","name":"Fallen Capital Chunk","transform":{"x":0.43,"y":0.13,"z":0.04,"rx":8,"ry":16,"rz":71,"sx":0.50,"sy":0.24,"sz":0.48},"color":"#928a78","topScaleX":0.90,"topScaleZ":0.95,"wonkiness":0.028},
-    {"id":"pillar_ruined_chunk1","kind":"box","name":"Small Broken Stone","transform":{"x":0.57,"y":0.08,"z":-0.29,"rx":11,"ry":-18,"rz":22,"sx":0.28,"sy":0.15,"sz":0.24},"color":"#7b7466","topScaleX":0.82,"topScaleZ":0.92,"wonkiness":0.035}
+    {"id":"pillar_ruined_base0","kind":"box","name":"Cracked Wide Plinth","transform":{"x":-0.30,"y":0.055,"z":0,"rx":0,"ry":0,"rz":-1.5,"sx":0.78,"sy":0.11,"sz":0.78},"color":"#625c52","wonkiness":0.024,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_ruined_base1","kind":"box","name":"Cracked Raised Foot","transform":{"x":-0.30,"y":0.145,"z":0,"rx":0,"ry":0,"rz":1.2,"sx":0.62,"sy":0.07,"sz":0.62},"color":"#7b7466","wonkiness":0.022,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_ruined_shaft","kind":"legSquare","name":"Broken Pillar Stump","transform":{"x":-0.30,"y":0.58,"z":0,"rx":0,"ry":0,"rz":2.5,"sx":0.44,"sy":0.80,"sz":0.44},"color":"#7b7466","topScaleX":0.83,"topScaleZ":0.92,"bottomScaleX":1.04,"bottomScaleZ":1.04,"topSkewX":0.05,"topSkewZ":-0.03,"wonkiness":0.035,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_ruined_chunk0","kind":"box","name":"Fallen Capital Chunk","transform":{"x":0.43,"y":0.13,"z":0.04,"rx":8,"ry":16,"rz":71,"sx":0.50,"sy":0.24,"sz":0.48},"color":"#928a78","topScaleX":0.90,"topScaleZ":0.95,"wonkiness":0.028,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pillar_ruined_chunk1","kind":"box","name":"Small Broken Stone","transform":{"x":0.57,"y":0.08,"z":-0.29,"rx":11,"ry":-18,"rz":22,"sx":0.28,"sy":0.15,"sz":0.24},"color":"#7b7466","topScaleX":0.82,"topScaleZ":0.92,"wonkiness":0.035,"materialRole":"stone","materialTexture":"carved_smooth.png"}
   ]
 }

@@ -5,10 +5,10 @@
   "notes": "Compact layered stone pedestal for statues, jars, lamps, trophies, or shrine props.",
   "tileBase": {"visible":true,"tileSize":1,"footprintW":1,"footprintD":1,"y":0,"gridOpacity":0.55},
   "parts": [
-    {"id":"pedestal_base0","kind":"box","name":"Pedestal Plinth","transform":{"x":0,"y":0.05,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.78,"sy":0.10,"sz":0.78},"color":"#625c52","wonkiness":0.008},
-    {"id":"pedestal_base1","kind":"box","name":"Pedestal Step","transform":{"x":0,"y":0.14,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.64,"sy":0.08,"sz":0.64},"color":"#7b7466","topScaleX":0.94,"topScaleZ":0.94,"wonkiness":0.008},
-    {"id":"pedestal_body","kind":"legSquare","name":"Pedestal Body","transform":{"x":0,"y":0.43,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.46,"sy":0.50,"sz":0.46},"color":"#7b7466","topScaleX":0.88,"topScaleZ":0.88,"bottomScaleX":1.04,"bottomScaleZ":1.04,"wonkiness":0.013},
-    {"id":"pedestal_neck","kind":"box","name":"Pedestal Neck","transform":{"x":0,"y":0.71,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.56,"sy":0.08,"sz":0.56},"color":"#928a78","wonkiness":0.008},
-    {"id":"pedestal_top","kind":"box","name":"Display Slab","transform":{"x":0,"y":0.80,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.76,"sy":0.10,"sz":0.76},"color":"#928a78","topScaleX":0.96,"topScaleZ":0.96,"wonkiness":0.008}
+    {"id":"pedestal_base0","kind":"box","name":"Pedestal Plinth","transform":{"x":0,"y":0.05,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.78,"sy":0.10,"sz":0.78},"color":"#625c52","wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pedestal_base1","kind":"box","name":"Pedestal Step","transform":{"x":0,"y":0.14,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.64,"sy":0.08,"sz":0.64},"color":"#7b7466","topScaleX":0.94,"topScaleZ":0.94,"wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pedestal_body","kind":"legSquare","name":"Pedestal Body","transform":{"x":0,"y":0.43,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.46,"sy":0.50,"sz":0.46},"color":"#7b7466","topScaleX":0.88,"topScaleZ":0.88,"bottomScaleX":1.04,"bottomScaleZ":1.04,"wonkiness":0.013,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pedestal_neck","kind":"box","name":"Pedestal Neck","transform":{"x":0,"y":0.71,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.56,"sy":0.08,"sz":0.56},"color":"#928a78","wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"},
+    {"id":"pedestal_top","kind":"box","name":"Display Slab","transform":{"x":0,"y":0.80,"z":0,"rx":0,"ry":0,"rz":0,"sx":0.76,"sy":0.10,"sz":0.76},"color":"#928a78","topScaleX":0.96,"topScaleZ":0.96,"wonkiness":0.008,"materialRole":"stone","materialTexture":"carved_smooth.png"}
   ]
 }
