@@ -4,6 +4,7 @@
 
   const META_KEY = 'hobunjiRoofClimbStructure';
   const ROOF_STATE_KEY = '__hobunjiRoofSurface';
+  const HOOK_MARK = '__hobunjiRoofClimbHook'; // Marks the current live ClimbSystem methods that still carry roof behavior.
   const MAX_PLAYER_WALL_DISTANCE = 1.75; // Used to make standing beside a structural wall sufficient for building climbing.
   const ENTRANCE_CLEARANCE_WORLD = 1.35; // Legacy metadata guard; the companion probe bridge clears entrance exclusions at runtime.
   const ROOF_SAMPLE_OFFSETS = [0.28, 0.5, 0.75, 1.0, 1.25]; // Used to find a stable roof landing point just behind the nearest wall plane.
@@ -360,6 +361,7 @@
   }
 
   function getRoofClimbTarget() {
+    ensureClimbHooks();
     const player = runtimePlayer();
     if (!player) { debugState.lastBlockReason = 'roof runtime player unavailable'; return null; }
     if (player.climbing) { debugState.lastBlockReason = 'player is already climbing'; return null; }
@@ -517,43 +519,91 @@
     return { fell: true, x: nextX, y: nextY, source: 'roof' };
   }
 
-  function installClimbHooks(system) {
-    if (!system || climbHooksInstalled) return false;
-    climbHooksInstalled = true;
-    const originalInit = system.init;
-    const originalGetClimbTarget = system.getClimbTarget;
-    const originalStartClimb = system.startClimb;
-    const originalUpdateClimb = system.updateClimb;
-    const originalUpdateBranchMovement = system.updateBranchMovement;
-    const originalResolveBranchKnockback = system.resolveBranchKnockback;
+  function markHook(fn, role) {
+    if (typeof fn !== 'function') return fn;
+    fn[HOOK_MARK] = role;
+    return fn;
+  }
 
-    system.init = function roofAwareClimbInit(injectedDeps) {
-      climbDeps = injectedDeps;
-      return originalInit?.call(this, injectedDeps);
-    };
-    system.getClimbTarget = function roofAwareGetClimbTarget() {
-      if (isRoofState(runtimePlayer()?.onBranch)) return null;
-      const existing = originalGetClimbTarget?.call(this);
-      return existing || getRoofClimbTarget();
-    };
-    system.startClimb = function roofAwareStartClimb(climb) {
-      if (climb?.type === 'roof') return startRoofClimb(climb);
-      return originalStartClimb?.call(this, climb);
-    };
-    system.updateClimb = function roofAwareUpdateClimb(dt) {
-      const result = originalUpdateClimb?.call(this, dt);
-      finishRoofIfNeeded(runtimePlayer());
-      return result;
-    };
-    system.updateBranchMovement = function roofAwareBranchMovement(dt) {
-      if (updateRoofMovement(dt)) return;
-      return originalUpdateBranchMovement?.call(this, dt);
-    };
-    system.resolveBranchKnockback = function roofAwareBranchKnockback(entity, fromX, fromY, speedPxS) {
-      if (isRoofState(entity?.onBranch)) return resolveRoofKnockback(entity, fromX, fromY, speedPxS);
-      return originalResolveBranchKnockback?.call(this, entity, fromX, fromY, speedPxS);
-    };
-    return true;
+  function roofHooksCurrent(system = window.ClimbSystem) {
+    if (!system) return false;
+    return ['getClimbTarget', 'startClimb', 'updateClimb', 'updateBranchMovement', 'resolveBranchKnockback']
+      .every(name => typeof system[name] === 'function' && !!system[name][HOOK_MARK]);
+  }
+
+  function installClimbHooks(system) {
+    if (!system) return false;
+    let changed = false;
+
+    if (typeof system.init === 'function' && !system.init[HOOK_MARK]) {
+      const originalInit = system.init;
+      system.init = markHook(function roofAwareClimbInit(injectedDeps) {
+        climbDeps = injectedDeps || climbDeps;
+        return originalInit.call(this, injectedDeps);
+      }, 'init');
+      changed = true;
+    }
+
+    if (typeof system.getClimbTarget === 'function' && !system.getClimbTarget[HOOK_MARK]) {
+      const originalGetClimbTarget = system.getClimbTarget;
+      system.getClimbTarget = markHook(function roofAwareGetClimbTarget() {
+        if (isRoofState(runtimePlayer()?.onBranch)) return null;
+        const existing = originalGetClimbTarget.call(this);
+        return existing || getRoofClimbTarget();
+      }, 'getClimbTarget');
+      changed = true;
+    }
+
+    if (typeof system.startClimb === 'function' && !system.startClimb[HOOK_MARK]) {
+      const originalStartClimb = system.startClimb;
+      system.startClimb = markHook(function roofAwareStartClimb(climb) {
+        if (climb?.type === 'roof') return startRoofClimb(climb);
+        return originalStartClimb.call(this, climb);
+      }, 'startClimb');
+      changed = true;
+    }
+
+    if (typeof system.updateClimb === 'function' && !system.updateClimb[HOOK_MARK]) {
+      const originalUpdateClimb = system.updateClimb;
+      system.updateClimb = markHook(function roofAwareUpdateClimb(dt) {
+        const result = originalUpdateClimb.call(this, dt);
+        finishRoofIfNeeded(runtimePlayer());
+        return result;
+      }, 'updateClimb');
+      changed = true;
+    }
+
+    if (typeof system.updateBranchMovement === 'function' && !system.updateBranchMovement[HOOK_MARK]) {
+      const originalUpdateBranchMovement = system.updateBranchMovement;
+      system.updateBranchMovement = markHook(function roofAwareBranchMovement(dt) {
+        if (updateRoofMovement(dt)) return;
+        return originalUpdateBranchMovement.call(this, dt);
+      }, 'updateBranchMovement');
+      changed = true;
+    }
+
+    if (typeof system.resolveBranchKnockback === 'function' && !system.resolveBranchKnockback[HOOK_MARK]) {
+      const originalResolveBranchKnockback = system.resolveBranchKnockback;
+      system.resolveBranchKnockback = markHook(function roofAwareBranchKnockback(entity, fromX, fromY, speedPxS) {
+        if (isRoofState(entity?.onBranch)) return resolveRoofKnockback(entity, fromX, fromY, speedPxS);
+        return originalResolveBranchKnockback.call(this, entity, fromX, fromY, speedPxS);
+      }, 'resolveBranchKnockback');
+      changed = true;
+    }
+
+    climbHooksInstalled = roofHooksCurrent(system);
+    return changed || climbHooksInstalled;
+  }
+
+  function ensureClimbHooks() {
+    const system = window.ClimbSystem;
+    if (!system) {
+      climbHooksInstalled = false;
+      return false;
+    }
+    installClimbHooks(system);
+    climbHooksInstalled = roofHooksCurrent(system);
+    return climbHooksInstalled;
   }
 
   // This file loads before climb-system.js. Intercept that script's one global
@@ -585,7 +635,9 @@
 
   window.HobunjiRoofClimb = Object.freeze({
     installStructureWrapper,
+    ensureClimbHooks,
     getRoofClimbTarget,
+    startRoofClimb,
     roofSurfaceYAt,
     transformedStructureFaces,
     getDebug() {
@@ -593,10 +645,16 @@
       return {
         structureWrapperInstalled,
         climbHooksInstalled,
+        climbHooksCurrent: roofHooksCurrent(),
         climbDepsCaptured: !!climbDeps?.player,
         runtimeDepsSource: runtimeDepsSource(),
         runtimePlayerReady: !!player,
         onRoof: isRoofState(player?.onBranch),
+        liveMethods: {
+          getClimbTarget: window.ClimbSystem?.getClimbTarget?.name || null,
+          startClimb: window.ClimbSystem?.startClimb?.name || null,
+          updateClimb: window.ClimbSystem?.updateClimb?.name || null,
+        },
         ...debugState,
       };
     },
