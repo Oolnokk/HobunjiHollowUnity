@@ -59,7 +59,7 @@
   // existing climb animation before game.js initializes it.
   (function loadRoofClimb() {
     if (typeof document === 'undefined') return;
-    const src = 'js/roof-climb.js?v=20260911roofclimb3'; // Cache-busts player-proximity structural wall/roof climbing behavior.
+    const src = 'js/roof-climb.js?v=20260911roofclimb4'; // Cache-busts resilient player-proximity structural wall/roof climbing behavior.
     if (window.HobunjiRoofClimb || document.querySelector('script[data-hobunji-roof-climb]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-roof-climb="1"><\/script>`);
