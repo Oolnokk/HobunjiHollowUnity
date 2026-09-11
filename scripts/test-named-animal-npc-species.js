@@ -43,6 +43,10 @@ assert.match(namedAnimal, /data-creature-color-text/, 'each animal appearance la
 assert.match(namedAnimal, /maxlength="7"/, 'hex input must be constrained to #RRGGBB length');
 assert.match(namedAnimal, /appearanceTab\.disabled = false/, 'animal NPCs must not disable the Appearance tab');
 assert.match(namedAnimal, /composeCreatureStudioFrame/, 'Character Studio must live-preview the same genotype layers with repo creature art');
+assert.match(namedAnimal, /if \(field\.value === next\) return false/, 'genotype persistence must not emit redundant synthetic input events');
+const appearanceRender = namedAnimal.match(/async function renderStudioCreatureAppearance\(kind\) \{([\s\S]*?)\n  \}\n\n  function refreshStudioDatabaseView/);
+assert.ok(appearanceRender, 'animal Appearance renderer must be discoverable for redraw-loop regression coverage');
+assert.doesNotMatch(appearanceRender[1], /saveStudioCreatureGenotype\(/, 'merely rendering/opening animal Appearance must never persist genotype or trigger Character Studio read/render recursively');
 assert.match(namedAnimal, /__namedAnimalNpcDebug/, 'mobile/dev diagnostics must expose named animal NPC bridge state');
 assert.doesNotMatch(namedAnimal, /banubu\s*:/i, 'general named-animal bridge must not hardcode Banubu');
 assert.doesNotMatch(namedAnimal, /hiki_hiki\s*:/i, 'general named-animal bridge must not hardcode Hiki-hiki');
