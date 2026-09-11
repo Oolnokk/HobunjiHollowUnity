@@ -9,6 +9,7 @@ const context = {
   console,
   document: { querySelector: () => null },
   window: {},
+  queueMicrotask,
 }; // Used to exercise the standalone skill module without the full Three.js game.
 vm.runInNewContext(fs.readFileSync('docs/js/skill-system.js', 'utf8'), context);
 
@@ -18,9 +19,10 @@ context.window.SkillSystem.init({
   getFoodEffectStacks: effect => effect === 'foraging' ? 2 : 0,
   saveSkillProgress: snapshot => { saved = snapshot; },
 });
-context.window.SkillSystem.restore({ skillLevels: { foraging: 5, alchemy: 4, cooking: 7 } });
+context.window.SkillSystem.restore({ skillLevels: { foraging: 5, alchemy: 4, crafting: 7 } });
 assert.equal(context.window.SkillSystem.level('foraging'), 5, 'legacy level-shaped saves migrate to cumulative XP');
-assert.equal(context.window.SkillSystem.level('crafting'), 7, 'the highest old Alchemy/Cooking level migrates to Crafting');
+assert.equal(context.window.SkillSystem.level('cooking'), 7, 'the pre-rename Crafting level migrates to the renamed Cooking skill');
+assert.equal(context.window.SkillSystem.level('alchemy'), 4, 'Alchemy is a distinct skill unaffected by the Crafting->Cooking rename');
 assert.equal(context.window.SkillSystem.level('mining'), 0, 'Mining starts clean instead of inheriting unrelated old progress');
 assert.equal(context.window.SkillSystem.effectiveLevel('foraging'), 7, 'food stacks temporarily raise the effective skill');
 assert(context.window.SkillSystem.bonusYieldChance('foraging') > 0, 'Foraging exposes a yield bonus');
@@ -88,11 +90,12 @@ const farmPanelSource = fs.readFileSync('docs/js/farm-panel.js', 'utf8');
 const dewVatsSource = fs.readFileSync('docs/js/dew-vats.js', 'utf8');
 const squeezerAuthored = JSON.parse(fs.readFileSync('docs/config/furniture-authored/squeezer.json', 'utf8'));
 const alchemySource = fs.readFileSync('docs/js/alchemy-system.js', 'utf8');
+const itemProcessingSource = fs.readFileSync('docs/js/item-processing.js', 'utf8');
 assert.match(gameSource, /hearthFurniture:\s*\(\) => makeCookingInteractable\(\)/, 'authored building hearths open cooking');
 assert.match(gameSource, /o\.key === 'hearth'.*makeCookingInteractable/, 'placed farmhouse hearths open cooking');
 assert.match(gameSource, /derivedHearth[\s\S]{0,600}makeCookingInteractable/, 'derived farmhouse hearths open cooking');
-assert.doesNotMatch(indexSource, /<div class="skill-name">(?:Alchemy|Cooking)<\/div>/, 'the old stub skills are removed from the tab');
-for (const name of ['Foraging', 'Mining', 'Farming', 'Fishing', 'Combat', 'Crafting']) assert(indexSource.includes(`>${name}<`), `${name} appears in the static Skills tab`);
+assert.doesNotMatch(indexSource, /<div class="skill-name">Alchemy<\/div>/, 'Alchemy has no inert static stub row (it is JS-rendered only)');
+for (const name of ['Foraging', 'Mining', 'Farming', 'Fishing', 'Combat', 'Cooking']) assert(indexSource.includes(`>${name}<`), `${name} appears in the static Skills tab placeholder, immediately replaced by SkillSystem.render()`);
 assert.match(cookingSource, /function openAtHearth\(/, 'cooking owns a hearth-only open entry point');
 assert.match(cookingSource, /recipe\?\.inventoryCategories/, 'saved cooked bases recover their reusable recipe categories');
 assert.match(cookingSource, /definition\?\.foodEffects/, 'multi-stage recipes carry their prepared ingredient effects forward');
@@ -102,7 +105,7 @@ assert.match(cookingSource, /registerProvider\('food'/, 'food contributes to the
 assert.match(cookingSource, /craftIngredientSaveChance/, 'Crafting ingredient saves are integrated');
 assert.match(gameSource, /rareFishWeightMultiplier/, 'Fishing rarity weighting is integrated');
 assert.match(indexSource, /js\/food-processing\.js/, 'the decoupled food-processing module loads before game boot');
-assert.match(gameSource, /HobunjiFoodProcessing\?\.getProcessingOutputs/, 'game.js delegates new vat recipes through a narrow adapter');
+assert.match(itemProcessingSource, /HobunjiFoodProcessing\?\.getProcessingOutputs/, 'item-processing.js delegates new vat recipes through a narrow adapter');
 assert.match(gameSource, /HobunjiFoodProcessing\?\.rollTreeNutDrop/, 'game.js delegates tree-nut yield rules through a narrow adapter');
 assert.doesNotMatch(processingSource, /(?:import|require).*game\.js/, 'food processing does not import game.js');
 assert.match(cookingSource, /consumeBestQuality/, 'processors can consume tracked quality without desynchronizing cooking stacks');
@@ -120,7 +123,7 @@ assert.match(authoredRuntimeSource, /authored_furniture_emitter_/, 'runtime emit
 assert.match(gameSource, /kind: 'timed'[\s\S]{0,500}readyAtMs/, 'squeezing persists a real-time job instead of granting its output immediately');
 assert.match(gameSource, /if \(processTimeline\)[\s\S]{0,500}startTimedJob/, 'manual nut, meat, and fish inputs start the authored squeezing timeline');
 assert.match(farmAnimalsSource, /function setVatWorkerPose\(/, 'assigned livestock are rendered at the live vat anchor during a batch');
-assert.match(farmAnimalsSource, /targetMatrix\.clone\(\)\.multiply\(gripMatrix\)\.multiply\(sizeMatrix\)/, 'live vat workers use the editor hierarchy: target × inverse scaled grip × size');
+assert.match(farmAnimalsSource, /targetMatrix\.clone\(\)\.multiply\(staticPose\.gripMatrix\)\.multiply\(staticPose\.sizeMatrix\)/, 'live vat workers use the editor hierarchy: target × inverse scaled grip × size');
 assert.doesNotMatch(farmAnimalsSource, /\(grip\.y \|\| 0\) - animal\.halfHeight/, 'vat attachment no longer invents a half-height offset absent from the furniture editor');
 assert.match(dewVatsSource, /creatureSizeClass\?\.\(kind, genotype\) === 'small'/, 'only Small livestock satisfy the squeezing-vat size predicate');
 assert.match(dewVatsSource, /return !!rec\?\.barnId && vatCanAccept\(rec\.kind, rec\.genotype\)/, 'a vat worker must be housed as well as Small, so stasis animals cannot satisfy the worker gate');

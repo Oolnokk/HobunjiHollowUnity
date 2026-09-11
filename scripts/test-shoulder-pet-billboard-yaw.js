@@ -10,8 +10,8 @@ assert.match(gameSource,
   /function _applyShoulderPetFinalTransform\(c, finalTransform\)[\s\S]{0,1800}group\.quaternion\.copy\(localQuaternion\)/,
   'shoulder-pet full-transform helper applies the face-relative root quaternion');
 assert.match(gameSource,
-  /const planeDelta = billboardWorldYaw - finalGroupRotY;[\s\S]{0,300}frontPlane\.rotation\.y = planeDelta \+ Math\.PI \/ 2;[\s\S]{0,180}backPlane\.rotation\.y = planeDelta - Math\.PI \/ 2;/,
-  'legacy first-frame planes counter-rotate the final attachment yaw');
+  /const setCanonicalPlaneRotation = \(plane, y\) => \{[\s\S]{0,200}plane\.rotation\.set\(0, y, 0\);[\s\S]{0,300}setCanonicalPlaneRotation\(c\.avatarRef\.frontPlane, Math\.PI \/ 2\);[\s\S]{0,120}setCanonicalPlaneRotation\(c\.avatarRef\.backPlane, -Math\.PI \/ 2\);/,
+  'final-transform attachment restores the canonical mirrored plane rotations');
 assert.match(planeSource,
   /const worldYaw = owner\.pngRot \+ faceYaw;[\s\S]{0,800}parentWorld\.invert\(\)\.multiply\(desiredWorld\)/,
   'render-time shoulder-pet planes preserve their explicit camera-relative world yaw');
