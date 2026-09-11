@@ -98,6 +98,7 @@ const assert = require('assert');
   let debug = context.window.HobunjiRoofClimb.getDebug();
   assert(debug.lastWallHit.playerDistance < 1.75, 'accepted wall is close to the player');
   assert.strictEqual(debug.lastWallHit.selectionModel, 'nearest-player-wall');
+  assert.strictEqual(debug.runtimeDepsSource, 'ClimbSystem.init');
 
   // Camera aim no longer gates building climbing. A wildly glancing ray or no
   // ray at all still works while the player is physically beside the wall.
@@ -163,5 +164,79 @@ const assert = require('assert');
   debug = context.window.HobunjiRoofClimb.getDebug();
   assert.strictEqual(debug.structureWrapperInstalled, true);
   assert.strictEqual(debug.climbHooksInstalled, true);
+
+  // Reproduce the live failure from Pixel Probe: the roof wrapper misses the
+  // ClimbSystem.init handoff, but Combat.deps already has the live player/TILE.
+  // Roof targeting must remain functional instead of returning a generic null.
+  let fallbackGroup = null;
+  const fallbackPlayer = {
+    x: 48, y: -48, angle: Math.PI / 2,
+    climbing: false, dodging: false, prone: false, onBranch: null,
+    vx: 0, vy: 0,
+  };
+  const fallbackDeps = {
+    player: fallbackPlayer,
+    TILE: 48,
+    worldSurfaceY: () => 0,
+    getPlayerInteractionRay: () => null,
+    getPlayerAimRay: () => null,
+    getMovementInput: () => ({ x: 0, y: 0 }),
+  };
+  const fallbackContext = {
+    console,
+    queueMicrotask,
+    window: {},
+  };
+  fallbackContext.window.window = fallbackContext.window;
+  fallbackContext.window.Combat = { deps: fallbackDeps };
+  fallbackContext.window.EntryTunnelWallUnmark = { preparePiece: p => ({ piece: p }) };
+  fallbackContext.window.BuildingDoor = { resolveDoorEntrance: () => null, doorWorldFromBuilding: () => null };
+  fallbackContext.window.GridTileAccessors = { getActiveScene: () => ({ traverse(fn) { if (fallbackGroup) fn(fallbackGroup); } }) };
+  fallbackContext.window.HousePieceGen = {
+    buildGroupFromPiece() { return { userData: {}, children: [], traverse(fn) { fn(this); } }; },
+  };
+  vm.createContext(fallbackContext);
+  vm.runInContext(code, fallbackContext);
+  fallbackGroup = fallbackContext.window.HousePieceGen.buildGroupFromPiece({}, piece, 0, 0, { elevationY: 0, rotationDeg: 0 });
+  let fallbackTarget = fallbackContext.window.HobunjiRoofClimb.getRoofClimbTarget();
+  assert(fallbackTarget?.type === 'roof', 'Combat.deps fallback resolves a roof target even when ClimbSystem.init was never captured');
+  let fallbackDebug = fallbackContext.window.HobunjiRoofClimb.getDebug();
+  assert.strictEqual(fallbackDebug.climbDepsCaptured, false, 'test really omits the roof ClimbSystem.init capture');
+  assert.strictEqual(fallbackDebug.runtimeDepsSource, 'Combat.deps fallback');
+  assert.strictEqual(fallbackDebug.runtimePlayerReady, true);
+
+  // Reproduce an entry-tunnel-carved wall fragment like the user's live
+  // `222__tunnel_0_0_after`. A straight inward line can pass through the
+  // tunnel gap, so fall back to the nearest safe interior point on an authored
+  // roof triangle rather than declaring the whole building unclimbable.
+  fallbackPlayer.x = 0.1 * 48;
+  fallbackPlayer.y = -0.2 * 48;
+  fallbackGroup = {
+    userData: {
+      hobunjiRoofClimbStructure: {
+        entrance: null,
+        walls: [{
+          id: '222__tunnel_0_0_after',
+          vertices: [
+            { x: 0, y: 0, z: 0 }, { x: 0, y: 1.4, z: 0 },
+            { x: 0.2, y: 1.4, z: 0 }, { x: 0.2, y: 0, z: 0 },
+          ],
+        }],
+        roofs: [{
+          id: '227',
+          vertices: [
+            { x: 0.8, y: 1.4, z: 0.3 },
+            { x: 2.0, y: 2.4, z: 1.1 },
+            { x: 0.8, y: 1.4, z: 1.6 },
+          ],
+        }],
+      },
+    },
+  };
+  fallbackTarget = fallbackContext.window.HobunjiRoofClimb.getRoofClimbTarget();
+  assert(fallbackTarget?.type === 'roof', 'carved entry-tunnel wall fragment still resolves a nearby authored roof landing');
+  assert.strictEqual(fallbackTarget.wallFaceId, '222__tunnel_0_0_after');
+  assert.strictEqual(fallbackTarget.landingSource, 'roof-interior-fallback', 'tunnel-gap case uses the safe roof-interior fallback');
+
   console.log('roof climb tests passed');
 })();
