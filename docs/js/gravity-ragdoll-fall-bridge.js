@@ -80,8 +80,9 @@
     state._gravityElapsedS = Math.min(state._gravityDurationS, state._gravityElapsedS + step);
     const t = clamp(state._gravityElapsedS / state._gravityDurationS, 0, 1); // Used only to traverse the pre-authored horizontal start/end path.
 
-    // No horizontal physics: the player follows the known safe landing path at
-    // constant scripted progress. No momentum, friction, bounce, or collision response.
+    // Horizontal displacement is authored/scripted, not physical: the player
+    // traverses start -> known safe landing at constant progress. No momentum,
+    // friction, bounce, angular inertia, or dynamic collision response exists.
     player.x = lerp(state.startX, state.endX, t);
     player.y = lerp(state.startY, state.endY, t);
 
