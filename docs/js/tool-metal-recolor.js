@@ -219,10 +219,154 @@
     return mask;
   }
 
+  // ── Triangle-tessellation repeat geometry ──────────────────────────────
+  // Ported from the Hobunji Weaving Pattern Editor prototype
+  // (fitGuaranteedTriangle/buildTranslationTessellation): fits the
+  // minimum-area triangle that encloses the motif's opaque envelope (plus a
+  // small padding), then pairs it with its own 180°-rotation around the
+  // midpoint of its longest edge. That triangle + partner always forms a
+  // parallelogram — any triangle tiles the plane this way — so translating
+  // it by integer combinations of the two edge vectors from the shared
+  // edge's endpoints to the apex (basisU/basisV) tiles seamlessly with no
+  // gaps and no need for a separate "spacing" between copies.
+  function findOpaqueBounds(mask, w, h) {
+    let x0 = w, y0 = h, x1 = -1, y1 = -1, count = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!mask[y * w + x]) continue;
+        count++;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    if (!count) return null;
+    return { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1, area: count };
+  }
+
+  function convexHull(points) {
+    if (points.length <= 1) return points.map(p => ({ ...p }));
+    const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const lower = [];
+    for (const p of pts) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    lower.pop(); upper.pop();
+    return lower.concat(upper);
+  }
+
+  // Hull of the opaque raster's own envelope (each row's filled span as
+  // pixel-edge corners, not pixel centers) so the fitted triangle encloses
+  // whole opaque pixels, not just their centers.
+  function opaqueEnvelopeHull(mask, w, h, bbox) {
+    const pts = [];
+    for (let y = bbox.y0; y <= bbox.y1; y++) {
+      let left = Infinity, right = -Infinity;
+      for (let x = bbox.x0; x <= bbox.x1; x++) {
+        if (!mask[y * w + x]) continue;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+      if (!Number.isFinite(left)) continue;
+      const ly = y - bbox.y0, lx = left - bbox.x0, rx = right - bbox.x0 + 1;
+      pts.push({ x: lx, y: ly }, { x: rx, y: ly }, { x: lx, y: ly + 1 }, { x: rx, y: ly + 1 });
+    }
+    return convexHull(pts);
+  }
+
+  function vecDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function lineIntersection(n1, c1, n2, c2) {
+    const det = n1.x * n2.y - n1.y * n2.x;
+    if (Math.abs(det) < 1e-8) return null;
+    return { x: (c1 * n2.y - n1.y * c2) / det, y: (n1.x * c2 - c1 * n2.x) / det };
+  }
+  function polygonArea(points) {
+    let a = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i], q = points[(i + 1) % points.length];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return Math.abs(a) * 0.5;
+  }
+  function rotate180(p, m) { return { x: 2 * m.x - p.x, y: 2 * m.y - p.y }; }
+
+  function fitGuaranteedTriangle(mask, w, h, padding) {
+    const bbox = findOpaqueBounds(mask, w, h);
+    if (!bbox) return null;
+    const hull = opaqueEnvelopeHull(mask, w, h, bbox);
+    if (hull.length < 3) {
+      const bw = Math.max(1, bbox.w), bh = Math.max(1, bbox.h);
+      hull.push({ x: bw, y: 0 }, { x: 0, y: bh });
+    }
+    const pad = Math.max(0, Number(padding) || 0);
+    const samples = 48, twopi = Math.PI * 2, normals = [];
+    for (let i = 0; i < samples; i++) {
+      const a = twopi * i / samples;
+      const n = { x: Math.cos(a), y: Math.sin(a) };
+      let support = -Infinity;
+      for (const p of hull) { const v = n.x * p.x + n.y * p.y; if (v > support) support = v; }
+      normals.push({ a, n, c: support + pad });
+    }
+    // Dense (48-angle) search for the minimum-area triangle whose three
+    // support lines all enclose the hull — cheap enough to run per render
+    // (O(samples^3) candidate triples, ~18k, each an O(1) check).
+    let best = null;
+    for (let i = 0; i < samples - 2; i++) {
+      for (let j = i + 1; j < samples - 1; j++) {
+        for (let k = j + 1; k < samples; k++) {
+          const gaps = [normals[j].a - normals[i].a, normals[k].a - normals[j].a, normals[i].a + twopi - normals[k].a];
+          if (Math.max(gaps[0], gaps[1], gaps[2]) >= Math.PI - 1e-6) continue;
+          const a = lineIntersection(normals[i].n, normals[i].c, normals[j].n, normals[j].c);
+          const b = lineIntersection(normals[j].n, normals[j].c, normals[k].n, normals[k].c);
+          const c = lineIntersection(normals[k].n, normals[k].c, normals[i].n, normals[i].c);
+          if (!a || !b || !c) continue;
+          const verts = [a, b, c];
+          const inside = verts.every(v => [normals[i], normals[j], normals[k]].every(s => s.n.x * v.x + s.n.y * v.y <= s.c + 1e-5));
+          if (!inside) continue;
+          const area = polygonArea(verts);
+          if (!Number.isFinite(area) || area <= 1e-6) continue;
+          if (!best || area < best.area) best = { verts, area };
+        }
+      }
+    }
+    if (!best) {
+      const bw = bbox.w + pad * 2, bh = bbox.h + pad * 2;
+      best = { verts: [{ x: 0, y: 0 }, { x: bw * 2, y: 0 }, { x: 0, y: bh * 2 }], area: bw * bh * 2 };
+    }
+    const verts = best.verts;
+    // The longest edge becomes the shared edge with the 180° partner —
+    // generally gives the most readable repeat.
+    const edges = [[0, 1, 2], [1, 2, 0], [2, 0, 1]]
+      .map(([ai, bi, ci]) => ({ ai, bi, ci, d: vecDist(verts[ai], verts[bi]) }))
+      .sort((x, y) => y.d - x.d)[0];
+    let A = verts[edges.ai], B = verts[edges.bi], C = verts[edges.ci];
+    const minX = Math.min(A.x, B.x, C.x, 0), minY = Math.min(A.y, B.y, C.y, 0);
+    const shift = { x: -minX + 1, y: -minY + 1 };
+    A = { x: A.x + shift.x, y: A.y + shift.y };
+    B = { x: B.x + shift.x, y: B.y + shift.y };
+    C = { x: C.x + shift.x, y: C.y + shift.y };
+    const midpoint = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+    const partnerC = rotate180(C, midpoint);
+    const basisU = { x: A.x - C.x, y: A.y - C.y };
+    const basisV = { x: B.x - C.x, y: B.y - C.y };
+    const motifPlacement = { x: shift.x, y: shift.y, w: bbox.w, h: bbox.h };
+    return { bbox, A, B, C, partnerC, midpoint, basisU, basisV, motifPlacement };
+  }
+
   // Renders a caller-authored removal pattern (see pattern-authoring.js) into
   // a same-size binary mask: 1 where the pattern's motif paints, i.e. where
   // verdigris should be stripped back to bare metal. Purely geometric — it
   // knows nothing about metal/verdigris, just stamps a black motif image
+  // (tiled via the triangle-tessellation lattice above, when enabled)
   // across a transparent raster per the placement fields the editor wrote.
   function buildAuthoredClearedMask(width, height, patternDef, motifImg) {
     const canvas = document.createElement('canvas');
@@ -231,41 +375,97 @@
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
-    const scale = Math.max(0.05, Number(patternDef.scale) || 1);
-    const mw = Math.max(1, (motifImg.naturalWidth || motifImg.width || 1) * scale);
-    const mh = Math.max(1, (motifImg.naturalHeight || motifImg.height || 1) * scale);
-    const spacing = Math.max(0, Number(patternDef.spacing) || 0);
-    const stepX = mw + spacing;
-    const stepY = mh + spacing;
+    // motifScale sizes the motif itself (baked into the "prepared" motif
+    // raster below, along with its own rotation); patternScale (applied via
+    // ctx.scale further down) zooms the whole tiled field afterward — same
+    // distinction as motifRotationDeg vs patternRotationDeg. `patternDef.scale`
+    // is a fallback for patterns saved before motifScale/patternScale
+    // existed as separate fields.
+    const motifScale = Math.max(0.05, Number(patternDef.motifScale ?? patternDef.scale) || 1);
+    const fieldScale = Math.max(0.05, Number(patternDef.patternScale) || 1);
     const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
     const fieldRad = ((Number(patternDef.patternRotationDeg) || 0) * Math.PI) / 180;
 
-    function stampAt(gx, gy, flip) {
-      ctx.save();
-      ctx.translate(gx, gy);
-      ctx.rotate(motifRad + (flip ? Math.PI : 0));
-      ctx.drawImage(motifImg, -mw / 2, -mh / 2, mw, mh);
-      ctx.restore();
-    }
+    // Prepare the motif once at its final scaled+rotated appearance (a
+    // square canvas sized to fit any rotation without clipping), so the
+    // triangle fit and lattice stamping below never reason about scale/
+    // rotation separately from the motif's own pixels.
+    const naturalW = motifImg.naturalWidth || motifImg.width || 1;
+    const naturalH = motifImg.naturalHeight || motifImg.height || 1;
+    const mw = Math.max(1, naturalW * motifScale);
+    const mh = Math.max(1, naturalH * motifScale);
+    const prepSize = Math.max(2, Math.ceil(Math.hypot(mw, mh)) + 2);
+    const prep = document.createElement('canvas');
+    prep.width = prepSize;
+    prep.height = prepSize;
+    const prepCtx = prep.getContext('2d');
+    prepCtx.imageSmoothingEnabled = false;
+    prepCtx.translate(prepSize / 2, prepSize / 2);
+    prepCtx.rotate(motifRad);
+    prepCtx.drawImage(motifImg, -mw / 2, -mh / 2, mw, mh);
 
     ctx.save();
     ctx.translate(width / 2 + (Number(patternDef.translateX) || 0), height / 2 + (Number(patternDef.translateY) || 0));
     ctx.rotate(fieldRad);
+    ctx.scale(fieldScale, fieldScale);
+
     if (patternDef.tiling) {
-      // Cover a diagonal-sized field so the whole-pattern rotation never
-      // leaves an unstamped corner uncovered once it's rotated back over
-      // the sprite's actual (axis-aligned) bounds.
-      const diag = Math.hypot(width, height);
-      const cols = Math.ceil(diag / stepX) + 2;
-      const rows = Math.ceil(diag / stepY) + 2;
-      for (let ry = -rows; ry <= rows; ry++) {
-        for (let rx = -cols; rx <= cols; rx++) {
-          const flip = !!patternDef.alternate && (((rx + ry) % 2 + 2) % 2 !== 0);
-          stampAt(rx * stepX, ry * stepY, flip);
+      const prepData = prepCtx.getImageData(0, 0, prepSize, prepSize).data;
+      const prepMask = new Uint8Array(prepSize * prepSize);
+      for (let p = 0, i = 0; i < prepData.length; i += 4, p++) if (prepData[i + 3] > 16) prepMask[p] = 1;
+      const padding = Math.max(0, Number(patternDef.spacing) ?? 0.5);
+      const fit = fitGuaranteedTriangle(prepMask, prepSize, prepSize, padding);
+      if (fit) {
+        // motifPlacement/bbox are both in the fit's own (shifted-positive)
+        // coordinate system derived from `prep` — this offset draws the
+        // whole prepared canvas so its own opaque bbox lands exactly where
+        // the fit says the (conceptually cropped) motif belongs. Drawing
+        // the whole canvas instead of a tight crop is harmless: the margin
+        // around the bbox is transparent.
+        const drawX = fit.motifPlacement.x - fit.bbox.x0;
+        const drawY = fit.motifPlacement.y - fit.bbox.y0;
+
+        function stampCell(ox, oy) {
+          ctx.save();
+          ctx.translate(ox, oy);
+          ctx.drawImage(prep, drawX, drawY);
+          ctx.restore();
+          ctx.save();
+          ctx.translate(ox, oy);
+          ctx.translate(fit.midpoint.x, fit.midpoint.y);
+          ctx.rotate(Math.PI);
+          ctx.translate(-fit.midpoint.x, -fit.midpoint.y);
+          ctx.drawImage(prep, drawX, drawY);
+          ctx.restore();
+        }
+
+        // How far the lattice needs to extend (in basisU/basisV step
+        // counts) to cover the whole canvas — inverting the (generally
+        // skewed, non-axis-aligned) basis matrix rather than assuming a
+        // square grid, since the fitted triangle's edges can point in any
+        // direction.
+        const reach = Math.hypot(width, height) / fieldScale / 2 + Math.max(mw, mh);
+        const det = fit.basisU.x * fit.basisV.y - fit.basisU.y * fit.basisV.x;
+        let maxI = 8, maxJ = 8;
+        if (Math.abs(det) > 1e-6) {
+          const invA = fit.basisV.y / det, invB = -fit.basisV.x / det;
+          const invC = -fit.basisU.y / det, invD = fit.basisU.x / det;
+          maxI = 0; maxJ = 0;
+          for (const [cx, cy] of [[reach, reach], [reach, -reach], [-reach, reach], [-reach, -reach]]) {
+            maxI = Math.max(maxI, Math.abs(invA * cx + invB * cy));
+            maxJ = Math.max(maxJ, Math.abs(invC * cx + invD * cy));
+          }
+          maxI = Math.min(300, Math.ceil(maxI) + 2);
+          maxJ = Math.min(300, Math.ceil(maxJ) + 2);
+        }
+        for (let j = -maxJ; j <= maxJ; j++) {
+          for (let i = -maxI; i <= maxI; i++) {
+            stampCell(i * fit.basisU.x + j * fit.basisV.x, i * fit.basisU.y + j * fit.basisV.y);
+          }
         }
       }
     } else {
-      stampAt(0, 0, false);
+      ctx.drawImage(prep, -prepSize / 2, -prepSize / 2);
     }
     ctx.restore();
 
@@ -401,9 +601,17 @@
       // oxidized (this only ever runs on an already mastery-5/fully-grown
       // tool — see toolVerdigrisPatternEligible in game.js).
       const clearedMask = buildAuthoredClearedMask(width, height, authoredPattern, motifImg);
+      // invert swaps which side of the motif keeps verdigris: normally the
+      // motif itself is the cleared shape and everything else stays
+      // oxidized; inverted, the motif shape stays oxidized and everything
+      // else clears instead.
+      const invert = !!authoredPattern.invert;
       oxidationMask = new Uint8Array(metalMask.length);
-      for (let p = 0; p < metalMask.length; p++) oxidationMask[p] = metalMask[p] && !clearedMask[p] ? 1 : 0;
-      debugLog(opts, 'authored pattern mask applied', { clearedPixels: clearedMask.reduce((a, v) => a + v, 0) });
+      for (let p = 0; p < metalMask.length; p++) {
+        const cleared = invert ? !clearedMask[p] : !!clearedMask[p];
+        oxidationMask[p] = metalMask[p] && !cleared ? 1 : 0;
+      }
+      debugLog(opts, 'authored pattern mask applied', { clearedPixels: clearedMask.reduce((a, v) => a + v, 0), invert });
     } else {
       oxidationMask = buildOxidationMask(metalMask, width, height, clamp01(opts.oxidationAmount), opts);
     }

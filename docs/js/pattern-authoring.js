@@ -14,14 +14,20 @@
   const SKETCH_SIZE = 192; // motif working resolution, px
 
   const PATTERN_DEFAULTS = Object.freeze({
-    scale: 0.5,
+    motifScale: 0.5, // size of each individual stamped motif copy
+    patternScale: 1, // zooms the whole tiled field (triangle lattice + stamp size together), distinct from motifScale
     motifRotationDeg: 0,
     patternRotationDeg: 0, // whole-pattern (tiled field) rotation, distinct from motifRotationDeg
     translateX: 0,
     translateY: 0,
-    spacing: 6,
+    // Repeat uses a guaranteed-tight triangle fit around the motif (see
+    // tool-metal-recolor.js's fitGuaranteedTriangle) — this is just the
+    // small clearance padding around that triangle, not a gap between
+    // copies the way a grid's spacing would be; neighboring triangle edges
+    // themselves always meet exactly, alternating 180° automatically.
+    spacing: 0.5,
     tiling: true,
-    alternate: false,
+    invert: false, // swap which side of the motif stays vs. clears (see tool-metal-recolor.js)
   });
 
   let stylesInjected = false;
@@ -92,14 +98,16 @@
             </div>
             <div class="pa-card">
               <h3>Placement</h3>
-              <div class="pa-field"><label><span>Scale</span><span class="pa-val" data-for="scale"></span></label><input type="range" class="pa-in" data-field="scale" min="0.1" max="3" step="0.01" value="${cfg.scale}"></div>
+              <div class="pa-field"><label><span>Motif scale</span><span class="pa-val" data-for="motifScale"></span></label><input type="range" class="pa-in" data-field="motifScale" min="0.1" max="3" step="0.01" value="${cfg.motifScale}"></div>
+              <div class="pa-field"><label><span>Pattern scale</span><span class="pa-val" data-for="patternScale"></span></label><input type="range" class="pa-in" data-field="patternScale" min="0.1" max="3" step="0.01" value="${cfg.patternScale}"></div>
               <div class="pa-field"><label><span>Motif rotation</span><span class="pa-val" data-for="motifRotationDeg"></span></label><input type="range" class="pa-in" data-field="motifRotationDeg" min="-180" max="180" step="1" value="${cfg.motifRotationDeg}"></div>
               <div class="pa-field"><label><span>Whole-pattern rotation</span><span class="pa-val" data-for="patternRotationDeg"></span></label><input type="range" class="pa-in" data-field="patternRotationDeg" min="-180" max="180" step="1" value="${cfg.patternRotationDeg}"></div>
               <div class="pa-field"><label><span>Translate X</span><span class="pa-val" data-for="translateX"></span></label><input type="range" class="pa-in" data-field="translateX" min="-150" max="150" step="1" value="${cfg.translateX}"></div>
               <div class="pa-field"><label><span>Translate Y</span><span class="pa-val" data-for="translateY"></span></label><input type="range" class="pa-in" data-field="translateY" min="-150" max="150" step="1" value="${cfg.translateY}"></div>
-              <div class="pa-field"><label><span>Repeat spacing</span><span class="pa-val" data-for="spacing"></span></label><input type="range" class="pa-in" data-field="spacing" min="0" max="40" step="1" value="${cfg.spacing}"></div>
+              <div class="pa-field"><label><span>Triangle padding</span><span class="pa-val" data-for="spacing"></span></label><input type="range" class="pa-in" data-field="spacing" min="0" max="8" step="0.25" value="${cfg.spacing}"></div>
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="tiling" ${cfg.tiling ? 'checked' : ''}><label>Repeat (tile the motif)</label></div>
-              <div class="pa-check"><input type="checkbox" class="pa-in" data-field="alternate" ${cfg.alternate ? 'checked' : ''}><label>Alternate copies 180°</label></div>
+              <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
+              <p class="pa-hint">Repeat geometry: triangle, alternating 180° — a tight triangle is fit around your motif and tiled edge-to-edge, so neighboring copies always meet with no gaps.</p>
               <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
             </div>
           </div>
@@ -130,8 +138,8 @@
     function updateValLabels() {
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
-        if (field === 'scale') el.textContent = `${Number(cfg.scale).toFixed(2)}×`;
-        else if (field === 'spacing') el.textContent = `${cfg.spacing}px`;
+        if (field === 'motifScale' || field === 'patternScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
+        else if (field === 'spacing') el.textContent = `${Number(cfg.spacing).toFixed(2)}px`;
         else if (field === 'translateX' || field === 'translateY') el.textContent = `${cfg[field]}px`;
         else el.textContent = `${cfg[field]}°`;
       });
@@ -149,14 +157,15 @@
     function currentPatternData() {
       return {
         motifDataUrl: hasMotifInk() ? sketchCanvas.toDataURL('image/png') : null,
-        scale: Number(cfg.scale),
+        motifScale: Number(cfg.motifScale),
+        patternScale: Number(cfg.patternScale),
         motifRotationDeg: Number(cfg.motifRotationDeg),
         patternRotationDeg: Number(cfg.patternRotationDeg),
         translateX: Number(cfg.translateX),
         translateY: Number(cfg.translateY),
         spacing: Number(cfg.spacing),
         tiling: !!cfg.tiling,
-        alternate: !!cfg.alternate,
+        invert: !!cfg.invert,
       };
     }
 
