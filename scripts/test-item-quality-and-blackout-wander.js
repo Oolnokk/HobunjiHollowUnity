@@ -150,7 +150,92 @@ function makeSeededRandom(seed) {
   const avg = list => list.reduce((sum, value) => sum + value, 0) / list.length;
   assert.ok(avg(perkBoostedQuality) >= avg(perkFreeQuality), 'Selective Harvest never lowers Farming\'s existing automatic quality bonus');
 
+  // Farmhand adds to Farming's existing automatic dig/plant/harvest speed
+  // curve rather than replacing it (same "never nerf an existing save"
+  // principle as Selective Harvest above).
+  PerkSystem.restore({});
+  const speedBefore = SkillSystem.actionSpeedMultiplier('farming');
+  PerkSystem.restore({ perkRanks: { farming: { farmhand: 5 } } });
+  const speedAfter = SkillSystem.actionSpeedMultiplier('farming');
+  assert.ok(speedAfter > speedBefore, 'Farmhand increases Farming action speed on top of the existing automatic curve');
+
+  // Every farming perk actually exists in a reachable tier: total capacity
+  // comfortably clears both tier thresholds at max Farming level.
+  const farmingTree = PerkSystem.TREES.farming;
+  const totalRanks = farmingTree.reduce((sum, perk) => sum + perk.maxRank, 0);
+  assert.ok(maxPoints < totalRanks, 'the farming tree is intentionally not fully clearable at max level, matching the other trees\' 50% pacing target');
+  for (const id of ['selectiveHarvest', 'bountifulHarvest', 'husbandry', 'farmhand', 'artisan', 'carefulBatches', 'efficientProcessing', 'workingAnimals', 'cellarmaster', 'preserver']) {
+    assert.ok(farmingTree.some(perk => perk.id === id), `the farming tree defines the ${id} perk`);
+  }
+
+  // Mobile-visible diagnostics: the most recent processing-quality roll is
+  // auditable without desktop developer tools (see CookingSystem.renderDebug).
+  const rolled = SkillSystem.rollProcessingQuality(3, 'aging');
+  const diag = SkillSystem.processingDiagnosticsText();
+  assert.match(diag, /PROCESSING/);
+  assert.match(diag, new RegExp(`Output: ${rolled}★`));
+
   console.log('skill-system.js / perk-system.js processing-quality checks passed.');
+}
+
+// ── dew-vats.js: Working Animals draws on the assigned worker's hearts ──
+{
+  const src = read('docs/js/dew-vats.js');
+  const windowStub = { CreatureGenetics: { creatureSizeClass: () => 'small' }, PerkSystem: { rank: () => 0 } };
+  const ctx = { window: windowStub, document: { createElement() { return {}; } }, performance: { now: () => 0 }, console };
+  vm.createContext(ctx);
+  vm.runInContext(src, ctx);
+  const DewVats = ctx.window.DewVats;
+
+  const livestock = [{ id: 'l1', assignedVatId: 'vat1', barnId: 'barn1', kind: 'testSmall', genotype: {}, heartLevel: 5 }];
+  const startTimedJobCalls = [];
+  const vat = {
+    id: 'vat1', furnitureKey: 'squeezingVat', getJob: () => null,
+    startTimedJob(options) { startTimedJobCalls.push(options); return { ok: true, started: true, durationS: 5 }; },
+  };
+  const processingFurnitureObjects = new Set([vat]);
+
+  DewVats.init({
+    COLS: 10, ROWS: 10, TileType: {},
+    ITEM_DEFS: {}, inventory: {}, processingFurnitureObjects,
+    PROCESSING_FURNITURE_DEFS: { squeezingVat: { method: 'squeezing' } },
+    PROCESSING_SFX_KEY: {},
+    getGrid: () => [], rollItemStars: () => 3, starRatingText: () => '',
+    recordItemQuality() {}, awardFarmingXp() {},
+    getScene: () => null, getWorldObjectAt: () => null, isHouseFootprint: () => false,
+    tileSurfaceY: () => 0, creaturePlaneGroundOffset: () => 0, nearestAngleAmong: () => 0,
+    cameraRelativePerps: () => ({}), perpClamp: v => v, angleDiff: () => 0,
+    dewItemKey: color => color + 'Dew', ensureProcessedItemDef() {}, getProcessingOutputs: () => [{ key: 'testMilk' }],
+    hasFarmPermission: () => true, loadWorldLivestock: () => livestock, saveWorldLivestock() {},
+    saveFarmLayout() {}, rnd: Math.random,
+  });
+
+  const withoutPerk = DewVats.autoSqueezeAtVat('vat1', 'blue');
+  assert.equal(withoutPerk, 'started', 'the vat starts a timed job when a valid Small worker is assigned');
+  assert.equal(startTimedJobCalls[0].inputStars, 3, 'without Working Animals, an assigned worker behaves like an anonymous machine (no heart influence)');
+
+  windowStub.PerkSystem = { rank: (skill, id) => (skill === 'farming' && id === 'workingAnimals') ? 3 : 0 };
+  DewVats.autoSqueezeAtVat('vat1', 'blue');
+  assert.ok(startTimedJobCalls[1].inputStars > 3, "Working Animals R3 lets a high-heart worker's own quality push the vat's output above the anonymous-machine baseline");
+
+  console.log('dew-vats.js Working Animals wiring checks passed.');
+}
+
+// ── Static wiring checks for pieces that live inside game.js/farm-animals.js
+// (too large/DOM-coupled to execute directly in this harness — matching the
+// existing test suite's own convention for those files) ─────────────────
+{
+  const game = read('docs/game.js');
+  const farmAnimals = read('docs/js/farm-animals.js');
+
+  assert.match(farmAnimals, /husbandryRank[\s\S]{0,200}heartStars/, 'Husbandry amplifies the animal-heart quality bonus in collectResource');
+  assert.match(game, /window\.FarmAnimals\?\.init\(\{[\s\S]{0,900}rollItemStars: window\.LootRolling\.rollItemStars,[\s\S]{0,200}awardFarmingXp:/, 'FarmAnimals.init now receives the quality/XP deps collectResource needs (previously missing, so they silently no-opped)');
+  assert.match(game, /efficientProcessingRank[\s\S]{0,300}bonusUnit/, 'Efficient Processing can add a bonus processed unit without consuming another ingredient');
+  assert.match(game, /function qualityDisplayForItem/, 'the inventory detail panel can render tracked quality');
+  assert.match(game, /Better-made drink tends to produce rather more adventurous blackouts/, 'alcohol flavor text hints at the blackout mechanic without ever exposing its numbers');
+  assert.doesNotMatch(game, /qualityDisplayForItem[\s\S]{0,400}(hop|zone|wanderScore|requestedHops)/i, 'the quality UI never leaks blackout distance mechanics');
+
+  console.log('game.js / farm-animals.js static wiring checks passed.');
 }
 
 // ── alcohol-gameplay-bridge.js: bottle quality survives save/load ───────

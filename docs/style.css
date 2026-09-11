@@ -2192,6 +2192,8 @@
     .ii-icon   { font-size: clamp(24px, calc(0.86 * var(--row)), 40px); }
     .ii-name   { font-size: var(--inv-font-sm); font-weight: bold; color: var(--text); line-height: 1.25; max-height: calc(2.8 * var(--inv-row)); overflow: hidden; }
     .ii-price  { font-size: var(--inv-font-xs); color: #f0d040; min-height: calc(1 * var(--inv-row)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .ii-quality:empty { display: none; }
+    .ii-quality { font-size: var(--inv-font-xs); color: #cfe8b8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .ii-tags   { display: flex; flex-wrap: wrap; gap: calc(0.65 * var(--inv-gap)); min-height: calc(1.1 * var(--inv-row)); max-height: calc(3.3 * var(--inv-row)); overflow: hidden; }
     .ii-tag    { font-size: var(--inv-font-xs); padding: 0 calc(0.09 * var(--col)); border-radius: calc(0.55 * var(--inv-row)); border: 1px solid var(--border); color: var(--muted); line-height: calc(0.95 * var(--inv-row)); }
     .ii-desc   { font-size: var(--inv-font-xs); color: var(--muted); line-height: 1.45; flex: 1 1 auto; min-height: 0; overflow-y: auto; }

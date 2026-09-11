@@ -910,7 +910,10 @@
     // product quality up on top of whatever Farming rolls — every full
     // heart above 2.5 (the "content" midpoint) is one extra guaranteed
     // star, every full heart below it is one fewer, clamped to 1-5.
-    const heartStars = Math.round((hearts - 2.5) / (HEART_MAX / 2));
+    // Husbandry (Farming perk) makes that heart swing count for more
+    // without replacing it — hearts stay relevant at every rank.
+    const husbandryRank = window.PerkSystem?.rank('farming', 'husbandry') || 0; // 0-5
+    const heartStars = Math.round((hearts - 2.5) / (HEART_MAX / 2) * (1 + husbandryRank * 0.15));
     const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars));
     deps.recordItemQuality?.(resDef.itemKey, stars, 1);
     deps.awardFarmingXp?.();

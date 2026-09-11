@@ -450,7 +450,8 @@
     if (!output) return;
     const tracked = Object.values(qualityBuckets).reduce((sum, bucket) => sum + Object.values(bucket).reduce((inner, count) => inner + (Number(count) || 0), 0), 0); // Used for mobile-visible state verification.
     const processingDiagnostics = window.HobunjiFoodProcessing?.diagnosticsText?.() || 'Processing module: unavailable'; // Used to expose vat/source wiring on mobile without developer tools.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}`;
+    const lastProcessing = window.SkillSystem?.processingDiagnosticsText?.(); // Used to make the most recent processing-quality roll auditable on mobile — see SkillSystem.rollProcessingQuality.
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}`;
   }
 
   function render() {

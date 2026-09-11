@@ -2583,10 +2583,17 @@
         // being rerolled from scratch — see the processing-quality-resolution
         // design in SkillSystem.rollProcessingQuality.
         const outputStars = window.SkillSystem?.rollProcessingQuality?.(inputStars, methodClass) ?? inputStars;
+        // Efficient Processing (Farming perk): a modest chance for one extra
+        // unit of each output from the same batch without consuming another
+        // ingredient — capped well below Bountiful Harvest's rate since
+        // processed goods are already economically amplified by quality.
+        const efficientProcessingRank = window.PerkSystem?.rank('farming', 'efficientProcessing') || 0;
+        const bonusChance = Math.min(0.15, efficientProcessingRank * 0.03);
+        const bonusUnit = bonusChance > 0 && (window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0;
         outputs.forEach(output => {
           window.ItemProcessing.ensureProcessedItemDef(output);
           const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
-          inventory[output.key] = Math.min(99, previousCount + 1);
+          inventory[output.key] = Math.min(99, previousCount + 1 + bonusUnit);
           window.CookingSystem?.recordItemQuality?.(output.key, outputStars, inventory[output.key] - previousCount);
         });
         return outputStars;
@@ -14340,6 +14347,50 @@
         window.EquipmentPanel.buildPackClothingSection();
       }
 
+      // Only items that can actually carry tracked quality query
+      // CookingSystem/the alcohol bridge — querying an untracked item (wood,
+      // seeds, gold, tools) would lazily fabricate a default-3-star bucket
+      // for it via reconcileQuality's migration fallback, which is meant
+      // for real quality-bearing stacks, not a passive detail-panel view.
+      function isQualityTrackedItem(def) {
+        if (!def) return false;
+        if (def.cat === 'crop' || def.cat === 'processed' || def.isCookedFood) return true;
+        if (def.cookingDefaultStars != null || def.cookingCategories?.length) return true;
+        if (window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)) return true;
+        const tags = (def.tags || []).map(t => String(t).toLowerCase());
+        return tags.includes('meat') || tags.includes('fish');
+      }
+
+      function starGlyphs(stars) {
+        const safe = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
+        return '★'.repeat(safe) + '☆'.repeat(5 - safe);
+      }
+
+      // Deliberately vague, non-numeric quality language — especially for
+      // alcohol, where the tooltip must never hint at blackout mechanics
+      // (no hop counts, no "teleports N zones"; see combat-core.js).
+      const QUALITY_DESCRIPTORS = { 1: 'Rough', 2: 'Ordinary', 3: 'Fine', 4: 'Excellent', 5: 'Exceptional' };
+
+      function qualityDisplayForItem(key, def) {
+        if (!isQualityTrackedItem(def)) return '';
+        if (window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)) {
+          const bottle = window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(key, def, inventory);
+          if (bottle) {
+            const stars = Math.max(1, Math.min(5, Math.round(bottle.stars)));
+            return `${starGlyphs(stars)} ${QUALITY_DESCRIPTORS[stars]} · ${bottle.remaining}/${bottle.total} open`;
+          }
+        }
+        const entries = window.CookingSystem?.availableQualityEntries?.(key) || [];
+        return entries.map(entry => `${starGlyphs(entry.stars)} ${QUALITY_DESCRIPTORS[entry.stars]} ×${entry.count}`).join('  ·  ');
+      }
+
+      function itemDescriptionWithFlavor(def) {
+        // Vague flavor only — no destination preview, no hop/zone numbers.
+        return window.HobunjiDrunkGameplayBridge?.isAlcoholDef?.(def)
+          ? `${def.desc} Better-made drink tends to produce rather more adventurous blackouts.`
+          : def.desc;
+      }
+
       function selectInventoryItem(key, skipGridUpdate) {
         const def   = ITEM_DEFS[key];
         const count = inventory[key] || 0;
@@ -14363,8 +14414,9 @@
         applyItemSpriteIcon(iiIconEl, def, key);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
+        set('iiQuality', qualityDisplayForItem(key, def));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
-        set('iiDesc',  def.desc);
+        set('iiDesc',  itemDescriptionWithFlavor(def));
 
         const actEl = document.getElementById('iiActions');
         if (actEl) {
@@ -26491,6 +26543,13 @@
         calendar,
         inventory,
         player,
+        // Collected animal-good quality/XP — previously missing here, so
+        // collectResource()'s Farming roll/heart bonus/XP award all
+        // silently no-op via optional chaining (see docs/js/farm-animals.js).
+        rollItemStars: window.LootRolling.rollItemStars,
+        starRatingText: window.LootRolling.starRatingText,
+        recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
+        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
         // Farm livestock has its own tile-space update loop, so give it the
         // same explicit face target used by companion/wildlife gaze.  The
         // horizontal point is in farm tiles; worldY is the player's actual

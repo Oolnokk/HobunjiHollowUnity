@@ -201,6 +201,10 @@
     let skillSpeed = 1 + normalizedPower(skillKey) * 0.5; // Used as the skill-owned action baseline before temporary alchemy modifiers.
     if (skillKey === 'foraging') skillSpeed = 1 + (window.PerkSystem?.rank('foraging', 'increaseForagingSpeed') || 0) * 0.1 + foodStacks('foraging') * 0.02; // Increase Foraging Speed perk.
     else if (skillKey === 'mining') skillSpeed = 1 + (window.PerkSystem?.rank('mining', 'increaseMiningSpeed') || 0) * 0.1 + foodStacks('mining') * 0.02; // Increase Mining Speed perk; five ranks preserve the former +50% cap.
+    // Farmhand adds on top of Farming's existing automatic level-based speed
+    // curve (unlike Foraging/Mining, which replace theirs outright) so an
+    // existing save's dig/plant/harvest pacing never regresses.
+    else if (skillKey === 'farming') skillSpeed = 1 + normalizedPower('farming') * 0.5 + (window.PerkSystem?.rank('farming', 'farmhand') || 0) * 0.06 + foodStacks('farming') * 0.02;
     const strengthWorkSpeed = ['foraging', 'mining', 'farming'].includes(skillKey) ? (window.AlchemySystem?.getWorkSpeedMultiplier?.() || 1) : 1; // Used to apply Strength only to chop, mine, and dig actions.
     return skillSpeed * strengthWorkSpeed;
   }
@@ -269,6 +273,8 @@
     aging: { down: 0.20, up: 0.35 },
   };
 
+  let lastProcessingRoll = null; // Mobile-visible diagnostics — see processingDiagnosticsText(), rendered by CookingSystem's debug panel.
+
   function rollProcessingQuality(inputStars, methodClass = 'quick') {
     const random = deps?.random || Math.random; // Used so tests can inject deterministic rolls.
     const safeInput = Math.max(1, Math.min(5, Math.round(Number(inputStars) || 3)));
@@ -287,7 +293,15 @@
     const same = Math.max(0, 1 - down - up);
     const roll = random() * (down + same + up);
     const delta = roll < down ? -1 : roll < down + same ? 0 : 1;
-    return Math.max(1, Math.min(5, safeInput + delta));
+    const outputStars = Math.max(1, Math.min(5, safeInput + delta));
+    lastProcessingRoll = { methodClass, inputStars: safeInput, outputStars, delta: outputStars - safeInput, farmingLevel: level('farming'), artisan, careful, cellarmaster, preserver };
+    return outputStars;
+  }
+
+  function processingDiagnosticsText() {
+    if (!lastProcessingRoll) return '';
+    const r = lastProcessingRoll;
+    return `PROCESSING\nMethod class: ${r.methodClass}\nInput: ${r.inputStars}★\nFarming level: ${r.farmingLevel}\nArtisan: ${r.artisan}  Careful Batches: ${r.careful}  Cellarmaster: ${r.cellarmaster}  Preserver: ${r.preserver}\nQuality delta: ${r.delta > 0 ? '+' : ''}${r.delta}\nOutput: ${r.outputStars}★`;
   }
 
   function rollQuality(skillKey) {
@@ -357,6 +371,7 @@
     craftIngredientSaveChance,
     rollQuality,
     rollProcessingQuality,
+    processingDiagnosticsText,
     starRatingText,
     render,
     snapshot: persist,
