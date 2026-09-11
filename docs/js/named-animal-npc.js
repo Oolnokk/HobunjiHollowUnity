@@ -295,7 +295,7 @@
   function setStudioHumanoidAppearance(speciesId) {
     const field = document.getElementById('appearanceJson'); // Same authoritative appearance JSON bridge used for normal humanoids.
     if (!field || !speciesId) return;
-    const appearance = { ...safeJson(field.value, {}) }; // Keeps colors/cosmetics while synchronizing the authoritative top-level species selection.
+    const appearance = { ...safeJson(field.value, {}) }; // Keeps colors/cosmetics while synchronizing an explicit user species edit.
     if (appearance.speciesId === speciesId && !appearance.creatureKind && appearance.avatarType !== 'animal') return;
     appearance.speciesId = speciesId;
     delete appearance.creatureKind;
@@ -338,7 +338,7 @@
     return true;
   }
 
-  function syncStudioSpecies() {
+  function syncStudioSpecies(options = {}) {
     if (studioSyncing) return;
     const input = document.getElementById('npcSpecies'); // Current authoritative species value for the selected NPC.
     const npcIdField = document.getElementById('npcId'); // Selected NPC id used only to apply reviewed legacy record corrections.
@@ -354,14 +354,10 @@
       const speciesId = normalizeSpeciesId(input.value); // Final species after any reviewed correction.
       const isAnimal = registry()?.isCreatureSpecies?.(speciesId) || reviewed?.kind === 'animal'; // Drives appearance UI and record synchronization.
       if (isAnimal && speciesId) setStudioAnimalAppearance(speciesId);
-      else if (speciesId) setStudioHumanoidAppearance(speciesId);
+      else if (speciesId && options.fromInput === true) setStudioHumanoidAppearance(speciesId);
       setStudioAppearanceAvailability(!!isAnimal);
       debugState.lastStudioNpcId = npcId;
       debugState.lastStudioSpecies = speciesId;
-      const currentCard = document.querySelector(`.npcCard[data-id="${CSS?.escape ? CSS.escape(npcId) : npcId}"] .npcMeta`); // Old local overrides can still contain the stale label until the selected record is rewritten.
-      if (currentCard && reviewed?.species && !currentCard.textContent.includes(reviewed.species)) {
-        currentCard.textContent = currentCard.textContent.replace(/ · [^·]+ · ([^·]+ · [^·]+(?: ·.*)?)$/, ` · ${reviewed.species} · $1`);
-      }
     } catch (error) {
       debugState.lastError = `studio sync failed: ${error?.message || error}`;
     } finally {
@@ -383,10 +379,10 @@
       help.id = 'npcSpeciesHelp';
       help.textContent = 'Species can be a person or any creature from the creature bestiary. Animal NPCs use creature sprites/genetics; the humanoid Appearance tab is disabled.';
       input.parentElement?.appendChild(help);
-      input.addEventListener('input', () => queueMicrotask(syncStudioSpecies));
+      input.addEventListener('input', () => queueMicrotask(() => syncStudioSpecies({ fromInput: true })));
       const previewMeta = document.getElementById('previewMeta'); // Changes every time Character Studio selects/fills a different NPC.
       if (previewMeta && typeof MutationObserver !== 'undefined') {
-        const observer = new MutationObserver(() => queueMicrotask(syncStudioSpecies)); // Re-applies reviewed species when fillFields writes an old raw database value.
+        const observer = new MutationObserver(() => queueMicrotask(() => syncStudioSpecies())); // Re-applies reviewed animal species without rewriting ordinary humanoid appearance variants on selection.
         observer.observe(previewMeta, { childList: true, characterData: true, subtree: true });
       }
     }
