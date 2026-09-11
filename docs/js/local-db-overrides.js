@@ -237,9 +237,14 @@
   function _installNamedAnimalNpcModule() {
     if (typeof document === 'undefined' || !LOCAL_DB_SCRIPT_URL) return;
     if (document.querySelector('script[data-hobunji-named-animal-npc="1"]')) return;
-    const script = document.createElement('script'); // Dynamically shared by game and Character Studio without adding duplicate script tags to both pages.
-    script.src = new URL('named-animal-npc.js', LOCAL_DB_SCRIPT_URL).href;
-    script.async = true;
+    const moduleUrl = new URL('named-animal-npc.js', LOCAL_DB_SCRIPT_URL).href; // Shared bridge URL resolved next to local-db-overrides.js in docs/js/.
+    if (document.readyState === 'loading' && typeof document.write === 'function') {
+      document.write(`<script src="${moduleUrl}" data-hobunji-named-animal-npc="1"><\/script>`); // Parser-synchronous load guarantees global assignment hooks exist before later avatar/game scripts execute.
+      return;
+    }
+    const script = document.createElement('script'); // Fallback for tools/pages that load LocalDBOverrides after document parsing has completed.
+    script.src = moduleUrl;
+    script.async = false;
     script.dataset.hobunjiNamedAnimalNpc = '1';
     script.onerror = () => console.warn('[LocalDBOverrides] Could not load named-animal-npc.js');
     (document.head || document.documentElement)?.appendChild(script);
