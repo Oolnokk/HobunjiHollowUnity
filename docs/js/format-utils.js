@@ -88,6 +88,23 @@
     document.head.appendChild(script);
   })();
 
+  // Plateau walk-off detection needs the same fresh getMovementInput dependency
+  // ClimbSystem uses, rather than player.inputX/Y from the previous movement tick.
+  // Load before climb-system.js so this bridge can capture its init dependencies.
+  (function loadPlateauFallLiveBridge() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/plateau-fall-live-bridge.js?v=20260911plateaufalllive1'; // Cache-busts fresh-input plateau fall detection and diagnostics.
+    if (window.HobunjiPlateauFallLive || document.querySelector('script[data-hobunji-plateau-fall-live]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-plateau-fall-live="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiPlateauFallLive = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
