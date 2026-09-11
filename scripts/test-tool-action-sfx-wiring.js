@@ -59,7 +59,9 @@ audioContext.window.AudioSystem.init({
   isRealMediaError: () => false,
   markAudioUrlFailed: () => {},
 });
-assert.equal(FakeAudio.loads, 1, 'preloaded tool cue should call load once during AudioSystem init');
+// 1 configured object-SFX cue, plus the 3 runtime-owned hard-footstep
+// recordings (always preloaded regardless of config) x their 2-voice pool.
+assert.equal(FakeAudio.loads, 7, 'preloaded tool cue should call load once during AudioSystem init');
 audioContext.window.AudioSystem.playObjectSfxKey('dig');
 assert.equal(FakeAudio.clones, 1, 'keyed playback should clone the retained preloaded element');
 assert.equal(FakeAudio.plays, 1, 'keyed playback should start the cloned cue');
