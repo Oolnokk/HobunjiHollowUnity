@@ -106,12 +106,13 @@
     },
     "treasureChest": {
       "label": "Treasure Chest",
-      "note": "metalBars/mysteryDye are generator entries (rollTreasureMetalKeys/rollTreasureDyeItemKeys in game.js) always rolled; gold is a plain ranged item roll in steps of 8; potion/clothing are generator entries with their own internal randomization (effect/reagent pick, piece/dye pick) gated by this pool's chance.",
+      "note": "metalBars/mysteryDye are generator entries (rollTreasureMetalKeys/rollTreasureDyeItemKeys in game.js) always rolled; gold is a plain ranged item roll in steps of 8; potion/combatManual/clothing are generator entries with their own internal randomization gated by this pool's chance.",
       "entries": [
         { "id": "metalBars", "kind": "generator", "generatorKey": "treasureMetalBars", "chance": 1, "conditions": {} },
         { "id": "mysteryDye", "kind": "generator", "generatorKey": "treasureMysteryDye", "chance": 1, "conditions": {} },
         { "id": "gold", "kind": "range", "itemKey": "gold", "min": 10, "max": 42, "step": 8, "chance": 0.7, "conditions": {} },
         { "id": "potion", "kind": "generator", "generatorKey": "treasurePotion", "chance": 0.35, "conditions": {} },
+        { "id": "combatManual", "kind": "generator", "generatorKey": "combatAbilityManual", "chance": 0.08, "conditions": {} },
         { "id": "clothing", "kind": "generator", "generatorKey": "treasureDyedClothing", "chance": 0.25, "conditions": {} }
       ]
     }

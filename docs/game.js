@@ -8504,6 +8504,8 @@
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
+      const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
+      const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
       window._npcWalkers = npcWalkers;
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
       // dialogueOpen/_dialogueWalker are read/written both here (camera/
@@ -10433,10 +10435,13 @@
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
         for (const rec of dbNpcs) {
+          if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
-          if (!target) { deferred.push(rec); continue; }
+          if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
+          if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
           try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
           catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
+          finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
         }
         console.log(`[NPC] Spawned ${npcWalkers.length}/${dbNpcs.length} walkers. inspect: window._npcWalkers`);
         console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
@@ -10465,10 +10470,13 @@
         setTimeout(async () => {
           const stillDeferred = [];
           for (const rec of records) {
+            if (npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
             const target = resolveNpcScheduleTarget(rec);
             if (!target) { stillDeferred.push(rec); continue; }
+            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
             try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
             catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
+            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
           if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
@@ -10929,6 +10937,10 @@
             }
             this._prevScheduleActivity = scheduleActivity;
             if (!target) return;
+            if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
+              despawnNpcVisitor(this); // Used to remove a recurring visitor only after they physically reach the authored exit.
+              return;
+            }
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
                 // May be several hops away (e.g. town → a building → one of its
@@ -11159,6 +11171,41 @@
         return walker;
       }
 
+      function despawnNpcVisitor(walker) {
+        const index = npcWalkers.indexOf(walker); // Used to remove exactly this completed departure without touching another NPC.
+        if (index < 0) return false;
+        walker.root?.parent?.remove?.(walker.root);
+        walker.root?._npcScene?.remove?.(walker.root);
+        walker.legs?.dispose?.();
+        walker.root?.traverse?.(object => {
+          object.geometry?.dispose?.();
+          const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []; // Used to release this visitor avatar's per-spawn GPU materials.
+          materials.forEach(material => { material.map?.dispose?.(); material.dispose?.(); });
+        });
+        npcWalkers.splice(index, 1);
+        window.__farmLog?.(`[schedule] ${walker.rec?.id || 'visitor'} despawned at ${walker.currentScheduleTarget?.label || 'visitor exit'}`, 'info');
+        return true;
+      }
+
+      let visitorArrivalCheckT = 0; // Used to throttle recurring visitor arrival checks to twice per second.
+      function updateNpcVisitorArrivals(dt) {
+        visitorArrivalCheckT -= dt;
+        if (visitorArrivalCheckT > 0) return;
+        visitorArrivalCheckT = 0.5;
+        for (const rec of scheduledNpcRecords.values()) {
+          if (!rec?.visitorPresence || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
+          const target = resolveNpcScheduleTarget(rec); // Used to return the entrance only while one of this visitor's windows is active.
+          if (!target?.visitorArrival) continue;
+          visitorSpawnPending.add(rec.id);
+          makeNpcWalker(rec, target).then(walker => {
+            if (!walker) return;
+            npcWalkers.push(walker);
+            window.__farmLog?.(`[schedule] ${rec.id} spawned at ${target.label || 'visitor entrance'} for arrival`, 'info');
+          }).catch(error => console.warn(`[NPC] ${rec.id} visitor arrival failed`, error))
+            .finally(() => visitorSpawnPending.delete(rec.id));
+        }
+      }
+
       // Fires once the screen is fully black on a player area transition.
       // Any NPC who was already mid-transit between the same two areas (i.e.
       // their goal-based schedule has them leaving exactly where the player
@@ -11294,7 +11341,8 @@
 
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        for (const w of npcWalkers) { w.update(dt); _tickNpcPortraitLife(w, dt); }
+        updateNpcVisitorArrivals(dt);
+        for (const w of [...npcWalkers]) { w.update(dt); if (npcWalkers.includes(w)) _tickNpcPortraitLife(w, dt); }
         _logGarankiDiagnostic(dt);
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;

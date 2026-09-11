@@ -34,6 +34,27 @@
       "note": "Main town-square path convergence."
     }
   ],
+  "visitorSchedules": [
+    {
+      "npcId": "jubmir",
+      "note": "Anan is Sunday: Jubmir visits Monday afternoon through Tuesday morning and Friday afternoon through Saturday morning.",
+      "entrance": { "mapId": "map_hobunji_town", "c": 30, "r": 48, "label": "Southern Cloud Forest entrance" },
+      "visits": [
+        { "arrivalDay": "Hronu", "arrivalTime": "11:00", "departureDay": "Kruru", "departureTime": "11:00" },
+        { "arrivalDay": "Tothu", "arrivalTime": "11:00", "departureDay": "Uung", "departureTime": "11:00" }
+      ],
+      "rules": [
+        { "day": "Hronu", "from": "11:00", "to": "17:00", "mapId": "map_hobunji_town", "stationId": "station_jubmir_explore", "activity": "selling and exploring town" },
+        { "day": "Hronu", "from": "17:00", "to": "24:00", "mapId": "map_i_inn_F2", "stationId": "station_inn_dorm_bed", "activity": "sleeping" },
+        { "day": "Kruru", "from": "00:00", "to": "09:00", "mapId": "map_i_inn_F2", "stationId": "station_inn_dorm_bed", "activity": "sleeping" },
+        { "day": "Kruru", "from": "09:00", "to": "11:00", "mapId": "map_hobunji_town", "stationId": "station_jubmir_explore", "activity": "selling and exploring town" },
+        { "day": "Tothu", "from": "11:00", "to": "17:00", "mapId": "map_hobunji_town", "stationId": "station_jubmir_explore", "activity": "selling and exploring town" },
+        { "day": "Tothu", "from": "17:00", "to": "24:00", "mapId": "map_i_inn_F2", "stationId": "station_inn_dorm_bed", "activity": "sleeping" },
+        { "day": "Uung", "from": "00:00", "to": "09:00", "mapId": "map_i_inn_F2", "stationId": "station_inn_dorm_bed", "activity": "sleeping" },
+        { "day": "Uung", "from": "09:00", "to": "11:00", "mapId": "map_hobunji_town", "stationId": "station_jubmir_explore", "activity": "selling and exploring town" }
+      ]
+    }
+  ],
   "presenceChoices": [
     {
       "id": "kaboku_afternoon_family_or_inn",
