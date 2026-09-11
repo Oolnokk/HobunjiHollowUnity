@@ -71,33 +71,38 @@ const context = vm.createContext({
 vm.runInContext(source, context, { filename: 'gravity-ragdoll-fall-bridge.js' });
 
 const Falls = window.HobunjiGravityRagdollFalls;
-assert.ok(Falls, 'gravity/ragdoll bridge is exported');
-assert.equal(Falls.gravityWorldPerSec2, 9.8, 'gravity is the sole physical acceleration');
+assert.ok(Falls, 'fall controller is exported');
+assert.equal(Falls.simHz, 30, 'air physics uses a Mario-64-style 30 Hz fixed simulation');
+assert.equal(Falls.quarterSteps, 4, 'each airborne tick is split into four movement qsteps');
+assert.equal(Falls.gravityPerStepWorld, 0.01, 'vertical speed loses a fixed amount each simulation tick');
+assert.equal(Falls.terminalFallPerStepWorld, 0.1875, 'fall speed has a terminal cap');
+assert.equal(Falls.terminalFallPerStepWorld / Falls.gravityPerStepWorld, 18.75, 'scaled controller preserves SM64 terminal/gravity ratio 75:4');
 assert.equal(Falls.ragdollBank, 'breakThrow', 'fall uses the zero-Footing knockdown animation bank');
 assert.equal(probeCalls, 1, 'existing plateau hook is installed before the presentation wrapper');
 assert.equal(Falls.getDebug().updateHookInstalled, true, 'ClimbSystem fall presentation hook is installed');
 
-const expectedDuration = Math.sqrt(2 / 9.8);
-assert.ok(Math.abs(Falls.gravityDuration(1) - expectedDuration) < 1e-12, 'fall duration follows constant gravity from rest');
+assert.equal(Falls.fallStepCount(1), 15, 'one-world-unit drop resolves in discrete fixed ticks from rest');
+assert.equal(Falls.gravityDuration(1), 0.5, 'predicted one-unit fall duration is derived from those fixed ticks');
 
 window.ClimbSystem.updateClimb(0.1);
 const state = player._hobunjiFallState;
-assert.ok(state, 'fall remains airborne after the first gravity tick');
+assert.ok(state, 'fall remains airborne after the first three fixed ticks');
 assert.equal(baseUpdateCalls, 0, 'old eased fall updater does not run while airborne');
-assert.ok(Math.abs(player.climbSurfaceY - 1.951) < 1e-9, 'vertical position is y = y0 - 1/2*g*t^2');
-assert.ok(Math.abs(player.x - 10 * (0.1 / expectedDuration)) < 1e-9, 'horizontal travel is deterministic linear authored-path progress');
-assert.ok(Math.abs(player.y - 20 * (0.1 / expectedDuration)) < 1e-9, 'second horizontal axis is deterministic authored-path progress');
-assert.equal(player.vx, 0, 'no horizontal velocity physics is retained');
-assert.equal(player.vy, 0, 'no second-axis velocity physics is retained');
+assert.ok(Math.abs(player.climbSurfaceY - 1.97) < 1e-9, 'vertical position follows frame-stepped gravity after three ticks');
+assert.ok(Math.abs(player.x - 2) < 1e-9, 'horizontal carry advances by fixed per-tick authored velocity');
+assert.ok(Math.abs(player.y - 4) < 1e-9, 'second ground-plane axis advances by the same fixed-tick model');
+assert.ok(Math.abs(player.vx - 20) < 1e-9, 'horizontal carry is exposed as kinematic velocity rather than rigid-body momentum');
+assert.ok(Math.abs(player.vy - 40) < 1e-9, 'second ground-plane carry remains kinematic');
 assert.equal(ragdollTriggers.length, 1, 'breakThrow starts once for the fall');
 assert.equal(ragdollTriggers[0].bank, 'breakThrow');
 assert.equal(ragdollTriggers[0].direction, 'front');
-assert.ok(Math.abs(ragdollTriggers[0].opts.durationMultiplier - expectedDuration) < 1e-12, 'ragdoll playback is stretched to the gravity fall duration');
+assert.ok(Math.abs(ragdollTriggers[0].opts.durationMultiplier - 0.5) < 1e-12, 'ragdoll playback is stretched to the predicted fixed-step fall duration');
 
-for (let i = 0; i < 10 && player._hobunjiFallState; i++) window.ClimbSystem.updateClimb(0.1);
-assert.equal(player._hobunjiFallState, null, 'existing landing owner executes once gravity reaches the authored surface');
+for (let i = 0; i < 20 && player._hobunjiFallState; i++) window.ClimbSystem.updateClimb(1 / 30);
+assert.equal(player._hobunjiFallState, null, 'existing landing owner executes when fixed-step gravity reaches the authored lower surface');
 assert.equal(baseUpdateCalls, 1, 'underlying fall/climb updater runs only for the authoritative landing tick');
 assert.equal(ragdollStopCalls, 1, 'breakThrow visual hold is released at landing');
 assert.equal(Falls.getDebug().active, false, 'debug state reports the completed fall');
+assert.ok(Falls.getDebug().verticalVelocityPerStep >= -Falls.terminalFallPerStepWorld, 'debugged vertical velocity never exceeds terminal fall speed');
 
-console.log('gravity ragdoll fall tests passed');
+console.log('SM64-style gravity ragdoll fall tests passed');
