@@ -6,7 +6,9 @@ const assert = require('assert');
   const code = fs.readFileSync(require('path').join(__dirname, '..', 'docs', 'js', 'roof-climb.js'), 'utf8');
   let group = null;
   const scene = { traverse(fn) { if (group) fn(group); } };
-  let ray = { origin: { x: 1, y: 1, z: -1 }, direction: { x: 0, y: 0, z: 1 } };
+  // Shoulder camera is deliberately far behind the nearby player. Roof-climb
+  // proximity must be measured from the player, not from this ray origin.
+  let ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0, y: 0, z: 1 } };
   let input = { x: 0, y: 0 };
   let mountState = 'none';
   let toast = null;
@@ -76,17 +78,28 @@ const assert = require('assert');
   system.init(deps);
 
   let target = system.getClimbTarget();
-  assert(target && target.type === 'roof', 'direct structural wall look offers roof climb');
+  assert(target && target.type === 'roof', 'nearby player can climb even when shoulder camera ray starts far behind');
   assert.strictEqual(target.wallFaceId, 'wall-south');
   assert(Math.abs(target.endSurfaceY - 2) < 1e-6, 'landing uses authored roof plane height');
+  let debug = context.window.HobunjiRoofClimb.getDebug();
+  assert(debug.lastWallHit.cameraDistance > 2.2, 'test actually covers the old camera-distance failure');
+  assert(debug.lastWallHit.playerDistance < 1.75, 'accepted wall is close to the player');
+
+  // Inverse case: a camera ray can be close to the wall while the player is
+  // too far away; that must not create a remote climb target.
+  player.y = -240;
+  ray = { origin: { x: 1, y: 1, z: -1 }, direction: { x: 0, y: 0, z: 1 } };
+  assert.strictEqual(system.getClimbTarget(), null, 'camera proximity cannot climb a wall when the player is far away');
+  player.y = -48;
+  ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0, y: 0, z: 1 } };
 
   meta.entrance = { x: 1, z: 0.5 };
   assert.strictEqual(system.getClimbTarget(), null, 'entrance-adjacent wall is not climbable');
   meta.entrance = { x: 9.5, z: 9.5 };
 
-  ray = { origin: { x: 1, y: 1, z: -1 }, direction: { x: 0.9, y: 0, z: 0.1 } };
+  ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0.9, y: 0, z: 0.1 } };
   assert.strictEqual(system.getClimbTarget(), null, 'glancing look is rejected');
-  ray = { origin: { x: 1, y: 1, z: -1 }, direction: { x: 0, y: 0, z: 1 } };
+  ray = { origin: { x: 1, y: 1, z: -5 }, direction: { x: 0, y: 0, z: 1 } };
   target = system.getClimbTarget();
 
   mountState = 'mounted';
@@ -118,7 +131,7 @@ const assert = require('assert');
   assert.strictEqual(kb.fell, true);
   assert.strictEqual(player.onBranch, null);
 
-  const debug = context.window.HobunjiRoofClimb.getDebug();
+  debug = context.window.HobunjiRoofClimb.getDebug();
   assert.strictEqual(debug.structureWrapperInstalled, true);
   assert.strictEqual(debug.climbHooksInstalled, true);
   console.log('roof climb tests passed');
