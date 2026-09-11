@@ -67,6 +67,10 @@
     return window.HobunjiRoofClimb?.getDebug?.() || {};
   }
 
+  function promptDebug() {
+    return window.HobunjiClimbPrompt?.getDebug?.() || {};
+  }
+
   function evaluateRay(_ray) {
     // Kept under the old API name because Pixel Probe already calls/evaluates
     // this helper, but climbability itself is now the same player-proximity
@@ -123,12 +127,14 @@
   function reportLines(text) {
     const result = evaluateRay(null);
     const debug = result.debug || {};
+    const prompt = promptDebug();
     const lines = [
       '',
       SECTION,
       'Entrance-adjacent exclusion: DISABLED',
       'Targeting model: nearest structural wall to PLAYER (camera ray not required)',
       `Roof runtime: source=${debug.runtimeDepsSource || 'unknown'} player=${debug.runtimePlayerReady ? 'ready' : 'missing'} climbInitCapture=${debug.climbDepsCaptured ? 'yes' : 'no'}`,
+      `Climb popup/action bridge: popupPatched=${prompt.popupPatched ? 'yes' : 'no'} targetBridge=${prompt.climbTargetBridgePatched ? 'yes' : 'no'} current=${prompt.climbTargetBridgeCurrent ? 'yes' : 'no'} visible=${prompt.visible ? 'yes' : 'no'} target=${prompt.targetType || '-'} actionable=${prompt.actionable ? 'yes' : 'no'} source=${prompt.targetSource || '-'} reason=${prompt.reason || '-'}`,
     ];
     const nearest = result.nearestWall;
     if (!result.climbable) {
