@@ -59,7 +59,7 @@
   // existing climb animation before game.js initializes it.
   (function loadRoofClimb() {
     if (typeof document === 'undefined') return;
-    const src = 'js/roof-climb.js?v=20260911roofclimb4'; // Cache-busts resilient player-proximity structural wall/roof climbing behavior.
+    const src = 'js/roof-climb.js?v=20260911roofclimb5'; // Cache-busts self-healing player-proximity structural wall/roof climbing behavior.
     if (window.HobunjiRoofClimb || document.querySelector('script[data-hobunji-roof-climb]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-roof-climb="1"><\/script>`);
@@ -76,7 +76,7 @@
   // every later building spawn receives the same entrance-neutral metadata.
   (function loadRoofClimbPixelProbe() {
     if (typeof document === 'undefined') return;
-    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe4'; // Cache-busts popup/action-aware climb diagnostics and entrance-adjacency disable.
+    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe5'; // Cache-busts live-hook/popup-aware climb diagnostics and entrance-adjacency disable.
     if (window.HobunjiRoofClimbProbe || document.querySelector('script[data-hobunji-roof-climb-probe]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-roof-climb-probe="1"><\/script>`);
