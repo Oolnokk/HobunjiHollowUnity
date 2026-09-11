@@ -55,7 +55,7 @@ assert.match(mountSource,
   /function beginSummonMount\(\) \{[\s\S]{0,300}if \(deps\.player\.climbing\)[\s\S]{0,220}Finish climbing before calling your mount\./,
   'mount summoning is rejected during an active climb');
 assert.match(gameSource,
-  /label: climbAllowed \? 'Climb' : 'Dismount to Climb'[\s\S]{0,160}allowed: climbAllowed/,
+  /const climbAllowed = \(window\.Mounts\?\.rideState \?\? 'none'\) === 'none';[\s\S]{0,260}label: climbAllowed \? climbLabel : 'Dismount to Climb'[\s\S]{0,160}allowed: climbAllowed/,
   'the mobile action arch disables climbing and labels the required dismount');
 assert.match(gameSource,
   /getMountRideState: \(\) => window\.Mounts\?\.rideState \?\? 'none'/,

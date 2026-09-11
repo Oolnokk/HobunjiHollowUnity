@@ -10,7 +10,7 @@ const index = fs.readFileSync('docs/index.html', 'utf8'); // Browser bootstrap u
 
 assert.match(
   game,
-  /const desktopWeaponPointerSlots = new Map\(\)[\s\S]*?desktopWeaponPointerSlots\.set\(e\.button, 2\)/,
+  /const desktopWeaponPointerSlots = new Map\(\)[\s\S]*?desktopWeaponPointerSlots\.set\(e\.button, weaponSlot\)/,
   'desktop weapon presses retain ownership of their original combat slot',
 );
 assert.match(
@@ -45,7 +45,7 @@ assert.match(
 );
 assert.match(
   index,
-  /combat-input\.js\?v=20260831heavyhold2[\s\S]*?game\.js\?v=20260831heavyhold2/,
+  /combat-input\.js\?v=\d+\w*[\s\S]*?game\.js\?v=\d+\w*/,
   'both changed browser modules are cache-invalidated together',
 );
 

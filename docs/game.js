@@ -22874,10 +22874,12 @@
               ? Math.max(branch.baseWorldY ?? 0, branch.tipWorldY ?? 0) + 0.4
               : (activeSurfaceYAtWorld(player.x / TILE, player.y / TILE) + 1.2);
             _climbPromptAnchor.position.set(anchorX / TILE, anchorWorldY, anchorY / TILE);
+            const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none';
+            const climbLabel = climbTarget.type === 'branchJumpDown' ? 'Climb Down' : 'Climb Tree';
             btns.push({
               icon: climbTarget.type === 'branchJumpDown' ? '🪂' : '🧗',
-              label: climbTarget.type === 'branchJumpDown' ? 'Climb Down' : 'Climb Tree',
-              action: 'climb_branch', style: 'secondary', allowed: true,
+              label: climbAllowed ? climbLabel : 'Dismount to Climb',
+              action: 'climb_branch', style: 'secondary', allowed: climbAllowed,
               worldInteraction: true, promptRoot: _climbPromptAnchor,
             });
           }
