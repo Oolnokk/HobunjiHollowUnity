@@ -46,9 +46,24 @@ for (const key of ['crownedPineNuts', 'shadewoodNuts', 'crownedPineNutOil', 'sha
   assert(cookingData.items[key], `${key} is registered as a cooking ingredient`);
 }
 
-context.window = {};
+context.window = { HobunjiCookingData: cookingData };
 vm.runInNewContext(fs.readFileSync('docs/js/food-processing.js', 'utf8'), context);
 const processing = context.window.HobunjiFoodProcessing;
+const expandedRecipeIds = [
+  'hearthPancakes', 'sweetCustard', 'eggToast', 'cheeseToast', 'savorySandwich', 'gardenSalad', 'vegetableSoup', 'roastDinner',
+  'breakfastHash', 'savorySkewers', 'fishStew', 'sweetBreadPudding', 'hearthFlatbread', 'stuffedDumplings', 'fishCakes', 'fruitFritters',
+]; // Used to verify every real-life-inspired meal template is installed by the runtime overlay.
+assert.equal(cookingData.recipes.length, 35, 'the runtime cooking overlay adds sixteen common meal archetypes');
+assert.equal(new Set(cookingData.recipes.map(recipe => recipe.id)).size, cookingData.recipes.length, 'expanded cooking recipe ids remain unique');
+for (const recipeId of expandedRecipeIds) {
+  const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Used to validate each newly overlaid recipe by id.
+  assert(recipe, `${recipeId} is installed by the food-processing overlay`);
+  assert(recipe.slots.length > 0 && recipe.slots.every(slot => slot.accepts.length > 0), `${recipeId} remains category-constrained`);
+  assert(cookingData.identityNameRules[recipeId], `${recipeId} has an ingredient-led naming rule`);
+}
+const expandedCategories = new Set(cookingData.recipes.flatMap(recipe => recipe.slots.flatMap(slot => slot.accepts))); // Used to verify the new meals actually broaden ingredient-family usage.
+for (const category of ['bread', 'sauce', 'herb', 'mollusk']) assert(expandedCategories.has(category), `${category} participates in the expanded meal roster`);
+assert.match(processing.diagnosticsText(), /Expanded meals: 16/, 'food-processing diagnostics report the expanded meal count');
 assert.equal(processing.SQUEEZING_VAT.name, 'Squeezing Vat', 'the old hand/grape names resolve to one squeezing-vat station');
 assert.equal(processing.getProcessingOutputs('squeezing', 'crownedPineNuts', cookingData.items.crownedPineNuts)[0].key, 'crownedPineNutOil', 'crowned pine nuts press into their own oil');
 assert.equal(processing.getProcessingOutputs('squeezing', 'shadewoodNuts', cookingData.items.shadewoodNuts)[0].key, 'shadewoodNutOil', 'shadewood nuts press into their own oil');
