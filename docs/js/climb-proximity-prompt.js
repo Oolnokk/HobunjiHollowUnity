@@ -13,12 +13,14 @@
 
   let climbAnchor = null; // Used as the ordinary WorldPopupText root when climbing is the only nearby world interaction.
   let popupPatched = false; // Used by getDebug to verify this bridge is augmenting the existing popup pipeline.
+  let climbTargetBridgePatched = false; // Used to verify the live ClimbSystem target path can fall back to the proven roof resolver.
   let lastDebug = {
     visible: false,
     targetType: null,
     actionable: false,
     label: null,
     reason: 'waiting for world interaction prompt sync',
+    targetSource: null,
   }; // Used by Pixel Probe/mobile diagnostics without introducing another visible UI surface.
 
   const combatDeps = () => window.Combat?.deps || null;
@@ -39,6 +41,35 @@
     // Plateau wall climbs intentionally remain available because startClimb
     // delegates those to the existing mounted leap. Roofs/branches do not.
     return target?.type !== 'wall';
+  }
+
+  function directRoofTarget() {
+    try { return window.HobunjiRoofClimb?.getRoofClimbTarget?.() || null; }
+    catch (_) { return null; }
+  }
+
+  // The roof resolver can be healthy even when a load-order wrapper missed the
+  // live ClimbSystem.getClimbTarget method. Patch that one handoff in-place so
+  // game.js's ordinary Dodge/climb action sees the same roof target as the popup.
+  function patchClimbSystemRoofFallback(system = window.ClimbSystem) {
+    const current = system?.getClimbTarget;
+    if (typeof current !== 'function') return false;
+    if (current.__hobunjiRoofTargetFallback) {
+      climbTargetBridgePatched = true;
+      return true;
+    }
+
+    function getClimbTargetWithRoofFallback(...args) {
+      let target = null;
+      try { target = current.apply(this, args); } catch (_) {}
+      return target || directRoofTarget();
+    }
+    Object.assign(getClimbTargetWithRoofFallback, current);
+    getClimbTargetWithRoofFallback.__hobunjiRoofTargetFallback = true;
+    getClimbTargetWithRoofFallback.__hobunjiRoofTargetFallbackOriginal = current;
+    system.getClimbTarget = getClimbTargetWithRoofFallback;
+    climbTargetBridgePatched = true;
+    return true;
   }
 
   function proximityPlateau(player) {
@@ -105,17 +136,23 @@
   function resolveCandidate() {
     const system = window.ClimbSystem;
     const player = combatDeps()?.player;
-    if (!system?.getClimbTarget || !player || movementStateBlocksPrompt(player)) return null;
+    if (!player || movementStateBlocksPrompt(player)) return null;
 
+    patchClimbSystemRoofFallback(system);
     let exact = null;
-    try { exact = system.getClimbTarget(); } catch (_) {}
-    if (exact && !mountedTargetUnavailable(exact)) return { ...exact, actionable: true };
+    try { exact = system?.getClimbTarget?.() || null; } catch (_) {}
+    let targetSource = exact ? 'ClimbSystem target' : null;
+    if (!exact) {
+      exact = directRoofTarget();
+      if (exact) targetSource = 'direct roof fallback';
+    }
+    if (exact && !mountedTargetUnavailable(exact)) return { ...exact, actionable: true, _promptTargetSource: targetSource };
     if (player.onBranch) return null;
 
     const plateau = proximityPlateau(player);
-    if (plateau && !mountedTargetUnavailable(plateau)) return { ...plateau, actionable: false };
+    if (plateau && !mountedTargetUnavailable(plateau)) return { ...plateau, actionable: false, _promptTargetSource: 'plateau proximity' };
     const branch = proximityBranch(player);
-    if (branch && !mountedTargetUnavailable(branch)) return { ...branch, actionable: false };
+    if (branch && !mountedTargetUnavailable(branch)) return { ...branch, actionable: false, _promptTargetSource: 'branch proximity' };
     return null;
   }
 
@@ -188,6 +225,7 @@
           reason: alreadyHasClimb
             ? 'game.js already supplied the climb interaction row'
             : 'no nearby climb candidate',
+          targetSource: alreadyHasClimb ? 'game.js' : null,
         };
         return original(options);
       }
@@ -217,8 +255,9 @@
         reason: alreadyHasWorldInteraction
           ? 'climb row shares existing world interaction list'
           : candidate.actionable
-            ? 'real ClimbSystem target'
+            ? 'actionable climb target'
             : 'nearby climbable surface',
+        targetSource: candidate._promptTargetSource || null,
       };
       return original({ ...options, buttons, promptInputs, root });
     }
@@ -261,11 +300,14 @@
 
   window.HobunjiClimbPrompt = Object.freeze({
     patchWorldPopupText,
+    patchClimbSystemRoofFallback,
     resolveCandidate,
     getDebug() {
       return {
         ...lastDebug,
         popupPatched,
+        climbTargetBridgePatched,
+        climbTargetBridgeCurrent: !!window.ClimbSystem?.getClimbTarget?.__hobunjiRoofTargetFallback,
         actionId: ACTION_ID,
         usesWorldPopupText: true,
         branchNearTiles: BRANCH_NEAR_TILES,
