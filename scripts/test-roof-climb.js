@@ -99,6 +99,7 @@ const assert = require('assert');
   assert(debug.lastWallHit.playerDistance < 1.75, 'accepted wall is close to the player');
   assert.strictEqual(debug.lastWallHit.selectionModel, 'nearest-player-wall');
   assert.strictEqual(debug.runtimeDepsSource, 'ClimbSystem.init');
+  assert.strictEqual(debug.climbHooksCurrent, true, 'all live roof climb method wrappers are installed');
 
   // Camera aim no longer gates building climbing. A wildly glancing ray or no
   // ray at all still works while the player is physically beside the wall.
@@ -164,6 +165,32 @@ const assert = require('assert');
   debug = context.window.HobunjiRoofClimb.getDebug();
   assert.strictEqual(debug.structureWrapperInstalled, true);
   assert.strictEqual(debug.climbHooksInstalled, true);
+  assert.strictEqual(debug.climbHooksCurrent, true);
+
+  // Reproduce the last-mile failure the live probe could not distinguish:
+  // another runtime wrapper replaces every roof-aware ClimbSystem method after
+  // installation. A direct roof query must self-heal the current methods so
+  // both the ordinary action target and the actual climb start/update work.
+  player.onBranch = null;
+  player.climbing = false;
+  system.getClimbTarget = function displacedGetClimbTarget() { return null; };
+  system.startClimb = function displacedStartClimb() { return false; };
+  system.updateClimb = function displacedUpdateClimb() {
+    player.x = player.climbEndX;
+    player.y = player.climbEndY;
+    player.climbSurfaceY = player.climbSurfaceEndY;
+    player.climbing = false;
+  };
+  system.updateBranchMovement = function displacedBranchMovement() { throw new Error('displaced branch movement should be wrapped for roof state'); };
+  system.resolveBranchKnockback = function displacedBranchKnockback() { throw new Error('displaced branch knockback should be wrapped for roof state'); };
+  target = context.window.HobunjiRoofClimb.getRoofClimbTarget();
+  assert(target?.type === 'roof', 'direct roof query still resolves after live ClimbSystem methods are displaced');
+  debug = context.window.HobunjiRoofClimb.getDebug();
+  assert.strictEqual(debug.climbHooksCurrent, true, 'roof query repairs all displaced live method wrappers');
+  assert.strictEqual(system.getClimbTarget()?.type, 'roof', 'repaired ordinary action target path returns the building climb');
+  assert.strictEqual(system.startClimb(target), true, 'repaired startClimb handles the roof target');
+  system.updateClimb(1);
+  assert(player.onBranch?.__hobunjiRoofSurface, 'repaired updateClimb hands the completed climb onto the roof surface');
 
   // Reproduce the live failure from Pixel Probe: the roof wrapper misses the
   // ClimbSystem.init handoff, but Combat.deps already has the live player/TILE.
