@@ -71,7 +71,7 @@ assert(lifeTotem.includes('DeadzoneBillboard?.addConfiguredPointLight'));
 assert(lifeTotem.includes('lifeTotemAuthoritativeLiquidMaterial'));
 assert(!lifeTotem.includes('opacity:0.78'), 'basin opacity tuning must live in the config file');
 assert(rootTotemConfigSource.includes("material:{model:'unlit',opacity:0.78,depthWrite:false,transparent:true}"));
-assert(rootTotemConfigSource.includes("enabled:true,color:'#7fe7c4',intensity:1.25,distance:4.2,decay:1.7"));
+assert(rootTotemConfigSource.includes("enabled:true,color:'#7fe7c4',intensity:1.25,distance:2.4,decay:1.7"));
 
 // Existing authored furniture data remains authoritative and untouched. These
 // fixtures exercise the shared vessel path and the authored-upgrade path.
