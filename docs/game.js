@@ -1888,14 +1888,14 @@
       // removal" as a form of weapon/armor decoration per the game's lore.
       function toolVerdigrisPatternEligible(itemKey) {
         const def = TOOL_ITEM_DEFS[itemKey];
-        // def.slots isn't a reliable "is this a weapon" signal — every
-        // farming/fishing tool shape is also equippable in the weapon slot
-        // (dual-purpose; see weapon-tool-stances.js's hoe augmentation and
-        // TOOL_SHAPE_DEFS' own 'weapon' entries) and def.slots is the same
-        // shared array reference for every tool of that shape/metal, so a
-        // slots check can't tell a dedicated weapon from a hoe. Dedicated
-        // melee weapons (MELEE_WEAPON_SHAPE_DEFS) are the real distinction.
-        if (!def?.metalKey || !def.shapeKey || !MELEE_WEAPON_SHAPE_DEFS[def.shapeKey]) return false;
+        // Every smith-crafted shape is weapon-capable in this game — the
+        // dedicated melee shapes (MELEE_WEAPON_SHAPE_DEFS) directly, and
+        // every farm/fish tool shape too (either natively, like the
+        // hatchet/pickshovel/fishing tools' own TOOL_SHAPE_DEFS 'weapon'
+        // slot, or via weapon-tool-stances.js's hoe augmentation) — so
+        // "weapon" here just means def.slots includes 'weapon', not a
+        // narrower "dedicated weapon shape only" reading.
+        if (!def?.metalKey || !def.slots?.includes('weapon')) return false;
         return toolMasteryLevel(itemKey) >= MASTERY_XP_THRESHOLDS.length;
       }
       function setToolVerdigrisPattern(itemKey, patternData) {
