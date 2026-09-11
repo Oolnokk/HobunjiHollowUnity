@@ -71,6 +71,23 @@
     document.head.appendChild(script);
   })();
 
+  // Extends roof climbing with Pixel Probe diagnostics and deliberately removes
+  // the old entrance-adjacency exclusion. Load immediately after roof-climb so
+  // every later building spawn receives the same entrance-neutral metadata.
+  (function loadRoofClimbPixelProbe() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe1'; // Cache-busts climbability diagnostics and entrance-adjacency disable.
+    if (window.HobunjiRoofClimbProbe || document.querySelector('script[data-hobunji-roof-climb-probe]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-roof-climb-probe="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiRoofClimbProbe = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
@@ -115,7 +132,7 @@
   function toolEmoji(tool) {
     const equipped = deps.equipmentSlots[tool];
     if (equipped && deps.TOOL_ITEM_DEFS[equipped]) return deps.TOOL_ITEM_DEFS[equipped].icon;
-    return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
+    return { shovel:'⛏️', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', ranged:'🏹 Ranged Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || '❔';
   }
 
   function toolName(tool) {
