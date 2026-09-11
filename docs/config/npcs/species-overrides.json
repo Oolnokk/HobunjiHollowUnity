@@ -1,14 +1,139 @@
 {
   "schema": "hobunji_npc_species_overrides.v1",
-  "note": "Small reviewed corrections for named NPCs whose authoritative species is a creature rather than a humanoid portrait species. Applied after either repo or local NPC database load; legacy chathead ID mappings remain fallback-only for older data.",
+  "note": "Small reviewed corrections for named NPCs whose authoritative species is a creature rather than a humanoid portrait species. Entries may also carry an authored Character Studio avatarExport; composition applies that export as the NPC's repo-default appearance/equipment/dyes while retaining the species correction. Applied after either repo or local NPC database load; legacy chathead ID mappings remain fallback-only for older data.",
   "npcs": {
     "banubu": {
       "species": "grehlr",
-      "kind": "animal"
+      "kind": "animal",
+      "avatarExport": {
+        "schema": "npc_avatar_editor_export.v1",
+        "source": "character-studio",
+        "name": "Banubu",
+        "appearance": {
+          "speciesId": "grehlr",
+          "gender": "male",
+          "cosmetics": {},
+          "bodyColors": {
+            "A": {
+              "h": -70,
+              "s": -0.8,
+              "v": -0.55
+            },
+            "B": {
+              "h": -70,
+              "s": -0.8,
+              "v": -0.55
+            },
+            "C": {
+              "h": -70,
+              "s": -0.75,
+              "v": -0.37
+            }
+          },
+          "chatColor": {
+            "h": 210,
+            "s": 75,
+            "l": 68
+          },
+          "creatureKind": "grehlr",
+          "avatarType": "animal",
+          "creatureColorOverrides": {
+            "base": "#14D948",
+            "mitts": "#17FFF3",
+            "coloredstripe": "#17FFF3",
+            "spectacles": "#17FFF3"
+          },
+          "creatureGenotype": {
+            "base": {
+              "color": "#14D948",
+              "copies": 2,
+              "inheritance": "dominant"
+            },
+            "sizeClass": "medium",
+            "mitts": {
+              "color": "#17FFF3",
+              "copies": 1,
+              "inheritance": "dominant",
+              "enabled": true
+            },
+            "spectacles": {
+              "color": "#ae8430",
+              "copies": 1,
+              "inheritance": "dominant",
+              "enabled": true
+            },
+            "coloredstripe": {
+              "color": "#ae8430",
+              "copies": 1,
+              "inheritance": "dominant",
+              "enabled": true
+            }
+          }
+        },
+        "equippedCosmetics": [],
+        "appliedDyes": {}
+      }
     },
     "hiki_hiki": {
       "species": "drenkirra",
-      "kind": "animal"
+      "kind": "animal",
+      "avatarExport": {
+        "schema": "npc_avatar_editor_export.v1",
+        "source": "character-studio",
+        "name": "Hiki-hiki",
+        "appearance": {
+          "speciesId": "drenkirra",
+          "gender": "male",
+          "cosmetics": {},
+          "bodyColors": {
+            "A": {
+              "h": -70,
+              "s": -0.8,
+              "v": -0.55
+            },
+            "B": {
+              "h": -70,
+              "s": -0.8,
+              "v": -0.55
+            },
+            "C": {
+              "h": -70,
+              "s": -0.75,
+              "v": -0.37
+            }
+          },
+          "chatColor": {
+            "h": 210,
+            "s": 75,
+            "l": 68
+          },
+          "creatureKind": "drenkirra",
+          "avatarType": "animal",
+          "creatureGenotype": {
+            "base": {
+              "color": "#ff7a18",
+              "copies": 2,
+              "inheritance": "dominant"
+            },
+            "sizeClass": "medium",
+            "bodystripes": {
+              "color": "#19c7c1",
+              "copies": 1,
+              "inheritance": "dominant",
+              "enabled": true
+            },
+            "spectacles": {
+              "color": "#19c7c1",
+              "copies": 1,
+              "inheritance": "dominant",
+              "enabled": true
+            }
+          },
+          "animalHatId": "kenk_riverlandskasa_wide"
+        },
+        "equippedCosmetics": [],
+        "appliedDyes": {}
+      }
     }
   }
 }
