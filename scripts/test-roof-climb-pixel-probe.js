@@ -30,7 +30,28 @@ context.window.window = context.window;
 context.window.GridTileAccessors = { getActiveScene: () => ({ traverse(fn) { if (group) fn(group); } }) };
 context.window.HobunjiRoofClimb = {
   getRoofClimbTarget() { return liveTarget; },
-  getDebug() { return { lastBlockReason: liveTarget ? null : 'no valid structural roof climb target' }; },
+  getDebug() {
+    return {
+      lastBlockReason: liveTarget ? null : 'no valid structural roof climb target',
+      runtimeDepsSource: 'Combat.deps fallback',
+      runtimePlayerReady: true,
+      climbDepsCaptured: false,
+    };
+  },
+};
+context.window.HobunjiClimbPrompt = {
+  getDebug() {
+    return {
+      popupPatched: true,
+      climbTargetBridgePatched: true,
+      climbTargetBridgeCurrent: true,
+      visible: true,
+      targetType: 'roof',
+      actionable: true,
+      targetSource: 'ClimbSystem target',
+      reason: 'actionable climb target',
+    };
+  },
 };
 context.window.HousePieceGen = {
   buildGroupFromPiece() { return { userData: { hobunjiRoofClimbStructure: { ...meta } } }; },
@@ -77,4 +98,7 @@ const report = api.reportLines('Pixel Probe report\nArea: town');
 assert(report.some(line => line.includes('Entrance-adjacent exclusion: DISABLED')));
 assert(report.some(line => line.includes('nearest structural wall to PLAYER')));
 assert(report.some(line => line.includes('camera ray not required')));
+assert(report.some(line => line.includes('Roof runtime: source=Combat.deps fallback')));
+assert(report.some(line => line.includes('Climb popup/action bridge: popupPatched=yes')));
+assert(report.some(line => line.includes('targetBridge=yes current=yes visible=yes target=roof actionable=yes')));
 console.log('roof climb pixel probe tests passed');
