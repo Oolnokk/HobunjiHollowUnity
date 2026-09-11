@@ -63,35 +63,42 @@
     return best;
   }
 
+  function roofDebug() {
+    return window.HobunjiRoofClimb?.getDebug?.() || {};
+  }
+
   function evaluateRay(_ray) {
     // Kept under the old API name because Pixel Probe already calls/evaluates
     // this helper, but climbability itself is now the same player-proximity
     // decision used by HobunjiRoofClimb.getRoofClimbTarget(), not a pixel-ray hit.
     activeStructureMetas();
     const player = runtimeDeps?.player || window.Combat?.deps?.player;
-    if (!player) return { wallHit: false, climbable: false, reason: 'player state unavailable' };
+    const debug = roofDebug();
+    if (!player) return { wallHit: false, climbable: false, reason: 'player state unavailable', debug };
 
     const mountState = window.Mounts?.rideState || 'none';
     if (mountState !== 'none') {
-      return { wallHit: false, climbable: false, reason: 'player is mounted', nearestWall: nearestWallDistanceFromPlayer() };
+      return { wallHit: false, climbable: false, reason: 'player is mounted', nearestWall: nearestWallDistanceFromPlayer(), debug };
     }
-    if (player.climbing) return { wallHit: false, climbable: false, reason: 'player is already climbing', nearestWall: nearestWallDistanceFromPlayer() };
-    if (player.prone) return { wallHit: false, climbable: false, reason: 'player is prone', nearestWall: nearestWallDistanceFromPlayer() };
-    if (player.onBranch) return { wallHit: false, climbable: false, reason: 'player is already on an elevated climb surface', nearestWall: nearestWallDistanceFromPlayer() };
-    if (player.dodging) return { wallHit: false, climbable: false, reason: 'player is currently dodging', nearestWall: nearestWallDistanceFromPlayer() };
+    if (player.climbing) return { wallHit: false, climbable: false, reason: 'player is already climbing', nearestWall: nearestWallDistanceFromPlayer(), debug };
+    if (player.prone) return { wallHit: false, climbable: false, reason: 'player is prone', nearestWall: nearestWallDistanceFromPlayer(), debug };
+    if (player.onBranch) return { wallHit: false, climbable: false, reason: 'player is already on an elevated climb surface', nearestWall: nearestWallDistanceFromPlayer(), debug };
+    if (player.dodging) return { wallHit: false, climbable: false, reason: 'player is currently dodging', nearestWall: nearestWallDistanceFromPlayer(), debug };
 
     const target = window.HobunjiRoofClimb?.getRoofClimbTarget?.() || null;
+    const latestDebug = roofDebug();
     const nearestWall = nearestWallDistanceFromPlayer();
     if (!target) {
       const distance = nearestWall?.distance;
       const reason = Number.isFinite(distance) && distance > MAX_PLAYER_WALL_DISTANCE
         ? `nearest structural wall is too far from player (${distance.toFixed(3)} > ${MAX_PLAYER_WALL_DISTANCE.toFixed(2)} tiles)`
-        : window.HobunjiRoofClimb?.getDebug?.()?.lastBlockReason || 'no valid structural roof climb target';
+        : latestDebug.lastBlockReason || 'no valid structural roof climb target';
       return {
         wallHit: !!nearestWall,
         climbable: false,
         reason,
         nearestWall,
+        debug: latestDebug,
       };
     }
 
@@ -107,13 +114,22 @@
         y: Number(target.endSurfaceY),
         z: Number(target.endWorldZ),
       },
+      landingSource: target.landingSource || latestDebug.lastCandidate?.landingSource || 'unknown',
       selectionModel: 'nearest-player-wall',
+      debug: latestDebug,
     };
   }
 
   function reportLines(text) {
     const result = evaluateRay(null);
-    const lines = ['', SECTION, 'Entrance-adjacent exclusion: DISABLED', 'Targeting model: nearest structural wall to PLAYER (camera ray not required)'];
+    const debug = result.debug || {};
+    const lines = [
+      '',
+      SECTION,
+      'Entrance-adjacent exclusion: DISABLED',
+      'Targeting model: nearest structural wall to PLAYER (camera ray not required)',
+      `Roof runtime: source=${debug.runtimeDepsSource || 'unknown'} player=${debug.runtimePlayerReady ? 'ready' : 'missing'} climbInitCapture=${debug.climbDepsCaptured ? 'yes' : 'no'}`,
+    ];
     const nearest = result.nearestWall;
     if (!result.climbable) {
       if (nearest && Number.isFinite(nearest.distance)) {
@@ -127,7 +143,7 @@
     lines.push(`Structural wall target: YES face=${result.wallFaceId ?? '-'} distance=${Number(result.playerDistance || 0).toFixed(3)} / ${MAX_PLAYER_WALL_DISTANCE.toFixed(2)} tiles`);
     if (result.point) lines.push(`Wall point: (${Number(result.point.x || 0).toFixed(3)},${Number(result.point.y || 0).toFixed(3)},${Number(result.point.z || 0).toFixed(3)})`);
     if (result.landing && [result.landing.x, result.landing.y, result.landing.z].every(Number.isFinite)) {
-      lines.push(`Roof landing: (${result.landing.x.toFixed(3)},${result.landing.y.toFixed(3)},${result.landing.z.toFixed(3)}) on authored roof plane`);
+      lines.push(`Roof landing: (${result.landing.x.toFixed(3)},${result.landing.y.toFixed(3)},${result.landing.z.toFixed(3)}) on authored roof plane via ${result.landingSource}`);
     }
     lines.push(`Climbable: YES — ${result.reason}`);
     return lines;
