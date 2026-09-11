@@ -7,6 +7,7 @@
   const MAX_PLAYER_WALL_DISTANCE = 1.75; // Used to make standing beside a structural wall sufficient for building climbing.
   const ENTRANCE_CLEARANCE_WORLD = 1.35; // Legacy metadata guard; the companion probe bridge clears entrance exclusions at runtime.
   const ROOF_SAMPLE_OFFSETS = [0.28, 0.5, 0.75, 1.0, 1.25]; // Used to find a stable roof landing point just behind the nearest wall plane.
+  const ROOF_FALLBACK_MAX_WALL_DISTANCE = 2.25; // Used by the interior-roof fallback for carved tunnel wall fragments whose straight sample line falls through an opening.
   const ROOF_WALK_SPEED_PX_S = 90; // Used by the roof movement override; matches the existing branch walking speed.
   const ROOF_KNOCKBACK_DUR_S = 0.18; // Used to mirror ordinary/branch knockback travel time.
   const EPS = 1e-6;
@@ -24,6 +25,15 @@
 
   const normalizePiece = piece => piece?.currentPiece || piece || null;
   const finite = value => Number.isFinite(Number(value));
+  const combatDeps = () => window.Combat?.deps || null;
+  const runtimePlayer = () => climbDeps?.player || combatDeps()?.player || null;
+  const runtimeTile = () => Math.max(1, Number(climbDeps?.TILE || combatDeps()?.TILE) || 1);
+  const runtimeFn = name => (typeof climbDeps?.[name] === 'function'
+    ? climbDeps[name]
+    : (typeof combatDeps()?.[name] === 'function' ? combatDeps()[name] : null));
+  const runtimeDepsSource = () => climbDeps?.player
+    ? 'ClimbSystem.init'
+    : (combatDeps()?.player ? 'Combat.deps fallback' : 'none');
 
   function preparedPiece(piece) {
     return window.EntryTunnelWallUnmark?.preparePiece?.(piece)?.piece || piece;
@@ -180,7 +190,7 @@
   }
 
   function interactionRay() {
-    return climbDeps?.getPlayerInteractionRay?.() || climbDeps?.getPlayerAimRay?.() || null;
+    return runtimeFn('getPlayerInteractionRay')?.() || runtimeFn('getPlayerAimRay')?.() || null;
   }
 
   function entranceTooClose(meta, point) {
@@ -217,10 +227,10 @@
   }
 
   function nearestStructureWallHit() {
-    const player = climbDeps?.player;
-    const tile = Number(climbDeps?.TILE) || 1;
+    const player = runtimePlayer();
+    const tile = runtimeTile();
     if (!player || !finite(player.x) || !finite(player.y)) {
-      debugState.lastBlockReason = 'player position unavailable';
+      debugState.lastBlockReason = 'roof runtime player unavailable';
       return null;
     }
     const px = Number(player.x) / tile;
@@ -270,9 +280,50 @@
       z: best.point.z,
       cameraDistance: null,
       playerDistance: best.playerDistance,
+      wallFaceId: best.wall?.id ?? null,
       selectionModel: 'nearest-player-wall',
     };
     if (entranceTooClose(best.meta, best.point)) { debugState.lastBlockReason = 'entrance adjacent'; return null; }
+    return best;
+  }
+
+  function nearestInteriorRoofLanding(hit) {
+    let best = null;
+    for (const roof of hit?.meta?.roofs || []) {
+      for (const [a, b, c] of faceTriangles(roof)) {
+        const centroid = {
+          x: (a.x + b.x + c.x) / 3,
+          y: (a.y + b.y + c.y) / 3,
+          z: (a.z + b.z + c.z) / 3,
+        };
+        // These are guaranteed interior points: each vertex is blended 35%
+        // toward the triangle centroid, keeping landings close to the eave
+        // without ever selecting the carved wall opening itself.
+        const samples = [centroid, ...[a, b, c].map(vertex => ({
+          x: vertex.x * 0.65 + centroid.x * 0.35,
+          y: vertex.y * 0.65 + centroid.y * 0.35,
+          z: vertex.z * 0.65 + centroid.z * 0.35,
+        }))];
+        for (const sample of samples) {
+          const distance = Math.hypot(sample.x - hit.point.x, sample.z - hit.point.z);
+          if (distance > ROOF_FALLBACK_MAX_WALL_DISTANCE || (best && distance >= best.distance)) continue;
+          const y = roofSurfaceYAt(hit.meta, sample.x, sample.z);
+          if (!Number.isFinite(y)) continue;
+          const dx = sample.x - hit.point.x;
+          const dz = sample.z - hit.point.z;
+          const len = Math.hypot(dx, dz);
+          if (len < EPS) continue;
+          best = {
+            x: sample.x,
+            y,
+            z: sample.z,
+            dir: { x: dx / len, y: dz / len },
+            distance,
+            source: 'roof-interior-fallback',
+          };
+        }
+      }
+    }
     return best;
   }
 
@@ -302,20 +353,24 @@
         const x = hit.point.x + dir.x * offset;
         const z = hit.point.z + dir.z * offset;
         const y = roofSurfaceYAt(hit.meta, x, z);
-        if (Number.isFinite(y)) return { x, y, z, dir: { x: dir.x, y: dir.z } };
+        if (Number.isFinite(y)) return { x, y, z, dir: { x: dir.x, y: dir.z }, source: 'wall-line-sample' };
       }
     }
-    return null;
+    return nearestInteriorRoofLanding(hit);
   }
 
   function getRoofClimbTarget() {
-    const player = climbDeps?.player;
-    if (!player || player.climbing || player.prone || player.onBranch) return null;
+    const player = runtimePlayer();
+    if (!player) { debugState.lastBlockReason = 'roof runtime player unavailable'; return null; }
+    if (player.climbing) { debugState.lastBlockReason = 'player is already climbing'; return null; }
+    if (player.prone) { debugState.lastBlockReason = 'player is prone'; return null; }
+    if (player.onBranch) { debugState.lastBlockReason = 'player is already on an elevated climb surface'; return null; }
     const hit = nearestStructureWallHit();
     if (!hit) return null;
     const landing = findRoofLanding(hit);
     if (!landing) { debugState.lastBlockReason = 'nearby wall has no reachable authored roof plane'; return null; }
-    const startSurfaceY = Number(climbDeps?.worldSurfaceY?.(player.x, player.y));
+    const surfaceYFn = runtimeFn('worldSurfaceY');
+    const startSurfaceY = Number(surfaceYFn?.(player.x, player.y));
     if (Number.isFinite(startSurfaceY) && landing.y <= startSurfaceY + 0.12) {
       debugState.lastBlockReason = 'roof is not above player';
       return null;
@@ -332,11 +387,13 @@
       wallFaceId: hit.wall.id,
       wallPoint: { ...hit.point },
       playerWallDistance: hit.playerDistance,
+      landingSource: landing.source || 'unknown',
     };
     debugState.lastBlockReason = null;
     debugState.lastCandidate = {
       wallFaceId: hit.wall.id,
       playerWallDistance: hit.playerDistance,
+      landingSource: target.landingSource,
       endWorldX: landing.x,
       endWorldZ: landing.z,
       endSurfaceY: landing.y,
@@ -347,15 +404,21 @@
   function isRoofState(branch) { return !!branch?.[ROOF_STATE_KEY]; }
 
   function startRoofClimb(climb) {
-    const player = climbDeps?.player;
-    if (!player || !climb?.meta) return false;
-    const mountRideState = climbDeps?.getMountRideState?.() || 'none';
+    const player = runtimePlayer();
+    if (!player || !climb?.meta) {
+      debugState.lastBlockReason = !player ? 'roof runtime player unavailable at climb start' : 'roof climb metadata unavailable';
+      return false;
+    }
+    const mountRideState = climbDeps?.getMountRideState?.()
+      || combatDeps()?.getMountRideState?.()
+      || window.Mounts?.rideState
+      || 'none';
     if (mountRideState !== 'none') {
-      climbDeps?.showToast?.('Dismount before climbing.', false);
+      (runtimeFn('showToast'))?.('Dismount before climbing.', false);
       debugState.lastBlockReason = 'mounted';
       return false;
     }
-    const tile = Number(climbDeps?.TILE) || 1;
+    const tile = runtimeTile();
     player.climbing = true;
     player.climbElapsed = 0;
     player.climbHopCount = 4;
@@ -370,9 +433,9 @@
     player.vx = 0;
     player.vy = 0;
     player.angle = Math.atan2(climb.dir.y, climb.dir.x);
-    climbDeps?.setFacingAngle?.(player.angle);
-    climbDeps?.setTargetAimAngle?.(player.angle);
-    climbDeps?.setLastMoveAngle?.(player.angle);
+    runtimeFn('setFacingAngle')?.(player.angle);
+    runtimeFn('setTargetAimAngle')?.(player.angle);
+    runtimeFn('setLastMoveAngle')?.(player.angle);
     player._climbTargetBranch = null;
     player._climbJumpDownAxis = null;
     player._climbLastHopIndex = -1;
@@ -396,11 +459,11 @@
   }
 
   function updateRoofMovement(dt) {
-    const player = climbDeps?.player;
+    const player = runtimePlayer();
     const roof = player?.onBranch;
     if (!isRoofState(roof)) return false;
-    const tile = Number(climbDeps?.TILE) || 1;
-    const raw = climbDeps?.getMovementInput?.() || { x: 0, y: 0 };
+    const tile = runtimeTile();
+    const raw = runtimeFn('getMovementInput')?.() || { x: Number(player.inputX) || 0, y: Number(player.inputY) || 0 };
     const rawLen = Math.hypot(Number(raw.x) || 0, Number(raw.y) || 0);
     const nx = rawLen > EPS ? (Number(raw.x) || 0) / rawLen : 0;
     const ny = rawLen > EPS ? (Number(raw.y) || 0) / rawLen : 0;
@@ -423,9 +486,9 @@
       }
       if (Number.isFinite(surface)) player.branchSurfaceY = surface;
       player.angle = Math.atan2(ny, nx);
-      climbDeps?.setFacingAngle?.(player.angle);
-      climbDeps?.setTargetAimAngle?.(player.angle);
-      climbDeps?.setLastMoveAngle?.(player.angle);
+      runtimeFn('setFacingAngle')?.(player.angle);
+      runtimeFn('setTargetAimAngle')?.(player.angle);
+      runtimeFn('setLastMoveAngle')?.(player.angle);
     }
     player.vx = 0;
     player.vy = 0;
@@ -435,7 +498,7 @@
   function resolveRoofKnockback(entity, fromX, fromY, speedPxS) {
     const roof = entity?.onBranch;
     if (!isRoofState(roof)) return null;
-    const tile = Number(climbDeps?.TILE) || 1;
+    const tile = runtimeTile();
     const angle = Math.atan2(entity.y - fromY, entity.x - fromX);
     const travel = Math.max(0, Number(speedPxS) || 0) * ROOF_KNOCKBACK_DUR_S;
     const nextX = entity.x + Math.cos(angle) * travel;
@@ -469,7 +532,7 @@
       return originalInit?.call(this, injectedDeps);
     };
     system.getClimbTarget = function roofAwareGetClimbTarget() {
-      if (isRoofState(climbDeps?.player?.onBranch)) return null;
+      if (isRoofState(runtimePlayer()?.onBranch)) return null;
       const existing = originalGetClimbTarget?.call(this);
       return existing || getRoofClimbTarget();
     };
@@ -479,7 +542,7 @@
     };
     system.updateClimb = function roofAwareUpdateClimb(dt) {
       const result = originalUpdateClimb?.call(this, dt);
-      finishRoofIfNeeded(climbDeps?.player);
+      finishRoofIfNeeded(runtimePlayer());
       return result;
     };
     system.updateBranchMovement = function roofAwareBranchMovement(dt) {
@@ -526,10 +589,14 @@
     roofSurfaceYAt,
     transformedStructureFaces,
     getDebug() {
+      const player = runtimePlayer();
       return {
         structureWrapperInstalled,
         climbHooksInstalled,
-        onRoof: isRoofState(climbDeps?.player?.onBranch),
+        climbDepsCaptured: !!climbDeps?.player,
+        runtimeDepsSource: runtimeDepsSource(),
+        runtimePlayerReady: !!player,
+        onRoof: isRoofState(player?.onBranch),
         ...debugState,
       };
     },
