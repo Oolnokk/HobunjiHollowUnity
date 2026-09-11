@@ -395,7 +395,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=branchfalldefense2"></script>
+  <script src="js/climb-system.js?v=20260911mountleap1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -2201,7 +2201,7 @@
   <script src="js/tool-metal-recolor.js?v=20260719a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260910review1"></script>
+  <script src="js/mount-system.js?v=20260911mountleap1"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
   <script src="js/audio-system.js?v=20260830flaskcues1"></script>
@@ -2335,7 +2335,7 @@
   </script>
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260909decouple1"></script>
-  <script src="game.js?v=20260910controller1"></script>
+  <script src="game.js?v=20260911mountleap1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260910controller1"></script>
   <script>

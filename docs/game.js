@@ -4925,8 +4925,15 @@
         const row = window.FormatUtils.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
         // A creature stationed onBranch (see wildlife-spawn.js's Nestmother
         // spawn) uses that branch's own height instead of terrain-follow —
-        // same override the player gets while climbing/on a branch.
-        const surfY = c.onBranch ? c.branchSurfaceY : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
+        // same override the player gets while climbing/on a branch. A mount
+        // mid-climb-leap (see mount-system.js's startClimbLeap/updateClimbLeap)
+        // gets the same treatment for the same reason the player's own
+        // climbSurfaceY exists: it's mid-crossing through impassable incline
+        // tiles, so a raw tile lookup would pop between the cliff base and
+        // landing the instant the crossing tile flips underneath it.
+        const surfY = c.onBranch ? c.branchSurfaceY
+          : c._climbLeap ? c._climbLeap.surfaceY
+          : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
         const grp = c.avatarRef.group;
         // scaleY (driven by attacks like Pounce, default 1) squashes the
         // sprite plane vertically around its own bottom edge rather than its
