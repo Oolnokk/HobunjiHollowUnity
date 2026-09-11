@@ -69,7 +69,7 @@
   // Store's daily stock rolls from (see game.js's generateDailyClothingStock),
   // just freely randomized instead of seeded by day.
   function _rollTreasureLootBundle() {
-    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, recipeItemKey: null, clothing: null };
+    const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, recipeItemKey: null, combatManualKey: null, clothing: null };
     if (_rollTreasureChance('metalBars', 1)) bundle.metalKeys = _rollTreasureMetalKeys();
     if (_rollTreasureChance('mysteryDye', 1)) bundle.dyeItemKeys = _rollTreasureDyeItemKeys();
     if (_rollTreasureChance('gold', 0.7)) {
@@ -83,6 +83,9 @@
       const chosen = recipes[Math.floor(deps.rnd() * recipes.length)]; // Seeded treasure choice.
       if (chosen && deps.rnd() < 0.25) bundle.recipeItemKey = window.AlchemySystem.ensureRecipeScrollItemDef(chosen.id);
       else if (chosen) bundle.potionKey = window.AlchemySystem.ensureRecipeItemDef(chosen.id, Math.floor(deps.rnd() * 3));
+    }
+    if (_rollTreasureChance('combatManual', 0.08)) {
+      bundle.combatManualKey = window.TechniqueScrolls?.rollManualKey?.({ random: deps.rnd }) || null; // Used as the rare, ability-specific combat-manual roll.
     }
     if (_rollTreasureChance('clothing', 0.25)) {
       const catalog = window.DyeSystem.getCatalog();
@@ -242,6 +245,10 @@
         if (loot.recipeItemKey) {
           deps.inventory[loot.recipeItemKey] = Math.min(99, (deps.inventory[loot.recipeItemKey] || 0) + 1);
           parts.push((deps.ITEM_DEFS[loot.recipeItemKey]?.icon || '📜') + ' ' + (deps.ITEM_DEFS[loot.recipeItemKey]?.label || 'Alchemy Recipe'));
+        }
+        if (loot.combatManualKey) {
+          deps.inventory[loot.combatManualKey] = Math.min(99, (deps.inventory[loot.combatManualKey] || 0) + 1);
+          parts.push((deps.ITEM_DEFS[loot.combatManualKey]?.icon || '📕') + ' ' + (deps.ITEM_DEFS[loot.combatManualKey]?.label || 'Combat Manual'));
         }
         if (loot.clothing) {
           deps.getPackClothing().push({ ...loot.clothing });

@@ -262,6 +262,21 @@
     }
   }
 
+  function _applyVisitorSchedule(merged, schedule) {
+    const npc = merged.npcs.find(entry => entry.id === schedule.npcId); // Used to attach one authoritative recurring arrival/departure lifecycle to its NPC.
+    if (!npc || !schedule.entrance || !Array.isArray(schedule.visits) || !schedule.visits.length) return;
+    npc.visitorPresence = {
+      entrance: { ...schedule.entrance },
+      visits: schedule.visits.map(visit => ({ ...visit })),
+    };
+    const hooks = npc.scheduleHooks || (npc.scheduleHooks = {}); // Used to retain the existing schedule container while replacing Jubmir's always-present routine.
+    hooks.defaultMapId = schedule.entrance.mapId;
+    hooks.rules = (schedule.rules || []).map(rule => ({ ...rule, visitorScheduleOverride: true }));
+    delete hooks.defaultStationId;
+    delete hooks.defaultPosition;
+    npc.agenda = []; // Used to prevent free-time planning from synthesizing an off-schedule town presence.
+  }
+
   function _presenceBoundaries(choice, npcById, day) {
     const start = _scheduleTimeMinutes(choice.from); // Used as the beginning of the conditional social window.
     const end = _scheduleTimeMinutes(choice.to); // Used as the end of the conditional social window.
@@ -342,6 +357,7 @@
     if (removedNpcIds.size) merged.npcs = merged.npcs.filter(npc => !removedNpcIds.has(npc.id));
     for (const redirect of scheduleOverrides.stationRedirects || []) _applyStationRedirect(merged, redirect);
     for (const redirect of scheduleOverrides.positionRedirects || []) _applyPositionRedirect(merged, redirect);
+    for (const schedule of scheduleOverrides.visitorSchedules || []) _applyVisitorSchedule(merged, schedule);
     for (const choice of scheduleOverrides.presenceChoices || []) _applyPresenceChoice(merged, choice);
     return merged;
   }

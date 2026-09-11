@@ -189,7 +189,7 @@
        to localStorage and have the game load that instead of the repo file,
        toggled from the onboarding save-select screen. Loaded before anything
        that calls loadDatabase() (combat-config-loader.js, game.js, onboarding.js). -->
-  <script src="js/local-db-overrides.js?v=20260727a"></script>
+  <script src="js/local-db-overrides.js?v=20260910jubmir1"></script>
   <!-- Item trait vocabulary/computation (window.ItemTraits) — see
        docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
        exists; consumed by npc-gifting.js and tools/item-database-editor. -->
@@ -295,7 +295,7 @@
        load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
-  <script src="js/wild-treasure.js?v=20260826treasure2"></script>
+  <script src="js/wild-treasure.js?v=20260910manuals1"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -350,13 +350,13 @@
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
   <script src="js/reagent-plants.js?v=20260811a"></script>
-  <!-- Jubmir the traveling trader: daily one-off egg stock (window.JubmirShop)
+  <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
        call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.JubmirShop.init(...) during its own setup. -->
-  <script src="js/jubmir-shop.js?v=20260807a"></script>
+  <script src="js/jubmir-shop.js?v=20260910manuals1"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -2270,7 +2270,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20260902a"></script>
+  <script src="js/npc-scheduling.js?v=20260910jubmir1"></script>
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so

@@ -326,6 +326,38 @@
           "restockDays": 1,
           "maxPerRestock": 1,
           "conditions": {}
+        },
+        {
+          "key": "combatManualOpportunistJab", "abilityId": "opportunistJab", "icon": "📕", "name": "Opportunist Jab Combat Manual",
+          "desc": "A practical manual that permanently teaches Opportunist Jab.", "price": 90, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        },
+        {
+          "key": "combatManualExhaustCutter", "abilityId": "exhaustCutter", "icon": "📕", "name": "Exhaust Cutter Combat Manual",
+          "desc": "A practical manual that permanently teaches Exhaust Cutter.", "price": 90, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        },
+        {
+          "key": "combatManualBackstabFlick", "abilityId": "backstabFlick", "icon": "📕", "name": "Backstab Flick Combat Manual",
+          "desc": "A practical manual that permanently teaches Backstab Flick.", "price": 90, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        },
+        {
+          "key": "combatManualMercySpike", "abilityId": "mercySpike", "icon": "📕", "name": "Mercy Spike Combat Manual",
+          "desc": "A practical manual that permanently teaches Mercy Spike.", "price": 90, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        },
+        {
+          "key": "combatManualCounterShield", "abilityId": "counterShield", "icon": "📕", "name": "Counter Shield Combat Manual",
+          "desc": "A guarded manual that permanently teaches Counter Shield.", "price": 120, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        },
+        {
+          "key": "combatManualBlinkDodge", "abilityId": "blinkDodge", "icon": "📕", "name": "Blink Dodge Combat Manual",
+          "desc": "A guarded manual that permanently teaches Blink Dodge.", "price": 120, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        },
+        {
+          "key": "combatManualChargedBreaker", "abilityId": "chargedBreaker", "icon": "📕", "name": "Charged Breaker Combat Manual",
+          "desc": "An advanced manual that permanently teaches Charged Breaker.", "price": 160, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        },
+        {
+          "key": "combatManualAcceleratingFlurry", "abilityId": "acceleratingFlurry", "icon": "📕", "name": "Accelerating Flurry Combat Manual",
+          "desc": "An advanced manual that permanently teaches Accelerating Flurry.", "price": 160, "restockDays": 1, "maxPerRestock": 1, "conditions": {}
         }
       ]
     }
