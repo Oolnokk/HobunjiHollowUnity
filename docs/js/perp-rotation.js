@@ -28,6 +28,65 @@
   // without it, nearestDT can alternate signs and hard-snap the portrait
   // between both edges every frame.
   const PERP_CENTER_HYSTERESIS_RAD = THREE.MathUtils.degToRad(3);
+  const npcWalkerByPerpState = new WeakMap(); // Caches each NPC's persistent clamp state -> walker lookup for the perspective-aware path below.
+  let npcCameraSample = null; // Reused for several NPC clamps in the same frame-sized window so debug camera access does not allocate once per walker.
+  let npcCameraSampleAtMs = -Infinity; // Timestamp used by liveNpcCameraPosition to keep that shared camera sample very short-lived.
+  let npcWorldPosition = null; // Lazily-created THREE.Vector3 reused when an NPC root has a transformed parent and needs a true world position.
+
+  function cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition) {
+    const worldX = Number(worldPosition?.x), worldZ = Number(worldPosition?.z);
+    const cameraX = Number(cameraPosition?.x), cameraZ = Number(cameraPosition?.z);
+    if (![worldX, worldZ, cameraX, cameraZ].every(Number.isFinite)) return null;
+    const dx = cameraX - worldX;
+    const dz = cameraZ - worldZ;
+    if (Math.hypot(dx, dz) < 1e-8) return null;
+    const viewYawWorld = Math.atan2(dx, dz);
+    return [viewYawWorld + Math.PI / 2, viewYawWorld - Math.PI / 2];
+  }
+
+  function liveNpcCameraPosition() {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (npcCameraSample && now - npcCameraSampleAtMs < 4) return npcCameraSample;
+    const climbDebugPosition = window.__climbDebug?.getCameraDebug?.()?.camPos;
+    const furnitureDebugPosition = window.__hobunjiFurnitureDebug?.camState?.position;
+    const source = climbDebugPosition || furnitureDebugPosition;
+    const x = Number(source?.x), y = Number(source?.y), z = Number(source?.z);
+    if (![x, y, z].every(Number.isFinite)) return null;
+    npcCameraSample = { x, y, z };
+    npcCameraSampleAtMs = now;
+    return npcCameraSample;
+  }
+
+  function npcWalkerForPerpState(state) {
+    if (!state || typeof state !== 'object') return null;
+    const cached = npcWalkerByPerpState.get(state);
+    if (cached?.perpState === state) return cached;
+    const walkers = window._npcWalkers;
+    if (!Array.isArray(walkers)) return null;
+    const walker = walkers.find(candidate => candidate?.perpState === state) || null;
+    if (walker) npcWalkerByPerpState.set(state, walker);
+    return walker;
+  }
+
+  function perspectiveNpcPerps(state, fallbackPerps) {
+    const walker = npcWalkerForPerpState(state);
+    const cameraPosition = walker ? liveNpcCameraPosition() : null;
+    if (!walker?.root || !cameraPosition) return fallbackPerps;
+    let worldPosition = walker.root.position;
+    if (typeof walker.root.getWorldPosition === 'function' && typeof THREE.Vector3 === 'function') {
+      npcWorldPosition ||= new THREE.Vector3();
+      worldPosition = walker.root.getWorldPosition(npcWorldPosition);
+    }
+    const resolved = cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition);
+    if (!resolved) return fallbackPerps;
+    state.npcPerspectiveDebug = {
+      mode: 'npc-world-camera-bearing',
+      cameraPosition: { x: cameraPosition.x, y: cameraPosition.y, z: cameraPosition.z },
+      npcWorldPosition: { x: Number(worldPosition.x), y: Number(worldPosition.y), z: Number(worldPosition.z) },
+      cameraPerpsRad: resolved.slice(),
+    };
+    return resolved;
+  }
 
   // Keeps model rotation outside dead zones around each perp angle (radius given
   // by deadRad, defaulting to PERP_DEAD_RAD).
@@ -100,8 +159,17 @@
   // Applies perpClamp to a rendered rotation. Callers keep `rawTarget` as
   // their authored/logical facing so stationary models can be re-clamped
   // whenever the camera azimuth changes instead of baking in an old result.
+  // NPC walkers use this function (the player calls perpClamp directly), so
+  // substitute the true NPC->camera world bearing here to account for the
+  // perspective camera's parallax away from the player/camera target.
   function clampedRotation(state, current, rawTarget, perps, lerp = 0.15, deadRad = PERP_DEAD_RAD) {
-    const { effectiveTarget, snapTo } = perpClamp(state, rawTarget, perps, deadRad);
+    const resolvedPerps = perspectiveNpcPerps(state, perps);
+    const { effectiveTarget, snapTo } = perpClamp(state, rawTarget, resolvedPerps, deadRad);
+    if (state.npcPerspectiveDebug && state.pixelProbeDebug) {
+      state.pixelProbeDebug.cameraPerpsMode = state.npcPerspectiveDebug.mode;
+      state.pixelProbeDebug.cameraPosition = { ...state.npcPerspectiveDebug.cameraPosition };
+      state.pixelProbeDebug.subjectWorldPosition = { ...state.npcPerspectiveDebug.npcWorldPosition };
+    }
     if (snapTo !== null || lerp >= 1) return effectiveTarget;
     return current + deps.angleDiff(effectiveTarget, current) * Math.max(0, lerp);
   }
@@ -227,6 +295,7 @@
     init,
     perpClamp,
     clampedRotation,
+    cameraRelativePerpsAtWorldPosition,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
     nearestCardinalAngle,
