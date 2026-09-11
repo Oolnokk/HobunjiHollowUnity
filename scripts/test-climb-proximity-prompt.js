@@ -102,8 +102,8 @@ window.WorldPopupText.syncInteractionPrompts({
 assert.equal(lastSync.buttons.length, 1, 'existing climb interaction row is not duplicated');
 assert.equal(lastSync.root.name, 'existing-branch-root');
 
-// Another normal world interaction keeps ownership of the shared list. Climb
-// prompting does not hijack NPC/object prompt placement.
+// The existing interaction popup is a stacked list, so a climb row can coexist
+// with Enter/Talk/etc. without inventing another popup surface.
 lastSync = null;
 window.WorldPopupText.syncInteractionPrompts({
   buttons: [{ action: 'talk', label: 'Talk', worldInteraction: true }],
@@ -111,8 +111,12 @@ window.WorldPopupText.syncInteractionPrompts({
   root: { name: 'npc-root' },
   enabled: true,
 });
-assert.equal(lastSync.buttons.length, 1, 'climb row waits while another world interaction owns the popup list');
+assert.equal(lastSync.buttons.length, 2, 'climb is appended to the existing world interaction list');
 assert.equal(lastSync.buttons[0].action, 'talk');
+assert.equal(lastSync.buttons[1].action, 'climb_branch');
+assert.equal(lastSync.buttons[1].label, 'Climb Building');
+assert.equal(lastSync.promptInputs[1].actionId, 'dodge');
+assert.equal(lastSync.root.name, 'npc-root', 'existing interaction root continues to own the shared stacked list');
 
 // Merely standing beside a plateau still gets a popup hint even before facing
 // is aligned enough for ClimbSystem.getClimbTarget().
