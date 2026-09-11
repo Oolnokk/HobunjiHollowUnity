@@ -130,6 +130,9 @@
   }
 
   function proximityPlateau(player) {
+    const area = window.GridTileAccessors?.getCurrentArea?.(); // Used to avoid advertising cliff climbing in an area where ClimbSystem itself disables it.
+    const isZoneArea = combatDeps()?._isZoneArea;
+    if (typeof isZoneArea === 'function' && !isZoneArea(area)) return null;
     const grid = activeGrid();
     if (!Array.isArray(grid) || !grid.length || !player) return null;
     const tile = tileSize();
@@ -285,10 +288,17 @@
     let target = null;
     try { target = system.getClimbTarget(); }
     catch (error) { return hide(`target error: ${error?.message || error}`); }
-    if (target && !mountedTargetUnavailable(target)) return renderPrompt(target, true);
+    if (target) {
+      if (mountedTargetUnavailable(target)) return hide('target requires dismounting');
+      return renderPrompt(target, true);
+    }
+    // Roofs and branches both reuse player.onBranch as their elevated-surface
+    // state. Once already up there, do not rediscover the same nearby wall/tree
+    // as a new climb unless ClimbSystem explicitly offered branchJumpDown above.
+    if (player?.onBranch) return hide('already on elevated surface');
 
     const nearby = nearestProximityHint(player);
-    if (!nearby) return hide(target ? 'target requires dismounting' : 'no climbable surface nearby');
+    if (!nearby) return hide('no climbable surface nearby');
     if (mountedTargetUnavailable(nearby)) return hide('nearby climbable surface requires dismounting');
     return renderPrompt(nearby, false);
   }
