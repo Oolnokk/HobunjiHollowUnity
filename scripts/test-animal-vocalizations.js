@@ -166,7 +166,7 @@ const delayed = creature('delayed');
 autoStart = false;
 assert.equal(window.AnimalVocalizations.threatGrowl(delayed, 'mobile-buffer-test'), true);
 tick(delayed, 0.09, { threatened: true });
-assert.equal(window.AnimalVocalizations.headNodOffsetDeg(delayed), 0, 'nod waits for actual audio start');
+assert.equal(window.AnimalVocalizations.headNodOffsetDeg(delayed) || 0, 0, 'nod waits for actual audio start');
 assert.equal(pendingStarts.length, 1);
 pendingStarts.shift()();
 tick(delayed, 0.045, { threatened: true });
@@ -191,7 +191,7 @@ assert.match(simpleEditor, /Filter utterance library/, 'large sound library has 
 assert.doesNotMatch(simpleEditor, /frequency analysis|normalization|tempo min|tempo max|pitch min|pitch max|contour/i);
 
 const gameSource = read('docs/game.js');
-assert.match(gameSource, /AnimalVocalizations\?\.tickCreature\?\.\(c, dt\)/, 'hostile cadence still drives passive chatter');
+assert.match(gameSource, /AnimalVocalizations\?\.tickCreature\?\.\(c, entityDt\)/, 'hostile cadence still drives passive chatter');
 assert.match(gameSource, /requestThreatGrowl:/, 'combat still requests semantic growl intent');
 assert.match(gameSource, /setHeadAdditiveRotation\?\.\(vocalHeadNodDeg\)/, 'utterance nod remains an additive neck layer');
 

@@ -50,7 +50,11 @@ class FakeImage {
   set src(url) {
     this.pixels = url.includes('bodystripes') ? rgbaPixels(0)
       : url.includes('spectacles') ? rgbaPixels(1)
-        : rgbaPixels();
+        // The real eye/blink overlay PNG is transparent outside its tiny eye
+        // region; a fully opaque stand-in would paint over the whole probe
+        // canvas and clobber the bodystripes/spectacles pixels drawn earlier.
+        : url.includes('_eye') || url.includes('_blink') ? rgbaPixels(-1)
+          : rgbaPixels();
     queueMicrotask(() => this.onload?.());
   }
 }
