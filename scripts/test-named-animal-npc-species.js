@@ -27,6 +27,8 @@ assert.match(namedAnimal, /npcSpeciesChoices/, 'Character Studio species field m
 assert.match(namedAnimal, /Animal ·/, 'the picker must visibly distinguish creature species from person species');
 assert.match(namedAnimal, /appearance\.creatureKind = kind/, 'animal selections must persist creature identity into appearance data');
 assert.match(namedAnimal, /appearance\.avatarType = 'animal'/, 'animal selections must explicitly mark the non-humanoid avatar route');
+assert.match(namedAnimal, /options\.fromInput === true/, 'ordinary humanoid appearance may only be rewritten after an explicit Species-field edit');
+assert.match(namedAnimal, /MutationObserver[\s\S]*syncStudioSpecies\(\)/, 'selection refreshes must re-check animal identity without forcing humanoid appearance variants');
 assert.match(namedAnimal, /buildAnimalPlaneAvatarModel/, 'named animal NPC world models must reuse the existing animal plane builder');
 assert.match(namedAnimal, /CreatureGeneticsRender/, 'named animal previews must reuse the shared creature genetics renderer when available');
 assert.match(namedAnimal, /__namedAnimalNpcDebug/, 'mobile/dev diagnostics must expose named animal NPC bridge state');
