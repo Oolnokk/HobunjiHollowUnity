@@ -18,7 +18,7 @@ assert.match(mountSource,
   /mountRideState !== 'mounted'[\s\S]{0,900}riderMesh\.position\.set\(carrierPosition\.x, targetY, carrierPosition\.z\);/,
   'only the settled mounted state snaps the rider to the final carrier mesh transform');
 assert.match(mountSource,
-  /const riderSeatOffsetY = \(Number\(seatLift\) \|\| 0\) - \(Number\(m\.halfHeight\) \|\| 0\);/,
+  /const riderSeatOffsetY = \(Number\(seatLift\) \|\| 0\) - \(Number\(m\.groundLift \?\? m\.halfHeight\) \|\| 0\);/,
   'the existing floor-relative saddle lift is converted to a carrier-center-relative rider offset');
 assert.match(mountSource,
   /get renderSync\(\) \{ return \{ \.\.\.mountRenderSync \}; \}/,
