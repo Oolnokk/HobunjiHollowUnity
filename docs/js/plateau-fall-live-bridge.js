@@ -31,7 +31,14 @@
   }
 
   function runtimeDeps() {
-    return climbDeps || window.Combat?.deps || null;
+    if (climbDeps?.player) return climbDeps;
+    return window.Combat?.deps || climbDeps || null;
+  }
+
+  function runtimeDepsSource() {
+    if (climbDeps?.player) return 'ClimbSystem.init';
+    if (window.Combat?.deps?.player) return 'Combat.deps fallback';
+    return 'none';
   }
 
   function movementIntent(deps, player) {
@@ -239,9 +246,10 @@
         const candidate = d.candidate
           ? `(${d.candidate.startCol},${d.candidate.startRow}) -> (${d.candidate.landCol},${d.candidate.landRow}) drop=${d.candidate.tierDrop} tier(s)`
           : 'none';
+        const deps = runtimeDeps();
         const section = [
           '', '=== Plateau fall diagnostics ===',
-          `Live watcher: ${watcherRaf ? 'RUNNING' : 'NOT RUNNING'}   ClimbSystem deps captured: ${climbDeps ? 'YES' : 'no'}`,
+          `Live watcher: ${watcherRaf ? 'RUNNING' : 'NOT RUNNING'}   Runtime deps: source=${runtimeDepsSource()} player=${deps?.player ? 'ready' : 'missing'} climbInitCapture=${climbDeps?.player ? 'yes' : 'no'}`,
           `Fresh input: ${d.inputSource || '-'} ${d.intent ? `(${Number(d.intent.x).toFixed(2)},${Number(d.intent.y).toFixed(2)}) active=${d.intent.active}` : '-'}`,
           `Current plateau tile: ${d.startTile ? `(${d.startTile.col},${d.startTile.row}) type=${d.startTile.type || '-'} tier=${d.startTile.elevTier} incline=${d.startTile.incline}` : 'unknown'}`,
           `Fall candidate: ${candidate}`,
@@ -264,11 +272,14 @@
   window.HobunjiPlateauFallLive = Object.freeze({
     probe,
     getDebug() {
+      const deps = runtimeDeps();
       return {
         ...lastDebug,
         watcherRunning: !!watcherRaf,
         climbInitPatched,
-        climbDepsCaptured: !!climbDeps,
+        climbDepsCaptured: !!climbDeps?.player,
+        runtimeDepsSource: runtimeDepsSource(),
+        runtimePlayerReady: !!deps?.player,
         config: { edgeTriggerTiles: EDGE_TRIGGER_TILES, maxWallTiles: MAX_WALL_TILES, intentMin: INTENT_MIN },
       };
     },
