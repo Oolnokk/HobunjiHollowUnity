@@ -50,14 +50,11 @@ assert.strictEqual(result.climbable, true, 'camera ray is irrelevant when the li
 assert.strictEqual(result.wallFaceId, 'wall');
 assert.strictEqual(result.selectionModel, 'nearest-player-wall');
 
-// Legacy entrance metadata is cleared and does not change climbability.
 group.userData.hobunjiRoofClimbStructure.entrance = {x:1,z:0.5};
 result = api.evaluateRay(null);
 assert.strictEqual(result.climbable, true, 'entrance adjacency remains disabled');
 assert.strictEqual(group.userData.hobunjiRoofClimbStructure.entrance, null, 'legacy entrance metadata is cleared');
 
-// When the live climb resolver has no target, diagnostics report the player's
-// nearest structural-wall distance rather than claiming the pixel ray missed.
 liveTarget = null;
 player.y = -240;
 result = api.evaluateRay({ origin:{x:1,y:1,z:-1}, direction:{x:0,y:0,z:1} });
