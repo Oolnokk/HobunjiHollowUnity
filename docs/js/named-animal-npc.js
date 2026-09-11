@@ -20,6 +20,7 @@
   let installTimer = null; // Used to stop polling once every available bridge has been installed.
   let studioSyncing = false; // Prevents Character Studio field synchronization from recursively dispatching itself.
   const imagePromiseByUrl = new Map(); // Reuses decoded creature images for editor/database portrait previews.
+  const watchedGlobalAssignments = new Set(); // Tracks compatibility globals already intercepted so bootstrap hooks are installed only once.
 
   function registry() {
     return window.HobunjiNpcSpeciesRegistry || null;
@@ -396,6 +397,23 @@
     return true;
   }
 
+  function watchGlobalAssignment(name) {
+    if (watchedGlobalAssignments.has(name)) return;
+    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Existing descriptor is preserved when it cannot safely be intercepted.
+    if (descriptor && descriptor.configurable === false) return;
+    let value = window[name]; // Backing value returned by the temporary accessor until the real module assigns its API.
+    Object.defineProperty(window, name, {
+      configurable: true,
+      enumerable: descriptor?.enumerable ?? true,
+      get() { return value; },
+      set(next) {
+        value = next;
+        installAll(); // Installs the relevant wrapper synchronously inside the module's own global assignment, before later game code can consume it.
+      },
+    });
+    watchedGlobalAssignments.add(name);
+  }
+
   function installAll() {
     try {
       installProfileBridge();
@@ -422,6 +440,9 @@
     debugSnapshot: () => ({ ...debugState }),
   };
   window.__namedAnimalNpcDebug = debugState;
+  watchGlobalAssignment('NpcAvatarPreview');
+  watchGlobalAssignment('PNGPlaneAvatar');
+  watchGlobalAssignment('renderProfile');
   installAll();
   installTimer = setInterval(installAll, INSTALL_INTERVAL_MS);
 })();
