@@ -35,6 +35,23 @@
     document.head.appendChild(script);
   })();
 
+  // Eastern Mire terrain is reshaped after the generic wilderness generator
+  // finishes. Load this adapter before the generator so it can both install
+  // its zone wrapper and invalidate stale same-year Tothal caches before the
+  // wildlife debug Force Tothal Shift path is used.
+  (function loadEasternMireIslandsEarly() {
+    const src = 'js/eastern-mire-islands.js?v=20260906b';
+    if (window.EasternMireIslands || document.querySelector('script[data-eastern-mire-islands]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-eastern-mire-islands="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.easternMireIslands = '1';
+    document.head.appendChild(script);
+  })();
+
   // The Cloud Forest tree batcher must load before cloud-forest-fog.js so it
   // can wrap that module's init() and capture the existing player/scene deps.
   // Keep this parser-synchronous for the same reason as the scenery guard above.
