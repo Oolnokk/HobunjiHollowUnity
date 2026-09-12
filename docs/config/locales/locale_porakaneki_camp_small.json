@@ -30,14 +30,14 @@
   "placement": {
     "mode": "temporary",
     "maxInstances": 1,
-    "allowedZones": [],
+    "allowedZones": ["map_western_slope"],
     "clearanceTiles": 2,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 10,
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,
-    "notes": "Placed post-generation by PorakanekiCamps using TemporaryLocales; unlike bandit camps it is persistent for the generated zone and is not cleared by looting."
+    "notes": "Placed post-generation in the Western Slope by PorakanekiCamps using TemporaryLocales; unlike bandit camps it is persistent for the generated zone and is not cleared by looting."
   },
   "meta": {"authoring":"runtime hunting camp","populationFromTents":true}
 }
