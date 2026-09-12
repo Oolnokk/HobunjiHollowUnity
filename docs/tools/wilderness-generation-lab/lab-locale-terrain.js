@@ -21,8 +21,15 @@
   let currentOverlay = null; // Active 3D diagnostic group removed before each regenerated preview.
   let renderToken = 0; // Monotonic overlay token prevents stale delayed scene attachment after rapid regeneration.
 
+  function normalizeTerrainRules(locale) {
+    if (!locale || typeof locale !== 'object') return locale;
+    const terrainAnchors = locale.terrainAnchors || locale.placement?.terrainAnchors || {}; // Locale Editor autosaves rules under placement; exported files also expose the runtime top-level copy.
+    const embeddedTiles = locale.embeddedTiles || locale.placement?.embeddedTiles || {}; // Same fallback keeps the Lab compatible with in-editor autosaves and downloaded locale JSON.
+    return { ...locale, terrainAnchors, embeddedTiles };
+  }
+
   function terrainAware(locales) {
-    return (locales || []).filter(locale => Placement.hasTerrainRules(locale));
+    return (locales || []).map(normalizeTerrainRules).filter(locale => Placement.hasTerrainRules(locale));
   }
 
   function loadEditorLocales() {
