@@ -231,6 +231,15 @@ function shouldRenderBlink(headUrl, nowMs) {
 let _puAssetBase = './assets/';
 const IMG_CACHE  = new Map();
 
+const DEFAULT_BEHIND_LAYER_ORDER = [
+  'sideLeft', 'rightSideHair',
+  'baseLeftArm', 'baseTorso', 'baseRightArm',
+  'head', 'frontHair',
+  'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
+  'snowgoggles',
+  'hairBack',
+];
+
 /** Set the asset base URL used by loadImg(). Call before rendering. */
 function setPortraitAssetBase(base) {
   _puAssetBase = base;
@@ -1596,7 +1605,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // plausible rear silhouette instead of leaving the back of the head bald.
       frontHair:     () => drawEmoteLayers(frontHairLayers),
     };
-    for (const key of (renderOptions?.behindLayerOrder || renderProfile.defaultBehindLayerOrder)) {
+    for (const key of (renderOptions?.behindLayerOrder || DEFAULT_BEHIND_LAYER_ORDER)) {
       _behindDraw[key]?.();
     }
     if (opacityMaskLayer?.url) {
@@ -2861,14 +2870,15 @@ window.getPortraitFighters = () => FIGHTERS;
 window.preloadAllPortraitSprites = preloadAllPortraitSprites;
 window.getPortraitXformPreset = getPortraitXformPreset;
 
-renderProfile.defaultBehindLayerOrder = [
-  'sideLeft', 'rightSideHair',
-  'baseLeftArm', 'baseTorso', 'baseRightArm',
-  'head', 'frontHair',
-  'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
-  'snowgoggles',
-  'hairBack',
-];
+// Kept as a real constant (not just a property on renderProfile) because
+// external modules (named-animal-npc.js, character-studio-animal-*.js)
+// monkey-patch `window.renderProfile` with a wrapper function. Since this
+// file declares renderProfile as a bare top-level `function` rather than
+// inside an IIFE, that reassignment overwrites the same global binding this
+// file's own code reads by bare name — so a `renderProfile.foo` lookup from
+// inside renderProfile's own body would silently start reading off the
+// wrapper (which has no such property) instead of the original function.
+renderProfile.defaultBehindLayerOrder = DEFAULT_BEHIND_LAYER_ORDER;
 
 window.loadPortraitCosmetics = loadPortraitCosmetics;
 window.renderPortraitProfile = renderProfile;
