@@ -542,7 +542,11 @@
   function hideEntity(hunter) {
     const entity = hunter?.entity;
     if (!entity) return;
-    hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE; // Preserve last detailed position before collapsing back into the abstract agent.
+    const wasDetailed = entity.areaId === cfg.zoneId && entity.avatarRef?.group?.visible !== false; // Only the first collapse from full simulation is allowed to overwrite the abstract position.
+    if (wasDetailed) {
+      hunter.x = entity.x / combatDeps.TILE;
+      hunter.y = entity.y / combatDeps.TILE;
+    } // Once already dormant, later coarse ticks must keep advancing hunter.x/y instead of snapping them back to this stale hidden entity transform.
     entity.areaId = `${DORMANT_AREA_PREFIX}${cfg.zoneId}`;
     if (entity.avatarRef?.group) entity.avatarRef.group.visible = false;
     if (entity.groundShadow) entity.groundShadow.visible = false;
@@ -687,8 +691,8 @@
     for (const hunter of state.hunters) {
       if (hunter.entity?.health <= 0) continue;
       if (sleeping) {
-        advanceAbstractHunter(hunter, coarseDt || dt); // Sleeping collapses immediately into a randomly chosen tent for that night.
-        hideEntity(hunter);
+        hideEntity(hunter); // Collapse any detailed entity first so its last visible transform is captured once.
+        advanceAbstractHunter(hunter, coarseDt || dt); // Then move the abstract agent into that night's randomly chosen tent without the dormant entity overwriting it.
         continue;
       }
 
