@@ -8,6 +8,7 @@
   const PROFILER_PREF_KEY = 'hobunji_perf_profiler_v1';
   const TREE_MODE_KEY = 'hobunji_tree_asset_mode_v1';
   const BACKDROP_BLUR_DIAGNOSTIC_KEY = 'hobunji_disable_backdrop_blur_v1';
+  const FORCE_HIDDEN_PANELS_KEY = 'hobunji_force_hidden_panels_v1';
 
   const readStorage = (key, fallback = null) => {
     try {
@@ -26,6 +27,7 @@
   let fpsEnabled = readStorage(FPS_PREF_KEY, '0') === '1';
   let profilerEnabled = readStorage(PROFILER_PREF_KEY, '0') === '1';
   let backdropBlurDisabled = readStorage(BACKDROP_BLUR_DIAGNOSTIC_KEY, '0') === '1';
+  let forceHiddenPanelsEnabled = readStorage(FORCE_HIDDEN_PANELS_KEY, '0') === '1';
   const perfState = {
     raf: 0,
     lastFrameTs: 0,
@@ -51,6 +53,7 @@
     longTaskObserver: null,
     lastHeapBytes: 0,
     heapDeltaMbPerSec: 0,
+    domNodeCount: 0,
   };
 
   function formatCount(value) {
@@ -265,6 +268,12 @@
       perfState.lastHeapBytes
         ? `JS heap: ${(perfState.lastHeapBytes / 1e6).toFixed(1)} MB   Δ ${perfState.heapDeltaMbPerSec >= 0 ? '+' : ''}${perfState.heapDeltaMbPerSec.toFixed(1)} MB/s`
         : 'JS heap: unavailable (non-Chromium browser)',
+      // A large, growing count here (thousands+) is circumstantial evidence
+      // for the "outside gameLoop" cost being browser-internal style/layout
+      // recalculation of DOM subtrees that stay mounted (at opacity:0) while
+      // "closed" -- see setForceHiddenPanelsEnabled below for the toggle
+      // that tests this directly.
+      `DOM nodes: ${formatCount(perfState.domNodeCount)}`,
     ].join('\n');
   }
 
@@ -319,6 +328,9 @@
         }
         perfState.lastHeapBytes = heapBytes;
       }
+      // Cheap enough (a single querySelectorAll pass) only because it's
+      // gated to this same 500ms tick rather than running every frame.
+      if (profilerEnabled) perfState.domNodeCount = document.querySelectorAll('*').length;
       updatePerformanceUI(ts);
     }
     perfState.raf = requestAnimationFrame(frameLoop);
@@ -388,6 +400,45 @@
         styleEl = document.createElement('style');
         styleEl.id = STYLE_ID;
         styleEl.textContent = '*, *::before, *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }';
+        document.head.appendChild(styleEl);
+      }
+    } else if (styleEl) {
+      styleEl.remove();
+    }
+  }
+
+  // Diagnostic toggle, not a real fix: even with backdrop-filter removed
+  // (the toggle above), #menuPanel and #houseLayoutModal stay mounted in the
+  // page at opacity:0 (not display:none) while "closed", specifically so
+  // their open/close transition has something to animate. But opacity:0
+  // does NOT let the browser skip recalculating style and layout for that
+  // subtree the way display:none would -- #menuPanel in particular carries
+  // the full inventory/farm/compendium/etc. content, a large and complex DOM
+  // tree, and any mutation inside it (even one driven by gameplay code that
+  // has no idea the panel is closed) can force the browser to redo
+  // style/layout work for the whole thing. That recalculation happens in a
+  // browser-internal phase between JS execution and paint -- structurally
+  // invisible to both the requestAnimationFrame and MutationObserver
+  // auto-instrumentation above, for the same underlying reason
+  // backdrop-filter's composite cost was invisible to them: it isn't JS
+  // execution time at all. This toggle forces a real display:none on these
+  // two known opacity-based panels while they're closed, so their DOM
+  // subtree drops out of layout entirely until reopened -- a harder, uglier
+  // version of "closed" than the game normally uses (no fade transition
+  // while this is on), but useful to isolate whether this is a real cost
+  // before touching anything.
+  function setForceHiddenPanelsEnabled(enabled) {
+    forceHiddenPanelsEnabled = !!enabled;
+    writeStorage(FORCE_HIDDEN_PANELS_KEY, forceHiddenPanelsEnabled ? '1' : '0');
+    const input = document.getElementById('settingForceHiddenPanels');
+    if (input) input.checked = forceHiddenPanelsEnabled;
+    const STYLE_ID = 'hobunjiForceHiddenPanelsStyle';
+    let styleEl = document.getElementById(STYLE_ID);
+    if (forceHiddenPanelsEnabled) {
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = STYLE_ID;
+        styleEl.textContent = '#menuPanel:not(.open), #houseLayoutModal:not(.open) { display: none !important; }';
         document.head.appendChild(styleEl);
       }
     } else if (styleEl) {
@@ -782,6 +833,11 @@
     backdropBlur.input.addEventListener('change', () => setBackdropBlurDisabled(backdropBlur.input.checked));
     box.appendChild(backdropBlur.row);
 
+    const forceHiddenPanels = makeCheckboxRow('settingForceHiddenPanels', 'Force display:none on closed panels (diagnostic)', forceHiddenPanelsEnabled,
+      '#menuPanel and #houseLayoutModal stay mounted at opacity:0 (not display:none) while closed, so their open/close animation has something to transition. Unlike the blur toggle above, this tests DOM style/layout recalculation cost rather than paint/composite cost: a large closed panel\'s subtree can still force the browser to redo layout work whenever anything inside it mutates, even fully invisible and unblurred. This forces real display:none on those two panels while closed (no fade transition while it\'s on) so you can check the FPS impact directly.');
+    forceHiddenPanels.input.addEventListener('change', () => setForceHiddenPanelsEnabled(forceHiddenPanels.input.checked));
+    box.appendChild(forceHiddenPanels.row);
+
     // Flashes a button's own label as inline feedback (e.g. "Copied!") and
     // reverts it after a moment — deliberate alternative to log()/__farmLog
     // for this whole cache-snapshot section, so neither a manual snapshot
@@ -1013,6 +1069,7 @@
     setFpsEnabled(fpsEnabled);
     setProfilerEnabled(profilerEnabled);
     setBackdropBlurDisabled(backdropBlurDisabled);
+    setForceHiddenPanelsEnabled(forceHiddenPanelsEnabled);
     startLagWatch();
     setTimeout(checkBakedTreeHealth, 4000);
   }
