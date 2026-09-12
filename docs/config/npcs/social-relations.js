@@ -20,6 +20,10 @@
 
   const DEFAULT_SEATING = Object.freeze({
     enabled: true,
+    // Seat choice does not need frame-rate reactivity. Re-score periodically
+    // (and immediately when the player's occupied chair changes) instead of
+    // re-running relationship/occupancy scoring once per NPC every frame.
+    reevaluateSeconds: 1,
     relationRadiusTiles: 5,
     distanceFalloffTiles: 5,
     dailyVariation: 2.25,
