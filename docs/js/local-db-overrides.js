@@ -155,6 +155,8 @@
       } else {
         delete npc.creatureKind;
         delete npc.appearance.creatureKind;
+        delete npc.appearance.animalKind;
+        delete npc.appearance.chatheadCreatureKind;
         if (npc.appearance.avatarType === 'animal') delete npc.appearance.avatarType;
       }
     }
