@@ -20,6 +20,28 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  const PUKTUK_KIND = 'puktuk'; // Used across genetics/render/spawn registration so the new species key stays centralized.
+  const PUKTUK_FOXTAIL_CHANCE = 0.08; // Used for fresh wild/livestock rolls; matches the existing 8% "rare pattern" tier.
+  const PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'; // Used to replace Drenkirra only in the Western Incline/Slope zone.
+
+  function configurePuktukStaticData() {
+    const gameCfg = window.SCRATCHBONES_CONFIG?.game; // Shared config object read later by game.js/farm-animals.js.
+    if (!gameCfg) return false;
+    const geneticsCfg = gameCfg.creatureGenetics || (gameCfg.creatureGenetics = {}); // Used by makeDefaultGenotype's existing per-pattern chance lookup.
+    const patternChances = geneticsCfg.patternChances || (geneticsCfg.patternChances = {}); // Stores Puktuk's rare foxtail roll without a second randomization path.
+    patternChances[PUKTUK_KIND] = { ...(patternChances[PUKTUK_KIND] || {}), belly: 1, foxtail: PUKTUK_FOXTAIL_CHANCE };
+
+    const livestockCfg = gameCfg.livestock || (gameCfg.livestock = {}); // Supplies the existing farm renderer, diet, and resource systems.
+    const widths = livestockCfg.animalWidths || (livestockCfg.animalWidths = {}); // Used by farm-animals.js and nursery/incubator previews.
+    widths[PUKTUK_KIND] = Number(widths['gar-wolf']) || 1.9;
+    const diets = livestockCfg.diet || (livestockCfg.diet = {}); // Used by barn trough feeding rules.
+    diets[PUKTUK_KIND] = 'prey';
+    const resources = livestockCfg.resources || (livestockCfg.resources = {}); // Used by the generic livestock collection/cooldown path.
+    resources[PUKTUK_KIND] = { itemKey: 'puktukWool', cooldownDays: 1, verb: 'Shear' };
+    return true;
+  }
+  configurePuktukStaticData();
+
   // `weight` skews which colors actually turn up on an animal — real
   // wildlife/livestock coats are overwhelmingly gray/brown/tan, with
   // orange an occasional accent and true red rare, so a flat uniform
@@ -149,7 +171,12 @@
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
     grehlr: ['mitts', 'spectacles', 'coloredstripe'],
     drenkirra: ['bodystripes', 'spectacles'],
+    puktuk: ['belly', 'foxtail'],
   };
+  const LIVESTOCK_ALWAYS_PRESENT_PATTERNS = { puktuk: new Set(['belly']) }; // Used by fresh rolls and breeding so Puktuk can never lose its authored belly layer.
+  function _patternAlwaysPresent(kind, patternId) {
+    return LIVESTOCK_ALWAYS_PRESENT_PATTERNS[kind]?.has(patternId) || false;
+  }
   // Per-pattern palette constraints. Grehlr's colored stripe is deliberately
   // restricted to the brighter end of the existing earthy fur palette; Fawn
   // is the authored lower brightness bound rather than a new stripe-only dye.
@@ -212,6 +239,7 @@
     'grehlr-den-mother': 'grehlr',
     'drenkirra-den-mother': 'drenkirra',
   };
+  const CREATURE_SIZE_PROFILE_ALIAS = { puktuk: 'gar-wolf' }; // Used only by size/ground calibration; Puktuk keeps its own sprites/genotype renderer.
   // Picks two fur colors that read as visually distinct — same rejection-
   // sample loop as the HTML lab's pickTwoFurColors().
   function pickTwoLivestockFurColors(kind) {
@@ -258,7 +286,7 @@
     const sizeClass = typeof genotypeOrSizeClass === 'string'
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the authored class used by renderer/anchors.
-    const profileKind = GENOTYPE_SPECIES_ALIAS[kind] || kind; // Reuses base-species rig data for variant creature keys.
+    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Puktuk borrows Gar-wolf size calibration without becoming a Gar-wolf render alias.
     const authored = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.sizeScales?.[sizeClass]; // Canonical Animation Author export.
     const x = Number(authored?.x); // Applied to the creature plane's local width.
     const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.
@@ -272,7 +300,7 @@
     const sizeClass = typeof genotypeOrSizeClass === 'string'
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the same authored size row used by creatureSizeScale().
-    const profileKind = GENOTYPE_SPECIES_ALIAS[kind] || kind; // Den-mother/alpha/wild variants share their base species' ground calibration.
+    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Puktuk borrows Gar-wolf floor calibration while visual aliases keep their own behavior.
     const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.
     return Number.isFinite(authored) && authored > 0 ? authored : null; // Zero is the Rigging "Auto" sentinel; callers fall back to their existing half-height terrain baseline.
   }
@@ -411,9 +439,10 @@
           : Number.isFinite(Number(geneticsCfg.defaultPatternChance))
             ? Number(geneticsCfg.defaultPatternChance)
             : (1 / 3);
-        const enabled = Math.random() < chance;
+        const alwaysPresent = _patternAlwaysPresent(kind, id); // Keeps authored anatomical regions (Puktuk belly) from being treated as optional genes.
+        const enabled = alwaysPresent || Math.random() < chance;
         const patternColor = _patternColorRule(kind, id) ? randomPatternColor(kind, id) : second.hex; // Restricted patterns get their own valid palette roll.
-        genotype[id] = { color: patternColor, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
+        genotype[id] = { color: patternColor, copies: alwaysPresent ? 2 : (enabled ? 1 : 0), inheritance: 'dominant', enabled };
       }
       genotype.sizeClass = sizeClass;
       const enabledIds = patterns.filter(id => genotype[id].enabled);
@@ -510,6 +539,14 @@
     if (Math.random() < mutationChance) baseColor = mutateFurColor(baseColor, kind);
     child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
     for (const id of patterns) {
+      if (_patternAlwaysPresent(kind, id)) {
+        const la = genotypeA?.[id] || { color: randomPatternColor(kind, id) }; // Supplies one parent's permanent-region color for blending.
+        const lb = genotypeB?.[id] || { color: randomPatternColor(kind, id) }; // Supplies the other parent's permanent-region color for blending.
+        let color = normalizePatternColor(blendFurHex(la.color, lb.color, kind), kind, id); // Permanent regions still inherit/mix their color normally.
+        if (Math.random() < mutationChance) color = mutatePatternColor(color, kind, id);
+        child[id] = { color, copies: 2, inheritance: 'dominant', enabled: true };
+        continue;
+      }
       const la = genotypeA?.[id] || { copies: 0, color: randomPatternColor(kind, id), inheritance: 'dominant' };
       const lb = genotypeB?.[id] || { copies: 0, color: randomPatternColor(kind, id), inheritance: 'dominant' };
       const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
@@ -529,15 +566,74 @@
     return child;
   }
 
-  // creature-genetics-render.js is intentionally loaded immediately after
-  // this file in docs/index.html. Registering now means this listener runs
-  // before game.js's later DOMContentLoaded setup, so prewarm/signature/
-  // composeFrame all see the new Grehlr overlay without duplicating the
-  // renderer's very large embedded head-rig data just to add one pattern id.
+  // creature-genetics-render.js and wildlife-spawn.js load after this file but
+  // before game.js. These installers run from our earlier DOMContentLoaded
+  // listener so the new species is registered before game.js initializes either
+  // system, without duplicating the renderer's large embedded head-rig table.
   function installGrehlrColoredStripeRendererLayer() {
     const patterns = window.CreatureGeneticsRender?.SPECIES?.grehlr?.patterns; // Runtime renderer list mutated once the sibling module has loaded.
     if (!Array.isArray(patterns)) return false;
     if (!patterns.includes('coloredstripe')) patterns.push('coloredstripe');
+    return true;
+  }
+
+  function installPuktukRendererSpecies() {
+    const species = window.CreatureGeneticsRender?.SPECIES; // Shared renderer registry used by wild, farm, nursery, and stable previews.
+    if (!species) return false;
+    species[PUKTUK_KIND] = {
+      prefix: 'puktuk',
+      base: {
+        idle: 'assets/creaturesprites/puktuk_idle.png',
+        run1: 'assets/creaturesprites/puktuk_run1.png',
+        run2: 'assets/creaturesprites/puktuk_run2.png',
+      },
+      patterns: ['belly', 'foxtail'],
+    };
+    return true;
+  }
+
+  function installPuktukWildlifeBootstrap() {
+    const wildlifeApi = window.WildlifeSpawn; // Patched once so registration happens against game.js's live CREATURE_DB/EXTERIOR_ZONES objects.
+    if (!wildlifeApi?.init) return false;
+    if (wildlifeApi.__puktukBootstrapInstalled) return true;
+    const originalInit = wildlifeApi.init; // Preserves territorial/other wrappers already installed around WildlifeSpawn.init.
+    wildlifeApi.init = function puktukAwareWildlifeInit(injectedDeps) {
+      configurePuktukStaticData();
+      const creatureDb = injectedDeps?.CREATURE_DB; // Live creature registry used by dev spawning, wilderness spawning, and companion/farm rendering.
+      const garWolf = creatureDb?.['gar-wolf']; // Supplies only the requested medium baseline dimensions; genetics separately reuses Gar-wolf size-class scaling.
+      const preyBaseline = creatureDb?.['uumkaoii-wild'] || creatureDb?.uumkaoii || creatureDb?.drenkirra || {}; // Supplies ordinary prey movement/health fields without inheriting Drenkirra-specific art.
+      if (creatureDb) {
+        const existing = creatureDb[PUKTUK_KIND] || {}; // Preserves any future authored Puktuk-only fields while enforcing the required new species data.
+        creatureDb[PUKTUK_KIND] = {
+          ...preyBaseline,
+          ...existing,
+          label: 'Puktuk',
+          hostile: false,
+          defaultSizeClass: 'medium',
+          modelWidth: Number(existing.modelWidth) || Number(garWolf?.modelWidth) || Number(preyBaseline.modelWidth) || 1.9,
+          spriteAspect: Number(existing.spriteAspect) || Number(garWolf?.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),
+          lootPool: 'creature_puktuk',
+          sprites: {
+            idle: 'assets/creaturesprites/puktuk_idle.png',
+            run: ['assets/creaturesprites/puktuk_run1.png', 'assets/creaturesprites/puktuk_run2.png'],
+          },
+        };
+      }
+
+      const westernZone = injectedDeps?.EXTERIOR_ZONES?.[PUKTUK_WESTERN_ZONE_ID]; // Shared zone object also read by cavern dens, keeping exterior/interior populations consistent.
+      const herbivores = westernZone?.herbivoreSpecies; // Mutated in-place so any existing references see the Drenkirra→Puktuk replacement.
+      let replacements = 0;
+      if (Array.isArray(herbivores)) {
+        for (let i = 0; i < herbivores.length; i++) {
+          if (herbivores[i] !== 'drenkirra') continue;
+          herbivores[i] = PUKTUK_KIND;
+          replacements++;
+        }
+      }
+      window.__farmLog?.(`[puktuk] registered species: default=medium sizeProfile=gar-wolf belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool; ${PUKTUK_WESTERN_ZONE_ID} Drenkirra replacements=${replacements} herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, replacements > 0 ? 'wildlife' : 'warn');
+      return originalInit.call(this, injectedDeps);
+    };
+    wildlifeApi.__puktukBootstrapInstalled = true;
     return true;
   }
 
@@ -561,10 +657,12 @@
     MUTATION_CHANCE: LIVESTOCK_MUTATION_CHANCE,
   };
 
-  if (!installGrehlrColoredStripeRendererLayer()) {
+  if (!installGrehlrColoredStripeRendererLayer() || !installPuktukRendererSpecies() || !installPuktukWildlifeBootstrap()) {
     window.addEventListener('DOMContentLoaded', () => {
-      const installed = installGrehlrColoredStripeRendererLayer(); // Runs before later game.js DOMContentLoaded listeners because this listener is registered first.
-      window.__farmLog?.(`[genotype] Grehlr coloredstripe renderer layer ${installed ? 'enabled' : 'failed to install'}`, installed ? 'wildlife' : 'warn');
+      const grehlrInstalled = installGrehlrColoredStripeRendererLayer(); // Runs before later game.js DOMContentLoaded listeners because this listener is registered first.
+      const puktukRendererInstalled = installPuktukRendererSpecies(); // Ensures all uploaded base/belly/foxtail frames are in the shared compositor before any spawn.
+      const puktukWildlifeInstalled = installPuktukWildlifeBootstrap(); // Wraps live registry initialization before game.js invokes it.
+      window.__farmLog?.(`[genotype] renderer extensions: Grehlr=${grehlrInstalled ? 'ok' : 'failed'} Puktuk=${puktukRendererInstalled ? 'ok' : 'failed'} wildlifeBootstrap=${puktukWildlifeInstalled ? 'ok' : 'failed'}`, grehlrInstalled && puktukRendererInstalled && puktukWildlifeInstalled ? 'wildlife' : 'warn');
     }, { once: true });
   }
 })();
