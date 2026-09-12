@@ -59,11 +59,25 @@
       .join('|');
   }
 
+  function markersAlreadyAttached(markers) {
+    if (!mapDeps?._zoneLayouts) return false;
+    const desiredIds = new Set(markers.map(marker => marker.id));
+    const attachedIds = new Set();
+    for (const [, layout] of mapDeps._zoneLayouts) {
+      for (const instance of (layout?.localeInstances || [])) {
+        if (instance?.[MARKER_FLAG]) attachedIds.add(instance.id);
+      }
+    }
+    if (attachedIds.size !== desiredIds.size) return false;
+    for (const id of desiredIds) if (!attachedIds.has(id)) return false;
+    return true;
+  }
+
   function syncMarkers() {
     if (!mapDeps?._zoneLayouts || !window.PorakanekiCamps?.debugSnapshot) return false;
     const markers = desiredMarkers(snapshot());
     const signature = signatureFor(markers);
-    if (signature === lastSignature) return false;
+    if (signature === lastSignature && markersAlreadyAttached(markers)) return false;
 
     const byZone = new Map();
     for (const marker of markers) {
@@ -147,7 +161,7 @@
     version: 1,
     sync: syncMarkers,
     debugSnapshot: () => ({ ready: !!mapDeps, signature: lastSignature, markers: desiredMarkers(snapshot()) }),
-    __test: Object.freeze({ campLocaleId, desiredMarkers }),
+    __test: Object.freeze({ campLocaleId, desiredMarkers, markersAlreadyAttached }),
   });
 
   watchNamespace('WildernessMap', installWildernessMap);
