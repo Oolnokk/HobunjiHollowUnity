@@ -4,7 +4,7 @@
   const progression = window.StableAnimalProgression;
   if (!progression || window.StableAnimalPerkAdjustments?.installed) return;
 
-  const PET_GREETING_RAPPORT = 1; // Used when an NPC successfully greets a rapport-trained companion or perched shoulder pet.
+  const PET_GREETING_RAPPORT = 10; // Used when an NPC successfully greets a rapport-trained companion or perched shoulder pet; active rapport multipliers apply through NpcRapport.adjust.
   const MOUNT_SPEED_PER_RANK = 0.04;
   const MOUNT_ACCEL_PER_RANK = 0.10;
   const MOUNT_MANEUVER_PER_RANK = 0.08;
