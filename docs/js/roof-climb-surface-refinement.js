@@ -368,6 +368,7 @@
   function markHook(fn, role) {
     if (typeof fn !== 'function') return fn;
     fn[HOOK_MARK] = role;
+    fn.__hobunjiRoofClimbHook = role; // Keeps the base roof self-healer from replacing this final, compatible refinement wrapper.
     return fn;
   }
 
