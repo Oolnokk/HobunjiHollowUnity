@@ -8,6 +8,7 @@
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
+    { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20260912pets2' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
   ];
