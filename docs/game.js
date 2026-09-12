@@ -23110,7 +23110,34 @@
       const _climbPromptAnchor = new THREE.Object3D();
       _climbPromptAnchor.name = 'climb_prompt_anchor';
 
+      // A real DevTools recording plus direct instrumentation found
+      // _loadWorldLivestock() (called by troughFurniture's getButtons()
+      // among others) falling through to a real, uncached parse 2417 times
+      // in one profiling window, despite the save blob being tiny (~91KB)
+      // and every caller across the 5 livestock gameplay files already
+      // calling it once and reusing the result -- ruling both of those out.
+      // refreshActionBar() (just below) calls obj.getButtons(reticle) a
+      // SECOND time on the same object computeActionButtons() already
+      // called it on internally (once to build the button list, once again
+      // to compute objectActionIds) on every single invocation, and
+      // computeActionButtons()'s own DOM-side caching (_lastBarKey) only
+      // skips the DOM update, not this recomputation -- so if refreshActionBar
+      // runs every frame (very plausible for reticle-following UI) while
+      // the player stands near a trough, that's two full recomputations
+      // (each rebuilding the trough's button list, each re-parsing the
+      // livestock save data) every frame for as long as the reticle sits on
+      // it. This wrapper measures computeActionButtons()'s own real call
+      // frequency directly instead of guessing further from a 40+-call-site
+      // trace through the file.
       function computeActionButtons() {
+        const _cabStart = performance.now();
+        try {
+          return computeActionButtonsImpl();
+        } finally {
+          window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
+        }
+      }
+      function computeActionButtonsImpl() {
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
