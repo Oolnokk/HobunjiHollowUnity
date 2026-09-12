@@ -34,7 +34,8 @@
       await loadScript('lab-entry-repair.js', 'wilderness-lab-entry-repair'); // Final preview assertion: run the shared exported-path causeway trim even if another generator wrapper changed call order.
       await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
       await loadScript('lab-locale-terrain.js', 'wilderness-lab-locale-terrain'); // Locale Editor autosave/import source plus selected/rejected terrain-probe and embedded-carve overlays.
-      console.log('[WildernessLab] shared causeway repair + terrain-aware locale matching + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + entry repair + pixel probe + locale terrain diagnostics loaded');
+      await loadScript('lab-banubu-cave.js', 'wilderness-lab-banubu-cave'); // Repo-backed Banubu Cave injection plus actual cave_small/Grehlr live visuals.
+      console.log('[WildernessLab] shared causeway repair + terrain-aware locale matching + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
       const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {
