@@ -7,6 +7,7 @@
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
+    { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
   ];
@@ -21,6 +22,7 @@
     const loadAt = index => {
       if (index >= featureScripts.length) {
         window.AnimalGrowth?.install?.();
+        window.StableAnimalProgression?.install?.();
         window.BarnIncubator?.install?.();
         return;
       }
@@ -37,12 +39,14 @@
   ensureFeaturesLoaded();
 
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
-  // FarmPanel, while LivestockNursery/AnimalGrowth/BarnIncubator all need the
-  // public farm APIs before game.js initializes them. Capture FarmPanel's one
-  // global assignment and install synchronously at that exact point; afterward
-  // FarmPanel is a normal writable global again, so there is no permanent proxy.
+  // FarmPanel, while LivestockNursery/AnimalGrowth/StableAnimalProgression/
+  // BarnIncubator all need the public farm APIs before game.js initializes them.
+  // Capture FarmPanel's one global assignment and install synchronously at that
+  // exact point; afterward FarmPanel is a normal writable global again, so there
+  // is no permanent proxy.
   const installNursery = () => window.LivestockNursery?.install?.();
   const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
+  const installStableAnimalProgression = () => window.StableAnimalProgression?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
 
   // The vegetation extraction currently has one ROCK fallback that can publish a
@@ -87,6 +91,7 @@
     installVegetationFoliageContractGuard();
     installNursery();
     installAnimalGrowth();
+    installStableAnimalProgression();
     installBarnIncubator();
   };
 
