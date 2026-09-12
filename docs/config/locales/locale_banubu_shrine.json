@@ -63,27 +63,6 @@
       "weight": 1,
       "facing": "any",
       "height": { "mode": "any", "min": null, "max": null }
-    },
-    "3,4": {
-      "terrain": "plateauCliff",
-      "strength": "required",
-      "weight": 1,
-      "facing": "north",
-      "height": { "mode": "any", "min": null, "max": null }
-    },
-    "4,4": {
-      "terrain": "plateauCliff",
-      "strength": "required",
-      "weight": 1,
-      "facing": "north",
-      "height": { "mode": "any", "min": null, "max": null }
-    },
-    "5,4": {
-      "terrain": "plateauCliff",
-      "strength": "required",
-      "weight": 1,
-      "facing": "north",
-      "height": { "mode": "any", "min": null, "max": null }
     }
   },
   "embeddedTiles": {
@@ -163,27 +142,6 @@
         "weight": 1,
         "facing": "any",
         "height": { "mode": "any", "min": null, "max": null }
-      },
-      "3,4": {
-        "terrain": "plateauCliff",
-        "strength": "required",
-        "weight": 1,
-        "facing": "north",
-        "height": { "mode": "any", "min": null, "max": null }
-      },
-      "4,4": {
-        "terrain": "plateauCliff",
-        "strength": "required",
-        "weight": 1,
-        "facing": "north",
-        "height": { "mode": "any", "min": null, "max": null }
-      },
-      "5,4": {
-        "terrain": "plateauCliff",
-        "strength": "required",
-        "weight": 1,
-        "facing": "north",
-        "height": { "mode": "any", "min": null, "max": null }
       }
     },
     "embeddedTiles": {
@@ -194,7 +152,7 @@
       "4,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
       "5,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true }
     },
-    "notes": "Northern Cliffs only. The front remains on a lower flat shelf; the mouth must align with a north-facing plateau cliff; the rear half must overlap higher plateau mass and is carved down to the cave floor. The cave entrance prop renders at 2x its normal in-game cave scale."
+    "notes": "Northern Cliffs only. The exposed front stays on one flat lower tier; the immediately adjacent rear rows must be higher plateau mass and are carved down to the cave floor, forcing the cave to intersect the resulting plateau cliff boundary. The cave entrance prop renders at 2x its normal in-game cave scale."
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",
