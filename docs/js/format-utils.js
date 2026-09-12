@@ -54,6 +54,29 @@
     document.head.appendChild(script);
   })();
 
+  // Stable progression used to be reachable only through FarmTroughs ->
+  // LivestockNursery -> install bridge. That indirect chain meant the real
+  // FarmPanel could publish without StableAnimalProgression ever seeing it,
+  // leaving the authored "leveling coming soon" Stable rows untouched. This
+  // pre-game bootstrap is already the page's synchronous bridge host, so load
+  // the farm feature bridge here as well. It installs the Stable modules and
+  // captures FarmPanel's publication before game.js initializes it. The later
+  // FarmTroughs bootstrap remains safe because every feature installer is
+  // idempotent and the bridge deliberately tolerates a repeated handoff.
+  (function loadStableAnimalFeatureBridge() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/livestock-nursery-install-bridge.js?v=20260912stable4';
+    if (document.querySelector('script[data-stable-animal-feature-bridge]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-stable-animal-feature-bridge="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.stableAnimalFeatureBridge = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
