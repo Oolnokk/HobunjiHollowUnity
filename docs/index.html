@@ -837,6 +837,10 @@
     </div>
     <div class="fed-scroll">
       <div class="fed-section">
+        <div class="fed-label">Testing Switchbox — dev-only kill switches for expensive systems that don't matter for whatever you're testing. Each button takes effect on the next reload.</div>
+        <div class="fed-grid" id="devSwitchboxGrid"></div>
+      </div>
+      <div class="fed-section">
         <div class="fed-label">Species (rolls fresh cosmetic genes per spawn) — Bandit entries roll a fresh gang member (species/clothing/loadout) per spawn</div>
         <div class="fed-grid" id="devSpawnSpeciesGrid"></div>
       </div>
@@ -2405,6 +2409,12 @@
   </script>
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20260909decouple1"></script>
+  <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
+       NPC/creature AI, water sim, low-poly foliage). Must load after
+       audio-system.js/water-system.js/foliage-generator.js (wraps their
+       exported functions) and before game.js (whose boot calls into all
+       three and reads window.DevTestingSwitchbox.flags directly). -->
+  <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
   <script src="game.js?v=20260912patternlibrary-signretire1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260910controller1"></script>

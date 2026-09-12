@@ -11440,9 +11440,14 @@
 
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        updateNpcVisitorArrivals(dt);
-        for (const w of [...npcWalkers]) { w.update(dt); if (npcWalkers.includes(w)) _tickNpcPortraitLife(w, dt); }
-        _logGarankiDiagnostic(dt);
+        // Dev Testing Switchbox "NPC & Creature AI" switch: skip schedule/
+        // pathing/visitor-arrival work (the expensive part) but keep nearby-
+        // NPC detection below running so a frozen villager is still talkable.
+        if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
+          updateNpcVisitorArrivals(dt);
+          for (const w of [...npcWalkers]) { w.update(dt); if (npcWalkers.includes(w)) _tickNpcPortraitLife(w, dt); }
+          _logGarankiDiagnostic(dt);
+        }
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
         for (const w of npcWalkers) {
@@ -22319,22 +22324,27 @@
           // immediately on entering an interior. Mounts remain exterior-only.
           window.Mounts?.updateMountRide(dt);
 
-          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
-            window.BanditCamps.updateCompanionPerception(dt);
-            window.BanditCamps.updateRandomEncounters(dt);
-            window.BanditCamps.updateCampBanners(dt);
-            window.WildlifeSpawn.updateHostileSpawning(dt);
-            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
-            updateHostiles(dt);
-            window.PerfProfiler?.end(hostilePerf);
-            window.CreatureDeath.updateCorpses(dt);
-          } else if (_isBuildingArea(currentArea)) {
-            // Ordinary building interiors still have no wild spawns; this
-            // branch only keeps any authored interior hostile/corpse active.
-            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
-            updateHostiles(dt);
-            window.PerfProfiler?.end(hostilePerf);
-            window.CreatureDeath.updateCorpses(dt);
+          // Dev Testing Switchbox "NPC & Creature AI" switch: freezes wildlife/
+          // bandit AI, spawning, and corpse cleanup along with the NPC walker
+          // schedules gated in updateNpcWalkers above.
+          if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
+            if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+              window.BanditCamps.updateCompanionPerception(dt);
+              window.BanditCamps.updateRandomEncounters(dt);
+              window.BanditCamps.updateCampBanners(dt);
+              window.WildlifeSpawn.updateHostileSpawning(dt);
+              const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
+              updateHostiles(dt);
+              window.PerfProfiler?.end(hostilePerf);
+              window.CreatureDeath.updateCorpses(dt);
+            } else if (_isBuildingArea(currentArea)) {
+              // Ordinary building interiors still have no wild spawns; this
+              // branch only keeps any authored interior hostile/corpse active.
+              const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
+              updateHostiles(dt);
+              window.PerfProfiler?.end(hostilePerf);
+              window.CreatureDeath.updateCorpses(dt);
+            }
           }
 
           window.ClimbSystem?.updateFallenNests?.(dt);
