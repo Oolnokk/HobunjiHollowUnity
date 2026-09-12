@@ -7492,6 +7492,19 @@
         } catch { return []; }
         finally {
           window.PerfProfiler?.record('_loadWorldLivestock: parse+find (cache miss)', performance.now() - parseStart);
+          // Neither the trough/computeActionButtons theory nor blob size
+          // panned out (2255+ misses recorded even while nowhere near a
+          // barn), so rather than keep guessing from call-site tracing,
+          // find the real caller directly: frame 0 of the stack is the
+          // literal string "Error", frame 1 is this function itself, so
+          // frame 2 is whoever actually called it.
+          if (window.PerfProfiler) {
+            const stack = new Error().stack || '';
+            const line = stack.split('\n')[2] || '';
+            const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
+            const callerLabel = match ? `${match[1]}:${match[2]}` : (line.trim().slice(0, 60) || 'unknown caller');
+            window.PerfProfiler.record('_loadWorldLivestock miss caller: ' + callerLabel, 0);
+          }
         }
       }
 

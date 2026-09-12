@@ -254,6 +254,14 @@
     const allSubsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg);
     const gameLoopTotal = perfState.subsystem.get('gameLoop total');
     const subsystems = allSubsystems.filter(([name, value]) => name !== 'gameLoop total' && value.avg >= SUBSYSTEM_DISPLAY_FLOOR_MS);
+    // _loadWorldLivestock's caller-tracking entries deliberately record 0ms
+    // (they're pure call-site counters, not timings), so the floor filter
+    // above would hide them forever regardless of how often they fire --
+    // exactly the opposite of what a counter needs. Shown separately,
+    // sorted by count, uncapped by SUBSYSTEM_DISPLAY_FLOOR_MS.
+    const livestockCallers = allSubsystems
+      .filter(([name]) => name.startsWith('_loadWorldLivestock miss caller: '))
+      .sort((a, b) => b[1].samples - a[1].samples);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const outlinePerfLine = outlineRenderPerfLine();
     const topLine = topGeom
@@ -279,6 +287,9 @@
       subsystems.length
         ? `Timed (≥${SUBSYSTEM_DISPLAY_FLOOR_MS}ms):\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms  ×${value.samples}`).join('\n')}`
         : 'Timed subsystems: none above the display floor',
+      ...(livestockCallers.length
+        ? [`_loadWorldLivestock cache-miss callers:\n${livestockCallers.map(([name, value]) => `  ${name.slice('_loadWorldLivestock miss caller: '.length)}  ×${value.samples}`).join('\n')}`]
+        : []),
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
       // longTaskMs is the browser's OWN measured total main-thread-blocking
       // time for these tasks, independent of every performance.now()
