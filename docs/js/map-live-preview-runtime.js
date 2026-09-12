@@ -372,13 +372,22 @@
     setStatus(`Selected ${selection.kind}${selection.id ? ` ${selection.id}` : selection.col != null ? ` ${selection.col},${selection.row}` : ''}. ${syncNote}`);
   }
 
-  async function handleReflect(message) {
+  let reflectQueue = Promise.resolve(); // Serializes reflect-requests so overlapping async applies can never interleave scene teardown/rebuild.
+
+  function handleReflect(message) {
     const request = message;
     if (!request.mapId || !request.workspace) return;
     if (request.mapId === request.workspace?.gameLink?.exteriorId) {
       reply(request, { status: 'rejected', warnings: ['Farm editing uses the in-game Farm Editor.'], applyMode: 'none' });
       return;
     }
+    // Chained rather than awaited directly: a second reflect-request arriving
+    // while the first is still mid-await (e.g. inside _loadTownFromWorkspace)
+    // must wait its turn instead of running deps.applyReflection concurrently.
+    reflectQueue = reflectQueue.then(() => applyReflectNow(request));
+  }
+
+  async function applyReflectNow(request) {
     if (request.revision <= revision) {
       reply(request, { status: 'rejected', warnings: [`Revision ${request.revision} is not newer than applied revision ${revision}.`], applyMode: 'none' });
       return;

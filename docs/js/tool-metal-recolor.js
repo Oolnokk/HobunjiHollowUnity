@@ -698,6 +698,7 @@
     return imageData;
   }
 
+  const MAX_CANVAS_CACHE_ENTRIES = 32; // Pattern-authoring live-editing settles one new cache key per slider tweak (translate/rotate/scale); without a cap this grows unbounded for the life of the tab.
   const _imgCache = new Map();
   const _canvasCache = new Map();
   window.HobunjiCacheAudit?.register('ToolMetalRecolor.imgCache', () => _imgCache.size);
@@ -820,6 +821,7 @@
       });
       ctx.putImageData(imageData, 0, 0);
       _canvasCache.set(cacheKey, canvas);
+      while (_canvasCache.size > MAX_CANVAS_CACHE_ENTRIES) _canvasCache.delete(_canvasCache.keys().next().value); // Evict oldest (Map preserves insertion order) instead of growing forever.
       debugLog(opts, 'canvas ready', {
         spritePath,
         oxidationAmount,
