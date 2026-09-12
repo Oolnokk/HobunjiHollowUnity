@@ -201,14 +201,14 @@ async function flush() {
   assert.equal(chief.rec.appearance.speciesId, 'porakaneki');
   assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_western_slope');
   assert.equal(chief.rec.scheduleHooks.rules.length, 0, 'chief must not be bound to fixed daytime schedule stations');
-  assert.deepEqual(chief.rec.agenda.map(beat => [beat.id, beat.activity]), [
+  assert.equal(JSON.stringify(chief.rec.agenda.map(beat => [beat.id, beat.activity])), JSON.stringify([
     ['porakaneki_sleep_late', 'goToRole'],
     ['porakaneki_sleep_early', 'goToRole'],
     ['porakaneki_day', 'break'],
-  ]);
+  ]));
   assert.equal(stations.length, 3);
   assert(stations.every(station => station.roles.includes('porakaneki-sleep')), 'all tents are equivalent sleep choices');
-  assert.deepEqual(debug.hunters.map(hunter => hunter.weapon), ['daggerSword', 'daggerSword', 'fishingspear'], 'weapon selection is independent and may duplicate');
+  assert.equal(JSON.stringify(debug.hunters.map(hunter => hunter.weapon)), JSON.stringify(['daggerSword', 'daggerSword', 'fishingspear']), 'weapon selection is independent and may duplicate');
   assert.equal(hostileObjects.length, 0, 'off-zone abstract hunters do not allocate combat entities');
 
   currentArea = 'map_western_slope';
