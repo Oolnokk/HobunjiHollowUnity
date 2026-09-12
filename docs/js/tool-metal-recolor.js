@@ -375,8 +375,7 @@
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
-    // motifScale sizes the motif itself (baked into the "prepared" motif
-    // raster below, along with its own rotation); patternScale (applied via
+    // motifScale sizes the motif itself; patternScale (applied via
     // ctx.scale further down) zooms the whole tiled field afterward — same
     // distinction as motifRotationDeg vs patternRotationDeg. `patternDef.scale`
     // is a fallback for patterns saved before motifScale/patternScale
@@ -385,24 +384,37 @@
     const fieldScale = Math.max(0.05, Number(patternDef.patternScale) || 1);
     const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
     const fieldRad = ((Number(patternDef.patternRotationDeg) || 0) * Math.PI) / 180;
-
-    // Prepare the motif once at its final scaled+rotated appearance (a
-    // square canvas sized to fit any rotation without clipping), so the
-    // triangle fit and lattice stamping below never reason about scale/
-    // rotation separately from the motif's own pixels.
+    const repeatMode = patternDef.repeatMode === 'grid' ? 'grid' : 'triangle';
     const naturalW = motifImg.naturalWidth || motifImg.width || 1;
     const naturalH = motifImg.naturalHeight || motifImg.height || 1;
-    const mw = Math.max(1, naturalW * motifScale);
-    const mh = Math.max(1, naturalH * motifScale);
-    const prepSize = Math.max(2, Math.ceil(Math.hypot(mw, mh)) + 2);
-    const prep = document.createElement('canvas');
-    prep.width = prepSize;
-    prep.height = prepSize;
-    const prepCtx = prep.getContext('2d');
-    prepCtx.imageSmoothingEnabled = false;
-    prepCtx.translate(prepSize / 2, prepSize / 2);
-    prepCtx.rotate(motifRad);
-    prepCtx.drawImage(motifImg, -mw / 2, -mh / 2, mw, mh);
+
+    // Renders the motif (rotated, at the given scale) into a square canvas
+    // just big enough to hold it without clipping, with the motif's own
+    // center always at the canvas center — so two renders at different
+    // scales still share the same conceptual anchor point.
+    function prepareMotif(scale) {
+      const mw = Math.max(1, naturalW * scale);
+      const mh = Math.max(1, naturalH * scale);
+      const size = Math.max(2, Math.ceil(Math.hypot(mw, mh)) + 2);
+      const c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      const cctx = c.getContext('2d');
+      cctx.imageSmoothingEnabled = false;
+      cctx.translate(size / 2, size / 2);
+      cctx.rotate(motifRad);
+      cctx.drawImage(motifImg, -mw / 2, -mh / 2, mw, mh);
+      return { canvas: c, ctx: cctx, size };
+    }
+
+    // The repeat geometry (triangle lattice or grid pitch) is always
+    // derived from a fixed 1x reference render, clipped tightly to the
+    // motif's own opaque ink — never the full working canvas, and never
+    // motifScale. The *actual* stamped artwork is prepared separately at
+    // the real motifScale and centered on that same geometry, so scale
+    // above 1x deliberately overflows into neighboring copies instead of
+    // growing the repeat geometry to match; below 1x it leaves gaps.
+    const prepDraw = prepareMotif(motifScale);
 
     ctx.save();
     ctx.translate(width / 2 + (Number(patternDef.translateX) || 0), height / 2 + (Number(patternDef.translateY) || 0));
@@ -410,62 +422,89 @@
     ctx.scale(fieldScale, fieldScale);
 
     if (patternDef.tiling) {
-      const prepData = prepCtx.getImageData(0, 0, prepSize, prepSize).data;
-      const prepMask = new Uint8Array(prepSize * prepSize);
-      for (let p = 0, i = 0; i < prepData.length; i += 4, p++) if (prepData[i + 3] > 16) prepMask[p] = 1;
-      const padding = Math.max(0, Number(patternDef.spacing) ?? 0.5);
-      const fit = fitGuaranteedTriangle(prepMask, prepSize, prepSize, padding);
-      if (fit) {
-        // motifPlacement/bbox are both in the fit's own (shifted-positive)
-        // coordinate system derived from `prep` — this offset draws the
-        // whole prepared canvas so its own opaque bbox lands exactly where
-        // the fit says the (conceptually cropped) motif belongs. Drawing
-        // the whole canvas instead of a tight crop is harmless: the margin
-        // around the bbox is transparent.
-        const drawX = fit.motifPlacement.x - fit.bbox.x0;
-        const drawY = fit.motifPlacement.y - fit.bbox.y0;
+      const prepRef = prepareMotif(1);
+      const refData = prepRef.ctx.getImageData(0, 0, prepRef.size, prepRef.size).data;
+      const refMask = new Uint8Array(prepRef.size * prepRef.size);
+      for (let p = 0, i = 0; i < refData.length; i += 4, p++) if (refData[i + 3] > 16) refMask[p] = 1;
+      const bbox = findOpaqueBounds(refMask, prepRef.size, prepRef.size);
 
-        function stampCell(ox, oy) {
-          ctx.save();
-          ctx.translate(ox, oy);
-          ctx.drawImage(prep, drawX, drawY);
-          ctx.restore();
-          ctx.save();
-          ctx.translate(ox, oy);
-          ctx.translate(fit.midpoint.x, fit.midpoint.y);
-          ctx.rotate(Math.PI);
-          ctx.translate(-fit.midpoint.x, -fit.midpoint.y);
-          ctx.drawImage(prep, drawX, drawY);
-          ctx.restore();
-        }
-
-        // How far the lattice needs to extend (in basisU/basisV step
-        // counts) to cover the whole canvas — inverting the (generally
-        // skewed, non-axis-aligned) basis matrix rather than assuming a
-        // square grid, since the fitted triangle's edges can point in any
-        // direction.
-        const reach = Math.hypot(width, height) / fieldScale / 2 + Math.max(mw, mh);
-        const det = fit.basisU.x * fit.basisV.y - fit.basisU.y * fit.basisV.x;
-        let maxI = 8, maxJ = 8;
-        if (Math.abs(det) > 1e-6) {
-          const invA = fit.basisV.y / det, invB = -fit.basisV.x / det;
-          const invC = -fit.basisU.y / det, invD = fit.basisU.x / det;
-          maxI = 0; maxJ = 0;
-          for (const [cx, cy] of [[reach, reach], [reach, -reach], [-reach, reach], [-reach, -reach]]) {
-            maxI = Math.max(maxI, Math.abs(invA * cx + invB * cy));
-            maxJ = Math.max(maxJ, Math.abs(invC * cx + invD * cy));
+      if (bbox) {
+        if (repeatMode === 'grid') {
+          // Grid pitch is the motif's own tight ink bounds at 1x scale,
+          // plus a configurable gap — not the full (possibly much larger,
+          // transparent-padded) prepared-canvas size.
+          const centerX = bbox.x0 + bbox.w / 2, centerY = bbox.y0 + bbox.h / 2;
+          const drawX = centerX - prepDraw.size / 2, drawY = centerY - prepDraw.size / 2;
+          const gap = Math.max(0, Number(patternDef.gridSpacing) ?? 6);
+          const stepX = bbox.w + gap, stepY = bbox.h + gap;
+          const reach = Math.hypot(width, height) / fieldScale;
+          const cols = Math.ceil(reach / stepX) + 2;
+          const rows = Math.ceil(reach / stepY) + 2;
+          for (let ry = -rows; ry <= rows; ry++) {
+            for (let rx = -cols; rx <= cols; rx++) {
+              ctx.save();
+              ctx.translate(rx * stepX, ry * stepY);
+              ctx.drawImage(prepDraw.canvas, drawX, drawY);
+              ctx.restore();
+            }
           }
-          maxI = Math.min(300, Math.ceil(maxI) + 2);
-          maxJ = Math.min(300, Math.ceil(maxJ) + 2);
-        }
-        for (let j = -maxJ; j <= maxJ; j++) {
-          for (let i = -maxI; i <= maxI; i++) {
-            stampCell(i * fit.basisU.x + j * fit.basisV.x, i * fit.basisU.y + j * fit.basisV.y);
+        } else {
+          const padding = Math.max(0, Number(patternDef.trianglePadding ?? patternDef.spacing) ?? 0.5);
+          const fit = fitGuaranteedTriangle(refMask, prepRef.size, prepRef.size, padding);
+          if (fit) {
+            // fit.motifPlacement/fit.bbox are in the fit's own
+            // (shifted-positive) coordinate system derived from the 1x
+            // reference — this is that bbox's own center in that system,
+            // which is where the actual (possibly differently-scaled)
+            // drawn motif gets centered.
+            const outputCenterX = fit.motifPlacement.x + fit.bbox.w / 2;
+            const outputCenterY = fit.motifPlacement.y + fit.bbox.h / 2;
+            const drawX = outputCenterX - prepDraw.size / 2;
+            const drawY = outputCenterY - prepDraw.size / 2;
+
+            function stampCell(ox, oy) {
+              ctx.save();
+              ctx.translate(ox, oy);
+              ctx.drawImage(prepDraw.canvas, drawX, drawY);
+              ctx.restore();
+              ctx.save();
+              ctx.translate(ox, oy);
+              ctx.translate(fit.midpoint.x, fit.midpoint.y);
+              ctx.rotate(Math.PI);
+              ctx.translate(-fit.midpoint.x, -fit.midpoint.y);
+              ctx.drawImage(prepDraw.canvas, drawX, drawY);
+              ctx.restore();
+            }
+
+            // How far the lattice needs to extend (in basisU/basisV step
+            // counts) to cover the whole canvas — inverting the
+            // (generally skewed, non-axis-aligned) basis matrix rather
+            // than assuming a square grid, since the fitted triangle's
+            // edges can point in any direction.
+            const reach = Math.hypot(width, height) / fieldScale / 2 + prepDraw.size;
+            const det = fit.basisU.x * fit.basisV.y - fit.basisU.y * fit.basisV.x;
+            let maxI = 8, maxJ = 8;
+            if (Math.abs(det) > 1e-6) {
+              const invA = fit.basisV.y / det, invB = -fit.basisV.x / det;
+              const invC = -fit.basisU.y / det, invD = fit.basisU.x / det;
+              maxI = 0; maxJ = 0;
+              for (const [cx, cy] of [[reach, reach], [reach, -reach], [-reach, reach], [-reach, -reach]]) {
+                maxI = Math.max(maxI, Math.abs(invA * cx + invB * cy));
+                maxJ = Math.max(maxJ, Math.abs(invC * cx + invD * cy));
+              }
+              maxI = Math.min(300, Math.ceil(maxI) + 2);
+              maxJ = Math.min(300, Math.ceil(maxJ) + 2);
+            }
+            for (let j = -maxJ; j <= maxJ; j++) {
+              for (let i = -maxI; i <= maxI; i++) {
+                stampCell(i * fit.basisU.x + j * fit.basisV.x, i * fit.basisU.y + j * fit.basisV.y);
+              }
+            }
           }
         }
       }
     } else {
-      ctx.drawImage(prep, -prepSize / 2, -prepSize / 2);
+      ctx.drawImage(prepDraw.canvas, -prepDraw.size / 2, -prepDraw.size / 2);
     }
     ctx.restore();
 

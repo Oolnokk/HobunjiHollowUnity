@@ -14,18 +14,21 @@
   const SKETCH_SIZE = 192; // motif working resolution, px
 
   const PATTERN_DEFAULTS = Object.freeze({
-    motifScale: 0.5, // size of each individual stamped motif copy
-    patternScale: 1, // zooms the whole tiled field (triangle lattice + stamp size together), distinct from motifScale
+    motifScale: 1, // size of each individual stamped motif copy, relative to its own opaque-ink bounds
+    patternScale: 1, // zooms the whole tiled field (repeat geometry + stamp size together), distinct from motifScale
     motifRotationDeg: 0,
     patternRotationDeg: 0, // whole-pattern (tiled field) rotation, distinct from motifRotationDeg
     translateX: 0,
     translateY: 0,
-    // Repeat uses a guaranteed-tight triangle fit around the motif (see
-    // tool-metal-recolor.js's fitGuaranteedTriangle) — this is just the
-    // small clearance padding around that triangle, not a gap between
-    // copies the way a grid's spacing would be; neighboring triangle edges
-    // themselves always meet exactly, alternating 180° automatically.
-    spacing: 0.5,
+    repeatMode: 'triangle', // 'triangle' (tight fit, alternating 180°, no gaps) | 'grid' (simple rectangular repeat)
+    // Repeat geometry is always clipped to the motif's own opaque ink at
+    // 1x motif scale, not the full sketch canvas — these are just the
+    // clearance around that tight fit. Triangle padding is a small buffer
+    // (see tool-metal-recolor.js's fitGuaranteedTriangle); grid spacing is
+    // an ordinary gap between copies. motifScale > 1x deliberately
+    // overflows into neighboring cells rather than growing either one.
+    trianglePadding: 0.5,
+    gridSpacing: 6,
     tiling: true,
     invert: false, // swap which side of the motif stays vs. clears (see tool-metal-recolor.js)
   });
@@ -73,7 +76,7 @@
     const cfg = { ...PATTERN_DEFAULTS, ...(options.initialPattern || {}) };
     let closed = false;
     let brushMode = 'brush'; // 'brush' | 'eraser'
-    let brushSize = 14;
+    let brushSize = 30;
     let drawing = false;
     let lastPt = null;
     let previewToken = 0;
@@ -94,7 +97,7 @@
                 <button type="button" class="pa-btn secondary pa-toolToggle" data-tool="eraser">Eraser</button>
                 <button type="button" class="pa-btn secondary" data-act="clearSketch">Clear</button>
               </div>
-              <div class="pa-field"><label><span>Brush size</span><span class="pa-brushSizeVal">${brushSize}px</span></label><input type="range" class="pa-brushSize" min="3" max="40" step="1" value="${brushSize}"></div>
+              <div class="pa-field"><label><span>Brush size</span><span class="pa-brushSizeVal">${brushSize}px</span></label><input type="range" class="pa-brushSize" min="25" max="35" step="1" value="${brushSize}"></div>
             </div>
             <div class="pa-card">
               <h3>Placement</h3>
@@ -104,10 +107,13 @@
               <div class="pa-field"><label><span>Whole-pattern rotation</span><span class="pa-val" data-for="patternRotationDeg"></span></label><input type="range" class="pa-in" data-field="patternRotationDeg" min="-180" max="180" step="1" value="${cfg.patternRotationDeg}"></div>
               <div class="pa-field"><label><span>Translate X</span><span class="pa-val" data-for="translateX"></span></label><input type="range" class="pa-in" data-field="translateX" min="-150" max="150" step="1" value="${cfg.translateX}"></div>
               <div class="pa-field"><label><span>Translate Y</span><span class="pa-val" data-for="translateY"></span></label><input type="range" class="pa-in" data-field="translateY" min="-150" max="150" step="1" value="${cfg.translateY}"></div>
-              <div class="pa-field"><label><span>Triangle padding</span><span class="pa-val" data-for="spacing"></span></label><input type="range" class="pa-in" data-field="spacing" min="0" max="8" step="0.25" value="${cfg.spacing}"></div>
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="tiling" ${cfg.tiling ? 'checked' : ''}><label>Repeat (tile the motif)</label></div>
+              <div class="pa-field" data-show-for="tiling"><label><span>Repeat geometry</span></label><select class="pa-in" data-field="repeatMode"><option value="triangle" ${cfg.repeatMode === 'triangle' ? 'selected' : ''}>Triangle (alternating 180°, no gaps)</option><option value="grid" ${cfg.repeatMode === 'grid' ? 'selected' : ''}>Grid</option></select></div>
+              <div class="pa-field" data-show-for="triangle"><label><span>Triangle padding</span><span class="pa-val" data-for="trianglePadding"></span></label><input type="range" class="pa-in" data-field="trianglePadding" min="0" max="8" step="0.25" value="${cfg.trianglePadding}"></div>
+              <div class="pa-field" data-show-for="grid"><label><span>Grid spacing</span><span class="pa-val" data-for="gridSpacing"></span></label><input type="range" class="pa-in" data-field="gridSpacing" min="0" max="40" step="1" value="${cfg.gridSpacing}"></div>
               <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
-              <p class="pa-hint">Repeat geometry: triangle, alternating 180° — a tight triangle is fit around your motif and tiled edge-to-edge, so neighboring copies always meet with no gaps.</p>
+              <p class="pa-hint" data-show-for="triangle">Triangle mode fits a tight triangle around your motif's own ink and tiles it edge-to-edge, alternating 180°, so neighboring copies always meet with no gaps. Motif scale above 1× deliberately overflows into neighboring copies instead of growing the fit.</p>
+              <p class="pa-hint" data-show-for="grid">Grid mode repeats the motif in a simple rectangular grid, spaced from its own tight ink bounds at 1× motif scale. Motif scale above 1× deliberately overlaps into neighboring cells instead of growing the grid.</p>
               <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
             </div>
           </div>
@@ -139,12 +145,20 @@
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
         if (field === 'motifScale' || field === 'patternScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
-        else if (field === 'spacing') el.textContent = `${Number(cfg.spacing).toFixed(2)}px`;
+        else if (field === 'trianglePadding' || field === 'gridSpacing') el.textContent = `${Number(cfg[field]).toFixed(2)}px`;
         else if (field === 'translateX' || field === 'translateY') el.textContent = `${cfg[field]}px`;
         else el.textContent = `${cfg[field]}°`;
       });
     }
+    function updateFieldVisibility() {
+      overlay.querySelectorAll('[data-show-for]').forEach(el => {
+        const want = el.dataset.showFor;
+        const visible = want === 'tiling' ? !!cfg.tiling : (!!cfg.tiling && cfg.repeatMode === want);
+        el.hidden = !visible;
+      });
+    }
     updateValLabels();
+    updateFieldVisibility();
 
     function hasMotifInk() {
       try {
@@ -163,7 +177,9 @@
         patternRotationDeg: Number(cfg.patternRotationDeg),
         translateX: Number(cfg.translateX),
         translateY: Number(cfg.translateY),
-        spacing: Number(cfg.spacing),
+        repeatMode: cfg.repeatMode === 'grid' ? 'grid' : 'triangle',
+        trianglePadding: Number(cfg.trianglePadding),
+        gridSpacing: Number(cfg.gridSpacing),
         tiling: !!cfg.tiling,
         invert: !!cfg.invert,
       };
@@ -268,8 +284,11 @@
     overlay.querySelectorAll('.pa-in[data-field]').forEach(input => {
       input.addEventListener('input', () => {
         const field = input.dataset.field;
-        cfg[field] = input.type === 'checkbox' ? input.checked : Number(input.value);
+        if (input.type === 'checkbox') cfg[field] = input.checked;
+        else if (input.tagName === 'SELECT') cfg[field] = input.value;
+        else cfg[field] = Number(input.value);
         updateValLabels();
+        updateFieldVisibility();
         schedulePreview();
       });
     });
@@ -282,6 +301,7 @@
         else input.value = cfg[field];
       });
       updateValLabels();
+      updateFieldVisibility();
       schedulePreview();
     });
 
