@@ -49,6 +49,8 @@
     subsystem: new Map(),
     longTasks: 0,
     longTaskObserver: null,
+    lastHeapBytes: 0,
+    heapDeltaMbPerSec: 0,
   };
 
   function formatCount(value) {
@@ -255,6 +257,14 @@
         : 'Timed subsystems: none above the display floor',
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
       `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
+      // Chrome-only. A large sustained value here (tens of MB/sec) points at
+      // GC pauses as a real candidate for time that isn't inside gameLoop
+      // and wasn't caught by the rAF/MutationObserver instrumentation --
+      // neither of those can see GC time, since it doesn't belong to any
+      // one JS callback's own measured duration.
+      perfState.lastHeapBytes
+        ? `JS heap: ${(perfState.lastHeapBytes / 1e6).toFixed(1)} MB   Δ ${perfState.heapDeltaMbPerSec >= 0 ? '+' : ''}${perfState.heapDeltaMbPerSec.toFixed(1)} MB/s`
+        : 'JS heap: unavailable (non-Chromium browser)',
     ].join('\n');
   }
 
@@ -293,6 +303,22 @@
       perfState.fps = perfState.sampleFrames * 1000 / Math.max(1, elapsed);
       perfState.sampleFrames = 0;
       perfState.sampleStart = ts;
+      // Chrome-only (root.performance.memory doesn't exist in Firefox/Safari).
+      // A sustained high allocation rate here would point at GC pauses as the
+      // 'outside gameLoop' cost -- several hot-path functions across this
+      // codebase build a fresh array every single frame ([...pending],
+      // [...managed], [...ground, ...held], etc.), and unlike the rAF/
+      // MutationObserver work already ruled out, GC time doesn't belong to
+      // any specific JS callback's own measured duration, so neither of
+      // those wrappers could have shown it even in principle.
+      const heapBytes = root.performance?.memory?.usedJSHeapSize;
+      if (Number.isFinite(heapBytes)) {
+        if (perfState.lastHeapBytes) {
+          const deltaBytes = heapBytes - perfState.lastHeapBytes;
+          perfState.heapDeltaMbPerSec = (deltaBytes / 1e6) / (elapsed / 1000);
+        }
+        perfState.lastHeapBytes = heapBytes;
+      }
       updatePerformanceUI(ts);
     }
     perfState.raf = requestAnimationFrame(frameLoop);
