@@ -2336,6 +2336,12 @@
         // placed by an authored map, just synthesized instead of authored.
         feedGrinder:   { itemKey: 'feedGrinderFurniture',   icon: '⚙️', name: 'Feed Grinder',         price: 0,  fw: 1, fd: 1, color: 0x8f8a78, area: 'interior', desc: 'Grinds a held crop, raw meat, or fish into Plant/Meat Fodder for barn troughs.', fixture: true },
         trough:        { itemKey: 'troughFurniture',        icon: '🪣', name: 'Feed Trough',          price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'Holds up to a week of feed (7 units) for one housed animal.', fixture: true },
+        // Authored town business signs (see AUTHORED_FURNITURE_KEYS below) —
+        // ordinary exterior decor entries so they're placeable, selectable,
+        // and reflectable through the Map Editor like anything else, rather
+        // than the old hardcoded town-sign-furniture-config.js placements.
+        generalStoreSign: { itemKey: 'generalStoreSignFurniture', icon: '🪧', name: 'General Store Sign', price: 0, fw: 1, fd: 1, color: 0x8b6540, area: 'any', desc: "Funji & Son's General Store hanging sign.", fixture: true },
+        innSign:          { itemKey: 'innSignFurniture',          icon: '🪧', name: 'Inn Sign',            price: 0, fw: 1, fd: 1, color: 0x8b6540, area: 'any', desc: 'The Inn hanging sign.', fixture: true },
       };
 
       const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS)
@@ -2361,10 +2367,10 @@
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
         'feedGrinder', 'trough', 'campfire', 'mineLadder',
-        // Town business signs (see town-sign-furniture-config.js/-runtime.js).
-        // Without these, buildFurnitureVisual falls back to
-        // ProceduralFurniture, which has no recipe for either key and
-        // silently returns an empty group — the signs never render at all.
+        // Town business signs, placed as ordinary map_hobunji_town decor
+        // (see DECORATIVE_FURNITURE_DEFS above). Without these, buildFurnitureVisual
+        // falls back to ProceduralFurniture, which has no recipe for either
+        // key and silently returns an empty group — the signs never render.
         'generalStoreSign', 'innSign',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);

@@ -1,7 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -61,30 +60,40 @@ function checkSign(relative, key, textureName) {
 checkSign('docs/config/furniture-authored/generalStoreSign.json', 'generalStoreSign', 'general_store_sign_text.png');
 checkSign('docs/config/furniture-authored/innSign.json', 'innSign', 'inn_sign_text.png');
 
-const configContext = { window: {} }; // Isolated browser-like global used to read the editable placement config without booting the game.
-vm.runInNewContext(read('docs/config/town-sign-furniture-config.js'), configContext);
-const placements = configContext.window.HOBUNJI_TOWN_SIGN_FURNITURE_CONFIG?.placements || [];
-assert.equal(placements.length, 2);
-for (const placement of placements) {
-  const distance = Math.abs(placement.col - placement.entrance.col) + Math.abs(placement.row - placement.entrance.row); // Exact tile distance from the associated entrance.
-  assert.equal(distance, 2, `${placement.id}: sign must remain two tiles from its entrance`);
-  assert.equal(placement.rotYDeg, 90, `${placement.id}: +X support side must rotate toward north`);
-  assert.equal(placement.localPostAxis, '+X');
-  assert.equal(placement.postAim, 'north');
-}
+// The two business signs are ordinary town decor now (see docs/game.js's
+// DECORATIVE_FURNITURE_DEFS and the Map Editor's DECOR catalog) rather than
+// the old hardcoded town-sign-furniture-config.js/-runtime.js placements —
+// that system has been retired so the signs are visible, selectable, and
+// editable through the same Map Editor + in-game click-to-select pipeline
+// as every other decor piece.
+const gameJs = read('docs/game.js');
+assert(/generalStoreSign:\s*\{[^}]*fixture:\s*true/.test(gameJs), 'generalStoreSign must be a DECORATIVE_FURNITURE_DEFS fixture entry');
+assert(/innSign:\s*\{[^}]*fixture:\s*true/.test(gameJs), 'innSign must be a DECORATIVE_FURNITURE_DEFS fixture entry');
+const authoredKeysMatch = gameJs.match(/const AUTHORED_FURNITURE_KEYS = new Set\(\[([\s\S]*?)\]\);/);
+assert(authoredKeysMatch, 'AUTHORED_FURNITURE_KEYS set must exist');
+assert(authoredKeysMatch[1].includes("'generalStoreSign'"), 'generalStoreSign must be in AUTHORED_FURNITURE_KEYS or it silently falls back to an empty ProceduralFurniture group');
+assert(authoredKeysMatch[1].includes("'innSign'"), 'innSign must be in AUTHORED_FURNITURE_KEYS or it silently falls back to an empty ProceduralFurniture group');
 
-const signRuntime = read('docs/js/town-sign-furniture-runtime.js'); // Static furniture must spawn only after the current synchronous tile-subdivision build completes.
-assert(signRuntime.includes('function rebuildAfterTileSubdivision()'));
-assert(signRuntime.includes('requestAnimationFrame(run)'));
-assert(signRuntime.includes('rebuildAfterTileSubdivision();'));
-assert(!/spawnTownBuildingsWithSigns[\s\S]{0,400}\brebuild\(\);/.test(signRuntime), 'signs must not rebuild synchronously inside spawnTownBuildings');
-assert(signRuntime.includes('function floorSubdivisionDisplacement(col, row)'));
-assert(signRuntime.includes('(h / 4294967296 - 0.5) * 0.03'));
-assert(signRuntime.includes('tileSubdivisionApplied: true'));
+const mapEditorHtml = read('docs/tools/map-editor/index.html');
+assert(/generalStoreSign:\{icon:/.test(mapEditorHtml), 'generalStoreSign must be placeable from the Map Editor Decor palette');
+assert(/innSign:\{icon:/.test(mapEditorHtml), 'innSign must be placeable from the Map Editor Decor palette');
 
-const zoneLoader = read('docs/js/zone-den-totem-features.js'); // Boot wiring must load all three sign/decal companions before furniture builds.
-assert(zoneLoader.includes("ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js')"));
-assert(zoneLoader.includes("ensureCompanionScript('HOBUNJI_TOWN_SIGN_FURNITURE_CONFIG', '../config/town-sign-furniture-config.js')"));
-assert(zoneLoader.includes("ensureCompanionScript('TownSignFurnitureRuntime', 'town-sign-furniture-runtime.js')"));
+const townMap = json('docs/config/maps/hobunji_hollow_town.map.json');
+const decorByKey = new Map((townMap.decor || []).map(d => [d.key, d]));
+const generalStore = decorByKey.get('generalStoreSign');
+const inn = decorByKey.get('innSign');
+assert(generalStore, 'map_hobunji_town must place a generalStoreSign decor entry');
+assert(inn, 'map_hobunji_town must place an innSign decor entry');
+assert.equal(generalStore.rotY, 90, 'generalStoreSign must rotate its +X support side toward north');
+assert.equal(inn.rotY, 90, 'innSign must rotate its +X support side toward north');
+
+// The retired hardcoded system must actually be gone, not left as dead
+// weight alongside the new decor entries (which would double-render).
+assert(!fs.existsSync(path.join(root, 'docs/config/town-sign-furniture-config.js')), 'town-sign-furniture-config.js should be removed now the signs are workspace decor');
+assert(!fs.existsSync(path.join(root, 'docs/js/town-sign-furniture-runtime.js')), 'town-sign-furniture-runtime.js should be removed now the signs are workspace decor');
+const zoneLoader = read('docs/js/zone-den-totem-features.js');
+assert(!zoneLoader.includes('TownSignFurnitureRuntime'), 'zone-den-totem-features.js must no longer load the retired town sign runtime');
+assert(!zoneLoader.includes('HOBUNJI_TOWN_SIGN_FURNITURE_CONFIG'), 'zone-den-totem-features.js must no longer load the retired town sign config');
+assert(zoneLoader.includes("ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js')"), 'FurnitureDecalRuntime (unrelated to the retired sign system) must still load');
 
 console.log('town sign furniture checks passed');
