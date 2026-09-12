@@ -368,12 +368,12 @@
   // stable across every distinct closure a given line of code produces, so
   // the overlay now answers "which file/line is responsible" directly
   // instead of "here are N unrelated-looking one-off timings."
-  function rafCallSiteLabel() {
+  function callSiteLabel() {
     const stack = new Error().stack;
     if (!stack) return 'unknown call site';
     const lines = stack.split('\n').slice(1); // Drop the "Error" header line.
     for (const line of lines) {
-      if (line.includes('js/performance-debug.js')) continue; // Skip this wrapper's own frames.
+      if (line.includes('js/performance-debug.js')) continue; // Skip this module's own frames.
       // Script URLs here carry a cache-busting query string (e.g.
       // ".../item-arch-category-colors.js?v=20260910review1:453:23"), so the
       // line:column numbers sit after "?...", not immediately after ".js".
@@ -392,7 +392,7 @@
     function profiledRequestAnimationFrame(callback) {
       if (typeof callback !== 'function') return boundNativeRaf(callback);
       if (!profilerEnabled) return boundNativeRaf(callback);
-      const label = rafCallSiteLabel(); // Captured HERE (scheduling time), not inside the callback below (run time) -- the stack only shows the real caller before requestAnimationFrame returns.
+      const label = callSiteLabel(); // Captured HERE (scheduling time), not inside the callback below (run time) -- the stack only shows the real caller before requestAnimationFrame returns.
       return boundNativeRaf(function hobunjiTimedRafCallback(...args) {
         const start = performance.now();
         const result = callback.apply(this, args);
@@ -402,6 +402,41 @@
     }
     profiledRequestAnimationFrame.__hobunjiRafProfiled = true;
     root.requestAnimationFrame = profiledRequestAnimationFrame;
+  }
+
+  // A real snapshot showed 'gameLoop total' fully explained by its own
+  // nested breakdown, and every rAF: call site combined added up to under
+  // 10ms -- yet 'outside gameLoop' was still ~59ms. That rules out
+  // requestAnimationFrame-scheduled work as the remaining cost. This
+  // codebase has ~24 separate files that each attach their own
+  // MutationObserver to document.body or document.documentElement with
+  // subtree:true (catalogued earlier in this investigation; two of them --
+  // inventory-ui.js's menu-readability scan and controller-ui-nav.js's
+  // per-frame panel-visibility check -- were already confirmed and fixed as
+  // real bugs). MutationObserver callbacks run as microtasks, not through
+  // requestAnimationFrame, so installRafProfiler above can't see them at
+  // all. Same fix, same reasoning: wrap the MutationObserver constructor
+  // itself so every observer's callback is timed automatically and
+  // attributed to whichever file constructed it, instead of auditing the
+  // remaining ~22 files one at a time.
+  function installMutationObserverProfiler() {
+    const NativeMutationObserver = root.MutationObserver;
+    if (typeof NativeMutationObserver !== 'function' || NativeMutationObserver.__hobunjiMoProfiled) return;
+    function ProfiledMutationObserver(callback) {
+      if (typeof callback !== 'function') return new NativeMutationObserver(callback);
+      const label = callSiteLabel(); // Captured at construction time -- stable for this observer's entire lifetime, unlike the per-call rAF label.
+      return new NativeMutationObserver(function hobunjiTimedMutationCallback(...args) {
+        if (!profilerEnabled) return callback.apply(this, args);
+        const start = performance.now();
+        const result = callback.apply(this, args);
+        recordSubsystem('MutationObserver: ' + label, performance.now() - start);
+        return result;
+      });
+    }
+    ProfiledMutationObserver.prototype = NativeMutationObserver.prototype;
+    Object.setPrototypeOf(ProfiledMutationObserver, NativeMutationObserver);
+    Object.defineProperty(ProfiledMutationObserver, '__hobunjiMoProfiled', { value: true });
+    root.MutationObserver = ProfiledMutationObserver;
   }
 
   function makeCheckboxRow(id, labelText, checked, title = '') {
@@ -901,6 +936,7 @@
 
   function install() {
     installRafProfiler(); // Before anything else below schedules its own requestAnimationFrame loop, so those get timed consistently too.
+    installMutationObserverProfiler(); // Same reasoning, for the ~24 files that instead react to DOM mutations rather than polling every frame.
     installRendererProfiler();
     installSettingsUI();
     installCloudForestTuningUI();
