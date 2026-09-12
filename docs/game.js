@@ -22629,6 +22629,10 @@
         window.PerfProfiler?.end(meshUpdatePerf);
 
         // ── Render active scene ──────────────────────────────────
+        // "Render CPU" in the overlay only shows the average cost of a single
+        // renderer.render() call; s_outlines below can chain up to 6 of them
+        // in one frame, so this bucket captures the true per-frame total.
+        const renderPassPerf = window.PerfProfiler?.begin('render passes');
         const activeScene = window.GridTileAccessors.getActiveScene();
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
@@ -22744,13 +22748,16 @@
             renderer.autoClearDepth = true;
           }
         }
+        window.PerfProfiler?.end(renderPassPerf);
 
         // ── 2D overlays (combat/debug/lightning, plus lighting) ──
+        const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
         drawOverlays();
         window.WeatherFX.drawLightingOverlay();
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         window.HudUpdate.updateHud();
+        window.PerfProfiler?.end(overlayPerf);
         requestAnimationFrame(gameLoop);
       }
 

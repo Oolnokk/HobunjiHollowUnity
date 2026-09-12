@@ -188,7 +188,7 @@
     const geom = Object.entries(perfState.geometryCategories).sort((a,b) => b[1] - a[1]);
     const totalGeom = geom.reduce((sum, pair) => sum + pair[1], 0);
     const topGeom = geom[0];
-    const subsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg).slice(0, 12); // Raised from 5 now that the gameLoop's per-frame work is broken into more (~12) named buckets — sorted worst-first so the real cost still surfaces even if some future addition pushes the count higher still.
+    const subsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg).slice(0, 16); // Raised from 5 now that the gameLoop's per-frame work is broken into more (currently 14) named buckets — sorted worst-first so the real cost still surfaces even if some future addition pushes the count higher still.
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const topLine = topGeom
       ? `${topGeom[0]} ${formatCount(topGeom[1])} tris (${totalGeom ? Math.round(topGeom[1] / totalGeom * 100) : 0}%)`
