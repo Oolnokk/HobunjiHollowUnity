@@ -535,3 +535,14 @@ if (/\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathnam
   npcWardrobeScript.defer = true;
   document.head.appendChild(npcWardrobeScript);
 }
+
+// The Locale Editor keeps its workspace/paint state in a large inline closure;
+// load terrain probe/embedded-cell authoring as a tool-specific sidecar so the
+// existing locale palette, repo library, export, and placement controls remain
+// untouched and backward-compatible.
+if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
+  const localeTerrainScript = document.createElement('script'); // Adds terrain-aware locale authoring and merged JSON/local-override export.
+  localeTerrainScript.src = 'terrain-placement.js?v=20260912a';
+  localeTerrainScript.defer = true;
+  document.head.appendChild(localeTerrainScript);
+}
