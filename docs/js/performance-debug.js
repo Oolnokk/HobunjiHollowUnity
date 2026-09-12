@@ -974,6 +974,31 @@
     cacheBtnRow.append(cacheBtnLabel, cacheBtn);
     box.appendChild(cacheBtnRow);
 
+    // perfState.subsystem never resets on its own (each entry is an
+    // exponential moving average that only updates when a NEW sample
+    // arrives), so a bucket from a diagnostic toggle that's since been
+    // switched off -- or from an early, unrepresentative moment like the
+    // slow loading screen -- stays frozen and visible in the Timed list
+    // forever, indistinguishable at a glance from a currently-active cost.
+    // This has already caused real confusion more than once. Clearing the
+    // map gives a clean baseline right before a specific A/B comparison.
+    const clearTimedBtnRow = document.createElement('div');
+    clearTimedBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
+    const clearTimedBtnLabel = document.createElement('span');
+    clearTimedBtnLabel.textContent = 'Clear timed history';
+    clearTimedBtnLabel.style.fontSize = '12px';
+    clearTimedBtnLabel.title = 'The "Timed" list in the Performance Profiler overlay never resets on its own, so a bucket from a toggle you\'ve since turned off (or from the slow loading screen) can stay frozen and visible indefinitely. This wipes it so the next reading reflects only what happens from now on.';
+    const clearTimedBtn = document.createElement('button');
+    clearTimedBtn.type = 'button';
+    clearTimedBtn.textContent = 'Clear';
+    clearTimedBtn.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#d1d5db';
+    clearTimedBtn.addEventListener('click', () => {
+      perfState.subsystem.clear();
+      flashButtonLabel(clearTimedBtn, 'Cleared!');
+    });
+    clearTimedBtnRow.append(clearTimedBtnLabel, clearTimedBtn);
+    box.appendChild(clearTimedBtnRow);
+
     const lagBtnRow = document.createElement('div');
     lagBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
     const lagBtnLabel = document.createElement('span');
