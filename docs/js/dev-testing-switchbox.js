@@ -1,32 +1,36 @@
-// Dev Testing Switchbox — dev-only performance kill switches for whatever
-// expensive system doesn't matter for the thing currently being tested.
-// Lives entirely in this one file: reads/writes its own localStorage-backed
-// flags, patches a couple of shared browser/engine primitives so it doesn't
-// have to chase every call site of the systems it turns off, and renders its
-// own toggle row in two places — the existing Dev Tools panel
+// Dev Testing Switchbox — dev-only performance/visual kill switches for
+// whatever expensive system doesn't matter for the thing currently being
+// tested. Lives entirely in this one file: reads/writes its own
+// localStorage-backed flags, patches a handful of shared engine primitives
+// so it doesn't have to chase every call site of the systems it turns off,
+// and renders a checkbox panel in two places — the existing Dev Tools panel
 // (#devSpawnPanel, opened via the 🐾 button, itself already gated behind
 // Settings' Dev Mode switch) for use mid-session, and the character/world
 // select screen (onboarding-core.js's #ob-overlay, or save-startup-gate.js's
-// empty-save gate on a brand-new browser) so a toggle can be flipped before
-// ever loading into a farm. Both surfaces are gated behind the same
+// empty-save gate on a brand-new browser) so switches can be set before ever
+// loading into a farm. Both surfaces are gated behind the same
 // `hobunjiDevMode` localStorage flag Settings' Dev Mode checkbox writes.
 //
-// Every flag here takes effect on the next page load, not live — a toggle
-// click persists the new value and reloads immediately (same pattern as
-// Settings' "Load from local folder" button). That keeps each gated system
-// simple: it only has to check its flag once, at boot, instead of on every
-// call.
+// UI model: every checkbox is free to flip with no immediate effect — one
+// shared Confirm button per panel instance applies every checked box as
+// "on" and every unchecked box as "off" in a single batch, persists that
+// combination, and reloads once so each gated system only has to check its
+// flag a single time, at its own boot/first-use point, rather than on every
+// call or frame.
 //
-// Must load after js/audio-system.js, js/water-system.js and
-// js/foliage-generator.js (whose exported functions it wraps) and before
-// game.js (whose own boot calls into all three) — see index.html's script
+// Must load after js/audio-system.js, js/water-system.js,
+// js/foliage-generator.js, js/WallBuilder.js, js/HousePieceGen.js, and
+// js/tool-metal-recolor.js (whose exported functions/prototypes it wraps),
+// and after js/rain-planes.js (which document.writes in js/sky-dome.js) —
+// and before game.js (whose own boot calls into all of them and reads
+// window.DevTestingSwitchbox.flags directly). See index.html's script
 // order, right before the game.js tag.
 (() => {
   'use strict';
 
   const STORAGE_KEY = 'hobunji_dev_switchbox_v1';
 
-  // Order here is also the on-screen button order.
+  // Order here is also the on-screen checkbox order.
   const SWITCHES = Object.freeze({
     noAudio: {
       label: '🔇 Audio',
@@ -43,6 +47,34 @@
     lowPolyFoliage: {
       label: '🧊 Low-Poly Foliage',
       hint: 'Replaces newly generated trees/bushes/boulders/stumps with plain box placeholders.',
+    },
+    noSkySphere: {
+      label: '🌌 Sky Sphere',
+      hint: 'Hides the sky dome (sun/moon/clouds/stars) every frame. Ambient lighting math is unaffected — only the visible dome disappears.',
+    },
+    noBrickWalls: {
+      label: '🧱 Brick Wall Generation',
+      hint: "Skips WallBuilder's instanced brick/stone geometry used on house walls and road curbs — the plain building/road base underneath still renders.",
+    },
+    noShingleGlbs: {
+      label: '🏚️ Eave/Shingle GLBs',
+      hint: 'Never loads the authored shingle GLB; roofs fall back to the existing simpler procedural tube shingles.',
+    },
+    noGrass: {
+      label: '🌱 Grass',
+      hint: "Turns off the farm/town/wilderness grass billboard layer — same effect as Settings' own Grass toggle.",
+    },
+    noWind: {
+      label: '🍃 Wind',
+      hint: "Stops the wind-sway shader on grass/foliage billboards — same effect as Settings' own Wind toggle.",
+    },
+    noShellOutlines: {
+      label: '✏️ Shell Outlines',
+      hint: "Disables the black shell-outline render pass (and the other outline passes gated by the same Settings switch).",
+    },
+    noVerdigris: {
+      label: '🟢 Verdigris',
+      hint: 'Skips tool oxidation/aging recoloring; base metal tinting still applies.',
     },
   });
 
@@ -61,17 +93,25 @@
     try { window.localStorage?.setItem(STORAGE_KEY, JSON.stringify(flags)); } catch (_) {}
   }
 
-  function setFlag(name, value) {
-    if (!(name in SWITCHES) || flags[name] === !!value) return;
-    flags[name] = !!value;
+  // Applies a full { switchName: boolean } batch (as produced by a panel's
+  // Confirm click) in one shot. Returns false and does nothing if the batch
+  // matches what's already active, so Confirm never reloads for no reason.
+  function applyFlags(nextFlags) {
+    let changed = false;
+    for (const key of Object.keys(SWITCHES)) {
+      if (!!flags[key] !== !!nextFlags[key]) { changed = true; break; }
+    }
+    if (!changed) return false;
+    for (const key of Object.keys(SWITCHES)) flags[key] = !!nextFlags[key];
     saveFlags();
     location.reload();
+    return true;
   }
 
   window.DevTestingSwitchbox = Object.freeze({
     flags, // Read directly (e.g. window.DevTestingSwitchbox.flags.noNpcBehavior) by the couple of per-frame checks in game.js that can't be patched from outside.
     SWITCHES,
-    setFlag,
+    applyFlags,
   });
 
   // ── 🔇 Audio ─────────────────────────────────────────────────────────
@@ -159,31 +199,183 @@
     }
   }
 
-  // ── Dev Tools panel wiring ───────────────────────────────────────────
-  // The panel markup (#devSwitchboxGrid) lives in index.html next to the
-  // rest of #devSpawnPanel's dev-only controls; this only needs to paint
-  // each button's on/off state and bind its click.
-  function renderSwitchButton(btn, name) {
-    const on = !!flags[name];
-    btn.textContent = `${SWITCHES[name].label}: ${on ? 'OFF' : 'Running'}`;
-    btn.classList.toggle('fed-active', on);
-    btn.title = SWITCHES[name].hint;
-    btn.setAttribute('aria-pressed', String(on));
+  // ── 🌌 Sky Sphere ─────────────────────────────────────────────────────
+  // The sky dome (js/sky-dome.js) is a single THREE.Group named
+  // 'hobunji_dynamic_skydome' that at least two other modules (rain-planes.js,
+  // cloud-forest-fog.js) independently flip .visible on every frame for
+  // their own area-transition reasons, so a one-time root.visible = false
+  // would just get overwritten a moment later by whichever of them runs
+  // next. sky-dome.js also doubles as this game's ambient-lighting-state
+  // source (getLightingState/fullDayLightingState — other systems read sun/
+  // moon position for lighting, not just for drawing the dome) so disabling
+  // its update() outright is not safe. Instead, wrap the renderer itself:
+  // forcing the dome invisible immediately before each render() call is
+  // guaranteed to be the last word for that frame, regardless of what any
+  // other module did to it earlier in the same tick, while leaving every
+  // other part of the sky-dome module (lighting math included) untouched.
+  // Note for this exact three.js r128 build: WebGLRenderer.prototype.render
+  // is undefined — render() is an own instance property set inside the
+  // constructor closure — so the constructor itself has to be wrapped
+  // rather than its prototype.
+  if (flags.noSkySphere) {
+    try {
+      const OriginalRenderer = window.THREE?.WebGLRenderer;
+      if (OriginalRenderer && !OriginalRenderer.__devSwitchboxSkyWrapped) {
+        const WrappedRenderer = function (...args) {
+          const instance = new OriginalRenderer(...args);
+          const originalRender = instance.render.bind(instance);
+          instance.render = function (scene, camera) {
+            const sky = scene?.getObjectByName?.('hobunji_dynamic_skydome');
+            if (sky) sky.visible = false;
+            return originalRender(scene, camera);
+          };
+          return instance;
+        };
+        WrappedRenderer.prototype = OriginalRenderer.prototype;
+        WrappedRenderer.__devSwitchboxSkyWrapped = true;
+        window.THREE.WebGLRenderer = WrappedRenderer;
+      }
+    } catch (err) {
+      console.warn('[Testing Switchbox] sky sphere patch failed', err);
+    }
   }
 
-  function installSwitchboxUI() {
-    const grid = document.getElementById('devSwitchboxGrid');
-    if (!grid || grid.dataset.switchboxBound) return;
-    grid.dataset.switchboxBound = '1';
-    for (const name of Object.keys(SWITCHES)) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'fed-btn';
-      btn.dataset.switch = name;
-      renderSwitchButton(btn, name);
-      btn.addEventListener('click', () => setFlag(name, !flags[name]));
-      grid.appendChild(btn);
+  // ── 🧱 Brick Wall Generation ──────────────────────────────────────────
+  // Every wall-brick instance in the game (house bodies/gables, road curbs,
+  // barns...) goes through a `new WallBuilder(...)` instance calling its own
+  // .build(panels, opts) — every instance shares WallBuilder.prototype, so
+  // patching it once here covers all of them. The underlying building/road
+  // base geometry is built separately (HousePieceGen's own face meshes,
+  // the road's own path mesh) and is unaffected — this only removes the
+  // decorative instanced brick layer added on top.
+  if (flags.noBrickWalls && window.WallBuilder?.prototype && typeof window.WallBuilder.prototype.build === 'function') {
+    window.WallBuilder.prototype.build = function () {
+      const group = new THREE.Group();
+      group.name = 'WallBuilder_Instances_disabled';
+      return group;
+    };
+  }
+
+  // ── 🏚️ Eave/Shingle GLBs ──────────────────────────────────────────────
+  // HousePieceGen's roof shingles already have a graceful fallback: each
+  // shingle tries _makeShingle() (needs the authored GLB template) first and
+  // falls back to _makeTube() (a plain procedural tube) whenever that
+  // template isn't loaded (see HousePieceGen.js's _addShingles). Simply
+  // never letting the GLB template load — instead of trying to intercept
+  // every shingle placement — routes every roof through that existing
+  // cheaper fallback for free.
+  if (flags.noShingleGlbs && window.HousePieceGen && typeof window.HousePieceGen.loadShingleGlb === 'function') {
+    window.HousePieceGen.loadShingleGlb = function () { return Promise.resolve(null); };
+  }
+
+  // ── 🟢 Verdigris ──────────────────────────────────────────────────────
+  // ToolMetalRecolor.getRecoloredCanvas takes an oxidationAmount alongside
+  // the base metal-tint color; recolorAndOxidize already early-returns
+  // before building any oxidation mask/outline when oxidationAmount is 0
+  // and there's no authored removal pattern, so forcing both here disables
+  // just the verdigris aging effect (and its per-pixel mask/outline cost)
+  // while leaving ordinary tool metal tinting intact.
+  if (flags.noVerdigris && window.ToolMetalRecolor && typeof window.ToolMetalRecolor.getRecoloredCanvas === 'function') {
+    const nativeGetRecoloredCanvas = window.ToolMetalRecolor.getRecoloredCanvas;
+    window.ToolMetalRecolor.getRecoloredCanvas = function (spritePath, opts = {}) {
+      return nativeGetRecoloredCanvas.call(this, spritePath, { ...opts, oxidationAmount: 0, authoredPattern: null });
+    };
+  }
+
+  // ── 🌱 Grass / 🍃 Wind / ✏️ Shell Outlines ────────────────────────────
+  // These three already have live, no-reload player-facing Settings
+  // checkboxes (settingGrass/settingBillWind/settingOutlines) wired entirely
+  // inside game.js's own closure — there's no exported setter to call
+  // directly. Forcing the checkbox unchecked and dispatching a real 'change'
+  // event routes through game.js's own existing listener exactly as if the
+  // player had clicked it, reusing its already-correct per-area/per-mesh
+  // application logic instead of reimplementing it. This has to wait for
+  // game.js to actually attach those listeners first — DOMContentLoaded
+  // fires only after every synchronous <script> in the document (game.js
+  // included, since it carries neither defer nor async) has finished
+  // running, so by then the listeners are guaranteed to already exist.
+  function forceSettingCheckboxOff(id) {
+    const el = document.getElementById(id);
+    if (!el || !el.checked) return;
+    el.checked = false;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function applyDeferredLiveSettings() {
+    if (flags.noGrass) forceSettingCheckboxOff('settingGrass');
+    if (flags.noWind) forceSettingCheckboxOff('settingBillWind');
+    if (flags.noShellOutlines) forceSettingCheckboxOff('settingOutlines');
+  }
+
+  if (flags.noGrass || flags.noWind || flags.noShellOutlines) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', applyDeferredLiveSettings, { once: true });
+    else applyDeferredLiveSettings();
+  }
+
+  // ── Shared checkbox-panel builder ─────────────────────────────────────
+  // Used by both render locations below. Every checkbox starts matched to
+  // the currently-active flags and can be freely flipped with no effect;
+  // Confirm reads the whole set at once and hands it to applyFlags, which
+  // reloads only if something in the batch actually changed.
+  function buildSwitchboxPanel() {
+    const root = document.createElement('div');
+    root.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:10px;opacity:.75;margin-bottom:2px;';
+    hint.textContent = 'Check a box to turn that system OFF, then hit Confirm to reload with your changes.';
+    root.appendChild(hint);
+
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+    root.appendChild(list);
+
+    const pending = { ...flags };
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.style.cssText = 'margin-top:6px;align-self:flex-start;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:inherit;font:inherit;font-size:11px;cursor:pointer;';
+
+    function refreshConfirmState() {
+      const changed = Object.keys(SWITCHES).some(name => !!pending[name] !== !!flags[name]);
+      confirmBtn.disabled = !changed;
+      confirmBtn.style.opacity = changed ? '1' : '.45';
+      confirmBtn.style.cursor = changed ? 'pointer' : 'default';
+      confirmBtn.textContent = changed ? '✔ Confirm (reloads)' : '✔ Confirm';
     }
+
+    for (const name of Object.keys(SWITCHES)) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;';
+      row.title = SWITCHES[name].hint;
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!pending[name];
+      cb.dataset.devSwitch = name;
+      cb.addEventListener('change', () => { pending[name] = cb.checked; refreshConfirmState(); });
+
+      const span = document.createElement('span');
+      span.textContent = SWITCHES[name].label;
+
+      row.appendChild(cb);
+      row.appendChild(span);
+      list.appendChild(row);
+    }
+
+    confirmBtn.addEventListener('click', () => applyFlags(pending));
+    refreshConfirmState();
+    root.appendChild(confirmBtn);
+    return root;
+  }
+
+  // ── Dev Tools panel wiring ───────────────────────────────────────────
+  // The panel markup (#devSwitchboxGrid) lives in index.html next to the
+  // rest of #devSpawnPanel's dev-only controls.
+  function installSwitchboxUI() {
+    const mount = document.getElementById('devSwitchboxGrid');
+    if (!mount || mount.dataset.switchboxBound) return;
+    mount.dataset.switchboxBound = '1';
+    mount.appendChild(buildSwitchboxPanel());
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installSwitchboxUI, { once: true });
@@ -205,30 +397,15 @@
     try { return window.localStorage?.getItem('hobunjiDevMode') === '1'; } catch { return false; }
   }
 
-  function renderInlineSwitchButton(btn, name) {
-    const on = !!flags[name];
-    btn.textContent = `${SWITCHES[name].label}: ${on ? 'OFF' : 'Running'}`;
-    btn.classList.toggle('ob-active', on);
-    btn.title = SWITCHES[name].hint;
-    btn.setAttribute('aria-pressed', String(on));
-  }
-
   function buildSaveSelectSection() {
     const section = document.createElement('div');
     section.id = SAVE_SELECT_SECTION_ID;
     section.className = 'sl-section';
-    section.innerHTML = `<div class="sl-section-label">🧪 Testing Switchbox — dev-only, takes effect next reload</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:6px;"></div>`;
-    const row = section.lastElementChild;
-    for (const name of Object.keys(SWITCHES)) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ob-tab';
-      btn.dataset.devSwitch = name;
-      renderInlineSwitchButton(btn, name);
-      btn.addEventListener('click', () => setFlag(name, !flags[name]));
-      row.appendChild(btn);
-    }
+    const title = document.createElement('div');
+    title.className = 'sl-section-label';
+    title.textContent = '🧪 Testing Switchbox — dev-only';
+    section.appendChild(title);
+    section.appendChild(buildSwitchboxPanel());
     return section;
   }
 
