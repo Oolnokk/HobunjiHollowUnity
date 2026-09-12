@@ -9,6 +9,7 @@
   const TREE_MODE_KEY = 'hobunji_tree_asset_mode_v1';
   const BACKDROP_BLUR_DIAGNOSTIC_KEY = 'hobunji_disable_backdrop_blur_v1';
   const FORCE_HIDDEN_PANELS_KEY = 'hobunji_force_hidden_panels_v1';
+  const GPU_SYNC_DIAGNOSTIC_KEY = 'hobunji_gpu_sync_diagnostic_v1';
 
   const readStorage = (key, fallback = null) => {
     try {
@@ -28,6 +29,7 @@
   let profilerEnabled = readStorage(PROFILER_PREF_KEY, '0') === '1';
   let backdropBlurDisabled = readStorage(BACKDROP_BLUR_DIAGNOSTIC_KEY, '0') === '1';
   let forceHiddenPanelsEnabled = readStorage(FORCE_HIDDEN_PANELS_KEY, '0') === '1';
+  let gpuSyncDiagnosticEnabled = readStorage(GPU_SYNC_DIAGNOSTIC_KEY, '0') === '1';
   const perfState = {
     raf: 0,
     lastFrameTs: 0,
@@ -444,6 +446,46 @@
     } else if (styleEl) {
       styleEl.remove();
     }
+  }
+
+  // Diagnostic toggle, not a real fix, and unlike the two above this one has
+  // real overhead of its own while it's on: rAF, MutationObserver, and
+  // setInterval have all now been ruled out as the dominant "outside
+  // gameLoop" cost (none of them, even combined, come close to the gap seen
+  // on real samples), which points at something none of those could ever
+  // see in principle -- GPU-side backpressure. Every "render:"/"held-overlay:"
+  // bucket already added to game.js only times how long the CPU took to
+  // *issue* that pass's draw calls; WebGL is asynchronous, so none of that
+  // says anything about how long the GPU actually took to execute them. If
+  // the GPU falls behind (plausible here: the outline-render architecture
+  // does up to ~9 full/partial scene passes per frame), the browser can't
+  // call the next requestAnimationFrame until the previous frame's buffer
+  // swap completes, and that wait happens entirely outside any JS callback
+  // this file could time -- exactly the shape of the "outside gameLoop" gap.
+  // gl.readPixels() on the default framebuffer forces a full pipeline flush,
+  // so timing it right after this frame's last render call reveals real GPU
+  // completion time instead of just CPU issue time. This is genuinely
+  // expensive (it defeats the CPU/GPU pipelining that makes WebGL fast in
+  // the first place), so it's off by default and meant to be flipped on just
+  // long enough to get one clear reading, then off again.
+  const gpuSyncPixelBuffer = new Uint8Array(4);
+  function gpuSyncDiagnostic(renderer) {
+    if (!gpuSyncDiagnosticEnabled || !profilerEnabled) return;
+    const gl = renderer?.getContext?.();
+    if (!gl) return;
+    const start = performance.now();
+    try {
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, gpuSyncPixelBuffer);
+    } catch (_) { return; }
+    recordSubsystem('GPU sync (forced readPixels)', performance.now() - start);
+  }
+  root.__hobunjiGpuSyncDiagnostic = gpuSyncDiagnostic;
+
+  function setGpuSyncDiagnosticEnabled(enabled) {
+    gpuSyncDiagnosticEnabled = !!enabled;
+    writeStorage(GPU_SYNC_DIAGNOSTIC_KEY, gpuSyncDiagnosticEnabled ? '1' : '0');
+    const input = document.getElementById('settingGpuSyncDiagnostic');
+    if (input) input.checked = gpuSyncDiagnosticEnabled;
   }
 
   function recordSubsystem(name, elapsedMs) {
@@ -870,6 +912,11 @@
     forceHiddenPanels.input.addEventListener('change', () => setForceHiddenPanelsEnabled(forceHiddenPanels.input.checked));
     box.appendChild(forceHiddenPanels.row);
 
+    const gpuSync = makeCheckboxRow('settingGpuSyncDiagnostic', 'Force GPU sync each frame (diagnostic, has real overhead)', gpuSyncDiagnosticEnabled,
+      'Every render/held-overlay timing above only measures how long the CPU took to issue that frame\'s draw calls, not how long the GPU actually took to execute them -- WebGL is asynchronous. This forces a full GPU pipeline flush once per frame (via a 1x1 readPixels) and times that flush as "GPU sync (forced readPixels)", revealing real GPU completion time. This itself adds real overhead by defeating CPU/GPU pipelining, so only turn it on long enough to get one reading, then off again.');
+    gpuSync.input.addEventListener('change', () => setGpuSyncDiagnosticEnabled(gpuSync.input.checked));
+    box.appendChild(gpuSync.row);
+
     // Flashes a button's own label as inline feedback (e.g. "Copied!") and
     // reverts it after a moment — deliberate alternative to log()/__farmLog
     // for this whole cache-snapshot section, so neither a manual snapshot
@@ -1103,6 +1150,7 @@
     setProfilerEnabled(profilerEnabled);
     setBackdropBlurDisabled(backdropBlurDisabled);
     setForceHiddenPanelsEnabled(forceHiddenPanelsEnabled);
+    setGpuSyncDiagnosticEnabled(gpuSyncDiagnosticEnabled);
     startLagWatch();
     setTimeout(checkBakedTreeHealth, 4000);
   }

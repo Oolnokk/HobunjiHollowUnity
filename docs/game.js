@@ -22773,6 +22773,13 @@
           }
         }
         window.PerfProfiler?.end(renderPassPerf);
+        // Optional diagnostic hook (off by default, see performance-debug.js):
+        // everything timed above only measures how long the CPU took to
+        // *issue* this frame's draw calls, not how long the GPU actually
+        // took to execute them. A forced readback here blocks until the GPU
+        // has really finished, so toggling this on can reveal GPU-bound
+        // frame time that's otherwise invisible to CPU-side profiling.
+        window.__hobunjiGpuSyncDiagnostic?.(renderer);
 
         // ── 2D overlays (combat/debug/lightning, plus lighting) ──
         const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
