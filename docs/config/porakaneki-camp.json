@@ -1,0 +1,41 @@
+{
+  "schema": "hobunji_porakaneki_camp.v1",
+  "zoneId": "map_western_slope",
+  "localeId": "locale_porakaneki_camp_small",
+  "population": {
+    "hunters": 3
+  },
+  "schedule": {
+    "sleepStartHour": 22,
+    "wakeHour": 6,
+    "huntEndHour": 10
+  },
+  "equipment": {
+    "weaponShapes": ["fishingspear", "hatchet", "daggerSword"],
+    "weaponMetalKey": "nativeCopper",
+    "forcedCosmetics": ["rugged_poncho"]
+  },
+  "hunting": {
+    "minRadiusTiles": 8,
+    "maxRadiusTiles": 16,
+    "travelSpeedTilesPerSecond": 1.15,
+    "campTravelSpeedTilesPerSecond": 0.85
+  },
+  "reputation": {
+    "npcId": "porakaneki_chief",
+    "initialFavor": -3,
+    "attackOnSightFavor": -5,
+    "greetingFavorGain": 1,
+    "greetingRapportGain": 1,
+    "greetingRadiusTiles": 2.5,
+    "assaultPenalty": -2,
+    "killPenalty": -2,
+    "damageAttributionRadiusTiles": 14,
+    "initializationMemoryEvent": "porakaneki_faction_initialized",
+    "warnings": [
+      { "radiusTiles": 10, "text": "Porakaneki hunters watch you closely." },
+      { "radiusTiles": 6, "text": "A Porakaneki hunter warns you not to come closer." },
+      { "radiusTiles": 3.5, "text": "Another step and this becomes a fight." }
+    ]
+  }
+}
