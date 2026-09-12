@@ -404,6 +404,7 @@
   }
 
   function isRoofState(branch) { return !!branch?.[ROOF_STATE_KEY]; }
+  function isPlayerOnRoof() { return isRoofState(runtimePlayer()?.onBranch); }
 
   function startRoofClimb(climb) {
     const player = runtimePlayer();
@@ -423,7 +424,7 @@
     const tile = runtimeTile();
     player.climbing = true;
     player.climbElapsed = 0;
-    player.climbHopCount = 4;
+    player.climbHopCount = 2;
     player.climbStartX = player.x;
     player.climbStartY = player.y;
     player.climbEndX = climb.endWorldX * tile;
@@ -525,6 +526,23 @@
     return fn;
   }
 
+  // The roof module is loaded before climb-system.js. Capture init synchronously
+  // inside the global setter so climb-system's later branch-safety wrapper closes
+  // over this capture layer. This avoids the old queued-microtask ordering hole
+  // where game.js could initialize ClimbSystem before the roof wrapper saw deps.
+  function installEarlyInitCapture(system) {
+    if (!system?.init || system.init.__hobunjiRoofClimbEarlyInitCapture) return false;
+    const originalInit = system.init;
+    function roofClimbEarlyInitCapture(injectedDeps) {
+      climbDeps = injectedDeps || climbDeps;
+      return originalInit.apply(this, arguments);
+    }
+    roofClimbEarlyInitCapture.__hobunjiRoofClimbEarlyInitCapture = true;
+    roofClimbEarlyInitCapture.__hobunjiRoofClimbEarlyInitCapturePrevious = originalInit;
+    system.init = roofClimbEarlyInitCapture;
+    return true;
+  }
+
   function roofHooksCurrent(system = window.ClimbSystem) {
     if (!system) return false;
     return ['getClimbTarget', 'startClimb', 'updateClimb', 'updateBranchMovement', 'resolveBranchKnockback']
@@ -566,8 +584,10 @@
     if (typeof system.updateClimb === 'function' && !system.updateClimb[HOOK_MARK]) {
       const originalUpdateClimb = system.updateClimb;
       system.updateClimb = markHook(function roofAwareUpdateClimb(dt) {
-        const result = originalUpdateClimb.call(this, dt);
-        finishRoofIfNeeded(runtimePlayer());
+        const player = runtimePlayer();
+        const roofClimbActive = !!player?._hobunjiClimbTargetRoof;
+        const result = originalUpdateClimb.call(this, roofClimbActive ? (Number(dt) || 0) * 2 : dt);
+        finishRoofIfNeeded(player);
         return result;
       }, 'updateClimb');
       changed = true;
@@ -607,10 +627,14 @@
   }
 
   // This file loads before climb-system.js. Intercept that script's one global
-  // assignment, then install after its own appended branch-safety wrapper has
-  // finished mutating the object but before game.js calls ClimbSystem.init().
+  // assignment, capture init immediately, then install the final roof method
+  // wrappers after its appended branch-safety extension has finished mutating
+  // the same ClimbSystem object.
   function armClimbAssignmentHook() {
-    if (window.ClimbSystem) return installClimbHooks(window.ClimbSystem);
+    if (window.ClimbSystem) {
+      installEarlyInitCapture(window.ClimbSystem);
+      return installClimbHooks(window.ClimbSystem);
+    }
     const existing = Object.getOwnPropertyDescriptor(window, 'ClimbSystem');
     if (existing && !existing.configurable) return false;
     let value = existing?.value;
@@ -620,6 +644,7 @@
       get() { return value; },
       set(next) {
         value = next;
+        installEarlyInitCapture(next);
         queueMicrotask(() => {
           if (window.ClimbSystem !== next) return;
           Object.defineProperty(window, 'ClimbSystem', { configurable: true, enumerable: true, writable: true, value: next });
@@ -638,6 +663,7 @@
     ensureClimbHooks,
     getRoofClimbTarget,
     startRoofClimb,
+    isPlayerOnRoof,
     roofSurfaceYAt,
     transformedStructureFaces,
     getDebug() {
