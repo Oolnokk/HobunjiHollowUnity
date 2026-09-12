@@ -1,11 +1,11 @@
 (() => {
   'use strict';
 
-  // The rest of the Farm/Stable hub stays in farm-panel-core.js.  Stable
+  // The rest of the Farm/Stable hub stays in farm-panel-core.js. Stable
   // training is rendered here directly instead of post-processing whatever
-  // markup the core renderer happened to create.  During ordinary index.html
+  // markup the core renderer happened to create. During ordinary index.html
   // parsing this keeps the core synchronous, just like the former single file.
-  const CORE_SRC = 'js/farm-panel-core.js?v=20260912stableNative1';
+  const CORE_SRC = 'js/farm-panel-core.js?v=20260912stableNative2';
 
   let stableDeps = null;
   let expandedStableId = null;
@@ -296,12 +296,51 @@
     window.__stablePanelTrainingDebug = panel.stableTrainingDebug;
   }
 
+  // document.write() only inserts the parser token while an external script is
+  // executing; the inserted farm-panel-core.js does not execute until this
+  // script returns. Arm the FarmPanel publication itself so the native Stable
+  // renderer is installed at the exact moment the core publishes its API.
+  // If the nursery bridge already owns the setter, delegate through it first so
+  // all of its installers still run, then patch the resulting FarmPanel value.
+  function armNativeInstallOnFarmPanelPublication() {
+    if (window.FarmPanel) { installNativeStableRenderer(); return; }
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel');
+    if (descriptor && descriptor.configurable === false) return;
+
+    let pending = null;
+    const previousGet = descriptor?.get;
+    const previousSet = descriptor?.set;
+    const enumerable = descriptor?.enumerable ?? true;
+
+    Object.defineProperty(window, 'FarmPanel', {
+      configurable: true,
+      enumerable,
+      get() {
+        return previousGet ? previousGet.call(window) : pending;
+      },
+      set(value) {
+        if (previousSet) {
+          previousSet.call(window, value);
+        } else {
+          pending = value;
+          Object.defineProperty(window, 'FarmPanel', {
+            configurable: true,
+            enumerable,
+            writable: true,
+            value,
+          });
+        }
+        installNativeStableRenderer();
+      },
+    });
+  }
+
   function loadCoreThenInstall() {
     if (window.FarmPanel) { installNativeStableRenderer(); return; }
     if (typeof document === 'undefined') return;
     if (document.readyState === 'loading') {
+      armNativeInstallOnFarmPanelPublication();
       document.write(`<script src="${CORE_SRC}" data-farm-panel-core="1"><\/script>`);
-      installNativeStableRenderer();
       return;
     }
     const script = document.createElement('script');
