@@ -1,5 +1,5 @@
 {
-  "schema": "hobunji_porakaneki_camp.v1",
+  "schema": "hobunji_porakaneki_camp.v2",
   "zoneId": "map_western_slope",
   "localeId": "locale_porakaneki_camp_small",
   "population": {
@@ -7,35 +7,52 @@
   },
   "schedule": {
     "sleepStartHour": 22,
-    "wakeHour": 6,
-    "huntEndHour": 10
+    "wakeHour": 6
   },
   "equipment": {
     "weaponShapes": ["fishingspear", "hatchet", "daggerSword"],
     "weaponMetalKey": "nativeCopper",
     "forcedCosmetics": ["rugged_poncho"]
   },
-  "hunting": {
-    "minRadiusTiles": 8,
-    "maxRadiusTiles": 16,
-    "travelSpeedTilesPerSecond": 1.15,
-    "campTravelSpeedTilesPerSecond": 0.85
+  "behavior": {
+    "fullSimulationChunkTiles": 10,
+    "offChunkTickSeconds": 4,
+    "decisionMinSeconds": 4,
+    "decisionMaxSeconds": 11,
+    "travelSpeedTilesPerSecond": 1.05,
+    "huntRadiusMinTiles": 7,
+    "huntRadiusMaxTiles": 22,
+    "localWanderRadiusTiles": 7,
+    "campSocialRadiusTiles": 8,
+    "stimulusInterestRadiusTiles": 12,
+    "activityWeights": {
+      "hunt": 0.52,
+      "wander": 0.24,
+      "socialize": 0.16,
+      "camp": 0.08
+    }
   },
   "reputation": {
     "npcId": "porakaneki_chief",
     "initialFavor": -3,
+    "minimumFavor": -5,
+    "maximumFavor": 10,
     "attackOnSightFavor": -5,
-    "greetingFavorGain": 1,
-    "greetingRapportGain": 1,
-    "greetingRadiusTiles": 2.5,
-    "assaultPenalty": -2,
-    "killPenalty": -2,
+    "greetingFavorThreshold": 1,
+    "greetingRadiusTiles": 3,
+    "killPenalty": -1,
     "damageAttributionRadiusTiles": 14,
     "initializationMemoryEvent": "porakaneki_faction_initialized",
-    "warnings": [
-      { "radiusTiles": 10, "text": "Porakaneki hunters watch you closely." },
-      { "radiusTiles": 6, "text": "A Porakaneki hunter warns you not to come closer." },
-      { "radiusTiles": 3.5, "text": "Another step and this becomes a fight." }
+    "warningRadiusTiles": 10,
+    "warningStaySeconds": 10,
+    "initialWarnings": [
+      "Go way. No want trouble",
+      "This our spot, not yours. Leave.",
+      "No want fight. Go way."
+    ],
+    "escalationWarnings": [
+      "Leave or we fight!",
+      "We said go way. Go way. Now!"
     ]
   }
 }
