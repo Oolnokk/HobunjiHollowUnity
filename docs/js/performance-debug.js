@@ -301,6 +301,21 @@
       // "closed" -- see setForceHiddenPanelsEnabled below for the toggle
       // that tests this directly.
       `DOM nodes: ${formatCount(perfState.domNodeCount)}`,
+      // DevTools' own Bottom-up profile named _loadWorldLivestock() (which
+      // does JSON.parse(localStorage.getItem('hobunjiSaveMeta'))) as an 11%
+      // self-time cost. An audit of every caller found no redundant
+      // repeated-in-a-loop calls -- each already parses once and reuses the
+      // result -- so the likely remaining explanation is simply that this
+      // blob (every world's livestock/breeding/storage/calendar/farm layout
+      // data, all in one JSON string) is large enough that even the existing
+      // once-per-frame-batch cache is expensive purely from its size. This
+      // reads its live size directly to confirm or rule that out.
+      (() => {
+        try {
+          const raw = root.localStorage?.getItem('hobunjiSaveMeta');
+          return raw ? `Save blob (hobunjiSaveMeta): ${(raw.length / 1e6).toFixed(2)} MB (${formatCount(raw.length)} chars)` : 'Save blob (hobunjiSaveMeta): not present';
+        } catch (_) { return 'Save blob (hobunjiSaveMeta): unavailable'; }
+      })(),
     ].join('\n');
   }
 
