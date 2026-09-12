@@ -16,6 +16,9 @@
 
   async function boot() {
     try {
+      // Terrain-aware locales wrap the generator itself, so load their shared
+      // matcher before any Lab adapter captures generateWorkspace.
+      await loadScript('../../js/locale-terrain-placement.js', 'locale-terrain-placement');
       // Load the shared causeway repair first. The Lab's final preview assertion
       // must never race a later dynamically inserted generator adapter.
       await loadScript('../../js/wilderness-entry-corridor.js', 'wilderness-entry-corridor');
@@ -30,7 +33,8 @@
       await loadScript('lab-environment-refresh.js', 'wilderness-lab-environment-refresh'); // Corrects old generic winter terminology: Coldmuck is localized slush; Western Slope snow is persistent avalanche deposition.
       await loadScript('lab-entry-repair.js', 'wilderness-lab-entry-repair'); // Final preview assertion: run the shared exported-path causeway trim even if another generator wrapper changed call order.
       await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
-      console.log('[WildernessLab] shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + entry repair + pixel probe loaded');
+      await loadScript('lab-locale-terrain.js', 'wilderness-lab-locale-terrain'); // Locale Editor autosave/import source plus selected/rejected terrain-probe and embedded-carve overlays.
+      console.log('[WildernessLab] shared causeway repair + terrain-aware locale matching + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + entry repair + pixel probe + locale terrain diagnostics loaded');
       const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {
