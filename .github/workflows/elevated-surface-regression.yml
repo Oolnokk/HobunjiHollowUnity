@@ -4,13 +4,16 @@ on:
   pull_request:
     paths:
       - 'docs/js/roof-climb.js'
+      - 'docs/js/roof-climb-surface-refinement.js'
       - 'docs/js/roof-climb-pixel-probe.js'
       - 'docs/js/climb-proximity-prompt.js'
       - 'docs/js/plateau-fall-live-bridge.js'
       - 'docs/js/footing-damage-recovery-bridge.js'
       - 'docs/js/gravity-ragdoll-fall-bridge.js'
       - 'docs/js/farm-buildings.js'
+      - 'docs/js/format-utils.js'
       - 'scripts/test-roof-climb.js'
+      - 'scripts/test-roof-climb-surface-refinement.js'
       - 'scripts/test-roof-climb-pixel-probe.js'
       - 'scripts/test-climb-proximity-prompt.js'
       - 'scripts/test-plateau-fall-landings.js'
@@ -22,13 +25,16 @@ on:
     branches: [main]
     paths:
       - 'docs/js/roof-climb.js'
+      - 'docs/js/roof-climb-surface-refinement.js'
       - 'docs/js/roof-climb-pixel-probe.js'
       - 'docs/js/climb-proximity-prompt.js'
       - 'docs/js/plateau-fall-live-bridge.js'
       - 'docs/js/footing-damage-recovery-bridge.js'
       - 'docs/js/gravity-ragdoll-fall-bridge.js'
       - 'docs/js/farm-buildings.js'
+      - 'docs/js/format-utils.js'
       - 'scripts/test-roof-climb.js'
+      - 'scripts/test-roof-climb-surface-refinement.js'
       - 'scripts/test-roof-climb-pixel-probe.js'
       - 'scripts/test-climb-proximity-prompt.js'
       - 'scripts/test-plateau-fall-landings.js'
@@ -52,12 +58,14 @@ jobs:
       - name: Syntax check elevated-surface modules
         run: |
           node --check docs/js/roof-climb.js
+          node --check docs/js/roof-climb-surface-refinement.js
           node --check docs/js/roof-climb-pixel-probe.js
           node --check docs/js/climb-proximity-prompt.js
           node --check docs/js/plateau-fall-live-bridge.js
           node --check docs/js/footing-damage-recovery-bridge.js
           node --check docs/js/gravity-ragdoll-fall-bridge.js
           node --check docs/js/farm-buildings.js
+          node --check docs/js/format-utils.js
 
       - name: Test plateau fall landing policy
         run: node scripts/test-plateau-fall-landings.js
@@ -73,6 +81,9 @@ jobs:
 
       - name: Test structural roof climbing
         run: node scripts/test-roof-climb.js
+
+      - name: Test roof climb surface refinement
+        run: node scripts/test-roof-climb-surface-refinement.js
 
       - name: Test roof climb Pixel Probe diagnostics
         run: node scripts/test-roof-climb-pixel-probe.js
