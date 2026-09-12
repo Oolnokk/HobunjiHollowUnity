@@ -12,6 +12,7 @@ on:
       - 'docs/js/animal-growth.js'
       - 'docs/js/stable-animal-progression.js'
       - 'docs/js/stable-animal-perk-adjustments.js'
+      - 'docs/js/stable-animal-training-refinements.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/fish-catalog.js'
@@ -20,6 +21,7 @@ on:
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
+      - 'scripts/test-stable-animal-training-refinements.js'
       - 'scripts/test-barn-incubator.js'
       - 'scripts/test-carpenter-barn-additions.js'
       - 'scripts/test-economy-progression.js'
@@ -35,6 +37,7 @@ on:
       - 'docs/js/animal-growth.js'
       - 'docs/js/stable-animal-progression.js'
       - 'docs/js/stable-animal-perk-adjustments.js'
+      - 'docs/js/stable-animal-training-refinements.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/fish-catalog.js'
@@ -43,6 +46,7 @@ on:
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
+      - 'scripts/test-stable-animal-training-refinements.js'
       - 'scripts/test-barn-incubator.js'
       - 'scripts/test-carpenter-barn-additions.js'
       - 'scripts/test-economy-progression.js'
@@ -69,6 +73,7 @@ jobs:
           node --check docs/js/animal-growth.js
           node --check docs/js/stable-animal-progression.js
           node --check docs/js/stable-animal-perk-adjustments.js
+          node --check docs/js/stable-animal-training-refinements.js
           node --check docs/js/barn-incubator.js
           node --check docs/js/carpenter-shop.js
           node --check docs/js/general-store.js
@@ -77,6 +82,8 @@ jobs:
         run: node scripts/test-animal-growth-kunji-shop.js
       - name: Test stable animal progression
         run: node scripts/test-stable-animal-progression.js
+      - name: Test stable training refinements
+        run: node scripts/test-stable-animal-training-refinements.js
       - name: Test barn incubator lifecycle
         run: node scripts/test-barn-incubator.js
       - name: Test carpenter barn additions
