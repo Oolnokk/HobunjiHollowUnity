@@ -136,7 +136,16 @@
       }
     },
     "porakaneki_chief": {
-      "species": "porakaneki"
+      "species": "porakaneki",
+      "avatarExport": {
+        "schema": "npc_avatar_editor_export.v1",
+        "source": "character-studio",
+        "name": "Porakaneki Chief",
+        "appearance": {
+          "speciesId": "porakaneki",
+          "gender": "male"
+        }
+      }
     }
   }
 }
