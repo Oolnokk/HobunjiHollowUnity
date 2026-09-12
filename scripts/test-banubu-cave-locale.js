@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const locale = require('../docs/config/locales/locale_banubu_shrine.json');
 const index = require('../docs/config/locales/index.json');
+const terrainPlacement = require('../docs/js/locale-terrain-placement.js');
 
 assert.strictEqual(locale.name, "Banubu's Cave", 'Banubu landmark must use the cave name in-game');
 assert.deepStrictEqual(locale.placement?.allowedZones, ['map_northern_cliffs'], 'Banubu Cave must be Northern Cliffs only');
@@ -16,7 +17,7 @@ assert.strictEqual(caveObject.key, 'cave_small', 'Banubu Cave must render with t
 assert.strictEqual(caveObject.label, "Banubu's Cave");
 assert.strictEqual(caveObject.visual?.renderer, 'cave_small');
 assert.strictEqual(caveObject.visual?.scale, 2, 'Banubu cave entrance must be twice normal cave prop scale');
-assert.strictEqual(caveObject.visual?.facing, 'north', 'Banubu Cave entrance must face out of the north-facing cliff');
+assert.strictEqual(caveObject.visual?.facing, 'north', 'Banubu Cave entrance must face out of its authored mouth');
 
 const embedded = locale.embeddedTiles || {};
 assert(Object.keys(embedded).length >= 6, 'Banubu Cave needs a substantial embedded rear footprint');
@@ -30,12 +31,46 @@ for (const [key, rule] of Object.entries(embedded)) {
 
 const anchors = locale.terrainAnchors || {};
 const freeApproach = Object.values(anchors).filter(rule => rule.terrain === 'free' && rule.strength === 'required');
-assert(freeApproach.length >= 3, 'Banubu Cave needs a required open approach before the cliff mouth');
-const cliffMouth = Object.values(anchors).filter(rule => rule.terrain === 'plateauCliff' && rule.strength === 'required');
-assert(cliffMouth.length >= 3, 'Banubu Cave needs a required cliff-edge mouth line');
-for (const rule of cliffMouth) assert.strictEqual(rule.facing, 'north', 'Banubu cave mouth probes must face north/outward');
+assert(freeApproach.length >= 3, 'Banubu Cave needs a required open approach before the embedded plateau');
 assert.deepStrictEqual(locale.placement?.terrainAnchors, locale.terrainAnchors, 'editor-persistence terrain anchors must mirror runtime terrain anchors');
 assert.deepStrictEqual(locale.placement?.embeddedTiles, locale.embeddedTiles, 'editor-persistence embedded cells must mirror runtime embedded cells');
+
+// The cave cliff is encoded by adjacency rather than a density-expanded
+// plateauCliff probe: row 4 stays on the flat lower floor while row 5 directly
+// behind it MUST be plateau >=1 tier higher. At the generator's normal 2x
+// density this becomes a real low/high boundary, while all 2x embedded cells
+// remain legal host checks.
+for (const col of [3, 4, 5]) {
+  assert(locale.tiles?.[`${col},4`], `mouth floor cell ${col},4 must exist`);
+  assert(locale.embeddedTiles?.[`${col},5`], `embedded plateau must begin immediately behind mouth cell ${col},4`);
+}
+
+function syntheticWorkspace(withPlateau) {
+  const cols = 40, rows = 40;
+  const root = { id: 'root', cols, rows, tiles: {}, generatedFrom: { note: 'Flattened after 2x tile-density expansion.' } };
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) root.tiles[`${c},${r}`] = { type: 'grass', crop: '' };
+  const workspace = { maps: [root], plateauGroups: [], localeInstances: [] };
+  if (!withPlateau) return workspace;
+  const plateau = { id: 'p1', elevation: 2 };
+  const submap = { id: 'plateau_p1', isSubmap: true, plateauGroupId: 'p1', cols: 40, rows: 20, anchorC: 0, anchorR: 20, tiles: {} };
+  for (let r = 20; r < rows; r++) for (let c = 0; c < cols; c++) {
+    root.tiles[`${c},${r}`].plateau = 'p1';
+    submap.tiles[`${c},${r - 20}`] = { type: 'grass', crop: '' };
+  }
+  workspace.maps.push(submap);
+  workspace.plateauGroups.push(plateau);
+  return workspace;
+}
+
+// Source row 5 expands to final rows 10/11. Anchor row 10 therefore puts
+// Banubu's embedded rear at final row 20 exactly where the synthetic plateau
+// begins; source row 4 stays on the lower tier immediately in front of it.
+const cliffFit = terrainPlacement.evaluateCandidateForTest(syntheticWorkspace(true), locale, 4, 10, { scale: 2, seed: 'banubu-cave-test' });
+assert.strictEqual(cliffFit.ok, true, `Banubu Cave must fit the synthetic 2x plateau boundary: ${cliffFit.reason || 'unknown rejection'}`);
+assert.strictEqual(cliffFit.floorTier, 0, 'synthetic cave floor should remain on the lower tier');
+assert.strictEqual(cliffFit.embedded.length, Object.keys(embedded).length * 4, 'every authored embedded cell should expand to four validated 2x host cells');
+const flatFit = terrainPlacement.evaluateCandidateForTest(syntheticWorkspace(false), locale, 4, 10, { scale: 2, seed: 'banubu-cave-flat-test' });
+assert.strictEqual(flatFit.ok, false, 'Banubu Cave must reject flat terrain with no higher plateau mass');
 
 const npc = (locale.npcAnchors || []).find(anchor => anchor.npcId === 'banubu');
 assert(npc, 'Banubu must remain anchored inside his cave locale');
@@ -53,4 +88,4 @@ assert(zoneRenderer.includes('LocaleCaveRuntime?.cavesForZone?.(mapId)'), 'game 
 assert(zoneRenderer.includes('DEN_SIZE_SCALE * authoredScale'), 'authored 2x cave scale must multiply the normal game cave scaling path');
 assert(labPreview.includes('ZoneFeatures.buildAnimalDenMeshes(scene, mergedZGrid(merged), [], LAB_CAVE_MAP_ID)'), 'Wilderness Lab must invoke the exact game cave renderer for Banubu Cave');
 
-console.log('Banubu Cave locale + shared game-render regression checks passed');
+console.log('Banubu Cave locale + 2x cliff placement + shared game-render regression checks passed');
