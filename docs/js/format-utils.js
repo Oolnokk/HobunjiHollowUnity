@@ -1,12 +1,42 @@
 (() => {
   'use strict';
 
+  // GitHack can redirect repository image requests across origins. The title
+  // skydome draws moon/cloud sprites into canvases before uploading them to
+  // WebGL, so those images must opt into anonymous CORS before `src` starts
+  // the request or the canvas becomes permanently tainted. Keep this guard
+  // narrowly scoped to the shared sky-sprite directory; all other image loads
+  // retain their existing behavior. sky-dome.js already sets crossOrigin on
+  // its own Image instances, so this also makes the title bootstrap match the
+  // production gameplay loader instead of introducing a second asset policy.
+  (function installSkySpriteCorsGuard() {
+    if (typeof HTMLImageElement === 'undefined') return;
+    const prototype = HTMLImageElement.prototype; // Supplies the native image `src` accessor used by every title sky sprite.
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'src'); // Retains the browser's original getter/setter flags while wrapping only assignment.
+    if (!descriptor?.set || descriptor.set.__hobunjiSkySpriteCorsGuard) return;
+    const nativeSet = descriptor.set; // Used to perform the real URL assignment after the CORS mode has been selected.
+    const guardedSet = function hobunjiSkySpriteCorsSrc(value) {
+      const source = String(value ?? ''); // Used only to recognize the repository's authored sky-sprite asset path.
+      if (source.includes('assets/sky_sprites/')) {
+        try { this.crossOrigin = 'anonymous'; } catch (_) {}
+      }
+      return nativeSet.call(this, value);
+    };
+    guardedSet.__hobunjiSkySpriteCorsGuard = true;
+    try {
+      Object.defineProperty(prototype, 'src', { ...descriptor, set: guardedSet });
+    } catch (_) {
+      // If a browser exposes a non-configurable accessor, leave native loading
+      // untouched; the title's existing debug state will still expose failure.
+    }
+  })();
+
   // Install the startup title screen synchronously while the main game page is
-  // still parsing. This keeps the black/title layer and its capture-phase input
-  // gate in front of every later gameplay/UI listener without changing index.html.
+  // still parsing. This keeps the title layer and its capture-phase input gate
+  // in front of every later gameplay/UI listener without changing index.html.
   (function loadTitleScreenRuntime() {
     if (typeof document === 'undefined') return;
-    const src = 'js/title-screen-runtime.js?v=20260908a'; // One-time parser-synchronous startup-title runtime.
+    const src = 'js/title-screen-runtime.js?v=20260908d'; // Cache-busts the title runtime after input-gate and gameplay-speed cloud fixes.
     if (window.HobunjiTitleScreen || document.querySelector('script[data-hobunji-title-screen]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-title-screen="1"><\/script>`);
