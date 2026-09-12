@@ -22283,6 +22283,7 @@
           return;
         }
 
+        const prePausePerf = window.PerfProfiler?.begin('popups+music'); // Runs even while paused, so kept separate from the gated gameplay buckets below.
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
@@ -22296,19 +22297,23 @@
         window.Music?.updateAmbientCues();
         window.Music?.updateLyreDucking();
         window.Music?.logAudioTickDiagnostics();
+        window.PerfProfiler?.end(prePausePerf);
 
         if (!paused) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
+          const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
           pollControllerInput();
           applyControllerCameraLook(dt);
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
+          window.PerfProfiler?.end(inputPerf);
           const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
           window.WildernessChunks?.update(dt);
           window.PerfProfiler?.end(wildernessChunkPerf);
+          const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           window.PlayerVitals.updatePlayerVitals(dt);
@@ -22316,12 +22321,14 @@
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
+          window.PerfProfiler?.end(worldSystemsPerf);
 
           // Active companions and shoulder pets follow the player through
           // every playable interior. A building still loading has no real
           // destination scene yet, so wait behind the existing black scene
           // transition rather than spawning a follower into `scene`'s
           // fallback and leaving it there after the building finishes.
+          const companionPerf = window.PerfProfiler?.begin('companions+mounts');
           const companionSceneReady = !_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea); // Gates indoor follower scene attachment.
           if (companionSceneReady) {
             syncCompanionFromWhistle();
@@ -22330,16 +22337,19 @@
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
           window.Mounts?.updateMountRide(dt);
+          window.PerfProfiler?.end(companionPerf);
 
           // Dev Testing Switchbox "NPC & Creature AI" switch: freezes wildlife/
           // bandit AI, spawning, and corpse cleanup along with the NPC walker
           // schedules gated in updateNpcWalkers above.
           if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
             if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+              const spawnPerf = window.PerfProfiler?.begin('bandit+wildlife spawn'); // Separate from 'hostiles' below, which only covers already-spawned AI ticking.
               window.BanditCamps.updateCompanionPerception(dt);
               window.BanditCamps.updateRandomEncounters(dt);
               window.BanditCamps.updateCampBanners(dt);
               window.WildlifeSpawn.updateHostileSpawning(dt);
+              window.PerfProfiler?.end(spawnPerf);
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
@@ -22354,6 +22364,7 @@
             }
           }
 
+          const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
           window.DenNestSystem.updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
@@ -22392,6 +22403,7 @@
             }
             window.WeatherFX.spawnRipples();
           }
+          window.PerfProfiler?.end(miscGameplayPerf);
         }
 
         // ── Camera smooth follow ─────────────────────────────────
@@ -22494,6 +22506,7 @@
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
         // (opacity and, while a tree is actually blocking, depthWrite).
+        const vegCullPerf = window.PerfProfiler?.begin('vegetation+path culling'); // Isolates the throttled-but-potentially-bulk culling passes below from the per-frame work around them.
         _vegCullAccum += dt;
         if (_vegCullAccum >= 0.14) {
           const force = _vegCullAccum >= 900; // first tick after script load
@@ -22511,8 +22524,10 @@
           _pathBrickCullAccum = 0;
           window.TerrainGeometry.updatePathBrickCulling(currentArea, force);
         }
+        window.PerfProfiler?.end(vegCullPerf);
 
         // ── Three.js updates ─────────────────────────────────────
+        const meshUpdatePerf = window.PerfProfiler?.begin('mesh+visual updates'); // Everything below through the rain/cloud-forest fog update, ahead of the actual render() call.
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
@@ -22611,6 +22626,7 @@
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
+        window.PerfProfiler?.end(meshUpdatePerf);
 
         // ── Render active scene ──────────────────────────────────
         const activeScene = window.GridTileAccessors.getActiveScene();
