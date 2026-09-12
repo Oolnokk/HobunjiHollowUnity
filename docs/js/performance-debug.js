@@ -244,8 +244,12 @@
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
       `Top visible geometry: ${topLine}`,
+      // ×N (samples) matters most for the rAF: call-site buckets: a call
+      // site averaging 2ms that only ever fired once is a one-time cost, but
+      // the same 2ms average firing hundreds of times is a real per-second
+      // budget problem the plain average alone can't distinguish.
       subsystems.length
-        ? `Timed (≥${SUBSYSTEM_DISPLAY_FLOOR_MS}ms):\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms`).join('\n')}`
+        ? `Timed (≥${SUBSYSTEM_DISPLAY_FLOOR_MS}ms):\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms  ×${value.samples}`).join('\n')}`
         : 'Timed subsystems: none above the display floor',
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
       `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
@@ -338,31 +342,47 @@
     return value;
   }
 
-  // A real snapshot showed 'gameLoop total' at 31.77ms against a 82.45ms
+  // A real snapshot showed 'gameLoop total' at 31.77ms against an 82.45ms
   // frame -- more than half the per-frame cost happens somewhere OUTSIDE
   // gameLoop's own call graph entirely. This codebase has ~70 other files
   // that each run their own independent, self-perpetuating
-  // requestAnimationFrame loop (hand/weapon pose drivers, the shared
-  // controller-input poller, music/UI systems, ...), any of which could be
-  // that missing time. Rather than instrument each candidate by hand one at
-  // a time, wrap requestAnimationFrame itself so every callback's own cost
-  // shows up automatically, labeled by its function name (deduplicated with
-  // a #2/#3 suffix for name collisions across files, since a plain "frame"
-  // or "sync" appears in more than one of them) — same recordSubsystem
-  // bucket set the rest of this overlay already reads, prefixed "rAF: " to
-  // keep them visually grouped and distinct from the explicitly-instrumented
-  // gameLoop buckets.
-  const rafFnLabels = new WeakMap();
-  const rafLabelCounts = new Map();
-  function labelForRafCallback(fn) {
-    let label = rafFnLabels.get(fn);
-    if (label) return label;
-    const baseName = fn.name || 'anonymous';
-    const n = (rafLabelCounts.get(baseName) || 0) + 1;
-    rafLabelCounts.set(baseName, n);
-    label = n > 1 ? `${baseName}#${n}` : baseName;
-    rafFnLabels.set(fn, label);
-    return label;
+  // requestAnimationFrame loop, any of which could be that missing time.
+  // Rather than instrument each candidate by hand one at a time, wrap
+  // requestAnimationFrame itself so every callback's own cost shows up
+  // automatically.
+  //
+  // First version of this grouped by callback FUNCTION IDENTITY (a WeakMap
+  // keyed on the callback itself). That backfired: real snapshots showed
+  // dozens of distinct "rAF: anonymous#1240", "anonymous#3376", etc. --
+  // something is creating a BRAND NEW anonymous closure and scheduling it
+  // fresh very often (a "schedule the next tick with a throwaway arrow
+  // function" pattern, common across this codebase's many debounced
+  // "queueRefresh"-style helpers), so identity-based grouping just gives
+  // every single occurrence its own one-sample bucket -- exactly the
+  // opposite of useful, since it can't tell us whether 40 different call
+  // sites each fired once, or one call site fired 40 times.
+  //
+  // Group by CALL SITE instead: capture a stack trace at the moment
+  // requestAnimationFrame(callback) is invoked (not when the callback later
+  // runs), and key on the first stack frame outside this file. That's
+  // stable across every distinct closure a given line of code produces, so
+  // the overlay now answers "which file/line is responsible" directly
+  // instead of "here are N unrelated-looking one-off timings."
+  function rafCallSiteLabel() {
+    const stack = new Error().stack;
+    if (!stack) return 'unknown call site';
+    const lines = stack.split('\n').slice(1); // Drop the "Error" header line.
+    for (const line of lines) {
+      if (line.includes('js/performance-debug.js')) continue; // Skip this wrapper's own frames.
+      // Script URLs here carry a cache-busting query string (e.g.
+      // ".../item-arch-category-colors.js?v=20260910review1:453:23"), so the
+      // line:column numbers sit after "?...", not immediately after ".js".
+      const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
+      if (match) return `${match[1]}:${match[2]}`;
+      const trimmed = line.trim();
+      if (trimmed) return trimmed.slice(0, 60);
+    }
+    return 'unknown call site';
   }
 
   function installRafProfiler() {
@@ -371,11 +391,12 @@
     const boundNativeRaf = nativeRaf.bind(root);
     function profiledRequestAnimationFrame(callback) {
       if (typeof callback !== 'function') return boundNativeRaf(callback);
+      if (!profilerEnabled) return boundNativeRaf(callback);
+      const label = rafCallSiteLabel(); // Captured HERE (scheduling time), not inside the callback below (run time) -- the stack only shows the real caller before requestAnimationFrame returns.
       return boundNativeRaf(function hobunjiTimedRafCallback(...args) {
-        if (!profilerEnabled) return callback.apply(this, args);
         const start = performance.now();
         const result = callback.apply(this, args);
-        recordSubsystem('rAF: ' + labelForRafCallback(callback), performance.now() - start);
+        recordSubsystem('rAF: ' + label, performance.now() - start);
         return result;
       });
     }
