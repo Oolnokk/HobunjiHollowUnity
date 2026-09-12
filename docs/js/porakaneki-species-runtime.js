@@ -2,14 +2,17 @@
 //
 // Porakaneki deliberately combines existing character systems instead of
 // duplicating their authored data:
-//   - Kenkari male body/wardrobe sprites, hands/feet, attachment rig, and body colors.
+//   - Kenkari male body/wardrobe sprites, attachment rig, and body colors.
+//   - Pachyderm hands and feline feet as explicit cross-species extremity donors.
 //   - Slagothim/Tletingan male hair cosmetics.
 //   - Porakaneki-specific head, untinted-head, and torso portrait sprites.
 (() => {
   'use strict';
 
   const SPECIES_ID = 'porakaneki'; // Used as the runtime/config key for every Porakaneki-specific override below.
-  const BODY_SPECIES_ID = 'kenkari'; // Used whenever Porakaneki resolves inherited body, wardrobe, extremity, rig, or palette data.
+  const BODY_SPECIES_ID = 'kenkari'; // Used whenever Porakaneki resolves inherited body, wardrobe, rig, or palette data.
+  const HAND_DONOR_SPECIES_ID = 'mashtzarr'; // Used to resolve the canonical pachyderm hand-model family without duplicating its GLB path.
+  const FOOT_DONOR_SPECIES_ID = 'engh-sho'; // Used to clone the canonical feline procedural-foot config without duplicating its GLB/material data.
   const HAIR_SPECIES_ID = 'tletingan'; // Documents the cosmetic donor used by config/species/porakaneki.json for male hairstyles.
   const GENDERS = Object.freeze(['male']); // Used to keep the species male-only until authored female assets are intentionally added.
   const EXPECTED_ASSETS = Object.freeze({ // Exposed in mobile diagnostics so missing authored art is immediately visible.
@@ -37,13 +40,17 @@
     playerSelectable: false,
     genders: [...GENDERS],
     bodySpecies: BODY_SPECIES_ID,
+    handDonorSpecies: HAND_DONOR_SPECIES_ID,
+    footDonorSpecies: FOOT_DONOR_SPECIES_ID,
     hairSpecies: HAIR_SPECIES_ID,
     expectedAssets: EXPECTED_ASSETS,
     appearanceConfigInstalled: false,
     rigProfilesInstalled: 0,
     rigConfigCorrectionsReapplied: false,
     handModelInherited: false,
+    handModelKey: null,
     footModelInherited: false,
+    footGlb: null,
     wardrobeResolverInstalled: false,
     paletteInheritanceInstalled: false,
     armMaskProfilesInstalled: 0,
@@ -68,15 +75,17 @@
     if (handProfiles?.mutate) {
       handProfiles.mutate(data => {
         data.speciesModels ||= {};
-        const sourceModel = data.speciesModels[BODY_SPECIES_ID]; // Reuses Kenkari's live model mapping instead of hardcoding its GLB family.
+        const sourceModel = data.speciesModels[HAND_DONOR_SPECIES_ID]; // Mashtzarr is the canonical pachyderm-hand donor.
         if (sourceModel) data.speciesModels[SPECIES_ID] = sourceModel;
       });
-      status.handModelInherited = !!handProfiles.data?.speciesModels?.[SPECIES_ID];
+      status.handModelKey = handProfiles.data?.speciesModels?.[SPECIES_ID] || null;
+      status.handModelInherited = !!status.handModelKey;
     }
 
     const feet = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet; // Shared per-species foot GLB/material config.
-    if (feet?.models?.[BODY_SPECIES_ID]) {
-      feet.models[SPECIES_ID] = clone(feet.models[BODY_SPECIES_ID]);
+    if (feet?.models?.[FOOT_DONOR_SPECIES_ID]) {
+      feet.models[SPECIES_ID] = clone(feet.models[FOOT_DONOR_SPECIES_ID]);
+      status.footGlb = feet.models[SPECIES_ID]?.glb || null;
       status.footModelInherited = true;
     }
     return status.handModelInherited || status.footModelInherited;
@@ -87,7 +96,7 @@
     if (!characters) return 0;
     let installed = 0;
     for (const gender of GENDERS) {
-      const source = characters[`${BODY_SPECIES_ID}::${gender}`]; // Kenkari male is the authored geometry/anchor source.
+      const source = characters[`${BODY_SPECIES_ID}::${gender}`]; // Kenkari male remains the authored geometry/anchor source even though visible extremity meshes come from other donors.
       if (!source) continue;
       const profile = clone(source); // Independent copy prevents future Porakaneki edits from mutating Kenkari.
       profile.species = SPECIES_ID;
@@ -194,6 +203,8 @@
   window.HobunjiPorakanekiSpecies = Object.freeze({
     speciesId: SPECIES_ID,
     bodySpeciesId: BODY_SPECIES_ID,
+    handDonorSpeciesId: HAND_DONOR_SPECIES_ID,
+    footDonorSpeciesId: FOOT_DONOR_SPECIES_ID,
     hairSpeciesId: HAIR_SPECIES_ID,
     expectedAssets: EXPECTED_ASSETS,
     install,
@@ -201,7 +212,7 @@
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
-      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hands=${d.handModelInherited} feet=${d.footModelInherited} paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} armMask=${d.armMaskProfilesInstalled}/1 head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
+      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} armMask=${d.armMaskProfilesInstalled}/1 head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
     },
   });
 
