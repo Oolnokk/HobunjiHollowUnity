@@ -12,7 +12,7 @@
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
-    new URL('porakaneki-species-runtime.js?v=20260912a', base).href,
+    new URL('porakaneki-species-runtime.js?v=20260912b', base).href,
     new URL('character-rig-scale.js?v=20260904i', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20260905a', base).href,
     new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
