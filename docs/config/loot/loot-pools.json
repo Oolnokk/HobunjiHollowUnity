@@ -27,6 +27,12 @@
         { "id": "hide", "itemKey": "drenkirraHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
       ]
     },
+    "creature_puktuk": {
+      "label": "Puktuk",
+      "entries": [
+        { "id": "meat", "itemKey": "puktukMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} }
+      ]
+    },
     "creature_gar-wolf": {
       "label": "Gar-wolf",
       "entries": [
