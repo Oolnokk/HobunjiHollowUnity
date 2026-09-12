@@ -34,6 +34,8 @@
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
     // Porakaneki camp network: 2-4 procedural camps on every wilderness map plus one larger chief camp that migrates with the regional season; residents collapse to abstract agents off-chunk.
     ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912d'],
+    // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
+    ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20260912a'],
     // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.
     ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260911a'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
