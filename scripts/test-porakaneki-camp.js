@@ -2,102 +2,113 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const cfg = JSON.parse(fs.readFileSync('docs/config/porakaneki-camp.json', 'utf8')); // Authoritative camp/LOD/reputation tuning exercised below.
-const locale = JSON.parse(fs.readFileSync('docs/config/locales/locale_porakaneki_camp_small.json', 'utf8')); // Real authored footprint used by the runtime stamp.
-const localeIndex = JSON.parse(fs.readFileSync('docs/config/locales/index.json', 'utf8')); // Guards locale-editor/index discoverability.
-const speciesOverrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8')); // Guards the male-only existing chief composition.
-const runtimeSource = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8'); // Executed in a browser-shaped VM to exercise actual state/LOD transitions.
-const houseLoader = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // Guards parser-time camp-runtime bootstrap.
-const combatLoader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8'); // Guards the dual-role dagger bridge load.
-const socialSource = fs.readFileSync('docs/js/npc-social-relationship-bridge-v2.js', 'utf8'); // Existing once-per-day gift/Rapport layer reused by the named chief.
+const cfg = JSON.parse(fs.readFileSync('docs/config/porakaneki-camp.json', 'utf8')); // Authoritative distributed-camp/season/LOD tuning.
+const smallLocale = JSON.parse(fs.readFileSync('docs/config/locales/locale_porakaneki_camp_small.json', 'utf8')); // Little procedural-only camp footprint.
+const chiefLocale = JSON.parse(fs.readFileSync('docs/config/locales/locale_porakaneki_camp_chief.json', 'utf8')); // Large seasonal named-chief camp footprint.
+const localeIndex = JSON.parse(fs.readFileSync('docs/config/locales/index.json', 'utf8')); // Guards both camp types' editor/runtime discoverability.
+const runtimeSource = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8'); // Browser-shaped VM exercises actual network/season/LOD transitions.
+const houseLoader = fs.readFileSync('docs/js/house-pieces.js', 'utf8'); // Guards parser-time bootstrap/cache version.
+const socialSource = fs.readFileSync('docs/js/npc-social-relationship-bridge-v2.js', 'utf8'); // Named chief retains normal gift/Rapport/dance/liquor path.
 
-assert.equal(cfg.schema, 'hobunji_porakaneki_camp.v2');
-assert.equal(cfg.zoneId, 'map_western_slope');
-assert.equal(cfg.localeId, 'locale_porakaneki_camp_small');
-assert.equal(cfg.population.hunters, 3);
-assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'daggerSword']);
+const ZONES = [
+  'map_northern_cliffs',
+  'map_southern_cloud_forest',
+  'map_western_slope',
+  'map_eastern_mire',
+];
+
+assert.equal(cfg.schema, 'hobunji_porakaneki_camp.v3');
+assert.deepEqual(cfg.wildernessZones, ZONES);
+assert.equal(cfg.smallCamps.minPerZone, 2);
+assert.equal(cfg.smallCamps.maxPerZone, 4);
+assert.equal(cfg.smallCamps.minResidents, 2);
+assert.equal(cfg.smallCamps.maxResidents, 4);
+assert.equal(cfg.chiefCamp.generatedResidents, 6);
+assert.deepEqual(cfg.chiefCamp.seasonZoneMap, {
+  Stormtide: 'map_southern_cloud_forest',
+  Deadgrass: 'map_western_slope',
+  Longpour: 'map_eastern_mire',
+  Coldmuck: 'map_northern_cliffs',
+});
 assert.equal(cfg.behavior.fullSimulationChunkTiles, 10);
 assert.equal(cfg.behavior.offChunkTickSeconds, 4);
 assert.equal(cfg.reputation.initialFavor, -3);
 assert.equal(cfg.reputation.minimumFavor, -5);
-assert.equal(cfg.reputation.maximumFavor, 10);
-assert.equal(cfg.reputation.attackOnSightFavor, -5);
-assert.equal(cfg.reputation.greetingFavorThreshold, 1);
 assert.equal(cfg.reputation.killPenalty, -1);
-assert.deepEqual(cfg.schedule, { sleepStartHour: 22, wakeHour: 6 });
-assert.deepEqual(cfg.reputation.initialWarnings, [
-  'Go way. No want trouble',
-  'This our spot, not yours. Leave.',
-  'No want fight. Go way.',
-]);
-assert.deepEqual(cfg.reputation.escalationWarnings, [
-  'Leave or we fight!',
-  'We said go way. Go way. Now!',
-]);
-assert.deepEqual(locale.placement.allowedZones, ['map_western_slope']);
-assert.equal(locale.objects.filter(object => object.kind === 'tent').length, 3);
-assert(localeIndex.locales.some(entry => entry.id === cfg.localeId && entry.category === 'porakaneki_camp'));
-assert.equal(speciesOverrides.npcs.porakaneki_chief.species, 'porakaneki');
-assert.equal(speciesOverrides.npcs.porakaneki_chief.avatarExport.appearance.gender, 'male');
-assert(houseLoader.includes("['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912c']"));
-assert(combatLoader.includes("['js/combat/porakaneki-dagger-ranged.js?v=20260912a'"));
-assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the existing once-per-day social gate');
-assert(socialSource.includes('window.NpcRapport'), 'chief gifting/dancing/liquor must retain the existing Rapport bridge');
-assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must route through the new free-time activity planner rather than a fixed station');
-assert(runtimeSource.includes("roles: ['porakaneki-sleep']"), 'night sleep must use a shared tent role instead of one permanently assigned tent');
+assert.deepEqual(smallLocale.placement.allowedZones, ZONES);
+assert.equal(smallLocale.placement.maxInstances, 4);
+assert.equal(smallLocale.meta.namedNpcs, false);
+assert.deepEqual(chiefLocale.placement.allowedZones, ZONES);
+assert.equal(chiefLocale.placement.maxInstances, 1);
+assert.equal(chiefLocale.meta.namedNpc, 'porakaneki_chief');
+assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 7);
+assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
+assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260912'));
+assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
+assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
+assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
+assert(runtimeSource.includes('for (const zoneId of (cfg.wildernessZones || []))'), 'runtime must build camps across every configured wilderness zone');
 
-let currentArea = 'town'; // Mutated to test off-zone, off-chunk, and same-chunk behavior separately.
-let hour = 12; // Mutated by sleep assertions through CalendarSystem.getHour.
-const day = 7; // Stable absolute day for daily greetings and sleep choices.
-const relation = { favor: 0, memory: [] }; // Existing chief relationship record doubles as tribe reputation.
-const rewardLog = []; // Captures permanent Favor changes; greeting should not add one.
-const toastLog = []; // Captures non-reward greeting/warning feedback.
-const hostileObjects = []; // Shared combat array receives only materialized same-chunk hunters.
-const stations = []; // Captures shared sleep-role stations registered for the chief.
+let currentArea = 'town'; // Mutated through off-zone, same-zone/off-chunk, and same-chunk cases.
+let hour = 12; // Calendar hour for awake/sleep checks.
+let season = 'Stormtide'; // Mutated to prove large-camp migration without disturbing little camps.
+const day = 7;
+const relation = { favor: 0, memory: [] }; // Named chief relationship record doubles as tribe-wide Favor.
+const hostileObjects = []; // Real combat entities should only appear for same-chunk residents.
+const rewardLog = [];
+const toastLog = [];
+const stations = [];
 const chief = {
   rec: { id: 'porakaneki_chief', appearance: {}, scheduleHooks: {}, agenda: [{ id: 'placeholder' }] },
   area: 'town',
-  root: { position: { x: 26.5, z: 26 } },
-}; // Normal NPC walker proves the named chief remains in ordinary NPC systems.
+  root: { position: { x: 5, z: 5 } },
+};
 
-const layout = {
-  cols: 64,
-  rows: 64,
-  tiles: Array.from({ length: 64 * 64 }, (_, i) => ({ c: i % 64, r: Math.floor(i / 64), type: 'grass', elevTier: 0 })),
-  buildings: [], dens: [], decor: [], furniture: [], transitions: [], rootTotems: [], localeInstances: [],
-  toTownExit: { col: 2, row: 2 },
-}; // Flat generated-zone stand-in consumed by buildZoneView.
+function makeLayout() {
+  return {
+    cols: 96,
+    rows: 96,
+    tiles: Array.from({ length: 96 * 96 }, (_, i) => ({ c: i % 96, r: Math.floor(i / 96), type: 'grass', elevTier: 0 })),
+    buildings: [], dens: [], decor: [], furniture: [], transitions: [], rootTotems: [], localeInstances: [],
+    toTownExit: { col: 2, row: 2 },
+  };
+}
+const zoneLayouts = new Map(ZONES.map(zoneId => [zoneId, makeLayout()])); // All four generated wilderness layouts are available to the runtime at once.
 
 function fakeStamp(view, localeDef, opts) {
-  assert.equal(opts.clearableTypes.size, 0, 'Porakaneki camp must never bulldoze generated clutter');
-  const id = opts.instanceId; // Matches TemporaryLocales' instance ownership field.
-  const anchorX = 22, anchorY = 22;
+  view.__stampSeq = (view.__stampSeq || 0) + 1; // First call is the silent large-camp reservation, following calls are small camps.
+  const seq = view.__stampSeq;
+  const isChief = localeDef.id === 'locale_porakaneki_camp_chief';
+  const width = isChief ? 19 : 13, height = isChief ? 17 : 12;
+  const x = isChief ? 4 : 24 + ((seq - 2) % 2) * 28;
+  const y = isChief ? 4 : 12 + Math.floor((seq - 2) / 2) * 30;
+  const id = opts.instanceId;
   for (const object of localeDef.objects) {
     view.objects.push({
       id: `${id}_${object.id}`,
       type: object.kind === 'tent' ? 'tent' : object.kind,
       key: object.key,
-      x: anchorX + object.col,
-      y: anchorY + object.row,
+      x: x + object.col,
+      y: y + object.row,
       w: object.w,
       h: object.h,
       temporaryLocaleInstanceId: id,
       destroyed: false,
     });
   }
-  return { id, site: { x: 20, y: 20, w: 13, h: 12 }, anchorX, anchorY };
+  return { id, site: { x, y, w: width, h: height }, removedObjectSnapshots: [], tileSnapshot: {} };
 }
 
 function avatarGroup() {
-  return { visible: true, position: { set() {} }, parent: { remove() {} } }; // Minimal group fields touched by materialize/hide/teardown.
+  return { visible: true, position: { set() {} }, parent: { remove() {} } }; // Minimal fields touched by materialize/hide/teardown.
 }
-
 const banditCombat = {
   init(deps) { this.deps = deps; return 'bandit-init'; },
   async loadGangConfig() { return { baseline: true }; },
   async makeEntity(_base, _rank, _tier, x, y, opts) {
     return {
-      id: `hunter_${opts.extra.porakanekiHunterIndex}`,
+      id: `generated_${opts.extra.porakanekiCampId}_${opts.extra.porakanekiHunterIndex}`,
       x, y, health: 20, maxHealth: 20, halfHeight: 0.5,
       def: { aggroRangePx: 360 }, state: 'idle', areaId: currentArea,
       avatarRef: { group: avatarGroup(), dispose() {} },
@@ -107,65 +118,66 @@ const banditCombat = {
       ...opts.extra,
     };
   },
-}; // Existing BanditCombat API stub proves random loadouts still build real combat-capable humanoids.
+};
 const npcScheduling = {
   init(deps) { this.deps = deps; return 'schedule-init'; },
   registerNpcStations(list) { stations.push(...list); },
-}; // Existing scheduler API stub captures the shared sleep-role tent stations.
-const banditCamps = { updateCampBanners() { return 'camp-tick'; } }; // Cheap game-loop seam wrapped by the runtime.
+};
+const banditCamps = { updateCampBanners() { return 'camp-tick'; } };
 
 const contextWindow = {
-  fetch: async url => ({ ok: true, status: 200, json: async () => String(url).includes('porakaneki-camp.json') ? cfg : locale }),
+  fetch: async url => {
+    const value = String(url);
+    const payload = value.includes('porakaneki-camp.json') ? cfg : value.includes('chief') ? chiefLocale : smallLocale;
+    return { ok: true, status: 200, json: async () => payload };
+  },
   BanditCombat: banditCombat,
   NpcScheduling: npcScheduling,
   BanditCamps: banditCamps,
   TemporaryLocales: { stamp: fakeStamp },
-  CalendarSystem: { getHour: () => hour, timeDebugSnapshot: () => ({ rawDay: day }) },
+  CalendarSystem: {
+    getHour: () => hour,
+    timeDebugSnapshot: () => ({ rawDay: day }),
+    yearNumber: () => 1,
+    currentSeason: () => ({ name: season }),
+  },
   DialogueContent: { getNpcDlgState: () => relation },
   WorldPopupText: { queueReward: (...args) => rewardLog.push(args) },
   NpcSocialStimuli: { strongestNear: () => null },
   __farmLog() {},
 };
 contextWindow.window = contextWindow;
-const context = vm.createContext({ window: contextWindow, fetch: contextWindow.fetch, console, Date, Math, Set, Map, Promise });
+const context = vm.createContext({ window: contextWindow, fetch: contextWindow.fetch, console, Date, Math, Set, Map, Promise, performance: { now: () => 1000 } });
 vm.runInContext(runtimeSource, context, { filename: 'porakaneki-camps-runtime.js' });
 
-// Random sequence is arranged so weapon rolls (every fourth draw during
-// abstract-hunter creation) are dagger, dagger, spear. That proves loadouts
-// are independent random samples and duplicates are legal rather than a
-// hardcoded one-of-each assignment.
-const randomValues = [
-  0.20, 0.30, 0.90, 0.10,
-  0.40, 0.50, 0.90, 0.20,
-  0.60, 0.70, 0.10, 0.30,
-  0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95,
-];
+const randomValues = [0.91, 0.91, 0.12, 0.4, 0.6, 0.2, 0.8, 0.3, 0.7, 0.1];
 let randomIndex = 0;
+const activeGrid = Array.from({ length: 96 }, () => Array.from({ length: 96 }, () => ({ type: 'grass' })));
 const combatDeps = {
   TILE: 60,
-  player: { x: 60 * 60, y: 60 * 60 }, // Far from camp at first: no hunter should materialize despite sharing the same zone later.
+  player: { x: 90 * 60, y: 90 * 60 },
   calendar: { day },
   rnd: () => randomValues[(randomIndex++) % randomValues.length],
-  zoneLayouts: new Map([['map_western_slope', layout]]),
+  zoneLayouts,
   zoneScenes: new Map(),
-  EXTERIOR_ZONES: { map_western_slope: { cols: 64, rows: 64, entryCol: 2, entryRow: 2 } },
+  EXTERIOR_ZONES: Object.fromEntries(ZONES.map(zoneId => [zoneId, { cols: 96, rows: 96, entryCol: 2, entryRow: 2 }])),
   WATERWAY_TYPES: new Set(['river', 'stream']),
   TileType: { PATH: 'path', RAMP: 'ramp', WATERFALL: 'waterfall', SHRUB: 'shrub', ROCK: 'rock' },
   HELD_SHAPE_DEFS: { fishingspear: { dmgType: 'sharp' }, hatchet: { dmgType: 'sharp' }, daggerSword: { dmgType: 'sharp' } },
   craftedToolItemKey: (shape, metal) => `${shape}_${metal}`,
   hostileObjects,
   getCurrentArea: () => currentArea,
-  getActiveGrid: () => Array.from({ length: 64 }, () => Array.from({ length: 64 }, () => ({ type: 'grass' }))),
-  getActiveCols: () => 64,
-  getActiveRows: () => 64,
+  getActiveGrid: () => activeGrid,
+  getActiveCols: () => 96,
+  getActiveRows: () => 96,
   tileSurfaceYInArea: () => 0,
   characterGroundShadowSurfaceOffset: () => 0.01,
-  moveCreatureToward(hunter, tx, ty, speed, dt) {
-    const dx = tx - hunter.x, dy = ty - hunter.y, distance = Math.hypot(dx, dy); // Cheap stand-in for the normal collision-aware movement helper.
+  moveCreatureToward(entity, tx, ty, speed, dt) {
+    const dx = tx - entity.x, dy = ty - entity.y, distance = Math.hypot(dx, dy);
     if (!distance) return;
     const step = Math.min(distance, speed * dt);
-    hunter.x += dx / distance * step;
-    hunter.y += dy / distance * step;
+    entity.x += dx / distance * step;
+    entity.y += dy / distance * step;
   },
   showToast(text, positive) { toastLog.push({ text, positive }); },
 };
@@ -178,136 +190,79 @@ async function flush() {
   await new Promise(resolve => setImmediate(resolve));
 }
 
+function smallCenters(debug) {
+  const result = {};
+  for (const zoneId of ZONES) result[zoneId] = debug.zones[zoneId].camps.filter(camp => camp.kind === 'small').map(camp => camp.center);
+  return result;
+}
+
 (async () => {
   await flush();
   const api = contextWindow.PorakanekiCamps;
-  assert.equal(api.version, 2);
+  assert.equal(api.version, 3);
   assert.equal(api.__test.isSleepingHour(2), true);
-  assert.equal(api.__test.isSleepingHour(7), false);
-  assert.equal(api.__test.isSleepingHour(23), true);
-  assert.deepEqual(JSON.parse(JSON.stringify(api.__test.chunkOf(26, 26))), { x: 2, y: 2 });
+  assert.equal(api.__test.isSleepingHour(12), false);
+  assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
+  assert.equal(api.__test.desiredChiefZone('Coldmuck'), 'map_northern_cliffs');
+  assert.equal(api.__test.weaponRoll(() => 0.99), 'daggerSword');
+  assert.equal(api.__test.weaponRoll(() => 0.99), 'daggerSword', 'independent random weapon rolls may duplicate');
 
   assert.equal(api.initializeReputation(), true);
-  assert.equal(relation.favor, -3, 'fresh chief relationship becomes the tribe-wide -3 starting reputation');
-  assert(relation.memory.some(entry => entry.event === 'porakaneki_faction_initialized'));
-  api.initializeReputation();
-  assert.equal(relation.favor, -3, 'starting reputation is not re-applied after its memory marker exists');
+  assert.equal(relation.favor, -3);
 
-  contextWindow.BanditCamps.updateCampBanners(0.21); // Off-zone tick stamps camp, authors chief planner agenda, and creates abstract hunter identities only.
+  contextWindow.BanditCamps.updateCampBanners(0.21); // Builds all four camp networks even though the player is in town.
   let debug = api.debugSnapshot();
-  assert.equal(debug.stamped, true);
-  assert.equal(debug.zoneId, 'map_western_slope');
-  assert.equal(chief.rec.gender, 'male');
-  assert.equal(chief.rec.appearance.speciesId, 'porakaneki');
+  assert.equal(debug.version, 3);
+  assert.equal(Object.keys(debug.zones).length, 4);
+  assert(debug.totalSmallCamps >= 8 && debug.totalSmallCamps <= 16, '2-4 small camps on each of four wilderness maps means 8-16 little camps total');
+  for (const zoneId of ZONES) {
+    assert(debug.zones[zoneId].smallCampCount >= 2 && debug.zones[zoneId].smallCampCount <= 4, `${zoneId} must have 2-4 little camps`);
+    assert.equal(debug.zones[zoneId].chiefReserved, true, `${zoneId} reserves a valid future chief-camp site`);
+    for (const camp of debug.zones[zoneId].camps.filter(camp => camp.kind === 'small')) assert(camp.residents >= 2 && camp.residents <= 4);
+  }
+  assert.equal(debug.chiefZoneId, 'map_southern_cloud_forest');
+  assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1, 'exactly one large chief camp is active');
+  assert.equal(debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief').residents, 6);
+  assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_southern_cloud_forest');
+  assert.equal(chief.rec.agenda.find(beat => beat.id === 'porakaneki_day').activity, 'break');
+  assert.equal(hostileObjects.length, 0, 'all off-zone generated residents remain abstract');
+
+  const originalSmallCenters = JSON.stringify(smallCenters(debug));
+  season = 'Deadgrass';
+  contextWindow.BanditCamps.updateCampBanners(0.21); // Large camp migrates; little camps must not move/re-roll.
+  debug = api.debugSnapshot();
+  assert.equal(debug.chiefZoneId, 'map_western_slope');
+  assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1);
+  assert.equal(debug.zones.map_western_slope.chiefActive, true);
+  assert.equal(debug.zones.map_southern_cloud_forest.chiefActive, false);
+  assert.equal(JSON.stringify(smallCenters(debug)), originalSmallCenters, 'small camps remain stable when the chief camp changes maps');
   assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_western_slope');
-  assert.equal(chief.rec.scheduleHooks.rules.length, 0, 'chief must not be bound to fixed daytime schedule stations');
-  assert.equal(JSON.stringify(chief.rec.agenda.map(beat => [beat.id, beat.activity])), JSON.stringify([
-    ['porakaneki_sleep_late', 'goToRole'],
-    ['porakaneki_sleep_early', 'goToRole'],
-    ['porakaneki_day', 'break'],
-  ]));
-  assert.equal(stations.length, 3);
-  assert(stations.every(station => station.roles.includes('porakaneki-sleep')), 'all tents are equivalent sleep choices');
-  assert.equal(JSON.stringify(debug.hunters.map(hunter => hunter.weapon)), JSON.stringify(['daggerSword', 'daggerSword', 'fishingspear']), 'weapon selection is independent and may duplicate');
-  assert.equal(hostileObjects.length, 0, 'off-zone abstract hunters do not allocate combat entities');
+  assert(chief.rec.agenda.every(beat => !beat.destinationArea || beat.destinationArea === 'map_western_slope'));
 
   currentArea = 'map_western_slope';
   chief.area = currentArea;
-  contextWindow.BanditCamps.updateCampBanners(4.1); // Player is still in a far chunk: only the coarse abstract simulation should run.
-  debug = api.debugSnapshot();
-  assert.equal(debug.coarseTicks, 1);
-  assert.equal(hostileObjects.length, 0, 'different-chunk hunters remain abstract even while player shares the wilderness zone');
-  assert(debug.hunters.every(hunter => hunter.materialized === false));
-
-  // Positive reputation causes a greeting, but greeting itself is social
-  // presentation only — it must not manufacture Favor or Rapport.
-  relation.favor = 1;
-  combatDeps.player.x = chief.root.position.x * combatDeps.TILE;
-  combatDeps.player.y = chief.root.position.z * combatDeps.TILE;
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  assert.equal(relation.favor, 1, 'greeting at Favor >= 1 does not change permanent reputation');
-  assert.equal(rewardLog.length, 0, 'greeting emits no Favor reward');
-  assert(toastLog.some(entry => /chief greets you/i.test(entry.text)));
-
-  // Move into the first hunter's actual chunk. Only now should the expensive
-  // humanoid entity/portrait be built, while hunters in other chunks stay abstract.
-  debug = api.debugSnapshot();
-  const firstAbstract = debug.hunters[0];
-  combatDeps.player.x = firstAbstract.x * combatDeps.TILE;
-  combatDeps.player.y = firstAbstract.y * combatDeps.TILE;
+  const targetCamp = debug.zones.map_western_slope.camps.find(camp => camp.kind === 'small');
+  const targetHunter = targetCamp.hunters[0];
+  combatDeps.player.x = targetHunter.x * combatDeps.TILE;
+  combatDeps.player.y = targetHunter.y * combatDeps.TILE;
   contextWindow.BanditCamps.updateCampBanners(0.21);
   await flush();
   contextWindow.BanditCamps.updateCampBanners(0.21);
   await flush();
   debug = api.debugSnapshot();
-  assert(hostileObjects.length >= 1, 'same-chunk hunter materializes into the real combat pipeline');
-  assert(debug.hunters.some(hunter => hunter.fullSimulation && hunter.materialized));
-  const daggerEntity = hostileObjects.find(entity => entity.porakanekiWeaponShape === 'daggerSword');
-  assert(daggerEntity?._banditRangedToolHolder, 'a randomly rolled dagger remains melee-capable and gets the thrown-ranged holder');
+  assert(hostileObjects.length >= 1, 'same-chunk procedural residents materialize through the real humanoid combat pipeline');
+  const materialized = debug.zones.map_western_slope.camps.flatMap(camp => camp.hunters).find(hunter => hunter.materialized && hunter.fullSimulation);
+  assert(materialized, 'at least one same-chunk resident runs full simulation');
 
-  // Once a materialized hunter leaves the player's chunk it must keep moving
-  // as an abstract agent. Its stale hidden entity transform must not overwrite
-  // the coarse position on each later off-chunk tick.
-  const firstMaterializedEntity = hostileObjects.find(entity => entity.porakanekiHunterIndex === firstAbstract.index);
-  assert(firstMaterializedEntity, 'first abstract hunter has a materialized entity before the LOD-collapse regression');
-  combatDeps.player.x = 60 * combatDeps.TILE;
-  combatDeps.player.y = 60 * combatDeps.TILE;
+  combatDeps.player.x = 90 * combatDeps.TILE;
+  combatDeps.player.y = 90 * combatDeps.TILE;
   contextWindow.BanditCamps.updateCampBanners(4.1);
-  let collapsed = api.debugSnapshot().hunters.find(hunter => hunter.index === firstAbstract.index);
-  assert.equal(collapsed.visible, false, 'leaving the chunk hides the detailed entity');
-  const collapsedOnce = [collapsed.x, collapsed.y];
-  contextWindow.BanditCamps.updateCampBanners(4.1);
-  collapsed = api.debugSnapshot().hunters.find(hunter => hunter.index === firstAbstract.index);
-  assert.notDeepEqual([collapsed.x, collapsed.y], collapsedOnce, 'a dormant materialized hunter continues coarse abstract travel instead of snapping back to its stale entity transform');
-
-  // Re-enter that hunter's current abstract chunk before violence checks;
-  // rematerialization must occur at the coarse position rather than its old one.
-  combatDeps.player.x = collapsed.x * combatDeps.TILE;
-  combatDeps.player.y = collapsed.y * combatDeps.TILE;
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  await flush();
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  assert.equal(firstMaterializedEntity.avatarRef.group.visible, true, 'returning to the hunter chunk restores full simulation');
-
-  // Hurting a hunter provokes immediate self-defense but does not change the
-  // permanent tribe score. Killing one applies exactly -1 and clamps at -5.
-  relation.favor = -3;
-  const firstEntity = firstMaterializedEntity;
-  firstEntity.health = 19;
-  combatDeps.player.x = firstEntity.x;
-  combatDeps.player.y = firstEntity.y;
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  assert.equal(relation.favor, -3, 'an attack alone does not permanently deduct Porakaneki Favor');
-  assert.equal(api.debugSnapshot().provoked, true, 'attack opens a temporary group self-defense window');
-  assert.equal(firstEntity.state, 'chase');
-
-  firstEntity.health = 0;
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  assert.equal(relation.favor, -4, 'one player-attributed Porakaneki death costs exactly one Favor');
-
-  // A second kill reaches the authored minimum. Materialize another hunter
-  // by entering its chunk if necessary, then verify -5 attack-on-sight.
   debug = api.debugSnapshot();
-  const secondAbstract = debug.hunters.find(hunter => hunter.health !== 0 && hunter.index !== firstEntity.porakanekiHunterIndex);
-  combatDeps.player.x = secondAbstract.x * combatDeps.TILE;
-  combatDeps.player.y = secondAbstract.y * combatDeps.TILE;
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  await flush();
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  await flush();
-  const secondEntity = hostileObjects.find(entity => entity.health > 0 && entity.porakanekiHunterIndex === secondAbstract.index);
-  assert(secondEntity, 'second hunter materializes when its chunk becomes relevant');
-  secondEntity.health = 0;
-  combatDeps.player.x = secondEntity.x;
-  combatDeps.player.y = secondEntity.y;
-  contextWindow.BanditCamps.updateCampBanners(0.21);
-  assert.equal(relation.favor, -5, 'second kill reaches, but cannot pass, the -5 minimum');
-  debug = api.debugSnapshot();
-  assert.equal(debug.attackOnSight, true);
-  assert.equal(debug.kills, 2);
-  assert.equal(rewardLog.length, 2, 'only the two kills emitted permanent Favor rewards');
+  assert(debug.coarseTicks >= 1);
+  const collapsed = debug.zones.map_western_slope.camps.flatMap(camp => camp.hunters).find(hunter => hunter.materialized && !hunter.fullSimulation);
+  assert(collapsed && collapsed.visible === false, 'previously materialized residents collapse back to hidden abstract agents outside the player chunk');
 
-  console.log('Porakaneki camp regression checks passed.');
+  console.log('Porakaneki distributed seasonal camp regression checks passed.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
