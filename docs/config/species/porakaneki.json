@@ -11,6 +11,8 @@
     "transformSpecies": "kenkari",
     "wardrobeSpecies": "kenkari",
     "bodyColorSpecies": "kenkari",
+    "handSpecies": "mashtzarr",
+    "footSpecies": "engh-sho",
     "hairSpecies": "tletingan",
     "appearanceCosmetics": true,
     "customPortraitLayers": [
