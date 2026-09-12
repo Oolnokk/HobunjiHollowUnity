@@ -32,7 +32,6 @@
     }
     const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
     script.src = src;
-    script.dataset.hobunjiTitleScreen = '1';
     script.dataset.entryTunnelDoorFurniture = '1';
     document.head.appendChild(script);
   })();
