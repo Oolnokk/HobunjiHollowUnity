@@ -49,6 +49,13 @@
       "name": "Bandit Camp (Small)",
       "category": "bandit_camp",
       "singleton": false
+    },
+    {
+      "id": "locale_porakaneki_camp_small",
+      "file": "config/locales/locale_porakaneki_camp_small.json",
+      "name": "Porakaneki Hunting Camp",
+      "category": "porakaneki_camp",
+      "singleton": false
     }
   ]
 }
