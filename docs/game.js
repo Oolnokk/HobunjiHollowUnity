@@ -22639,29 +22639,37 @@
           // composite below can read real per-pixel depth afterwards —
           // rendering straight to the canvas would lose that depth buffer
           // the moment the fullscreen composite quad overwrites it.
+          const rpMainPerf = window.PerfProfiler?.begin('render: main scene');
           renderer.setRenderTarget(_mainRT);
           renderer.render(activeScene, camera);
+          window.PerfProfiler?.end(rpMainPerf);
 
           // Preserve the colour/depth result while PNG silhouettes add only
           // the missing occlusion depth needed by both outline systems.
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
+          const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
           _renderPngPlaneOutlineOccluderDepth(activeScene);
+          window.PerfProfiler?.end(rpPngOccluderPerf);
 
           // Selective shell outline pass (layer-1 objects only)
+          const rpShellPerf = window.PerfProfiler?.begin('render: shell outline');
           activeScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
           renderer.render(activeScene, camera);
           camera.layers.enableAll();
           activeScene.overrideMaterial = null;
+          window.PerfProfiler?.end(rpShellPerf);
 
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
           if (_targetOutlineMeshes.length > 0) {
+            const rpTargetPerf = window.PerfProfiler?.begin('render: target outline');
             scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
             camera.layers.set(2);
             renderer.render(scene, camera);
             camera.layers.enableAll();
             scene.overrideMaterial = null;
+            window.PerfProfiler?.end(rpTargetPerf);
           }
 
           // Redraw Cloud Forest mist (layer 5, see cloud-forest-fog.js) over
@@ -22673,9 +22681,11 @@
           // haze around it. depthTest still applies, so this correctly
           // leaves outlines on anything nearer than the mist untouched.
           if (s_cloudForestFog) {
+            const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
             camera.layers.set(5);
             renderer.render(activeScene, camera);
             camera.layers.enableAll();
+            window.PerfProfiler?.end(rpMistPerf);
           }
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
@@ -22686,6 +22696,7 @@
           // composite's uSeamOutlinesOn uniform also zeroes its contribution
           // regardless, so leaving _edgeIdRT's contents stale here is safe.
           if (s_furnitureSeamOutlines) {
+            const rpSeamPerf = window.PerfProfiler?.begin('render: furniture seam');
             renderer.setRenderTarget(_edgeIdRT);
             renderer.setClearColor(0x000000, 0);
             renderer.clear(true, true, false);
@@ -22694,6 +22705,7 @@
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
             camera.layers.enableAll();
+            window.PerfProfiler?.end(rpSeamPerf);
           }
 
           // Depth-only source for the depth-edge detector, PNG-plane avatars
@@ -22704,6 +22716,7 @@
           // Opt-in/off by default since it's an extra full scene pass on top
           // of everything above.
           if (s_depthOutlines) {
+            const rpDepthPerf = window.PerfProfiler?.begin('render: depth outline'); // Also does a full activeScene.traverse() every frame, same concern as the png occluder pass above.
             const _hiddenForDepthPass = [];
             activeScene.traverse(o => {
               if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
@@ -22716,10 +22729,12 @@
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
             _hiddenForDepthPass.forEach(o => { o.visible = true; });
+            window.PerfProfiler?.end(rpDepthPerf);
           }
 
           // Composite: blend depth-discontinuity + furniture material-seam
           // outlines over the rendered scene, straight to the canvas.
+          const rpCompositePerf = window.PerfProfiler?.begin('render: composite');
           renderer.setRenderTarget(null);
           _postMat.uniforms.tColor.value          = _mainRT.texture;
           _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
@@ -22732,6 +22747,7 @@
           _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
           _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
           renderer.render(_postScene, _postCamera);
+          window.PerfProfiler?.end(rpCompositePerf);
         } else {
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
