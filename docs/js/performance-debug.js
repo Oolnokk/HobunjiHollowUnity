@@ -338,6 +338,51 @@
     return value;
   }
 
+  // A real snapshot showed 'gameLoop total' at 31.77ms against a 82.45ms
+  // frame -- more than half the per-frame cost happens somewhere OUTSIDE
+  // gameLoop's own call graph entirely. This codebase has ~70 other files
+  // that each run their own independent, self-perpetuating
+  // requestAnimationFrame loop (hand/weapon pose drivers, the shared
+  // controller-input poller, music/UI systems, ...), any of which could be
+  // that missing time. Rather than instrument each candidate by hand one at
+  // a time, wrap requestAnimationFrame itself so every callback's own cost
+  // shows up automatically, labeled by its function name (deduplicated with
+  // a #2/#3 suffix for name collisions across files, since a plain "frame"
+  // or "sync" appears in more than one of them) — same recordSubsystem
+  // bucket set the rest of this overlay already reads, prefixed "rAF: " to
+  // keep them visually grouped and distinct from the explicitly-instrumented
+  // gameLoop buckets.
+  const rafFnLabels = new WeakMap();
+  const rafLabelCounts = new Map();
+  function labelForRafCallback(fn) {
+    let label = rafFnLabels.get(fn);
+    if (label) return label;
+    const baseName = fn.name || 'anonymous';
+    const n = (rafLabelCounts.get(baseName) || 0) + 1;
+    rafLabelCounts.set(baseName, n);
+    label = n > 1 ? `${baseName}#${n}` : baseName;
+    rafFnLabels.set(fn, label);
+    return label;
+  }
+
+  function installRafProfiler() {
+    const nativeRaf = root.requestAnimationFrame;
+    if (typeof nativeRaf !== 'function' || nativeRaf.__hobunjiRafProfiled) return;
+    const boundNativeRaf = nativeRaf.bind(root);
+    function profiledRequestAnimationFrame(callback) {
+      if (typeof callback !== 'function') return boundNativeRaf(callback);
+      return boundNativeRaf(function hobunjiTimedRafCallback(...args) {
+        if (!profilerEnabled) return callback.apply(this, args);
+        const start = performance.now();
+        const result = callback.apply(this, args);
+        recordSubsystem('rAF: ' + labelForRafCallback(callback), performance.now() - start);
+        return result;
+      });
+    }
+    profiledRequestAnimationFrame.__hobunjiRafProfiled = true;
+    root.requestAnimationFrame = profiledRequestAnimationFrame;
+  }
+
   function makeCheckboxRow(id, labelText, checked, title = '') {
     const row = document.createElement('label');
     row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;cursor:pointer;font-size:12px';
@@ -834,6 +879,7 @@
   }
 
   function install() {
+    installRafProfiler(); // Before anything else below schedules its own requestAnimationFrame loop, so those get timed consistently too.
     installRendererProfiler();
     installSettingsUI();
     installCloudForestTuningUI();
