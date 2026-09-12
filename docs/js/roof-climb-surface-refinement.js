@@ -376,6 +376,10 @@
       .every(name => typeof system[name] === 'function' && !!system[name][HOOK_MARK]);
   }
 
+  function scheduleFinalHookRepair(system) {
+    queueMicrotask(() => queueMicrotask(() => installSystemHooks(window.ClimbSystem || system)));
+  }
+
   function installSystemHooks(system) {
     if (!system) return false;
     let changed = false;
@@ -384,7 +388,9 @@
       const originalInit = system.init;
       function captureRefinementDeps(injectedDeps) {
         climbDeps = injectedDeps || climbDeps;
-        return originalInit.apply(this, arguments);
+        const result = originalInit.apply(this, arguments);
+        scheduleFinalHookRepair(system); // Repairs methods after every other init wrapper/deferred roof hook has had a turn.
+        return result;
       }
       captureRefinementDeps.__hobunjiRoofSurfaceDepsCapture = true;
       captureRefinementDeps.__hobunjiRoofSurfaceDepsCapturePrevious = originalInit;
@@ -493,14 +499,16 @@
             if (!originalInit.__hobunjiRoofSurfaceDepsCapture) {
               function captureBeforeDeferredHooks(injectedDeps) {
                 climbDeps = injectedDeps || climbDeps;
-                return originalInit.apply(this, arguments);
+                const result = originalInit.apply(this, arguments);
+                scheduleFinalHookRepair(resolved); // Runs after the base roof module's own queued final wrapper installation.
+                return result;
               }
               captureBeforeDeferredHooks.__hobunjiRoofSurfaceDepsCapture = true;
               captureBeforeDeferredHooks.__hobunjiRoofSurfaceDepsCapturePrevious = originalInit;
               resolved.init = captureBeforeDeferredHooks;
             }
           }
-          queueMicrotask(() => installSystemHooks(window.ClimbSystem || resolved));
+          scheduleFinalHookRepair(resolved);
         },
       });
       return true;
