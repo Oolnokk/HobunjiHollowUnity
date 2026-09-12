@@ -1,0 +1,43 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_porakaneki_camp_small",
+  "name": "Porakaneki Hunting Camp",
+  "category": "porakaneki_camp",
+  "singleton": false,
+  "description": "A small Porakaneki wilderness hunting camp. Members sleep in its tents, emerge by day, and scatter to nearby hunting grounds.",
+  "tags": ["porakaneki", "camp", "hunting", "neutral"],
+  "cols": 9,
+  "rows": 8,
+  "tiles": {
+    "0,0":{"type":"grass"},"1,0":{"type":"grass"},"2,0":{"type":"grass"},"3,0":{"type":"grass"},"4,0":{"type":"grass"},"5,0":{"type":"grass"},"6,0":{"type":"grass"},"7,0":{"type":"grass"},"8,0":{"type":"grass"},
+    "0,1":{"type":"grass"},"1,1":{"type":"grass"},"2,1":{"type":"grass"},"3,1":{"type":"grass"},"4,1":{"type":"grass"},"5,1":{"type":"grass"},"6,1":{"type":"grass"},"7,1":{"type":"grass"},"8,1":{"type":"grass"},
+    "0,2":{"type":"grass"},"1,2":{"type":"grass"},"2,2":{"type":"grass"},"3,2":{"type":"grass"},"4,2":{"type":"grass"},"5,2":{"type":"grass"},"6,2":{"type":"grass"},"7,2":{"type":"grass"},"8,2":{"type":"grass"},
+    "0,3":{"type":"grass"},"1,3":{"type":"grass"},"2,3":{"type":"grass"},"3,3":{"type":"grass"},"4,3":{"type":"grass"},"5,3":{"type":"grass"},"6,3":{"type":"grass"},"7,3":{"type":"grass"},"8,3":{"type":"grass"},
+    "0,4":{"type":"grass"},"1,4":{"type":"grass"},"2,4":{"type":"grass"},"3,4":{"type":"grass"},"4,4":{"type":"grass"},"5,4":{"type":"grass"},"6,4":{"type":"grass"},"7,4":{"type":"grass"},"8,4":{"type":"grass"},
+    "0,5":{"type":"grass"},"1,5":{"type":"grass"},"2,5":{"type":"grass"},"3,5":{"type":"grass"},"4,5":{"type":"grass"},"5,5":{"type":"grass"},"6,5":{"type":"grass"},"7,5":{"type":"grass"},"8,5":{"type":"grass"},
+    "0,6":{"type":"grass"},"1,6":{"type":"grass"},"2,6":{"type":"grass"},"3,6":{"type":"grass"},"4,6":{"type":"grass"},"5,6":{"type":"grass"},"6,6":{"type":"grass"},"7,6":{"type":"grass"},"8,6":{"type":"grass"},
+    "0,7":{"type":"grass"},"1,7":{"type":"grass"},"2,7":{"type":"grass"},"3,7":{"type":"grass"},"4,7":{"type":"grass"},"5,7":{"type":"grass"},"6,7":{"type":"grass"},"7,7":{"type":"grass"},"8,7":{"type":"grass"}
+  },
+  "objects": [
+    {"id":"obj_tent_1","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":1,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_2","kind":"tent","key":"tent","label":"Porakaneki Tent","col":6,"row":1,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_3","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":5,"w":2,"h":2,"rot":0},
+    {"id":"obj_campfire","kind":"decor","key":"campfire","label":"Porakaneki Campfire","col":4,"row":3,"w":1,"h":1,"rot":0},
+    {"id":"obj_crate","kind":"decor","key":"crateStack","label":"Hunting Supplies","col":6,"row":5,"w":1,"h":1,"rot":0}
+  ],
+  "npcAnchors": [],
+  "connectors": [],
+  "placement": {
+    "mode": "temporary",
+    "maxInstances": 1,
+    "allowedZones": [],
+    "clearanceTiles": 2,
+    "requiresFlatGround": true,
+    "minDistanceFromEntry": 10,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "Placed post-generation by PorakanekiCamps using TemporaryLocales; unlike bandit camps it is persistent for the generated zone and is not cleared by looting."
+  },
+  "meta": {"authoring":"runtime hunting camp","populationFromTents":true}
+}
