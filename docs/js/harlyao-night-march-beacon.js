@@ -66,6 +66,8 @@
   }
 
   function beaconHeight(center, zoneId) {
+    const liveSurface = Number(center?.surfaceY); // Visible formation exposes its real rendered feet height, keeping the locator on the same elevation.
+    if (Number.isFinite(liveSurface)) return liveSurface + 1.2;
     const grid = deps?.getActiveGrid?.() || deps?.getAreaGrid?.(zoneId) || null;
     const tile = grid?.[center?.row]?.[center?.col];
     if (tile && typeof deps?.tileSurfaceYInArea === 'function') {
@@ -82,8 +84,10 @@
     const currentArea = deps?.getCurrentArea?.() || lightingDeps?.getCurrentArea?.() || null;
     const active = !!scheduled && currentArea === zoneId;
     const chunk = march?.visible && march?.liveChunk ? march.liveChunk : scheduled?.chunk || null;
-    const center = active ? chunkCenter(chunk, zoneId) : null;
-    return { active, zoneId, currentArea, chunk, center, armyVisible: !!march?.visible };
+    const liveCenter = march?.visible && march?.liveAnchor ? { ...march.liveAnchor } : null; // Observed locator follows the real formation centroid, not merely its chunk center.
+    const center = active ? (liveCenter || chunkCenter(chunk, zoneId)) : null;
+    const centerSource = liveCenter ? 'formation-centroid' : 'chunk-center'; // Mobile diagnostics distinguishes exact observed tracking from hidden coarse tracking.
+    return { active, zoneId, currentArea, chunk, center, centerSource, armyVisible: !!march?.visible };
   }
 
   function viewportRect() {
@@ -239,6 +243,7 @@
       radiusPx: Math.round(radius),
       color,
       shape: 'serpentine',
+      centerSource: beacon.centerSource,
     };
   }
 
@@ -344,8 +349,9 @@
     formatDebug: () => {
       const data = debugSnapshot();
       const chunk = data.chunk ? `${data.chunk.cx},${data.chunk.cz}` : 'none';
+      const center = data.center ? `${Number(data.center.x).toFixed(2)},${Number(data.center.z).toFixed(2)}` : 'none';
       const screen = data.screen ? `${data.screen.edge ? 'edge' : 'world'}@${data.screen.x},${data.screen.y}/${data.screen.radiusPx}px` : 'none';
-      return `Harlyao beacon: active=${data.active} area=${data.currentArea || '-'} zone=${data.zoneId || '-'} chunk=${chunk} color=${data.color} screen=${screen} armyVisible=${data.armyVisible}`;
+      return `Harlyao beacon: active=${data.active} area=${data.currentArea || '-'} zone=${data.zoneId || '-'} chunk=${chunk} center=${center}/${data.centerSource || '-'} color=${data.color} screen=${screen} armyVisible=${data.armyVisible}`;
     },
     __test: Object.freeze({ chunkCenter, clampOffscreenPoint }),
   });

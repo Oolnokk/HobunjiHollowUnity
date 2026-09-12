@@ -14,7 +14,7 @@
   let deps = null; // Captured from BanditCombat.init; used by movement, terrain, tools, scenes, and hostileObjects.
   let cfg = null; // Parsed harlyao-night-march.json used by all route/formation logic.
   let gangCfg = null; // Existing bandit balance config reused for combat stats/abilities.
-  let buildPromise = null; // Prevents duplicate 20-member materialization jobs.
+  let buildPromise = null; // Prevents duplicate 20-member materialization jobs and partial-formation wake races.
   let buildGeneration = 0; // Invalidates an async build when the night/day route is torn down.
   let scheduleKey = null; // Whole-day/hour key; offscreen chunk is recomputed only when this changes.
   let scheduled = null; // Cached hourly route/chunk result used between schedule changes.
@@ -26,19 +26,22 @@
     members: [], // Cached live humanoid entities created only after first observation.
     visible: false, // True only while player and army share the army's live chunk.
     provoked: false, // Whole formation becomes hostile after any member is hit.
-    liveChunk: null, // Leader's actual observed chunk while visible.
+    liveChunk: null, // Leader's actual observed chunk while visible; stable build target while materializing.
     observedStep: 0, // Furthest route step physically observed; prevents later schedule snap-back.
     lastLogKey: null, // Throttles mobile log to hourly route changes.
     reason: 'boot', // Last lifecycle transition for mobile debug reports.
-    builds: 0, // Count of first-time formation materializations.
-    wakes: 0, // Count of cached formation wake-ups.
+    builds: 0, // Count of materialization jobs started.
+    wakes: 0, // Count of complete cached formation wake-ups.
     sleeps: 0, // Count of visible-to-dormant chunk exits.
+    updateTicks: 0, // Proves the BanditCamps game-loop seam is still calling this controller.
+    lastUpdateAt: 0, // Last performance timestamp observed by update(), used by mobile diagnostics.
   };
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const chunkTiles = () => Number(window.WildernessChunks?.constants?.CHUNK_TILES) || FALLBACK_CHUNK_TILES;
   const chunkCount = tiles => Math.max(1, Math.ceil(Math.max(1, Number(tiles) || 1) / chunkTiles()));
   const sameChunk = (a, b) => !!a && !!b && a.cx === b.cx && a.cz === b.cz;
+  const expectedMemberCount = () => Math.max(1, Math.floor(Number(cfg?.memberCount) || 20));
 
   function civilDay() {
     const rawDay = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay); // Absolute day survives the civil-midnight bridge.
@@ -237,16 +240,28 @@
     c.vy = 0;
   }
 
+  function refreshMemberArea(c, zoneId) {
+    if (!c || deps?.getCurrentArea?.() !== zoneId) return;
+    const liveGrid = deps.getActiveGrid?.(); // Current live grid is authoritative after wilderness rebuilds/re-entry.
+    const liveCols = Number(deps.getActiveCols?.()); // Current column count is used by place() clamping.
+    const liveRows = Number(deps.getActiveRows?.()); // Current row count is used by place() clamping.
+    if (liveGrid) c.areaGrid = liveGrid;
+    if (Number.isFinite(liveCols) && liveCols > 0) c.areaCols = liveCols;
+    if (Number.isFinite(liveRows) && liveRows > 0) c.areaRows = liveRows;
+  }
+
   function place(c, tile, zoneId) {
+    refreshMemberArea(c, zoneId);
     c.x = tile.col * deps.TILE;
     c.y = tile.row * deps.TILE;
     c.homeX = c.x;
     c.homeY = c.y;
     c.areaId = zoneId;
-    const col = clamp(Math.floor(tile.col), 0, c.areaCols - 1); // Terrain sample column.
-    const row = clamp(Math.floor(tile.row), 0, c.areaRows - 1); // Terrain sample row.
+    const col = clamp(Math.floor(tile.col), 0, Math.max(0, c.areaCols - 1)); // Terrain sample column.
+    const row = clamp(Math.floor(tile.row), 0, Math.max(0, c.areaRows - 1)); // Terrain sample row.
     const terrain = c.areaGrid?.[row]?.[col]; // Tile below this cached avatar.
-    const surface = terrain && deps.tileSurfaceYInArea ? deps.tileSurfaceYInArea(terrain, zoneId) : 0; // Current terrain elevation.
+    const sampled = terrain && deps.tileSurfaceYInArea ? Number(deps.tileSurfaceYInArea(terrain, zoneId)) : 0; // Current terrain elevation.
+    const surface = Number.isFinite(sampled) ? sampled : 0;
     if (c.avatarRef?.group) {
       c.avatarRef.group.position.set(tile.col, surface + (c.halfHeight || 0.45), tile.row);
       c.avatarRef.group.visible = true;
@@ -256,6 +271,7 @@
       c.groundShadow.visible = true;
     }
     if (c._banditToolHolder) c._banditToolHolder.visible = true;
+    c._harlyaoPlacement = { col: tile.col, row: tile.row, surfaceY: surface, sampleCol: col, sampleRow: row }; // Mobile diagnostics verify rendered feet against sampled terrain.
   }
 
   async function loadGangConfig() {
@@ -295,6 +311,7 @@
     }
     neutral(c);
     ghostify(c);
+    hide(c); // A partially built army must never wake/march before all async portrait builds finish.
     deps.hostileObjects.push(c);
     return c;
   }
@@ -345,25 +362,33 @@
   async function materialize(s, chunk) {
     if (buildPromise || deps.getCurrentArea?.() !== s.zoneId) return buildPromise;
     const generation = ++buildGeneration; // Assigned only after any prior nightly teardown, so it cannot invalidate itself.
+    const targetChunk = { cx: chunk.cx, cz: chunk.cz, routeStep: chunk.routeStep ?? s.routeStep }; // Immutable build anchor prevents a partially visible leader from moving the abort gate.
     state.day = s.day;
     state.zoneId = s.zoneId;
-    state.liveChunk = { cx: chunk.cx, cz: chunk.cz };
-    state.observedStep = Math.max(state.observedStep, chunk.routeStep ?? s.routeStep);
+    state.liveChunk = { cx: targetChunk.cx, cz: targetChunk.cz };
+    state.observedStep = Math.max(state.observedStep, targetChunk.routeStep);
     state.builds++;
-    state.reason = `building:${chunk.cx},${chunk.cz}`;
+    state.reason = `building:${state.members.length}/${expectedMemberCount()}@${targetChunk.cx},${targetChunk.cz}`;
 
     buildPromise = (async () => {
       const dims = zoneDims(s.zoneId); // Shared dimensions for all 20 slots.
-      const count = Math.max(1, Math.floor(Number(cfg?.memberCount) || 20)); // Authored army size.
-      for (let i = 0; i < count; i++) {
-        if (generation !== buildGeneration || deps.getCurrentArea?.() !== s.zoneId || !sameChunk(playerChunk(), state.liveChunk)) break;
-        const c = await buildMember(i, s, chunk, dims, generation); // One fully rigged bandit-style Harlyao.
+      const count = expectedMemberCount(); // Authored army size.
+      for (let i = state.members.length; i < count; i++) {
+        if (generation !== buildGeneration || deps.getCurrentArea?.() !== s.zoneId || !sameChunk(playerChunk(), targetChunk)) break;
+        const c = await buildMember(i, s, targetChunk, dims, generation); // One fully rigged but still dormant bandit-style Harlyao.
         if (c) state.members.push(c);
+        state.reason = `building:${state.members.length}/${count}@${targetChunk.cx},${targetChunk.cz}`;
         if ((i + 1) % MATERIALIZE_BATCH === 0) await yieldFrame();
       }
-      if (generation === buildGeneration) {
-        state.visible = state.members.some(c => c && c.health > 0);
-        state.reason = state.visible ? `visible:${state.members.length}` : 'build-empty';
+      if (generation !== buildGeneration) return state.members;
+      const stillHere = deps.getCurrentArea?.() === s.zoneId && sameChunk(playerChunk(), targetChunk);
+      if (state.members.length >= count && stillHere) {
+        wake(s, targetChunk); // First visibility uses the exact same terrain-aware placement path as every later wake.
+        state.reason = `visible:${state.members.length}`;
+      } else {
+        state.visible = false;
+        state.liveChunk = { cx: targetChunk.cx, cz: targetChunk.cz };
+        state.reason = `build-paused:${state.members.length}/${count}@${targetChunk.cx},${targetChunk.cz}`;
       }
       return state.members;
     })().finally(() => { buildPromise = null; });
@@ -425,6 +450,42 @@
     }
   }
 
+  function liveAnchor() {
+    if (!state.visible || !deps?.TILE) return null;
+    let x = 0; // Sum of visible member world X in tile units.
+    let z = 0; // Sum of visible member world Z in tile units.
+    let surfaceY = 0; // Sum of visible members' rendered feet heights.
+    let n = 0; // Visible member count for centroid.
+    for (const c of state.members) {
+      if (!c || c.health <= 0 || c.areaId !== state.zoneId || !c.avatarRef?.group?.visible) continue;
+      x += c.x / deps.TILE;
+      z += c.y / deps.TILE;
+      surfaceY += (Number(c.avatarRef.group.position.y) || 0) - (Number(c.halfHeight) || 0);
+      n++;
+    }
+    if (!n) return null;
+    const cx = x / n;
+    const cz = z / n;
+    return { x: cx, z: cz, col: Math.floor(cx), row: Math.floor(cz), surfaceY: surfaceY / n, members: n };
+  }
+
+  function placementDebug() {
+    const c = state.members.find(member => member && member.health > 0 && member.areaId === state.zoneId && member.avatarRef?.group?.visible);
+    if (!c?.avatarRef?.group || !deps?.TILE) return null;
+    const feetY = Number(c.avatarRef.group.position.y) - (Number(c.halfHeight) || 0); // Rendered feet should equal sampled surface exactly.
+    const surfaceY = Number(c._harlyaoPlacement?.surfaceY);
+    return {
+      member: c.harlyaoArmyIndex ?? 0,
+      simX: c.x / deps.TILE,
+      simZ: c.y / deps.TILE,
+      renderX: Number(c.avatarRef.group.position.x),
+      renderZ: Number(c.avatarRef.group.position.z),
+      feetY,
+      surfaceY: Number.isFinite(surfaceY) ? surfaceY : null,
+      groundErrorY: Number.isFinite(surfaceY) ? feetY - surfaceY : null,
+    };
+  }
+
   function glowSource() {
     if (!state.visible || !deps?.TILE || !cfg) return null;
     let x = 0; // Sum of visible member world X/tile units.
@@ -466,6 +527,8 @@
   }
 
   function update(dt) {
+    state.updateTicks++;
+    state.lastUpdateAt = Number(globalThis.performance?.now?.()) || Date.now(); // Mobile diagnostics distinguish a spawn bug from a dead update seam.
     if (!deps || !cfg) return;
     const s = hourlyState(); // Hidden route calculation changes only on day/whole-hour cache key.
     if (!s?.active) {
@@ -493,7 +556,8 @@
     // only this chunk equality runs. No 20-member loops, pathfinding, animation,
     // combat AI, material work, or formation-light work occurs while hidden.
     if (!sameChunk(playerChunk(), chunk)) return;
-    if (state.members.length) wake(s, chunk);
+    if (buildPromise) return; // Critical: never wake a partially built async formation on the next frame.
+    if (state.members.length >= expectedMemberCount()) wake(s, chunk);
     else materialize(s, chunk);
   }
 
@@ -566,6 +630,10 @@
       scheduled: s?.active ? { zoneId: s.zoneId, direction: s.route.directionLabel, hour: s.hour, chunk } : null,
       playerChunk: playerChunk(),
       liveChunk: state.liveChunk ? { ...state.liveChunk } : null,
+      liveAnchor: liveAnchor(),
+      placement: placementDebug(),
+      expectedMembers: expectedMemberCount(),
+      building: !!buildPromise,
       membersCached: state.members.length,
       membersAlive: state.members.filter(c => c?.health > 0).length,
       visible: state.visible,
@@ -574,6 +642,8 @@
       builds: state.builds,
       wakes: state.wakes,
       sleeps: state.sleeps,
+      updateTicks: state.updateTicks,
+      lastUpdateAt: state.lastUpdateAt,
       reason: state.reason,
     };
   }
@@ -588,7 +658,9 @@
       const sched = d.scheduled ? `${d.scheduled.zoneId}/${d.scheduled.direction}@${d.scheduled.chunk.cx},${d.scheduled.chunk.cz}` : 'inactive';
       const player = d.playerChunk ? `${d.playerChunk.cx},${d.playerChunk.cz}` : 'none';
       const live = d.liveChunk ? `${d.liveChunk.cx},${d.liveChunk.cz}` : 'none';
-      return `Harlyao march: cfg=${d.configReady} deps=${d.depsReady} scheduled=${sched} player=${player} live=${live} members=${d.membersAlive}/${d.membersCached} visible=${d.visible} provoked=${d.provoked} reason=${d.reason}`;
+      const anchor = d.liveAnchor ? `${d.liveAnchor.x.toFixed(2)},${d.liveAnchor.z.toFixed(2)}` : 'none';
+      const ground = Number.isFinite(d.placement?.groundErrorY) ? d.placement.groundErrorY.toFixed(3) : '-';
+      return `Harlyao march: cfg=${d.configReady} deps=${d.depsReady} scheduled=${sched} player=${player} live=${live} anchor=${anchor} members=${d.membersAlive}/${d.membersCached}/${d.expectedMembers} building=${d.building} visible=${d.visible} groundErr=${ground} ticks=${d.updateTicks} provoked=${d.provoked} reason=${d.reason}`;
     },
     __test: Object.freeze({ routeForDay, coarseStateFor, chunkCount, formationOffset }),
   });
