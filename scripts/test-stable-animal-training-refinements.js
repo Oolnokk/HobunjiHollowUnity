@@ -127,6 +127,10 @@ assert.match(bridge, /installStableAnimalTrainingRefinements\(\)/, 'farm feature
 const troughSource = fs.readFileSync('docs/js/farm-troughs.js', 'utf8');
 assert.match(troughSource, /livestock-nursery-install-bridge\.js\?v=20260912stable4/, 'farm trough bootstrap cache-busts the feature bridge that loads stable training');
 assert.doesNotMatch(troughSource, /livestock-nursery-install-bridge\.js\?v=20260902mainrebuild1/, 'stable training cannot silently reuse the pre-progression bridge cache key');
+const formatUtilsSource = fs.readFileSync('docs/js/format-utils.js', 'utf8');
+assert.match(formatUtilsSource, /loadStableAnimalFeatureBridge/, 'pre-game bootstrap directly owns a Stable feature bridge loader');
+assert.match(formatUtilsSource, /livestock-nursery-install-bridge\.js\?v=20260912stable4/, 'direct pre-game Stable loader uses the current bridge cache key');
+assert.match(formatUtilsSource, /data-stable-animal-feature-bridge/, 'direct pre-game Stable loader is parser-synchronous and duplicate guarded');
 assert.match(source, /document\.getElementById\('stableAnimalProgression'\)\?\.remove\(\)/, 'old separate Animal Training block is removed');
 assert.match(source, /expandedStableId === entry\.id \? null : entry\.id/, 'tapping the open animal collapses it and tapping another switches the single expanded tree');
 assert.match(source, /Lv\. \$\{entry\.level\}\/\$\{MAX_STABLE_LEVEL\}/, 'Stable row itself displays the current level and cap');
