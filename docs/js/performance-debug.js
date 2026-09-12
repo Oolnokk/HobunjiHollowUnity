@@ -208,12 +208,24 @@
     return parts.length ? `Outline-perf layer (native-ward of held-overlay): ${parts.join('  ')}` : null;
   }
 
+  // Below this, a bucket rarely if ever mattered across every real snapshot
+  // taken while chasing the "severe framerate" investigation (all
+  // consistently well under 1ms) -- hidden so the overlay's fixed height
+  // keeps showing the buckets that actually move, instead of scrolling them
+  // off past the visible screen area under a wall of confirmed-boring ones.
+  // 'gameLoop total' and 'render passes' are always shown regardless (see
+  // profilerText) since they're the two top-level bars everything else
+  // should be read against.
+  const SUBSYSTEM_DISPLAY_FLOOR_MS = 0.5;
+
   function profilerText() {
     const avgRender = perfState.renderSamples ? perfState.renderCpuMs / perfState.renderSamples : 0;
     const geom = Object.entries(perfState.geometryCategories).sort((a,b) => b[1] - a[1]);
     const totalGeom = geom.reduce((sum, pair) => sum + pair[1], 0);
     const topGeom = geom[0];
-    const subsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg).slice(0, 30); // Raised from 5 now that the gameLoop's per-frame work (plus js/held-object-render-order.js's own internal render sub-passes) is broken into more (currently up to ~28) named buckets — sorted worst-first so the real cost still surfaces even if some future addition pushes the count higher still.
+    const allSubsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg);
+    const gameLoopTotal = perfState.subsystem.get('gameLoop total');
+    const subsystems = allSubsystems.filter(([name, value]) => name !== 'gameLoop total' && value.avg >= SUBSYSTEM_DISPLAY_FLOOR_MS);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const outlinePerfLine = outlineRenderPerfLine();
     const topLine = topGeom
@@ -221,16 +233,22 @@
       : 'not scanned yet';
     return [
       `FPS ${perfState.fps.toFixed(1)}   frame ${perfState.frameMs.toFixed(2)} ms`,
+      // The gap between these two (when positive) is time spent between one
+      // gameLoop() call finishing and the next one starting -- i.e. some
+      // OTHER requestAnimationFrame loop, a MutationObserver callback, or GC,
+      // not anything wrapped above. A near-zero or negative gap means the
+      // cost really is inside gameLoop's own call graph.
+      gameLoopTotal ? `gameLoop total ${gameLoopTotal.avg.toFixed(2)} ms   (outside gameLoop: ${(perfState.frameMs - gameLoopTotal.avg).toFixed(2)} ms)` : 'gameLoop total: not sampled yet',
+      ...(outlinePerfLine ? [outlinePerfLine] : []),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
       `Top visible geometry: ${topLine}`,
       subsystems.length
-        ? `Timed:\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms`).join('\n')}`
-        : 'Timed subsystems: none instrumented',
+        ? `Timed (≥${SUBSYSTEM_DISPLAY_FLOOR_MS}ms):\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms`).join('\n')}`
+        : 'Timed subsystems: none above the display floor',
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
       `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
-      ...(outlinePerfLine ? [outlinePerfLine] : []),
     ].join('\n');
   }
 

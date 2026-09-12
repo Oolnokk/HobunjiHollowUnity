@@ -22272,6 +22272,13 @@
       });
 
       function gameLoop(now) {
+        // Brackets the ENTIRE function so 'frame ms' (measured independently by
+        // performance-debug.js's own rAF loop, i.e. real wall-clock time between
+        // one gameLoop call and the next) minus this bucket's average tells us
+        // directly how much per-frame time -- if any -- is being spent outside
+        // gameLoop's own call graph entirely (other requestAnimationFrame loops,
+        // MutationObserver callbacks, GC, etc.) rather than in anything below.
+        const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
         gameFrameSerial++;
@@ -22279,6 +22286,7 @@
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
           renderer.render(scene, camera);
+          window.PerfProfiler?.end(gameLoopTotalPerf);
           requestAnimationFrame(gameLoop);
           return;
         }
@@ -22774,6 +22782,7 @@
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         window.HudUpdate.updateHud();
         window.PerfProfiler?.end(overlayPerf);
+        window.PerfProfiler?.end(gameLoopTotalPerf);
         requestAnimationFrame(gameLoop);
       }
 
