@@ -32,6 +32,7 @@
     }
     const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
     script.src = src;
+    script.dataset.hobunjiTitleScreen = '1';
     script.dataset.entryTunnelDoorFurniture = '1';
     document.head.appendChild(script);
   })();
@@ -68,6 +69,24 @@
     const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
     script.src = src;
     script.dataset.hobunjiRoofClimb = '1';
+    document.head.appendChild(script);
+  })();
+
+  // Final structural-surface policy sits above roof-climb.js: near-contact wall
+  // gating, wall-plane-following animation, fresh-input roof movement, and
+  // explicit wall/shingle visual offsets all live here. It still loads before
+  // climb-system.js so it can capture the exact movement deps synchronously.
+  (function loadRoofClimbSurfaceRefinement() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/roof-climb-surface-refinement.js?v=20260912a'; // Cache-busts contact-distance, wall-angle, roof-movement, and surface-offset refinements.
+    if (window.HobunjiRoofClimbSurfaceRefinement || document.querySelector('script[data-hobunji-roof-surface-refinement]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-roof-surface-refinement="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiRoofSurfaceRefinement = '1';
     document.head.appendChild(script);
   })();
 
@@ -127,7 +146,7 @@
     context.beginPath();
     context.moveTo(x + radius, y);
     context.arcTo(x + width, y, x + width, y + height, radius);
-    context.arcTo(x + width, y + height, x, y, radius);
+    context.arcTo(x + width, y + height, x, y + height, radius);
     context.arcTo(x, y + height, x, y, radius);
     context.arcTo(x, y, x + radius, y, radius);
     context.closePath();
