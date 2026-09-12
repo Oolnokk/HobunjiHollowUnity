@@ -5,6 +5,7 @@
   'use strict';
 
   const INSTALL_INTERVAL_MS = 250;
+  const MAX_INSTALL_POLL_MS = 20000; // Pages that never load the avatar-preview/portrait/plane modules (map/dialogue/schedule/item/loot/locale editors) would otherwise poll forever; watchGlobalAssignment still catches a later load after this cap.
   const STUDIO_PATH_RE = /\/tools\/character-studio\//;
   const MODULE_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : '';
   const debugState = {
@@ -21,6 +22,7 @@
   const watchedGlobalAssignments = new Set();
   const imagePromiseByUrl = new Map();
   let installTimer = null;
+  let installPollStartedAt = 0;
   let studioSyncing = false;
 
   function registry() { return window.HobunjiNpcSpeciesRegistry || null; }
@@ -513,9 +515,11 @@
       installPortraitBridge();
       installPlaneBridge();
       installStudioPicker();
-      if (debugState.profileBridge && debugState.portraitBridge && debugState.planeBridge
-        && (!isCharacterStudio() || debugState.studioPicker)) {
-        if (installTimer) clearInterval(installTimer);
+      const settled = debugState.profileBridge && debugState.portraitBridge && debugState.planeBridge
+        && (!isCharacterStudio() || debugState.studioPicker);
+      const timedOut = installTimer && (Date.now() - installPollStartedAt) >= MAX_INSTALL_POLL_MS;
+      if ((settled || timedOut) && installTimer) {
+        clearInterval(installTimer);
         installTimer = null;
       }
     } catch (error) {
@@ -538,5 +542,6 @@
   watchGlobalAssignment('PNGPlaneAvatar');
   watchGlobalAssignment('renderProfile');
   installAll();
+  installPollStartedAt = Date.now();
   installTimer = setInterval(installAll, INSTALL_INTERVAL_MS);
 })();
