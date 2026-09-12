@@ -19,6 +19,9 @@
       // Terrain-aware locales wrap the generator itself, so load their shared
       // matcher before any Lab adapter captures generateWorkspace.
       await loadScript('../../js/locale-terrain-placement.js', 'locale-terrain-placement');
+      await loadScript('../../js/locale-cave-runtime.js', 'locale-cave-runtime'); // Shared placed-locale cave registry used by the game and live Lab preview.
+      await loadScript('../../js/GLTFLoader.js', 'wilderness-lab-gltf-loader'); // Exact checked-in loader used by the game's cave_small renderer.
+      await loadScript('../../js/zone-den-totem-features.js', 'wilderness-lab-zone-den-totem-features'); // Reuse the game's actual cave entrance renderer instead of a Lab approximation.
       // Load the shared causeway repair first. The Lab's final preview assertion
       // must never race a later dynamically inserted generator adapter.
       await loadScript('../../js/wilderness-entry-corridor.js', 'wilderness-entry-corridor');
@@ -34,8 +37,8 @@
       await loadScript('lab-entry-repair.js', 'wilderness-lab-entry-repair'); // Final preview assertion: run the shared exported-path causeway trim even if another generator wrapper changed call order.
       await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
       await loadScript('lab-locale-terrain.js', 'wilderness-lab-locale-terrain'); // Locale Editor autosave/import source plus selected/rejected terrain-probe and embedded-carve overlays.
-      await loadScript('lab-banubu-cave.js', 'wilderness-lab-banubu-cave'); // Repo-backed Banubu Cave injection plus actual cave_small/Grehlr live visuals.
-      console.log('[WildernessLab] shared causeway repair + terrain-aware locale matching + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
+      await loadScript('lab-banubu-cave.js', 'wilderness-lab-banubu-cave'); // Repo-backed Banubu Cave injection plus exact game cave renderer and actual Grehlr live visual.
+      console.log('[WildernessLab] shared game cave renderer + terrain-aware locale matching + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
       const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {
