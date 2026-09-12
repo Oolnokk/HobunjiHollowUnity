@@ -94,7 +94,7 @@
   // every later building spawn receives the same entrance-neutral metadata.
   (function loadRoofClimbPixelProbe() {
     if (typeof document === 'undefined') return;
-    const src = 'js/roof-climb-pixel-probe.js?v=20260911roofprobe5'; // Cache-busts live-hook/popup-aware climb diagnostics and entrance-adjacency disable.
+    const src = 'js/roof-climb-pixel-probe.js?v=20260912roofprobe6'; // Cache-busts final contact-threshold, surface-offset, and movement diagnostics.
     if (window.HobunjiRoofClimbProbe || document.querySelector('script[data-hobunji-roof-climb-probe]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-hobunji-roof-climb-probe="1"><\/script>`);
