@@ -8,6 +8,7 @@ on:
       - 'docs/config/porakaneki-camp.json'
       - 'docs/config/locales/index.json'
       - 'docs/config/locales/locale_porakaneki_camp_small.json'
+      - 'docs/config/locales/locale_porakaneki_camp_chief.json'
       - 'docs/config/npcs/species-overrides.json'
       - 'docs/config/species/harlyao.json'
       - 'docs/config/species/porakaneki.json'
