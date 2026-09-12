@@ -188,6 +188,12 @@
       title: `Author verdigris removal — ${def.label}`,
       motifHint: 'Draw the motif to strip back to bare metal — everything else stays fully oxidized.',
       initialPattern: existing?.mode === 'pattern' ? existing.pattern : null,
+      library: window.PatternLibrary ? {
+        list: () => window.PatternLibrary.listAvailable(),
+        get: (id) => window.PatternLibrary.getById(id),
+        save: (label, patternData) => window.PatternLibrary.saveToLibrary(label, patternData),
+        remove: (id) => window.PatternLibrary.removeSaved(id),
+      } : null,
       renderPreview: (patternData) => window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, {
         targetHex: baseMetal.hex,
         verdigrisHex: baseMetal.verdigrisHex,

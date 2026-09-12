@@ -63,6 +63,11 @@
       .pa-previewWrap{display:grid;place-items:center;min-height:260px;border-radius:13px;border:1px solid #294039;background:#0a0e11;background-image:linear-gradient(45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.045) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.045) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.045) 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
       .pa-previewWrap canvas,.pa-previewWrap img{position:static;inset:auto;width:auto;height:auto;max-width:100%;max-height:340px;image-rendering:pixelated}
       .pa-hint{font-size:11px;line-height:1.4;color:#9cb3ae;margin:0 0 9px}
+      .pa-libraryList{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow:auto;margin-bottom:2px}
+      .pa-libraryRow{display:flex;align-items:center;gap:6px}
+      .pa-libraryRow .pa-libLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#eaf5f3}
+      .pa-libraryRow .pa-btn{padding:5px 9px;font-size:11px}
+      .pa-libraryName{flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:8px;color:#eaf5f3;padding:6px 8px;font-size:12px}
       .pa-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid rgba(255,255,255,.1)}
       .pa-toolToggle.active{outline:2px solid #7fc7bc;background:rgba(127,199,188,.18)!important}
     `;
@@ -116,6 +121,16 @@
               <p class="pa-hint" data-show-for="grid">Grid mode repeats the motif in a simple rectangular grid, spaced from its own tight ink bounds at 1× motif scale. Motif scale above 1× deliberately overlaps into neighboring cells instead of growing the grid.</p>
               <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
             </div>
+            ${options.library ? `
+            <div class="pa-card">
+              <h3>Library</h3>
+              <p class="pa-hint">Save this pattern to reuse later, or load one you've already saved or unlocked. Loading replaces the current motif and settings.</p>
+              <div class="pa-libraryList"></div>
+              <div class="pa-row" style="margin-top:9px">
+                <input type="text" class="pa-libraryName" placeholder="Pattern name" maxlength="60">
+                <button type="button" class="pa-btn secondary" data-act="saveToLibrary">Save to library</button>
+              </div>
+            </div>` : ''}
           </div>
           <div class="pa-col">
             <div class="pa-card" style="height:100%">
@@ -260,11 +275,37 @@
     sketchCanvas.addEventListener('pointerleave', endStroke);
     sketchCanvas.addEventListener('pointercancel', endStroke);
 
-    if (cfg.motifDataUrl) {
+    // Shared by the initial load below and by "Load" in the Library card —
+    // NOT used by "Reset placement", which deliberately leaves whatever is
+    // currently drawn on the sketchpad untouched.
+    function drawMotifImageIntoSketch(dataUrl) {
+      sketchCtx.clearRect(0, 0, SKETCH_SIZE, SKETCH_SIZE);
+      if (!dataUrl) { schedulePreview(); return; }
       const img = new Image();
-      img.onload = () => { sketchCtx.drawImage(img, 0, 0, SKETCH_SIZE, SKETCH_SIZE); schedulePreview(); };
-      img.src = cfg.motifDataUrl;
+      img.onload = () => { sketchCtx.clearRect(0, 0, SKETCH_SIZE, SKETCH_SIZE); sketchCtx.drawImage(img, 0, 0, SKETCH_SIZE, SKETCH_SIZE); schedulePreview(); };
+      img.src = dataUrl;
     }
+    function syncInputsFromCfg() {
+      overlay.querySelectorAll('.pa-in[data-field]').forEach(input => {
+        const field = input.dataset.field;
+        if (input.type === 'checkbox') input.checked = cfg[field];
+        else input.value = cfg[field];
+      });
+    }
+    // Replaces the motif AND every placement setting with a previously
+    // saved/unlocked library entry (or, at open time, this session's own
+    // initialPattern) — the same merge-onto-defaults cfg already got built
+    // with, so a library pattern authored before some newer field existed
+    // still loads sane values for it.
+    function applyPatternData(data) {
+      Object.assign(cfg, PATTERN_DEFAULTS, data || {});
+      syncInputsFromCfg();
+      updateValLabels();
+      updateFieldVisibility();
+      drawMotifImageIntoSketch(cfg.motifDataUrl);
+    }
+
+    if (cfg.motifDataUrl) drawMotifImageIntoSketch(cfg.motifDataUrl);
 
     overlay.querySelectorAll('.pa-toolToggle').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -295,15 +336,58 @@
 
     overlay.querySelector('[data-act="resetPlacement"]').addEventListener('click', () => {
       Object.assign(cfg, PATTERN_DEFAULTS);
-      overlay.querySelectorAll('.pa-in[data-field]').forEach(input => {
-        const field = input.dataset.field;
-        if (input.type === 'checkbox') input.checked = cfg[field];
-        else input.value = cfg[field];
-      });
+      syncInputsFromCfg();
       updateValLabels();
       updateFieldVisibility();
       schedulePreview();
     });
+
+    // ── Library (only wired up when the caller passes options.library —
+    // see pattern-library.js and metal-craft-shop.js) ───────────────────
+    function renderLibraryList() {
+      const container = overlay.querySelector('.pa-libraryList');
+      if (!container || !options.library) return;
+      const entries = options.library.list?.() || [];
+      container.innerHTML = '';
+      if (!entries.length) {
+        container.innerHTML = '<p class="pa-hint" style="margin:0">No saved or unlocked patterns yet.</p>';
+        return;
+      }
+      entries.forEach(entry => {
+        const row = document.createElement('div');
+        row.className = 'pa-libraryRow';
+        row.innerHTML = `
+          <span class="pa-libLabel">${escapeHtml(entry.label)}${entry.source === 'catalog' ? ' 🔓' : ''}</span>
+          <button type="button" class="pa-btn secondary" data-lib-load="${escapeHtml(entry.id)}">Load</button>
+          ${entry.removable ? `<button type="button" class="pa-btn secondary" data-lib-remove="${escapeHtml(entry.id)}">✕</button>` : ''}
+        `;
+        container.appendChild(row);
+      });
+      container.querySelectorAll('[data-lib-load]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const data = options.library.get?.(btn.dataset.libLoad);
+          if (data) applyPatternData(data);
+        });
+      });
+      container.querySelectorAll('[data-lib-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          options.library.remove?.(btn.dataset.libRemove);
+          renderLibraryList();
+        });
+      });
+    }
+    if (options.library) {
+      renderLibraryList();
+      overlay.querySelector('[data-act="saveToLibrary"]')?.addEventListener('click', () => {
+        const data = currentPatternData();
+        if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving to the library.'; return; }
+        const nameInput = overlay.querySelector('.pa-libraryName');
+        const label = nameInput.value.trim() || 'Untitled pattern';
+        options.library.save?.(label, data);
+        nameInput.value = '';
+        renderLibraryList();
+      });
+    }
 
     function close() {
       if (closed) return;

@@ -26517,6 +26517,11 @@
         saveGearInventory,
       });
 
+      window.PatternLibrary?.init({
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+      });
+
       window.ReagentPlants?.init({
         calendar,
         inventory,
@@ -27117,6 +27122,7 @@
         for (const ammoId of ['shrapnel', 'concussive']) if (!gearInventory.unlockedSpecialAmmo.includes(ammoId)) gearInventory.unlockedSpecialAmmo.push(ammoId);
         window.EquipmentPanel.ensureGearClothingCollection();
         window.DyeSystem.ensureCollection();
+        window.PatternLibrary?.ensureCollection();
 
         // Personal stable — same lazy-seed pattern as the whistles block just
         // above: a character with no stable yet gets the starter dabinggi-hound
