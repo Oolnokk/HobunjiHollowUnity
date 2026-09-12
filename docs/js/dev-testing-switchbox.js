@@ -124,23 +124,47 @@
   // fallbacks (oscillator-based footsteps/attacks) — every gain node this
   // codebase creates sits between its signal and ctx.destination, so forcing
   // each one's value to (and pinned at) 0 silences that whole chain.
+  //
+  // play() rejects (rather than silently resolving) with the same
+  // NotAllowedError name a real browser autoplay block uses — every play()
+  // call site in this codebase already has a .catch() for exactly that
+  // case (it's a normal, expected outcome here, not an error), so this
+  // reuses that existing handling instead of adding a new one. It also
+  // keeps the in-game debug log honest: with a silent Promise.resolve()
+  // every caller logs something like "unlock replay started" even though
+  // nothing audible happened, which reads as this switch having failed —
+  // rejecting routes those same call sites into their existing "blocked"
+  // log line instead.
   if (flags.noAudio) {
     try {
       if (window.HTMLMediaElement) {
-        window.HTMLMediaElement.prototype.play = function () { return Promise.resolve(); };
+        window.HTMLMediaElement.prototype.play = function () {
+          return Promise.reject(new DOMException('Playback blocked: Testing Switchbox Audio is off.', 'NotAllowedError'));
+        };
       }
       const gainProto = window.BaseAudioContext?.prototype || window.AudioContext?.prototype;
       if (gainProto && typeof gainProto.createGain === 'function') {
         const nativeCreateGain = gainProto.createGain;
         gainProto.createGain = function (...args) {
           const node = nativeCreateGain.apply(this, args);
-          node.gain.value = 0;
+          // Automation methods (setValueAtTime/linearRampToValueAtTime/...)
+          // schedule the audio-thread parameter timeline directly and don't
+          // go through the .value accessor below, so each one needs its own
+          // override too — pinning .value alone would miss any gain fade
+          // driven by these instead of a plain assignment.
           const nativeSetValueAtTime = node.gain.setValueAtTime?.bind(node.gain);
           if (nativeSetValueAtTime) node.gain.setValueAtTime = (_v, t) => nativeSetValueAtTime(0, t);
           const nativeLinearRamp = node.gain.linearRampToValueAtTime?.bind(node.gain);
           if (nativeLinearRamp) node.gain.linearRampToValueAtTime = (_v, t) => nativeLinearRamp(0, t);
           const nativeExpRamp = node.gain.exponentialRampToValueAtTime?.bind(node.gain);
           if (nativeExpRamp) node.gain.exponentialRampToValueAtTime = (_v, t) => nativeExpRamp(0.0001, t);
+          // Plain `gainNode.gain.value = x` assignment (seen in this
+          // codebase's own oscillator-based footstep/combat synth fallback)
+          // is a direct property set, not a method call — locking it via
+          // its own accessor is the only way to keep it pinned at 0.
+          try {
+            Object.defineProperty(node.gain, 'value', { get: () => 0, set: () => {}, configurable: true });
+          } catch (_) { node.gain.value = 0; }
           return node;
         };
       }
