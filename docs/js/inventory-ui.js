@@ -218,8 +218,18 @@
 
   function enforceMenuReadability() {
     document.querySelectorAll(MENU_READABILITY_ROOTS).forEach((root) => {
+      // Closed panels sit at opacity:0 rather than display:none (see #menuPanel.open
+      // in style.css), so they stay mounted and keep matching every click/mutation
+      // this observer watches. Nothing in them is visible while closed, so skip the
+      // full-tree scan below until the panel actually opens again.
+      if (!root.classList.contains('open')) return;
       const elements = [root, ...root.querySelectorAll('*')];
       elements.forEach((element) => {
+        // Inactive tabs (.mp-pane without .active) stay display:none while their tab
+        // isn't selected, so their content has no layout box — offsetParent is a cheap
+        // way to detect that and skip it, instead of paying for getComputedStyle()
+        // (below) on every element from every tab a player has ever visited this session.
+        if (element !== root && element.offsetParent === null) return;
         if (!isMenuTextCarrier(element)) return;
 
         // Include the nearest interactive owner's state so child text is recalculated when its parent becomes selected/active.
