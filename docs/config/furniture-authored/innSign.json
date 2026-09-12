@@ -183,7 +183,7 @@
   "pieceAnimationAuthoring": { "version": 2, "model": "rigid-piece-relative", "separateFromProcessingWarps": true, "windDirection": "furniture-local horizontal degrees", "windAxisBias": true },
   "repoFurniture": {
     "editableIn": "docs/tools/furniture-avatar-author/index.html",
-    "placementConfig": "docs/config/town-sign-furniture-config.js",
+    "placementConfig": "docs/config/maps/hobunji_hollow_town.map.json (decor)",
     "supportSideLocalAxis": "+X",
     "supportSideMeaning": "longer horizontal-beam overhang",
     "uniformScaleFromOriginal": 0.8

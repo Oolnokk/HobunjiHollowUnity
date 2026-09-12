@@ -18,6 +18,8 @@ button.warn{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
 button.bad{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
 button.act{outline:2px solid var(--acc);outline-offset:1px}
 button.restricted{opacity:.45}
+#liveConnection.connected{color:var(--ok);border-color:rgba(52,211,153,.42)}
+#reflectBtn:disabled{opacity:.45;cursor:not-allowed}
 input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;outline:none}
 textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.35}
 label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
@@ -60,6 +62,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #canvas3d{display:none;width:100%;height:100%;touch-action:none;background:var(--bg)}
 #canvas3d.active{display:block}
 #canvas2d.hidden3d{display:none}
+#gizmo3dBar{position:absolute;right:10px;top:10px;z-index:20;display:none;gap:5px;align-items:center;padding:6px;background:rgba(7,16,26,.9);border:1px solid var(--border);border-radius:10px}
+#gizmo3dBar.show{display:flex}
+#gizmo3dBar button{padding:5px 8px;font-size:11px}
+#gizmo3dSelection{max-width:210px;overflow:hidden;text-overflow:ellipsis}
 #hud{position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none;max-width:calc(100% - 16px)}
 #validateList{max-height:220px;overflow-y:auto}
 .vIssue{border-radius:6px;padding:5px 7px;margin-bottom:4px;font-size:11px;line-height:1.4}
@@ -81,6 +87,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
 <script src="../../js/panel-ui.js"></script>
+<script src="../../js/map-live-preview.js?v=20260909a"></script>
 </head>
 <body>
 <div id="shell">
@@ -88,8 +95,11 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     <h1>MAP EDITOR</h1>
     <span class="pill" id="activeMapPill">no map</span>
     <button class="sec" id="upToParentBtn" style="display:none">⬆ Parent map</button>
+    <button class="sec" id="openInterior3dBtn" style="display:none">🏠 Open in 3D Interior Editor</button>
     <div id="topbar-right">
-      <button class="ok" id="playBtn">🎮 Send to Game &amp; Play</button>
+      <span class="pill" id="liveConnection">○ Game not connected</span>
+      <button class="ok" id="reflectBtn">↻ Reflect in Game</button>
+      <button class="sec" id="playBtn">🎮 Open Game</button>
       <button class="sec" id="undoBtn">↶ Undo</button>
       <button class="sec" id="redoBtn">↷ Redo</button>
       <button class="sec" id="exportMapBtn">⬇ Map JSON</button>
@@ -364,6 +374,13 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
     <div id="view">
       <canvas id="canvas2d"></canvas>
       <canvas id="canvas3d"></canvas>
+      <div id="gizmo3dBar">
+        <span class="pill" id="gizmo3dSelection">Click decor or furniture</span>
+        <button class="sec act" id="gizmo3dTranslate">Move</button>
+        <button class="sec" id="gizmo3dRotate">Rotate</button>
+        <button class="sec" id="gizmo3dScale">Scale</button>
+        <button class="sec" id="gizmo3dClear">Done</button>
+      </div>
       <div id="hud">
         <span class="pill" id="modePill">Mode: pan</span>
         <span class="pill" id="cursorPill">—</span>
@@ -400,10 +417,12 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/building-door.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/GLTFLoader.js"></script>
 <script src="../../js/WallBuilder.js"></script>
 <script src="../../js/HousePieceGen.js"></script>
 <script src="../../js/terrain-preview.js"></script>
+<script src="../../js/procedural-furniture.js"></script>
 <script>
 (() => {
 'use strict';
@@ -452,6 +471,7 @@ document.addEventListener('click', e => {
 const GAME = {
   layoutKey: 'hobunji_farm_layout_v3',
   townKey:   'hobunji_town_v1',
+  workspaceOverrideKey: 'hobunji_game_workspace_override_v1',
   farm: { cols: 36, rows: 26 },
   house: { col: 26, row: 2, w: 5, d: 4, doorCol: 28, doorRow: 6 },
   interior: { cols: 6, rows: 6, entry: [2,4], exit: [2,5] },
@@ -516,7 +536,13 @@ const DECOR = {
   tableLong:{icon:'🍽️',label:'Long Table',fw:4,fd:1,area:'interior'}, tableRound:{icon:'🍽️',label:'Round Table',fw:2,fd:2,area:'interior'},
   tableSmall:{icon:'🍽️',label:'Small Table',fw:1,fd:1,area:'interior'}, wardrobe:{icon:'🚪',label:'Tall Wardrobe',fw:2,fd:1,area:'interior'},
   washTub:{icon:'🛁',label:'Copper Wash Tub',fw:1,fd:1,area:'any'},
-  counter:{icon:'🏪',label:'Shop Counter',fw:3,fd:1,area:'interior'}
+  statue:{icon:'🗿',label:'Weathered Statue',fw:1,fd:1,area:'any'},
+  counter:{icon:'🏪',label:'Shop Counter',fw:3,fd:1,area:'interior'},
+  nestBranch:{icon:'🪺',label:'Branch Nest',fw:1,fd:1,area:'any'}, nest:{icon:'🪺',label:'Nest',fw:2,fd:2,area:'any'},
+  alchemyTable:{icon:'⚗️',label:'Alchemy Table',fw:1,fd:1,area:'interior'}, bulletinBoard:{icon:'📋',label:'Bulletin Board',fw:1,fd:1,area:'interior'},
+  mineLadder:{icon:'🪜',label:'Mine Ladder',fw:1,fd:1,area:'interior'}, campfire:{icon:'🔥',label:'Campfire',fw:1,fd:1,area:'any'},
+  feedGrinder:{icon:'⚙️',label:'Feed Grinder',fw:1,fd:1,area:'interior'}, trough:{icon:'🪣',label:'Feed Trough',fw:1,fd:1,area:'interior'},
+  generalStoreSign:{icon:'🪧',label:'General Store Sign',fw:1,fd:1,area:'any'}, innSign:{icon:'🪧',label:'Inn Sign',fw:1,fd:1,area:'any'}
 };
 
 // Shared routes and transition spots are supported on BOTH map categories.
@@ -596,6 +622,13 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
       spawnRow: Number.isFinite(exit.spawnRow) ? exit.spawnRow : 0
     }))
   );
+  const decorRecord = furniture => {
+    const out = JSON.parse(JSON.stringify(furniture));
+    out.key = String(out.itemKey || out.key || '').replace(/Furniture$/, '');
+    delete out.itemKey;
+    if (!out.id) out.id = uid('decor');
+    return out;
+  };
   return {
     schema: 'hobunji_map.v1',
     id: entry.id || mapData.id || uid('map'),
@@ -606,7 +639,14 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
     rivers: [],
     npcPaths: Array.isArray(mapData.npcPaths) ? mapData.npcPaths : [],
     transitions,
-    objects: {}, furniture: [], decor: [], buildings: [], npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+    objects: {}, furniture: [], decor: (mapData.furniture || []).map(decorRecord), buildings: [], npcStations: Array.isArray(mapData.npcStations) ? mapData.npcStations : [],
+    entryPoints: JSON.parse(JSON.stringify(mapData.entryPoints || [])),
+    layouts: (mapData.layouts || []).map(layout => {
+      const out = JSON.parse(JSON.stringify(layout));
+      out.decor = (out.furniture || []).map(decorRecord);
+      delete out.furniture;
+      return out;
+    }),
     buildingInteriorBase: JSON.parse(JSON.stringify(mapData))
   };
 }
@@ -647,6 +687,21 @@ function buildBuildingInteriorMapV1(m) {
   base.exits = Array.from(generated.values());
   base.routes = (m.routes || []).map(p => ({ id: p.id, label: p.label, nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
   base.npcStations = (m.npcStations || []).map(st => ({ id: st.id, label: st.label || st.id, col: st.col, row: st.row, rotY: st.rotY || 0, pose: st.pose || 'stand', toolKey: st.toolKey || '', toolIntervalSec: st.toolIntervalSec || 0, toolAnimStyle: st.toolAnimStyle || '', wanderRadiusTiles: st.wanderRadiusTiles || 0, wanderMode: st.wanderMode === 'shape' ? 'shape' : 'radius', wanderShapeTiles: Array.isArray(st.wanderShapeTiles) ? st.wanderShapeTiles : [] }));
+  const furnitureRecord = decor => {
+    const out = JSON.parse(JSON.stringify(decor));
+    out.itemKey = String(out.key || out.itemKey || '');
+    if (!out.itemKey.endsWith('Furniture')) out.itemKey += 'Furniture';
+    delete out.key;
+    return out;
+  };
+  base.furniture = (m.decor || []).map(furnitureRecord);
+  base.entryPoints = JSON.parse(JSON.stringify(m.entryPoints || []));
+  base.layouts = (m.layouts || []).map(layout => {
+    const out = JSON.parse(JSON.stringify(layout));
+    out.furniture = (out.decor || []).map(furnitureRecord);
+    delete out.decor;
+    return out;
+  });
   base.npcPaths = (m.npcPaths || []).map(p => ({ id: p.id, label: p.label, npcId: p.npcId || '', nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
   return base;
 }
@@ -709,6 +764,22 @@ function computeMapDiff(m) {
 }
 
 let ws = loadWorkspace();
+function ensurePlacementIds() {
+  for (const map of ws.maps || []) {
+    if (map.category === 'building_interior' && !map.decor?.length && map.buildingInteriorBase?.furniture?.length) {
+      map.decor = map.buildingInteriorBase.furniture.map(furniture => {
+        const item = JSON.parse(JSON.stringify(furniture));
+        item.key = String(item.itemKey || item.key || '').replace(/Furniture$/, '');
+        delete item.itemKey;
+        return item;
+      });
+    }
+    for (const item of map.furniture || []) if (!item.id) item.id = uid('furn');
+    for (const item of map.decor || []) if (!item.id) item.id = uid('decor');
+    for (const layout of map.layouts || []) for (const item of layout.decor || []) if (!item.id) item.id = uid('decor');
+  }
+}
+ensurePlacementIds();
 migrateSubmapAnchors();
 sanitizePlateauGaps();
 ws.maps.forEach(captureBaseline);
@@ -720,6 +791,11 @@ recomputeAllElevations();
 // specific rule's station so it can be seen/edited in place.
 window._mapEditorBridge = {
   getWorkspace: () => ws,
+  importBuildingInterior: data => importBuildingInterior(data),
+  exportActiveBuildingInterior: () => {
+    const map = activeMap();
+    return isInteriorMap(map) ? buildBuildingInteriorMapV1(map) : null;
+  },
   focusStation: (mapId, stationId) => {
     if (!mapId || !mapById(mapId)) return false;
     ws.activeId = mapId;
@@ -730,6 +806,184 @@ window._mapEditorBridge = {
     return true;
   },
 };
+
+function importBuildingInterior(data) {
+  if (!data || data.schema !== 'hobunji_building_interior.v1' || !data.id) return false;
+  const incoming = buildingInteriorToWorkspaceMap(data, { id: data.id, name: data.name });
+  const existing = ws.maps.findIndex(map => map.id === incoming.id);
+  if (existing >= 0) ws.maps[existing] = incoming; else ws.maps.push(incoming);
+  ws.activeId = incoming.id;
+  editingLayoutId = null;
+  ensurePlacementIds();
+  captureBaseline(incoming);
+  updateAll();
+  setStatus(`Updated from 3D Interior Editor: ${incoming.name}. Reflect in Game when ready.`);
+  return true;
+}
+
+// ── Running-game live preview bridge ────────────────────────────────────────
+let _liveGameConnected = false;
+let _liveRevision = 0;
+let _liveSelection = null;
+const _liveAcknowledgedMaps = new Map();
+
+function liveRootMapId(mapId) {
+  return window.MapLivePreview.rootMapId(ws, mapId);
+}
+
+function isFarmEditorMap(mapId) {
+  return liveRootMapId(mapId) === ws.gameLink.exteriorId;
+}
+
+function refreshLiveControls() {
+  const connection = $('liveConnection');
+  const button = $('reflectBtn');
+  if (connection) {
+    connection.textContent = _liveGameConnected ? '● Game connected' : '○ Game not connected';
+    connection.classList.toggle('connected', _liveGameConnected);
+  }
+  if (button) {
+    const farm = isFarmEditorMap(activeMap()?.id);
+    button.disabled = farm;
+    button.title = farm ? 'Farm editing stays in the in-game Farm Editor.' : 'Apply this workspace snapshot to the running game without reloading it.';
+  }
+}
+
+function liveSelectionLocation(map, selection) {
+  if (Number.isFinite(selection?.col) && Number.isFinite(selection?.row)) return { col: selection.col, row: selection.row };
+  let record = null;
+  if (selection?.kind === 'building') record = (map.buildings || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'spot') record = (map.transitions || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'station') record = (map.npcStations || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'entry') record = (map.entryPoints || []).find(item => item.id === selection.id);
+  else if (selection?.kind === 'decor') record = activeDecor(map).find(item => (selection.id && item.id === selection.id) || (!selection.id && item.key === selection.key && item.col === selection.col && item.row === selection.row));
+  else if (selection?.kind === 'furniture') {
+    const records = map.category === 'building_interior' ? activeDecor(map) : (map.furniture || []);
+    const wantedKey = String(selection.key || selection.itemKey || '').replace(/Furniture$/, '');
+    record = records.find(item => (selection.id && item.id === selection.id) || ((!selection.id || !item.id) && String(item.key || item.itemKey || '').replace(/Furniture$/, '') === wantedKey && item.col === selection.col && item.row === selection.row));
+  }
+  if (!record) return null;
+  return { col: record.col ?? record.gridX, row: record.row ?? record.gridZ };
+}
+
+function focusLiveSelection(message) {
+  if (!message?.mapId) return false;
+  if (message.mapSnapshot) {
+    const incoming = message.mapSnapshot;
+    const normalized = {
+      ...makeMap(incoming.name || incoming.id, incoming.category || 'exterior', incoming.cols || 1, incoming.rows || 1),
+      ...JSON.parse(JSON.stringify(incoming)),
+      tiles: normalizeWorkspaceTiles(incoming.tiles),
+    };
+    const index = ws.maps.findIndex(map => map.id === incoming.id);
+    if (index >= 0) ws.maps[index] = normalized;
+    else ws.maps.push(normalized);
+    captureBaseline(normalized);
+  }
+  const map = mapById(message.mapId);
+  if (!map) { setStatus(`Running game requested unknown map ${message.mapId}.`); return false; }
+  ws.activeId = map.id;
+  editingLayoutId = message.layoutId && message.layoutId !== 'default' && (map.layouts || []).some(layout => layout.id === message.layoutId)
+    ? message.layoutId : null;
+  activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null; activeStationId = null; activeEntryId = null; _selectedBuildingId = null;
+  const selection = message.selection || { kind: 'tile', col: 0, row: 0 };
+  if (selection.kind === 'building') { _selectedBuildingId = selection.id || null; setMode('building'); }
+  else if (selection.kind === 'spot') { activeSpotId = selection.id || null; setMode('spot'); }
+  else if (selection.kind === 'station') { activeStationId = selection.id || null; setMode('station'); }
+  else if (selection.kind === 'entry') { activeEntryId = selection.id || null; setMode('entry'); }
+  else if (selection.kind === 'decor') setMode('decor');
+  else if (selection.kind === 'furniture') setMode(map.category === 'building_interior' ? 'decor' : 'furniture');
+  else setMode('tile');
+  updateAll();
+  const location = liveSelectionLocation(map, selection);
+  if (location) {
+    const rect = canvas.getBoundingClientRect();
+    cam.x = rect.width / 2 - (location.col + viewOffset.c + 0.5) * cam.zoom;
+    cam.y = rect.height / 2 - (location.row + viewOffset.r + 0.5) * cam.zoom;
+    _liveSelection = { ...selection, ...location, expiresAt: performance.now() + 2200 };
+    draw();
+    setTimeout(() => { if (_liveSelection?.expiresAt <= performance.now()) { _liveSelection = null; draw(); } }, 2300);
+  }
+  setStatus(`Focused from game: ${map.name}${editingLayoutId ? ` · ${editingLayoutId}` : ''}${location ? ` · ${location.col},${location.row}` : ''}.`);
+  return true;
+}
+
+function liveChangedSections(rootId) {
+  const maps = ws.maps.filter(map => liveRootMapId(map.id) === rootId);
+  const changed = new Set();
+  for (const map of maps) {
+    window.MapLivePreview.classifyMapChanges(_liveAcknowledgedMaps.get(map.id), map).forEach(section => changed.add(section));
+  }
+  return [...changed];
+}
+
+function reflectInGame() {
+  const map = activeMap();
+  const rootId = liveRootMapId(map.id);
+  if (isFarmEditorMap(rootId)) { setStatus('Farm editing uses the in-game Farm Editor.'); return; }
+  const requestId = window.MapLivePreview.requestId('reflect');
+  const changedSections = liveChangedSections(rootId);
+  _liveRevision = Math.max(_liveRevision + 1, Date.now());
+  _mapLiveEndpoint.send({
+    type: 'reflect-request', requestId, revision: _liveRevision, mapId: rootId,
+    layoutId: editingLayoutId || 'default', changedSections,
+    workspace: window.MapLivePreview.clone(ws), generated: !!map.liveGeneratedInstance,
+  }, { mirror: true });
+  setStatus(`Reflection r${_liveRevision} sent${changedSections.length ? ` (${changedSections.join(', ')})` : ' (no detected changes)'}.`);
+}
+
+function handleLiveMessage(message) {
+  if (message.type === 'interior-author-update') {
+    if (importBuildingInterior(message.interior)) {
+      _mapLiveEndpoint.send({ type: 'interior-author-result', requestId: message.requestId, mapId: message.interior.id, status: 'applied' });
+    }
+    return;
+  }
+  if (message.type === 'placement-transform') {
+    const map = mapById(message.mapId);
+    const selection = message.selection || {};
+    const layout = message.layoutId && message.layoutId !== 'default' ? (map?.layouts || []).find(item => item.id === message.layoutId) : null;
+    const records = selection.kind === 'decor' ? (layout?.decor || map?.decor || [])
+      : selection.kind === 'furniture' ? (map?.category === 'building_interior' ? (layout?.decor || map?.decor || []) : (map?.furniture || [])) : [];
+    const record = records.find(item => (selection.id && item.id === selection.id)
+      || (!selection.id && (item.key || item.itemKey) === String(selection.key || selection.itemKey || '').replace(/Furniture$/, '') && item.col === selection.col && item.row === selection.row));
+    if (record && message.transform) {
+      Object.assign(record, message.transform);
+      delete record.postScale;
+      ws.activeId = map.id;
+      editingLayoutId = layout?.id || null;
+      draw(); refreshPreview(); saveWorkspace();
+      setStatus(`Live gizmo updated ${selection.kind} ${selection.id}.`);
+      _mapLiveEndpoint.send({ type: 'placement-transform-result', requestId: message.requestId, status: 'applied', mapId: map.id });
+    }
+    return;
+  }
+  if (message.type === 'game-ready' || message.type === 'game-state') {
+    _liveGameConnected = true;
+    refreshLiveControls();
+    return;
+  }
+  if (message.type === 'navigate') {
+    _liveGameConnected = true;
+    focusLiveSelection(message);
+    _mapLiveEndpoint.send({ type: 'editor-state', requestId: message.requestId, mapId: message.mapId });
+    refreshLiveControls();
+    return;
+  }
+  if (message.type === 'reflect-result') {
+    _liveGameConnected = true;
+    if (message.status === 'applied') {
+      ws.maps.filter(map => liveRootMapId(map.id) === message.mapId).forEach(map => _liveAcknowledgedMaps.set(map.id, window.MapLivePreview.clone(map)));
+      setStatus(`✓ Game applied r${message.revision} · ${message.applyMode}${message.warnings?.length ? ` · ${message.warnings.join(' ')}` : ''}`);
+    } else {
+      setStatus(`Game ${message.status || 'rejected'} r${message.revision}: ${(message.warnings || ['Unknown error']).join(' ')}`);
+    }
+    refreshLiveControls();
+  }
+}
+
+const _mapLiveEndpoint = window.MapLivePreview.createEndpoint('editor', handleLiveMessage);
+window._mapEditorBridge.focusRuntimeSelection = focusLiveSelection;
 
 function normalizeWorkspaceTileRecord(t) {
   if (!t || typeof t !== 'object') return null;
@@ -831,6 +1085,7 @@ function saveWorkspace() {
   _saveT = setTimeout(() => { try { localStorage.setItem(WS_KEY, JSON.stringify(ws)); } catch(_) {} }, 300);
 }
 function activeMap() { return ws.maps.find(m => m.id === ws.activeId) || ws.maps[0]; }
+function isInteriorMap(map) { return map?.category === 'interior' || map?.category === 'building_interior'; }
 function mapById(id) { return ws.maps.find(m => m.id === id) || null; }
 
 // ── Alternate layouts: decor seam ────────────────────────────────────────────
@@ -1527,9 +1782,11 @@ let _stationPaintMode = false; // painting the active station's wanderShapeTiles
 let _stationPaintRadius = 1; // brush size (tiles) for station shape painting — 1 keeps the original single-tile toggle-on-click behavior
 let activeRampId = null;   // ramp being extended in ramp mode
 let activeRampNodeIndex = null; // selected node index in active ramp
+let selectedPlacement = null; // {kind:'decor'|'furniture', id} clicked in decor/furniture mode — Delete/Backspace removes it (see applyAt/handleDeleteKey)
 
 function setMode(m) {
   mode = m;
+  selectedPlacement = null;
   document.querySelectorAll('#modeBar button[data-mode]').forEach(b => b.classList.toggle('act', b.dataset.mode === m));
   $('modePill').textContent = `Mode: ${m}`;
   renderPalette();
@@ -2059,8 +2316,11 @@ function renderPalette() {
     else html = Object.keys(PROCESSORS).map(k =>
       `<button class="sec palBtn ${brush.furniture===k?'act':''}" data-pal="furniture" data-val="${k}">${PROCESSORS[k].icon} ${PROCESSORS[k].label}</button>`).join('');
   } else if (mode === 'decor') {
-    const want = (m.category === 'interior' || m.category === 'building_interior') ? ['interior','any'] : ['farm','any'];
-    html = Object.keys(DECOR).filter(k => want.includes(DECOR[k].area)).map(k =>
+    // Map authoring is not inventory placement: exterior town/zone scenes may
+    // intentionally use beds, tables, shop fixtures, or other pieces whose
+    // player-facing placement rule says "interior". Show the complete catalog
+    // here; the area flag remains metadata for gameplay placement systems.
+    html = Object.keys(DECOR).map(k =>
       `<button class="sec palBtn ${brush.decor===k?'act':''}" data-pal="decor" data-val="${k}">${DECOR[k].icon} ${DECOR[k].label} <span class="muted" style="margin-left:auto">${DECOR[k].fw}×${DECOR[k].fd}</span></button>`).join('');
   } else if (mode === 'path') {
     html = `<button class="ok" id="newPathBtn" style="width:100%;margin-bottom:6px">+ New route</button>` +
@@ -2756,7 +3016,9 @@ function draw() {
   (m.furniture || []).forEach(f => {
     const info = PROCESSORS[f.key]; if (!info) return;
     const p = w2s(f.col, f.row);
-    ctx.fillStyle = 'rgba(202,164,94,.4)'; ctx.fillRect(p.x+1, p.y+1, z-2, z-2);
+    const isSel = selectedPlacement?.kind === 'furniture' && selectedPlacement.id === f.id;
+    ctx.fillStyle = isSel ? 'rgba(250,204,21,.5)' : 'rgba(202,164,94,.4)'; ctx.fillRect(p.x+1, p.y+1, z-2, z-2);
+    if (isSel) { ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.strokeRect(p.x+1, p.y+1, z-2, z-2); ctx.lineWidth = 1; }
     if (z > 9) ctx.fillText(info.icon, p.x + z/2, p.y + z/2);
   });
   // Decor (with footprints) — from the currently-edited layout if one is
@@ -2765,9 +3027,11 @@ function draw() {
   activeDecor(m).forEach(d => {
     const info = DECOR[d.key]; if (!info) return;
     const p = w2s(d.col, d.row);
-    ctx.fillStyle = 'rgba(167,139,250,.35)'; ctx.fillRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
-    ctx.strokeStyle = 'rgba(167,139,250,.7)'; ctx.lineWidth = 1;
+    const isSel = selectedPlacement?.kind === 'decor' && selectedPlacement.id === d.id;
+    ctx.fillStyle = isSel ? 'rgba(250,204,21,.45)' : 'rgba(167,139,250,.35)'; ctx.fillRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
+    ctx.strokeStyle = isSel ? '#facc15' : 'rgba(167,139,250,.7)'; ctx.lineWidth = isSel ? 2 : 1;
     ctx.strokeRect(p.x+1, p.y+1, info.fw*z-2, info.fd*z-2);
+    ctx.lineWidth = 1;
     if (z > 9) ctx.fillText(info.icon, p.x + info.fw*z/2, p.y + info.fd*z/2);
   });
   // Shared routes
@@ -2910,6 +3174,14 @@ function draw() {
       ctx.font = `${Math.floor(z*0.5)}px system-ui`;
     }
   });
+  if (_liveSelection && _liveSelection.expiresAt > performance.now()) {
+    const p = w2s(_liveSelection.col + 0.5, _liveSelection.row + 0.5);
+    const pulse = 0.38 + 0.12 * Math.sin(performance.now() / 90);
+    ctx.save();
+    ctx.strokeStyle = '#ffffff'; ctx.fillStyle = `rgba(106,167,255,${pulse})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(8, z * 0.48), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
   ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 }
 
@@ -2988,13 +3260,27 @@ function applyAt(tile) {
   } else if (mode === 'object' && m.category === 'exterior') {
     m.objects[brush.object] = [c, r];
   } else if (mode === 'furniture' && m.category === 'exterior') {
-    if (!m.furniture.some(f => f.col === c && f.row === r)) m.furniture.push({ key: brush.furniture, col: c, row: r });
+    // Clicking an already-placed piece selects it (Delete/Backspace removes
+    // it — see handleDeleteKey) instead of silently doing nothing; clicking
+    // an empty cell places a new one, same as before.
+    const existingFurniture = m.furniture.find(f => f.col === c && f.row === r);
+    if (existingFurniture) {
+      selectedPlacement = { kind: 'furniture', id: existingFurniture.id };
+      setStatus(`Selected ${PROCESSORS[existingFurniture.key]?.label || existingFurniture.key} at (${c},${r}). Press Delete to remove.`);
+    } else {
+      m.furniture.push({ id: uid('furn'), key: brush.furniture, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
+      selectedPlacement = null;
+    }
   } else if (mode === 'decor') {
     const info = DECOR[brush.decor];
     const decorArr = activeDecor(m);
-    if (info && c + info.fw <= m.cols && r + info.fd <= m.rows
-        && !decorArr.some(d => overlaps(d, c, r, info.fw, info.fd))) {
-      decorArr.push({ key: brush.decor, col: c, row: r });
+    const existingDecor = decorArr.find(d => overlaps(d, c, r, 1, 1));
+    if (existingDecor) {
+      selectedPlacement = { kind: 'decor', id: existingDecor.id };
+      setStatus(`Selected ${DECOR[existingDecor.key]?.label || existingDecor.key} at (${existingDecor.col},${existingDecor.row}). Press Delete to remove.`);
+    } else if (info && c + info.fw <= m.cols && r + info.fd <= m.rows) {
+      decorArr.push({ id: uid('decor'), key: brush.decor, col: c, row: r, rotY: 0, postX: 0, postY: 0, postZ: 0, postSX: 1, postSY: 1, postSZ: 1 });
+      selectedPlacement = null;
     }
   } else if (mode === 'entry') {
     if (!activeEntryId) { setStatus('Select (or create) an entry point first.'); return; }
@@ -3117,10 +3403,11 @@ function applyAt(tile) {
     }
     else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
-    const fi = m.furniture.findIndex(f => f.col===c && f.row===r); if (fi >= 0) { m.furniture.splice(fi,1); did = true; }
+    const fi = m.furniture.findIndex(f => f.col===c && f.row===r);
+    if (fi >= 0) { if (m.furniture[fi].id === selectedPlacement?.id) selectedPlacement = null; m.furniture.splice(fi,1); did = true; }
     const decorArr = activeDecor(m);
     const di = decorArr.findIndex(d => { const inf = DECOR[d.key]; return inf && c >= d.col && c < d.col+inf.fw && r >= d.row && r < d.row+inf.fd; });
-    if (di >= 0) { decorArr.splice(di,1); did = true; }
+    if (di >= 0) { if (decorArr[di].id === selectedPlacement?.id) selectedPlacement = null; decorArr.splice(di,1); did = true; }
     ((m.routes || []).concat(m.npcPaths || [])).forEach(p => {
       for (let i = p.nodes.length-1; i >= 0; i--) if (p.nodes[i][0] === c && p.nodes[i][1] === r) { p.nodes.splice(i,1); did = true; }
     });
@@ -3347,7 +3634,28 @@ canvas.addEventListener('wheel', e => {
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyY' || (e.shiftKey && e.code === 'KeyZ'))) { e.preventDefault(); redo(); }
+  if ((e.code === 'Delete' || e.code === 'Backspace') && selectedPlacement && !isTypingTarget(e.target)) {
+    e.preventDefault();
+    deleteSelectedPlacement();
+  }
 });
+function isTypingTarget(el) {
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
+function deleteSelectedPlacement() {
+  if (!selectedPlacement) return;
+  const m = activeMap();
+  if (selectedPlacement.kind === 'furniture') {
+    const idx = m.furniture.findIndex(f => f.id === selectedPlacement.id);
+    if (idx >= 0) { m.furniture.splice(idx, 1); setStatus('Furniture deleted.'); }
+  } else if (selectedPlacement.kind === 'decor') {
+    const decorArr = activeDecor(m);
+    const idx = decorArr.findIndex(d => d.id === selectedPlacement.id);
+    if (idx >= 0) { decorArr.splice(idx, 1); setStatus('Decor deleted.'); }
+  }
+  selectedPlacement = null;
+  draw(); refreshPreview(); saveWorkspace();
+}
 
 // ── Map management UI ────────────────────────────────────────────────────────
 // Depth-first ordering: each submap is listed right after its parent (and its
@@ -3376,7 +3684,7 @@ function renderMapList() {
   }).join('');
   $('mapList').querySelectorAll('.item').forEach(el => el.addEventListener('click', () => {
     ws.activeId = el.dataset.id; undoStack.length = 0; redoStack.length = 0; activePathId = null; activeRiverId = null; activeRampId = null; activeSpotId = null;
-    activeEntryId = null; editingLayoutId = null;
+    activeEntryId = null; editingLayoutId = null; selectedPlacement = null;
     updateAll(); fitView();
   }));
   $('mapCountTag').textContent = String(ws.maps.length);
@@ -3400,7 +3708,9 @@ function fillSettings() {
   const group = m.isSubmap ? plateauGroupById(m.plateauGroupId) : null;
   $('activeMapPill').textContent = `${m.name} (${m.cols}×${m.rows})${m.isSubmap ? ` · tier ${m.elevation}${group ? ` · #${group.number}` : ''}` : ''}`;
   $('upToParentBtn').style.display = (m.isSubmap && mapById(m.parentMapId)) ? '' : 'none';
+  $('openInterior3dBtn').style.display = isInteriorMap(m) ? '' : 'none';
   $('floorTemplateBtn').style.display = (m.category === 'interior' || m.category === 'building_interior') ? '' : 'none';
+  refreshLiveControls();
 }
 
 function refreshPreview() {
@@ -3452,7 +3762,17 @@ function init3D() {
   controls.enableDamping = true;
   const group = new THREE.Group();
   scene.add(group);
-  three3d = { renderer, scene, camera, controls, group };
+  const transform = new THREE.TransformControls(camera, renderer.domElement);
+  transform.setMode('translate');
+  transform.addEventListener('dragging-changed', event => {
+    controls.enabled = !event.value;
+    if (event.value) pushUndo();
+    else if (_3dSelected) { sync3DTransformToRecord(); saveWorkspace(); refreshPreview(); }
+  });
+  transform.addEventListener('objectChange', sync3DTransformToRecord);
+  scene.add(transform);
+  three3d = { renderer, scene, camera, controls, transform, group, placementMeshes: new Map() };
+  canvas3d.addEventListener('pointerdown', pick3DPlacement);
 
   function tick() {
     three3d.raf = requestAnimationFrame(tick);
@@ -3461,6 +3781,57 @@ function init3D() {
   }
   tick();
   return true;
+}
+
+let _3dSelected = null; // Stable {mapId,layoutId,kind,id}; survives preview rebuilds.
+
+function active3DRecord() {
+  if (!_3dSelected) return null;
+  const map = mapById(_3dSelected.mapId);
+  if (!map) return null;
+  const layout = _3dSelected.layoutId ? (map.layouts || []).find(item => item.id === _3dSelected.layoutId) : null;
+  const records = _3dSelected.kind === 'decor' ? (layout?.decor || map.decor || []) : (map.furniture || []);
+  return records.find(item => item.id === _3dSelected.id) || null;
+}
+
+function set3DGizmoMode(mode) {
+  three3d?.transform?.setMode(mode);
+  for (const [id, value] of [['gizmo3dTranslate','translate'],['gizmo3dRotate','rotate'],['gizmo3dScale','scale']]) $(id)?.classList.toggle('act', value === mode);
+}
+
+function select3DPlacement(ref) {
+  _3dSelected = ref || null;
+  const mesh = ref && three3d?.placementMeshes?.get(`${ref.kind}:${ref.id}`);
+  if (mesh) three3d.transform.attach(mesh); else three3d?.transform?.detach();
+  const record = active3DRecord();
+  $('gizmo3dSelection').textContent = record ? `${ref.kind}: ${DECOR[record.key]?.label || PROCESSORS[record.key]?.label || record.key}` : 'Click decor or furniture';
+}
+
+function pick3DPlacement(event) {
+  if (!three3d || three3d.transform.dragging) return;
+  const rect = canvas3d.getBoundingClientRect();
+  const mouse = new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+  const ray = new THREE.Raycaster(); ray.setFromCamera(mouse, three3d.camera);
+  const hits = ray.intersectObjects([...three3d.placementMeshes.values()], true);
+  let node = hits[0]?.object;
+  while (node && !node.userData?.placementRef) node = node.parent;
+  if (node?.userData?.placementRef) select3DPlacement(node.userData.placementRef);
+}
+
+function sync3DTransformToRecord() {
+  const record = active3DRecord();
+  const mesh = _3dSelected && three3d?.placementMeshes?.get(`${_3dSelected.kind}:${_3dSelected.id}`);
+  const base = mesh?.userData?.placementBase;
+  if (!record || !mesh || !base) return;
+  record.postX = +(mesh.position.x - base.x).toFixed(3);
+  record.postY = +(mesh.position.y - base.y).toFixed(3);
+  record.postZ = +(mesh.position.z - base.z).toFixed(3);
+  record.rotY = +(mesh.rotation.y * 180 / Math.PI).toFixed(1);
+  record.postSX = +Math.max(.05, mesh.scale.x).toFixed(3);
+  record.postSY = +Math.max(.05, mesh.scale.y).toFixed(3);
+  record.postSZ = +Math.max(.05, mesh.scale.z).toFixed(3);
+  delete record.postScale;
+  draw();
 }
 
 function resize3D() {
@@ -3578,6 +3949,8 @@ function rebuild3D() {
   _3dDirty = false;
   const myGen = ++_3dBuildGeneration;
   const { group } = three3d;
+  three3d.transform.detach();
+  three3d.placementMeshes.clear();
   while (group.children.length) {
     const o = group.children.pop();
     // Terrain materials are cached/reused across rebuilds now (see
@@ -3723,9 +4096,42 @@ function rebuild3D() {
   // rebuild; falls back to the old placeholder box per-building on
   // fetch/parse/build failure.
   spawnPreviewBuildings(group, merged, myGen);
+  spawnPreviewPlacements(group, merged);
 
   three3d.controls.target.set(merged.cols/2, 0, merged.rows/2);
   three3d.camera.lookAt(three3d.controls.target);
+}
+
+function spawnPreviewPlacements(group, merged) {
+  if (!window.ProceduralFurniture) return;
+  const map = activeMap();
+  const offset = mapWorldInfo(map);
+  const layoutId = editingLayoutId || null;
+  const add = (kind, record) => {
+    const key = record.key || record.itemKey;
+    const info = kind === 'decor' ? DECOR[key] : PROCESSORS[key];
+    if (!info || !record.id) return;
+    const fw = info.fw || 1, fd = info.fd || 1;
+    const cx = offset.offsetC + record.col + fw / 2;
+    const cz = offset.offsetR + record.row + fd / 2;
+    const tier = Number(map.elevation) || 0;
+    const baseY = TerrainPreview.NORMAL_TOP + tier * TerrainPreview.PLATEAU_UNIT
+      + TerrainPreview.sampleVisualHeight(merged.visualHeights, cx, cz, merged.cols, merged.rows);
+    const color = kind === 'decor' ? 0x8b6540 : 0x888888;
+    const mesh = window.ProceduralFurniture.buildFurnitureGroup(key, color);
+    const scale = record.postScale != null ? record.postScale : 1;
+    mesh.position.set(cx + (record.postX || 0), baseY + (record.postY || 0), cz + (record.postZ || 0));
+    mesh.rotation.y = (record.rotY || 0) * Math.PI / 180;
+    mesh.scale.set(record.postSX ?? scale, record.postSY ?? scale, record.postSZ ?? scale);
+    const ref = { mapId: map.id, layoutId: kind === 'decor' ? layoutId : null, kind, id: record.id };
+    mesh.userData.placementRef = ref;
+    mesh.userData.placementBase = { x: cx, y: baseY, z: cz };
+    group.add(mesh);
+    three3d.placementMeshes.set(`${kind}:${record.id}`, mesh);
+  };
+  for (const record of map.furniture || []) add('furniture', record);
+  for (const record of activeDecor(map)) add('decor', record);
+  if (_3dSelected?.mapId === map.id) select3DPlacement(_3dSelected);
 }
 
 // Footprint placeholder box, lifted to the building's anchor tile's resolved
@@ -3847,6 +4253,7 @@ function toggle3D(show) {
   const willShow = show !== undefined ? show : !canvas3d.classList.contains('active');
   canvas3d.classList.toggle('active', willShow);
   canvas.classList.toggle('hidden3d', willShow);
+  $('gizmo3dBar').classList.toggle('show', willShow);
   if (willShow) {
     if (!init3D()) {
       canvas3d.classList.remove('active');
@@ -4260,6 +4667,21 @@ $('upToParentBtn').addEventListener('click', () => {
   activeEntryId = null; editingLayoutId = null;
   updateAll(); fitView();
 });
+$('openInterior3dBtn').addEventListener('click', () => {
+  const map = activeMap();
+  if (!isInteriorMap(map)) { setStatus('Open an interior map first.'); return; }
+  const interior = buildBuildingInteriorMapV1(map); // Carries the live unsaved 2D workspace state into the richer author schema.
+  let handedToHub = false;
+  try {
+    handedToHub = window.parent !== window && !!window.parent.openBuildingInteriorEditor?.(map.id, interior);
+  } catch (_) { /* Standalone/cross-origin tools use the mirrored handoff below. */ }
+  if (!handedToHub) {
+    _mapLiveEndpoint.send({ type: 'open-interior-author', requestId: window.MapLivePreview.requestId('interior-open'), interior }, { mirror: true });
+    const editorWindow = window.open('../building-interior-author/index.html', 'hobunji-building-interior-author');
+    if (!editorWindow) { setStatus('Popup blocked — allow the 3D Interior Editor window, then try again.'); return; }
+  }
+  setStatus(`Opening ${map.name || map.id} in the 3D Interior Editor.`);
+});
 $('newPlateauGroupBtn').addEventListener('click', () => {
   pushUndo();
   const g = createPlateauGroup();
@@ -4324,19 +4746,13 @@ $('showBaseChk').addEventListener('change', draw);
 $('loadFromGameBtn').addEventListener('click', loadFromGame);
 
 $('playBtn').addEventListener('click', () => {
-  if (!ws.gameLink.exteriorId) { setStatus('Pick a Farm map in Game Link first.'); return; }
-  const layout = buildFarmLayoutV3();
   try {
-    localStorage.setItem(GAME.layoutKey, JSON.stringify(layout));
-    let townMsg = '';
-    if (ws.gameLink.townId) {
-      const tl = buildTownLayout();
-      if (tl) { localStorage.setItem(GAME.townKey, JSON.stringify(tl)); townMsg = ` + town (${tl.tiles.length} tiles)`; }
-    }
-    setStatus(`Sent ${layout.tiles.length} tiles, ${layout.furniture.length} processors, ${layout.decor.length} decor, ${layout.routes.length} routes, ${layout.transitions.length} spots${townMsg} → game`);
+    localStorage.setItem(GAME.workspaceOverrideKey, JSON.stringify(ws));
+    setStatus('Opening game with a one-shot workspace snapshot. Farm data was not overwritten.');
     window.open(GAME.gamePath, '_blank');
   } catch(e) { setStatus('Failed: ' + e.message); }
 });
+$('reflectBtn').addEventListener('click', reflectInGame);
 
 $('exportMapBtn').addEventListener('click', () => {
   const m = activeMap();
@@ -4590,6 +5006,10 @@ $('delLayoutBtn').addEventListener('click', () => {
 });
 
 $('toggle3dBtn').addEventListener('click', () => toggle3D());
+$('gizmo3dTranslate').addEventListener('click', () => set3DGizmoMode('translate'));
+$('gizmo3dRotate').addEventListener('click', () => set3DGizmoMode('rotate'));
+$('gizmo3dScale').addEventListener('click', () => set3DGizmoMode('scale'));
+$('gizmo3dClear').addEventListener('click', () => select3DPlacement(null));
 $('validateBtn').addEventListener('click', runValidation);
 $('copyValidationBtn').addEventListener('click', copyValidationReport);
 $('quickCheckBtn').addEventListener('click', runQuickCheck);
@@ -4784,6 +5204,11 @@ async function loadBuildingInteriorMaps() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 resizeCanvas(); updateAll(); fitView();
+const _pendingLiveNavigation = window.MapLivePreview.consumePendingNavigation();
+if (_pendingLiveNavigation) focusLiveSelection(_pendingLiveNavigation);
+const _latestLiveMessage = _mapLiveEndpoint.readLatest();
+if (_latestLiveMessage?.type === 'interior-author-update') handleLiveMessage(_latestLiveMessage);
+_mapLiveEndpoint.send({ type: 'editor-ready', mapId: activeMap()?.id, layoutId: editingLayoutId || 'default' });
 loadAudioCueIndexes();
 loadBuildingInteriorMaps();
 loadTerrainMaterials();

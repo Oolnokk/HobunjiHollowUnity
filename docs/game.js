@@ -2336,6 +2336,12 @@
         // placed by an authored map, just synthesized instead of authored.
         feedGrinder:   { itemKey: 'feedGrinderFurniture',   icon: '⚙️', name: 'Feed Grinder',         price: 0,  fw: 1, fd: 1, color: 0x8f8a78, area: 'interior', desc: 'Grinds a held crop, raw meat, or fish into Plant/Meat Fodder for barn troughs.', fixture: true },
         trough:        { itemKey: 'troughFurniture',        icon: '🪣', name: 'Feed Trough',          price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'Holds up to a week of feed (7 units) for one housed animal.', fixture: true },
+        // Authored town business signs (see AUTHORED_FURNITURE_KEYS below) —
+        // ordinary exterior decor entries so they're placeable, selectable,
+        // and reflectable through the Map Editor like anything else, rather
+        // than the old hardcoded town-sign-furniture-config.js placements.
+        generalStoreSign: { itemKey: 'generalStoreSignFurniture', icon: '🪧', name: 'General Store Sign', price: 0, fw: 1, fd: 1, color: 0x8b6540, area: 'any', desc: "Funji & Son's General Store hanging sign.", fixture: true },
+        innSign:          { itemKey: 'innSignFurniture',          icon: '🪧', name: 'Inn Sign',            price: 0, fw: 1, fd: 1, color: 0x8b6540, area: 'any', desc: 'The Inn hanging sign.', fixture: true },
       };
 
       const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS)
@@ -2361,6 +2367,11 @@
         'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
         'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
         'feedGrinder', 'trough', 'campfire', 'mineLadder',
+        // Town business signs, placed as ordinary map_hobunji_town decor
+        // (see DECORATIVE_FURNITURE_DEFS above). Without these, buildFurnitureVisual
+        // falls back to ProceduralFurniture, which has no recipe for either
+        // key and silently returns an empty group — the signs never render.
+        'generalStoreSign', 'innSign',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
@@ -8866,6 +8877,8 @@
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
+      let _workspaceDefinition = null; // Resolved full workspace used to merge one live-preview map without leaking unrelated editor edits.
+      const _livePreviewMapIds = new Set(); // Map ids whose in-memory editor snapshot must outrank standalone config files until reload.
       function _isBuildingArea(area) { return typeof area === 'string' && area.startsWith('map_i_'); }
       // A den's cavern (synthesizeCavernMapData's wallStyle:'cavern') is a
       // monster-lair building, not a house/shop — the Den-Mother fight
@@ -9347,6 +9360,7 @@
           merged.computeVertexNormals();
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
+          mesh.userData.mapEditorTerrain = { mapId };
           mesh.userData.wildernessChunkOwnsGeometry = true;
           if (includeGlobalPath && !includeTiles && matKey === TileType.GRASS && pathNet) {
             mesh.name = 'zone_path_ground'; // Identifies this otherwise-ambiguous grass mesh in mobile Pixel Probe reports.
@@ -9535,6 +9549,7 @@
           const ring = new THREE.Mesh(ringGeo, ringMat);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceYInArea(tile, mapId) + 0.02, t.row + 0.5);
+          ring.userData.mapEditorRef = { mapId, kind: 'spot', id: t.id, col: t.col, row: t.row };
           zScene.add(ring);
         }
 
@@ -11393,15 +11408,15 @@
       // ── Town zone ──────────────────────────────────────────────────
       // Loads the town layout from the workspace JSON file.
       // Mirrors the map editor's buildTownLayout() conversion.
-      async function _loadTownFromWorkspace() {
+      async function _loadTownFromWorkspace(workspaceOverride = null, options = {}) {
         try {
           // One-shot override: docs/tools/index.html's "Open Game" button stashes the
           // map editor's live (possibly unsaved) workspace here so testing in-progress
           // edits doesn't require exporting to the on-disk JSON first. Consumed once —
           // cleared immediately so a plain reload goes back to the real saved file.
           const GAME_WS_OVERRIDE_KEY = 'hobunji_game_workspace_override_v1';
-          let ws;
-          const overrideRaw = localStorage.getItem(GAME_WS_OVERRIDE_KEY);
+          let ws = workspaceOverride ? window.MapLivePreview.clone(workspaceOverride) : null;
+          const overrideRaw = workspaceOverride ? null : localStorage.getItem(GAME_WS_OVERRIDE_KEY);
           if (overrideRaw) {
             localStorage.removeItem(GAME_WS_OVERRIDE_KEY);
             try {
@@ -11436,8 +11451,12 @@
           } catch(_) {}
           // Resolve each map: fetch from file if listed in index, fall back to workspace inline data
           const resolvedMaps = await Promise.all((ws.maps || []).map(async m => {
-            const file = mapFileIndex[m.id];
-            if (!file) return m;
+            const file = options.preferWorkspace ? null : mapFileIndex[m.id];
+            if (!file) {
+              return m?.schema === 'hobunji_map.v1' && m.category === 'exterior'
+                ? window.MapLayoutSystem.getEffectiveMapData(m, window.MapLayoutSystem.currentSnapshot())
+                : m;
+            }
             try {
               const r = await fetch(file);
               if (!r.ok) return m;
@@ -11762,9 +11781,13 @@
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
-          if (!townM) return;
+          if (!townM) {
+            if (options.throwOnError) throw new Error('Workspace has no map_hobunji_town map.');
+            return false;
+          }
+          _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
             if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
@@ -11799,11 +11822,16 @@
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
             }
           });
-          initTownTravel(layout);
-        } catch(e) { debugLog('Town workspace load failed: ' + e.message, 'warn'); }
+          initTownTravel(layout, options);
+          return true;
+        } catch(e) {
+          debugLog('Town workspace load failed: ' + e.message, 'warn');
+          if (options.throwOnError) throw e;
+          return false;
+        }
       }
 
-      function initTownTravel(layout) {
+      function initTownTravel(layout, options = {}) {
         if (!layout || layout.version !== 1) return;
         _townZone = layout;
         const TCOLS = layout.cols || 60, TROWS = layout.rows || 50;
@@ -11832,9 +11860,10 @@
         window.Music?.registerMapAudio(layout.mapAudio);
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
-        if (_townSceneBuilt && townScene) {
+        if (_townSceneBuilt && townScene && !options.deferTownSceneRefresh) {
           _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
           window.TownZoneBuildings.spawnTownBuildings();
+          window.TownZoneBuildings.spawnTownDecorFurniture();
         }
       }
 
@@ -11944,18 +11973,20 @@
       // performLiveLayoutSwap). Safe to call whether or not the player is
       // currently standing in mapId; only removes the player/tool meshes
       // from the outgoing scene when they actually are.
-      function discardBuildingScene(mapId) {
+      function discardBuildingScene(mapId, options = {}) {
         const info = _buildingScenes.get(mapId);
         if (!info?.scene) { _buildingScenes.delete(mapId); return; }
         if (currentArea === mapId) {
           info.scene.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
         }
-        for (const creature of [...hostileObjects]) {
-          if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
-          hostileObjects.delete(creature);
-          creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
-          creature.mesh?.parent?.remove(creature.mesh);
-          creature.groundShadow?.parent?.remove(creature.groundShadow);
+        if (!options.preserveResidents) {
+          for (const creature of [...hostileObjects]) {
+            if (creature.areaId !== mapId && creature.zoneId !== mapId) continue;
+            hostileObjects.delete(creature);
+            creature.avatarRef?.group?.parent?.remove(creature.avatarRef.group);
+            creature.mesh?.parent?.remove(creature.mesh);
+            creature.groundShadow?.parent?.remove(creature.groundShadow);
+          }
         }
         info.scene.traverse(object => object.geometry?.dispose?.());
         info.scene.clear();
@@ -12000,9 +12031,19 @@
           mapData = synthesizeBarnInteriorMapData(mapId);
           loadSource = 'barn';
         } else {
+        const liveWorkspaceMap = _livePreviewMapIds.has(mapId) ? _workspaceMaps?.find(m => m.id === mapId) : null; // Live reflection intentionally outranks a standalone config copy.
+        if (liveWorkspaceMap) {
+          const visualBase = liveWorkspaceMap.buildingInteriorBase;
+          mapData = visualBase?.schema === 'hobunji_building_interior.v1'
+            ? { ...visualBase, ...window.MapLivePreview.clone(liveWorkspaceMap), schema: visualBase.schema }
+            : window.MapLivePreview.clone(liveWorkspaceMap);
+          loadSource = 'live-map-editor';
+        }
         try {
-          const resp = await fetch('config/maps/' + mapId + '.json');
-          if (resp.ok) { mapData = await resp.json(); loadSource = 'config'; }
+          if (!mapData) {
+            const resp = await fetch('config/maps/' + mapId + '.json');
+            if (resp.ok) { mapData = await resp.json(); loadSource = 'config'; }
+          }
         } catch(_) {}
         // Fallback: load map data from cached workspace JSON
         if (!mapData && _workspaceMaps) {
@@ -12187,15 +12228,18 @@
             const by = f.postY || 0;
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
+            let renderedFurniture = null;
+            let furnitureSfxSource = null;
             if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
               const model = buildFurnitureVisual(furnitureKey, color);
+              renderedFurniture = model;
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
               model.scale.set(scX, scY, scZ);
               _markOutline(model);
               _markFurnitureEdgeId(model);
               bScene.add(model);
-              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
+              furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
               registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
@@ -12205,19 +12249,35 @@
               // Fallback: no procedural recipe found for this furniture key
               window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
               const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
+              renderedFurniture = ph;
               ph.position.set(bx, by + 0.4, bz);
               ph.rotation.y = rotRad;
               ph.scale.set(scX, scY, scZ);
               _markOutline(ph);
               _markFurnitureEdgeId(ph);
               bScene.add(ph);
-              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
+              furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
+            renderedFurniture.userData.mapEditorRef = {
+              mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
+              id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
+              postX: f.postX || 0, postY: f.postY || 0, postZ: f.postZ || 0, rotY: f.rotY || 0,
+              postSX: scX, postSY: scY, postSZ: scZ,
+            };
             // Building-map furniture bypasses makeDecorativeFurnitureMesh,
             // so add its configured lamp/candle light explicitly here.
+            let furnitureLight = null;
             if (def?.light) {
-              bScene.add(makeFurniturePointLight(def.light, bx, by + (def.light.height || 0.6), bz));
+              furnitureLight = makeFurniturePointLight(def.light, bx, by + (def.light.height || 0.6), bz);
+              bScene.add(furnitureLight);
             }
+            renderedFurniture.userData.mapEditorAux = {
+              light: furnitureLight,
+              lightOffset: furnitureLight ? furnitureLight.position.clone().sub(renderedFurniture.position) : null,
+              sfxSource: furnitureSfxSource,
+              sfxOffsetX: furnitureSfxSource ? furnitureSfxSource.x - renderedFurniture.position.x : 0,
+              sfxOffsetZ: furnitureSfxSource ? furnitureSfxSource.z - renderedFurniture.position.z : 0,
+            };
             // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
             // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
             // a custom interaction registered at this instance's actual
@@ -13244,6 +13304,244 @@
       // tickMinedRockRegrowth) now live in js/zone-regrowth.js — call via
       // window.ZoneRegrowth.*.
 
+      function _livePreviewRenderBundle() {
+        return [playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup];
+      }
+
+      function _detachLivePreviewResidents(areaId) {
+        const residents = []; // Runtime-owned objects preserved across an editor-triggered scene rebuild.
+        if (currentArea === areaId) residents.push(..._livePreviewRenderBundle());
+        for (const walker of npcWalkers) if (normalizeNpcArea(walker.area) === normalizeNpcArea(areaId)) residents.push(walker.root);
+        for (const collection of [hostileObjects, companionObjects]) {
+          for (const creature of collection) {
+            if ((creature.areaId || creature.zoneId) !== areaId) continue;
+            residents.push(creature.avatarRef?.group, creature.groundShadow);
+          }
+        }
+        const unique = [...new Set(residents.filter(Boolean))];
+        unique.forEach(object => object.parent?.remove(object));
+        return unique;
+      }
+
+      function _reattachLivePreviewResidents(sceneTarget, residents) {
+        if (!sceneTarget) return;
+        residents.forEach(object => sceneTarget.add(object));
+      }
+
+      function _captureLivePreviewZonePersistence(mapId) {
+        return {
+          reagents: _zoneReagentPersist.get(mapId),
+          berries: _zoneBerryPersist.get(mapId),
+          treasure: _zoneTreasurePersist.get(mapId),
+          felledTrees: _zoneFelledTreePersist.get(mapId),
+          minedRocks: _zoneMinedRockPersist.get(mapId),
+        };
+      }
+
+      function _restoreLivePreviewZonePersistence(mapId, saved) {
+        for (const [key, store] of [
+          ['reagents', _zoneReagentPersist], ['berries', _zoneBerryPersist], ['treasure', _zoneTreasurePersist],
+          ['felledTrees', _zoneFelledTreePersist], ['minedRocks', _zoneMinedRockPersist],
+        ]) {
+          if (saved?.[key] != null) store.set(mapId, saved[key]);
+        }
+      }
+
+      function _disposeTownSceneForLivePreview() {
+        const residents = _detachLivePreviewResidents('town');
+        if (townScene) {
+          townScene.traverse(object => object.geometry?.dispose?.());
+          townScene.clear();
+        }
+        _townBuildingGroups = [];
+        _townSceneBuilt = false;
+        townScene = null;
+        return residents;
+      }
+
+      function _exportGeneratedMapForEditor(mapId) {
+        const layout = _zoneLayouts.get(mapId);
+        if (!layout) return null;
+        const tiles = {};
+        for (const tile of (layout.tiles || [])) {
+          if (!Number.isFinite(tile.c) || !Number.isFinite(tile.r)) continue;
+          tiles[`${tile.c},${tile.r}`] = { ...tile, type: tile.type || 'grass' };
+          delete tiles[`${tile.c},${tile.r}`].c;
+          delete tiles[`${tile.c},${tile.r}`].r;
+        }
+        return {
+          schema: 'hobunji_map.v1',
+          id: mapId,
+          name: mapDebugName(mapId),
+          category: 'exterior',
+          cols: layout.cols,
+          rows: layout.rows,
+          tiles,
+          visualHeights: layout.visualHeights instanceof Map
+            ? Object.fromEntries(layout.visualHeights)
+            : window.MapLivePreview.clone(layout.visualHeights || {}),
+          transitions: window.MapLivePreview.clone(layout.transitions || []),
+          buildings: window.MapLivePreview.clone(layout.buildings || []),
+          decor: window.MapLivePreview.clone(layout.decor || []),
+          furniture: window.MapLivePreview.clone(layout.furniture || []),
+          routes: [], rivers: [], npcStations: [], layouts: [], entryPoints: [],
+          liveGeneratedInstance: true,
+        };
+      }
+
+      function _generatedLayoutFromEditorMap(mapId, map) {
+        const previous = _zoneLayouts.get(mapId) || {};
+        const tiles = Object.entries(map.tiles || {}).map(([key, value]) => {
+          const [c, r] = key.split(',').map(Number);
+          return { ...value, c, r };
+        }).filter(tile => Number.isFinite(tile.c) && Number.isFinite(tile.r));
+        return {
+          ...previous,
+          cols: map.cols || previous.cols,
+          rows: map.rows || previous.rows,
+          tiles,
+          visualHeights: new Map(Object.entries(map.visualHeights || {})),
+          transitions: window.MapLivePreview.clone(map.transitions || previous.transitions || []),
+          buildings: window.MapLivePreview.clone(map.buildings || previous.buildings || []),
+          decor: window.MapLivePreview.clone(map.decor || previous.decor || []),
+          furniture: window.MapLivePreview.clone(map.furniture || previous.furniture || []),
+          livePreview: true,
+        };
+      }
+
+      async function _applyLiveMapReflection(request) {
+        const incomingWorkspace = window.MapLivePreview.clone(request.workspace);
+        const targetMap = incomingWorkspace?.maps?.find(map => map.id === request.mapId);
+        if (!targetMap) throw new Error(`Map ${request.mapId} is missing from the reflected workspace.`);
+        const farmMapId = _workspaceDefinition?.gameLink?.exteriorId || incomingWorkspace?.gameLink?.exteriorId;
+        if (request.mapId === farmMapId) {
+          throw new Error('Farm editing uses the in-game Farm Editor.');
+        }
+
+        const areaBefore = currentArea;
+        const playerBefore = { x: player.x, y: player.y, angle: player.angle, facingAngle };
+        const generated = !!targetMap.liveGeneratedInstance && WildernessMapGenerator.zoneMapIds().includes(request.mapId);
+        const previousWorkspace = window.MapLivePreview.clone(_workspaceDefinition);
+        const previousZoneLayout = _zoneLayouts.get(request.mapId);
+        const wasLivePreview = _livePreviewMapIds.has(request.mapId);
+        let detachedResidents = [];
+        let rebuiltArea = null;
+        let zonePersistence = null;
+        const workspace = generated ? incomingWorkspace : window.MapLivePreview.clone(_workspaceDefinition || incomingWorkspace);
+        if (!generated && _workspaceDefinition) {
+          const incomingById = new Map((incomingWorkspace.maps || []).map(map => [map.id, map]));
+          const targetIds = new Set((incomingWorkspace.maps || [])
+            .filter(map => window.MapLivePreview.rootMapId(incomingWorkspace, map.id) === request.mapId)
+            .map(map => map.id));
+          workspace.maps = (workspace.maps || []).map(map => targetIds.has(map.id) && incomingById.has(map.id) ? incomingById.get(map.id) : map);
+          for (const mapId of targetIds) if (!workspace.maps.some(map => map.id === mapId)) workspace.maps.push(incomingById.get(mapId));
+        }
+        try {
+          _livePreviewMapIds.add(request.mapId);
+
+          if (generated) {
+            _zoneLayouts.set(request.mapId, _generatedLayoutFromEditorMap(request.mapId, targetMap));
+          } else {
+            await _loadTownFromWorkspace(workspace, { preferWorkspace: true, throwOnError: true, deferTownSceneRefresh: true });
+          }
+
+          if (request.mapId !== mapIdForAreaForLivePreview(areaBefore)) {
+            if (_isBuildingArea(request.mapId)) discardBuildingScene(request.mapId);
+            else if (request.mapId === 'map_hobunji_town' && townScene) {
+              rebuiltArea = 'town';
+              detachedResidents = _disposeTownSceneForLivePreview();
+              buildTownScene();
+              _reattachLivePreviewResidents(townScene, detachedResidents);
+            }
+            else if (_zoneScenes.has(request.mapId)) _dirtyZoneScenes.add(request.mapId);
+            return { applyMode: rebuiltArea ? 'scene-rebuild' : 'cache-invalidation', warnings: [] };
+          }
+
+          if (_isBuildingArea(areaBefore)) {
+            rebuiltArea = areaBefore;
+            detachedResidents = _detachLivePreviewResidents(areaBefore);
+            discardBuildingScene(areaBefore, { preserveResidents: true });
+            enterBuilding(areaBefore, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
+            await waitForBuildingSceneReady(areaBefore);
+            if (!_buildingScenes.get(areaBefore)?.scene) throw new Error(`Timed out rebuilding ${areaBefore}.`);
+            _reattachLivePreviewResidents(_buildingScenes.get(areaBefore).scene, detachedResidents);
+            player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
+            _snapCameraTarget();
+            return { applyMode: 'scene-rebuild', warnings: [] };
+          }
+
+          if (areaBefore === 'town') {
+            rebuiltArea = 'town';
+            detachedResidents = _disposeTownSceneForLivePreview();
+            buildTownScene();
+            if (!townScene) throw new Error('Town scene rebuild produced no scene.');
+            _reattachLivePreviewResidents(townScene, detachedResidents);
+            player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
+            _snapCameraTarget();
+            return { applyMode: 'scene-rebuild', warnings: [] };
+          }
+
+          if (_isZoneArea(areaBefore)) {
+            rebuiltArea = areaBefore;
+            detachedResidents = _detachLivePreviewResidents(areaBefore);
+            zonePersistence = _captureLivePreviewZonePersistence(areaBefore);
+            _disposeZoneScene(areaBefore);
+            _restoreLivePreviewZonePersistence(areaBefore, zonePersistence);
+            const rebuilt = buildZoneScene(areaBefore, playerBefore.x / TILE, playerBefore.y / TILE);
+            if (!rebuilt?.scene) throw new Error(`Zone scene rebuild produced no scene for ${areaBefore}.`);
+            _reattachLivePreviewResidents(rebuilt.scene, detachedResidents);
+            window.ReagentPlants.ensureZoneReagents(areaBefore);
+            window.WildBerries.ensureZone(areaBefore);
+            window.WildTreasure.ensureZone(areaBefore);
+            player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
+            _snapCameraTarget();
+            return { applyMode: 'scene-rebuild', warnings: generated ? ['Live generated instance remains session-only.'] : [] };
+          }
+
+          return { applyMode: 'cache-invalidation', warnings: [] };
+        } catch (error) {
+          let rollbackError = null;
+          try {
+            if (!wasLivePreview) _livePreviewMapIds.delete(request.mapId);
+            if (generated) {
+              if (previousZoneLayout) _zoneLayouts.set(request.mapId, previousZoneLayout);
+              else _zoneLayouts.delete(request.mapId);
+            } else if (previousWorkspace) {
+              await _loadTownFromWorkspace(previousWorkspace, { preferWorkspace: true, throwOnError: true, deferTownSceneRefresh: true });
+            }
+            if (previousZoneLayout && _isZoneArea(request.mapId)) _zoneLayouts.set(request.mapId, previousZoneLayout);
+            if (rebuiltArea === 'town') {
+              const currentResidents = townScene ? _disposeTownSceneForLivePreview() : [];
+              buildTownScene();
+              _reattachLivePreviewResidents(townScene, [...new Set([...detachedResidents, ...currentResidents])]);
+            } else if (_isBuildingArea(rebuiltArea)) {
+              discardBuildingScene(rebuiltArea, { preserveResidents: true });
+              enterBuilding(rebuiltArea, playerBefore.x / TILE - 0.5, playerBefore.y / TILE - 0.5);
+              await waitForBuildingSceneReady(rebuiltArea);
+              _reattachLivePreviewResidents(_buildingScenes.get(rebuiltArea)?.scene, detachedResidents);
+            } else if (_isZoneArea(rebuiltArea)) {
+              _disposeZoneScene(rebuiltArea);
+              _restoreLivePreviewZonePersistence(rebuiltArea, zonePersistence);
+              const restored = buildZoneScene(rebuiltArea, playerBefore.x / TILE, playerBefore.y / TILE);
+              _reattachLivePreviewResidents(restored?.scene, detachedResidents);
+              window.ReagentPlants.ensureZoneReagents(rebuiltArea);
+              window.WildBerries.ensureZone(rebuiltArea);
+              window.WildTreasure.ensureZone(rebuiltArea);
+            }
+          } catch (rollbackFailure) { rollbackError = rollbackFailure; }
+          player.x = playerBefore.x; player.y = playerBefore.y; player.angle = playerBefore.angle; facingAngle = playerBefore.facingAngle;
+          _snapCameraTarget();
+          if (rollbackError) throw new Error(`${error?.message || error}; rollback also failed: ${rollbackError?.message || rollbackError}`);
+          throw error;
+        }
+      }
+
+      function mapIdForAreaForLivePreview(area) {
+        if (area === 'town') return 'map_hobunji_town';
+        if (_isBuildingArea(area) || _isZoneArea(area)) return area;
+        return null;
+      }
+
       function buildTownScene() {
         if (_townSceneBuilt) return;
         _townSceneBuilt = true;
@@ -13359,6 +13657,7 @@
           const merged = window.TerrainGeometry._mergeTileGeos(entries);
           const mesh = new THREE.Mesh(merged, resolveTileMat('map_hobunji_town', matKey));
           mesh.receiveShadow = true;
+          mesh.userData.mapEditorTerrain = { mapId: 'map_hobunji_town' };
           if (matKey === TileType.GRASS && pathNet) {
             pathNet.bindGlobalGroundMesh?.(mesh);
           }
@@ -13407,6 +13706,7 @@
           // Used by the async building pass to move a stale linked marker
           // onto the door it belongs to without leaving an orphan ring.
           ring.userData.transitionId = t.id;
+          ring.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'spot', id: t.id, col: t.col, row: t.row };
           townScene.add(ring);
         }
 
@@ -13423,6 +13723,7 @@
         // Generate 3D buildings from rock-tile clusters
         _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
         window.TownZoneBuildings.spawnTownBuildings();
+        window.TownZoneBuildings.spawnTownDecorFurniture();
 
         debugLog('buildTownScene complete');
       }
@@ -18632,8 +18933,14 @@
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
         const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
         const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
-        camera.position.set(safe.x, safe.y, safe.z);
-        camera.lookAt(lookAtX, lookY, lookAtZ);
+        // The Map Editor's orbit-around-selection camera (map-live-preview-
+        // runtime.js) owns camera.position/lookAt directly while a placement
+        // is selected — skip the normal player-follow pose so this per-frame
+        // recompute doesn't fight it, while still keeping fov/aspect current.
+        if (!window.__mapEditorOrbitActive) {
+          camera.position.set(safe.x, safe.y, safe.z);
+          camera.lookAt(lookAtX, lookY, lookAtZ);
+        }
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
         camera.updateProjectionMatrix();
@@ -23844,6 +24151,7 @@
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.__mapEditorGizmoActive) return;
         if (actionId === 'toolSelect') {
           if (phase === 'release') {
             if (!toolSelectPress.down) return;
@@ -24080,6 +24388,11 @@
           publishControllerStatus(null);
           return;
         }
+        if (window.__mapEditorGizmoActive) {
+          input.x = 0; input.y = 0; controllerLookActive = false;
+          gamepadState.previous.clear(); gamepadState.activeShift = null;
+          return;
+        }
         const padChanged = !gamepadState.hadPad || gamepadState.activePadIndex !== pad.index; // Used to prime edges when a controller connects or deliberate input switches pads.
         gamepadState.hadPad = true;
         gamepadState.activePadIndex = pad.index;
@@ -24263,6 +24576,7 @@
       let _shiftDownAt = null;
       let _shiftDragged = false;
       window.addEventListener('keydown', (event) => {
+        if (window.__mapEditorGizmoActive) { event.preventDefault(); return; }
         const key = event.key.toLowerCase();
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
@@ -24493,6 +24807,7 @@
 
       // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
       function handleGameWheel(e, heldOnly = false) {
+        if (window.__mapEditorGizmoActive) { e.preventDefault(); return true; }
         if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
         // Shift+wheel cycles melee auto-target's lock orbitally around the
@@ -24608,7 +24923,8 @@
       let _cameraJoystickTargetCyclePast = false; // edge-detect state for melee auto-target cycling, see gameLoop's joystick consumption
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
-          && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
+          && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
+          && !window.__mapEditorGizmoActive;
       }
       // Every other camera mode nudges a look-around offset on top of a fixed
       // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
@@ -24705,7 +25021,7 @@
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (menuOpen || farmEditMode || e.shiftKey) return;
+          if (menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if (heldMode === 'tool' && activeTool === 'weapon' && window.Combat?.input) {
             const weaponSlot = weaponActionSlot(mouseAction);
@@ -24809,6 +25125,12 @@
           if (desktopWeaponPointerSlots.has(0) && (Number(e.buttons) & 1) === 0) {
             finishDesktopMouseAction({ button: 0, pointerType: 'mouse' });
           }
+          // __mapEditorPanelOpen covers the whole Map Edit panel session,
+          // not just an active placement selection (__mapEditorGizmoActive)
+          // — mouse movement shouldn't spin the camera out from under the
+          // panel, or hijack a Click to Select attempt, before anything is
+          // even selected yet.
+          if (window.__mapEditorGizmoActive || window.__mapEditorPanelOpen) return;
           // A floating menu (the pause/inventory menu incl. its Alchemy tab,
           // the cooking hearth/campfire modal via setInteractionBlocked, or
           // the utilities wheel/an entries arc like potion/ammo select) owns
@@ -26018,6 +26340,32 @@
         getRainPlaneSettings: window.RainPlanes.getSettings,
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
+      });
+
+      window.MapLivePreviewRuntime?.init({
+        getCurrentArea: () => currentArea,
+        isBuildingArea: _isBuildingArea,
+        isZoneArea: _isZoneArea,
+        isDevMode: () => s_devMode,
+        isProceduralZone: mapId => WildernessMapGenerator.zoneMapIds().includes(mapId),
+        mapName: mapDebugName,
+        activeLayoutId: mapId => {
+          const raw = _rawMapDataByMapId.get(mapId) || _workspaceMaps?.find(map => map.id === mapId);
+          if (raw?.layouts?.length) {
+            return window.MapLayoutSystem.resolveActiveLayout(raw, window.MapLayoutSystem.currentSnapshot())?.id || 'default';
+          }
+          return _activeLayoutByMap.get(mapId) || 'default';
+        },
+        exportGeneratedMap: _exportGeneratedMapForEditor,
+        applyReflection: _applyLiveMapReflection,
+        getActiveScene: window.GridTileAccessors.getActiveScene,
+        renderer,
+        camera,
+        playerMesh,
+        npcWalkers,
+        showToast,
+        DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
+        openArenaSpawner: () => window.DevSpawner.toggle(),
       });
 
       window.DenNestSystem?.init({

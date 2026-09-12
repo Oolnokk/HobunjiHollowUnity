@@ -22,8 +22,6 @@
   ensureCompanionScript('NaturalSurfaceMaterials', 'natural-surface-materials.js');
   ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js');
   ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js');
-  ensureCompanionScript('HOBUNJI_TOWN_SIGN_FURNITURE_CONFIG', '../config/town-sign-furniture-config.js');
-  ensureCompanionScript('TownSignFurnitureRuntime', 'town-sign-furniture-runtime.js');
   ensureCompanionScript('StructuralWrap', 'structural-wrap.js');
   ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js');
   // Generic rigid piece animation reuses the Root Totem wind helpers and

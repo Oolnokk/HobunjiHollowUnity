@@ -357,7 +357,7 @@
     const currentArea = deps.getCurrentArea();
     const devMode = deps.isDevMode();
     const showFarmEdit = devMode && currentArea === 'farm' && deps.isFarmOwner();
-    const showDevSpawn = devMode && currentArea === DEV_ARENA_ZONE_ID;
+    const showDevSpawn = false; // Arena spawning now lives inside the off-farm Map Edit panel, avoiding a slot collision.
     if (!showDevSpawn && deps.getDebugWeather()) deps.setDebugWeather(null);
     const farmBtn = document.getElementById('farmEditBtn');
     const spawnBtn = document.getElementById('devSpawnBtn');
@@ -368,6 +368,7 @@
       const panel = document.getElementById('devSpawnPanel');
       if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; spawnBtn?.classList.remove('fed-open'); }
     }
+    window.MapLivePreviewRuntime?.refreshVisibility();
   }
 
   function _bindListeners() {
