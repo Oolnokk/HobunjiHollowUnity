@@ -1,9 +1,27 @@
 {
-  "schema": "hobunji_porakaneki_camp.v2",
-  "zoneId": "map_western_slope",
-  "localeId": "locale_porakaneki_camp_small",
-  "population": {
-    "hunters": 3
+  "schema": "hobunji_porakaneki_camp.v3",
+  "wildernessZones": [
+    "map_northern_cliffs",
+    "map_southern_cloud_forest",
+    "map_western_slope",
+    "map_eastern_mire"
+  ],
+  "smallCamps": {
+    "localeId": "locale_porakaneki_camp_small",
+    "minPerZone": 2,
+    "maxPerZone": 4,
+    "minResidents": 2,
+    "maxResidents": 4
+  },
+  "chiefCamp": {
+    "localeId": "locale_porakaneki_camp_chief",
+    "generatedResidents": 6,
+    "seasonZoneMap": {
+      "Stormtide": "map_southern_cloud_forest",
+      "Deadgrass": "map_western_slope",
+      "Longpour": "map_eastern_mire",
+      "Coldmuck": "map_northern_cliffs"
+    }
   },
   "schedule": {
     "sleepStartHour": 22,
@@ -11,8 +29,7 @@
   },
   "equipment": {
     "weaponShapes": ["fishingspear", "hatchet", "daggerSword"],
-    "weaponMetalKey": "nativeCopper",
-    "forcedCosmetics": ["rugged_poncho"]
+    "weaponMetalKey": "nativeCopper"
   },
   "behavior": {
     "fullSimulationChunkTiles": 10,
