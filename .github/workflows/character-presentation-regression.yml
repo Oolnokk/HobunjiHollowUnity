@@ -27,6 +27,7 @@ on:
       - 'docs/js/harlyao-night-march-pixel-probe.js'
       - 'docs/js/harlyao-night-march-runtime.js'
       - 'docs/js/harlyao-species-runtime.js'
+      - 'docs/js/porakaneki-camp-placement-policy.js'
       - 'docs/js/porakaneki-camps-runtime.js'
       - 'docs/js/porakaneki-map-markers.js'
       - 'docs/js/porakaneki-species-runtime.js'
@@ -47,6 +48,7 @@ on:
       - 'scripts/test-maoao-arm-tint-runtime.js'
       - 'scripts/test-npc-facing-deadzone.js'
       - 'scripts/test-porakaneki-camp.js'
+      - 'scripts/test-porakaneki-camp-placement-policy.js'
       - 'scripts/test-porakaneki-map-markers.js'
       - 'scripts/test-porakaneki-species.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
@@ -67,6 +69,8 @@ jobs:
         run: node scripts/test-porakaneki-species.js
       - name: Porakaneki camp regression
         run: node scripts/test-porakaneki-camp.js
+      - name: Porakaneki dense-wilderness camp placement regression
+        run: node scripts/test-porakaneki-camp-placement-policy.js
       - name: Porakaneki map marker regression
         run: node scripts/test-porakaneki-map-markers.js
       - name: Harlyao night march regression
