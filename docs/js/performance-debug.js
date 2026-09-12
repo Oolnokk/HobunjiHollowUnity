@@ -111,13 +111,32 @@
     perfState.scanMs = performance.now() - start;
   }
 
+  // Patching THREE.WebGLRenderer.prototype.render doesn't reach the game's
+  // actual renderer: r128 defines render() as an own instance property set
+  // inside the constructor closure, not on the shared prototype, and this
+  // codebase also constructs several OTHER independent WebGLRenderer
+  // instances (character-creation preview, farm-panel-core's 3D preview, …)
+  // whose own construction-order relative to the r128 compatibility bridge
+  // (js/social-action-r128-render-bridge.js) isn't guaranteed — so a
+  // prototype patch here could silently attach to the wrong instance, or
+  // none at all, while never erroring. game.js instead hands this module
+  // its one real gameplay renderer directly via attachRenderer() right
+  // after constructing it, and this patches that exact instance.
+  let rendererProfilerRetries = 0;
   function installRendererProfiler() {
-    const proto = root.THREE?.WebGLRenderer?.prototype;
-    if (!proto || proto.__hobunjiPerfWrapped) return false;
-    const original = proto.render;
+    const renderer = root.__hobunjiGameRenderer;
+    if (!renderer) {
+      // game.js may not have reached renderer creation yet if this module's
+      // own (async-loaded) script happens to run unusually early — retry
+      // for a few seconds rather than permanently giving up.
+      if (rendererProfilerRetries++ < 40) setTimeout(installRendererProfiler, 250);
+      return false;
+    }
+    if (renderer.__hobunjiPerfWrapped) return true;
+    const original = renderer.render;
     if (typeof original !== 'function') return false;
-    Object.defineProperty(proto, '__hobunjiPerfWrapped', { value: true, configurable: true });
-    proto.render = function hobunjiProfiledRender(scene, camera) {
+    renderer.__hobunjiPerfWrapped = true;
+    renderer.render = function hobunjiProfiledRender(scene, camera) {
       // Captured unconditionally (cheap: two reference assignments) so
       // getLiveGpuInfo() below can report real-time renderer.info numbers
       // — and the low-FPS auto-snapshot watcher can trigger a cache audit
@@ -146,7 +165,7 @@
     // TRUE, undecorated render() by walking a chain of __hobunji*Original
     // markers (see its unwrapRendererRender) — without this marker those
     // replay passes stop unwrapping here instead of reaching the real render.
-    proto.render.__hobunjiPerfDebugOriginal = original;
+    renderer.render.__hobunjiPerfDebugOriginal = original;
     return true;
   }
 

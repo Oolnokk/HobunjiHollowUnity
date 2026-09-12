@@ -17895,6 +17895,13 @@
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
       threeContainer.appendChild(renderer.domElement);
+      // Direct handoff for js/performance-debug.js's installRendererProfiler(),
+      // which patches this exact instance rather than THREE.WebGLRenderer's
+      // prototype — several other modules (avatar-preview-scene.js,
+      // farm-panel-core.js, the character creator) construct their own
+      // separate renderers too, and this is the one gameplay actually renders
+      // through every frame.
+      window.__hobunjiGameRenderer = renderer;
 
       // ── Interior scene (bigger-on-the-inside room) ────────────────
       const interiorScene = new THREE.Scene();
