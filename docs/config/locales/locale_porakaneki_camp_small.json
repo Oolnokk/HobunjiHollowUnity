@@ -1,11 +1,11 @@
 {
   "schema": "hobunji_locale.v1",
   "id": "locale_porakaneki_camp_small",
-  "name": "Porakaneki Hunting Camp",
+  "name": "Porakaneki Hunting Camp (Small)",
   "category": "porakaneki_camp",
   "singleton": false,
-  "description": "A small Porakaneki wilderness hunting camp. Members sleep in its tents, emerge by day, and scatter to nearby hunting grounds.",
-  "tags": ["porakaneki", "camp", "hunting", "neutral"],
+  "description": "A little Porakaneki wilderness hunting camp inhabited only by procedurally generated Porakaneki. Residents sleep in its tents, emerge by day, and roam reactively around nearby hunting grounds.",
+  "tags": ["porakaneki", "camp", "hunting", "neutral", "procedural_population"],
   "cols": 9,
   "rows": 8,
   "tiles": {
@@ -29,15 +29,15 @@
   "connectors": [],
   "placement": {
     "mode": "temporary",
-    "maxInstances": 1,
-    "allowedZones": ["map_western_slope"],
+    "maxInstances": 4,
+    "allowedZones": ["map_northern_cliffs", "map_southern_cloud_forest", "map_western_slope", "map_eastern_mire"],
     "clearanceTiles": 2,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 10,
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,
-    "notes": "Placed post-generation in the Western Slope by PorakanekiCamps using TemporaryLocales; unlike bandit camps it is persistent for the generated zone and is not cleared by looting."
+    "notes": "PorakanekiCamps places 2-4 persistent small camps independently in every generated wilderness map. These camps never contain the named chief."
   },
-  "meta": {"authoring":"runtime hunting camp","populationFromTents":true}
+  "meta": {"authoring":"runtime hunting camp","populationFromTents":true,"namedNpcs":false}
 }
