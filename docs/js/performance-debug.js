@@ -573,10 +573,32 @@
     const nativeRaf = root.requestAnimationFrame;
     if (typeof nativeRaf !== 'function' || nativeRaf.__hobunjiRafProfiled) return;
     const boundNativeRaf = nativeRaf.bind(root);
+    // Unlike setInterval/MutationObserver (which only ever need their label
+    // once, at schedule/construction time), requestAnimationFrame's own API
+    // forces a fresh call every single frame for every self-rescheduling
+    // loop -- game.js's own gameLoop included. That originally meant a
+    // brand-new new Error().stack capture (genuinely expensive: real stack
+    // unwinding, not just sampling) on every one of those calls, for every
+    // frame, for as long as the profiler is on. A real DevTools recording
+    // during this investigation showed "Profiling overhead" alone eating
+    // 56% of total time -- this instrumentation had become a bigger cost
+    // than anything it was trying to measure. Since a persistent
+    // self-rescheduling loop passes the SAME function reference to
+    // requestAnimationFrame every time, its call site can never change
+    // between calls, so it's cached by callback identity here and the stack
+    // is only ever captured once per distinct callback (still once per call
+    // for the genuinely-fresh-closure-per-frame patterns noted below, same
+    // as before -- no regression there, just no more needless recapture for
+    // the common persistent-function case).
+    const rafLabelCache = new WeakMap();
     function profiledRequestAnimationFrame(callback) {
       if (typeof callback !== 'function') return boundNativeRaf(callback);
       if (!profilerEnabled) return boundNativeRaf(callback);
-      const label = callSiteLabel(); // Captured HERE (scheduling time), not inside the callback below (run time) -- the stack only shows the real caller before requestAnimationFrame returns.
+      let label = rafLabelCache.get(callback);
+      if (label === undefined) {
+        label = callSiteLabel(); // Captured HERE (scheduling time), not inside the callback below (run time) -- the stack only shows the real caller before requestAnimationFrame returns.
+        rafLabelCache.set(callback, label);
+      }
       return boundNativeRaf(function hobunjiTimedRafCallback(...args) {
         const start = performance.now();
         const result = callback.apply(this, args);
