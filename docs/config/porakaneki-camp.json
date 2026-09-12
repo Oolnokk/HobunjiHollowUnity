@@ -11,11 +11,13 @@
     "minPerZone": 2,
     "maxPerZone": 4,
     "minResidents": 2,
-    "maxResidents": 4
+    "maxResidents": 4,
+    "notes": "Each wilderness generation rolls 2-4 persistent little camps independently on every wilderness map. These camps contain procedural Porakaneki only and do not migrate with the chief."
   },
   "chiefCamp": {
     "localeId": "locale_porakaneki_camp_chief",
     "generatedResidents": 6,
+    "notes": "Exactly one large chief camp is active worldwide. Its site changes wilderness map whenever the regional season changes; inactive maps retain only an internal placement reservation so their little camps never need to be reshuffled.",
     "seasonZoneMap": {
       "Stormtide": "map_southern_cloud_forest",
       "Deadgrass": "map_western_slope",
