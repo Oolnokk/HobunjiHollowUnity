@@ -16,6 +16,7 @@ on:
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/farm-troughs.js'
+      - 'docs/js/format-utils.js'
       - 'docs/js/fish-catalog.js'
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
@@ -42,6 +43,7 @@ on:
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/farm-troughs.js'
+      - 'docs/js/format-utils.js'
       - 'docs/js/fish-catalog.js'
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
@@ -79,6 +81,7 @@ jobs:
           node --check docs/js/barn-incubator.js
           node --check docs/js/carpenter-shop.js
           node --check docs/js/farm-troughs.js
+          node --check docs/js/format-utils.js
           node --check docs/js/general-store.js
           node --check docs/js/livestock-nursery-install-bridge.js
       - name: Test Growth Tonic and Kunji shop
