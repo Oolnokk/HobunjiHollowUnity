@@ -11,6 +11,7 @@ on:
       - 'docs/config/shops/shop-stock.json'
       - 'docs/js/animal-growth.js'
       - 'docs/js/stable-animal-progression.js'
+      - 'docs/js/stable-animal-perk-adjustments.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/fish-catalog.js'
@@ -33,6 +34,7 @@ on:
       - 'docs/config/shops/shop-stock.json'
       - 'docs/js/animal-growth.js'
       - 'docs/js/stable-animal-progression.js'
+      - 'docs/js/stable-animal-perk-adjustments.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/fish-catalog.js'
@@ -66,6 +68,7 @@ jobs:
           node --check docs/config/economy-progression.js
           node --check docs/js/animal-growth.js
           node --check docs/js/stable-animal-progression.js
+          node --check docs/js/stable-animal-perk-adjustments.js
           node --check docs/js/barn-incubator.js
           node --check docs/js/carpenter-shop.js
           node --check docs/js/general-store.js
