@@ -149,7 +149,7 @@
       const refundMetal = plating.mode === 'cosmetic' ? plating.metalKey : def.metalKey;
       deps.inventory[deps.metalBarItemKey(refundMetal)] = Math.min(99, (deps.inventory[deps.metalBarItemKey(refundMetal)] || 0) + PLATE_BAR_COST);
       deps.clearToolPlating(itemKey);
-      deps.showToast('Cleared plating — back to live verdigris, materials returned.', true);
+      deps.showToast('Cleared plating/pattern — back to live verdigris, materials returned.', true);
     } else if (choice === 'resistant' || choice.startsWith('cosmetic:')) {
       const metalKey = choice === 'resistant' ? def.metalKey : choice.slice('cosmetic:'.length);
       const metal = deps.METAL_DEFS[metalKey];
@@ -169,6 +169,52 @@
     renderMetalCraftShopPage();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
+  }
+
+  // Opens the (agnostic, reusable) pattern authoring modal against this
+  // literal tool's own sprite, so the player can hand-draw which parts of a
+  // fully-grown (mastery 5) weapon get stripped back to bare metal — see
+  // toolVerdigrisPatternEligible/setToolVerdigrisPattern (game.js) and
+  // pattern-authoring.js. Costs the same as any other plating service; a
+  // player can reopen this at any time to redraw an already-authored
+  // pattern (paying again, same as re-plating).
+  function openVerdigrisPatternEditor(itemKey) {
+    const def = deps.TOOL_ITEM_DEFS[itemKey];
+    const baseMetal = deps.METAL_DEFS[def.metalKey];
+    const existing = deps.toolPlating(itemKey);
+    const barKey = deps.metalBarItemKey(def.metalKey);
+
+    window.PatternAuthoring?.openEditor({
+      title: `Author verdigris removal — ${def.label}`,
+      motifHint: 'Draw the motif to strip back to bare metal — everything else stays fully oxidized.',
+      initialPattern: existing?.mode === 'pattern' ? existing.pattern : null,
+      library: window.PatternLibrary ? {
+        list: () => window.PatternLibrary.listAvailable(),
+        get: (id) => window.PatternLibrary.getById(id),
+        save: (label, patternData) => window.PatternLibrary.saveToLibrary(label, patternData),
+        remove: (id) => window.PatternLibrary.removeSaved(id),
+      } : null,
+      renderPreview: (patternData) => window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, {
+        targetHex: baseMetal.hex,
+        verdigrisHex: baseMetal.verdigrisHex,
+        oxidationAmount: 1,
+        authoredPattern: patternData,
+      }),
+      onSave: (patternData) => {
+        if ((deps.inventory[barKey] || 0) < PLATE_BAR_COST) { deps.showToast(`Not enough ${baseMetal.label} bars.`, false); return false; }
+        if ((deps.inventory.gold || 0) < PLATE_LABOR_GOLD) { deps.showToast('Not enough gold.', false); return false; }
+        deps.inventory[barKey] -= PLATE_BAR_COST;
+        deps.clampInventoryStack(barKey);
+        deps.inventory.gold -= PLATE_LABOR_GOLD;
+        deps.setToolVerdigrisPattern(itemKey, patternData);
+        deps.refreshMetalToolWorldTexture(itemKey);
+        deps.showToast('Verdigris carefully stripped into a pattern.', true);
+        renderMetalCraftShopPage();
+        deps.buildInventoryGrid();
+        deps.saveMemberWorldData();
+        return true;
+      },
+    });
   }
 
   // Same cost as smithing a whole new tool — see task spec. Keeps the
@@ -254,8 +300,11 @@
         const effectiveMetal = deps.toolEffectiveMetalKey(itemKey);
         const reinforced = deps.toolReinforcementMetal(itemKey);
         const platingText = plating
-          ? (plating.mode === 'cosmetic' ? `Plated: ${deps.METAL_DEFS[plating.metalKey]?.label}` : 'Verdigris-resistant coat')
+          ? (plating.mode === 'cosmetic' ? `Plated: ${deps.METAL_DEFS[plating.metalKey]?.label}`
+            : plating.mode === 'pattern' ? 'Authored verdigris-removal pattern'
+            : 'Verdigris-resistant coat')
           : `Live verdigris: ${verdigrisPct}%`;
+        const patternEligible = deps.toolVerdigrisPatternEligible(itemKey);
         const plateOptions = [
           `<option value="clear">— live verdigris (clear plating) —</option>`,
           `<option value="resistant">Verdigris-resistant coat (${deps.esc(deps.METAL_DEFS[def.metalKey].label)})</option>`,
@@ -265,6 +314,11 @@
           // option instead.
           ...Object.keys(deps.METAL_DEFS).filter(k => deps.METAL_DEFS[k].tier == null && (deps.inventory[deps.metalBarItemKey(k)] || 0) > 0)
             .map(k => `<option value="cosmetic:${k}">Cosmetic: ${deps.esc(deps.METAL_DEFS[k].label)}</option>`),
+          // Only offered once this weapon has finished its procedural growth
+          // (mastery 5) — see toolVerdigrisPatternEligible. Mutually
+          // exclusive with every option above: picking it (and saving in the
+          // editor) replaces whatever plating/pattern this tool already had.
+          ...(patternEligible ? [`<option value="pattern">Author a verdigris-removal pattern…</option>`] : []),
         ].join('');
         const reinforceOptions = deps.VERDIGRIS_METAL_KEYS
           .filter(k => deps.METAL_DEFS[k].tier > (deps.METAL_DEFS[effectiveMetal]?.tier || 0) && (deps.inventory[deps.metalBarItemKey(k)] || 0) >= CRAFT_BAR_COST)
@@ -287,7 +341,9 @@
           </div>
         `;
         row.querySelector('.mc-plate-btn')?.addEventListener('click', () => {
-          applyMetalToolPlating(itemKey, row.querySelector('.mc-plate-select').value);
+          const choice = row.querySelector('.mc-plate-select').value;
+          if (choice === 'pattern') { openVerdigrisPatternEditor(itemKey); return; }
+          applyMetalToolPlating(itemKey, choice);
         });
         row.querySelector('.mc-reinforce-btn')?.addEventListener('click', () => {
           const sel = row.querySelector('.mc-reinforce-select');

@@ -1853,10 +1853,15 @@
         return Math.max(0, Math.min(1, toolMasteryXp(itemKey) / maxXp));
       }
 
-      // gearInventory.toolPlating[itemKey] = { mode: 'cosmetic'|'resistant', metalKey }
+      // gearInventory.toolPlating[itemKey] = { mode: 'cosmetic'|'resistant'|'pattern', metalKey, pattern? }
       // 'cosmetic': any metal's clean color, hiding the live verdigris entirely.
       // 'resistant': the tool's OWN base metal, clean/polished — "the same
-      // metal, just not oxidized". Absent = show the live verdigris (default).
+      // metal, just not oxidized". 'pattern': a smith-authored inverse
+      // verdigris-removal motif (see toolVerdigrisPatternEligible/
+      // setToolVerdigrisPattern below) — metalKey is unused, `pattern` holds
+      // the placement/motif definition pattern-authoring.js produced.
+      // Absent = show the live verdigris (default). All four are mutually
+      // exclusive by construction — they share this one record.
       function toolPlating(itemKey) {
         return gearInventory?.toolPlating?.[itemKey] || null;
       }
@@ -1869,6 +1874,34 @@
       function clearToolPlating(itemKey) {
         if (!gearInventory?.toolPlating) return;
         delete gearInventory.toolPlating[itemKey];
+        saveGearInventory();
+      }
+
+      // ── Authored verdigris-removal pattern (Sloomi/Kzubug's smithing
+      // counter, "Author pattern" — see metal-craft-shop.js/
+      // pattern-authoring.js) ─────────────────────────────────────────────
+      // Only offered once a weapon-slotted crafted tool has finished its
+      // procedural verdigris growth (mastery 5 — see toolVerdigrisFraction):
+      // at that point the whole surface is oxidized and otherwise stays
+      // that way forever, so this lets the player hand-author which parts
+      // get stripped back to bare metal instead, "controlled verdigris
+      // removal" as a form of weapon/armor decoration per the game's lore.
+      function toolVerdigrisPatternEligible(itemKey) {
+        const def = TOOL_ITEM_DEFS[itemKey];
+        // Every smith-crafted shape is weapon-capable in this game — the
+        // dedicated melee shapes (MELEE_WEAPON_SHAPE_DEFS) directly, and
+        // every farm/fish tool shape too (either natively, like the
+        // hatchet/pickshovel/fishing tools' own TOOL_SHAPE_DEFS 'weapon'
+        // slot, or via weapon-tool-stances.js's hoe augmentation) — so
+        // "weapon" here just means def.slots includes 'weapon', not a
+        // narrower "dedicated weapon shape only" reading.
+        if (!def?.metalKey || !def.slots?.includes('weapon')) return false;
+        return toolMasteryLevel(itemKey) >= MASTERY_XP_THRESHOLDS.length;
+      }
+      function setToolVerdigrisPattern(itemKey, patternData) {
+        if (!gearInventory || !patternData) return;
+        if (!gearInventory.toolPlating) gearInventory.toolPlating = {};
+        gearInventory.toolPlating[itemKey] = { mode: 'pattern', metalKey: null, pattern: patternData };
         saveGearInventory();
       }
 
@@ -1947,6 +1980,14 @@
         if (plating?.mode === 'resistant') {
           return { targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
         }
+        if (plating?.mode === 'pattern' && plating.pattern) {
+          // Always mastery-5/fully-grown by the time a pattern can be
+          // authored (see toolVerdigrisPatternEligible) — oxidationAmount
+          // is irrelevant once authoredPattern is set (ToolMetalRecolor
+          // uses the pattern instead of the procedural growth), but keep it
+          // at 1 for any other consumer inspecting this same options object.
+          return { targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: 1, authoredPattern: plating.pattern };
+        }
         return { targetHex: baseMetal.hex, verdigrisHex: baseMetal.verdigrisHex, oxidationAmount: toolVerdigrisFraction(itemKey) };
       }
       const _metalToolDataUrlCache = new Map(); // same cache key -> data URL, for plain <img src> consumers
@@ -1968,6 +2009,11 @@
       }
       function metalToolCacheKey(itemKey, opts) {
         const plating = toolPlating(itemKey);
+        if (plating?.mode === 'pattern') {
+          // The authored pattern (motif + placement) is the whole identity
+          // here — there's no single scalar like oxidationAmount to key on.
+          return `toolmetal:${itemKey}:pattern:${JSON.stringify(plating.pattern)}`;
+        }
         return `toolmetal:${itemKey}:${plating ? plating.mode + ':' + plating.metalKey : 'live'}:${quantizeOxidation(opts.oxidationAmount).toFixed(2)}`;
       }
       function ensureMetalToolIconSource(itemKey) {
@@ -2096,8 +2142,10 @@
           specialAmmo: 0,
           rangedAmmoLoadouts: {},
           unlockedSpecialAmmo: ['shrapnel', 'concussive'],
-          // toolPlating[itemKey] = { mode: 'cosmetic'|'resistant', metalKey } —
-          // Sloomi/Kzubug's cosmetic plating service (see setToolPlating).
+          // toolPlating[itemKey] = { mode: 'cosmetic'|'resistant'|'pattern', metalKey, pattern? } —
+          // Sloomi/Kzubug's cosmetic plating service (see setToolPlating) and
+          // authored verdigris-removal pattern service (see
+          // setToolVerdigrisPattern) — mutually exclusive, sharing one record.
           toolPlating: {},
           // toolReinforcement[itemKey] = { metalKey } — Sloomi/Kzubug's metal
           // reinforcement service (see setToolReinforcement).
@@ -8236,6 +8284,7 @@
         awardMotesOfProwess,
         spendMotesOfProwess,
         gearInventory: () => gearInventory,
+        inventory: () => inventory, // Console debug access to bag/gold — not Proxy-guarded the way gearInventory.toolMastery is (see mastery-policy.js), so direct writes (e.g. inventory.gold += 100) work fine from here.
         combatSwingAfflictionIds: () => combatSwingAfflictionIds,
         combatSwingCone: () => combatSwingCone,
         toolMeshMap: () => toolMeshMap,
@@ -26675,6 +26724,8 @@
         toolPlating,
         clearToolPlating,
         setToolPlating,
+        toolVerdigrisPatternEligible,
+        setToolVerdigrisPattern,
         toolReinforcementMetal,
         setToolReinforcement,
         toolEffectiveMetalKey,
@@ -26810,6 +26861,11 @@
       });
 
       window.DyeSystem?.init({
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+      });
+
+      window.PatternLibrary?.init({
         getGearInventory: () => gearInventory,
         saveGearInventory,
       });
@@ -27414,6 +27470,7 @@
         for (const ammoId of ['shrapnel', 'concussive']) if (!gearInventory.unlockedSpecialAmmo.includes(ammoId)) gearInventory.unlockedSpecialAmmo.push(ammoId);
         window.EquipmentPanel.ensureGearClothingCollection();
         window.DyeSystem.ensureCollection();
+        window.PatternLibrary?.ensureCollection();
 
         // Personal stable — same lazy-seed pattern as the whistles block just
         // above: a character with no stable yet gets the starter dabinggi-hound
