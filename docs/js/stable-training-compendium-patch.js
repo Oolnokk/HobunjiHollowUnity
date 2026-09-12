@@ -27,7 +27,7 @@
       api[methodName] = function stableTrainingCompendiumCopy(...args) {
         const result = original.apply(this, args);
         rewriteVisibleCopy();
-        queueMicrotask?.(rewriteVisibleCopy);
+        if (typeof window.queueMicrotask === 'function') window.queueMicrotask(rewriteVisibleCopy);
         return result;
       };
     }
