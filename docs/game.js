@@ -7472,13 +7472,27 @@
       // gets a fresh read.
       let _worldLivestockFrameCache = null;
       function _loadWorldLivestock() {
-        if (_worldLivestockFrameCache) return _worldLivestockFrameCache;
+        if (_worldLivestockFrameCache) {
+          // A real DevTools recording named this whole function 682.9ms/11%
+          // self time despite the save blob measuring only ~91KB (far too
+          // small on its own to explain that), and an audit of every caller
+          // found no redundant repeated-in-a-loop calls. The remaining
+          // unknown is simply HOW OFTEN this runs the real parse below vs.
+          // hitting the cache -- this pair of counters answers that
+          // directly instead of guessing further.
+          window.PerfProfiler?.record('_loadWorldLivestock: cache hit', 0);
+          return _worldLivestockFrameCache;
+        }
         const worldId = _tothalWorldId();
         if (!worldId) return [];
+        const parseStart = performance.now();
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
           return (meta?.worlds || []).find(w => w.id === worldId)?.livestock ?? [];
         } catch { return []; }
+        finally {
+          window.PerfProfiler?.record('_loadWorldLivestock: parse+find (cache miss)', performance.now() - parseStart);
+        }
       }
 
       function _saveWorldLivestock(list) {
