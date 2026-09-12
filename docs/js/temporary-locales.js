@@ -273,13 +273,14 @@
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 
-// Keep the Cloud Forest / wilderness-entry refinements in their own modules,
-// but load them synchronously here: this script already sits after
-// wilderness-map-generator.js and before border-terrain.js in docs/index.html.
-// The narrow-corridor adapter runs after the older Cloud Forest repair so it
-// can also repopulate the apron that repair reclaimed too late for flora.
+// Keep the terrain-aware fixed-locale matcher, Cloud Forest, and wilderness-
+// entry refinements in their own modules, but load them synchronously here:
+// this script already sits after wilderness-map-generator.js and before
+// border-terrain.js in docs/index.html. Loading terrain matching first lets
+// later zone adapters wrap its generator methods without bypassing it.
 if (typeof document !== 'undefined' && document.currentScript) {
+  const localeTerrainSrc = new URL('locale-terrain-placement.js', document.currentScript.src).href; // Shared fixed-locale terrain matcher used by the game and Wilderness Lab.
   const cloudRuntimeSrc = new URL('cloud-forest-runtime.js', document.currentScript.src).href;
   const entryCorridorSrc = new URL('wilderness-entry-corridor.js', document.currentScript.src).href;
-  document.write('<script src="' + cloudRuntimeSrc + '"></' + 'script><script src="' + entryCorridorSrc + '"></' + 'script>');
+  document.write('<script src="' + localeTerrainSrc + '"></' + 'script><script src="' + cloudRuntimeSrc + '"></' + 'script><script src="' + entryCorridorSrc + '"></' + 'script>');
 }
