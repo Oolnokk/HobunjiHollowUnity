@@ -97,6 +97,7 @@
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/held-item-action-input.js?v=20260910a', () => !!window.HeldItemActionInput],
     ['js/alcohol-gameplay-bridge.js?v=20260828treecover1', () => !!window.HobunjiDrunkGameplayBridge],
+    ['js/dialogue-kurraya-sample-runtime.js?v=20260904pitch2latency1', () => !!window.DialogueKurrayaSampleRuntime?.installed],
     ['js/npc-gifting.js?v=20260831a', () => !!window.NpcGifting],
     ['js/npc-wardrobe.js?v=20260831a', () => !!window.NpcWardrobe],
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20260904placeholder2', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
