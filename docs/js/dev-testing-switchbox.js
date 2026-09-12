@@ -3,8 +3,13 @@
 // Lives entirely in this one file: reads/writes its own localStorage-backed
 // flags, patches a couple of shared browser/engine primitives so it doesn't
 // have to chase every call site of the systems it turns off, and renders its
-// own toggle row inside the existing Dev Tools panel (#devSpawnPanel, opened
-// via the 🐾 button, itself already gated behind Settings' Dev Mode switch).
+// own toggle row in two places — the existing Dev Tools panel
+// (#devSpawnPanel, opened via the 🐾 button, itself already gated behind
+// Settings' Dev Mode switch) for use mid-session, and the character/world
+// select screen (onboarding-core.js's #ob-overlay, or save-startup-gate.js's
+// empty-save gate on a brand-new browser) so a toggle can be flipped before
+// ever loading into a farm. Both surfaces are gated behind the same
+// `hobunjiDevMode` localStorage flag Settings' Dev Mode checkbox writes.
 //
 // Every flag here takes effect on the next page load, not live — a toggle
 // click persists the new value and reloads immediately (same pattern as
@@ -183,4 +188,87 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installSwitchboxUI, { once: true });
   else installSwitchboxUI();
+
+  // ── Save/character-select entry point ───────────────────────────────
+  // The actual "character select" screen (onboarding-core.js's #ob-overlay
+  // .ob-card — "Choose Your Farmer"/"Choose Your World", or the empty-save
+  // gate save-startup-gate.js shows a new browser first) renders well
+  // before this script runs and gets fully torn down and rebuilt (a fresh
+  // .ob-card element) on every character/world click. Mirrors save-startup-
+  // gate.js's own approach for the same reason: a MutationObserver on
+  // document.body, coalesced onto one rAF-scheduled refresh, so the section
+  // keeps reappearing after every rebuild without doing real DOM work on
+  // ticks where nothing actually changed.
+  const SAVE_SELECT_SECTION_ID = 'devSwitchboxSaveSelectSection';
+
+  function devModeEnabled() {
+    try { return window.localStorage?.getItem('hobunjiDevMode') === '1'; } catch { return false; }
+  }
+
+  function renderInlineSwitchButton(btn, name) {
+    const on = !!flags[name];
+    btn.textContent = `${SWITCHES[name].label}: ${on ? 'OFF' : 'Running'}`;
+    btn.classList.toggle('ob-active', on);
+    btn.title = SWITCHES[name].hint;
+    btn.setAttribute('aria-pressed', String(on));
+  }
+
+  function buildSaveSelectSection() {
+    const section = document.createElement('div');
+    section.id = SAVE_SELECT_SECTION_ID;
+    section.className = 'sl-section';
+    section.innerHTML = `<div class="sl-section-label">🧪 Testing Switchbox — dev-only, takes effect next reload</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:6px;"></div>`;
+    const row = section.lastElementChild;
+    for (const name of Object.keys(SWITCHES)) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ob-tab';
+      btn.dataset.devSwitch = name;
+      renderInlineSwitchButton(btn, name);
+      btn.addEventListener('click', () => setFlag(name, !flags[name]));
+      row.appendChild(btn);
+    }
+    return section;
+  }
+
+  function findVisibleSaveSelectCard() {
+    // #ob-overlay can hold more than one .ob-card at once — save-startup-
+    // gate.js hides the real "Create Your Farmer" card (display:none) behind
+    // its own empty-save gate card until the player restores or explicitly
+    // chooses to create a farmer — so this has to pick whichever one is
+    // actually shown, not just the first match in DOM order.
+    for (const card of document.querySelectorAll('#ob-overlay .ob-card')) {
+      const style = getComputedStyle(card);
+      if (style.display !== 'none' && style.visibility !== 'hidden') return card;
+    }
+    return null;
+  }
+
+  function refreshSaveSelectEntryPoint() {
+    const card = findVisibleSaveSelectCard();
+    const existing = document.getElementById(SAVE_SELECT_SECTION_ID);
+    if (!card || !devModeEnabled()) {
+      existing?.remove();
+      return;
+    }
+    if (existing && existing.parentElement === card) return; // Still attached to the current (not yet re-rendered) card.
+    existing?.remove(); // Left over from a card onboarding-core.js already replaced.
+    card.appendChild(buildSaveSelectSection());
+  }
+
+  let saveSelectRefreshScheduled = false;
+  function scheduleSaveSelectRefresh() {
+    if (saveSelectRefreshScheduled) return;
+    saveSelectRefreshScheduled = true;
+    requestAnimationFrame(() => { saveSelectRefreshScheduled = false; refreshSaveSelectEntryPoint(); });
+  }
+
+  function installSaveSelectEntryPoint() {
+    refreshSaveSelectEntryPoint();
+    new MutationObserver(scheduleSaveSelectRefresh).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.body) installSaveSelectEntryPoint();
+  else document.addEventListener('DOMContentLoaded', installSaveSelectEntryPoint, { once: true });
 })();
