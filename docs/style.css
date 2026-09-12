@@ -371,7 +371,7 @@
     #menuBtn.open  { background: var(--accent-dim); border-color: rgba(249,226,138,0.5); }
 
     /* ── Farm editor toggle button ───────────────────────── */
-    #farmEditBtn {
+    #farmEditBtn, #mapEditBtn {
       position: fixed;
       left: calc(var(--play-right) - 10 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
       width: calc(4 * var(--col)); height: calc(2 * var(--row));
@@ -386,8 +386,8 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.35);
       transition: background 0.15s; cursor: pointer;
     }
-    #farmEditBtn:hover { background: rgba(255,255,255,0.12); }
-    #farmEditBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+    #farmEditBtn:hover, #mapEditBtn:hover { background: rgba(255,255,255,0.12); }
+    #farmEditBtn.fed-open, #mapEditBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
 
     /* ── Dev spawn menu toggle button (same slot as #farmEditBtn) ────── */
     #devSpawnBtn {
@@ -433,7 +433,7 @@
     #furniturePlacerBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
 
     /* ── Farm editor panel ───────────────────────────────── */
-    #farmEditorPanel, #devSpawnPanel, #furniturePlacerPanel {
+    #farmEditorPanel, #mapEditPanel, #devSpawnPanel, #furniturePlacerPanel {
       position: fixed;
       right: 2px;
       top: calc(var(--oy) + 4 * var(--row));
@@ -473,6 +473,12 @@
       font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
       color: var(--muted); margin-bottom: 4px; padding: 0 2px;
     }
+    .map-edit-summary { line-height: 1.45; }
+    .map-edit-detail, .map-edit-result { color: var(--muted); font-size: 11px; margin-top: 4px; overflow-wrap: anywhere; }
+    .map-edit-connection { color: #fbbf24; font-size: 11px; margin-top: 7px; }
+    .map-edit-connection.connected { color: #5adc8c; }
+    .map-edit-warning { margin-top: 8px; padding: 7px; border-radius: 7px; border: 1px solid rgba(251,191,36,.42); background: rgba(251,191,36,.1); color: #fde68a; font-size: 10px; line-height: 1.4; }
+    .map-edit-actions { display: grid; gap: 5px; }
     .fed-grid {
       display: flex; flex-wrap: wrap; gap: 4px;
     }

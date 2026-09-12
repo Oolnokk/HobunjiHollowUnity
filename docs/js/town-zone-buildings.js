@@ -149,6 +149,84 @@
   // cycle is skipped entirely. Failed preload keeps the previous fallback.
   let _townBuildingsGlbUpgradePending = false;
   // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
+  let _townSpawnGeneration = 0; // Invalidates async piece loads when live reflection replaces the town scene.
+  let _townDecorFurnitureGroups = []; // Meshes/groups from the town map's own decor+furniture arrays; disposed and rebuilt on every call, same as _townBuildingGroups.
+
+  // Mirrors spawnZoneDecorFurniture for the town map's own decor/furniture
+  // arrays (map_hobunji_town's `decor`/`furniture`, authored via the Map
+  // Editor's exterior Decor/Furniture palettes). Town has no zoneLayouts
+  // entry of its own — it stays on getTownZone()/getTownScene() like
+  // spawnTownBuildings — so this can't just call spawnZoneDecorFurniture(mapId).
+  // Unlike the zone version, this always disposes and rebuilds (no "already
+  // spawned" guard) so it's safe to call again after a live reflection.
+  function spawnTownDecorFurniture() {
+    const townScene = deps.getTownScene();
+    const townMap = deps.getTownZone();
+    for (const mesh of _townDecorFurnitureGroups) {
+      townScene?.remove(mesh);
+      mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    }
+    _townDecorFurnitureGroups = [];
+    if (!townScene || !townMap) return;
+    const decorDefs = townMap.decor || [];
+    const furnitureDefs = townMap.furniture || [];
+    if (!decorDefs.length && !furnitureDefs.length) return;
+    if (typeof window.ProceduralFurniture === 'undefined') {
+      deps.debugLog('ProceduralFurniture not loaded — skipping town decor/furniture', 'warn');
+      return;
+    }
+
+    const applyPlacementTransform = (object, record, baseY) => {
+      const uniform = record.postScale != null ? record.postScale : 1;
+      object.position.x += record.postX || 0;
+      object.position.y = baseY + (record.postY || 0);
+      object.position.z += record.postZ || 0;
+      object.rotation.y = (record.rotY || 0) * Math.PI / 180;
+      object.scale.set(record.postSX ?? uniform, record.postSY ?? uniform, record.postSZ ?? uniform);
+    };
+
+    for (const d of decorDefs) {
+      const result = deps.makeDecorativeFurnitureMesh(d.col, d.row, d.key, townScene, 'map_hobunji_town');
+      if (!result) continue;
+      const y = deps.NORMAL_TOP + _tileVisualHeight(townMap, d.col, d.row);
+      applyPlacementTransform(result.mesh, d, y);
+      if (result.light) {
+        result.light.position.x += d.postX || 0;
+        result.light.position.y += y + (d.postY || 0);
+        result.light.position.z += d.postZ || 0;
+      }
+      result.mesh.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'decor', id: d.id || null, key: d.key, col: d.col, row: d.row,
+        postX: d.postX || 0, postY: d.postY || 0, postZ: d.postZ || 0, rotY: d.rotY || 0,
+        postSX: d.postSX ?? d.postScale ?? 1, postSY: d.postSY ?? d.postScale ?? 1, postSZ: d.postSZ ?? d.postScale ?? 1 };
+      result.mesh.userData.mapEditorAux = {
+        light: result.light || null,
+        lightOffset: result.light ? result.light.position.clone().sub(result.mesh.position) : null,
+        sfxSource: result.sfxSource || null,
+        sfxOffsetX: result.sfxSource ? result.sfxSource.x - result.mesh.position.x : 0,
+        sfxOffsetZ: result.sfxSource ? result.sfxSource.z - result.mesh.position.z : 0,
+      };
+      _townDecorFurnitureGroups.push(result.mesh);
+    }
+    for (const f of furnitureDefs) {
+      const def = deps.PROCESSING_FURNITURE_DEFS[f.key];
+      if (!def) continue;
+      const group = deps.buildFurnitureVisual(f.key, def.color || 0x888888);
+      const y = deps.NORMAL_TOP + _tileVisualHeight(townMap, f.col, f.row);
+      group.position.set(f.col + 0.5, y, f.row + 0.5);
+      applyPlacementTransform(group, f, y);
+      deps.markOutline(group);
+      deps.markFurnitureEdgeId(group);
+      group.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'furniture', id: f.id || null, key: f.key, col: f.col, row: f.row,
+        postX: f.postX || 0, postY: f.postY || 0, postZ: f.postZ || 0, rotY: f.rotY || 0,
+        postSX: f.postSX ?? f.postScale ?? 1, postSY: f.postSY ?? f.postScale ?? 1, postSZ: f.postSZ ?? f.postScale ?? 1 };
+      townScene.add(group);
+      _townDecorFurnitureGroups.push(group);
+      const sfxSource = window.Music?.registerFurnitureSfxSource('map_hobunji_town', f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
+      group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
+    }
+    deps.debugLog(`spawnTownDecorFurniture: built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
+  }
+
   function spawnTownBuildings() {
     const townScene = deps.getTownScene();
     const townBuildingDefs = deps.getTownBuildingDefs();
@@ -157,6 +235,7 @@
       deps.debugLog('HousePieceGen not loaded — skipping town buildings', 'warn');
       return;
     }
+    const generation = ++_townSpawnGeneration;
 
     // Dispose previous groups
     for (const entry of deps.getTownBuildingGroups()) {
@@ -185,6 +264,7 @@
     }));
 
     Promise.all([_ensureStructureAssets(), pieceLoads]).then(([structureReady, results]) => {
+      if (generation !== _townSpawnGeneration) return;
       const townScene2 = deps.getTownScene();
       if (!townScene2) return;
       const townMap = deps.getTownZone();
@@ -206,6 +286,7 @@
             rotationDeg: bldg.rotationDeg || 0, elevationY,
           });
         }
+        g.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
         townScene2.add(g);
         groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
 
@@ -288,6 +369,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           _townBuildingsGlbUpgradePending = false;
+          if (generation !== _townSpawnGeneration) return;
           _applyBuildingGlbTints();
           const townScene3 = deps.getTownScene();
           if (!townScene3) return;
@@ -310,6 +392,7 @@
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
               rotationDeg: bldg.rotationDeg || 0, elevationY,
             });
+            g.userData.mapEditorRef = { mapId: 'map_hobunji_town', kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
             townScene3.add(g);
             upgraded.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
           }
@@ -326,6 +409,7 @@
   // piece-JSON geometry, lifted to their anchor tile's discrete plateau tier
   // plus the same subtle visual-height sample used by terrain. Buildings stay
   // rigid/level: only the whole group's Y origin moves.
+  const _zoneSpawnGeneration = new Map(); // Per-zone invalidation for async live-reflection rebuilds.
   function spawnZoneBuildings(mapId) {
     const zoneData = deps.zoneLayouts.get(mapId);
     const buildingDefs = zoneData?.buildings || [];
@@ -335,6 +419,8 @@
       return;
     }
     if (deps.zoneBuildingGroups.has(mapId)) return; // already spawned for this zone scene
+    const generation = (_zoneSpawnGeneration.get(mapId) || 0) + 1;
+    _zoneSpawnGeneration.set(mapId, generation);
 
     const groups = [];
     deps.zoneBuildingGroups.set(mapId, groups);
@@ -355,6 +441,7 @@
     }));
 
     Promise.all([_ensureStructureAssets(), pieceLoads]).then(([structureReady, results]) => {
+      if (_zoneSpawnGeneration.get(mapId) !== generation) return;
       const scene = deps.zoneScenes.get(mapId)?.scene;
       if (!scene) return;
 
@@ -371,6 +458,7 @@
             rotationDeg: bldg.rotationDeg || 0, elevationY,
           });
         }
+        g.userData.mapEditorRef = { mapId, kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
         scene.add(g);
         groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
       }
@@ -385,6 +473,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           deps.zoneBuildingsGlbUpgradePending.delete(mapId);
+          if (_zoneSpawnGeneration.get(mapId) !== generation) return;
           _applyBuildingGlbTints();
           const scene2 = deps.zoneScenes.get(mapId)?.scene;
           if (!scene2) return;
@@ -405,6 +494,7 @@
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
               rotationDeg: bldg.rotationDeg || 0, elevationY,
             });
+            g.userData.mapEditorRef = { mapId, kind: 'building', id: bldg.id, col: bldg.gridX, row: bldg.gridZ };
             scene2.add(g);
             groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
           }
@@ -432,12 +522,35 @@
     const meshes = [];
     deps.zoneDecorFurnitureGroups.set(mapId, meshes);
 
+    const applyPlacementTransform = (object, record, baseY) => {
+      const uniform = record.postScale != null ? record.postScale : 1;
+      object.position.x += record.postX || 0;
+      object.position.y = baseY + (record.postY || 0);
+      object.position.z += record.postZ || 0;
+      object.rotation.y = (record.rotY || 0) * Math.PI / 180;
+      object.scale.set(record.postSX ?? uniform, record.postSY ?? uniform, record.postSZ ?? uniform);
+    };
+
     for (const d of decorDefs) {
       const result = deps.makeDecorativeFurnitureMesh(d.col, d.row, d.key, scene, mapId);
       if (!result) continue;
       const y = deps.NORMAL_TOP + (d.elevTier || 0) * deps.PLATEAU_UNIT;
-      result.mesh.position.y += y;
-      if (result.light) result.light.position.y += y;
+      applyPlacementTransform(result.mesh, d, y);
+      if (result.light) {
+        result.light.position.x += d.postX || 0;
+        result.light.position.y += y + (d.postY || 0);
+        result.light.position.z += d.postZ || 0;
+      }
+      result.mesh.userData.mapEditorRef = { mapId, kind: 'decor', id: d.id || null, key: d.key, col: d.col, row: d.row,
+        postX: d.postX || 0, postY: d.postY || 0, postZ: d.postZ || 0, rotY: d.rotY || 0,
+        postSX: d.postSX ?? d.postScale ?? 1, postSY: d.postSY ?? d.postScale ?? 1, postSZ: d.postSZ ?? d.postScale ?? 1 };
+      result.mesh.userData.mapEditorAux = {
+        light: result.light || null,
+        lightOffset: result.light ? result.light.position.clone().sub(result.mesh.position) : null,
+        sfxSource: result.sfxSource || null,
+        sfxOffsetX: result.sfxSource ? result.sfxSource.x - result.mesh.position.x : 0,
+        sfxOffsetZ: result.sfxSource ? result.sfxSource.z - result.mesh.position.z : 0,
+      };
       meshes.push(result.mesh);
     }
     for (const f of furnitureDefs) {
@@ -446,11 +559,16 @@
       const group = deps.buildFurnitureVisual(f.key, def.color || 0x888888);
       const y = deps.NORMAL_TOP + (f.elevTier || 0) * deps.PLATEAU_UNIT;
       group.position.set(f.col + 0.5, y, f.row + 0.5);
+      applyPlacementTransform(group, f, y);
       deps.markOutline(group);
       deps.markFurnitureEdgeId(group);
+      group.userData.mapEditorRef = { mapId, kind: 'furniture', id: f.id || null, key: f.key, col: f.col, row: f.row,
+        postX: f.postX || 0, postY: f.postY || 0, postZ: f.postZ || 0, rotY: f.rotY || 0,
+        postSX: f.postSX ?? f.postScale ?? 1, postSY: f.postSY ?? f.postScale ?? 1, postSZ: f.postSZ ?? f.postScale ?? 1 };
       scene.add(group);
       meshes.push(group);
-      window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, window.Music?.resolveFurnitureSfx(def));
+      const sfxSource = window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
+      group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
     deps.debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }
@@ -460,6 +578,7 @@
     detectTownBuildings,
     loadHousePieceFaceTexture,
     spawnTownBuildings,
+    spawnTownDecorFurniture,
     spawnZoneBuildings,
     spawnZoneDecorFurniture,
   };

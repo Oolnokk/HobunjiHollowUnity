@@ -18,6 +18,7 @@ on:
       - 'docs/js/harlyao-terror.js'
       - 'docs/js/house-pieces.js'
       - 'docs/js/maoao-arm-tint-runtime.js'
+      - 'docs/js/perp-rotation.js'
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
@@ -27,6 +28,7 @@ on:
       - 'scripts/test-harlyao-species.js'
       - 'scripts/test-harlyao-terror.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
+      - 'scripts/test-npc-facing-deadzone.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-shoulder-camera-reset-button.js'
       - '.github/workflows/character-presentation-regression.yml'
@@ -51,6 +53,8 @@ jobs:
         run: node scripts/test-harlyao-calendar-markers.js
       - name: Mao-ao arm tint regression
         run: node scripts/test-maoao-arm-tint-runtime.js
+      - name: NPC perspective-facing deadzone regression
+        run: node scripts/test-npc-facing-deadzone.js
       - name: Shoulder camera character framing regression
         run: node scripts/test-shoulder-camera-character-framing.js
       - name: Shoulder camera reset button regression

@@ -49,6 +49,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
 <script src="../../js/panel-ui.js"></script>
+<script src="../../js/map-live-preview.js?v=20260910a"></script>
 </head>
 <body>
 <div class="app" id="biaApp">
@@ -59,6 +60,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
       <button id="undoBtn" disabled>Undo</button>
       <button id="redoBtn" disabled>Redo</button>
       <button id="copyJsonBtn">Copy JSON</button>
+      <button id="updateMapEditorBtn" class="ok">Update Map Editor</button>
       <button id="downloadBtn" class="ok">Download JSON</button>
     </div>
   </header>
@@ -451,6 +453,25 @@ var state = {
   dragFurn: null,
   dragOff: null,
 };
+function loadInteriorData(data, source){
+  if(!data || data.schema!=='hobunji_building_interior.v1') return false;
+  pushUndo(); state.interior=JSON.parse(JSON.stringify(data)); afterLoad();
+  log('Loaded "'+(data.name||data.id||'interior')+'" from '+(source||'Map Editor')+'.');
+  return true;
+}
+var mapEditorEndpoint=window.MapLivePreview.createEndpoint('interior-author',function(message){
+  if(message.type==='interior-author-result'&&message.status==='applied') log('Map Editor updated. Use Reflect in Game there to rebuild the running scene.');
+  if(message.type==='open-interior-author') loadInteriorData(message.interior,'Map Editor');
+});
+
+function updateMapEditor(){
+  refreshExport();
+  var interior=JSON.parse(JSON.stringify(state.interior));
+  var direct=window.opener?._mapEditorBridge?.importBuildingInterior?.(interior);
+  var request={type:'interior-author-update',requestId:window.MapLivePreview.requestId('interior'),interior:interior};
+  if(!direct){ mapEditorEndpoint.send(request,{mirror:true}); window.open('../map-editor/index.html','hobunji-map-editor'); }
+  log(direct?'Updated the open Map Editor.':'Sent update to Map Editor; opening it now.');
+}
 
 // Same weekday names as docs/js/calendar-system.js's WEEKDAY_NAMES — this
 // standalone tool has no dependency on that module, so the list is kept in
@@ -1446,6 +1467,7 @@ $('fetchServerBtn').addEventListener('click',fetchServerMaps);
 $('newBtn').addEventListener('click',function(){ pushUndo(); state.interior=makeBlank(); afterLoad(); log('New interior.'); });
 $('undoBtn').addEventListener('click',undo);
 $('redoBtn').addEventListener('click',redo);
+$('updateMapEditorBtn').addEventListener('click',updateMapEditor);
 $('mapId').addEventListener('change',function(){state.interior.id=$('mapId').value.trim();});
 $('mapName').addEventListener('change',function(){state.interior.name=$('mapName').value.trim();});
 $('wallStyle').addEventListener('change',function(){pushUndo(); state.interior.wallStyle=$('wallStyle').value||undefined; rebuild3D(); refreshExport();});
@@ -1490,8 +1512,11 @@ initTC();
 afterLoad();
 animate();
 log('Building Interior Editor ready.');
+var latestMapEditorMessage=mapEditorEndpoint.readLatest(); // Receives an unsaved map sent just before a standalone editor window opened.
+if(latestMapEditorMessage&&latestMapEditorMessage.type==='open-interior-author') loadInteriorData(latestMapEditorMessage.interior,'Map Editor');
 // Hub bridge — lets the parent dev-tools hub load a server map into this editor
 window._biaBridge = {
+  loadData: function(data, source) { return loadInteriorData(data, source || 'hub'); },
   loadFromServer: function(mapId) {
     fetch('../../config/maps/' + mapId + '.json')
       .then(function(r) { return r.json(); })
