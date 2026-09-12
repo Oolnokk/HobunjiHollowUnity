@@ -44,7 +44,13 @@
   // every den and cave locale in the game. Dens can recolor it per den family;
   // locale caves default to the ordinary carved-stone surface unless their
   // authored visual metadata asks for the grehlr soil variant.
-  const CAVE_SMALL_GLB_PATH = 'assets/models/cave_small.glb';
+  const ZONE_FEATURE_SCRIPT_SRC = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Resolves cave assets correctly from docs/index.html and nested preview tools.
+  function zoneFeatureAssetUrl(path) {
+    if (!ZONE_FEATURE_SCRIPT_SRC || typeof URL === 'undefined') return path;
+    try { return new URL('../' + String(path || '').replace(/^\/+/, ''), ZONE_FEATURE_SCRIPT_SRC).href; }
+    catch (_) { return path; }
+  }
+  const CAVE_SMALL_GLB_PATH = zoneFeatureAssetUrl('assets/models/cave_small.glb');
   // Halves a normal den's visual footprint (see buildAnimalDenMeshes). Locale
   // caves multiply this by visual.scale, so visual.scale:2 fills the complete
   // authored footprint while still using the exact den-rendering geometry path.
@@ -52,8 +58,8 @@
   const DEN_SINK = 0.35; // Settles the model's base slightly below ground level so it doesn't look like it's floating on top of the terrain.
   const DEN_CAVE_TEXTURE_REPEAT = 0.35;
   const DEN_CAVE_VARIANTS = {
-    grehlr: { textureUrl: 'assets/textures/canvas.png', color: 0x423d35 },
-    default: { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080 },
+    grehlr: { textureUrl: zoneFeatureAssetUrl('assets/textures/canvas.png'), color: 0x423d35 },
+    default: { textureUrl: zoneFeatureAssetUrl('assets/textures/carved_smooth.png'), color: 0x808080 },
   };
   function denCaveVariantFor(denMotherKind) {
     return (typeof denMotherKind === 'string' && denMotherKind.startsWith('grehlr')) ? DEN_CAVE_VARIANTS.grehlr : DEN_CAVE_VARIANTS.default;
