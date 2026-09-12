@@ -13,6 +13,10 @@
   let gameplayLock = null; // Shared movement/tool/action lock held for the complete placement-edit session.
   let transformSendTimer = null;
   const raycaster = new THREE.Raycaster(); // Shared picker raycaster; created once instead of per pointer event.
+  let orbitState = null; // {target, azimuth, elevation, distance, dragging, lastX, lastY} while a placement is selected — see startOrbit/stopOrbit.
+  const ORBIT_DEG_PER_PX = 0.3;
+  const ORBIT_MIN_ELEVATION_DEG = -85;
+  const ORBIT_MAX_ELEVATION_DEG = 85;
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -64,6 +68,12 @@
     const open = panel.style.display !== 'flex';
     panel.style.display = open ? 'flex' : 'none';
     button?.classList.toggle('fed-open', open);
+    // Read by game.js's mousemove handler: mouse-driven camera rotation is
+    // suppressed for the whole Map Edit session, not just while a placement
+    // is actively selected (__mapEditorGizmoActive) — otherwise stray mouse
+    // movement spins the camera out from under the panel, or fights a
+    // Click to Select attempt before anything is even selected yet.
+    window.__mapEditorPanelOpen = open;
     if (open) refreshPanel();
   }
 
@@ -71,6 +81,7 @@
     const panel = document.getElementById('mapEditPanel');
     if (panel) panel.style.display = 'none';
     document.getElementById('mapEditBtn')?.classList.remove('fed-open');
+    window.__mapEditorPanelOpen = false;
     disarmPicker();
     if (selectedPlacement) detachPlacement();
   }
@@ -104,6 +115,7 @@
     window.__mapEditorGizmoActive = true;
     gameplayLock = gameplayLock || window.CharacterActionLocks?.acquire?.({ owner: 'map-editor-gizmo', reason: 'Adjusting a map placement', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     control.attach(node);
+    startOrbit(node);
     refreshPanel();
   }
 
@@ -113,8 +125,88 @@
     gameplayLock?.release?.(); gameplayLock = null;
     window.__mapEditorGizmoDragging = false;
     window.__mapEditorGizmoActive = false;
+    stopOrbit();
     selectedPlacement = null;
     refreshPanel();
+  }
+
+  // While a placement is selected, the player's own follow camera
+  // (game.js's updateCameraPosition, which skips its normal pose whenever
+  // window.__mapEditorOrbitActive is set) is replaced by a free orbit
+  // around the selected object, so it can be inspected/positioned from any
+  // angle instead of whatever direction the player happens to be facing.
+  // Starts from the camera's current view of the target (no snap-cut), and
+  // only engages on a plain click-drag that misses every TransformControls
+  // handle — dragging the move/rotate/scale gizmo itself must never also
+  // spin the camera.
+  function sphericalFromCameraToTarget(targetPos) {
+    const offset = deps.camera.position.clone().sub(targetPos);
+    const distance = Math.max(0.5, offset.length());
+    const elevation = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(offset.y / distance, -1, 1))), ORBIT_MIN_ELEVATION_DEG, ORBIT_MAX_ELEVATION_DEG);
+    const azimuth = THREE.MathUtils.radToDeg(Math.atan2(offset.x, offset.z));
+    return { azimuth, elevation, distance };
+  }
+
+  function applyOrbitCamera() {
+    if (!orbitState) return;
+    const { azimuth, elevation, distance, target } = orbitState;
+    const azRad = THREE.MathUtils.degToRad(azimuth);
+    const elRad = THREE.MathUtils.degToRad(elevation);
+    const horizontal = Math.cos(elRad) * distance;
+    const tx = target.position.x, ty = target.position.y, tz = target.position.z;
+    deps.camera.position.set(tx + horizontal * Math.sin(azRad), ty + Math.sin(elRad) * distance, tz + horizontal * Math.cos(azRad));
+    deps.camera.lookAt(tx, ty, tz);
+  }
+
+  function onOrbitPointerDown(event) {
+    if (!orbitState || event.button !== 0) return;
+    // transformControl's own pointerdown listener (registered once, when
+    // ensureTransformControl() first constructed it — always before this
+    // per-selection listener, which is added fresh in startOrbit on every
+    // attach) has already run by the time this fires, synchronously setting
+    // .axis/.dragging if the pointer hit a gizmo handle. Only orbit when it
+    // didn't.
+    if (transformControl?.dragging || transformControl?.axis) return;
+    orbitState.dragging = true;
+    orbitState.lastX = event.clientX;
+    orbitState.lastY = event.clientY;
+    window.addEventListener('pointermove', onOrbitPointerMove);
+    window.addEventListener('pointerup', onOrbitPointerUp);
+  }
+
+  function onOrbitPointerMove(event) {
+    if (!orbitState?.dragging) return;
+    const dx = event.clientX - orbitState.lastX;
+    const dy = event.clientY - orbitState.lastY;
+    orbitState.lastX = event.clientX;
+    orbitState.lastY = event.clientY;
+    orbitState.azimuth -= dx * ORBIT_DEG_PER_PX;
+    orbitState.elevation = THREE.MathUtils.clamp(orbitState.elevation + dy * ORBIT_DEG_PER_PX, ORBIT_MIN_ELEVATION_DEG, ORBIT_MAX_ELEVATION_DEG);
+    applyOrbitCamera();
+  }
+
+  function onOrbitPointerUp() {
+    if (orbitState) orbitState.dragging = false;
+    window.removeEventListener('pointermove', onOrbitPointerMove);
+    window.removeEventListener('pointerup', onOrbitPointerUp);
+  }
+
+  function startOrbit(node) {
+    stopOrbit();
+    const spherical = sphericalFromCameraToTarget(node.position);
+    orbitState = { target: node, dragging: false, lastX: 0, lastY: 0, ...spherical };
+    window.__mapEditorOrbitActive = true;
+    deps.renderer.domElement.addEventListener('pointerdown', onOrbitPointerDown);
+    applyOrbitCamera(); // reproduces the camera's current pose from the derived angles — no visible jump on selection
+  }
+
+  function stopOrbit() {
+    if (!orbitState) return;
+    deps.renderer.domElement.removeEventListener('pointerdown', onOrbitPointerDown);
+    window.removeEventListener('pointermove', onOrbitPointerMove);
+    window.removeEventListener('pointerup', onOrbitPointerUp);
+    orbitState = null;
+    window.__mapEditorOrbitActive = false;
   }
 
   function setGizmoMode(mode) {

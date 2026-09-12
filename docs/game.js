@@ -18933,8 +18933,14 @@
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
         const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
         const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
-        camera.position.set(safe.x, safe.y, safe.z);
-        camera.lookAt(lookAtX, lookY, lookAtZ);
+        // The Map Editor's orbit-around-selection camera (map-live-preview-
+        // runtime.js) owns camera.position/lookAt directly while a placement
+        // is selected — skip the normal player-follow pose so this per-frame
+        // recompute doesn't fight it, while still keeping fov/aspect current.
+        if (!window.__mapEditorOrbitActive) {
+          camera.position.set(safe.x, safe.y, safe.z);
+          camera.lookAt(lookAtX, lookY, lookAtZ);
+        }
         camera.fov = modeCfg.fovDeg ?? 42;
         camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
         camera.updateProjectionMatrix();
@@ -25119,7 +25125,12 @@
           if (desktopWeaponPointerSlots.has(0) && (Number(e.buttons) & 1) === 0) {
             finishDesktopMouseAction({ button: 0, pointerType: 'mouse' });
           }
-          if (window.__mapEditorGizmoActive) return;
+          // __mapEditorPanelOpen covers the whole Map Edit panel session,
+          // not just an active placement selection (__mapEditorGizmoActive)
+          // — mouse movement shouldn't spin the camera out from under the
+          // panel, or hijack a Click to Select attempt, before anything is
+          // even selected yet.
+          if (window.__mapEditorGizmoActive || window.__mapEditorPanelOpen) return;
           // A floating menu (the pause/inventory menu incl. its Alchemy tab,
           // the cooking hearth/campfire modal via setInteractionBlocked, or
           // the utilities wheel/an entries arc like potion/ammo select) owns
