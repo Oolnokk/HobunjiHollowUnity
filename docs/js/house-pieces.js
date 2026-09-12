@@ -32,8 +32,8 @@
     ['Ghostify', 'ghostify.js?v=20260909a'],
     // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
-    // Western Slope Porakaneki: normal-NPC chief planning plus loose reactive generated hunters that collapse to abstract agents outside the player's chunk.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912c'],
+    // Porakaneki camp network: 2-4 procedural camps on every wilderness map plus one larger chief camp that migrates with the regional season; residents collapse to abstract agents off-chunk.
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912d'],
     // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.
     ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260911a'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
