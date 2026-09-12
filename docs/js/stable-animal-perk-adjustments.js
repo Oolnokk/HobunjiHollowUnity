@@ -159,6 +159,18 @@
     return null;
   }
 
+  function greetingRapportReason(animalId) {
+    return `pet_greeting:${animalId}`;
+  }
+
+  function greetingAlreadyRecorded(npcId, animalId, day) {
+    const memory = window.DialogueContent?.getNpcDlgState?.(npcId)?.memory || [];
+    const reason = greetingRapportReason(animalId);
+    return memory.some(item => item?.type === 'rapport'
+      && Math.floor(Number(item.day)) === day
+      && item?.reason === reason);
+  }
+
   function awardGreetingRapport(options, animal) {
     const npcId = String(options?.speakerId || '');
     if (!npcId || !animal) return 0;
@@ -168,9 +180,9 @@
       greetedToday.clear();
     }
     const key = `${npcId}:${animal.entry.id}`;
-    if (greetedToday.has(key)) return 0;
+    if (greetedToday.has(key) || greetingAlreadyRecorded(npcId, animal.entry.id, day)) return 0;
     greetedToday.add(key);
-    return window.NpcRapport?.adjust?.(npcId, PET_GREETING_RAPPORT, `pet_greeting:${animal.entry.id}`) || 0;
+    return window.NpcRapport?.adjust?.(npcId, PET_GREETING_RAPPORT, greetingRapportReason(animal.entry.id)) || 0;
   }
 
   function patchAmbientDialogue(api) {
