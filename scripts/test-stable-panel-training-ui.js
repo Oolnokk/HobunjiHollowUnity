@@ -107,13 +107,18 @@ const stable = [
 let activeCompanionId = null;
 let activeMountId = null;
 let saveCount = 0;
+let writtenCoreScript = '';
 const stableList = new FakeElement('div');
 
 const document = {
-  readyState: 'complete',
+  // This is the important part of the regression: in a real parser-inserted
+  // external script, document.write() queues the inserted script token; it does
+  // NOT execute farm-panel-core.js before farm-panel.js itself returns.
+  readyState: 'loading',
   head: new FakeElement('head'),
   createElement: tagName => new FakeElement(tagName),
   getElementById: id => id === 'stableList' ? stableList : null,
+  write(html) { writtenCoreScript += String(html || ''); },
 };
 
 const companionGeneral = { id: 'rapportBond', name: 'Trusted Company', maxRank: 5, desc: '+6% positive NPC rapport per rank.' };
@@ -158,14 +163,13 @@ const refinements = {
   companionCombatModifiers() { return { damage: 1, cooldown: 1, range: 1, staminaCost: 1 }; },
 };
 
-const FarmPanel = { init() {}, renderStablePanel() { throw new Error('legacy Stable renderer should have been replaced'); } };
+const legacyFarmPanel = { init() {}, renderStablePanel() { throw new Error('legacy Stable renderer should have been replaced'); } };
 const context = {
   window: null,
   document,
   console,
   StableAnimalProgression: progression,
   StableAnimalTrainingRefinements: refinements,
-  FarmPanel,
   CreatureGenetics: {
     stableEntryRole: entry => entry.role,
     defaultLivestockName: kind => kind,
@@ -180,11 +184,42 @@ const context = {
   CREATURE_DB: { 'dabinggi-hound': { label: 'Dabinggi Hound' }, 'gar-wolf': { label: 'Gar-wolf' } },
 };
 context.window = context;
+
+// Simulate the existing livestock-nursery bridge already owning FarmPanel's
+// parser-time setter. farm-panel.js must chain through this instead of replacing
+// it, because the real game needs both installers at the same publication.
+let bridgePending = null;
+let bridgeInstallCount = 0;
+Object.defineProperty(context, 'FarmPanel', {
+  configurable: true,
+  enumerable: true,
+  get() { return bridgePending; },
+  set(value) {
+    bridgePending = value;
+    Object.defineProperty(context, 'FarmPanel', {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value,
+    });
+    bridgeInstallCount++;
+  },
+});
+
 vm.createContext(context);
 const source = fs.readFileSync('docs/js/farm-panel.js', 'utf8');
 vm.runInContext(source, context, { filename: 'farm-panel.js' });
 
-assert.equal(context.FarmPanel.__nativeStableTrainingRenderer, true, 'FarmPanel installs the native Stable training renderer itself');
+assert.match(writtenCoreScript, /farm-panel-core\.js/, 'farm-panel.js queues the core script while the HTML parser is paused');
+assert.equal(context.FarmPanel, null, 'queued parser script has not executed yet when farm-panel.js returns');
+
+// Now reproduce what the browser does next: the parser reaches the written
+// external script and farm-panel-core.js publishes window.FarmPanel. The armed
+// setter must delegate to the nursery bridge and install the native renderer in
+// the same synchronous handoff.
+context.FarmPanel = legacyFarmPanel;
+assert.equal(bridgeInstallCount, 1, 'existing FarmPanel publication bridge still receives the core API');
+assert.equal(context.FarmPanel.__nativeStableTrainingRenderer, true, 'native Stable renderer installs when the delayed core actually publishes');
 assert.equal(context.FarmPanel.__stableAnimalProgressionWrapped, true, 'legacy progression decorator is blocked from wrapping the native renderer');
 assert.equal(context.FarmPanel.__stableTrainingRefinementsWrapped, true, 'legacy refinement decorator is blocked from wrapping the native renderer');
 
@@ -226,5 +261,6 @@ assert.equal(saveCount, 0, 'expanding/collapsing UI does not mutate the save');
 
 assert.doesNotMatch(source, /leveling coming soon/i, 'farm-panel.js itself contains no obsolete leveling placeholder');
 assert.match(source, /function renderStablePanelNative\(/, 'Stable UI is rendered directly by farm-panel.js, not by a post-render decorator');
+assert.match(source, /armNativeInstallOnFarmPanelPublication/, 'browser parser timing is handled at the FarmPanel publication boundary');
 
 console.log('Native Stable panel training UI regression tests passed.');
