@@ -9,12 +9,14 @@ on:
       - 'docs/js/plateau-fall-live-bridge.js'
       - 'docs/js/footing-damage-recovery-bridge.js'
       - 'docs/js/gravity-ragdoll-fall-bridge.js'
+      - 'docs/js/farm-buildings.js'
       - 'scripts/test-roof-climb.js'
       - 'scripts/test-roof-climb-pixel-probe.js'
       - 'scripts/test-climb-proximity-prompt.js'
       - 'scripts/test-plateau-fall-landings.js'
       - 'scripts/test-plateau-fall-live-bridge.js'
       - 'scripts/test-gravity-ragdoll-falls.js'
+      - 'scripts/test-roof-barn-entry.js'
       - '.github/workflows/elevated-surface-regression.yml'
   push:
     branches: [main]
@@ -25,12 +27,14 @@ on:
       - 'docs/js/plateau-fall-live-bridge.js'
       - 'docs/js/footing-damage-recovery-bridge.js'
       - 'docs/js/gravity-ragdoll-fall-bridge.js'
+      - 'docs/js/farm-buildings.js'
       - 'scripts/test-roof-climb.js'
       - 'scripts/test-roof-climb-pixel-probe.js'
       - 'scripts/test-climb-proximity-prompt.js'
       - 'scripts/test-plateau-fall-landings.js'
       - 'scripts/test-plateau-fall-live-bridge.js'
       - 'scripts/test-gravity-ragdoll-falls.js'
+      - 'scripts/test-roof-barn-entry.js'
       - '.github/workflows/elevated-surface-regression.yml'
 
 jobs:
@@ -53,6 +57,7 @@ jobs:
           node --check docs/js/plateau-fall-live-bridge.js
           node --check docs/js/footing-damage-recovery-bridge.js
           node --check docs/js/gravity-ragdoll-fall-bridge.js
+          node --check docs/js/farm-buildings.js
 
       - name: Test plateau fall landing policy
         run: node scripts/test-plateau-fall-landings.js
@@ -71,3 +76,6 @@ jobs:
 
       - name: Test roof climb Pixel Probe diagnostics
         run: node scripts/test-roof-climb-pixel-probe.js
+
+      - name: Test roof barn entry guard
+        run: node scripts/test-roof-barn-entry.js
