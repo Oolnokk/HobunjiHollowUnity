@@ -6,7 +6,7 @@
 
   const META_KEY = 'hobunjiRoofClimbStructure';
   const SECTION = '=== Roof climb diagnostics ===';
-  const MAX_PLAYER_WALL_DISTANCE = 1.75; // Mirrors roof-climb.js player-proximity targeting.
+  const DEFAULT_MAX_PLAYER_WALL_DISTANCE = 0.42; // Fallback for the final near-contact structural climb policy.
   const EPS = 1e-6;
 
   let runtimeDeps = null; // Captured from PixelProbe.init; used to report the live player/roof target state.
@@ -14,6 +14,10 @@
   let appending = false; // Prevents the MutationObserver from recursively reacting to its own report append.
 
   function finite(value) { return Number.isFinite(Number(value)); }
+  function maxPlayerWallDistance() {
+    const live = Number(window.HobunjiRoofClimb?.maxWallDistanceTiles);
+    return Number.isFinite(live) && live > 0 ? live : DEFAULT_MAX_PLAYER_WALL_DISTANCE;
+  }
 
   function activeStructureMetas() {
     const scene = window.GridTileAccessors?.getActiveScene?.();
@@ -92,10 +96,11 @@
     const target = window.HobunjiRoofClimb?.getRoofClimbTarget?.() || null;
     const latestDebug = roofDebug();
     const nearestWall = nearestWallDistanceFromPlayer();
+    const maxDistance = maxPlayerWallDistance();
     if (!target) {
       const distance = nearestWall?.distance;
-      const reason = Number.isFinite(distance) && distance > MAX_PLAYER_WALL_DISTANCE
-        ? `nearest structural wall is too far from player (${distance.toFixed(3)} > ${MAX_PLAYER_WALL_DISTANCE.toFixed(2)} tiles)`
+      const reason = Number.isFinite(distance) && distance > maxDistance
+        ? `nearest structural wall is too far from player (${distance.toFixed(3)} > ${maxDistance.toFixed(2)} tiles)`
         : latestDebug.lastBlockReason || 'no valid structural roof climb target';
       return {
         wallHit: !!nearestWall,
@@ -129,11 +134,13 @@
     const debug = result.debug || {};
     const prompt = promptDebug();
     const methods = debug.liveMethods || {};
+    const maxDistance = maxPlayerWallDistance();
     const lines = [
       '',
       SECTION,
       'Entrance-adjacent exclusion: DISABLED',
-      'Targeting model: nearest structural wall to PLAYER (camera ray not required)',
+      `Targeting model: structural wall contact <= ${maxDistance.toFixed(2)} tiles from PLAYER (camera ray not required)`,
+      `Surface refinement: hooks=${debug.surfaceRefinementHooksCurrent ? 'current' : 'missing/stale'} deps=${debug.surfaceRefinementDepsCaptured ? 'captured' : 'fallback'} wallOffset=${Number(debug.surfaceOffsets?.wallTiles ?? 0).toFixed(2)} roofOffsetY=${Number(debug.surfaceOffsets?.roofY ?? 0).toFixed(2)}`,
       `Roof runtime: source=${debug.runtimeDepsSource || 'unknown'} player=${debug.runtimePlayerReady ? 'ready' : 'missing'} climbInitCapture=${debug.climbDepsCaptured ? 'yes' : 'no'} hooks=${debug.climbHooksCurrent ? 'current' : 'missing/stale'}`,
       `Roof live methods: get=${methods.getClimbTarget || window.ClimbSystem?.getClimbTarget?.name || '-'} start=${methods.startClimb || window.ClimbSystem?.startClimb?.name || '-'} update=${methods.updateClimb || window.ClimbSystem?.updateClimb?.name || '-'}`,
       `Climb popup/action bridge: popupPatched=${prompt.popupPatched ? 'yes' : 'no'} targetBridge=${prompt.climbTargetBridgePatched ? 'yes' : 'no'} current=${prompt.climbTargetBridgeCurrent ? 'yes' : 'no'} visible=${prompt.visible ? 'yes' : 'no'} target=${prompt.targetType || '-'} actionable=${prompt.actionable ? 'yes' : 'no'} source=${prompt.targetSource || '-'} reason=${prompt.reason || '-'}`,
@@ -141,17 +148,20 @@
     const nearest = result.nearestWall;
     if (!result.climbable) {
       if (nearest && Number.isFinite(nearest.distance)) {
-        lines.push(`Nearest structural wall: face=${nearest.wallFaceId ?? '-'} distance=${nearest.distance.toFixed(3)} / ${MAX_PLAYER_WALL_DISTANCE.toFixed(2)} tiles`);
+        lines.push(`Nearest structural wall: face=${nearest.wallFaceId ?? '-'} distance=${nearest.distance.toFixed(3)} / ${maxDistance.toFixed(2)} tiles`);
       } else {
         lines.push('Nearest structural wall: none');
       }
       lines.push(`Climbable: NO — ${result.reason}`);
       return lines;
     }
-    lines.push(`Structural wall target: YES face=${result.wallFaceId ?? '-'} distance=${Number(result.playerDistance || 0).toFixed(3)} / ${MAX_PLAYER_WALL_DISTANCE.toFixed(2)} tiles`);
+    lines.push(`Structural wall target: YES face=${result.wallFaceId ?? '-'} distance=${Number(result.playerDistance || 0).toFixed(3)} / ${maxDistance.toFixed(2)} tiles`);
     if (result.point) lines.push(`Wall point: (${Number(result.point.x || 0).toFixed(3)},${Number(result.point.y || 0).toFixed(3)},${Number(result.point.z || 0).toFixed(3)})`);
     if (result.landing && [result.landing.x, result.landing.y, result.landing.z].every(Number.isFinite)) {
       lines.push(`Roof landing: (${result.landing.x.toFixed(3)},${result.landing.y.toFixed(3)},${result.landing.z.toFixed(3)}) on authored roof plane via ${result.landingSource}`);
+    }
+    if (debug.lastMovementInput) {
+      lines.push(`Roof movement: input=(${Number(debug.lastMovementInput.x || 0).toFixed(3)},${Number(debug.lastMovementInput.y || 0).toFixed(3)}) source=${debug.lastMovementInput.source || '-'} movedPx=${Number(debug.lastMovementMovedPx || 0).toFixed(2)}`);
     }
     lines.push(`Climbable: YES — ${result.reason}`);
     return lines;
