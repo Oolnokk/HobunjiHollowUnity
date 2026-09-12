@@ -7,6 +7,7 @@
   const FPS_PREF_KEY = 'hobunji_fps_counter_v1';
   const PROFILER_PREF_KEY = 'hobunji_perf_profiler_v1';
   const TREE_MODE_KEY = 'hobunji_tree_asset_mode_v1';
+  const BACKDROP_BLUR_DIAGNOSTIC_KEY = 'hobunji_disable_backdrop_blur_v1';
 
   const readStorage = (key, fallback = null) => {
     try {
@@ -24,6 +25,7 @@
 
   let fpsEnabled = readStorage(FPS_PREF_KEY, '0') === '1';
   let profilerEnabled = readStorage(PROFILER_PREF_KEY, '0') === '1';
+  let backdropBlurDisabled = readStorage(BACKDROP_BLUR_DIAGNOSTIC_KEY, '0') === '1';
   const perfState = {
     raf: 0,
     lastFrameTs: 0,
@@ -329,6 +331,42 @@
       if (overlay) overlay.style.display = 'none';
     }
     startFrameLoopIfNeeded();
+  }
+
+  // Diagnostic toggle, not a real fix: this codebase uses backdrop-filter:
+  // blur() in 30+ places (docs/style.css, docs/onboarding.css,
+  // docs/cooking-ui.css), including #menuPanel at blur(24px) -- the single
+  // largest radius in the file. #menuPanel and several other panels stay
+  // mounted at opacity:0 rather than display:none while "closed" (so their
+  // open/close CSS transition has something to animate), but opacity does
+  // NOT let a browser skip the backdrop-filter compositing cost the way
+  // display:none would -- the compositor still has to keep re-sampling and
+  // blurring whatever's behind the panel (the animating 3D scene) every
+  // single frame, for as long as the panel is mounted, whether or not it's
+  // actually visible. That cost happens entirely in the browser's own
+  // paint/composite pipeline, never inside any JS callback -- which is
+  // exactly why it wouldn't show up in either the requestAnimationFrame or
+  // MutationObserver auto-instrumentation above; JS-side timing has no way
+  // to see it. This toggle removes every backdrop-filter on the page via one
+  // !important override, so its FPS impact (if any) can be checked directly
+  // instead of guessed at from the outside.
+  function setBackdropBlurDisabled(disabled) {
+    backdropBlurDisabled = !!disabled;
+    writeStorage(BACKDROP_BLUR_DIAGNOSTIC_KEY, backdropBlurDisabled ? '1' : '0');
+    const input = document.getElementById('settingDisableBackdropBlur');
+    if (input) input.checked = backdropBlurDisabled;
+    const STYLE_ID = 'hobunjiDisableBackdropBlurStyle';
+    let styleEl = document.getElementById(STYLE_ID);
+    if (backdropBlurDisabled) {
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = STYLE_ID;
+        styleEl.textContent = '*, *::before, *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }';
+        document.head.appendChild(styleEl);
+      }
+    } else if (styleEl) {
+      styleEl.remove();
+    }
   }
 
   function recordSubsystem(name, elapsedMs) {
@@ -713,6 +751,11 @@
     perf.input.addEventListener('change', () => setProfilerEnabled(perf.input.checked));
     box.appendChild(perf.row);
 
+    const backdropBlur = makeCheckboxRow('settingDisableBackdropBlur', 'Disable backdrop blur (diagnostic)', backdropBlurDisabled,
+      'Menus use backdrop-filter: blur() to frost the game world behind them, including #menuPanel at blur(24px). Closed panels stay in the page at opacity:0 rather than display:none (so they can fade in/out), and opacity does not let the browser skip the blur\'s compositing cost -- it can keep re-blurring the animating scene behind an invisible panel every frame. This removes every blur on the page so you can check its real FPS impact directly. Visual-only: menus still work, they just render sharp instead of frosted.');
+    backdropBlur.input.addEventListener('change', () => setBackdropBlurDisabled(backdropBlur.input.checked));
+    box.appendChild(backdropBlur.row);
+
     // Flashes a button's own label as inline feedback (e.g. "Copied!") and
     // reverts it after a moment — deliberate alternative to log()/__farmLog
     // for this whole cache-snapshot section, so neither a manual snapshot
@@ -943,6 +986,7 @@
     installCloudForestFogHook();
     setFpsEnabled(fpsEnabled);
     setProfilerEnabled(profilerEnabled);
+    setBackdropBlurDisabled(backdropBlurDisabled);
     startLagWatch();
     setTimeout(checkBakedTreeHealth, 4000);
   }
