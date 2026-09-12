@@ -25237,6 +25237,13 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // window.PerfProfiler?.measure(name, fn) would skip calling fn
+          // entirely (not just the timing) if PerfProfiler were ever
+          // undefined, since optional chaining short-circuits the whole
+          // call -- unlike every other PerfProfiler use in this file, fn
+          // here IS this handler's real mouse-look/aim logic, so it must
+          // always run regardless of whether the profiler is present.
+          const run = () => {
           // A missing right-button up can still be proven by the buttons
           // bitmask on the next real mouse event. End the owned hold before
           // camera-look or aiming gets a chance to use that event.
@@ -25325,6 +25332,9 @@
               lastMouseMoveTime = performance.now();
             }
           }
+          };
+          if (window.PerfProfiler) window.PerfProfiler.measure('event: mousemove (camera-look/aim)', run);
+          else run();
         });
       }
       // ── Furniture placer pointer handler ───────────────────────────
