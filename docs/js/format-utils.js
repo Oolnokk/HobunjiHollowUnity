@@ -54,6 +54,75 @@
     document.head.appendChild(script);
   })();
 
+  // Roof climbing must see the post-entry-carve authored structure planes, but
+  // must install before climb-system.js so its final wrapper can capture the
+  // existing climb animation before game.js initializes it.
+  (function loadRoofClimb() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/roof-climb.js?v=20260911roofclimb5'; // Cache-busts self-healing player-proximity structural wall/roof climbing behavior.
+    if (window.HobunjiRoofClimb || document.querySelector('script[data-hobunji-roof-climb]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-roof-climb="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiRoofClimb = '1';
+    document.head.appendChild(script);
+  })();
+
+  // Final structural-surface policy sits above roof-climb.js: near-contact wall
+  // gating, wall-plane-following animation, fresh-input roof movement, and
+  // explicit wall/shingle visual offsets all live here. It still loads before
+  // climb-system.js so it can capture the exact movement deps synchronously.
+  (function loadRoofClimbSurfaceRefinement() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/roof-climb-surface-refinement.js?v=20260912a'; // Cache-busts contact-distance, wall-angle, roof-movement, and surface-offset refinements.
+    if (window.HobunjiRoofClimbSurfaceRefinement || document.querySelector('script[data-hobunji-roof-surface-refinement]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-roof-surface-refinement="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiRoofSurfaceRefinement = '1';
+    document.head.appendChild(script);
+  })();
+
+  // Extends roof climbing with Pixel Probe diagnostics and deliberately removes
+  // the old entrance-adjacency exclusion. Load immediately after roof-climb so
+  // every later building spawn receives the same entrance-neutral metadata.
+  (function loadRoofClimbPixelProbe() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/roof-climb-pixel-probe.js?v=20260912roofprobe6'; // Cache-busts final contact-threshold, surface-offset, and movement diagnostics.
+    if (window.HobunjiRoofClimbProbe || document.querySelector('script[data-hobunji-roof-climb-probe]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-roof-climb-probe="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiRoofClimbProbe = '1';
+    document.head.appendChild(script);
+  })();
+
+  // Plateau walk-off detection needs the same fresh getMovementInput dependency
+  // ClimbSystem uses, rather than player.inputX/Y from the previous movement tick.
+  // Load before climb-system.js so this bridge can capture its init dependencies.
+  (function loadPlateauFallLiveBridge() {
+    if (typeof document === 'undefined') return;
+    const src = 'js/plateau-fall-live-bridge.js?v=20260911plateaufalllive2'; // Cache-busts fallback-aware fresh-input plateau fall detection and diagnostics.
+    if (window.HobunjiPlateauFallLive || document.querySelector('script[data-hobunji-plateau-fall-live]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-plateau-fall-live="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Used only when FormatUtils is loaded after initial HTML parsing.
+    script.src = src;
+    script.dataset.hobunjiPlateauFallLive = '1';
+    document.head.appendChild(script);
+  })();
+
   // Small formatting/math helpers extracted out of game.js following the
   // same window.<Namespace> + init(deps) pattern already used by
   // js/dye-system.js and js/bounty-board.js. equipmentSlots/TOOL_ITEM_DEFS/
@@ -78,7 +147,7 @@
     context.arcTo(x + width, y, x + width, y + height, radius);
     context.arcTo(x + width, y + height, x, y + height, radius);
     context.arcTo(x, y + height, x, y, radius);
-    context.arcTo(x, y, x + width, y, radius);
+    context.arcTo(x, y, x + radius, y, radius);
     context.closePath();
   }
 

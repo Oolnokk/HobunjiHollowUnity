@@ -1,0 +1,92 @@
+name: Elevated surface regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/roof-climb.js'
+      - 'docs/js/roof-climb-surface-refinement.js'
+      - 'docs/js/roof-climb-pixel-probe.js'
+      - 'docs/js/climb-proximity-prompt.js'
+      - 'docs/js/plateau-fall-live-bridge.js'
+      - 'docs/js/footing-damage-recovery-bridge.js'
+      - 'docs/js/gravity-ragdoll-fall-bridge.js'
+      - 'docs/js/farm-buildings.js'
+      - 'docs/js/format-utils.js'
+      - 'scripts/test-roof-climb.js'
+      - 'scripts/test-roof-climb-surface-refinement.js'
+      - 'scripts/test-roof-climb-pixel-probe.js'
+      - 'scripts/test-climb-proximity-prompt.js'
+      - 'scripts/test-plateau-fall-landings.js'
+      - 'scripts/test-plateau-fall-live-bridge.js'
+      - 'scripts/test-gravity-ragdoll-falls.js'
+      - 'scripts/test-roof-barn-entry.js'
+      - '.github/workflows/elevated-surface-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/roof-climb.js'
+      - 'docs/js/roof-climb-surface-refinement.js'
+      - 'docs/js/roof-climb-pixel-probe.js'
+      - 'docs/js/climb-proximity-prompt.js'
+      - 'docs/js/plateau-fall-live-bridge.js'
+      - 'docs/js/footing-damage-recovery-bridge.js'
+      - 'docs/js/gravity-ragdoll-fall-bridge.js'
+      - 'docs/js/farm-buildings.js'
+      - 'docs/js/format-utils.js'
+      - 'scripts/test-roof-climb.js'
+      - 'scripts/test-roof-climb-surface-refinement.js'
+      - 'scripts/test-roof-climb-pixel-probe.js'
+      - 'scripts/test-climb-proximity-prompt.js'
+      - 'scripts/test-plateau-fall-landings.js'
+      - 'scripts/test-plateau-fall-live-bridge.js'
+      - 'scripts/test-gravity-ragdoll-falls.js'
+      - 'scripts/test-roof-barn-entry.js'
+      - '.github/workflows/elevated-surface-regression.yml'
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax check elevated-surface modules
+        run: |
+          node --check docs/js/roof-climb.js
+          node --check docs/js/roof-climb-surface-refinement.js
+          node --check docs/js/roof-climb-pixel-probe.js
+          node --check docs/js/climb-proximity-prompt.js
+          node --check docs/js/plateau-fall-live-bridge.js
+          node --check docs/js/footing-damage-recovery-bridge.js
+          node --check docs/js/gravity-ragdoll-fall-bridge.js
+          node --check docs/js/farm-buildings.js
+          node --check docs/js/format-utils.js
+
+      - name: Test plateau fall landing policy
+        run: node scripts/test-plateau-fall-landings.js
+
+      - name: Test live plateau fall watcher
+        run: node scripts/test-plateau-fall-live-bridge.js
+
+      - name: Test SM64-style fall motion
+        run: node scripts/test-gravity-ragdoll-falls.js
+
+      - name: Test shared world climb prompts
+        run: node scripts/test-climb-proximity-prompt.js
+
+      - name: Test structural roof climbing
+        run: node scripts/test-roof-climb.js
+
+      - name: Test roof climb surface refinement
+        run: node scripts/test-roof-climb-surface-refinement.js
+
+      - name: Test roof climb Pixel Probe diagnostics
+        run: node scripts/test-roof-climb-pixel-probe.js
+
+      - name: Test roof barn entry guard
+        run: node scripts/test-roof-barn-entry.js

@@ -354,6 +354,7 @@
   }
 
   function label(entry) { return deps.getBarnTiers()[entry.tier]?.label || 'Barn'; }
+  function playerOnRoof() { return !!window.HobunjiRoofClimb?.isPlayerOnRoof?.(); }
 
   function _registerFootprint(entry) {
     for (let r = entry.row; r < entry.row + entry.h; r++) {
@@ -383,7 +384,7 @@
         const tier = deps.getBarnTiers()[entry.tier];
         const occupants = deps.loadWorldLivestock().filter(l => l.barnId === entry.id).length;
         return [
-          { icon: '🚪', label: 'Enter Barn', action: 'obj_barn_enter_' + entry.id, style: 'primary', allowed: true },
+          { icon: '🚪', label: 'Enter Barn', action: 'obj_barn_enter_' + entry.id, style: 'primary', allowed: !playerOnRoof() },
           { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('livestock') },
           { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
         ];
@@ -410,6 +411,7 @@
         }
         if (action === 'obj_barn_enter_' + entry.id) {
           if (entry.stage !== 'built') return { ok: false, message: 'Build the barn first.' };
+          if (playerOnRoof()) return { ok: false, message: 'Climb down before entering the barn.' };
           deps.enterBuilding('map_i_barn_' + entry.id);
           return { ok: true, message: `Entered the ${label(entry)}.` };
         }
