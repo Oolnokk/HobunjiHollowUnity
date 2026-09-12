@@ -554,6 +554,38 @@
     root.MutationObserver = ProfiledMutationObserver;
   }
 
+  // requestAnimationFrame and MutationObserver were both ruled out as the
+  // dominant "outside gameLoop" cost (their combined totals never exceeded
+  // ~20-25ms even on the worst real samples), but there's a third,
+  // completely separate scheduling mechanism neither of those wrappers can
+  // see: setInterval. A repo-wide search turned up 71 setInterval call
+  // sites across 63 files -- periodic polling loops, retry timers, UI
+  // refreshers -- none of them requestAnimationFrame-based, so none of them
+  // were ever instrumented. Several fire as often as every 50-100ms, which
+  // at this game's actual frame times (100-190ms on the worst samples) is
+  // effectively "every frame or two." Same call-site-labeling approach as
+  // MutationObserver above: each setInterval() call creates one persistent
+  // timer reusing the same callback forever, so labeling at the scheduling
+  // call site (not per-invocation) is both stable and cheap.
+  function installSetIntervalProfiler() {
+    const nativeSetInterval = root.setInterval;
+    if (typeof nativeSetInterval !== 'function' || nativeSetInterval.__hobunjiIntervalProfiled) return;
+    const boundNativeSetInterval = nativeSetInterval.bind(root);
+    function profiledSetInterval(callback, delay, ...args) {
+      if (typeof callback !== 'function') return boundNativeSetInterval(callback, delay, ...args);
+      const label = callSiteLabel();
+      return boundNativeSetInterval(function hobunjiTimedIntervalCallback(...cbArgs) {
+        if (!profilerEnabled) return callback.apply(this, cbArgs);
+        const start = performance.now();
+        const result = callback.apply(this, cbArgs);
+        recordSubsystem('setInterval: ' + label, performance.now() - start);
+        return result;
+      }, delay, ...args);
+    }
+    profiledSetInterval.__hobunjiIntervalProfiled = true;
+    root.setInterval = profiledSetInterval;
+  }
+
   function makeCheckboxRow(id, labelText, checked, title = '') {
     const row = document.createElement('label');
     row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;cursor:pointer;font-size:12px';
@@ -1062,6 +1094,7 @@
   function install() {
     installRafProfiler(); // Before anything else below schedules its own requestAnimationFrame loop, so those get timed consistently too.
     installMutationObserverProfiler(); // Same reasoning, for the ~24 files that instead react to DOM mutations rather than polling every frame.
+    installSetIntervalProfiler(); // Same reasoning again, for the ~63 files that poll on a plain setInterval timer instead of rAF or MutationObserver.
     installRendererProfiler();
     installSettingsUI();
     installCloudForestTuningUI();
