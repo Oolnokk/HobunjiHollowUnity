@@ -39,7 +39,7 @@ assert.equal(locale.objects.filter(object => object.kind === 'tent').length, 3);
 assert(localeIndex.locales.some(entry => entry.id === cfg.localeId && entry.category === 'porakaneki_camp'));
 assert.equal(speciesOverrides.npcs.porakaneki_chief.species, 'porakaneki');
 assert.equal(speciesOverrides.npcs.porakaneki_chief.avatarExport.appearance.gender, 'male');
-assert(houseLoader.includes("['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912b']"));
+assert(houseLoader.includes("['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912c']"));
 assert(combatLoader.includes("['js/combat/porakaneki-dagger-ranged.js?v=20260912a'"));
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the existing once-per-day social gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief gifting/dancing/liquor must retain the existing Rapport bridge');
@@ -245,10 +245,34 @@ async function flush() {
   const daggerEntity = hostileObjects.find(entity => entity.porakanekiWeaponShape === 'daggerSword');
   assert(daggerEntity?._banditRangedToolHolder, 'a randomly rolled dagger remains melee-capable and gets the thrown-ranged holder');
 
+  // Once a materialized hunter leaves the player's chunk it must keep moving
+  // as an abstract agent. Its stale hidden entity transform must not overwrite
+  // the coarse position on each later off-chunk tick.
+  const firstMaterializedEntity = hostileObjects.find(entity => entity.porakanekiHunterIndex === firstAbstract.index);
+  assert(firstMaterializedEntity, 'first abstract hunter has a materialized entity before the LOD-collapse regression');
+  combatDeps.player.x = 60 * combatDeps.TILE;
+  combatDeps.player.y = 60 * combatDeps.TILE;
+  contextWindow.BanditCamps.updateCampBanners(4.1);
+  let collapsed = api.debugSnapshot().hunters.find(hunter => hunter.index === firstAbstract.index);
+  assert.equal(collapsed.visible, false, 'leaving the chunk hides the detailed entity');
+  const collapsedOnce = [collapsed.x, collapsed.y];
+  contextWindow.BanditCamps.updateCampBanners(4.1);
+  collapsed = api.debugSnapshot().hunters.find(hunter => hunter.index === firstAbstract.index);
+  assert.notDeepEqual([collapsed.x, collapsed.y], collapsedOnce, 'a dormant materialized hunter continues coarse abstract travel instead of snapping back to its stale entity transform');
+
+  // Re-enter that hunter's current abstract chunk before violence checks;
+  // rematerialization must occur at the coarse position rather than its old one.
+  combatDeps.player.x = collapsed.x * combatDeps.TILE;
+  combatDeps.player.y = collapsed.y * combatDeps.TILE;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  await flush();
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  assert.equal(firstMaterializedEntity.avatarRef.group.visible, true, 'returning to the hunter chunk restores full simulation');
+
   // Hurting a hunter provokes immediate self-defense but does not change the
   // permanent tribe score. Killing one applies exactly -1 and clamps at -5.
   relation.favor = -3;
-  const firstEntity = hostileObjects[0];
+  const firstEntity = firstMaterializedEntity;
   firstEntity.health = 19;
   combatDeps.player.x = firstEntity.x;
   combatDeps.player.y = firstEntity.y;
