@@ -111,8 +111,24 @@
   const lastFocusedByPanel = new WeakMap();
   let currentTarget = null;
 
+  // Every [data-ctrl-panel] root (menuPanel, npcDialogue, dyePanel,
+  // houseLayoutModal, the cooking layer) is appended directly to <body>, so
+  // unlike isVisible() above — which has to walk ancestors for a nav target
+  // that can sit many levels deep inside a hidden .mp-pane — checking the
+  // panel's own computed style is already the full answer, no ancestor walk
+  // needed. This runs on every single frame (see isActive()'s comment
+  // below), so skipping that walk avoids forcing a synchronous style/layout
+  // recompute for the whole document on every one of these per-panel checks.
+  function panelVisible(el) {
+    if (!el || !el.isConnected) return false;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
   function visiblePanels() {
-    return Array.from(document.querySelectorAll(PANEL_SELECTOR)).filter(isVisible);
+    return Array.from(document.querySelectorAll(PANEL_SELECTOR)).filter(panelVisible);
   }
 
   function activePanel() {
