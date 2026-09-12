@@ -165,6 +165,10 @@
     } else if (mode === 'probe') {
       rules.terrainAnchors[key] = sanitizeProbe(brush);
     } else if (mode === 'embedded') {
+      if (!locale.tiles?.[key]) {
+        debug(`embedded cells must already be painted footprint tiles (${key}); paint the locale footprint there first`);
+        return;
+      }
       rules.embeddedTiles[key] = sanitizeEmbedded(brush);
     }
     saveRuleStore();
