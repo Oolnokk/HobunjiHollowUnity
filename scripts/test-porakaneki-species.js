@@ -15,6 +15,8 @@ assert.equal(porakaneki.playerSelectable, false);
 assert.deepEqual(porakaneki.genders, ['male']);
 assert.equal(porakaneki.inheritanceNotes.wardrobeSpecies, 'kenkari');
 assert.equal(porakaneki.inheritanceNotes.bodyColorSpecies, 'kenkari');
+assert.equal(porakaneki.inheritanceNotes.handSpecies, 'mashtzarr');
+assert.equal(porakaneki.inheritanceNotes.footSpecies, 'engh-sho');
 assert.equal(porakaneki.inheritanceNotes.hairSpecies, 'tletingan');
 assert.equal(porakaneki.male.headSprite, 'fightersprites/kenkari-m/head_porakaneki_m.png');
 assert.deepEqual(porakaneki.male.headUrLayers.map(layer => layer.url), [
@@ -46,9 +48,9 @@ const cosmetics = {
   },
 }; // Proves Porakaneki points at Kenkari's canonical live range object.
 const handProfileData = {
-  speciesModels: { kenkari: 'avian' },
+  speciesModels: { kenkari: 'avian', mashtzarr: 'pachyderm' },
   speciesScaleOverrides: {},
-}; // Proves Porakaneki inherits Kenkari's current hand-model mapping.
+}; // Proves Porakaneki explicitly resolves the Mashtzarr pachyderm hand-model mapping, not the Kenkari hand family.
 const windowObject = {
   SCRATCHBONES_CONFIG: {
     game: {
@@ -59,6 +61,7 @@ const windowObject = {
           proceduralFeet: {
             models: {
               kenkari: { glb: 'assets/models/feet/foot_kenkari.glb', materialRoles: { Body: 'body' } },
+              'engh-sho': { glb: 'assets/models/feet/foot_feline.glb', materialRoles: { Body: 'body' } },
             },
           },
         },
@@ -93,11 +96,12 @@ vm.runInContext(runtimeSource, context, { filename: 'porakaneki-species-runtime.
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species.porakaneki.npcOnly, true);
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species.porakaneki.playerSelectable, false);
 assert.deepEqual(Array.from(windowObject.SCRATCHBONES_CONFIG.game.appearanceEditor.species.porakaneki.genders), ['male']);
-assert.equal(windowObject.HobunjiHandModelProfiles.data.speciesModels.porakaneki, 'avian');
+assert.equal(windowObject.HobunjiHandModelProfiles.data.speciesModels.porakaneki, 'pachyderm');
 const porakanekiFoot = windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models.porakaneki; // Field-level checks avoid cross-realm prototype differences.
-const kenkariFoot = windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models.kenkari; // Source must remain independently mutable.
-assert.equal(porakanekiFoot.glb, kenkariFoot.glb);
-assert.notEqual(porakanekiFoot, kenkariFoot);
+const felineFoot = windowObject.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.models['engh-sho']; // Canonical feline source must remain independently mutable.
+assert.equal(porakanekiFoot.glb, 'assets/models/feet/foot_feline.glb');
+assert.equal(porakanekiFoot.glb, felineFoot.glb);
+assert.notEqual(porakanekiFoot, felineFoot);
 const porakanekiRig = windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['porakaneki::male']; // Verifies the Kenkari profile is cloned rather than aliased.
 assert.equal(porakanekiRig.species, 'porakaneki');
 assert.equal(porakanekiRig.anatomy.rigScaleX, 1.01);
@@ -112,7 +116,7 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   const loadedCosmetics = await windowObject.loadPortraitCosmetics();
   assert.equal(loadedCosmetics.bodyColorRangesByGender.porakaneki_male, loadedCosmetics.bodyColorRangesByGender.kenkari_male);
 
-  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260912a');
+  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260912b');
   const scaleBootstrapIndex = bootstrapSource.indexOf('character-rig-scale.js?v=20260904i');
   assert(porakanekiBootstrapIndex >= 0 && scaleBootstrapIndex > porakanekiBootstrapIndex,
     'Porakaneki profile inheritance must load before whole-rig scale installs profile defaults');
@@ -120,7 +124,11 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   const debug = windowObject.HobunjiPorakanekiSpecies.debugSnapshot();
   assert.equal(debug.rigProfilesInstalled, 1);
   assert.equal(debug.handModelInherited, true);
+  assert.equal(debug.handDonorSpecies, 'mashtzarr');
+  assert.equal(debug.handModelKey, 'pachyderm');
   assert.equal(debug.footModelInherited, true);
+  assert.equal(debug.footDonorSpecies, 'engh-sho');
+  assert.equal(debug.footGlb, 'assets/models/feet/foot_feline.glb');
   assert.equal(debug.wardrobeResolverInstalled, true);
   assert.equal(debug.paletteInheritanceInstalled, true);
   assert.equal(debug.armMaskProfilesInstalled, 1);
