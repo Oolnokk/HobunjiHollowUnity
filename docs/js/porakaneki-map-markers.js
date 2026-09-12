@@ -59,17 +59,24 @@
       .join('|');
   }
 
-  function markersAlreadyAttached(markers) {
+  function markersPresentOnLayouts(markers) {
     if (!mapDeps?._zoneLayouts) return false;
-    const desiredIds = new Set(markers.map(marker => marker.id));
-    const attachedIds = new Set();
-    for (const [, layout] of mapDeps._zoneLayouts) {
-      for (const instance of (layout?.localeInstances || [])) {
-        if (instance?.[MARKER_FLAG]) attachedIds.add(instance.id);
-      }
+    const expectedByZone = new Map();
+    for (const marker of markers) {
+      if (!expectedByZone.has(marker.zoneId)) expectedByZone.set(marker.zoneId, new Set());
+      expectedByZone.get(marker.zoneId).add(marker.localeId);
     }
-    if (attachedIds.size !== desiredIds.size) return false;
-    for (const id of desiredIds) if (!attachedIds.has(id)) return false;
+    for (const [zoneId, expected] of expectedByZone) {
+      const layout = mapDeps._zoneLayouts.get(zoneId);
+      if (!layout) return false;
+      const actual = new Set((layout.localeInstances || []).filter(instance => instance?.[MARKER_FLAG]).map(instance => instance.localeId));
+      for (const localeId of expected) if (!actual.has(localeId)) return false;
+    }
+    for (const [zoneId, layout] of mapDeps._zoneLayouts) {
+      const expected = expectedByZone.get(zoneId) || new Set();
+      const extras = (layout?.localeInstances || []).filter(instance => instance?.[MARKER_FLAG] && !expected.has(instance.localeId));
+      if (extras.length) return false;
+    }
     return true;
   }
 
@@ -77,7 +84,10 @@
     if (!mapDeps?._zoneLayouts || !window.PorakanekiCamps?.debugSnapshot) return false;
     const markers = desiredMarkers(snapshot());
     const signature = signatureFor(markers);
-    if (signature === lastSignature && markersAlreadyAttached(markers)) return false;
+    // A fresh Tothal layout can coincidentally produce the same camp coordinates
+    // as the prior one, so matching coordinates alone is not enough: verify the
+    // current layout objects actually carry the proxies before short-circuiting.
+    if (signature === lastSignature && markersPresentOnLayouts(markers)) return false;
 
     const byZone = new Map();
     for (const marker of markers) {
@@ -161,7 +171,7 @@
     version: 1,
     sync: syncMarkers,
     debugSnapshot: () => ({ ready: !!mapDeps, signature: lastSignature, markers: desiredMarkers(snapshot()) }),
-    __test: Object.freeze({ campLocaleId, desiredMarkers, markersAlreadyAttached }),
+    __test: Object.freeze({ campLocaleId, desiredMarkers }),
   });
 
   watchNamespace('WildernessMap', installWildernessMap);
