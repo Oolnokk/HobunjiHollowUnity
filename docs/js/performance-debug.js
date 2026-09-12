@@ -52,6 +52,8 @@
     geometryCategories: {},
     subsystem: new Map(),
     longTasks: 0,
+    longTaskMs: 0,
+    longTaskMaxMs: 0,
     longTaskObserver: null,
     lastHeapBytes: 0,
     heapDeltaMbPerSec: 0,
@@ -181,7 +183,24 @@
   function ensureLongTaskObserver() {
     if (!profilerEnabled || perfState.longTaskObserver || !root.PerformanceObserver) return;
     try {
-      const observer = new root.PerformanceObserver(list => { perfState.longTasks += list.getEntries().length; });
+      // entry.duration is the BROWSER's own measurement of how long this
+      // whole macrotask blocked the main thread -- including anything it
+      // bundled in that no performance.now() bracket in this codebase ever
+      // wrapped (e.g. style/layout recalculation the browser runs as part
+      // of the same task right before rendering). Every scheduled callback
+      // mechanism (rAF across ~70 files, MutationObserver, setInterval,
+      // this game's own mousemove handler) has now been individually timed
+      // and ruled out as the "outside gameLoop" cost, so the next test is
+      // to compare the SUM of those against the browser's own longtask
+      // duration total for the same window: if the browser's number is
+      // bigger, the gap is real browser-internal work no JS timer can see.
+      const observer = new root.PerformanceObserver(list => {
+        for (const entry of list.getEntries()) {
+          perfState.longTasks += 1;
+          perfState.longTaskMs += entry.duration;
+          if (entry.duration > perfState.longTaskMaxMs) perfState.longTaskMaxMs = entry.duration;
+        }
+      });
       observer.observe({ entryTypes: ['longtask'] });
       perfState.longTaskObserver = observer;
     } catch (_) {}
@@ -261,7 +280,13 @@
         ? `Timed (≥${SUBSYSTEM_DISPLAY_FLOOR_MS}ms):\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms  ×${value.samples}`).join('\n')}`
         : 'Timed subsystems: none above the display floor',
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
-      `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
+      // longTaskMs is the browser's OWN measured total main-thread-blocking
+      // time for these tasks, independent of every performance.now()
+      // bracket in this file -- compare it against gameLoop total (and the
+      // Timed list above) above: if it's meaningfully bigger, some of what
+      // the browser bundles into these tasks (e.g. style/layout work done
+      // just before a rAF callback runs) isn't captured by any JS timer.
+      `Long tasks: ${perfState.longTasks}  Σ${perfState.longTaskMs.toFixed(1)}ms  max ${perfState.longTaskMaxMs.toFixed(1)}ms   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
       // Chrome-only. A large sustained value here (tens of MB/sec) points at
       // GC pauses as a real candidate for time that isn't inside gameLoop
       // and wasn't caught by the rAF/MutationObserver instrumentation --
@@ -297,6 +322,8 @@
       perfState.renderCpuMs = 0;
       perfState.renderSamples = 0;
       perfState.longTasks = 0;
+      perfState.longTaskMs = 0;
+      perfState.longTaskMaxMs = 0;
     } else if (overlay) overlay.style.display = 'none';
   }
 
