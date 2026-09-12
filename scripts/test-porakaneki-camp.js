@@ -39,7 +39,7 @@ assert.equal(locale.objects.filter(object => object.kind === 'tent').length, 3);
 assert(localeIndex.locales.some(entry => entry.id === cfg.localeId && entry.category === 'porakaneki_camp'));
 assert.equal(speciesOverrides.npcs.porakaneki_chief.species, 'porakaneki');
 assert.equal(speciesOverrides.npcs.porakaneki_chief.avatarExport.appearance.gender, 'male');
-assert(houseLoader.includes("['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912a']"));
+assert(houseLoader.includes("['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260912b']"));
 assert(combatLoader.includes("['js/combat/porakaneki-dagger-ranged.js?v=20260912a'"));
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the existing once-per-day social gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief gifting/dancing/liquor must retain the existing Rapport bridge');
