@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Clothing Sprite Warp Author</title>
+<style>
+:root{
+  --bg:#08111d;--panel:#101b2a;--panel2:#142235;--line:#2b405c;--text:#edf5ff;--muted:#9fb4cf;
+  --accent:#73a9ff;--good:#58d68d;--warn:#f6c453;--bad:#ff748c;--inner:#55e1c1;--mid:#ffd166;--outer:#ff7aa8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden}
+button,input,select{font:inherit}
+button,select,input[type="number"],input[type="text"]{background:#0b1624;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+button{cursor:pointer;font-weight:700}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type="range"]{width:100%}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
+#app{height:100%;display:grid;grid-template-rows:auto 1fr}
+header{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line);background:#091522;min-height:48px}
+header h1{font-size:14px;margin:0;white-space:nowrap}
+#recent{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#statusPill{margin-left:auto;border:1px solid var(--line);border-radius:999px;padding:4px 9px;font-size:11px;color:var(--muted);white-space:nowrap}
+#statusPill.good{color:var(--good);border-color:color-mix(in srgb,var(--good) 55%,var(--line))}
+#statusPill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+main{min-height:0;display:grid;grid-template-columns:330px 1fr 285px}
+aside{min-height:0;overflow:auto;background:var(--panel);border-right:1px solid var(--line);padding:10px}
+#right{border-right:0;border-left:1px solid var(--line)}
+section.card{border:1px solid var(--line);background:rgba(255,255,255,.025);border-radius:10px;padding:9px;margin-bottom:9px}
+section.card h2{font-size:11px;text-transform:uppercase;letter-spacing:.55px;color:#c8d8ed;margin:0 0 8px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px}.row.one{grid-template-columns:1fr}.row.three{grid-template-columns:1fr 1fr 1fr}
+.small{font-size:10px;color:var(--muted)}
+.inline{display:flex;align-items:center;gap:6px}.inline>*{min-width:0}
+.check{display:flex;align-items:center;gap:6px;color:var(--text);font-size:11px;margin:4px 0}.check input{margin:0}
+.value{float:right;color:var(--text);font-variant-numeric:tabular-nums}
+#workspace{position:relative;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;background:
+ linear-gradient(45deg,#0b1623 25%,transparent 25%) 0 0/18px 18px,
+ linear-gradient(45deg,transparent 75%,#0b1623 75%) 0 0/18px 18px,
+ linear-gradient(45deg,transparent 75%,#0b1623 75%) 9px -9px/18px 18px,
+ linear-gradient(45deg,#0b1623 25%,#0d1927 25%) 9px -9px/18px 18px;
+ overflow:hidden}
+#stageWrap{position:relative;width:min(78vh,calc(100vw - 650px));height:min(78vh,calc(100vw - 650px));min-width:280px;min-height:280px;max-width:900px;max-height:900px;aspect-ratio:1/1;box-shadow:0 0 0 1px var(--line),0 18px 50px rgba(0,0,0,.34);background:#111c29}
+#stage{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated;cursor:crosshair}
+#modeBadge{position:absolute;left:10px;top:10px;padding:4px 8px;border-radius:999px;background:rgba(4,10,17,.78);border:1px solid var(--line);font-size:11px;pointer-events:none}
+#hint{position:absolute;left:10px;right:10px;bottom:10px;padding:6px 8px;border-radius:8px;background:rgba(4,10,17,.78);color:var(--muted);font-size:10px;pointer-events:none;text-align:center}
+#layerList{display:flex;flex-direction:column;gap:5px}.layerItem{display:flex;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:7px;padding:6px 7px;background:#0b1624}.layerItem span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.layerItem code{color:var(--muted);font-size:9px}
+#debug{height:165px;overflow:auto;white-space:pre-wrap;background:#07111c;border:1px solid var(--line);border-radius:8px;padding:7px;font:10px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;color:#b9cbe1}
+#vertexPanel[hidden]{display:none}.nudgeGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;max-width:170px;margin:auto}.nudgeGrid button:nth-child(1){grid-column:2}.nudgeGrid button:nth-child(2){grid-column:1;grid-row:2}.nudgeGrid button:nth-child(3){grid-column:2;grid-row:2}.nudgeGrid button:nth-child(4){grid-column:3;grid-row:2}
+hr{border:0;border-top:1px solid var(--line);margin:8px 0}
+@media(max-width:980px){
+  html,body{overflow:auto;height:auto;min-height:100%}#app{height:auto;min-height:100vh}main{display:flex;flex-direction:column}aside{overflow:visible;border:0;border-bottom:1px solid var(--line)}#right{border:0;border-top:1px solid var(--line)}#workspace{min-height:62vh;padding:14px;order:-1}#stageWrap{width:min(92vw,62vh);height:min(92vw,62vh);min-width:260px;min-height:260px}header{position:sticky;top:0;z-index:4}#recent{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <h1>Clothing Sprite Warp Author</h1>
+  <div id="recent">Most recent change: target portraits and portrait clothing now render through the game's actual shared portrait runtime instead of duplicated transform math.</div>
+  <div id="statusPill">Booting…</div>
+</header>
+<main>
+<aside id="left">
+  <section class="card">
+    <h2>1 · Repository + target character</h2>
+    <div class="row one"><div><label>Git ref / branch</label><input id="repoRef" type="text" value="main" autocomplete="off"></div></div>
+    <div class="row">
+      <div><label>Target species</label><select id="species"></select></div>
+      <div><label>Target gender</label><select id="gender"><option value="male">Male</option><option value="female">Female</option></select></div>
+    </div>
+    <button id="reloadCharacter">Reload target</button>
+    <div id="characterInfo" class="small" style="margin-top:6px">—</div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Clothing + existing setup</h2>
+    <div class="row one"><div><label>Filter clothing / cosmetic configs</label><input id="clothingFilter" type="text" placeholder="tunic, poncho, kasa…" autocomplete="off"></div></div>
+    <div class="row one"><div><label>Piece</label><select id="clothing"></select></div></div>
+    <div class="row one"><div><label>Existing species + gender setup</label><select id="sourceVariant"></select></div></div>
+    <div class="inline"><button id="loadClothing">Load piece</button><button id="autoVariant">Auto-match target</button></div>
+    <div id="clothingInfo" class="small" style="margin-top:6px">—</div>
+    <div id="layerList" style="margin-top:7px"></div>
+  </section>
+
+  <section class="card">
+    <h2>3 · Tandem resize + quad warp</h2>
+    <div class="row">
+      <div><label>Width <span class="value" id="scaleXVal">100%</span></label><input id="scaleX" type="range" min="25" max="300" step="1" value="100"></div>
+      <div><label>Height <span class="value" id="scaleYVal">100%</span></label><input id="scaleY" type="range" min="25" max="300" step="1" value="100"></div>
+    </div>
+    <div class="inline"><button id="modeQuad">Quad mode</button><button id="resetQuad">Reset quad</button></div>
+    <div class="small" style="margin-top:6px">Drag any corner. Drag the center handle to move every clothing layer together. Resize sliders act from the last reset/source fit.</div>
+  </section>
+
+  <section class="card">
+    <h2>4 · Mask + spider web</h2>
+    <div class="row">
+      <div><label>Mask source</label><select id="maskSource"><option value="auto">Auto matching part</option><option value="full">Full character</option><option value="head">Head only</option><option value="torso">Torso only</option></select></div>
+      <div><label>Outline points <span class="value" id="pointCountVal">48</span></label><input id="pointCount" type="range" min="16" max="128" step="4" value="48"></div>
+    </div>
+    <div class="row">
+      <div><label>Alpha threshold <span class="value" id="alphaVal">16</span></label><input id="alphaThreshold" type="range" min="1" max="254" step="1" value="16"></div>
+      <div><label>Mesh spread <span class="value" id="spreadVal">100%</span></label><input id="spread" type="range" min="0" max="220" step="1" value="100"></div>
+    </div>
+    <button id="buildWeb">Generate mask + spider web</button>
+    <div class="small" style="margin-top:6px">Step 1 traces equal-point inner/outer splines. Step 2 joins corresponding points with rays. Step 3 inserts ray midpoints. Step 4 joins those midpoints into the interstitial spline.</div>
+  </section>
+</aside>
+
+<div id="workspace">
+  <div id="stageWrap">
+    <canvas id="stage" width="200" height="200"></canvas>
+    <div id="modeBadge">Quad</div>
+    <div id="hint">Load a target and clothing piece, then drag the clothing handles.</div>
+  </div>
+</div>
+
+<aside id="right">
+  <section class="card">
+    <h2>View</h2>
+    <label class="check"><input id="showCharacter" type="checkbox" checked>Target character</label>
+    <label class="check"><input id="showClothing" type="checkbox" checked>Clothing output</label>
+    <label class="check"><input id="showMask" type="checkbox" checked>Underlying species mask</label>
+    <label class="check"><input id="showLockMask" type="checkbox">Exact locked clothing pixels</label>
+    <label class="check"><input id="showWeb" type="checkbox" checked>Spider-web mesh</label>
+    <label class="check"><input id="showQuad" type="checkbox" checked>Quad handles</label>
+  </section>
+
+  <section class="card">
+    <h2>5 · Fine mesh deformation</h2>
+    <div class="inline"><button id="modeMesh">Mesh mode</button><button id="resetMesh" disabled>Reset mesh</button></div>
+    <div class="small" style="margin-top:6px">Inner spline vertices are hard-locked. Drag yellow midpoint or pink outer vertices. Pixels under the lock mask are composited back at their exact original positions after deformation.</div>
+    <div id="vertexPanel" hidden style="margin-top:8px">
+      <hr>
+      <div id="vertexLabel" class="small">—</div>
+      <div class="row"><div><label>X</label><input id="vertexX" type="number" step="0.1"></div><div><label>Y</label><input id="vertexY" type="number" step="0.1"></div></div>
+      <div class="inline"><button id="applyVertex">Apply coordinates</button><select id="nudgeStep"><option value="0.1">0.1 px</option><option value="0.25">0.25 px</option><option value="0.5">0.5 px</option><option value="1">1 px</option></select></div>
+      <div class="nudgeGrid" style="margin-top:7px"><button data-nudge="0,-1">↑</button><button data-nudge="-1,0">←</button><button data-nudge="0,1">↓</button><button data-nudge="1,0">→</button></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>6 · Export</h2>
+    <div class="row one"><button id="downloadActive" disabled>Download active layer PNG</button></div>
+    <div class="row one"><button id="downloadZip" disabled>Download all layers + mask + project ZIP</button></div>
+    <div class="row one"><button id="downloadProject" disabled>Download project JSON</button></div>
+    <div class="small">PNG layers are converted back into the selected source setup's original local sprite dimensions, so the existing authored xform can remain unchanged.</div>
+  </section>
+
+  <section class="card">
+    <h2>In-page debug</h2>
+    <div class="inline"><button id="copyDebug">Copy debug</button><button id="clearDebug">Clear</button></div>
+    <pre id="debug"></pre>
+  </section>
+</aside>
+</main>
+</div>
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clothing Sprite Warp Author — single-file standalone tool.
+// It intentionally depends on no local scripts: when downloaded and opened as
+// file:// it reads current game data/assets from raw.githubusercontent.com.
+// ─────────────────────────────────────────────────────────────────────────────
+const REPO = 'Oolnokk/HobunjiHollowUnity';
+const STAGE_W = 200;
+const STAGE_H = 200;
+const LAYER_SIZE = 80;
+const $ = (id) => document.getElementById(id);
+const stage = $('stage');
+const ctx = stage.getContext('2d', { willReadFrequently:true });
+ctx.imageSmoothingEnabled = false;
+
+const state = {
+  mode:'quad',
+  speciesIndex:null,
+  cosmeticsIndex:null,
+  fallbackGroups:null,
+  targetSpeciesEntry:null,
+  targetSpeciesData:null,
+  targetGenderData:null,
+  targetFighter:null, // Used as the canonical fighter profile passed to the shared in-game portrait renderer.
+  portraitRuntime:null, // Used to isolate the repo's real portrait scripts from this standalone tool's own globals.
+  portraitRuntimeRef:null, // Used to rebuild the isolated runtime whenever the selected Git ref changes.
+  speciesDataCache:new Map(), // Used by parent-species inheritance resolution without refetching the same JSON.
+  characterLayers:[], // Used by automatic under-clothing mask selection.
+  characterCanvas:makeCanvas(),
+  characterVisibilityMaskCanvas:makeCanvas(), // Used to apply the exact runtime opacity-mask cutout to part-specific underlay masks.
+  underlayMaskCanvas:makeCanvas(),
+  lockMaskCanvas:makeCanvas(),
+  clothingConfig:null,
+  clothingEntry:null,
+  sourceVariantKey:null,
+  clothingPartNames:[],
+  clothingLayers:[],
+  clothingCompositeBase:makeCanvas(),
+  quadLayerCanvases:[],
+  quadCompositeCanvas:makeCanvas(),
+  outputLayerCanvases:[],
+  outputCompositeCanvas:makeCanvas(),
+  quadSource:null,
+  quadBase:null,
+  quad:null,
+  mesh:null,
+  clothingClusterMask:makeCanvas(),
+  selectedVertex:null,
+  drag:null,
+};
+
+function makeCanvas(w=STAGE_W,h=STAGE_H){
+  const c=document.createElement('canvas');c.width=w;c.height=h;const cctx=c.getContext('2d',{willReadFrequently:true});cctx.imageSmoothingEnabled=false;return c;
+}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function pretty(value){return String(value||'').replace(/^appearance::/,'').replace(/[_:-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());}
+function safeName(value){return String(value||'export').replace(/[^a-z0-9._-]+/gi,'_').replace(/^_+|_+$/g,'')||'export';}
+function log(message,kind='info'){
+  const line=`[${new Date().toLocaleTimeString()}] ${kind.toUpperCase()} ${message}`;
+  const box=$('debug');box.textContent+=(box.textContent?'\n':'')+line;box.scrollTop=box.scrollHeight;
+  if(kind==='error') setStatus(message,'bad');
+}
+function setStatus(message,kind=''){$('statusPill').textContent=message;$('statusPill').className=kind||'';}
+window.addEventListener('error',e=>log(`${e.message} @ ${e.filename||'inline'}:${e.lineno||0}`,'error'));
+window.addEventListener('unhandledrejection',e=>log(`Unhandled promise: ${e.reason?.stack||e.reason}`,'error'));
+
+function inferredRef(){
+  const host=location.hostname;
+  if(host==='raw.githack.com'||host==='raw.githubusercontent.com'){
+    const parts=location.pathname.split('/').filter(Boolean);
+    if(parts[0]==='Oolnokk'&&parts[1]==='HobunjiHollowUnity'&&parts[2]) return decodeURIComponent(parts[2]);
+  }
+  return 'main';
+}
+function rawRepoRoot(){return `https://raw.githubusercontent.com/${REPO}/${encodeURIComponent($('repoRef').value.trim()||'main')}/`;}
+function docsRoot(){return rawRepoRoot()+'docs/';}
+async function fetchJson(url){
+  const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status} loading ${url}`);return r.json();
+}
+async function fetchText(url){
+  const response=await fetch(url,{cache:'no-store'}); // Used by ensurePortraitRuntime to load the exact repo JavaScript selected by Git ref.
+  if(!response.ok)throw new Error(`HTTP ${response.status} loading ${url}`);
+  return response.text();
+}
+function destroyPortraitRuntime(){
+  state.portraitRuntime?.frame?.remove?.();
+  state.portraitRuntime=null;state.portraitRuntimeRef=null;state.targetFighter=null;state.speciesDataCache.clear();
+}
+async function ensurePortraitRuntime(){
+  const ref=$('repoRef').value.trim()||'main'; // Used to guarantee the renderer and data come from the same selected repository revision.
+  if(state.portraitRuntime&&state.portraitRuntimeRef===ref)return state.portraitRuntime;
+  destroyPortraitRuntime();
+  setStatus('Loading shared portrait runtime…');
+  const frame=document.createElement('iframe'); // Used as a disposable same-origin realm so changing Git refs can reload classic-script globals safely.
+  frame.hidden=true;frame.setAttribute('aria-hidden','true');frame.src='about:blank';document.body.appendChild(frame);
+  await new Promise(resolve=>{if(frame.contentDocument?.readyState==='complete')resolve();else frame.addEventListener('load',resolve,{once:true});});
+  const runtimeWindow=frame.contentWindow; // Used to call the actual shared portrait renderer without colliding with this tool's globals.
+  const runtimeDocument=frame.contentDocument;
+  const root=rawRepoRoot(); // Used below to fetch the same config/renderer files the game page loads.
+  const sources=await Promise.all([
+    ['scratchbones-config.js',fetchText(root+'docs/config/scratchbones-config.js')],
+    ['portrait-utils.js',fetchText(root+'docs/js/portrait-utils.js')],
+    ['npc-avatar-preview-utils.js',fetchText(root+'docs/js/npc-avatar-preview-utils.js')],
+    ['portrait-arm-cloud-mask.js',fetchText(root+'docs/js/portrait-arm-cloud-mask.js')],
+  ].map(async([label,promise])=>[label,await promise]));
+  for(const [label,source] of sources){
+    const script=runtimeDocument.createElement('script'); // Used to execute fetched classic scripts in the isolated runtime realm despite raw GitHub MIME types.
+    script.textContent=`${source}\n//# sourceURL=hobunji-shared-runtime/${label}`;
+    runtimeDocument.head.appendChild(script);
+  }
+  const bridge=runtimeDocument.createElement('script'); // Used to expose only the canonical renderer operations this tool needs, including access to lexical FIGHTERS.
+  bridge.textContent=`
+    window.__HobunjiClothingWarpPortraitRuntime={
+      setAssetBase(base){ window.setPortraitAssetBase(base); },
+      setFighter(fighter){ const normalized=normalizedFighterPortrait(fighter); FIGHTERS=[normalized]; return normalized; },
+      getPreset(name){ return window.getPortraitXformPreset(name); },
+      async renderProfile(canvas,fighter,options){
+        const profile={fighter,bodyColors:{}};
+        const renderOptions={forceEyesOpen:true,breathingComposer:null,...(options||{})};
+        if(window.NpcAvatarPreview?.renderProfileToCanvas)return window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,renderOptions);
+        return window.renderPortraitProfile(canvas,profile,renderOptions);
+      },
+      async renderBaseLayer(canvas,url){
+        const image=await loadImg(url);const context=canvas.getContext('2d');context.clearRect(0,0,canvas.width,canvas.height);
+        window.drawPortraitLayer(context,image,window.getPortraitXformPreset('B'),{mode:'none'},url);return true;
+      },
+      async applyOpacityMask(canvas,maskLayer){
+        if(!maskLayer?.url)return false;const image=await loadImg(maskLayer.url);const normalized=normalizePortraitMaskLayer(maskLayer);
+        window.applyPortraitOpacityMask(canvas.getContext('2d'),image,normalized);return true;
+      }
+    };`;
+  runtimeDocument.head.appendChild(bridge);
+  const api=runtimeWindow.__HobunjiClothingWarpPortraitRuntime; // Used by target and clothing rendering below.
+  if(!api?.renderProfile||!api?.renderBaseLayer)throw new Error('Shared portrait runtime bridge failed to initialize.');
+  api.setAssetBase(root+'docs/assets/');
+  state.portraitRuntime={frame,window:runtimeWindow,document:runtimeDocument,api};state.portraitRuntimeRef=ref;
+  log(`Shared portrait runtime loaded from ${ref}: scratchbones-config + portrait-utils + NpcAvatarPreview + opacity-mask patch.`);
+  return state.portraitRuntime;
+}
+async function fetchBlob(url){
+  const r=await fetch(url,{cache:'force-cache'});if(!r.ok)throw new Error(`HTTP ${r.status} loading ${url}`);return r.blob();
+}
+const bitmapCache=new Map();
+async function loadBitmap(url){
+  if(bitmapCache.has(url))return bitmapCache.get(url);
+  const p=(async()=>{const blob=await fetchBlob(url);return createImageBitmap(blob);})();
+  bitmapCache.set(url,p);try{return await p;}catch(err){bitmapCache.delete(url);throw err;}
+}
+function speciesAssetUrl(path){
+  if(!path)return null;if(/^https?:/i.test(path))return path;
+  const p=String(path).replace(/^\.\//,'').replace(/^\/+/,'');
+  if(p.startsWith('docs/'))return rawRepoRoot()+p;
+  if(p.startsWith('assets/'))return docsRoot()+p;
+  return docsRoot()+'assets/'+p;
+}
+function cosmeticAssetUrl(path){
+  if(!path)return null;if(/^https?:/i.test(path))return path;
+  let p=String(path).replace(/^\.\//,'').replace(/^\/+/,'');
+  if(p.startsWith('docs/'))return rawRepoRoot()+p;
+  if(p.startsWith('assets/'))return docsRoot()+p;
+  return docsRoot()+'assets/'+p;
+}
+function cosmeticConfigUrl(entryPath){
+  const p=String(entryPath||'').replace(/^\.\//,'');
+  return docsRoot()+'config/cosmetics/'+p;
+}
+
+function normalizeXform(raw){
+  const xf=raw&&typeof raw==='object'?raw:{};
+  return {
+    ax:Number(xf.ax??0)||0,
+    ay:Number(xf.ay??0)||0,
+    sx:Number(xf.sx??xf.scaleX??xf.scaleMulX??1)||1,
+    sy:Number(xf.sy??xf.scaleY??xf.scaleMulY??1)||1,
+    rotDeg:Number(xf.rotDeg??0)||0,
+  };
+}
+function matrixForImage(bitmap,xform){
+  const xf=normalizeXform(xform);const targetW=LAYER_SIZE*xf.sx,targetH=LAYER_SIZE*xf.sy;
+  const scaleX=targetW/bitmap.width,scaleY=targetH/bitmap.height;
+  const rad=xf.rotDeg*Math.PI/180,c=Math.cos(rad),s=Math.sin(rad);
+  const a=c*scaleX,b=s*scaleX,cc=-s*scaleY,d=c*scaleY;
+  const cx=STAGE_W/2+xf.ax*LAYER_SIZE,cy=STAGE_H/2+xf.ay*LAYER_SIZE;
+  const e=cx-a*bitmap.width/2-cc*bitmap.height/2;
+  const f=cy-b*bitmap.width/2-d*bitmap.height/2;
+  return {a,b,c:cc,d,e,f};
+}
+function invertMatrix(m){
+  const det=m.a*m.d-m.b*m.c;if(Math.abs(det)<1e-9)return null;
+  return {a:m.d/det,b:-m.b/det,c:-m.c/det,d:m.a/det,e:(m.c*m.f-m.d*m.e)/det,f:(m.b*m.e-m.a*m.f)/det};
+}
+function drawBitmapWithXform(targetCtx,bitmap,xform){
+  const m=matrixForImage(bitmap,xform);targetCtx.save();targetCtx.setTransform(m.a,m.b,m.c,m.d,m.e,m.f);targetCtx.drawImage(bitmap,0,0);targetCtx.restore();return m;
+}
+function extractLayerXform(layer,partName){
+  const base=layer?.spriteStyle?.base||{};const xforms=base.xform||{};
+  if(xforms[partName])return xforms[partName];
+  const first=Object.values(xforms)[0];return first||layer?.xform||{};
+}
+function portraitAssetRelPath(path){
+  let value=String(path||'').replace(/^\.\//,'').replace(/^\/+/, ''); // Used when handing repo-authored sprite paths to portrait-utils' setPortraitAssetBase/loadImg path.
+  if(value.startsWith('docs/assets/'))value=value.slice('docs/assets/'.length);
+  else if(value.startsWith('assets/'))value=value.slice('assets/'.length);
+  return value;
+}
+function matrixForCanonicalPortraitImage(bitmap,xform){
+  const xf=normalizeXform(xform); // Used by PNG export to invert the exact placement performed by drawPortraitLayer.
+  const h=LAYER_SIZE*xf.sy,w=(bitmap.width/Math.max(1,bitmap.height))*LAYER_SIZE*Math.abs(xf.sx);
+  const cx=STAGE_W/2+xf.ay*LAYER_SIZE,cy=STAGE_H/2-xf.ax*LAYER_SIZE;
+  return {a:w/bitmap.width,b:0,c:0,d:h/bitmap.height,e:cx-w/2,f:cy-h/2};
+}
+
+async function boot(){
+  $('repoRef').value=inferredRef();
+  setStatus('Loading shared portrait runtime…');
+  await ensurePortraitRuntime();
+  setStatus('Loading indexes…');
+  await loadIndexes();
+  populateSpecies();
+  populateClothingOptions();
+  await loadTargetCharacter();
+  render();
+  setStatus('Ready','good');
+}
+async function loadIndexes(){
+  const root=docsRoot();
+  const [speciesIndex,cosmeticsIndex,fallbackGroups]=await Promise.all([
+    fetchJson(root+'config/species/index.json'),
+    fetchJson(root+'config/cosmetics/index.json'),
+    fetchJson(root+'config/species/cosmetic-fallback-groups.json').catch(()=>({headGroups:[],bodyGroups:[]})),
+  ]);
+  state.speciesIndex=speciesIndex;state.cosmeticsIndex=cosmeticsIndex;state.fallbackGroups=fallbackGroups;
+  log(`Loaded ${speciesIndex.entries?.length||0} species and ${cosmeticsIndex.entries?.length||0} cosmetic configs.`);
+}
+function populateSpecies(){
+  const sel=$('species');sel.innerHTML='';
+  for(const entry of state.speciesIndex?.entries||[]){const o=document.createElement('option');o.value=entry.speciesId;o.textContent=entry.label||pretty(entry.speciesId);sel.appendChild(o);}
+  if([...sel.options].some(o=>o.value==='mao-ao'))sel.value='mao-ao';
+}
+function targetAllowedCosmetics(){
+  const direct=state.targetGenderData?.allowedCosmetics;
+  return new Set(Array.isArray(direct)?direct:[]);
+}
+function populateClothingOptions(){
+  const sel=$('clothing');const prior=sel.value;const filter=$('clothingFilter').value.trim().toLowerCase();const allowed=targetAllowedCosmetics();
+  sel.innerHTML='';
+  const allowedGroup=document.createElement('optgroup');allowedGroup.label='Allowed for target';
+  const otherGroup=document.createElement('optgroup');otherGroup.label='Other existing configs';
+  let allowedCount=0,otherCount=0;
+  for(const entry of state.cosmeticsIndex?.entries||[]){
+    const hay=`${entry.id} ${entry.path}`.toLowerCase();if(filter&&!hay.includes(filter))continue;
+    const o=document.createElement('option');o.value=entry.id;o.textContent=pretty(entry.id);o.dataset.path=entry.path;
+    if(allowed.has(entry.id)){allowedGroup.appendChild(o);allowedCount++;}else{otherGroup.appendChild(o);otherCount++;}
+  }
+  if(allowedCount)sel.appendChild(allowedGroup);if(otherCount)sel.appendChild(otherGroup);
+  if([...sel.options].some(o=>o.value===prior))sel.value=prior;
+  else if([...sel.options].some(o=>o.value==='tankan_tunic'))sel.value='tankan_tunic';
+}
+async function loadSpeciesData(speciesId){
+  const cacheKey=`${state.portraitRuntimeRef||$('repoRef').value}:${speciesId}`; // Used to keep inherited species lookups tied to the active Git ref.
+  if(state.speciesDataCache.has(cacheKey))return state.speciesDataCache.get(cacheKey);
+  const entry=(state.speciesIndex?.entries||[]).find(item=>item.speciesId===speciesId);if(!entry)throw new Error(`Unknown species ${speciesId}`);
+  const data=await fetchJson(docsRoot()+'config/species/'+String(entry.path).replace(/^\.\//,''));state.speciesDataCache.set(cacheKey,{entry,data});return {entry,data};
+}
+async function resolveTargetGenderData(speciesData,gender,seen=new Set()){
+  const speciesId=speciesData?.speciesId||state.targetSpeciesEntry?.speciesId; // Used to guard parent-species inheritance cycles while matching the runtime loader's shallow portrait inheritance.
+  const cycleKey=`${speciesId}:${gender}`;if(seen.has(cycleKey))throw new Error(`Species inheritance cycle at ${cycleKey}`);seen.add(cycleKey);
+  let parentGender=null;
+  if(speciesData?.parentSpecies){const parent=await loadSpeciesData(speciesData.parentSpecies);parentGender=await resolveTargetGenderData(parent.data,gender,seen);}
+  const own=speciesData?.[gender]||{};const merged={...(parentGender||{}),...own};
+  merged.allowedCosmetics=[...new Set([...(parentGender?.allowedCosmetics||[]),...(own.allowedCosmetics||[])])];
+  return merged;
+}
+function fighterForSharedRenderer(speciesData,genderData,entry,gender){
+  return {
+    id:`${entry.speciesId}_${gender}`,speciesId:entry.speciesId,gender,label:`${speciesData.label||entry.label||entry.speciesId} (${gender==='male'?'M':'F'})`,
+    headUrl:genderData.headSprite,
+    bodyLayers:(genderData.portraitBodyLayers||[]).map(layer=>({...layer,xformPreset:'B'})),
+    urLayers:(genderData.headUrLayers||[]).map(layer=>({url:layer.url,renderOrder:layer.renderOrder})),
+    headXform:genderData.headXform||null,
+    opacityMaskLayer:genderData.portraitOpacityMaskLayer||null,
+  };
+}
+async function loadTargetCharacter(){
+  const speciesId=$('species').value,gender=$('gender').value; // Used to resolve the exact target fighter/profile selected in the UI.
+  setStatus(`Loading ${speciesId} ${gender}…`);const loaded=await loadSpeciesData(speciesId);const data=loaded.data;
+  const gd=await resolveTargetGenderData(data,gender);if(!gd?.headSprite&&!gd?.portraitBodyLayers?.length)throw new Error(`${loaded.entry.label||speciesId} has no ${gender} portrait setup.`);
+  state.targetSpeciesEntry=loaded.entry;state.targetSpeciesData=data;state.targetGenderData=gd;
+  await renderCharacterLayers();populateClothingOptions();
+  $('characterInfo').textContent=`${loaded.entry.label||speciesId} · ${gender} · canonical game renderer · ${state.characterLayers.length} mask source layers`;
+  invalidateMesh('Target character changed');render();setStatus('Target loaded','good');
+}
+async function renderCharacterLayers(){
+  state.characterLayers=[];const gd=state.targetGenderData; // Used to build both the canonical composite and part-specific alpha sources.
+  const runtime=await ensurePortraitRuntime();runtime.api.setAssetBase(docsRoot()+'assets/');
+  const fighterInput=fighterForSharedRenderer(state.targetSpeciesData,gd,state.targetSpeciesEntry,$('gender').value); // Used to mirror loadPortraitCosmetics' fighter shape without duplicating render math.
+  const fighter=runtime.api.setFighter(fighterInput);state.targetFighter=fighter;
+  const runtimeCanvas=runtime.document.createElement('canvas');runtimeCanvas.width=STAGE_W;runtimeCanvas.height=STAGE_H; // Used as the actual renderProfile target inside the isolated game-script realm.
+  await runtime.api.renderProfile(runtimeCanvas,fighter,{forceEyesOpen:true,breathingComposer:null});
+  const cctx=state.characterCanvas.getContext('2d');cctx.clearRect(0,0,STAGE_W,STAGE_H);cctx.drawImage(runtimeCanvas,0,0);
+
+  const descriptors=[
+    ...(fighterInput.bodyLayers||[]).map(body=>({kind:'body',id:body.id||'body',source:body,url:body.url})),
+    ...(fighterInput.headUrl?[{kind:'head',id:'head',source:{url:fighterInput.headUrl},url:fighterInput.headUrl}]:[]),
+    ...((fighterInput.urLayers||[]).map((ur,index)=>({kind:'head',id:`headUr${index}`,source:ur,url:ur?.url})).filter(item=>item.url)),
+  ]; // Used only for selectable under-clothing mask regions; each layer is positioned by the same shared drawPortraitLayer function.
+  for(const descriptor of descriptors){
+    try{const canvas=makeCanvas();await runtime.api.renderBaseLayer(canvas,portraitAssetRelPath(descriptor.url));state.characterLayers.push({id:descriptor.id,kind:descriptor.kind,canvas,source:descriptor.source});}
+    catch(error){log(`Character mask layer skipped (${descriptor.id}): ${error?.message||error}`,'warn');}
+  }
+
+  const visibility=state.characterVisibilityMaskCanvas,vctx=visibility.getContext('2d');vctx.clearRect(0,0,STAGE_W,STAGE_H);vctx.fillStyle='#fff';vctx.fillRect(0,0,STAGE_W,STAGE_H); // Used to carry the runtime's exact destination-out portrait opacity mask into synchronous mask rebuilds.
+  if(fighterInput.opacityMaskLayer?.url){
+    try{await runtime.api.applyOpacityMask(visibility,fighterInput.opacityMaskLayer);}catch(error){log(`Canonical portrait opacity mask skipped: ${error?.message||error}`,'warn');}
+  }
+  rebuildUnderlayMask();
+  const preset=runtime.api.getPreset('B');log(`Target rendered through NpcAvatarPreview/renderPortraitProfile; preset B = ax ${preset.ax}, ay ${preset.ay}, sx ${preset.sx}, sy ${preset.sy}.`);
+}
+
+async function loadClothingConfigOnly(){
+  const id=$('clothing').value;const entry=(state.cosmeticsIndex?.entries||[]).find(e=>e.id===id);if(!entry)throw new Error(`Unknown clothing config ${id}`);
+  const cfg=await fetchJson(cosmeticConfigUrl(entry.path));state.clothingEntry=entry;state.clothingConfig=cfg;
+  populateSourceVariants();return cfg;
+}
+function availableVariantKeys(){
+  const keys=Object.keys(state.clothingConfig?.speciesVariants||{});if(state.clothingConfig?.parts)keys.unshift('__generic__');return keys;
+}
+function autoVariantForTarget(){
+  const keys=availableVariantKeys();if(!keys.length)return null;
+  const species=$('species').value,gender=$('gender').value,exact=`${species}_${gender}`;if(keys.includes(exact))return exact;
+  const wardrobe=state.targetSpeciesData?.inheritanceNotes?.wardrobeSpecies||state.targetSpeciesData?.parentSpecies;
+  if(wardrobe&&keys.includes(`${wardrobe}_${gender}`))return `${wardrobe}_${gender}`;
+  const group=(state.fallbackGroups?.bodyGroups||[]).find(g=>g.members?.some(m=>m.species===species&&m.gender===gender));
+  if(group){
+    const current=group.members.find(m=>m.species===species&&m.gender===gender);let best=null,bestD=Infinity;
+    for(const m of group.members||[]){const k=`${m.species}_${m.gender}`;if(!keys.includes(k))continue;const d=Math.abs((m.position||0)-(current?.position||0));if(d<bestD){bestD=d;best=k;}}
+    if(best)return best;
+  }
+  return keys.find(k=>k.endsWith(`_${gender}`))||keys[0];
+}
+function populateSourceVariants(){
+  const sel=$('sourceVariant');sel.innerHTML='';for(const key of availableVariantKeys()){const o=document.createElement('option');o.value=key;o.textContent=key==='__generic__'?'Generic / shared setup':pretty(key);sel.appendChild(o);}const auto=autoVariantForTarget();if(auto)sel.value=auto;
+}
+function clothingPartsForVariant(key){
+  if(key==='__generic__')return state.clothingConfig?.parts||{};
+  return state.clothingConfig?.speciesVariants?.[key]?.parts||state.clothingConfig?.parts||{};
+}
+async function loadClothing(){
+  if(!state.clothingConfig||state.clothingEntry?.id!==$('clothing').value)await loadClothingConfigOnly();
+  const key=$('sourceVariant').value||autoVariantForTarget();if(!key)throw new Error('This config has no renderable generic or species variant.');
+  state.sourceVariantKey=key;const parts=clothingPartsForVariant(key);state.clothingPartNames=Object.keys(parts);state.clothingLayers=[];
+  const jobs=[];const runtime=await ensurePortraitRuntime();runtime.api.setAssetBase(docsRoot()+'assets/');const portraitPreset=runtime.api.getPreset('B'); // Used so source clothing starts in exactly the same portrait coordinate system as runtime.
+  for(const [partName,part] of Object.entries(parts))for(const [layerName,layer] of Object.entries(part?.layers||{})){
+    const url=layer?.image?.url;if(!url)continue;
+    jobs.push((async()=>{const bmp=await loadBitmap(cosmeticAssetUrl(url));const baseCanvas=makeCanvas();const isPortrait=String(partName).toLowerCase()==='head'||String(url).toLowerCase().includes('/portrait/');let xform,matrix;
+      if(isPortrait){xform={...portraitPreset,xformPreset:'B'};await runtime.api.renderBaseLayer(baseCanvas,portraitAssetRelPath(url));matrix=matrixForCanonicalPortraitImage(bmp,portraitPreset);}
+      else{xform=extractLayerXform(layer,partName);matrix=drawBitmapWithXform(baseCanvas.getContext('2d'),bmp,xform);}
+      return {partName,layerName,url,bitmap:bmp,xform,matrix,baseCanvas,canonicalPortrait:isPortrait,filename:String(url).split('/').pop()||`${partName}_${layerName}.png`};})());
+  }
+  const settled=await Promise.allSettled(jobs);for(const r of settled){if(r.status==='fulfilled')state.clothingLayers.push(r.value);else log(`Clothing layer skipped: ${r.reason}`,'warn');}
+  if(!state.clothingLayers.length)throw new Error('Selected setup contains no loadable PNG layers.');
+  rebuildClothingBaseComposite();
+  const bounds=alphaBounds(state.clothingCompositeBase,1)||{x:35,y:35,w:130,h:130};
+  state.quadSource=[{x:bounds.x,y:bounds.y},{x:bounds.x+bounds.w,y:bounds.y},{x:bounds.x+bounds.w,y:bounds.y+bounds.h},{x:bounds.x,y:bounds.y+bounds.h}];
+  state.quadBase=state.quadSource.map(p=>({...p}));state.quad=state.quadBase.map(p=>({...p}));$('scaleX').value=100;$('scaleY').value=100;updateScaleLabels();
+  rebuildQuadWarp();rebuildUnderlayMask();invalidateMesh('Clothing setup changed',false);state.outputLayerCanvases=state.quadLayerCanvases;state.outputCompositeCanvas=state.quadCompositeCanvas;
+  $('clothingInfo').textContent=`${state.clothingConfig?.meta?.name||pretty(state.clothingEntry.id)} · source ${key} · ${state.clothingLayers.length} PNG layer${state.clothingLayers.length===1?'':'s'}`;
+  renderLayerList();enableExports(true);render();setStatus('Clothing loaded','good');log(`Loaded ${state.clothingEntry.id} from ${key} with ${state.clothingLayers.length} layer(s).`);
+}
+function renderLayerList(){const box=$('layerList');box.innerHTML='';state.clothingLayers.forEach((l,i)=>{const d=document.createElement('div');d.className='layerItem';d.innerHTML=`<span>${i+1}. ${pretty(l.partName)} / ${pretty(l.layerName)}</span><code>${l.bitmap.width}×${l.bitmap.height}</code>`;box.appendChild(d);});}
+function rebuildClothingBaseComposite(){const c=state.clothingCompositeBase,cctx=c.getContext('2d');cctx.clearRect(0,0,STAGE_W,STAGE_H);for(const l of state.clothingLayers)cctx.drawImage(l.baseCanvas,0,0);}
+
+function alphaBounds(canvas,threshold=1){const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;let minX=canvas.width,minY=canvas.height,maxX=-1,maxY=-1;for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){if(d[(y*canvas.width+x)*4+3]>=threshold){if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}}return maxX<0?null:{x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1};}
+function quadCenter(q){return {x:q.reduce((s,p)=>s+p.x,0)/4,y:q.reduce((s,p)=>s+p.y,0)/4};}
+function scaledQuad(base,sx,sy){const c=quadCenter(base);return base.map(p=>({x:c.x+(p.x-c.x)*sx,y:c.y+(p.y-c.y)*sy}));}
+function affineFromTriangles(s0,s1,s2,d0,d1,d2){
+  const det=s0.x*(s1.y-s2.y)+s1.x*(s2.y-s0.y)+s2.x*(s0.y-s1.y);if(Math.abs(det)<1e-8)return null;
+  const a=(d0.x*(s1.y-s2.y)+d1.x*(s2.y-s0.y)+d2.x*(s0.y-s1.y))/det;
+  const c=(d0.x*(s2.x-s1.x)+d1.x*(s0.x-s2.x)+d2.x*(s1.x-s0.x))/det;
+  const e=(d0.x*(s1.x*s2.y-s2.x*s1.y)+d1.x*(s2.x*s0.y-s0.x*s2.y)+d2.x*(s0.x*s1.y-s1.x*s0.y))/det;
+  const b=(d0.y*(s1.y-s2.y)+d1.y*(s2.y-s0.y)+d2.y*(s0.y-s1.y))/det;
+  const d=(d0.y*(s2.x-s1.x)+d1.y*(s0.x-s2.x)+d2.y*(s1.x-s0.x))/det;
+  const f=(d0.y*(s1.x*s2.y-s2.x*s1.y)+d1.y*(s2.x*s0.y-s0.x*s2.y)+d2.y*(s0.x*s1.y-s1.x*s0.y))/det;
+  return {a,b,c,d,e,f};
+}
+function drawTriangleWarp(targetCtx,sourceCanvas,s0,s1,s2,d0,d1,d2){
+  const m=affineFromTriangles(s0,s1,s2,d0,d1,d2);if(!m)return;
+  targetCtx.save();targetCtx.beginPath();targetCtx.moveTo(d0.x,d0.y);targetCtx.lineTo(d1.x,d1.y);targetCtx.lineTo(d2.x,d2.y);targetCtx.closePath();targetCtx.clip();targetCtx.setTransform(m.a,m.b,m.c,m.d,m.e,m.f);targetCtx.drawImage(sourceCanvas,0,0);targetCtx.restore();
+}
+function warpCanvasQuad(source,sourceQuad,destQuad){
+  const out=makeCanvas();const o=out.getContext('2d');o.clearRect(0,0,STAGE_W,STAGE_H);
+  drawTriangleWarp(o,source,sourceQuad[0],sourceQuad[1],sourceQuad[2],destQuad[0],destQuad[1],destQuad[2]);
+  drawTriangleWarp(o,source,sourceQuad[0],sourceQuad[2],sourceQuad[3],destQuad[0],destQuad[2],destQuad[3]);return out;
+}
+function rebuildQuadWarp(){
+  if(!state.quadSource||!state.quad)return;
+  state.quadLayerCanvases=state.clothingLayers.map(l=>warpCanvasQuad(l.baseCanvas,state.quadSource,state.quad));
+  const comp=state.quadCompositeCanvas,cctx=comp.getContext('2d');cctx.clearRect(0,0,STAGE_W,STAGE_H);for(const c of state.quadLayerCanvases)cctx.drawImage(c,0,0);
+  if(!state.mesh){state.outputLayerCanvases=state.quadLayerCanvases;state.outputCompositeCanvas=state.quadCompositeCanvas;}
+  rebuildUnderlayMask();
+}
+function applyScaleSliders(){if(!state.quadBase)return;const sx=Number($('scaleX').value)/100,sy=Number($('scaleY').value)/100;state.quad=scaledQuad(state.quadBase,sx,sy);rebuildQuadWarp();invalidateMesh('Quad/resize changed');render();}
+function updateScaleLabels(){$('scaleXVal').textContent=$('scaleX').value+'%';$('scaleYVal').textContent=$('scaleY').value+'%';}
+
+function autoUnderlayLayerIds(){
+  const ids=new Set();const partNames=state.clothingPartNames.map(s=>String(s).toLowerCase());const slots=[state.clothingConfig?.slot,...(state.clothingConfig?.slots||[])].filter(Boolean).map(s=>String(s).toLowerCase());
+  const headish=slots.some(s=>['hat','hood','head','face'].includes(s))||partNames.some(p=>/head|hat|hood|face/.test(p));if(headish)ids.add('head');
+  for(const p of partNames){
+    if(/torso|body|chest/.test(p))ids.add('torso');if(/arm.?l|left.?arm/.test(p))ids.add('armL');if(/arm.?r|right.?arm/.test(p))ids.add('armR');
+    if(/leg.?l/.test(p))ids.add('legL');if(/leg.?r/.test(p))ids.add('legR');
+  }
+  if(!ids.size)for(const l of state.characterLayers)if(l.kind==='body')ids.add(l.id);
+  return ids;
+}
+function rebuildUnderlayMask(){
+  const mode=$('maskSource')?.value||'auto';const c=state.underlayMaskCanvas,cctx=c.getContext('2d');cctx.clearRect(0,0,STAGE_W,STAGE_H);
+  let selected=[];
+  if(mode==='full')selected=state.characterLayers;
+  else if(mode==='head')selected=state.characterLayers.filter(l=>l.kind==='head');
+  else if(mode==='torso')selected=state.characterLayers.filter(l=>String(l.id).toLowerCase()==='torso');
+  else{const ids=autoUnderlayLayerIds();selected=state.characterLayers.filter(l=>ids.has(l.id)||(ids.has('head')&&l.kind==='head'));}
+  if(!selected.length)selected=state.characterLayers;
+  cctx.save();cctx.fillStyle='#fff';for(const l of selected)cctx.drawImage(l.canvas,0,0);cctx.restore();cctx.globalCompositeOperation='destination-in';cctx.drawImage(state.characterVisibilityMaskCanvas,0,0);cctx.globalCompositeOperation='source-over';
+  const lock=state.lockMaskCanvas,lctx=lock.getContext('2d');lctx.clearRect(0,0,STAGE_W,STAGE_H);lctx.drawImage(c,0,0);lctx.globalCompositeOperation='destination-in';lctx.drawImage(state.quadCompositeCanvas,0,0);lctx.globalCompositeOperation='source-over';
+}
+
+function largestComponentBoundary(canvas,threshold){
+  const w=canvas.width,h=canvas.height,data=canvas.getContext('2d').getImageData(0,0,w,h).data;const bin=new Uint8Array(w*h),visited=new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++)bin[i]=data[i*4+3]>=threshold?1:0;
+  let largest=[];const qx=new Int16Array(w*h),qy=new Int16Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const start=y*w+x;if(!bin[start]||visited[start])continue;let qh=0,qt=0;qx[qt]=x;qy[qt++]=y;visited[start]=1;const comp=[];
+    while(qh<qt){const px=qx[qh],py=qy[qh++],idx=py*w+px;comp.push(idx);const ns=[[px-1,py],[px+1,py],[px,py-1],[px,py+1]];for(const [nx,ny] of ns){if(nx<0||ny<0||nx>=w||ny>=h)continue;const ni=ny*w+nx;if(bin[ni]&&!visited[ni]){visited[ni]=1;qx[qt]=nx;qy[qt++]=ny;}}}
+    if(comp.length>largest.length)largest=comp;
+  }
+  if(!largest.length)return null;const chosen=new Uint8Array(w*h);for(const idx of largest)chosen[idx]=1;
+  const edges=[];const add=(x1,y1,x2,y2)=>edges.push({a:{x:x1,y:y1},b:{x:x2,y:y2},used:false});
+  for(const idx of largest){const x=idx%w,y=(idx/w)|0;const at=(nx,ny)=>nx>=0&&ny>=0&&nx<w&&ny<h&&chosen[ny*w+nx];if(!at(x,y-1))add(x,y,x+1,y);if(!at(x+1,y))add(x+1,y,x+1,y+1);if(!at(x,y+1))add(x+1,y+1,x,y+1);if(!at(x-1,y))add(x,y+1,x,y);}
+  const starts=new Map();edges.forEach((e,i)=>{const k=`${e.a.x},${e.a.y}`;if(!starts.has(k))starts.set(k,[]);starts.get(k).push(i);});
+  const loops=[];
+  for(let si=0;si<edges.length;si++){if(edges[si].used)continue;const loop=[];let i=si,guard=0;while(i!=null&&!edges[i].used&&guard++<edges.length+8){const e=edges[i];e.used=true;loop.push(e.a);const k=`${e.b.x},${e.b.y}`;const next=(starts.get(k)||[]).find(j=>!edges[j].used);if(next==null){if(e.b.x===loop[0].x&&e.b.y===loop[0].y){}else loop.push(e.b);break;}i=next;if(i===si)break;}if(loop.length>2)loops.push(loop);}
+  if(!loops.length)return null;loops.sort((a,b)=>polylineLength(b,true)-polylineLength(a,true));const outline=loops[0];
+  const mask=makeCanvas(w,h),m=mask.getContext('2d'),img=m.createImageData(w,h);for(const idx of largest){img.data[idx*4]=255;img.data[idx*4+1]=255;img.data[idx*4+2]=255;img.data[idx*4+3]=255;}m.putImageData(img,0,0);
+  return {outline,pixelCount:largest.length,componentMask:mask};
+}
+function polylineLength(points,closed=false){let sum=0;for(let i=1;i<points.length;i++)sum+=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);if(closed&&points.length>1)sum+=Math.hypot(points[0].x-points.at(-1).x,points[0].y-points.at(-1).y);return sum;}
+function resampleClosed(points,count){
+  if(points.length<2)return points.slice();const segs=[],cum=[0];let total=0;for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length],len=Math.hypot(b.x-a.x,b.y-a.y);segs.push({a,b,len});total+=len;cum.push(total);}const out=[];
+  for(let n=0;n<count;n++){const t=total*n/count;let i=0;while(i<segs.length-1&&cum[i+1]<t)i++;const seg=segs[i],local=seg.len?((t-cum[i])/seg.len):0;out.push({x:seg.a.x+(seg.b.x-seg.a.x)*local,y:seg.a.y+(seg.b.y-seg.a.y)*local});}return out;
+}
+function signedArea(points){let a=0;for(let i=0;i<points.length;i++){const p=points[i],q=points[(i+1)%points.length];a+=p.x*q.y-q.x*p.y;}return a/2;}
+function alignOuterToInner(inner,outer){
+  let candidate=outer.slice();if(Math.sign(signedArea(inner))!==Math.sign(signedArea(candidate)))candidate.reverse();let best=candidate,bestScore=Infinity;
+  for(const direction of [candidate,candidate.slice().reverse()])for(let shift=0;shift<direction.length;shift++){let score=0;for(let i=0;i<inner.length;i++){const q=direction[(i+shift)%direction.length],p=inner[i];const dx=p.x-q.x,dy=p.y-q.y;score+=dx*dx+dy*dy;}if(score<bestScore){bestScore=score;best=inner.map((_,i)=>({...direction[(i+shift)%direction.length]}));}}
+  return best;
+}
+function buildSpiderWeb(){
+  if(!state.clothingLayers.length)throw new Error('Load clothing first.');rebuildUnderlayMask();const threshold=Number($('alphaThreshold').value),count=Number($('pointCount').value);
+  const innerComp=largestComponentBoundary(state.underlayMaskCanvas,threshold);const outerComp=largestComponentBoundary(state.quadCompositeCanvas,threshold);if(!innerComp)throw new Error('No opaque target-character cluster found for the selected mask source.');if(!outerComp)throw new Error('No opaque clothing cluster found.');
+  let inner=resampleClosed(innerComp.outline,count),outer=resampleClosed(outerComp.outline,count);outer=alignOuterToInner(inner,outer);const mid=inner.map((p,i)=>({x:(p.x+outer[i].x)/2,y:(p.y+outer[i].y)/2}));
+  state.clothingClusterMask=outerComp.componentMask;state.mesh={inner,outerBase:outer.map(p=>({...p})),midBase:mid.map(p=>({...p})),outerEdit:outer.map(p=>({...p})),midEdit:mid.map(p=>({...p})),innerPixels:innerComp.pixelCount,outerPixels:outerComp.pixelCount};state.selectedVertex=null;$('spread').value=100;updateSpreadLabel();$('resetMesh').disabled=false;
+  rebuildMeshOutput();setMode('mesh');render();log(`Spider web: ${count} paired points; target cluster ${innerComp.pixelCount}px, clothing cluster ${outerComp.pixelCount}px.`);setStatus('Spider web generated','good');
+}
+function spreadPoint(inner,p,spread){return {x:inner.x+(p.x-inner.x)*spread,y:inner.y+(p.y-inner.y)*spread};}
+function meshDestRing(ring){const spread=Number($('spread').value)/100;const src=ring==='mid'?state.mesh.midEdit:state.mesh.outerEdit;return src.map((p,i)=>spreadPoint(state.mesh.inner[i],p,spread));}
+function clipAndDrawPolygon(targetCtx,source,points){targetCtx.save();targetCtx.beginPath();points.forEach((p,i)=>i?targetCtx.lineTo(p.x,p.y):targetCtx.moveTo(p.x,p.y));targetCtx.closePath();targetCtx.clip();targetCtx.drawImage(source,0,0);targetCtx.restore();}
+function canvasMasked(source,mask,mode='in'){const out=makeCanvas();const o=out.getContext('2d');o.drawImage(source,0,0);o.globalCompositeOperation=mode==='out'?'destination-out':'destination-in';o.drawImage(mask,0,0);o.globalCompositeOperation='source-over';return out;}
+function meshWarpLayer(source){
+  const out=makeCanvas(),o=out.getContext('2d'),m=state.mesh;const dm=meshDestRing('mid'),doo=meshDestRing('outer');
+  // Keep all non-primary disconnected clothing clusters exactly where quad warp put them.
+  o.drawImage(canvasMasked(source,state.clothingClusterMask,'out'),0,0);
+  // Keep everything inside the inner species spline fixed before deforming the annulus.
+  clipAndDrawPolygon(o,source,m.inner);
+  const n=m.inner.length;
+  for(let i=0;i<n;i++){const j=(i+1)%n;
+    drawTriangleWarp(o,source,m.inner[i],m.inner[j],m.midBase[j],m.inner[i],m.inner[j],dm[j]);
+    drawTriangleWarp(o,source,m.inner[i],m.midBase[j],m.midBase[i],m.inner[i],dm[j],dm[i]);
+    drawTriangleWarp(o,source,m.midBase[i],m.midBase[j],m.outerBase[j],dm[i],dm[j],doo[j]);
+    drawTriangleWarp(o,source,m.midBase[i],m.outerBase[j],m.outerBase[i],dm[i],doo[j],doo[i]);
+  }
+  // Exact-pixel lock: source clothing under the body-part mask is overlaid last,
+  // so mesh edits can never move those masked pixels even if a triangle crosses them.
+  o.drawImage(canvasMasked(source,state.lockMaskCanvas,'in'),0,0);
+  return out;
+}
+function rebuildMeshOutput(){
+  if(!state.mesh)return;state.outputLayerCanvases=state.quadLayerCanvases.map(meshWarpLayer);const comp=makeCanvas(),c=comp.getContext('2d');for(const l of state.outputLayerCanvases)c.drawImage(l,0,0);state.outputCompositeCanvas=comp;render();
+}
+function invalidateMesh(reason,renderNow=true){if(state.mesh)log(`${reason}; spider web invalidated.`,'warn');state.mesh=null;state.selectedVertex=null;$('resetMesh').disabled=true;$('vertexPanel').hidden=true;if(state.quadLayerCanvases.length){state.outputLayerCanvases=state.quadLayerCanvases;state.outputCompositeCanvas=state.quadCompositeCanvas;}if(renderNow)render();}
+
+function setMode(mode){state.mode=mode;$('modeBadge').textContent=mode==='mesh'?'Mesh':'Quad';$('hint').textContent=mode==='mesh'?'Drag yellow midpoint or pink outer vertices. Inner turquoise vertices and masked pixels stay locked.':'Drag quad corners; drag the center handle to move all clothing layers together.';render();}
+function drawOverlayCanvas(canvas,alpha=1){ctx.save();ctx.globalAlpha=alpha;ctx.drawImage(canvas,0,0);ctx.restore();}
+function render(){
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,STAGE_W,STAGE_H);ctx.fillStyle='#101b28';ctx.fillRect(0,0,STAGE_W,STAGE_H);
+  if($('showCharacter').checked)drawOverlayCanvas(state.characterCanvas,.78);
+  if($('showClothing').checked&&state.outputCompositeCanvas)drawOverlayCanvas(state.outputCompositeCanvas,1);
+  if($('showMask').checked){ctx.save();ctx.globalAlpha=.18;ctx.fillStyle='#46e0c2';const mask=state.underlayMaskCanvas.getContext('2d').getImageData(0,0,STAGE_W,STAGE_H).data;const img=ctx.createImageData(STAGE_W,STAGE_H);for(let i=0;i<STAGE_W*STAGE_H;i++)if(mask[i*4+3]){img.data[i*4]=70;img.data[i*4+1]=224;img.data[i*4+2]=194;img.data[i*4+3]=255;}const tmp=makeCanvas();tmp.getContext('2d').putImageData(img,0,0);ctx.drawImage(tmp,0,0);ctx.restore();}
+  if($('showLockMask').checked){ctx.save();ctx.globalAlpha=.45;ctx.drawImage(state.lockMaskCanvas,0,0);ctx.restore();}
+  if($('showQuad').checked&&state.quad)drawQuad();if($('showWeb').checked&&state.mesh)drawWeb();ctx.restore();
+}
+function drawQuad(){const q=state.quad;ctx.save();ctx.strokeStyle='#73a9ff';ctx.lineWidth=1;ctx.beginPath();q.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();for(const p of q){ctx.fillStyle='#73a9ff';ctx.fillRect(p.x-2.3,p.y-2.3,4.6,4.6);}const c=quadCenter(q);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(c.x,c.y,2.6,0,Math.PI*2);ctx.fill();ctx.restore();}
+function drawWeb(){const m=state.mesh,mid=meshDestRing('mid'),outer=meshDestRing('outer');ctx.save();ctx.lineWidth=.55;
+  for(let i=0;i<m.inner.length;i++){ctx.strokeStyle='rgba(210,225,244,.34)';ctx.beginPath();ctx.moveTo(m.inner[i].x,m.inner[i].y);ctx.lineTo(outer[i].x,outer[i].y);ctx.stroke();}
+  drawClosedSpline(m.inner,'#55e1c1',.9);drawClosedSpline(mid,'#ffd166',.9);drawClosedSpline(outer,'#ff7aa8',.9);
+  for(let i=0;i<m.inner.length;i++){drawVertex(m.inner[i],'#55e1c1',1.35);drawVertex(mid[i],'#ffd166',1.65);drawVertex(outer[i],'#ff7aa8',1.65);}if(state.selectedVertex){const p=(state.selectedVertex.ring==='mid'?mid:outer)[state.selectedVertex.index];ctx.strokeStyle='#fff';ctx.lineWidth=.8;ctx.beginPath();ctx.arc(p.x,p.y,3.3,0,Math.PI*2);ctx.stroke();}ctx.restore();}
+function drawClosedSpline(points,color,width){ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();}
+function drawVertex(p,color,r){ctx.fillStyle=color;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();}
+
+function pointerStagePos(e){const r=stage.getBoundingClientRect();return {x:(e.clientX-r.left)*STAGE_W/r.width,y:(e.clientY-r.top)*STAGE_H/r.height};}
+function hitQuad(p){if(!state.quad)return null;let best=null,d=6;state.quad.forEach((q,i)=>{const dist=Math.hypot(p.x-q.x,p.y-q.y);if(dist<d){best={type:'corner',index:i};d=dist;}});const c=quadCenter(state.quad);if(Math.hypot(p.x-c.x,p.y-c.y)<6)return {type:'center'};return best;}
+function hitMesh(p){if(!state.mesh)return null;const mid=meshDestRing('mid'),outer=meshDestRing('outer');let best=null,bestD=5;for(const ring of ['mid','outer']){const pts=ring==='mid'?mid:outer;for(let i=0;i<pts.length;i++){const d=Math.hypot(p.x-pts[i].x,p.y-pts[i].y);if(d<bestD){bestD=d;best={ring,index:i};}}}return best;}
+stage.addEventListener('pointerdown',e=>{stage.setPointerCapture(e.pointerId);const p=pointerStagePos(e);
+  if(state.mode==='mesh'&&state.mesh){const hit=hitMesh(p);if(hit){state.selectedVertex=hit;state.drag={kind:'mesh',hit,last:p};syncVertexPanel();render();return;}}
+  const qhit=hitQuad(p);if(qhit){state.drag={kind:'quad',hit:qhit,start:p,startQuad:state.quad.map(v=>({...v}))};}
+});
+stage.addEventListener('pointermove',e=>{if(!state.drag)return;const p=pointerStagePos(e);
+  if(state.drag.kind==='quad'){
+    const d=state.drag;if(d.hit.type==='corner')state.quad[d.hit.index]={x:clamp(p.x,-80,280),y:clamp(p.y,-80,280)};else{const dx=p.x-d.start.x,dy=p.y-d.start.y;state.quad=d.startQuad.map(v=>({x:v.x+dx,y:v.y+dy}));}
+    rebuildQuadWarp();invalidateMesh('Quad edited',false);render();
+  }else if(state.drag.kind==='mesh')moveSelectedVertexTo(p);
+});
+stage.addEventListener('pointerup',()=>{state.drag=null;});stage.addEventListener('pointercancel',()=>{state.drag=null;});
+
+function moveSelectedVertexTo(dest){if(!state.mesh||!state.selectedVertex)return;const {ring,index}=state.selectedVertex,spread=Math.max(.0001,Number($('spread').value)/100),inner=state.mesh.inner[index];const canonical={x:inner.x+(dest.x-inner.x)/spread,y:inner.y+(dest.y-inner.y)/spread};(ring==='mid'?state.mesh.midEdit:state.mesh.outerEdit)[index]=canonical;syncVertexPanel();rebuildMeshOutput();}
+function selectedCanonical(){if(!state.mesh||!state.selectedVertex)return null;return (state.selectedVertex.ring==='mid'?state.mesh.midEdit:state.mesh.outerEdit)[state.selectedVertex.index];}
+function syncVertexPanel(){const p=selectedCanonical();$('vertexPanel').hidden=!p;if(!p)return;$('vertexLabel').textContent=`${state.selectedVertex.ring==='mid'?'Interstitial':'Outer'} vertex ${state.selectedVertex.index+1} of ${state.mesh.inner.length}`;$('vertexX').value=p.x.toFixed(2);$('vertexY').value=p.y.toFixed(2);}
+function applyVertexInputs(){const p=selectedCanonical();if(!p)return;p.x=Number($('vertexX').value);p.y=Number($('vertexY').value);rebuildMeshOutput();syncVertexPanel();}
+function nudgeSelected(dx,dy){const p=selectedCanonical();if(!p)return;const step=Number($('nudgeStep').value)||.25;p.x+=dx*step;p.y+=dy*step;rebuildMeshOutput();syncVertexPanel();}
+
+function finalLocalCanvas(layerIndex){
+  const layer=state.clothingLayers[layerIndex],stageCanvas=state.outputLayerCanvases[layerIndex];if(!layer||!stageCanvas)return null;const inv=invertMatrix(layer.matrix);if(!inv)throw new Error(`Could not invert xform for ${layer.filename}`);const out=makeCanvas(layer.bitmap.width,layer.bitmap.height),o=out.getContext('2d');o.setTransform(inv.a,inv.b,inv.c,inv.d,inv.e,inv.f);o.drawImage(stageCanvas,0,0);o.setTransform(1,0,0,1,0,0);return out;
+}
+function canvasBlob(canvas,type='image/png'){return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Canvas export failed')),type));}
+function downloadBlob(blob,filename){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);}
+function projectData(){
+  return {tool:'hobunji-clothing-sprite-warp-author',version:2,sharedPortraitRenderer:true,repo:REPO,ref:$('repoRef').value.trim()||'main',target:{species:$('species').value,gender:$('gender').value,maskSource:$('maskSource').value},clothing:{id:state.clothingEntry?.id||null,configPath:state.clothingEntry?.path||null,sourceVariant:state.sourceVariantKey,parts:state.clothingPartNames,layers:state.clothingLayers.map(l=>({part:l.partName,layer:l.layerName,url:l.url,filename:l.filename,width:l.bitmap.width,height:l.bitmap.height,xform:l.xform,canonicalPortrait:l.canonicalPortrait===true}))},quad:{source:state.quadSource,destination:state.quad},mesh:state.mesh?{pointCount:state.mesh.inner.length,spread:Number($('spread').value)/100,innerLocked:state.mesh.inner,midBase:state.mesh.midBase,outerBase:state.mesh.outerBase,midEdit:state.mesh.midEdit,outerEdit:state.mesh.outerEdit,lockedPixelsCompositedLast:true}:null};
+}
+async function downloadActiveLayer(){if(!state.clothingLayers.length)return;const c=finalLocalCanvas(0),blob=await canvasBlob(c);downloadBlob(blob,safeName(state.clothingLayers[0].filename.replace(/\.png$/i,''))+'_warped.png');}
+async function downloadProject(){const blob=new Blob([JSON.stringify(projectData(),null,2)],{type:'application/json'});downloadBlob(blob,`${safeName(state.clothingEntry?.id)}_${safeName($('species').value)}_${$('gender').value}_warp_project.json`);}
+
+// Minimal uncompressed ZIP writer. PNGs are already compressed, so STORE mode
+// keeps this standalone HTML dependency-free while still producing one mobile-
+// friendly download for multilayer clothing.
+const CRC_TABLE=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(bytes){let c=0xffffffff;for(const b of bytes)c=CRC_TABLE[(c^b)&255]^(c>>>8);return (c^0xffffffff)>>>0;}
+function dosDateTime(date=new Date()){const year=Math.max(1980,date.getFullYear());return {time:(date.getHours()<<11)|(date.getMinutes()<<5)|(date.getSeconds()>>1),date:((year-1980)<<9)|((date.getMonth()+1)<<5)|date.getDate()};}
+function u16(v){const b=new Uint8Array(2);new DataView(b.buffer).setUint16(0,v,true);return b;}function u32(v){const b=new Uint8Array(4);new DataView(b.buffer).setUint32(0,v>>>0,true);return b;}
+function concatBytes(parts){const total=parts.reduce((s,p)=>s+p.length,0),out=new Uint8Array(total);let o=0;for(const p of parts){out.set(p,o);o+=p.length;}return out;}
+function buildZip(files){const enc=new TextEncoder(),locals=[],centrals=[];let offset=0;const dt=dosDateTime();for(const file of files){const name=enc.encode(file.name),data=file.bytes,crc=crc32(data);const local=concatBytes([u32(0x04034b50),u16(20),u16(0),u16(0),u16(dt.time),u16(dt.date),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),name,data]);locals.push(local);const central=concatBytes([u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(dt.time),u16(dt.date),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset),name]);centrals.push(central);offset+=local.length;}const centralBytes=concatBytes(centrals),localBytes=concatBytes(locals),end=concatBytes([u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(centralBytes.length),u32(localBytes.length),u16(0)]);return new Blob([localBytes,centralBytes,end],{type:'application/zip'});}
+async function downloadZip(){
+  setStatus('Building ZIP…');const files=[];for(let i=0;i<state.clothingLayers.length;i++){const c=finalLocalCanvas(i),blob=await canvasBlob(c),bytes=new Uint8Array(await blob.arrayBuffer());const base=state.clothingLayers[i].filename.replace(/\.png$/i,'');files.push({name:`layers/${safeName(base)}_warped.png`,bytes});}
+  for(const [name,canvas] of [['underlay-mask.png',state.underlayMaskCanvas],['locked-pixels-mask.png',state.lockMaskCanvas],['preview.png',state.outputCompositeCanvas]]){const blob=await canvasBlob(canvas);files.push({name,bytes:new Uint8Array(await blob.arrayBuffer())});}
+  files.push({name:'project.json',bytes:new TextEncoder().encode(JSON.stringify(projectData(),null,2))});const zip=buildZip(files);downloadBlob(zip,`${safeName(state.clothingEntry?.id)}_${safeName($('species').value)}_${$('gender').value}_warped.zip`);setStatus('ZIP downloaded','good');
+}
+function enableExports(enabled){$('downloadActive').disabled=!enabled;$('downloadZip').disabled=!enabled;$('downloadProject').disabled=!enabled;}
+
+function updatePointLabel(){$('pointCountVal').textContent=$('pointCount').value;}
+function updateAlphaLabel(){$('alphaVal').textContent=$('alphaThreshold').value;}
+function updateSpreadLabel(){$('spreadVal').textContent=$('spread').value+'%';}
+
+$('reloadCharacter').addEventListener('click',()=>loadTargetCharacter().catch(e=>log(e.stack||e,'error')));
+$('species').addEventListener('change',()=>loadTargetCharacter().catch(e=>log(e.stack||e,'error')));$('gender').addEventListener('change',()=>loadTargetCharacter().catch(e=>log(e.stack||e,'error')));
+$('repoRef').addEventListener('change',async()=>{try{bitmapCache.clear();destroyPortraitRuntime();await ensurePortraitRuntime();await loadIndexes();populateSpecies();populateClothingOptions();await loadTargetCharacter();state.clothingConfig=null;state.clothingLayers=[];enableExports(false);render();}catch(e){log(e.stack||e,'error');}});
+$('clothingFilter').addEventListener('input',populateClothingOptions);
+$('clothing').addEventListener('change',()=>loadClothingConfigOnly().then(()=>{$('clothingInfo').textContent='Config loaded; choose a source setup, then Load piece.';}).catch(e=>log(e.stack||e,'error')));
+$('loadClothing').addEventListener('click',()=>loadClothing().catch(e=>log(e.stack||e,'error')));
+$('sourceVariant').addEventListener('change',()=>{if(state.clothingConfig)loadClothing().catch(e=>log(e.stack||e,'error'));});
+$('autoVariant').addEventListener('click',()=>{const v=autoVariantForTarget();if(v){$('sourceVariant').value=v;loadClothing().catch(e=>log(e.stack||e,'error'));}});
+$('scaleX').addEventListener('input',()=>{updateScaleLabels();applyScaleSliders();});$('scaleY').addEventListener('input',()=>{updateScaleLabels();applyScaleSliders();});
+$('resetQuad').addEventListener('click',()=>{if(!state.quadSource)return;state.quadBase=state.quadSource.map(p=>({...p}));state.quad=state.quadBase.map(p=>({...p}));$('scaleX').value=100;$('scaleY').value=100;updateScaleLabels();rebuildQuadWarp();invalidateMesh('Quad reset');});
+$('modeQuad').addEventListener('click',()=>setMode('quad'));$('modeMesh').addEventListener('click',()=>{if(state.mesh)setMode('mesh');else log('Generate the spider web before entering Mesh mode.','warn');});
+$('maskSource').addEventListener('change',()=>{rebuildUnderlayMask();invalidateMesh('Mask source changed');});
+$('pointCount').addEventListener('input',updatePointLabel);$('alphaThreshold').addEventListener('input',updateAlphaLabel);
+$('buildWeb').addEventListener('click',()=>{try{buildSpiderWeb();}catch(e){log(e.stack||e,'error');}});
+$('spread').addEventListener('input',()=>{updateSpreadLabel();if(state.mesh){rebuildMeshOutput();syncVertexPanel();}});
+$('resetMesh').addEventListener('click',()=>{if(!state.mesh)return;state.mesh.midEdit=state.mesh.midBase.map(p=>({...p}));state.mesh.outerEdit=state.mesh.outerBase.map(p=>({...p}));$('spread').value=100;updateSpreadLabel();rebuildMeshOutput();syncVertexPanel();});
+$('applyVertex').addEventListener('click',applyVertexInputs);document.querySelectorAll('[data-nudge]').forEach(b=>b.addEventListener('click',()=>{const [dx,dy]=b.dataset.nudge.split(',').map(Number);nudgeSelected(dx,dy);}));
+for(const id of ['showCharacter','showClothing','showMask','showLockMask','showWeb','showQuad'])$(id).addEventListener('change',render);
+$('downloadActive').addEventListener('click',()=>downloadActiveLayer().catch(e=>log(e.stack||e,'error')));$('downloadProject').addEventListener('click',()=>downloadProject().catch(e=>log(e.stack||e,'error')));$('downloadZip').addEventListener('click',()=>downloadZip().catch(e=>log(e.stack||e,'error')));
+$('copyDebug').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('debug').textContent);setStatus('Debug copied','good');}catch{const t=document.createElement('textarea');t.value=$('debug').textContent;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();}});$('clearDebug').addEventListener('click',()=>{$('debug').textContent='';});
+
+updateScaleLabels();updatePointLabel();updateAlphaLabel();updateSpreadLabel();boot().catch(e=>log(e.stack||e,'error'));
+</script>
+</body>
+</html>
