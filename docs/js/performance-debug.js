@@ -183,6 +183,31 @@
     perfState.longTaskObserver = null;
   }
 
+  // js/outline-render-performance.js already wraps the renderer one layer
+  // closer to the true native render than held-object-render-order.js does
+  // (it loads earlier, via house-pieces.js's script chain, so everything
+  // else installed after it -- terrain-render-chunks.js,
+  // natural-surface-stretch-post-jigsaw.js, held-object-render-order.js --
+  // wraps AROUND it, not the reverse). Its own lifetime per-pass CPU-ms
+  // average therefore isolates "this layer plus everything below it" from
+  // the outer layers' overhead, without needing a second timing system —
+  // reuses its existing snapshot() instead of re-instrumenting the same
+  // render() calls a third time.
+  function outlineRenderPerfLine() {
+    const snap = root.OutlineRenderPerformance?.snapshot?.();
+    const lifetime = snap?.lifetime;
+    if (!lifetime) return null;
+    const order = ['base', 'pngDepth', 'shell', 'target', 'materialId', 'postOrDirect'];
+    const parts = order
+      .map(name => {
+        const b = lifetime[name];
+        if (!b?.renders) return null;
+        return `${name} ${(b.cpuMs / b.renders).toFixed(2)}ms`;
+      })
+      .filter(Boolean);
+    return parts.length ? `Outline-perf layer (native-ward of held-overlay): ${parts.join('  ')}` : null;
+  }
+
   function profilerText() {
     const avgRender = perfState.renderSamples ? perfState.renderCpuMs / perfState.renderSamples : 0;
     const geom = Object.entries(perfState.geometryCategories).sort((a,b) => b[1] - a[1]);
@@ -190,6 +215,7 @@
     const topGeom = geom[0];
     const subsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg).slice(0, 30); // Raised from 5 now that the gameLoop's per-frame work (plus js/held-object-render-order.js's own internal render sub-passes) is broken into more (currently up to ~28) named buckets — sorted worst-first so the real cost still surfaces even if some future addition pushes the count higher still.
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
+    const outlinePerfLine = outlineRenderPerfLine();
     const topLine = topGeom
       ? `${topGeom[0]} ${formatCount(topGeom[1])} tris (${totalGeom ? Math.round(topGeom[1] / totalGeom * 100) : 0}%)`
       : 'not scanned yet';
@@ -204,6 +230,7 @@
         : 'Timed subsystems: none instrumented',
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
       `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
+      ...(outlinePerfLine ? [outlinePerfLine] : []),
     ].join('\n');
   }
 
