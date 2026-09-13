@@ -512,6 +512,20 @@
   <script src="js/weather-fx.js?v=20260809b"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
+  <!-- Tile-driven environment surface overlay (window.EnvironmentSurfaceMicroPlateau)
+       — owns both Western Slope's permanent snow and seasonal Coldmuck
+       slush on every other outdoor zone, reading tile height straight from
+       grid data (elevTier/rampElevation) instead of scanning rendered
+       terrain geometry. Fully replaced the old triangle-copy job-queue
+       system in environment-surface-runtime.js (rain-planes.js loads that
+       above on demand, now an inert stub kept only so that bootstrap check
+       and the Pixel Probe adapter below still have something to find). -->
+  <script src="js/environment-surface-micro-plateau.js?v=20260913b"></script>
+  <!-- Feeds the surface overlay's build progress into the Pixel Probe
+       report line (window.EnvironmentSurfacePixelProbe) — intercepts
+       window.PixelProbe assignment if pixel-probe.js below hasn't loaded
+       yet. -->
+  <script src="js/environment-surface-pixel-probe.js?v=20260913b"></script>
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
