@@ -21,7 +21,7 @@
   // V50 output as a real map_i_* building interior instead of dumping its
   // scene graph into the Testing Arena.
   if (document.readyState === 'loading') {
-    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50interior1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50interior1"></scr' + 'ipt>');
+    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50interior2"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50interior2"></scr' + 'ipt>');
   }
 })();
