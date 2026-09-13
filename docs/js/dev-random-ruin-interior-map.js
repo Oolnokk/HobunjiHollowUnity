@@ -18,6 +18,7 @@
   const CONTROL_RANGE = 1.65;
   const MAX_STEP_HEIGHT = 0.42;
   const FALL_MS = 650;
+  const TRANSITION_FALLBACK_MS = 1600; // Dev-only escape hatch when the normal fade lifecycle is unavailable (e.g. title/dev harness state).
 
   let deps = null;
   let buildingScenes = null;
@@ -65,6 +66,35 @@
   }
   function movePlayerObjectsTo(scene) {
     for (const object of playerSceneObjects()) { detach(object); scene?.add(object); }
+  }
+
+  // Use the game's ordinary fade transition whenever it is alive. Some dev/title
+  // states leave startSceneTransition installed but never execute its midpoint
+  // callback; in that case run the exact same area-switch callback once after a
+  // short grace period. The once-guard prevents a delayed fade callback from
+  // applying the warp twice.
+  function runSceneTransition(callback) {
+    let fired = false;
+    let fallbackTimer = 0;
+    const once = () => {
+      if (fired) return;
+      fired = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      callback();
+    };
+    fallbackTimer = setTimeout(() => {
+      if (!fired) {
+        console.warn('[Random Test Ruin] normal scene-transition midpoint did not fire; using dev direct-switch fallback.');
+        once();
+      }
+    }, TRANSITION_FALLBACK_MS);
+    try {
+      if (typeof deps?.startSceneTransition === 'function') deps.startSceneTransition(once);
+      else once();
+    } catch (error) {
+      console.warn('[Random Test Ruin] scene transition failed; using direct-switch fallback.', error);
+      once();
+    }
   }
 
   function removeGeneratorFrame() {
@@ -265,8 +295,7 @@
   }
 
   function enterRuin() {
-    const from=deps.getActiveScene?.();
-    deps.startSceneTransition?.(()=>{
+    runSceneTransition(()=>{
       for(const o of playerSceneObjects()) detach(o);
       deps.setCurrentArea(MAP_ID); deps.setCurrentBuildingMapId?.(MAP_ID);
       deps.player.x=ruin.spawn.x*deps.TILE; deps.player.y=ruin.spawn.z*deps.TILE; deps.player.vx=0;deps.player.vy=0;
@@ -281,13 +310,13 @@
   function leaveRuin() {
     if (!ruin || deps.getCurrentArea?.()!==MAP_ID) return;
     const back=returnAnchor||{area:'farm',x:(deps.COLS/2)*deps.TILE,y:(deps.ROWS/2)*deps.TILE};
-    deps.startSceneTransition?.(()=>{
+    runSceneTransition(()=>{
       for(const o of playerSceneObjects()) detach(o);
       deps.setCurrentArea(back.area); deps.setCurrentBuildingMapId?.(deps._isBuildingArea?.(back.area)?back.area:null);
       deps.player.x=back.x; deps.player.y=back.y; deps.player.vx=0;deps.player.vy=0;
       let target=deps.getActiveScene?.(); if(!target&&deps._isZoneArea?.(back.area)) target=deps.buildZoneScene?.(back.area)?.scene;
       movePlayerObjectsTo(target); deps._snapCameraTarget?.(); deps.refreshActionBar?.();
-      clearRuntime(true); deps.showToast?.('Left Random Test Ruin.',true);
+      clearRuntime(true); returnAnchor=null; deps.showToast?.('Left Random Test Ruin.',true);
     });
   }
 
