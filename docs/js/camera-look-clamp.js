@@ -16,4 +16,16 @@
     clampPitchOffsetDeg,
     defaults: Object.freeze({ downDeg: DEFAULT_DOWN_CLAMP_DEG, upDeg: DEFAULT_UP_CLAMP_DEG }),
   };
+
+  // Parser-time dev-playtest bootstrap. camera-look-clamp.js already sits
+  // immediately before the Dev Testing Switchbox and game.js in index.html;
+  // loading these here keeps the animated-surface registry and Random Test
+  // Ruin harness synchronous, so they can wrap THREE.WebGLRenderer and
+  // DevSpawner.init before game boot creates either runtime dependency.
+  // The ruin module itself remains inert unless Dev Mode's Random Test Ruin
+  // button is used, and it never writes its seed/state into save storage.
+  if (document.readyState === 'loading') {
+    document.write('<script src="js/dynamic-surfaces.js?v=20260912ruins1"><\\/script>');
+    document.write('<script src="js/dev-random-ruin.js?v=20260912ruins1"><\\/script>');
+  }
 })();
