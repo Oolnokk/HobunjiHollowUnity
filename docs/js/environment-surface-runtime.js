@@ -3,42 +3,37 @@
 
   if (typeof window === 'undefined' || window.EnvironmentSurfaceRuntime?.__installedV4) return;
 
-  const WESTERN_SLOPE_ID = 'map_western_slope'; // Used by resolveMode() so permanent Western Slope snow overrides seasonal slush.
+  // Western Slope's permanent snow is owned entirely by
+  // environment-surface-micro-plateau.js now (a direct grid-height overlay,
+  // not a scan of rendered terrain geometry) — this runtime only still
+  // builds the seasonal Coldmuck slush shell for every other outdoor area.
+  const WESTERN_SLOPE_ID = 'map_western_slope'; // Used by resolveMode() so Western Slope never also gets seasonal slush.
   const SURFACE_NORMAL_MIN_Y = 0.28; // Used by processTriangle() to exclude wall-like faces while keeping walkable slopes and plateau tops.
   const LARGE_TERRAIN_TRIANGLES = 60000; // Matches TerrainRenderChunks' split threshold so giant root meshes wait for their renderer spatial children.
   const WORK_BUDGET_MS = 1.25; // Maximum environment-surface CPU time spent in one animation frame.
   const MAX_TRIANGLES_PER_SLICE = 160; // Hard triangle cap paired with WORK_BUDGET_MS so work yields frequently on fast machines too.
   const TOP_BATCH_TRIANGLES = 768; // Maximum generated top triangles kept in one output batch before flushing.
-  const EXACT_STRETCH_TRIANGLE_LIMIT = 768; // Small owners can use the exact farm/furniture irregular stretch mapper without risking a long synchronous solve.
+  const EXACT_STRETCH_TRIANGLE_LIMIT = 768; // Small owners flush once at the end instead of in batches, avoiding many tiny allocations.
   const EDGE_SEGMENTS = 6; // Number of curved side-shell strips between the raised top and the source tile surface.
   const SHELL_BATCH_EDGES = 128; // Bounds each perimeter-shell allocation so shell rebuilds are incremental too.
   const SHELL_OUTLINE_LAYER = 1; // Existing inverted-hull shell-outline layer; enabled only on exposed continuous-mass side shells.
   const KEY_SCALE = 1000; // Used by edge keys to weld shared edges across separately generated terrain owners.
-  const PROTECTED_SOURCE_EDGE = 0.16; // Same protected PNG edge fraction used by natural-surface-stretch-post-jigsaw.js.
-  const PROTECTED_SURFACE_EDGE = 0.06; // Same narrow surface band that receives the protected PNG edge on farm/natural surfaces.
   const DISCOVERY_INTERVAL_MS = 180; // Lightweight root-scene discovery cadence for renderer-created spatial chunks that appear after first render.
-  const LAND_TARGETS = new Set(['grass', 'path', 'tilled', 'trench', 'raised', 'paddy', 'rock', 'shrub', 'cliff', 'ramp']); // Western snow covers authored exposed land targets.
   const WATER_KEYS = new Set(['water', 'river', 'stream', 'waterfall']); // Open water remains uncovered.
 
   const PRESETS = Object.freeze({
-    snow: Object.freeze({
-      height: 0.275,
-      edgeWidth: 0.18,
-      edgeRound: 1.4,
-      opacity: 1,
-    }),
     slush: Object.freeze({
       height: 0.18,
       edgeWidth: 0.13,
       edgeRound: 1.35,
       opacity: 0.22,
     }),
-  }); // Snow remains exactly half the original 0.55 preview height; both tops are flat constant offsets.
+  });
 
   let deps = null; // Captured from RainPlanes.init(); provides THREE, scene, calendar, area, player, and outdoor-state access.
-  let attachedScene = null; // Scene currently owning generated snow/slush meshes.
+  let attachedScene = null; // Scene currently owning generated slush meshes.
   let activeArea = null; // Last area id used to detect map transitions.
-  let activeMode = 'none'; // Last none|snow|slush mode used to detect season/policy transitions.
+  let activeMode = 'none'; // Last none|slush mode used to detect season/policy transitions.
   let wildernessHooksInstalled = false; // Prevents wrapping WildernessChunks more than once.
   let priorRainInit = null; // Original RainPlanes.init preserved by installRainPlanesBridge().
   let priorRainUpdate = null; // Original RainPlanes.update preserved by installRainPlanesBridge().
@@ -48,8 +43,6 @@
   let shellRevision = 0; // Increments whenever owner boundaries change so stale shell jobs cannot publish.
   let shellDirty = false; // Marks that globally exposed perimeter geometry needs rebuilding.
   let lastDiscoveryAt = -Infinity; // Throttles only cheap scene-child discovery; it never scans source triangles.
-  let snowTextureState = 'not-requested'; // Exposed in debugSnapshot() so white canvas texture load/tint failures are visible.
-  let snowCanvasTexture = null; // Shared shade-filled white canvas.png texture used by every snow top material.
 
   const pendingJobs = new Map(); // Source mesh -> newest build request; avoids duplicate work while preserving insertion priority.
   const ownerRoots = new Map(); // Source mesh -> generated top group currently visible for that source.
@@ -60,10 +53,8 @@
 
   let completedJobs = 0; // Total completed source-mesh top builds.
   let shellBuilds = 0; // Total completed global continuous-mass shell rebuilds.
-  let exactStretchBuilds = 0; // Completed top batches mapped through HobunjiSurfaceStretchUV.
-  let fallbackStretchBuilds = 0; // Completed top batches using the cheap protected-edge rectangular fallback.
-  let lastSliceMs = 0; // Most recent single-frame snow/slush work slice.
-  let maxSliceMs = 0; // Largest observed single-frame snow/slush work slice.
+  let lastSliceMs = 0; // Most recent single-frame slush work slice.
+  let maxSliceMs = 0; // Largest observed single-frame slush work slice.
   let lastJobWorkMs = 0; // Accumulated incremental CPU time for the most recently completed source job.
   let maxJobWorkMs = 0; // Largest accumulated CPU time for any completed source job.
   let lastTriangleCount = 0; // Accepted upward-facing triangles in the most recently completed source job.
@@ -98,14 +89,7 @@
 
   function resolveMode() {
     if (!deps?.getActiveScene?.() || deps?.isOutdoorArea?.() === false) return 'none';
-    const areaId = currentAreaId();
-    if (isWesternSlope(areaId)) {
-      // window.EnvironmentSurfaceMicroPlateau (environment-surface-micro-plateau.js)
-      // owns Western Slope snow when installed — a chunked, incrementally-built
-      // replacement for this runtime's whole-mesh triangle-copy snow job, which
-      // could stall the main thread scanning/building large Western Slope scenes.
-      return window.EnvironmentSurfaceMicroPlateau?.installed ? 'none' : 'snow';
-    }
+    if (isWesternSlope(currentAreaId())) return 'none'; // Always owned by environment-surface-micro-plateau.js — see the file banner above.
     return currentSeasonName() === 'Coldmuck' ? 'slush' : 'none';
   }
 
@@ -128,21 +112,15 @@
     return Math.floor(Number(count) / 3) || 0;
   }
 
-  function isTerrainSurfaceMesh(mesh, mode) {
+  function isTerrainSurfaceMesh(mesh) {
     if (!mesh?.isMesh || !mesh.geometry?.attributes?.position || mesh.visible === false) return false;
     if (mesh.userData?.environmentSurfaceRuntime || mesh.userData?.terrainRenderChunkSource) return false;
     if (mesh.userData?.isBillboard || mesh.isSkinnedMesh) return false;
     const key = terrainKeyForMesh(mesh);
     const name = String(mesh.name || '').toLowerCase();
     if (WATER_KEYS.has(key) || /(^|[_-])(water|river|stream|waterfall)([_-]|$)/.test(name)) return false;
-    if (mode === 'slush') {
-      if (key) return key === 'grass';
-      return /grass/.test(name) && (hasTerrainLayer(mesh) || mesh.userData?.terrainRenderChunk === true);
-    }
-    if (LAND_TARGETS.has(key)) return true;
-    if (mesh.userData?.terrainRenderChunk === true) return true;
-    if (!hasTerrainLayer(mesh)) return false;
-    return /terrain|ground|floor|border|cliff|mesa|ramp|rock|path|trench|raised|paddy|shrub/i.test(name);
+    if (key) return key === 'grass';
+    return /grass/.test(name) && (hasTerrainLayer(mesh) || mesh.userData?.terrainRenderChunk === true);
   }
 
   function shouldDeferToSpatialSplit(mesh) {
@@ -183,15 +161,6 @@
     ].join('|');
   }
 
-  function frameRemapCoordinate(value) {
-    const t = Math.max(0, Math.min(1, Number(value) || 0));
-    if (t <= PROTECTED_SURFACE_EDGE) return (t / PROTECTED_SURFACE_EDGE) * PROTECTED_SOURCE_EDGE;
-    if (t >= 1 - PROTECTED_SURFACE_EDGE) {
-      return 1 - PROTECTED_SOURCE_EDGE + ((t - (1 - PROTECTED_SURFACE_EDGE)) / PROTECTED_SURFACE_EDGE) * PROTECTED_SOURCE_EDGE;
-    }
-    return PROTECTED_SOURCE_EDGE + ((t - PROTECTED_SURFACE_EDGE) / (1 - PROTECTED_SURFACE_EDGE * 2)) * (1 - PROTECTED_SOURCE_EDGE * 2);
-  }
-
   function quantizedNumber(value) {
     return Math.round(Number(value) * KEY_SCALE);
   }
@@ -206,101 +175,12 @@
     return a < b ? `${a}|${b}` : `${b}|${a}`;
   }
 
-  function localWhiteShadeCanvas(image) {
-    try {
-      const width = image?.naturalWidth || image?.width;
-      const height = image?.naturalHeight || image?.height;
-      if (!width || !height) return null;
-      const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      context.drawImage(image, 0, 0, width, height);
-      const imageData = context.getImageData(0, 0, width, height);
-      const data = imageData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        if (!data[i + 3]) continue;
-        const luminance = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
-        const shade = Math.max(0.68, Math.min(1.0, 0.76 + luminance * 0.28));
-        const value = Math.round(255 * shade);
-        data[i] = value; data[i + 1] = value; data[i + 2] = value;
-      }
-      context.putImageData(imageData, 0, 0);
-      return canvas;
-    } catch (_) { return null; }
-  }
-
-  function requestSnowTexture() {
-    if (snowTextureState !== 'not-requested' || !deps?.THREE) return;
-    const THREE = deps.THREE;
-    snowTextureState = 'loading';
-    new THREE.TextureLoader().load(
-      'assets/textures/canvas.png',
-      texture => {
-        let finalTexture = texture;
-        try {
-          const shadeFill = window.getShadeFillCanvas;
-          if (typeof shadeFill === 'function' && texture.image) {
-            const canvas = shadeFill(texture.image, 'environment-snow|canvas.png|white', {
-              mode: 'shadeFill',
-              rgb: [255, 255, 255],
-              options: window.getPortraitTintingConfig?.() || {},
-            });
-            if (canvas) finalTexture = new THREE.CanvasTexture(canvas);
-          } else if (texture.image) {
-            const canvas = localWhiteShadeCanvas(texture.image);
-            if (canvas) finalTexture = new THREE.CanvasTexture(canvas);
-          }
-        } catch (error) {
-          debugLog(`white canvas shade fill failed; using raw canvas.png: ${error?.message || error}`, 'warn');
-        }
-        finalTexture.wrapS = finalTexture.wrapT = THREE.ClampToEdgeWrapping;
-        finalTexture.minFilter = THREE.LinearFilter;
-        finalTexture.magFilter = THREE.LinearFilter;
-        finalTexture.generateMipmaps = false;
-        finalTexture.needsUpdate = true;
-        snowCanvasTexture = finalTexture;
-        snowTextureState = finalTexture === texture ? 'raw-canvas-png' : 'shade-filled-white-canvas-png';
-        for (const [key, material] of sharedMaterials) {
-          if (!key.startsWith('snow:top')) continue;
-          material.map = snowCanvasTexture;
-          material.color.setHex(0xffffff);
-          material.needsUpdate = true;
-        }
-      },
-      undefined,
-      error => {
-        snowTextureState = `load-failed:${String(error?.message || 'unknown')}`;
-        debugLog('failed to load assets/textures/canvas.png for snow; keeping white fallback material', 'warn');
-      },
-    );
-  }
-
   function sharedMaterial(mode, kind) {
     const key = `${mode}:${kind}`;
     if (sharedMaterials.has(key)) return sharedMaterials.get(key);
     const THREE = deps.THREE;
     let material;
-    if (mode === 'snow' && kind === 'top') {
-      requestSnowTexture();
-      material = new THREE.MeshLambertMaterial({
-        color: 0xffffff,
-        map: snowCanvasTexture,
-        side: THREE.DoubleSide,
-        transparent: false,
-        depthTest: true,
-        depthWrite: true,
-        fog: true,
-      });
-    } else if (mode === 'snow') {
-      material = new THREE.MeshLambertMaterial({
-        color: 0xf1f4f8,
-        side: THREE.DoubleSide,
-        transparent: false,
-        depthTest: true,
-        depthWrite: true,
-        fog: true,
-      });
-    } else if (kind === 'top') {
+    if (kind === 'top') {
       material = new THREE.MeshPhongMaterial({
         color: 0x101417,
         specular: new THREE.Color(0x70777c),
@@ -482,65 +362,19 @@
     return null;
   }
 
-  function fallbackUvAttribute(job, vertexCount) {
-    const THREE = deps.THREE;
-    const bounds = job.uvBounds;
-    const minX = Number(bounds?.min?.x || 0);
-    const minZ = Number(bounds?.min?.z || 0);
-    const dx = Math.max(1e-5, Number(bounds?.max?.x || 1) - minX);
-    const dz = Math.max(1e-5, Number(bounds?.max?.z || 1) - minZ);
-    const uv = new Float32Array(vertexCount * 2);
-    for (let i = 0; i < vertexCount; i++) {
-      const x = job.worldXZ[i * 2];
-      const z = job.worldXZ[i * 2 + 1];
-      uv[i * 2] = frameRemapCoordinate((x - minX) / dx);
-      uv[i * 2 + 1] = frameRemapCoordinate((z - minZ) / dz);
-    }
-    return new THREE.BufferAttribute(uv, 2);
-  }
-
-  function mapTopGeometry(job, geometry, finalBatch) {
-    if (job.mode !== 'snow') return geometry;
-    if (job.exactStretch && finalBatch) {
-      const mapper = window.HobunjiSurfaceStretchUV;
-      if (typeof mapper?.mapGeometry === 'function') {
-        try {
-          const mapped = mapper.mapGeometry(geometry, { label: `environment-snow:${job.label}` });
-          if (mapped?.getAttribute?.('uv')) {
-            if (mapped !== geometry) geometry.dispose?.();
-            exactStretchBuilds++;
-            return mapped;
-          }
-        } catch (error) {
-          debugLog(`exact snow stretch failed for ${job.label}; using protected fallback: ${error?.message || error}`, 'warn');
-        }
-      }
-    }
-    geometry.setAttribute('uv', fallbackUvAttribute(job, geometry.getAttribute('position').count));
-    geometry.userData = Object.assign({}, geometry.userData, {
-      environmentSnowUvMapping: 'protected-edge-rectangular-fallback',
-      protectedSourceEdgeFraction: PROTECTED_SOURCE_EDGE,
-      protectedSurfaceEdgeFraction: PROTECTED_SURFACE_EDGE,
-    });
-    fallbackStretchBuilds++;
-    return geometry;
-  }
-
   function flushTopBatch(job, finalBatch = false) {
     if (!job.batchTriangles) return;
     const THREE = deps.THREE;
-    let geometry = new THREE.BufferGeometry();
+    const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(job.positions), 3));
     geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(job.normals), 3));
-    geometry = mapTopGeometry(job, geometry, finalBatch);
     geometry.computeBoundingBox?.();
     geometry.computeBoundingSphere?.();
     const mesh = new THREE.Mesh(geometry, sharedMaterial(job.mode, 'top'));
     mesh.name = `${job.root.name}_top_${job.batchIndex++}`;
     mesh.userData.environmentSurfaceRuntime = true;
     mesh.userData.environmentSurfaceFlatTop = true;
-    mesh.userData.environmentSurfaceTexture = job.mode === 'snow' ? 'assets/textures/canvas.png|shade-fill-white' : null;
-    mesh.renderOrder = job.mode === 'slush' ? 22 : 2;
+    mesh.renderOrder = 22;
     mesh.receiveShadow = true;
     job.root.add(mesh);
     job.positions.length = 0;
@@ -644,7 +478,7 @@
   }
 
   function queueTerrainMesh(mesh, mode, labelPrefix = 'terrain') {
-    if (!isTerrainSurfaceMesh(mesh, mode)) return false;
+    if (!isTerrainSurfaceMesh(mesh)) return false;
     if (shouldDeferToSpatialSplit(mesh)) {
       deferredLargeSources++;
       return false;
@@ -666,7 +500,7 @@
   function queueTerrainSubtree(root, mode, labelPrefix = 'chunk') {
     const candidates = [];
     root?.traverse?.(node => {
-      if (node?.isMesh && isTerrainSurfaceMesh(node, mode) && !shouldDeferToSpatialSplit(node)) candidates.push(node);
+      if (node?.isMesh && isTerrainSurfaceMesh(node) && !shouldDeferToSpatialSplit(node)) candidates.push(node);
     });
     candidates.sort((a, b) => {
       const ac = a.userData?.terrainRenderChunk === true ? 0 : 1;
@@ -693,7 +527,7 @@
         chunkGroups.push(node);
         return;
       }
-      if (node.isMesh && isTerrainSurfaceMesh(node, mode)) otherMeshes.push(node);
+      if (node.isMesh && isTerrainSurfaceMesh(node)) otherMeshes.push(node);
       for (const child of node.children || []) visit(child);
     };
     visit(scene);
@@ -717,7 +551,7 @@
           if (spatial?.userData?.terrainRenderChunk !== true) continue;
           if (queueTerrainMesh(spatial, mode, 'spatial')) { queued++; discoveredSpatialChunks++; }
         }
-      } else if (child?.isMesh && isTerrainSurfaceMesh(child, mode)) {
+      } else if (child?.isMesh && isTerrainSurfaceMesh(child)) {
         if (queueTerrainMesh(child, mode, 'root-discovery')) queued++;
       }
     }
@@ -789,7 +623,7 @@
     mesh.userData.environmentSurfaceRuntime = true;
     mesh.userData.environmentSurfaceMassShellOutline = true;
     mesh.layers.enable(SHELL_OUTLINE_LAYER);
-    mesh.renderOrder = job.mode === 'slush' ? 22.1 : 2.1;
+    mesh.renderOrder = 22.1;
     mesh.receiveShadow = true;
     job.root.add(mesh);
     job.positions.length = 0;
@@ -814,7 +648,7 @@
       const outward = preset.edgeWidth * Math.sin(t * Math.PI); // Bulges outward mid-curve but returns to the source tile edge at t=1.
       const verticalT = Math.pow(t, preset.edgeRound);
       const nextAX = record.ax + ox * outward;
-      const nextAY = record.topAY + (record.ay - record.topAY) * verticalT; // t=1 is exactly the original surface Y regardless of snow height scaling.
+      const nextAY = record.topAY + (record.ay - record.topAY) * verticalT; // t=1 is exactly the original surface Y regardless of preset height scaling.
       const nextAZ = record.az + oz * outward;
       const nextBX = record.bx + ox * outward;
       const nextBY = record.topBY + (record.by - record.topBY) * verticalT;
@@ -903,7 +737,7 @@
     lastDiscoveryAt = -Infinity;
     if (!scene || mode === 'none') return;
     seedScene(scene, mode);
-    debugLog(`${area || '(unknown area)'} => ${mode}; queued ${pendingJobs.size} per-mesh jobs (flat tops, canvas snow texture)`);
+    debugLog(`${area || '(unknown area)'} => ${mode}; queued ${pendingJobs.size} per-mesh jobs (flat tops)`);
   }
 
   function findWildernessChunkAncestor(object) {
@@ -958,9 +792,8 @@
     attachedScene = null;
     activeArea = null;
     activeMode = 'none';
-    requestSnowTexture();
     lastReason = 'initialized; awaiting active outdoor scene';
-    debugLog('runtime v4 installed: flat half-height Western snow, white canvas PNG tops, protected-edge stretch, continuous shells');
+    debugLog('runtime v4 installed: seasonal Coldmuck slush shell (Western Slope snow now owned by environment-surface-micro-plateau.js)');
   }
 
   function update() {
@@ -1014,15 +847,11 @@
       maxJobWorkMs: Number(maxJobWorkMs.toFixed(2)),
       lastTriangles: lastTriangleCount,
       lastBoundaryEdges: lastBoundaryCount,
-      exactStretchBuilds,
-      fallbackStretchBuilds,
       deferredLargeSources,
       discoveredSpatialChunks,
-      snowTextureState,
       wildernessHooksInstalled,
       lastReason,
       presets: PRESETS,
-      protectedStretch: { sourceEdgeFraction: PROTECTED_SOURCE_EDGE, surfaceEdgeFraction: PROTECTED_SURFACE_EDGE },
     };
   }
 

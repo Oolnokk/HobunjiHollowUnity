@@ -59,18 +59,16 @@ window.EnvironmentSurfaceRuntime = Object.freeze({
     const refresh = () => {
       const legacy = window.EnvironmentSurfaceRuntime?.debugSnapshot?.();
       const micro = window.EnvironmentSurfaceMicroPlateau?.debugSnapshot?.();
-      const status = !micro ? 'unavailable' : micro.active ? 'ACTIVE' : micro.building ? 'BUILDING' : micro.scanning ? 'SCANNING' : 'waiting';
+      const status = !micro ? 'unavailable' : micro.active ? 'ACTIVE' : 'waiting';
       panel.textContent =
         'LEGACY snow=' + (legacy?.mode || 'absent') + ' pending=' + (legacy?.pendingJobs ?? 0) + ' owners=' + (legacy?.ownerSurfaces ?? 0)
         + '\\nMICRO v' + (micro?.version ?? '-') + ' plateau=' + status
         + ' thickness=' + (micro?.thickness ?? '-')
-        + ' source=' + (micro?.scanSource || '-')
-        + ' processed=' + (micro?.processedTriangles ?? 0)
-        + ' accepted=' + (micro?.sampledTriangles ?? 0)
-        + '\\ntiles=' + (micro?.builtTiles ?? 0) + ' sampledTiles=' + (micro?.sampledTiles ?? 0)
-        + ' chunks=' + (micro?.builtChunks ?? 0) + '/' + (micro?.totalChunks ?? 0)
+        + '\\ntiles=' + (micro?.builtTiles ?? 0)
+        + ' chunks=' + (micro?.chunkCount ?? 0)
         + ' edges=' + (micro?.exposedEdges ?? 0)
-        + ' slice=' + (micro?.lastSliceMs ?? '-') + '/' + (micro?.maxSliceMs ?? '-') + 'ms'
+        + ' builds=' + (micro?.buildCount ?? 0)
+        + ' lastBuild=' + (micro?.lastBuildMs ?? '-') + 'ms'
         + ' tex=' + (micro?.textureState || '-')
         + '\\nreason=' + (micro?.lastReason || '-');
     };

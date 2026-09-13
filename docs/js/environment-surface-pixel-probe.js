@@ -8,13 +8,9 @@
   function formatLine() {
     const legacy = window.EnvironmentSurfaceRuntime?.debugSnapshot?.();
     const micro = window.EnvironmentSurfaceMicroPlateau?.debugSnapshot?.();
-    const microStatus = !micro ? 'unavailable'
-      : micro.active ? 'active'
-      : micro.building ? 'building'
-      : micro.scanning ? 'scanning'
-      : 'waiting';
+    const microStatus = !micro ? 'unavailable' : micro.active ? 'active' : 'waiting';
     const microText = micro
-      ? ` micro=${microStatus}/v${micro.version ?? '-'}/thick${micro.thickness ?? '-'}/source${micro.scanSource || '-'}/processed${micro.processedTriangles ?? 0}/accepted${micro.sampledTriangles ?? 0}/tiles${micro.builtTiles ?? 0}/sampledTiles${micro.sampledTiles ?? 0}/chunks${micro.builtChunks ?? 0}-${micro.totalChunks ?? 0}/edges${micro.exposedEdges ?? 0}/slice${micro.lastSliceMs ?? '-'}ms-max${micro.maxSliceMs ?? '-'}ms/tex${micro.textureState || '-'}`
+      ? ` micro=${microStatus}/v${micro.version ?? '-'}/thick${micro.thickness ?? '-'}/tiles${micro.builtTiles ?? 0}/chunks${micro.chunkCount ?? 0}/edges${micro.exposedEdges ?? 0}/builds${micro.buildCount ?? 0}/lastBuild${micro.lastBuildMs ?? '-'}ms/tex${micro.textureState || '-'}`
       : ' micro=unavailable';
     const legacyText = legacy
       ? ` legacy=${legacy.mode || 'disabled'}/pending${legacy.pendingJobs ?? 0}/owners${legacy.ownerSurfaces ?? 0}`

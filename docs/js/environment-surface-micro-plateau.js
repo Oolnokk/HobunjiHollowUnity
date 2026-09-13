@@ -3,17 +3,24 @@
 
   if (typeof window === 'undefined' || window.EnvironmentSurfaceMicroPlateau?.installed) return;
 
+  // v3 drops the v2 prototype's whole approach: instead of scanning every
+  // candidate terrain mesh's triangles frame-by-frame to reverse-engineer
+  // each tile's real height (slow on a real zone's hundreds of sources, and
+  // blind to any terrain mesh it failed to pattern-match, like the actual
+  // plateau mesa tops), this reads tile height directly from the same grid
+  // data — tile.elevTier/rampElevation — the zone's own terrain builders
+  // (js/zone-plateau-mesa.js's buildPlateauMesa, the regular floor mesh)
+  // already use. That makes the snow height correct by construction for
+  // every tile, and the whole zone can be built in one synchronous pass on
+  // entry, exactly like those builders already do without a performance
+  // problem — no incremental scan/build state machine needed.
   const WESTERN_SLOPE_ID = 'map_western_slope';
   const PLATEAU_UNIT = 2.5;
   const SNOW_THICKNESS = 0.12;
   const TOP_CLEARANCE = 0.018;
   const EDGE_WIDTH = 0.075;
   const EDGE_SEGMENTS = 4;
-  const BOOT_DELAY_MS = 900;
-  const SCAN_BUDGET_MS = 0.65;
-  const SCAN_TRIANGLES_PER_SLICE = 480;
-  const CHUNK_TILES = 16;
-  const BUILD_CHUNKS_PER_FRAME = 1;
+  const CHUNK_TILES = 16; // Output mesh partitioning only (frustum culling) — every chunk still builds in the same synchronous pass.
   const LAND_TYPES = new Set(['grass', 'path', 'tilled', 'trench', 'raised', 'paddy', 'rock', 'shrub', 'cliff', 'ramp', 'weeds']);
   const WATER_TYPES = new Set(['water', 'river', 'stream', 'waterfall']);
   const LOGICAL_OFFSETS = Object.freeze({ trench: -0.5, raised: 0.5 });
@@ -21,26 +28,17 @@
   let activeScene = null;
   let activeArea = null;
   let root = null;
-  let scan = null;
-  let build = null;
-  let bootStartedAt = performance.now();
-  let sourceSnapshotTaken = false;
   let lastFrameAt = 0;
   let textureState = 'not-requested';
   let snowTexture = null;
   let snowMaterial = null;
   let builtTiles = 0;
-  let sampledTiles = 0;
-  let sampledTriangles = 0;
-  let processedTriangles = 0;
   let exposedEdges = 0;
-  let builtChunks = 0;
-  let totalChunks = 0;
+  let chunkCount = 0;
   let buildCount = 0;
-  let lastSliceMs = 0;
-  let maxSliceMs = 0;
-  let lastReason = 'waiting for active Western Slope scene';
+  let lastBuildMs = 0;
   let grassHiddenScene = null;
+  let lastReason = 'waiting for active Western Slope scene';
 
   const now = () => globalThis.performance?.now?.() ?? Date.now();
 
@@ -117,7 +115,7 @@
       let finalTexture = texture;
       try {
         if (typeof window.getShadeFillCanvas === 'function' && texture.image) {
-          const tinted = window.getShadeFillCanvas(texture.image, 'environment-snow-micro-plateau-v2|canvas.png|white', {
+          const tinted = window.getShadeFillCanvas(texture.image, 'environment-snow-micro-plateau-v3|canvas.png|white', {
             mode: 'shadeFill', rgb: [255, 255, 255], options: window.getPortraitTintingConfig?.() || {},
           });
           if (tinted) finalTexture = new THREE.CanvasTexture(tinted);
@@ -186,155 +184,6 @@
     });
   }
 
-  function sourceCandidates(scene) {
-    const out = [];
-    const seen = new Set();
-    const add = mesh => {
-      if (!mesh?.isMesh || seen.has(mesh) || mesh.visible === false) return;
-      if (mesh.userData?.environmentSurfaceRuntime || mesh.userData?.terrainRenderChunkSource || mesh.userData?.isBillboard || mesh.isSkinnedMesh) return;
-      const geometry = mesh.geometry;
-      if (!geometry?.attributes?.position) return;
-      const name = String(mesh.name || '').toLowerCase();
-      const key = String(mesh.userData?.terrainEdgeId || mesh.userData?.terrainKey || mesh.material?.userData?.terrainKey || '').toLowerCase();
-      if (WATER_TYPES.has(key) || /(^|[_-])(water|river|stream|waterfall)([_-]|$)/.test(name)) return;
-      const layerMask = Number(mesh.layers?.mask || 0) >>> 0;
-      const terrainLayer = Boolean(layerMask & (1 << 3));
-      if (mesh.userData?.terrainRenderChunk === true || terrainLayer || /terrain|ground|floor|mesa|plateau|ramp|trench|raised|path|rock/i.test(name)) {
-        seen.add(mesh);
-        out.push(mesh);
-      }
-    };
-    scene?.traverse?.(node => { if (node?.isMesh) add(node); });
-    return out;
-  }
-
-  function elementRange(geometry) {
-    const total = geometry?.index?.count ?? geometry?.attributes?.position?.count ?? 0;
-    const rawStart = Math.max(0, Math.floor(Number(geometry?.drawRange?.start) || 0));
-    const start = Math.min(total, rawStart - rawStart % 3);
-    const rawCount = Number(geometry?.drawRange?.count);
-    const available = Math.max(0, total - start);
-    const count = Number.isFinite(rawCount) ? Math.max(0, Math.min(available, Math.floor(rawCount))) : available;
-    return { start, end: start + count - count % 3 };
-  }
-
-  function prepareSource(mesh) {
-    const THREE = window.THREE;
-    const geometry = mesh.geometry;
-    const range = elementRange(geometry);
-    return {
-      geometry,
-      position: geometry.attributes.position,
-      index: geometry.index || null,
-      end: range.end,
-      element: range.start,
-      matrixWorld: mesh.matrixWorld.clone(),
-      a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(),
-      ab: new THREE.Vector3(), ac: new THREE.Vector3(), normal: new THREE.Vector3(),
-    };
-  }
-
-  function readVertex(source, element, out) {
-    const index = source.index ? source.index.getX(element) : element;
-    out.fromBufferAttribute(source.position, index).applyMatrix4(source.matrixWorld);
-  }
-
-  function startScan(scene, grid, cols, rows) {
-    sourceSnapshotTaken = true;
-    scene.updateMatrixWorld?.(true);
-    const meshes = sourceCandidates(scene);
-    if (!meshes.length) {
-      lastReason = 'no terrain render sources found; will retry';
-      sourceSnapshotTaken = false;
-      bootStartedAt = now() - BOOT_DELAY_MS + 250;
-      return false;
-    }
-    processedTriangles = 0;
-    sampledTriangles = 0;
-    sampledTiles = 0;
-    scan = {
-      scene, grid, cols, rows,
-      sources: meshes.map(prepareSource),
-      sourceIndex: 0,
-      tileMaxY: new Float32Array(cols * rows).fill(-Infinity),
-      acceptedTriangles: 0,
-      processedTriangles: 0,
-    };
-    lastReason = `incrementally sampling ${meshes.length} terrain sources`;
-    return true;
-  }
-
-  function sampleTriangle(source, state) {
-    const e = source.element;
-    source.element += 3;
-    state.processedTriangles++;
-    readVertex(source, e, source.a);
-    readVertex(source, e + 1, source.b);
-    readVertex(source, e + 2, source.c);
-    source.ab.subVectors(source.b, source.a);
-    source.ac.subVectors(source.c, source.a);
-    source.normal.crossVectors(source.ab, source.ac);
-    const length = source.normal.length();
-    if (length < 1e-8) return;
-    source.normal.multiplyScalar(1 / length);
-    if (source.normal.y < 0) source.normal.multiplyScalar(-1);
-    if (source.normal.y < 0.28) return;
-    const cx = (source.a.x + source.b.x + source.c.x) / 3;
-    const cz = (source.a.z + source.b.z + source.c.z) / 3;
-    const col = Math.floor(cx), row = Math.floor(cz);
-    if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return;
-    if (!tileCovered(state.grid?.[row]?.[col])) return;
-    const maxY = Math.max(source.a.y, source.b.y, source.c.y);
-    const key = row * state.cols + col;
-    if (maxY > state.tileMaxY[key]) state.tileMaxY[key] = maxY;
-    state.acceptedTriangles++;
-  }
-
-  function beginBuild(state) {
-    scan = null;
-    processedTriangles = state.processedTriangles;
-    sampledTriangles = state.acceptedTriangles;
-    sampledTiles = 0;
-    builtTiles = 0;
-    exposedEdges = 0;
-    builtChunks = 0;
-    const chunks = [];
-    for (let row = 0; row < state.rows; row += CHUNK_TILES) {
-      for (let col = 0; col < state.cols; col += CHUNK_TILES) chunks.push({ col, row });
-    }
-    totalChunks = chunks.length;
-    build = { ...state, chunks, chunkIndex: 0, topCache: new Array(state.cols * state.rows) };
-    root = new window.THREE.Group();
-    root.name = 'hobunji_environment_surface_snow_micro_plateau';
-    root.userData.environmentSurfaceRuntime = true;
-    root.userData.environmentSurfaceMicroPlateau = true;
-    root.userData.environmentSurfaceTopGeometry = 'tile-driven-shallow-plateau-v2';
-    state.scene.add(root);
-    lastReason = `terrain scan complete; incrementally building ${totalChunks} snow chunks`;
-  }
-
-  function processScanSlice() {
-    if (!scan) return false;
-    const started = now();
-    let processedThisSlice = 0;
-    while (scan.sourceIndex < scan.sources.length && processedThisSlice < SCAN_TRIANGLES_PER_SLICE && now() - started < SCAN_BUDGET_MS) {
-      const source = scan.sources[scan.sourceIndex];
-      if (source.element + 2 >= source.end) {
-        scan.sourceIndex++;
-        continue;
-      }
-      sampleTriangle(source, scan);
-      processedThisSlice++;
-    }
-    processedTriangles = scan.processedTriangles;
-    sampledTriangles = scan.acceptedTriangles;
-    const elapsed = now() - started;
-    lastSliceMs = elapsed;
-    maxSliceMs = Math.max(maxSliceMs, elapsed);
-    if (scan.sourceIndex >= scan.sources.length) beginBuild(scan);
-    return true;
-  }
-
   function rampCornerY(grid, ci, cj, fallback) {
     let sum = 0, count = 0;
     for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
@@ -346,6 +195,9 @@
     return count ? sum / count : fallback;
   }
 
+  // Every tile's snow height comes straight from its own authored grid
+  // data — no reverse-engineering from rendered mesh geometry — so it's
+  // always exactly right, including on the real elevated plateau tiers.
   function tileTopCorners(state, col, row) {
     if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return null;
     const cacheKey = row * state.cols + col;
@@ -355,24 +207,19 @@
       state.topCache[cacheKey] = null;
       return null;
     }
-    const sampled = state.tileMaxY[cacheKey];
     const type = String(tile?.type || 'grass').toLowerCase();
     let corners;
     if (type !== 'ramp') {
-      const fallback = logicalSurfaceY(tile);
-      const top = (Number.isFinite(sampled) ? sampled : fallback) + TOP_CLEARANCE;
+      const top = logicalSurfaceY(tile) + TOP_CLEARANCE;
       corners = [top, top, top, top];
     } else {
       const fallback = logicalSurfaceY(tile);
       corners = [
-        rampCornerY(state.grid, col, row, fallback),
-        rampCornerY(state.grid, col + 1, row, fallback),
-        rampCornerY(state.grid, col, row + 1, fallback),
-        rampCornerY(state.grid, col + 1, row + 1, fallback),
+        rampCornerY(state.grid, col, row, fallback) + TOP_CLEARANCE,
+        rampCornerY(state.grid, col + 1, row, fallback) + TOP_CLEARANCE,
+        rampCornerY(state.grid, col, row + 1, fallback) + TOP_CLEARANCE,
+        rampCornerY(state.grid, col + 1, row + 1, fallback) + TOP_CLEARANCE,
       ];
-      const authoredMax = Math.max(...corners);
-      const lift = (Number.isFinite(sampled) ? sampled - authoredMax : 0) + TOP_CLEARANCE;
-      corners = corners.map(y => y + lift);
     }
     state.topCache[cacheKey] = corners;
     return corners;
@@ -457,7 +304,6 @@
         if (!corners) continue;
         addTopTile(capPos, capUv, capIdx, col, row, corners);
         builtTiles++;
-        if (Number.isFinite(state.tileMaxY[row * state.cols + col])) sampledTiles++;
         for (const [side, dc, dr] of sides) {
           const edge = edgeCorners(corners, side);
           const neighbor = tileTopCorners(state, col + dc, row + dr);
@@ -478,29 +324,35 @@
     makeMesh(lipPos, lipUv, lipIdx, `snow_micro_plateau_edges_${label}`, 2.21);
   }
 
-  function processBuildSlice() {
-    if (!build) return false;
+  // One synchronous pass over the whole zone — the same way
+  // buildZoneMesaMeshes/the ordinary floor mesh already build on entry
+  // without a performance problem, because this is pure per-tile
+  // arithmetic against already-loaded grid data, not a scan of however
+  // much terrain geometry the zone happens to render.
+  function buildZoneSnow(scene, grid, cols, rows) {
     const started = now();
-    let chunksThisFrame = 0;
-    while (build.chunkIndex < build.chunks.length && chunksThisFrame < BUILD_CHUNKS_PER_FRAME) {
-      buildOneChunk(build, build.chunks[build.chunkIndex++]);
-      builtChunks++;
-      chunksThisFrame++;
+    const state = { grid, cols, rows, topCache: new Array(cols * rows) };
+    root = new window.THREE.Group();
+    root.name = 'hobunji_environment_surface_snow_micro_plateau';
+    root.userData.environmentSurfaceRuntime = true;
+    root.userData.environmentSurfaceMicroPlateau = true;
+    root.userData.environmentSurfaceTopGeometry = 'tile-driven-shallow-plateau-v3';
+    scene.add(root);
+
+    builtTiles = 0;
+    exposedEdges = 0;
+    chunkCount = 0;
+    for (let row = 0; row < rows; row += CHUNK_TILES) {
+      for (let col = 0; col < cols; col += CHUNK_TILES) {
+        buildOneChunk(state, { col, row });
+        chunkCount++;
+      }
     }
-    const elapsed = now() - started;
-    lastSliceMs = elapsed;
-    maxSliceMs = Math.max(maxSliceMs, elapsed);
-    if (build.chunkIndex >= build.chunks.length) {
-      const scene = build.scene;
-      build = null;
-      buildCount++;
-      setGrassHidden(scene, true);
-      grassHiddenScene = scene;
-      lastReason = `built ${builtTiles} shallow snow tiles in ${builtChunks} chunks; ${sampledTiles} sampled tiles; ${exposedEdges} short edges`;
-    } else {
-      lastReason = `building snow chunks ${builtChunks}/${totalChunks}`;
-    }
-    return true;
+    buildCount++;
+    lastBuildMs = now() - started;
+    setGrassHidden(scene, true);
+    grassHiddenScene = scene;
+    lastReason = `built ${builtTiles} shallow snow tiles in ${chunkCount} chunk mesh(es); ${exposedEdges} short edges (${lastBuildMs.toFixed(1)}ms)`;
   }
 
   function resetForScene(scene, area) {
@@ -509,20 +361,12 @@
       grassHiddenScene = null;
     }
     disposeRoot();
-    scan = null;
-    build = null;
     activeScene = scene;
     activeArea = area;
-    bootStartedAt = now();
-    sourceSnapshotTaken = false;
     builtTiles = 0;
-    sampledTiles = 0;
-    sampledTriangles = 0;
-    processedTriangles = 0;
     exposedEdges = 0;
-    builtChunks = 0;
-    totalChunks = 0;
-    lastReason = 'waiting briefly for terrain render chunks';
+    chunkCount = 0;
+    lastReason = 'waiting for grid data';
   }
 
   function tick(timestamp) {
@@ -533,58 +377,39 @@
     const area = currentArea();
     if (!scene || !window.THREE || !window.GridTileAccessors) return;
     if (!isWesternSlope(area)) {
-      if (root || scan || build) resetForScene(scene, area);
+      if (root) resetForScene(scene, area);
       lastReason = 'inactive outside Western Slope';
       return;
     }
     if (scene !== activeScene || area !== activeArea) resetForScene(scene, area);
-    if (build) {
-      processBuildSlice();
-      return;
-    }
-    if (scan) {
-      processScanSlice();
-      return;
-    }
-    if (root && buildCount > 0) return;
-    if (now() - bootStartedAt < BOOT_DELAY_MS) return;
-    if (sourceSnapshotTaken) return;
+    if (root) return;
     const grid = currentGrid(), cols = currentCols(), rows = currentRows();
     if (!grid || !cols || !rows) return;
-    startScan(scene, grid, cols, rows);
+    buildZoneSnow(scene, grid, cols, rows);
   }
 
   function forceRebuild() {
     const scene = currentScene();
     if (!scene || !isWesternSlope()) return debugSnapshot();
     resetForScene(scene, currentArea());
-    bootStartedAt = now() - BOOT_DELAY_MS;
     return debugSnapshot();
   }
 
   function debugSnapshot() {
     return {
       installed: true,
-      version: 2,
-      active: Boolean(root && !build),
+      version: 3,
+      active: Boolean(root),
       area: currentArea() || null,
       mode: isWesternSlope() ? 'snow-micro-plateau' : 'inactive',
       thickness: SNOW_THICKNESS,
       edgeWidth: EDGE_WIDTH,
-      scanning: Boolean(scan),
-      building: Boolean(build),
-      scanSource: scan ? `${Math.min(scan.sourceIndex + 1, scan.sources.length)}/${scan.sources.length}` : null,
-      processedTriangles,
-      sampledTriangles,
-      sampledTiles,
       builtTiles,
       exposedEdges,
-      builtChunks,
-      totalChunks,
+      chunkCount,
       buildCount,
+      lastBuildMs: Number(lastBuildMs.toFixed(2)),
       textureState,
-      lastSliceMs: Number(lastSliceMs.toFixed(2)),
-      maxSliceMs: Number(maxSliceMs.toFixed(2)),
       lastReason,
     };
   }
