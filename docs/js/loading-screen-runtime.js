@@ -8,6 +8,7 @@
 
   const CONFIG_URL = 'config/loading-screens.json';
   const COMPENDIUM_URL = 'js/compendium-ui.js?v=20260907loadingtips1';
+  const SKY_BACKDROP_URL = 'js/loading-screen-sky-backdrop.js?v=20260913e';
   const LORE_FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf';
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf';
   const MIN_VISIBLE_MS = 5000; // Used by hide() so boot/map loaders stay readable for at least five seconds.
@@ -17,8 +18,8 @@
   const MAP_CALL_RE = /\b(?:enterZone|performTravel|doTravel|setCurrentArea)\b/; // Used to recognize world-map travel callbacks before their expensive work begins.
   const DEFAULT_SETTINGS = Object.freeze({
     scriptSide: 'left', imageScale: 1, panRange: 7, panSpeed: 0.055,
-    manualSpeed: 150, loreSize: 19, scriptSize: 89, scriptY: 46,
-    columnSpacing: -0.55, scriptScrollSpeed: 0.017,
+    manualSpeed: 150, loreSize: 19, scriptSize: 160, scriptY: 45,
+    columnSpacing: -0.56, scriptScrollSpeed: 0.03,
   }); // Used for the synchronous first paint before loading-screens.json finishes fetching.
   const FALLBACK_TIPS = Object.freeze([
     { title: 'Resources', text: 'Health keeps you alive, Stamina pays for effort, and Footing keeps you upright.' },
@@ -38,6 +39,7 @@
   const state = {
     configPromise: null,
     compendiumPromise: null,
+    skyBackdropPromise: null,
     fontsPromise: null,
     tankanFontSettled: false, // Used to keep Tankan-script glyphs hidden until their font load attempt settles, preventing a fallback-font flash.
     lastEntryId: null,
@@ -68,13 +70,40 @@
     activeTip: '',
     activeTipTitle: '', // Used by the loading-screen header and diagnostics to preserve the selected Compendium feature context.
     reason: 'idle',
-    tipPoolGeneration: 0, // Generation the cached tip pool/semantic rules below were built for; a mismatch forces one rebuild per loading session instead of one every ten-second tick.
+    tipPoolGeneration: 0,
     tipPoolCache: null,
     semanticRulesCache: null,
   }; // Used by rendering, transition coverage, real request progress, and the built-in mobile diagnostics panel.
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const nowMs = () => (window.performance?.now?.() ?? Date.now());
+
+  function ensureSkyBackdropLoaded() {
+    if (window.LoadingScreenSkyBackdrop?.installed) {
+      window.LoadingScreenSkyBackdrop.redraw?.();
+      return Promise.resolve(true);
+    }
+    if (state.skyBackdropPromise) return state.skyBackdropPromise;
+    state.skyBackdropPromise = new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = SKY_BACKDROP_URL;
+      script.async = false;
+      script.dataset.hobunjiLoadingSkyRuntime = '1';
+      script.onload = () => {
+        const installed = !!window.LoadingScreenSkyBackdrop?.installed;
+        if (!installed) state.skyBackdropPromise = null;
+        window.LoadingScreenSkyBackdrop?.redraw?.();
+        resolve(installed);
+      };
+      script.onerror = () => {
+        state.skyBackdropPromise = null;
+        try { (window.__farmLog || console.warn)(`[loading-screen] failed to load ${SKY_BACKDROP_URL}`, 'warn'); } catch (_) {}
+        resolve(false);
+      };
+      (document.head || document.documentElement).appendChild(script);
+    });
+    return state.skyBackdropPromise;
+  }
 
   function revealTankanScript() {
     state.tankanFontSettled = true;
@@ -89,14 +118,14 @@
     }
     const loreFontPromise = new FontFace('KhymeryyanRoman', `url('${LORE_FONT_URL}')`).load()
       .then(font => { document.fonts.add(font); return true; })
-      .catch(() => false); // Used by show() to keep its existing wait for the lore font without blocking Tankan-script reveal on it.
+      .catch(() => false);
     const tankanFontPromise = new FontFace('TankanScript', `url('${TANKAN_FONT_URL}')`).load()
       .then(font => { document.fonts.add(font); return true; })
       .catch(() => false)
       .then(loaded => {
         revealTankanScript();
         return loaded;
-      }); // Used to reveal the vertical script only after TankanScript is either loaded or has definitively failed.
+      });
     state.fontsPromise = Promise.all([loreFontPromise, tankanFontPromise])
       .then(results => results.every(Boolean));
     return state.fontsPromise;
@@ -123,7 +152,7 @@
         existing.addEventListener?.('error', () => resolve(false), { once: true });
         return;
       }
-      const script = document.createElement('script'); // Used to make canonical Compendium definitions available to the first loading screen.
+      const script = document.createElement('script');
       script.src = COMPENDIUM_URL;
       script.async = false;
       script.dataset.hobunjiLoadingCompendium = '1';
@@ -139,21 +168,23 @@
     const style = document.createElement('style');
     style.id = 'hobunjiLoadScreenStyles';
     style.textContent = `
-#hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden;pointer-events:none}
+#hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden;pointer-events:none;isolation:isolate}
 #hobunjiLoadScreen.visible{display:block}
-#hlsImage{position:absolute;left:50%;top:48%;width:auto;height:auto;max-width:78vw;max-height:70vh;object-fit:contain;transform-origin:center center;will-change:transform}
-#hlsScriptViewport{position:absolute;top:46%;width:min(42vw,540px);height:min(72vh,880px);overflow:hidden;transform:translate(-50%,-50%);visibility:hidden}
+#hlsSkyBackdrop{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+#hlsImage{position:absolute;left:50%;top:48%;width:auto;height:auto;max-width:78vw;max-height:70vh;object-fit:contain;transform-origin:center center;will-change:transform;z-index:1}
+#hlsScriptViewport{position:absolute;top:0;width:min(42vw,540px);height:100%;overflow:visible;transform:translateX(-50%);visibility:hidden;z-index:1}
 #hobunjiLoadScreen.tankan-font-settled #hlsScriptViewport{visibility:visible}
 #hlsScriptFloat{position:absolute;left:50%;top:0;will-change:transform}
 #hlsScriptWords{display:flex;flex-direction:row;align-items:flex-start;justify-content:center;gap:0;width:max-content;--script-column-spacing:0em}
 .hlsVerticalWord + .hlsVerticalWord{margin-left:var(--script-column-spacing)}
 .hlsVerticalWord{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;font-family:"TankanScript",sans-serif;line-height:.56;color:#fff;white-space:nowrap}
 .hlsVerticalGlyph{display:block;width:1em;height:.56em;line-height:.56em;text-align:center}
-#hlsLoreBlock{position:absolute;left:50%;bottom:max(5.5vh,28px);transform:translateX(-50%);width:min(78vw,980px);text-align:center;color:#fff;font-family:"KhymeryyanRoman",serif;text-shadow:0 2px 8px rgba(0,0,0,.9)}
+#hlsLoreBlock{position:absolute;left:50%;bottom:max(5.5vh,28px);transform:translateX(-50%);width:min(78vw,980px);text-align:center;color:#fff;font-family:"KhymeryyanRoman",serif;text-shadow:0 2px 8px rgba(0,0,0,.9);z-index:1}
 #hlsLoreHeader{margin:0 0 .42em;font-size:15px;line-height:1.05;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8fd0ff;text-wrap:balance}
 #hlsLore{line-height:1.24;text-wrap:balance}
-#hlsPercent{position:absolute;right:max(4vw,24px);bottom:max(5.5vh,28px);color:#fff;font-family:"KhymeryyanRoman",serif;font-size:18px;line-height:1;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:auto;user-select:none}
-#hlsDebug{display:none;position:absolute;right:max(4vw,24px);bottom:max(9vh,58px);max-width:min(84vw,440px);padding:9px 11px;border:1px solid rgba(255,255,255,.35);border-radius:7px;background:rgba(0,0,0,.82);color:#eee;font:11px/1.35 monospace;white-space:pre-wrap;text-align:left;text-shadow:none}
+#hlsPercent{position:absolute;right:max(4vw,24px);bottom:max(5.5vh,28px);color:#fff;font-family:"KhymeryyanRoman",serif;font-size:18px;line-height:1;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:auto;user-select:none;z-index:1}
+#hlsDebug{display:none;position:absolute;right:max(4vw,24px);bottom:max(9vh,58px);max-width:min(84vw,440px);padding:9px 11px;border:1px solid rgba(255,255,255,.35);border-radius:7px;background:rgba(0,0,0,.82);color:#eee;font:11px/1.35 monospace;white-space:pre-wrap;text-align:left;text-shadow:none;z-index:2}
+#hlsSkyDebug{z-index:2!important}
 #hlsDebug.visible{display:block}
 .hlsProperNoun{color:#e8c86b}
 .hlsSystemTerm{color:#8fd0ff}
@@ -197,7 +228,7 @@
   }
 
   function onPercentDebugTap() {
-    const now = Date.now(); // Used to detect a deliberate five-tap diagnostics gesture without permanent debug chrome.
+    const now = Date.now();
     if (now - state.debugTapAt > 1800) state.debugTapCount = 0;
     state.debugTapAt = now;
     state.debugTapCount += 1;
@@ -219,6 +250,7 @@
       `reason=${state.reason} area=${area ?? 'unknown'}`,
       `progress=${Math.round(state.progress)} source=${state.progressSource}`,
       `requests=${state.requestCompleted}/${state.requestStarted}`,
+      `skyBackdrop=${window.LoadingScreenSkyBackdrop?.installed ? 'installed' : state.skyBackdropPromise ? 'loading' : 'missing'}`,
       `tankanFont=${state.tankanFontSettled ? 'settled' : 'waiting'}`,
       `visibleFor=${Math.round(state.visible ? nowMs() - state.visibleSince : 0)}ms min=${MIN_VISIBLE_MS}ms`,
       `tipRotation=${TIP_ROTATE_MS}ms active=${!!state.tipTimer}`,
@@ -269,14 +301,14 @@
   }
 
   function resolveCompendiumTipTitle(card, text) {
-    const source = String(text || '').trim(); // Used to detect explicit inner labels such as "Humour:" before falling back to the card hierarchy.
-    const labeledPrefix = source.match(/^([^:]{2,48}):\s+\S/); // Used to promote a named child concept to the loading-screen header when the tip itself names one.
+    const source = String(text || '').trim();
+    const labeledPrefix = source.match(/^([^:]{2,48}):\s+\S/);
     if (labeledPrefix) {
-      const label = labeledPrefix[1].trim(); // Used as the most-specific header for structured Compendium notes.
+      const label = labeledPrefix[1].trim();
       if (!/^(?:Tags|Keywords)$/i.test(label)) return label;
     }
-    const entryTitle = card.querySelector?.('.compendium-entry-title')?.textContent?.trim() || ''; // Used as the normal per-feature title when no child label is present.
-    const sectionTitle = card.closest?.('.compendium-section')?.querySelector?.('.compendium-section-title')?.textContent?.trim() || ''; // Used to disambiguate broad entry names such as Fishing inside Character Skills.
+    const entryTitle = card.querySelector?.('.compendium-entry-title')?.textContent?.trim() || '';
+    const sectionTitle = card.closest?.('.compendium-section')?.querySelector?.('.compendium-section-title')?.textContent?.trim() || '';
     if (/^Character Skills$/i.test(sectionTitle) && entryTitle && !/\bSkill\b/i.test(entryTitle)) return `${entryTitle} Skill`;
     return entryTitle || sectionTitle || 'Compendium';
   }
@@ -291,12 +323,12 @@
       const title = card.querySelector?.('.compendium-entry-title')?.textContent?.trim() || 'Compendium';
       if (/unavailable|diagnostic/i.test(title)) continue;
       const copy = compactTip(card.querySelector?.('.compendium-entry-copy')?.textContent);
-      const copyTitle = resolveCompendiumTipTitle(card, copy); // Used so each main card tip carries the narrowest meaningful feature label.
+      const copyTitle = resolveCompendiumTipTitle(card, copy);
       if (copy.length >= 20) tips.push({ key: `${title}:copy`, title: copyTitle, text: copy });
       const notes = card.querySelectorAll?.('.compendium-notes li') || [];
       for (let index = 0; index < notes.length; index++) {
         const note = compactTip(notes[index]?.textContent);
-        const noteTitle = resolveCompendiumTipTitle(card, note); // Used so structured child notes can override the broader card title.
+        const noteTitle = resolveCompendiumTipTitle(card, note);
         if (note.length >= 20) tips.push({ key: `${title}:note:${index}`, title: noteTitle, text: note });
       }
     }
@@ -304,9 +336,6 @@
   }
 
   function invalidateTipCacheIfStale() {
-    // The compendium/afflictions registry can't change mid-loading-screen, so
-    // extractCompendiumTips()/semanticRules() only need to run once per
-    // show() generation instead of once every ten-second tip-rotation tick.
     if (state.tipPoolGeneration !== state.generation) {
       state.tipPoolGeneration = state.generation;
       state.tipPoolCache = null;
@@ -369,7 +398,7 @@
       ['Alchemy', 'hlsSystemTerm'], ['Humour', 'hlsSystemTerm'], ['Drive', 'hlsSystemTerm'],
       ['Elemental Magnetism', 'hlsSystemTerm'], ['Magnetism', 'hlsSystemTerm'],
       ['Restore', 'hlsSystemTerm'], ['Afflict', 'hlsSystemTerm'], ['Greaten', 'hlsSystemTerm'], ['Lighten', 'hlsSystemTerm'],
-    ]; // Used to color recurring Compendium vocabulary consistently across arbitrary tip text.
+    ];
 
     const pane = document.querySelector?.('#mpCompendium');
     const vocabularyNodes = pane?.querySelectorAll?.('.compendium-entry-title, .compendium-section-title') || [];
@@ -446,7 +475,6 @@
     renderActiveTip(els, state.activeTip || pickTip());
     renderScript(els, settings, entry.script || 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = settings.scriptSide === 'right' ? '75%' : '25%';
-    els.scriptViewport.style.top = `${settings.scriptY}%`;
     return settings;
   }
 
@@ -477,9 +505,9 @@
 
   function installFetchProgressHook() {
     if (typeof window.fetch !== 'function' || window.fetch.__hobunjiLoadingProgressWrapped) return;
-    const originalFetch = window.fetch.bind(window); // Used to preserve native fetch behavior while counting requests during a visible loading session.
+    const originalFetch = window.fetch.bind(window);
     const wrappedFetch = function hobunjiLoadingProgressFetch(...args) {
-      const generation = state.visible ? state.generation : 0; // Used so a request started for an older screen cannot advance a newer loading session.
+      const generation = state.visible ? state.generation : 0;
       if (generation) noteRequestStart();
       let request;
       try { request = originalFetch(...args); }
@@ -523,10 +551,16 @@
     state.els.image.style.transform = `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${Number(settings.imageScale) || 1})`;
 
     state.scriptScrollPhase = (state.scriptScrollPhase + dt * (Number(settings.scriptScrollSpeed) || 0)) % 1;
-    const viewportHeight = state.els.scriptViewport.clientHeight || 0;
-    const contentHeight = state.els.scriptFloat.offsetHeight || 0;
-    const maxScroll = Math.max(0, contentHeight - viewportHeight);
-    state.els.scriptFloat.style.transform = `translateX(-50%) translateY(${-maxScroll * state.scriptScrollPhase}px)`;
+    const viewportHeight = Math.max(1, state.els.root.clientHeight || innerHeight || 1);
+    const contentHeight = Math.max(1, state.els.scriptFloat.offsetHeight || 1);
+    const legacyWindowHeight = Math.min(viewportHeight * 0.72, 880);
+    const authoredY = clamp(Number(settings.scriptY) || 45, 0, 100) / 100;
+    const anchorTop = viewportHeight * authoredY - legacyWindowHeight * 0.5;
+    const travel = viewportHeight + contentHeight;
+    const phaseOffset = ((viewportHeight - anchorTop) / travel) % 1;
+    const travelPhase = (state.scriptScrollPhase + phaseOffset) % 1;
+    const scriptY = viewportHeight - travelPhase * travel;
+    state.els.scriptFloat.style.transform = `translateX(-50%) translateY(${scriptY}px)`;
     if (state.debugVisible) updateDebugPanel();
     state.motionRaf = requestAnimationFrame(t => motionTick(t, settings));
   }
@@ -541,7 +575,8 @@
   }
 
   function showImmediate(reason = 'map-change') {
-    const previousGeneration = state.generation; // Used to settle any delayed hide promises superseded by a newer loading screen.
+    ensureSkyBackdropLoaded();
+    const previousGeneration = state.generation;
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
     state.hideTimer = null;
     stopTipRotation();
@@ -558,9 +593,9 @@
     state.activeTipTitle = '';
     const els = buildDom();
     els.root.classList.add('visible');
+    window.LoadingScreenSkyBackdrop?.redraw?.();
     renderScript(els, DEFAULT_SETTINGS, 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = '25%';
-    els.scriptViewport.style.top = '46%';
     els.lore.style.fontSize = `${DEFAULT_SETTINGS.loreSize}px`;
     renderActiveTip(els, pickTip());
     startTipRotation(myGeneration);
@@ -571,20 +606,17 @@
     return myGeneration;
   }
 
-  // Shows synchronously first, then fills authored settings/canonical tip copy
-  // as resources settle. Transition hooks call this BEFORE startSceneTransition
-  // starts fading, so the browser gets frames to paint it before the expensive
-  // world-map callback runs at the black midpoint.
   async function show(options = {}) {
     const reason = typeof options === 'string' ? options : (options?.reason || 'map-change');
     const myGeneration = showImmediate(reason);
     setProgress(4, 'overlay-visible');
-    await Promise.all([ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()]);
+    await Promise.all([ensureSkyBackdropLoaded(), ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()]);
     if (state.generation !== myGeneration || state.finalHiddenGeneration === myGeneration) return;
     setProgress(16, 'loader-resources');
     const config = await state.configPromise;
     if (state.generation !== myGeneration || state.finalHiddenGeneration === myGeneration) return;
     const settings = applyEntryAndSettings(config);
+    window.LoadingScreenSkyBackdrop?.redraw?.();
     setProgress(20, 'compendium-tip');
     if (state.motionRaf) cancelAnimationFrame(state.motionRaf);
     state.lastFrameTime = nowMs();
@@ -609,7 +641,7 @@
 
   function hide(reason = 'map-ready') {
     if (!state.generation) return Promise.resolve();
-    const generation = state.generation; // Used to make a delayed five-second hide harmless if a newer world transition starts first.
+    const generation = state.generation;
     state.reason = reason;
     setProgress(100, 'map-ready');
     const wait = Math.max(0, MIN_VISIBLE_MS - (nowMs() - state.visibleSince));
@@ -638,16 +670,16 @@
 
   function shouldLoadForTransition(callback) {
     const area = safeCurrentArea();
-    if (isBuildingArea(area)) return false; // Exiting an authored building never gets a loading screen.
+    if (isBuildingArea(area)) return false;
     const source = callbackSource(callback);
-    if (!source || BUILDING_CALL_RE.test(source)) return false; // Entering an authored building never gets a loading screen.
+    if (!source || BUILDING_CALL_RE.test(source)) return false;
     return MAP_CALL_RE.test(source);
   }
 
   function wrapStartSceneTransition(original) {
     if (typeof original !== 'function' || original.__hobunjiLoadingScreenWrapped) return original;
     const wrapped = function loadingScreenSceneTransition(callback, ...args) {
-      const useLoader = shouldLoadForTransition(callback); // Used to distinguish world-map travel from ordinary building entry/exit.
+      const useLoader = shouldLoadForTransition(callback);
       if (!useLoader) return original.call(this, callback, ...args);
 
       show({ reason: 'world-map-transition' });
@@ -671,7 +703,7 @@
   }
 
   function installDependencyInitHooks() {
-    const seen = new Set(); // Used to avoid wrapping aliases that point at the same namespace object.
+    const seen = new Set();
     for (const key of Object.getOwnPropertyNames(window)) {
       let namespace;
       try { namespace = window[key]; } catch (_) { continue; }
@@ -689,9 +721,7 @@
         wrappedInit.__hobunjiLoadingDepsWrapped = true;
         namespace.init = wrappedInit;
         state.dependencyInitHooks += 1;
-      } catch (_) {
-        // Some third-party namespaces expose non-writable init methods; skip them.
-      }
+      } catch (_) {}
     }
   }
 
@@ -712,7 +742,7 @@
     };
 
     if (tryInstall() || typeof setTimeout !== 'function') return;
-    let attempts = 0; // Used only as a defensive fallback while game.js is still parser-executing.
+    let attempts = 0;
     const retry = () => {
       if (tryInstall()) return;
       attempts += 1;
@@ -734,8 +764,9 @@
       }
       return;
     }
+    ensureSkyBackdropLoaded();
     show({ reason: 'initial-boot' });
-    const completeBoot = () => hide('initial-boot-ready'); // Used by the browser load boundary so boot reaches 100 only when page resources are done.
+    const completeBoot = () => hide('initial-boot-ready');
     if (document.readyState === 'complete') completeBoot();
     else window.addEventListener?.('load', completeBoot, { once: true });
   }
@@ -751,6 +782,7 @@
     setProgress,
     shouldLoadForTransition,
     installTransitionHook,
+    ensureSkyBackdropLoaded,
     getProgress: () => state.progress,
     getDebug: () => ({
       visible: state.visible,
@@ -760,6 +792,7 @@
       progressSource: state.progressSource,
       requestStarted: state.requestStarted,
       requestCompleted: state.requestCompleted,
+      skyBackdropInstalled: !!window.LoadingScreenSkyBackdrop?.installed,
       tankanFontSettled: state.tankanFontSettled,
       area: safeCurrentArea(),
       activeTipTitle: state.activeTipTitle,
@@ -781,13 +814,13 @@
 // policy to loading-screen rendering while preserving the current boot manifest.
 (() => {
   'use strict';
-  const src = 'js/dev-zone-gate.js?v=20260907a'; // Used as the cache-busted runtime path for the Dev Mode entrance gate.
+  const src = 'js/dev-zone-gate.js?v=20260907a';
   if (window.DevZoneGate?.installed || document.querySelector?.('script[data-dev-zone-gate]')) return;
   if (document.readyState === 'loading' && typeof document.write === 'function') {
     document.write(`<script src="${src}" data-dev-zone-gate="1"><\/script>`);
     return;
   }
-  const script = document.createElement('script'); // Used only if this runtime is injected after initial HTML parsing.
+  const script = document.createElement('script');
   script.src = src;
   script.dataset.devZoneGate = '1';
   (document.head || document.documentElement).appendChild(script);
