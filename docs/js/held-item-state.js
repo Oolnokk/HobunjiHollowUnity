@@ -1,26 +1,39 @@
 // Canonical manual held-item state bridge.
 //
 // Inventory "Hold" is intentionally different from the item-selection arch:
-// combat manuals, clothing, and other off-arch objects stay out of
-// getInventoryStackItems(), but pressing Hold still needs to replace whatever
-// ordinary tool/item the player has in their hands. This module only coordinates
-// the existing game state exposed through module init dependency bags. It never
-// edits inventory counts, active item lists, save data, or wheel eligibility.
+// combat manuals, clothing, and other off-arch objects stay out of the visible
+// arch, but a held bag item still has to become the REAL game-level held item
+// so game.js's hand renderer and ordinary item actions can see it.
+//
+// The projection below is deliberately narrow. While a manual bag item is held,
+// it makes that one stack visible to game.js's existing getInventoryStackItems()
+// resolver, points the real active item index at it, and sets heldMode='item'.
+// ActionArcUI/HudUpdate receive filtered views so the projected stack never
+// appears in the selection arch. No inventory count or persistence data is
+// written by this module.
 (() => {
   'use strict';
   if (window.HobunjiHeldItemState) return;
 
-  let deps = {}; // Merged read/control dependencies captured from the existing one-time module init calls.
+  let deps = {}; // Merged read/control dependencies captured from existing one-time module init calls.
+  let actionRaw = null; // Unwrapped game.js held-mode/index/list controls captured from ActionArcUI.init().
   let activeSignature = null; // Identity of the manual Hold currently owning the player's hands.
-  let baselineItemIndex = null; // Item-arch index at manual-Hold activation, used to detect an explicit later wheel/scroll selection.
-  let syncTimer = null; // Low-frequency synchronizer that observes existing held-state changes without patching their functions.
-  let keyListenerInstalled = false; // Guards the hands-free Z listener from duplicate registration.
-  const debug = { // Mobile-visible state for diagnosing Hold behavior without DevTools.
-    version: 1,
+  let projectionKey = null; // Off-arch bag key temporarily projected into game.js's active-stack resolver.
+  let previousWheelKey = null; // Real wheel selection restored when manual Hold ends without a new ordinary selection.
+  let previousHeldMode = null; // Diagnostic only; manual Hold itself always puts ordinary equipment away.
+  let baseWheelEligible = null; // Canonical ItemProcessing eligibility underneath the one-stack projection.
+  let syncTimer = null; // Low-frequency synchronizer for stale/external state changes.
+  let keyListenerInstalled = false;
+
+  const debug = {
+    version: 2,
     captures: {},
     activeSignature: null,
-    baselineItemIndex: null,
+    projectionKey: null,
+    previousWheelKey: null,
+    previousHeldMode: null,
     lastHeldMode: null,
+    lastResolvedKey: null,
     lastEvent: null,
     staleClears: 0,
     ordinarySelectionClears: 0,
@@ -36,25 +49,25 @@
   }
 
   function resolveClothingInstance(uid) {
-    const gearInventory = deps.getGearInventory?.(); // Gear collection containing wearable clothing instances.
-    const gearMatch = (gearInventory?.clothingItems || []).find(item => item?.uid === uid); // Matching owned gear article, if present.
+    const gearInventory = deps.getGearInventory?.();
+    const gearMatch = (gearInventory?.clothingItems || []).find(item => item?.uid === uid);
     if (gearMatch) return gearMatch;
-    const packClothing = deps.getPackClothing?.() || []; // World-scoped loose clothing that may also be manually held for gifting.
+    const packClothing = deps.getPackClothing?.() || [];
     return packClothing.find(item => item?.uid === uid) || null;
   }
 
   function resolveManualHeldThing() {
-    const held = rawManualHeldItem(); // Raw selector written by the existing Inventory/Equipment Hold buttons.
+    const held = rawManualHeldItem();
     if (!held) return null;
     if (held.kind === 'bagItem') {
-      const key = held.key; // Canonical stack key selected by Inventory Hold.
-      const count = Math.max(0, Number(deps.inventory?.[key]) || 0); // Live count used only to reject a stale/consumed Hold reference.
+      const key = held.key;
+      const count = Math.max(0, Number(deps.inventory?.[key]) || 0);
       if (!key || count <= 0) return null;
-      const def = deps.ITEM_DEFS?.[key] || {}; // Existing item metadata used for actions, labels, and debug output.
+      const def = deps.ITEM_DEFS?.[key] || {};
       return { kind: 'bagItem', key, count, def, label: def.label || key, icon: def.icon || '✋' };
     }
     if (held.kind === 'clothing') {
-      const instance = resolveClothingInstance(held.uid); // Exact gear/pack article referenced by the Hold selector.
+      const instance = resolveClothingInstance(held.uid);
       if (!instance) return null;
       return { kind: 'clothing', uid: held.uid, instance, label: instance.label || instance.baseLabel || 'Clothing', icon: '👕' };
     }
@@ -68,102 +81,319 @@
 
   function resetTracking() {
     activeSignature = null;
-    baselineItemIndex = null;
+    previousHeldMode = null;
     debug.activeSignature = null;
-    debug.baselineItemIndex = null;
+    debug.previousHeldMode = null;
   }
 
-  function clearManualHeld(reason = 'manual-clear') {
-    const held = rawManualHeldItem(); // Current raw selector checked before invoking its canonical clear setter.
-    if (!held) {
+  function installWheelProjection() {
+    const api = window.ItemProcessing;
+    if (!api?.isWheelEligible) return false;
+    if (api.__hobunjiManualHoldProjectionPatched) {
+      baseWheelEligible = api.__hobunjiManualHoldProjectionBase || baseWheelEligible;
+      return true;
+    }
+
+    const base = api.isWheelEligible.bind(api);
+    baseWheelEligible = base;
+    api.isWheelEligible = function hobunjiManualHoldWheelProjection(key, ...rest) {
+      // getInventoryStackItems() calls isWheelEligible from Array.filter,
+      // supplying (definition, sourceArray) after the key. Only that exact
+      // stack-resolution call sees the projection. Inventory's ordinary
+      // isWheelEligible(key) check therefore still reports this item as
+      // off-arch and continues to show its Hold button.
+      const stackResolutionCall = rest.length >= 2 && Array.isArray(rest[1]);
+      if (stackResolutionCall && projectionKey && key === projectionKey && (Number(deps.inventory?.[key]) || 0) > 0) return true;
+      return base(key, ...rest);
+    };
+    api.__hobunjiManualHoldProjectionPatched = true;
+    api.__hobunjiManualHoldProjectionBase = base;
+    return true;
+  }
+
+  function rawStacks() {
+    return actionRaw?.getInventoryStackItems?.() || [];
+  }
+
+  function stackIndexForKey(stacks, key) {
+    return key ? stacks.findIndex(item => item?.key === key) : -1;
+  }
+
+  function rawActiveKey() {
+    const stacks = rawStacks();
+    if (!stacks.length) return null;
+    const rawIndex = Number(actionRaw?.getActiveItemIndex?.());
+    const index = Number.isFinite(rawIndex) ? Math.max(0, Math.min(stacks.length - 1, rawIndex)) : 0;
+    return stacks[index]?.key || null;
+  }
+
+  function archStacks() {
+    const stacks = rawStacks();
+    return projectionKey ? stacks.filter(item => item?.key !== projectionKey) : stacks;
+  }
+
+  function archActiveIndex() {
+    if (!projectionKey) return Number(actionRaw?.getActiveItemIndex?.()) || 0;
+    const stacks = archStacks();
+    if (!stacks.length) return 0;
+    const priorIndex = stackIndexForKey(stacks, previousWheelKey);
+    return priorIndex >= 0 ? priorIndex : Math.max(0, Math.min(stacks.length - 1, Number(actionRaw?.getActiveItemIndex?.()) || 0));
+  }
+
+  function refreshHeldUi() {
+    deps.refreshActionBar?.();
+    window.HudUpdate?.refreshItemScroll?.();
+  }
+
+  function restorePreviousWheelSelection() {
+    if (!actionRaw?.setActiveItemIndex) return;
+    const stacks = rawStacks(); // projectionKey must already be null before this runs.
+    if (!stacks.length) {
+      actionRaw.setActiveItemIndex(0);
+      return;
+    }
+    const previousIndex = stackIndexForKey(stacks, previousWheelKey);
+    const fallback = Math.max(0, Math.min(stacks.length - 1, Number(actionRaw.getActiveItemIndex?.()) || 0));
+    actionRaw.setActiveItemIndex(previousIndex >= 0 ? previousIndex : fallback);
+  }
+
+  function clearManualSelector() {
+    if (!rawManualHeldItem()) return;
+    if (typeof deps.clearManualHeldItem === 'function') deps.clearManualHeldItem();
+    else deps.setManualHeldItem?.(null);
+  }
+
+  function endBagProjection({ clearManual = false, restoreWheel = true, putHandsFree = false, reason = 'clear' } = {}) {
+    const oldKey = projectionKey;
+    if (!oldKey && !rawManualHeldItem()) {
       resetTracking();
       return false;
     }
-    if (typeof deps.clearManualHeldItem === 'function') deps.clearManualHeldItem();
-    else deps.setManualHeldItem?.(null);
+    if (clearManual) clearManualSelector();
+
+    projectionKey = null;
+    debug.projectionKey = null;
+    if (restoreWheel) restorePreviousWheelSelection();
+    previousWheelKey = null;
+    debug.previousWheelKey = null;
+    resetTracking();
+
+    if (putHandsFree && actionRaw?.setHeldMode) actionRaw.setHeldMode('none');
+    debug.lastEvent = { type: 'clear', key: oldKey, reason, restoreWheel, putHandsFree, at: Date.now() };
+    refreshHeldUi();
+    return true;
+  }
+
+  function clearManualHeld(reason = 'manual-clear') {
+    const hadProjection = Boolean(projectionKey);
+    const hadManual = Boolean(rawManualHeldItem());
+    if (!hadProjection && !hadManual) {
+      resetTracking();
+      return false;
+    }
+    if (hadProjection) return endBagProjection({ clearManual: true, restoreWheel: true, putHandsFree: true, reason });
+    clearManualSelector();
     resetTracking();
     debug.lastEvent = { type: 'clear', reason, at: Date.now() };
+    refreshHeldUi();
     return true;
   }
 
   function ordinarySelectionReady() {
-    return typeof deps.putAwayHeldEquipment === 'function' && typeof deps.getHeldMode === 'function';
+    return Boolean(actionRaw?.getHeldMode && actionRaw?.getActiveItemIndex && actionRaw?.getInventoryStackItems);
   }
 
-  function activateManualHold(thing, signature, itemIndex) {
+  function activateBagProjection(thing, signature) {
+    if (!ordinarySelectionReady() || !installWheelProjection()) return false;
+
+    // Capture the real pre-Hold wheel selection while the item is still
+    // excluded. This is separate from the rendered/effective held item.
+    const beforeStacks = rawStacks();
+    const beforeIndex = Number(actionRaw.getActiveItemIndex?.());
+    const safeBeforeIndex = beforeStacks.length && Number.isFinite(beforeIndex)
+      ? Math.max(0, Math.min(beforeStacks.length - 1, beforeIndex))
+      : 0;
+    previousWheelKey = beforeStacks[safeBeforeIndex]?.key || null;
+    previousHeldMode = actionRaw.getHeldMode?.() ?? null;
+
+    // Canonically remove the old tool/weapon/item first. Then project only
+    // this off-arch stack into game.js's resolver and point the raw held state
+    // at it, which is what updateHeldItemHolder() actually reads.
+    actionRaw.putAwayHeldEquipment?.();
+    projectionKey = thing.key;
+    const projectedStacks = rawStacks();
+    const projectedIndex = stackIndexForKey(projectedStacks, thing.key);
+    if (projectedIndex < 0) {
+      projectionKey = null;
+      restorePreviousWheelSelection();
+      previousWheelKey = null;
+      previousHeldMode = null;
+      debug.lastEvent = { type: 'activate-failed', key: thing.key, reason: 'not-in-resolved-stack', at: Date.now() };
+      return false;
+    }
+
+    actionRaw.setActiveItemIndex?.(projectedIndex);
+    actionRaw.setHeldMode?.('item');
     activeSignature = signature;
-    baselineItemIndex = Number.isFinite(itemIndex) ? itemIndex : null;
-    debug.activeSignature = activeSignature;
-    debug.baselineItemIndex = baselineItemIndex;
-    deps.putAwayHeldEquipment();
+    debug.activeSignature = signature;
+    debug.projectionKey = projectionKey;
+    debug.previousWheelKey = previousWheelKey;
+    debug.previousHeldMode = previousHeldMode;
+    deps.showToast?.(`✋ Holding ${thing.label}.`, true);
+    debug.lastEvent = { type: 'activate', key: thing.key, previousWheelKey, previousHeldMode, at: Date.now() };
+    refreshHeldUi();
+    return true;
+  }
+
+  function activateClothingHold(thing, signature) {
+    activeSignature = signature;
+    previousHeldMode = actionRaw?.getHeldMode?.() ?? deps.getHeldMode?.() ?? null;
+    debug.activeSignature = signature;
+    debug.previousHeldMode = previousHeldMode;
+    (actionRaw?.putAwayHeldEquipment || deps.putAwayHeldEquipment)?.();
     deps.refreshActionBar?.();
     window.HudUpdate?.refreshItemScroll?.();
     deps.showToast?.(`✋ Holding ${thing.label}.`, true);
-    debug.lastEvent = { type: 'activate', signature, label: thing.label, at: Date.now() };
+    debug.lastEvent = { type: 'activate-clothing', signature, label: thing.label, at: Date.now() };
   }
 
   function syncNow() {
-    const rawHeld = rawManualHeldItem(); // Raw value distinguishes "nothing held" from a stale selector that must be cleaned up.
-    const thing = resolveManualHeldThing(); // Valid live manual-held item resolved without mutating inventory or wheel state.
+    const rawHeld = rawManualHeldItem();
+    const thing = resolveManualHeldThing();
     if (rawHeld && !thing) {
       debug.staleClears++;
-      clearManualHeld('stale-manual-reference');
+      if (projectionKey) endBagProjection({ clearManual: true, restoreWheel: true, putHandsFree: true, reason: 'stale-manual-reference' });
+      else clearManualHeld('stale-manual-reference');
       return null;
     }
+
     if (!thing) {
-      resetTracking();
+      // Pressing "Holding — Stop" clears the selector first. If a bag
+      // projection is still active, remove it and return to hands-free while
+      // restoring the pre-Hold wheel selection.
+      if (projectionKey) endBagProjection({ clearManual: false, restoreWheel: true, putHandsFree: true, reason: 'hold-stop' });
+      else resetTracking();
       return null;
     }
-    if (!ordinarySelectionReady()) return thing;
 
-    const signature = signatureFor(thing); // Stable identity used to detect a newly pressed Hold button.
-    const heldMode = deps.getHeldMode?.() ?? null; // Canonical ordinary held mode controlled by game.js/ActionArcUI.
-    const itemIndexValue = Number(deps.getActiveItemIndex?.()); // Current arch index used only to detect explicit wheel navigation.
-    const itemIndex = Number.isFinite(itemIndexValue) ? itemIndexValue : null; // Normalized index for comparisons/debug.
-    debug.lastHeldMode = heldMode;
-
+    const signature = signatureFor(thing);
     if (signature !== activeSignature) {
-      activateManualHold(thing, signature, itemIndex);
+      if (projectionKey) endBagProjection({ clearManual: false, restoreWheel: true, putHandsFree: false, reason: 'manual-item-changed' });
+      if (thing.kind === 'bagItem') activateBagProjection(thing, signature);
+      else activateClothingHold(thing, signature);
       return thing;
     }
 
-    const ordinaryModeSelected = heldMode !== null && heldMode !== undefined && heldMode !== 'none'; // True when the player explicitly drew a tool or wheel item after Hold.
-    const itemIndexChanged = baselineItemIndex !== null && itemIndex !== null && itemIndex !== baselineItemIndex; // True when prev/next/wheel navigation selected a different ordinary item.
-    if (ordinaryModeSelected || itemIndexChanged) {
-      debug.ordinarySelectionClears++;
-      clearManualHeld(ordinaryModeSelected ? `ordinary-mode:${heldMode}` : 'item-index-changed');
-      return null;
+    if (projectionKey && ordinarySelectionReady()) {
+      const heldMode = actionRaw.getHeldMode?.() ?? null;
+      const resolvedKey = rawActiveKey();
+      debug.lastHeldMode = heldMode;
+      debug.lastResolvedKey = resolvedKey;
+      // Our own projection is exactly mode=item + activeKey=projectionKey.
+      // Any different real mode/index means some normal selection path won;
+      // relinquish manual Hold without overwriting that newer selection.
+      if (heldMode !== 'item' || resolvedKey !== projectionKey) {
+        debug.ordinarySelectionClears++;
+        endBagProjection({ clearManual: true, restoreWheel: false, putHandsFree: false, reason: heldMode !== 'item' ? `ordinary-mode:${heldMode}` : 'ordinary-item-changed' });
+        return null;
+      }
     }
     return thing;
   }
 
   function getManualBagItem() {
-    const thing = resolveManualHeldThing(); // Live manual state queried by consumers that specifically require a bag item.
+    const thing = resolveManualHeldThing();
     if (thing?.kind !== 'bagItem') return null;
     return { ...thing.def, key: thing.key, _manualHeld: true };
   }
 
   function getHeldBagItem() {
-    const manual = getManualBagItem(); // Manual Hold always wins over the ordinary item arch.
+    const manual = getManualBagItem();
     if (manual) return manual;
-    if (deps.getHeldMode?.() !== 'item') return null;
-    return deps.getActiveInventoryItem?.() || null;
+    if ((actionRaw?.getHeldMode?.() ?? deps.getHeldMode?.()) !== 'item') return null;
+    return (actionRaw?.getActiveInventoryItem?.() || deps.getActiveInventoryItem?.()) ?? null;
   }
 
   function getManualGiftItem() {
-    const thing = resolveManualHeldThing(); // Manual Hold shape translated to the existing NpcGifting contract.
+    const thing = resolveManualHeldThing();
     if (!thing) return null;
     if (thing.kind === 'clothing') return { kind: 'clothing', instance: thing.instance };
     return { kind: 'bagItem', key: thing.key, def: thing.def };
+  }
+
+  function releaseForNormalSelection(reason = 'ordinary-selection') {
+    if (!projectionKey && !rawManualHeldItem()) return false;
+    if (projectionKey) return endBagProjection({ clearManual: true, restoreWheel: true, putHandsFree: false, reason });
+    clearManualSelector();
+    resetTracking();
+    return true;
+  }
+
+  function captureActionRaw(injectedDeps) {
+    actionRaw = {
+      getInventoryStackItems: injectedDeps.getInventoryStackItems,
+      getActiveItemIndex: injectedDeps.getActiveItemIndex,
+      setActiveItemIndex: injectedDeps.setActiveItemIndex,
+      getHeldMode: injectedDeps.getHeldMode,
+      setHeldMode: injectedDeps.setHeldMode,
+      getActiveInventoryItem: injectedDeps.getActiveInventoryItem,
+      cycleActiveInventoryItem: injectedDeps.cycleActiveInventoryItem,
+      putAwayHeldEquipment: injectedDeps.putAwayHeldEquipment,
+      refreshActionBar: injectedDeps.refreshActionBar,
+    };
+  }
+
+  function actionArcDeps(injectedDeps) {
+    captureActionRaw(injectedDeps);
+    return {
+      ...injectedDeps,
+      getInventoryStackItems: archStacks,
+      getActiveItemIndex: archActiveIndex,
+      setActiveItemIndex: index => {
+        if (!projectionKey) return actionRaw.setActiveItemIndex?.(index);
+        const selectedKey = archStacks()[index]?.key || null;
+        releaseForNormalSelection('arch-item-select');
+        const stacks = rawStacks();
+        const realIndex = stackIndexForKey(stacks, selectedKey);
+        return actionRaw.setActiveItemIndex?.(realIndex >= 0 ? realIndex : Math.max(0, Number(index) || 0));
+      },
+      cycleActiveInventoryItem: dir => {
+        if (projectionKey) releaseForNormalSelection('arch-item-cycle');
+        return actionRaw.cycleActiveInventoryItem?.(dir);
+      },
+      setHeldMode: mode => {
+        if (projectionKey && mode !== 'item') releaseForNormalSelection(`switch-held-mode:${mode}`);
+        return actionRaw.setHeldMode?.(mode);
+      },
+      putAwayHeldEquipment: (...args) => {
+        if (projectionKey) releaseForNormalSelection('put-away');
+        return actionRaw.putAwayHeldEquipment?.(...args);
+      },
+    };
+  }
+
+  function hudDeps(injectedDeps) {
+    const fallbackCycle = injectedDeps.cycleActiveInventoryItem;
+    return {
+      ...injectedDeps,
+      getInventoryStackItems: () => projectionKey ? (injectedDeps.getInventoryStackItems?.() || []).filter(item => item?.key !== projectionKey) : (injectedDeps.getInventoryStackItems?.() || []),
+      getActiveItemIndex: () => projectionKey ? archActiveIndex() : (injectedDeps.getActiveItemIndex?.() || 0),
+      getHeldMode: () => projectionKey ? 'item' : injectedDeps.getHeldMode?.(),
+      getActiveInventoryItem: () => projectionKey ? getManualBagItem() : injectedDeps.getActiveInventoryItem?.(),
+      cycleActiveInventoryItem: dir => {
+        if (projectionKey) releaseForNormalSelection('hud-item-cycle');
+        return fallbackCycle?.(dir);
+      },
+    };
   }
 
   function installKeyListener() {
     if (keyListenerInstalled || typeof document === 'undefined') return;
     keyListenerInstalled = true;
     document.addEventListener('keydown', event => {
-      const target = event.target; // Focused element used to avoid consuming a typed Z in text fields/contenteditable UI.
-      const tagName = String(target?.tagName || '').toLowerCase(); // Normalized tag name for lightweight text-entry filtering.
-      const isTextEntry = tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable; // Existing browser controls where Z should remain ordinary text input.
+      const target = event.target;
+      const tagName = String(target?.tagName || '').toLowerCase();
+      const isTextEntry = tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable;
       if (isTextEntry || String(event.key || '').toLowerCase() !== 'z' || !rawManualHeldItem()) return;
       clearManualHeld('put-away-key');
     }, true);
@@ -174,21 +404,24 @@
     syncTimer = window.setInterval(syncNow, 80);
   }
 
-  function wrapInit(name, { giftResolver = false } = {}) {
-    const api = window[name]; // Existing parser-loaded module whose normal init call supplies canonical game-state dependencies.
+  function wrapInit(name, { mode = 'capture', giftResolver = false } = {}) {
+    const api = window[name];
     if (!api?.init || api.__hobunjiHeldItemStateBound) return false;
-    const originalInit = api.init.bind(api); // Original one-time initialization preserved exactly after dependency capture.
+    const originalInit = api.init.bind(api);
     api.init = (injectedDeps, ...rest) => {
       mergeDeps(injectedDeps);
-      let forwardedDeps = injectedDeps; // Dependency bag passed to the owning module after optional read-only held-gift resolution is added.
-      if (giftResolver && injectedDeps && typeof injectedDeps === 'object') {
-        const fallbackGetHeldGiftItem = injectedDeps.getHeldGiftItem; // Existing game getter retained for ordinary wheel-held gifts.
+      installWheelProjection();
+      let forwardedDeps = injectedDeps;
+      if (mode === 'action') forwardedDeps = actionArcDeps(injectedDeps);
+      else if (mode === 'hud') forwardedDeps = hudDeps(injectedDeps);
+      if (giftResolver && forwardedDeps && typeof forwardedDeps === 'object') {
+        const fallbackGetHeldGiftItem = forwardedDeps.getHeldGiftItem;
         forwardedDeps = {
-          ...injectedDeps,
+          ...forwardedDeps,
           getHeldGiftItem: () => getManualGiftItem() || fallbackGetHeldGiftItem?.() || null,
         };
       }
-      const result = originalInit(forwardedDeps, ...rest); // Owning module's canonical initialization/result.
+      const result = originalInit(forwardedDeps, ...rest);
       debug.captures[name] = true;
       installKeyListener();
       ensureSynchronizer();
@@ -199,25 +432,37 @@
     return true;
   }
 
-  wrapInit('ActionArcUI');
-  wrapInit('HudUpdate');
+  installWheelProjection();
+  wrapInit('ActionArcUI', { mode: 'action' });
+  wrapInit('HudUpdate', { mode: 'hud' });
   wrapInit('EquipmentPanel');
   wrapInit('NpcGifting', { giftResolver: true });
   installKeyListener();
   ensureSynchronizer();
 
   window.HobunjiHeldItemState = {
-    version: 1,
+    version: 2,
     syncNow,
     clearManualHeld,
+    releaseForNormalSelection,
     getManualHeldThing: resolveManualHeldThing,
     getManualBagItem,
     getHeldBagItem,
     getManualGiftItem,
-    getDebug: () => ({ ...debug, captures: { ...debug.captures }, rawManualHeldItem: rawManualHeldItem(), resolvedManualHeldItem: resolveManualHeldThing() }),
+    getDebug: () => ({
+      ...debug,
+      captures: { ...debug.captures },
+      rawManualHeldItem: rawManualHeldItem(),
+      resolvedManualHeldItem: resolveManualHeldThing(),
+      rawHeldMode: actionRaw?.getHeldMode?.() ?? deps.getHeldMode?.() ?? null,
+      rawActiveKey: rawActiveKey(),
+      visibleArchKeys: archStacks().map(item => item?.key).filter(Boolean),
+      wheelProjectionReady: typeof baseWheelEligible === 'function',
+    }),
     formatDebug: () => {
-      const thing = resolveManualHeldThing(); // Current resolved item summarized for copyable mobile diagnostics.
-      return `Manual Hold: ${thing ? `${thing.kind}:${thing.key || thing.uid} (${thing.label})` : 'none'} | ordinary=${deps.getHeldMode?.() ?? '?'} | active=${activeSignature || 'none'} | clears=${debug.ordinarySelectionClears}/${debug.staleClears}`;
+      const thing = resolveManualHeldThing();
+      const rawMode = actionRaw?.getHeldMode?.() ?? deps.getHeldMode?.() ?? '?';
+      return `Manual Hold v2: ${thing ? `${thing.kind}:${thing.key || thing.uid}` : 'none'} | projected=${projectionKey || 'none'} | mode=${rawMode} | resolved=${rawActiveKey() || 'none'} | prior=${previousWheelKey || 'none'}`;
     },
   };
 })();
