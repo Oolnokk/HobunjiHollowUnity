@@ -265,8 +265,8 @@
   function rulePreviewDelta(height) {
     if (!height || height.mode === 'any') return 0;
     if (height.mode === 'relativeRange') {
-      const min = Number(height.min);
-      const max = Number(height.max);
+      const min = height.min == null || height.min === '' ? NaN : Number(height.min); // Open-ended relative ranges must stay open; Number(null) would incorrectly collapse them to Δ0.
+      const max = height.max == null || height.max === '' ? NaN : Number(height.max);
       if (Number.isFinite(min) && Number.isFinite(max)) {
         if (min <= 0 && max >= 0) return 0;
         return Math.abs(min) <= Math.abs(max) ? min : max;
