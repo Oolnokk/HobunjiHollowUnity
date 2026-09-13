@@ -17,15 +17,16 @@
     defaults: Object.freeze({ downDeg: DEFAULT_DOWN_CLAMP_DEG, upDeg: DEFAULT_UP_CLAMP_DEG }),
   };
 
-  // Parser-time dev-playtest bootstrap. The random-ruin adapter now registers
-  // V50 output as a real map_i_* building interior instead of dumping its
-  // scene graph into the Testing Arena. Prototype hooks load between the
-  // generic dynamic-surface registry and the base ruin adapter so their
-  // interaction listener can claim only the structural controls the adapter
-  // does not yet own (ladders/transit doors) without duplicating base logic.
+  // Parser-time dev-playtest bootstrap. Hit-driven puzzle logic loads before
+  // the structural/base ruin adapters because it must publish mechanism signal
+  // proxies and suppress their legacy Interact shortcuts before those adapters
+  // poll keyboard/controller input. Prototype hooks still own only the extra
+  // structural interactions (ladders/transit doors), and the base adapter owns
+  // the actual V50 map lifecycle and animated mechanism presentation.
   if (document.readyState === 'loading') {
-    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50hooks1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260913v50hooks1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50hooks1"></scr' + 'ipt>');
+    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50hits1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-hit-puzzles-loader.js?v=20260913v50hits1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260913v50hits1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50hits1"></scr' + 'ipt>');
   }
 })();
