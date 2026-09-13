@@ -660,8 +660,13 @@
       const minX = deps.PLAYER_RADIUS, maxX = deps.getActiveCols() * deps.TILE - deps.PLAYER_RADIUS;
       const minY = deps.PLAYER_RADIUS, maxY = deps.getActiveRows() * deps.TILE - deps.PLAYER_RADIUS;
       const nextX = deps.clamp(desiredX, minX, maxX), nextY = deps.clamp(desiredY, minY, maxY);
-      if (deps.canPlayerOccupy(nextX, m.y)) m.x = nextX; else mountCurrentSpeedPxS *= 0.4;
-      if (deps.canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= 0.4;
+      // Framerate-independent collision bleed-off: while blocked, speed decays
+      // toward 0 at the same real-time rate regardless of how many frames the
+      // block spans (a plain per-call `*= 0.4` would bleed off far faster at
+      // high framerate than low, since it fires once per frame).
+      const collisionBleedRate = Math.exp(-55 * dt);
+      if (deps.canPlayerOccupy(nextX, m.y)) m.x = nextX; else mountCurrentSpeedPxS *= collisionBleedRate;
+      if (deps.canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= collisionBleedRate;
     }
 
     const movedDx = m.x - stepStartX;

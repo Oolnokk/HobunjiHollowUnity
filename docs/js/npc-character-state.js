@@ -40,7 +40,7 @@
     walker.currentScheduleTarget = options.resolveScheduleTarget?.(walker.rec) || null;
     const groundY = options.surfaceY?.(walker.area, Math.floor(root.position.x), Math.floor(root.position.z));
     if (!Number.isFinite(groundY)) return;
-    root.position.y += (groundY - root.position.y) * 0.2;
+    root.position.y += (groundY - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap (matches game.js's own NPC ground-follow rate).
     if (walker.groundShadow) {
       walker.groundShadow.position.y = groundY - root.position.y + (Number(options.shadowSurfaceOffset?.()) || 0);
     }
