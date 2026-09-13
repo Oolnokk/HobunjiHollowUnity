@@ -21,14 +21,17 @@
   // the structural/base ruin adapters because it must publish mechanism signal
   // proxies before the adapter resolves moving geometry. Motion/egress integration
   // loads after the base adapter so it can carry riders and repair missing recovery
-  // access against the final V50 scene graph. The final coverage resolver reconciles
-  // Batch 1's intentionally-early audit with behaviors owned by Batches 2/3.
+  // access against the final V50 scene graph. Wall-plane rendering is a separate
+  // visual-only switch so hiding prototype planes never disables their collision.
+  // The final coverage resolver reconciles Batch 1's intentionally-early audit
+  // with behaviors owned by Batches 2/3.
   if (document.readyState === 'loading') {
-    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50coverage1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-hit-puzzles-loader.js?v=20260913v50coverage1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260913v50coverage1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50coverage1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260913v50coverage1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260913v50coverage1"></scr' + 'ipt>');
+    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50walls2"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-hit-puzzles-loader.js?v=20260913v50walls2"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260913v50walls2"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50walls2"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260913v50walls2"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260913v50walls2"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260913v50walls2"></scr' + 'ipt>');
   }
 })();
