@@ -147,7 +147,8 @@ const contextWindow = {
   __farmLog() {},
 };
 contextWindow.window = contextWindow;
-const context = vm.createContext({ window: contextWindow, fetch: contextWindow.fetch, console, Date, Math, Set, Map, Promise, performance: { now: () => 1000 } });
+let fakeNowMs = 1000;
+const context = vm.createContext({ window: contextWindow, fetch: contextWindow.fetch, console, Date, Math, Set, Map, Promise, performance: { now: () => fakeNowMs } });
 vm.runInContext(runtimeSource, context, { filename: 'porakaneki-camps-runtime.js' });
 
 const randomValues = [0.91, 0.91, 0.12, 0.4, 0.6, 0.2, 0.8, 0.3, 0.7, 0.1];
@@ -259,8 +260,26 @@ function smallCenters(debug) {
   contextWindow.BanditCamps.updateCampBanners(4.1);
   debug = api.debugSnapshot();
   assert(debug.coarseTicks >= 1);
-  const collapsed = debug.zones.map_western_slope.camps.flatMap(camp => camp.hunters).find(hunter => hunter.materialized && !hunter.fullSimulation);
+  const collapsedCamp = debug.zones.map_western_slope.camps.find(camp => camp.hunters.some(hunter => hunter.materialized && !hunter.fullSimulation));
+  const collapsedIndex = collapsedCamp.hunters.findIndex(hunter => hunter.materialized && !hunter.fullSimulation);
+  const collapsed = collapsedCamp.hunters[collapsedIndex];
   assert(collapsed && collapsed.visible === false, 'previously materialized residents collapse back to hidden abstract agents outside the player chunk');
+
+  // A hunter collapsed back to an abstract agent must not stay a live,
+  // GPU-resource-holding entity forever just because the player never
+  // returns to its chunk -- see DORMANT_ENTITY_RELEASE_S. Ticking without
+  // advancing the fake clock keeps it merely hidden (matches the assertion
+  // above); only once it's been continuously dormant past that grace period
+  // does the next tick actually tear its entity down.
+  const hostileCountWhileHidden = hostileObjects.length;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  assert.equal(hostileObjects.length, hostileCountWhileHidden, 'a briefly-dormant resident is not immediately torn down (avoids chunk-edge thrash)');
+  fakeNowMs += 3001;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  debug = api.debugSnapshot();
+  const stillTracked = debug.zones.map_western_slope.camps.find(camp => camp.id === collapsedCamp.id).hunters[collapsedIndex];
+  assert.equal(stillTracked.materialized, false, 'sustained dormancy actually releases the entity back to plain abstract data');
+  assert(hostileObjects.length < hostileCountWhileHidden, 'the released entity is spliced out of hostileObjects, not left as permanent dead weight');
 
   console.log('Porakaneki distributed seasonal camp regression checks passed.');
 })().catch(error => {

@@ -22,6 +22,7 @@
   const DORMANT_AREA_PREFIX = '__porakaneki_dormant__:'; // Removes hidden/off-chunk residents from the normal hostile loop.
   const TICK_INTERVAL_S = 0.20; // Neutral LOD/planning cadence; hostile combat still uses the normal combat loop.
   const PROVOKE_SECONDS = 45; // Temporary same-camp self-defense window after an assault without permanent Favor loss.
+  const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-chunk/sleeping hunter's real entity is actually torn down -- long enough that stepping back and forth across a chunk edge doesn't thrash rebuild it, short enough that wandering the wilderness for a while doesn't leave dozens of "abstract" residents permanently retained as full live entities (see hideEntity's DORMANT_AREA_PREFIX comment: they're meant to collapse back to plain data, not just go invisible).
 
   let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects.
   let schedulingDeps = null; // Captured from NpcScheduling.init; live named-chief walker.
@@ -593,6 +594,7 @@
         decisionT: camp.rng() * 2,
         entity: null,
         building: false,
+        dormantSinceMs: null,
         sleepDay: -1,
         sleepPoint: null,
         greetingDay: -1,
@@ -684,6 +686,27 @@
     if (entity._banditToolHolder) entity._banditToolHolder.visible = false;
     if (entity._banditRangedToolHolder) entity._banditRangedToolHolder.visible = false;
     entity.vx = 0; entity.vy = 0;
+  }
+  // hideEntity above only ever toggles visibility -- called every ~0.2s
+  // tick for every sleeping/off-chunk hunter, it must stay cheap and
+  // reversible so a player oscillating right at a chunk edge doesn't
+  // rebuild the same entity every tick. But left there forever, a fully
+  // materialized entity (real avatar mesh/geometry/textures, and a
+  // permanent slot in combatDeps.hostileObjects that every hostile update
+  // pass has to at least glance at) never actually goes away: every camp a
+  // player has ever wandered near over a session stays "abstract" in name
+  // only, silently accumulating live entities and GPU resources forever.
+  // This is what makes that collapse real: once a hunter has been hidden
+  // continuously for DORMANT_ENTITY_RELEASE_S, actually tear its entity
+  // down (teardownEntity disposes the mesh and splices it out of
+  // hostileObjects) rather than just hiding it -- materializeHunter already
+  // rebuilds on demand the next time this specific hunter shares the
+  // player's chunk again.
+  function retireDormantEntity(hunter) {
+    if (!hunter?.entity) return;
+    hideEntity(hunter);
+    if (hunter.dormantSinceMs == null) hunter.dormantSinceMs = nowMs();
+    else if (nowMs() - hunter.dormantSinceMs >= DORMANT_ENTITY_RELEASE_S * 1000) teardownEntity(hunter);
   }
   function placeEntity(hunter) {
     const entity = hunter?.entity, camp = hunter?.camp;
@@ -832,15 +855,16 @@
     for (const hunter of camp.hunters) {
       if (hunter.entity?.health <= 0 || hunter.killCounted && hunter.entity?.health <= 0) continue;
       if (sleeping) {
-        hideEntity(hunter);
+        retireDormantEntity(hunter);
         if (coarseDt > 0 || currentArea() === camp.zoneId) advanceAbstractHunter(hunter, coarseDt || dt);
         continue;
       }
       if (!sharesPlayerChunk(hunter)) {
-        hideEntity(hunter);
+        retireDormantEntity(hunter);
         if (coarseDt > 0) advanceAbstractHunter(hunter, coarseDt);
         continue;
       }
+      hunter.dormantSinceMs = null;
       if (!hunter.entity && !hunter.building) materializeHunter(hunter, generation).catch(error => window.__farmLog?.(`[porakaneki] materialize failed: ${error.message}`, 'warn'));
       if (hunter.entity) { placeEntityIfDormant(hunter); updateDetailedHunter(hunter, dt); }
     }
