@@ -96,7 +96,7 @@
   },
   "terrainAnchors": {
     "3,3": {
-      "terrain": "ground",
+      "terrain": "free",
       "strength": "required",
       "weight": 1,
       "facing": "any",
@@ -107,7 +107,7 @@
       }
     },
     "4,3": {
-      "terrain": "ground",
+      "terrain": "free",
       "strength": "required",
       "weight": 1,
       "facing": "any",
@@ -118,7 +118,7 @@
       }
     },
     "5,3": {
-      "terrain": "ground",
+      "terrain": "free",
       "strength": "required",
       "weight": 1,
       "facing": "any",
@@ -137,6 +137,17 @@
         "mode": "relativeRange",
         "min": 1,
         "max": 32
+      }
+    },
+    "4,4": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
       }
     }
   },
@@ -352,7 +363,7 @@
     "groundOnly": false,
     "terrainAnchors": {
       "3,3": {
-        "terrain": "ground",
+        "terrain": "free",
         "strength": "required",
         "weight": 1,
         "facing": "any",
@@ -363,7 +374,7 @@
         }
       },
       "4,3": {
-        "terrain": "ground",
+        "terrain": "free",
         "strength": "required",
         "weight": 1,
         "facing": "any",
@@ -374,7 +385,7 @@
         }
       },
       "5,3": {
-        "terrain": "ground",
+        "terrain": "free",
         "strength": "required",
         "weight": 1,
         "facing": "any",
@@ -393,6 +404,17 @@
           "mode": "relativeRange",
           "min": 1,
           "max": 32
+        }
+      },
+      "4,4": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
         }
       }
     },
@@ -558,7 +580,7 @@
         "carveToLocaleFloor": true
       }
     },
-    "notes": "Northern Cliffs only. The exposed front stays on one flat lower tier; the first embedded row must form a north-facing INTERNAL plateau cliff above it (boundary escarpments are rejected), and the rear footprint is carved down to the cave floor. The cave entrance prop renders at 2x its normal in-game cave scale. Banubu cave floor/approach must sit on true ground tier 0; the rear embeds into higher plateau mass so the cave is at the bottom of the cliff, never on a raised shelf."
+    "notes": "Northern Cliffs only. The exposed front stays on one flat lower tier; the first embedded row must form a north-facing INTERNAL plateau cliff above it (boundary escarpments are rejected), and the rear footprint is carved down to the cave floor. The cave entrance prop renders at 2x its normal in-game cave scale. Banubu cave floor/approach must sit on true ground tier 0; the rear embeds into higher plateau mass so the cave is at the bottom of the cliff, never on a raised shelf. The mouth cell is the LOW side of the internal cliff at \u03940, while the embedded cell immediately behind it is the HIGH side at \u0394>=+1. This keeps the cave at the local cliff base even when the whole region is globally elevated."
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",

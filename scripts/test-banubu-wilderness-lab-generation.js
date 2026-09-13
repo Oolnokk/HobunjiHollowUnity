@@ -36,10 +36,15 @@ console.log(JSON.stringify({
 assert(diagnostic, 'Banubu Cave must produce a terrain-placement diagnostic in the real Northern Cliffs generation.');
 assert.strictEqual(diagnostic.status, 'placed', `Banubu Cave must place in the Wilderness Lab default Northern Cliffs seed; got ${diagnostic.reason || diagnostic.status}`);
 assert(instance, 'Banubu Cave must produce a localeInstance in the real Northern Cliffs generation.');
-assert.strictEqual(diagnostic.selected?.floorTier, 0, 'Banubu Cave must place at the true ground-level base of a cliff, never on a raised shelf');
-assert.strictEqual(instance.floorTier, 0, 'runtime Banubu locale floor must remain tier 0');
 const internalCliffProbes = (diagnostic.selected?.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');
-assert.strictEqual(internalCliffProbes.length, 2, "one north-facing authored cliff cell must expand to exactly a 2-tile cliff-face strip at the generator's 2x density");
+const lowSideCliffProbes = internalCliffProbes.filter(probe => probe.rule?.height?.min === 0 && probe.rule?.height?.max === 0);
+const highSideCliffProbes = internalCliffProbes.filter(probe => (probe.rule?.height?.min ?? -Infinity) >= 1);
+assert(lowSideCliffProbes.length === 2, 'Banubu mouth Δ0 cliff cell must expand to a 2-tile low-side strip');
+assert(highSideCliffProbes.length === 2, 'Banubu embedded cliff cell must expand to a 2-tile high-side strip');
+assert(lowSideCliffProbes.every(probe => Math.abs(probe.hostTier - diagnostic.selected.floorTier) < 0.001), 'Banubu mouth must be on the local low side at the locale floor tier');
+assert(highSideCliffProbes.every(probe => probe.hostTier >= diagnostic.selected.floorTier + 1), 'Banubu rear cliff must rise at least one tier above the locale floor');
+
+assert.strictEqual(internalCliffProbes.length, 4, "paired low/high authored cliff cells must expand to two 2-tile cliff-face strips at 2x density");
 assert(internalCliffProbes.every(probe => probe.rule.facing === 'north' && probe.matched), 'Banubu Cave must match its explicit north-facing internal plateau cliff strip');
 const root = (workspace.maps || []).find(map => map && !map.isSubmap);
 for (const probe of internalCliffProbes) {

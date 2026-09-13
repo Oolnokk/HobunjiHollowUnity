@@ -30,12 +30,15 @@ for (const [key, rule] of Object.entries(embedded)) {
 }
 
 const anchors = locale.terrainAnchors || {};
-const groundApproach = Object.values(anchors).filter(rule => rule.terrain === 'ground' && rule.strength === 'required');
-assert(groundApproach.length >= 3, 'Banubu Cave needs a required true-ground approach so the cave floor cannot land on a raised shelf');
-for (const key of ['3,3', '4,3', '5,3']) {
-  assert.strictEqual(anchors[key]?.terrain, 'ground', `Banubu approach ${key} must require tier-0 ground`);
-  assert.strictEqual(locale.placement?.terrainAnchors?.[key]?.terrain, 'ground', `persisted Banubu approach ${key} must mirror tier-0 ground requirement`);
-}
+const freeApproach = ['3,3', '4,3', '5,3'].map(key => anchors[key]);
+assert(freeApproach.every(rule => rule?.terrain === 'free' && rule?.strength === 'required'), 'Banubu Cave needs an open approach before the cliff mouth');
+const lowCliff = anchors['4,4'];
+assert(lowCliff, 'Banubu Cave needs an explicit low-side cliff probe at the cave mouth');
+assert.strictEqual(lowCliff.terrain, 'plateauCliff');
+assert.strictEqual(lowCliff.facing, 'north');
+assert.strictEqual(lowCliff.height?.mode, 'relativeRange');
+assert.strictEqual(lowCliff.height?.min, 0);
+assert.strictEqual(lowCliff.height?.max, 0, 'mouth cliff probe must be exactly on the locale floor, selecting the low side of the cliff');
 const internalCliff = anchors['4,5'];
 assert(internalCliff, 'Banubu Cave needs an explicit cliff probe at the front of its embedded host');
 assert.strictEqual(internalCliff.terrain, 'plateauCliff', 'Banubu Cave must require an internal plateau cliff, not a boundary cliff');

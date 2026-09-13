@@ -356,6 +356,7 @@ let paletteObject = OBJECT_PALETTE[0];
 let paletteNpc = null; // { npcId, name } or null = custom
 let painting = false;
 let paintErase = false;
+let markerDrag = null; // Active direct-manipulation drag for an object/NPC/connector; committed once on pointerup.
 
 // ── View / canvas ─────────────────────────────────────────────────────────────
 const canvas = $('canvas2d');
@@ -482,10 +483,19 @@ function draw() {
     ctx.strokeRect(x+1, y+1, w-2, h-2);
     if (cs >= 14) {
       const info = OBJECT_PALETTE.find(o => o.key === obj.key);
+      const cx = x+w/2, cy = y+h/2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((Number(obj.rot) || 0) * Math.PI / 180);
       ctx.fillStyle = '#fff';
       ctx.font = `${Math.round(cs*0.6)}px system-ui`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(info?.icon || '❓', x+w/2, y+h/2);
+      ctx.fillText(info?.icon || '❓', 0, 0);
+      ctx.strokeStyle = sel ? '#fff' : 'rgba(255,255,255,.8)';
+      ctx.lineWidth = Math.max(1, cs * 0.06);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -Math.min(w,h)*0.34); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -Math.min(w,h)*0.34); ctx.lineTo(-cs*.11, -Math.min(w,h)*0.22); ctx.lineTo(cs*.11, -Math.min(w,h)*0.22); ctx.closePath(); ctx.fill();
+      ctx.restore();
     }
   }
 
@@ -574,6 +584,59 @@ function placeOrSelectConnector(c, r) {
   finishEdit();
 }
 
+function beginMarkerDrag(type, item, c, r, pointerId) {
+  selected = { type, id: item.id };
+  markerDrag = {
+    type, id: item.id, pointerId,
+    offsetC: type === 'object' ? c - item.col : 0,
+    offsetR: type === 'object' ? r - item.row : 0,
+    moved: false
+  };
+  renderInspector(); draw();
+}
+
+function tryBeginMarkerDrag(c, r, pointerId) {
+  const m = activeLocale();
+  if (!m) return false;
+  if (mode === 'object') {
+    const hit = [...m.objects].reverse().find(o => c >= o.col && c < o.col + o.w && r >= o.row && r < o.row + o.h);
+    if (hit) { beginMarkerDrag('object', hit, c, r, pointerId); return true; }
+  } else if (mode === 'npc') {
+    const hit = [...m.npcAnchors].reverse().find(n => n.col === c && n.row === r);
+    if (hit) { beginMarkerDrag('npc', hit, c, r, pointerId); return true; }
+  } else if (mode === 'connector') {
+    const hit = [...m.connectors].reverse().find(conn => conn.col === c && conn.row === r);
+    if (hit) { beginMarkerDrag('connector', hit, c, r, pointerId); return true; }
+  }
+  return false;
+}
+
+function updateMarkerDrag(c, r) {
+  const m = activeLocale();
+  if (!m || !markerDrag) return false;
+  let item = null;
+  if (markerDrag.type === 'object') item = m.objects.find(x => x.id === markerDrag.id);
+  else if (markerDrag.type === 'npc') item = m.npcAnchors.find(x => x.id === markerDrag.id);
+  else if (markerDrag.type === 'connector') item = m.connectors.find(x => x.id === markerDrag.id);
+  if (!item) return false;
+  let col = c - markerDrag.offsetC, row = r - markerDrag.offsetR;
+  if (markerDrag.type === 'object') {
+    col = clamp(col, 0, Math.max(0, m.cols - item.w));
+    row = clamp(row, 0, Math.max(0, m.rows - item.h));
+  } else {
+    col = clamp(col, 0, m.cols - 1);
+    row = clamp(row, 0, m.rows - 1);
+  }
+  col = Math.round(col); row = Math.round(row);
+  if (item.col === col && item.row === row) return true;
+  item.col = col; item.row = row; markerDrag.moved = true;
+  const colInput = $('insCol'), rowInput = $('insRow');
+  if (colInput) colInput.value = col;
+  if (rowInput) rowInput.value = row;
+  draw();
+  return true;
+}
+
 function finishEdit() {
   const m = activeLocale();
   if (m) m.meta.updatedAt = nowIso();
@@ -591,6 +654,7 @@ canvas.addEventListener('pointerdown', e => {
   if (!m) return;
   if (mode === 'tile') { painting = true; paintErase = false; applyTileAt(c, r, false); finishEdit(); }
   else if (mode === 'erase') { painting = true; paintErase = true; applyTileAt(c, r, true); finishEdit(); }
+  else if ((mode === 'object' || mode === 'npc' || mode === 'connector') && tryBeginMarkerDrag(c, r, e.pointerId)) { return; }
   else if (mode === 'object') placeOrSelectObject(c, r);
   else if (mode === 'npc') placeOrSelectNpc(c, r);
   else if (mode === 'connector') placeOrSelectConnector(c, r);
@@ -604,12 +668,22 @@ canvas.addEventListener('pointermove', e => {
     view.panY = panStart.panY + (e.clientY - panStart.y);
     draw(); return;
   }
+  if (markerDrag && markerDrag.pointerId === e.pointerId) { updateMarkerDrag(c, r); return; }
   if (painting && (mode === 'tile' || mode === 'erase')) { applyTileAt(c, r, paintErase); draw(); }
   else draw();
 });
-window.addEventListener('pointerup', () => {
+window.addEventListener('pointerup', e => {
   if (painting) { painting = false; finishEdit(); }
+  if (markerDrag && (e.pointerId == null || markerDrag.pointerId === e.pointerId)) {
+    const changed = markerDrag.moved;
+    markerDrag = null;
+    if (changed) finishEdit(); else { renderInspector(); draw(); }
+  }
   isPanning = false; panStart = null;
+});
+window.addEventListener('pointercancel', e => {
+  if (markerDrag && markerDrag.pointerId === e.pointerId) { markerDrag = null; finishEdit(); }
+  painting = false; isPanning = false; panStart = null;
 });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -648,7 +722,7 @@ function renderPalette() {
       btn.addEventListener('click', () => { paletteObject = o; renderPalette(); });
       box.appendChild(btn);
     }
-    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click empty ground to place the selected object; click an existing object to select and edit it below.' }));
+    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click empty ground to place the selected object; drag an existing object to move it. Rotation is in the Inspector.' }));
   } else if (mode === 'npc') {
     const custom = document.createElement('button');
     custom.className = 'palBtn sec' + (paletteNpc === null ? ' act' : '');
@@ -662,9 +736,9 @@ function renderPalette() {
       btn.addEventListener('click', () => { paletteNpc = p; renderPalette(); });
       box.appendChild(btn);
     }
-    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click ground to place an anchor; click an existing anchor to select it.' }));
+    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click ground to place an anchor; drag an existing anchor to move it.' }));
   } else if (mode === 'connector') {
-    box.innerHTML = '<p class="muted">Click a footprint edge cell to mark where the wilderness path network should connect in. Click an existing connector to select it.</p>';
+    box.innerHTML = '<p class="muted">Click a footprint edge cell to mark where the wilderness path network should connect in. Drag an existing connector to move it.</p>';
   } else {
     box.innerHTML = '<p class="muted">Pan mode — drag to move the view, scroll to zoom.</p>';
   }
@@ -688,6 +762,8 @@ function renderInspector() {
       <div><label>Row</label><input id="insRow" type="number" value="${o.row}"></div></div>
       <div class="g2" style="margin-top:6px"><div><label>Width</label><input id="insW" type="number" min="1" value="${o.w}"></div>
       <div><label>Height</label><input id="insH" type="number" min="1" value="${o.h}"></div></div>
+      <div style="margin-top:6px"><label>Rotation Y°</label><div class="row" style="flex-wrap:nowrap"><button class="sec" id="insRotLeft" type="button">↺ 45°</button><input id="insRot" type="number" step="15" value="${Number(o.rot)||0}"><button class="sec" id="insRotRight" type="button">↻ 45°</button></div></div>
+      <p class="muted" style="margin-top:4px">Drag the object directly on the canvas to translate it.</p>
       ${isTent ? `
       <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
         <label class="chk"><input type="checkbox" id="insLootable" ${ia.lootable ? 'checked' : ''}> Lootable (held action grants loot)</label>
@@ -696,12 +772,20 @@ function renderInspector() {
         <p class="muted" style="margin-top:4px">A camp is cleared once every lootable/burnable tent in it is gone — see placement.mode below.</p>
       </div>` : ''}
       <div class="row" style="margin-top:8px"><button class="ok" id="insSave">Save</button><button class="bad" id="insDelete">Delete</button></div>`;
+    const rotateBy = delta => {
+      o.rot = (((Number(o.rot) || 0) + delta) % 360 + 360) % 360;
+      $('insRot').value = o.rot;
+      finishEdit();
+    };
+    $('insRotLeft').addEventListener('click', () => rotateBy(-45));
+    $('insRotRight').addEventListener('click', () => rotateBy(45));
     $('insSave').addEventListener('click', () => {
       o.label = $('insLabel').value.trim();
       o.col = Math.round(Number($('insCol').value)) || 0;
       o.row = Math.round(Number($('insRow').value)) || 0;
       o.w = Math.max(1, Math.round(Number($('insW').value)) || 1);
       o.h = Math.max(1, Math.round(Number($('insH').value)) || 1);
+      o.rot = ((Number($('insRot').value) || 0) % 360 + 360) % 360;
       if (isTent) {
         o.interactable = {
           lootable: $('insLootable').checked,
