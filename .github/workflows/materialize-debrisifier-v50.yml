@@ -6,6 +6,7 @@ on:
       - agent/tool-hub-debrisifier-active
     paths:
       - '.github/workflows/materialize-debrisifier-v50.yml'
+      - 'docs/tools/debris-ifier/runtime/debrisifier-v50.part*.b64'
   workflow_dispatch:
 
 permissions:
