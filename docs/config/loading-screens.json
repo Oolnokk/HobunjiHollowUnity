@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "selectedId": "sample",
   "settings": {
     "scriptSide": "left",
@@ -8,13 +8,14 @@
     "panSpeed": 0.055,
     "manualSpeed": 150,
     "loreSize": 19,
-    "scriptSize": 89,
-    "scriptY": 46,
-    "columnSpacing": -0.55,
-    "scriptScrollSpeed": 0.017,
+    "scriptSize": 150,
+    "scriptY": 45,
+    "columnSpacing": -0.56,
+    "scriptScrollSpeed": 0.042,
     "loadPercent": 63,
     "skyFocusOffsetX": 0,
-    "skyFocusOffsetY": 0
+    "skyFocusOffsetY": -0.5,
+    "skyZoom": 1.25
   },
   "entries": [
     {
