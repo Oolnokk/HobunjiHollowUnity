@@ -11,6 +11,7 @@ const editorHtml = fs.readFileSync('docs/tools/map-editor/index.html', 'utf8');
 const interiorEditorHtml = fs.readFileSync('docs/tools/building-interior-author/index.html', 'utf8');
 const indexHtml = fs.readFileSync('docs/index.html', 'utf8');
 const townZoneSource = fs.readFileSync('docs/js/town-zone-buildings.js', 'utf8');
+const uiOverrides = JSON.parse(fs.readFileSync('docs/config/ui/ui-element-editor-overrides.json', 'utf8')); // Used below to keep the Map Edit tab geometry matched to the Farm Editor tab.
 
 assert.doesNotThrow(() => new Function(protocolSource), 'shared live-preview protocol parses');
 assert.doesNotThrow(() => new Function(runtimeSource), 'runtime live-preview controller parses');
@@ -57,6 +58,7 @@ assert.equal(api.consumePendingNavigation().mapId, 'root', 'cold-start editor na
 assert.equal(api.consumePendingNavigation(), null, 'cold-start navigation is one-shot');
 
 assert.match(indexHtml, /id="mapEditBtn"[\s\S]*style="display:none;"/, 'off-farm Map Edit control starts hidden');
+assert.deepEqual(uiOverrides.elements['#mapEditBtn'], uiOverrides.elements['#farmEditBtn'], 'Map Edit tab uses the Farm Editor tab geometry override');
 assert.match(runtimeSource, /area === 'farm'.*Farm editing uses the in-game Farm Editor/, 'runtime explicitly leaves farm authoring to Farm Editor');
 assert.match(runtimeSource, /mapSnapshot: generated \? deps\.exportGeneratedMap/, 'procedural zones export a session snapshot to the editor');
 assert.match(editorHtml, /id="reflectBtn">↻ Reflect in Game/, 'Map Editor exposes Reflect in Game');
