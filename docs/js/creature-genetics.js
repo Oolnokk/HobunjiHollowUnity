@@ -20,9 +20,12 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  const PUKTUK_KIND = 'puktuk'; // Used across genetics/render/spawn registration so the new species key stays centralized.
+  const PUKTUK_KIND = 'puktuk'; // Used across genetics/render/spawn registration so the species key stays centralized.
   const PUKTUK_FOXTAIL_CHANCE = 0.08; // Used for fresh wild/livestock rolls; matches the existing 8% "rare pattern" tier.
   const PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'; // Used to replace Drenkirra only in the Western Incline/Slope zone.
+  const VOORG_ASS_KIND = 'voorg-ass'; // Used across genetics/render/spawn/livestock registration for the Northern Cliffs species.
+  const VOORG_ASS_NORTHERN_ZONE_ID = 'map_northern_cliffs'; // Used to replace only the Northern Cliffs wild Uumkao'ii population.
+  const LIGHT_WOOL_ITEM_KEY = 'lightWool'; // Used by Vorg-Ass shearing and runtime item registration.
 
   function configurePuktukStaticData() {
     const gameCfg = window.SCRATCHBONES_CONFIG?.game; // Shared config object read later by game.js/farm-animals.js.
@@ -40,7 +43,45 @@
     resources[PUKTUK_KIND] = { itemKey: 'puktukWool', cooldownDays: 1, verb: 'Shear' };
     return true;
   }
+
+  function configureVoorgAssStaticData() {
+    const gameCfg = window.SCRATCHBONES_CONFIG?.game; // Shared config object read later by game.js/farm-animals.js.
+    if (!gameCfg) return false;
+    const geneticsCfg = gameCfg.creatureGenetics || (gameCfg.creatureGenetics = {}); // Used by makeDefaultGenotype's existing per-pattern chance lookup.
+    const patternChances = geneticsCfg.patternChances || (geneticsCfg.patternChances = {}); // Keeps the authored belly permanently visible without inventing optional patterns.
+    patternChances[VOORG_ASS_KIND] = { ...(patternChances[VOORG_ASS_KIND] || {}), belly: 1 };
+
+    const livestockCfg = gameCfg.livestock || (gameCfg.livestock = {}); // Supplies the existing farm renderer, diet, and resource systems.
+    const widths = livestockCfg.animalWidths || (livestockCfg.animalWidths = {}); // Used by farm-animals.js and nursery/incubator previews.
+    widths[VOORG_ASS_KIND] = Number(widths.uumkaoii) || Number(widths[PUKTUK_KIND]) || Number(widths['gar-wolf']) || 1.9;
+    const diets = livestockCfg.diet || (livestockCfg.diet = {}); // Vorg-Ass are herbivorous prey livestock like the Northern Cliffs Uumkao'ii they replace.
+    diets[VOORG_ASS_KIND] = 'prey';
+    const resources = livestockCfg.resources || (livestockCfg.resources = {}); // Reuses the generic Puktuk-style livestock collection/cooldown path.
+    resources[VOORG_ASS_KIND] = { itemKey: LIGHT_WOOL_ITEM_KEY, cooldownDays: 1, verb: 'Shear' };
+    return true;
+  }
+
+  function configureWoolMaterialData() {
+    const items = window.HobunjiCookingData?.items; // Runtime item catalog read by inventory labels, processors, and material-category checks.
+    if (!items) return false;
+    const puktukWool = items.puktukWool; // Existing Heavy Wool data is retained under its save-compatible item key.
+    if (puktukWool) puktukWool.name = 'Heavy Wool';
+    const baseWool = puktukWool || {
+      categories: ['wool', 'material'], quality: 1, baseBoost: 1, processingTier: 'raw', primaryEffect: 'farming', tags: ['Wool'],
+    };
+    const baseTags = Array.isArray(baseWool.tags) ? baseWool.tags.filter(tag => tag !== 'Heavy' && tag !== 'Puktuk' && tag !== 'Light' && tag !== 'Voorg-Ass') : [];
+    items[LIGHT_WOOL_ITEM_KEY] = {
+      ...baseWool,
+      id: LIGHT_WOOL_ITEM_KEY,
+      name: 'Light Wool',
+      categories: Array.from(new Set([...(Array.isArray(baseWool.categories) ? baseWool.categories : []), 'wool', 'material'])),
+      tags: Array.from(new Set([...baseTags, 'Voorg-Ass', 'Light'])),
+    };
+    return true;
+  }
+
   configurePuktukStaticData();
+  configureVoorgAssStaticData();
 
   // `weight` skews which colors actually turn up on an animal — real
   // wildlife/livestock coats are overwhelmingly gray/brown/tan, with
@@ -172,8 +213,12 @@
     grehlr: ['mitts', 'spectacles', 'coloredstripe'],
     drenkirra: ['bodystripes', 'spectacles'],
     puktuk: ['belly', 'foxtail'],
+    'voorg-ass': ['belly'],
   };
-  const LIVESTOCK_ALWAYS_PRESENT_PATTERNS = { puktuk: new Set(['belly']) }; // Used by fresh rolls and breeding so Puktuk can never lose its authored belly layer.
+  const LIVESTOCK_ALWAYS_PRESENT_PATTERNS = {
+    puktuk: new Set(['belly']),
+    'voorg-ass': new Set(['belly']),
+  }; // Used by fresh rolls and breeding so authored belly regions can never disappear.
   function _patternAlwaysPresent(kind, patternId) {
     return LIVESTOCK_ALWAYS_PRESENT_PATTERNS[kind]?.has(patternId) || false;
   }
@@ -239,7 +284,10 @@
     'grehlr-den-mother': 'grehlr',
     'drenkirra-den-mother': 'drenkirra',
   };
-  const CREATURE_SIZE_PROFILE_ALIAS = { puktuk: 'gar-wolf' }; // Used only by size/ground calibration; Puktuk keeps its own sprites/genotype renderer.
+  const CREATURE_SIZE_PROFILE_ALIAS = {
+    puktuk: 'gar-wolf',
+    'voorg-ass': 'uumkaoii',
+  }; // Used only by size/ground calibration; each species keeps its own sprites/genotype renderer.
   // Picks two fur colors that read as visually distinct — same rejection-
   // sample loop as the HTML lab's pickTwoFurColors().
   function pickTwoLivestockFurColors(kind) {
@@ -286,7 +334,7 @@
     const sizeClass = typeof genotypeOrSizeClass === 'string'
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the authored class used by renderer/anchors.
-    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Puktuk borrows Gar-wolf size calibration without becoming a Gar-wolf render alias.
+    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Species may borrow size calibration without becoming a render alias.
     const authored = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.sizeScales?.[sizeClass]; // Canonical Animation Author export.
     const x = Number(authored?.x); // Applied to the creature plane's local width.
     const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.
@@ -300,7 +348,7 @@
     const sizeClass = typeof genotypeOrSizeClass === 'string'
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the same authored size row used by creatureSizeScale().
-    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Puktuk borrows Gar-wolf floor calibration while visual aliases keep their own behavior.
+    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Size aliases borrow floor calibration while visual aliases keep their own behavior.
     const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.
     return Number.isFinite(authored) && authored > 0 ? authored : null; // Zero is the Rigging "Auto" sentinel; callers fall back to their existing half-height terrain baseline.
   }
@@ -439,7 +487,7 @@
           : Number.isFinite(Number(geneticsCfg.defaultPatternChance))
             ? Number(geneticsCfg.defaultPatternChance)
             : (1 / 3);
-        const alwaysPresent = _patternAlwaysPresent(kind, id); // Keeps authored anatomical regions (Puktuk belly) from being treated as optional genes.
+        const alwaysPresent = _patternAlwaysPresent(kind, id); // Keeps authored anatomical regions (Puktuk/Voorg-Ass belly) from being treated as optional genes.
         const enabled = alwaysPresent || Math.random() < chance;
         const patternColor = _patternColorRule(kind, id) ? randomPatternColor(kind, id) : second.hex; // Restricted patterns get their own valid palette roll.
         genotype[id] = { color: patternColor, copies: alwaysPresent ? 2 : (enabled ? 1 : 0), inheritance: 'dominant', enabled };
@@ -561,14 +609,14 @@
     }
     child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
     const childEnabledIds = patterns.filter(id => child[id].enabled);
-    const childEnabledSummary = childEnabledIds.map(id => `${id}:${_furPaletteName(child[id].color)}`).join(','); // Helps validate restricted stripe colors without desktop devtools.
+    const childEnabledSummary = childEnabledIds.map(id => `${id}:${_furPaletteName(child[id].color)}`).join(','); // Helps validate restricted/permanent pattern colors without desktop devtools.
     window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledSummary || 'none'}]`, 'wildlife');
     return child;
   }
 
   // creature-genetics-render.js and wildlife-spawn.js load after this file but
   // before game.js. These installers run from our earlier DOMContentLoaded
-  // listener so the new species is registered before game.js initializes either
+  // listener so new species are registered before game.js initializes either
   // system, without duplicating the renderer's large embedded head-rig table.
   function installGrehlrColoredStripeRendererLayer() {
     const patterns = window.CreatureGeneticsRender?.SPECIES?.grehlr?.patterns; // Runtime renderer list mutated once the sibling module has loaded.
@@ -588,6 +636,21 @@
         run2: 'assets/creaturesprites/puktuk_run2.png',
       },
       patterns: ['belly', 'foxtail'],
+    };
+    return true;
+  }
+
+  function installVoorgAssRendererSpecies() {
+    const species = window.CreatureGeneticsRender?.SPECIES; // Shared renderer registry used by wild, farm, nursery, and stable previews.
+    if (!species) return false;
+    species[VOORG_ASS_KIND] = {
+      prefix: VOORG_ASS_KIND,
+      base: {
+        idle: 'assets/creaturesprites/voorg-ass_idle.png',
+        run1: 'assets/creaturesprites/voorg-ass_run1.png',
+        run2: 'assets/creaturesprites/voorg-ass_run2.png',
+      },
+      patterns: ['belly'],
     };
     return true;
   }
@@ -637,6 +700,52 @@
     return true;
   }
 
+  function installVoorgAssWildlifeBootstrap() {
+    const wildlifeApi = window.WildlifeSpawn; // Patched after Puktuk so both registrations safely compose around the same live init call.
+    if (!wildlifeApi?.init) return false;
+    if (wildlifeApi.__voorgAssBootstrapInstalled) return true;
+    const originalInit = wildlifeApi.init; // Preserves the Puktuk wrapper plus any other existing wrappers.
+    wildlifeApi.init = function voorgAssAwareWildlifeInit(injectedDeps) {
+      configureVoorgAssStaticData();
+      configureWoolMaterialData();
+      const creatureDb = injectedDeps?.CREATURE_DB; // Live creature registry used by wilderness, farm, stable, and dev spawn paths.
+      const preyBaseline = creatureDb?.['uumkaoii-wild'] || creatureDb?.uumkaoii || creatureDb?.drenkirra || {}; // Reuses the prey behavior of the Northern Cliffs species being replaced.
+      if (creatureDb) {
+        const existing = creatureDb[VOORG_ASS_KIND] || {}; // Preserves future authored overrides while enforcing the new species' required identity/art.
+        creatureDb[VOORG_ASS_KIND] = {
+          ...preyBaseline,
+          ...existing,
+          label: 'Voorg-Ass',
+          hostile: false,
+          defaultSizeClass: existing.defaultSizeClass || preyBaseline.defaultSizeClass || 'large',
+          modelWidth: Number(existing.modelWidth) || Number(preyBaseline.modelWidth) || 1.5,
+          spriteAspect: Number(existing.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),
+          lootPool: 'creature_voorg-ass',
+          sprites: {
+            idle: 'assets/creaturesprites/voorg-ass_idle.png',
+            run: ['assets/creaturesprites/voorg-ass_run1.png', 'assets/creaturesprites/voorg-ass_run2.png'],
+          },
+        };
+      }
+
+      const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_NORTHERN_ZONE_ID]; // Shared zone object also read by cavern den generation.
+      const herbivores = northernZone?.herbivoreSpecies; // Mutated in place so existing exterior/cavern references see the replacement immediately.
+      let replacements = 0;
+      if (Array.isArray(herbivores)) {
+        for (let i = 0; i < herbivores.length; i++) {
+          if (herbivores[i] !== 'uumkaoii-wild' && herbivores[i] !== 'uumkaoii') continue;
+          herbivores[i] = VOORG_ASS_KIND;
+          replacements++;
+        }
+      }
+      const lightWoolReady = window.HobunjiCookingData?.items?.[LIGHT_WOOL_ITEM_KEY]?.name === 'Light Wool'; // Included in mobile-visible diagnostics.
+      window.__farmLog?.(`[voorg-ass] registered species: default=${creatureDb?.[VOORG_ASS_KIND]?.defaultSizeClass || 'unknown'} sizeProfile=uumkaoii belly=always optionalPatterns=none livestock=${LIGHT_WOOL_ITEM_KEY}(Light Wool) woolReady=${lightWoolReady}; ${VOORG_ASS_NORTHERN_ZONE_ID} Uumkao'ii replacements=${replacements} herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, replacements > 0 && lightWoolReady ? 'wildlife' : 'warn');
+      return originalInit.call(this, injectedDeps);
+    };
+    wildlifeApi.__voorgAssBootstrapInstalled = true;
+    return true;
+  }
+
   window.CreatureGenetics = {
     init,
     defaultLivestockName,
@@ -657,12 +766,15 @@
     MUTATION_CHANCE: LIVESTOCK_MUTATION_CHANCE,
   };
 
-  if (!installGrehlrColoredStripeRendererLayer() || !installPuktukRendererSpecies() || !installPuktukWildlifeBootstrap()) {
+  if (!installGrehlrColoredStripeRendererLayer() || !installPuktukRendererSpecies() || !installVoorgAssRendererSpecies() || !installPuktukWildlifeBootstrap() || !installVoorgAssWildlifeBootstrap() || !configureWoolMaterialData()) {
     window.addEventListener('DOMContentLoaded', () => {
       const grehlrInstalled = installGrehlrColoredStripeRendererLayer(); // Runs before later game.js DOMContentLoaded listeners because this listener is registered first.
       const puktukRendererInstalled = installPuktukRendererSpecies(); // Ensures all uploaded base/belly/foxtail frames are in the shared compositor before any spawn.
+      const voorgRendererInstalled = installVoorgAssRendererSpecies(); // Registers the uploaded base + mandatory belly frames and no optional patterns.
       const puktukWildlifeInstalled = installPuktukWildlifeBootstrap(); // Wraps live registry initialization before game.js invokes it.
-      window.__farmLog?.(`[genotype] renderer extensions: Grehlr=${grehlrInstalled ? 'ok' : 'failed'} Puktuk=${puktukRendererInstalled ? 'ok' : 'failed'} wildlifeBootstrap=${puktukWildlifeInstalled ? 'ok' : 'failed'}`, grehlrInstalled && puktukRendererInstalled && puktukWildlifeInstalled ? 'wildlife' : 'warn');
+      const voorgWildlifeInstalled = installVoorgAssWildlifeBootstrap(); // Wraps after Puktuk so Northern Cliffs replacement composes with the existing Western Slope replacement.
+      const woolItemsInstalled = configureWoolMaterialData(); // cooking-data.js has loaded by DOMContentLoaded, so Heavy/Light Wool labels are now safe to register.
+      window.__farmLog?.(`[genotype] renderer extensions: Grehlr=${grehlrInstalled ? 'ok' : 'failed'} Puktuk=${puktukRendererInstalled ? 'ok' : 'failed'} VoorgAss=${voorgRendererInstalled ? 'ok' : 'failed'} puktukWildlife=${puktukWildlifeInstalled ? 'ok' : 'failed'} voorgWildlife=${voorgWildlifeInstalled ? 'ok' : 'failed'} woolItems=${woolItemsInstalled ? 'ok' : 'failed'}`, grehlrInstalled && puktukRendererInstalled && voorgRendererInstalled && puktukWildlifeInstalled && voorgWildlifeInstalled && woolItemsInstalled ? 'wildlife' : 'warn');
     }, { once: true });
   }
 })();
