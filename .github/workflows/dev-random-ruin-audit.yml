@@ -1,0 +1,15 @@
+name: Random Test Ruin Audit
+
+on:
+  push:
+    branches:
+      - agent/tool-hub-debrisifier-active
+  workflow_dispatch:
+
+jobs:
+  static-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Random Test Ruin integration
+        run: node scripts/test-dev-random-ruin-integration.js
