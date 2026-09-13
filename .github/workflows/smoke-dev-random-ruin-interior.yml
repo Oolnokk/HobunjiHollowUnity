@@ -6,6 +6,7 @@ on:
       - agent/tool-hub-debrisifier-active
     paths:
       - '.github/workflows/smoke-dev-random-ruin-interior.yml'
+      - 'docs/js/dev-random-ruin-interior-map.js'
   workflow_dispatch:
 
 permissions:
@@ -57,6 +58,7 @@ jobs:
                 gridRows: window.GridTileAccessors.getActiveGrid()?.length || 0,
                 sceneName: activeScene?.name || null,
                 hasV50Root: !!activeScene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')),
+                hasInteriorVoid: !!activeScene?.getObjectByName?.('hobunji_interior_unlit_black_void'),
                 state: info,
               };
             });
@@ -64,6 +66,7 @@ jobs:
             assert.equal(state.building, true, JSON.stringify(state));
             assert.equal(state.sceneName, 'map_i_dev_random_ruin', JSON.stringify(state));
             assert.equal(state.hasV50Root, true, JSON.stringify(state));
+            assert.equal(state.hasInteriorVoid, true, JSON.stringify(state));
             assert.ok(state.cols >= 6 && state.rows >= 6, JSON.stringify(state));
             assert.equal(state.gridRows, state.rows, JSON.stringify(state));
             assert.ok(state.state?.rooms >= 3, JSON.stringify(state));
