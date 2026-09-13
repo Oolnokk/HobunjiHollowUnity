@@ -57,6 +57,12 @@ assert(editorSource.includes('id="skyPreviewHour"'), `${editorPath}: day/night p
 assert(editorSource.includes('The sky is the actual preview backdrop behind the image, script, lore, and load percentage'), `${editorPath}: behind-content live sky workflow missing`);
 assert(editorSource.includes('body.previewOnly #skyFocusGuide'), `${editorPath}: focus guide must disappear in full preview mode`);
 assert(editorSource.includes('delete output.settings.skyPreviewHour'), `${editorPath}: editor-only preview hour must not leak into exported runtime config`);
+assert(editorSource.includes('const PREVIEW_W=1920,PREVIEW_H=1080'), `${editorPath}: fixed 16:9 authoring viewport missing`);
+assert(editorSource.includes('function fitStage()'), `${editorPath}: widescreen preview fitting logic missing`);
+assert(editorSource.includes('width:1920px;height:1080px'), `${editorPath}: visible widescreen frame dimensions missing`);
+assert(editorSource.includes('loreSize:19') && editorSource.includes('scriptSize:89'), `${editorPath}: defaults must match current game lore/script sizing`);
+assert(editorSource.includes('columnSpacing:-.55') && editorSource.includes('scriptScrollSpeed:.017'), `${editorPath}: defaults must match current game script composition`);
+assert(editorSource.includes('loadPercent:63'), `${editorPath}: default preview progress should match the shipped loading-screen configuration`);
 assert(!fs.existsSync(path.join(root, removedToolPath)), `${removedToolPath}: standalone tool should remain removed`);
 
 console.log('loading-screen sky backdrop regression: PASS');
