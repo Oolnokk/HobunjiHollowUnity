@@ -1,4 +1,4 @@
-# Temporary verification workflow; remove after hallway-clearance + wall-plane smoke passes.
+# Temporary verification workflow; remove after hallway-clearance + optional wall-plane smoke passes.
 name: Smoke Random Test Ruin Full Runtime
 
 on:
@@ -34,5 +34,5 @@ jobs:
           HOBUNJI_RUIN_FIXED_SEEDS: '0x2468ace0'
           HOBUNJI_RUIN_AUDIT_SEEDS: '0'
         run: node scripts/test-dev-random-ruin-browser.js
-      - name: Exercise sequential rerolls, hallway clearance, wall planes, and multi-seed audit
+      - name: Exercise sequential rerolls, hallway clearance, optional wall planes, and multi-seed audit
         run: node scripts/test-dev-random-ruin-browser.js
