@@ -7,6 +7,9 @@
   const FPS_PREF_KEY = 'hobunji_fps_counter_v1';
   const PROFILER_PREF_KEY = 'hobunji_perf_profiler_v1';
   const TREE_MODE_KEY = 'hobunji_tree_asset_mode_v1';
+  const BACKDROP_BLUR_DIAGNOSTIC_KEY = 'hobunji_disable_backdrop_blur_v1';
+  const FORCE_HIDDEN_PANELS_KEY = 'hobunji_force_hidden_panels_v1';
+  const GPU_SYNC_DIAGNOSTIC_KEY = 'hobunji_gpu_sync_diagnostic_v1';
 
   const readStorage = (key, fallback = null) => {
     try {
@@ -24,6 +27,9 @@
 
   let fpsEnabled = readStorage(FPS_PREF_KEY, '0') === '1';
   let profilerEnabled = readStorage(PROFILER_PREF_KEY, '0') === '1';
+  let backdropBlurDisabled = readStorage(BACKDROP_BLUR_DIAGNOSTIC_KEY, '0') === '1';
+  let forceHiddenPanelsEnabled = readStorage(FORCE_HIDDEN_PANELS_KEY, '0') === '1';
+  let gpuSyncDiagnosticEnabled = readStorage(GPU_SYNC_DIAGNOSTIC_KEY, '0') === '1';
   const perfState = {
     raf: 0,
     lastFrameTs: 0,
@@ -46,7 +52,12 @@
     geometryCategories: {},
     subsystem: new Map(),
     longTasks: 0,
+    longTaskMs: 0,
+    longTaskMaxMs: 0,
     longTaskObserver: null,
+    lastHeapBytes: 0,
+    heapDeltaMbPerSec: 0,
+    domNodeCount: 0,
   };
 
   function formatCount(value) {
@@ -111,13 +122,32 @@
     perfState.scanMs = performance.now() - start;
   }
 
+  // Patching THREE.WebGLRenderer.prototype.render doesn't reach the game's
+  // actual renderer: r128 defines render() as an own instance property set
+  // inside the constructor closure, not on the shared prototype, and this
+  // codebase also constructs several OTHER independent WebGLRenderer
+  // instances (character-creation preview, farm-panel-core's 3D preview, …)
+  // whose own construction-order relative to the r128 compatibility bridge
+  // (js/social-action-r128-render-bridge.js) isn't guaranteed — so a
+  // prototype patch here could silently attach to the wrong instance, or
+  // none at all, while never erroring. game.js instead hands this module
+  // its one real gameplay renderer directly via attachRenderer() right
+  // after constructing it, and this patches that exact instance.
+  let rendererProfilerRetries = 0;
   function installRendererProfiler() {
-    const proto = root.THREE?.WebGLRenderer?.prototype;
-    if (!proto || proto.__hobunjiPerfWrapped) return false;
-    const original = proto.render;
+    const renderer = root.__hobunjiGameRenderer;
+    if (!renderer) {
+      // game.js may not have reached renderer creation yet if this module's
+      // own (async-loaded) script happens to run unusually early — retry
+      // for a few seconds rather than permanently giving up.
+      if (rendererProfilerRetries++ < 40) setTimeout(installRendererProfiler, 250);
+      return false;
+    }
+    if (renderer.__hobunjiPerfWrapped) return true;
+    const original = renderer.render;
     if (typeof original !== 'function') return false;
-    Object.defineProperty(proto, '__hobunjiPerfWrapped', { value: true, configurable: true });
-    proto.render = function hobunjiProfiledRender(scene, camera) {
+    renderer.__hobunjiPerfWrapped = true;
+    renderer.render = function hobunjiProfiledRender(scene, camera) {
       // Captured unconditionally (cheap: two reference assignments) so
       // getLiveGpuInfo() below can report real-time renderer.info numbers
       // — and the low-FPS auto-snapshot watcher can trigger a cache audit
@@ -146,14 +176,31 @@
     // TRUE, undecorated render() by walking a chain of __hobunji*Original
     // markers (see its unwrapRendererRender) — without this marker those
     // replay passes stop unwrapping here instead of reaching the real render.
-    proto.render.__hobunjiPerfDebugOriginal = original;
+    renderer.render.__hobunjiPerfDebugOriginal = original;
     return true;
   }
 
   function ensureLongTaskObserver() {
     if (!profilerEnabled || perfState.longTaskObserver || !root.PerformanceObserver) return;
     try {
-      const observer = new root.PerformanceObserver(list => { perfState.longTasks += list.getEntries().length; });
+      // entry.duration is the BROWSER's own measurement of how long this
+      // whole macrotask blocked the main thread -- including anything it
+      // bundled in that no performance.now() bracket in this codebase ever
+      // wrapped (e.g. style/layout recalculation the browser runs as part
+      // of the same task right before rendering). Every scheduled callback
+      // mechanism (rAF across ~70 files, MutationObserver, setInterval,
+      // this game's own mousemove handler) has now been individually timed
+      // and ruled out as the "outside gameLoop" cost, so the next test is
+      // to compare the SUM of those against the browser's own longtask
+      // duration total for the same window: if the browser's number is
+      // bigger, the gap is real browser-internal work no JS timer can see.
+      const observer = new root.PerformanceObserver(list => {
+        for (const entry of list.getEntries()) {
+          perfState.longTasks += 1;
+          perfState.longTaskMs += entry.duration;
+          if (entry.duration > perfState.longTaskMaxMs) perfState.longTaskMaxMs = entry.duration;
+        }
+      });
       observer.observe({ entryTypes: ['longtask'] });
       perfState.longTaskObserver = observer;
     } catch (_) {}
@@ -164,27 +211,131 @@
     perfState.longTaskObserver = null;
   }
 
+  // js/outline-render-performance.js already wraps the renderer one layer
+  // closer to the true native render than held-object-render-order.js does
+  // (it loads earlier, via house-pieces.js's script chain, so everything
+  // else installed after it -- terrain-render-chunks.js,
+  // natural-surface-stretch-post-jigsaw.js, held-object-render-order.js --
+  // wraps AROUND it, not the reverse). Its own lifetime per-pass CPU-ms
+  // average therefore isolates "this layer plus everything below it" from
+  // the outer layers' overhead, without needing a second timing system —
+  // reuses its existing snapshot() instead of re-instrumenting the same
+  // render() calls a third time.
+  function outlineRenderPerfLine() {
+    const snap = root.OutlineRenderPerformance?.snapshot?.();
+    const lifetime = snap?.lifetime;
+    if (!lifetime) return null;
+    const order = ['base', 'pngDepth', 'shell', 'target', 'materialId', 'postOrDirect'];
+    const parts = order
+      .map(name => {
+        const b = lifetime[name];
+        if (!b?.renders) return null;
+        return `${name} ${(b.cpuMs / b.renders).toFixed(2)}ms`;
+      })
+      .filter(Boolean);
+    return parts.length ? `Outline-perf layer (native-ward of held-overlay): ${parts.join('  ')}` : null;
+  }
+
+  // Below this, a bucket rarely if ever mattered across every real snapshot
+  // taken while chasing the "severe framerate" investigation (all
+  // consistently well under 1ms) -- hidden so the overlay's fixed height
+  // keeps showing the buckets that actually move, instead of scrolling them
+  // off past the visible screen area under a wall of confirmed-boring ones.
+  // 'gameLoop total' and 'render passes' are always shown regardless (see
+  // profilerText) since they're the two top-level bars everything else
+  // should be read against.
+  const SUBSYSTEM_DISPLAY_FLOOR_MS = 0.5;
+
   function profilerText() {
     const avgRender = perfState.renderSamples ? perfState.renderCpuMs / perfState.renderSamples : 0;
     const geom = Object.entries(perfState.geometryCategories).sort((a,b) => b[1] - a[1]);
     const totalGeom = geom.reduce((sum, pair) => sum + pair[1], 0);
     const topGeom = geom[0];
-    const subsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg).slice(0, 5); // Shows enough timed systems on mobile to distinguish hostile, render-adjacent, NPC, combat, and streaming costs.
+    const allSubsystems = [...perfState.subsystem.entries()].sort((a,b) => b[1].avg - a[1].avg);
+    const gameLoopTotal = perfState.subsystem.get('gameLoop total');
+    const subsystems = allSubsystems.filter(([name, value]) => name !== 'gameLoop total' && value.avg >= SUBSYSTEM_DISPLAY_FLOOR_MS);
+    // _loadWorldLivestock's caller-tracking entries deliberately record 0ms
+    // (they're pure call-site counters, not timings), so the floor filter
+    // above would hide them forever regardless of how often they fire --
+    // exactly the opposite of what a counter needs. Shown separately,
+    // sorted by count, uncapped by SUBSYSTEM_DISPLAY_FLOOR_MS.
+    const livestockCallers = allSubsystems
+      .filter(([name]) => name.startsWith('_loadWorldLivestock miss caller: '))
+      .sort((a, b) => b[1].samples - a[1].samples);
+    // Same reasoning one level up: currentLivestock() in livestock-nursery.js
+    // turned out to be _loadWorldLivestock's single biggest caller by far, but
+    // it itself has ~20 call sites, so this tracks ITS real caller the same way.
+    const currentLivestockCallers = allSubsystems
+      .filter(([name]) => name.startsWith('currentLivestock miss caller: '))
+      .sort((a, b) => b[1].samples - a[1].samples);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
+    const outlinePerfLine = outlineRenderPerfLine();
     const topLine = topGeom
       ? `${topGeom[0]} ${formatCount(topGeom[1])} tris (${totalGeom ? Math.round(topGeom[1] / totalGeom * 100) : 0}%)`
       : 'not scanned yet';
     return [
       `FPS ${perfState.fps.toFixed(1)}   frame ${perfState.frameMs.toFixed(2)} ms`,
+      // The gap between these two (when positive) is time spent between one
+      // gameLoop() call finishing and the next one starting -- i.e. some
+      // OTHER requestAnimationFrame loop, a MutationObserver callback, or GC,
+      // not anything wrapped above. A near-zero or negative gap means the
+      // cost really is inside gameLoop's own call graph.
+      gameLoopTotal ? `gameLoop total ${gameLoopTotal.avg.toFixed(2)} ms   (outside gameLoop: ${(perfState.frameMs - gameLoopTotal.avg).toFixed(2)} ms)` : 'gameLoop total: not sampled yet',
+      ...(outlinePerfLine ? [outlinePerfLine] : []),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
       `Top visible geometry: ${topLine}`,
+      // ×N (samples) matters most for the rAF: call-site buckets: a call
+      // site averaging 2ms that only ever fired once is a one-time cost, but
+      // the same 2ms average firing hundreds of times is a real per-second
+      // budget problem the plain average alone can't distinguish.
       subsystems.length
-        ? `Timed:\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms`).join('\n')}`
-        : 'Timed subsystems: none instrumented',
+        ? `Timed (≥${SUBSYSTEM_DISPLAY_FLOOR_MS}ms):\n${subsystems.map(([name, value]) => `  ${name} ${value.avg.toFixed(2)} ms  ×${value.samples}`).join('\n')}`
+        : 'Timed subsystems: none above the display floor',
+      ...(livestockCallers.length
+        ? [`_loadWorldLivestock cache-miss callers:\n${livestockCallers.map(([name, value]) => `  ${name.slice('_loadWorldLivestock miss caller: '.length)}  ×${value.samples}`).join('\n')}`]
+        : []),
+      ...(currentLivestockCallers.length
+        ? [`currentLivestock() (livestock-nursery.js) callers:\n${currentLivestockCallers.map(([name, value]) => `  ${name.slice('currentLivestock miss caller: '.length)}  ×${value.samples}`).join('\n')}`]
+        : []),
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
-      `Long tasks: ${perfState.longTasks}   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
+      // longTaskMs is the browser's OWN measured total main-thread-blocking
+      // time for these tasks, independent of every performance.now()
+      // bracket in this file -- compare it against gameLoop total (and the
+      // Timed list above) above: if it's meaningfully bigger, some of what
+      // the browser bundles into these tasks (e.g. style/layout work done
+      // just before a rAF callback runs) isn't captured by any JS timer.
+      `Long tasks: ${perfState.longTasks}  Σ${perfState.longTaskMs.toFixed(1)}ms  max ${perfState.longTaskMaxMs.toFixed(1)}ms   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
+      // Chrome-only. A large sustained value here (tens of MB/sec) points at
+      // GC pauses as a real candidate for time that isn't inside gameLoop
+      // and wasn't caught by the rAF/MutationObserver instrumentation --
+      // neither of those can see GC time, since it doesn't belong to any
+      // one JS callback's own measured duration.
+      perfState.lastHeapBytes
+        ? `JS heap: ${(perfState.lastHeapBytes / 1e6).toFixed(1)} MB   Δ ${perfState.heapDeltaMbPerSec >= 0 ? '+' : ''}${perfState.heapDeltaMbPerSec.toFixed(1)} MB/s`
+        : 'JS heap: unavailable (non-Chromium browser)',
+      // A large, growing count here (thousands+) is circumstantial evidence
+      // for the "outside gameLoop" cost being browser-internal style/layout
+      // recalculation of DOM subtrees that stay mounted (at opacity:0) while
+      // "closed" -- see setForceHiddenPanelsEnabled below for the toggle
+      // that tests this directly.
+      `DOM nodes: ${formatCount(perfState.domNodeCount)}`,
+      // DevTools' own Bottom-up profile named _loadWorldLivestock() (which
+      // does JSON.parse(localStorage.getItem('hobunjiSaveMeta'))) as an 11%
+      // self-time cost. An audit of every caller found no redundant
+      // repeated-in-a-loop calls -- each already parses once and reuses the
+      // result -- so the likely remaining explanation is simply that this
+      // blob (every world's livestock/breeding/storage/calendar/farm layout
+      // data, all in one JSON string) is large enough that even the existing
+      // once-per-frame-batch cache is expensive purely from its size. This
+      // reads its live size directly to confirm or rule that out.
+      (() => {
+        try {
+          const raw = root.localStorage?.getItem('hobunjiSaveMeta');
+          return raw ? `Save blob (hobunjiSaveMeta): ${(raw.length / 1e6).toFixed(2)} MB (${formatCount(raw.length)} chars)` : 'Save blob (hobunjiSaveMeta): not present';
+        } catch (_) { return 'Save blob (hobunjiSaveMeta): unavailable'; }
+      })(),
     ].join('\n');
   }
 
@@ -206,6 +357,8 @@
       perfState.renderCpuMs = 0;
       perfState.renderSamples = 0;
       perfState.longTasks = 0;
+      perfState.longTaskMs = 0;
+      perfState.longTaskMaxMs = 0;
     } else if (overlay) overlay.style.display = 'none';
   }
 
@@ -223,6 +376,25 @@
       perfState.fps = perfState.sampleFrames * 1000 / Math.max(1, elapsed);
       perfState.sampleFrames = 0;
       perfState.sampleStart = ts;
+      // Chrome-only (root.performance.memory doesn't exist in Firefox/Safari).
+      // A sustained high allocation rate here would point at GC pauses as the
+      // 'outside gameLoop' cost -- several hot-path functions across this
+      // codebase build a fresh array every single frame ([...pending],
+      // [...managed], [...ground, ...held], etc.), and unlike the rAF/
+      // MutationObserver work already ruled out, GC time doesn't belong to
+      // any specific JS callback's own measured duration, so neither of
+      // those wrappers could have shown it even in principle.
+      const heapBytes = root.performance?.memory?.usedJSHeapSize;
+      if (Number.isFinite(heapBytes)) {
+        if (perfState.lastHeapBytes) {
+          const deltaBytes = heapBytes - perfState.lastHeapBytes;
+          perfState.heapDeltaMbPerSec = (deltaBytes / 1e6) / (elapsed / 1000);
+        }
+        perfState.lastHeapBytes = heapBytes;
+      }
+      // Cheap enough (a single querySelectorAll pass) only because it's
+      // gated to this same 500ms tick rather than running every frame.
+      if (profilerEnabled) perfState.domNodeCount = document.querySelectorAll('*').length;
       updatePerformanceUI(ts);
     }
     perfState.raf = requestAnimationFrame(frameLoop);
@@ -263,6 +435,121 @@
     startFrameLoopIfNeeded();
   }
 
+  // Diagnostic toggle, not a real fix: this codebase uses backdrop-filter:
+  // blur() in 30+ places (docs/style.css, docs/onboarding.css,
+  // docs/cooking-ui.css), including #menuPanel at blur(24px) -- the single
+  // largest radius in the file. #menuPanel and several other panels stay
+  // mounted at opacity:0 rather than display:none while "closed" (so their
+  // open/close CSS transition has something to animate), but opacity does
+  // NOT let a browser skip the backdrop-filter compositing cost the way
+  // display:none would -- the compositor still has to keep re-sampling and
+  // blurring whatever's behind the panel (the animating 3D scene) every
+  // single frame, for as long as the panel is mounted, whether or not it's
+  // actually visible. That cost happens entirely in the browser's own
+  // paint/composite pipeline, never inside any JS callback -- which is
+  // exactly why it wouldn't show up in either the requestAnimationFrame or
+  // MutationObserver auto-instrumentation above; JS-side timing has no way
+  // to see it. This toggle removes every backdrop-filter on the page via one
+  // !important override, so its FPS impact (if any) can be checked directly
+  // instead of guessed at from the outside.
+  function setBackdropBlurDisabled(disabled) {
+    backdropBlurDisabled = !!disabled;
+    writeStorage(BACKDROP_BLUR_DIAGNOSTIC_KEY, backdropBlurDisabled ? '1' : '0');
+    const input = document.getElementById('settingDisableBackdropBlur');
+    if (input) input.checked = backdropBlurDisabled;
+    const STYLE_ID = 'hobunjiDisableBackdropBlurStyle';
+    let styleEl = document.getElementById(STYLE_ID);
+    if (backdropBlurDisabled) {
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = STYLE_ID;
+        styleEl.textContent = '*, *::before, *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }';
+        document.head.appendChild(styleEl);
+      }
+    } else if (styleEl) {
+      styleEl.remove();
+    }
+  }
+
+  // Diagnostic toggle, not a real fix: even with backdrop-filter removed
+  // (the toggle above), #menuPanel and #houseLayoutModal stay mounted in the
+  // page at opacity:0 (not display:none) while "closed", specifically so
+  // their open/close transition has something to animate. But opacity:0
+  // does NOT let the browser skip recalculating style and layout for that
+  // subtree the way display:none would -- #menuPanel in particular carries
+  // the full inventory/farm/compendium/etc. content, a large and complex DOM
+  // tree, and any mutation inside it (even one driven by gameplay code that
+  // has no idea the panel is closed) can force the browser to redo
+  // style/layout work for the whole thing. That recalculation happens in a
+  // browser-internal phase between JS execution and paint -- structurally
+  // invisible to both the requestAnimationFrame and MutationObserver
+  // auto-instrumentation above, for the same underlying reason
+  // backdrop-filter's composite cost was invisible to them: it isn't JS
+  // execution time at all. This toggle forces a real display:none on these
+  // two known opacity-based panels while they're closed, so their DOM
+  // subtree drops out of layout entirely until reopened -- a harder, uglier
+  // version of "closed" than the game normally uses (no fade transition
+  // while this is on), but useful to isolate whether this is a real cost
+  // before touching anything.
+  function setForceHiddenPanelsEnabled(enabled) {
+    forceHiddenPanelsEnabled = !!enabled;
+    writeStorage(FORCE_HIDDEN_PANELS_KEY, forceHiddenPanelsEnabled ? '1' : '0');
+    const input = document.getElementById('settingForceHiddenPanels');
+    if (input) input.checked = forceHiddenPanelsEnabled;
+    const STYLE_ID = 'hobunjiForceHiddenPanelsStyle';
+    let styleEl = document.getElementById(STYLE_ID);
+    if (forceHiddenPanelsEnabled) {
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = STYLE_ID;
+        styleEl.textContent = '#menuPanel:not(.open), #houseLayoutModal:not(.open) { display: none !important; }';
+        document.head.appendChild(styleEl);
+      }
+    } else if (styleEl) {
+      styleEl.remove();
+    }
+  }
+
+  // Diagnostic toggle, not a real fix, and unlike the two above this one has
+  // real overhead of its own while it's on: rAF, MutationObserver, and
+  // setInterval have all now been ruled out as the dominant "outside
+  // gameLoop" cost (none of them, even combined, come close to the gap seen
+  // on real samples), which points at something none of those could ever
+  // see in principle -- GPU-side backpressure. Every "render:"/"held-overlay:"
+  // bucket already added to game.js only times how long the CPU took to
+  // *issue* that pass's draw calls; WebGL is asynchronous, so none of that
+  // says anything about how long the GPU actually took to execute them. If
+  // the GPU falls behind (plausible here: the outline-render architecture
+  // does up to ~9 full/partial scene passes per frame), the browser can't
+  // call the next requestAnimationFrame until the previous frame's buffer
+  // swap completes, and that wait happens entirely outside any JS callback
+  // this file could time -- exactly the shape of the "outside gameLoop" gap.
+  // gl.readPixels() on the default framebuffer forces a full pipeline flush,
+  // so timing it right after this frame's last render call reveals real GPU
+  // completion time instead of just CPU issue time. This is genuinely
+  // expensive (it defeats the CPU/GPU pipelining that makes WebGL fast in
+  // the first place), so it's off by default and meant to be flipped on just
+  // long enough to get one clear reading, then off again.
+  const gpuSyncPixelBuffer = new Uint8Array(4);
+  function gpuSyncDiagnostic(renderer) {
+    if (!gpuSyncDiagnosticEnabled || !profilerEnabled) return;
+    const gl = renderer?.getContext?.();
+    if (!gl) return;
+    const start = performance.now();
+    try {
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, gpuSyncPixelBuffer);
+    } catch (_) { return; }
+    recordSubsystem('GPU sync (forced readPixels)', performance.now() - start);
+  }
+  root.__hobunjiGpuSyncDiagnostic = gpuSyncDiagnostic;
+
+  function setGpuSyncDiagnosticEnabled(enabled) {
+    gpuSyncDiagnosticEnabled = !!enabled;
+    writeStorage(GPU_SYNC_DIAGNOSTIC_KEY, gpuSyncDiagnosticEnabled ? '1' : '0');
+    const input = document.getElementById('settingGpuSyncDiagnostic');
+    if (input) input.checked = gpuSyncDiagnosticEnabled;
+  }
+
   function recordSubsystem(name, elapsedMs) {
     const key = String(name || 'unnamed');
     const value = Math.max(0, Number(elapsedMs) || 0);
@@ -272,6 +559,157 @@
     prev.samples += 1;
     perfState.subsystem.set(key, prev);
     return value;
+  }
+
+  // A real snapshot showed 'gameLoop total' at 31.77ms against an 82.45ms
+  // frame -- more than half the per-frame cost happens somewhere OUTSIDE
+  // gameLoop's own call graph entirely. This codebase has ~70 other files
+  // that each run their own independent, self-perpetuating
+  // requestAnimationFrame loop, any of which could be that missing time.
+  // Rather than instrument each candidate by hand one at a time, wrap
+  // requestAnimationFrame itself so every callback's own cost shows up
+  // automatically.
+  //
+  // First version of this grouped by callback FUNCTION IDENTITY (a WeakMap
+  // keyed on the callback itself). That backfired: real snapshots showed
+  // dozens of distinct "rAF: anonymous#1240", "anonymous#3376", etc. --
+  // something is creating a BRAND NEW anonymous closure and scheduling it
+  // fresh very often (a "schedule the next tick with a throwaway arrow
+  // function" pattern, common across this codebase's many debounced
+  // "queueRefresh"-style helpers), so identity-based grouping just gives
+  // every single occurrence its own one-sample bucket -- exactly the
+  // opposite of useful, since it can't tell us whether 40 different call
+  // sites each fired once, or one call site fired 40 times.
+  //
+  // Group by CALL SITE instead: capture a stack trace at the moment
+  // requestAnimationFrame(callback) is invoked (not when the callback later
+  // runs), and key on the first stack frame outside this file. That's
+  // stable across every distinct closure a given line of code produces, so
+  // the overlay now answers "which file/line is responsible" directly
+  // instead of "here are N unrelated-looking one-off timings."
+  function callSiteLabel() {
+    const stack = new Error().stack;
+    if (!stack) return 'unknown call site';
+    const lines = stack.split('\n').slice(1); // Drop the "Error" header line.
+    for (const line of lines) {
+      if (line.includes('js/performance-debug.js')) continue; // Skip this module's own frames.
+      // Script URLs here carry a cache-busting query string (e.g.
+      // ".../item-arch-category-colors.js?v=20260910review1:453:23"), so the
+      // line:column numbers sit after "?...", not immediately after ".js".
+      const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
+      if (match) return `${match[1]}:${match[2]}`;
+      const trimmed = line.trim();
+      if (trimmed) return trimmed.slice(0, 60);
+    }
+    return 'unknown call site';
+  }
+
+  function installRafProfiler() {
+    const nativeRaf = root.requestAnimationFrame;
+    if (typeof nativeRaf !== 'function' || nativeRaf.__hobunjiRafProfiled) return;
+    const boundNativeRaf = nativeRaf.bind(root);
+    // Unlike setInterval/MutationObserver (which only ever need their label
+    // once, at schedule/construction time), requestAnimationFrame's own API
+    // forces a fresh call every single frame for every self-rescheduling
+    // loop -- game.js's own gameLoop included. That originally meant a
+    // brand-new new Error().stack capture (genuinely expensive: real stack
+    // unwinding, not just sampling) on every one of those calls, for every
+    // frame, for as long as the profiler is on. A real DevTools recording
+    // during this investigation showed "Profiling overhead" alone eating
+    // 56% of total time -- this instrumentation had become a bigger cost
+    // than anything it was trying to measure. Since a persistent
+    // self-rescheduling loop passes the SAME function reference to
+    // requestAnimationFrame every time, its call site can never change
+    // between calls, so it's cached by callback identity here and the stack
+    // is only ever captured once per distinct callback (still once per call
+    // for the genuinely-fresh-closure-per-frame patterns noted below, same
+    // as before -- no regression there, just no more needless recapture for
+    // the common persistent-function case).
+    const rafLabelCache = new WeakMap();
+    function profiledRequestAnimationFrame(callback) {
+      if (typeof callback !== 'function') return boundNativeRaf(callback);
+      if (!profilerEnabled) return boundNativeRaf(callback);
+      let label = rafLabelCache.get(callback);
+      if (label === undefined) {
+        label = callSiteLabel(); // Captured HERE (scheduling time), not inside the callback below (run time) -- the stack only shows the real caller before requestAnimationFrame returns.
+        rafLabelCache.set(callback, label);
+      }
+      return boundNativeRaf(function hobunjiTimedRafCallback(...args) {
+        const start = performance.now();
+        const result = callback.apply(this, args);
+        recordSubsystem('rAF: ' + label, performance.now() - start);
+        return result;
+      });
+    }
+    profiledRequestAnimationFrame.__hobunjiRafProfiled = true;
+    root.requestAnimationFrame = profiledRequestAnimationFrame;
+  }
+
+  // A real snapshot showed 'gameLoop total' fully explained by its own
+  // nested breakdown, and every rAF: call site combined added up to under
+  // 10ms -- yet 'outside gameLoop' was still ~59ms. That rules out
+  // requestAnimationFrame-scheduled work as the remaining cost. This
+  // codebase has ~24 separate files that each attach their own
+  // MutationObserver to document.body or document.documentElement with
+  // subtree:true (catalogued earlier in this investigation; two of them --
+  // inventory-ui.js's menu-readability scan and controller-ui-nav.js's
+  // per-frame panel-visibility check -- were already confirmed and fixed as
+  // real bugs). MutationObserver callbacks run as microtasks, not through
+  // requestAnimationFrame, so installRafProfiler above can't see them at
+  // all. Same fix, same reasoning: wrap the MutationObserver constructor
+  // itself so every observer's callback is timed automatically and
+  // attributed to whichever file constructed it, instead of auditing the
+  // remaining ~22 files one at a time.
+  function installMutationObserverProfiler() {
+    const NativeMutationObserver = root.MutationObserver;
+    if (typeof NativeMutationObserver !== 'function' || NativeMutationObserver.__hobunjiMoProfiled) return;
+    function ProfiledMutationObserver(callback) {
+      if (typeof callback !== 'function') return new NativeMutationObserver(callback);
+      const label = callSiteLabel(); // Captured at construction time -- stable for this observer's entire lifetime, unlike the per-call rAF label.
+      return new NativeMutationObserver(function hobunjiTimedMutationCallback(...args) {
+        if (!profilerEnabled) return callback.apply(this, args);
+        const start = performance.now();
+        const result = callback.apply(this, args);
+        recordSubsystem('MutationObserver: ' + label, performance.now() - start);
+        return result;
+      });
+    }
+    ProfiledMutationObserver.prototype = NativeMutationObserver.prototype;
+    Object.setPrototypeOf(ProfiledMutationObserver, NativeMutationObserver);
+    Object.defineProperty(ProfiledMutationObserver, '__hobunjiMoProfiled', { value: true });
+    root.MutationObserver = ProfiledMutationObserver;
+  }
+
+  // requestAnimationFrame and MutationObserver were both ruled out as the
+  // dominant "outside gameLoop" cost (their combined totals never exceeded
+  // ~20-25ms even on the worst real samples), but there's a third,
+  // completely separate scheduling mechanism neither of those wrappers can
+  // see: setInterval. A repo-wide search turned up 71 setInterval call
+  // sites across 63 files -- periodic polling loops, retry timers, UI
+  // refreshers -- none of them requestAnimationFrame-based, so none of them
+  // were ever instrumented. Several fire as often as every 50-100ms, which
+  // at this game's actual frame times (100-190ms on the worst samples) is
+  // effectively "every frame or two." Same call-site-labeling approach as
+  // MutationObserver above: each setInterval() call creates one persistent
+  // timer reusing the same callback forever, so labeling at the scheduling
+  // call site (not per-invocation) is both stable and cheap.
+  function installSetIntervalProfiler() {
+    const nativeSetInterval = root.setInterval;
+    if (typeof nativeSetInterval !== 'function' || nativeSetInterval.__hobunjiIntervalProfiled) return;
+    const boundNativeSetInterval = nativeSetInterval.bind(root);
+    function profiledSetInterval(callback, delay, ...args) {
+      if (typeof callback !== 'function') return boundNativeSetInterval(callback, delay, ...args);
+      const label = callSiteLabel();
+      return boundNativeSetInterval(function hobunjiTimedIntervalCallback(...cbArgs) {
+        if (!profilerEnabled) return callback.apply(this, cbArgs);
+        const start = performance.now();
+        const result = callback.apply(this, cbArgs);
+        recordSubsystem('setInterval: ' + label, performance.now() - start);
+        return result;
+      }, delay, ...args);
+    }
+    profiledSetInterval.__hobunjiIntervalProfiled = true;
+    root.setInterval = profiledSetInterval;
   }
 
   function makeCheckboxRow(id, labelText, checked, title = '') {
@@ -548,6 +986,21 @@
     perf.input.addEventListener('change', () => setProfilerEnabled(perf.input.checked));
     box.appendChild(perf.row);
 
+    const backdropBlur = makeCheckboxRow('settingDisableBackdropBlur', 'Disable backdrop blur (diagnostic)', backdropBlurDisabled,
+      'Menus use backdrop-filter: blur() to frost the game world behind them, including #menuPanel at blur(24px). Closed panels stay in the page at opacity:0 rather than display:none (so they can fade in/out), and opacity does not let the browser skip the blur\'s compositing cost -- it can keep re-blurring the animating scene behind an invisible panel every frame. This removes every blur on the page so you can check its real FPS impact directly. Visual-only: menus still work, they just render sharp instead of frosted.');
+    backdropBlur.input.addEventListener('change', () => setBackdropBlurDisabled(backdropBlur.input.checked));
+    box.appendChild(backdropBlur.row);
+
+    const forceHiddenPanels = makeCheckboxRow('settingForceHiddenPanels', 'Force display:none on closed panels (diagnostic)', forceHiddenPanelsEnabled,
+      '#menuPanel and #houseLayoutModal stay mounted at opacity:0 (not display:none) while closed, so their open/close animation has something to transition. Unlike the blur toggle above, this tests DOM style/layout recalculation cost rather than paint/composite cost: a large closed panel\'s subtree can still force the browser to redo layout work whenever anything inside it mutates, even fully invisible and unblurred. This forces real display:none on those two panels while closed (no fade transition while it\'s on) so you can check the FPS impact directly.');
+    forceHiddenPanels.input.addEventListener('change', () => setForceHiddenPanelsEnabled(forceHiddenPanels.input.checked));
+    box.appendChild(forceHiddenPanels.row);
+
+    const gpuSync = makeCheckboxRow('settingGpuSyncDiagnostic', 'Force GPU sync each frame (diagnostic, has real overhead)', gpuSyncDiagnosticEnabled,
+      'Every render/held-overlay timing above only measures how long the CPU took to issue that frame\'s draw calls, not how long the GPU actually took to execute them -- WebGL is asynchronous. This forces a full GPU pipeline flush once per frame (via a 1x1 readPixels) and times that flush as "GPU sync (forced readPixels)", revealing real GPU completion time. This itself adds real overhead by defeating CPU/GPU pipelining, so only turn it on long enough to get one reading, then off again.');
+    gpuSync.input.addEventListener('change', () => setGpuSyncDiagnosticEnabled(gpuSync.input.checked));
+    box.appendChild(gpuSync.row);
+
     // Flashes a button's own label as inline feedback (e.g. "Copied!") and
     // reverts it after a moment — deliberate alternative to log()/__farmLog
     // for this whole cache-snapshot section, so neither a manual snapshot
@@ -577,6 +1030,31 @@
     });
     cacheBtnRow.append(cacheBtnLabel, cacheBtn);
     box.appendChild(cacheBtnRow);
+
+    // perfState.subsystem never resets on its own (each entry is an
+    // exponential moving average that only updates when a NEW sample
+    // arrives), so a bucket from a diagnostic toggle that's since been
+    // switched off -- or from an early, unrepresentative moment like the
+    // slow loading screen -- stays frozen and visible in the Timed list
+    // forever, indistinguishable at a glance from a currently-active cost.
+    // This has already caused real confusion more than once. Clearing the
+    // map gives a clean baseline right before a specific A/B comparison.
+    const clearTimedBtnRow = document.createElement('div');
+    clearTimedBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
+    const clearTimedBtnLabel = document.createElement('span');
+    clearTimedBtnLabel.textContent = 'Clear timed history';
+    clearTimedBtnLabel.style.fontSize = '12px';
+    clearTimedBtnLabel.title = 'The "Timed" list in the Performance Profiler overlay never resets on its own, so a bucket from a toggle you\'ve since turned off (or from the slow loading screen) can stay frozen and visible indefinitely. This wipes it so the next reading reflects only what happens from now on.';
+    const clearTimedBtn = document.createElement('button');
+    clearTimedBtn.type = 'button';
+    clearTimedBtn.textContent = 'Clear';
+    clearTimedBtn.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#d1d5db';
+    clearTimedBtn.addEventListener('click', () => {
+      perfState.subsystem.clear();
+      flashButtonLabel(clearTimedBtn, 'Cleared!');
+    });
+    clearTimedBtnRow.append(clearTimedBtnLabel, clearTimedBtn);
+    box.appendChild(clearTimedBtnRow);
 
     const lagBtnRow = document.createElement('div');
     lagBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
@@ -770,12 +1248,18 @@
   }
 
   function install() {
+    installRafProfiler(); // Before anything else below schedules its own requestAnimationFrame loop, so those get timed consistently too.
+    installMutationObserverProfiler(); // Same reasoning, for the ~24 files that instead react to DOM mutations rather than polling every frame.
+    installSetIntervalProfiler(); // Same reasoning again, for the ~63 files that poll on a plain setInterval timer instead of rAF or MutationObserver.
     installRendererProfiler();
     installSettingsUI();
     installCloudForestTuningUI();
     installCloudForestFogHook();
     setFpsEnabled(fpsEnabled);
     setProfilerEnabled(profilerEnabled);
+    setBackdropBlurDisabled(backdropBlurDisabled);
+    setForceHiddenPanelsEnabled(forceHiddenPanelsEnabled);
+    setGpuSyncDiagnosticEnabled(gpuSyncDiagnosticEnabled);
     startLagWatch();
     setTimeout(checkBakedTreeHealth, 4000);
   }
