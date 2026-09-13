@@ -1,0 +1,24 @@
+name: Inventory Hold regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/held-item-state.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/combat/technique-scrolls.js'
+      - 'scripts/test-held-item-state.js'
+      - 'scripts/test-combat-manuals-jubmir-visits.js'
+      - '.github/workflows/inventory-hold-regression.yml'
+
+jobs:
+  inventory-hold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Test renderer-facing off-arch Hold state
+        run: node scripts/test-held-item-state.js
+      - name: Test combat manual Hold action
+        run: node scripts/test-combat-manuals-jubmir-visits.js
