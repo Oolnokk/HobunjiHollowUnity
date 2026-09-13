@@ -91,6 +91,7 @@
       script.dataset.hobunjiLoadingSkyRuntime = '1';
       script.onload = () => {
         const installed = !!window.LoadingScreenSkyBackdrop?.installed;
+        if (!installed) state.skyBackdropPromise = null;
         window.LoadingScreenSkyBackdrop?.redraw?.();
         resolve(installed);
       };
