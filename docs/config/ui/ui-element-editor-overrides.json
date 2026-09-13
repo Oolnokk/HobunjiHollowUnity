@@ -13,6 +13,12 @@
       "width": "86px",
       "height": "30px"
     },
+    "#mapEditBtn": {
+      "left": "max(0px, calc(100vw - 258px))",
+      "top": "44px",
+      "width": "86px",
+      "height": "30px"
+    },
     "#furniturePlacerBtn": {
       "left": "max(86px, calc(100vw - 172px))",
       "top": "44px",

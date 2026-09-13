@@ -7472,13 +7472,40 @@
       // gets a fresh read.
       let _worldLivestockFrameCache = null;
       function _loadWorldLivestock() {
-        if (_worldLivestockFrameCache) return _worldLivestockFrameCache;
+        if (_worldLivestockFrameCache) {
+          // A real DevTools recording named this whole function 682.9ms/11%
+          // self time despite the save blob measuring only ~91KB (far too
+          // small on its own to explain that), and an audit of every caller
+          // found no redundant repeated-in-a-loop calls. The remaining
+          // unknown is simply HOW OFTEN this runs the real parse below vs.
+          // hitting the cache -- this pair of counters answers that
+          // directly instead of guessing further.
+          window.PerfProfiler?.record('_loadWorldLivestock: cache hit', 0);
+          return _worldLivestockFrameCache;
+        }
         const worldId = _tothalWorldId();
         if (!worldId) return [];
+        const parseStart = performance.now();
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
           return (meta?.worlds || []).find(w => w.id === worldId)?.livestock ?? [];
         } catch { return []; }
+        finally {
+          window.PerfProfiler?.record('_loadWorldLivestock: parse+find (cache miss)', performance.now() - parseStart);
+          // Neither the trough/computeActionButtons theory nor blob size
+          // panned out (2255+ misses recorded even while nowhere near a
+          // barn), so rather than keep guessing from call-site tracing,
+          // find the real caller directly: frame 0 of the stack is the
+          // literal string "Error", frame 1 is this function itself, so
+          // frame 2 is whoever actually called it.
+          if (window.PerfProfiler) {
+            const stack = new Error().stack || '';
+            const line = stack.split('\n')[2] || '';
+            const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
+            const callerLabel = match ? `${match[1]}:${match[2]}` : (line.trim().slice(0, 60) || 'unknown caller');
+            window.PerfProfiler.record('_loadWorldLivestock miss caller: ' + callerLabel, 0);
+          }
+        }
       }
 
       function _saveWorldLivestock(list) {
@@ -11440,9 +11467,14 @@
 
       function updateNpcWalkers(dt) {
         const previousNearbyNpcWalker = nearbyNpcWalker;
-        updateNpcVisitorArrivals(dt);
-        for (const w of [...npcWalkers]) { w.update(dt); if (npcWalkers.includes(w)) _tickNpcPortraitLife(w, dt); }
-        _logGarankiDiagnostic(dt);
+        // Dev Testing Switchbox "NPC & Creature AI" switch: skip schedule/
+        // pathing/visitor-arrival work (the expensive part) but keep nearby-
+        // NPC detection below running so a frozen villager is still talkable.
+        if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
+          updateNpcVisitorArrivals(dt);
+          for (const w of [...npcWalkers]) { w.update(dt); if (npcWalkers.includes(w)) _tickNpcPortraitLife(w, dt); }
+          _logGarankiDiagnostic(dt);
+        }
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
         const px = player.x / TILE, pz = player.y / TILE;
         for (const w of npcWalkers) {
@@ -17890,6 +17922,13 @@
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
       threeContainer.appendChild(renderer.domElement);
+      // Direct handoff for js/performance-debug.js's installRendererProfiler(),
+      // which patches this exact instance rather than THREE.WebGLRenderer's
+      // prototype — several other modules (avatar-preview-scene.js,
+      // farm-panel-core.js, the character creator) construct their own
+      // separate renderers too, and this is the one gameplay actually renders
+      // through every frame.
+      window.__hobunjiGameRenderer = renderer;
 
       // ── Interior scene (bigger-on-the-inside room) ────────────────
       const interiorScene = new THREE.Scene();
@@ -22260,6 +22299,13 @@
       });
 
       function gameLoop(now) {
+        // Brackets the ENTIRE function so 'frame ms' (measured independently by
+        // performance-debug.js's own rAF loop, i.e. real wall-clock time between
+        // one gameLoop call and the next) minus this bucket's average tells us
+        // directly how much per-frame time -- if any -- is being spent outside
+        // gameLoop's own call graph entirely (other requestAnimationFrame loops,
+        // MutationObserver callbacks, GC, etc.) rather than in anything below.
+        const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
         gameFrameSerial++;
@@ -22267,10 +22313,12 @@
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
           renderer.render(scene, camera);
+          window.PerfProfiler?.end(gameLoopTotalPerf);
           requestAnimationFrame(gameLoop);
           return;
         }
 
+        const prePausePerf = window.PerfProfiler?.begin('popups+music'); // Runs even while paused, so kept separate from the gated gameplay buckets below.
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
@@ -22284,19 +22332,23 @@
         window.Music?.updateAmbientCues();
         window.Music?.updateLyreDucking();
         window.Music?.logAudioTickDiagnostics();
+        window.PerfProfiler?.end(prePausePerf);
 
         if (!paused) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
+          const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
           pollControllerInput();
           applyControllerCameraLook(dt);
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
+          window.PerfProfiler?.end(inputPerf);
           const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
           window.WildernessChunks?.update(dt);
           window.PerfProfiler?.end(wildernessChunkPerf);
+          const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           window.PlayerVitals.updatePlayerVitals(dt);
@@ -22304,12 +22356,14 @@
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
+          window.PerfProfiler?.end(worldSystemsPerf);
 
           // Active companions and shoulder pets follow the player through
           // every playable interior. A building still loading has no real
           // destination scene yet, so wait behind the existing black scene
           // transition rather than spawning a follower into `scene`'s
           // fallback and leaving it there after the building finishes.
+          const companionPerf = window.PerfProfiler?.begin('companions+mounts');
           const companionSceneReady = !_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea); // Gates indoor follower scene attachment.
           if (companionSceneReady) {
             syncCompanionFromWhistle();
@@ -22318,25 +22372,34 @@
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
           window.Mounts?.updateMountRide(dt);
+          window.PerfProfiler?.end(companionPerf);
 
-          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
-            window.BanditCamps.updateCompanionPerception(dt);
-            window.BanditCamps.updateRandomEncounters(dt);
-            window.BanditCamps.updateCampBanners(dt);
-            window.WildlifeSpawn.updateHostileSpawning(dt);
-            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
-            updateHostiles(dt);
-            window.PerfProfiler?.end(hostilePerf);
-            window.CreatureDeath.updateCorpses(dt);
-          } else if (_isBuildingArea(currentArea)) {
-            // Ordinary building interiors still have no wild spawns; this
-            // branch only keeps any authored interior hostile/corpse active.
-            const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
-            updateHostiles(dt);
-            window.PerfProfiler?.end(hostilePerf);
-            window.CreatureDeath.updateCorpses(dt);
+          // Dev Testing Switchbox "NPC & Creature AI" switch: freezes wildlife/
+          // bandit AI, spawning, and corpse cleanup along with the NPC walker
+          // schedules gated in updateNpcWalkers above.
+          if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
+            if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+              const spawnPerf = window.PerfProfiler?.begin('bandit+wildlife spawn'); // Separate from 'hostiles' below, which only covers already-spawned AI ticking.
+              window.BanditCamps.updateCompanionPerception(dt);
+              window.BanditCamps.updateRandomEncounters(dt);
+              window.BanditCamps.updateCampBanners(dt);
+              window.WildlifeSpawn.updateHostileSpawning(dt);
+              window.PerfProfiler?.end(spawnPerf);
+              const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
+              updateHostiles(dt);
+              window.PerfProfiler?.end(hostilePerf);
+              window.CreatureDeath.updateCorpses(dt);
+            } else if (_isBuildingArea(currentArea)) {
+              // Ordinary building interiors still have no wild spawns; this
+              // branch only keeps any authored interior hostile/corpse active.
+              const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
+              updateHostiles(dt);
+              window.PerfProfiler?.end(hostilePerf);
+              window.CreatureDeath.updateCorpses(dt);
+            }
           }
 
+          const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
           window.DenNestSystem.updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
@@ -22375,6 +22438,7 @@
             }
             window.WeatherFX.spawnRipples();
           }
+          window.PerfProfiler?.end(miscGameplayPerf);
         }
 
         // ── Camera smooth follow ─────────────────────────────────
@@ -22477,6 +22541,7 @@
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
         // (opacity and, while a tree is actually blocking, depthWrite).
+        const vegCullPerf = window.PerfProfiler?.begin('vegetation+path culling'); // Isolates the throttled-but-potentially-bulk culling passes below from the per-frame work around them.
         _vegCullAccum += dt;
         if (_vegCullAccum >= 0.14) {
           const force = _vegCullAccum >= 900; // first tick after script load
@@ -22494,8 +22559,10 @@
           _pathBrickCullAccum = 0;
           window.TerrainGeometry.updatePathBrickCulling(currentArea, force);
         }
+        window.PerfProfiler?.end(vegCullPerf);
 
         // ── Three.js updates ─────────────────────────────────────
+        const meshUpdatePerf = window.PerfProfiler?.begin('mesh+visual updates'); // Everything below through the rain/cloud-forest fog update, ahead of the actual render() call.
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
@@ -22594,37 +22661,50 @@
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
+        window.PerfProfiler?.end(meshUpdatePerf);
 
         // ── Render active scene ──────────────────────────────────
+        // "Render CPU" in the overlay only shows the average cost of a single
+        // renderer.render() call; s_outlines below can chain up to 6 of them
+        // in one frame, so this bucket captures the true per-frame total.
+        const renderPassPerf = window.PerfProfiler?.begin('render passes');
         const activeScene = window.GridTileAccessors.getActiveScene();
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
           // composite below can read real per-pixel depth afterwards —
           // rendering straight to the canvas would lose that depth buffer
           // the moment the fullscreen composite quad overwrites it.
+          const rpMainPerf = window.PerfProfiler?.begin('render: main scene');
           renderer.setRenderTarget(_mainRT);
           renderer.render(activeScene, camera);
+          window.PerfProfiler?.end(rpMainPerf);
 
           // Preserve the colour/depth result while PNG silhouettes add only
           // the missing occlusion depth needed by both outline systems.
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
+          const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
           _renderPngPlaneOutlineOccluderDepth(activeScene);
+          window.PerfProfiler?.end(rpPngOccluderPerf);
 
           // Selective shell outline pass (layer-1 objects only)
+          const rpShellPerf = window.PerfProfiler?.begin('render: shell outline');
           activeScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
           renderer.render(activeScene, camera);
           camera.layers.enableAll();
           activeScene.overrideMaterial = null;
+          window.PerfProfiler?.end(rpShellPerf);
 
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
           if (_targetOutlineMeshes.length > 0) {
+            const rpTargetPerf = window.PerfProfiler?.begin('render: target outline');
             scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
             camera.layers.set(2);
             renderer.render(scene, camera);
             camera.layers.enableAll();
             scene.overrideMaterial = null;
+            window.PerfProfiler?.end(rpTargetPerf);
           }
 
           // Redraw Cloud Forest mist (layer 5, see cloud-forest-fog.js) over
@@ -22636,9 +22716,11 @@
           // haze around it. depthTest still applies, so this correctly
           // leaves outlines on anything nearer than the mist untouched.
           if (s_cloudForestFog) {
+            const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
             camera.layers.set(5);
             renderer.render(activeScene, camera);
             camera.layers.enableAll();
+            window.PerfProfiler?.end(rpMistPerf);
           }
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
@@ -22649,6 +22731,7 @@
           // composite's uSeamOutlinesOn uniform also zeroes its contribution
           // regardless, so leaving _edgeIdRT's contents stale here is safe.
           if (s_furnitureSeamOutlines) {
+            const rpSeamPerf = window.PerfProfiler?.begin('render: furniture seam');
             renderer.setRenderTarget(_edgeIdRT);
             renderer.setClearColor(0x000000, 0);
             renderer.clear(true, true, false);
@@ -22657,6 +22740,7 @@
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
             camera.layers.enableAll();
+            window.PerfProfiler?.end(rpSeamPerf);
           }
 
           // Depth-only source for the depth-edge detector, PNG-plane avatars
@@ -22667,6 +22751,7 @@
           // Opt-in/off by default since it's an extra full scene pass on top
           // of everything above.
           if (s_depthOutlines) {
+            const rpDepthPerf = window.PerfProfiler?.begin('render: depth outline'); // Also does a full activeScene.traverse() every frame, same concern as the png occluder pass above.
             const _hiddenForDepthPass = [];
             activeScene.traverse(o => {
               if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
@@ -22679,10 +22764,12 @@
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
             _hiddenForDepthPass.forEach(o => { o.visible = true; });
+            window.PerfProfiler?.end(rpDepthPerf);
           }
 
           // Composite: blend depth-discontinuity + furniture material-seam
           // outlines over the rendered scene, straight to the canvas.
+          const rpCompositePerf = window.PerfProfiler?.begin('render: composite');
           renderer.setRenderTarget(null);
           _postMat.uniforms.tColor.value          = _mainRT.texture;
           _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
@@ -22695,6 +22782,7 @@
           _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
           _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
           renderer.render(_postScene, _postCamera);
+          window.PerfProfiler?.end(rpCompositePerf);
         } else {
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
@@ -22711,13 +22799,24 @@
             renderer.autoClearDepth = true;
           }
         }
+        window.PerfProfiler?.end(renderPassPerf);
+        // Optional diagnostic hook (off by default, see performance-debug.js):
+        // everything timed above only measures how long the CPU took to
+        // *issue* this frame's draw calls, not how long the GPU actually
+        // took to execute them. A forced readback here blocks until the GPU
+        // has really finished, so toggling this on can reveal GPU-bound
+        // frame time that's otherwise invisible to CPU-side profiling.
+        window.__hobunjiGpuSyncDiagnostic?.(renderer);
 
         // ── 2D overlays (combat/debug/lightning, plus lighting) ──
+        const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
         drawOverlays();
         window.WeatherFX.drawLightingOverlay();
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         window.HudUpdate.updateHud();
+        window.PerfProfiler?.end(overlayPerf);
+        window.PerfProfiler?.end(gameLoopTotalPerf);
         requestAnimationFrame(gameLoop);
       }
 
@@ -23024,7 +23123,34 @@
       const _climbPromptAnchor = new THREE.Object3D();
       _climbPromptAnchor.name = 'climb_prompt_anchor';
 
+      // A real DevTools recording plus direct instrumentation found
+      // _loadWorldLivestock() (called by troughFurniture's getButtons()
+      // among others) falling through to a real, uncached parse 2417 times
+      // in one profiling window, despite the save blob being tiny (~91KB)
+      // and every caller across the 5 livestock gameplay files already
+      // calling it once and reusing the result -- ruling both of those out.
+      // refreshActionBar() (just below) calls obj.getButtons(reticle) a
+      // SECOND time on the same object computeActionButtons() already
+      // called it on internally (once to build the button list, once again
+      // to compute objectActionIds) on every single invocation, and
+      // computeActionButtons()'s own DOM-side caching (_lastBarKey) only
+      // skips the DOM update, not this recomputation -- so if refreshActionBar
+      // runs every frame (very plausible for reticle-following UI) while
+      // the player stands near a trough, that's two full recomputations
+      // (each rebuilding the trough's button list, each re-parsing the
+      // livestock save data) every frame for as long as the reticle sits on
+      // it. This wrapper measures computeActionButtons()'s own real call
+      // frequency directly instead of guessing further from a 40+-call-site
+      // trace through the file.
       function computeActionButtons() {
+        const _cabStart = performance.now();
+        try {
+          return computeActionButtonsImpl();
+        } finally {
+          window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
+        }
+      }
+      function computeActionButtonsImpl() {
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
@@ -25165,6 +25291,13 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // window.PerfProfiler?.measure(name, fn) would skip calling fn
+          // entirely (not just the timing) if PerfProfiler were ever
+          // undefined, since optional chaining short-circuits the whole
+          // call -- unlike every other PerfProfiler use in this file, fn
+          // here IS this handler's real mouse-look/aim logic, so it must
+          // always run regardless of whether the profiler is present.
+          const run = () => {
           // A missing right-button up can still be proven by the buttons
           // bitmask on the next real mouse event. End the owned hold before
           // camera-look or aiming gets a chance to use that event.
@@ -25253,6 +25386,9 @@
               lastMouseMoveTime = performance.now();
             }
           }
+          };
+          if (window.PerfProfiler) window.PerfProfiler.measure('event: mousemove (camera-look/aim)', run);
+          else run();
         });
       }
       // ── Furniture placer pointer handler ───────────────────────────
