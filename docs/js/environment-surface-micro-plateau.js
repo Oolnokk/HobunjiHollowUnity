@@ -21,6 +21,8 @@
   const EDGE_WIDTH = 0.075;
   const EDGE_SEGMENTS = 4;
   const CHUNK_TILES = 16; // Output mesh partitioning only (frustum culling) — every chunk still builds in the same synchronous pass.
+  const UV_GROUP_TILES = 32; // Must stay a multiple of CHUNK_TILES so render chunks never straddle a UV-group boundary — otherwise a chunk's own clamp to the grid's full size (not its group's) lets it spill into the next group, double-processing the overlap. Bounds one stretch-mapping call's topology to a fixed-size block regardless of total zone size (the "ignore maxPatchWorldSize" perimeter-frame patch means a single call can't self-limit island size), while still spanning many render chunks worth of continuous texture instead of tiling per render-chunk.
+  if (UV_GROUP_TILES % CHUNK_TILES !== 0) throw new Error('EnvironmentSurfaceMicroPlateau: UV_GROUP_TILES must be a multiple of CHUNK_TILES');
   const LAND_TYPES = new Set(['grass', 'path', 'tilled', 'trench', 'raised', 'paddy', 'rock', 'shrub', 'cliff', 'ramp', 'weeds']);
   const WATER_TYPES = new Set(['water', 'river', 'stream', 'waterfall']);
   const LOGICAL_OFFSETS = Object.freeze({ trench: -0.5, raised: 0.5 });
@@ -38,6 +40,7 @@
   let buildCount = 0;
   let lastBuildMs = 0;
   let grassHiddenScene = null;
+  let refineState = null;
   let lastReason = 'waiting for active Western Slope scene';
 
   const now = () => globalThis.performance?.now?.() ?? Date.now();
@@ -277,16 +280,11 @@
   // per tile — the whole cap-and-lip island stretches across one texture
   // domain, with the interior relaxed and the outer boundary mapped along
   // the texture's perimeter, exactly like the farm's cliff texturing.
-  function stretchMapSnowUv(geometry, label) {
-    const mapper = window.HobunjiSurfaceStretchUV;
-    if (typeof mapper?.mapGeometry === 'function') {
-      try {
-        const mapped = mapper.mapGeometry(geometry, { label: `environment-snow-micro-plateau:${label}` });
-        if (mapped?.getAttribute?.('uv')) return mapped;
-      } catch (_) {}
-    }
-    // Fallback (mapper not yet loaded): naive per-vertex planar UV so the
-    // mesh still renders sanely rather than untextured.
+  // Naive per-vertex planar UV — used as the instant placeholder every
+  // chunk gets on the first, synchronous build (so snow appears immediately,
+  // matching a real plateau's own zone-entry cost) before the proper
+  // connected-surface stretch below replaces it a group at a time.
+  function planarFallbackUv(geometry) {
     const THREE = window.THREE;
     const position = geometry.getAttribute('position');
     geometry.computeBoundingBox();
@@ -302,13 +300,65 @@
     return geometry;
   }
 
-  function makeMesh(positions, indices, name, order) {
-    if (!indices.length) return null;
+  function stretchMapSnowUv(geometry, label) {
+    const mapper = window.HobunjiSurfaceStretchUV;
+    if (typeof mapper?.mapGeometry === 'function') {
+      try {
+        const mapped = mapper.mapGeometry(geometry, { label: `environment-snow-micro-plateau:${label}` });
+        if (mapped?.getAttribute?.('uv')) return mapped;
+      } catch (_) {}
+    }
+    // Fallback (mapper not yet loaded): same placeholder the instant first
+    // pass uses, so the mesh still renders sanely rather than untextured.
+    return planarFallbackUv(geometry);
+  }
+
+  // Appends one chunk's cap+lip triangles into the shared whole-zone pos/idx
+  // buffers (not its own geometry) so the stretch mapper below sees every
+  // chunk as part of one connected surface — a real, contiguous plateau
+  // must get one continuous texture domain, not one per render-chunk.
+  // `tally` is false when re-deriving a chunk's geometry for the UV-refine
+  // pass (same deterministic tileTopCorners cache, so identical output) —
+  // builtTiles/exposedEdges must only count each tile/edge once, from the
+  // original instant build.
+  function appendChunkGeometry(state, chunk, pos, idx, tally = true) {
+    const rowEnd = Math.min(state.rows, chunk.row + CHUNK_TILES);
+    const colEnd = Math.min(state.cols, chunk.col + CHUNK_TILES);
+    const sides = [['N',0,-1], ['E',1,0], ['S',0,1], ['W',-1,0]];
+
+    for (let row = chunk.row; row < rowEnd; row++) {
+      for (let col = chunk.col; col < colEnd; col++) {
+        const corners = tileTopCorners(state, col, row);
+        if (!corners) continue;
+        addTopTile(pos, idx, col, row, corners);
+        if (tally) builtTiles++;
+        for (const [side, dc, dr] of sides) {
+          const edge = edgeCorners(corners, side);
+          const neighbor = tileTopCorners(state, col + dc, row + dr);
+          if (neighbor) {
+            const other = neighborEdgeCorners(neighbor, side);
+            const oursMid = (edge[0] + edge[1]) * 0.5;
+            const theirsMid = (other[0] + other[1]) * 0.5;
+            if (oursMid <= theirsMid + 0.025) continue;
+          }
+          addRoundedLip(pos, idx, col, row, side, edge);
+          if (tally) exposedEdges++;
+        }
+      }
+    }
+  }
+
+  // Builds one chunk's own small mesh immediately, with the cheap planar
+  // placeholder UV — used by the instant first pass so snow is visible
+  // (correct height/coverage) the moment the zone loads, before any of the
+  // (much more expensive) connected-surface stretch-mapping runs.
+  function makeChunkMesh(pos, idx, name, order) {
+    if (!idx.length) return null;
     const THREE = window.THREE;
     let geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
-    geometry = stretchMapSnowUv(geometry, name);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geometry.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+    geometry = planarFallbackUv(geometry);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, material());
@@ -321,41 +371,45 @@
     return mesh;
   }
 
-  function buildOneChunk(state, chunk) {
-    const pos = [], idx = [];
-    const rowEnd = Math.min(state.rows, chunk.row + CHUNK_TILES);
-    const colEnd = Math.min(state.cols, chunk.col + CHUNK_TILES);
-    const sides = [['N',0,-1], ['E',1,0], ['S',0,1], ['W',-1,0]];
-
-    for (let row = chunk.row; row < rowEnd; row++) {
-      for (let col = chunk.col; col < colEnd; col++) {
-        const corners = tileTopCorners(state, col, row);
-        if (!corners) continue;
-        addTopTile(pos, idx, col, row, corners);
-        builtTiles++;
-        for (const [side, dc, dr] of sides) {
-          const edge = edgeCorners(corners, side);
-          const neighbor = tileTopCorners(state, col + dc, row + dr);
-          if (neighbor) {
-            const other = neighborEdgeCorners(neighbor, side);
-            const oursMid = (edge[0] + edge[1]) * 0.5;
-            const theirsMid = (other[0] + other[1]) * 0.5;
-            if (oursMid <= theirsMid + 0.025) continue;
-          }
-          addRoundedLip(pos, idx, col, row, side, edge);
-          exposedEdges++;
-        }
-      }
+  // Slices one chunk's already-stretch-mapped triangles (by triangle
+  // range, matching the order they were appended in) out of the combined,
+  // non-indexed UV-group geometry, replacing that chunk's existing mesh's
+  // geometry in place — same idea real terrain uses (split into
+  // GPU-friendly spatial chunks only once the source UVs are final), just
+  // applied as a later upgrade instead of at initial build time.
+  function replaceChunkGeometryFromRange(mesh, combinedPosition, combinedUv, triStart, triCount) {
+    const THREE = window.THREE;
+    const vStart = triStart * 3, vCount = triCount * 3;
+    const positions = new Float32Array(vCount * 3);
+    const uvs = new Float32Array(vCount * 2);
+    for (let i = 0; i < vCount; i++) {
+      const src = vStart + i;
+      positions[i * 3] = combinedPosition.getX(src);
+      positions[i * 3 + 1] = combinedPosition.getY(src);
+      positions[i * 3 + 2] = combinedPosition.getZ(src);
+      uvs[i * 2] = combinedUv.getX(src);
+      uvs[i * 2 + 1] = combinedUv.getY(src);
     }
-
-    makeMesh(pos, idx, `snow_micro_plateau_${chunk.col}_${chunk.row}`, 2.2);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    mesh.geometry.dispose();
+    mesh.geometry = geometry;
   }
 
-  // One synchronous pass over the whole zone — the same way
-  // buildZoneMesaMeshes/the ordinary floor mesh already build on entry
-  // without a performance problem, because this is pure per-tile
-  // arithmetic against already-loaded grid data, not a scan of however
-  // much terrain geometry the zone happens to render.
+  // One synchronous pass over the whole zone building every chunk's real
+  // height/coverage instantly — the same way buildZoneMesaMeshes/the
+  // ordinary floor mesh already build on entry without a performance
+  // problem, because this is pure per-tile arithmetic against already-
+  // loaded grid data, not a scan of however much terrain geometry the zone
+  // happens to render. Each chunk starts with a cheap planar placeholder
+  // UV; refineState below queues the (much more expensive) connected-
+  // surface stretch-mapping to run afterward, a bounded block at a time
+  // across frames, so a huge real zone's proper texturing never costs one
+  // multi-second freeze on entry — just a few seconds of the snow looking
+  // plainer before it fills in.
   function buildZoneSnow(scene, grid, cols, rows) {
     const started = now();
     const state = { grid, cols, rows, topCache: new Array(cols * rows) };
@@ -369,17 +423,76 @@
     builtTiles = 0;
     exposedEdges = 0;
     chunkCount = 0;
+    const refineGroups = [];
     for (let row = 0; row < rows; row += CHUNK_TILES) {
       for (let col = 0; col < cols; col += CHUNK_TILES) {
-        buildOneChunk(state, { col, row });
+        const pos = [], idx = [];
+        appendChunkGeometry(state, { col, row }, pos, idx);
+        makeChunkMesh(pos, idx, `snow_micro_plateau_${col}_${row}`, 2.2);
         chunkCount++;
       }
     }
+    for (let groupRow = 0; groupRow < rows; groupRow += UV_GROUP_TILES) {
+      for (let groupCol = 0; groupCol < cols; groupCol += UV_GROUP_TILES) {
+        refineGroups.push({ groupCol, groupRow });
+      }
+    }
+
     buildCount++;
     lastBuildMs = now() - started;
     setGrassHidden(scene, true);
     grassHiddenScene = scene;
-    lastReason = `built ${builtTiles} shallow snow tiles in ${chunkCount} chunk mesh(es); ${exposedEdges} short edges (${lastBuildMs.toFixed(1)}ms)`;
+    refineState = { scene, state, groups: refineGroups, groupIndex: 0 };
+    lastReason = `built ${builtTiles} shallow snow tiles in ${chunkCount} chunk mesh(es); ${exposedEdges} short edges (${lastBuildMs.toFixed(1)}ms); refining texture in background`;
+  }
+
+  // Upgrades one UV-group's chunks from the instant placeholder UV to the
+  // proper connected-surface stretch — one group per call, so the cost of
+  // texturing a whole real zone (measured at several seconds for Western
+  // Slope's actual size) is spread across many frames instead of paid as
+  // a single freeze. Each group's own call still takes on the order of
+  // 50-150ms, so this still causes a brief hitch when it runs, but many
+  // small hitches spread over a couple of seconds reads very differently
+  // from one multi-second freeze on zone entry.
+  function processUvRefineStep() {
+    if (!refineState || refineState.groupIndex >= refineState.groups.length) { refineState = null; return; }
+    const { scene, state, groups, groupIndex } = refineState;
+    const { groupCol, groupRow } = groups[groupIndex];
+    refineState.groupIndex++;
+    const rowLimit = Math.min(state.rows, groupRow + UV_GROUP_TILES);
+    const colLimit = Math.min(state.cols, groupCol + UV_GROUP_TILES);
+    const pos = [], idx = [];
+    const chunkRanges = [];
+    for (let row = groupRow; row < rowLimit; row += CHUNK_TILES) {
+      for (let col = groupCol; col < colLimit; col += CHUNK_TILES) {
+        const triStart = idx.length / 3;
+        appendChunkGeometry(state, { col, row }, pos, idx, false);
+        const triCount = idx.length / 3 - triStart;
+        if (triCount > 0) chunkRanges.push({ col, row, triStart, triCount });
+      }
+    }
+    if (!idx.length) {
+      if (refineState.groupIndex >= groups.length) { lastReason = lastReason.replace('; refining texture in background', ''); refineState = null; }
+      return;
+    }
+    const THREE = window.THREE;
+    let combined = new THREE.BufferGeometry();
+    combined.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    combined.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+    combined = stretchMapSnowUv(combined, `group_${groupCol}_${groupRow}`);
+    if (combined.index) combined = combined.toNonIndexed();
+    const combinedPosition = combined.getAttribute('position');
+    const combinedUv = combined.getAttribute('uv');
+    for (const chunk of chunkRanges) {
+      const mesh = root?.children.find(m => m.name === `snow_micro_plateau_${chunk.col}_${chunk.row}`);
+      if (mesh && mesh.geometry.attributes.position.count === chunk.triCount * 3) {
+        replaceChunkGeometryFromRange(mesh, combinedPosition, combinedUv, chunk.triStart, chunk.triCount);
+      }
+    }
+    if (refineState && refineState.groupIndex >= groups.length) {
+      refineState = null;
+      lastReason = `built ${builtTiles} shallow snow tiles in ${chunkCount} chunk mesh(es); ${exposedEdges} short edges (${lastBuildMs.toFixed(1)}ms); texture refined`;
+    }
   }
 
   function resetForScene(scene, area) {
@@ -388,6 +501,7 @@
       grassHiddenScene = null;
     }
     disposeRoot();
+    refineState = null;
     activeScene = scene;
     activeArea = area;
     builtTiles = 0;
@@ -409,7 +523,10 @@
       return;
     }
     if (scene !== activeScene || area !== activeArea) resetForScene(scene, area);
-    if (root) return;
+    if (root) {
+      if (refineState) processUvRefineStep();
+      return;
+    }
     const grid = currentGrid(), cols = currentCols(), rows = currentRows();
     if (!grid || !cols || !rows) return;
     buildZoneSnow(scene, grid, cols, rows);
@@ -436,6 +553,8 @@
       chunkCount,
       buildCount,
       lastBuildMs: Number(lastBuildMs.toFixed(2)),
+      refiningTexture: Boolean(refineState),
+      refineProgress: refineState ? `${refineState.groupIndex}/${refineState.groups.length}` : null,
       textureState,
       lastReason,
     };
