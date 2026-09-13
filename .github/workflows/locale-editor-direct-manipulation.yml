@@ -21,9 +21,12 @@ jobs:
         with:
           node-version: '20'
       - name: Apply locale editor patch
-        run: python scripts/tmp-apply-locale-direct-manipulation.py
+        run: |
+          python scripts/tmp-fix-low-cliff-expansion.py
+          python scripts/tmp-apply-locale-direct-manipulation.py
       - name: Syntax-check Locale Editor scripts
         run: |
+          node --check docs/js/locale-terrain-placement.js
           node --check docs/tools/locale-editor/locale-preview3d.js
           python - <<'PY'
           from pathlib import Path
@@ -48,6 +51,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/config/locales/locale_banubu_shrine.json docs/tools/locale-editor/index.html scripts/test-banubu-cave-locale.js scripts/test-banubu-wilderness-lab-generation.js
+          git add docs/js/locale-terrain-placement.js docs/config/locales/locale_banubu_shrine.json docs/tools/locale-editor/index.html scripts/test-banubu-cave-locale.js scripts/test-banubu-wilderness-lab-generation.js
           git commit -m 'Add locale marker dragging and object rotation'
           git push origin HEAD:chatgpt/locale-terrain-anchors
