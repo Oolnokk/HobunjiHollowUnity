@@ -84,6 +84,87 @@
     });
   }
 
+  // Wilderness Chunk Lab: a real (procedurally generated, chunk-streamed)
+  // wilderness zone sized down to a few chunks instead of a full 200x200-tile
+  // zone — see EXTERIOR_ZONES.map_wilderness_lab and game.js's
+  // regenerateWildernessLab for why. Toggle in/out exactly like
+  // teleportToDevArena above; regenerateWildernessLabInPlace additionally lets
+  // it be rebuilt over and over without leaving, so the existing "Show Chunk
+  // Grid"/"Audit Loaded Chunks" debug tools and the Performance Profiler's
+  // live GPU geometry/texture counts have a cheap, repeatable way to check
+  // whether anything fails to get released across a chunk unload/rebuild.
+  const WILDERNESS_LAB_ZONE_ID = 'map_wilderness_lab';
+  let _wildernessLabReturnAnchor = null;
+
+  function _wildernessLabChunksPerSide() {
+    const raw = Number(document.getElementById('devWildernessLabSize')?.value) || 1;
+    return Math.max(1, Math.min(8, Math.round(Math.sqrt(raw))));
+  }
+
+  function teleportToWildernessLab() {
+    if (deps.getCurrentArea() === WILDERNESS_LAB_ZONE_ID) {
+      const back = _wildernessLabReturnAnchor || { area: 'farm', x: (deps.COLS / 2) * deps.TILE, y: (deps.ROWS / 2) * deps.TILE };
+      _wildernessLabReturnAnchor = null;
+      deps.startSceneTransition(() => {
+        const fromScene = deps.getActiveScene();
+        if (fromScene) { fromScene.remove(deps.playerMesh); fromScene.remove(deps.playerGroundShadow); }
+        if (deps._isBuildingArea(deps.getCurrentArea())) deps.setCurrentBuildingMapId(null);
+        deps.setCurrentArea(back.area);
+        deps.player.x = back.x; deps.player.y = back.y;
+        deps.player.vx = 0; deps.player.vy = 0;
+        deps._snapCameraTarget();
+        _addPlayerToScene(deps.getActiveScene());
+        deps.refreshActionBar();
+        deps.showToast('Left the Wilderness Chunk Lab.', true);
+        deps.closeMenu();
+      });
+      return;
+    }
+    if (!deps.regenerateWildernessLab(_wildernessLabChunksPerSide())) {
+      deps.showToast('Wilderness Chunk Lab failed to generate — see debug log.', true);
+      return;
+    }
+    _wildernessLabReturnAnchor = { area: deps.getCurrentArea(), x: deps.player.x, y: deps.player.y };
+    deps.startSceneTransition(() => {
+      const fromScene = deps.getActiveScene();
+      if (fromScene) { fromScene.remove(deps.playerMesh); fromScene.remove(deps.playerGroundShadow); }
+      if (deps._isBuildingArea(deps.getCurrentArea())) deps.setCurrentBuildingMapId(null);
+      deps.setCurrentArea(WILDERNESS_LAB_ZONE_ID);
+      const zdef = deps.EXTERIOR_ZONES[WILDERNESS_LAB_ZONE_ID];
+      deps.player.x = (zdef.entryCol + 0.5) * deps.TILE;
+      deps.player.y = (zdef.entryRow + 0.5) * deps.TILE;
+      deps.player.vx = 0; deps.player.vy = 0;
+      deps._snapCameraTarget();
+      _addPlayerToScene(deps.buildZoneScene(WILDERNESS_LAB_ZONE_ID)?.scene);
+      deps.refreshActionBar();
+      deps.showToast('Generated a fresh Wilderness Chunk Lab.', true);
+      deps.closeMenu();
+    });
+  }
+
+  function regenerateWildernessLabInPlace() {
+    if (deps.getCurrentArea() !== WILDERNESS_LAB_ZONE_ID) {
+      deps.showToast('Enter the Wilderness Chunk Lab first.', true);
+      return;
+    }
+    if (!deps.regenerateWildernessLab(_wildernessLabChunksPerSide())) {
+      deps.showToast('Regeneration failed — see debug log.', true);
+      return;
+    }
+    deps.startSceneTransition(() => {
+      const fromScene = deps.getActiveScene();
+      if (fromScene) { fromScene.remove(deps.playerMesh); fromScene.remove(deps.playerGroundShadow); }
+      const zdef = deps.EXTERIOR_ZONES[WILDERNESS_LAB_ZONE_ID];
+      deps.player.x = (zdef.entryCol + 0.5) * deps.TILE;
+      deps.player.y = (zdef.entryRow + 0.5) * deps.TILE;
+      deps.player.vx = 0; deps.player.vy = 0;
+      deps._snapCameraTarget();
+      _addPlayerToScene(deps.buildZoneScene(WILDERNESS_LAB_ZONE_ID)?.scene);
+      deps.refreshActionBar();
+      deps.showToast('Regenerated in place — check Audit Loaded Chunks and the Performance Profiler\'s GPU geometry/texture counts for anything left over.', true);
+    });
+  }
+
   // Creatures the dev spawn menu has placed in the arena this session — a
   // separate tracking set from hostileObjects/companionObjects (which this
   // panel also adds its spawns to, so the normal AI/render tick loops pick
@@ -373,6 +454,8 @@
 
   function _bindListeners() {
     document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
+    document.getElementById('devTeleportWildernessLabBtn')?.addEventListener('click', teleportToWildernessLab);
+    document.getElementById('devRegenerateWildernessLabBtn')?.addEventListener('click', regenerateWildernessLabInPlace);
     document.getElementById('devSpawnSpeciesGrid')?.addEventListener('click', (e) => {
       const btn = e.target.closest('.fed-btn');
       if (!btn) return;
@@ -441,8 +524,11 @@
   window.DevSpawner = {
     init: initWithBinding,
     DEV_ARENA_ZONE_ID,
+    WILDERNESS_LAB_ZONE_ID,
     getArenaSpawnedCreatures: () => _arenaSpawnedCreatures,
     teleportToDevArena,
+    teleportToWildernessLab,
+    regenerateWildernessLabInPlace,
     toggle,
     refreshEditorButtonVisibility,
     setArenaWeather,

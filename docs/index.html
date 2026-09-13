@@ -580,6 +580,13 @@
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
   <script src="js/equipment-panel.js?v=20260807a"></script>
+  <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
+       resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
+       before game.js, which calls window.TerrainTileMaterials.init(...) near
+       the top of its farm-setup sequence (well before window.BorderTerrain's
+       own init() below, which captures game.js's resulting local
+       resolveTileMat/resolveCliffMat aliases into its own deps). -->
+  <script src="js/terrain-tile-materials.js?v=20260913a"></script>
   <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
        scene-graph generation, no other window.* system reads; must load
        before game.js, which calls window.BorderTerrain.init(...) and then
@@ -1905,6 +1912,25 @@
               <div class="settings-desc">Warp to an empty sandbox area with a creature-spawning menu (replaces the farm editor pencil while you're there). Press again to warp back to where you were.</div>
             </div>
             <button type="button" id="devTeleportArenaBtn" class="settings-small-btn">Teleport</button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Teleport to Wilderness Chunk Lab</div>
+              <div class="settings-desc">Warp to a real procedurally generated wilderness zone sized down to just a few chunks, instead of a full map — for isolating terrain/foliage render cost and checking chunk unload/rebuild for anything that doesn't get released (pair with "Show Chunk Grid"/"Audit Loaded Chunks" below and the Performance Profiler's GPU counts). Press again to warp back.</div>
+            </div>
+            <select id="devWildernessLabSize" class="settings-small-btn" style="cursor:pointer" title="Chunks per side">
+              <option value="1">1 chunk</option>
+              <option value="4">2×2 chunks</option>
+              <option value="9">3×3 chunks</option>
+            </select>
+            <button type="button" id="devTeleportWildernessLabBtn" class="settings-small-btn">Teleport</button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Regenerate Wilderness Chunk Lab In Place</div>
+              <div class="settings-desc">While inside the lab: disposes and rebuilds every loaded chunk with a fresh random layout, without leaving. Repeat a few times and check whether GPU geometry/texture counts and the chunk residency audit return to the same baseline each time, or creep upward.</div>
+            </div>
+            <button type="button" id="devRegenerateWildernessLabBtn" class="settings-small-btn">Regenerate</button>
           </div>
         </div>
       </div><!-- /mpSettings -->

@@ -177,9 +177,29 @@
     return tex;
   }
 
+  // 'source' tint reads a mesh's own material color -- for trunks/vines
+  // that's foliage-generator.js's per-tree hslMat(), seeded per (col,row) via
+  // xfnv1a, which produces a near-continuous bark hue for natural-looking
+  // variation. loadBodySpriteTintTexture below caches one permanent
+  // CanvasTexture + GPU texture per distinct hex string forever (textureCache
+  // is a session-lifetime Map with no eviction) -- so an unquantized exact
+  // hex here means every one of the thousands of trees in a wilderness zone,
+  // regenerated fresh on every Tothal Shift, mints its own cache entry that's
+  // never freed: an unbounded, session-long texture leak. Snapping each
+  // channel to a 16-step grid (4096 possible tints, in practice far fewer)
+  // keeps the variation visually indistinguishable while making the cache
+  // reusable instead of ever-growing.
+  const TINT_QUANTIZE_STEP = 16;
+  function quantizeTintChannel(value255) {
+    return Math.min(255, Math.round(value255 / TINT_QUANTIZE_STEP) * TINT_QUANTIZE_STEP);
+  }
   function sourceTint(material) {
-    if (material?.color?.isColor) return `#${material.color.getHexString()}`;
-    return '#ffffff';
+    if (!material?.color?.isColor) return '#ffffff';
+    const c = material.color;
+    const r = quantizeTintChannel(Math.round(c.r * 255));
+    const g = quantizeTintChannel(Math.round(c.g * 255));
+    const b = quantizeTintChannel(Math.round(c.b * 255));
+    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
   }
 
   function resolveTint(surfaceCfg, sourceMaterial) {

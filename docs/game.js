@@ -1495,6 +1495,33 @@
           townReturnCol: 30, townReturnRow: 2,
           audioIndex: 'general',
         },
+        // Dev-only sibling to map_dev_arena, reachable solely through
+        // Settings' "Teleport to Wilderness Chunk Lab" button (see
+        // regenerateWildernessLab/teleportToWildernessLab in dev-spawner.js).
+        // Where the Testing Arena is a hand-authored empty room, this zone
+        // runs the SAME WildernessMapGenerator -> TerrainPreview ->
+        // _zoneLayouts -> buildZoneScene -> WildernessChunks pipeline every
+        // real wilderness zone uses, just sized down to a handful of 16-tile
+        // chunks instead of a full 200x200 zone -- small enough to isolate
+        // whether a perf/resource-leak issue lives in per-chunk terrain and
+        // foliage generation itself, and to give the existing "Show Chunk
+        // Grid"/"Audit Loaded Chunks" debug tools plus the Performance
+        // Profiler's live GPU geometry/texture counts something cheap and
+        // reproducible to check across a regenerate for whatever shouldn't
+        // survive a chunk unload/rebuild. cols/rows below are only the
+        // placeholder shown before the first regenerateWildernessLab() call
+        // replaces them via _zoneLayouts. No packSpecies/herbivoreSpecies
+        // pool, same as map_dev_arena, so it never spawns ambient wildlife or
+        // bandit camps on its own.
+        map_wilderness_lab: {
+          label: 'Wilderness Chunk Lab',
+          cols: 16, rows: 16,
+          groundColor: 0x556b4a, fogColor: 0x2a332a,
+          entryCol: 8, entryRow: 8,
+          exitCol: 1, exitRow: 1,
+          townReturnCol: 30, townReturnRow: 2,
+          audioIndex: 'general',
+        },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
@@ -8218,6 +8245,70 @@
           .finally(() => { _tothalShiftPromise = null; });
       }
       window.forceTothalShift = () => checkTothalShift(true);
+
+      // ── Wilderness Chunk Lab ──────────────────────────────────────────
+      // Runs the exact generation pipeline performTothalShift uses for a
+      // real zone (WildernessMapGenerator.generateWorkspace ->
+      // TerrainPreview.buildMergedZoneGrid -> a _zoneLayouts entry
+      // buildZoneScene can consume), but against map_wilderness_lab and
+      // sized to just a few WildernessChunks.constants.CHUNK_TILES-wide
+      // chunks instead of a full zone -- see that mapId's EXTERIOR_ZONES
+      // comment for why this exists. A fresh random seed every call, so
+      // repeated regeneration (see dev-spawner.js's
+      // regenerateWildernessLabInPlace) gives a new layout each time rather
+      // than rebuilding the same one, the way a real Tothal Shift would for
+      // a new year.
+      function regenerateWildernessLab(chunksPerSide = 1, seedOverride = null) {
+        if (typeof WildernessMapGenerator === 'undefined' || typeof TerrainPreview === 'undefined') {
+          debugLog('[wilderness-lab] generator not loaded', 'warn');
+          return false;
+        }
+        const mapId = 'map_wilderness_lab';
+        const chunkTiles = window.WildernessChunks?.constants?.CHUNK_TILES || 16;
+        const exportScale = 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
+        const side = Math.max(1, Math.min(8, Math.round(Number(chunksPerSide) || 1)));
+        const internalSize = Math.max(4, Math.round((side * chunkTiles) / exportScale));
+        // seedOverride lets a caller (see window.__regenerateWildernessLab from
+        // devtools) regenerate the SAME layout repeatedly instead of a fresh
+        // random one each time -- the only way to tell a real per-cycle
+        // resource leak apart from an ever-growing cache that's simply keyed
+        // on each regenerate's distinct generated content.
+        const seed = seedOverride || `wilderness_lab_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6)}`;
+        let workspace, merged;
+        try {
+          // Reuses map_northern_cliffs' terrain preset/boundary settings so
+          // the lab's terrain is representative of a real zone's generated
+          // plateaus/cliffs rather than the flatter 'custom' default.
+          workspace = WildernessMapGenerator.generateWorkspace(seed, {
+            width: internalSize, height: internalSize,
+            entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
+          });
+          merged = TerrainPreview.buildMergedZoneGrid(workspace, workspace.maps[0].id);
+        } catch (e) {
+          debugLog(`[wilderness-lab] generation failed: ${e.message}`, 'warn');
+          return false;
+        }
+        if (!merged) { debugLog('[wilderness-lab] no fold math available', 'warn'); return false; }
+        _zoneLayouts.set(mapId, {
+          cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
+          transitions: [], toTownExit: workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row } : null,
+          mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+          dens: workspace.animalDens || [], rootTotems: workspace.rootTotems || [],
+          foliagePatches: workspace.foliagePatches || [], wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
+          ambushStations: workspace.ambushStations || [], localeInstances: [],
+        });
+        if (EXTERIOR_ZONES[mapId] && workspace.entry) {
+          EXTERIOR_ZONES[mapId].entryCol = workspace.entry.col;
+          EXTERIOR_ZONES[mapId].entryRow = workspace.entry.row;
+        }
+        window.WildlifeSpawn?.forgetZoneDenState(mapId);
+        window.BanditCamps?.forgetZoneState(mapId);
+        if (currentArea === mapId) _dirtyZoneScenes.add(mapId);
+        else _disposeZoneScene(mapId);
+        debugLog(`[wilderness-lab] generated ${side}x${side} chunk(s) (${merged.cols}x${merged.rows} tiles), seed ${seed}`);
+        return true;
+      }
+      window.__regenerateWildernessLab = regenerateWildernessLab; // Console/QA hook, mirrors window.forceTothalShift.
 
       // Wilderness fog-of-war, discovered-locale tracking, waypoints, and
       // full-screen Map panel rendering now live in
@@ -19411,103 +19502,19 @@
         if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) window.ZoneRegrowth.refreshZoneGroundVisuals(mapId);
       }
 
-      // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
-      // ground/cliff meshes — same emissive-floor treatment as floorMat (see
-      // TILE_EMISSIVE_FLOOR above) so a textured tile doesn't read as a solid
-      // black blob at night/in storms the way an untreated MeshLambertMaterial
-      // would. Unlike loadHousePieceFaceTexture (which bakes its tile size
-      // into each face's own UV, since a furniture part's geometry is built
-      // once for one fixed material), ground meshes get their UV for free
-      // from _mergeTileGeos/the world-space UV added to each standalone
-      // heightfield builder below — plain world-unit (X,Z) coordinates — so
-      // tileSize here just scales texture.repeat instead; that also means
-      // the exact same merged geometry keeps working if the override's
-      // tileSize is ever changed, no geometry rebuild required.
-      // fillColor, when given, recolors the PNG's visible pixels to that
-      // target hex using the same adaptive luminance-preserving shade fill
-      // as portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
-      // loaded before this file) — keeps the texture's own shading/grain
-      // instead of showing the raw PNG albedo untouched.
-      // stretch, when given as [worldWidth, worldHeight], fits the whole PNG
-      // once across that world-unit span instead of tiling it (the preview
-      // tool's "stretch to bounds" mode) — since this ground UV is already
-      // raw world (X,Z) in 1-unit-per-tile units (see the comment above),
-      // that span is simply the map's own tile footprint, so this is just a
-      // texture.repeat change, no geometry/UV rebuild needed. Overrides
-      // tileSize when present.
-      // unlit, when true, builds a MeshBasicMaterial (see unlitFloorMat)
-      // instead of the usual lit MeshLambertMaterial — used for grass so its
-      // textured ground override reads at one consistent brightness like the
-      // base tileMats.grass does, instead of dimming at night/in storms.
-      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor, stretch, unlit) {
-        const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
-        const mat = unlit
-          ? new THREE.MeshBasicMaterial({ color: col })
-          : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
-        new THREE.TextureLoader().load(path, (tex) => {
-          let finalTex = tex;
-          const rgb = fillColor && parseHexColor(fillColor);
-          if (rgb) {
-            const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
-              mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
-            });
-            finalTex = new THREE.CanvasTexture(canvas);
-          }
-          finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
-          if (Array.isArray(stretch) && stretch.length === 2) {
-            finalTex.repeat.set(1 / Math.max(0.05, stretch[0]), 1 / Math.max(0.05, stretch[1]));
-          } else {
-            const ts = Math.max(0.05, tileSize || 1);
-            finalTex.repeat.set(1 / ts, 1 / ts);
-          }
-          mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
-        }, undefined, () => {});
-        return mat;
-      }
-
-      const _mapTileMatCache = new Map(); // "mapId,tileMatsKey" -> THREE.Material
-      window.HobunjiCacheAudit?.register('game.mapTileMatCache', () => _mapTileMatCache.size);
-      function resolveTileMat(mapId, matKey) {
-        const base = tileMats[matKey] || tileMats.grass;
-        // '*' is a wildcard entry — applies to any map with no entry of its own
-        // (every wilderness zone, without having to list each zone's mapId),
-        // overridden by a map-specific entry (town/farm) when one exists.
-        const override = _terrainMaterialConfig.byMap?.[mapId]?.[matKey] || _terrainMaterialConfig.byMap?.['*']?.[matKey];
-        if (!override?.texture) return base;
-        const cacheKey = mapId + ',' + matKey;
-        let mat = _mapTileMatCache.get(cacheKey);
-        if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch, matKey === TileType.GRASS);
-          _mapTileMatCache.set(cacheKey, mat);
-        }
-        return mat;
-      }
-
-      // Steep-cliff "stone skin" overlay material — same role as tileMats.rock
-      // but for the standalone heightfield cliff-face meshes (plateau mesas,
-      // farm/town border terrain — see buildZoneBorderTerrain/buildBorderTerrain/
-      // buildTownBorderTerrain), which never went through tileMats at all
-      // before this. Overridden via the 'cliff' key in terrain-materials.json,
-      // independent of 'rock' so a map can texture ore-bearing rock tiles
-      // differently from its distant cliff faces.
-      const _defaultCliffMat = new THREE.MeshLambertMaterial({
-        color: 0x6a6460, side: THREE.DoubleSide,
-        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+      // loadTerrainTileTexture/resolveTileMat/resolveCliffMat now live in
+      // js/terrain-tile-materials.js — call via window.TerrainTileMaterials.*.
+      // tileMats/TILE_EMISSIVE_FLOOR/_terrainMaterialConfig stay here (used
+      // elsewhere in this file too); threaded in below via init(deps).
+      window.TerrainTileMaterials.init({
+        TILE_EMISSIVE_FLOOR,
+        tileMats,
+        TileType,
+        getTerrainMaterialConfig: () => _terrainMaterialConfig,
       });
-      const _mapCliffMatCache = new Map(); // mapId -> THREE.Material
-      window.HobunjiCacheAudit?.register('game.mapCliffMatCache', () => _mapCliffMatCache.size);
-      function resolveCliffMat(mapId) {
-        const override = _terrainMaterialConfig.byMap?.[mapId]?.cliff || _terrainMaterialConfig.byMap?.['*']?.cliff;
-        if (!override?.texture) return _defaultCliffMat;
-        let mat = _mapCliffMatCache.get(mapId);
-        if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, _defaultCliffMat.color.getHex(), override.tileSize, override.fillColor, override.stretch);
-          mat.side = THREE.DoubleSide;
-          mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
-          _mapCliffMatCache.set(mapId, mat);
-        }
-        return mat;
-      }
+      const loadTerrainTileTexture = window.TerrainTileMaterials.loadTerrainTileTexture;
+      const resolveTileMat = window.TerrainTileMaterials.resolveTileMat;
+      const resolveCliffMat = window.TerrainTileMaterials.resolveCliffMat;
 
       // Fixed per-terrain-type ID colours feeding the same material-ID-seam
       // outline used for furniture (see _markFurnitureEdgeId), generalized to
@@ -19606,7 +19613,7 @@
           float baseAlpha = uDepth;  // opacity = depth fraction exactly
 
           vec3 surfaceColor = mix(uColor, vec3(0.85, 0.96, 1.0), effect * 0.55);
-          float finalAlpha  = window.FormatUtils.clamp(baseAlpha + detailAlpha, 0.0, 0.92);
+          float finalAlpha  = clamp(baseAlpha + detailAlpha, 0.0, 0.92);
 
           gl_FragColor = vec4(surfaceColor, finalAlpha);
         }
@@ -26546,6 +26553,7 @@
         getRainPlaneSettings: window.RainPlanes.getSettings,
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
+        regenerateWildernessLab,
       });
 
       window.MapLivePreviewRuntime?.init({

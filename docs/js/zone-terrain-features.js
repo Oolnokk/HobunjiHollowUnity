@@ -336,7 +336,25 @@
     });
     if (!mesh) return [];
     mesh.userData.wildernessChunkOwnsGeometry = true;
-    mesh.userData.wildernessChunkOwnsMaterial = true;
+    // NOT wildernessChunkOwnsMaterial: deps.buildMergedWaterMesh's material is
+    // water-system.js's module-level mergedWaterMaterial singleton (built once
+    // via _material()'s own if(!mergedWaterMaterial) memoization and reused by
+    // every water mesh in every zone), not something this one chunk owns.
+    // Tagging it here made disposeTaggedChunkObjects (see wilderness-chunks.js)
+    // dispose that SHARED material's map and every texture-valued uniform
+    // (including uWaterTexture) on every single chunk unload -- i.e. on every
+    // ordinary chunk-streaming unload as the player walks away from any water,
+    // not just here. Because _material()'s guard only checks whether the
+    // module-level reference is still non-null (it is -- dispose() doesn't
+    // null it out), the next water mesh build silently reused the same
+    // now-disposed material/texture objects, which three.js then transparently
+    // re-uploads to the GPU -- one more native GPU texture (and recompiled
+    // shader program) leaked per dispose-and-reuse cycle, invisible to every
+    // cache registry since no cache ever grew: the same JS objects were reused
+    // throughout, only their GPU-side resources kept churning. Confirmed via
+    // the new Wilderness Chunk Lab: renderer.info.memory.textures climbed on
+    // nearly every regenerate while every one of HobunjiCacheAudit's
+    // registered caches stayed flat.
     deps.displaceZoneGeometry(mesh.geometry, mapId);
     mesh.geometry.computeVertexNormals();
     console.log(`%c[zone:${mapId}] merged river/stream/waterfall water surface built: ${cells.length} tile(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
