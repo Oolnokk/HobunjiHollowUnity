@@ -11,6 +11,7 @@ const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 
 const camera = read('docs/js/camera-look-clamp.js');
 const motion = read('docs/js/dev-random-ruin-motion-runtime.js');
+const coverage = read('docs/js/dev-random-ruin-runtime-coverage.js');
 const api = read('docs/tools/debris-ifier/debrisifier-v50-api.js');
 const interior = read('docs/js/dev-random-ruin-interior-map.js');
 const hooks = read('docs/js/dev-random-ruin-prototype-hooks.js');
@@ -21,6 +22,7 @@ const loadOrder = [
   'dev-random-ruin-prototype-hooks.js',
   'dev-random-ruin-interior-map.js',
   'dev-random-ruin-motion-runtime.js',
+  'dev-random-ruin-runtime-coverage.js',
 ].map(name => camera.indexOf(name));
 assert(loadOrder.every(index => index >= 0), 'camera bootstrap must load every Random Test Ruin runtime module');
 for (let i = 1; i < loadOrder.length; i++) {
@@ -41,6 +43,11 @@ assert(motion.includes('ridesMovingDais'), 'motion runtime must carry V50 elevat
 assert(motion.includes('pushElevatorBlock'), 'elevator push blocks must be interactable in-game');
 assert(motion.includes('DevRandomRuinPrototypeHooks?.rebuild'), 'recovery ladders must re-enter the ordinary prototype hook pass');
 assert(motion.includes('auditSeeds'), 'game-side motion runtime must expose isolated multi-seed auditing');
+assert(coverage.includes("entry.activatorType === 'alwaysLitTorch'"), 'cross-layer audit must recognize V50 always-lit fuel torches');
+assert(coverage.includes('registeredTorchSources'), 'always-lit audit coverage must be backed by actual Batch 2 torch-source discovery');
+assert(coverage.includes('data.groundedToMovingPlatform && object?.parent'), 'platform-parented displays must be recognized as transform-driven');
+assert(coverage.includes('effectiveUnhandled'), 'cross-layer audit must retain truly unhandled prototype objects');
+assert(coverage.includes('filterSeedAudit'), 'multi-seed audit must reconcile known cross-layer activator classes');
 
 const parts = [];
 for (let i = 1; i <= 9; i++) {
@@ -57,8 +64,10 @@ assert(hitSource.includes('TORCH_BURN_MS = 12000'), 'temporary ruin torch must r
 assert(hitSource.includes('harpoon_fishingmace.png'), 'temporary ruin torch must reuse the fishing-mace sprite');
 assert(hitSource.includes('glyphObelisk'), 'decoded hit runtime must support projectile glyph targets');
 assert(hitSource.includes('brazier'), 'decoded hit runtime must support physical brazier ignition');
+assert(hitSource.includes('alwaysLitTorch'), 'decoded hit runtime must discover V50 always-lit reference torches as fuel sources');
 assert(hitSource.includes('installRanged'), 'decoded hit runtime must install a ranged-projectile seam');
 assert(hitSource.includes('installCombat'), 'decoded hit runtime must install its torch-sweep combat seam');
 new vm.Script(hitSource, { filename: 'dev-random-ruin-hit-puzzles.js' });
+new vm.Script(coverage, { filename: 'dev-random-ruin-runtime-coverage.js' });
 
 console.log('Random Test Ruin integration static audit passed.');
