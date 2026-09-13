@@ -251,6 +251,23 @@
     return integerRoll(rng, num(small.minResidents, 2), num(small.maxResidents, 4));
   }
 
+  // Symmetric counterpart to bandit-camps.js's own porakanekiAvoidPoints:
+  // bandit camps for a zone are normally seeded lazily, well after this
+  // zone's Porakaneki sites already exist, so that side does the real work
+  // for the common ordering. This only matters on the rarer reverse order
+  // (a bandit camp already stamped into this zone before Porakaneki's own
+  // eager world-boot build reaches it) -- same reasoning, just avoiding the
+  // other system's sites instead.
+  function banditCampAvoidPoints(zoneId, minDistance) {
+    if (!(minDistance > 0)) return [];
+    const recs = window.BanditCamps?.campInstances?.get?.(zoneId);
+    if (!recs?.length) return [];
+    return recs.map(rec => {
+      const site = rec?.instance?.site;
+      return site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null;
+    }).filter(Boolean);
+  }
+
   function buildZoneCamps(zoneId, layout) {
     const view = buildZoneView(zoneId, layout);
     if (!view) return null;
@@ -272,6 +289,7 @@
       clearanceTiles: chiefLocaleDef.placement?.clearanceTiles ?? 3,
       requiresFlatGround: chiefLocaleDef.placement?.requiresFlatGround !== false,
       minDistanceFromEntry: chiefLocaleDef.placement?.minDistanceFromEntry ?? 14,
+      avoidPoints: banditCampAvoidPoints(zoneId, chiefLocaleDef.placement?.minDistanceFromBanditCamp ?? 16),
       instanceId: `porakaneki_chief_reservation_${zoneId}`,
     });
     if (zoneState.chiefReservation) state.stamps += 1;
@@ -284,6 +302,7 @@
         clearanceTiles: smallLocaleDef.placement?.clearanceTiles ?? 2,
         requiresFlatGround: smallLocaleDef.placement?.requiresFlatGround !== false,
         minDistanceFromEntry: smallLocaleDef.placement?.minDistanceFromEntry ?? 10,
+        avoidPoints: banditCampAvoidPoints(zoneId, smallLocaleDef.placement?.minDistanceFromBanditCamp ?? 12),
         instanceId: `porakaneki_small_${zoneId}_${i}`,
       });
       if (!instance) continue;

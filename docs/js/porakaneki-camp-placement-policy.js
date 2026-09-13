@@ -56,10 +56,16 @@
     // but permits a camp's individual tents to sit on neighboring elevation
     // tiers instead of deleting the camp entirely on cliff-heavy generations.
     attempts.push({ clearanceTiles: 0, minDistanceFromEntry: Math.min(authoredDistance, 6), requiresFlatGround: false });
+    // Absolute last resort: gives up the bandit-camp keep-away buffer (see
+    // opts.avoidPoints) too. A generation dense enough to fail every attempt
+    // above is rare, but placing a camp too close to a bandit camp is still
+    // better than silently placing fewer camps than the config calls for.
+    if (opts.avoidPoints?.length) attempts.push({ clearanceTiles: 0, minDistanceFromEntry: Math.min(authoredDistance, 6), requiresFlatGround: false, avoidPoints: [] });
     return attempts.filter((attempt, index, all) => all.findIndex(other =>
       other.clearanceTiles === attempt.clearanceTiles &&
       other.minDistanceFromEntry === attempt.minDistanceFromEntry &&
-      other.requiresFlatGround === attempt.requiresFlatGround
+      other.requiresFlatGround === attempt.requiresFlatGround &&
+      JSON.stringify(other.avoidPoints || null) === JSON.stringify(attempt.avoidPoints || null)
     ) === index);
   }
 

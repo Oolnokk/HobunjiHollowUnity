@@ -160,4 +160,74 @@ for (const snapshot of instance.removedObjectSnapshots.slice(0, 12)) {
   assert.equal(liveGrid[snapshot.y][snapshot.x].type, 'grass', 'camp clearing is re-applied after a wilderness grid rebuild/re-entry');
 }
 
+// avoidPoints: a generic minimum-distance-from-arbitrary-points constraint
+// on TemporaryLocales.stamp itself (not Porakaneki-specific -- see its own
+// comment), used by both porakaneki-camps-runtime.js and bandit-camps.js so
+// neither system's camps land right next to the other's regardless of which
+// one claims its site first.
+function makeFlatZone(cols, rows) {
+  const tiles = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({
+    height: 0, water: false, path: false, ramp: false, waterfall: false, terrain: 'grass', occupiedBy: null,
+  })));
+  return { cols, rows, tiles, objects: [], entry: { x: 0, y: 0 } };
+}
+function makeSmallLocale(id = 'locale_test_small') {
+  return {
+    id,
+    tiles: { '0,0': { type: 'grass' }, '2,0': { type: 'grass' }, '0,2': { type: 'grass' }, '2,2': { type: 'grass' } },
+    objects: [],
+    placement: { clearanceTiles: 0, requiresFlatGround: true, minDistanceFromEntry: 0 },
+  };
+}
+
+{
+  const zone = makeFlatZone(20, 20);
+  const locale = makeSmallLocale();
+  const avoidPoints = [{ col: 5, row: 5, minDistance: 6 }];
+  const instance = contextWindow.TemporaryLocales.stamp(zone, locale, {
+    instanceId: 'avoid_points_check',
+    clearableTypes: new Set(),
+    clearanceTiles: 0,
+    requiresFlatGround: true,
+    minDistanceFromEntry: 0,
+    avoidPoints,
+    rng: () => 0.999, // Picks from the end of the shuffled candidate list deterministically.
+  });
+  assert(instance, 'a site still exists plenty far from the single avoided point in an open zone');
+  const cx = instance.site.x + instance.site.w / 2, cy = instance.site.y + instance.site.h / 2;
+  const dist = Math.hypot(cx - avoidPoints[0].col, cy - avoidPoints[0].row);
+  assert(dist >= avoidPoints[0].minDistance, `placed site (dist=${dist}) must respect avoidPoints' minDistance`);
+}
+
+{
+  // A zone small enough that the ONLY fitting site is inside the avoided
+  // radius: campStampAttempts' last-resort attempt must still place the
+  // camp (better than not placing one at all) by dropping avoidPoints,
+  // rather than TemporaryLocales.stamp itself ever bending the rule.
+  const zone = makeFlatZone(4, 4);
+  const locale = makeSmallLocale('porakaneki_tiny_test');
+  const avoidPoints = [{ col: 1, row: 1, minDistance: 20 }];
+  const direct = contextWindow.TemporaryLocales.stamp(zone, locale, {
+    instanceId: 'other_tiny_direct', // Not porakaneki-prefixed: bypasses the wrapped retry chain entirely.
+    clearableTypes: new Set(),
+    clearanceTiles: 0,
+    requiresFlatGround: true,
+    minDistanceFromEntry: 0,
+    avoidPoints,
+    rng: () => 0.5,
+  });
+  assert.equal(direct, null, 'TemporaryLocales.stamp itself never bends avoidPoints on its own');
+
+  const viaPolicy = contextWindow.TemporaryLocales.stamp(zone, locale, {
+    instanceId: 'porakaneki_tiny_via_policy',
+    clearableTypes: new Set(),
+    clearanceTiles: 0,
+    requiresFlatGround: true,
+    minDistanceFromEntry: 0,
+    avoidPoints,
+    rng: () => 0.5,
+  });
+  assert(viaPolicy, 'the porakaneki-prefixed instanceId lets the placement policy fall back to dropping avoidPoints rather than placing nothing');
+}
+
 console.log('Porakaneki dense-wilderness camp placement policy regression passed.');

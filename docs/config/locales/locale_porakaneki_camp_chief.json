@@ -37,6 +37,7 @@
     "clearanceTiles": 3,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 14,
+    "minDistanceFromBanditCamp": 16,
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,

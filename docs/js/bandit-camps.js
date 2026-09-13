@@ -805,10 +805,28 @@
     }
   }
 
+  // Porakaneki camps are placed eagerly for every wilderness zone at world
+  // boot (see PorakanekiCamps.ensureWorldCamps), long before a bandit camp
+  // for that same zone gets seeded here (lazily, only once the player
+  // actually enters it) -- so by the time this runs, any Porakaneki sites
+  // already there are real and worth staying away from. TemporaryLocales'
+  // own overlap check already refuses to stamp literally on top of one
+  // (it's just another locale's carrier object), but with no minimum
+  // separation a bandit camp could still land right next door, sharing a
+  // chunk with a whole camp's worth of Porakaneki residents the moment
+  // either side draws the player into combat.
+  function porakanekiAvoidPoints(zoneId, minDistance) {
+    if (!(minDistance > 0)) return [];
+    const camps = window.PorakanekiCamps?.debugSnapshot?.()?.zones?.[zoneId]?.camps;
+    if (!camps?.length) return [];
+    return camps.filter(camp => camp?.center).map(camp => ({ col: camp.center.col, row: camp.center.row, minDistance }));
+  }
+
   async function spawnBanditCamp(zoneId, localeDef, cfg) {
     const view = _banditZoneView(zoneId);
     if (!view) return null;
     const placement = localeDef.placement || {};
+    const avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
     let instance = null;
     for (const clearance of [placement.clearanceTiles ?? 2, 1, 0]) {
       instance = window.TemporaryLocales.stamp(view, localeDef, {
@@ -817,8 +835,24 @@
         minDistanceFromEntry: placement.minDistanceFromEntry,
         clearableTypes: _BANDIT_CLEARABLE_TYPES,
         rng: deps.rnd,
+        avoidPoints,
       });
       if (instance) break;
+    }
+    // Last resort: give up the Porakaneki buffer rather than silently
+    // placing fewer bandit camps than the zone calls for on a generation
+    // dense enough that nowhere else fits.
+    if (!instance && avoidPoints.length) {
+      for (const clearance of [placement.clearanceTiles ?? 2, 1, 0]) {
+        instance = window.TemporaryLocales.stamp(view, localeDef, {
+          clearanceTiles: clearance,
+          requiresFlatGround: placement.requiresFlatGround !== false,
+          minDistanceFromEntry: placement.minDistanceFromEntry,
+          clearableTypes: _BANDIT_CLEARABLE_TYPES,
+          rng: deps.rnd,
+        });
+        if (instance) break;
+      }
     }
     if (!instance) {
       window.__farmLog?.(`[bandits] zone "${zoneId}": no site fits ${localeDef.id} (fallback: no camp placed here).`, 'wildlife');
