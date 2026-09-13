@@ -246,6 +246,11 @@
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, [deps.resolveTileMat(mapId, deps.TileType.GRASS), deps.resolveTileMat(mapId, deps.TileType.ROCK)]);
     mesh.receiveShadow = true;
+    // Named (unlike a bare default '') so terrain-source scanners that
+    // pattern-match mesh names — e.g. environment-surface-micro-plateau.js's
+    // Western Slope snow scan — actually find a zone's real elevated
+    // plateau/mesa tops, not just its flat per-tile floor mesh.
+    mesh.name = `${mapId}_plateau_mesa_${groupId}`;
     zScene.add(mesh);
     // A plateau's own lid+skin is the primary way the fixed follow camera
     // (see updateCameraPosition) can end up with something tall between

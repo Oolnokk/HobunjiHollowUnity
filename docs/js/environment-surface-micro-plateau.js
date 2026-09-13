@@ -40,6 +40,7 @@
   let lastSliceMs = 0;
   let maxSliceMs = 0;
   let lastReason = 'waiting for active Western Slope scene';
+  let grassHiddenScene = null;
 
   const now = () => globalThis.performance?.now?.() ?? Date.now();
 
@@ -163,6 +164,26 @@
     root.parent?.remove(root);
     root.traverse?.(node => node.geometry?.dispose?.());
     root = null;
+  }
+
+  // Snow caps every walkable land tile, so the decorative grass-blade
+  // billboards underneath (js/zone-grass-billboards.js's per-chunk groups)
+  // would otherwise poke straight up through it. Hides/restores those
+  // groups whole rather than per-tile — cheap, and Western Slope has no
+  // farmland mixed in to make a partial cover look wrong.
+  function setGrassHidden(scene, hidden) {
+    if (!scene?.traverse) return;
+    scene.traverse(node => {
+      const data = node?.userData;
+      if (!data?.isWildernessGrassChunkGroup && !data?.isRichFoliageBillboard) return;
+      if (hidden) {
+        if (data.environmentSurfaceMicroPlateauPrevVisible === undefined) data.environmentSurfaceMicroPlateauPrevVisible = node.visible;
+        node.visible = false;
+      } else if (data.environmentSurfaceMicroPlateauPrevVisible !== undefined) {
+        node.visible = data.environmentSurfaceMicroPlateauPrevVisible;
+        delete data.environmentSurfaceMicroPlateauPrevVisible;
+      }
+    });
   }
 
   function sourceCandidates(scene) {
@@ -470,8 +491,11 @@
     lastSliceMs = elapsed;
     maxSliceMs = Math.max(maxSliceMs, elapsed);
     if (build.chunkIndex >= build.chunks.length) {
+      const scene = build.scene;
       build = null;
       buildCount++;
+      setGrassHidden(scene, true);
+      grassHiddenScene = scene;
       lastReason = `built ${builtTiles} shallow snow tiles in ${builtChunks} chunks; ${sampledTiles} sampled tiles; ${exposedEdges} short edges`;
     } else {
       lastReason = `building snow chunks ${builtChunks}/${totalChunks}`;
@@ -480,6 +504,10 @@
   }
 
   function resetForScene(scene, area) {
+    if (grassHiddenScene) {
+      setGrassHidden(grassHiddenScene, false);
+      grassHiddenScene = null;
+    }
     disposeRoot();
     scan = null;
     build = null;
