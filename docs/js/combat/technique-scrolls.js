@@ -201,16 +201,33 @@
     if (deps?.inventory) itemDeps = { ...itemDeps, ...deps };
     registerItems(deps);
   }
-  function heldScroll() {
+  function manualHeldBagItem() {
+    const held = itemDeps?.getManualHeldItem?.(); // Used to let Inventory Hold select an off-arch bag stack without changing the wheel selection.
+    const key = held?.kind === 'bagItem' ? held.key : null; // Used as the authoritative key for the explicitly held off-arch item.
+    if (!key || !(Number(itemDeps?.inventory?.[key]) > 0)) return null;
+    const def = itemDeps?.ITEM_DEFS?.[key] || {}; // Used to give held-item consumers the same metadata shape as a wheel-selected item.
+    return { ...def, key };
+  }
+  function selectedHeldBagItem() {
+    const manual = manualHeldBagItem(); // Used to give an explicit Inventory Hold selection priority over the item arch.
+    if (manual) return manual;
     if (itemDeps?.getHeldMode?.() != null && itemDeps.getHeldMode() !== 'item') return null;
-    const active = itemDeps?.getActiveInventoryItem?.(); // Used as the authoritative currently selected held inventory entry.
+    return itemDeps?.getActiveInventoryItem?.() || null;
+  }
+  function clearManualHeldBagItem(key) {
+    const held = itemDeps?.getManualHeldItem?.(); // Used to clear the Hold button after its selected stack is consumed away.
+    if (held?.kind === 'bagItem' && held.key === key && !(Number(itemDeps?.inventory?.[key]) > 0)) itemDeps?.setManualHeldItem?.(null);
+  }
+  function heldScroll() {
+    const active = selectedHeldBagItem(); // Used as the authoritative wheel-or-inventory-Hold selected inventory entry.
+    if (!active) return null;
     const tier = Number(active?.techniqueScrollTier || itemDeps?.ITEM_DEFS?.[active?.key]?.techniqueScrollTier) || 0; // Used to recognize registered scrolls after inventory metadata enrichment.
     if (tier < 1 || tier > 3 || !(Number(itemDeps?.inventory?.[active?.key]) > 0)) return null;
     return { key: active.key, tier, def: itemDeps.ITEM_DEFS?.[active.key] || active };
   }
   function heldManual() {
-    if (itemDeps?.getHeldMode?.() != null && itemDeps.getHeldMode() !== 'item') return null;
-    const active = itemDeps?.getActiveInventoryItem?.(); // Used as the authoritative selected manual stack.
+    const active = selectedHeldBagItem(); // Used as the authoritative wheel-or-inventory-Hold selected manual stack.
+    if (!active) return null;
     const abilityId = active?.combatManualAbilityId || itemDeps?.ITEM_DEFS?.[active?.key]?.combatManualAbilityId; // Used to resolve the exact ability this manual teaches.
     const manual = manualForAbility(abilityId);
     if (!manual || manual.key !== active?.key || !(Number(itemDeps?.inventory?.[manual.key]) > 0)) return null;
@@ -234,6 +251,7 @@
     const awardMotes = window.Combat?.deps?.awardMotesOfProwess; // Used as the existing canonical Motes mutation/persistence path.
     if (!held || typeof awardMotes !== 'function') return false;
     itemDeps.inventory[held.key] = Math.max(0, Number(itemDeps.inventory[held.key]) - 1); itemDeps.clampInventoryStack?.(held.key);
+    clearManualHeldBagItem(held.key);
     awardMotes(held.tier);
     const learnedId = rollTechniqueUnlock(held.tier); // Used only after already-learned attacks have been removed from the weighted list.
     const learnedDef = learnedId ? ability(learnedId) : null; // Used for player-facing reward text.
@@ -253,6 +271,7 @@
     }
     itemDeps.inventory[held.key] = Math.max(0, Number(itemDeps.inventory[held.key]) - 1);
     itemDeps.clampInventoryStack?.(held.key);
+    clearManualHeldBagItem(held.key);
     const learned = unlockAbility(held.abilityId, held.label); // Used as the same authoritative persisted unlock path as Technique Scroll discoveries.
     if (!learned) return false;
     itemDeps.showToast?.(`📕 Read ${held.label}. Learned ${ability(held.abilityId)?.label || held.abilityId}!`, true);
@@ -386,7 +405,7 @@
 
   patchLoadout(); patchCaptains(window.BanditCamps); patchBounties(window.BountyBoard);
   futureGlobal('HobunjiDrunkGameplayBridge', patchHeldActions);
-  hookItemInit('CookingSystem'); hookItemInit('FarmCrates');
+  hookItemInit('CookingSystem'); hookItemInit('FarmCrates'); hookItemInit('EquipmentPanel');
   document.addEventListener('hobunjiPlayerReady', e => loadUnlocks(e.detail));
   if (window.__hobunjiPlayerProfile) loadUnlocks(window.__hobunjiPlayerProfile);
   document.addEventListener('DOMContentLoaded', () => {
@@ -401,7 +420,7 @@
     getUnlockedTechniqueIds: () => [...unlocked].sort(),
     getDebug() {
       const all = allTechniques(); // Used to expose learned/locked state and scroll inventory through existing mobile debug inspection.
-      return { ready: !!itemDeps, unlocked: [...unlocked].sort(), locked: all.filter(def => !unlocked.has(def.id)).map(def => ({ id: def.id, label: def.label, category: def.category })), manuals: allManuals().map(manual => ({ ...manual, count: Number(itemDeps?.inventory?.[manual.key]) || 0, learned: unlocked.has(manual.abilityId) })), scrollCounts: Object.fromEntries(Object.entries(SCROLLS).map(([tier, s]) => [tier, Number(itemDeps?.inventory?.[s.key]) || 0])), lastEvent: lastEvent && { ...lastEvent } };
+      return { ready: !!itemDeps, manualHeldItem: itemDeps?.getManualHeldItem?.() || null, resolvedHeldBagKey: selectedHeldBagItem()?.key || null, unlocked: [...unlocked].sort(), locked: all.filter(def => !unlocked.has(def.id)).map(def => ({ id: def.id, label: def.label, category: def.category })), manuals: allManuals().map(manual => ({ ...manual, count: Number(itemDeps?.inventory?.[manual.key]) || 0, learned: unlocked.has(manual.abilityId) })), scrollCounts: Object.fromEntries(Object.entries(SCROLLS).map(([tier, s]) => [tier, Number(itemDeps?.inventory?.[s.key]) || 0])), lastEvent: lastEvent && { ...lastEvent } };
     },
     devGrantScroll(tier) { return window.Combat?.deps?.isDevMode?.() ? !!grantScroll(tier, 'Dev debug') : false; },
   };

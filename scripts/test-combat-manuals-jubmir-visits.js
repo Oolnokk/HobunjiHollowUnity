@@ -17,7 +17,9 @@ const abilityDefs = [
 ]; // Mirrors every currently registered slottable combat technique.
 
 const abilities = new Map(abilityDefs.map(([id, label, category]) => [id, { id, label, category }]));
-let activeItem = null; // Used to simulate selecting a specific manual in the held-item UI.
+let activeItem = null; // Used to simulate selecting a specific manual in the item arch.
+let heldMode = 'item'; // Used to prove an Inventory Hold selection works even when the item arch is not the active held mode.
+let manualHeldItem = null; // Used to simulate game.js's off-arch Inventory Hold selector.
 const inventory = { gold: 999 };
 const itemDefs = {};
 const inventoryItems = [];
@@ -38,6 +40,7 @@ const windowStub = {
     deps: { awardMotesOfProwess: noop, currentWeaponKey: () => 'bronzesword' },
   },
   CookingSystem: { init: noop },
+  EquipmentPanel: { init: noop },
   HobunjiDrunkGameplayBridge: { getHeldItemAction: () => null, beginHeldItemAction: () => false },
   dispatchEvent: noop,
 };
@@ -50,9 +53,14 @@ const techniqueContext = vm.createContext({
 vm.runInContext(fs.readFileSync('docs/js/combat/technique-scrolls.js', 'utf8'), techniqueContext, { filename: 'technique-scrolls.js' });
 windowStub.CookingSystem.init({
   inventory, ITEM_DEFS: itemDefs, inventoryItems,
-  getHeldMode: () => 'item', getActiveInventoryItem: () => activeItem,
+  getHeldMode: () => heldMode, getActiveInventoryItem: () => activeItem,
   clampInventoryStack: noop, refreshItemScroll: noop, buildInventoryGrid: noop,
   refreshActionBar: noop, saveMemberWorldData: noop, showToast: noop,
+});
+windowStub.EquipmentPanel.init({
+  inventory,
+  getManualHeldItem: () => manualHeldItem,
+  setManualHeldItem: value => { manualHeldItem = value; },
 });
 
 const manuals = windowStub.TechniqueScrolls.allManuals();
@@ -65,10 +73,25 @@ const targetManual = windowStub.TechniqueScrolls.manualForAbility('blinkDodge');
 inventory[targetManual.key] = 1;
 activeItem = itemDefs[targetManual.key];
 activeItem.key = targetManual.key;
-assert.equal(windowStub.TechniqueScrolls.consumeManual(), true, 'reading a manual succeeds');
+assert.equal(windowStub.TechniqueScrolls.consumeManual(), true, 'reading a wheel-selected manual succeeds');
 assert.equal(inventory[targetManual.key], 0, 'reading consumes one manual');
 assert.equal(windowStub.TechniqueScrolls.isUnlocked('blinkDodge'), true, 'reading unlocks the exact ability');
 assert.equal(windowStub.TechniqueScrolls.consumeManual(), false, 'an empty manual stack cannot be read again');
+
+const heldManual = windowStub.TechniqueScrolls.manualForAbility('counterShield');
+inventory[heldManual.key] = 1;
+activeItem = null;
+heldMode = 'tool';
+manualHeldItem = { kind: 'bagItem', key: heldManual.key };
+const heldAction = windowStub.HobunjiDrunkGameplayBridge.getHeldItemAction(); // Used to exercise the same Item Action path the game uses after pressing Hold in Inventory.
+assert.equal(heldAction?.action, 'consume_held_item', 'Inventory Hold exposes the combat manual Item Action while the item arch is inactive');
+assert.match(heldAction?.label || '', /Read Counter Shield Combat Manual/, 'Inventory Hold resolves the exact off-arch manual');
+assert.equal(windowStub.TechniqueScrolls.getDebug().resolvedHeldBagKey, heldManual.key, 'mobile debug reports the manually held off-arch stack');
+assert.equal(windowStub.HobunjiDrunkGameplayBridge.beginHeldItemAction(), true, 'Item Action reads a manual selected through Inventory Hold');
+assert.equal(inventory[heldManual.key], 0, 'reading a held off-arch manual consumes one manual');
+assert.equal(windowStub.TechniqueScrolls.isUnlocked('counterShield'), true, 'the held off-arch manual unlocks its exact ability');
+assert.equal(manualHeldItem, null, 'consuming the last manually held copy clears the Hold selector');
+heldMode = 'item';
 
 const lootConfig = JSON.parse(fs.readFileSync('docs/config/loot/loot-pools.json', 'utf8'));
 const manualLoot = lootConfig.pools.treasureChest.entries.find(entry => entry.id === 'combatManual');
