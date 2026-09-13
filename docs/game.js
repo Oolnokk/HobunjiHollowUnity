@@ -26065,6 +26065,21 @@
         xAxis: _xAxis,
         zAxis: _zAxis,
         getCurrentArea: () => currentArea,
+        // PorakanekiCamps captures this same deps bundle (see its
+        // installBanditCombat) and needs these to ever build zone/chief
+        // camp state at all -- without zoneLayouts, ensureZoneState can
+        // never find a wilderness map to stamp a camp into, so the whole
+        // camp network (including the always-visible chief marker) silently
+        // never populates.
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        TileType,
+        WATERWAY_TYPES,
+        EXTERIOR_ZONES,
+        markOutline: _markOutline,
+        showToast,
+        player,
+        calendar,
       });
 
       window.CreatureGenetics?.init({ clamp: window.FormatUtils.clamp, CREATURE_DB });
@@ -26949,6 +26964,13 @@
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         TILE,
         angleDiff,
+        showToast,
+      });
+
+      window.WildernessAiSnapshot?.init({
+        npcWalkers,
+        hostileObjects,
+        TILE,
         showToast,
       });
 

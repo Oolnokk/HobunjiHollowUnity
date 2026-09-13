@@ -312,6 +312,7 @@
     "clearanceTiles": 2,
     "requiresFlatGround": true,
     "minDistanceFromEntry": 6,
+    "minDistanceFromPorakanekiCamp": 12,
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,

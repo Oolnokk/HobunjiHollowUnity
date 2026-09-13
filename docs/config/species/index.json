@@ -16,6 +16,11 @@
       "path": "./harlyao.json"
     },
     {
+      "speciesId": "porakaneki",
+      "label": "Porakaneki",
+      "path": "./porakaneki.json"
+    },
+    {
       "speciesId": "tletingan",
       "label": "Tletingan",
       "path": "./tletingan.json"

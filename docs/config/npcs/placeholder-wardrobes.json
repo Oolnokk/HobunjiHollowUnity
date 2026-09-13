@@ -9,10 +9,10 @@
   "assignments": {
     "aliri_ginju": { "area": "map_i_ginju_farmstead", "furnitureId": "f_ginju_chest", "itemKey": "chestFurniture", "reason": "home:home" },
     "binding_hatayap": { "area": "map_i_unumanuk_household", "furnitureId": "f_unmh_chest1", "itemKey": "chestFurniture", "reason": "home:home" },
-    "bird_bone": { "area": "map_i_temple", "furnitureId": "fmqfjv69rtvht", "itemKey": "candleTableFurniture", "reason": "schedule:attending the Spirit Counsel station_temple_counsel_ring_5" },
+    "bird_bone": { "area": "map_i_temple", "furnitureId": "fmtr6f8zy0ins", "itemKey": "tableLongFurniture", "reason": "schedule:attending the Spirit Counsel station_temple_counsel_ring_5" },
     "dzahiri_khibu": { "area": "map_i_carpenters", "furnitureId": "f_car_chest", "itemKey": "chestFurniture", "reason": "home:home" },
     "dzibim_khibu": { "area": "map_i_carpenters", "furnitureId": "f_car_stool_dzibim", "itemKey": "stoolFurniture", "reason": "home:home" },
-    "father_hunundi_hodu": { "area": "map_i_temple", "furnitureId": "fmqfjm09vbvsl", "itemKey": "benchFurniture", "reason": "home:home" },
+    "father_hunundi_hodu": { "area": "map_i_temple", "furnitureId": "fmqfjv69rtvht", "itemKey": "candleTableFurniture", "reason": "home:home" },
     "foroji_funji": { "area": "map_i_general_store", "furnitureId": "fmqfm0z7jep8i", "itemKey": "dresserFurniture", "reason": "home:home" },
     "furunji_funji": { "area": "map_i_general_store", "furnitureId": "fmqk10h7g0bzj", "itemKey": "tableSmallFurniture", "reason": "home:home" },
     "gantami_ginju": { "area": "map_i_ginju_farmstead", "furnitureId": "f_ginju_dresser", "itemKey": "dresserFurniture", "reason": "home:home" },
