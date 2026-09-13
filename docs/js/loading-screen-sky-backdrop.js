@@ -434,13 +434,13 @@
       const canvas = document.createElement('canvas');
       canvas.id = 'hlsSkyBackdrop';
       canvas.setAttribute('aria-hidden', 'true');
-      Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+      Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', zIndex: '0', pointerEvents: 'none' });
       root.insertBefore(canvas, root.firstChild);
       state.canvas = canvas;
       state.context = canvas.getContext('2d', { alpha: false });
       const debug = document.createElement('pre');
       debug.id = 'hlsSkyDebug';
-      Object.assign(debug.style, { display: 'none', position: 'absolute', left: 'max(4vw,24px)', bottom: 'max(9vh,58px)', maxWidth: 'min(76vw,420px)', margin: '0', padding: '8px 10px', border: '1px solid rgba(255,255,255,.28)', borderRadius: '7px', background: 'rgba(0,0,0,.78)', color: '#dcecff', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap', pointerEvents: 'none' });
+      Object.assign(debug.style, { display: 'none', position: 'absolute', left: 'max(4vw,24px)', bottom: 'max(9vh,58px)', maxWidth: 'min(76vw,420px)', margin: '0', padding: '8px 10px', border: '1px solid rgba(255,255,255,.28)', borderRadius: '7px', background: 'rgba(0,0,0,.78)', color: '#dcecff', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap', pointerEvents: 'none', zIndex: '2' });
       root.appendChild(debug);
       state.debug = debug;
     }
