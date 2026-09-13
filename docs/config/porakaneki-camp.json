@@ -1,0 +1,77 @@
+{
+  "schema": "hobunji_porakaneki_camp.v3",
+  "wildernessZones": [
+    "map_northern_cliffs",
+    "map_southern_cloud_forest",
+    "map_western_slope",
+    "map_eastern_mire"
+  ],
+  "smallCamps": {
+    "localeId": "locale_porakaneki_camp_small",
+    "minPerZone": 2,
+    "maxPerZone": 4,
+    "minResidents": 2,
+    "maxResidents": 4,
+    "notes": "Each wilderness generation rolls 2-4 persistent little camps independently on every wilderness map. These camps contain procedural Porakaneki only and do not migrate with the chief."
+  },
+  "chiefCamp": {
+    "localeId": "locale_porakaneki_camp_chief",
+    "generatedResidents": 6,
+    "notes": "Exactly one large chief camp is active worldwide. Its site changes wilderness map whenever the regional season changes; inactive maps retain only an internal placement reservation so their little camps never need to be reshuffled.",
+    "seasonZoneMap": {
+      "Stormtide": "map_southern_cloud_forest",
+      "Deadgrass": "map_western_slope",
+      "Longpour": "map_eastern_mire",
+      "Coldmuck": "map_northern_cliffs"
+    }
+  },
+  "schedule": {
+    "sleepStartHour": 22,
+    "wakeHour": 6
+  },
+  "equipment": {
+    "weaponShapes": ["fishingspear", "hatchet", "daggerSword"],
+    "weaponMetalKey": "nativeCopper"
+  },
+  "behavior": {
+    "fullSimulationChunkTiles": 10,
+    "offChunkTickSeconds": 4,
+    "decisionMinSeconds": 4,
+    "decisionMaxSeconds": 11,
+    "travelSpeedTilesPerSecond": 1.05,
+    "huntRadiusMinTiles": 7,
+    "huntRadiusMaxTiles": 22,
+    "localWanderRadiusTiles": 7,
+    "campSocialRadiusTiles": 8,
+    "stimulusInterestRadiusTiles": 12,
+    "activityWeights": {
+      "hunt": 0.52,
+      "wander": 0.24,
+      "socialize": 0.16,
+      "camp": 0.08
+    }
+  },
+  "reputation": {
+    "npcId": "porakaneki_chief",
+    "initialFavor": -3,
+    "minimumFavor": -5,
+    "maximumFavor": 10,
+    "attackOnSightFavor": -5,
+    "greetingFavorThreshold": 1,
+    "greetingRadiusTiles": 3,
+    "killPenalty": -1,
+    "damageAttributionRadiusTiles": 14,
+    "initializationMemoryEvent": "porakaneki_faction_initialized",
+    "warningRadiusTiles": 10,
+    "warningStaySeconds": 10,
+    "initialWarnings": [
+      "Go way. No want trouble",
+      "This our spot, not yours. Leave.",
+      "No want fight. Go way."
+    ],
+    "escalationWarnings": [
+      "Leave or we fight!",
+      "We said go way. Go way. Now!"
+    ]
+  }
+}

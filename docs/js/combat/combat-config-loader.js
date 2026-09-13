@@ -109,6 +109,7 @@
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
     ['js/combat/enemy-weapon-stances.js?v=20260903a', () => !!window.EnemyWeaponStances],
     ['js/combat/ranged-weapon-archetypes.js?v=20260910controller1', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 2],
+    ['js/combat/porakaneki-dagger-ranged.js?v=20260912a', () => Number(window.HobunjiPorakanekiDaggerRanged?.version) >= 1],
     ['js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 2],
     ['js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 7],
     ['js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],

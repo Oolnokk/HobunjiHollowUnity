@@ -1,0 +1,46 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_porakaneki_camp_chief",
+  "name": "Porakaneki Chief Camp",
+  "category": "porakaneki_chief_camp",
+  "singleton": true,
+  "description": "The large seasonal Porakaneki camp. The named chief lives here with a larger procedural population; the camp migrates between wilderness maps when the regional season changes.",
+  "tags": ["porakaneki", "camp", "chief", "seasonal", "migrating", "neutral"],
+  "cols": 13,
+  "rows": 11,
+  "tiles": {
+    "0,0":{"type":"grass"},
+    "12,0":{"type":"grass"},
+    "0,10":{"type":"grass"},
+    "12,10":{"type":"grass"},
+    "6,5":{"type":"grass"}
+  },
+  "objects": [
+    {"id":"obj_tent_1","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":1,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_2","kind":"tent","key":"tent","label":"Porakaneki Tent","col":5,"row":1,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_3","kind":"tent","key":"tent","label":"Porakaneki Tent","col":9,"row":1,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_4","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":5,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_5","kind":"tent","key":"tent","label":"Porakaneki Tent","col":9,"row":5,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_6","kind":"tent","key":"tent","label":"Porakaneki Tent","col":1,"row":8,"w":2,"h":2,"rot":0},
+    {"id":"obj_tent_7","kind":"tent","key":"tent","label":"Porakaneki Chief Tent","col":9,"row":8,"w":2,"h":2,"rot":0},
+    {"id":"obj_campfire","kind":"decor","key":"campfire","label":"Porakaneki Council Fire","col":6,"row":5,"w":1,"h":1,"rot":0},
+    {"id":"obj_crate_1","kind":"decor","key":"crateStack","label":"Hunting Supplies","col":5,"row":8,"w":1,"h":1,"rot":0},
+    {"id":"obj_crate_2","kind":"decor","key":"crateStack","label":"Hunting Supplies","col":7,"row":8,"w":1,"h":1,"rot":0},
+    {"id":"obj_crate_3","kind":"decor","key":"crateStack","label":"Camp Stores","col":6,"row":9,"w":1,"h":1,"rot":0}
+  ],
+  "npcAnchors": [],
+  "connectors": [],
+  "placement": {
+    "mode": "temporary",
+    "maxInstances": 1,
+    "allowedZones": ["map_northern_cliffs", "map_southern_cloud_forest", "map_western_slope", "map_eastern_mire"],
+    "clearanceTiles": 3,
+    "requiresFlatGround": true,
+    "minDistanceFromEntry": 14,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "PorakanekiCamps reserves one valid chief-camp site in each wilderness generation, but activates/renders exactly one of them according to CalendarSystem.currentSeason()."
+  },
+  "meta": {"authoring":"seasonal runtime chief camp","populationFromTents":true,"namedNpc":"porakaneki_chief"}
+}

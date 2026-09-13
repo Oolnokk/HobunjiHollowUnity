@@ -1,0 +1,205 @@
+{
+  "speciesId": "porakaneki",
+  "label": "Porakaneki",
+  "parentSpecies": "kenkari",
+  "npcOnly": true,
+  "playerSelectable": false,
+  "genders": [
+    "male"
+  ],
+  "inheritanceNotes": {
+    "transformSpecies": "kenkari",
+    "wardrobeSpecies": "kenkari",
+    "bodyColorSpecies": "kenkari",
+    "handSpecies": "mashtzarr",
+    "footSpecies": "engh-sho",
+    "hairSpecies": "tletingan",
+    "appearanceCosmetics": true,
+    "customPortraitLayers": [
+      "head",
+      "headUntinted",
+      "torso"
+    ]
+  },
+  "male": {
+    "headSprite": "fightersprites/kenkari-m/head_porakaneki_m.png",
+    "headUrLayers": [
+      {
+        "url": "fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki.png"
+      }
+    ],
+    "headXform": {
+      "ax": 0,
+      "ay": 0,
+      "sx": 1,
+      "sy": 1
+    },
+    "allowedCosmetics": [
+      "appearance::Kenkari_M::kenk_eyedisks",
+      "appearance::Tletingan_M::tl_forwardtuft_long",
+      "appearance::Tletingan_M::tl_forwardtuft_short",
+      "appearance::Tletingan_M::tl_longponytail",
+      "appearance::Tletingan_M::tl_splayedknot",
+      "appearance::Tletingan_M::tl_wildbeard",
+      "appearance::Tletingan_M::tl_braid-L",
+      "appearance::Tletingan_M::tl_braid-R",
+      "appearance::Tletingan_M::tl_braidcluster-R",
+      "appearance::hat::basic_headband",
+      "appearance::hat::leather_headband",
+      "appearance::Kenkari_M::kenk_bowlkasa",
+      "fine_hood",
+      "tankan_tunic",
+      "bandolier1",
+      "tankan_bodywrap",
+      "rugged_poncho",
+      "fine_poncho"
+    ],
+    "forcedCosmetics": {
+      "eyes": "kenk_eyedisks"
+    },
+    "cosmeticWeights": {
+      "hat": {
+        "none": 30,
+        "basic_headband": 30,
+        "kenk_bowlkasa": 40
+      },
+      "hood": {
+        "none": 80,
+        "fine_hood": 20
+      },
+      "hairFront": {
+        "none": 10,
+        "forwardtuft_long": 45,
+        "forwardtuft_short": 45
+      },
+      "facialHair": {
+        "none": 65,
+        "wildbeard": 35
+      },
+      "hairBack": {
+        "none": 50,
+        "longponytail": 25,
+        "splayedknot": 25
+      },
+      "hairSide": {
+        "none": 60,
+        "braid-R": 20,
+        "braidcluster-R": 20
+      },
+      "hairSideL": {
+        "none": 60,
+        "braid-L": 40
+      }
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_kenk_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_porakaneki_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_kenk_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    },
+    "randomizationRules": {
+      "brightnessContrastAB": {
+        "medium": {
+          "min": -0.17,
+          "max": 0.08
+        },
+        "bright": {
+          "min": 0.1,
+          "max": 0.33
+        }
+      },
+      "hatHideRules": {
+        "basic_headband": {
+          "hideSlots": []
+        },
+        "leather_headband": {
+          "hideSlots": []
+        },
+        "kenk_bowlkasa": {
+          "hideSlots": [
+            "hairFront",
+            "hairBack",
+            "hairSide",
+            "hairSideL"
+          ]
+        }
+      },
+      "clothingColors": {
+        "syncAcrossPieces": false,
+        "range": {
+          "minH": -40,
+          "maxH": 65,
+          "stops": [
+            {
+              "h": -40,
+              "sMin": -0.85,
+              "sMax": -0.35,
+              "vMin": -0.82,
+              "vMax": -0.22
+            },
+            {
+              "h": 10,
+              "sMin": -0.8,
+              "sMax": -0.25,
+              "vMin": -0.87,
+              "vMax": -0.27
+            },
+            {
+              "h": 65,
+              "sMin": -0.7,
+              "sMax": -0.2,
+              "vMin": -0.77,
+              "vMax": -0.17
+            }
+          ]
+        }
+      }
+    }
+  }
+}

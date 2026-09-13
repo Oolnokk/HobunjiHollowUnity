@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_npc_species_overrides.v1",
-  "note": "Small reviewed corrections for named NPCs whose authoritative species is a creature rather than a humanoid portrait species. Entries may also carry an authored Character Studio avatarExport; composition applies that export as the NPC's repo-default appearance/equipment/dyes while retaining the species correction. Applied after either repo or local NPC database load; legacy chathead ID mappings remain fallback-only for older data.",
+  "note": "Small reviewed corrections for named NPCs whose authoritative species differs from stale/generated NPC-database data. Entries may also carry an authored Character Studio avatarExport; composition applies that export as the NPC's repo-default appearance/equipment/dyes while retaining the species correction. Applied after either repo or local NPC database load; legacy chathead ID mappings remain fallback-only for older data.",
   "npcs": {
     "banubu": {
       "species": "grehlr",
@@ -133,6 +133,18 @@
         },
         "equippedCosmetics": [],
         "appliedDyes": {}
+      }
+    },
+    "porakaneki_chief": {
+      "species": "porakaneki",
+      "avatarExport": {
+        "schema": "npc_avatar_editor_export.v1",
+        "source": "character-studio",
+        "name": "Porakaneki Chief",
+        "appearance": {
+          "speciesId": "porakaneki",
+          "gender": "male"
+        }
       }
     }
   }

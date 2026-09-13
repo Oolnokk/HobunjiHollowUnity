@@ -5,8 +5,20 @@ on:
     paths:
       - 'docs/config/character-rig-scale-defaults.js'
       - 'docs/config/harlyao-night-march.json'
+      - 'docs/config/porakaneki-camp.json'
+      - 'docs/config/locales/index.json'
+      - 'docs/config/locales/locale_porakaneki_camp_small.json'
+      - 'docs/config/locales/locale_porakaneki_camp_chief.json'
+      - 'docs/config/npcs/species-overrides.json'
       - 'docs/config/species/harlyao.json'
+      - 'docs/config/species/porakaneki.json'
       - 'docs/config/species/index.json'
+      - 'docs/assets/fightersprites/kenkari-m/head_porakaneki_m.png'
+      - 'docs/assets/fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki.png'
+      - 'docs/assets/fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki_blink.png'
+      - 'docs/assets/portraitsprites/torso_porakaneki_m.png'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/combat/porakaneki-dagger-ranged.js'
       - 'docs/js/ghostify.js'
       - 'docs/js/harlyao-night-march-atmosphere.js'
       - 'docs/js/harlyao-night-march-beacon.js'
@@ -15,9 +27,14 @@ on:
       - 'docs/js/harlyao-night-march-pixel-probe.js'
       - 'docs/js/harlyao-night-march-runtime.js'
       - 'docs/js/harlyao-species-runtime.js'
+      - 'docs/js/porakaneki-camp-placement-policy.js'
+      - 'docs/js/porakaneki-camps-runtime.js'
+      - 'docs/js/porakaneki-map-markers.js'
+      - 'docs/js/porakaneki-species-runtime.js'
       - 'docs/js/harlyao-terror.js'
       - 'docs/js/house-pieces.js'
       - 'docs/js/maoao-arm-tint-runtime.js'
+      - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/perp-rotation.js'
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
@@ -30,6 +47,10 @@ on:
       - 'scripts/test-harlyao-terror.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
       - 'scripts/test-npc-facing-deadzone.js'
+      - 'scripts/test-porakaneki-camp.js'
+      - 'scripts/test-porakaneki-camp-placement-policy.js'
+      - 'scripts/test-porakaneki-map-markers.js'
+      - 'scripts/test-porakaneki-species.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-shoulder-camera-reset-button.js'
       - '.github/workflows/character-presentation-regression.yml'
@@ -44,6 +65,14 @@ jobs:
           node-version: '22'
       - name: Harlyao species regression
         run: node scripts/test-harlyao-species.js
+      - name: Porakaneki species regression
+        run: node scripts/test-porakaneki-species.js
+      - name: Porakaneki camp regression
+        run: node scripts/test-porakaneki-camp.js
+      - name: Porakaneki dense-wilderness camp placement regression
+        run: node scripts/test-porakaneki-camp-placement-policy.js
+      - name: Porakaneki map marker regression
+        run: node scripts/test-porakaneki-map-markers.js
       - name: Harlyao night march regression
         run: node scripts/test-harlyao-night-march.js
       - name: Harlyao night march beacon regression
