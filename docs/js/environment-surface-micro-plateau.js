@@ -23,7 +23,14 @@
   const WESTERN_SLOPE_ID = 'map_western_slope';
   const PLATEAU_UNIT = 2.5;
   const SURFACE_THICKNESS = 2.00;
-  const TOP_CLEARANCE = 0.018;
+  // How far the cap's top surface sits above the true tile height. Doubles
+  // as the visual "sink" depth: the player and every creature are still
+  // positioned at the real, unmodified ground height everywhere else in the
+  // game (this module never touches collision/movement/pathing), so raising
+  // this simply buries their feet/lower legs under the raised snow surface
+  // by this same amount — a real person, and every animal, standing in deep
+  // snow, rather than a thin coat of white paint on flat pavement.
+  const SURFACE_DEPTH = 0.22;
   const EDGE_WIDTH = 0.075;
   const EDGE_SEGMENTS = 4;
   const CHUNK_TILES = 16; // Output mesh partitioning only (frustum culling), applied after the whole zone is stretch-mapped as one connected surface below — never affects texture continuity.
@@ -245,15 +252,15 @@
     const type = String(tile?.type || 'grass').toLowerCase();
     let corners;
     if (type !== 'ramp') {
-      const top = logicalSurfaceY(tile) + TOP_CLEARANCE;
+      const top = logicalSurfaceY(tile) + SURFACE_DEPTH;
       corners = [top, top, top, top];
     } else {
       const fallback = logicalSurfaceY(tile);
       corners = [
-        rampCornerY(state.grid, col, row, fallback) + TOP_CLEARANCE,
-        rampCornerY(state.grid, col + 1, row, fallback) + TOP_CLEARANCE,
-        rampCornerY(state.grid, col, row + 1, fallback) + TOP_CLEARANCE,
-        rampCornerY(state.grid, col + 1, row + 1, fallback) + TOP_CLEARANCE,
+        rampCornerY(state.grid, col, row, fallback) + SURFACE_DEPTH,
+        rampCornerY(state.grid, col + 1, row, fallback) + SURFACE_DEPTH,
+        rampCornerY(state.grid, col, row + 1, fallback) + SURFACE_DEPTH,
+        rampCornerY(state.grid, col + 1, row + 1, fallback) + SURFACE_DEPTH,
       ];
     }
     state.topCache[cacheKey] = corners;

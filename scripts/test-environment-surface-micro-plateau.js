@@ -6,7 +6,7 @@ const assert = require('assert');
 const source = fs.readFileSync('docs/js/environment-surface-micro-plateau.js', 'utf8');
 
 assert.match(source, /const SURFACE_THICKNESS = /, 'surface depth must stay a single tunable constant shared by snow and slush');
-assert.match(source, /TOP_CLEARANCE = 0\.018/, 'clean cap must clear the tile\'s own surface without becoming a tall second plateau');
+assert.match(source, /const SURFACE_DEPTH = /, 'cap must sit a deliberate, tunable depth above the tile\'s own surface, not an arbitrary anti-z-fighting sliver');
 assert.match(source, /return LAND_TYPES\.has\(type\) && !WATER_TYPES\.has\(type\)/, 'plateau-owned skipFloor tiles must still receive coverage');
 assert.doesNotMatch(source, /!tile\?\.skipFloor/, 'skipFloor must never suppress plateau/ramp coverage');
 assert.doesNotMatch(source, /sourceCandidates|prepareSource|sampleTriangle|processScanSlice|SCAN_BUDGET_MS|SCAN_TRIANGLES_PER_SLICE/, 'must not scan rendered terrain mesh triangles at all — height comes directly from grid data');
