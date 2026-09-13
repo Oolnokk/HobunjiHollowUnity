@@ -19,7 +19,7 @@ assert.match(source, /pixel-probe\.js\?v=\$\{CACHE_KEY\}/, 'Pixel Probe must byp
 assert.match(source, /LEGACY snow=/, 'bottom-left status must make legacy-runtime state explicit');
 assert.match(source, /tiles=/, 'bottom-left status must expose built tile count');
 assert.match(source, /lastBuild=/, 'bottom-left status must expose the synchronous build time');
-assert.match(micro, /tile-driven-shallow-plateau-v3/, 'replacement renderer must advertise direct-grid-height plateau geometry');
+assert.match(micro, /root\.userData\.environmentSurfaceMode = mode/, 'replacement renderer must advertise which mode (snow/slush) it built');
 assert.match(micro, /CHUNK_TILES = 16/, 'replacement output must be chunked');
 assert.match(probe, /Environment surface:/, 'Pixel Probe adapter must append an environment surface diagnostic line');
 assert.match(probe, /builtTiles/, 'Pixel Probe must expose built tile count');

@@ -3,20 +3,16 @@
 
   if (typeof window === 'undefined' || window.EnvironmentSurfaceMicroPlateau?.installed) return;
 
-  // v3 drops the v2 prototype's whole approach: instead of scanning every
-  // candidate terrain mesh's triangles frame-by-frame to reverse-engineer
-  // each tile's real height (slow on a real zone's hundreds of sources, and
-  // blind to any terrain mesh it failed to pattern-match, like the actual
-  // plateau mesa tops), this reads tile height directly from the same grid
-  // data — tile.elevTier/rampElevation — the zone's own terrain builders
-  // (js/zone-plateau-mesa.js's buildPlateauMesa, the regular floor mesh)
-  // already use. That makes the snow height correct by construction for
-  // every tile, and the whole zone can be built in one synchronous pass on
-  // entry, exactly like those builders already do without a performance
-  // problem — no incremental scan/build state machine needed.
+  // v4 generalizes v3's direct-grid-height snow renderer to also cover
+  // seasonal Coldmuck slush on every other outdoor zone — the same
+  // mechanism (tile height read straight from grid data, one synchronous
+  // whole-zone build, connected-surface stretch mapping, grass hidden
+  // underneath), just a different material. This replaces
+  // environment-surface-runtime.js's old triangle-scanning job-queue slush
+  // system entirely, the same way v3 already replaced its snow job.
   const WESTERN_SLOPE_ID = 'map_western_slope';
   const PLATEAU_UNIT = 2.5;
-  const SNOW_THICKNESS = 2.00;
+  const SURFACE_THICKNESS = 2.00;
   const TOP_CLEARANCE = 0.018;
   const EDGE_WIDTH = 0.075;
   const EDGE_SEGMENTS = 4;
@@ -25,13 +21,19 @@
   const WATER_TYPES = new Set(['water', 'river', 'stream', 'waterfall']);
   const LOGICAL_OFFSETS = Object.freeze({ trench: -0.5, raised: 0.5 });
 
+  const MODE_PRESETS = Object.freeze({
+    snow: Object.freeze({ color: 0xffffff, opacity: 1, transparent: false, textured: true, depthWrite: true }),
+    slush: Object.freeze({ color: 0x000000, opacity: 0.22, transparent: true, textured: false, depthWrite: false }),
+  });
+
   let activeScene = null;
   let activeArea = null;
+  let activeMode = 'none';
   let root = null;
   let lastFrameAt = 0;
   let textureState = 'not-requested';
   let snowTexture = null;
-  let snowMaterial = null;
+  const materials = {}; // mode -> THREE.Material, built lazily and reused.
   let builtTiles = 0;
   let exposedEdges = 0;
   let chunkCount = 0;
@@ -39,7 +41,7 @@
   let lastBuildMs = 0;
   let grassHiddenScene = null;
   let lastGrassHideCheckAt = 0;
-  let lastReason = 'waiting for active Western Slope scene';
+  let lastReason = 'waiting for an active outdoor scene';
 
   const now = () => globalThis.performance?.now?.() ?? Date.now();
 
@@ -68,8 +70,27 @@
     catch (_) { return 0; }
   }
 
-  function isWesternSlope(area = currentArea()) {
+  function currentSeasonName() {
+    try { return String(window.CalendarSystem?.currentSeason?.()?.name || ''); }
+    catch (_) { return ''; }
+  }
+
+  function isWesternSlope(area) {
     return area === WESTERN_SLOPE_ID || area.includes('western_slope');
+  }
+
+  // Approximates the real game's own isOutdoorArea() (farm/town/any zone),
+  // which isn't reachable from here — this module isn't part of the
+  // RainPlanes dependency-injection chain that carries the real check.
+  function isOutdoorArea(area) {
+    return area === 'farm' || area === 'town' || area.startsWith('map_');
+  }
+
+  function resolveMode() {
+    const area = currentArea();
+    if (isWesternSlope(area)) return 'snow';
+    if (!isOutdoorArea(area)) return 'none';
+    return currentSeasonName() === 'Coldmuck' ? 'slush' : 'none';
   }
 
   function tileCovered(tile) {
@@ -116,7 +137,7 @@
       let finalTexture = texture;
       try {
         if (typeof window.getShadeFillCanvas === 'function' && texture.image) {
-          const tinted = window.getShadeFillCanvas(texture.image, 'environment-snow-micro-plateau-v3|canvas.png|white', {
+          const tinted = window.getShadeFillCanvas(texture.image, 'environment-snow-micro-plateau-v4|canvas.png|white', {
             mode: 'shadeFill', rgb: [255, 255, 255], options: window.getPortraitTintingConfig?.() || {},
           });
           if (tinted) finalTexture = new THREE.CanvasTexture(tinted);
@@ -132,30 +153,33 @@
       finalTexture.needsUpdate = true;
       snowTexture = finalTexture;
       textureState = finalTexture === texture ? 'raw-canvas-png' : 'shade-filled-white-canvas-png';
-      if (snowMaterial) {
-        snowMaterial.map = snowTexture;
-        snowMaterial.needsUpdate = true;
+      if (materials.snow) {
+        materials.snow.map = snowTexture;
+        materials.snow.needsUpdate = true;
       }
     }, undefined, error => {
       textureState = `load-failed:${String(error?.message || 'unknown')}`;
     });
   }
 
-  function material() {
+  function material(mode) {
     const THREE = window.THREE;
-    if (snowMaterial || !THREE) return snowMaterial;
-    ensureTexture();
-    snowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      map: snowTexture,
+    if (materials[mode] || !THREE) return materials[mode];
+    const preset = MODE_PRESETS[mode];
+    if (!preset) return null;
+    if (preset.textured) ensureTexture();
+    materials[mode] = new THREE.MeshBasicMaterial({
+      color: preset.color,
+      map: preset.textured ? snowTexture : null,
       side: THREE.DoubleSide,
-      transparent: false,
+      transparent: preset.transparent,
+      opacity: preset.opacity,
       depthTest: true,
-      depthWrite: true,
+      depthWrite: preset.depthWrite,
       fog: true,
     });
-    snowMaterial.userData.environmentSurfaceMicroPlateauMaterial = true;
-    return snowMaterial;
+    materials[mode].userData.environmentSurfaceMicroPlateauMaterial = mode;
+    return materials[mode];
   }
 
   function disposeRoot() {
@@ -165,11 +189,11 @@
     root = null;
   }
 
-  // Snow caps every walkable land tile, so the decorative grass-blade
+  // Snow/slush caps every walkable land tile, so the decorative grass-blade
   // billboards underneath (js/zone-grass-billboards.js's per-chunk groups)
   // would otherwise poke straight up through it. Hides/restores those
-  // groups whole rather than per-tile — cheap, and Western Slope has no
-  // farmland mixed in to make a partial cover look wrong.
+  // groups whole rather than per-tile — cheap, and neither environment
+  // mixes with farmland in a way that would make a partial cover look wrong.
   function setGrassHidden(scene, hidden) {
     if (!scene?.traverse) return;
     scene.traverse(node => {
@@ -196,7 +220,7 @@
     return count ? sum / count : fallback;
   }
 
-  // Every tile's snow height comes straight from its own authored grid
+  // Every tile's surface height comes straight from its own authored grid
   // data — no reverse-engineering from rendered mesh geometry — so it's
   // always exactly right, including on the real elevated plateau tiers.
   function tileTopCorners(state, col, row) {
@@ -260,7 +284,7 @@
     for (let segment = 1; segment <= EDGE_SEGMENTS; segment++) {
       const t = segment / EDGE_SEGMENTS;
       const outward = EDGE_WIDTH * Math.sin(t * Math.PI);
-      const drop = SNOW_THICKNESS * (t * t * (3 - 2 * t));
+      const drop = SURFACE_THICKNESS * (t * t * (3 - 2 * t));
       const nextA = [ax + d[0] * outward, topA - drop, az + d[1] * outward];
       const nextB = [bx + d[0] * outward, topB - drop, bz + d[1] * outward];
       const base = pos.length / 3;
@@ -271,14 +295,8 @@
     }
   }
 
-  // Wraps every generated chunk through the same connected-surface UV
-  // unwrapper the real plateau mesa's cliff faces use (window.
-  // HobunjiSurfaceStretchUV, patched onto buildPlateauMesa in
-  // surface-stretch-uv-furniture.js) instead of tiling one texture square
-  // per tile — the whole cap-and-lip island stretches across one texture
-  // domain, with the interior relaxed and the outer boundary mapped along
-  // the texture's perimeter, exactly like the farm's cliff texturing.
-  // Naive per-vertex planar UV — only used if the stretch mapper below
+  // Naive per-vertex planar UV — the only UV slush needs (its material has
+  // no texture map), and the fallback for snow if the stretch mapper below
   // hasn't loaded yet, so the mesh still renders sanely rather than
   // untextured.
   function planarFallbackUv(geometry) {
@@ -297,6 +315,14 @@
     return geometry;
   }
 
+  // Wraps every generated chunk through the same connected-surface UV
+  // unwrapper the real plateau mesa's cliff faces use (window.
+  // HobunjiSurfaceStretchUV, patched onto buildPlateauMesa in
+  // surface-stretch-uv-furniture.js) instead of tiling one texture square
+  // per tile — the whole cap-and-lip island stretches across one texture
+  // domain, with the interior relaxed and the outer boundary mapped along
+  // the texture's perimeter, exactly like the farm's cliff texturing. Only
+  // snow needs this — slush's material has no texture map to warp.
   function stretchMapSnowUv(geometry, label) {
     const mapper = window.HobunjiSurfaceStretchUV;
     if (typeof mapper?.mapGeometry === 'function') {
@@ -305,8 +331,6 @@
         if (mapped?.getAttribute?.('uv')) return mapped;
       } catch (_) {}
     }
-    // Fallback (mapper not yet loaded): keep the mesh rendering sanely
-    // rather than untextured.
     return planarFallbackUv(geometry);
   }
 
@@ -341,13 +365,13 @@
     }
   }
 
-  // Slices one chunk's already-stretch-mapped triangles (by triangle
-  // range, matching the order they were appended in) out of the combined,
+  // Slices one chunk's already-mapped triangles (by triangle range,
+  // matching the order they were appended in) out of the combined,
   // non-indexed whole-zone geometry into its own small render mesh — pure
   // culling/draw-call partitioning, applied AFTER UV mapping so it never
   // affects texture continuity (the same order real terrain uses: split
   // into GPU-friendly spatial chunks only once the source UVs are final).
-  function makeChunkMeshFromRange(combinedPosition, combinedUv, triStart, triCount, name, order) {
+  function makeChunkMeshFromRange(combinedPosition, combinedUv, triStart, triCount, name, order, mode) {
     const THREE = window.THREE;
     const vStart = triStart * 3, vCount = triCount * 3;
     const positions = new Float32Array(vCount * 3);
@@ -365,7 +389,7 @@
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geometry, material());
+    const mesh = new THREE.Mesh(geometry, material(mode));
     mesh.name = name;
     mesh.userData.environmentSurfaceRuntime = true;
     mesh.userData.environmentSurfaceMicroPlateau = true;
@@ -378,21 +402,19 @@
   // One synchronous pass over the whole zone — the same way
   // buildZoneMesaMeshes/the ordinary floor mesh already build on entry
   // without a performance problem, because this only happens once, on
-  // zone entry, not every frame — the same "loading" moment real terrain's
-  // own UV mapping already spends real time in (per the live Pixel Probe:
-  // thousands of remapCalls at zone load). Height comes straight from grid
-  // data (fast); the whole zone's cap+lip geometry is stretch-mapped in
-  // one connected pass (the expensive part, but still one-time) so the
-  // texture reads as one continuous surface — top and cliff edges together
-  // — instead of tiling once per render chunk.
-  function buildZoneSnow(scene, grid, cols, rows) {
+  // zone entry (or a season flip), not every frame. Height comes straight
+  // from grid data (fast); the whole zone's cap+lip geometry is mapped in
+  // one connected pass so snow's texture reads as one continuous surface
+  // instead of tiling once per render chunk (slush has no texture, so it
+  // skips straight to the cheap planar UV).
+  function buildZoneSurface(scene, grid, cols, rows, mode) {
     const started = now();
     const state = { grid, cols, rows, topCache: new Array(cols * rows) };
     root = new window.THREE.Group();
-    root.name = 'hobunji_environment_surface_snow_micro_plateau';
+    root.name = `hobunji_environment_surface_micro_plateau_${mode}`;
     root.userData.environmentSurfaceRuntime = true;
     root.userData.environmentSurfaceMicroPlateau = true;
-    root.userData.environmentSurfaceTopGeometry = 'tile-driven-shallow-plateau-v3';
+    root.userData.environmentSurfaceMode = mode;
     scene.add(root);
 
     builtTiles = 0;
@@ -415,12 +437,12 @@
       let combined = new THREE.BufferGeometry();
       combined.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       combined.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-      combined = stretchMapSnowUv(combined, 'zone');
+      combined = mode === 'snow' ? stretchMapSnowUv(combined, 'zone') : planarFallbackUv(combined);
       if (combined.index) combined = combined.toNonIndexed();
       const combinedPosition = combined.getAttribute('position');
       const combinedUv = combined.getAttribute('uv');
       for (const chunk of chunkRanges) {
-        makeChunkMeshFromRange(combinedPosition, combinedUv, chunk.triStart, chunk.triCount, `snow_micro_plateau_${chunk.col}_${chunk.row}`, 2.2);
+        makeChunkMeshFromRange(combinedPosition, combinedUv, chunk.triStart, chunk.triCount, `environment_surface_micro_plateau_${mode}_${chunk.col}_${chunk.row}`, mode === 'snow' ? 2.2 : 22.1, mode);
       }
     }
 
@@ -428,10 +450,10 @@
     lastBuildMs = now() - started;
     setGrassHidden(scene, true);
     grassHiddenScene = scene;
-    lastReason = `built ${builtTiles} shallow snow tiles in ${chunkCount} chunk mesh(es); ${exposedEdges} short edges (${lastBuildMs.toFixed(1)}ms)`;
+    lastReason = `built ${builtTiles} ${mode} tile(s) in ${chunkCount} chunk mesh(es); ${exposedEdges} short edges (${lastBuildMs.toFixed(1)}ms)`;
   }
 
-  function resetForScene(scene, area) {
+  function resetForScene(scene, area, mode) {
     if (grassHiddenScene) {
       setGrassHidden(grassHiddenScene, false);
       grassHiddenScene = null;
@@ -439,6 +461,7 @@
     disposeRoot();
     activeScene = scene;
     activeArea = area;
+    activeMode = mode;
     builtTiles = 0;
     exposedEdges = 0;
     chunkCount = 0;
@@ -452,18 +475,19 @@
     const scene = currentScene();
     const area = currentArea();
     if (!scene || !window.THREE || !window.GridTileAccessors) return;
-    if (!isWesternSlope(area)) {
-      if (root) resetForScene(scene, area);
-      lastReason = 'inactive outside Western Slope';
+    const mode = resolveMode();
+    if (mode === 'none') {
+      if (root) resetForScene(scene, area, mode);
+      lastReason = 'inactive (indoors, or outdoor but not snow/slush season)';
       return;
     }
-    if (scene !== activeScene || area !== activeArea) resetForScene(scene, area);
+    if (scene !== activeScene || area !== activeArea || mode !== activeMode) resetForScene(scene, area, mode);
     if (root) {
-      // Wilderness grass billboards can stream/build in after snow's own
-      // build already ran (zone decoration finishing later than terrain),
-      // so a single hide-on-build call can miss them — cheaply re-check
-      // every second or so rather than never, without traversing the
-      // scene every single frame.
+      // Wilderness grass billboards can stream/build in after the surface's
+      // own build already ran (zone decoration finishing later than
+      // terrain), so a single hide-on-build call can miss them — cheaply
+      // re-check every second or so rather than never, without traversing
+      // the scene every single frame.
       if (timestamp - lastGrassHideCheckAt > 1000) {
         lastGrassHideCheckAt = timestamp;
         setGrassHidden(scene, true);
@@ -472,25 +496,28 @@
     }
     const grid = currentGrid(), cols = currentCols(), rows = currentRows();
     if (!grid || !cols || !rows) return;
-    buildZoneSnow(scene, grid, cols, rows);
+    buildZoneSurface(scene, grid, cols, rows, mode);
   }
 
   function forceRebuild() {
     const scene = currentScene();
-    if (!scene || !isWesternSlope()) return debugSnapshot();
-    resetForScene(scene, currentArea());
+    const mode = resolveMode();
+    if (!scene || mode === 'none') return debugSnapshot();
+    resetForScene(scene, currentArea(), mode);
     return debugSnapshot();
   }
 
   function debugSnapshot() {
+    const mode = resolveMode();
     return {
       installed: true,
-      version: 3,
+      version: 4,
       active: Boolean(root),
       area: currentArea() || null,
-      mode: isWesternSlope() ? 'snow-micro-plateau' : 'inactive',
-      thickness: SNOW_THICKNESS,
+      mode,
+      thickness: SURFACE_THICKNESS,
       edgeWidth: EDGE_WIDTH,
+      opacity: MODE_PRESETS[mode]?.opacity ?? null,
       builtTiles,
       exposedEdges,
       chunkCount,
