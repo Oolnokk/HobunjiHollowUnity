@@ -1,0 +1,31 @@
+name: Loading screen sky backdrop regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/loading-screen-sky-backdrop.js'
+      - 'docs/js/local-save-folder.js'
+      - 'docs/config/loading-screens.json'
+      - 'docs/tools/loading-screen-editor/sky-focus.html'
+      - 'scripts/test-loading-screen-sky-backdrop.js'
+      - '.github/workflows/loading-screen-sky-backdrop-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/loading-screen-sky-backdrop.js'
+      - 'docs/js/local-save-folder.js'
+      - 'docs/config/loading-screens.json'
+      - 'docs/tools/loading-screen-editor/sky-focus.html'
+      - 'scripts/test-loading-screen-sky-backdrop.js'
+      - '.github/workflows/loading-screen-sky-backdrop-regression.yml'
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate loading-screen sky backdrop
+        run: node scripts/test-loading-screen-sky-backdrop.js
