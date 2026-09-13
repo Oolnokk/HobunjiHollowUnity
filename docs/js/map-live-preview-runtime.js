@@ -35,7 +35,14 @@
     return null;
   }
 
-  function currentDescriptor() {
+  // includeSnapshot defaults to true for callers that actually send the
+  // descriptor over the endpoint (init/game-state/navigation), which need
+  // the full generated-map clone. refreshPanel/refreshVisibility only read
+  // the cheap metadata fields below and pass includeSnapshot:false — without
+  // that, every placement-transform-result during a gizmo drag (throttled
+  // to just 45ms) was re-running the full mapSnapshot export via
+  // refreshPanel()'s setStatus(), tanking FPS on any sizeable zone.
+  function currentDescriptor({ includeSnapshot = true } = {}) {
     const area = deps.getCurrentArea();
     const mapId = mapIdForArea(area);
     if (!mapId) return { area, mapId: null, editable: false, reason: area === 'farm' ? 'Farm editing uses the in-game Farm Editor.' : 'This area has no Map Editor source.' };
@@ -47,14 +54,14 @@
       layoutId: deps.activeLayoutId(mapId),
       editable: true,
       generated,
-      mapSnapshot: generated ? deps.exportGeneratedMap(mapId) : null,
+      mapSnapshot: includeSnapshot && generated ? deps.exportGeneratedMap(mapId) : null,
     };
   }
 
   function refreshVisibility() {
     const button = document.getElementById('mapEditBtn');
     if (!deps) { if (button) button.style.display = 'none'; return; }
-    const descriptor = currentDescriptor();
+    const descriptor = currentDescriptor({ includeSnapshot: false });
     const show = !!deps?.isDevMode?.() && descriptor.editable && deps.getCurrentArea() !== 'farm';
     if (button) button.style.display = show ? '' : 'none';
     if (!show) closePanel();
@@ -252,7 +259,7 @@
   }
 
   function refreshPanel() {
-    const descriptor = deps ? currentDescriptor() : { editable: false };
+    const descriptor = deps ? currentDescriptor({ includeSnapshot: false }) : { editable: false };
     const name = document.getElementById('mapEditMapName');
     const layout = document.getElementById('mapEditLayout');
     const connection = document.getElementById('mapEditConnection');

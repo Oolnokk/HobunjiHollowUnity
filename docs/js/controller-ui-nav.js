@@ -128,7 +128,9 @@
   }
 
   function visiblePanels() {
-    return Array.from(document.querySelectorAll(PANEL_SELECTOR)).filter(panelVisible);
+    const panels = Array.from(document.querySelectorAll(PANEL_SELECTOR));
+    panels.forEach(watchPanelAttributes);
+    return panels.filter(panelVisible);
   }
 
   function activePanel() {
@@ -527,12 +529,29 @@
   }, true);
 
   // ── panel discovery: MutationObserver (open/close via class/style/attr) ──
-  const observer = new MutationObserver(() => reconcileStack());
+  // Split in two so ordinary UI churn doesn't pay for panel-visibility
+  // tracking: structuralObserver watches the whole body (subtree+childList,
+  // no attributes) purely to notice a panel node itself being
+  // added/removed — e.g. cooking-system.js building its layer fresh. Actual
+  // visibility toggles (class/style/aria-hidden/hidden) are watched only on
+  // the handful of [data-ctrl-panel] roots themselves via attrObserver,
+  // since panelVisible() above already only ever looks at a panel's own
+  // computed style, never an ancestor's. A single document-wide attribute
+  // observer used to re-run reconcileStack (a full querySelectorAll +
+  // getComputedStyle/getBoundingClientRect pass) on every class/style
+  // mutation anywhere in the entire game UI — item icons, tooltips, HUD
+  // updates, hover states — which showed up as ~5% of total frame time
+  // spent just in querySelectorAll during ordinary inventory browsing.
+  const structuralObserver = new MutationObserver(() => reconcileStack());
+  const attrObserver = new MutationObserver(() => reconcileStack());
+  const attrWatchedPanels = new WeakSet();
+  function watchPanelAttributes(panel) {
+    if (attrWatchedPanels.has(panel)) return;
+    attrWatchedPanels.add(panel);
+    attrObserver.observe(panel, { attributes: true, attributeFilter: ['class', 'style', 'aria-hidden', 'hidden'] });
+  }
   function startObserving() {
-    observer.observe(document.body, {
-      attributes: true, attributeFilter: ['class', 'style', 'aria-hidden', 'hidden'],
-      subtree: true, childList: true,
-    });
+    structuralObserver.observe(document.body, { childList: true, subtree: true });
   }
   function boot() {
     if (!document.body) { document.addEventListener('DOMContentLoaded', boot, { once: true }); return; }

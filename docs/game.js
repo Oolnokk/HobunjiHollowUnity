@@ -13537,9 +13537,11 @@
         const tiles = {};
         for (const tile of (layout.tiles || [])) {
           if (!Number.isFinite(tile.c) || !Number.isFinite(tile.r)) continue;
-          tiles[`${tile.c},${tile.r}`] = { ...tile, type: tile.type || 'grass' };
-          delete tiles[`${tile.c},${tile.r}`].c;
-          delete tiles[`${tile.c},${tile.r}`].r;
+          // Destructuring c/r out (rather than spreading the whole tile then
+          // delete-ing them back off) avoids forcing V8 into dictionary mode
+          // per tile — this export can run over thousands of tiles.
+          const { c, r, type, ...rest } = tile;
+          tiles[`${c},${r}`] = { ...rest, type: type || 'grass' };
         }
         return {
           schema: 'hobunji_map.v1',
