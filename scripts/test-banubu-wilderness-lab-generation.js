@@ -49,7 +49,8 @@ assert(compiled, 'the authored Banubu default must compile through the terrain-a
 assert.strictEqual(diagnostic.scale, 2, 'real Wilderness Lab Northern Cliffs generation must evaluate Banubu at the normal 2x tile density');
 assert((diagnostic.tested || 0) > 0, 'real generation must actually scan candidate anchors for Banubu');
 assert.strictEqual(compiled.tiles.size, 36, 'the authored 3x3 Banubu footprint must expand to 36 final-grid cells at 2x density');
-assert.strictEqual(compiled.probes.size, 24, 'the six authored facing-any cliff probes must expand to 24 final-grid probes at 2x density');
+assert.strictEqual(compiled.probes.size, 12, 'six directional cliff probes must expand to one 2-cell face strip each at 2x density');
+assert.strictEqual(compiled.embedded.size, 12, 'the three rear embedded cells must expand to twelve final-grid cells at 2x density');
 assert(['placed', 'skipped'].includes(diagnostic.status), `unexpected Banubu diagnostic status: ${diagnostic.status}`);
 
 const root = (workspace.maps || []).find(map => map && !map.isSubmap);
@@ -59,22 +60,26 @@ if (diagnostic.status === 'placed') {
   assert(instance, 'a placed Banubu diagnostic must have a localeInstance');
   assert(diagnostic.selected, 'a placed Banubu diagnostic must retain its selected candidate');
   const cliffProbes = (diagnostic.selected.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');
-  assert(cliffProbes.length > 0, 'a placed Banubu candidate must include its authored internal-cliff probes');
-  assert(cliffProbes.every(probe => probe.rule.facing === 'any' && probe.matched), 'all evaluated Banubu cliff probes must match the authored facing-any rule');
-  assert(cliffProbes.every(probe => probe.hostTier >= diagnostic.selected.floorTier + 1), 'Banubu cliff probes must remain above the derived next-lower locale floor');
-  for (const probe of cliffProbes) {
+  const required = cliffProbes.filter(probe => probe.rule?.strength === 'required');
+  const lowRequired = required.filter(probe => probe.rule?.height?.max === 0);
+  const highRequired = required.filter(probe => probe.rule?.height?.min >= 1);
+  assert(lowRequired.length > 0 && highRequired.length > 0, 'placed Banubu candidate must preserve paired required low/high cliff probes');
+  assert(lowRequired.every(probe => probe.rule.facing === 'north' && probe.matched && Math.abs(probe.hostTier - diagnostic.selected.floorTier) <= 0.05), 'required cave-mouth probes must sit on the local lower tier');
+  assert(highRequired.every(probe => probe.rule.facing === 'north' && probe.matched && probe.hostTier >= diagnostic.selected.floorTier + 1), 'required rear probes must sit on the higher side of the same north-facing cliff');
+  for (const probe of required) {
     const tile = root.tiles?.[`${probe.c},${probe.r}`];
     assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu plateauCliff probes must never resolve to boundary-escarpment terrain');
   }
+  const embedded = diagnostic.selected.embedded || [];
+  assert(embedded.length > 0 && embedded.every(cell => cell.matched && cell.hostTier >= diagnostic.selected.floorTier + 1), 'rear embedded cells must originate in high plateau mass before carving');
   assert((instance.objects || []).some(object => object.key === 'cave_small'), 'placed Banubu locale must carry its cave_small object into runtime data');
   assert(!(instance.npcAnchors || []).some(anchor => anchor.npcId === 'banubu'), 'Banubu exterior locale must not spawn Banubu; he belongs in the future interior');
 } else {
-  // This user-authored six-cliff formation is intentionally restrictive. A particular wilderness seed may simply contain no legal host; that is a valid generator outcome, not a regression.
   assert.strictEqual(instance, null, 'a skipped Banubu diagnostic must not fabricate a localeInstance');
-  assert.strictEqual(diagnostic.reason, 'no terrain-aware placement matched', 'a skipped authored Banubu locale should report an ordinary no-match');
+  assert.strictEqual(diagnostic.reason, 'no terrain-aware placement matched', 'a skipped Banubu locale should report an ordinary no-match');
   assert.strictEqual(diagnostic.valid, 0, 'a skipped seed should report zero valid candidates');
   assert((diagnostic.rejected || []).length > 0, 'a skipped seed must retain rejected candidates for Locale Editor near-miss diagnostics');
-  assert((diagnostic.rejected || []).some(candidate => /cliff|probe|terrain-aware placement/i.test(String(candidate.reason || ''))), 'rejections should demonstrate that Banubu was evaluated against its cliff rules');
+  assert((diagnostic.rejected || []).some(candidate => /cliff|embedded|probe|terrain-aware placement/i.test(String(candidate.reason || ''))), 'rejections should demonstrate that Banubu was evaluated against its cliff-base rules');
 }
 
-console.log(`Banubu real Northern Cliffs terrain-awareness regression passed (${diagnostic.status}).`);
+console.log(`Banubu real Northern Cliffs cliff-base regression passed (${diagnostic.status}).`);
