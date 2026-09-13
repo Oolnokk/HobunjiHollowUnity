@@ -99,6 +99,7 @@
     ['js/alcohol-gameplay-bridge.js?v=20260828treecover1', () => !!window.HobunjiDrunkGameplayBridge],
     ['js/npc-gifting.js?v=20260831a', () => !!window.NpcGifting],
     ['js/held-item-state.js?v=20260913safe1', () => Number(window.HobunjiHeldItemState?.version) >= 1],
+    ['js/held-item-render-projection.js?v=20260913runtime1', () => Number(window.HobunjiHeldItemRenderProjection?.version) >= 1],
     ['js/npc-wardrobe.js?v=20260831a', () => !!window.NpcWardrobe],
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20260904placeholder2', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
