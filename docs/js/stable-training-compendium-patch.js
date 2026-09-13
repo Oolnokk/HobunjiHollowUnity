@@ -5,7 +5,7 @@
   const OLD_KICKER = 'Not active progression yet';
   const OLD_TEXT = 'Stable rows currently show a level value, but the Stable UI explicitly marks creature leveling as coming later. Do not expect that number to advance through normal play yet.';
   const NEW_KICKER = 'Level 10 animal training';
-  const NEW_TEXT = 'Stabled companions, mounts, and shoulder pets gain XP while active, up to level 10. Each level grants a training point. Tap an animal in the Stable to expand its perk tree; companions also have species-specific combat training.';
+  const NEW_TEXT = 'Stabled companions, mounts, and shoulder pets gain XP while active from role-specific activities, up to level 10. Mounts train through exploration, travel, and completed quests. Animal companions train through enemy defeats, buried treasure, bandit camps, Den-Mothers, and stolen den eggs or babies. Shoulder pets train through enemy defeats and positive Rapport gains. Each level grants a training point. Tap an animal in the Stable to expand its perk tree; companions also have species-specific combat training.';
 
   function rewriteVisibleCopy() {
     const root = document.getElementById?.('mpCompendium');
