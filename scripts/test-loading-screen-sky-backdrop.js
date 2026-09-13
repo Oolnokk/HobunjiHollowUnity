@@ -42,6 +42,11 @@ inlineScripts.forEach((source, index) => parseJavaScript(source, `${editorPath}#
 assert(Number(config.version) >= 6, `${configPath}: expected version >= 6`);
 assert(Number.isFinite(Number(config.settings?.skyFocusOffsetX)), `${configPath}: skyFocusOffsetX must be numeric`);
 assert(Number.isFinite(Number(config.settings?.skyFocusOffsetY)), `${configPath}: skyFocusOffsetY must be numeric`);
+assert(Number(config.settings?.loreSize) === 19, `${configPath}: current game loreSize must remain 19`);
+assert(Number(config.settings?.scriptSize) === 89, `${configPath}: current game scriptSize must remain 89`);
+assert(Number(config.settings?.columnSpacing) === -0.55, `${configPath}: current game columnSpacing must remain -0.55`);
+assert(Number(config.settings?.scriptScrollSpeed) === 0.017, `${configPath}: current game scriptScrollSpeed must remain 0.017`);
+assert(Number(config.settings?.loadPercent) === 63, `${configPath}: current editor preview progress must remain 63`);
 
 assert(bootstrapSource.includes('loading-screen-sky-backdrop.js'), `${bootstrapPath}: backdrop bootstrap reference missing`);
 assert(runtimeSource.includes("document.getElementById('hobunjiLoadScreen')"), `${runtimePath}: must attach to the canonical loading-screen root`);
