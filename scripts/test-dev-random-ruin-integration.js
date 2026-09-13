@@ -13,6 +13,9 @@ const camera = read('docs/js/camera-look-clamp.js');
 const motion = read('docs/js/dev-random-ruin-motion-runtime.js');
 const coverage = read('docs/js/dev-random-ruin-runtime-coverage.js');
 const api = read('docs/tools/debris-ifier/debrisifier-v50-api.js');
+const debrisBootstrap = read('docs/tools/debris-ifier/debrisifier-01.js');
+const debrisSource = read('docs/tools/debris-ifier/debrisifier-v50-source.js');
+const embeddedTree = JSON.parse(read('docs/tools/debris-ifier/debrisifier-v50-embedded-tree.json'));
 const interior = read('docs/js/dev-random-ruin-interior-map.js');
 const hooks = read('docs/js/dev-random-ruin-prototype-hooks.js');
 
@@ -31,6 +34,7 @@ for (let i = 1; i < loadOrder.length; i++) {
 
 assert(interior.includes("const RUIN_TILE_SCALE = 2"), 'generated ruin must retain 2x horizontal cells');
 assert(interior.includes("map_i_dev_random_ruin"), 'generated ruin must remain a real session-only interior map');
+assert(interior.includes('tools/debris-ifier/index.html?devRuntime=1'), 'hidden generator must request embedded V50 runtime mode');
 assert(hooks.includes("generatedAccessType === 'stoneLadder'"), 'prototype hook layer must discover V50 ladders');
 assert(hooks.includes("motion === 'elevatorPushBlock'"), 'prototype hook layer must discover elevator push blocks');
 
@@ -48,6 +52,34 @@ assert(coverage.includes('registeredTorchSources'), 'always-lit audit coverage m
 assert(coverage.includes('data.groundedToMovingPlatform && object?.parent'), 'platform-parented displays must be recognized as transform-driven');
 assert(coverage.includes('effectiveUnhandled'), 'cross-layer audit must retain truly unhandled prototype objects');
 assert(coverage.includes('filterSeedAudit'), 'multi-seed audit must reconcile known cross-layer activator classes');
+
+// The hidden in-game generator must not discover furniture or load authored assets
+// from GitHub at runtime. The readable V50 file remains exact; debrisifier-01.js
+// swaps only its repository transport while executing devRuntime=1.
+assert(debrisBootstrap.includes("params.get('devRuntime') === '1'"), 'Debris-ifier bootstrap must recognize hidden dev runtime mode');
+assert(debrisBootstrap.includes("REPO_TREE_URL='debrisifier-v50-embedded-tree.json'"), 'embedded runtime must replace the live GitHub tree URL');
+assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href).href"), 'embedded runtime must map repo asset paths to the local docs origin');
+assert(debrisBootstrap.includes('refusing an unverified embedded patch'), 'embedded transport patch must fail closed if exact V50 bindings drift');
+assert(debrisBootstrap.includes("source.src = 'debrisifier-v50-source.js'"), 'direct Debris-ifier mode must keep loading the exact readable source file');
+new vm.Script(debrisBootstrap, { filename:'debrisifier-01.js' });
+new vm.Script(debrisSource, { filename:'debrisifier-v50-source.js' });
+
+const furnitureRoots = ['docs/config/furniture-authored/', 'docs/assets/models/furniture/data/'];
+const ruinRe = /(pillar|stone|obelisk|ruin|statue|buttress|arch|pedestal|support)/i;
+const treePaths = embeddedTree.tree.filter(entry => entry.type === 'blob').map(entry => entry.path);
+const furniturePaths = treePaths.filter(file => furnitureRoots.some(dir => file.startsWith(dir)) && /\.json$/i.test(file));
+assert.equal(furniturePaths.length, 11, 'embedded V50 tree must contain the exact 11 ruin-friendly furniture paths');
+assert(furniturePaths.every(file => ruinRe.test(path.basename(file))), 'embedded furniture manifest must contain only V50 ruin-friendly candidates');
+assert(furniturePaths.includes('docs/config/furniture-authored/statue.json'), 'embedded candidate pool must retain authored statue furniture');
+assert(furniturePaths.includes('docs/assets/models/furniture/data/pillar_square.json'), 'embedded candidate pool must retain authored square pillars');
+assert(furniturePaths.includes('docs/assets/models/furniture/data/stone_arch.json'), 'embedded candidate pool must retain stone arches');
+for (const asset of [
+  'docs/assets/textures/carved_smooth.png',
+  'docs/assets/textures/inn_sign_text.png',
+  'docs/assets/textures/general_store_sign_text.png',
+  'docs/assets/models/Roughbrick1.glb',
+]) assert(treePaths.includes(asset), `embedded V50 tree must retain ${asset}`);
+assert.equal(embeddedTree.truncated, false, 'embedded V50 tree must be complete');
 
 const parts = [];
 for (let i = 1; i <= 9; i++) {
