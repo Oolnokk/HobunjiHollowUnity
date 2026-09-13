@@ -948,7 +948,13 @@
     placeIdleTarget('right', state.rightContactY);
 
     surfaceForRole(isKenkariFamily ? 'keratin' : 'body').then(texture => {
-      if (state.disposed) return;
+      // buildSurfaceTexture's image load + tint is async, so a fast re-attach
+      // (any avatar refresh -- every area transition included) can dispose()
+      // this attach() call before this resolves: the texture already exists
+      // by the time we get here, but nothing else will ever hold a reference
+      // to it once we bail below, so it must be disposed here or it leaks
+      // one native GPU texture per race, forever, invisible to any cache.
+      if (state.disposed) { texture?.dispose?.(); return; }
       for (const foot of [leftFallback, rightFallback]) {
         const material = foot.userData.material;
         // Resets to white so the texture's own baked tint isn't multiplied
