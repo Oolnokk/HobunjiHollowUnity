@@ -3,6 +3,16 @@
 
   if (typeof window === 'undefined' || window.EnvironmentSurfaceMicroPlateau?.installed) return;
 
+  // Resolved from this script's own URL (not the hosting page's) so the
+  // texture still loads correctly when this module runs somewhere other
+  // than the real game's docs/index.html — e.g. the Wilderness Generation
+  // Lab, three directories deeper, which would otherwise 404 on a path
+  // relative to its own page.
+  const SNOW_TEXTURE_URL = (() => {
+    try { return new URL('../assets/textures/canvas.png', document.currentScript.src).href; }
+    catch (_) { return 'assets/textures/canvas.png'; }
+  })();
+
   // v4 generalizes v3's direct-grid-height snow renderer to also cover
   // seasonal Coldmuck slush on every other outdoor zone — the same
   // mechanism (tile height read straight from grid data, one synchronous
@@ -133,7 +143,7 @@
     const THREE = window.THREE;
     if (!THREE || textureState !== 'not-requested') return;
     textureState = 'loading';
-    new THREE.TextureLoader().load('assets/textures/canvas.png', texture => {
+    new THREE.TextureLoader().load(SNOW_TEXTURE_URL, texture => {
       let finalTexture = texture;
       try {
         if (typeof window.getShadeFillCanvas === 'function' && texture.image) {

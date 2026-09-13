@@ -294,6 +294,13 @@
     document.head.appendChild(script);
   }
 
+  // Exposed so lab-real-environment-surface.js can reuse this cosmetic
+  // Deadgrass desaturation tint even though it now drives the actual snow
+  // /slush overlay geometry through the real game module instead of this
+  // file's own rebuildWinter/renderWorkspace overrides above.
+  Preview.__applyColdmuckGroundLook = applyColdmuckGroundLook;
+  Preview.__clearColdmuckGroundLook = clearColdmuckGroundLook;
+
   relabelEnvironmentUi();
   installEnvironmentUiBehavior();
   installCurrentMainLiveRecipeRouting();

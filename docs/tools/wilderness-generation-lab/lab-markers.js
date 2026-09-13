@@ -28,10 +28,13 @@
       await loadScript('lab-object-markers.js', 'wilderness-lab-object-markers'); // Schematic cube marker renderer consumes the reconstructed object array and wraps the adjusted terrain preview.
       await loadScript('lab-terrain-skin.js', 'wilderness-lab-terrain-skin'); // Final pass keeps the broad Great Basin ramp field grass-skinned rather than path-skinned.
       await loadScript('lab-environment-refresh.js', 'wilderness-lab-environment-refresh'); // Corrects old generic winter terminology: Coldmuck is localized slush; Western Slope snow is persistent avalanche deposition.
+      await loadScript('../../js/surface-stretch-uv-furniture.js', 'wilderness-lab-surface-stretch-uv'); // Connected-surface UV unwrapper the real snow/slush module below stretch-maps its texture through, same as the real game's plateau mesa cliffs.
+      await loadScript('../../js/environment-surface-micro-plateau.js', 'wilderness-lab-environment-surface-micro-plateau'); // The actual live game module that renders Western Slope snow and Coldmuck slush.
+      await loadScript('lab-real-environment-surface.js', 'wilderness-lab-real-environment-surface'); // Replaces this lab's old standalone winter mesh preview above with the real game module, so the preview can't drift out of sync with what actually ships.
       await loadScript('lab-scale-reference.js', 'wilderness-lab-scale-reference'); // Loads after environment-refresh so its figure is placed on the final, snow/slush-adjusted terrain height.
       await loadScript('lab-entry-repair.js', 'wilderness-lab-entry-repair'); // Final preview assertion: run the shared exported-path causeway trim even if another generator wrapper changed call order.
       await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
-      console.log('[WildernessLab] shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + scale reference + entry repair + pixel probe loaded');
+      console.log('[WildernessLab] shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + real environment surface + scale reference + entry repair + pixel probe loaded');
       const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {
