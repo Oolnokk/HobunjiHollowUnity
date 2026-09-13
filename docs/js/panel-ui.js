@@ -545,4 +545,9 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   localeTerrainScript.src = 'terrain-placement.js?v=20260912a';
   localeTerrainScript.defer = true;
   document.head.appendChild(localeTerrainScript);
+
+  const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.
+  localePreview3dScript.src = 'locale-preview3d.js?v=20260913a';
+  localePreview3dScript.defer = true;
+  document.head.appendChild(localePreview3dScript);
 }

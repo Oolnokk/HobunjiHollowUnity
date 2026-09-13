@@ -251,7 +251,8 @@
   function clearPreviewRoot() {
     if (!previewRoot) return;
     while (previewRoot.children.length) {
-      const child = previewRoot.children.pop();
+      const child = previewRoot.children[previewRoot.children.length - 1];
+      previewRoot.remove(child);
       disposeObject(child);
     }
   }
@@ -342,7 +343,7 @@
     const fallback = addBox(parent, object.col + (object.w || 1) / 2, 0.55, object.row + (object.h || 1) / 2, object.w || 1, 1.0, object.h || 1, 0x6f665c, { transparent: true, opacity: 0.55 });
     try {
       const template = await loadCaveTemplate();
-      if (!previewRoot || parent.parent !== previewRoot) return;
+      if (!previewRoot || parent !== previewRoot || !previewRoot.parent) return;
       const cave = template.clone(true);
       cave.traverse(node => {
         if (!node.isMesh) return;
