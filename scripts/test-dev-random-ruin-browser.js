@@ -44,12 +44,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     }
   });
 
-  await page.addInitScript(() => localStorage.setItem('hobunjiDevMode', '1'));
+  await page.addInitScript(() => {
+    localStorage.setItem('hobunjiDevMode', '1');
+    localStorage.removeItem('hobunjiDevRandomRuinWallPlanes');
+  });
   await page.goto(TEST_URL, { waitUntil:'domcontentloaded', timeout:30000 });
   await page.waitForFunction(() =>
     !!window.DevRandomRuin &&
     !!window.DevRandomRuinPrototypeHooks &&
     !!window.DevRandomRuinHitPuzzles &&
+    !!window.DevRandomRuinWallPlanes &&
     !!window.DevRandomRuinMotionRuntime &&
     !!window.DevRandomRuinRuntimeCoverage,
   null, { timeout:30000 });
@@ -65,6 +69,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         seed:value,
         area:window.GridTileAccessors?.getCurrentArea?.() || null,
         gameState:window.DevRandomRuin?.getState?.() || null,
+        wallPlanes:window.DevRandomRuinWallPlanes?.snapshot?.() || null,
         badge:document.getElementById('devRandomRuinBadge')?.textContent || null,
         generatorPresent:!!generator,
         transport:frame?.contentWindow?.__debrisifierEmbeddedTransport || null,
@@ -110,6 +115,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const hit = window.DevRandomRuinHitPuzzles.snapshot();
       const motion = window.DevRandomRuinMotionRuntime.snapshot();
       const coverage = window.DevRandomRuinRuntimeCoverage.snapshot();
+      const wallPlaneControl = window.DevRandomRuinWallPlanes.snapshot();
       const frame = document.getElementById('devRandomRuinGeneratorFrame');
       const generator = frame?.contentWindow?.DebrisifierV50;
       const generatorState = generator?.getState?.();
@@ -153,6 +159,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         hit,
         motion,
         coverage,
+        wallPlaneControl,
         transport,
         furnitureStatus,
         ladders,
@@ -185,12 +192,36 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok(active.runtimeWallPlanes?.count > 0, JSON.stringify(active.runtimeWallPlanes));
     assert.equal(active.runtimeWallPlanes.visible, active.runtimeWallPlanes.count, JSON.stringify(active.runtimeWallPlanes));
     assert.equal(active.runtimeWallPlanes.doubleSided, active.runtimeWallPlanes.count, JSON.stringify(active.runtimeWallPlanes));
+    assert.equal(active.wallPlaneControl.enabled, true, JSON.stringify(active.wallPlaneControl));
+    assert.equal(active.wallPlaneControl.count, active.runtimeWallPlanes.count, JSON.stringify(active.wallPlaneControl));
+    assert.equal(active.wallPlaneControl.renderVisible, active.wallPlaneControl.count, JSON.stringify(active.wallPlaneControl));
+    assert.equal(active.wallPlaneControl.meshVisible, active.wallPlaneControl.count, JSON.stringify(active.wallPlaneControl));
+    assert.ok(active.wallPlaneControl.blockerCount > 0, JSON.stringify(active.wallPlaneControl));
     assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
     assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
     for (const hall of active.hallwayCollision) {
       assert.ok(hall.samples > 0, `hallway ${hall.id} produced no center-lane samples`);
       assert.equal(hall.blocked.length, 0, `hallway ${hall.id} center lane is blocked: ${JSON.stringify(hall)}`);
     }
+
+    // The visual option must hide only the prototype wall materials. Meshes and
+    // registered blockers stay alive so turning walls off cannot change traversal.
+    if (seed === FIXED_SEEDS[0]) {
+      const toggle = await page.evaluate(() => {
+        window.DevRandomRuinWallPlanes.setVisible(false);
+        const off = window.DevRandomRuinWallPlanes.snapshot();
+        window.DevRandomRuinWallPlanes.setVisible(true);
+        const on = window.DevRandomRuinWallPlanes.snapshot();
+        return { off, on, checkbox:document.getElementById('settingDevRandomRuinWallPlanes')?.checked ?? null };
+      });
+      assert.equal(toggle.off.renderVisible, 0, JSON.stringify(toggle));
+      assert.equal(toggle.off.meshVisible, toggle.off.count, JSON.stringify(toggle));
+      assert.equal(toggle.off.blockerCount, active.wallPlaneControl.blockerCount, JSON.stringify(toggle));
+      assert.equal(toggle.on.renderVisible, toggle.on.count, JSON.stringify(toggle));
+      assert.equal(toggle.on.blockerCount, active.wallPlaneControl.blockerCount, JSON.stringify(toggle));
+      assert.equal(toggle.checkbox, true, JSON.stringify(toggle));
+    }
+
     if (active.negativeLevels > 0) {
       assert.ok(active.ladders > 0, `negative floor tiers require ladder access: ${JSON.stringify(active)}`);
     }
