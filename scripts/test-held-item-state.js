@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const moduleSource = fs.readFileSync('docs/js/held-item-state.js', 'utf8');
+const projectionSource = fs.readFileSync('docs/js/held-item-render-projection.js', 'utf8');
 const loaderSource = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
 const inventory = { gold: 73, combatManualCounterShield: 2, apple: 5 };
@@ -37,8 +38,6 @@ function moduleStub(name) {
 
 const windowStub = {
   // Canonical eligibility excludes combat manuals from the ordinary item arch.
-  // getInventoryStackItems() below intentionally calls this from Array.filter
-  // with the same (item, sourceArray) trailing arguments used by game.js.
   ItemProcessing: {
     isWheelEligible(key) { return key === 'apple'; },
   },
@@ -53,10 +52,15 @@ const documentStub = {
 };
 const context = vm.createContext({ window: windowStub, document: documentStub, console, Date, Math, setTimeout, clearTimeout, queueMicrotask });
 vm.runInContext(moduleSource, context, { filename: 'held-item-state.js' });
+vm.runInContext(projectionSource, context, { filename: 'held-item-render-projection.js' });
 
+// This intentionally matches game.js's real contract: the active-stack
+// resolver asks ItemProcessing.isWheelEligible(item.key) with ONE argument.
+// The previous regression incorrectly passed Array.filter callback arguments
+// through to isWheelEligible and therefore tested a runtime path that did not exist.
 function getInventoryStackItems() {
-  return inventoryItems.filter((item, index, source) =>
-    (inventory[item.key] || 0) > 0 && windowStub.ItemProcessing.isWheelEligible(item.key, item, source));
+  return inventoryItems.filter(item =>
+    (inventory[item.key] || 0) > 0 && windowStub.ItemProcessing.isWheelEligible(item.key));
 }
 function getActiveInventoryItem() {
   const stacks = getInventoryStackItems();
@@ -103,22 +107,23 @@ windowStub.EquipmentPanel.init(sharedDeps);
 windowStub.NpcGifting.init({ ...sharedDeps, getHeldGiftItem: () => ({ kind: 'bagItem', key: 'apple', def: itemDefs.apple }) });
 
 assert.equal(typeof intervalCallback, 'function', 'bridge should install one low-frequency synchronizer');
-assert.equal(windowStub.HobunjiHeldItemState.version, 2, 'renderer projection should expose held-state API v2');
+assert.equal(windowStub.HobunjiHeldItemState.version, 2, 'held-state API should be v2');
+assert.equal(windowStub.HobunjiHeldItemRenderProjection.ready, true, 'renderer projection should install after held-state');
 assert.deepEqual(getInventoryStackItems().map(item => item.key), ['apple'], 'manual-only item starts outside the canonical wheel');
-assert.equal(windowStub.ItemProcessing.isWheelEligible('combatManualCounterShield'), false, 'ordinary eligibility query must still classify the manual as off-arch');
+assert.equal(windowStub.ItemProcessing.isWheelEligible('combatManualCounterShield'), false, 'manual starts canonically off-arch');
 
 // Core regression: Hold must become the actual raw game-level held item so
-// updateHeldItemHolder() can render it, without adding it to the visible arch.
+// updateHeldItemHolder() can render it, while the wrapped arch/HUD stay filtered.
 manualHeldItem = { kind: 'bagItem', key: 'combatManualCounterShield' };
 windowStub.HobunjiHeldItemState.syncNow();
 assert.equal(heldMode, 'item', 'manual bag Hold should drive the real held mode used by the renderer');
+assert.equal(windowStub.ItemProcessing.isWheelEligible('combatManualCounterShield'), true, 'live renderer projection must let the held key through the real one-argument eligibility gate');
 assert.equal(getActiveInventoryItem()?.key, 'combatManualCounterShield', 'raw game resolver should resolve the manually held off-arch stack');
 assert.equal(putAwayCalls, 1, 'manual Hold should canonically put away the old tool/weapon before projection');
 assert.deepEqual(capturedInitDeps.ActionArcUI.getInventoryStackItems().map(item => item.key), ['apple'], 'visible item arch must keep the projected manual excluded');
 assert.equal(capturedInitDeps.ActionArcUI.getActiveItemIndex(), 0, 'arch selection should still point at its pre-Hold ordinary item');
 assert.deepEqual(capturedInitDeps.HudUpdate.getInventoryStackItems().map(item => item.key), ['apple'], 'HUD item scroll must also keep the projected manual excluded');
 assert.equal(capturedInitDeps.HudUpdate.getActiveInventoryItem()?.key, 'combatManualCounterShield', 'held-item HUD resolver should describe the actual manual item');
-assert.equal(windowStub.ItemProcessing.isWheelEligible('combatManualCounterShield'), false, 'Hold must not change ordinary one-argument wheel eligibility');
 assert.equal(windowStub.HobunjiHeldItemState.getManualBagItem().key, 'combatManualCounterShield');
 assert.equal(capturedInitDeps.NpcGifting.getHeldGiftItem().key, 'combatManualCounterShield', 'gifting should resolve manual Hold before ordinary wheel item');
 assert.equal(JSON.stringify(inventory), inventoryBefore, 'manual Hold must not mutate inventory counts');
@@ -130,6 +135,7 @@ assert.match(toastLog.at(-1) || '', /Holding Counter Shield Combat Manual/, 'man
 // the filtered arch index back to the canonical stack after projection ends.
 capturedInitDeps.ActionArcUI.setActiveItemIndex(0);
 assert.equal(manualHeldItem, null, 'ordinary arch selection should clear manual Hold');
+assert.equal(windowStub.ItemProcessing.isWheelEligible('combatManualCounterShield'), false, 'renderer eligibility override must disappear when manual Hold ends');
 assert.equal(getActiveInventoryItem()?.key, 'apple', 'ordinary selection should become the raw held item after manual projection ends');
 assert.equal(activeItemIndex, 0, 'ordinary wheel index should map back correctly');
 assert.equal(JSON.stringify(saveMeta), saveBefore, 'ordinary-selection handoff must leave save graph untouched');
@@ -143,6 +149,7 @@ heldMode = 'tool';
 windowStub.HobunjiHeldItemState.syncNow();
 assert.equal(manualHeldItem, null, 'external tool selection should replace manual Hold');
 assert.equal(heldMode, 'tool', 'cleanup must preserve the newer externally selected tool mode');
+assert.equal(windowStub.ItemProcessing.isWheelEligible('combatManualCounterShield'), false);
 assert.equal(saveCalls, 0);
 
 // A direct ordinary item-index change is likewise authoritative.
@@ -156,8 +163,8 @@ assert.equal(manualHeldItem, null, 'external ordinary item selection should clea
 assert.equal(getActiveInventoryItem()?.key, 'apple');
 assert.equal(saveCalls, 0);
 
-// Pressing the same inventory Hold button again clears manualHeldItem first;
-// sync must remove the projection, restore the prior wheel item, and leave hands free.
+// Pressing the same Inventory Hold button again clears manualHeldItem first;
+// sync must remove projection, restore the prior wheel item, and leave hands free.
 heldMode = 'tool';
 activeItemIndex = 0;
 manualHeldItem = { kind: 'bagItem', key: 'combatManualCounterShield' };
@@ -165,6 +172,7 @@ windowStub.HobunjiHeldItemState.syncNow();
 manualHeldItem = null;
 windowStub.HobunjiHeldItemState.syncNow();
 assert.equal(heldMode, 'none', 'Holding — Stop should return to hands free');
+assert.equal(windowStub.ItemProcessing.isWheelEligible('combatManualCounterShield'), false);
 assert.equal(getActiveInventoryItem()?.key, 'apple', 'Holding — Stop should restore the pre-Hold wheel selection');
 assert.equal(saveCalls, 0);
 
@@ -189,6 +197,7 @@ assert.equal(JSON.stringify(inventory), inventoryBefore, 'stale cleanup must not
 assert.equal(JSON.stringify(saveMeta), saveBefore, 'stale cleanup must not alter save data');
 assert.equal(saveCalls, 0);
 
+const combinedSource = moduleSource + '\n' + projectionSource;
 const sourceBans = [
   /STARTING_INVENTORY/,
   /localStorage\.setItem/,
@@ -196,13 +205,15 @@ const sourceBans = [
   /Object\.defineProperty\s*\(\s*window/,
   /futureGlobal/,
 ];
-for (const pattern of sourceBans) assert.doesNotMatch(moduleSource, pattern, `held-state bridge must not use ${pattern}`);
-assert.match(moduleSource, /stackResolutionCall[\s\S]*projectionKey/, 'projection must be scoped specifically to stack resolution');
+for (const pattern of sourceBans) assert.doesNotMatch(combinedSource, pattern, `manual Hold runtime code must not use ${pattern}`);
 assert.match(moduleSource, /getInventoryStackItems:\s*archStacks/, 'ActionArcUI must receive the projection-filtered stack view');
+assert.match(projectionSource, /projectionKey[\s\S]*key === projectionKey[\s\S]*return true/, 'renderer bridge must authorize exactly the live projected key');
 
 const heldModuleIndex = loaderSource.indexOf('js/held-item-state.js?v=20260913safe1');
+const rendererProjectionIndex = loaderSource.indexOf('js/held-item-render-projection.js?v=20260913runtime1');
 const giftingModuleIndex = loaderSource.indexOf('js/npc-gifting.js?v=20260831a');
 assert(heldModuleIndex > giftingModuleIndex, 'held-item-state must load after NpcGifting is defined');
+assert(rendererProjectionIndex > heldModuleIndex, 'renderer projection must load after held-item-state');
 assert.doesNotMatch(loaderSource, /inventory-held-override\.js/, 'unsafe old bridge must stay absent from runtime loader');
 
-console.log('held-item-state renderer projection regression: PASS');
+console.log('held-item-state real-runtime renderer projection regression: PASS');
