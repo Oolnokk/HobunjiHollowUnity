@@ -4,21 +4,21 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const root = path.resolve(__dirname, '..'); // Used by every fixture read so the test works from any invocation directory.
-const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8'); // Used to load the production files covered by this regression guard.
+const root = path.resolve(__dirname, '..');
+const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
-const runtimePath = 'docs/js/loading-screen-sky-backdrop.js'; // Used in parse failures and required-runtime assertions below.
-const skyDomePath = 'docs/js/sky-dome.js'; // Used to verify the normal 3D sky keeps clouds in front of both celestial bodies.
-const editorPath = 'docs/tools/loading-screen-editor/index.html'; // Used to validate the integrated loading-screen + sky-framing authoring surface.
-const removedToolPath = 'docs/tools/loading-screen-editor/sky-focus.html'; // Used to guard against accidentally restoring the old standalone workflow.
-const configPath = 'docs/config/loading-screens.json'; // Used to confirm exported/shipped framing settings remain compatible.
-const bootstrapPath = 'docs/js/local-save-folder.js'; // Used to confirm initial boot still installs the backdrop before the loading-screen runtime.
+const runtimePath = 'docs/js/loading-screen-sky-backdrop.js';
+const skyDomePath = 'docs/js/sky-dome.js';
+const editorPath = 'docs/tools/loading-screen-editor/index.html';
+const removedToolPath = 'docs/tools/loading-screen-editor/sky-focus.html';
+const configPath = 'docs/config/loading-screens.json';
+const bootstrapPath = 'docs/js/local-save-folder.js';
 
-const runtimeSource = read(runtimePath); // Used by syntax and integration assertions for the loading-screen sky runtime.
-const skyDomeSource = read(skyDomePath); // Used by the 3D cloud/celestial ordering assertions.
-const editorSource = read(editorPath); // Used by syntax and authoring-workflow assertions for the integrated editor.
-const bootstrapSource = read(bootstrapPath); // Used by the boot-loader reference assertion.
-const config = JSON.parse(read(configPath)); // Used by version and persisted-offset/zoom assertions.
+const runtimeSource = read(runtimePath);
+const skyDomeSource = read(skyDomePath);
+const editorSource = read(editorPath);
+const bootstrapSource = read(bootstrapPath);
+const config = JSON.parse(read(configPath));
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -29,9 +29,9 @@ function parseJavaScript(source, filename) {
 }
 
 function extractInlineScripts(html) {
-  const scripts = []; // Used as the collected executable inline script bodies from the editor HTML.
-  const pattern = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi; // Used to parse ordinary inline script blocks without executing browser code.
-  let match; // Used as the current regex match while walking all inline script tags.
+  const scripts = [];
+  const pattern = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+  let match;
   while ((match = pattern.exec(html))) scripts.push(match[1]);
   return scripts;
 }
@@ -39,7 +39,7 @@ function extractInlineScripts(html) {
 parseJavaScript(runtimeSource, runtimePath);
 parseJavaScript(skyDomeSource, skyDomePath);
 parseJavaScript(bootstrapSource, bootstrapPath);
-const inlineScripts = extractInlineScripts(editorSource); // Used to ensure the integrated editor contains syntax-valid executable script.
+const inlineScripts = extractInlineScripts(editorSource);
 assert(inlineScripts.length > 0, `${editorPath}: expected an inline script`);
 inlineScripts.forEach((source, index) => parseJavaScript(source, `${editorPath}#script-${index + 1}`));
 
@@ -48,16 +48,16 @@ assert(Number.isFinite(Number(config.settings?.skyFocusOffsetX)), `${configPath}
 assert(Number.isFinite(Number(config.settings?.skyFocusOffsetY)), `${configPath}: skyFocusOffsetY must be numeric`);
 assert(Number.isFinite(Number(config.settings?.skyZoom)), `${configPath}: skyZoom must be numeric`);
 assert(Number(config.settings?.loreSize) === 19, `${configPath}: uploaded loreSize must remain 19`);
-assert(Number(config.settings?.scriptSize) === 150, `${configPath}: uploaded scriptSize must remain 150`);
+assert(Number(config.settings?.scriptSize) === 160, `${configPath}: latest uploaded scriptSize must remain 160`);
 assert(Number(config.settings?.scriptY) === 45, `${configPath}: uploaded scriptY must remain 45`);
 assert(Number(config.settings?.columnSpacing) === -0.56, `${configPath}: uploaded columnSpacing must remain -0.56`);
-assert(Number(config.settings?.scriptScrollSpeed) === 0.042, `${configPath}: uploaded scriptScrollSpeed must remain 0.042`);
+assert(Number(config.settings?.scriptScrollSpeed) === 0.03, `${configPath}: latest uploaded scriptScrollSpeed must remain 0.03`);
 assert(Number(config.settings?.loadPercent) === 63, `${configPath}: uploaded preview progress must remain 63`);
-assert(Number(config.settings?.skyFocusOffsetX) === 0, `${configPath}: uploaded skyFocusOffsetX must remain 0`);
-assert(Number(config.settings?.skyFocusOffsetY) === -0.5, `${configPath}: uploaded skyFocusOffsetY must remain -0.5`);
-assert(Number(config.settings?.skyZoom) === 1.25, `${configPath}: shipped sky zoom must remain 1.25x`);
+assert(Number(config.settings?.skyFocusOffsetX) === 8, `${configPath}: latest uploaded skyFocusOffsetX must remain 8`);
+assert(Number(config.settings?.skyFocusOffsetY) === 0, `${configPath}: latest uploaded skyFocusOffsetY must remain 0`);
+assert(Number(config.settings?.skyZoom) === 3.25, `${configPath}: shipped sky zoom must remain 3.25x`);
 
-assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913c'), `${bootstrapPath}: current backdrop bootstrap reference missing`);
+assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913d'), `${bootstrapPath}: current backdrop bootstrap reference missing`);
 assert(bootstrapSource.includes('data-loading-sky-retry'), `${bootstrapPath}: DOM-ready backdrop retry guard missing`);
 assert(bootstrapSource.includes('#hobunjiLoadScreen>#hlsSkyBackdrop{z-index:0!important}'), `${bootstrapPath}: explicit runtime sky stacking contract missing`);
 assert(runtimeSource.includes("document.getElementById('hobunjiLoadScreen')"), `${runtimePath}: must attach to the canonical loading-screen root`);
@@ -65,7 +65,8 @@ assert(runtimeSource.includes('window.HobunjiSkyDome?.getDebugState?.()'), `${ru
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getLightingState?.()'), `${runtimePath}: must reuse live skydome lighting when available`);
 assert(runtimeSource.includes("focusKind: night >= 0.5 ? 'moon' : 'sun'"), `${runtimePath}: automatic day/night celestial focus rule missing`);
 assert(runtimeSource.includes('skyFocusOffsetX') && runtimeSource.includes('skyFocusOffsetY'), `${runtimePath}: tool-authored framing offsets missing`);
-assert(runtimeSource.includes('skyZoom: 1.25'), `${runtimePath}: 1.25x fallback sky zoom missing`);
+assert(runtimeSource.includes('skyZoom: 3.25'), `${runtimePath}: 3.25x fallback sky zoom missing`);
+assert(runtimeSource.includes('0.5, 4'), `${runtimePath}: runtime sky zoom ceiling must remain 4x`);
 assert(runtimeSource.includes('VIEW_SPAN_U / zoom') && runtimeSource.includes('VIEW_SPAN_V / zoom'), `${runtimePath}: sky zoom must change the projected field of view`);
 assert(runtimeSource.includes('root.insertBefore(canvas, root.firstChild)'), `${runtimePath}: sky canvas must remain behind existing loading-screen foreground content`);
 const runtimeSunDraw = runtimeSource.indexOf("drawCelestial(state.context, dimensions.width, dimensions.height, center, sky, 'sun')");
@@ -82,6 +83,7 @@ assert(editorSource.includes('id="skyBackdrop"'), `${editorPath}: integrated sky
 assert(editorSource.includes('id="skyFocusOffsetX"') && editorSource.includes('id="skyFocusOffsetY"'), `${editorPath}: integrated sky offset controls missing`);
 assert(editorSource.includes('id="skyPreviewHour"'), `${editorPath}: day/night preview-hour control missing`);
 assert(editorSource.includes('id="skyZoom"'), `${editorPath}: sky zoom control missing`);
+assert(editorSource.includes('id="skyZoom" type="range" min="0.5" max="4"'), `${editorPath}: editor sky zoom slider must reach 4x`);
 assert(editorSource.includes('The sky is the actual preview backdrop behind the image, script, lore, and load percentage'), `${editorPath}: behind-content live sky workflow missing`);
 assert(editorSource.includes('body.previewOnly #skyFocusGuide'), `${editorPath}: focus guide must disappear in full preview mode`);
 assert(editorSource.includes('delete output.settings.skyPreviewHour'), `${editorPath}: editor-only preview hour must not leak into exported runtime config`);
@@ -91,9 +93,10 @@ assert(editorSource.includes('availableW/previewW') && editorSource.includes('av
 assert(!editorSource.includes('const PREVIEW_W=1920,PREVIEW_H=1080'), `${editorPath}: fixed 16:9 viewport must not return`);
 assert(editorSource.includes('max-width:78%;max-height:70%'), `${editorPath}: image bounds must scale from the simulated runtime viewport`);
 assert(editorSource.includes('width:min(42%,540px);height:min(72%,880px)'), `${editorPath}: script viewport must use runtime-equivalent device-relative bounds`);
-assert(editorSource.includes('scriptSize:150') && editorSource.includes('scriptY:45'), `${editorPath}: defaults must use the uploaded script sizing/position`);
-assert(editorSource.includes('columnSpacing:-.56') && editorSource.includes('scriptScrollSpeed:.042'), `${editorPath}: defaults must use the uploaded script composition`);
-assert(editorSource.includes('skyFocusOffsetY:-.5') && editorSource.includes('skyZoom:1.25'), `${editorPath}: uploaded sky framing plus 1.25x zoom must be the default`);
+assert(editorSource.includes('scriptSize:160') && editorSource.includes('scriptY:45'), `${editorPath}: defaults must use the latest uploaded script sizing/position`);
+assert(editorSource.includes('columnSpacing:-.56') && editorSource.includes('scriptScrollSpeed:.03'), `${editorPath}: defaults must use the latest uploaded script composition`);
+assert(editorSource.includes('skyFocusOffsetX:8') && editorSource.includes('skyFocusOffsetY:0') && editorSource.includes('skyZoom:3.25'), `${editorPath}: latest uploaded sky framing plus 3.25x zoom must be the default`);
+assert(editorSource.includes(',.5,4)'), `${editorPath}: editor normalization/preview zoom ceiling must remain 4x`);
 const editorSunDraw = editorSource.indexOf('drawBody("sun",w,h,state)');
 const editorMoonDraw = editorSource.indexOf('drawBody("moon",w,h,state)');
 const editorCloudDraw = editorSource.indexOf('drawClouds(w,h,state)', editorMoonDraw);
