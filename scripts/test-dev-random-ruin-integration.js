@@ -57,7 +57,8 @@ assert(coverage.includes('filterSeedAudit'), 'multi-seed audit must reconcile kn
 // from GitHub at runtime. The readable V50 file remains exact; debrisifier-01.js
 // swaps only its repository transport while executing devRuntime=1.
 assert(debrisBootstrap.includes("params.get('devRuntime') === '1'"), 'Debris-ifier bootstrap must recognize hidden dev runtime mode');
-assert(debrisBootstrap.includes("REPO_TREE_URL='debrisifier-v50-embedded-tree.json'"), 'embedded runtime must replace the live GitHub tree URL');
+assert(debrisBootstrap.includes("const EMBEDDED_TREE = 'debrisifier-v50-embedded-tree.json'"), 'embedded runtime must name the committed local tree');
+assert(debrisBootstrap.includes('sourceText.replace(treeNeedle, treeReplacement).replace(rawNeedle, rawReplacement)'), 'embedded runtime must substitute both verified transport bindings');
 assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href).href"), 'embedded runtime must map repo asset paths to the local docs origin');
 assert(debrisBootstrap.includes('refusing an unverified embedded patch'), 'embedded transport patch must fail closed if exact V50 bindings drift');
 assert(debrisBootstrap.includes("source.src = 'debrisifier-v50-source.js'"), 'direct Debris-ifier mode must keep loading the exact readable source file');
