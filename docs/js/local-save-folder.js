@@ -14,7 +14,7 @@ document.write('<style>#hobunjiLoadScreen>#hlsSkyBackdrop{z-index:0!important}#h
 
 // This compatibility loader is a stable parser-blocking boot slot before the loading-screen runtime.
 // Load the lightweight sky backdrop here so initial boot and later map-travel loaders use the same module.
-document.write('<script src="js/loading-screen-sky-backdrop.js?v=20260913b"><\/script>');
+document.write('<script src="js/loading-screen-sky-backdrop.js?v=20260913c"><\/script>');
 
 // A second, idempotent DOM-ready check protects the loader from browser/parser
 // edge cases around nested document.write script insertion. The sky module has
@@ -23,7 +23,7 @@ document.write('<script src="js/loading-screen-sky-backdrop.js?v=20260913b"><\/s
 window.addEventListener('DOMContentLoaded', () => {
   if (window.LoadingScreenSkyBackdrop?.installed || document.querySelector('script[data-loading-sky-retry]')) return;
   const script = document.createElement('script');
-  script.src = 'js/loading-screen-sky-backdrop.js?v=20260913b';
+  script.src = 'js/loading-screen-sky-backdrop.js?v=20260913c';
   script.async = false;
   script.dataset.loadingSkyRetry = '1';
   (document.head || document.documentElement).appendChild(script);
