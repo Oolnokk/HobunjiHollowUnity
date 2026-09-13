@@ -1,10 +1,23 @@
-// Bootstraps the preserved V50 runtime while the Tool Hub integration still uses the original split-script shell.
+// Boots the exact readable Debris-ifier V50 source and then exposes its dev API.
+// index.html still references the historical split-script shell; this first entry
+// deliberately owns the real runtime so existing tool links keep working unchanged.
 (() => {
-  const script = document.createElement('script'); // Used to load the integrity-checked V50 runtime reconstruction after Three.js dependencies are ready.
-  script.src = 'debrisifier-runtime-loader.js';
-  script.onerror = () => {
-    const debug = document.getElementById('debug');
-    if (debug) debug.textContent = 'Debris-ifier bootstrap: FAILED — runtime loader did not load.';
+  'use strict';
+
+  const debug = document.getElementById('debug');
+  const fail = message => {
+    if (debug) debug.textContent = `Debris-ifier bootstrap: FAILED — ${message}`;
+    console.error('[Debris-ifier bootstrap]', message);
   };
-  document.head.appendChild(script);
+
+  const source = document.createElement('script');
+  source.src = 'debrisifier-v50-source.js';
+  source.onerror = () => fail('readable V50 source did not load.');
+  source.onload = () => {
+    const api = document.createElement('script');
+    api.src = 'debrisifier-v50-api.js';
+    api.onerror = () => fail('V50 dev API did not load.');
+    document.head.appendChild(api);
+  };
+  document.head.appendChild(source);
 })();
