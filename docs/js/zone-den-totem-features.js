@@ -169,7 +169,8 @@
       for (const cave of localeCaves) {
         const w = Math.max(1, Number(cave.w) || 1), h = Math.max(1, Number(cave.h) || 1);
         const centerCol = Number(cave.x) + w / 2, centerRow = Number(cave.y) + h / 2;
-        const elevTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0;
+        const sampledTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0; // Center sampling is only a fallback for old/non-terrain-aware cave records.
+        const elevTier = Number.isFinite(Number(cave.floorTier)) ? Number(cave.floorTier) : sampledTier; // Terrain-aware caves sit on their locale floor, not a higher embedded plateau cell under the model center.
         const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
         const visual = cave.visual || {}; // Authored scale/facing controls modify the same normal den cave prop rather than creating a second renderer.
         const variant = visual.surface === 'grehlr' ? DEN_CAVE_VARIANTS.grehlr : DEN_CAVE_VARIANTS.default;

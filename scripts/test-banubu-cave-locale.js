@@ -30,8 +30,12 @@ for (const [key, rule] of Object.entries(embedded)) {
 }
 
 const anchors = locale.terrainAnchors || {};
-const freeApproach = Object.values(anchors).filter(rule => rule.terrain === 'free' && rule.strength === 'required');
-assert(freeApproach.length >= 3, 'Banubu Cave needs a required open approach before the embedded plateau');
+const groundApproach = Object.values(anchors).filter(rule => rule.terrain === 'ground' && rule.strength === 'required');
+assert(groundApproach.length >= 3, 'Banubu Cave needs a required true-ground approach so the cave floor cannot land on a raised shelf');
+for (const key of ['3,3', '4,3', '5,3']) {
+  assert.strictEqual(anchors[key]?.terrain, 'ground', `Banubu approach ${key} must require tier-0 ground`);
+  assert.strictEqual(locale.placement?.terrainAnchors?.[key]?.terrain, 'ground', `persisted Banubu approach ${key} must mirror tier-0 ground requirement`);
+}
 const internalCliff = anchors['4,5'];
 assert(internalCliff, 'Banubu Cave needs an explicit cliff probe at the front of its embedded host');
 assert.strictEqual(internalCliff.terrain, 'plateauCliff', 'Banubu Cave must require an internal plateau cliff, not a boundary cliff');
@@ -90,6 +94,8 @@ const labPreview = fs.readFileSync(path.join(repoRoot, 'docs/tools/wilderness-ge
 assert(caveRuntime.includes('generateZoneWorkspace = function localeCaveGenerateZoneWorkspace'), 'game wilderness generation must register placed locale caves');
 assert(zoneRenderer.includes('LocaleCaveRuntime?.cavesForZone?.(mapId)'), 'game cave renderer must consume locale cave registrations');
 assert(zoneRenderer.includes('DEN_SIZE_SCALE * authoredScale'), 'authored 2x cave scale must multiply the normal game cave scaling path');
+assert(caveRuntime.includes('floorTier: Number.isFinite(Number(instance.floorTier))'), 'locale cave registry must preserve the placed locale floor tier');
+assert(zoneRenderer.includes('Number.isFinite(Number(cave.floorTier)) ? Number(cave.floorTier) : sampledTier'), 'locale cave renderer must anchor terrain-aware caves to their locale floor tier');
 assert(labPreview.includes('ZoneFeatures.buildAnimalDenMeshes(scene, mergedZGrid(merged), [], LAB_CAVE_MAP_ID)'), 'Wilderness Lab must invoke the exact game cave renderer for Banubu Cave');
 
 console.log('Banubu Cave locale + 2x cliff placement + shared game-render regression checks passed');

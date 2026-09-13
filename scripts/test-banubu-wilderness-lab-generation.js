@@ -36,6 +36,8 @@ console.log(JSON.stringify({
 assert(diagnostic, 'Banubu Cave must produce a terrain-placement diagnostic in the real Northern Cliffs generation.');
 assert.strictEqual(diagnostic.status, 'placed', `Banubu Cave must place in the Wilderness Lab default Northern Cliffs seed; got ${diagnostic.reason || diagnostic.status}`);
 assert(instance, 'Banubu Cave must produce a localeInstance in the real Northern Cliffs generation.');
+assert.strictEqual(diagnostic.selected?.floorTier, 0, 'Banubu Cave must place at the true ground-level base of a cliff, never on a raised shelf');
+assert.strictEqual(instance.floorTier, 0, 'runtime Banubu locale floor must remain tier 0');
 const internalCliffProbes = (diagnostic.selected?.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');
 assert.strictEqual(internalCliffProbes.length, 2, "one north-facing authored cliff cell must expand to exactly a 2-tile cliff-face strip at the generator's 2x density");
 assert(internalCliffProbes.every(probe => probe.rule.facing === 'north' && probe.matched), 'Banubu Cave must match its explicit north-facing internal plateau cliff strip');
