@@ -48,6 +48,11 @@ new vm.Script(interior, { filename:'dev-random-ruin-interior-map.js' });
 assert(api.includes('createRuntimeStoneLadder'), 'V50 bridge must expose the real stone ladder constructor');
 assert(api.includes('auditInteriorSeeds'), 'V50 bridge must expose multi-seed runtime-tag auditing');
 assert(api.includes('inspectRuntimeTags'), 'V50 bridge must classify runtime-tagged prototype output');
+assert(api.includes('prepareRuntimeWallPlanes'), 'V50 bridge must explicitly prepare the prototype wall planes for game rendering');
+assert(api.includes('runtimeWallPlaneRendered'), 'prototype wall planes must be tagged after runtime render preparation');
+assert(api.includes('THREE.DoubleSide'), 'prototype wall planes must render from either game-camera side');
+assert(api.includes('runtimeHallwayState'), 'V50 bridge must expose generated hallway clearance metadata');
+assert(api.includes('minCrossCells < 5'), 'embedded runtime must reject hallway width regressions below five prototype cells');
 assert(motion.includes('runtimeRecoveryEgress'), 'motion runtime must mark injected recovery ladders');
 assert(motion.includes('exactLevelComponents'), 'motion runtime must audit each negative elevation tier');
 assert(motion.includes('ridesMovingDais'), 'motion runtime must carry V50 elevator blocks with moving daises');
@@ -60,8 +65,8 @@ assert(coverage.includes('data.groundedToMovingPlatform && object?.parent'), 'pl
 assert(coverage.includes('effectiveUnhandled'), 'cross-layer audit must retain truly unhandled prototype objects');
 assert(coverage.includes('filterSeedAudit'), 'multi-seed audit must reconcile known cross-layer activator classes');
 
-// The recovered prototype file is immutable source-of-truth. Embedded mode patches
-// only four verified transport call sites in memory after reading these exact bytes.
+// The recovered prototype file is immutable source-of-truth. Embedded mode reads
+// these exact bytes and applies only verified in-memory game-runtime patches.
 assert.equal(
   crypto.createHash('sha256').update(debrisSource).digest('hex'),
   '038a5d54c66b0ae2a9ceeb66967b9e5c32b616040f40b503eec59d5331885f40',
@@ -69,16 +74,20 @@ assert.equal(
 );
 assert(debrisBootstrap.includes("params.get('devRuntime') === '1'"), 'Debris-ifier bootstrap must recognize hidden dev runtime mode');
 assert(debrisBootstrap.includes("const EMBEDDED_TREE = 'debrisifier-v50-embedded-tree.json'"), 'embedded runtime must name the committed local tree');
-assert(debrisBootstrap.includes('.replace(treeNeedle, treeReplacement)'), 'embedded runtime must substitute the verified repository tree binding');
-assert(debrisBootstrap.includes('.replace(rawNeedle, rawReplacement)'), 'embedded runtime must substitute the verified raw asset helper');
-assert(debrisBootstrap.includes('.replace(brickNeedle, brickReplacement)'), 'embedded runtime must route the direct Roughbrick loader through the local helper');
-assert(debrisBootstrap.includes('.replace(decalNeedle, decalReplacement)'), 'embedded runtime must route direct mechanism decals through the local helper');
+assert(debrisBootstrap.includes('const hallReplacement = \'const width=randomIntInclusive(rng,5,6),length=randomIntInclusive(rng,5,8);\''), 'embedded runtime must widen normal V50 hallways to 5–6 cells');
+assert(debrisBootstrap.includes("escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=10+rooms.length*3;'"), 'embedded runtime must widen fallback V50 hallways to 5–6 cells');
+assert(debrisBootstrap.includes('Math.max(3,Number(door.widthCells)||3)'), 'hallway door arches must consume the authored doorway width instead of a fixed 3-cell span');
+assert(debrisBootstrap.includes('Math.max(3,Number(chosen.door.widthCells)||3)'), 'focus doorway arches must consume the authored doorway width');
 assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href).href"), 'embedded runtime must map repo asset paths to the local docs origin');
-assert(debrisBootstrap.includes('refusing an unverified embedded patch'), 'embedded transport patch must fail closed if exact V50 bindings drift');
+assert(debrisBootstrap.includes('refusing an unverified embedded patch'), 'embedded runtime patching must fail closed if exact V50 bindings drift');
 assert(debrisBootstrap.includes("source.src = 'debrisifier-v50-source.js'"), 'direct Debris-ifier mode must keep loading the exact readable source file');
+assert(debrisBootstrap.includes('patchedBindings: patches.length'), 'embedded runtime must report the verified patch count');
 assert.equal((debrisSource.match(/REPO_RAW_ROOT/g) || []).length, 4, 'V50 source gained an unaudited direct raw-repo transport use');
+assert(debrisSource.includes('const width=randomIntInclusive(rng,3,4),length=randomIntInclusive(rng,5,8);'), 'source-of-truth V50 hallway sizing unexpectedly changed');
+assert(debrisSource.includes('hallWidth=randomIntInclusive(rng,3,4),hallLen=10+rooms.length*3;'), 'source-of-truth V50 fallback hallway sizing unexpectedly changed');
 new vm.Script(debrisBootstrap, { filename:'debrisifier-01.js' });
 new vm.Script(debrisSource, { filename:'debrisifier-v50-source.js' });
+new vm.Script(api, { filename:'debrisifier-v50-api.js' });
 
 const furnitureRoots = ['docs/config/furniture-authored/', 'docs/assets/models/furniture/data/'];
 const ruinRe = /(pillar|stone|obelisk|ruin|statue|buttress|arch|pedestal|support)/i;
