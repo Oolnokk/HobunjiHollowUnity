@@ -21,11 +21,14 @@ jobs:
         with:
           node-version: '20'
       - name: Apply patch
-        run: python scripts/tmp-apply-cliff-derived-floor.py
+        run: |
+          python scripts/tmp-apply-cliff-derived-floor.py
+          python scripts/tmp-fix-cliff-floor-test.py
       - name: Syntax checks
         run: |
           node --check docs/js/locale-terrain-placement.js
           node --check docs/tools/locale-editor/locale-preview3d.js
+          node --check scripts/test-banubu-wilderness-lab-generation.js
           python - <<'PY'
           from pathlib import Path
           import re, subprocess
@@ -53,4 +56,4 @@ jobs:
           git commit -m 'Derive locale floor from adjacent cliff tier'
           git push origin HEAD:chatgpt/locale-terrain-anchors
 
-# Touch to trigger the patch after the workflow exists on the branch.
+# Rerun after fixing the regression assertion quoting.
