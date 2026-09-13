@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hobunji Hollow — Snow Runtime Test</title>
+</head>
+<body>
+  <script>
+    (async () => {
+      'use strict';
+
+      const CACHE_KEY = '20260913snowcache5';
+      const response = await fetch(`index.html?surface-test=${CACHE_KEY}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Failed to load index.html: HTTP ${response.status}`);
+      let html = await response.text();
+
+      const legacyStub = `<script>
+window.EnvironmentSurfaceRuntime = Object.freeze({
+  __installedV4: true,
+  __disabledForMicroPlateauTest: true,
+  init() {},
+  update() {},
+  forceRebuild() { return this.debugSnapshot(); },
+  debugSnapshot() {
+    return {
+      installed: false,
+      initialized: false,
+      version: 'disabled',
+      area: window.GridTileAccessors?.getCurrentArea?.() || null,
+      mode: 'disabled',
+      activeMode: 'disabled',
+      ownerSurfaces: 0,
+      pendingJobs: 0,
+      activeJob: null,
+      completedJobs: 0,
+      discoveredSpatialChunks: 0,
+      lastReason: 'legacy environment-surface runtime disabled for micro-plateau test',
+    };
+  },
+});
+<\/script>`;
+
+      html = html.replace(
+        /<script src="js\/rain-planes\.js\?v=[^"]+"><\/script>/,
+        `${legacyStub}\n  <script src="js/rain-planes.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-micro-plateau.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-pixel-probe.js?v=${CACHE_KEY}"><\/script>`,
+      );
+      html = html.replace(
+        /<script src="js\/pixel-probe\.js\?v=[^"]+"><\/script>/,
+        `<script src="js/pixel-probe.js?v=${CACHE_KEY}"><\/script>`,
+      );
+      html = html.replace('</body>', `
+<script>
+  (() => {
+    const panel = document.createElement('pre');
+    panel.id = 'environmentSurfaceTestStatus';
+    panel.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;max-width:min(92vw,760px);max-height:34vh;overflow:auto;margin:0;padding:7px 9px;border:1px solid rgba(255,255,255,.35);border-radius:7px;background:rgba(0,0,0,.82);color:#fff;font:10px/1.35 ui-monospace,monospace;pointer-events:none;white-space:pre-wrap';
+    document.body.appendChild(panel);
+    const refresh = () => {
+      const legacy = window.EnvironmentSurfaceRuntime?.debugSnapshot?.();
+      const micro = window.EnvironmentSurfaceMicroPlateau?.debugSnapshot?.();
+      const status = !micro ? 'unavailable' : micro.active ? 'ACTIVE' : micro.building ? 'BUILDING' : micro.scanning ? 'SCANNING' : 'waiting';
+      panel.textContent =
+        'LEGACY snow=' + (legacy?.mode || 'absent') + ' pending=' + (legacy?.pendingJobs ?? 0) + ' owners=' + (legacy?.ownerSurfaces ?? 0)
+        + '\\nMICRO v' + (micro?.version ?? '-') + ' plateau=' + status
+        + ' thickness=' + (micro?.thickness ?? '-')
+        + ' source=' + (micro?.scanSource || '-')
+        + ' processed=' + (micro?.processedTriangles ?? 0)
+        + ' accepted=' + (micro?.sampledTriangles ?? 0)
+        + '\\ntiles=' + (micro?.builtTiles ?? 0) + ' sampledTiles=' + (micro?.sampledTiles ?? 0)
+        + ' chunks=' + (micro?.builtChunks ?? 0) + '/' + (micro?.totalChunks ?? 0)
+        + ' edges=' + (micro?.exposedEdges ?? 0)
+        + ' slice=' + (micro?.lastSliceMs ?? '-') + '/' + (micro?.maxSliceMs ?? '-') + 'ms'
+        + ' tex=' + (micro?.textureState || '-')
+        + '\\nreason=' + (micro?.lastReason || '-');
+    };
+    refresh();
+    setInterval(refresh, 250);
+  })();
+<\/script>
+</body>`);
+
+      document.open();
+      document.write(html);
+      document.close();
+    })().catch(error => {
+      document.body.textContent = `Snow runtime test bootstrap failed: ${error?.message || error}`;
+      console.error(error);
+    });
+  </script>
+</body>
+</html>
