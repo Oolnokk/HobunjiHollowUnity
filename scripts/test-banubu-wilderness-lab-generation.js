@@ -82,4 +82,15 @@ if (diagnostic.status === 'placed') {
   assert((diagnostic.rejected || []).some(candidate => /cliff|embedded|probe|terrain-aware placement/i.test(String(candidate.reason || ''))), 'rejections should demonstrate that Banubu was evaluated against its cliff-base rules');
 }
 
-console.log(`Banubu real Northern Cliffs cliff-base regression passed (${diagnostic.status}).`);
+// Regression for the exact Locale Editor preview seed that exposed the over-constrained six-required-cliff layout.
+const priorNoMatchSeed = 'locale-preview|locale_banubu_shrine|map_northern_cliffs|mtzx7qkr|ckqwlqf';
+const previewWorkspace = generator.generateZoneWorkspace('map_northern_cliffs', priorNoMatchSeed, [locale]);
+const previewDiagnostic = (previewWorkspace.localeTerrainDiagnostics || []).find(item => item.localeId === locale.id);
+const previewInstance = (previewWorkspace.localeInstances || []).find(item => item.localeId === locale.id) || null;
+assert(previewDiagnostic, 'the known Locale Editor seed must still emit Banubu terrain diagnostics');
+assert.strictEqual(previewDiagnostic.status, 'placed', 'the known former no-match preview seed should now find a cliff-base placement');
+assert((previewDiagnostic.valid || 0) > 0, 'the known former no-match preview seed must expose at least one valid cliff-base candidate');
+assert(previewInstance, 'the known former no-match preview seed must create a runtime locale instance');
+assert.strictEqual(previewInstance.floorTier, previewDiagnostic.selected?.floorTier, 'preview runtime cave floor must match the selected lower cliff tier');
+
+console.log(`Banubu real Northern Cliffs cliff-base regression passed (${diagnostic.status}); prior Locale Editor no-match seed now places with ${previewDiagnostic.valid} valid candidates.`);
