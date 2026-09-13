@@ -1,0 +1,43 @@
+name: Finish Banubu cave
+
+on:
+  push:
+    branches:
+      - chatgpt/locale-terrain-anchors
+    paths:
+      - scripts/tmp-finish-banubu-cave.py
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/locale-terrain-anchors
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply cave finish patch
+        run: python scripts/tmp-finish-banubu-cave.py
+      - name: Syntax checks
+        run: |
+          node --check docs/js/zone-den-totem-features.js
+          node --check docs/tools/locale-editor/terrain-placement.js
+          node --check scripts/test-banubu-cave-locale.js
+          node --check scripts/test-banubu-wilderness-lab-generation.js
+      - name: Locale regressions
+        run: |
+          node scripts/test-locale-terrain-placement.js
+          node scripts/test-banubu-cave-locale.js
+          node scripts/test-banubu-wilderness-lab-generation.js
+      - name: Commit changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/js/zone-den-totem-features.js docs/config/locales/locale_banubu_shrine.json docs/tools/locale-editor/terrain-placement.js scripts/test-banubu-cave-locale.js scripts/test-banubu-wilderness-lab-generation.js
+          git commit -m 'Finish Banubu cave placement and material'
+          git push origin HEAD:chatgpt/locale-terrain-anchors
