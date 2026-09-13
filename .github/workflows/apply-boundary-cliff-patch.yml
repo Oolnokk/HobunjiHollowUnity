@@ -1,0 +1,106 @@
+name: Apply boundary cliff patch
+
+on:
+  push:
+    branches:
+      - chatgpt/locale-terrain-anchors
+    paths:
+      - '.github/workflows/apply-boundary-cliff-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/locale-terrain-anchors
+      - name: Split boundary cliffs from plateau cliffs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count} for {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          placement = 'docs/js/locale-terrain-placement.js'
+          replace_once(
+              placement,
+              "      terrain: ['any', 'water', 'river', 'stream', 'plateau', 'plateauCliff', 'ground', 'free'].includes(raw?.terrain) ? raw.terrain : (embedded ? 'plateau' : 'plateauCliff'),",
+              "      terrain: ['any', 'water', 'river', 'stream', 'plateau', 'plateauCliff', 'boundaryCliff', 'ground', 'free'].includes(raw?.terrain) ? raw.terrain : (embedded ? 'plateau' : 'plateauCliff'),"
+          )
+          old_cliff = '''  function cliffInfo(context, c, r) {\n    const selfTier = tileTier(context, c, r); // Candidate cell tier anchors comparisons to its four orthogonal neighbors.\n    let best = null; // Largest local tier drop identifies the visually dominant plateau face/facing direction.\n    for (const direction of CARDINAL) {\n      const neighborTier = tileTier(context, c + direction.dx, r + direction.dy); // Adjacent tier used to detect either side of a plateau cliff.\n      const drop = selfTier - neighborTier;\n      if (drop > 0.5 && (!best || drop > best.drop)) best = { drop, facing: direction.facing, highTier: selfTier, lowTier: neighborTier };\n      if (drop < -0.5) {\n        const outwardFacing = CARDINAL.find(item => item.dx === -direction.dx && item.dy === -direction.dy)?.facing || 'any'; // Low-side cell still inherits the face direction pointing away from the higher neighbor.\n        const inverseDrop = -drop;\n        if (!best || inverseDrop > best.drop) best = { drop: inverseDrop, facing: outwardFacing, highTier: neighborTier, lowTier: selfTier };\n      }\n    }\n    return best;\n  }\n'''
+          new_cliff = '''  function isBoundaryCliffTile(tile) {\n    return !!(tile?.borderEscarpment || tile?.generatedBorderEscarpment || tile?.distantBoundaryLandscape); // Exported generator metadata distinguishes perimeter escarpments from ordinary plateau mass.\n  }\n\n  function cliffInfo(context, c, r, requestedKind = 'any') {\n    const selfTile = tileRecord(context.root, c, r); // Boundary classification must inspect both sides of the height break, not only the sampled cell.\n    const selfTier = tileTier(context, c, r); // Candidate cell tier anchors comparisons to its four orthogonal neighbors.\n    let best = null; // Largest matching local tier drop identifies the visually dominant face/facing direction.\n    for (const direction of CARDINAL) {\n      const neighborC = c + direction.dx;\n      const neighborR = r + direction.dy;\n      const neighborTile = tileRecord(context.root, neighborC, neighborR);\n      const neighborTier = tileTier(context, neighborC, neighborR); // Adjacent tier used to detect either side of a cliff.\n      const kind = (isBoundaryCliffTile(selfTile) || isBoundaryCliffTile(neighborTile)) ? 'boundary' : 'plateau'; // Any face touching exported boundary-escarpment terrain belongs to the wilderness perimeter, even when sampled from its low side.\n      if (requestedKind !== 'any' && kind !== requestedKind) continue;\n      const drop = selfTier - neighborTier;\n      if (drop > 0.5 && (!best || drop > best.drop)) best = { drop, facing: direction.facing, highTier: selfTier, lowTier: neighborTier, kind };\n      if (drop < -0.5) {\n        const outwardFacing = CARDINAL.find(item => item.dx === -direction.dx && item.dy === -direction.dy)?.facing || 'any'; // Low-side cell still inherits the face direction pointing away from the higher neighbor.\n        const inverseDrop = -drop;\n        if (!best || inverseDrop > best.drop) best = { drop: inverseDrop, facing: outwardFacing, highTier: neighborTier, lowTier: selfTier, kind };\n      }\n    }\n    return best;\n  }\n'''
+          replace_once(placement, old_cliff, new_cliff)
+          replace_once(
+              placement,
+              "      case 'plateauCliff': return !!cliffInfo(context, c, r);",
+              "      case 'plateauCliff': return !!cliffInfo(context, c, r, 'plateau');\n      case 'boundaryCliff': return !!cliffInfo(context, c, r, 'boundary');"
+          )
+          old_facing = '''  function facingMatches(context, c, r, facing) {\n    if (!facing || facing === 'any') return true;\n    return cliffInfo(context, c, r)?.facing === facing;\n  }\n'''
+          new_facing = '''  function facingMatches(context, c, r, facing, terrain = 'any') {\n    if (!facing || facing === 'any') return true;\n    const requestedKind = terrain === 'plateauCliff' ? 'plateau' : terrain === 'boundaryCliff' ? 'boundary' : 'any'; // Facing must be read from the same cliff class that satisfied the terrain rule.\n    return cliffInfo(context, c, r, requestedKind)?.facing === facing;\n  }\n'''
+          replace_once(placement, old_facing, new_facing)
+          replace_once(
+              placement,
+              "    const facing = terrain && facingMatches(context, worldC, worldR, rule.facing); // Facing matters primarily for plateau-cliff probes.",
+              "    const facing = terrain && facingMatches(context, worldC, worldR, rule.facing, rule.terrain); // Facing is resolved inside the same plateau-vs-boundary cliff class as the terrain match."
+          )
+
+          editor = 'docs/tools/locale-editor/terrain-placement.js'
+          replace_once(
+              editor,
+              "    ['plateauCliff', 'Plateau cliff edge'],",
+              "    ['plateauCliff', 'Internal plateau cliff edge'],\n    ['boundaryCliff', 'Boundary cliff edge'],"
+          )
+          replace_once(
+              editor,
+              "      <div class=\"helpbox\"><b>Probe</b> cells inspect wilderness without generating a locale tile. <b>Embedded</b> cells are still part of the locale footprint, but must overlap the selected host terrain; “carve” removes higher plateau volume down to the locale floor. The grid below mirrors the main footprint editor.</div>",
+              "      <div class=\"helpbox\"><b>Probe</b> cells inspect wilderness without generating a locale tile. <b>Plateau cliff</b> means an internal generated plateau face; <b>Boundary cliff</b> means the wilderness perimeter escarpment. <b>Embedded</b> cells are still part of the locale footprint, but must overlap the selected host terrain; “carve” removes higher plateau volume down to the locale floor. The grid below mirrors the main footprint editor.</div>"
+          )
+
+          lab = 'docs/tools/wilderness-generation-lab/lab-locale-terrain.js'
+          replace_once(
+              lab,
+              "        <div class=\"help\" style=\"margin-top:5px\">Cyan = required/preferred probe · red = avoid/rejected · magenta = embedded/carved footprint · amber = selected generated footprint.</div>",
+              "        <div class=\"help\" style=\"margin-top:5px\">Cyan = required internal plateau cliff/other required probe · violet = required boundary cliff · yellow = preferred · red = avoid/rejected · magenta = embedded/carved footprint · amber = selected generated footprint.</div>"
+          )
+          replace_once(
+              lab,
+              "  function buildOverlay(workspace, merged) {",
+              "  function probeColor(rule, css = false) {\n    const color = rule?.strength === 'avoid' ? 0xfb7185 : rule?.strength === 'preferred' ? 0xfacc15 : rule?.terrain === 'boundaryCliff' ? 0xa78bfa : 0x55e6ff; // Boundary cliffs stay visually distinct from internal plateau cliffs in both diagnostic views.\n    return css ? `#${color.toString(16).padStart(6, '0')}` : color;\n  }\n\n  function buildOverlay(workspace, merged) {"
+          )
+          replace_once(
+              lab,
+              "          const color = probe.rule?.strength === 'avoid' ? 0xfb7185 : probe.rule?.strength === 'preferred' ? 0xfacc15 : 0x55e6ff;",
+              "          const color = probeColor(probe.rule);"
+          )
+          replace_once(
+              lab,
+              "        for (const probe of diagnostic.selected.probes || []) square(probe.c, probe.r, probe.rule?.strength === 'avoid' ? '#fb7185' : probe.rule?.strength === 'preferred' ? '#facc15' : '#55e6ff', 0.92, 0.25);",
+              "        for (const probe of diagnostic.selected.probes || []) square(probe.c, probe.r, probeColor(probe.rule, true), 0.92, 0.25);"
+          )
+
+          test = 'scripts/test-locale-terrain-placement.js'
+          anchor = "// A cave whose embedded host is not above its floor must be rejected.\n"
+          block = '''// Boundary escarpments and internal plateau cliffs are distinct terrain classes.\nconst boundaryClassWorkspace = makeWorkspace();\nfor (let r = 2; r <= 5; r++) {\n  const tile = boundaryClassWorkspace.maps[0].tiles[`6,${r}`];\n  tile.borderEscarpment = true;\n  tile.generatedBorderEscarpment = true;\n  tile.borderEscarpmentSide = 'west';\n}\nconst plateauRuleOnBoundary = Placement.evaluateCandidateForTest(boundaryClassWorkspace, cave, 4, 2, { scale: 1, seed: 'boundary-class-test' });\nassert.strictEqual(plateauRuleOnBoundary.ok, false, 'plateauCliff must reject a wilderness boundary escarpment');\nconst boundaryCave = JSON.parse(JSON.stringify(cave));\nboundaryCave.id = 'locale_test_boundary_cave';\nboundaryCave.terrainAnchors['2,0'].terrain = 'boundaryCliff';\nconst boundaryRuleOnBoundary = Placement.evaluateCandidateForTest(boundaryClassWorkspace, boundaryCave, 4, 2, { scale: 1, seed: 'boundary-class-test' });\nassert.strictEqual(boundaryRuleOnBoundary.ok, true, `boundaryCliff must match the exported boundary escarpment: ${boundaryRuleOnBoundary.reason || 'unknown rejection'}`);\n\n'''
+          replace_once(test, anchor, block + anchor)
+          PY
+          node --check docs/js/locale-terrain-placement.js
+          node --check docs/tools/locale-editor/terrain-placement.js
+          node --check docs/tools/wilderness-generation-lab/lab-locale-terrain.js
+          node scripts/test-locale-terrain-placement.js
+          node scripts/test-banubu-cave-locale.js
+          node scripts/test-banubu-wilderness-lab-generation.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/js/locale-terrain-placement.js docs/tools/locale-editor/terrain-placement.js docs/tools/wilderness-generation-lab/lab-locale-terrain.js scripts/test-locale-terrain-placement.js
+          git commit -m 'Differentiate boundary and plateau cliffs'
+          git push origin HEAD:chatgpt/locale-terrain-anchors
