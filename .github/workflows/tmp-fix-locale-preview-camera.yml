@@ -141,3 +141,5 @@ jobs:
           git add docs/tools/locale-editor/locale-preview3d.js scripts/test-banubu-cave-locale.js
           git commit -m 'Center locale preview camera on placed locale'
           git push origin HEAD:chatgpt/locale-terrain-anchors
+
+# Triggered after workflow creation so the branch-local workflow is active.
