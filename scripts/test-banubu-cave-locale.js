@@ -27,30 +27,29 @@ assert.deepStrictEqual(locale.connectors?.map(({ id, col, row, side, label }) =>
   { id: 'conn_1', col: 4, row: 2, side: 'north', label: "Banubu's Cave entrance" },
 ], 'Banubu entrance connector must match the user-authored version');
 
-const lowSideKeys = ['3,2','4,2','5,2'];
-const highSideKeys = ['3,3','4,3','5,3'];
+const expectedAnchorKeys = ['3,2','4,2','5,2','3,3','4,3','5,3'];
 const anchors = locale.terrainAnchors || {};
-assert.deepStrictEqual(Object.keys(anchors).sort(), [...lowSideKeys, ...highSideKeys].sort(), 'Banubu default must use paired low/high cliff probes across the cave width');
-for (const key of lowSideKeys) {
+assert.deepStrictEqual(Object.keys(anchors).sort(), expectedAnchorKeys.slice().sort(), 'Banubu default must use the six paired cliff-base probes');
+for (const key of ['3,2','4,2','5,2']) {
   const rule = anchors[key];
-  assert.strictEqual(rule?.terrain, 'plateauCliff', `${key} must sample the internal plateau cliff from the low side`);
-  assert.strictEqual(rule?.facing, 'north');
+  assert.strictEqual(rule?.terrain, 'plateauCliff', `${key} must inspect an internal plateau cliff`);
+  assert.strictEqual(rule?.facing, 'north', `${key} must use the cave mouth's north-facing cliff`);
   assert.strictEqual(rule?.height?.mode, 'relativeRange');
   assert.strictEqual(rule?.height?.min, 0);
-  assert.strictEqual(rule?.height?.max, 0);
+  assert.strictEqual(rule?.height?.max, 0, `${key} must sit on the local low side of the cliff`);
 }
-for (const key of highSideKeys) {
+for (const key of ['3,3','4,3','5,3']) {
   const rule = anchors[key];
-  assert.strictEqual(rule?.terrain, 'plateauCliff', `${key} must sample the internal plateau cliff from the high side`);
-  assert.strictEqual(rule?.facing, 'north');
+  assert.strictEqual(rule?.terrain, 'plateauCliff', `${key} must inspect an internal plateau cliff`);
+  assert.strictEqual(rule?.facing, 'north', `${key} must use the backing north-facing cliff`);
   assert.strictEqual(rule?.height?.mode, 'relativeRange');
-  assert.strictEqual(rule?.height?.min, 1);
+  assert.strictEqual(rule?.height?.min, 1, `${key} must sit on the high side above the locale floor`);
   assert.strictEqual(rule?.height?.max, null);
 }
-assert.strictEqual(anchors['4,2']?.strength, 'required', 'center mouth probe must require the low side of the cliff');
-assert.strictEqual(anchors['4,3']?.strength, 'required', 'center rear probe must require the high side of the same cliff');
+assert.strictEqual(anchors['4,2']?.strength, 'required', 'center mouth probe must be required');
+assert.strictEqual(anchors['4,3']?.strength, 'required', 'center backing probe must be required');
 for (const key of ['3,2','5,2','3,3','5,3']) {
-  assert.strictEqual(anchors[key]?.strength, 'preferred', `${key} should prefer a straight cliff face without making irregular generated cliffs impossible`);
+  assert.strictEqual(anchors[key]?.strength, 'preferred', `${key} is a shaping preference, not a hard rectangular-cliff requirement`);
   assert.strictEqual(anchors[key]?.weight, 2);
 }
 assert.deepStrictEqual(locale.placement?.terrainAnchors, locale.terrainAnchors, 'editor-persistence terrain anchors must mirror runtime terrain anchors');
@@ -82,6 +81,8 @@ const caveRuntime = fs.readFileSync(path.join(repoRoot, 'docs/js/locale-cave-run
 const zoneRenderer = fs.readFileSync(path.join(repoRoot, 'docs/js/zone-den-totem-features.js'), 'utf8');
 const labPreview = fs.readFileSync(path.join(repoRoot, 'docs/tools/wilderness-generation-lab/lab-banubu-cave.js'), 'utf8');
 const localeEditorPreview = fs.readFileSync(path.join(repoRoot, 'docs/tools/locale-editor/locale-preview3d.js'), 'utf8');
+const localeEditorIndex = fs.readFileSync(path.join(repoRoot, 'docs/tools/locale-editor/index.html'), 'utf8');
+const localeTerrainEditor = fs.readFileSync(path.join(repoRoot, 'docs/tools/locale-editor/terrain-placement.js'), 'utf8');
 const placementSource = fs.readFileSync(path.join(repoRoot, 'docs/js/locale-terrain-placement.js'), 'utf8');
 assert(caveRuntime.includes('generateZoneWorkspace = function localeCaveGenerateZoneWorkspace'), 'game wilderness generation must register placed locale caves');
 assert(zoneRenderer.includes('LocaleCaveRuntime?.cavesForZone?.(mapId)'), 'game cave renderer must consume locale cave registrations');
@@ -91,6 +92,12 @@ assert(labPreview.includes('ZoneFeatures.buildAnimalDenMeshes(scene, mergedZGrid
 assert(localeEditorPreview.includes('const placed = currentInstance || currentWorkspace?.localeInstances'), 'Locale Editor preview camera must focus the actual rendered locale instance first');
 assert(localeEditorPreview.includes("if (value == null || value === '') return null"), 'Locale Editor preview camera must not coerce a missing anchor to tile 0,0');
 assert(localeEditorPreview.includes('const bounds = compiled?.footprint || compiled?.bounds'), 'Locale Editor preview camera must orbit the painted locale footprint');
+assert(localeEditorPreview.includes('hasPlacementAnchors ? placement.terrainAnchors'), '3D preview must prefer persisted workspace terrain rules over stale sidecar cache');
+assert(localeEditorPreview.includes('output.placement = { ...placement, terrainAnchors: clone(output.terrainAnchors)'), 'preview/debug locale must serialize synchronized top-level and placement terrain rules');
+assert(localeEditorIndex.includes('setTerrainRules: (localeId, rules) =>'), 'main Locale Editor must expose live terrain-rule synchronization');
+assert(localeEditorIndex.includes('m.terrainAnchors = terrainAnchors;') && localeEditorIndex.includes('m.placement.terrainAnchors = JSON.parse(JSON.stringify(terrainAnchors));'), 'live workspace must mirror runtime and persisted terrain probes');
+assert(localeTerrainEditor.includes('reconcileRulesFromLocale(locale)'), 'terrain sidecar must reconcile stale cache from the authoritative workspace locale');
+assert(localeTerrainEditor.includes('syncRulesToMainLocale(locale.id, rules);'), 'terrain brush edits must update the live workspace locale immediately');
 assert(placementSource.includes('lowSideRelative'), 'density scaling must distinguish low-side directional cliff probes from high-side probes');
 
-console.log('Banubu cliff-base authoring + terrain/runtime regression checks passed');
+console.log('Banubu cliff-base authoring + terrain/runtime + editor rule-sync regression checks passed');
