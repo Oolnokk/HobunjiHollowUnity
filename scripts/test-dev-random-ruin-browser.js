@@ -73,6 +73,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         generatorDebug:frame?.contentDocument?.getElementById('debug')?.textContent || null,
         generatedSeed:state?.locale?.seed || null,
         generatedEnvironment:state?.locale?.meta?.environment || null,
+        runtimeWallPlanes:state?.runtimeWallPlanes || null,
+        runtimeHallways:state?.runtimeHallways || null,
       };
     }, seed);
   }
@@ -103,6 +105,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
 
     const active = await page.evaluate(() => {
       const scene = window.GridTileAccessors.getActiveScene();
+      const root = scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')) || null;
       const hooks = window.DevRandomRuinPrototypeHooks.snapshot();
       const hit = window.DevRandomRuinHitPuzzles.snapshot();
       const motion = window.DevRandomRuinMotionRuntime.snapshot();
@@ -110,20 +113,42 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const frame = document.getElementById('devRandomRuinGeneratorFrame');
       const generator = frame?.contentWindow?.DebrisifierV50;
       const generatorState = generator?.getState?.();
+      const shell = generatorState?.locale?.meta?.interiorShell || null;
       const transport = frame?.contentWindow?.__debrisifierEmbeddedTransport || null;
       const furnitureStatus = frame?.contentDocument?.getElementById('furnitureRepoStatus')?.textContent || '';
-      const levels = Object.values(
-        generatorState?.locale?.meta?.interiorShell?.plateauModel?.levelByCell || {},
-      ).map(Number);
+      const levels = Object.values(shell?.plateauModel?.levelByCell || {}).map(Number);
       let ladders = 0;
       scene?.traverse?.(object => {
         if (object.userData?.generatedAccessType === 'stoneLadder') ladders++;
       });
+
+      // Sample the actual game collision registry along the center of every
+      // hallway body, excluding the first/last cell where closed doors belong.
+      const hallwayCollision = [];
+      if (root && shell) {
+        const cell = Number(shell.cellSize) || .5;
+        for (const hall of shell.hallways || []) {
+          const alongCells = hall.axis === 'x' ? Number(hall.w) : Number(hall.h);
+          const blocked = [];
+          let samples = 0;
+          for (let i = 1; i <= alongCells - 2; i++) {
+            const c = hall.axis === 'x' ? Number(hall.col) + i + .5 : Number(hall.col) + Number(hall.w) / 2;
+            const r = hall.axis === 'z' ? Number(hall.row) + i + .5 : Number(hall.row) + Number(hall.h) / 2;
+            const local = new THREE.Vector3(c * cell - Number(shell.worldWidth) / 2, 0, r * cell - Number(shell.worldDepth) / 2);
+            const world = root.localToWorld(local);
+            samples++;
+            const hitRecord = window.DynamicSurfaces?.blockerAt?.(world.x, world.z, { radius:.28, actorHeight:1.25 }) || null;
+            if (hitRecord) blocked.push({ i, id:hitRecord.id, x:+world.x.toFixed(3), z:+world.z.toFixed(3) });
+          }
+          hallwayCollision.push({ id:hall.id, axis:hall.axis, crossCells:hall.axis === 'x' ? hall.h : hall.w, samples, blocked });
+        }
+      }
+
       return {
         area:window.GridTileAccessors.getCurrentArea(),
         building:window.GridTileAccessors.isBuildingArea(),
         sceneName:scene?.name || null,
-        hasRoot:!!scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')),
+        hasRoot:!!root,
         hooks,
         hit,
         motion,
@@ -132,6 +157,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         furnitureStatus,
         ladders,
         negativeLevels:levels.filter(level => level < 0).length,
+        runtimeWallPlanes:generatorState?.runtimeWallPlanes || null,
+        runtimeHallways:generatorState?.runtimeHallways || null,
+        hallwayCollision,
       };
     });
 
@@ -146,12 +174,23 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.sameOrigin, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
-    assert.equal(active.transport?.patchedBindings, 4, JSON.stringify(active.transport));
+    assert.equal(active.transport?.patchedBindings, 8, JSON.stringify(active.transport));
+    assert.deepEqual(active.transport?.runtimeHallwayWidthCells, [5,6], JSON.stringify(active.transport));
+    assert.equal(active.transport?.runtimeDoorwayUsesAuthoredWidth, true, JSON.stringify(active.transport));
     assert.match(
       active.furnitureStatus,
       /11 JSONs.*1 Runtime Authored.*10 Furniture Model Data/,
       active.furnitureStatus,
     );
+    assert.ok(active.runtimeWallPlanes?.count > 0, JSON.stringify(active.runtimeWallPlanes));
+    assert.equal(active.runtimeWallPlanes.visible, active.runtimeWallPlanes.count, JSON.stringify(active.runtimeWallPlanes));
+    assert.equal(active.runtimeWallPlanes.doubleSided, active.runtimeWallPlanes.count, JSON.stringify(active.runtimeWallPlanes));
+    assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
+    assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
+    for (const hall of active.hallwayCollision) {
+      assert.ok(hall.samples > 0, `hallway ${hall.id} produced no center-lane samples`);
+      assert.equal(hall.blocked.length, 0, `hallway ${hall.id} center lane is blocked: ${JSON.stringify(hall)}`);
+    }
     if (active.negativeLevels > 0) {
       assert.ok(active.ladders > 0, `negative floor tiers require ladder access: ${JSON.stringify(active)}`);
     }
@@ -159,6 +198,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       seed,
       ladders:active.ladders,
       negativeLevels:active.negativeLevels,
+      walls:active.runtimeWallPlanes.count,
+      minHallwayCells:active.runtimeHallways.minCrossCells,
+      hallways:active.hallwayCollision.length,
       furnitureStatus:active.furnitureStatus,
     });
   }
@@ -171,6 +213,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok(audit.aggregate.motions.length > 0, JSON.stringify(audit.aggregate));
     assert.ok(audit.aggregate.activators.length > 0, JSON.stringify(audit.aggregate));
     assert.ok(audit.aggregate.access.includes('stoneLadder'), JSON.stringify(audit.aggregate));
+    for (const row of audit.results || []) {
+      assert.ok(row.runtimeWallPlanes?.count > 0, JSON.stringify(row));
+      assert.equal(row.runtimeWallPlanes.visible, row.runtimeWallPlanes.count, JSON.stringify(row));
+      assert.equal(row.runtimeWallPlanes.doubleSided, row.runtimeWallPlanes.count, JSON.stringify(row));
+      assert.ok(row.runtimeHallways?.minCrossCells >= 5, JSON.stringify(row));
+    }
     aggregate = audit.aggregate;
   }
   assert.deepEqual(
