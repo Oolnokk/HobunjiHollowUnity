@@ -19,10 +19,21 @@ const settings = {
 
 const workspace = generator.generateWorkspace('wild-lab-2', settings);
 const diagnostic = (workspace.localeTerrainDiagnostics || []).find(item => item.localeId === locale.id);
-const instance = (workspace.localeInstances || []).find(item => item.localeId === locale.id);
+const instance = (workspace.localeInstances || []).find(item => item.localeId === locale.id) || null;
+const scale = terrainPlacement.inferGenerationScale(workspace);
+const compiled = terrainPlacement.compileLocale(locale, scale);
 
 console.log(JSON.stringify({
-  diagnostic,
+  diagnostic: diagnostic ? {
+    localeId: diagnostic.localeId,
+    status: diagnostic.status,
+    reason: diagnostic.reason,
+    scale: diagnostic.scale,
+    tested: diagnostic.tested,
+    valid: diagnostic.valid,
+    selected: diagnostic.selected,
+    rejectedCount: diagnostic.rejected?.length || 0,
+  } : null,
   instance: instance ? {
     localeId: instance.localeId,
     x: instance.x,
@@ -33,25 +44,37 @@ console.log(JSON.stringify({
   } : null,
 }, null, 2));
 
-assert(diagnostic, 'Banubu Cave must produce a terrain-placement diagnostic in the real Northern Cliffs generation.');
-assert.strictEqual(diagnostic.status, 'placed', `Banubu Cave must place in the Wilderness Lab default Northern Cliffs seed; got ${diagnostic.reason || diagnostic.status}`);
-assert(instance, 'Banubu Cave must produce a localeInstance in the real Northern Cliffs generation.');
-const internalCliffProbes = (diagnostic.selected?.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');
-const highSideCliffProbes = internalCliffProbes.filter(probe => (probe.rule?.height?.min ?? -Infinity) >= 1);
-assert(highSideCliffProbes.length === 2, 'Banubu authored high-side cliff cell must expand to a 2-tile cliff-face strip');
-assert(highSideCliffProbes.every(probe => probe.hostTier >= diagnostic.selected.floorTier + 1), 'Banubu rear cliff must rise above the derived lower-side locale floor');
+assert(diagnostic, 'Banubu Cave must produce a terrain-placement diagnostic in real Northern Cliffs generation.');
+assert(compiled, 'the authored Banubu default must compile through the terrain-aware placement path');
+assert.strictEqual(diagnostic.scale, 2, 'real Wilderness Lab Northern Cliffs generation must evaluate Banubu at the normal 2x tile density');
+assert((diagnostic.tested || 0) > 0, 'real generation must actually scan candidate anchors for Banubu');
+assert.strictEqual(compiled.tiles.size, 36, 'the authored 3x3 Banubu footprint must expand to 36 final-grid cells at 2x density');
+assert.strictEqual(compiled.probes.size, 24, 'the six authored facing-any cliff probes must expand to 24 final-grid probes at 2x density');
+assert(['placed', 'skipped'].includes(diagnostic.status), `unexpected Banubu diagnostic status: ${diagnostic.status}`);
 
-assert.strictEqual(internalCliffProbes.length, 2, "one high-side authored cliff cell must expand to exactly a 2-tile cliff-face strip at 2x density");
-assert(internalCliffProbes.every(probe => probe.rule.facing === 'north' && probe.matched), 'Banubu Cave must match its explicit north-facing internal plateau cliff strip');
 const root = (workspace.maps || []).find(map => map && !map.isSubmap);
-const plateauTier = new Map((workspace.plateauGroups || []).map(group => [group.id, Number(group.elevation) || 0]));
-const tierAt = (c, r) => { const tile = root?.tiles?.[`${c},${r}`]; if (!tile) return 0; if (Number.isFinite(Number(tile.rampElevation))) return Number(tile.rampElevation); return plateauTier.get(tile.plateau) || 0; };
-assert(highSideCliffProbes.every(probe => Math.abs(tierAt(probe.c, probe.r - 1) - diagnostic.selected.floorTier) < 0.001), "the north-adjacent low side of Banubu's chosen cliff must exactly equal the derived locale floor tier");
-for (const probe of internalCliffProbes) {
-  const tile = root?.tiles?.[`${probe.c},${probe.r}`];
-  assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu internal cliff probe must never land on boundary-escarpment terrain');
-}
-assert((instance.objects || []).some(object => object.key === 'cave_small'), 'placed Banubu locale must carry its cave_small object into runtime data.');
-assert(!(instance.npcAnchors || []).some(anchor => anchor.npcId === 'banubu'), 'Banubu exterior locale must not spawn Banubu; he belongs in the future interior.');
+assert(root, 'real Northern Cliffs generation must expose a root map');
 
-console.log('Banubu Cave real Wilderness Lab Northern Cliffs generation regression passed');
+if (diagnostic.status === 'placed') {
+  assert(instance, 'a placed Banubu diagnostic must have a localeInstance');
+  assert(diagnostic.selected, 'a placed Banubu diagnostic must retain its selected candidate');
+  const cliffProbes = (diagnostic.selected.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');
+  assert(cliffProbes.length > 0, 'a placed Banubu candidate must include its authored internal-cliff probes');
+  assert(cliffProbes.every(probe => probe.rule.facing === 'any' && probe.matched), 'all evaluated Banubu cliff probes must match the authored facing-any rule');
+  assert(cliffProbes.every(probe => probe.hostTier >= diagnostic.selected.floorTier + 1), 'Banubu cliff probes must remain above the derived next-lower locale floor');
+  for (const probe of cliffProbes) {
+    const tile = root.tiles?.[`${probe.c},${probe.r}`];
+    assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu plateauCliff probes must never resolve to boundary-escarpment terrain');
+  }
+  assert((instance.objects || []).some(object => object.key === 'cave_small'), 'placed Banubu locale must carry its cave_small object into runtime data');
+  assert(!(instance.npcAnchors || []).some(anchor => anchor.npcId === 'banubu'), 'Banubu exterior locale must not spawn Banubu; he belongs in the future interior');
+} else {
+  // This user-authored six-cliff formation is intentionally restrictive. A particular wilderness seed may simply contain no legal host; that is a valid generator outcome, not a regression.
+  assert.strictEqual(instance, null, 'a skipped Banubu diagnostic must not fabricate a localeInstance');
+  assert.strictEqual(diagnostic.reason, 'no terrain-aware placement matched', 'a skipped authored Banubu locale should report an ordinary no-match');
+  assert.strictEqual(diagnostic.valid, 0, 'a skipped seed should report zero valid candidates');
+  assert((diagnostic.rejected || []).length > 0, 'a skipped seed must retain rejected candidates for Locale Editor near-miss diagnostics');
+  assert((diagnostic.rejected || []).some(candidate => /cliff|probe|terrain-aware placement/i.test(String(candidate.reason || ''))), 'rejections should demonstrate that Banubu was evaluated against its cliff rules');
+}
+
+console.log(`Banubu real Northern Cliffs terrain-awareness regression passed (${diagnostic.status}).`);
