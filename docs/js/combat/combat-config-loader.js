@@ -128,6 +128,7 @@
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
     ['js/wildlife-cloud-forest-behavior.js?v=20260829a', () => !!window.HobunjiCloudForestWildlife],
     ['js/wildlife-grehlr-foraging.js?v=20260829a', () => !!window.HobunjiGrehlrForaging],
+    ['js/weaving-system.js?v=20260913armor1', () => Number(window.WeavingSystem?.version) >= 1],
   ];
 
   function loadModule(src, alreadyLoaded) {
