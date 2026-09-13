@@ -2,8 +2,9 @@
   'use strict';
 
   // Wilderness-zone landmark meshes tied to authored placement data rather
-  // than the tile grid itself: animal den cave entrances and composed living
-  // Root Totems. Farm and wilderness Root Totems share this renderer.
+  // than the tile grid itself: animal den cave entrances, locale cave mouths,
+  // and composed living Root Totems. Farm and wilderness Root Totems share
+  // this renderer.
   function ensureCompanionScript(globalName, fileName) {
     if (window[globalName] || typeof document === 'undefined') return;
     if (document.readyState !== 'loading') {
@@ -24,6 +25,7 @@
   ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js');
   ensureCompanionScript('StructuralWrap', 'structural-wrap.js');
   ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js');
+  ensureCompanionScript('LocaleCaveRuntime', 'locale-cave-runtime.js');
   // Generic rigid piece animation reuses the Root Totem wind helpers and
   // patches AuthoredFurniture.buildGroup before any live furniture is built.
   ensureCompanionScript('FurniturePieceAnimationRuntime', 'furniture-piece-animation-runtime.js');
@@ -38,32 +40,26 @@
     return window.HOBUNJI_ROOT_TOTEM_CONFIG?.canonicalRecipe || null;
   }
 
-  // Animal den entrance prop: docs/assets/models/cave_small.glb, shared by
-  // every den in the game — recolored per den family (see denCaveVariantFor)
-  // rather than modeled once per look. The GLB ships with no UV attribute
-  // at all (a single baked-color mesh), so a flat XZ planar projection
-  // (assignCaveUv) stands in for authored UVs, same "generate UVs for a
-  // mesh that never had any" need HousePieceGen.js's shingle GLB solves for
-  // its own shell meshes.
-  const CAVE_SMALL_GLB_PATH = 'assets/models/cave_small.glb';
-  // Halves the den's visual footprint (see buildAnimalDenMeshes) — half of
-  // whatever span the entrance prop would otherwise fill relative to the
-  // den's tile footprint.
+  // Animal den / authored locale cave entrance prop: cave_small.glb, shared by
+  // every den and cave locale in the game. Dens can recolor it per den family;
+  // locale caves default to the ordinary carved-stone surface unless their
+  // authored visual metadata asks for the grehlr soil variant.
+  const ZONE_FEATURE_SCRIPT_SRC = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Resolves cave assets correctly from docs/index.html and nested preview tools.
+  function zoneFeatureAssetUrl(path) {
+    if (!ZONE_FEATURE_SCRIPT_SRC || typeof URL === 'undefined') return path;
+    try { return new URL('../' + String(path || '').replace(/^\/+/, ''), ZONE_FEATURE_SCRIPT_SRC).href; }
+    catch (_) { return path; }
+  }
+  const CAVE_SMALL_GLB_PATH = zoneFeatureAssetUrl('assets/models/cave_small.glb');
+  // Halves a normal den's visual footprint (see buildAnimalDenMeshes). Locale
+  // caves multiply this by visual.scale, so visual.scale:2 fills the complete
+  // authored footprint while still using the exact den-rendering geometry path.
   const DEN_SIZE_SCALE = 0.5;
   const DEN_SINK = 0.35; // Settles the model's base slightly below ground level so it doesn't look like it's floating on top of the terrain.
-  // Matches the tiling density buildCarvedCavernMesh already uses for the
-  // mine's own carved_smooth.png cavern shell (game.js's mine wallStyle
-  // texture options) — small enough that the little entrance prop and the
-  // cavern beyond it read as the same continuous stone/soil surface.
   const DEN_CAVE_TEXTURE_REPEAT = 0.35;
-  // Same two looks used for the den's cavern INTERIOR (see game.js's
-  // 'cavern' wallStyle texture options, which reads this exact table via
-  // denCaveVariantFor) — the farm border cliffs' own rock texture/tint for
-  // gar-wolf/uumkao'ii dens, the trench floor's own soil texture/tint for
-  // grehlr dens, so an entrance and the tunnel behind it always match.
   const DEN_CAVE_VARIANTS = {
-    grehlr: { textureUrl: 'assets/textures/canvas.png', color: 0x423d35 },
-    default: { textureUrl: 'assets/textures/carved_smooth.png', color: 0x808080 },
+    grehlr: { textureUrl: zoneFeatureAssetUrl('assets/textures/canvas.png'), color: 0x423d35 },
+    default: { textureUrl: zoneFeatureAssetUrl('assets/textures/carved_smooth.png'), color: 0x808080 },
   };
   function denCaveVariantFor(denMotherKind) {
     return (typeof denMotherKind === 'string' && denMotherKind.startsWith('grehlr')) ? DEN_CAVE_VARIANTS.grehlr : DEN_CAVE_VARIANTS.default;
@@ -81,7 +77,7 @@
     return tex;
   }
 
-  const _caveMaterialCache = new Map(); // color -> THREE.Material, shared by every den of that family
+  const _caveMaterialCache = new Map(); // color -> THREE.Material, shared by every den/locale cave of that family
   function caveMaterialFor(variant) {
     let mat = _caveMaterialCache.get(variant.color);
     if (mat) return mat;
@@ -90,10 +86,6 @@
     return mat;
   }
 
-  // Flat XZ projection straight off local vertex position — see the GLB
-  // comment above. Deliberately not normalized to 0..1 (unlike a typical
-  // planar-stretch UV): using raw local units lets a shared DEN_CAVE_TEXTURE_REPEAT
-  // tile consistently across every den's clone regardless of its own scale.
   function assignCaveUv(geometry) {
     if (geometry.getAttribute('uv')) return;
     const pos = geometry.getAttribute('position');
@@ -109,7 +101,7 @@
     if (_caveTemplatePromise) return _caveTemplatePromise;
     const Loader = THREE.GLTFLoader;
     if (!Loader) {
-      console.warn('[zone den] THREE.GLTFLoader unavailable; animal den cave entrances cannot load.');
+      console.warn('[zone den] THREE.GLTFLoader unavailable; cave entrances cannot load.');
       return Promise.resolve(null);
     }
     _caveTemplatePromise = new Promise(resolve => {
@@ -133,30 +125,39 @@
     return _caveTemplatePromise;
   }
 
+  function caveFacingRotation(facing, rotDegrees) {
+    if (Number.isFinite(Number(rotDegrees))) return Number(rotDegrees) * Math.PI / 180;
+    switch (String(facing || 'south').toLowerCase()) {
+      case 'north': return Math.PI;
+      case 'east': return -Math.PI / 2;
+      case 'west': return Math.PI / 2;
+      default: return 0;
+    }
+  }
+
   function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
-    if (!dens || !dens.length) return;
+    const denList = Array.isArray(dens) ? dens : [];
+    const localeCaves = window.LocaleCaveRuntime?.cavesForZone?.(mapId) || []; // Authored caves are registered from placed localeInstances after wilderness generation.
+    if (!denList.length && !localeCaves.length) return;
     loadCaveSmallTemplate().then(template => {
       if (!template) return;
       const box = template.geometry.boundingBox;
       const templateWidth = Math.max(1e-4, box.max.x - box.min.x);
       const templateDepth = Math.max(1e-4, box.max.z - box.min.z);
+      const templateSpan = Math.max(templateWidth, templateDepth);
       const group = new THREE.Group();
       group.name = 'animalDenEntrances';
-      for (const den of dens) {
+      for (const den of denList) {
         const w = den.w || 1, h = den.h || 1;
         const centerCol = den.x + w / 2, centerRow = den.y + h / 2;
         const elevTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0;
         const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
-        // The den's own cavern species (see cavern-generator.js's
-        // pickDenMotherKind) — the exact same deterministic per-den roll
-        // its interior Den-Mother uses, so the entrance prop's color always
-        // matches what's actually inside.
         const cavernMapId = window.WildlifeSpawn?.denCavernMapId?.(mapId, den.id) || null;
         const denMotherKind = cavernMapId ? window.CavernGenerator?.pickDenMotherKind?.(cavernMapId) : null;
         const variant = denCaveVariantFor(denMotherKind);
         const mesh = template.clone();
         mesh.material = caveMaterialFor(variant);
-        const scale = (Math.min(w, h) / Math.max(templateWidth, templateDepth)) * DEN_SIZE_SCALE;
+        const scale = (Math.min(w, h) / templateSpan) * DEN_SIZE_SCALE;
         mesh.scale.set(scale, scale, scale);
         mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scale, centerRow);
         mesh.castShadow = true;
@@ -165,8 +166,31 @@
         deps.markOutline(mesh);
         group.add(mesh);
       }
+      for (const cave of localeCaves) {
+        const w = Math.max(1, Number(cave.w) || 1), h = Math.max(1, Number(cave.h) || 1);
+        const centerCol = Number(cave.x) + w / 2, centerRow = Number(cave.y) + h / 2;
+        const elevTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0;
+        const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;
+        const visual = cave.visual || {}; // Authored scale/facing controls modify the same normal den cave prop rather than creating a second renderer.
+        const variant = visual.surface === 'grehlr' ? DEN_CAVE_VARIANTS.grehlr : DEN_CAVE_VARIANTS.default;
+        const authoredScale = Math.max(0.1, Number(visual.scale) || 1);
+        const scale = (Math.min(w, h) / templateSpan) * DEN_SIZE_SCALE * authoredScale;
+        const mesh = template.clone();
+        mesh.material = caveMaterialFor(variant);
+        mesh.scale.set(scale, scale, scale);
+        mesh.rotation.y = caveFacingRotation(visual.facing, Number.isFinite(Number(cave.rot)) ? cave.rot : null);
+        mesh.position.set(centerCol, groundY - DEN_SINK - box.min.y * scale, centerRow);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData.cameraObstacle = true;
+        mesh.userData.localeCave = true;
+        mesh.userData.localeId = cave.localeId || null;
+        mesh.userData.localeObjectId = cave.sourceObjectId || cave.id || null;
+        deps.markOutline(mesh);
+        group.add(mesh);
+      }
       zScene.add(group);
-      console.log(`%c[zone:${mapId}] animal den cave entrances built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+      console.log(`%c[zone:${mapId}] cave entrances built: ${denList.length} animal dens + ${localeCaves.length} locale caves`, 'color:#22c55e;font-weight:bold');
     });
   }
 

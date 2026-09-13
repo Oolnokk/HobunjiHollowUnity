@@ -1,0 +1,38 @@
+name: Locale terrain regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/config/locales/**'
+      - 'docs/js/locale-terrain-placement.js'
+      - 'docs/js/locale-cave-runtime.js'
+      - 'docs/js/zone-den-totem-features.js'
+      - 'docs/tools/wilderness-generation-lab/**'
+      - 'docs/tools/locale-editor/**'
+      - 'scripts/test-locale-terrain-placement.js'
+      - 'scripts/test-banubu-cave-locale.js'
+      - 'scripts/test-banubu-wilderness-lab-generation.js'
+      - '.github/workflows/locale-terrain-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check Banubu Wilderness Lab renderer
+        run: node --check docs/tools/wilderness-generation-lab/lab-banubu-cave.js
+      - name: Syntax check Locale Editor terrain and 3D preview
+        run: |
+          node --check docs/tools/locale-editor/terrain-placement.js
+          node --check docs/tools/locale-editor/locale-preview3d.js
+          node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles','previewRoot.remove(child)','parent !== previewRoot'])if(!s.includes(needle))throw new Error('missing '+needle);"
+      - name: Test terrain-aware locale placement
+        run: node scripts/test-locale-terrain-placement.js
+      - name: Test Banubu authored cave rules and runtime parity
+        run: node scripts/test-banubu-cave-locale.js
+      - name: Test Banubu in real Wilderness Lab Northern Cliffs generation
+        run: node scripts/test-banubu-wilderness-lab-generation.js

@@ -18,7 +18,7 @@
     {
       "id": "locale_banubu_shrine",
       "file": "config/locales/locale_banubu_shrine.json",
-      "name": "Banubu's Shrine",
+      "name": "Banubu's Cave",
       "category": "great_fey_shrine",
       "singleton": true
     },
