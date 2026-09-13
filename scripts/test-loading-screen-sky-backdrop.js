@@ -79,6 +79,7 @@ assert(runtimeSunDraw >= 0 && runtimeMoonDraw > runtimeSunDraw && runtimeCloudDr
 assert(loadingRuntimeSource.includes("const SKY_BACKDROP_URL = 'js/loading-screen-sky-backdrop.js?v=20260913e'"), `${loadingRuntimePath}: loading runtime must own a cache-busted sky backdrop URL`);
 assert(loadingRuntimeSource.includes('function ensureSkyBackdropLoaded()'), `${loadingRuntimePath}: runtime-owned sky bootstrap missing`);
 assert(loadingRuntimeSource.includes("script.dataset.hobunjiLoadingSkyRuntime = '1'"), `${loadingRuntimePath}: runtime sky script marker missing`);
+assert(loadingRuntimeSource.includes('if (!installed) state.skyBackdropPromise = null'), `${loadingRuntimePath}: failed sky install must become retryable`);
 assert(loadingRuntimeSource.includes('await Promise.all([ensureSkyBackdropLoaded(), ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()])'), `${loadingRuntimePath}: show() must wait for its own sky bootstrap alongside other loader resources`);
 assert(loadingRuntimeSource.includes("skyBackdrop=${window.LoadingScreenSkyBackdrop?.installed ? 'installed'"), `${loadingRuntimePath}: loader diagnostics must expose sky bootstrap state`);
 assert(loadingRuntimeSource.includes('#hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden;pointer-events:none;isolation:isolate}'), `${loadingRuntimePath}: loading root must own an isolated stacking context`);
