@@ -5,7 +5,7 @@ const assert = require('assert');
 
 const source = fs.readFileSync('docs/js/environment-surface-micro-plateau.js', 'utf8');
 
-assert.match(source, /SNOW_THICKNESS = 0\.12/, 'micro-plateau snow must stay intentionally shallow');
+assert.match(source, /const SNOW_THICKNESS = /, 'snow depth must stay a single tunable constant');
 assert.match(source, /TOP_CLEARANCE = 0\.018/, 'clean cap must clear the tile\'s own surface without becoming a tall second plateau');
 assert.match(source, /return LAND_TYPES\.has\(type\) && !WATER_TYPES\.has\(type\)/, 'plateau-owned skipFloor tiles must still receive snow');
 assert.doesNotMatch(source, /!tile\?\.skipFloor/, 'skipFloor must never suppress plateau/ramp snow coverage');

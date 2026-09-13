@@ -16,7 +16,7 @@
   // problem — no incremental scan/build state machine needed.
   const WESTERN_SLOPE_ID = 'map_western_slope';
   const PLATEAU_UNIT = 2.5;
-  const SNOW_THICKNESS = 0.12;
+  const SNOW_THICKNESS = 2.00;
   const TOP_CLEARANCE = 0.018;
   const EDGE_WIDTH = 0.075;
   const EDGE_SEGMENTS = 4;
