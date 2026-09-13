@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '..');
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
 const runtimePath = 'docs/js/loading-screen-sky-backdrop.js';
+const loadingRuntimePath = 'docs/js/loading-screen-runtime.js';
 const skyDomePath = 'docs/js/sky-dome.js';
 const editorPath = 'docs/tools/loading-screen-editor/index.html';
 const removedToolPath = 'docs/tools/loading-screen-editor/sky-focus.html';
@@ -15,6 +16,7 @@ const configPath = 'docs/config/loading-screens.json';
 const bootstrapPath = 'docs/js/local-save-folder.js';
 
 const runtimeSource = read(runtimePath);
+const loadingRuntimeSource = read(loadingRuntimePath);
 const skyDomeSource = read(skyDomePath);
 const editorSource = read(editorPath);
 const bootstrapSource = read(bootstrapPath);
@@ -37,6 +39,7 @@ function extractInlineScripts(html) {
 }
 
 parseJavaScript(runtimeSource, runtimePath);
+parseJavaScript(loadingRuntimeSource, loadingRuntimePath);
 parseJavaScript(skyDomeSource, skyDomePath);
 parseJavaScript(bootstrapSource, bootstrapPath);
 const inlineScripts = extractInlineScripts(editorSource);
@@ -74,6 +77,14 @@ const runtimeMoonDraw = runtimeSource.indexOf("drawCelestial(state.context, dime
 const runtimeCloudDraw = runtimeSource.indexOf('drawClouds(state.context, dimensions.width, dimensions.height, center, sky, now)');
 assert(runtimeSunDraw >= 0 && runtimeMoonDraw > runtimeSunDraw && runtimeCloudDraw > runtimeMoonDraw, `${runtimePath}: clouds must composite after both sun and moon so they can occlude them`);
 
+assert(loadingRuntimeSource.includes('#hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden'), `${loadingRuntimePath}: loading root must remain the actual viewport clipping boundary`);
+assert(loadingRuntimeSource.includes('#hlsScriptViewport{position:absolute;top:0;width:min(42vw,540px);height:100%;overflow:visible;transform:translateX(-50%)'), `${loadingRuntimePath}: Tankan script viewport must span the real screen and not add internal top/bottom masks`);
+assert(loadingRuntimeSource.includes('const travel = viewportHeight + contentHeight'), `${loadingRuntimePath}: script scroll must travel across the full real viewport plus its own height`);
+assert(loadingRuntimeSource.includes('const scriptY = viewportHeight - travelPhase * travel'), `${loadingRuntimePath}: script scroll must enter from below and exit above the real viewport`);
+assert(!loadingRuntimeSource.includes('contentHeight - viewportHeight'), `${loadingRuntimePath}: legacy internal-window scroll range must not return`);
+assert(!loadingRuntimeSource.includes("els.scriptViewport.style.top = `${settings.scriptY}%`"), `${loadingRuntimePath}: scriptY must no longer move a clipping viewport`);
+assert(loadingRuntimeSource.includes("scriptSize: 160, scriptY: 45") && loadingRuntimeSource.includes('columnSpacing: -0.56, scriptScrollSpeed: 0.03'), `${loadingRuntimePath}: synchronous first paint must match current shipped script defaults`);
+
 assert(skyDomeSource.includes('const CELESTIAL_RADIUS = 197'), `${skyDomePath}: expected celestial radius contract missing`);
 assert(skyDomeSource.includes('const CLOUD_RADII = [176, 184, 192]'), `${skyDomePath}: expected nearer cloud-shell radii missing`);
 assert(skyDomeSource.includes('sprite.renderOrder = -900') && skyDomeSource.includes('selfLight.renderOrder = -899') && skyDomeSource.includes('glow.renderOrder = -901'), `${skyDomePath}: celestial transparent render ordering changed`);
@@ -92,7 +103,10 @@ assert(editorSource.includes('previewW=Math.max(1,Math.round(innerWidth))') && e
 assert(editorSource.includes('availableW/previewW') && editorSource.includes('availableH/previewH'), `${editorPath}: device-aspect frame fitting logic missing`);
 assert(!editorSource.includes('const PREVIEW_W=1920,PREVIEW_H=1080'), `${editorPath}: fixed 16:9 viewport must not return`);
 assert(editorSource.includes('max-width:78%;max-height:70%'), `${editorPath}: image bounds must scale from the simulated runtime viewport`);
-assert(editorSource.includes('width:min(42%,540px);height:min(72%,880px)'), `${editorPath}: script viewport must use runtime-equivalent device-relative bounds`);
+assert(editorSource.includes('#scriptViewport{position:absolute;top:0;left:25%;width:min(42%,540px);height:100%;overflow:visible'), `${editorPath}: preview script must be clipped only by the stage/game viewport`);
+assert(editorSource.includes('travel=viewportHeight+contentHeight') && editorSource.includes('scriptY=viewportHeight-travelPhase*travel'), `${editorPath}: preview script must enter/exit across actual viewport edges`);
+assert(!editorSource.includes('contentHeight-viewportHeight'), `${editorPath}: legacy preview internal-window scroll range must not return`);
+assert(!editorSource.includes('els.scriptViewport.style.top=`${data.settings.scriptY}%`'), `${editorPath}: scriptY must not move the preview clipping viewport`);
 assert(editorSource.includes('scriptSize:160') && editorSource.includes('scriptY:45'), `${editorPath}: defaults must use the latest uploaded script sizing/position`);
 assert(editorSource.includes('columnSpacing:-.56') && editorSource.includes('scriptScrollSpeed:.03'), `${editorPath}: defaults must use the latest uploaded script composition`);
 assert(editorSource.includes('skyFocusOffsetX:8') && editorSource.includes('skyFocusOffsetY:0') && editorSource.includes('skyZoom:3.25'), `${editorPath}: latest uploaded sky framing plus 3.25x zoom must be the default`);
