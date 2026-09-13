@@ -35,6 +35,7 @@ function extractInlineScripts(html) {
 }
 
 parseJavaScript(runtimeSource, runtimePath);
+parseJavaScript(bootstrapSource, bootstrapPath);
 const inlineScripts = extractInlineScripts(editorSource); // Used to ensure the integrated editor contains syntax-valid executable script.
 assert(inlineScripts.length > 0, `${editorPath}: expected an inline script`);
 inlineScripts.forEach((source, index) => parseJavaScript(source, `${editorPath}#script-${index + 1}`));
@@ -48,7 +49,9 @@ assert(Number(config.settings?.columnSpacing) === -0.55, `${configPath}: current
 assert(Number(config.settings?.scriptScrollSpeed) === 0.017, `${configPath}: current game scriptScrollSpeed must remain 0.017`);
 assert(Number(config.settings?.loadPercent) === 63, `${configPath}: current editor preview progress must remain 63`);
 
-assert(bootstrapSource.includes('loading-screen-sky-backdrop.js'), `${bootstrapPath}: backdrop bootstrap reference missing`);
+assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913b'), `${bootstrapPath}: current backdrop bootstrap reference missing`);
+assert(bootstrapSource.includes('data-loading-sky-retry'), `${bootstrapPath}: DOM-ready backdrop retry guard missing`);
+assert(bootstrapSource.includes('#hobunjiLoadScreen>#hlsSkyBackdrop{z-index:0!important}'), `${bootstrapPath}: explicit runtime sky stacking contract missing`);
 assert(runtimeSource.includes("document.getElementById('hobunjiLoadScreen')"), `${runtimePath}: must attach to the canonical loading-screen root`);
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getDebugState?.()'), `${runtimePath}: must reuse live skydome state when available`);
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getLightingState?.()'), `${runtimePath}: must reuse live skydome lighting when available`);
@@ -62,9 +65,12 @@ assert(editorSource.includes('id="skyPreviewHour"'), `${editorPath}: day/night p
 assert(editorSource.includes('The sky is the actual preview backdrop behind the image, script, lore, and load percentage'), `${editorPath}: behind-content live sky workflow missing`);
 assert(editorSource.includes('body.previewOnly #skyFocusGuide'), `${editorPath}: focus guide must disappear in full preview mode`);
 assert(editorSource.includes('delete output.settings.skyPreviewHour'), `${editorPath}: editor-only preview hour must not leak into exported runtime config`);
-assert(editorSource.includes('const PREVIEW_W=1920,PREVIEW_H=1080'), `${editorPath}: fixed 16:9 authoring viewport missing`);
-assert(editorSource.includes('function fitStage()'), `${editorPath}: widescreen preview fitting logic missing`);
-assert(editorSource.includes('width:1920px;height:1080px'), `${editorPath}: visible widescreen frame dimensions missing`);
+assert(editorSource.includes('function syncPreviewViewport()'), `${editorPath}: device viewport synchronization missing`);
+assert(editorSource.includes('previewW=Math.max(1,Math.round(innerWidth))') && editorSource.includes('previewH=Math.max(1,Math.round(innerHeight))'), `${editorPath}: preview must derive its dimensions from the current browser/device viewport`);
+assert(editorSource.includes('availableW/previewW') && editorSource.includes('availableH/previewH'), `${editorPath}: device-aspect frame fitting logic missing`);
+assert(!editorSource.includes('const PREVIEW_W=1920,PREVIEW_H=1080'), `${editorPath}: fixed 16:9 viewport must not return`);
+assert(editorSource.includes('max-width:78%;max-height:70%'), `${editorPath}: image bounds must scale from the simulated runtime viewport`);
+assert(editorSource.includes('width:min(42%,540px);height:min(72%,880px)'), `${editorPath}: script viewport must use runtime-equivalent device-relative bounds`);
 assert(editorSource.includes('loreSize:19') && editorSource.includes('scriptSize:89'), `${editorPath}: defaults must match current game lore/script sizing`);
 assert(editorSource.includes('columnSpacing:-.55') && editorSource.includes('scriptScrollSpeed:.017'), `${editorPath}: defaults must match current game script composition`);
 assert(editorSource.includes('loadPercent:63'), `${editorPath}: default preview progress should match the shipped loading-screen configuration`);
