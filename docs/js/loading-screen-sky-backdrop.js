@@ -12,9 +12,9 @@
   const CLOUD_NAMES = Array.from({ length: 8 }, (_, index) => `cloud${index + 1}.png`); // Used by loadAssets() and rebuildCloudAtlases().
   const CLOUD_COUNTS = [24, 32, 42]; // Used by buildCloudAtlas() to match the production sky's three density bands.
   const CLOUD_SPEEDS = [0.0018, 0.00105, 0.00055]; // Used by drawClouds() for the same relative cloud-band drift rates.
-  const VIEW_SPAN_U = 0.44; // Used by projection helpers as the wide horizontal equirectangular window around the focused body.
-  const VIEW_SPAN_V = 0.34; // Used by projection helpers as the vertical equirectangular window around the focused body.
-  const DEFAULT_SETTINGS = Object.freeze({ skyFocusOffsetX: 0, skyFocusOffsetY: 0 }); // Used until loading-screens.json supplies tool-authored framing offsets.
+  const VIEW_SPAN_U = 0.44; // Used by projection helpers as the unzoomed horizontal equirectangular window around the focused body.
+  const VIEW_SPAN_V = 0.34; // Used by projection helpers as the unzoomed vertical equirectangular window around the focused body.
+  const DEFAULT_SETTINGS = Object.freeze({ skyFocusOffsetX: 0, skyFocusOffsetY: 0, skyZoom: 1.25 }); // Used until loading-screens.json supplies tool-authored framing values.
   const state = {
     config: null, // Used by currentSettings() after the shared JSON finishes loading.
     canvas: null, // Used by drawFrame() as the full-screen backdrop drawing surface.
@@ -168,11 +168,17 @@
   function viewCenterForFocus(focus, settings, width, height) {
     const offsetX = clamp(Number(settings.skyFocusOffsetX) || 0, -45, 45) / 100; // Used to shift the focused sun/moon horizontally by an authored screen-width percentage.
     const offsetY = clamp(Number(settings.skyFocusOffsetY) || 0, -35, 35) / 100; // Used to shift the focused sun/moon vertically by an authored screen-height percentage.
+    const zoom = clamp(Number(settings.skyZoom) || 1, 0.5, 2.5); // Used to reduce/increase the UV window while keeping authored offsets screen-relative.
+    const spanU = VIEW_SPAN_U / zoom; // Used as the current horizontal UV field of view after zoom.
+    const spanV = VIEW_SPAN_V / zoom; // Used as the current vertical UV field of view after zoom.
     return {
-      u: mod(focus.u - offsetX * VIEW_SPAN_U, 1),
-      v: clamp(focus.v + offsetY * VIEW_SPAN_V, 0, 1),
+      u: mod(focus.u - offsetX * spanU, 1),
+      v: clamp(focus.v + offsetY * spanV, 0, 1),
       offsetX,
       offsetY,
+      zoom,
+      spanU,
+      spanV,
       width,
       height,
     };
@@ -181,10 +187,12 @@
   function projectUv(uv, center, width, height) {
     const deltaU = wrappedDeltaU(uv.u, center.u); // Used to place this sky point relative to the focused equirectangular center.
     const deltaV = uv.v - center.v; // Used to place this sky point vertically relative to the focused center.
+    const spanU = center.spanU || VIEW_SPAN_U; // Used as this frame's zoom-adjusted horizontal field of view.
+    const spanV = center.spanV || VIEW_SPAN_V; // Used as this frame's zoom-adjusted vertical field of view.
     return {
-      x: width * (0.5 + deltaU / VIEW_SPAN_U),
-      y: height * (0.5 - deltaV / VIEW_SPAN_V),
-      visible: Math.abs(deltaU) <= VIEW_SPAN_U * 0.6 && Math.abs(deltaV) <= VIEW_SPAN_V * 0.65,
+      x: width * (0.5 + deltaU / spanU),
+      y: height * (0.5 - deltaV / spanV),
+      visible: Math.abs(deltaU) <= spanU * 0.6 && Math.abs(deltaV) <= spanV * 0.65,
     };
   }
 
@@ -207,8 +215,9 @@
 
   function drawGradient(context, width, height, center, sky) {
     const rowStep = Math.max(2, Math.round(height / 180)); // Used to draw the shader-like UV gradient in a bounded number of scanline fills.
+    const spanV = center.spanV || VIEW_SPAN_V; // Used as the zoom-adjusted latitude span represented by the screen.
     for (let y = 0; y < height; y += rowStep) {
-      const v = clamp(center.v + (0.5 - y / height) * VIEW_SPAN_V, 0, 1); // Used to sample the global sky latitude represented by this screen row.
+      const v = clamp(center.v + (0.5 - y / height) * spanV, 0, 1); // Used to sample the global sky latitude represented by this screen row.
       context.fillStyle = skyColorAtV(v, sky);
       context.fillRect(0, y, width, rowStep + 1);
     }
@@ -290,12 +299,14 @@
   function drawWrappedAtlas(context, atlas, center, width, height, offsetU, alpha) {
     const atlasWidth = atlas.width; // Used to convert global sky U into source pixels.
     const atlasHeight = atlas.height; // Used to convert global sky V into source pixels.
-    const leftU = mod(center.u - VIEW_SPAN_U * 0.5 + offsetU, 1); // Used as the wrapped source longitude at the left edge of the screen.
-    const topV = clamp(center.v + VIEW_SPAN_V * 0.5, 0, 1); // Used as the global sky latitude at the top edge of the screen.
-    const bottomV = clamp(center.v - VIEW_SPAN_V * 0.5, 0, 1); // Used as the global sky latitude at the bottom edge of the screen.
+    const spanU = center.spanU || VIEW_SPAN_U; // Used as the zoom-adjusted horizontal crop span.
+    const spanV = center.spanV || VIEW_SPAN_V; // Used as the zoom-adjusted vertical crop span.
+    const leftU = mod(center.u - spanU * 0.5 + offsetU, 1); // Used as the wrapped source longitude at the left edge of the screen.
+    const topV = clamp(center.v + spanV * 0.5, 0, 1); // Used as the global sky latitude at the top edge of the screen.
+    const bottomV = clamp(center.v - spanV * 0.5, 0, 1); // Used as the global sky latitude at the bottom edge of the screen.
     const sourceY = (1 - topV) * atlasHeight; // Used as the CanvasTexture-flipped top crop pixel.
     const sourceHeight = Math.max(1, (topV - bottomV) * atlasHeight); // Used as the CanvasTexture-flipped crop height.
-    const sourceWidth = VIEW_SPAN_U * atlasWidth; // Used as the crop width represented by this wide view.
+    const sourceWidth = spanU * atlasWidth; // Used as the crop width represented by this zoom level.
     const sourceX = leftU * atlasWidth; // Used as the first wrapped source pixel in this crop.
     context.save();
     context.globalAlpha = alpha;
@@ -386,7 +397,8 @@
     if (!image) return;
     const projected = projectUv(uv, center, width, height); // Used as the body center in screen pixels.
     if (!projected.visible) return;
-    const baseSize = Math.min(width, height) * (kind === 'sun' ? 0.19 : 0.17); // Used as the prominent loading-screen body height.
+    const zoom = center.zoom || 1; // Used to scale the body with the authored sky camera zoom.
+    const baseSize = Math.min(width, height) * (kind === 'sun' ? 0.19 : 0.17) * zoom; // Used as the prominent loading-screen body height at this zoom.
     const imageWidth = image.naturalWidth || image.width; // Used to preserve this body sprite's original aspect ratio.
     const imageHeight = image.naturalHeight || image.height; // Used to preserve this body sprite's original aspect ratio.
     const drawWidth = baseSize * (imageWidth / Math.max(1, imageHeight)); // Used as the aspect-correct body width.
@@ -445,7 +457,7 @@
       'SKY BACKDROP',
       `focus=${frame.focusKind} hour=${frame.hour.toFixed(2)} night=${frame.night.toFixed(2)}`,
       `focusUV=${frame.focus.u.toFixed(3)},${frame.focus.v.toFixed(3)} centerUV=${frame.center.u.toFixed(3)},${frame.center.v.toFixed(3)}`,
-      `toolOffset=${(frame.center.offsetX * 100).toFixed(1)}vw, ${(frame.center.offsetY * 100).toFixed(1)}vh`,
+      `toolOffset=${(frame.center.offsetX * 100).toFixed(1)}vw, ${(frame.center.offsetY * 100).toFixed(1)}vh zoom=${frame.center.zoom.toFixed(2)}x`,
       `config=${state.configReady ? 'loaded' : 'fallback'} assets=${state.assetsReady ? 'loaded' : 'gradient-only'}`,
       `cloudCover=${frame.cloudCover.toFixed(2)} bucket=${frame.cloudBucket} stars=${frame.stars.toFixed(2)}`,
     ].join('\n');
@@ -462,14 +474,16 @@
     const sky = currentSkyState(); // Used as the authoritative live sky/weather/lunar input for this frame.
     const settings = currentSettings(); // Used as the tool-authored framing configuration for this frame.
     const focus = sky.focusKind === 'moon' ? sky.moon : sky.sun; // Used as the body that the wide view follows by day/night.
-    const center = viewCenterForFocus(focus, settings, dimensions.width, dimensions.height); // Used as the equirectangular crop center after authored offset.
+    const center = viewCenterForFocus(focus, settings, dimensions.width, dimensions.height); // Used as the equirectangular crop center after authored offset/zoom.
     ensureMoonPhase(sky);
     state.context.clearRect(0, 0, dimensions.width, dimensions.height);
     drawGradient(state.context, dimensions.width, dimensions.height, center, sky);
     drawStars(state.context, dimensions.width, dimensions.height, center, sky);
-    drawClouds(state.context, dimensions.width, dimensions.height, center, sky, now);
     drawCelestial(state.context, dimensions.width, dimensions.height, center, sky, 'sun');
     drawCelestial(state.context, dimensions.width, dimensions.height, center, sky, 'moon');
+    // Clouds intentionally render after both celestial bodies so their alpha can
+    // occlude the sun and moon just like the nearer cloud shells in sky-dome.js.
+    drawClouds(state.context, dimensions.width, dimensions.height, center, sky, now);
     drawVignette(state.context, dimensions.width, dimensions.height);
     const frame = { ...sky, focus, focusKind: sky.focusKind, center }; // Used by diagnostics and the public getDebug() accessor after this draw completes.
     state.lastFrame = frame;
