@@ -363,6 +363,8 @@
 
   function clearHookState(resetAudit = true) {
     DS.clearScope(SCOPE);
+    const badge = document.getElementById('devRandomRuinBadge');
+    if (badge) delete badge.dataset.prototypeHookBase;
     root = null;
     extraControls = [];
     transitDoors = [];
@@ -425,8 +427,34 @@
     nearestExtraControl.onPress?.();
   }, true);
 
+  function activeGeneratedRoot() {
+    if (deps?.getCurrentArea?.() !== MAP_ID) return null;
+    const scene = deps.getActiveScene?.();
+    let found = null;
+    scene?.traverse?.(object => {
+      if (!found && String(object.name || '').startsWith('dev_v50_ruin_')) found = object;
+    });
+    return found;
+  }
+
   function frameUpdate() {
-    if (!root || deps?.getCurrentArea?.() !== MAP_ID) return;
+    const inRuin = deps?.getCurrentArea?.() === MAP_ID;
+    if (!inRuin) {
+      // The base adapter's exit control calls its local leaveRuin() directly,
+      // bypassing the wrapped public API. Detect the area change here so our
+      // extra registry never leaks into the map the player returned to.
+      if (root) clearHookState();
+      return;
+    }
+    const activeRoot = activeGeneratedRoot();
+    // The Settings button likewise calls the base module's local generate()
+    // closure rather than window.DevRandomRuin.generate(). Scene discovery is
+    // therefore authoritative: any newly adopted V50 root gets hooked even
+    // when generation did not pass through our public wrapper.
+    if (activeRoot && activeRoot !== root) buildAuditForRoot(activeRoot);
+    if (!root) return;
+    const badge = document.getElementById('devRandomRuinBadge');
+    if (badge && !badge.dataset.prototypeHookBase) updateBadge();
     const now = performance.now();
     const last = frameUpdate._last || now;
     const dt = clamp((now-last)/1000, 0, .05);
@@ -438,12 +466,8 @@
   async function waitForGeneratedRoot(serial) {
     const started = performance.now();
     while (serial === buildSerial && performance.now() - started < 4500) {
-      if (deps?.getCurrentArea?.() === MAP_ID) {
-        const scene = deps.getActiveScene?.();
-        let found = null;
-        scene?.traverse?.(object => { if (!found && String(object.name || '').startsWith('dev_v50_ruin_')) found = object; });
-        if (found) return found;
-      }
+      const found = activeGeneratedRoot();
+      if (found) return found;
       await new Promise(resolve => setTimeout(resolve, 40));
     }
     return null;
