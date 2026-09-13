@@ -4,18 +4,20 @@ on:
   pull_request:
     paths:
       - 'docs/js/loading-screen-sky-backdrop.js'
+      - 'docs/js/sky-dome.js'
       - 'docs/js/local-save-folder.js'
       - 'docs/config/loading-screens.json'
-      - 'docs/tools/loading-screen-editor/sky-focus.html'
+      - 'docs/tools/loading-screen-editor/index.html'
       - 'scripts/test-loading-screen-sky-backdrop.js'
       - '.github/workflows/loading-screen-sky-backdrop-regression.yml'
   push:
     branches: [main]
     paths:
       - 'docs/js/loading-screen-sky-backdrop.js'
+      - 'docs/js/sky-dome.js'
       - 'docs/js/local-save-folder.js'
       - 'docs/config/loading-screens.json'
-      - 'docs/tools/loading-screen-editor/sky-focus.html'
+      - 'docs/tools/loading-screen-editor/index.html'
       - 'scripts/test-loading-screen-sky-backdrop.js'
       - '.github/workflows/loading-screen-sky-backdrop-regression.yml'
 
