@@ -52,6 +52,65 @@
     return shell.plateauModel;
   }
 
+  // Preserve and render V50's actual carved-smooth PlaneGeometry walls in the
+  // game scene. We do not rebuild them as boxes: the prototype mesh, geometry,
+  // transforms and texture map are retained. Only a per-wall material clone is
+  // made so the game can see both faces regardless of camera/scene orientation.
+  function prepareRuntimeWallPlanes() {
+    let count = 0;
+    localePreviewRoot?.traverse?.(object => {
+      if (!object.userData?.ruinInteriorWall || !object.isMesh) return;
+      count++;
+      const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      const runtimeMaterials = sourceMaterials.map(material => {
+        if (!material) return material;
+        const runtime = material.clone?.() || material;
+        runtime.side = THREE.DoubleSide;
+        runtime.transparent = false;
+        runtime.opacity = 1;
+        runtime.depthTest = true;
+        runtime.depthWrite = true;
+        runtime.needsUpdate = true;
+        return runtime;
+      });
+      object.material = Array.isArray(object.material) ? runtimeMaterials : runtimeMaterials[0];
+      object.visible = true;
+      object.frustumCulled = false;
+      object.castShadow = true;
+      object.receiveShadow = true;
+      object.userData.runtimeWallPlaneRendered = true;
+      object.userData.runtimeWallPlaneSource = 'DebrisifierV50 ruinInteriorWall';
+    });
+    return count;
+  }
+
+  function runtimeWallPlaneState() {
+    let count = 0, visible = 0, doubleSided = 0;
+    localePreviewRoot?.traverse?.(object => {
+      if (!object.userData?.ruinInteriorWall || !object.isMesh) return;
+      count++;
+      if (object.visible !== false) visible++;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      if (materials.length && materials.every(material => material?.side === THREE.DoubleSide)) doubleSided++;
+    });
+    return { count, visible, doubleSided };
+  }
+
+  function runtimeHallwayState() {
+    const shell = lastGeneratedLocale?.meta?.interiorShell;
+    const cellSize = Number(shell?.cellSize) || .5;
+    const rows = (shell?.hallways || []).map(hall => {
+      const crossCells = hall.axis === 'x' ? Number(hall.h) : Number(hall.w);
+      return { id:hall.id, axis:hall.axis, crossCells, prototypeWidth:crossCells * cellSize };
+    });
+    return {
+      count:rows.length,
+      minCrossCells:rows.length ? Math.min(...rows.map(row => row.crossCells)) : 0,
+      maxCrossCells:rows.length ? Math.max(...rows.map(row => row.crossCells)) : 0,
+      rows,
+    };
+  }
+
   async function generateInteriorLocale(options = {}) {
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
@@ -70,11 +129,19 @@
       throw new Error($('localeStatus')?.textContent || 'V50 did not produce an interior ruin.');
     }
     hydrateInteriorPlateauLevels();
+    const wallPlaneCount = prepareRuntimeWallPlanes();
+    const hallwayState = runtimeHallwayState();
+    if (hallwayState.count && hallwayState.minCrossCells < 5) {
+      throw new Error(`Embedded V50 hallway clearance regressed below 5 cells (${hallwayState.minCrossCells}).`);
+    }
+    if (!wallPlaneCount) throw new Error('V50 interior generated no renderable wall planes.');
 
     return {
       seed: $('localeSeed').value,
       locale: cloneJson(lastGeneratedLocale),
       status: $('localeStatus')?.textContent || '',
+      runtimeWallPlanes: runtimeWallPlaneState(),
+      runtimeHallways: hallwayState,
     };
   }
 
@@ -215,6 +282,8 @@
         seed:generated.seed,
         rooms:generated.locale?.meta?.interiorShell?.rooms?.length || 0,
         negativeLevelCells:levels.filter(level => level < 0).length,
+        runtimeWallPlanes:generated.runtimeWallPlanes,
+        runtimeHallways:generated.runtimeHallways,
         ...tags,
       });
     }
@@ -239,6 +308,8 @@
       mechanismTargetState,
       previewLoopPaused,
       previewRootAttachedToTool: localePreviewRoot.parent === scene,
+      runtimeWallPlanes: runtimeWallPlaneState(),
+      runtimeHallways: runtimeHallwayState(),
     };
   }
 
@@ -258,6 +329,9 @@
     inspectRuntimeTags,
     auditInteriorSeeds,
     hydrateInteriorPlateauLevels,
+    prepareRuntimeWallPlanes,
+    runtimeWallPlaneState,
+    runtimeHallwayState,
     getState,
   });
 })();
