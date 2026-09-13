@@ -84,6 +84,20 @@
   }
 
   function currentLivestock() {
+    // This one line alone accounted for ~1761 of _loadWorldLivestock's 2417
+    // real (uncached) parses in one profiling window -- far more than any
+    // other caller found across the whole codebase. There are ~20 call
+    // sites for currentLivestock()/babies()/adults() in this file and none
+    // is an obvious per-frame loop on inspection, so rather than keep
+    // auditing them one at a time, tally the REAL caller directly the same
+    // way _loadWorldLivestock's own callers were found.
+    if (window.PerfProfiler) {
+      const stack = new Error().stack || '';
+      const line = stack.split('\n')[2] || '';
+      const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
+      const callerLabel = match ? `${match[1]}:${match[2]}` : (line.trim().slice(0, 60) || 'unknown caller');
+      window.PerfProfiler.record('currentLivestock miss caller: ' + callerLabel, 0);
+    }
     return animalDeps?.loadWorldLivestock?.() || [];
   }
 

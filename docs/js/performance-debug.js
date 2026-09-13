@@ -262,6 +262,12 @@
     const livestockCallers = allSubsystems
       .filter(([name]) => name.startsWith('_loadWorldLivestock miss caller: '))
       .sort((a, b) => b[1].samples - a[1].samples);
+    // Same reasoning one level up: currentLivestock() in livestock-nursery.js
+    // turned out to be _loadWorldLivestock's single biggest caller by far, but
+    // it itself has ~20 call sites, so this tracks ITS real caller the same way.
+    const currentLivestockCallers = allSubsystems
+      .filter(([name]) => name.startsWith('currentLivestock miss caller: '))
+      .sort((a, b) => b[1].samples - a[1].samples);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const outlinePerfLine = outlineRenderPerfLine();
     const topLine = topGeom
@@ -289,6 +295,9 @@
         : 'Timed subsystems: none above the display floor',
       ...(livestockCallers.length
         ? [`_loadWorldLivestock cache-miss callers:\n${livestockCallers.map(([name, value]) => `  ${name.slice('_loadWorldLivestock miss caller: '.length)}  ×${value.samples}`).join('\n')}`]
+        : []),
+      ...(currentLivestockCallers.length
+        ? [`currentLivestock() (livestock-nursery.js) callers:\n${currentLivestockCallers.map(([name, value]) => `  ${name.slice('currentLivestock miss caller: '.length)}  ×${value.samples}`).join('\n')}`]
         : []),
       wildlifeLod ? `LOD bandits ${wildlifeLod.activeBandits}/${wildlifeLod.totalBandits} active · wildlife ${wildlifeLod.visuallyActiveWildlife}/${wildlifeLod.totalWildlife} visible` : 'LOD counts unavailable',
       // longTaskMs is the browser's OWN measured total main-thread-blocking
