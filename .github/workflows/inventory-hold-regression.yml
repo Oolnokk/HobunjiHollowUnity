@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'docs/js/held-item-state.js'
+      - 'docs/js/held-item-render-projection.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/combat/technique-scrolls.js'
       - 'scripts/test-held-item-state.js'
