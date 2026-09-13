@@ -26,50 +26,69 @@
     "5,3": { "type": "grass" }
   },
   "terrainAnchors": {
-    "3,1": {
-      "terrain": "plateauCliff",
-      "strength": "required",
-      "weight": 1,
-      "facing": "any",
-      "height": { "mode": "relativeRange", "min": 1, "max": null }
-    },
-    "4,1": {
-      "terrain": "plateauCliff",
-      "strength": "required",
-      "weight": 1,
-      "facing": "any",
-      "height": { "mode": "relativeRange", "min": 1, "max": null }
-    },
-    "5,1": {
-      "terrain": "plateauCliff",
-      "strength": "required",
-      "weight": 1,
-      "facing": "any",
-      "height": { "mode": "relativeRange", "min": 1, "max": null }
-    },
     "3,2": {
       "terrain": "plateauCliff",
-      "strength": "required",
-      "weight": 1,
-      "facing": "any",
-      "height": { "mode": "relativeRange", "min": 1, "max": null }
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
+      "height": { "mode": "relativeRange", "min": 0, "max": 0 }
     },
     "4,2": {
       "terrain": "plateauCliff",
       "strength": "required",
       "weight": 1,
-      "facing": "any",
-      "height": { "mode": "relativeRange", "min": 1, "max": null }
+      "facing": "north",
+      "height": { "mode": "relativeRange", "min": 0, "max": 0 }
     },
     "5,2": {
       "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
+      "height": { "mode": "relativeRange", "min": 0, "max": 0 }
+    },
+    "3,3": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
+      "height": { "mode": "relativeRange", "min": 1, "max": null }
+    },
+    "4,3": {
+      "terrain": "plateauCliff",
       "strength": "required",
       "weight": 1,
-      "facing": "any",
+      "facing": "north",
+      "height": { "mode": "relativeRange", "min": 1, "max": null }
+    },
+    "5,3": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
       "height": { "mode": "relativeRange", "min": 1, "max": null }
     }
   },
-  "embeddedTiles": {},
+  "embeddedTiles": {
+    "3,3": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": { "mode": "relativeRange", "min": 1, "max": null },
+      "carveToLocaleFloor": true
+    },
+    "4,3": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": { "mode": "relativeRange", "min": 1, "max": null },
+      "carveToLocaleFloor": true
+    },
+    "5,3": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": { "mode": "relativeRange", "min": 1, "max": null },
+      "carveToLocaleFloor": true
+    }
+  },
   "objects": [
     {
       "id": "obj_structure",
@@ -106,55 +125,74 @@
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,
-    "notes": "Northern Cliffs only. The exposed front stays on one flat lower tier; the first embedded row must form a north-facing INTERNAL plateau cliff above it (boundary escarpments are rejected), and the rear footprint is carved down to the cave floor. The cave entrance prop renders at 2x its normal in-game cave scale.",
+    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a north-facing internal plateau cliff, the center rear cell is pinned to the HIGH side, and the rear row is embedded into plateau mass then carved down to the cave floor. Flanking cliff probes are preferred rather than required so irregular natural cliff edges can still host the cave. Boundary escarpments are rejected. The cave entrance prop renders at 2x its normal in-game cave scale.",
     "terrainAnchors": {
-      "3,1": {
-        "terrain": "plateauCliff",
-        "strength": "required",
-        "weight": 1,
-        "facing": "any",
-        "height": { "mode": "relativeRange", "min": 1, "max": null }
-      },
-      "4,1": {
-        "terrain": "plateauCliff",
-        "strength": "required",
-        "weight": 1,
-        "facing": "any",
-        "height": { "mode": "relativeRange", "min": 1, "max": null }
-      },
-      "5,1": {
-        "terrain": "plateauCliff",
-        "strength": "required",
-        "weight": 1,
-        "facing": "any",
-        "height": { "mode": "relativeRange", "min": 1, "max": null }
-      },
       "3,2": {
         "terrain": "plateauCliff",
-        "strength": "required",
-        "weight": 1,
-        "facing": "any",
-        "height": { "mode": "relativeRange", "min": 1, "max": null }
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
+        "height": { "mode": "relativeRange", "min": 0, "max": 0 }
       },
       "4,2": {
         "terrain": "plateauCliff",
         "strength": "required",
         "weight": 1,
-        "facing": "any",
-        "height": { "mode": "relativeRange", "min": 1, "max": null }
+        "facing": "north",
+        "height": { "mode": "relativeRange", "min": 0, "max": 0 }
       },
       "5,2": {
         "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
+        "height": { "mode": "relativeRange", "min": 0, "max": 0 }
+      },
+      "3,3": {
+        "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
+        "height": { "mode": "relativeRange", "min": 1, "max": null }
+      },
+      "4,3": {
+        "terrain": "plateauCliff",
         "strength": "required",
         "weight": 1,
-        "facing": "any",
+        "facing": "north",
+        "height": { "mode": "relativeRange", "min": 1, "max": null }
+      },
+      "5,3": {
+        "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
         "height": { "mode": "relativeRange", "min": 1, "max": null }
       }
     },
-    "embeddedTiles": {}
+    "embeddedTiles": {
+      "3,3": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": { "mode": "relativeRange", "min": 1, "max": null },
+        "carveToLocaleFloor": true
+      },
+      "4,3": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": { "mode": "relativeRange", "min": 1, "max": null },
+        "carveToLocaleFloor": true
+      },
+      "5,3": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": { "mode": "relativeRange", "min": 1, "max": null },
+        "carveToLocaleFloor": true
+      }
+    }
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",
-    "updatedAt": "2026-09-13T10:48:22.601Z"
+    "updatedAt": "2026-09-13T14:50:00.000Z"
   }
 }
