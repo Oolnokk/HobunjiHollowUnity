@@ -19697,7 +19697,7 @@
           float baseAlpha = uDepth;  // opacity = depth fraction exactly
 
           vec3 surfaceColor = mix(uColor, vec3(0.85, 0.96, 1.0), effect * 0.55);
-          float finalAlpha  = window.FormatUtils.clamp(baseAlpha + detailAlpha, 0.0, 0.92);
+          float finalAlpha  = clamp(baseAlpha + detailAlpha, 0.0, 0.92);
 
           gl_FragColor = vec4(surfaceColor, finalAlpha);
         }
