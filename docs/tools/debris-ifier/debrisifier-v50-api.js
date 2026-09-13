@@ -10,10 +10,6 @@
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
 
-  // Three r128 objects in the embedded V50 tool do not consistently expose the
-  // newer Object3D.removeFromParent() convenience method. Removing through the
-  // current parent is supported by every Three build used by Hobunji and also
-  // works when the generated root is later adopted by the game's Three scene.
   function detachObject(root) {
     if (root?.parent?.remove) root.parent.remove(root);
   }
@@ -66,10 +62,6 @@
     return { localeRoot: localePreviewRoot, particleRoot: mechanismParticleRoot };
   }
 
-  // The normal V50 tool owns a requestAnimationFrame loop that applies one global
-  // preview progress value to every mechanism. Runtime playtests need independent
-  // mechanism state instead, so stop future tool frames after generation and let
-  // the game call tickRuntime/applyProgress explicitly.
   function pausePreviewLoop() {
     if (previewLoopPaused) return;
     previewLoopPaused = true;
@@ -94,9 +86,6 @@
     applyMechanismProgress(root, clamp(Number(progress) || 0, 0, 1));
   }
 
-  // Pressure plates are siblings of their mechanism roots in V50. The tool's normal
-  // whole-locale preview updates their weight before mechanisms are evaluated; the
-  // runtime adapter drives mechanisms separately, so expose just that weight pass.
   function syncPressurePlates(root) {
     if (!root?.traverse) return;
     root.traverse(plateRoot => {
@@ -131,6 +120,88 @@
     updateMechanismParticleEffects(safeDt);
   }
 
+  // Runtime-generated recovery access deliberately calls V50's real ladder
+  // constructor instead of drawing a game-side stand-in.
+  function createRuntimeStoneLadder(height, width = .72, depth = .12) {
+    const material = new THREE.MeshStandardMaterial({
+      color: hexToNum(RUIN_STONE_FILL), roughness: .92, metalness: .02,
+    });
+    const ladder = createStoneLadder(material, Math.max(.5, Number(height) || .5), width, depth);
+    ladder.userData.runtimeRecoveryEgress = true;
+    return ladder;
+  }
+
+  const KNOWN_MOTIONS = new Set([
+    'bridge','bridgeSequence','stoneDoor','movingDais','collapsingStairs',
+    'pushPuzzleBlock','elevatorPushBlock','pressurePlate','torch','brazier',
+    'signalObelisk','rotatingObelisk','linkedCubePair',
+  ]);
+  const KNOWN_ACTIVATORS = new Set([
+    'pressurePlate','torch','brazier','glyphObelisk','stackedObelisk','linkedCubePillars',
+  ]);
+  const KNOWN_ACCESS = new Set(['stoneStair','stoneLadder']);
+
+  function inspectRuntimeTags(root) {
+    const motions = new Set(), activators = new Set(), access = new Set(), unknown = [];
+    let transitDoors = 0, staticDaises = 0, elevatorSockets = 0, ladders = 0;
+    root?.traverse?.(object => {
+      const d = object.userData || {};
+      const motion = d.previewMotion?.type;
+      if (motion) {
+        motions.add(motion);
+        if (!KNOWN_MOTIONS.has(motion)) unknown.push({ kind:'motion', value:motion, name:object.name || String(object.id) });
+      }
+      if (d.activatorType) {
+        activators.add(d.activatorType);
+        if (!KNOWN_ACTIVATORS.has(d.activatorType)) unknown.push({ kind:'activator', value:d.activatorType, name:object.name || String(object.id) });
+      }
+      if (d.generatedAccessType) {
+        access.add(d.generatedAccessType);
+        if (d.generatedAccessType === 'stoneLadder') ladders++;
+        if (!KNOWN_ACCESS.has(d.generatedAccessType)) unknown.push({ kind:'access', value:d.generatedAccessType, name:object.name || String(object.id) });
+      }
+      if (d.transitDoor) transitDoors++;
+      if (d.staticPuzzleDais) staticDaises++;
+      if (d.elevatorWellSocket) elevatorSockets++;
+    });
+    return {
+      motions:[...motions].sort(), activators:[...activators].sort(), access:[...access].sort(),
+      transitDoors, staticDaises, elevatorSockets, ladders, unknown,
+    };
+  }
+
+  async function auditInteriorSeeds(options = {}) {
+    const count = Math.max(1, Math.min(50, Math.floor(Number(options.count) || 12)));
+    const seedPrefix = String(options.seedPrefix || 'runtime-audit');
+    const results = [];
+    const aggregate = { motions:new Set(), activators:new Set(), access:new Set(), unknown:[] };
+    for (let i = 0; i < count; i++) {
+      const generated = await generateInteriorLocale({
+        seed:`${seedPrefix}-${i}`,
+        size:options.size || 'medium',
+        density:options.density ?? 62,
+        roomMin:options.roomMin ?? 3,
+        roomMax:options.roomMax ?? 8,
+      });
+      const tags = inspectRuntimeTags(localePreviewRoot);
+      for (const value of tags.motions) aggregate.motions.add(value);
+      for (const value of tags.activators) aggregate.activators.add(value);
+      for (const value of tags.access) aggregate.access.add(value);
+      for (const entry of tags.unknown) aggregate.unknown.push({ seed:generated.seed, ...entry });
+      results.push({ seed:generated.seed, rooms:generated.locale?.meta?.interiorShell?.rooms?.length || 0, ...tags });
+    }
+    return {
+      count,
+      results,
+      aggregate:{
+        motions:[...aggregate.motions].sort(),
+        activators:[...aggregate.activators].sort(),
+        access:[...aggregate.access].sort(),
+        unknown:aggregate.unknown,
+      },
+    };
+  }
+
   function getState() {
     return {
       seed: $('localeSeed')?.value || null,
@@ -154,6 +225,9 @@
     syncPressurePlates,
     rotateLinkedCube,
     tickRuntime,
+    createRuntimeStoneLadder,
+    inspectRuntimeTags,
+    auditInteriorSeeds,
     getState,
   });
 })();
