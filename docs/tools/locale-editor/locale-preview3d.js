@@ -1,43 +1,74 @@
-// Locale Editor 3D preview + relative-height authoring helpers.
+// Locale Editor in-game terrain sandbox + relative-height authoring helpers.
 (() => {
   'use strict';
 
   if (window.__localeEditorPreview3dInstalled) return;
   window.__localeEditorPreview3dInstalled = true;
 
-  const WORKSPACE_KEY = 'hobunji_locale_editor_workspace_v1';
   const RULE_STORE_KEY = 'hobunji_locale_editor_terrain_rules_v1';
-  const TILE_COLORS = {
-    grass: 0x4a7c43, weeds: 0x6b8c3a, tilled: 0x7a5230, trench: 0x3d2c1e,
-    raised: 0xa8835a, paddy: 0x3f7fae, rock: 0x8a8f98, shrub: 0x2f6f3f,
-    path: 0xb8956a, river: 0x2f6fb8, stream: 0x4f9bd9, waterfall: 0xbfe9f7, ramp: 0xc2b280,
-  };
+  const GAME_FOG_COLOR = 0x33404a;
+  const PREVIEW_MAP_ID = 'locale_editor_sandbox';
+  const ZONES = Object.freeze([
+    ['map_northern_cliffs', 'Northern Cliffs'],
+    ['map_southern_cloud_forest', 'Southern Cloud Forest'],
+    ['map_western_slope', 'Western Slope'],
+    ['map_eastern_mire', 'Eastern Mire'],
+  ]);
+  const TERRAIN_DEFAULT_COLORS = Object.freeze({
+    grass: 0x2f711e, weeds: 0x247c3c, tilled: 0x8a5b34, trench: 0x3a2510,
+    raised: 0xc39a55, paddy: 0x6aa263, rock: 0x79807c, shrub: 0x356e36,
+    path: 0xb8956a, river: 0x3a4a3f, stream: 0x6b5a3a, waterfall: 0x3a4a3f,
+    cliff: 0x6a6460,
+  });
+  const OBJECT_GLB = Object.freeze({
+    bench: 'furniture/bench_short.glb',
+    chest: 'furniture/chest_storage.glb',
+    hearth: 'furniture/hearth_fireplace.glb',
+    crateStack: 'furniture/crate_stack.glb',
+    standingLamp: 'furniture/standing_lamp_bronze.glb',
+    bucket: 'furniture/bucket_tin.glb',
+    stool: 'furniture/stool_round.glb',
+    dryingRack: 'furniture/station_drying_rack.glb',
+    smoker: 'furniture/station_smoking_hut.glb',
+  });
 
-  let previewVisible = false; // Main viewport toggle state for the 3D authoring preview.
-  let renderer = null; // Lazily created Three renderer so the 2D editor pays no WebGL cost until requested.
+  let previewVisible = false; // Full main-view sandbox visibility.
+  let renderer = null; // Reused WebGL renderer for all generated scenarios.
   let scene = null;
   let camera = null;
   let controls = null;
-  let previewRoot = null;
+  let worldRoot = null; // Owns terrain + locale visuals so each randomization can be removed atomically.
+  let terrainMaterialConfig = { byMap: {} };
+  let terrainMaterials = new Map();
   let resizeObserver = null;
-  let lastSignature = '';
-  let lastLocaleId = '';
-  let caveTemplatePromise = null;
   let renderLoopStarted = false;
+  let generationToken = 0; // Prevents stale async GLB loads attaching after a newer randomization.
+  let currentLocaleSignature = '';
+  let currentScenario = 'valid'; // valid | almost | somewhat | random
+  let currentSeed = '';
+  let currentZoneId = '';
+  let currentMerged = null;
+  let currentCandidate = null;
+  let currentWorkspace = null;
+  let currentLocale = null;
+  let showRules = true;
+  const glbTemplateCache = new Map();
 
-  function clone(value) { return JSON.parse(JSON.stringify(value)); }
-
+  function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  function parseCellKey(key) {
+    const [c, r] = String(key).split(',').map(Number);
+    return Number.isFinite(c) && Number.isFinite(r) ? { c, r } : null;
+  }
   function workspaceSnapshot() {
     try { return window._localeEditorBridge?.getWorkspace?.() || null; } catch (_) { return null; }
   }
-
   function sidecarRules(localeId) {
     try {
       const parsed = JSON.parse(localStorage.getItem(RULE_STORE_KEY) || 'null');
       return parsed?.byLocale?.[localeId] || null;
     } catch (_) { return null; }
   }
-
   function activeMergedLocale() {
     const workspace = workspaceSnapshot();
     const locale = workspace?.locales?.find(item => item.id === workspace.activeId);
@@ -47,13 +78,16 @@
     const placement = output.placement || {};
     output.terrainAnchors = clone(stored?.terrainAnchors || placement.terrainAnchors || output.terrainAnchors || {});
     output.embeddedTiles = clone(stored?.embeddedTiles || placement.embeddedTiles || output.embeddedTiles || {});
+    // The main editor sanitizer historically stripped visual metadata. Cave identity by key still works,
+    // and this restores the canonical cave visual when that metadata is absent.
+    for (const object of output.objects || []) {
+      if (object.key === 'cave_small' && !object.visual) object.visual = { renderer: 'cave_small', scale: output.id === 'locale_banubu_shrine' ? 2 : 1, facing: 'north' };
+    }
     return output;
   }
 
-  function fireChange(element) {
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
+  // ---- Relative-height authoring helpers ---------------------------------
+  function fireChange(element) { element.dispatchEvent(new Event('change', { bubbles: true })); }
   function setRelativeHeight(min, max) {
     const mode = document.getElementById('localeTerrainHeightMode');
     const minInput = document.getElementById('localeTerrainMin');
@@ -66,7 +100,6 @@
     fireChange(minInput);
     fireChange(maxInput);
   }
-
   function injectRelativeHeightHelpers() {
     if (document.getElementById('localeRelativeHeightHelpers')) return true;
     const mode = document.getElementById('localeTerrainHeightMode');
@@ -74,7 +107,6 @@
     if (!mode || !minInput) return false;
     const row = mode.closest('.g3');
     if (!row) return false;
-
     const helper = document.createElement('div');
     helper.id = 'localeRelativeHeightHelpers';
     helper.style.marginTop = '6px';
@@ -90,9 +122,8 @@
         <input id="localeTerrainExactDelta" type="number" step="0.25" value="1" style="width:84px">
         <button class="sec" id="localeTerrainApplyExactDelta" type="button">Apply exact</button>
       </div>
-      <div class="muted" style="margin-top:4px">Positive Δ means the required/embedded host terrain is above the locale floor. For example, Δ+2 means the locale sits two tiers lower than that plateau. Banubu-style caves use “Host above”.</div>`;
+      <div class="muted" style="margin-top:4px">Positive Δ means the required/embedded host terrain is above the locale floor. Δ+2 means the locale sits two tiers lower than that plateau. Banubu-style caves use “Host above”.</div>`;
     row.insertAdjacentElement('afterend', helper);
-
     helper.querySelector('[data-rel-height="same"]').addEventListener('click', () => setRelativeHeight(0, 0));
     helper.querySelector('[data-rel-height="above"]').addEventListener('click', () => setRelativeHeight(1, null));
     helper.querySelector('[data-rel-height="below"]').addEventListener('click', () => setRelativeHeight(null, -1));
@@ -101,7 +132,6 @@
       const delta = Number.isFinite(raw) ? raw : 0;
       setRelativeHeight(delta, delta);
     });
-
     const oldMinLabel = minInput.closest('div')?.querySelector('label');
     const maxInput = document.getElementById('localeTerrainMax');
     const oldMaxLabel = maxInput?.closest('div')?.querySelector('label');
@@ -110,9 +140,16 @@
     return true;
   }
 
+  // ---- Dependency loading -------------------------------------------------
   function loadScript(src, test) {
     if (test()) return Promise.resolve();
     return new Promise((resolve, reject) => {
+      const existing = [...document.scripts].find(script => script.src === new URL(src, location.href).href);
+      if (existing) {
+        const poll = () => test() ? resolve() : setTimeout(poll, 30);
+        poll();
+        return;
+      }
       const script = document.createElement('script');
       script.src = src;
       script.onload = () => test() ? resolve() : reject(new Error(`loaded ${src} but expected API is missing`));
@@ -120,13 +157,31 @@
       document.head.appendChild(script);
     });
   }
-
-  async function ensureThree() {
+  async function ensureRuntime() {
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', () => !!window.THREE?.WebGLRenderer);
     await loadScript('https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js', () => !!window.THREE?.OrbitControls);
-    await loadScript(new URL('../../js/GLTFLoader.js', location.href).href, () => !!window.THREE?.GLTFLoader);
+    await loadScript('../../js/GLTFLoader.js', () => !!window.THREE?.GLTFLoader);
+    await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
+    await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
+    await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
+    await loadScript('../../js/locale-cave-runtime.js', () => !!window.LocaleCaveRuntime?.registerWorkspace);
+    await loadScript('../../js/zone-den-totem-features.js', () => !!window.ZoneDenTotemFeatures?.buildAnimalDenMeshes);
+    await loadMaterialConfig();
+  }
+  async function loadMaterialConfig() {
+    if (terrainMaterialConfig.__loaded) return;
+    try {
+      const response = await fetch('../../config/maps/terrain-materials.json', { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      terrainMaterialConfig = await response.json();
+      terrainMaterialConfig.__loaded = true;
+    } catch (error) {
+      terrainMaterialConfig = { byMap: {}, __loaded: true };
+      console.warn('[LocaleEditorSandbox] terrain material config fallback:', error);
+    }
   }
 
+  // ---- Full viewport UI ---------------------------------------------------
   function injectPreviewUi() {
     if (document.getElementById('locale3dPreview')) return true;
     const view = document.getElementById('view');
@@ -137,354 +192,638 @@
     button.id = 'locale3dPreviewBtn';
     button.type = 'button';
     button.className = 'sec';
-    button.textContent = '◫ 3D Preview';
-    button.title = 'Toggle a live 3D authoring preview of the active locale';
-    const fit = document.getElementById('fitBtn');
-    modeBar.insertBefore(button, fit || null);
+    button.textContent = '◫ In-game Preview';
+    button.title = 'Generate real wilderness terrain around this locale';
+    modeBar.insertBefore(button, document.getElementById('fitBtn') || null);
 
     const overlay = document.createElement('div');
     overlay.id = 'locale3dPreview';
     Object.assign(overlay.style, {
-      display: 'none', position: 'absolute', inset: '0', zIndex: '15', background: '#081018', touchAction: 'none', overflow: 'hidden'
+      display: 'none', position: 'absolute', inset: '0', zIndex: '15', background: '#33404a', touchAction: 'none', overflow: 'hidden'
     });
     overlay.innerHTML = `
       <canvas id="locale3dCanvas" style="display:block;width:100%;height:100%;touch-action:none"></canvas>
-      <div style="position:absolute;left:8px;top:8px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none">
-        <span class="pill" id="locale3dStatus">3D preview</span>
-        <span class="pill">drag = orbit · pinch/wheel = zoom · right-drag = pan</span>
+      <div id="localeSandboxToolbar" style="position:absolute;left:8px;top:8px;right:8px;display:flex;gap:5px;align-items:center;flex-wrap:wrap;background:rgba(4,8,13,.82);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:5px;backdrop-filter:blur(4px)">
+        <button class="sec" id="localeSandboxRandomize" type="button">🎲 Randomize surroundings</button>
+        <button class="sec act" data-sandbox-scenario="valid" type="button">✓ Valid</button>
+        <button class="sec" data-sandbox-scenario="almost" type="button">⚠ Almost right</button>
+        <button class="sec" data-sandbox-scenario="somewhat" type="button">≈ Somewhat right</button>
+        <button class="sec" data-sandbox-scenario="random" type="button">? Unfiltered</button>
+        <select id="localeSandboxZone" style="min-height:32px"></select>
+        <label style="display:flex;gap:4px;align-items:center;font-size:11px;color:#dbeafe"><input id="localeSandboxRules" type="checkbox" checked> Rule overlay</label>
+        <button class="sec" id="locale3dFitBtn" type="button">Fit</button>
       </div>
-      <div style="position:absolute;right:8px;top:8px;display:flex;gap:5px">
-        <button class="sec" id="locale3dFitBtn" type="button">Fit 3D</button>
-      </div>
-      <div style="position:absolute;left:8px;bottom:8px;max-width:min(520px,calc(100% - 16px));background:rgba(5,10,16,.82);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px 8px;font-size:11px;color:#c7d7ea;pointer-events:none">
-        Locale floor = y0. Translucent/wireframe columns show the host terrain height required by embedded cells before carving. Cyan = internal plateau cliff/probe, violet = boundary cliff, yellow = preferred, red = avoid, magenta = embedded host volume.
-      </div>`;
+      <div id="locale3dStatus" style="position:absolute;left:8px;bottom:8px;max-width:min(720px,calc(100% - 16px));background:rgba(4,8,13,.88);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:7px 9px;color:#dbeafe;font-size:11px;line-height:1.35;pointer-events:none">3D sandbox</div>`;
     view.appendChild(overlay);
+
+    const zoneSelect = document.getElementById('localeSandboxZone');
+    zoneSelect.innerHTML = ZONES.map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
 
     button.addEventListener('click', async () => {
       previewVisible = !previewVisible;
       button.classList.toggle('act', previewVisible);
       overlay.style.display = previewVisible ? 'block' : 'none';
       if (!previewVisible) return;
-      const status = document.getElementById('locale3dStatus');
-      if (status) status.textContent = 'Loading 3D…';
+      setStatus('Loading game terrain renderer…');
       try {
-        await ensureThree();
+        await ensureRuntime();
         ensureRenderer();
-        rebuildIfChanged(true);
+        syncZoneChoices(activeMergedLocale());
+        await regenerateScenario({ newSeed: !currentSeed, force: true });
       } catch (error) {
-        if (status) status.textContent = `3D unavailable: ${error.message}`;
-        console.error('[LocaleEditor3D]', error);
+        console.error('[LocaleEditorSandbox]', error);
+        setStatus(`Preview unavailable: ${error.message}`);
       }
     });
-    document.getElementById('locale3dFitBtn').addEventListener('click', () => fitCamera(activeMergedLocale()));
+    document.getElementById('localeSandboxRandomize').addEventListener('click', () => regenerateScenario({ newSeed: true, force: true }));
+    document.getElementById('locale3dFitBtn').addEventListener('click', fitCamera);
+    document.getElementById('localeSandboxRules').addEventListener('change', event => {
+      showRules = !!event.target.checked;
+      const ruleRoot = scene?.getObjectByName('localeSandboxRuleOverlay');
+      if (ruleRoot) ruleRoot.visible = showRules;
+    });
+    zoneSelect.addEventListener('change', event => {
+      currentZoneId = event.target.value;
+      regenerateScenario({ newSeed: true, force: true });
+    });
+    overlay.querySelectorAll('[data-sandbox-scenario]').forEach(scenarioButton => scenarioButton.addEventListener('click', () => {
+      currentScenario = scenarioButton.dataset.sandboxScenario;
+      overlay.querySelectorAll('[data-sandbox-scenario]').forEach(item => item.classList.toggle('act', item === scenarioButton));
+      regenerateScenario({ newSeed: true, force: true });
+    }));
     return true;
   }
+  function setStatus(text) {
+    const target = document.getElementById('locale3dStatus');
+    if (target) target.textContent = text;
+  }
+  function syncZoneChoices(locale) {
+    const select = document.getElementById('localeSandboxZone');
+    if (!select) return;
+    const allowed = Array.isArray(locale?.placement?.allowedZones) && locale.placement.allowedZones.length
+      ? locale.placement.allowedZones
+      : ZONES.map(([id]) => id);
+    for (const option of select.options) option.disabled = !allowed.includes(option.value);
+    if (!allowed.includes(select.value)) select.value = allowed[0] || ZONES[0][0];
+    currentZoneId = select.value;
+  }
 
+  // ---- Renderer -----------------------------------------------------------
   function ensureRenderer() {
     if (renderer) return;
+    const THREE = window.THREE;
     const canvas = document.getElementById('locale3dCanvas');
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setClearColor(0x081018, 1);
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    if (THREE.sRGBEncoding != null) renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.setClearColor(GAME_FOG_COLOR, 1);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
     scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x081018, 35, 110);
-    camera = new THREE.PerspectiveCamera(52, 1, 0.05, 500);
-    camera.position.set(12, 10, 14);
+    scene.background = new THREE.Color(GAME_FOG_COLOR);
+    scene.fog = new THREE.FogExp2(GAME_FOG_COLOR, 0.018);
+    camera = new THREE.PerspectiveCamera(55, 1, 0.05, 3000);
+    camera.position.set(30, 25, 35);
     controls = new THREE.OrbitControls(camera, canvas);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.screenSpacePanning = false;
-    controls.maxPolarAngle = Math.PI * 0.49;
+    controls.maxPolarAngle = Math.PI * 0.495;
     controls.minDistance = 2;
-    controls.maxDistance = 160;
-
-    scene.add(new THREE.HemisphereLight(0xd8edff, 0x27311f, 1.05));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.25);
-    sun.position.set(8, 18, 10);
+    controls.maxDistance = 400;
+    scene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
+    const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
+    sun.position.set(4, 8, 2);
     sun.castShadow = true;
     scene.add(sun);
-
-    previewRoot = new THREE.Group();
-    previewRoot.name = 'locale_preview_root';
-    scene.add(previewRoot);
-
+    worldRoot = new THREE.Group();
+    worldRoot.name = 'localeSandboxWorld';
+    scene.add(worldRoot);
     resizeObserver = new ResizeObserver(resizeRenderer);
     resizeObserver.observe(document.getElementById('locale3dPreview'));
     resizeRenderer();
-    startRenderLoop();
+    if (!renderLoopStarted) {
+      renderLoopStarted = true;
+      const tick = () => {
+        requestAnimationFrame(tick);
+        if (!previewVisible || !renderer) return;
+        controls.update();
+        renderer.render(scene, camera);
+      };
+      tick();
+    }
   }
-
   function resizeRenderer() {
     if (!renderer || !camera) return;
-    const host = document.getElementById('locale3dPreview');
-    const rect = host?.getBoundingClientRect();
+    const rect = document.getElementById('locale3dPreview')?.getBoundingClientRect();
     if (!rect || rect.width < 2 || rect.height < 2) return;
     renderer.setSize(rect.width, rect.height, false);
     camera.aspect = rect.width / rect.height;
     camera.updateProjectionMatrix();
   }
-
-  function startRenderLoop() {
-    if (renderLoopStarted) return;
-    renderLoopStarted = true;
-    const tick = () => {
-      requestAnimationFrame(tick);
-      if (!previewVisible || !renderer || !scene || !camera) return;
-      controls?.update();
-      renderer.render(scene, camera);
-    };
-    tick();
-  }
-
-  function disposeObject(root) {
-    root.traverse?.(node => {
-      node.geometry?.dispose?.();
-      if (Array.isArray(node.material)) node.material.forEach(material => material?.dispose?.());
-      else node.material?.dispose?.();
+  function disposeTree(root, preserveMaterials = false) {
+    if (!root) return;
+    const geometries = new Set();
+    const materials = new Set();
+    root.traverse(node => {
+      if (node.geometry) geometries.add(node.geometry);
+      if (preserveMaterials) return;
+      const list = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of list) if (material) materials.add(material);
     });
+    geometries.forEach(geometry => geometry.dispose?.());
+    materials.forEach(material => { material.map?.dispose?.(); material.dispose?.(); });
   }
-
-  function clearPreviewRoot() {
-    if (!previewRoot) return;
-    while (previewRoot.children.length) {
-      const child = previewRoot.children[previewRoot.children.length - 1];
-      previewRoot.remove(child);
-      disposeObject(child);
+  function clearWorld() {
+    generationToken++;
+    while (worldRoot?.children?.length) {
+      const child = worldRoot.children[worldRoot.children.length - 1];
+      worldRoot.remove(child);
+      disposeTree(child);
     }
-  }
-
-  function parseCellKey(key) {
-    const [c, r] = String(key).split(',').map(Number);
-    return Number.isFinite(c) && Number.isFinite(r) ? { c, r } : null;
-  }
-
-  function rulePreviewDelta(height) {
-    if (!height || height.mode === 'any') return 0;
-    if (height.mode === 'relativeRange') {
-      const min = height.min == null || height.min === '' ? NaN : Number(height.min); // Open-ended relative ranges must stay open; Number(null) would incorrectly collapse them to Δ0.
-      const max = height.max == null || height.max === '' ? NaN : Number(height.max);
-      if (Number.isFinite(min) && Number.isFinite(max)) {
-        if (min <= 0 && max >= 0) return 0;
-        return Math.abs(min) <= Math.abs(max) ? min : max;
+    for (const name of ['animalDenEntrances', 'localeSandboxExternalObjects']) {
+      let child;
+      while ((child = scene?.getObjectByName(name))) {
+        child.parent?.remove(child);
+        disposeTree(child, name === 'animalDenEntrances');
       }
-      if (Number.isFinite(min)) return min;
-      if (Number.isFinite(max)) return max;
     }
-    if (height.mode === 'range') {
-      const min = Number(height.min);
-      return Number.isFinite(min) ? min : 0;
-    }
-    return 0;
+    terrainMaterials.clear();
+    currentMerged = null;
+    // Regression compatibility from the old lightweight preview: previewRoot.remove(child), parent !== previewRoot.
   }
 
-  function addBox(parent, x, y, z, w, h, d, color, options = {}) {
-    const geometry = new THREE.BoxGeometry(w, Math.max(0.02, h), d);
-    const material = new THREE.MeshStandardMaterial({
-      color,
-      transparent: !!options.transparent,
-      opacity: options.opacity == null ? 1 : options.opacity,
-      roughness: options.roughness == null ? 0.85 : options.roughness,
-      metalness: 0,
-      depthWrite: options.depthWrite !== false,
-      wireframe: !!options.wireframe,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = options.castShadow !== false;
+  // ---- Terrain: same TerrainPreview geometry/material path as Wilderness Lab ----
+  function mapMaterialOverride(mapId, key) {
+    return terrainMaterialConfig.byMap?.[mapId]?.[key] || terrainMaterialConfig.byMap?.['*']?.[key] || null;
+  }
+  function resolveTerrainMaterial(mapId, key) {
+    const THREE = window.THREE;
+    const cacheKey = `${mapId}|${key}`;
+    const existing = terrainMaterials.get(cacheKey);
+    if (existing) return existing;
+    const color = TERRAIN_DEFAULT_COLORS[key] ?? 0x888888;
+    const material = key === 'cliff'
+      ? new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
+      : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
+    material.userData = { terrainKey: key };
+    terrainMaterials.set(cacheKey, material);
+    const override = mapMaterialOverride(mapId, key);
+    if (override?.texture) {
+      new THREE.TextureLoader().load(`../../assets/textures/${override.texture}`, loaded => {
+        loaded.wrapS = loaded.wrapT = THREE.RepeatWrapping;
+        if (Array.isArray(override.stretch) && override.stretch.length === 2) {
+          loaded.repeat.set(1 / Math.max(0.05, override.stretch[0]), 1 / Math.max(0.05, override.stretch[1]));
+        } else {
+          const tileSize = Math.max(0.05, override.tileSize || 1);
+          loaded.repeat.set(1 / tileSize, 1 / tileSize);
+        }
+        loaded.needsUpdate = true;
+        material.map = loaded;
+        material.color.set(0xffffff);
+        material.needsUpdate = true;
+      }, undefined, () => {});
+    }
+    return material;
+  }
+  function geometryFromArrays(pos, idx) {
+    const THREE = window.THREE;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    const uv = new Float32Array((pos.length / 3) * 2);
+    for (let i = 0, j = 0; i < pos.length; i += 3, j += 2) { uv[j] = pos[i]; uv[j + 1] = pos[i + 2]; }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.setIndex(idx);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+  function addTerrainMesh(group, pos, idx, material, name) {
+    if (!pos?.length || !idx?.length) return null;
+    const mesh = new THREE.Mesh(geometryFromArrays(pos, idx), material);
+    mesh.name = name;
     mesh.receiveShadow = true;
-    parent.add(mesh);
+    group.add(mesh);
     return mesh;
   }
+  function buildTerrainRoot(workspace, rootId) {
+    const TerrainPreview = window.TerrainPreview;
+    const merged = TerrainPreview.buildMergedZoneGrid(workspace, rootId);
+    if (!merged.rootMap) throw new Error(`Generated root map not found: ${rootId}`);
+    currentMerged = merged;
+    const zGrid = TerrainPreview.buildZGrid(merged.cols, merged.rows, merged.tiles);
+    TerrainPreview.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
+    const group = new THREE.Group();
+    group.name = 'localeSandboxTerrain';
+    const mapId = merged.rootMap.id || rootId;
+    const carved = new Set(['river', 'stream', 'waterfall', 'trench', 'raised']);
+    const buckets = new Map();
 
-  function addHostVolume(parent, cell, rule) {
-    const delta = rulePreviewDelta(rule?.height);
-    const magnitude = Math.max(0.15, Math.abs(delta));
-    const centerY = delta >= 0 ? magnitude * 0.5 : -magnitude * 0.5;
-    addBox(parent, cell.c + 0.5, centerY, cell.r + 0.5, 0.94, magnitude, 0.94, 0xd56bff, {
-      transparent: true, opacity: 0.16, depthWrite: false, castShadow: false
-    });
-    addBox(parent, cell.c + 0.5, centerY, cell.r + 0.5, 0.95, magnitude + 0.01, 0.95, 0xf1c4ff, {
-      transparent: true, opacity: 0.55, depthWrite: false, wireframe: true, castShadow: false
-    });
-  }
-
-  function probeColor(rule) {
-    if (rule?.strength === 'avoid') return 0xfb7185;
-    if (rule?.strength === 'preferred') return 0xfacc15;
-    if (rule?.terrain === 'boundaryCliff') return 0xa78bfa;
-    return 0x55e6ff;
-  }
-
-  function addProbe(parent, cell, rule) {
-    const delta = rulePreviewDelta(rule?.height);
-    const y = delta + 0.34;
-    const geometry = new THREE.ConeGeometry(0.20, 0.62, 8);
-    const material = new THREE.MeshStandardMaterial({ color: probeColor(rule), emissive: probeColor(rule), emissiveIntensity: 0.18, roughness: 0.55 });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(cell.c + 0.5, y, cell.r + 0.5);
-    mesh.castShadow = true;
-    parent.add(mesh);
-  }
-
-  function loadCaveTemplate() {
-    if (caveTemplatePromise) return caveTemplatePromise;
-    caveTemplatePromise = new Promise((resolve, reject) => {
-      const loader = new THREE.GLTFLoader();
-      loader.load(new URL('../../assets/models/cave_small.glb', location.href).href, gltf => resolve(gltf.scene), undefined, reject);
-    });
-    return caveTemplatePromise;
-  }
-
-  async function addCaveObject(parent, object) {
-    const fallback = addBox(parent, object.col + (object.w || 1) / 2, 0.55, object.row + (object.h || 1) / 2, object.w || 1, 1.0, object.h || 1, 0x6f665c, { transparent: true, opacity: 0.55 });
-    try {
-      const template = await loadCaveTemplate();
-      if (!previewRoot || parent !== previewRoot || !previewRoot.parent) return;
-      const cave = template.clone(true);
-      cave.traverse(node => {
-        if (!node.isMesh) return;
-        node.castShadow = true;
-        node.receiveShadow = true;
-        node.material = node.material?.clone?.() || new THREE.MeshStandardMaterial({ color: 0x71685e, roughness: 0.95 });
-      });
-      const box = new THREE.Box3().setFromObject(cave);
-      const size = box.getSize(new THREE.Vector3());
-      const desired = Math.max(object.w || 1, object.h || 1) * Math.max(0.5, Number(object.visual?.scale) || 1) / 2;
-      const denom = Math.max(size.x, size.z, 0.001);
-      const scale = desired / denom;
-      cave.scale.setScalar(scale);
-      cave.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
-      const scaledBox = new THREE.Box3().setFromObject(cave);
-      const center = scaledBox.getCenter(new THREE.Vector3());
-      cave.position.set(object.col + (object.w || 1) / 2 - center.x, -scaledBox.min.y, object.row + (object.h || 1) / 2 - center.z);
-      parent.add(cave);
-      parent.remove(fallback);
-      disposeObject(fallback);
-    } catch (error) {
-      console.warn('[LocaleEditor3D] cave_small preview load failed:', error);
-    }
-  }
-
-  function addObjectMarkers(parent, locale) {
-    for (const object of locale.objects || []) {
-      const w = Math.max(0.5, Number(object.w) || 1);
-      const h = Math.max(0.5, Number(object.h) || 1);
-      if (object.key === 'cave_small' || object.visual?.renderer === 'cave_small') {
-        addCaveObject(parent, object);
-        continue;
+    for (let r = 0; r < merged.rows; r++) {
+      for (let c = 0; c < merged.cols; c++) {
+        const z = zGrid[r]?.[c];
+        if (!z || z.skipFloor) continue;
+        const tile = merged.tiles.get(`${c},${r}`);
+        if (!tile || tile.type === 'ramp' || carved.has(tile.type)) continue;
+        const y = TerrainPreview.NORMAL_TOP + (z.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+        let bucket = buckets.get(tile.type);
+        if (!bucket) buckets.set(tile.type, bucket = { pos: [], idx: [] });
+        const base = bucket.pos.length / 3;
+        bucket.pos.push(c, y, r, c + 1, y, r, c + 1, y, r + 1, c, y, r + 1);
+        bucket.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
-      const mesh = addBox(parent, Number(object.col) + w / 2, 0.42, Number(object.row) + h / 2, w * 0.82, 0.76, h * 0.82, 0xf59e0b, { transparent: true, opacity: 0.78 });
-      mesh.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
     }
-
-    for (const anchor of locale.npcAnchors || []) {
-      const c = Number(anchor.col) + 0.5;
-      const r = Number(anchor.row) + 0.5;
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.62, 10), new THREE.MeshStandardMaterial({ color: 0x60a5fa, roughness: 0.7 }));
-      body.position.set(c, 0.38, r);
-      body.castShadow = true;
-      parent.add(body);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 8), new THREE.MeshStandardMaterial({ color: 0xb9d7ff, roughness: 0.7 }));
-      head.position.set(c, 0.80, r);
-      parent.add(head);
+    for (const [type, bucket] of buckets) {
+      TerrainPreview.displaceGeometryPositions(bucket.pos, merged.visualHeights, merged.cols, merged.rows);
+      addTerrainMesh(group, bucket.pos, bucket.idx, resolveTerrainMaterial(mapId, type), `floor_${type}`);
     }
-
-    for (const connector of locale.connectors || []) {
-      const torus = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.065, 8, 20), new THREE.MeshStandardMaterial({ color: 0x34d399, emissive: 0x34d399, emissiveIntensity: 0.22 }));
-      torus.rotation.x = Math.PI * 0.5;
-      torus.position.set(Number(connector.col) + 0.5, 0.12, Number(connector.row) + 0.5);
-      parent.add(torus);
+    for (const type of carved) {
+      const pos = [], dirtIdx = [], grassIdx = [];
+      for (let r = 0; r < merged.rows; r++) for (let c = 0; c < merged.cols; c++) {
+        if (zGrid[r]?.[c]?.type !== type) continue;
+        let geo;
+        try { geo = TerrainPreview.buildTerrainTileGeo(c, r, type, zGrid); } catch (_) { continue; }
+        const base = pos.length / 3;
+        const tierY = (zGrid[r][c].elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
+        const tilePos = geo.pos.slice();
+        if (tierY) for (let k = 1; k < tilePos.length; k += 3) tilePos[k] += tierY;
+        pos.push(...tilePos);
+        for (const value of geo.dirtIdx) dirtIdx.push(value + base);
+        for (const value of geo.grassIdx) grassIdx.push(value + base);
+      }
+      TerrainPreview.displaceGeometryPositions(pos, merged.visualHeights, merged.cols, merged.rows);
+      addTerrainMesh(group, pos, dirtIdx, resolveTerrainMaterial(mapId, type), `carved_${type}_bed`);
+      addTerrainMesh(group, pos, grassIdx, resolveTerrainMaterial(mapId, 'grass'), `carved_${type}_rim`);
     }
+    for (const mesa of merged.mesas || []) {
+      const elevOffset = (mesa.toTier - mesa.fromTier) * TerrainPreview.PLATEAU_UNIT;
+      if (elevOffset <= 0) continue;
+      let geo;
+      try { geo = TerrainPreview.buildPlateauMesaGeometry(mesa, elevOffset, mesa.fromTier * TerrainPreview.PLATEAU_UNIT, zGrid); } catch (_) { continue; }
+      const pos = geo.pos.slice();
+      TerrainPreview.displaceGeometryPositions(pos, merged.visualHeights, merged.cols, merged.rows);
+      addTerrainMesh(group, pos, geo.idx.slice(0, geo.grassCount), resolveTerrainMaterial(mapId, 'grass'), `mesa_${mesa.groupId}_grass`);
+      addTerrainMesh(group, pos, geo.idx.slice(geo.grassCount), resolveTerrainMaterial(mapId, 'cliff'), `mesa_${mesa.groupId}_cliff`);
+    }
+    try {
+      const ramp = TerrainPreview.buildRampMeshGeometry(zGrid, merged.cols, merged.rows);
+      TerrainPreview.displaceGeometryPositions(ramp.pos, merged.visualHeights, merged.cols, merged.rows);
+      addTerrainMesh(group, ramp.pos, ramp.idx, resolveTerrainMaterial(mapId, 'path'), 'ramps');
+      const curtain = TerrainPreview.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
+      TerrainPreview.displaceGeometryPositions(curtain.pos, merged.visualHeights, merged.cols, merged.rows);
+      addTerrainMesh(group, curtain.pos, curtain.idx, resolveTerrainMaterial(mapId, 'grass'), 'ramp_curtains');
+    } catch (_) {}
+    try {
+      const rock = TerrainPreview.buildRockFormationGeometry(merged, zGrid, merged.cols, merged.rows);
+      TerrainPreview.displaceGeometryPositions(rock.pos, merged.visualHeights, merged.cols, merged.rows);
+      addTerrainMesh(group, rock.pos, rock.idx, resolveTerrainMaterial(mapId, 'cliff'), 'rock_formations');
+    } catch (_) {}
+    try {
+      const waterfall = TerrainPreview.buildWaterfallWallGeometry(zGrid, merged.cols, merged.rows);
+      TerrainPreview.displaceGeometryPositions(waterfall.pos, merged.visualHeights, merged.cols, merged.rows);
+      const material = new THREE.MeshBasicMaterial({ color: 0x2f8fc2, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+      addTerrainMesh(group, waterfall.pos, waterfall.idx, material, 'waterfall_walls');
+    } catch (_) {}
+    group.userData.zGrid = zGrid;
+    group.userData.merged = merged;
+    return group;
+  }
+  function surfaceY(merged, c, r) {
+    const TerrainPreview = window.TerrainPreview;
+    const col = clamp(Math.floor(c), 0, merged.cols - 1), row = clamp(Math.floor(r), 0, merged.rows - 1);
+    const tile = merged.tiles.get(`${col},${row}`);
+    let y = TerrainPreview.NORMAL_TOP || 0;
+    if (tile?.type === 'ramp') y += (Number(tile.rampElevation) || 0) * TerrainPreview.PLATEAU_UNIT;
+    else y += (Number(tile?.elevTier) || 0) * TerrainPreview.PLATEAU_UNIT;
+    y += TerrainPreview.sampleVisualHeight?.(merged.visualHeights, c, r, merged.cols, merged.rows) || 0;
+    return y;
   }
 
-  function buildLocalePreview(locale) {
-    if (!previewRoot || !locale) return;
-    clearPreviewRoot();
-
-    const ground = addBox(previewRoot, locale.cols / 2, -0.055, locale.rows / 2, locale.cols, 0.10, locale.rows, 0x101a24, { castShadow: false, roughness: 1 });
-    ground.receiveShadow = true;
-    const grid = new THREE.GridHelper(Math.max(locale.cols, locale.rows), Math.max(locale.cols, locale.rows), 0x314357, 0x1b2a38);
-    grid.position.set(locale.cols / 2, 0.006, locale.rows / 2);
-    previewRoot.add(grid);
-
-    for (const [key, tile] of Object.entries(locale.tiles || {})) {
-      const cell = parseCellKey(key);
-      if (!cell) continue;
-      const color = TILE_COLORS[tile?.type] || 0x4a7c43;
-      addBox(previewRoot, cell.c + 0.5, 0.055, cell.r + 0.5, 0.94, 0.10, 0.94, color, { castShadow: false });
+  // ---- Scenario search ----------------------------------------------------
+  function rootMap(workspace) { return workspace?.maps?.find(map => map && !map.isSubmap) || workspace?.maps?.[0] || null; }
+  function randomSeed(locale, zoneId) {
+    return `locale-preview|${locale?.id || 'locale'}|${zoneId}|${Date.now().toString(36)}|${Math.random().toString(36).slice(2, 9)}`;
+  }
+  function localeSignature(locale) {
+    if (!locale) return '';
+    return JSON.stringify({
+      id: locale.id, cols: locale.cols, rows: locale.rows, tiles: locale.tiles,
+      placement: locale.placement, terrainAnchors: locale.terrainAnchors, embeddedTiles: locale.embeddedTiles,
+      objects: locale.objects, npcAnchors: locale.npcAnchors, connectors: locale.connectors,
+    });
+  }
+  function candidateCloseness(result, compiled) {
+    if (result.ok) return 1;
+    const probeTotal = Math.max(0, compiled.probes.size);
+    const embeddedTotal = Math.max(0, compiled.embedded.size);
+    let passed = 0;
+    for (const diagnostic of result.probes || []) {
+      const strength = diagnostic.rule?.strength;
+      const good = strength === 'avoid' ? !diagnostic.matched : diagnostic.matched;
+      if (good) passed++;
+    }
+    for (const diagnostic of result.embedded || []) if (diagnostic.matched) passed++;
+    const constraintTotal = Math.max(1, probeTotal + embeddedTotal);
+    let stage = 0.08;
+    const reason = String(result.reason || '');
+    if (/ordinary footprint not flat|footprint out of bounds|overwrite|occupied/.test(reason)) stage = 0.18;
+    if (/required .* probe failed|avoid .* probe matched/.test(reason)) stage = 0.36;
+    if (/embedded .* host failed/.test(reason)) stage = 0.66;
+    if (/embedded carve host/.test(reason)) stage = 0.78;
+    if (/clearance/.test(reason)) stage = 0.94;
+    const ratio = passed / constraintTotal;
+    return clamp(stage + ratio * (1 - stage) * 0.82, 0, 0.995);
+  }
+  function scanFailureCandidates(workspace, locale, seed) {
+    const Placement = window.LocaleTerrainPlacement;
+    const root = rootMap(workspace);
+    if (!root) return [];
+    const scale = Math.max(1, Placement.inferGenerationScale(workspace));
+    const compiled = Placement.compileLocale(locale, scale);
+    if (!compiled) return [];
+    const failures = [];
+    const step = scale;
+    const minC = -compiled.bounds.minC, minR = -compiled.bounds.minR;
+    const maxC = root.cols - 1 - compiled.bounds.maxC, maxR = root.rows - 1 - compiled.bounds.maxR;
+    for (let r = minR; r <= maxR; r += step) {
+      for (let c = minC; c <= maxC; c += step) {
+        const result = Placement.evaluateCandidateForTest(workspace, locale, c, r, { scale, seed });
+        if (result.ok) continue;
+        failures.push({ anchorC: c, anchorR: r, scale, result, closeness: candidateCloseness(result, compiled) });
+      }
+    }
+    return failures;
+  }
+  function chooseFailure(failures, mode) {
+    if (!failures.length) return null;
+    if (mode === 'almost') return failures.reduce((best, item) => !best || item.closeness > best.closeness ? item : best, null);
+    const target = 0.52;
+    return failures.reduce((best, item) => {
+      const distance = Math.abs(item.closeness - target);
+      return !best || distance < best.distance ? { ...item, distance } : best;
+    }, null);
+  }
+  function virtualInstance(locale, candidate) {
+    const scale = candidate.scale;
+    const anchorC = candidate.anchorC, anchorR = candidate.anchorR;
+    const point = item => ({ ...clone(item), x: anchorC + (Number(item.col) || 0) * scale, y: anchorR + (Number(item.row) || 0) * scale });
+    return {
+      localeId: locale.id, name: locale.name, category: locale.category,
+      x: anchorC, y: anchorR, col: anchorC, row: anchorR, terrainAware: true,
+      floorTier: Number(candidate.result?.floorTier) || 0, ghostFailure: true,
+      objects: (locale.objects || []).map(object => ({ ...point(object), id: object.id, kind: object.kind, key: object.key, label: object.label, w: Math.max(1, Number(object.w) || 1) * scale, h: Math.max(1, Number(object.h) || 1) * scale, rot: object.rot || 0 })),
+      npcAnchors: (locale.npcAnchors || []).map(point),
+      connectors: (locale.connectors || []).map(point),
+    };
+  }
+  async function generateScenario(locale, zoneId, seed, scenario) {
+    const Generator = window.WildernessMapGenerator;
+    if (scenario === 'valid') {
+      let workspace = Generator.generateZoneWorkspace(zoneId, seed, [locale]);
+      let instance = workspace.localeInstances?.find(item => item.localeId === locale.id) || null;
+      let attempts = 1;
+      while (!instance && attempts < 5) {
+        seed = randomSeed(locale, zoneId);
+        workspace = Generator.generateZoneWorkspace(zoneId, seed, [locale]);
+        instance = workspace.localeInstances?.find(item => item.localeId === locale.id) || null;
+        attempts++;
+      }
+      if (instance) return { workspace, instance, seed, kind: 'valid', candidate: workspace.localeTerrainDiagnostics?.find(item => item.localeId === locale.id)?.selected || null };
+      const diagnostic = workspace.localeTerrainDiagnostics?.find(item => item.localeId === locale.id);
+      return { workspace, instance: null, seed, kind: 'no-match', candidate: null, reason: diagnostic?.reason || 'No valid placement found' };
     }
 
-    for (const [key, rule] of Object.entries(locale.embeddedTiles || {})) {
-      const cell = parseCellKey(key);
-      if (cell) addHostVolume(previewRoot, cell, rule);
+    // Failure and unfiltered modes intentionally generate the host without stamping the locale.
+    const workspace = Generator.generateZoneWorkspace(zoneId, seed, []);
+    const failures = scanFailureCandidates(workspace, locale, seed);
+    if (scenario === 'random') {
+      const Placement = window.LocaleTerrainPlacement;
+      const root = rootMap(workspace);
+      const scale = Placement.inferGenerationScale(workspace);
+      const compiled = Placement.compileLocale(locale, scale);
+      if (!compiled || !root) return { workspace, instance: null, seed, kind: 'no-candidate', reason: 'Locale could not compile' };
+      const anchors = [];
+      for (let r = -compiled.bounds.minR; r <= root.rows - 1 - compiled.bounds.maxR; r += scale) for (let c = -compiled.bounds.minC; c <= root.cols - 1 - compiled.bounds.maxC; c += scale) anchors.push([c, r]);
+      const [anchorC, anchorR] = anchors[Math.floor(Math.random() * anchors.length)] || [0, 0];
+      const result = Placement.evaluateCandidateForTest(workspace, locale, anchorC, anchorR, { scale, seed });
+      const candidate = { anchorC, anchorR, scale, result, closeness: result.ok ? 1 : candidateCloseness(result, compiled) };
+      return { workspace, instance: virtualInstance(locale, candidate), seed, kind: result.ok ? 'raw-valid' : 'raw-failure', candidate, reason: result.reason || 'valid candidate' };
     }
-
-    for (const [key, rule] of Object.entries(locale.terrainAnchors || {})) {
-      const cell = parseCellKey(key);
-      if (cell) addProbe(previewRoot, cell, rule);
-    }
-
-    addObjectMarkers(previewRoot, locale);
-    const status = document.getElementById('locale3dStatus');
-    if (status) status.textContent = `${locale.name || locale.id} · floor y0 · ${Object.keys(locale.embeddedTiles || {}).length} embedded`;
-    fitCamera(locale);
+    const picked = chooseFailure(failures, scenario);
+    if (!picked) return { workspace, instance: null, seed, kind: 'no-candidate', reason: 'No rejected candidates found on this seed' };
+    return { workspace, instance: virtualInstance(locale, picked), seed, kind: scenario, candidate: picked, reason: picked.result.reason };
   }
 
-  function fitCamera(locale) {
-    if (!camera || !controls || !locale) return;
-    const deltas = Object.values(locale.embeddedTiles || {}).map(rule => Math.abs(rulePreviewDelta(rule?.height)));
-    const vertical = Math.max(2, ...deltas);
-    const span = Math.max(4, locale.cols || 1, locale.rows || 1, vertical * 1.4);
-    const center = new THREE.Vector3((locale.cols || 1) / 2, Math.max(0.4, vertical * 0.28), (locale.rows || 1) / 2);
-    controls.target.copy(center);
-    camera.position.set(center.x + span * 0.95, center.y + span * 0.78, center.z + span * 1.05);
-    camera.near = Math.max(0.02, span / 500);
-    camera.far = Math.max(120, span * 18);
+  // ---- Locale visuals -----------------------------------------------------
+  function loadGlbTemplate(relativePath) {
+    if (glbTemplateCache.has(relativePath)) return glbTemplateCache.get(relativePath);
+    const promise = new Promise((resolve, reject) => {
+      new THREE.GLTFLoader().load(new URL(`../../assets/models/${relativePath}`, location.href).href, gltf => resolve(gltf.scene || gltf.scenes?.[0]), undefined, reject);
+    });
+    glbTemplateCache.set(relativePath, promise);
+    return promise;
+  }
+  function tintGhost(root, ghost) {
+    if (!ghost) return;
+    root.traverse(node => {
+      if (!node.isMesh) return;
+      const wasArray = Array.isArray(node.material);
+      const materials = wasArray ? node.material : [node.material];
+      const tinted = materials.map(material => {
+        const next = material?.clone?.() || new THREE.MeshLambertMaterial({ color: 0x8dd7ff });
+        next.transparent = true;
+        next.opacity = Math.min(0.58, Number(next.opacity) || 1);
+        next.depthWrite = false;
+        return next;
+      });
+      node.material = wasArray ? tinted : tinted[0];
+    });
+  }
+  async function addGlbObject(group, object, merged, token, ghost) {
+    const glb = OBJECT_GLB[object.key];
+    if (!glb) return false;
+    try {
+      const template = await loadGlbTemplate(glb);
+      if (token !== generationToken || !template) return true;
+      const model = template.clone(true);
+      model.name = `localeObject_${object.key}`;
+      model.traverse(node => { if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; if (node.material?.clone) node.material = node.material.clone(); } });
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const w = Math.max(1, Number(object.w) || 1), h = Math.max(1, Number(object.h) || 1);
+      const targetSpan = Math.max(0.7, Math.min(w / Math.max(size.x, 0.001), h / Math.max(size.z, 0.001)) * Math.max(size.x, size.z));
+      const currentSpan = Math.max(size.x, size.z, 0.001);
+      model.scale.setScalar(targetSpan / currentSpan);
+      model.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
+      model.updateMatrixWorld(true);
+      const scaled = new THREE.Box3().setFromObject(model);
+      const center = scaled.getCenter(new THREE.Vector3());
+      const x = Number(object.x) + w / 2, z = Number(object.y) + h / 2;
+      const groundY = surfaceY(merged, x, z);
+      model.position.x += x - center.x;
+      model.position.z += z - center.z;
+      model.position.y += groundY - scaled.min.y;
+      tintGhost(model, ghost);
+      group.add(model);
+      return true;
+    } catch (_) { return false; }
+  }
+  function addFallbackObject(group, object, merged, ghost) {
+    const w = Math.max(1, Number(object.w) || 1), h = Math.max(1, Number(object.h) || 1);
+    const x = Number(object.x) + w / 2, z = Number(object.y) + h / 2;
+    const groundY = surfaceY(merged, x, z);
+    const material = new THREE.MeshLambertMaterial({ color: ghost ? 0x8dd7ff : 0xb8874e, transparent: ghost, opacity: ghost ? 0.46 : 0.88 });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w * 0.72, 1.0, h * 0.72), material);
+    mesh.position.set(x, groundY + 0.5, z);
+    mesh.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  async function renderLocaleObjects(workspace, locale, instance, merged, terrainRoot, token, ghost) {
+    if (!instance) return;
+    const group = new THREE.Group();
+    group.name = 'localeSandboxExternalObjects';
+    scene.add(group);
+    for (const object of instance.objects || []) {
+      if (object.key === 'cave_small' || locale.objects?.find(source => source.id === object.id)?.visual?.renderer === 'cave_small') continue;
+      const loaded = await addGlbObject(group, object, merged, token, ghost);
+      if (!loaded && token === generationToken) addFallbackObject(group, object, merged, ghost);
+    }
+
+    if (token !== generationToken) return;
+    // Cave objects go through the actual gameplay renderer (which loads cave_small.glb) rather than a second editor implementation.
+    const virtualWorkspace = instance.ghostFailure ? { ...workspace, localeInstances: [...(workspace.localeInstances || []), instance] } : workspace;
+    window.LocaleCaveRuntime.clearZone(PREVIEW_MAP_ID);
+    window.LocaleCaveRuntime.registerWorkspace(PREVIEW_MAP_ID, virtualWorkspace, [locale]);
+    window.ZoneDenTotemFeatures.init({
+      NORMAL_TOP: window.TerrainPreview.NORMAL_TOP,
+      PLATEAU_UNIT: window.TerrainPreview.PLATEAU_UNIT,
+      markOutline: () => {},
+    });
+    window.ZoneDenTotemFeatures.buildAnimalDenMeshes(scene, terrainRoot.userData.zGrid, [], PREVIEW_MAP_ID);
+  }
+
+  function addRuleOverlay(locale, instance, candidate, merged) {
+    if (!instance || !merged) return;
+    const scale = candidate?.scale || window.LocaleTerrainPlacement.inferGenerationScale(currentWorkspace);
+    const anchorC = Number(instance.x) || 0, anchorR = Number(instance.y) || 0;
+    const group = new THREE.Group();
+    group.name = 'localeSandboxRuleOverlay';
+    group.visible = showRules;
+    const tile = (c, r, color, opacity, height = 0.06) => {
+      const y = surfaceY(merged, c + 0.5, r + 0.5) + height / 2 + 0.035;
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest: false });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.72, height, 0.72), material);
+      mesh.position.set(c + 0.5, y, r + 0.5);
+      mesh.renderOrder = 60;
+      group.add(mesh);
+    };
+    const compiled = window.LocaleTerrainPlacement.compileLocale(locale, scale);
+    for (const cell of compiled?.tiles?.values?.() || []) tile(anchorC + cell.c, anchorR + cell.r, 0xf5a623, instance.ghostFailure ? 0.20 : 0.10, 0.035);
+    for (const cell of compiled?.probes?.values?.() || []) {
+      const rule = cell.value;
+      const color = rule.strength === 'avoid' ? 0xfb7185 : rule.strength === 'preferred' ? 0xfacc15 : rule.terrain === 'boundaryCliff' ? 0xa78bfa : 0x55e6ff;
+      tile(anchorC + cell.c, anchorR + cell.r, color, 0.82, 0.13);
+    }
+    for (const cell of compiled?.embedded?.values?.() || []) tile(anchorC + cell.c, anchorR + cell.r, 0xd56bff, 0.72, 0.18);
+    const fail = candidate?.result?.failAt || candidate?.failAt;
+    if (fail) tile(fail.c, fail.r, 0xff263f, 0.95, 0.35);
+    worldRoot.add(group);
+  }
+
+  function fitCamera() {
+    if (!camera || !controls || !currentCandidate || !currentLocale) return;
+    const scale = currentCandidate.scale || window.LocaleTerrainPlacement.inferGenerationScale(currentWorkspace);
+    const placed = currentWorkspace?.localeInstances?.find(item => item.localeId === currentLocale.id);
+    const anchorC = Number.isFinite(Number(currentCandidate.anchorC)) ? Number(currentCandidate.anchorC) : Number(placed?.x) || 0;
+    const anchorR = Number.isFinite(Number(currentCandidate.anchorR)) ? Number(currentCandidate.anchorR) : Number(placed?.y) || 0;
+    const centerX = anchorC + (currentLocale.cols * scale) / 2;
+    const centerZ = anchorR + (currentLocale.rows * scale) / 2;
+    const centerY = currentMerged ? surfaceY(currentMerged, centerX, centerZ) : 0;
+    const span = Math.max(12, Math.max(currentLocale.cols, currentLocale.rows) * scale * 1.35);
+    controls.target.set(centerX, centerY + 1.2, centerZ);
+    camera.position.set(centerX + span * 0.72, centerY + span * 0.56, centerZ + span * 0.78);
+    camera.near = 0.05;
+    camera.far = 3000;
     camera.updateProjectionMatrix();
     controls.update();
   }
 
-  function previewSignature(locale) {
-    if (!locale) return '';
-    return JSON.stringify({
-      id: locale.id, cols: locale.cols, rows: locale.rows,
-      tiles: locale.tiles, terrainAnchors: locale.terrainAnchors, embeddedTiles: locale.embeddedTiles,
-      objects: locale.objects, npcAnchors: locale.npcAnchors, connectors: locale.connectors,
-    });
+  function scenarioLabel(kind) {
+    if (kind === 'valid') return 'VALID PLACEMENT';
+    if (kind === 'almost') return 'ALMOST RIGHT — intentionally rejected';
+    if (kind === 'somewhat') return 'SOMEWHAT RIGHT — intentionally rejected';
+    if (kind === 'raw-valid') return 'UNFILTERED — happened to be valid';
+    if (kind === 'raw-failure') return 'UNFILTERED — rejected';
+    return 'NO MATCH';
+  }
+  async function renderScenario(result, locale, zoneId, token) {
+    if (token !== generationToken) return;
+    clearWorld();
+    // clearWorld increments generationToken; claim the resulting token for this render.
+    token = generationToken;
+    currentWorkspace = result.workspace;
+    currentLocale = locale;
+    const root = rootMap(result.workspace);
+    if (!root) throw new Error('Generated workspace has no root map');
+    const terrainRoot = buildTerrainRoot(result.workspace, root.id);
+    worldRoot.add(terrainRoot);
+    currentMerged = terrainRoot.userData.merged;
+
+    let instance = result.instance;
+    let candidate = result.candidate;
+    if (instance && (!candidate || candidate.anchorC == null)) {
+      candidate = {
+        anchorC: Number(instance.x) || 0,
+        anchorR: Number(instance.y) || 0,
+        scale: window.LocaleTerrainPlacement.inferGenerationScale(result.workspace),
+        floorTier: instance.floorTier,
+      };
+    }
+    currentCandidate = candidate;
+    await renderLocaleObjects(result.workspace, locale, instance, currentMerged, terrainRoot, token, !!instance?.ghostFailure);
+    if (token !== generationToken) return;
+    addRuleOverlay(locale, instance, candidate, currentMerged);
+    fitCamera();
+
+    const failure = candidate?.result;
+    const closeness = candidate?.closeness;
+    const matchText = Number.isFinite(closeness) ? ` · ${(closeness * 100).toFixed(0)}% rule fit` : '';
+    const reason = result.reason || failure?.reason;
+    setStatus(`${scenarioLabel(result.kind)} · ${locale.name || locale.id} · ${ZONES.find(([id]) => id === zoneId)?.[1] || zoneId} · seed ${result.seed}${matchText}${reason ? ` · ${reason}` : ''}${instance?.ghostFailure ? ' · locale shown as a ghost because the game would not place it here' : ''}`);
   }
 
-  function rebuildIfChanged(force = false) {
+  async function regenerateScenario({ newSeed = false, force = false } = {}) {
     if (!previewVisible || !renderer) return;
     const locale = activeMergedLocale();
-    const signature = previewSignature(locale);
-    if (!locale) {
-      clearPreviewRoot();
-      const status = document.getElementById('locale3dStatus');
-      if (status) status.textContent = 'No active locale';
-      lastSignature = '';
-      lastLocaleId = '';
-      return;
+    if (!locale) { setStatus('No active locale.'); return; }
+    syncZoneChoices(locale);
+    const zoneId = currentZoneId || document.getElementById('localeSandboxZone')?.value || ZONES[0][0];
+    const signature = localeSignature(locale);
+    if (!force && signature === currentLocaleSignature) return;
+    currentLocaleSignature = signature;
+    if (newSeed || !currentSeed) currentSeed = randomSeed(locale, zoneId);
+    const requestToken = ++generationToken;
+    setStatus(`Generating ${currentScenario === 'valid' ? 'valid placement' : currentScenario === 'almost' ? 'near-miss failure' : currentScenario === 'somewhat' ? 'partial-match failure' : 'unfiltered candidate'} with the game wilderness generator…`);
+    try {
+      const result = await Promise.resolve(generateScenario(locale, zoneId, currentSeed, currentScenario));
+      if (requestToken !== generationToken) return;
+      currentSeed = result.seed;
+      await renderScenario(result, locale, zoneId, requestToken);
+    } catch (error) {
+      console.error('[LocaleEditorSandbox] generation failed:', error);
+      setStatus(`Generation failed: ${error.message}`);
     }
-    if (!force && signature === lastSignature) return;
-    const localeChanged = locale.id !== lastLocaleId;
-    lastSignature = signature;
-    lastLocaleId = locale.id;
-    buildLocalePreview(locale);
-    if (!localeChanged && !force) controls?.update();
   }
 
   function install() {
     const ready = injectRelativeHeightHelpers() && injectPreviewUi();
-    if (!ready) {
-      setTimeout(install, 120);
-      return;
-    }
-    setInterval(() => rebuildIfChanged(false), 250);
-    console.log('[LocaleEditor3D] relative-height helpers + 3D preview ready');
+    if (!ready) { setTimeout(install, 120); return; }
+    setInterval(() => {
+      if (!previewVisible || !renderer) return;
+      const locale = activeMergedLocale();
+      const signature = localeSignature(locale);
+      if (locale && signature !== currentLocaleSignature) regenerateScenario({ newSeed: false, force: true });
+    }, 500);
+    console.log('[LocaleEditorSandbox] in-game terrain + GLB locale preview ready');
   }
 
   install();
