@@ -8258,7 +8258,7 @@
       // regenerateWildernessLabInPlace) gives a new layout each time rather
       // than rebuilding the same one, the way a real Tothal Shift would for
       // a new year.
-      function regenerateWildernessLab(chunksPerSide = 1) {
+      function regenerateWildernessLab(chunksPerSide = 1, seedOverride = null) {
         if (typeof WildernessMapGenerator === 'undefined' || typeof TerrainPreview === 'undefined') {
           debugLog('[wilderness-lab] generator not loaded', 'warn');
           return false;
@@ -8268,7 +8268,12 @@
         const exportScale = 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
         const side = Math.max(1, Math.min(8, Math.round(Number(chunksPerSide) || 1)));
         const internalSize = Math.max(4, Math.round((side * chunkTiles) / exportScale));
-        const seed = `wilderness_lab_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6)}`;
+        // seedOverride lets a caller (see window.__regenerateWildernessLab from
+        // devtools) regenerate the SAME layout repeatedly instead of a fresh
+        // random one each time -- the only way to tell a real per-cycle
+        // resource leak apart from an ever-growing cache that's simply keyed
+        // on each regenerate's distinct generated content.
+        const seed = seedOverride || `wilderness_lab_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6)}`;
         let workspace, merged;
         try {
           // Reuses map_northern_cliffs' terrain preset/boundary settings so
