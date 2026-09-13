@@ -1,7 +1,7 @@
 // Boots the exact readable Debris-ifier V50 source and then exposes its dev API.
 // Direct tool usage executes the source byte-for-byte. The hidden in-game ruin
 // generator keeps the same source file and generator logic, but patches only its
-// repository transport at load time so generation is same-origin and offline-safe.
+// repository transport at load time so generation is independent of live repo I/O.
 (() => {
   'use strict';
 
@@ -36,17 +36,32 @@
     const treeReplacement = `const REPO_TREE_URL='${EMBEDDED_TREE}';`;
     const rawNeedle = "function rawTextureUrl(path){return REPO_RAW_ROOT+String(path||'').replace(/^\\/+/, '');}";
     const rawReplacement = "function rawTextureUrl(path){const clean=String(path||'').replace(/^\\/+/, '');const fromDocsRoot=clean.startsWith('docs/')?clean.slice(5):clean;return new URL('../../'+fromDocsRoot,location.href).href;}";
+    const brickNeedle = 'new THREE.GLTFLoader().load(REPO_RAW_ROOT+WALL_BRICK_GLB_PATH,gltf=>';
+    const brickReplacement = 'new THREE.GLTFLoader().load(rawTextureUrl(WALL_BRICK_GLB_PATH),gltf=>';
+    const decalNeedle = 'const texture=loader.load(REPO_RAW_ROOT+path,loaded=>';
+    const decalReplacement = 'const texture=loader.load(rawTextureUrl(path),loaded=>';
 
-    if (!sourceText.includes(treeNeedle)) throw new Error('V50 repository-tree binding changed; refusing an unverified embedded patch.');
-    if (!sourceText.includes(rawNeedle)) throw new Error('V50 raw-asset URL helper changed; refusing an unverified embedded patch.');
+    for (const [label, needle] of [
+      ['repository-tree binding', treeNeedle],
+      ['raw-asset URL helper', rawNeedle],
+      ['Roughbrick loader', brickNeedle],
+      ['mechanism decal loader', decalNeedle],
+    ]) {
+      if (!sourceText.includes(needle)) throw new Error(`V50 ${label} changed; refusing an unverified embedded patch.`);
+    }
 
-    const patched = sourceText.replace(treeNeedle, treeReplacement).replace(rawNeedle, rawReplacement);
+    const patched = sourceText
+      .replace(treeNeedle, treeReplacement)
+      .replace(rawNeedle, rawReplacement)
+      .replace(brickNeedle, brickReplacement)
+      .replace(decalNeedle, decalReplacement);
     window.__debrisifierEmbeddedTransport = Object.freeze({
       active: true,
       sameOrigin: true,
       sourceSha256: SOURCE_SHA256,
       tree: EMBEDDED_TREE,
       expectedFurniturePaths: EMBEDDED_FURNITURE_COUNT,
+      patchedBindings: 4,
     });
     return patched;
   }
