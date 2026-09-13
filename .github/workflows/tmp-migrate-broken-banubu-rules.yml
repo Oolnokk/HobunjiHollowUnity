@@ -1,0 +1,41 @@
+name: Migrate broken Banubu terrain rules
+
+on:
+  push:
+    branches:
+      - chatgpt/locale-terrain-anchors
+    paths:
+      - scripts/tmp-migrate-broken-banubu-rules.py
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/locale-terrain-anchors
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply targeted migration
+        run: python scripts/tmp-migrate-broken-banubu-rules.py
+      - name: Syntax checks
+        run: |
+          node --check docs/tools/locale-editor/terrain-placement.js
+          node --check scripts/test-banubu-wilderness-lab-generation.js
+      - name: Locale regressions
+        run: |
+          node scripts/test-locale-terrain-placement.js
+          node scripts/test-banubu-cave-locale.js
+          node scripts/test-banubu-wilderness-lab-generation.js
+      - name: Commit migration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/tools/locale-editor/terrain-placement.js scripts/test-banubu-wilderness-lab-generation.js
+          git commit -m 'Repair legacy Banubu locale terrain rules'
+          git push origin HEAD:chatgpt/locale-terrain-anchors
