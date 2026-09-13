@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'docs/js/loading-screen-sky-backdrop.js'
+      - 'docs/js/loading-screen-runtime.js'
       - 'docs/js/sky-dome.js'
       - 'docs/js/local-save-folder.js'
       - 'docs/config/loading-screens.json'
@@ -14,6 +15,7 @@ on:
     branches: [main]
     paths:
       - 'docs/js/loading-screen-sky-backdrop.js'
+      - 'docs/js/loading-screen-runtime.js'
       - 'docs/js/sky-dome.js'
       - 'docs/js/local-save-folder.js'
       - 'docs/config/loading-screens.json'
