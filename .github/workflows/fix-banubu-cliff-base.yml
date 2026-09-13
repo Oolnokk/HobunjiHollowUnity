@@ -1,4 +1,4 @@
-name: Fix Banubu Cliff Base
+name: Validate Banubu Cliff Base
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  patch:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,66 +20,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Require Banubu cave at true cliff base
+      - name: Run locale regressions and publish diagnostics
         shell: bash
         run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          locale_path = Path('docs/config/locales/locale_banubu_shrine.json')
-          locale = json.loads(locale_path.read_text())
-          for key in ('3,3', '4,3', '5,3'):
-              locale['terrainAnchors'][key]['terrain'] = 'ground'
-              locale['placement']['terrainAnchors'][key]['terrain'] = 'ground'
-          note = 'Banubu cave floor/approach must sit on true ground tier 0; the rear embeds into higher plateau mass so the cave is at the bottom of the cliff, never on a raised shelf.'
-          old_note = str(locale.get('placement', {}).get('notes') or '').strip()
-          if note not in old_note:
-              locale['placement']['notes'] = old_note + (' ' if old_note else '') + note
-          locale_path.write_text(json.dumps(locale, indent=2) + '\n')
-
-          runtime_path = Path('docs/js/locale-cave-runtime.js')
-          s = runtime_path.read_text()
-          old = "          localeName: instance.name || locale.name || instance.localeId,\n          visual: clone(source?.visual || placed.visual || { renderer: 'cave_small', scale: 1 }),"
-          new = "          localeName: instance.name || locale.name || instance.localeId,\n          floorTier: Number.isFinite(Number(instance.floorTier)) ? Number(instance.floorTier) : null, // Locale floor remains authoritative even when the cave object overlaps embedded high terrain.\n          visual: clone(source?.visual || placed.visual || { renderer: 'cave_small', scale: 1 }),"
-          if old in s:
-              runtime_path.write_text(s.replace(old, new, 1))
-          elif 'floorTier: Number.isFinite(Number(instance.floorTier))' not in s:
-              raise SystemExit('locale cave runtime patch target missing')
-
-          renderer_path = Path('docs/js/zone-den-totem-features.js')
-          s = renderer_path.read_text()
-          if 'Number.isFinite(Number(cave.floorTier)) ? Number(cave.floorTier) : sampledTier' not in s:
-              start = s.index('      for (const cave of localeCaves) {')
-              old = "        const elevTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0;\n        const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;"
-              pos = s.index(old, start)
-              new = "        const sampledTier = zGrid?.[Math.floor(centerRow)]?.[Math.floor(centerCol)]?.elevTier || 0; // Center sampling is only a fallback for old/non-terrain-aware cave records.\n        const elevTier = Number.isFinite(Number(cave.floorTier)) ? Number(cave.floorTier) : sampledTier; // Terrain-aware caves sit on their locale floor, not a higher embedded plateau cell under the model center.\n        const groundY = deps.NORMAL_TOP + elevTier * deps.PLATEAU_UNIT;"
-              s = s[:pos] + s[pos:].replace(old, new, 1)
-              renderer_path.write_text(s)
-
-          test_path = Path('scripts/test-banubu-cave-locale.js')
-          s = test_path.read_text()
-          if 'const groundApproach =' not in s:
-              old = "const freeApproach = Object.values(anchors).filter(rule => rule.terrain === 'free' && rule.strength === 'required');\nassert(freeApproach.length >= 3, 'Banubu Cave needs a required open approach before the embedded plateau');"
-              new = "const groundApproach = Object.values(anchors).filter(rule => rule.terrain === 'ground' && rule.strength === 'required');\nassert(groundApproach.length >= 3, 'Banubu Cave needs a required true-ground approach so the cave floor cannot land on a raised shelf');\nfor (const key of ['3,3', '4,3', '5,3']) {\n  assert.strictEqual(anchors[key]?.terrain, 'ground', `Banubu approach ${key} must require tier-0 ground`);\n  assert.strictEqual(locale.placement?.terrainAnchors?.[key]?.terrain, 'ground', `persisted Banubu approach ${key} must mirror tier-0 ground requirement`);\n}"
-              if old not in s: raise SystemExit('Banubu approach assertion target missing')
-              s = s.replace(old, new, 1)
-          marker = "assert(zoneRenderer.includes('DEN_SIZE_SCALE * authoredScale'), 'authored 2x cave scale must multiply the normal game cave scaling path');"
-          if 'locale cave registry must preserve the placed locale floor tier' not in s:
-              s = s.replace(marker, marker + "\nassert(caveRuntime.includes('floorTier: Number.isFinite(Number(instance.floorTier))'), 'locale cave registry must preserve the placed locale floor tier');\nassert(zoneRenderer.includes('Number.isFinite(Number(cave.floorTier)) ? Number(cave.floorTier) : sampledTier'), 'locale cave renderer must anchor terrain-aware caves to their locale floor tier');", 1)
-          test_path.write_text(s)
-
-          real_path = Path('scripts/test-banubu-wilderness-lab-generation.js')
-          s = real_path.read_text()
-          marker = "assert(instance, 'Banubu Cave must produce a localeInstance in the real Northern Cliffs generation.');"
-          if 'true ground-level base of a cliff' not in s:
-              s = s.replace(marker, marker + "\nassert.strictEqual(diagnostic.selected?.floorTier, 0, 'Banubu Cave must place at the true ground-level base of a cliff, never on a raised shelf');\nassert.strictEqual(instance.floorTier, 0, 'runtime Banubu locale floor must remain tier 0');", 1)
-          real_path.write_text(s)
-          PY
-          node --check docs/js/locale-cave-runtime.js
-          node --check docs/js/zone-den-totem-features.js
+          set +e
+          {
+            echo '=== syntax locale cave runtime ==='
+            node --check docs/js/locale-cave-runtime.js
+            echo "exit=$?"
+            echo '=== syntax zone renderer ==='
+            node --check docs/js/zone-den-totem-features.js
+            echo "exit=$?"
+            echo '=== generic terrain placement ==='
+            node scripts/test-locale-terrain-placement.js
+            echo "exit=$?"
+            echo '=== Banubu authored/runtime ==='
+            node scripts/test-banubu-cave-locale.js
+            echo "exit=$?"
+            echo '=== Banubu real Northern Cliffs ==='
+            node scripts/test-banubu-wilderness-lab-generation.js
+            echo "exit=$?"
+          } > scripts/tmp-banubu-validation.txt 2>&1
+          cat scripts/tmp-banubu-validation.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/config/locales/locale_banubu_shrine.json docs/js/locale-cave-runtime.js docs/js/zone-den-totem-features.js scripts/test-banubu-cave-locale.js scripts/test-banubu-wilderness-lab-generation.js
-          git commit -m 'Place Banubu cave at the cliff base'
+          git add scripts/tmp-banubu-validation.txt
+          git commit -m 'Record Banubu cliff-base validation'
           git push origin HEAD:chatgpt/locale-terrain-anchors
