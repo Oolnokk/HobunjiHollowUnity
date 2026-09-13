@@ -566,6 +566,13 @@
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
   <script src="js/equipment-panel.js?v=20260807a"></script>
+  <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
+       resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
+       before game.js, which calls window.TerrainTileMaterials.init(...) near
+       the top of its farm-setup sequence (well before window.BorderTerrain's
+       own init() below, which captures game.js's resulting local
+       resolveTileMat/resolveCliffMat aliases into its own deps). -->
+  <script src="js/terrain-tile-materials.js?v=20260913a"></script>
   <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
        scene-graph generation, no other window.* system reads; must load
        before game.js, which calls window.BorderTerrain.init(...) and then
