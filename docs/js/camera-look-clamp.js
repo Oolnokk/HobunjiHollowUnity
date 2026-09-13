@@ -25,7 +25,7 @@
   // The ruin module itself remains inert unless Dev Mode's Random Test Ruin
   // button is used, and it never writes its seed/state into save storage.
   if (document.readyState === 'loading') {
-    document.write('<script src="js/dynamic-surfaces.js?v=20260912ruins1"><\\/script>');
-    document.write('<script src="js/dev-random-ruin.js?v=20260912ruins1"><\\/script>');
+    document.write('<script src="js/dynamic-surfaces.js?v=20260912ruins1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin.js?v=20260912ruins1"></scr' + 'ipt>');
   }
 })();
