@@ -6,3 +6,6 @@ document.write('<script src="js/local-save-folder-core.js?v=20260812a"><\/script
 document.write('<script src="js/netlify-cloud-save.js?v=20260904a"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');
 document.write('<script src="js/save-startup-gate.js?v=20260910review1"><\/script>');
+// This compatibility loader is a stable parser-blocking boot slot before the loading-screen runtime.
+// Load the lightweight sky backdrop here so initial boot and later map-travel loaders use the same module.
+document.write('<script src="js/loading-screen-sky-backdrop.js?v=20260913a"><\/script>');
