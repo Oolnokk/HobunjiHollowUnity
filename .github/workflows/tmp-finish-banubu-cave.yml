@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - chatgpt/locale-terrain-anchors
-    paths:
-      - scripts/tmp-finish-banubu-cave.py
 
 permissions:
   contents: write
