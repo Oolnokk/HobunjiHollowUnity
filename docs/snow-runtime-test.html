@@ -42,7 +42,7 @@ window.EnvironmentSurfaceRuntime = Object.freeze({
 <\/script>`;
 
       html = html.replace(
-        /<script src="js\/rain-planes\.js\?v=[^"]+"><\/script>/,
+        /<script src="js\/rain-planes\.js\?v=[^"]+"><\/script>(?:\s*<script src="js\/environment-surface-micro-plateau\.js\?v=[^"]+"><\/script>)?(?:\s*<script src="js\/environment-surface-pixel-probe\.js\?v=[^"]+"><\/script>)?/,
         `${legacyStub}\n  <script src="js/rain-planes.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-micro-plateau.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-pixel-probe.js?v=${CACHE_KEY}"><\/script>`,
       );
       html = html.replace(

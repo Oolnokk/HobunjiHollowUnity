@@ -505,6 +505,21 @@
   <script src="js/weather-fx.js?v=20260809b"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
+  <!-- Tile-driven shallow snow micro-plateau (window.EnvironmentSurfaceMicroPlateau)
+       — replaces the legacy triangle-copy Western Slope snow mesh from
+       environment-surface-runtime.js (rain-planes.js loads that above on
+       demand) with an incrementally-built, chunked replacement that can't
+       freeze the main thread scanning/building terrain. Must load after
+       rain-planes.js so window.EnvironmentSurfaceRuntime already exists;
+       environment-surface-runtime.js's resolveMode() checks
+       window.EnvironmentSurfaceMicroPlateau.installed to step aside on
+       Western Slope and leave seasonal slush elsewhere alone. -->
+  <script src="js/environment-surface-micro-plateau.js?v=20260913a"></script>
+  <!-- Feeds the micro-plateau renderer's scan/build progress into the
+       Pixel Probe report line (window.EnvironmentSurfacePixelProbe) —
+       intercepts window.PixelProbe assignment if pixel-probe.js below
+       hasn't loaded yet. -->
+  <script src="js/environment-surface-pixel-probe.js?v=20260913a"></script>
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->

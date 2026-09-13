@@ -99,7 +99,13 @@
   function resolveMode() {
     if (!deps?.getActiveScene?.() || deps?.isOutdoorArea?.() === false) return 'none';
     const areaId = currentAreaId();
-    if (isWesternSlope(areaId)) return 'snow';
+    if (isWesternSlope(areaId)) {
+      // window.EnvironmentSurfaceMicroPlateau (environment-surface-micro-plateau.js)
+      // owns Western Slope snow when installed — a chunked, incrementally-built
+      // replacement for this runtime's whole-mesh triangle-copy snow job, which
+      // could stall the main thread scanning/building large Western Slope scenes.
+      return window.EnvironmentSurfaceMicroPlateau?.installed ? 'none' : 'snow';
+    }
     return currentSeasonName() === 'Coldmuck' ? 'slush' : 'none';
   }
 
