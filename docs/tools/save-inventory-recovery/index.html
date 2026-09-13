@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Hobunji Inventory Recovery</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #111; color: #f3f3f3; }
+    main { max-width: 900px; margin: 0 auto; padding: 18px; }
+    h1 { font-size: 1.45rem; margin: 0 0 10px; }
+    h2 { font-size: 1.05rem; margin: 22px 0 8px; }
+    p, li { line-height: 1.42; }
+    .warn { border: 1px solid #8d5d16; background: #2b2112; padding: 12px; border-radius: 10px; }
+    .ok { border-color: #2a7a46; background: #132619; }
+    .bad { border-color: #a23a3a; background: #2a1515; }
+    button { font: inherit; padding: 11px 13px; margin: 5px 5px 5px 0; border-radius: 9px; border: 1px solid #666; background: #262626; color: #fff; }
+    button.primary { background: #235f3a; border-color: #4c9f69; }
+    button.danger { background: #6a2929; border-color: #aa4d4d; }
+    button:disabled { opacity: .45; }
+    code { overflow-wrap: anywhere; }
+    .card { border: 1px solid #444; background: #191919; border-radius: 12px; padding: 12px; margin: 10px 0; }
+    .target { border-color: #d29c36; box-shadow: inset 0 0 0 1px #d29c36; }
+    .meta { color: #bbb; font-size: .9rem; }
+    .items { margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .88rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .pill { display: inline-block; border: 1px solid #555; border-radius: 999px; padding: 2px 7px; margin: 2px 4px 2px 0; font-size: .78rem; color: #ccc; }
+    #status { margin-top: 12px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Hobunji Inventory Recovery</h1>
+  <div class="warn">
+    <strong>This page does not change your save when it opens.</strong>
+    It only reads this browser's Hobunji local save and looks for every saved <code>nonGearInventory</code> record. Restore only after you identify the inventory that looks like yours.
+  </div>
+
+  <h2>Safety</h2>
+  <p>Before restoring, keep the broken game build from doing more save actions. If possible, open this recovery page in a separate tab, inspect first, then close the broken game tab before pressing Restore.</p>
+  <div>
+    <button id="downloadBtn">Download Hobunji save backup</button>
+    <button id="refreshBtn">Re-scan save</button>
+  </div>
+
+  <div id="summary" class="card"></div>
+  <div id="status"></div>
+
+  <h2>Inventory records found</h2>
+  <div id="records"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const META_KEY = 'hobunjiSaveMeta'; // Used to read and, only after explicit confirmation, repair the canonical multi-world save blob.
+  const PROFILE_KEY = 'hobunjiPlayerProfile'; // Used to identify the currently selected character/world and keep the legacy/current profile mirror aligned after repair.
+  const summaryEl = document.getElementById('summary'); // Used for current world/character and raw-save presence diagnostics.
+  const recordsEl = document.getElementById('records'); // Used to render every discovered nonGearInventory candidate.
+  const statusEl = document.getElementById('status'); // Used for backup/restore feedback visible on mobile.
+
+  let metaRaw = null; // Used to preserve the exact canonical save string for backup before any explicit repair.
+  let profileRaw = null; // Used to preserve the exact profile mirror for backup before any explicit repair.
+  let meta = null; // Used as the parsed canonical save graph scanned for inventory candidates.
+  let profile = null; // Used to resolve the current target world/member.
+  let candidates = []; // Used by restore buttons to reference the scanned inventory records without serializing them into the DOM.
+  let target = null; // Used to identify the currently selected world/member record that should receive a recovered inventory.
+
+  function parseJson(raw) {
+    try { return raw ? JSON.parse(raw) : null; } catch (_) { return null; }
+  }
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function inventoryStats(inv) {
+    const entries = Object.entries(inv || {}).filter(([, value]) => Number(value) !== 0);
+    const positive = entries.filter(([, value]) => Number(value) > 0);
+    return {
+      distinct: positive.length,
+      total: positive.reduce((sum, [, value]) => sum + Math.max(0, Number(value) || 0), 0),
+      gold: Math.max(0, Number(inv?.gold) || 0),
+      preview: positive
+        .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0))
+        .slice(0, 18)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n'),
+    };
+  }
+
+  function walk(value, path, seen) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    if (value.nonGearInventory && typeof value.nonGearInventory === 'object' && !Array.isArray(value.nonGearInventory)) {
+      candidates.push({ path, owner: value, inventory: value.nonGearInventory });
+    }
+    if (Array.isArray(value)) {
+      value.forEach((child, index) => walk(child, `${path}[${index}]`, seen));
+      return;
+    }
+    Object.entries(value).forEach(([key, child]) => {
+      if (key === 'nonGearInventory') return;
+      walk(child, `${path}.${key}`, seen);
+    });
+  }
+
+  function resolveTarget() {
+    const worldId = profile?.worldId || null; // Used to find the selected world inside saveMeta.worlds.
+    const characterId = profile?.characterId || profile?.playerId || null; // Used as the member-map key inside the selected world.
+    const worlds = Array.isArray(meta?.worlds) ? meta.worlds : [];
+    const world = worlds.find(entry => entry?.id === worldId) || null;
+    const member = world && characterId ? world.members?.[characterId] || null : null;
+    return { worldId, characterId, world, member };
+  }
+
+  function candidateLabel(candidate) {
+    const world = Array.isArray(meta?.worlds)
+      ? meta.worlds.find(w => candidate.path.startsWith(`saveMeta.worlds[${meta.worlds.indexOf(w)}]`))
+      : null; // Used only for a human-friendly world label when the path belongs to saveMeta.worlds.
+    const stats = inventoryStats(candidate.inventory);
+    const tags = [];
+    if (candidate.owner === target?.member) tags.push('CURRENT TARGET');
+    if (world?.label) tags.push(world.label);
+    return { stats, tags };
+  }
+
+  function setStatus(message, kind = '') {
+    statusEl.className = kind ? `warn ${kind}` : 'warn';
+    statusEl.textContent = message;
+  }
+
+  function rescan() {
+    metaRaw = localStorage.getItem(META_KEY);
+    profileRaw = localStorage.getItem(PROFILE_KEY);
+    meta = parseJson(metaRaw);
+    profile = parseJson(profileRaw);
+    candidates = [];
+    if (meta) walk(meta, 'saveMeta', new Set());
+    if (profile?.nonGearInventory && typeof profile.nonGearInventory === 'object') {
+      candidates.push({ path: 'playerProfile', owner: profile, inventory: profile.nonGearInventory, profileMirror: true });
+    }
+    target = resolveTarget();
+
+    summaryEl.innerHTML = '';
+    const currentStats = inventoryStats(target?.member?.nonGearInventory || {});
+    summaryEl.innerHTML = `
+      <div><strong>Selected world:</strong> ${escapeHtml(profile?.worldLabel || target?.world?.label || target?.worldId || 'unknown')}</div>
+      <div><strong>World id:</strong> <code>${escapeHtml(target?.worldId || 'unknown')}</code></div>
+      <div><strong>Character id:</strong> <code>${escapeHtml(target?.characterId || 'unknown')}</code></div>
+      <div><strong>Current target inventory:</strong> ${currentStats.distinct} item types / ${currentStats.total} total units / ${currentStats.gold} gold</div>
+      <div class="meta">saveMeta: ${meta ? 'parsed' : 'MISSING/INVALID'} · playerProfile: ${profile ? 'parsed' : 'MISSING/INVALID'} · candidates: ${candidates.length}</div>`;
+
+    recordsEl.innerHTML = '';
+    if (!candidates.length) {
+      recordsEl.innerHTML = '<div class="warn bad">No saved nonGearInventory records were found in this origin.</div>';
+      return;
+    }
+
+    candidates.forEach((candidate, index) => {
+      const info = candidateLabel(candidate);
+      const card = document.createElement('div');
+      card.className = 'card' + (candidate.owner === target?.member ? ' target' : '');
+      const pills = [...info.tags, candidate.profileMirror ? 'PROFILE MIRROR' : '']
+        .filter(Boolean)
+        .map(tag => `<span class="pill">${escapeHtml(tag)}</span>`)
+        .join('');
+      card.innerHTML = `
+        <div>${pills}</div>
+        <div><strong>${escapeHtml(candidate.path)}</strong></div>
+        <div class="meta">${info.stats.distinct} item types · ${info.stats.total} units · ${info.stats.gold} gold</div>
+        <div class="items">${escapeHtml(info.stats.preview || '(empty)')}</div>`;
+
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'primary';
+      restoreBtn.textContent = 'Restore this inventory to current member';
+      restoreBtn.disabled = !target?.member || candidate.owner === target.member || info.stats.distinct === 0;
+      restoreBtn.onclick = () => restoreCandidate(index);
+      card.appendChild(restoreBtn);
+      recordsEl.appendChild(card);
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+  }
+
+  function backupPayload() {
+    const hobunjiKeys = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && /hobunji|farm|save/i.test(key)) hobunjiKeys[key] = localStorage.getItem(key);
+    }
+    return {
+      createdAt: new Date().toISOString(),
+      origin: location.origin,
+      pathname: location.pathname,
+      keys: hobunjiKeys,
+    };
+  }
+
+  function downloadBackup() {
+    const payload = backupPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hobunji-save-backup-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('Backup download created. No save data was changed.', 'ok');
+  }
+
+  function restoreCandidate(index) {
+    const candidate = candidates[index];
+    if (!candidate || !target?.member) {
+      setStatus('Cannot resolve the current world/member target. Nothing was changed.', 'bad');
+      return;
+    }
+    const stats = inventoryStats(candidate.inventory);
+    const currentStats = inventoryStats(target.member.nonGearInventory || {});
+    const promptText = `Restore ${stats.distinct} item types / ${stats.total} units into the current member?\n\nCurrent target has ${currentStats.distinct} item types / ${currentStats.total} units.\n\nA recovery backup will be written first.`;
+    if (!confirm(promptText)) return;
+
+    const timestamp = Date.now();
+    const safetyKey = `hobunjiInventoryRecoveryBackup:${timestamp}`; // Used as an automatic rollback point created immediately before the explicit restore write.
+    const safety = {
+      createdAt: new Date(timestamp).toISOString(),
+      sourcePath: candidate.path,
+      targetWorldId: target.worldId,
+      targetCharacterId: target.characterId,
+      hobunjiSaveMeta: metaRaw,
+      hobunjiPlayerProfile: profileRaw,
+    };
+    localStorage.setItem(safetyKey, JSON.stringify(safety));
+
+    const recovered = clone(candidate.inventory);
+    target.member.nonGearInventory = recovered;
+    localStorage.setItem(META_KEY, JSON.stringify(meta));
+
+    if (profile) {
+      profile.nonGearInventory = clone(recovered);
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    }
+
+    setStatus(`Restored inventory from ${candidate.path}. Safety snapshot: ${safetyKey}. Re-scan to verify, then reopen the SAFE game build.`, 'ok');
+    rescan();
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', downloadBackup);
+  document.getElementById('refreshBtn').addEventListener('click', rescan);
+  rescan();
+})();
+</script>
+</main>
+</body>
+</html>
