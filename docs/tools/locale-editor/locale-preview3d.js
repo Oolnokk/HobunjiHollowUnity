@@ -49,6 +49,7 @@
   let currentZoneId = '';
   let currentMerged = null;
   let currentCandidate = null;
+  let currentInstance = null; // Exact locale instance currently rendered; camera orbiting follows this rather than assuming world origin.
   let currentWorkspace = null;
   let currentLocale = null;
   let showRules = true;
@@ -350,6 +351,7 @@
     }
     terrainMaterials.clear();
     currentMerged = null;
+    currentInstance = null; // Do not leave the orbit target attached to a locale from the previous generated scenario.
     // Regression compatibility from the old lightweight preview: previewRoot.remove(child), parent !== previewRoot.
   }
 
@@ -779,16 +781,40 @@
     worldRoot.add(group);
   }
 
+  function finiteCoordinate(value) {
+    if (value == null || value === '') return null; // Number(null) is 0, which previously made an absent anchor silently focus tile 0,0.
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
   function fitCamera() {
-    if (!camera || !controls || !currentCandidate || !currentLocale) return;
-    const scale = currentCandidate.scale || window.LocaleTerrainPlacement.inferGenerationScale(currentWorkspace);
-    const placed = currentWorkspace?.localeInstances?.find(item => item.localeId === currentLocale.id);
-    const anchorC = Number.isFinite(Number(currentCandidate.anchorC)) ? Number(currentCandidate.anchorC) : Number(placed?.x) || 0;
-    const anchorR = Number.isFinite(Number(currentCandidate.anchorR)) ? Number(currentCandidate.anchorR) : Number(placed?.y) || 0;
-    const centerX = anchorC + (currentLocale.cols * scale) / 2;
-    const centerZ = anchorR + (currentLocale.rows * scale) / 2;
+    if (!camera || !controls || !currentLocale) return;
+    const scale = currentCandidate?.scale || window.LocaleTerrainPlacement.inferGenerationScale(currentWorkspace) || 1;
+    const placed = currentInstance || currentWorkspace?.localeInstances?.find(item => item.localeId === currentLocale.id) || null;
+    const anchorC = finiteCoordinate(placed?.x) ?? finiteCoordinate(placed?.col) ?? finiteCoordinate(currentCandidate?.anchorC);
+    const anchorR = finiteCoordinate(placed?.y) ?? finiteCoordinate(placed?.row) ?? finiteCoordinate(currentCandidate?.anchorR);
+    const compiled = window.LocaleTerrainPlacement.compileLocale(currentLocale, scale);
+    const bounds = compiled?.footprint || compiled?.bounds;
+    let centerX, centerZ, spanX, spanZ;
+    if (anchorC != null && anchorR != null) {
+      const minC = finiteCoordinate(bounds?.minC) ?? 0;
+      const minR = finiteCoordinate(bounds?.minR) ?? 0;
+      const maxC = finiteCoordinate(bounds?.maxC);
+      const maxR = finiteCoordinate(bounds?.maxR);
+      const localWidth = maxC == null ? Math.max(1, Number(currentLocale.cols) || 1) * scale : Math.max(1, maxC - minC + 1);
+      const localDepth = maxR == null ? Math.max(1, Number(currentLocale.rows) || 1) * scale : Math.max(1, maxR - minR + 1);
+      centerX = anchorC + minC + localWidth * 0.5;
+      centerZ = anchorR + minR + localDepth * 0.5;
+      spanX = localWidth;
+      spanZ = localDepth;
+    } else if (currentMerged) {
+      // A no-match preview has no locale instance. Keep it centered on the generated map instead of falling back to the world origin corner.
+      centerX = currentMerged.cols * 0.5;
+      centerZ = currentMerged.rows * 0.5;
+      spanX = Math.max(1, currentMerged.cols * 0.18);
+      spanZ = Math.max(1, currentMerged.rows * 0.18);
+    } else return;
     const centerY = currentMerged ? surfaceY(currentMerged, centerX, centerZ) : 0;
-    const span = Math.max(12, Math.max(currentLocale.cols, currentLocale.rows) * scale * 1.35);
+    const span = Math.max(12, Math.max(spanX, spanZ) * 1.35);
     controls.target.set(centerX, centerY + 1.2, centerZ);
     camera.position.set(centerX + span * 0.72, centerY + span * 0.56, centerZ + span * 0.78);
     camera.near = 0.05;
@@ -829,6 +855,7 @@
       };
     }
     currentCandidate = candidate;
+    currentInstance = instance; // Camera focus must follow the exact instance being drawn, including ghost failure previews.
     await renderLocaleObjects(result.workspace, locale, instance, currentMerged, terrainRoot, token, !!instance?.ghostFailure);
     if (token !== generationToken) return;
     addRuleOverlay(locale, instance, candidate, currentMerged);
