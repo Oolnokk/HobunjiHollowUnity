@@ -61,7 +61,8 @@ assert(Number(config.settings?.skyFocusOffsetY) === 0, `${configPath}: latest up
 assert(Number(config.settings?.skyZoom) === 3.25, `${configPath}: shipped sky zoom must remain 3.25x`);
 
 // The compatibility loader may still prewarm the sky, but correctness must not depend on it.
-assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913d'), `${bootstrapPath}: compatibility backdrop bootstrap reference missing`);
+assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913e'), `${bootstrapPath}: compatibility backdrop prewarm reference missing`);
+assert(bootstrapSource.includes('window.LoadingScreenRuntime?.ensureSkyBackdropLoaded'), `${bootstrapPath}: compatibility retry must defer to the runtime-owned sky bootstrap`);
 assert(runtimeSource.includes("document.getElementById('hobunjiLoadScreen')"), `${runtimePath}: must attach to the canonical loading-screen root`);
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getDebugState?.()'), `${runtimePath}: must reuse live skydome state when available`);
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getLightingState?.()'), `${runtimePath}: must reuse live skydome lighting when available`);
