@@ -1,0 +1,30 @@
+name: Locale terrain regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/config/locales/**'
+      - 'docs/js/locale-terrain-placement.js'
+      - 'docs/js/locale-cave-runtime.js'
+      - 'docs/js/zone-den-totem-features.js'
+      - 'docs/tools/wilderness-generation-lab/**'
+      - 'scripts/test-locale-terrain-placement.js'
+      - 'scripts/test-banubu-cave-locale.js'
+      - 'scripts/test-banubu-wilderness-lab-generation.js'
+      - '.github/workflows/locale-terrain-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Test terrain-aware locale placement
+        run: node scripts/test-locale-terrain-placement.js
+      - name: Test Banubu authored cave rules and runtime parity
+        run: node scripts/test-banubu-cave-locale.js
+      - name: Test Banubu in real Wilderness Lab Northern Cliffs generation
+        run: node scripts/test-banubu-wilderness-lab-generation.js
