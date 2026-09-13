@@ -1,0 +1,40 @@
+name: Apply Locale Preview Open Range Fix
+
+on:
+  push:
+    branches:
+      - chatgpt/locale-terrain-anchors
+    paths:
+      - '.github/workflows/apply-locale-preview-open-range-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/locale-terrain-anchors
+      - name: Fix open relative range preview
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('docs/tools/locale-editor/locale-preview3d.js')
+          text = p.read_text()
+          old = """    if (height.mode === 'relativeRange') {\n      const min = Number(height.min);\n      const max = Number(height.max);\n      if (Number.isFinite(min) && Number.isFinite(max)) {\n"""
+          new = """    if (height.mode === 'relativeRange') {\n      const min = height.min == null || height.min === '' ? NaN : Number(height.min); // Open-ended relative ranges must stay open; Number(null) would incorrectly collapse them to Δ0.\n      const max = height.max == null || height.max === '' ? NaN : Number(height.max);\n      if (Number.isFinite(min) && Number.isFinite(max)) {\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one relative-range preview block, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          node --check docs/tools/locale-editor/locale-preview3d.js
+          node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');if(!s.includes(\"height.min == null || height.min === '' ? NaN\"))throw new Error('open-ended min guard missing');if(!s.includes(\"height.max == null || height.max === '' ? NaN\"))throw new Error('open-ended max guard missing');"
+          node scripts/test-banubu-cave-locale.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/tools/locale-editor/locale-preview3d.js
+          git commit -m 'Fix open relative height preview ranges'
+          git push origin HEAD:chatgpt/locale-terrain-anchors
