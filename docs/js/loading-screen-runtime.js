@@ -17,8 +17,8 @@
   const MAP_CALL_RE = /\b(?:enterZone|performTravel|doTravel|setCurrentArea)\b/; // Used to recognize world-map travel callbacks before their expensive work begins.
   const DEFAULT_SETTINGS = Object.freeze({
     scriptSide: 'left', imageScale: 1, panRange: 7, panSpeed: 0.055,
-    manualSpeed: 150, loreSize: 19, scriptSize: 89, scriptY: 46,
-    columnSpacing: -0.55, scriptScrollSpeed: 0.017,
+    manualSpeed: 150, loreSize: 19, scriptSize: 160, scriptY: 45,
+    columnSpacing: -0.56, scriptScrollSpeed: 0.03,
   }); // Used for the synchronous first paint before loading-screens.json finishes fetching.
   const FALLBACK_TIPS = Object.freeze([
     { title: 'Resources', text: 'Health keeps you alive, Stamina pays for effort, and Footing keeps you upright.' },
@@ -142,7 +142,7 @@
 #hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden;pointer-events:none}
 #hobunjiLoadScreen.visible{display:block}
 #hlsImage{position:absolute;left:50%;top:48%;width:auto;height:auto;max-width:78vw;max-height:70vh;object-fit:contain;transform-origin:center center;will-change:transform}
-#hlsScriptViewport{position:absolute;top:46%;width:min(42vw,540px);height:min(72vh,880px);overflow:hidden;transform:translate(-50%,-50%);visibility:hidden}
+#hlsScriptViewport{position:absolute;top:0;width:min(42vw,540px);height:100%;overflow:visible;transform:translateX(-50%);visibility:hidden}
 #hobunjiLoadScreen.tankan-font-settled #hlsScriptViewport{visibility:visible}
 #hlsScriptFloat{position:absolute;left:50%;top:0;will-change:transform}
 #hlsScriptWords{display:flex;flex-direction:row;align-items:flex-start;justify-content:center;gap:0;width:max-content;--script-column-spacing:0em}
@@ -304,9 +304,6 @@
   }
 
   function invalidateTipCacheIfStale() {
-    // The compendium/afflictions registry can't change mid-loading-screen, so
-    // extractCompendiumTips()/semanticRules() only need to run once per
-    // show() generation instead of once every ten-second tip-rotation tick.
     if (state.tipPoolGeneration !== state.generation) {
       state.tipPoolGeneration = state.generation;
       state.tipPoolCache = null;
@@ -369,7 +366,7 @@
       ['Alchemy', 'hlsSystemTerm'], ['Humour', 'hlsSystemTerm'], ['Drive', 'hlsSystemTerm'],
       ['Elemental Magnetism', 'hlsSystemTerm'], ['Magnetism', 'hlsSystemTerm'],
       ['Restore', 'hlsSystemTerm'], ['Afflict', 'hlsSystemTerm'], ['Greaten', 'hlsSystemTerm'], ['Lighten', 'hlsSystemTerm'],
-    ]; // Used to color recurring Compendium vocabulary consistently across arbitrary tip text.
+    ];
 
     const pane = document.querySelector?.('#mpCompendium');
     const vocabularyNodes = pane?.querySelectorAll?.('.compendium-entry-title, .compendium-section-title') || [];
@@ -446,7 +443,6 @@
     renderActiveTip(els, state.activeTip || pickTip());
     renderScript(els, settings, entry.script || 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = settings.scriptSide === 'right' ? '75%' : '25%';
-    els.scriptViewport.style.top = `${settings.scriptY}%`;
     return settings;
   }
 
@@ -477,9 +473,9 @@
 
   function installFetchProgressHook() {
     if (typeof window.fetch !== 'function' || window.fetch.__hobunjiLoadingProgressWrapped) return;
-    const originalFetch = window.fetch.bind(window); // Used to preserve native fetch behavior while counting requests during a visible loading session.
+    const originalFetch = window.fetch.bind(window);
     const wrappedFetch = function hobunjiLoadingProgressFetch(...args) {
-      const generation = state.visible ? state.generation : 0; // Used so a request started for an older screen cannot advance a newer loading session.
+      const generation = state.visible ? state.generation : 0;
       if (generation) noteRequestStart();
       let request;
       try { request = originalFetch(...args); }
@@ -523,10 +519,16 @@
     state.els.image.style.transform = `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${Number(settings.imageScale) || 1})`;
 
     state.scriptScrollPhase = (state.scriptScrollPhase + dt * (Number(settings.scriptScrollSpeed) || 0)) % 1;
-    const viewportHeight = state.els.scriptViewport.clientHeight || 0;
-    const contentHeight = state.els.scriptFloat.offsetHeight || 0;
-    const maxScroll = Math.max(0, contentHeight - viewportHeight);
-    state.els.scriptFloat.style.transform = `translateX(-50%) translateY(${-maxScroll * state.scriptScrollPhase}px)`;
+    const viewportHeight = Math.max(1, state.els.root.clientHeight || innerHeight || 1);
+    const contentHeight = Math.max(1, state.els.scriptFloat.offsetHeight || 1);
+    const legacyWindowHeight = Math.min(viewportHeight * 0.72, 880);
+    const authoredY = clamp(Number(settings.scriptY) || 45, 0, 100) / 100;
+    const anchorTop = viewportHeight * authoredY - legacyWindowHeight * 0.5;
+    const travel = viewportHeight + contentHeight;
+    const phaseOffset = ((viewportHeight - anchorTop) / travel) % 1;
+    const travelPhase = (state.scriptScrollPhase + phaseOffset) % 1;
+    const scriptY = viewportHeight - travelPhase * travel;
+    state.els.scriptFloat.style.transform = `translateX(-50%) translateY(${scriptY}px)`;
     if (state.debugVisible) updateDebugPanel();
     state.motionRaf = requestAnimationFrame(t => motionTick(t, settings));
   }
@@ -541,7 +543,7 @@
   }
 
   function showImmediate(reason = 'map-change') {
-    const previousGeneration = state.generation; // Used to settle any delayed hide promises superseded by a newer loading screen.
+    const previousGeneration = state.generation;
     if (state.hideTimer && typeof clearTimeout === 'function') clearTimeout(state.hideTimer);
     state.hideTimer = null;
     stopTipRotation();
@@ -560,7 +562,6 @@
     els.root.classList.add('visible');
     renderScript(els, DEFAULT_SETTINGS, 'HOBUNJI HOLLOW');
     els.scriptViewport.style.left = '25%';
-    els.scriptViewport.style.top = '46%';
     els.lore.style.fontSize = `${DEFAULT_SETTINGS.loreSize}px`;
     renderActiveTip(els, pickTip());
     startTipRotation(myGeneration);
@@ -571,10 +572,6 @@
     return myGeneration;
   }
 
-  // Shows synchronously first, then fills authored settings/canonical tip copy
-  // as resources settle. Transition hooks call this BEFORE startSceneTransition
-  // starts fading, so the browser gets frames to paint it before the expensive
-  // world-map callback runs at the black midpoint.
   async function show(options = {}) {
     const reason = typeof options === 'string' ? options : (options?.reason || 'map-change');
     const myGeneration = showImmediate(reason);
@@ -609,7 +606,7 @@
 
   function hide(reason = 'map-ready') {
     if (!state.generation) return Promise.resolve();
-    const generation = state.generation; // Used to make a delayed five-second hide harmless if a newer world transition starts first.
+    const generation = state.generation;
     state.reason = reason;
     setProgress(100, 'map-ready');
     const wait = Math.max(0, MIN_VISIBLE_MS - (nowMs() - state.visibleSince));
@@ -638,16 +635,16 @@
 
   function shouldLoadForTransition(callback) {
     const area = safeCurrentArea();
-    if (isBuildingArea(area)) return false; // Exiting an authored building never gets a loading screen.
+    if (isBuildingArea(area)) return false;
     const source = callbackSource(callback);
-    if (!source || BUILDING_CALL_RE.test(source)) return false; // Entering an authored building never gets a loading screen.
+    if (!source || BUILDING_CALL_RE.test(source)) return false;
     return MAP_CALL_RE.test(source);
   }
 
   function wrapStartSceneTransition(original) {
     if (typeof original !== 'function' || original.__hobunjiLoadingScreenWrapped) return original;
     const wrapped = function loadingScreenSceneTransition(callback, ...args) {
-      const useLoader = shouldLoadForTransition(callback); // Used to distinguish world-map travel from ordinary building entry/exit.
+      const useLoader = shouldLoadForTransition(callback);
       if (!useLoader) return original.call(this, callback, ...args);
 
       show({ reason: 'world-map-transition' });
@@ -671,7 +668,7 @@
   }
 
   function installDependencyInitHooks() {
-    const seen = new Set(); // Used to avoid wrapping aliases that point at the same namespace object.
+    const seen = new Set();
     for (const key of Object.getOwnPropertyNames(window)) {
       let namespace;
       try { namespace = window[key]; } catch (_) { continue; }
@@ -689,9 +686,7 @@
         wrappedInit.__hobunjiLoadingDepsWrapped = true;
         namespace.init = wrappedInit;
         state.dependencyInitHooks += 1;
-      } catch (_) {
-        // Some third-party namespaces expose non-writable init methods; skip them.
-      }
+      } catch (_) {}
     }
   }
 
@@ -712,7 +707,7 @@
     };
 
     if (tryInstall() || typeof setTimeout !== 'function') return;
-    let attempts = 0; // Used only as a defensive fallback while game.js is still parser-executing.
+    let attempts = 0;
     const retry = () => {
       if (tryInstall()) return;
       attempts += 1;
@@ -735,7 +730,7 @@
       return;
     }
     show({ reason: 'initial-boot' });
-    const completeBoot = () => hide('initial-boot-ready'); // Used by the browser load boundary so boot reaches 100 only when page resources are done.
+    const completeBoot = () => hide('initial-boot-ready');
     if (document.readyState === 'complete') completeBoot();
     else window.addEventListener?.('load', completeBoot, { once: true });
   }
@@ -781,13 +776,13 @@
 // policy to loading-screen rendering while preserving the current boot manifest.
 (() => {
   'use strict';
-  const src = 'js/dev-zone-gate.js?v=20260907a'; // Used as the cache-busted runtime path for the Dev Mode entrance gate.
+  const src = 'js/dev-zone-gate.js?v=20260907a';
   if (window.DevZoneGate?.installed || document.querySelector?.('script[data-dev-zone-gate]')) return;
   if (document.readyState === 'loading' && typeof document.write === 'function') {
     document.write(`<script src="${src}" data-dev-zone-gate="1"><\/script>`);
     return;
   }
-  const script = document.createElement('script'); // Used only if this runtime is injected after initial HTML parsing.
+  const script = document.createElement('script');
   script.src = src;
   script.dataset.devZoneGate = '1';
   (document.head || document.documentElement).appendChild(script);
