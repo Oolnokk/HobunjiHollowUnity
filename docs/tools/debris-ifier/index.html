@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Hobunji Debris-ifier V50</title>
+<link rel="stylesheet" href="debrisifier.css">
+</head>
+<body>
+<div id="app">
+<header>
+  <div><h1>Hobunji Debris-ifier V50</h1><div class="muted">Turn intact GLBs or live Hobunji repo furniture into genuinely fractured ruin meshes.</div></div>
+  <div class="row" style="margin:0">
+    <span class="fileButton"><button>Load GLB</button><input id="glbInput" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json"></span>
+    <span class="fileButton"><button>Load Furniture JSON</button><input id="jsonInput" type="file" accept=".json,application/json"></span>
+    <button id="regenerateBtn" class="warn" disabled>Regenerate Damage</button>
+    <button id="exportBtn" class="ok" disabled>Export Ruined GLB</button>
+  </div>
+</header>
+
+<aside class="panel">
+  <div class="section">
+    <h2>Repository furniture</h2>
+    <div class="muted" id="furnitureRepoStatus" style="font-size:11px">Authored furniture library: loading…</div>
+    <label style="margin-top:7px">Search repo furniture</label><input id="furnitureSearch" placeholder="chair, barrel, loom…">
+    <label style="margin-top:7px">Furniture</label><select id="furnitureSelect"><option value="">Loading…</option></select>
+    <button id="loadRepoFurnitureBtn" class="ok" style="width:100%;margin-top:7px" disabled>Load Selected Repo Furniture</button>
+    <div class="materialPath" id="furnitureSelectionPath">Repository furniture index</div>
+    <div class="muted" style="font-size:10px">Indexes the current <code>main</code> branch directly; local JSON loading remains available above.</div>
+  </div>
+  <div class="section">
+    <h2>Random ruins locale preview</h2>
+    <label>Locale seed</label><div class="g2"><input id="localeSeed" value="ruins-001"><button id="rerollLocaleSeedBtn">New Seed</button></div>
+    <label style="margin-top:7px">Size class</label><select id="localeSize"><option value="random">Random (2×2 through camp-size)</option><option value="tiny">Tiny · 2–3 tiles</option><option value="small">Small · 4–5 tiles</option><option value="medium">Medium · 6–7 tiles</option><option value="large">Large · 8–10 tiles</option></select>
+    <label style="margin-top:7px">Ruin environment</label><select id="localeEnvironment"><option value="outdoor">Outdoor locale</option><option value="interior">Interior ruin</option></select>
+    <div class="muted" style="font-size:10px;margin-top:4px">Interior mode builds carved-smooth wall planes with matching pillar furniture at every wall corner, then lays the house/path WallBuilder brick recipe horizontally as the floor.</div>
+    <div id="interiorRoomRangeControls" style="display:none">
+      <div class="g2" style="margin-top:7px"><div><label>Interior rooms min</label><input id="interiorRoomMin" type="number" min="2" max="12" step="1" value="3"></div><div><label>Interior rooms max</label><input id="interiorRoomMax" type="number" min="2" max="12" step="1" value="8"></div></div>
+      <div class="muted" style="font-size:10px;margin-top:4px">Each interior Generate click rerolls a fresh seed and guarantees a new connected complex with a room count inside this range. Default: 3–8 rooms.</div>
+    </div>
+    <div class="slider"><div><label>Ruin density</label><input id="localeDensity" type="range" min="20" max="100" value="62"></div><output id="localeDensityOut">62%</output></div>
+    <div class="slider"><div><label>Deep-sunk tall pillar site chance</label><input id="localeSunkenChance" type="range" min="0" max="100" value="28"></div><output id="localeSunkenChanceOut">28%</output></div>
+    <div class="g2"><button id="generateLocaleBtn" class="ok">Generate Ruins Locale</button><button id="downloadLocaleBtn" disabled>Download Preview Locale JSON</button></div>
+    <div style="margin-top:6px"><button id="activateMechanismsBtn" disabled>Activate Mechanisms</button></div>
+    <div class="materialPath" id="localeStatus">Uses the repo's architectural furniture batch. It first lays out a purposeful ruin, then debrisifies it. Outdoor ruins auto-sink unstable pieces; interior ruins flatten unstable pieces onto a stable face and use WallBuilder-style brick floors.</div>
+  </div>
+  <div class="section">
+    <h2>Rotation + burial / submerge</h2>
+    <div class="slider"><div><label>Random rotation strength</label><input id="rubbleRotate" type="range" min="0" max="100" value="100"></div><output id="rubbleRotateOut">100%</output></div>
+    <div class="slider"><div><label>Random burial depth</label><input id="rubbleSubmerge" type="range" min="0" max="100" value="35"></div><output id="rubbleSubmergeOut">35%</output></div>
+    <div class="muted" style="font-size:10px">These are seeded and apply to both loose debris and every ruins-locale prop. Here, “submerge” means sunk into the substrate, never water.</div>
+  </div>
+  <div class="section">
+    <h2>Damage presets</h2>
+    <div class="presetGrid">
+      <button data-preset="centuries">Centuries Ruined</button>
+      <button data-preset="fallen">Snapped + Fallen</button>
+      <button data-preset="violent">Violent Break</button>
+      <button data-preset="eroded">Eroded Remnant</button>
+    </div>
+  </div>
+  <div class="section">
+    <h2>Fracture</h2>
+    <label>Seed</label><div class="g2"><input id="seed" value="ruin-001"><button id="rerollSeedBtn">New Seed</button></div>
+    <label style="margin-top:7px">Break axis</label><select id="axis"><option value="y">Horizontal / cut height</option><option value="x">Vertical / cut left-right</option><option value="z">Vertical / cut front-back</option></select>
+    <div class="slider"><div><label>Cut position</label><input id="cut" type="range" min="10" max="90" value="54"></div><output id="cutOut">54%</output></div>
+    <div class="slider"><div><label>Plane tilt X</label><input id="tiltX" type="range" min="-55" max="55" value="8"></div><output id="tiltXOut">8°</output></div>
+    <div class="slider"><div><label>Plane tilt Z</label><input id="tiltZ" type="range" min="-55" max="55" value="-6"></div><output id="tiltZOut">-6°</output></div>
+    <div class="slider"><div><label>Jaggedness</label><input id="jagged" type="range" min="0" max="40" value="18"></div><output id="jaggedOut">18%</output></div>
+    <div class="slider"><div><label>Crumble bites</label><input id="crumble" type="range" min="0" max="100" value="52"></div><output id="crumbleOut">52%</output></div>
+    <div class="slider"><div><label>Break-local detail</label><input id="detail" type="range" min="0" max="2" step="1" value="1"></div><output id="detailOut">1×</output></div>
+    <div class="muted" style="font-size:10px">Detail subdivision is restricted to triangles touching or immediately bordering the fracture field; untouched surfaces stay at their source topology.</div>
+  </div>
+  <div class="section">
+    <h2>Severed section</h2>
+    <label>What happens to the severed side?</label><select id="upperMode"><option value="discard">Missing / weathered away</option><option value="fall">Fall beside the ruin</option><option value="keep">Keep split in place</option></select>
+    <div class="slider"><div><label>Fall rotation</label><input id="fallAngle" type="range" min="0" max="130" value="72"></div><output id="fallAngleOut">72°</output></div>
+    <div class="slider"><div><label>Fall separation</label><input id="fallOffset" type="range" min="0" max="100" value="30"></div><output id="fallOffsetOut">30%</output></div>
+  </div>
+  <div class="section">
+    <h2>Loose debris</h2>
+    <div class="slider"><div><label>Rubble pieces</label><input id="rubble" type="range" min="0" max="60" value="22"></div><output id="rubbleOut">22</output></div>
+    <div class="slider"><div><label>Rubble spread</label><input id="spread" type="range" min="10" max="180" value="90"></div><output id="spreadOut">90%</output></div>
+    <div class="slider"><div><label>Rubble size</label><input id="rubbleSize" type="range" min="20" max="180" value="85"></div><output id="rubbleSizeOut">85%</output></div>
+    <label class="check"><input id="groundRubble" type="checkbox" checked> Set loose debris on the source model's ground plane</label>
+  </div>
+  <div class="section">
+    <h2>Material textures</h2>
+    <div class="muted" id="textureRepoStatus" style="font-size:11px">Repository PNG library: loading…</div>
+    <div class="textureToolbar"><input id="textureSearch" placeholder="Search every PNG in the repo"><button id="texturePrevBtn">‹</button><button id="textureNextBtn">›</button></div>
+    <div class="muted" id="texturePageStatus" style="font-size:10px;margin-top:4px"></div>
+    <div class="selectedTexture"><img id="selectedTexturePreview" alt=""><div><div class="pill" id="selectedTexturePill">carved_smooth.png</div><div class="materialPath" id="selectedTexturePath">docs/assets/textures/carved_smooth.png</div></div></div>
+    <div id="textureGrid" class="textureGrid"></div>
+
+    <div class="miniTitle">Broken interior + rubble</div>
+    <div class="materialCard">
+      <div class="statusOk" style="font-weight:800">Inherited source material</div>
+      <div class="muted" style="font-size:10px;margin-top:4px">Fracture caps now clone the material actually cut by that break. Loose rubble samples the source piece's own material slots as well, so stone breaks as stone, wood as wood, etc.</div>
+      <div style="display:none" aria-hidden="true"><input id="interiorTextureEnabled" type="checkbox"><span id="interiorTextureName"></span><button id="assignInteriorTextureBtn"></button><button id="clearInteriorTextureBtn"></button><input id="interiorFillEnabled" type="checkbox"><input id="interiorColor" type="color" value="#4d4d4d"><input id="interiorRough" type="range" min="20" max="100" value="95"><output id="interiorRoughOut">95%</output></div>
+    </div>
+
+    <div class="miniTitle">GLB exterior material groups</div>
+    <div class="muted" style="font-size:10px">Each imported material slot can keep its original look or independently replace its exterior map with the selected repo PNG. Replacement UVs are stretch-to-fit.</div>
+    <div id="materialAssignments"><div class="muted">Load a GLB to expose its material groups.</div></div>
+    <label class="check" style="margin-top:9px"><input id="showOriginal" type="checkbox"> Ghost the original model for comparison</label>
+  </div>
+  <div class="section">
+    <h2>Reproducibility</h2>
+    <div class="g2"><button id="downloadRecipeBtn" disabled>Download Damage Recipe</button><span class="fileButton"><button>Load Damage Recipe</button><input id="recipeInput" type="file" accept=".json,application/json"></span></div>
+  </div>
+</aside>
+
+<main class="panel viewer" id="viewer">
+  <canvas id="canvas"></canvas>
+  <div class="overlay"><span class="pill" id="sourcePill">No source loaded</span><span class="pill" id="statsPill">0 → 0 triangles</span></div>
+  <div id="dropHint">Drop a <b>.glb</b> or Hobunji furniture <b>.json</b> here<br><span style="font-size:11px">Furniture schemas with a <code>parts[]</code> recipe are reconstructed directly.</span></div>
+</main>
+<div class="debug" id="debug">Debris-ifier ready. Loading Three.js dependencies…</div>
+</div>
+
+<script>window.__debrisDeps=[];</script>
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js" onerror="window.__debrisDeps.push('three.min.js failed')"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" onerror="window.__debrisDeps.push('OrbitControls failed')"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js" onerror="window.__debrisDeps.push('GLTFLoader failed')"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js" onerror="window.__debrisDeps.push('GLTFExporter failed')"></script>
+<script src="debrisifier-01.js"></script>
+<script src="debrisifier-02.js"></script>
+<script src="debrisifier-03.js"></script>
+<script src="debrisifier-04.js"></script>
+<script src="debrisifier-05.js"></script>
+<script src="debrisifier-06.js"></script>
+<script src="debrisifier-07.js"></script>
+<script src="debrisifier-08.js"></script>
+<script src="debrisifier-09.js"></script>
+<script src="debrisifier-10.js"></script>
+<script src="debrisifier-11.js"></script>
+</body>
+</html>
