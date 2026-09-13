@@ -41,12 +41,13 @@ jobs:
             await page.addInitScript(() => localStorage.setItem('hobunjiDevMode', '1'));
             await page.goto('http://127.0.0.1:8000/index.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
             await page.waitForFunction(() => !!window.DevRandomRuin && !!window.GridTileAccessors && !!document.getElementById('devRandomTestRuinBtn'), null, { timeout: 30000 });
+            await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
+            await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout: 5000 });
             const ok = await page.evaluate(async () => window.DevRandomRuin.generate(0x5eed1234));
             assert.equal(ok, true, 'generate() should succeed');
             await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout: 30000 });
             const state = await page.evaluate(() => {
               const activeScene = window.GridTileAccessors.getActiveScene();
-              const root = activeScene?.getObjectByName?.('dev_v50_ruin_1592594996');
               const info = window.DevRandomRuin.getState();
               return {
                 area: window.GridTileAccessors.getCurrentArea(),
@@ -55,13 +56,14 @@ jobs:
                 rows: window.GridTileAccessors.getActiveRows(),
                 gridRows: window.GridTileAccessors.getActiveGrid()?.length || 0,
                 sceneName: activeScene?.name || null,
-                hasV50Root: !!root,
-                state,
+                hasV50Root: !!activeScene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')),
+                state: info,
               };
             });
             assert.equal(state.area, 'map_i_dev_random_ruin', JSON.stringify(state));
             assert.equal(state.building, true, JSON.stringify(state));
             assert.equal(state.sceneName, 'map_i_dev_random_ruin', JSON.stringify(state));
+            assert.equal(state.hasV50Root, true, JSON.stringify(state));
             assert.ok(state.cols >= 6 && state.rows >= 6, JSON.stringify(state));
             assert.equal(state.gridRows, state.rows, JSON.stringify(state));
             assert.ok(state.state?.rooms >= 3, JSON.stringify(state));
