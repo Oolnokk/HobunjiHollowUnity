@@ -59,10 +59,11 @@ jobs:
 
           real_test = 'scripts/test-banubu-wilderness-lab-generation.js'
           anchor2 = "assert(instance, 'Banubu Cave must produce a localeInstance in the real Northern Cliffs generation.');\n"
-          block2 = anchor2 + "const internalCliffProbes = (diagnostic.selected?.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');\nassert.strictEqual(internalCliffProbes.length, 2, 'one north-facing authored cliff cell must expand to exactly a 2-tile cliff-face strip at the generator\'s 2x density');\nassert(internalCliffProbes.every(probe => probe.rule.facing === 'north' && probe.matched), 'Banubu Cave must match its explicit north-facing internal plateau cliff strip');\nconst root = (workspace.maps || []).find(map => map && !map.isSubmap);\nfor (const probe of internalCliffProbes) {\n  const tile = root?.tiles?.[`${probe.c},${probe.r}`];\n  assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu internal cliff probe must never land on boundary-escarpment terrain');\n}\n"
+          block2 = anchor2 + "const internalCliffProbes = (diagnostic.selected?.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');\nassert.strictEqual(internalCliffProbes.length, 2, \"one north-facing authored cliff cell must expand to exactly a 2-tile cliff-face strip at the generator's 2x density\");\nassert(internalCliffProbes.every(probe => probe.rule.facing === 'north' && probe.matched), 'Banubu Cave must match its explicit north-facing internal plateau cliff strip');\nconst root = (workspace.maps || []).find(map => map && !map.isSubmap);\nfor (const probe of internalCliffProbes) {\n  const tile = root?.tiles?.[`${probe.c},${probe.r}`];\n  assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu internal cliff probe must never land on boundary-escarpment terrain');\n}\n"
           replace_once(real_test, anchor2, block2)
           PY
           node --check docs/js/locale-terrain-placement.js
+          node --check scripts/test-banubu-wilderness-lab-generation.js
           node scripts/test-locale-terrain-placement.js
           node scripts/test-banubu-cave-locale.js
           node scripts/test-banubu-wilderness-lab-generation.js
