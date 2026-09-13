@@ -166,6 +166,13 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
             <div><label>Clearance tiles (buffer kept clear around footprint)</label><input id="locClearance" type="number" min="0" max="20" value="2"></div>
             <div><label>Min distance from zone entry</label><input id="locMinDist" type="number" min="0" max="200" value="0"></div>
           </div>
+          <div style="margin-top:6px"><label>Locale floor source</label>
+            <select id="locFloorMode">
+              <option value="footprint">Use the footprint's host tier</option>
+              <option value="nextLowerCliffTier">Use the next lower tier beside a required cliff</option>
+            </select>
+            <p class="muted" style="margin-top:4px">“Next lower tier” follows the cliff geometry itself: a 1→0 cliff gives ground level; a 7→4 cliff gives the tier-4 mesa top.</p>
+          </div>
           <label class="chk" style="margin-top:6px"><input type="checkbox" id="locFlatGround" checked> Requires flat ground</label>
           <label class="chk"><input type="checkbox" id="locSameSector"> Same one-of-nine sector as the zone's entry gate</label>
           <label class="chk"><input type="checkbox" id="locAlwaysVisible"> Always visible on the wilderness map (no discovery needed)</label>
@@ -279,7 +286,9 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
-    placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' },
+    terrainAnchors: {}, // Runtime terrain probes; mirrored into placement for editor persistence.
+    embeddedTiles: {},  // Runtime embedded-host cells; mirrored into placement for editor persistence.
+    placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '', terrainAnchors: {}, embeddedTiles: {} },
     meta: { createdAt: nowIso(), updatedAt: nowIso() }
   };
 }
@@ -297,15 +306,27 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [],
-    placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
+    placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
   });
+  // Nested placement rules are authoritative when explicitly present. Legacy
+  // locale files with only top-level runtime fields are migrated into placement.
+  const rawPlacement = raw.placement || {};
+  const hasPlacementAnchors = Object.prototype.hasOwnProperty.call(rawPlacement, 'terrainAnchors');
+  const hasPlacementEmbedded = Object.prototype.hasOwnProperty.call(rawPlacement, 'embeddedTiles');
+  const terrainAnchors = JSON.parse(JSON.stringify((hasPlacementAnchors ? rawPlacement.terrainAnchors : raw.terrainAnchors) || {}));
+  const embeddedTiles = JSON.parse(JSON.stringify((hasPlacementEmbedded ? rawPlacement.embeddedTiles : raw.embeddedTiles) || {}));
+  m.terrainAnchors = terrainAnchors;
+  m.embeddedTiles = embeddedTiles;
+  m.placement.terrainAnchors = JSON.parse(JSON.stringify(terrainAnchors));
+  m.placement.embeddedTiles = JSON.parse(JSON.stringify(embeddedTiles));
   for (const [k, v] of Object.entries(raw.tiles || {})) {
     const type = TILE_INFO[v?.type] ? v.type : 'grass';
     m.tiles[k] = { type };
   }
   for (const o of (raw.objects || [])) {
     const obj = { id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 };
+    if (o.visual && typeof o.visual === 'object') obj.visual = JSON.parse(JSON.stringify(o.visual)); // Preserve authored renderer/scale/facing metadata such as cave_small visual overrides.
     // Tents (and any future lootable/burnable prop) carry a held-action
     // spec the wilderness runtime reads directly -- see docs/js/temporary-locales.js.
     if (o.interactable && typeof o.interactable === 'object') {
@@ -356,6 +377,7 @@ let paletteObject = OBJECT_PALETTE[0];
 let paletteNpc = null; // { npcId, name } or null = custom
 let painting = false;
 let paintErase = false;
+let markerDrag = null; // Active direct-manipulation drag for an object/NPC/connector; committed once on pointerup.
 
 // ── View / canvas ─────────────────────────────────────────────────────────────
 const canvas = $('canvas2d');
@@ -482,10 +504,19 @@ function draw() {
     ctx.strokeRect(x+1, y+1, w-2, h-2);
     if (cs >= 14) {
       const info = OBJECT_PALETTE.find(o => o.key === obj.key);
+      const cx = x+w/2, cy = y+h/2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((Number(obj.rot) || 0) * Math.PI / 180);
       ctx.fillStyle = '#fff';
       ctx.font = `${Math.round(cs*0.6)}px system-ui`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(info?.icon || '❓', x+w/2, y+h/2);
+      ctx.fillText(info?.icon || '❓', 0, 0);
+      ctx.strokeStyle = sel ? '#fff' : 'rgba(255,255,255,.8)';
+      ctx.lineWidth = Math.max(1, cs * 0.06);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -Math.min(w,h)*0.34); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -Math.min(w,h)*0.34); ctx.lineTo(-cs*.11, -Math.min(w,h)*0.22); ctx.lineTo(cs*.11, -Math.min(w,h)*0.22); ctx.closePath(); ctx.fill();
+      ctx.restore();
     }
   }
 
@@ -574,6 +605,59 @@ function placeOrSelectConnector(c, r) {
   finishEdit();
 }
 
+function beginMarkerDrag(type, item, c, r, pointerId) {
+  selected = { type, id: item.id };
+  markerDrag = {
+    type, id: item.id, pointerId,
+    offsetC: type === 'object' ? c - item.col : 0,
+    offsetR: type === 'object' ? r - item.row : 0,
+    moved: false
+  };
+  renderInspector(); draw();
+}
+
+function tryBeginMarkerDrag(c, r, pointerId) {
+  const m = activeLocale();
+  if (!m) return false;
+  if (mode === 'object') {
+    const hit = [...m.objects].reverse().find(o => c >= o.col && c < o.col + o.w && r >= o.row && r < o.row + o.h);
+    if (hit) { beginMarkerDrag('object', hit, c, r, pointerId); return true; }
+  } else if (mode === 'npc') {
+    const hit = [...m.npcAnchors].reverse().find(n => n.col === c && n.row === r);
+    if (hit) { beginMarkerDrag('npc', hit, c, r, pointerId); return true; }
+  } else if (mode === 'connector') {
+    const hit = [...m.connectors].reverse().find(conn => conn.col === c && conn.row === r);
+    if (hit) { beginMarkerDrag('connector', hit, c, r, pointerId); return true; }
+  }
+  return false;
+}
+
+function updateMarkerDrag(c, r) {
+  const m = activeLocale();
+  if (!m || !markerDrag) return false;
+  let item = null;
+  if (markerDrag.type === 'object') item = m.objects.find(x => x.id === markerDrag.id);
+  else if (markerDrag.type === 'npc') item = m.npcAnchors.find(x => x.id === markerDrag.id);
+  else if (markerDrag.type === 'connector') item = m.connectors.find(x => x.id === markerDrag.id);
+  if (!item) return false;
+  let col = c - markerDrag.offsetC, row = r - markerDrag.offsetR;
+  if (markerDrag.type === 'object') {
+    col = clamp(col, 0, Math.max(0, m.cols - item.w));
+    row = clamp(row, 0, Math.max(0, m.rows - item.h));
+  } else {
+    col = clamp(col, 0, m.cols - 1);
+    row = clamp(row, 0, m.rows - 1);
+  }
+  col = Math.round(col); row = Math.round(row);
+  if (item.col === col && item.row === row) return true;
+  item.col = col; item.row = row; markerDrag.moved = true;
+  const colInput = $('insCol'), rowInput = $('insRow');
+  if (colInput) colInput.value = col;
+  if (rowInput) rowInput.value = row;
+  draw();
+  return true;
+}
+
 function finishEdit() {
   const m = activeLocale();
   if (m) m.meta.updatedAt = nowIso();
@@ -591,6 +675,7 @@ canvas.addEventListener('pointerdown', e => {
   if (!m) return;
   if (mode === 'tile') { painting = true; paintErase = false; applyTileAt(c, r, false); finishEdit(); }
   else if (mode === 'erase') { painting = true; paintErase = true; applyTileAt(c, r, true); finishEdit(); }
+  else if ((mode === 'object' || mode === 'npc' || mode === 'connector') && tryBeginMarkerDrag(c, r, e.pointerId)) { return; }
   else if (mode === 'object') placeOrSelectObject(c, r);
   else if (mode === 'npc') placeOrSelectNpc(c, r);
   else if (mode === 'connector') placeOrSelectConnector(c, r);
@@ -604,12 +689,22 @@ canvas.addEventListener('pointermove', e => {
     view.panY = panStart.panY + (e.clientY - panStart.y);
     draw(); return;
   }
+  if (markerDrag && markerDrag.pointerId === e.pointerId) { updateMarkerDrag(c, r); return; }
   if (painting && (mode === 'tile' || mode === 'erase')) { applyTileAt(c, r, paintErase); draw(); }
   else draw();
 });
-window.addEventListener('pointerup', () => {
+window.addEventListener('pointerup', e => {
   if (painting) { painting = false; finishEdit(); }
+  if (markerDrag && (e.pointerId == null || markerDrag.pointerId === e.pointerId)) {
+    const changed = markerDrag.moved;
+    markerDrag = null;
+    if (changed) finishEdit(); else { renderInspector(); draw(); }
+  }
   isPanning = false; panStart = null;
+});
+window.addEventListener('pointercancel', e => {
+  if (markerDrag && markerDrag.pointerId === e.pointerId) { markerDrag = null; finishEdit(); }
+  painting = false; isPanning = false; panStart = null;
 });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -648,7 +743,7 @@ function renderPalette() {
       btn.addEventListener('click', () => { paletteObject = o; renderPalette(); });
       box.appendChild(btn);
     }
-    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click empty ground to place the selected object; click an existing object to select and edit it below.' }));
+    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click empty ground to place the selected object; drag an existing object to move it. Rotation is in the Inspector.' }));
   } else if (mode === 'npc') {
     const custom = document.createElement('button');
     custom.className = 'palBtn sec' + (paletteNpc === null ? ' act' : '');
@@ -662,9 +757,9 @@ function renderPalette() {
       btn.addEventListener('click', () => { paletteNpc = p; renderPalette(); });
       box.appendChild(btn);
     }
-    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click ground to place an anchor; click an existing anchor to select it.' }));
+    box.appendChild(Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Click ground to place an anchor; drag an existing anchor to move it.' }));
   } else if (mode === 'connector') {
-    box.innerHTML = '<p class="muted">Click a footprint edge cell to mark where the wilderness path network should connect in. Click an existing connector to select it.</p>';
+    box.innerHTML = '<p class="muted">Click a footprint edge cell to mark where the wilderness path network should connect in. Drag an existing connector to move it.</p>';
   } else {
     box.innerHTML = '<p class="muted">Pan mode — drag to move the view, scroll to zoom.</p>';
   }
@@ -688,6 +783,8 @@ function renderInspector() {
       <div><label>Row</label><input id="insRow" type="number" value="${o.row}"></div></div>
       <div class="g2" style="margin-top:6px"><div><label>Width</label><input id="insW" type="number" min="1" value="${o.w}"></div>
       <div><label>Height</label><input id="insH" type="number" min="1" value="${o.h}"></div></div>
+      <div style="margin-top:6px"><label>Rotation Y°</label><div class="row" style="flex-wrap:nowrap"><button class="sec" id="insRotLeft" type="button">↺ 45°</button><input id="insRot" type="number" step="15" value="${Number(o.rot)||0}"><button class="sec" id="insRotRight" type="button">↻ 45°</button></div></div>
+      <p class="muted" style="margin-top:4px">Drag the object directly on the canvas to translate it.</p>
       ${isTent ? `
       <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
         <label class="chk"><input type="checkbox" id="insLootable" ${ia.lootable ? 'checked' : ''}> Lootable (held action grants loot)</label>
@@ -696,12 +793,20 @@ function renderInspector() {
         <p class="muted" style="margin-top:4px">A camp is cleared once every lootable/burnable tent in it is gone — see placement.mode below.</p>
       </div>` : ''}
       <div class="row" style="margin-top:8px"><button class="ok" id="insSave">Save</button><button class="bad" id="insDelete">Delete</button></div>`;
+    const rotateBy = delta => {
+      o.rot = (((Number(o.rot) || 0) + delta) % 360 + 360) % 360;
+      $('insRot').value = o.rot;
+      finishEdit();
+    };
+    $('insRotLeft').addEventListener('click', () => rotateBy(-45));
+    $('insRotRight').addEventListener('click', () => rotateBy(45));
     $('insSave').addEventListener('click', () => {
       o.label = $('insLabel').value.trim();
       o.col = Math.round(Number($('insCol').value)) || 0;
       o.row = Math.round(Number($('insRow').value)) || 0;
       o.w = Math.max(1, Math.round(Number($('insW').value)) || 1);
       o.h = Math.max(1, Math.round(Number($('insH').value)) || 1);
+      o.rot = ((Number($('insRot').value) || 0) % 360 + 360) % 360;
       if (isTent) {
         o.interactable = {
           lootable: $('insLootable').checked,
@@ -794,6 +899,7 @@ function renderSettings() {
   $('locClearance').value = m.placement.clearanceTiles;
   $('locMinDist').value = m.placement.minDistanceFromEntry;
   $('locFlatGround').checked = m.placement.requiresFlatGround;
+  $('locFloorMode').value = m.placement.floorMode === 'nextLowerCliffTier' ? 'nextLowerCliffTier' : 'footprint';
   $('locSameSector').checked = !!m.placement.sameSectorAsEntry;
   $('locAlwaysVisible').checked = !!m.placement.alwaysVisibleOnMap;
   $('locGroundOnly').checked = !!m.placement.groundOnly;
@@ -847,6 +953,7 @@ $('applyPlacementBtn').addEventListener('click', () => {
   m.placement.clearanceTiles = clamp(Math.round(Number($('locClearance').value)) || 0, 0, 20);
   m.placement.minDistanceFromEntry = clamp(Math.round(Number($('locMinDist').value)) || 0, 0, 500);
   m.placement.requiresFlatGround = $('locFlatGround').checked;
+  m.placement.floorMode = $('locFloorMode').value === 'nextLowerCliffTier' ? 'nextLowerCliffTier' : 'footprint';
   m.placement.sameSectorAsEntry = $('locSameSector').checked;
   m.placement.alwaysVisibleOnMap = $('locAlwaysVisible').checked;
   m.placement.groundOnly = $('locGroundOnly').checked;
@@ -927,8 +1034,12 @@ function renderValidation() {
   if (!/^locale_/.test(m.id)) issues.push({ level:'info', msg:'Id does not follow the "locale_" naming convention.' });
   const dupes = ws.locales.filter(l => l.id === m.id);
   if (dupes.length > 1) issues.push({ level:'error', msg:'Another locale in this workspace shares this id.' });
-  if ((m.category === 'dwelling' || m.category === 'great_fey_shrine') && !m.npcAnchors.length) {
+  const caveExterior = m.objects.some(object => object.key === 'cave_small');
+  if ((m.category === 'dwelling' || m.category === 'great_fey_shrine') && !m.npcAnchors.length && !(m.category === 'great_fey_shrine' && caveExterior)) {
     issues.push({ level:'warning', msg:`No NPC anchors placed — a ${m.category === 'dwelling' ? 'dwelling' : 'shrine'} usually anchors at least one named character.` });
+  }
+  if (m.placement.floorMode === 'nextLowerCliffTier' && !Object.values(m.terrainAnchors || m.placement.terrainAnchors || {}).some(rule => rule?.strength === 'required' && (rule?.terrain === 'plateauCliff' || rule?.terrain === 'boundaryCliff'))) {
+    issues.push({ level:'error', msg:'Floor source is “next lower cliff tier” but there is no required cliff probe to derive it from.' });
   }
   if (!m.singleton && (m.category === 'dwelling' || m.category === 'great_fey_shrine')) {
     issues.push({ level:'info', msg:'Not marked singleton — story locations like this are usually placed exactly once in the world.' });
@@ -953,6 +1064,7 @@ function buildExport(m) {
     id: m.id, name: m.name, category: m.category, singleton: m.singleton,
     description: m.description, tags: m.tags, cols: m.cols, rows: m.rows,
     tiles: m.tiles, objects: m.objects, npcAnchors: m.npcAnchors, connectors: m.connectors,
+    terrainAnchors: m.terrainAnchors || {}, embeddedTiles: m.embeddedTiles || {},
     placement: m.placement, meta: m.meta
   };
 }
@@ -1055,6 +1167,20 @@ setMode('pan');
 // Expose a tiny bridge so the dev-tools hub (docs/tools/index.html) can hook in later.
 window._localeEditorBridge = {
   getWorkspace: () => JSON.parse(JSON.stringify(ws)),
+  setTerrainRules: (localeId, rules) => {
+    const m = ws.locales.find(locale => locale.id === localeId);
+    if (!m) return false;
+    const terrainAnchors = JSON.parse(JSON.stringify(rules?.terrainAnchors || {}));
+    const embeddedTiles = JSON.parse(JSON.stringify(rules?.embeddedTiles || {}));
+    m.terrainAnchors = terrainAnchors;
+    m.embeddedTiles = embeddedTiles;
+    m.placement = m.placement || {};
+    m.placement.terrainAnchors = JSON.parse(JSON.stringify(terrainAnchors));
+    m.placement.embeddedTiles = JSON.parse(JSON.stringify(embeddedTiles));
+    renderValidation();
+    renderJson();
+    return true;
+  },
   loadLocale: (data) => {
     const m = sanitizeLoaded(data);
     if (!ws.locales.some(l => l.id === m.id)) ws.locales.push(m);
