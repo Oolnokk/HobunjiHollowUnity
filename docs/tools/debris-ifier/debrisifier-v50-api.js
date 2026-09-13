@@ -86,6 +86,33 @@
     applyMechanismProgress(root, clamp(Number(progress) || 0, 0, 1));
   }
 
+  // Pressure plates are siblings of their mechanism roots in V50. The tool's normal
+  // whole-locale preview updates their weight before mechanisms are evaluated; the
+  // runtime adapter drives mechanisms separately, so expose just that weight pass.
+  function syncPressurePlates(root) {
+    if (!root?.traverse) return;
+    root.traverse(plateRoot => {
+      if (plateRoot.userData?.previewMotion?.type !== 'pressurePlate') return;
+      let weight = 0;
+      const block = plateRoot.userData.linkedWeightBlock;
+      if (block) {
+        const dx = block.position.x - plateRoot.position.x;
+        const dz = block.position.z - plateRoot.position.z;
+        const dy = Math.abs(block.position.y - plateRoot.position.y);
+        const dist = Math.hypot(dx, dz);
+        const threshold = (block.userData.pushBlockSize || .62) * .58 + .34;
+        const verticalThreshold = (block.userData.pushBlockSize || .62) * .72 + .18;
+        if (dy < verticalThreshold) weight = clamp((threshold - dist) / Math.max(.08, threshold * .28), 0, 1);
+      }
+      plateRoot.userData.weightProgress = weight;
+      plateRoot.userData.weightActive = weight > .82;
+      if (plateRoot.userData.pressPlate) {
+        plateRoot.userData.pressPlate.position.y = (plateRoot.userData.plateOpenY ?? .105)
+          - (plateRoot.userData.plateDepress ?? .05) * weight;
+      }
+    });
+  }
+
   function rotateLinkedCube(root, controlIndex, direction = 1) {
     return rotateLinkedCubeControl(root, Number(controlIndex) || 0, direction < 0 ? -1 : 1);
   }
@@ -116,6 +143,7 @@
     setMechanismTarget,
     snapMechanismState,
     applyProgress,
+    syncPressurePlates,
     rotateLinkedCube,
     tickRuntime,
     getState,
