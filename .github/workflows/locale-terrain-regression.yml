@@ -22,6 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Syntax check Banubu Wilderness Lab renderer
+        run: node --check docs/tools/wilderness-generation-lab/lab-banubu-cave.js
       - name: Test terrain-aware locale placement
         run: node scripts/test-locale-terrain-placement.js
       - name: Test Banubu authored cave rules and runtime parity
