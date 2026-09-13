@@ -10,16 +10,24 @@
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
 
+  // Three r128 objects in the embedded V50 tool do not consistently expose the
+  // newer Object3D.removeFromParent() convenience method. Removing through the
+  // current parent is supported by every Three build used by Hobunji and also
+  // works when the generated root is later adopted by the game's Three scene.
+  function detachObject(root) {
+    if (root?.parent?.remove) root.parent.remove(root);
+  }
+
   function restorePreviewRoots() {
     if (localePreviewRoot.parent !== scene) {
-      localePreviewRoot.removeFromParent();
+      detachObject(localePreviewRoot);
       localePreviewRoot.position.set(0, 0, 0);
       localePreviewRoot.rotation.set(0, 0, 0);
       localePreviewRoot.scale.set(1, 1, 1);
       scene.add(localePreviewRoot);
     }
     if (mechanismParticleRoot.parent !== scene) {
-      mechanismParticleRoot.removeFromParent();
+      detachObject(mechanismParticleRoot);
       mechanismParticleRoot.position.set(0, 0, 0);
       mechanismParticleRoot.rotation.set(0, 0, 0);
       mechanismParticleRoot.scale.set(1, 1, 1);
@@ -53,8 +61,8 @@
   }
 
   function takePreviewRoots() {
-    localePreviewRoot.removeFromParent();
-    mechanismParticleRoot.removeFromParent();
+    detachObject(localePreviewRoot);
+    detachObject(mechanismParticleRoot);
     return { localeRoot: localePreviewRoot, particleRoot: mechanismParticleRoot };
   }
 
