@@ -1,0 +1,73 @@
+name: Apply Banubu internal cliff patch
+
+on:
+  push:
+    branches:
+      - chatgpt/locale-terrain-anchors
+    paths:
+      - '.github/workflows/apply-banubu-internal-cliff.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/locale-terrain-anchors
+      - name: Require an internal plateau cliff for Banubu Cave
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count} for {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          placement = 'docs/js/locale-terrain-placement.js'
+          marker = '''  function compileLocale(locale, scale) {\n    const tiles = scaledCellEntries(locale.tiles, scale, raw => ({ type: raw?.type || 'grass' })); // Expanded generated footprint tiles painted after a site is selected.\n    const probes = scaledCellEntries(locale.terrainAnchors, scale, raw => normalizeProbe(raw, false)); // Expanded non-generating environmental probes.\n'''
+          replacement = '''  function scaledProbeEntries(record, scale) {\n    const output = new Map(); // Cliff probes expand only along their authored face so density scaling does not turn one cliff edge into a required solid NxN cliff block.\n    for (const [key, raw] of Object.entries(record || {})) {\n      const parsed = parseCellKey(key);\n      if (!parsed) continue;\n      const rule = normalizeProbe(raw, false);\n      const isCliff = rule.terrain === 'plateauCliff' || rule.terrain === 'boundaryCliff';\n      if (isCliff && rule.facing !== 'any' && scale > 1) {\n        for (let i = 0; i < scale; i++) {\n          const dx = rule.facing === 'west' ? 0 : rule.facing === 'east' ? scale - 1 : i;\n          const dy = rule.facing === 'north' ? 0 : rule.facing === 'south' ? scale - 1 : i;\n          const c = parsed.c * scale + dx;\n          const r = parsed.r * scale + dy;\n          output.set(sourceKey(c, r), { c, r, sourceC: parsed.c, sourceR: parsed.r, value: rule });\n        }\n        continue;\n      }\n      for (let dy = 0; dy < scale; dy++) {\n        for (let dx = 0; dx < scale; dx++) {\n          const c = parsed.c * scale + dx;\n          const r = parsed.r * scale + dy;\n          output.set(sourceKey(c, r), { c, r, sourceC: parsed.c, sourceR: parsed.r, value: rule });\n        }\n      }\n    }\n    return output;\n  }\n\n  function compileLocale(locale, scale) {\n    const tiles = scaledCellEntries(locale.tiles, scale, raw => ({ type: raw?.type || 'grass' })); // Expanded generated footprint tiles painted after a site is selected.\n    const probes = scaledProbeEntries(locale.terrainAnchors, scale); // Cliff probes become the correct face strip after tile-density expansion; ordinary probes still fill their scaled source cell.\n'''
+          replace_once(placement, marker, replacement)
+
+          locale_path = Path('docs/config/locales/locale_banubu_shrine.json')
+          locale = json.loads(locale_path.read_text())
+          cliff_rule = {
+              'terrain': 'plateauCliff',
+              'strength': 'required',
+              'weight': 1,
+              'facing': 'north',
+              'height': {'mode': 'relativeRange', 'min': 1, 'max': 32},
+          }
+          locale.setdefault('terrainAnchors', {})['4,5'] = cliff_rule
+          locale.setdefault('placement', {}).setdefault('terrainAnchors', {})['4,5'] = json.loads(json.dumps(cliff_rule))
+          locale['placement']['notes'] = "Northern Cliffs only. The exposed front stays on one flat lower tier; the first embedded row must form a north-facing INTERNAL plateau cliff above it (boundary escarpments are rejected), and the rear footprint is carved down to the cave floor. The cave entrance prop renders at 2x its normal in-game cave scale."
+          locale['meta']['updatedAt'] = '2026-09-13T00:00:00.000Z'
+          locale_path.write_text(json.dumps(locale, indent=2) + '\n')
+
+          test_path = 'scripts/test-banubu-cave-locale.js'
+          anchor = "const freeApproach = Object.values(anchors).filter(rule => rule.terrain === 'free' && rule.strength === 'required');\nassert(freeApproach.length >= 3, 'Banubu Cave needs a required open approach before the embedded plateau');\n"
+          block = anchor + "const internalCliff = anchors['4,5'];\nassert(internalCliff, 'Banubu Cave needs an explicit cliff probe at the front of its embedded host');\nassert.strictEqual(internalCliff.terrain, 'plateauCliff', 'Banubu Cave must require an internal plateau cliff, not a boundary cliff');\nassert.strictEqual(internalCliff.facing, 'north', 'Banubu Cave plateau face must open north toward the authored mouth');\n"
+          replace_once(test_path, anchor, block)
+
+          real_test = 'scripts/test-banubu-wilderness-lab-generation.js'
+          anchor2 = "assert(instance, 'Banubu Cave must produce a localeInstance in the real Northern Cliffs generation.');\n"
+          block2 = anchor2 + "const internalCliffProbes = (diagnostic.selected?.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');\nassert.strictEqual(internalCliffProbes.length, 2, 'one north-facing authored cliff cell must expand to exactly a 2-tile cliff-face strip at the generator\'s 2x density');\nassert(internalCliffProbes.every(probe => probe.rule.facing === 'north' && probe.matched), 'Banubu Cave must match its explicit north-facing internal plateau cliff strip');\nconst root = (workspace.maps || []).find(map => map && !map.isSubmap);\nfor (const probe of internalCliffProbes) {\n  const tile = root?.tiles?.[`${probe.c},${probe.r}`];\n  assert(!tile?.borderEscarpment && !tile?.generatedBorderEscarpment && !tile?.distantBoundaryLandscape, 'Banubu internal cliff probe must never land on boundary-escarpment terrain');\n}\n"
+          replace_once(real_test, anchor2, block2)
+          PY
+          node --check docs/js/locale-terrain-placement.js
+          node scripts/test-locale-terrain-placement.js
+          node scripts/test-banubu-cave-locale.js
+          node scripts/test-banubu-wilderness-lab-generation.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/js/locale-terrain-placement.js docs/config/locales/locale_banubu_shrine.json scripts/test-banubu-cave-locale.js scripts/test-banubu-wilderness-lab-generation.js
+          git commit -m 'Keep Banubu Cave on internal plateau cliffs'
+          git push origin HEAD:chatgpt/locale-terrain-anchors
