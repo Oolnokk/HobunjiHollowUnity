@@ -46,7 +46,41 @@
     carveToLocaleFloor: true,
   }; // Shared brush state; embedded mode ignores strength/weight while probe mode ignores carveToLocaleFloor.
 
+  // One specific pre-sync Locale Editor build could leave Banubu with a large
+  // south-facing cliff rectangle in browser-local workspace data. Keep local
+  // authoring authoritative in general, but migrate that known malformed
+  // signature back to the canonical cliff-base rule set once.
+  const BANUBU_CANONICAL_RULES = {
+    terrainAnchors: {
+      '3,2': { terrain: 'plateauCliff', strength: 'preferred', weight: 2, facing: 'north', height: { mode: 'relativeRange', min: 0, max: 0 } },
+      '4,2': { terrain: 'plateauCliff', strength: 'required', weight: 1, facing: 'north', height: { mode: 'relativeRange', min: 0, max: 0 } },
+      '5,2': { terrain: 'plateauCliff', strength: 'preferred', weight: 2, facing: 'north', height: { mode: 'relativeRange', min: 0, max: 0 } },
+      '3,3': { terrain: 'plateauCliff', strength: 'preferred', weight: 2, facing: 'north', height: { mode: 'relativeRange', min: 1, max: null } },
+      '4,3': { terrain: 'plateauCliff', strength: 'required', weight: 1, facing: 'north', height: { mode: 'relativeRange', min: 1, max: null } },
+      '5,3': { terrain: 'plateauCliff', strength: 'preferred', weight: 2, facing: 'north', height: { mode: 'relativeRange', min: 1, max: null } },
+    },
+    embeddedTiles: {
+      '3,3': { terrain: 'plateau', facing: 'any', height: { mode: 'relativeRange', min: 1, max: null }, carveToLocaleFloor: true },
+      '4,3': { terrain: 'plateau', facing: 'any', height: { mode: 'relativeRange', min: 1, max: null }, carveToLocaleFloor: true },
+      '5,3': { terrain: 'plateau', facing: 'any', height: { mode: 'relativeRange', min: 1, max: null }, carveToLocaleFloor: true },
+    },
+  };
+
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
+
+  function isKnownBrokenBanubuRules(locale, rules) {
+    if (locale?.id !== 'locale_banubu_shrine' || locale?.placement?.floorMode !== 'nextLowerCliffTier') return false;
+    const anchors = Object.values(rules?.terrainAnchors || {});
+    if (anchors.length < 20 || Object.keys(rules?.embeddedTiles || {}).length !== 0) return false;
+    return anchors.every(rule => rule?.terrain === 'plateauCliff' &&
+      rule?.strength === 'required' && rule?.facing === 'south' &&
+      (rule?.height?.mode || 'any') === 'any');
+  }
+
+  function migrateKnownBrokenRules(locale, rules) {
+    if (!isKnownBrokenBanubuRules(locale, rules)) return rules;
+    return clone(BANUBU_CANONICAL_RULES);
+  }
 
   function loadRuleStore() {
     try {
@@ -132,7 +166,16 @@
 
   function reconcileRulesFromLocale(locale) {
     if (!locale?.id) return { terrainAnchors: {}, embeddedTiles: {} };
-    const fromLocale = rulesFromLocale(locale);
+    let fromLocale = rulesFromLocale(locale);
+    const migrated = migrateKnownBrokenRules(locale, fromLocale);
+    if (migrated !== fromLocale) {
+      fromLocale = migrated;
+      store.byLocale[locale.id] = fromLocale;
+      syncRulesToMainLocale(locale.id, fromLocale);
+      saveRuleStore();
+      debug('repaired legacy Banubu south-cliff terrain rules to canonical north-facing cliff-base rules');
+      return fromLocale;
+    }
     // Explicit workspace fields are authoritative. This replaces obsolete
     // sidecar data instead of resurrecting it after a newer locale is loaded.
     if (hasPersistedRuleFields(locale)) {

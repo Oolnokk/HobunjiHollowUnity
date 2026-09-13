@@ -2,8 +2,15 @@ const assert = require('assert');
 const generator = require('../docs/js/wilderness-map-generator.js');
 const terrainPlacement = require('../docs/js/locale-terrain-placement.js');
 const locale = require('../docs/config/locales/locale_banubu_shrine.json');
+const fs = require('fs');
+const path = require('path');
 
 terrainPlacement.install(generator);
+
+const terrainEditorSource = fs.readFileSync(path.resolve(__dirname, '../docs/tools/locale-editor/terrain-placement.js'), 'utf8');
+assert(terrainEditorSource.includes('isKnownBrokenBanubuRules'), 'Locale Editor must recognize the known stale Banubu south-cliff browser-workspace signature');
+assert(terrainEditorSource.includes('BANUBU_CANONICAL_RULES'), 'Locale Editor must carry the canonical Banubu repair rule set');
+assert(terrainEditorSource.includes("anchors.length < 20") && terrainEditorSource.includes("rule?.facing === 'south'"), 'Banubu migration must stay narrowly scoped to the obsolete large south-facing rule grid');
 
 const settings = {
   ...generator.defaultSettings(),
@@ -87,6 +94,7 @@ if (diagnostic.status === 'placed') {
 const previewSeeds = [
   'locale-preview|locale_banubu_shrine|map_northern_cliffs|mtzx7qkr|ckqwlqf',
   'locale-preview|locale_banubu_shrine|map_northern_cliffs|mtzztqpk|s0ho2n6',
+  'locale-preview|locale_banubu_shrine|map_northern_cliffs|mu0bd5bo|khx6y2e',
 ];
 const previewResults = [];
 for (const seed of previewSeeds) {
