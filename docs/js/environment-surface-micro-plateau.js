@@ -225,11 +225,10 @@
     return corners;
   }
 
-  function addTopTile(pos, uv, idx, col, row, corners) {
+  function addTopTile(pos, idx, col, row, corners) {
     const base = pos.length / 3;
     const [y00, y10, y01, y11] = corners;
     pos.push(col,y00,row, col+1,y10,row, col,y01,row+1, col+1,y11,row+1);
-    uv.push(0,0, 1,0, 0,1, 1,1);
     idx.push(base,base+2,base+3, base,base+3,base+1);
   }
 
@@ -247,7 +246,7 @@
     return [corners[3], corners[1]];
   }
 
-  function addRoundedLip(pos, uv, idx, col, row, side, edgeY) {
+  function addRoundedLip(pos, idx, col, row, side, edgeY) {
     const dirs = { N:[0,-1], E:[1,0], S:[0,1], W:[-1,0] };
     const d = dirs[side];
     let ax, az, bx, bz;
@@ -265,20 +264,51 @@
       const nextB = [bx + d[0] * outward, topB - drop, bz + d[1] * outward];
       const base = pos.length / 3;
       pos.push(...prevA, ...prevB, ...nextB, ...nextA);
-      uv.push(0,1-t+1/EDGE_SEGMENTS, 1,1-t+1/EDGE_SEGMENTS, 1,1-t, 0,1-t);
       idx.push(base,base+1,base+2, base,base+2,base+3);
       prevA = nextA;
       prevB = nextB;
     }
   }
 
-  function makeMesh(positions, uvs, indices, name, order) {
+  // Wraps every generated chunk through the same connected-surface UV
+  // unwrapper the real plateau mesa's cliff faces use (window.
+  // HobunjiSurfaceStretchUV, patched onto buildPlateauMesa in
+  // surface-stretch-uv-furniture.js) instead of tiling one texture square
+  // per tile — the whole cap-and-lip island stretches across one texture
+  // domain, with the interior relaxed and the outer boundary mapped along
+  // the texture's perimeter, exactly like the farm's cliff texturing.
+  function stretchMapSnowUv(geometry, label) {
+    const mapper = window.HobunjiSurfaceStretchUV;
+    if (typeof mapper?.mapGeometry === 'function') {
+      try {
+        const mapped = mapper.mapGeometry(geometry, { label: `environment-snow-micro-plateau:${label}` });
+        if (mapped?.getAttribute?.('uv')) return mapped;
+      } catch (_) {}
+    }
+    // Fallback (mapper not yet loaded): naive per-vertex planar UV so the
+    // mesh still renders sanely rather than untextured.
+    const THREE = window.THREE;
+    const position = geometry.getAttribute('position');
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const dx = Math.max(1e-5, box.max.x - box.min.x);
+    const dz = Math.max(1e-5, box.max.z - box.min.z);
+    const uv = new Float32Array(position.count * 2);
+    for (let i = 0; i < position.count; i++) {
+      uv[i * 2] = (position.getX(i) - box.min.x) / dx;
+      uv[i * 2 + 1] = (position.getZ(i) - box.min.z) / dz;
+    }
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    return geometry;
+  }
+
+  function makeMesh(positions, indices, name, order) {
     if (!indices.length) return null;
     const THREE = window.THREE;
-    const geometry = new THREE.BufferGeometry();
+    let geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setIndex(new THREE.BufferAttribute(indices.length > 65535 ? new Uint32Array(indices) : new Uint16Array(indices), 1));
+    geometry = stretchMapSnowUv(geometry, name);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, material());
@@ -292,8 +322,7 @@
   }
 
   function buildOneChunk(state, chunk) {
-    const capPos = [], capUv = [], capIdx = [];
-    const lipPos = [], lipUv = [], lipIdx = [];
+    const pos = [], idx = [];
     const rowEnd = Math.min(state.rows, chunk.row + CHUNK_TILES);
     const colEnd = Math.min(state.cols, chunk.col + CHUNK_TILES);
     const sides = [['N',0,-1], ['E',1,0], ['S',0,1], ['W',-1,0]];
@@ -302,7 +331,7 @@
       for (let col = chunk.col; col < colEnd; col++) {
         const corners = tileTopCorners(state, col, row);
         if (!corners) continue;
-        addTopTile(capPos, capUv, capIdx, col, row, corners);
+        addTopTile(pos, idx, col, row, corners);
         builtTiles++;
         for (const [side, dc, dr] of sides) {
           const edge = edgeCorners(corners, side);
@@ -313,15 +342,13 @@
             const theirsMid = (other[0] + other[1]) * 0.5;
             if (oursMid <= theirsMid + 0.025) continue;
           }
-          addRoundedLip(lipPos, lipUv, lipIdx, col, row, side, edge);
+          addRoundedLip(pos, idx, col, row, side, edge);
           exposedEdges++;
         }
       }
     }
 
-    const label = `${chunk.col}_${chunk.row}`;
-    makeMesh(capPos, capUv, capIdx, `snow_micro_plateau_caps_${label}`, 2.2);
-    makeMesh(lipPos, lipUv, lipIdx, `snow_micro_plateau_edges_${label}`, 2.21);
+    makeMesh(pos, idx, `snow_micro_plateau_${chunk.col}_${chunk.row}`, 2.2);
   }
 
   // One synchronous pass over the whole zone — the same way

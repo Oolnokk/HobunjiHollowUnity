@@ -21,5 +21,7 @@ assert.match(source, /tile-driven-shallow-plateau-v3/, 'generated root must expo
 assert.match(source, /MeshBasicMaterial/, 'micro snow must avoid an expensive whole-zone normal solve');
 assert.match(source, /isWildernessGrassChunkGroup|isRichFoliageBillboard/, 'grass-blade billboards under the snow cap must be hidden');
 assert.match(source, /setGrassHidden\(grassHiddenScene, false\)/, 'grass visibility must be restored when leaving Western Slope');
+assert.match(source, /window\.HobunjiSurfaceStretchUV/, 'snow UV must stretch-map across the connected cap+lip surface like the real plateau mesa cliffs, not tile one texture square per tile');
+assert.doesNotMatch(source, /uv\.push\(0,0, 1,0, 0,1, 1,1\)/, 'must not fall back to one naive 0-1 UV square per tile');
 
 console.log('Environment surface micro-plateau source checks passed.');
