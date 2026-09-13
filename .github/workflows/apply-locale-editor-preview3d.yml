@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: chatgpt/locale-terrain-anchors
-      - name: Wire Locale Editor 3D preview and regression
+      - name: Wire Locale Editor 3D preview
         shell: bash
         run: |
           python - <<'PY'
@@ -28,7 +28,7 @@ jobs:
               text = p.read_text()
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f'{path}: expected one match, found {count}')
+                  raise SystemExit(f'{path}: expected one match, found {count} for {old[:90]!r}')
               p.write_text(text.replace(old, new, 1))
 
           panel = 'docs/js/panel-ui.js'
@@ -36,19 +36,27 @@ jobs:
           new = old + """\n  const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.\n  localePreview3dScript.src = 'locale-preview3d.js?v=20260913a';\n  localePreview3dScript.defer = true;\n  document.head.appendChild(localePreview3dScript);\n"""
           replace_once(panel, old, new)
 
-          workflow = '.github/workflows/locale-terrain-regression.yml'
-          p = Path(workflow)
-          text = p.read_text()
-          text = text.replace("      - 'docs/tools/wilderness-generation-lab/**'\n", "      - 'docs/tools/wilderness-generation-lab/**'\n      - 'docs/tools/locale-editor/**'\n")
-          text = text.replace("      - name: Syntax check Banubu Wilderness Lab renderer\n        run: node --check docs/tools/wilderness-generation-lab/lab-banubu-cave.js\n", "      - name: Syntax check Banubu Wilderness Lab renderer\n        run: node --check docs/tools/wilderness-generation-lab/lab-banubu-cave.js\n      - name: Syntax check Locale Editor terrain and 3D preview\n        run: |\n          node --check docs/tools/locale-editor/terrain-placement.js\n          node --check docs/tools/locale-editor/locale-preview3d.js\n          node -e \"const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles'])if(!s.includes(needle))throw new Error('missing '+needle);\"\n")
-          p.write_text(text)
+          preview = 'docs/tools/locale-editor/locale-preview3d.js'
+          replace_once(
+              preview,
+              "      const child = previewRoot.children.pop();\n      disposeObject(child);",
+              "      const child = previewRoot.children[previewRoot.children.length - 1];\n      previewRoot.remove(child);\n      disposeObject(child);"
+          )
+          replace_once(
+              preview,
+              "      if (!previewRoot || parent.parent !== previewRoot) return;",
+              "      if (!previewRoot || parent !== previewRoot || !previewRoot.parent) return;"
+          )
           PY
           node --check docs/js/panel-ui.js
           node --check docs/tools/locale-editor/terrain-placement.js
           node --check docs/tools/locale-editor/locale-preview3d.js
-          node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles'])if(!s.includes(needle))throw new Error('missing '+needle);"
+          node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','previewRoot.remove(child)','parent !== previewRoot'])if(!s.includes(needle))throw new Error('missing '+needle);"
+          node scripts/test-locale-terrain-placement.js
+          node scripts/test-banubu-cave-locale.js
+          node scripts/test-banubu-wilderness-lab-generation.js
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/js/panel-ui.js .github/workflows/locale-terrain-regression.yml
+          git add docs/js/panel-ui.js docs/tools/locale-editor/locale-preview3d.js
           git commit -m 'Wire Locale Editor 3D preview and relative height controls'
           git push origin HEAD:chatgpt/locale-terrain-anchors
