@@ -161,6 +161,7 @@
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', () => !!window.THREE?.WebGLRenderer);
     await loadScript('https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js', () => !!window.THREE?.OrbitControls);
     await loadScript('../../js/GLTFLoader.js', () => !!window.THREE?.GLTFLoader);
+    await loadScript('../../js/portrait-utils.js', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
     await loadScript('../../js/locale-terrain-placement.js', () => !!window.LocaleTerrainPlacement?.evaluateCandidateForTest);
@@ -370,17 +371,28 @@
     const override = mapMaterialOverride(mapId, key);
     if (override?.texture) {
       new THREE.TextureLoader().load(`../../assets/textures/${override.texture}`, loaded => {
-        loaded.wrapS = loaded.wrapT = THREE.RepeatWrapping;
-        if (Array.isArray(override.stretch) && override.stretch.length === 2) {
-          loaded.repeat.set(1 / Math.max(0.05, override.stretch[0]), 1 / Math.max(0.05, override.stretch[1]));
-        } else {
-          const tileSize = Math.max(0.05, override.tileSize || 1);
-          loaded.repeat.set(1 / tileSize, 1 / tileSize);
-        }
-        loaded.needsUpdate = true;
-        material.map = loaded;
-        material.color.set(0xffffff);
-        material.needsUpdate = true;
+        try {
+          let finalTexture = loaded;
+          const rgb = override.fillColor && window.parseHexColor?.(override.fillColor);
+          if (rgb && typeof window.getShadeFillCanvas === 'function') {
+            const tinted = window.getShadeFillCanvas(loaded.image, `${override.texture}|${override.fillColor}`, {
+              mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: window.getPortraitTintingConfig?.(),
+            });
+            finalTexture = new THREE.CanvasTexture(tinted);
+            loaded.dispose?.();
+          }
+          finalTexture.wrapS = finalTexture.wrapT = THREE.RepeatWrapping;
+          if (Array.isArray(override.stretch) && override.stretch.length === 2) {
+            finalTexture.repeat.set(1 / Math.max(0.05, override.stretch[0]), 1 / Math.max(0.05, override.stretch[1]));
+          } else {
+            const tileSize = Math.max(0.05, override.tileSize || 1);
+            finalTexture.repeat.set(1 / tileSize, 1 / tileSize);
+          }
+          finalTexture.needsUpdate = true;
+          material.map = finalTexture;
+          material.color.set(0xffffff);
+          material.needsUpdate = true;
+        } catch (_) {}
       }, undefined, () => {});
     }
     return material;
@@ -532,34 +544,33 @@
     const ratio = passed / constraintTotal;
     return clamp(stage + ratio * (1 - stage) * 0.82, 0, 0.995);
   }
-  function scanFailureCandidates(workspace, locale, seed) {
+  function findFailureCandidate(workspace, locale, seed, mode) {
     const Placement = window.LocaleTerrainPlacement;
     const root = rootMap(workspace);
-    if (!root) return [];
+    if (!root) return null;
     const scale = Math.max(1, Placement.inferGenerationScale(workspace));
     const compiled = Placement.compileLocale(locale, scale);
-    if (!compiled) return [];
-    const failures = [];
+    if (!compiled) return null;
     const step = scale;
     const minC = -compiled.bounds.minC, minR = -compiled.bounds.minR;
     const maxC = root.cols - 1 - compiled.bounds.maxC, maxR = root.rows - 1 - compiled.bounds.maxR;
+    const target = 0.52;
+    let best = null;
     for (let r = minR; r <= maxR; r += step) {
       for (let c = minC; c <= maxC; c += step) {
         const result = Placement.evaluateCandidateForTest(workspace, locale, c, r, { scale, seed });
         if (result.ok) continue;
-        failures.push({ anchorC: c, anchorR: r, scale, result, closeness: candidateCloseness(result, compiled) });
+        const closeness = candidateCloseness(result, compiled);
+        const item = { anchorC: c, anchorR: r, scale, result, closeness };
+        if (mode === 'almost') {
+          if (!best || closeness > best.closeness) best = item;
+        } else {
+          const distance = Math.abs(closeness - target);
+          if (!best || distance < best.distance) best = { ...item, distance };
+        }
       }
     }
-    return failures;
-  }
-  function chooseFailure(failures, mode) {
-    if (!failures.length) return null;
-    if (mode === 'almost') return failures.reduce((best, item) => !best || item.closeness > best.closeness ? item : best, null);
-    const target = 0.52;
-    return failures.reduce((best, item) => {
-      const distance = Math.abs(item.closeness - target);
-      return !best || distance < best.distance ? { ...item, distance } : best;
-    }, null);
+    return best;
   }
   function virtualInstance(locale, candidate) {
     const scale = candidate.scale;
@@ -593,7 +604,6 @@
 
     // Failure and unfiltered modes intentionally generate the host without stamping the locale.
     const workspace = Generator.generateZoneWorkspace(zoneId, seed, []);
-    const failures = scanFailureCandidates(workspace, locale, seed);
     if (scenario === 'random') {
       const Placement = window.LocaleTerrainPlacement;
       const root = rootMap(workspace);
@@ -607,7 +617,7 @@
       const candidate = { anchorC, anchorR, scale, result, closeness: result.ok ? 1 : candidateCloseness(result, compiled) };
       return { workspace, instance: virtualInstance(locale, candidate), seed, kind: result.ok ? 'raw-valid' : 'raw-failure', candidate, reason: result.reason || 'valid candidate' };
     }
-    const picked = chooseFailure(failures, scenario);
+    const picked = findFailureCandidate(workspace, locale, seed, scenario);
     if (!picked) return { workspace, instance: null, seed, kind: 'no-candidate', reason: 'No rejected candidates found on this seed' };
     return { workspace, instance: virtualInstance(locale, picked), seed, kind: scenario, candidate: picked, reason: picked.result.reason };
   }
@@ -687,6 +697,7 @@
       const loaded = await addGlbObject(group, object, merged, token, ghost);
       if (!loaded && token === generationToken) addFallbackObject(group, object, merged, ghost);
     }
+    renderAnchorMarkers(group, instance, merged, ghost);
 
     if (token !== generationToken) return;
     // Cave objects go through the actual gameplay renderer (which loads cave_small.glb) rather than a second editor implementation.
@@ -699,6 +710,45 @@
       markOutline: () => {},
     });
     window.ZoneDenTotemFeatures.buildAnimalDenMeshes(scene, terrainRoot.userData.zGrid, [], PREVIEW_MAP_ID);
+    if (ghost) ghostCaveGroupWhenReady(token);
+  }
+
+  function renderAnchorMarkers(group, instance, merged, ghost) {
+    for (const anchor of instance?.npcAnchors || []) {
+      const x = Number(anchor.x) + 0.5, z = Number(anchor.y) + 0.5;
+      const y = surfaceY(merged, x, z);
+      if (anchor.npcId === 'banubu') {
+        const material = new THREE.SpriteMaterial({ map: new THREE.TextureLoader().load('../../assets/creaturesprites/grehlr_idle.png'), transparent: true, opacity: ghost ? 0.58 : 1, depthWrite: false });
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(2.2, 2.2 / 0.75, 1);
+        sprite.position.set(x, y + sprite.scale.y * 0.5, z);
+        group.add(sprite);
+      } else {
+        const material = new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: ghost, opacity: ghost ? 0.52 : 0.9 });
+        const marker = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.8, 10), material);
+        marker.position.set(x, y + 0.4, z);
+        group.add(marker);
+      }
+    }
+    for (const connector of instance?.connectors || []) {
+      const x = Number(connector.x) + 0.5, z = Number(connector.y) + 0.5;
+      const y = surfaceY(merged, x, z) + 0.09;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.055, 8, 20), new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: ghost ? 0.48 : 0.92 }));
+      ring.rotation.x = Math.PI * 0.5;
+      ring.position.set(x, y, z);
+      group.add(ring);
+    }
+  }
+
+  function ghostCaveGroupWhenReady(token) {
+    const started = performance.now();
+    const poll = () => {
+      if (token !== generationToken) return;
+      const group = scene?.getObjectByName('animalDenEntrances');
+      if (!group) { if (performance.now() - started < 2500) requestAnimationFrame(poll); return; }
+      tintGhost(group, true);
+    };
+    poll();
   }
 
   function addRuleOverlay(locale, instance, candidate, merged) {
