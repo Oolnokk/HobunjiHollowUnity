@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "selectedId": "sample",
   "settings": {
     "scriptSide": "left",
@@ -12,7 +12,9 @@
     "scriptY": 46,
     "columnSpacing": -0.55,
     "scriptScrollSpeed": 0.017,
-    "loadPercent": 63
+    "loadPercent": 63,
+    "skyFocusOffsetX": 0,
+    "skyFocusOffsetY": 0
   },
   "entries": [
     {
