@@ -8,14 +8,14 @@
     "panSpeed": 0.055,
     "manualSpeed": 150,
     "loreSize": 19,
-    "scriptSize": 150,
+    "scriptSize": 160,
     "scriptY": 45,
     "columnSpacing": -0.56,
-    "scriptScrollSpeed": 0.042,
+    "scriptScrollSpeed": 0.03,
     "loadPercent": 63,
-    "skyFocusOffsetX": 0,
-    "skyFocusOffsetY": -0.5,
-    "skyZoom": 1.25
+    "skyFocusOffsetX": 8,
+    "skyFocusOffsetY": 0,
+    "skyZoom": 3.25
   },
   "entries": [
     {
