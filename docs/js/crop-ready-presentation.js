@@ -26,6 +26,36 @@
   const candidateState = new WeakMap();
   const sceneState = new WeakMap();
   let lastReadyCount = 0;
+  let farmDeps = null; // Captured from FarmPanel.init purely to identify the farm's own scene (see crop-billboard-presentation.js) — ready crops only ever exist there, so every other area's scene (town, wilderness, interiors) can skip the discovery scan entirely instead of walking its whole child list at 10 Hz for nothing.
+
+  function patchFarmPanel(api) {
+    if (!api?.init || api.__hobunjiCropReadyPresentationPatched) return;
+    const originalInit = api.init.bind(api);
+    api.init = function cropReadyPresentationFarmPanelInit(injectedDeps = {}, ...rest) {
+      const result = originalInit(injectedDeps, ...rest);
+      farmDeps = injectedDeps;
+      return result;
+    };
+    api.__hobunjiCropReadyPresentationPatched = true;
+  }
+
+  function installFarmPanelHook() {
+    if (window.FarmPanel) { patchFarmPanel(window.FarmPanel); return; }
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel');
+    if (descriptor && !descriptor.configurable) return;
+    const previousGet = descriptor?.get;
+    const previousSet = descriptor?.set;
+    let value = descriptor?.value;
+    Object.defineProperty(window, 'FarmPanel', {
+      configurable: true,
+      get() { return previousGet ? previousGet.call(window) : value; },
+      set(next) {
+        if (previousSet) previousSet.call(window, next);
+        else value = next;
+        patchFarmPanel(previousGet ? previousGet.call(window) : value);
+      },
+    });
+  }
 
   function halfTileCentered(value) {
     if (!Number.isFinite(value)) return false;
@@ -213,7 +243,7 @@
   }
 
   function prepare(scene) {
-    if (!scene) return [];
+    if (!scene || !farmDeps?.scene || scene !== farmDeps.scene) return [];
     const record = ensureSceneState(scene);
     if (!record.scanValidThisTurn) refreshSceneTurn(scene, record);
 
@@ -256,6 +286,7 @@
     prototype.__hobunjiCropReadyPresentationHooked = true;
   }
 
+  installFarmPanelHook();
   installRenderHook();
 
   window.HobunjiCropReadyPresentation = {
@@ -264,6 +295,7 @@
       sparklesPerCrop: SPARKLES_PER_CROP,
       coalescedPerTurn: true,
       discoveryHz: 1000 / DISCOVERY_INTERVAL_MS,
+      farmReady: Boolean(farmDeps?.scene),
     }),
   };
 })();
