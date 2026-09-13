@@ -33,3 +33,5 @@ s = replace_once(s,
 """const newestDebugSeed = 'locale-preview|locale_banubu_shrine|map_northern_cliffs|mu0bd5bo|khx6y2e';\nconst newestWorkspace = generator.generateZoneWorkspace('map_northern_cliffs', newestDebugSeed, [locale]);\nconst newestDiagnostic = (newestWorkspace.localeTerrainDiagnostics || []).find(item => item.localeId === locale.id);\nassert(newestDiagnostic, 'the newest Locale Editor debug seed must emit Banubu terrain diagnostics');\nassert.strictEqual(newestDiagnostic.status, 'placed', 'the newest debug seed should place when evaluated with canonical Banubu rules rather than stale browser rules');\nassert((newestDiagnostic.valid || 0) > 0, 'the newest debug seed must expose at least one valid canonical cliff-base candidate');\n\nconsole.log(`Banubu real Northern Cliffs cliff-base regression passed (${diagnostic.status}); newest debug seed places with ${newestDiagnostic.valid} valid candidates.`);\n""", 'new debug seed regression')
 
 path.write_text(s, encoding='utf-8')
+
+# Touch marker so the one-shot workflow runs after it has been created.
