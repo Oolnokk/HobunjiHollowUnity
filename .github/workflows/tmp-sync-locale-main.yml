@@ -1,0 +1,41 @@
+name: Sync locale branch with main
+
+on:
+  push:
+    branches:
+      - chatgpt/locale-terrain-anchors
+    paths:
+      - .github/workflows/tmp-sync-locale-main.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/locale-terrain-anchors
+          fetch-depth: 0
+      - name: Merge current main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          if ! git merge --no-ff origin/main -m 'Merge current main into locale terrain branch'; then
+            echo '--- CONFLICTED FILES ---'
+            git diff --name-only --diff-filter=U
+            echo '--- CONFLICT HUNKS ---'
+            git diff --cc
+            exit 1
+          fi
+      - name: Regression checks
+        run: |
+          node --check docs/js/zone-den-totem-features.js
+          node --check docs/tools/locale-editor/terrain-placement.js
+          node scripts/test-locale-terrain-placement.js
+          node scripts/test-banubu-cave-locale.js
+          node scripts/test-banubu-wilderness-lab-generation.js
+      - name: Push synced branch
+        run: git push origin HEAD:chatgpt/locale-terrain-anchors
