@@ -919,7 +919,7 @@
   }
 
   function exteriorAdjacency(area) {
-    const zoneIds = Object.keys(devDeps?.EXTERIOR_ZONES || {}).filter(id => id !== "map_dev_arena");
+    const zoneIds = Object.keys(devDeps?.EXTERIOR_ZONES || {}).filter(id => id !== "map_dev_arena" && id !== "map_wilderness_lab");
     if (area === "farm") return ["town"];
     if (area === "town") return ["farm", ...zoneIds];
     if (zoneIds.includes(area)) return ["town"];

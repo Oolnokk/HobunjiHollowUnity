@@ -33,6 +33,12 @@
         { "id": "meat", "itemKey": "puktukMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} }
       ]
     },
+    "creature_voorg-ass": {
+      "label": "Voorg-Ass",
+      "entries": [
+        { "id": "meat", "itemKey": "voorgAssMeat", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+      ]
+    },
     "creature_gar-wolf": {
       "label": "Gar-wolf",
       "entries": [

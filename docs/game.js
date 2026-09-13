@@ -1495,6 +1495,33 @@
           townReturnCol: 30, townReturnRow: 2,
           audioIndex: 'general',
         },
+        // Dev-only sibling to map_dev_arena, reachable solely through
+        // Settings' "Teleport to Wilderness Chunk Lab" button (see
+        // regenerateWildernessLab/teleportToWildernessLab in dev-spawner.js).
+        // Where the Testing Arena is a hand-authored empty room, this zone
+        // runs the SAME WildernessMapGenerator -> TerrainPreview ->
+        // _zoneLayouts -> buildZoneScene -> WildernessChunks pipeline every
+        // real wilderness zone uses, just sized down to a handful of 16-tile
+        // chunks instead of a full 200x200 zone -- small enough to isolate
+        // whether a perf/resource-leak issue lives in per-chunk terrain and
+        // foliage generation itself, and to give the existing "Show Chunk
+        // Grid"/"Audit Loaded Chunks" debug tools plus the Performance
+        // Profiler's live GPU geometry/texture counts something cheap and
+        // reproducible to check across a regenerate for whatever shouldn't
+        // survive a chunk unload/rebuild. cols/rows below are only the
+        // placeholder shown before the first regenerateWildernessLab() call
+        // replaces them via _zoneLayouts. No packSpecies/herbivoreSpecies
+        // pool, same as map_dev_arena, so it never spawns ambient wildlife or
+        // bandit camps on its own.
+        map_wilderness_lab: {
+          label: 'Wilderness Chunk Lab',
+          cols: 16, rows: 16,
+          groundColor: 0x556b4a, fogColor: 0x2a332a,
+          entryCol: 8, entryRow: 8,
+          exitCol: 1, exitRow: 1,
+          townReturnCol: 30, townReturnRow: 2,
+          audioIndex: 'general',
+        },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
@@ -7472,13 +7499,40 @@
       // gets a fresh read.
       let _worldLivestockFrameCache = null;
       function _loadWorldLivestock() {
-        if (_worldLivestockFrameCache) return _worldLivestockFrameCache;
+        if (_worldLivestockFrameCache) {
+          // A real DevTools recording named this whole function 682.9ms/11%
+          // self time despite the save blob measuring only ~91KB (far too
+          // small on its own to explain that), and an audit of every caller
+          // found no redundant repeated-in-a-loop calls. The remaining
+          // unknown is simply HOW OFTEN this runs the real parse below vs.
+          // hitting the cache -- this pair of counters answers that
+          // directly instead of guessing further.
+          window.PerfProfiler?.record('_loadWorldLivestock: cache hit', 0);
+          return _worldLivestockFrameCache;
+        }
         const worldId = _tothalWorldId();
         if (!worldId) return [];
+        const parseStart = performance.now();
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
           return (meta?.worlds || []).find(w => w.id === worldId)?.livestock ?? [];
         } catch { return []; }
+        finally {
+          window.PerfProfiler?.record('_loadWorldLivestock: parse+find (cache miss)', performance.now() - parseStart);
+          // Neither the trough/computeActionButtons theory nor blob size
+          // panned out (2255+ misses recorded even while nowhere near a
+          // barn), so rather than keep guessing from call-site tracing,
+          // find the real caller directly: frame 0 of the stack is the
+          // literal string "Error", frame 1 is this function itself, so
+          // frame 2 is whoever actually called it.
+          if (window.PerfProfiler) {
+            const stack = new Error().stack || '';
+            const line = stack.split('\n')[2] || '';
+            const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
+            const callerLabel = match ? `${match[1]}:${match[2]}` : (line.trim().slice(0, 60) || 'unknown caller');
+            window.PerfProfiler.record('_loadWorldLivestock miss caller: ' + callerLabel, 0);
+          }
+        }
       }
 
       function _saveWorldLivestock(list) {
@@ -8191,6 +8245,70 @@
           .finally(() => { _tothalShiftPromise = null; });
       }
       window.forceTothalShift = () => checkTothalShift(true);
+
+      // ── Wilderness Chunk Lab ──────────────────────────────────────────
+      // Runs the exact generation pipeline performTothalShift uses for a
+      // real zone (WildernessMapGenerator.generateWorkspace ->
+      // TerrainPreview.buildMergedZoneGrid -> a _zoneLayouts entry
+      // buildZoneScene can consume), but against map_wilderness_lab and
+      // sized to just a few WildernessChunks.constants.CHUNK_TILES-wide
+      // chunks instead of a full zone -- see that mapId's EXTERIOR_ZONES
+      // comment for why this exists. A fresh random seed every call, so
+      // repeated regeneration (see dev-spawner.js's
+      // regenerateWildernessLabInPlace) gives a new layout each time rather
+      // than rebuilding the same one, the way a real Tothal Shift would for
+      // a new year.
+      function regenerateWildernessLab(chunksPerSide = 1, seedOverride = null) {
+        if (typeof WildernessMapGenerator === 'undefined' || typeof TerrainPreview === 'undefined') {
+          debugLog('[wilderness-lab] generator not loaded', 'warn');
+          return false;
+        }
+        const mapId = 'map_wilderness_lab';
+        const chunkTiles = window.WildernessChunks?.constants?.CHUNK_TILES || 16;
+        const exportScale = 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
+        const side = Math.max(1, Math.min(8, Math.round(Number(chunksPerSide) || 1)));
+        const internalSize = Math.max(4, Math.round((side * chunkTiles) / exportScale));
+        // seedOverride lets a caller (see window.__regenerateWildernessLab from
+        // devtools) regenerate the SAME layout repeatedly instead of a fresh
+        // random one each time -- the only way to tell a real per-cycle
+        // resource leak apart from an ever-growing cache that's simply keyed
+        // on each regenerate's distinct generated content.
+        const seed = seedOverride || `wilderness_lab_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6)}`;
+        let workspace, merged;
+        try {
+          // Reuses map_northern_cliffs' terrain preset/boundary settings so
+          // the lab's terrain is representative of a real zone's generated
+          // plateaus/cliffs rather than the flatter 'custom' default.
+          workspace = WildernessMapGenerator.generateWorkspace(seed, {
+            width: internalSize, height: internalSize,
+            entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
+          });
+          merged = TerrainPreview.buildMergedZoneGrid(workspace, workspace.maps[0].id);
+        } catch (e) {
+          debugLog(`[wilderness-lab] generation failed: ${e.message}`, 'warn');
+          return false;
+        }
+        if (!merged) { debugLog('[wilderness-lab] no fold math available', 'warn'); return false; }
+        _zoneLayouts.set(mapId, {
+          cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
+          transitions: [], toTownExit: workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row } : null,
+          mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+          dens: workspace.animalDens || [], rootTotems: workspace.rootTotems || [],
+          foliagePatches: workspace.foliagePatches || [], wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
+          ambushStations: workspace.ambushStations || [], localeInstances: [],
+        });
+        if (EXTERIOR_ZONES[mapId] && workspace.entry) {
+          EXTERIOR_ZONES[mapId].entryCol = workspace.entry.col;
+          EXTERIOR_ZONES[mapId].entryRow = workspace.entry.row;
+        }
+        window.WildlifeSpawn?.forgetZoneDenState(mapId);
+        window.BanditCamps?.forgetZoneState(mapId);
+        if (currentArea === mapId) _dirtyZoneScenes.add(mapId);
+        else _disposeZoneScene(mapId);
+        debugLog(`[wilderness-lab] generated ${side}x${side} chunk(s) (${merged.cols}x${merged.rows} tiles), seed ${seed}`);
+        return true;
+      }
+      window.__regenerateWildernessLab = regenerateWildernessLab; // Console/QA hook, mirrors window.forceTothalShift.
 
       // Wilderness fog-of-war, discovered-locale tracking, waypoints, and
       // full-screen Map panel rendering now live in
@@ -11110,7 +11228,7 @@
               if (isVisibleArea) {
                 this._updateStationWander(target, dt);
                 const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-                root.position.y += (wty - root.position.y) * 0.2;
+                root.position.y += (wty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap: same catch-up feel at any dt, not just one frame's worth per call.
                 if (this._moveSpeedTiles > 0.05) {
                   const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
                   root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
@@ -11127,7 +11245,7 @@
                 root.position.z = seatTransform.z;
                 const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
                 const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32;
-                root.position.y += (groundY + seatSink - root.position.y) * 0.18;
+                root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
                 root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
@@ -11253,7 +11371,7 @@
             }
             if (this.state === 'breakoff') this.state = 'idle';
             const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-            root.position.y += (ty - root.position.y) * 0.2;
+            root.position.y += (ty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap.
             // Bob animation when moving — mirrors the player's own
             // effort-based move bob (updateMovement): amplitude ramps from
             // the calm-walking baseline up to the full-effort peak as this
@@ -17895,6 +18013,13 @@
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
       threeContainer.appendChild(renderer.domElement);
+      // Direct handoff for js/performance-debug.js's installRendererProfiler(),
+      // which patches this exact instance rather than THREE.WebGLRenderer's
+      // prototype — several other modules (avatar-preview-scene.js,
+      // farm-panel-core.js, the character creator) construct their own
+      // separate renderers too, and this is the one gameplay actually renders
+      // through every frame.
+      window.__hobunjiGameRenderer = renderer;
 
       // ── Interior scene (bigger-on-the-inside room) ────────────────
       const interiorScene = new THREE.Scene();
@@ -19377,103 +19502,19 @@
         if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) window.ZoneRegrowth.refreshZoneGroundVisuals(mapId);
       }
 
-      // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
-      // ground/cliff meshes — same emissive-floor treatment as floorMat (see
-      // TILE_EMISSIVE_FLOOR above) so a textured tile doesn't read as a solid
-      // black blob at night/in storms the way an untreated MeshLambertMaterial
-      // would. Unlike loadHousePieceFaceTexture (which bakes its tile size
-      // into each face's own UV, since a furniture part's geometry is built
-      // once for one fixed material), ground meshes get their UV for free
-      // from _mergeTileGeos/the world-space UV added to each standalone
-      // heightfield builder below — plain world-unit (X,Z) coordinates — so
-      // tileSize here just scales texture.repeat instead; that also means
-      // the exact same merged geometry keeps working if the override's
-      // tileSize is ever changed, no geometry rebuild required.
-      // fillColor, when given, recolors the PNG's visible pixels to that
-      // target hex using the same adaptive luminance-preserving shade fill
-      // as portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
-      // loaded before this file) — keeps the texture's own shading/grain
-      // instead of showing the raw PNG albedo untouched.
-      // stretch, when given as [worldWidth, worldHeight], fits the whole PNG
-      // once across that world-unit span instead of tiling it (the preview
-      // tool's "stretch to bounds" mode) — since this ground UV is already
-      // raw world (X,Z) in 1-unit-per-tile units (see the comment above),
-      // that span is simply the map's own tile footprint, so this is just a
-      // texture.repeat change, no geometry/UV rebuild needed. Overrides
-      // tileSize when present.
-      // unlit, when true, builds a MeshBasicMaterial (see unlitFloorMat)
-      // instead of the usual lit MeshLambertMaterial — used for grass so its
-      // textured ground override reads at one consistent brightness like the
-      // base tileMats.grass does, instead of dimming at night/in storms.
-      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor, stretch, unlit) {
-        const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
-        const mat = unlit
-          ? new THREE.MeshBasicMaterial({ color: col })
-          : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
-        new THREE.TextureLoader().load(path, (tex) => {
-          let finalTex = tex;
-          const rgb = fillColor && parseHexColor(fillColor);
-          if (rgb) {
-            const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
-              mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
-            });
-            finalTex = new THREE.CanvasTexture(canvas);
-          }
-          finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
-          if (Array.isArray(stretch) && stretch.length === 2) {
-            finalTex.repeat.set(1 / Math.max(0.05, stretch[0]), 1 / Math.max(0.05, stretch[1]));
-          } else {
-            const ts = Math.max(0.05, tileSize || 1);
-            finalTex.repeat.set(1 / ts, 1 / ts);
-          }
-          mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
-        }, undefined, () => {});
-        return mat;
-      }
-
-      const _mapTileMatCache = new Map(); // "mapId,tileMatsKey" -> THREE.Material
-      window.HobunjiCacheAudit?.register('game.mapTileMatCache', () => _mapTileMatCache.size);
-      function resolveTileMat(mapId, matKey) {
-        const base = tileMats[matKey] || tileMats.grass;
-        // '*' is a wildcard entry — applies to any map with no entry of its own
-        // (every wilderness zone, without having to list each zone's mapId),
-        // overridden by a map-specific entry (town/farm) when one exists.
-        const override = _terrainMaterialConfig.byMap?.[mapId]?.[matKey] || _terrainMaterialConfig.byMap?.['*']?.[matKey];
-        if (!override?.texture) return base;
-        const cacheKey = mapId + ',' + matKey;
-        let mat = _mapTileMatCache.get(cacheKey);
-        if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch, matKey === TileType.GRASS);
-          _mapTileMatCache.set(cacheKey, mat);
-        }
-        return mat;
-      }
-
-      // Steep-cliff "stone skin" overlay material — same role as tileMats.rock
-      // but for the standalone heightfield cliff-face meshes (plateau mesas,
-      // farm/town border terrain — see buildZoneBorderTerrain/buildBorderTerrain/
-      // buildTownBorderTerrain), which never went through tileMats at all
-      // before this. Overridden via the 'cliff' key in terrain-materials.json,
-      // independent of 'rock' so a map can texture ore-bearing rock tiles
-      // differently from its distant cliff faces.
-      const _defaultCliffMat = new THREE.MeshLambertMaterial({
-        color: 0x6a6460, side: THREE.DoubleSide,
-        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+      // loadTerrainTileTexture/resolveTileMat/resolveCliffMat now live in
+      // js/terrain-tile-materials.js — call via window.TerrainTileMaterials.*.
+      // tileMats/TILE_EMISSIVE_FLOOR/_terrainMaterialConfig stay here (used
+      // elsewhere in this file too); threaded in below via init(deps).
+      window.TerrainTileMaterials.init({
+        TILE_EMISSIVE_FLOOR,
+        tileMats,
+        TileType,
+        getTerrainMaterialConfig: () => _terrainMaterialConfig,
       });
-      const _mapCliffMatCache = new Map(); // mapId -> THREE.Material
-      window.HobunjiCacheAudit?.register('game.mapCliffMatCache', () => _mapCliffMatCache.size);
-      function resolveCliffMat(mapId) {
-        const override = _terrainMaterialConfig.byMap?.[mapId]?.cliff || _terrainMaterialConfig.byMap?.['*']?.cliff;
-        if (!override?.texture) return _defaultCliffMat;
-        let mat = _mapCliffMatCache.get(mapId);
-        if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, _defaultCliffMat.color.getHex(), override.tileSize, override.fillColor, override.stretch);
-          mat.side = THREE.DoubleSide;
-          mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
-          _mapCliffMatCache.set(mapId, mat);
-        }
-        return mat;
-      }
+      const loadTerrainTileTexture = window.TerrainTileMaterials.loadTerrainTileTexture;
+      const resolveTileMat = window.TerrainTileMaterials.resolveTileMat;
+      const resolveCliffMat = window.TerrainTileMaterials.resolveCliffMat;
 
       // Fixed per-terrain-type ID colours feeding the same material-ID-seam
       // outline used for furniture (see _markFurnitureEdgeId), generalized to
@@ -19572,7 +19613,7 @@
           float baseAlpha = uDepth;  // opacity = depth fraction exactly
 
           vec3 surfaceColor = mix(uColor, vec3(0.85, 0.96, 1.0), effect * 0.55);
-          float finalAlpha  = window.FormatUtils.clamp(baseAlpha + detailAlpha, 0.0, 0.92);
+          float finalAlpha  = clamp(baseAlpha + detailAlpha, 0.0, 0.92);
 
           gl_FragColor = vec4(surfaceColor, finalAlpha);
         }
@@ -21414,9 +21455,15 @@
         // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
         // or a climbing hop's bounce, see player.climbHopBounce)
         const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
-        playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
-        playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
-        playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
+        // Exponential catch-up scaled by dt so the player mesh converges on its
+        // logical (wx, wz, targetY) target at the same real-time rate whether
+        // the frame budget is 8ms or 40ms — a plain per-frame `* 0.25` would
+        // visibly snap faster the instant the framerate jumps.
+        const _playerMeshSmoothXZ = 1 - Math.exp(-17.3 * dt);
+        const _playerMeshSmoothY  = 1 - Math.exp(-11.9 * dt);
+        playerMesh.position.x += (wx - playerMesh.position.x) * _playerMeshSmoothXZ;
+        playerMesh.position.z += (wz - playerMesh.position.z) * _playerMeshSmoothXZ;
+        playerMesh.position.y += (targetY - playerMesh.position.y) * _playerMeshSmoothY;
         // updateMountRide has already written the carrier's final smoothed
         // mesh transform this frame. In steady riding, use that exact render
         // position so rider and mount cannot trail each other through two
@@ -22265,6 +22312,13 @@
       });
 
       function gameLoop(now) {
+        // Brackets the ENTIRE function so 'frame ms' (measured independently by
+        // performance-debug.js's own rAF loop, i.e. real wall-clock time between
+        // one gameLoop call and the next) minus this bucket's average tells us
+        // directly how much per-frame time -- if any -- is being spent outside
+        // gameLoop's own call graph entirely (other requestAnimationFrame loops,
+        // MutationObserver callbacks, GC, etc.) rather than in anything below.
+        const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
         gameFrameSerial++;
@@ -22272,10 +22326,12 @@
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
           renderer.render(scene, camera);
+          window.PerfProfiler?.end(gameLoopTotalPerf);
           requestAnimationFrame(gameLoop);
           return;
         }
 
+        const prePausePerf = window.PerfProfiler?.begin('popups+music'); // Runs even while paused, so kept separate from the gated gameplay buckets below.
         worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
@@ -22289,19 +22345,23 @@
         window.Music?.updateAmbientCues();
         window.Music?.updateLyreDucking();
         window.Music?.logAudioTickDiagnostics();
+        window.PerfProfiler?.end(prePausePerf);
 
         if (!paused) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
+          const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
           pollControllerInput();
           applyControllerCameraLook(dt);
           updateMeleeAutoTarget(dt);
           updateMovement(dt);
+          window.PerfProfiler?.end(inputPerf);
           const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
           window.WildernessChunks?.update(dt);
           window.PerfProfiler?.end(wildernessChunkPerf);
+          const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
           window.PlayerVitals.updatePlayerVitals(dt);
@@ -22309,12 +22369,14 @@
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
+          window.PerfProfiler?.end(worldSystemsPerf);
 
           // Active companions and shoulder pets follow the player through
           // every playable interior. A building still loading has no real
           // destination scene yet, so wait behind the existing black scene
           // transition rather than spawning a follower into `scene`'s
           // fallback and leaving it there after the building finishes.
+          const companionPerf = window.PerfProfiler?.begin('companions+mounts');
           const companionSceneReady = !_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea); // Gates indoor follower scene attachment.
           if (companionSceneReady) {
             syncCompanionFromWhistle();
@@ -22323,16 +22385,19 @@
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
           window.Mounts?.updateMountRide(dt);
+          window.PerfProfiler?.end(companionPerf);
 
           // Dev Testing Switchbox "NPC & Creature AI" switch: freezes wildlife/
           // bandit AI, spawning, and corpse cleanup along with the NPC walker
           // schedules gated in updateNpcWalkers above.
           if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
             if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
+              const spawnPerf = window.PerfProfiler?.begin('bandit+wildlife spawn'); // Separate from 'hostiles' below, which only covers already-spawned AI ticking.
               window.BanditCamps.updateCompanionPerception(dt);
               window.BanditCamps.updateRandomEncounters(dt);
               window.BanditCamps.updateCampBanners(dt);
               window.WildlifeSpawn.updateHostileSpawning(dt);
+              window.PerfProfiler?.end(spawnPerf);
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
@@ -22347,6 +22412,7 @@
             }
           }
 
+          const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
           window.DenNestSystem.updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
@@ -22385,6 +22451,7 @@
             }
             window.WeatherFX.spawnRipples();
           }
+          window.PerfProfiler?.end(miscGameplayPerf);
         }
 
         // ── Camera smooth follow ─────────────────────────────────
@@ -22487,6 +22554,7 @@
 
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
         // (opacity and, while a tree is actually blocking, depthWrite).
+        const vegCullPerf = window.PerfProfiler?.begin('vegetation+path culling'); // Isolates the throttled-but-potentially-bulk culling passes below from the per-frame work around them.
         _vegCullAccum += dt;
         if (_vegCullAccum >= 0.14) {
           const force = _vegCullAccum >= 900; // first tick after script load
@@ -22504,8 +22572,10 @@
           _pathBrickCullAccum = 0;
           window.TerrainGeometry.updatePathBrickCulling(currentArea, force);
         }
+        window.PerfProfiler?.end(vegCullPerf);
 
         // ── Three.js updates ─────────────────────────────────────
+        const meshUpdatePerf = window.PerfProfiler?.begin('mesh+visual updates'); // Everything below through the rain/cloud-forest fog update, ahead of the actual render() call.
         updatePlayerMesh(dt);
         updateLungeTrailStamps(dt);
         if (!paused) {
@@ -22570,7 +22640,7 @@
               } else {
                 proximityStr = windStrBase;
               }
-              vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * 0.15;
+              vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * (1 - Math.exp(-9.8 * dt)); // Framerate-independent wind-strength catch-up.
             }
           }
           const windScale = windStrBase / 0.03;
@@ -22604,37 +22674,50 @@
         // Constant-cost world rain: three UV/yaw updates regardless of density.
         window.RainPlanes?.update(dt);
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
+        window.PerfProfiler?.end(meshUpdatePerf);
 
         // ── Render active scene ──────────────────────────────────
+        // "Render CPU" in the overlay only shows the average cost of a single
+        // renderer.render() call; s_outlines below can chain up to 6 of them
+        // in one frame, so this bucket captures the true per-frame total.
+        const renderPassPerf = window.PerfProfiler?.begin('render passes');
         const activeScene = window.GridTileAccessors.getActiveScene();
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
           // composite below can read real per-pixel depth afterwards —
           // rendering straight to the canvas would lose that depth buffer
           // the moment the fullscreen composite quad overwrites it.
+          const rpMainPerf = window.PerfProfiler?.begin('render: main scene');
           renderer.setRenderTarget(_mainRT);
           renderer.render(activeScene, camera);
+          window.PerfProfiler?.end(rpMainPerf);
 
           // Preserve the colour/depth result while PNG silhouettes add only
           // the missing occlusion depth needed by both outline systems.
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
+          const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
           _renderPngPlaneOutlineOccluderDepth(activeScene);
+          window.PerfProfiler?.end(rpPngOccluderPerf);
 
           // Selective shell outline pass (layer-1 objects only)
+          const rpShellPerf = window.PerfProfiler?.begin('render: shell outline');
           activeScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
           renderer.render(activeScene, camera);
           camera.layers.enableAll();
           activeScene.overrideMaterial = null;
+          window.PerfProfiler?.end(rpShellPerf);
 
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
           if (_targetOutlineMeshes.length > 0) {
+            const rpTargetPerf = window.PerfProfiler?.begin('render: target outline');
             scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
             camera.layers.set(2);
             renderer.render(scene, camera);
             camera.layers.enableAll();
             scene.overrideMaterial = null;
+            window.PerfProfiler?.end(rpTargetPerf);
           }
 
           // Redraw Cloud Forest mist (layer 5, see cloud-forest-fog.js) over
@@ -22646,9 +22729,11 @@
           // haze around it. depthTest still applies, so this correctly
           // leaves outlines on anything nearer than the mist untouched.
           if (s_cloudForestFog) {
+            const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
             camera.layers.set(5);
             renderer.render(activeScene, camera);
             camera.layers.enableAll();
+            window.PerfProfiler?.end(rpMistPerf);
           }
           renderer.autoClearColor = true;
           renderer.autoClearDepth = true;
@@ -22659,6 +22744,7 @@
           // composite's uSeamOutlinesOn uniform also zeroes its contribution
           // regardless, so leaving _edgeIdRT's contents stale here is safe.
           if (s_furnitureSeamOutlines) {
+            const rpSeamPerf = window.PerfProfiler?.begin('render: furniture seam');
             renderer.setRenderTarget(_edgeIdRT);
             renderer.setClearColor(0x000000, 0);
             renderer.clear(true, true, false);
@@ -22667,6 +22753,7 @@
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
             camera.layers.enableAll();
+            window.PerfProfiler?.end(rpSeamPerf);
           }
 
           // Depth-only source for the depth-edge detector, PNG-plane avatars
@@ -22677,6 +22764,7 @@
           // Opt-in/off by default since it's an extra full scene pass on top
           // of everything above.
           if (s_depthOutlines) {
+            const rpDepthPerf = window.PerfProfiler?.begin('render: depth outline'); // Also does a full activeScene.traverse() every frame, same concern as the png occluder pass above.
             const _hiddenForDepthPass = [];
             activeScene.traverse(o => {
               if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
@@ -22689,10 +22777,12 @@
             renderer.render(activeScene, camera);
             activeScene.overrideMaterial = null;
             _hiddenForDepthPass.forEach(o => { o.visible = true; });
+            window.PerfProfiler?.end(rpDepthPerf);
           }
 
           // Composite: blend depth-discontinuity + furniture material-seam
           // outlines over the rendered scene, straight to the canvas.
+          const rpCompositePerf = window.PerfProfiler?.begin('render: composite');
           renderer.setRenderTarget(null);
           _postMat.uniforms.tColor.value          = _mainRT.texture;
           _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
@@ -22705,6 +22795,7 @@
           _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
           _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
           renderer.render(_postScene, _postCamera);
+          window.PerfProfiler?.end(rpCompositePerf);
         } else {
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
@@ -22721,13 +22812,24 @@
             renderer.autoClearDepth = true;
           }
         }
+        window.PerfProfiler?.end(renderPassPerf);
+        // Optional diagnostic hook (off by default, see performance-debug.js):
+        // everything timed above only measures how long the CPU took to
+        // *issue* this frame's draw calls, not how long the GPU actually
+        // took to execute them. A forced readback here blocks until the GPU
+        // has really finished, so toggling this on can reveal GPU-bound
+        // frame time that's otherwise invisible to CPU-side profiling.
+        window.__hobunjiGpuSyncDiagnostic?.(renderer);
 
         // ── 2D overlays (combat/debug/lightning, plus lighting) ──
+        const overlayPerf = window.PerfProfiler?.begin('overlays+hud');
         drawOverlays();
         window.WeatherFX.drawLightingOverlay();
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         window.HudUpdate.updateHud();
+        window.PerfProfiler?.end(overlayPerf);
+        window.PerfProfiler?.end(gameLoopTotalPerf);
         requestAnimationFrame(gameLoop);
       }
 
@@ -23034,7 +23136,34 @@
       const _climbPromptAnchor = new THREE.Object3D();
       _climbPromptAnchor.name = 'climb_prompt_anchor';
 
+      // A real DevTools recording plus direct instrumentation found
+      // _loadWorldLivestock() (called by troughFurniture's getButtons()
+      // among others) falling through to a real, uncached parse 2417 times
+      // in one profiling window, despite the save blob being tiny (~91KB)
+      // and every caller across the 5 livestock gameplay files already
+      // calling it once and reusing the result -- ruling both of those out.
+      // refreshActionBar() (just below) calls obj.getButtons(reticle) a
+      // SECOND time on the same object computeActionButtons() already
+      // called it on internally (once to build the button list, once again
+      // to compute objectActionIds) on every single invocation, and
+      // computeActionButtons()'s own DOM-side caching (_lastBarKey) only
+      // skips the DOM update, not this recomputation -- so if refreshActionBar
+      // runs every frame (very plausible for reticle-following UI) while
+      // the player stands near a trough, that's two full recomputations
+      // (each rebuilding the trough's button list, each re-parsing the
+      // livestock save data) every frame for as long as the reticle sits on
+      // it. This wrapper measures computeActionButtons()'s own real call
+      // frequency directly instead of guessing further from a 40+-call-site
+      // trace through the file.
       function computeActionButtons() {
+        const _cabStart = performance.now();
+        try {
+          return computeActionButtonsImpl();
+        } finally {
+          window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
+        }
+      }
+      function computeActionButtonsImpl() {
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
@@ -25175,6 +25304,13 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // window.PerfProfiler?.measure(name, fn) would skip calling fn
+          // entirely (not just the timing) if PerfProfiler were ever
+          // undefined, since optional chaining short-circuits the whole
+          // call -- unlike every other PerfProfiler use in this file, fn
+          // here IS this handler's real mouse-look/aim logic, so it must
+          // always run regardless of whether the profiler is present.
+          const run = () => {
           // A missing right-button up can still be proven by the buttons
           // bitmask on the next real mouse event. End the owned hold before
           // camera-look or aiming gets a chance to use that event.
@@ -25263,6 +25399,9 @@
               lastMouseMoveTime = performance.now();
             }
           }
+          };
+          if (window.PerfProfiler) window.PerfProfiler.measure('event: mousemove (camera-look/aim)', run);
+          else run();
         });
       }
       // ── Furniture placer pointer handler ───────────────────────────
@@ -25933,6 +26072,21 @@
         xAxis: _xAxis,
         zAxis: _zAxis,
         getCurrentArea: () => currentArea,
+        // PorakanekiCamps captures this same deps bundle (see its
+        // installBanditCombat) and needs these to ever build zone/chief
+        // camp state at all -- without zoneLayouts, ensureZoneState can
+        // never find a wilderness map to stamp a camp into, so the whole
+        // camp network (including the always-visible chief marker) silently
+        // never populates.
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        TileType,
+        WATERWAY_TYPES,
+        EXTERIOR_ZONES,
+        markOutline: _markOutline,
+        showToast,
+        player,
+        calendar,
       });
 
       window.CreatureGenetics?.init({ clamp: window.FormatUtils.clamp, CREATURE_DB });
@@ -26399,6 +26553,7 @@
         getRainPlaneSettings: window.RainPlanes.getSettings,
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
+        regenerateWildernessLab,
       });
 
       window.MapLivePreviewRuntime?.init({
@@ -26817,6 +26972,13 @@
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         TILE,
         angleDiff,
+        showToast,
+      });
+
+      window.WildernessAiSnapshot?.init({
+        npcWalkers,
+        hostileObjects,
+        TILE,
         showToast,
       });
 

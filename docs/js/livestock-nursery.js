@@ -84,6 +84,20 @@
   }
 
   function currentLivestock() {
+    // This one line alone accounted for ~1761 of _loadWorldLivestock's 2417
+    // real (uncached) parses in one profiling window -- far more than any
+    // other caller found across the whole codebase. There are ~20 call
+    // sites for currentLivestock()/babies()/adults() in this file and none
+    // is an obvious per-frame loop on inspection, so rather than keep
+    // auditing them one at a time, tally the REAL caller directly the same
+    // way _loadWorldLivestock's own callers were found.
+    if (window.PerfProfiler) {
+      const stack = new Error().stack || '';
+      const line = stack.split('\n')[2] || '';
+      const match = line.match(/([\w-]+\.js)(?:\?[^:()\s]*)?:(\d+):(\d+)/);
+      const callerLabel = match ? `${match[1]}:${match[2]}` : (line.trim().slice(0, 60) || 'unknown caller');
+      window.PerfProfiler.record('currentLivestock miss caller: ' + callerLabel, 0);
+    }
     return animalDeps?.loadWorldLivestock?.() || [];
   }
 
@@ -828,6 +842,22 @@
 
   function decoratePanelNow() {
     if (panelDecorating || typeof document === 'undefined') return;
+    // installPanelObserver watches the WHOLE document.body subtree for any
+    // mutation at all, so this fires on essentially every HUD/UI update in
+    // the game, not just ones inside the Farm panel. Both #farmLivestockList
+    // and #farmBuildingsList only exist inside the Farm tab's .mp-pane,
+    // which -- like every other menu pane in this game -- stays mounted in
+    // the DOM while closed rather than being removed, so without this check
+    // decoratePanelNow() ran its full rebuild (including a real,
+    // uncached save-blob parse via currentLivestock()) on every one of those
+    // mutations for as long as the game was open, regardless of whether the
+    // player had the Farm tab open at all. Found via direct call-frequency
+    // instrumentation: thousands of calls even while sitting completely idle
+    // away from any menu. classList checks here are cheap (no forced
+    // layout), unlike a getBoundingClientRect()/getComputedStyle() check.
+    const menuOpen = document.getElementById('menuPanel')?.classList.contains('open');
+    const farmPaneActive = document.getElementById('mpFarm')?.classList.contains('active');
+    if (!menuOpen || !farmPaneActive) return;
     panelDecorating = true;
     panelObserver?.disconnect();
     try {

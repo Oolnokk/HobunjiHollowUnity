@@ -456,10 +456,14 @@
       // the held planes and classified ground cover. Color is untouched.
       renderer.clearDepth();
       const hidden = hideObjects([...ground, ...held]);
+      const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep'); // Full scene.traverseVisible() every frame this runs -- see prepareNonGroundDepthMaterials.
       const depthMaterialStates = prepareNonGroundDepthMaterials(scene);
+      window.PerfProfiler?.end(prepPerf);
       try {
         camera.layers.mask = originalCameraMask;
+        const depthRebuildPerf = window.PerfProfiler?.begin('held-overlay: depth rebuild render');
         rawRender.call(renderer, scene, camera);
+        window.PerfProfiler?.end(depthRebuildPerf);
         nonGroundDepthReplayCount++;
       } finally {
         restoreMaterialStates(depthMaterialStates);
@@ -470,7 +474,9 @@
       // is the actual selective x-ray: ground is absent from the depth buffer,
       // but all position-based ordinary occluders remain.
       camera.layers.mask = HELD_OVERLAY_MASK;
+      const overlayDrawPerf = window.PerfProfiler?.begin('held-overlay: overlay render');
       rawRender.call(renderer, scene, camera);
+      window.PerfProfiler?.end(overlayDrawPerf);
       selectiveOverlayCount++;
 
       // 3) Put authored ground depth back without touching color. The outline
@@ -479,7 +485,9 @@
       const groundMaterialStates = prepareGroundDepthMaterials(ground);
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
+        const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
         rawRender.call(renderer, scene, camera);
+        window.PerfProfiler?.end(groundRestorePerf);
         groundDepthRestoreCount++;
       } finally {
         restoreMaterialStates(groundMaterialStates);
@@ -519,13 +527,17 @@
     // contains exactly one tool draw, with no doubled alpha/edge darkening.
     const heldVisibility = hideObjects(held);
     let result;
+    const basePerf = window.PerfProfiler?.begin('held-overlay: base render');
     try {
       result = originalRender.call(this, scene, camera);
     } finally {
+      window.PerfProfiler?.end(basePerf);
       restoreVisibility(heldVisibility);
     }
 
+    const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the three sub-passes above plus the depth-material-prep traversal; kept separate so it's directly comparable to held-overlay: base render.
     replaySelectiveHeldOverlay(this, scene, camera, held, ground, originalCameraMask);
+    window.PerfProfiler?.end(replayPerf);
     return result;
   }
 

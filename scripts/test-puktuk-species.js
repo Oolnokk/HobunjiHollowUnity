@@ -12,12 +12,12 @@ const cookingSource = read('docs/js/cooking-data.js'); // Confirms the existing 
 assert.match(geneticsSource, /puktuk:\s*\['belly', 'foxtail'\]/, 'Puktuk exposes the belly and foxtail pattern layers');
 assert.match(geneticsSource, /puktuk:\s*new Set\(\['belly'\]\)/, 'Puktuk belly is authored as always-present');
 assert.match(geneticsSource, /const PUKTUK_FOXTAIL_CHANCE = 0\.08/, 'Puktuk foxtail uses the rare 8% fresh-roll rate');
-assert.match(geneticsSource, /CREATURE_SIZE_PROFILE_ALIAS = \{ puktuk: 'gar-wolf' \}/, 'Puktuk reuses Gar-wolf size calibration without a render alias');
+assert.match(geneticsSource, /puktuk:\s*'gar-wolf'/, 'Puktuk reuses Gar-wolf size calibration without a render alias');
 assert.match(geneticsSource, /PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'/, 'Puktuk targets the Western Incline/Slope zone');
 assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*puktuk_run2\.png/, 'Puktuk base animation sprites are registered');
 assert.match(geneticsSource, /itemKey: 'puktukWool'[\s\S]*verb: 'Shear'/, 'Puktuk livestock production uses the existing wool item');
 assert.deepEqual(loot.pools?.creature_puktuk?.entries?.map(entry => entry.itemKey), ['puktukMeat'], 'Puktuk has its own meat drop pool');
-assert.match(cookingSource, /"puktukWool"\s*:\s*\{[\s\S]*?"name"\s*:\s*"Puktuk Wool"[\s\S]*?"Heavy"/, 'Puktuk Wool remains tagged Heavy');
+assert.match(cookingSource, /"puktukWool"\s*:\s*\{[\s\S]*?"name"\s*:\s*"Puktuk Wool"[\s\S]*?"Heavy"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
 
 let rngState = 0x51f15e; // Used by deterministic Math.random so the rarity assertion cannot become flaky in CI.
 const seededMath = Object.create(Math); // Used by the VM runtime while retaining all native Math helpers.
@@ -90,7 +90,7 @@ assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.animalWidths.puktuk, 
 windowStub.CreatureGeneticsRender = { SPECIES: { grehlr: { patterns: [] } } }; // Supplies the real shared renderer registry that the module extends before game startup.
 let receivedWildlifeDeps = null; // Used to prove the wrapper still delegates to the original WildlifeSpawn.init with the same dependency object.
 windowStub.WildlifeSpawn = { init(injectedDeps) { receivedWildlifeDeps = injectedDeps; return 'ok'; } };
-assert.equal(typeof listeners.DOMContentLoaded, 'function', 'genetics module registered its pre-game install hook');
+assert.equal(typeof listeners.DOMContentLoaded, 'function', 'genetics module registered its pre-game DOMContentLoaded registration hook');
 listeners.DOMContentLoaded();
 assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGeneticsRender.SPECIES.puktuk.patterns)), ['belly', 'foxtail']);
 

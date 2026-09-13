@@ -10,6 +10,7 @@
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20260912pets2' },
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
+    { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260913xp1' },
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
@@ -27,6 +28,7 @@
         window.AnimalGrowth?.install?.();
         window.StableAnimalProgression?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
+        window.StableAnimalXpEvents?.install?.();
         window.BarnIncubator?.install?.();
         return;
       }
@@ -44,14 +46,16 @@
 
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
   // FarmPanel, while LivestockNursery/AnimalGrowth/StableAnimalProgression/
-  // StableAnimalTrainingRefinements/BarnIncubator all need the public farm APIs
-  // before game.js initializes them. Capture FarmPanel's one global assignment
-  // and install synchronously at that exact point; afterward FarmPanel is a
-  // normal writable global again, so there is no permanent proxy.
+  // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator all need
+  // the public farm APIs before game.js initializes them. Capture FarmPanel's
+  // one global assignment and install synchronously at that exact point;
+  // afterward FarmPanel is a normal writable global again, so there is no
+  // permanent proxy.
   const installNursery = () => window.LivestockNursery?.install?.();
   const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
   const installStableAnimalProgression = () => window.StableAnimalProgression?.install?.();
   const installStableAnimalTrainingRefinements = () => window.StableAnimalTrainingRefinements?.install?.();
+  const installStableAnimalXpEvents = () => window.StableAnimalXpEvents?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
 
   // The vegetation extraction currently has one ROCK fallback that can publish a
@@ -98,6 +102,7 @@
     installAnimalGrowth();
     installStableAnimalProgression();
     installStableAnimalTrainingRefinements();
+    installStableAnimalXpEvents();
     installBarnIncubator();
   };
 

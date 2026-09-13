@@ -107,6 +107,13 @@
     const requireFlat = (opts.requiresFlatGround ?? placement.requiresFlatGround) !== false;
     const clearableTypes = opts.clearableTypes || DEFAULT_CLEARABLE_TYPES;
     const minDistFromEntry = Math.max(0, Number(opts.minDistanceFromEntry ?? placement.minDistanceFromEntry) || 0);
+    // Generic keep-away list: [{ col, row, minDistance }, ...]. Nothing here
+    // knows or cares what the points represent (another system's camp
+    // center, a den mouth, whatever) -- it's the same "stay this far from
+    // this spot" idea minDistFromEntry already expresses for the zone entry,
+    // just for an arbitrary caller-supplied set of points instead of one
+    // fixed one.
+    const avoidPoints = Array.isArray(opts.avoidPoints) ? opts.avoidPoints : [];
     const w = bbox.w + clearance * 2, h = bbox.h + clearance * 2;
     if (w > zone.cols || h > zone.rows) return null;
 
@@ -123,6 +130,14 @@
       if (minDistFromEntry > 0 && zone.entry) {
         const dist = Math.hypot((c.x + w / 2) - zone.entry.x, (c.y + h / 2) - zone.entry.y);
         if (dist < minDistFromEntry) continue;
+      }
+      if (avoidPoints.length) {
+        const cx = c.x + w / 2, cy = c.y + h / 2;
+        const tooClose = avoidPoints.some(p => {
+          const minDistance = Number(p?.minDistance) || 0;
+          return minDistance > 0 && Math.hypot(cx - Number(p.col), cy - Number(p.row)) < minDistance;
+        });
+        if (tooClose) continue;
       }
       if (siteFits(zone, c.x, c.y, w, h, requireFlat, clearableTypes)) {
         return { x: c.x, y: c.y, w, h, clearance, bbox };
