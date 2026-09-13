@@ -17,6 +17,8 @@
     definition: null,
   }; // Query opt-in opens a direct Banubu test; the checkbox can enable it in any Lab session.
   let grehlrTexturePromise = null; // Actual Banubu/Grehlr idle sprite used by the live preview.
+  let lastWorkspace = null; // Latest rendered workspace lets the 2D authoring locator use the real placed locale instance.
+  let lastMerged = null; // Latest merged terrain dimensions map placed world coordinates onto the 2D canvas.
 
   function requestGenerate() {
     const button = document.getElementById('generateBtn');
@@ -60,7 +62,7 @@
       <summary>Banubu's Cave live preview</summary>
       <div class="card-body">
         <label style="display:flex;gap:6px;align-items:center"><input id="banubuCaveEnabled" type="checkbox" ${state.enabled ? 'checked' : ''} style="width:auto"> Place Banubu's Cave</label>
-        <div class="help" style="margin-top:6px">Uses the repo locale and real plateau carve. The cave mouth is rendered by <code>ZoneDenTotemFeatures.buildAnimalDenMeshes</code> — the same <code>cave_small.glb</code>, UVs, material, sink, shadow flags, and scale math used in-game. Banubu uses his Grehlr idle sprite.</div>
+        <div class="help" style="margin-top:6px">Uses the repo locale and real plateau carve. The cave mouth is rendered by <code>ZoneDenTotemFeatures.buildAnimalDenMeshes</code> — the same <code>cave_small.glb</code>, UVs, material, sink, shadow flags, and scale math used in-game. Banubu uses his Grehlr idle sprite. The 2D view adds only an authoring outline/label so the generated cave is easy to locate.</div>
         <div id="banubuCaveStatus" class="help" style="margin-top:6px">Loading locale…</div>
       </div>`;
     sidebar.appendChild(panel);
@@ -157,25 +159,77 @@
     ZoneFeatures.buildAnimalDenMeshes(scene, mergedZGrid(merged), [], LAB_CAVE_MAP_ID);
   }
 
+  function banubuInstance(workspace) {
+    return (workspace?.localeInstances || []).find(locale => locale?.localeId === BANUBU_LOCALE_ID) || null;
+  }
+
+  function banubuCaveObject(instance) {
+    return (instance?.objects || []).find(object => object?.key === 'cave_small') || null;
+  }
+
+  function draw2dLocator(workspace, merged) {
+    if (!state.enabled || !workspace || !merged) return;
+    const instance = banubuInstance(workspace);
+    const cave = banubuCaveObject(instance);
+    const canvas = document.getElementById('view2d');
+    if (!cave || !canvas || !merged.cols || !merged.rows) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const sx = canvas.width / merged.cols;
+    const sy = canvas.height / merged.rows;
+    const x = Number(cave.x) * sx;
+    const y = Number(cave.y) * sy;
+    const w = Math.max(1, Number(cave.w) || 1) * sx;
+    const h = Math.max(1, Number(cave.h) || 1) * sy;
+    const lineWidth = Math.max(2, Math.min(6, Math.min(sx, sy) * 1.2));
+    const fontSize = Math.max(12, Math.min(24, Math.round(Math.min(canvas.width, canvas.height) / 34)));
+    context.save();
+    context.strokeStyle = '#ffffff';
+    context.fillStyle = 'rgba(0,0,0,0.78)';
+    context.lineWidth = lineWidth;
+    context.strokeRect(x - lineWidth, y - lineWidth, w + lineWidth * 2, h + lineWidth * 2);
+    context.font = `700 ${fontSize}px system-ui, sans-serif`;
+    context.textBaseline = 'bottom';
+    const label = "Banubu's Cave";
+    const textWidth = context.measureText(label).width;
+    const pad = 4;
+    const labelX = Math.max(0, Math.min(canvas.width - textWidth - pad * 2, x + w * 0.5 - textWidth * 0.5 - pad));
+    const labelY = Math.max(fontSize + pad * 2, y - lineWidth - 3);
+    context.fillRect(labelX, labelY - fontSize - pad * 2, textWidth + pad * 2, fontSize + pad * 2);
+    context.fillStyle = '#ffffff';
+    context.fillText(label, labelX + pad, labelY - pad);
+    context.restore();
+  }
+
   const previousRenderWorkspace = Preview.renderWorkspace.bind(Preview);
   Preview.renderWorkspace = (workspace, rootId, winterSettings) => {
     const merged = previousRenderWorkspace(workspace, rootId, winterSettings);
+    lastWorkspace = workspace;
+    lastMerged = merged;
     if (state.enabled && state.definition) {
-      const instance = (workspace?.localeInstances || []).find(locale => locale?.localeId === BANUBU_LOCALE_ID);
+      const instance = banubuInstance(workspace);
       const scene = currentScene();
       if (instance && scene) {
         renderExactGameCave(scene, merged, workspace);
         renderBanubuNpc(scene, merged, instance);
       }
       const diagnostic = (workspace?.localeTerrainDiagnostics || []).find(item => item.localeId === BANUBU_LOCALE_ID);
+      const cave = banubuCaveObject(instance);
       updateStatus(diagnostic?.status === 'placed'
-        ? `Placed · ${diagnostic.valid} valid sites · floor tier ${diagnostic.selected?.floorTier ?? 0} · exact game cave renderer + Banubu visible`
+        ? `Placed · ${diagnostic.valid} valid sites · floor tier ${diagnostic.selected?.floorTier ?? 0} · cave @ ${cave?.x ?? '?'},${cave?.y ?? '?'} · Banubu @ ${instance?.npcAnchors?.find(anchor => anchor.npcId === 'banubu')?.x ?? '?'},${instance?.npcAnchors?.find(anchor => anchor.npcId === 'banubu')?.y ?? '?'} · exact game cave renderer active`
         : `No placement · ${diagnostic?.reason || 'no matching plateau host'}`);
     }
     return merged;
   };
 
+  const previousDraw2d = Preview.draw2d.bind(Preview);
+  Preview.draw2d = (...args) => {
+    const result = previousDraw2d(...args);
+    draw2dLocator(lastWorkspace, lastMerged); // Locator is authoring UI only; terrain underneath is the actual carved/stamped locale.
+    return result;
+  };
+
   installControls();
   loadDefinition();
-  console.log('[WildernessLab] Banubu Cave exact game-render path loaded');
+  console.log('[WildernessLab] Banubu Cave exact game-render path + 2D locator loaded');
 })();
