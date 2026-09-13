@@ -18,7 +18,8 @@
     ['river', 'River'],
     ['stream', 'Stream'],
     ['plateau', 'Plateau mass'],
-    ['plateauCliff', 'Plateau cliff edge'],
+    ['plateauCliff', 'Internal plateau cliff edge'],
+    ['boundaryCliff', 'Boundary cliff edge'],
     ['ground', 'Ground level'],
     ['free', 'Free/open terrain'],
   ];
@@ -220,7 +221,7 @@
         <button class="sec" type="button" data-terrain-mode="erase">⌫ Rule erase</button>
         <button class="sec" type="button" id="localeTerrainCavePreset">Cave preset</button>
       </div>
-      <div class="helpbox"><b>Probe</b> cells inspect wilderness without generating a locale tile. <b>Embedded</b> cells are still part of the locale footprint, but must overlap the selected host terrain; “carve” removes higher plateau volume down to the locale floor. The grid below mirrors the main footprint editor.</div>
+      <div class="helpbox"><b>Probe</b> cells inspect wilderness without generating a locale tile. <b>Plateau cliff</b> means an internal generated plateau face; <b>Boundary cliff</b> means the wilderness perimeter escarpment. <b>Embedded</b> cells are still part of the locale footprint, but must overlap the selected host terrain; “carve” removes higher plateau volume down to the locale floor. The grid below mirrors the main footprint editor.</div>
       <div class="g2">
         <div><label>Terrain</label><select id="localeTerrainKind">${terrainOptionsHtml()}</select></div>
         <div><label>Facing</label><select id="localeTerrainFacing"><option value="any">Any</option><option value="north">North</option><option value="east">East</option><option value="south">South</option><option value="west">West</option></select></div>

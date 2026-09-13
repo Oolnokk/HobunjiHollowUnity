@@ -109,7 +109,7 @@
 
   function normalizeProbe(raw, embedded) {
     const rule = {
-      terrain: ['any', 'water', 'river', 'stream', 'plateau', 'plateauCliff', 'ground', 'free'].includes(raw?.terrain) ? raw.terrain : (embedded ? 'plateau' : 'plateauCliff'),
+      terrain: ['any', 'water', 'river', 'stream', 'plateau', 'plateauCliff', 'boundaryCliff', 'ground', 'free'].includes(raw?.terrain) ? raw.terrain : (embedded ? 'plateau' : 'plateauCliff'),
       facing: ['any', 'north', 'east', 'south', 'west'].includes(raw?.facing) ? raw.facing : 'any',
       height: normalizeHeightRule(raw?.height),
     }; // Shared normalized constraint record used by candidate scoring and diagnostics.
@@ -164,17 +164,32 @@
     return WATER_TYPES.has(type) ? type : null;
   }
 
-  function cliffInfo(context, c, r) {
+  function isBoundaryCliffTile(tile) {
+    return !!(tile?.borderEscarpment || tile?.generatedBorderEscarpment || tile?.distantBoundaryLandscape); // Exported generator metadata distinguishes perimeter escarpments from ordinary plateau mass.
+  }
+
+  function cliffInfo(context, c, r, requestedKind = 'any', requestedFacing = 'any') {
+    const selfTile = tileRecord(context.root, c, r); // Boundary classification must inspect both sides of the height break, not only the sampled cell.
     const selfTier = tileTier(context, c, r); // Candidate cell tier anchors comparisons to its four orthogonal neighbors.
-    let best = null; // Largest local tier drop identifies the visually dominant plateau face/facing direction.
+    let best = null; // Largest matching local tier drop identifies the requested face/facing direction.
     for (const direction of CARDINAL) {
-      const neighborTier = tileTier(context, c + direction.dx, r + direction.dy); // Adjacent tier used to detect either side of a plateau cliff.
+      const neighborC = c + direction.dx;
+      const neighborR = r + direction.dy;
+      const neighborTile = tileRecord(context.root, neighborC, neighborR);
+      const neighborTier = tileTier(context, neighborC, neighborR); // Adjacent tier used to detect either side of a cliff.
+      const kind = (isBoundaryCliffTile(selfTile) || isBoundaryCliffTile(neighborTile)) ? 'boundary' : 'plateau'; // Any face touching exported boundary-escarpment terrain belongs to the wilderness perimeter, even when sampled from its low side.
+      if (requestedKind !== 'any' && kind !== requestedKind) continue;
       const drop = selfTier - neighborTier;
-      if (drop > 0.5 && (!best || drop > best.drop)) best = { drop, facing: direction.facing, highTier: selfTier, lowTier: neighborTier };
+      if (drop > 0.5) {
+        const faceFacing = direction.facing;
+        if (requestedFacing !== 'any' && faceFacing !== requestedFacing) continue;
+        if (!best || drop > best.drop) best = { drop, facing: faceFacing, highTier: selfTier, lowTier: neighborTier, kind };
+      }
       if (drop < -0.5) {
         const outwardFacing = CARDINAL.find(item => item.dx === -direction.dx && item.dy === -direction.dy)?.facing || 'any'; // Low-side cell still inherits the face direction pointing away from the higher neighbor.
+        if (requestedFacing !== 'any' && outwardFacing !== requestedFacing) continue;
         const inverseDrop = -drop;
-        if (!best || inverseDrop > best.drop) best = { drop: inverseDrop, facing: outwardFacing, highTier: neighborTier, lowTier: selfTier };
+        if (!best || inverseDrop > best.drop) best = { drop: inverseDrop, facing: outwardFacing, highTier: neighborTier, lowTier: selfTier, kind };
       }
     }
     return best;
@@ -191,16 +206,18 @@
       case 'river': return tile.type === 'river';
       case 'stream': return tile.type === 'stream';
       case 'plateau': return tier > 0.05 || !!tile.plateau;
-      case 'plateauCliff': return !!cliffInfo(context, c, r);
+      case 'plateauCliff': return !!cliffInfo(context, c, r, 'plateau');
+      case 'boundaryCliff': return !!cliffInfo(context, c, r, 'boundary');
       case 'ground': return tier <= 0.05 && !water;
       case 'free': return !water && tile.type !== 'ramp' && !tileGeneratedId(tile);
       default: return false;
     }
   }
 
-  function facingMatches(context, c, r, facing) {
+  function facingMatches(context, c, r, facing, terrain = 'any') {
     if (!facing || facing === 'any') return true;
-    return cliffInfo(context, c, r)?.facing === facing;
+    const requestedKind = terrain === 'plateauCliff' ? 'plateau' : terrain === 'boundaryCliff' ? 'boundary' : 'any'; // Facing must be read from the same cliff class that satisfied the terrain rule.
+    return !!cliffInfo(context, c, r, requestedKind, facing); // A corner may expose two equal faces, so ask for the authored direction instead of trusting one arbitrary dominant edge.
   }
 
   function heightMatches(rule, hostTier, localeFloorTier) {
@@ -214,7 +231,7 @@
 
   function constraintMatch(context, worldC, worldR, rule, localeFloorTier) {
     const terrain = terrainMatches(context, worldC, worldR, rule.terrain); // Terrain class match is the first/cheapest constraint gate.
-    const facing = terrain && facingMatches(context, worldC, worldR, rule.facing); // Facing matters primarily for plateau-cliff probes.
+    const facing = terrain && facingMatches(context, worldC, worldR, rule.facing, rule.terrain); // Facing is resolved inside the same plateau-vs-boundary cliff class as the terrain match.
     const hostTier = tileTier(context, worldC, worldR); // Resolved host tier is returned for diagnostics and embedded carve tests.
     const height = facing && heightMatches(rule, hostTier, localeFloorTier); // Height range is evaluated only after terrain/facing succeeded.
     return { matched: !!(terrain && facing && height), terrain, facing, height, hostTier };

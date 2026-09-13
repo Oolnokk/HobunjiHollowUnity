@@ -50,6 +50,22 @@ for (const [dc, dr] of [[2,0],[3,0],[2,1],[3,1]]) {
 assert.strictEqual(workspace.localeInstances[0].terrainAware, true);
 assert.strictEqual(workspace.localeInstances[0].connectors[0].x, anchorC);
 
+// Boundary escarpments and internal plateau cliffs are distinct terrain classes.
+const boundaryClassWorkspace = makeWorkspace();
+for (let r = 2; r <= 5; r++) {
+  const tile = boundaryClassWorkspace.maps[0].tiles[`6,${r}`];
+  tile.borderEscarpment = true;
+  tile.generatedBorderEscarpment = true;
+  tile.borderEscarpmentSide = 'west';
+}
+const plateauRuleOnBoundary = Placement.evaluateCandidateForTest(boundaryClassWorkspace, cave, 4, 2, { scale: 1, seed: 'boundary-class-test' });
+assert.strictEqual(plateauRuleOnBoundary.ok, false, 'plateauCliff must reject a wilderness boundary escarpment');
+const boundaryCave = JSON.parse(JSON.stringify(cave));
+boundaryCave.id = 'locale_test_boundary_cave';
+boundaryCave.terrainAnchors['2,0'].terrain = 'boundaryCliff';
+const boundaryRuleOnBoundary = Placement.evaluateCandidateForTest(boundaryClassWorkspace, boundaryCave, 4, 2, { scale: 1, seed: 'boundary-class-test' });
+assert.strictEqual(boundaryRuleOnBoundary.ok, true, `boundaryCliff must match the exported boundary escarpment: ${boundaryRuleOnBoundary.reason || 'unknown rejection'}`);
+
 // A cave whose embedded host is not above its floor must be rejected.
 const flatWorkspace = makeWorkspace();
 for (const tile of Object.values(flatWorkspace.maps[0].tiles)) delete tile.plateau;

@@ -106,7 +106,7 @@
         </div>
         <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input id="localeTerrainRejected" type="checkbox" checked style="width:auto"> Show rejected near-miss probes</label>
         <div id="localeTerrainSourceStatus" class="help" style="margin-top:6px">No terrain-aware locale selected.</div>
-        <div class="help" style="margin-top:5px">Cyan = required/preferred probe · red = avoid/rejected · magenta = embedded/carved footprint · amber = selected generated footprint.</div>
+        <div class="help" style="margin-top:5px">Cyan = required internal plateau cliff/other required probe · violet = required boundary cliff · yellow = preferred · red = avoid/rejected · magenta = embedded/carved footprint · amber = selected generated footprint.</div>
       </div>`;
     sidebar.appendChild(panel);
 
@@ -187,6 +187,11 @@
     group.add(mesh);
   }
 
+  function probeColor(rule, css = false) {
+    const color = rule?.strength === 'avoid' ? 0xfb7185 : rule?.strength === 'preferred' ? 0xfacc15 : rule?.terrain === 'boundaryCliff' ? 0xa78bfa : 0x55e6ff; // Boundary cliffs stay visually distinct from internal plateau cliffs in both diagnostic views.
+    return css ? `#${color.toString(16).padStart(6, '0')}` : color;
+  }
+
   function buildOverlay(workspace, merged) {
     const group = new THREE.Group(); // One removable parent contains all selected/rejected terrain-locale diagnostics.
     group.name = 'wilderness_lab_locale_terrain_overlay';
@@ -195,7 +200,7 @@
       if (diagnostic.status === 'placed' && diagnostic.selected) {
         for (const cell of diagnostic.selected.footprint || []) marker(group, merged, cell.c, cell.r, 0xf5a623, 0.10, 0.55, 0.05, 0.82);
         for (const probe of diagnostic.selected.probes || []) {
-          const color = probe.rule?.strength === 'avoid' ? 0xfb7185 : probe.rule?.strength === 'preferred' ? 0xfacc15 : 0x55e6ff;
+          const color = probeColor(probe.rule);
           marker(group, merged, probe.c, probe.r, color, 0.25, 0.96, 0.11, 0.56);
         }
         for (const cell of diagnostic.selected.embedded || []) marker(group, merged, cell.c, cell.r, 0xd56bff, 0.34, 0.94, 0.14, 0.64);
@@ -243,7 +248,7 @@
     for (const diagnostic of workspace?.localeTerrainDiagnostics || []) {
       if (diagnostic.status === 'placed' && diagnostic.selected) {
         for (const cell of diagnostic.selected.footprint || []) square(cell.c, cell.r, '#f5a623', 0.42, 0.09);
-        for (const probe of diagnostic.selected.probes || []) square(probe.c, probe.r, probe.rule?.strength === 'avoid' ? '#fb7185' : probe.rule?.strength === 'preferred' ? '#facc15' : '#55e6ff', 0.92, 0.25);
+        for (const probe of diagnostic.selected.probes || []) square(probe.c, probe.r, probeColor(probe.rule, true), 0.92, 0.25);
         for (const cell of diagnostic.selected.embedded || []) square(cell.c, cell.r, '#d56bff', 0.88, 0.18);
       }
       if (state.showRejected) for (const rejected of (diagnostic.rejected || []).slice(0, 32)) {
