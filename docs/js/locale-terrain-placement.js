@@ -272,21 +272,43 @@
     return output;
   }
 
+  function requiredCliffFloor(context, compiled, anchorC, anchorR) {
+    const lowTiers = []; // Required cliff faces can define the locale floor from the immediately adjacent low side, regardless of whether that low side is ground or another mesa.
+    for (const cell of compiled.probes.values()) {
+      const rule = cell.value;
+      if (rule.strength !== 'required' || (rule.terrain !== 'plateauCliff' && rule.terrain !== 'boundaryCliff')) continue;
+      const requestedKind = rule.terrain === 'boundaryCliff' ? 'boundary' : 'plateau';
+      const info = cliffInfo(context, anchorC + cell.c, anchorR + cell.r, requestedKind, rule.facing || 'any');
+      if (info) lowTiers.push(info.lowTier);
+    }
+    if (!lowTiers.length) return null;
+    const min = Math.min(...lowTiers);
+    const max = Math.max(...lowTiers);
+    if (max - min > 0.05) return { error: `required cliff probes disagree on lower tier (spread ${(max - min).toFixed(2)})` };
+    return { tier: lowTiers[0], source: 'requiredCliffLowSide' };
+  }
+
   function chooseLocaleFloor(context, compiled, anchorC, anchorR) {
     const ordinary = ordinaryFootprintCells(compiled); // Non-embedded cells represent the approach/interior floor rather than host mass being carved away.
     const sample = ordinary.length ? ordinary : [...compiled.tiles.values()];
     const tiers = sample.map(cell => tileTier(context, anchorC + cell.c, anchorR + cell.r)); // Host tiers under floor cells determine the stamped locale's floor.
-    if (!tiers.length) return { tier: 0, spread: 0, groupId: null };
+    const floorMode = compiled.locale.placement?.floorMode === 'nextLowerCliffTier' ? 'nextLowerCliffTier' : 'footprint';
+    const cliffFloor = floorMode === 'nextLowerCliffTier' ? requiredCliffFloor(context, compiled, anchorC, anchorR) : null;
+    if (floorMode === 'nextLowerCliffTier' && !cliffFloor) return { tier: 0, spread: 0, mismatch: Infinity, groupId: null, error: 'no required cliff face available to derive locale floor' };
+    if (cliffFloor?.error) return { tier: 0, spread: 0, mismatch: Infinity, groupId: null, error: cliffFloor.error };
+    if (!tiers.length) return { tier: cliffFloor?.tier || 0, spread: 0, mismatch: 0, groupId: null, source: cliffFloor?.source || 'footprint' };
     const counts = new Map(); // Rounded tier frequency selects a stable floor in mildly noisy/ramp-adjacent terrain.
     for (const tier of tiers) {
       const key = Number(tier.toFixed(2));
       counts.set(key, (counts.get(key) || 0) + 1);
     }
-    let floorTier = tiers[0]; // Most common host tier becomes locale floor; ties keep the earliest encountered tier.
+    let floorTier = tiers[0]; // Most common host tier becomes locale floor unless the placement explicitly derives it from the low side of a required cliff.
     let floorCount = -1;
     for (const [tier, count] of counts) if (count > floorCount) { floorCount = count; floorTier = Number(tier); }
+    if (cliffFloor) floorTier = Number(cliffFloor.tier);
     const minTier = Math.min(...tiers); // Tier spread enforces legacy-like flatness on the ordinary footprint when requested.
     const maxTier = Math.max(...tiers);
+    const mismatch = Math.max(...tiers.map(tier => Math.abs(tier - floorTier))); // Derived floors must actually be occupied by the ordinary locale footprint, not merely sit below an unrelated shelf.
     let groupId = null; // Matching plateau group lets a raised-floor cave carve into a higher mesa while staying on its lower shelf.
     for (const cell of sample) {
       const worldC = anchorC + cell.c;
@@ -294,7 +316,7 @@
       const tile = tileRecord(context.root, worldC, worldR);
       if (tile?.plateau && Math.abs(tileTier(context, worldC, worldR) - floorTier) <= 0.05) { groupId = tile.plateau; break; }
     }
-    return { tier: floorTier, spread: maxTier - minTier, groupId };
+    return { tier: floorTier, spread: maxTier - minTier, mismatch, groupId, source: cliffFloor?.source || 'footprint' };
   }
 
   function objectBlockingReason(tile) {
@@ -332,7 +354,9 @@
     if (!inSameEntrySector(context, anchorC, anchorR, compiled)) return { ok: false, reason: 'outside entry sector' };
 
     const floor = chooseLocaleFloor(context, compiled, anchorC, anchorR); // Candidate floor tier is needed before relative-height probes can be evaluated.
+    if (floor.error) return { ok: false, reason: floor.error, floorTier: floor.tier };
     if (placement.requiresFlatGround !== false && floor.spread > 0.05) return { ok: false, reason: `ordinary footprint not flat (spread ${floor.spread.toFixed(2)})`, floorTier: floor.tier };
+    if (placement.floorMode === 'nextLowerCliffTier' && floor.mismatch > 0.05) return { ok: false, reason: `ordinary footprint is not on the cliff's next lower tier (mismatch ${floor.mismatch.toFixed(2)})`, floorTier: floor.tier };
 
     const entry = context.workspace?.entry; // Entry distance rule is measured in final exported tiles.
     const minDistance = Math.max(0, Number(placement.minDistanceFromEntry) || 0) * compiled.scale;

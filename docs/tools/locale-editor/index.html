@@ -166,6 +166,13 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
             <div><label>Clearance tiles (buffer kept clear around footprint)</label><input id="locClearance" type="number" min="0" max="20" value="2"></div>
             <div><label>Min distance from zone entry</label><input id="locMinDist" type="number" min="0" max="200" value="0"></div>
           </div>
+          <div style="margin-top:6px"><label>Locale floor source</label>
+            <select id="locFloorMode">
+              <option value="footprint">Use the footprint's host tier</option>
+              <option value="nextLowerCliffTier">Use the next lower tier beside a required cliff</option>
+            </select>
+            <p class="muted" style="margin-top:4px">“Next lower tier” follows the cliff geometry itself: a 1→0 cliff gives ground level; a 7→4 cliff gives the tier-4 mesa top.</p>
+          </div>
           <label class="chk" style="margin-top:6px"><input type="checkbox" id="locFlatGround" checked> Requires flat ground</label>
           <label class="chk"><input type="checkbox" id="locSameSector"> Same one-of-nine sector as the zone's entry gate</label>
           <label class="chk"><input type="checkbox" id="locAlwaysVisible"> Always visible on the wilderness map (no discovery needed)</label>
@@ -279,7 +286,7 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
-    placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' },
+    placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' },
     meta: { createdAt: nowIso(), updatedAt: nowIso() }
   };
 }
@@ -297,7 +304,7 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [],
-    placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
+    placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
   });
   for (const [k, v] of Object.entries(raw.tiles || {})) {
@@ -306,6 +313,7 @@ function sanitizeLoaded(raw) {
   }
   for (const o of (raw.objects || [])) {
     const obj = { id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 };
+    if (o.visual && typeof o.visual === 'object') obj.visual = JSON.parse(JSON.stringify(o.visual)); // Preserve authored renderer/scale/facing metadata such as cave_small visual overrides.
     // Tents (and any future lootable/burnable prop) carry a held-action
     // spec the wilderness runtime reads directly -- see docs/js/temporary-locales.js.
     if (o.interactable && typeof o.interactable === 'object') {
@@ -878,6 +886,7 @@ function renderSettings() {
   $('locClearance').value = m.placement.clearanceTiles;
   $('locMinDist').value = m.placement.minDistanceFromEntry;
   $('locFlatGround').checked = m.placement.requiresFlatGround;
+  $('locFloorMode').value = m.placement.floorMode === 'nextLowerCliffTier' ? 'nextLowerCliffTier' : 'footprint';
   $('locSameSector').checked = !!m.placement.sameSectorAsEntry;
   $('locAlwaysVisible').checked = !!m.placement.alwaysVisibleOnMap;
   $('locGroundOnly').checked = !!m.placement.groundOnly;
@@ -931,6 +940,7 @@ $('applyPlacementBtn').addEventListener('click', () => {
   m.placement.clearanceTiles = clamp(Math.round(Number($('locClearance').value)) || 0, 0, 20);
   m.placement.minDistanceFromEntry = clamp(Math.round(Number($('locMinDist').value)) || 0, 0, 500);
   m.placement.requiresFlatGround = $('locFlatGround').checked;
+  m.placement.floorMode = $('locFloorMode').value === 'nextLowerCliffTier' ? 'nextLowerCliffTier' : 'footprint';
   m.placement.sameSectorAsEntry = $('locSameSector').checked;
   m.placement.alwaysVisibleOnMap = $('locAlwaysVisible').checked;
   m.placement.groundOnly = $('locGroundOnly').checked;
@@ -1011,8 +1021,12 @@ function renderValidation() {
   if (!/^locale_/.test(m.id)) issues.push({ level:'info', msg:'Id does not follow the "locale_" naming convention.' });
   const dupes = ws.locales.filter(l => l.id === m.id);
   if (dupes.length > 1) issues.push({ level:'error', msg:'Another locale in this workspace shares this id.' });
-  if ((m.category === 'dwelling' || m.category === 'great_fey_shrine') && !m.npcAnchors.length) {
+  const caveExterior = m.objects.some(object => object.key === 'cave_small');
+  if ((m.category === 'dwelling' || m.category === 'great_fey_shrine') && !m.npcAnchors.length && !(m.category === 'great_fey_shrine' && caveExterior)) {
     issues.push({ level:'warning', msg:`No NPC anchors placed — a ${m.category === 'dwelling' ? 'dwelling' : 'shrine'} usually anchors at least one named character.` });
+  }
+  if (m.placement.floorMode === 'nextLowerCliffTier' && !Object.values(m.terrainAnchors || m.placement.terrainAnchors || {}).some(rule => rule?.strength === 'required' && (rule?.terrain === 'plateauCliff' || rule?.terrain === 'boundaryCliff'))) {
+    issues.push({ level:'error', msg:'Floor source is “next lower cliff tier” but there is no required cliff probe to derive it from.' });
   }
   if (!m.singleton && (m.category === 'dwelling' || m.category === 'great_fey_shrine')) {
     issues.push({ level:'info', msg:'Not marked singleton — story locations like this are usually placed exactly once in the world.' });
