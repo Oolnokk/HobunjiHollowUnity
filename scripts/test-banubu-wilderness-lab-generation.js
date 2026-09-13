@@ -56,7 +56,7 @@ assert(compiled, 'the authored Banubu default must compile through the terrain-a
 assert.strictEqual(diagnostic.scale, 2, 'real Wilderness Lab Northern Cliffs generation must evaluate Banubu at the normal 2x tile density');
 assert((diagnostic.tested || 0) > 0, 'real generation must actually scan candidate anchors for Banubu');
 assert.strictEqual(compiled.tiles.size, 36, 'the authored 3x3 Banubu footprint must expand to 36 final-grid cells at 2x density');
-assert.strictEqual(compiled.probes.size, 12, 'six directional cliff probes must expand to one 2-cell face strip each at 2x density');
+assert.strictEqual(compiled.probes.size, 24, 'six directional cliff probes plus three 2x2 free-space probes must expand to 24 final-grid probes');
 assert.strictEqual(compiled.embedded.size, 12, 'the three rear embedded cells must expand to twelve final-grid cells at 2x density');
 assert(['placed', 'skipped'].includes(diagnostic.status), `unexpected Banubu diagnostic status: ${diagnostic.status}`);
 
@@ -66,7 +66,10 @@ assert(root, 'real Northern Cliffs generation must expose a root map');
 if (diagnostic.status === 'placed') {
   assert(instance, 'a placed Banubu diagnostic must have a localeInstance');
   assert(diagnostic.selected, 'a placed Banubu diagnostic must retain its selected candidate');
-  const cliffProbes = (diagnostic.selected.probes || []).filter(probe => probe.rule?.terrain === 'plateauCliff');
+  const allProbes = diagnostic.selected.probes || [];
+  const freeProbes = allProbes.filter(probe => probe.rule?.terrain === 'free');
+  assert(freeProbes.length > 0 && freeProbes.every(probe => probe.rule?.strength === 'required' && probe.matched && Math.abs(probe.hostTier - diagnostic.selected.floorTier) <= 0.05), 'front-of-cave clearance probes must resolve to free/open terrain on the locale floor');
+  const cliffProbes = allProbes.filter(probe => probe.rule?.terrain === 'plateauCliff');
   const required = cliffProbes.filter(probe => probe.rule?.strength === 'required');
   const lowRequired = required.filter(probe => probe.rule?.height?.max === 0);
   const highRequired = required.filter(probe => probe.rule?.height?.min >= 1);

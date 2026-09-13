@@ -56,7 +56,6 @@
   // authored footprint while still using the exact den-rendering geometry path.
   const DEN_SIZE_SCALE = 0.5;
   const DEN_SINK = 0.35; // Settles the model's base slightly below ground level so it doesn't look like it's floating on top of the terrain.
-  const DEN_CAVE_TEXTURE_REPEAT = 0.35;
   const DEN_CAVE_VARIANTS = {
     grehlr: { textureUrl: zoneFeatureAssetUrl('assets/textures/canvas.png'), color: 0x423d35 },
     default: { textureUrl: zoneFeatureAssetUrl('assets/textures/carved_smooth.png'), color: 0x808080 },
@@ -70,8 +69,10 @@
     let tex = _caveTextureCache.get(url);
     if (tex) return tex;
     tex = new THREE.TextureLoader().load(url);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(DEN_CAVE_TEXTURE_REPEAT, DEN_CAVE_TEXTURE_REPEAT);
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.repeat.set(1, 1);
+    tex.offset.set(0, 0);
+    tex.needsUpdate = true;
     if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
     _caveTextureCache.set(url, tex);
     return tex;
@@ -86,13 +87,29 @@
     return mat;
   }
 
-  function assignCaveUv(geometry) {
-    if (geometry.getAttribute('uv')) return;
+  function fitCaveUvToTexture(geometry) {
     const pos = geometry.getAttribute('position');
-    if (!pos) return;
-    const uv = new Float32Array(pos.count * 2);
-    for (let i = 0; i < pos.count; i++) { uv[i * 2] = pos.getX(i); uv[i * 2 + 1] = pos.getZ(i); }
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    let sourceUv = geometry.getAttribute('uv');
+    if (!sourceUv) {
+      if (!pos) return;
+      const generated = new Float32Array(pos.count * 2);
+      for (let i = 0; i < pos.count; i++) { generated[i * 2] = pos.getX(i); generated[i * 2 + 1] = pos.getZ(i); }
+      sourceUv = new THREE.BufferAttribute(generated, 2);
+    }
+    let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
+    for (let i = 0; i < sourceUv.count; i++) {
+      const u = sourceUv.getX(i), v = sourceUv.getY(i);
+      minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+      minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+    }
+    const spanU = Math.max(1e-6, maxU - minU);
+    const spanV = Math.max(1e-6, maxV - minV);
+    const fitted = new Float32Array(sourceUv.count * 2);
+    for (let i = 0; i < sourceUv.count; i++) {
+      fitted[i * 2] = (sourceUv.getX(i) - minU) / spanU;
+      fitted[i * 2 + 1] = (sourceUv.getY(i) - minV) / spanV;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(fitted, 2));
   }
 
   let _caveTemplate = null, _caveTemplatePromise = null;
@@ -113,7 +130,7 @@
           resolve(null);
           return;
         }
-        assignCaveUv(mesh.geometry);
+        fitCaveUvToTexture(mesh.geometry);
         mesh.geometry.computeBoundingBox();
         _caveTemplate = mesh;
         resolve(mesh);

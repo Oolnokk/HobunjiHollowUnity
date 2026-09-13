@@ -52,6 +52,9 @@
   // signature back to the canonical cliff-base rule set once.
   const BANUBU_CANONICAL_RULES = {
     terrainAnchors: {
+      '3,0': { terrain: 'free', strength: 'required', weight: 1, facing: 'any', height: { mode: 'relativeRange', min: 0, max: 0 } },
+      '4,0': { terrain: 'free', strength: 'required', weight: 1, facing: 'any', height: { mode: 'relativeRange', min: 0, max: 0 } },
+      '5,0': { terrain: 'free', strength: 'required', weight: 1, facing: 'any', height: { mode: 'relativeRange', min: 0, max: 0 } },
       '3,2': { terrain: 'plateauCliff', strength: 'preferred', weight: 2, facing: 'north', height: { mode: 'relativeRange', min: 0, max: 0 } },
       '4,2': { terrain: 'plateauCliff', strength: 'required', weight: 1, facing: 'north', height: { mode: 'relativeRange', min: 0, max: 0 } },
       '5,2': { terrain: 'plateauCliff', strength: 'preferred', weight: 2, facing: 'north', height: { mode: 'relativeRange', min: 0, max: 0 } },
@@ -77,8 +80,17 @@
       (rule?.height?.mode || 'any') === 'any');
   }
 
+  function isBanubuRulesMissingFrontClearance(locale, rules) {
+    if (locale?.id !== 'locale_banubu_shrine' || locale?.placement?.floorMode !== 'nextLowerCliffTier') return false;
+    const expected = clone(BANUBU_CANONICAL_RULES);
+    delete expected.terrainAnchors['3,0'];
+    delete expected.terrainAnchors['4,0'];
+    delete expected.terrainAnchors['5,0'];
+    return sameRules(rules, expected);
+  }
+
   function migrateKnownBrokenRules(locale, rules) {
-    if (!isKnownBrokenBanubuRules(locale, rules)) return rules;
+    if (!isKnownBrokenBanubuRules(locale, rules) && !isBanubuRulesMissingFrontClearance(locale, rules)) return rules;
     return clone(BANUBU_CANONICAL_RULES);
   }
 
@@ -173,7 +185,7 @@
       store.byLocale[locale.id] = fromLocale;
       syncRulesToMainLocale(locale.id, fromLocale);
       saveRuleStore();
-      debug('repaired legacy Banubu south-cliff terrain rules to canonical north-facing cliff-base rules');
+      debug('updated Banubu browser terrain rules to the canonical north-facing cliff-base rules with a free approach apron');
       return fromLocale;
     }
     // Explicit workspace fields are authoritative. This replaces obsolete

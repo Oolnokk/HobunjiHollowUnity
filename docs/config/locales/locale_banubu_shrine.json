@@ -5,47 +5,350 @@
   "category": "great_fey_shrine",
   "singleton": true,
   "description": "Banubu's cave-shrine, cut into a plateau cliff in the Northern Cliffs.",
-  "tags": ["great_fey", "shrine", "cave", "plateau_cliff", "story"],
+  "tags": [
+    "great_fey",
+    "shrine",
+    "cave",
+    "plateau_cliff",
+    "story"
+  ],
   "cols": 10,
   "rows": 10,
   "tiles": {
-    "3,1": { "type": "grass" }, "4,1": { "type": "grass" }, "5,1": { "type": "grass" },
-    "3,2": { "type": "grass" }, "4,2": { "type": "grass" }, "5,2": { "type": "grass" },
-    "3,3": { "type": "grass" }, "4,3": { "type": "grass" }, "5,3": { "type": "grass" }
-  },
-  "terrainAnchors": {
-    "3,2": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 0, "max": 0 } },
-    "4,2": { "terrain": "plateauCliff", "strength": "required", "weight": 1, "facing": "north", "height": { "mode": "relativeRange", "min": 0, "max": 0 } },
-    "5,2": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 0, "max": 0 } },
-    "3,3": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 1, "max": null } },
-    "4,3": { "terrain": "plateauCliff", "strength": "required", "weight": 1, "facing": "north", "height": { "mode": "relativeRange", "min": 1, "max": null } },
-    "5,3": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 1, "max": null } }
-  },
-  "embeddedTiles": {
-    "3,3": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": null }, "carveToLocaleFloor": true },
-    "4,3": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": null }, "carveToLocaleFloor": true },
-    "5,3": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": null }, "carveToLocaleFloor": true }
-  },
-  "objects": [{ "id": "obj_structure", "kind": "structure", "key": "cave_small", "label": "Banubu's Cave", "col": 3, "row": 1, "w": 3, "h": 3, "rot": 180 }],
-  "npcAnchors": [],
-  "connectors": [{ "id": "conn_1", "col": 4, "row": 2, "side": "north", "label": "Banubu's Cave entrance" }],
-  "placement": {
-    "mode": "fixed", "maxInstances": 1, "allowedZones": ["map_northern_cliffs"], "clearanceTiles": 0, "requiresFlatGround": true,
-    "floorMode": "nextLowerCliffTier", "minDistanceFromEntry": 0, "sameSectorAsEntry": false, "alwaysVisibleOnMap": false, "groundOnly": false,
-    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a north-facing internal plateau cliff, the center rear cell is pinned to the HIGH side, and the rear row is embedded into plateau mass then carved down to the cave floor. Flanking cliff probes are preferred rather than required so irregular natural cliff edges can still host the cave. Boundary escarpments are rejected. The cave entrance prop renders at 2x its normal in-game cave scale.",
-    "terrainAnchors": {
-      "3,2": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 0, "max": 0 } },
-      "4,2": { "terrain": "plateauCliff", "strength": "required", "weight": 1, "facing": "north", "height": { "mode": "relativeRange", "min": 0, "max": 0 } },
-      "5,2": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 0, "max": 0 } },
-      "3,3": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 1, "max": null } },
-      "4,3": { "terrain": "plateauCliff", "strength": "required", "weight": 1, "facing": "north", "height": { "mode": "relativeRange", "min": 1, "max": null } },
-      "5,3": { "terrain": "plateauCliff", "strength": "preferred", "weight": 2, "facing": "north", "height": { "mode": "relativeRange", "min": 1, "max": null } }
+    "3,1": {
+      "type": "grass"
     },
-    "embeddedTiles": {
-      "3,3": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": null }, "carveToLocaleFloor": true },
-      "4,3": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": null }, "carveToLocaleFloor": true },
-      "5,3": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": null }, "carveToLocaleFloor": true }
+    "4,1": {
+      "type": "grass"
+    },
+    "5,1": {
+      "type": "grass"
+    },
+    "3,2": {
+      "type": "grass"
+    },
+    "4,2": {
+      "type": "grass"
+    },
+    "5,2": {
+      "type": "grass"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "grass"
     }
   },
-  "meta": { "createdAt": "2026-07-19T00:00:00.000Z", "updatedAt": "2026-09-13T14:50:00.000Z" }
+  "terrainAnchors": {
+    "3,2": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,2": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "5,2": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "3,3": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "4,3": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "5,3": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 2,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      }
+    },
+    "3,0": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "4,0": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    },
+    "5,0": {
+      "terrain": "free",
+      "strength": "required",
+      "weight": 1,
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 0,
+        "max": 0
+      }
+    }
+  },
+  "embeddedTiles": {
+    "3,3": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": true
+    },
+    "4,3": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": true
+    },
+    "5,3": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": null
+      },
+      "carveToLocaleFloor": true
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_structure",
+      "kind": "structure",
+      "key": "cave_small",
+      "label": "Banubu's Cave",
+      "col": 3,
+      "row": 1,
+      "w": 3,
+      "h": 3,
+      "rot": 180
+    }
+  ],
+  "npcAnchors": [],
+  "connectors": [
+    {
+      "id": "conn_1",
+      "col": 4,
+      "row": 2,
+      "side": "north",
+      "label": "Banubu's Cave entrance"
+    }
+  ],
+  "placement": {
+    "mode": "fixed",
+    "maxInstances": 1,
+    "allowedZones": [
+      "map_northern_cliffs"
+    ],
+    "clearanceTiles": 0,
+    "requiresFlatGround": true,
+    "floorMode": "nextLowerCliffTier",
+    "minDistanceFromEntry": 0,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a north-facing internal plateau cliff, the center rear cell is pinned to the HIGH side, and the rear row is embedded into plateau mass then carved down to the cave floor. Flanking cliff probes are preferred rather than required so irregular natural cliff edges can still host the cave. The three cells directly north/in front of the north-facing mouth must be free, open terrain on the cave floor. Boundary escarpments are rejected. The cave entrance prop renders at 2x its normal in-game cave scale.",
+    "terrainAnchors": {
+      "3,2": {
+        "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "4,2": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "5,2": {
+        "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "3,3": {
+        "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "4,3": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "5,3": {
+        "terrain": "plateauCliff",
+        "strength": "preferred",
+        "weight": 2,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        }
+      },
+      "3,0": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "4,0": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      },
+      "5,0": {
+        "terrain": "free",
+        "strength": "required",
+        "weight": 1,
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    "embeddedTiles": {
+      "3,3": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": true
+      },
+      "4,3": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": true
+      },
+      "5,3": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": null
+        },
+        "carveToLocaleFloor": true
+      }
+    }
+  },
+  "meta": {
+    "createdAt": "2026-07-19T00:00:00.000Z",
+    "updatedAt": "2026-09-13T21:30:00.000Z"
+  }
 }
