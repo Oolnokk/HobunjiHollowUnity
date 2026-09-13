@@ -1,3 +1,4 @@
+# Temporary verification workflow; remove after the same-origin ruin smoke passes.
 name: Smoke Random Test Ruin Full Runtime
 
 on:
@@ -95,7 +96,7 @@ jobs:
               assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
               assert.match(active.furnitureStatus, /11 JSONs.*1 Runtime Authored.*10 Furniture Model Data/, active.furnitureStatus);
               if (active.negativeLevels > 0) assert.ok(active.ladders > 0, `negative floor tiers require ladder access: ${JSON.stringify(active)}`);
-              activeRuns.push({ seed, rooms:active.motion?.rooms || null, ladders:active.ladders, negativeLevels:active.negativeLevels, furnitureStatus:active.furnitureStatus });
+              activeRuns.push({ seed, ladders:active.ladders, negativeLevels:active.negativeLevels, furnitureStatus:active.furnitureStatus });
             }
 
             const audit = await page.evaluate(async () => window.DevRandomRuinRuntimeCoverage.auditSeeds(8));
