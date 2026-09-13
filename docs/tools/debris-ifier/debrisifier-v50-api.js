@@ -4,6 +4,8 @@
 (() => {
   'use strict';
 
+  let previewLoopPaused = false;
+
   function cloneJson(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
@@ -56,6 +58,16 @@
     return { localeRoot: localePreviewRoot, particleRoot: mechanismParticleRoot };
   }
 
+  // The normal V50 tool owns a requestAnimationFrame loop that applies one global
+  // preview progress value to every mechanism. Runtime playtests need independent
+  // mechanism state instead, so stop future tool frames after generation and let
+  // the game call tickRuntime/applyProgress explicitly.
+  function pausePreviewLoop() {
+    if (previewLoopPaused) return;
+    previewLoopPaused = true;
+    window.requestAnimationFrame = () => 0;
+  }
+
   function setMechanismTarget(active) {
     mechanismTargetState = active ? 1 : 0;
     updateMechanismButton();
@@ -78,12 +90,19 @@
     return rotateLinkedCubeControl(root, Number(controlIndex) || 0, direction < 0 ? -1 : 1);
   }
 
+  function tickRuntime(dt) {
+    const safeDt = clamp(Number(dt) || 0, 0, .05);
+    updateLinkedCubePuzzles(safeDt);
+    updateMechanismParticleEffects(safeDt);
+  }
+
   function getState() {
     return {
       seed: $('localeSeed')?.value || null,
       locale: cloneJson(lastGeneratedLocale),
       mechanismProgress,
       mechanismTargetState,
+      previewLoopPaused,
       previewRootAttachedToTool: localePreviewRoot.parent === scene,
     };
   }
@@ -93,10 +112,12 @@
     generateInteriorLocale,
     takePreviewRoots,
     restorePreviewRoots,
+    pausePreviewLoop,
     setMechanismTarget,
     snapMechanismState,
     applyProgress,
     rotateLinkedCube,
+    tickRuntime,
     getState,
   });
 })();
