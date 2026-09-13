@@ -19,8 +19,6 @@ s = replace_once(s,
 
 path.write_text(s, encoding='utf-8')
 
-# Add a source-contract regression plus the user's newest debug seed. The exact
-# seed confirms the canonical rules can place in the same generated terrain.
 path = Path('scripts/test-banubu-wilderness-lab-generation.js')
 s = path.read_text(encoding='utf-8')
 
@@ -29,9 +27,7 @@ s = replace_once(s,
 """const locale = require('../docs/config/locales/locale_banubu_shrine.json');\nconst fs = require('fs');\nconst path = require('path');\n\nterrainPlacement.install(generator);\n\nconst terrainEditorSource = fs.readFileSync(path.resolve(__dirname, '../docs/tools/locale-editor/terrain-placement.js'), 'utf8');\nassert(terrainEditorSource.includes('isKnownBrokenBanubuRules'), 'Locale Editor must recognize the known stale Banubu south-cliff browser-workspace signature');\nassert(terrainEditorSource.includes('BANUBU_CANONICAL_RULES'), 'Locale Editor must carry the canonical Banubu repair rule set');\nassert(terrainEditorSource.includes("anchors.length < 20") && terrainEditorSource.includes("rule?.facing === 'south'"), 'Banubu migration must stay narrowly scoped to the obsolete large south-facing rule grid');\n""", 'migration regression setup')
 
 s = replace_once(s,
-"""console.log(`Banubu real Northern Cliffs cliff-base regression passed (${diagnostic.status}); debug preview seeds place with 48 valid / 39 valid candidates.`);\n""",
-"""const newestDebugSeed = 'locale-preview|locale_banubu_shrine|map_northern_cliffs|mu0bd5bo|khx6y2e';\nconst newestWorkspace = generator.generateZoneWorkspace('map_northern_cliffs', newestDebugSeed, [locale]);\nconst newestDiagnostic = (newestWorkspace.localeTerrainDiagnostics || []).find(item => item.localeId === locale.id);\nassert(newestDiagnostic, 'the newest Locale Editor debug seed must emit Banubu terrain diagnostics');\nassert.strictEqual(newestDiagnostic.status, 'placed', 'the newest debug seed should place when evaluated with canonical Banubu rules rather than stale browser rules');\nassert((newestDiagnostic.valid || 0) > 0, 'the newest debug seed must expose at least one valid canonical cliff-base candidate');\n\nconsole.log(`Banubu real Northern Cliffs cliff-base regression passed (${diagnostic.status}); newest debug seed places with ${newestDiagnostic.valid} valid candidates.`);\n""", 'new debug seed regression')
+"""  'locale-preview|locale_banubu_shrine|map_northern_cliffs|mtzztqpk|s0ho2n6',\n];\n""",
+"""  'locale-preview|locale_banubu_shrine|map_northern_cliffs|mtzztqpk|s0ho2n6',\n  'locale-preview|locale_banubu_shrine|map_northern_cliffs|mu0bd5bo|khx6y2e',\n];\n""", 'new debug seed regression')
 
 path.write_text(s, encoding='utf-8')
-
-# Touch marker so the one-shot workflow runs after it has been created.
