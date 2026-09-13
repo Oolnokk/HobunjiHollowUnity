@@ -36,8 +36,14 @@ for (let i = 1; i < loadOrder.length; i++) {
 assert(interior.includes("const RUIN_TILE_SCALE = 2"), 'generated ruin must retain 2x horizontal cells');
 assert(interior.includes("map_i_dev_random_ruin"), 'generated ruin must remain a real session-only interior map');
 assert(interior.includes('tools/debris-ifier/index.html?devRuntime=1'), 'hidden generator must request embedded V50 runtime mode');
+assert(interior.includes('await enterRuin(); updateBadge();'), 'generate must await the actual ruin transition midpoint before reporting success');
+assert(interior.includes('const entering=ruin;'), 'ruin entry transition must capture the generated instance it is entering');
+assert(interior.includes('if(!entering||ruin!==entering)return;'), 'stale ruin-entry transition callbacks must be identity-guarded');
+assert(interior.includes('if(removeMap) removeGeneratorFrame();'), 'rerolls must retain the V50 iframe while full clear/leave removes it');
+assert(interior.includes('restorePreviewRoots()'), 'reroll lifecycle comment must retain the V50 preview-root restore contract');
 assert(hooks.includes("generatedAccessType === 'stoneLadder'"), 'prototype hook layer must discover V50 ladders');
 assert(hooks.includes("motion === 'elevatorPushBlock'"), 'prototype hook layer must discover elevator push blocks');
+new vm.Script(interior, { filename:'dev-random-ruin-interior-map.js' });
 
 assert(api.includes('createRuntimeStoneLadder'), 'V50 bridge must expose the real stone ladder constructor');
 assert(api.includes('auditInteriorSeeds'), 'V50 bridge must expose multi-seed runtime-tag auditing');
