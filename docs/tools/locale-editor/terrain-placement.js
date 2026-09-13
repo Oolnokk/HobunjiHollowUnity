@@ -101,10 +101,24 @@
 
   function rulesFromLocale(locale) {
     const placement = locale?.placement || {}; // Placement object is the persistence-compatible home for editor-side terrain rules.
+    const hasPlacementAnchors = Object.prototype.hasOwnProperty.call(placement, 'terrainAnchors');
+    const hasPlacementEmbedded = Object.prototype.hasOwnProperty.call(placement, 'embeddedTiles');
     return {
-      terrainAnchors: clone(placement.terrainAnchors || locale?.terrainAnchors || {}),
-      embeddedTiles: clone(placement.embeddedTiles || locale?.embeddedTiles || {}),
+      terrainAnchors: clone((hasPlacementAnchors ? placement.terrainAnchors : locale?.terrainAnchors) || {}),
+      embeddedTiles: clone((hasPlacementEmbedded ? placement.embeddedTiles : locale?.embeddedTiles) || {}),
     };
+  }
+
+  function hasPersistedRuleFields(locale) {
+    const placement = locale?.placement || {};
+    return Object.prototype.hasOwnProperty.call(placement, 'terrainAnchors') || Object.prototype.hasOwnProperty.call(placement, 'embeddedTiles');
+  }
+
+  function sameRules(a, b) { return JSON.stringify(a || {}) === JSON.stringify(b || {}); }
+
+  function syncRulesToMainLocale(localeId, rules) {
+    try { bridge()?.setTerrainRules?.(localeId, clone(rules)); }
+    catch (error) { debug(`workspace terrain-rule sync failed: ${error.message}`); }
   }
 
   function ensureRules(locale) {
@@ -113,6 +127,25 @@
     const rules = store.byLocale[locale.id]; // Active editable rule set is retained separately from the main editor's closed-over workspace object.
     rules.terrainAnchors = rules.terrainAnchors || {};
     rules.embeddedTiles = rules.embeddedTiles || {};
+    return rules;
+  }
+
+  function reconcileRulesFromLocale(locale) {
+    if (!locale?.id) return { terrainAnchors: {}, embeddedTiles: {} };
+    const fromLocale = rulesFromLocale(locale);
+    // Explicit workspace fields are authoritative. This replaces obsolete
+    // sidecar data instead of resurrecting it after a newer locale is loaded.
+    if (hasPersistedRuleFields(locale)) {
+      if (!sameRules(store.byLocale[locale.id], fromLocale)) {
+        store.byLocale[locale.id] = fromLocale;
+        saveRuleStore();
+      }
+    } else if (!store.byLocale[locale.id]) {
+      store.byLocale[locale.id] = fromLocale;
+      saveRuleStore();
+    }
+    const rules = ensureRules(locale);
+    syncRulesToMainLocale(locale.id, rules);
     return rules;
   }
 
@@ -172,6 +205,7 @@
       }
       rules.embeddedTiles[key] = sanitizeEmbedded(brush);
     }
+    syncRulesToMainLocale(locale.id, rules);
     saveRuleStore();
     syncWorkspaceStorage();
     draw();
@@ -182,6 +216,7 @@
     const locale = activeLocale();
     if (!locale || !confirm(`Clear every terrain probe and embedded cell from ${locale.name || locale.id}?`)) return;
     store.byLocale[locale.id] = { terrainAnchors: {}, embeddedTiles: {} };
+    syncRulesToMainLocale(locale.id, store.byLocale[locale.id]);
     saveRuleStore();
     syncWorkspaceStorage();
     draw();
@@ -461,16 +496,7 @@
   function seedStoreFromWorkspace() {
     const workspace = workspaceSnapshot();
     if (!workspace) return;
-    let changed = false; // New persisted nested rules are imported into sidecar store without overwriting edits already made this session.
-    for (const locale of workspace.locales || []) {
-      if (store.byLocale[locale.id]) continue;
-      const fromLocale = rulesFromLocale(locale);
-      if (Object.keys(fromLocale.terrainAnchors).length || Object.keys(fromLocale.embeddedTiles).length) {
-        store.byLocale[locale.id] = fromLocale;
-        changed = true;
-      }
-    }
-    if (changed) saveRuleStore();
+    for (const locale of workspace.locales || []) reconcileRulesFromLocale(locale);
   }
 
   function pollActiveLocale() {
@@ -478,7 +504,7 @@
     const id = locale?.id || '';
     if (id !== lastActiveId) {
       lastActiveId = id;
-      if (locale) ensureRules(locale);
+      if (locale) reconcileRulesFromLocale(locale);
       draw();
       updateStats();
       debug(locale ? `editing terrain rules for ${locale.id}` : 'no active locale');

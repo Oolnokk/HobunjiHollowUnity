@@ -77,8 +77,11 @@
     const output = clone(locale);
     const stored = sidecarRules(locale.id);
     const placement = output.placement || {};
-    output.terrainAnchors = clone(stored?.terrainAnchors || placement.terrainAnchors || output.terrainAnchors || {});
-    output.embeddedTiles = clone(stored?.embeddedTiles || placement.embeddedTiles || output.embeddedTiles || {});
+    const hasPlacementAnchors = Object.prototype.hasOwnProperty.call(placement, 'terrainAnchors');
+    const hasPlacementEmbedded = Object.prototype.hasOwnProperty.call(placement, 'embeddedTiles');
+    output.terrainAnchors = clone((hasPlacementAnchors ? placement.terrainAnchors : (output.terrainAnchors || stored?.terrainAnchors)) || {});
+    output.embeddedTiles = clone((hasPlacementEmbedded ? placement.embeddedTiles : (output.embeddedTiles || stored?.embeddedTiles)) || {});
+    output.placement = { ...placement, terrainAnchors: clone(output.terrainAnchors), embeddedTiles: clone(output.embeddedTiles) };
     // The main editor sanitizer historically stripped visual metadata. Cave identity by key still works,
     // and this restores the canonical cave visual when that metadata is absent.
     for (const object of output.objects || []) {

@@ -286,7 +286,9 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
-    placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' },
+    terrainAnchors: {}, // Runtime terrain probes; mirrored into placement for editor persistence.
+    embeddedTiles: {},  // Runtime embedded-host cells; mirrored into placement for editor persistence.
+    placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '', terrainAnchors: {}, embeddedTiles: {} },
     meta: { createdAt: nowIso(), updatedAt: nowIso() }
   };
 }
@@ -307,6 +309,17 @@ function sanitizeLoaded(raw) {
     placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, floorMode: 'footprint', minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
   });
+  // Nested placement rules are authoritative when explicitly present. Legacy
+  // locale files with only top-level runtime fields are migrated into placement.
+  const rawPlacement = raw.placement || {};
+  const hasPlacementAnchors = Object.prototype.hasOwnProperty.call(rawPlacement, 'terrainAnchors');
+  const hasPlacementEmbedded = Object.prototype.hasOwnProperty.call(rawPlacement, 'embeddedTiles');
+  const terrainAnchors = JSON.parse(JSON.stringify((hasPlacementAnchors ? rawPlacement.terrainAnchors : raw.terrainAnchors) || {}));
+  const embeddedTiles = JSON.parse(JSON.stringify((hasPlacementEmbedded ? rawPlacement.embeddedTiles : raw.embeddedTiles) || {}));
+  m.terrainAnchors = terrainAnchors;
+  m.embeddedTiles = embeddedTiles;
+  m.placement.terrainAnchors = JSON.parse(JSON.stringify(terrainAnchors));
+  m.placement.embeddedTiles = JSON.parse(JSON.stringify(embeddedTiles));
   for (const [k, v] of Object.entries(raw.tiles || {})) {
     const type = TILE_INFO[v?.type] ? v.type : 'grass';
     m.tiles[k] = { type };
@@ -1051,6 +1064,7 @@ function buildExport(m) {
     id: m.id, name: m.name, category: m.category, singleton: m.singleton,
     description: m.description, tags: m.tags, cols: m.cols, rows: m.rows,
     tiles: m.tiles, objects: m.objects, npcAnchors: m.npcAnchors, connectors: m.connectors,
+    terrainAnchors: m.terrainAnchors || {}, embeddedTiles: m.embeddedTiles || {},
     placement: m.placement, meta: m.meta
   };
 }
@@ -1153,6 +1167,20 @@ setMode('pan');
 // Expose a tiny bridge so the dev-tools hub (docs/tools/index.html) can hook in later.
 window._localeEditorBridge = {
   getWorkspace: () => JSON.parse(JSON.stringify(ws)),
+  setTerrainRules: (localeId, rules) => {
+    const m = ws.locales.find(locale => locale.id === localeId);
+    if (!m) return false;
+    const terrainAnchors = JSON.parse(JSON.stringify(rules?.terrainAnchors || {}));
+    const embeddedTiles = JSON.parse(JSON.stringify(rules?.embeddedTiles || {}));
+    m.terrainAnchors = terrainAnchors;
+    m.embeddedTiles = embeddedTiles;
+    m.placement = m.placement || {};
+    m.placement.terrainAnchors = JSON.parse(JSON.stringify(terrainAnchors));
+    m.placement.embeddedTiles = JSON.parse(JSON.stringify(embeddedTiles));
+    renderValidation();
+    renderJson();
+    return true;
+  },
   loadLocale: (data) => {
     const m = sanitizeLoaded(data);
     if (!ws.locales.some(l => l.id === m.id)) ws.locales.push(m);
