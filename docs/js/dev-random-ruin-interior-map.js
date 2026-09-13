@@ -13,6 +13,7 @@
   const MAP_ID = 'map_i_dev_random_ruin';
   const SCOPE = 'dev-random-ruin-interior';
   const SOURCE_SHA = '038a5d54c66b0ae2a9ceeb66967b9e5c32b616040f40b503eec59d5331885f40';
+  const RUIN_TILE_SCALE = 2; // V50 authors 0.5-world-unit cells; runtime expands them to 1.0 so entrances/corridors have player-safe clearance.
   const PAD = 2;
   const PLAYER_RADIUS = 0.28;
   const CONTROL_RANGE = 1.65;
@@ -37,6 +38,10 @@
   }
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const localCellSize = meta => Number(meta?.cellSize) || 0.5;
+  const worldCellSize = meta => localCellSize(meta) * RUIN_TILE_SCALE;
+  const scaledWorldWidth = (meta, fallback = 0) => (Number(meta?.worldWidth) || fallback) * RUIN_TILE_SCALE;
+  const scaledWorldDepth = (meta, fallback = 0) => (Number(meta?.worldDepth) || fallback) * RUIN_TILE_SCALE;
   function randomSeed() {
     try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] >>> 0; }
     catch (_) { return ((Date.now() ^ Math.floor(performance.now() * 1000)) >>> 0); }
@@ -135,9 +140,9 @@
   }
 
   function floorProjection(meta) {
-    const worldW = Number(meta.worldWidth) || 8;
-    const worldD = Number(meta.worldDepth) || 8;
-    const cs = Number(meta.cellSize) || 0.5;
+    const worldW = scaledWorldWidth(meta, 8);
+    const worldD = scaledWorldDepth(meta, 8);
+    const cs = worldCellSize(meta);
     const cols = Math.max(6, Math.ceil(worldW) + PAD * 2);
     const rows = Math.max(6, Math.ceil(worldD) + PAD * 2);
     const walkable = new Set();
@@ -156,18 +161,18 @@
   function entranceLocalPoint(meta) {
     const e = meta.entrance;
     if (!e) return { x: 0, z: 0, side: 'south' };
-    const cs = Number(meta.cellSize) || 0.5;
-    const ox = -Number(meta.worldWidth || 0) / 2;
-    const oz = -Number(meta.worldDepth || 0) / 2;
+    const cs = worldCellSize(meta);
+    const ox = -scaledWorldWidth(meta) / 2;
+    const oz = -scaledWorldDepth(meta) / 2;
     if (e.axis === 'x') return { x: Number(e.boundary) * cs + ox, z: Number(e.center) * cs + oz, side: e.side };
     return { x: Number(e.center) * cs + ox, z: Number(e.boundary) * cs + oz, side: e.side };
   }
   function spawnInsideEntrance(meta) {
     const p = entranceLocalPoint(meta);
     const inward = { north:[0,1], south:[0,-1], west:[1,0], east:[-1,0] }[p.side] || [0,1];
-    const inset = Math.max(0.7, (Number(meta.cellSize) || 0.5) * 1.5);
-    return { x: PAD + Number(meta.worldWidth || 0) / 2 + p.x + inward[0] * inset,
-      z: PAD + Number(meta.worldDepth || 0) / 2 + p.z + inward[1] * inset };
+    const inset = Math.max(0.7, worldCellSize(meta) * 1.5);
+    return { x: PAD + scaledWorldWidth(meta) / 2 + p.x + inward[0] * inset,
+      z: PAD + scaledWorldDepth(meta) / 2 + p.z + inward[1] * inset };
   }
 
   function boxFor(object) {
@@ -195,7 +200,7 @@
     ruin.localeRoot.traverse(o => { if (!floorMesh && o.userData?.wallBuilderRecipe === 'wallrecipe2.json') floorMesh = o; });
     const levels = floorMesh?.userData?.plateauModel?.levelByCell || {};
     const step = Number(floorMesh?.userData?.plateauModel?.stepHeight ?? meta.plateauModel?.stepHeight ?? 0.42);
-    const cs = Number(meta.cellSize) || 0.5;
+    const cs = worldCellSize(meta);
     const originX = PAD, originZ = PAD;
     const floorKeys = new Set((meta.floorCells || []).map(([c,r]) => `${c},${r}`));
     for (const [c0,r0] of (meta.floorCells || [])) {
@@ -249,13 +254,14 @@
 
   function pushBlock(block) {
     const p=centerFor(block), px=deps.player.x/deps.TILE, pz=deps.player.y/deps.TILE;
-    const dx=p.x-px,dz=p.z-pz, step=Number(ruin.meta.cellSize)||.5; let sx=0,sz=0;
+    const dx=p.x-px,dz=p.z-pz, localStep=localCellSize(ruin.meta), worldStep=worldCellSize(ruin.meta); let sx=0,sz=0;
     if (Math.abs(dx)>=Math.abs(dz)) sx=Math.sign(dx)||1; else sz=Math.sign(dz)||1;
-    const nx=p.x+sx*step,nz=p.z+sz*step;
+    const nx=p.x+sx*worldStep,nz=p.z+sz*worldStep;
     if (!DS.sampleSupport(nx,nz,{minY:-4,maxY:5,pad:.02})) return deps.showToast?.('The block cannot be pushed there.',false);
     const hit=DS.blockerAt(nx,nz,{radius:.06,actorHeight:1});
     if (hit && hit.id!==block.userData.__devRuinBlockerId) return deps.showToast?.('Something blocks the stone block.',false);
-    block.position.x+=sx*step; block.position.z+=sz*step; block.updateMatrixWorld?.(true); ruin.api.syncPressurePlates(ruin.localeRoot);
+    // The locale root carries the 2x horizontal scale, so child transforms remain in V50's original local cell units.
+    block.position.x+=sx*localStep; block.position.z+=sz*localStep; block.updateMatrixWorld?.(true); ruin.api.syncPressurePlates(ruin.localeRoot);
   }
 
   function makeMapRecord(seed, generated, roots, meta) {
@@ -263,14 +269,16 @@
     scene.name=MAP_ID; scene.background=new THREE.Color(0x080b09);
     const ambient=new THREE.AmbientLight(0xffffff,.62); scene.add(ambient);
     const key=new THREE.DirectionalLight(0xfff1cf,.72); key.position.set(projected.cols*.35,8,projected.rows*.3); scene.add(key);
-    roots.localeRoot.position.set(PAD+Number(meta.worldWidth||0)/2,0,PAD+Number(meta.worldDepth||0)/2);
+    // Scale only the horizontal plane: V50's half-unit cell becomes one full game-world unit while floor/elevation heights stay authored.
+    roots.localeRoot.scale.x*=RUIN_TILE_SCALE; roots.localeRoot.scale.z*=RUIN_TILE_SCALE;
+    roots.localeRoot.position.set(PAD+scaledWorldWidth(meta)/2,0,PAD+scaledWorldDepth(meta)/2);
     roots.localeRoot.name=`dev_v50_ruin_${seed}`; scene.add(roots.localeRoot);
     roots.particleRoot.position.set(0,0,0); scene.add(roots.particleRoot);
     const spawn=spawnInsideEntrance(meta);
     const exitTile=[clamp(Math.floor(spawn.x),0,projected.cols-1),clamp(Math.floor(spawn.z),0,projected.rows-1)];
     const mapData={schema:'hobunji_building_interior.v1',id:MAP_ID,name:`Random Test Ruin #${seed}`,cols:projected.cols,rows:projected.rows,
       floor:projected.floor,colliders:[],furniture:[],vendorZones:[],exits:[{id:'exit_dev_random_ruin',label:'Leave Test Ruin',tiles:[exitTile],targetMap:'',spawnCol:0,spawnRow:0}],
-      devSessionOnly:true,devSeed:seed,sourceGenerator:'HobunjiDebrisifierV50'};
+      devSessionOnly:true,devSeed:seed,devRuinTileScale:RUIN_TILE_SCALE,sourceGenerator:'HobunjiDebrisifierV50'};
     return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot};
   }
 
@@ -343,9 +351,9 @@
   function updateMechanisms(dt){ruin.api.syncPressurePlates(ruin.localeRoot);ruin.api.tickRuntime(dt);for(const m of ruin.mechanisms.values()){const linked=m.root.userData?.linkedPressurePlateRoot||m.root.userData?.linkedCubePuzzleRoot;if(!linked)m.progress+=clamp(m.target-m.progress,-dt*1.55,dt*1.55);ruin.api.applyProgress(m.root,m.progress);}for(const a of ruin.activators){const m=ruin.mechanisms.get(a.userData?.linkedMechanismId);if(m&&!['pressurePlate','linkedCubePillars'].includes(a.userData?.activatorType))ruin.api.applyProgress(a,m.progress);}}
   DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateMechanisms(dt);reconcilePlayer(now);});
 
-  function updateBadge(){if(!ruin)return;let b=document.getElementById('devRandomRuinBadge');if(!b){b=document.createElement('div');b.id='devRandomRuinBadge';b.style.cssText='position:fixed;left:10px;bottom:10px;z-index:65;padding:6px 9px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(12,14,12,.82);color:#ddd;font:11px monospace;pointer-events:none';document.body.appendChild(b);}b.textContent=`${MAP_ID} · seed ${ruin.seed} · ${ruin.meta.rooms?.length||0} rooms · ${ruin.mechanisms.size} mechanisms`;b.style.display='';}
-  function installSettingsButton(){if(!devModeEnabled())return;const arena=document.getElementById('devTeleportArenaBtn');if(!arena||document.getElementById('devRandomTestRuinBtn'))return;const row=document.createElement('div');row.className='settings-row';row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only V50 ruin as a real interior map and enter it. Nothing is saved.</div></div><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';arena.closest('.settings-row')?.insertAdjacentElement('afterend',row);row.querySelector('button')?.addEventListener('click',()=>generate(randomSeed()));}
+  function updateBadge(){if(!ruin)return;let b=document.getElementById('devRandomRuinBadge');if(!b){b=document.createElement('div');b.id='devRandomRuinBadge';b.style.cssText='position:fixed;left:10px;bottom:10px;z-index:65;padding:6px 9px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(12,14,12,.82);color:#ddd;font:11px monospace;pointer-events:none';document.body.appendChild(b);}b.textContent=`${MAP_ID} · seed ${ruin.seed} · 2x tiles · ${ruin.meta.rooms?.length||0} rooms · ${ruin.mechanisms.size} mechanisms`;b.style.display='';}
+  function installSettingsButton(){if(!devModeEnabled())return;const arena=document.getElementById('devTeleportArenaBtn');if(!arena||document.getElementById('devRandomTestRuinBtn'))return;const row=document.createElement('div');row.className='settings-row';row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only V50 ruin as a real interior map with 2x horizontal tiles and enter it. Nothing is saved.</div></div><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';arena.closest('.settings-row')?.insertAdjacentElement('afterend',row);row.querySelector('button')?.addEventListener('click',()=>generate(randomSeed()));}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,sourceSeed:ruin.sourceSeed,rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),dynamic:DS.debugSnapshot()}:null});
 })();
