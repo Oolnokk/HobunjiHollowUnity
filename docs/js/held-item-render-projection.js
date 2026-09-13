@@ -34,7 +34,8 @@
   api.isWheelEligible = function hobunjiHeldRenderEligibility(key, ...rest) {
     const liveKey = liveManualBagKey(); // Current valid manual selector, if any.
     if (!liveKey || liveKey !== armedKey) armedKey = null;
-    if (armedKey && key === armedKey) return true;
+    const projectionKey = armedKey; // Snapshot used by the renderer's one-argument eligibility query for this call.
+    if (projectionKey && key === projectionKey) return true;
     return baseIsWheelEligible(key, ...rest);
   };
 
