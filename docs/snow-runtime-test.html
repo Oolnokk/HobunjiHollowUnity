@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hobunji Hollow — Snow Runtime Test</title>
+</head>
+<body>
+  <script>
+    (async () => {
+      'use strict';
+
+      const CACHE_KEY = '20260913snowcache4'; // Used to force the current RainPlanes/environment-surface files instead of any previously cached stable-main copies.
+      const response = await fetch(`index.html?surface-test=${CACHE_KEY}`, { cache: 'no-store' }); // Used as the authoritative current game page before only the relevant script URLs are refreshed.
+      if (!response.ok) throw new Error(`Failed to load index.html: HTTP ${response.status}`);
+      let html = await response.text(); // Used as the complete game document that this test entrypoint writes into its own browsing context.
+
+      html = html.replace(
+        /<script src="js\/rain-planes\.js\?v=[^"]+"><\/script>/,
+        `<script src="js/rain-planes.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-runtime.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-near-priority.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-micro-plateau.js?v=${CACHE_KEY}"><\/script>\n  <script src="js/environment-surface-pixel-probe.js?v=${CACHE_KEY}"><\/script>`,
+      );
+      html = html.replace(
+        /<script src="js\/pixel-probe\.js\?v=[^"]+"><\/script>/,
+        `<script src="js/pixel-probe.js?v=${CACHE_KEY}"><\/script>`,
+      );
+      html = html.replace('</body>', `
+<script>
+  (() => {
+    const panel = document.createElement('pre'); // Mobile-visible runtime snapshot used to distinguish loader failure from snow-generation failure without DevTools.
+    panel.id = 'environmentSurfaceTestStatus';
+    panel.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;max-width:min(92vw,720px);max-height:34vh;overflow:auto;margin:0;padding:7px 9px;border:1px solid rgba(255,255,255,.35);border-radius:7px;background:rgba(0,0,0,.82);color:#fff;font:10px/1.35 ui-monospace,monospace;pointer-events:none;white-space:pre-wrap';
+    document.body.appendChild(panel);
+    const refresh = () => {
+      const state = window.EnvironmentSurfaceRuntime?.debugSnapshot?.();
+      const priority = window.EnvironmentSurfaceNearPriority?.debugSnapshot?.();
+      const micro = window.EnvironmentSurfaceMicroPlateau?.debugSnapshot?.();
+      panel.textContent = state
+        ? 'ENV SURFACE v' + state.version
+          + ' mode=' + state.mode + ' active=' + state.activeMode
+          + ' owners=' + state.ownerSurfaces + ' pending=' + state.pendingJobs
+          + ' job=' + (state.activeJob || '-') + ' spatial=' + state.discoveredSpatialChunks
+          + '\\nMICRO plateau=' + (micro?.active ? 'ACTIVE' : micro?.scanning ? 'SCANNING' : 'waiting')
+          + ' thickness=' + (micro?.thickness ?? '-')
+          + ' tiles=' + (micro?.builtTiles ?? 0) + ' sampled=' + (micro?.sampledTiles ?? 0)
+          + ' edges=' + (micro?.exposedEdges ?? 0) + ' tris=' + (micro?.sampledTriangles ?? 0)
+          + ' tex=' + (micro?.textureState || '-')
+          + '\\nmicroReason=' + (micro?.lastReason || '-')
+          + '\\npriority=' + (priority?.prioritized ? 'done' : 'waiting')
+          + ' moved=' + (priority?.reorderedChunks ?? 0)
+          + ' reason=' + (priority?.lastReason || '-')
+          + '\\nlegacyRuntime=' + state.lastReason
+        : 'ENV SURFACE: not installed';
+    };
+    refresh();
+    setInterval(refresh, 500);
+  })();
+<\/script>
+</body>`);
+
+      document.open();
+      document.write(html);
+      document.close();
+    })().catch(error => {
+      document.body.textContent = `Snow runtime test bootstrap failed: ${error?.message || error}`;
+      console.error(error);
+    });
+  </script>
+</body>
+</html>
