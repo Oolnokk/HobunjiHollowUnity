@@ -73,33 +73,34 @@
     for (const object of playerSceneObjects()) { detach(object); scene?.add(object); }
   }
 
-  // Use the game's ordinary fade transition whenever it is alive. Some dev/title
-  // states leave startSceneTransition installed but never execute its midpoint
-  // callback; in that case run the exact same area-switch callback once after a
-  // short grace period. The once-guard prevents a delayed fade callback from
-  // applying the warp twice.
+  // Resolve only after the transition midpoint has actually applied the scene
+  // switch. Reroll callers can then safely start another generation without a
+  // stale midpoint callback acting on a later `ruin` instance.
   function runSceneTransition(callback) {
-    let fired = false;
-    let fallbackTimer = 0;
-    const once = () => {
-      if (fired) return;
-      fired = true;
-      if (fallbackTimer) clearTimeout(fallbackTimer);
-      callback();
-    };
-    fallbackTimer = setTimeout(() => {
-      if (!fired) {
-        console.warn('[Random Test Ruin] normal scene-transition midpoint did not fire; using dev direct-switch fallback.');
+    return new Promise((resolve, reject) => {
+      let fired = false;
+      let fallbackTimer = 0;
+      const once = () => {
+        if (fired) return;
+        fired = true;
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        try { callback(); resolve(); }
+        catch (error) { reject(error); }
+      };
+      fallbackTimer = setTimeout(() => {
+        if (!fired) {
+          console.warn('[Random Test Ruin] normal scene-transition midpoint did not fire; using dev direct-switch fallback.');
+          once();
+        }
+      }, TRANSITION_FALLBACK_MS);
+      try {
+        if (typeof deps?.startSceneTransition === 'function') deps.startSceneTransition(once);
+        else once();
+      } catch (error) {
+        console.warn('[Random Test Ruin] scene transition failed; using direct-switch fallback.', error);
         once();
       }
-    }, TRANSITION_FALLBACK_MS);
-    try {
-      if (typeof deps?.startSceneTransition === 'function') deps.startSceneTransition(once);
-      else once();
-    } catch (error) {
-      console.warn('[Random Test Ruin] scene transition failed; using direct-switch fallback.', error);
-      once();
-    }
+    });
   }
 
   function removeGeneratorFrame() {
@@ -295,7 +296,7 @@
       const rec=makeMapRecord(seed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
       ruin={seed,sourceSeed:generated.seed,api,locale:generated.locale,meta,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null};
       registerFloor(meta); discoverRuntimeObjects();
-      enterRuin(); updateBadge();
+      await enterRuin(); updateBadge();
       deps.showToast?.(`Entered Random Test Ruin #${seed} as ${MAP_ID}.`,true);
       return true;
     } catch(error) { console.error('[Random Test Ruin interior]',error); deps.showToast?.(`Random Test Ruin failed: ${error.message}`,false); clearRuntime(true); return false; }
@@ -303,22 +304,28 @@
   }
 
   function enterRuin() {
-    runSceneTransition(()=>{
+    const entering=ruin;
+    return runSceneTransition(()=>{
+      // A completed generate now awaits this callback, but keep the identity guard
+      // so an explicit clear/leave during a transition cannot warp into stale data.
+      if(!entering||ruin!==entering)return;
       for(const o of playerSceneObjects()) detach(o);
       deps.setCurrentArea(MAP_ID); deps.setCurrentBuildingMapId?.(MAP_ID);
-      deps.player.x=ruin.spawn.x*deps.TILE; deps.player.y=ruin.spawn.z*deps.TILE; deps.player.vx=0;deps.player.vy=0;
-      movePlayerObjectsTo(ruin.scene);
-      const s=DS.sampleSupport(ruin.spawn.x,ruin.spawn.z,{minY:-4,maxY:5,pad:.02}); ruin.supportId=s?.id||null;ruin.supportY=s?.y||0;
-      ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y}; ruin.lastSafePx={...ruin.lastAcceptedPx};
-      if(deps.playerMesh?.position) deps.playerMesh.position.y=ruin.supportY;
+      deps.player.x=entering.spawn.x*deps.TILE; deps.player.y=entering.spawn.z*deps.TILE; deps.player.vx=0;deps.player.vy=0;
+      movePlayerObjectsTo(entering.scene);
+      const s=DS.sampleSupport(entering.spawn.x,entering.spawn.z,{minY:-4,maxY:5,pad:.02}); entering.supportId=s?.id||null;entering.supportY=s?.y||0;
+      entering.lastAcceptedPx={x:deps.player.x,y:deps.player.y}; entering.lastSafePx={...entering.lastAcceptedPx};
+      if(deps.playerMesh?.position) deps.playerMesh.position.y=entering.supportY;
       deps._snapCameraTarget?.(); deps.refreshActionBar?.(); deps.closeMenu?.();
     });
   }
 
   function leaveRuin() {
     if (!ruin || deps.getCurrentArea?.()!==MAP_ID) return;
+    const leaving=ruin;
     const back=returnAnchor||{area:'farm',x:(deps.COLS/2)*deps.TILE,y:(deps.ROWS/2)*deps.TILE};
-    runSceneTransition(()=>{
+    return runSceneTransition(()=>{
+      if(!leaving||ruin!==leaving)return;
       for(const o of playerSceneObjects()) detach(o);
       deps.setCurrentArea(back.area); deps.setCurrentBuildingMapId?.(deps._isBuildingArea?.(back.area)?back.area:null);
       deps.player.x=back.x; deps.player.y=back.y; deps.player.vx=0;deps.player.vy=0;
@@ -331,7 +338,12 @@
   function clearRuntime(removeMap=true) {
     DS.clearScope(SCOPE); if(promptOwned) window.ActionPromptUI?.hideActionPrompt?.(); promptOwned=false;currentControl=null;
     if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);} if(removeMap) buildingScenes?.delete(MAP_ID);
-    ruin=null; removeGeneratorFrame(); const badge=document.getElementById('devRandomRuinBadge'); if(badge) badge.style.display='none';
+    ruin=null;
+    // A reroll deliberately keeps the hidden V50 realm alive. Its API's
+    // restorePreviewRoots() reclaims these detached roots before rebuilding,
+    // preserving exact prototype caches and preventing repeated iframe/CDN boot.
+    if(removeMap) removeGeneratorFrame();
+    const badge=document.getElementById('devRandomRuinBadge'); if(badge) badge.style.display='none';
   }
 
   function controlPoint(c){ return c.point ? new THREE.Vector3(c.point.x,0,c.point.z) : centerFor(c.object); }
