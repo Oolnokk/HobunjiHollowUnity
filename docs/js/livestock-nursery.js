@@ -842,6 +842,22 @@
 
   function decoratePanelNow() {
     if (panelDecorating || typeof document === 'undefined') return;
+    // installPanelObserver watches the WHOLE document.body subtree for any
+    // mutation at all, so this fires on essentially every HUD/UI update in
+    // the game, not just ones inside the Farm panel. Both #farmLivestockList
+    // and #farmBuildingsList only exist inside the Farm tab's .mp-pane,
+    // which -- like every other menu pane in this game -- stays mounted in
+    // the DOM while closed rather than being removed, so without this check
+    // decoratePanelNow() ran its full rebuild (including a real,
+    // uncached save-blob parse via currentLivestock()) on every one of those
+    // mutations for as long as the game was open, regardless of whether the
+    // player had the Farm tab open at all. Found via direct call-frequency
+    // instrumentation: thousands of calls even while sitting completely idle
+    // away from any menu. classList checks here are cheap (no forced
+    // layout), unlike a getBoundingClientRect()/getComputedStyle() check.
+    const menuOpen = document.getElementById('menuPanel')?.classList.contains('open');
+    const farmPaneActive = document.getElementById('mpFarm')?.classList.contains('active');
+    if (!menuOpen || !farmPaneActive) return;
     panelDecorating = true;
     panelObserver?.disconnect();
     try {
