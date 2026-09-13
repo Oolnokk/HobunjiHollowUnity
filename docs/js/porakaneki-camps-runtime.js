@@ -510,6 +510,47 @@
     if (!Array.isArray(lines) || !lines.length) return '';
     return lines[Math.floor(rand() * lines.length)] || lines[0]; // Keeps repeated camp approaches from always using the same warning.
   }
+  // Warnings/greetings are meant to read as an actual Porakaneki speaking,
+  // the same overhead chathead+text bubble every other NPC's greeting uses
+  // (see ambient-dialogue.js) -- not a generic HUD toast with no speaker.
+  // Falls back to the toast only if AmbientDialogue or a live avatar to
+  // anchor the bubble to isn't available (e.g. very first tick after boot).
+  function speakOverheadFromWalker(walker, text, options = {}) {
+    if (text && walker?.root && window.AmbientDialogue?.show) {
+      const shown = window.AmbientDialogue.show(walker.root, text, {
+        speakerId: walker.rec?.id || 'porakaneki_chief',
+        profile: walker.profile,
+        mode: 'chathead',
+        tone: options.tone || 'greeting',
+      });
+      if (shown) return true;
+    }
+    if (text) combatDeps.showToast?.(text, options.important !== false);
+    return false;
+  }
+  function speakOverheadFromHunter(hunter, text, options = {}) {
+    const entity = hunter?.entity;
+    if (text && entity?.avatarRef?.group && window.AmbientDialogue?.show) {
+      // rosterRecord is the same {name, appearance, equippedCosmetics,
+      // appliedDyes} shape bandit/animal roster records already use to
+      // build a portrait -- Porakaneki inherits Kenkari's registered
+      // portrait fighter (see porakaneki-species-runtime.js), so this
+      // resolves through the exact same pipeline as any other NPC.
+      const profile = window.NpcAvatarPreview?.buildProfileFromNpcExport?.(entity.rosterRecord) || null;
+      const shown = window.AmbientDialogue.show(entity.avatarRef.group, text, {
+        speakerId: entity.id,
+        profile,
+        mode: profile ? 'chathead' : 'overhead',
+        tone: options.tone || 'greeting',
+      });
+      if (shown) return true;
+    }
+    if (text) combatDeps.showToast?.(text, options.important !== false);
+    return false;
+  }
+  function speakerHunterFor(camp) {
+    return camp?.hunters?.find(hunter => hunter.entity) || null; // Whichever resident is actually materialized speaks for the camp.
+  }
   function resetCampWarning(camp) {
     if (!camp) return;
     camp.warningEnteredAtMs = 0;
@@ -537,12 +578,12 @@
     if (!nearest.warningInitialShown) {
       nearest.warningInitialShown = true;
       const text = chooseLine(rep.initialWarnings);
-      if (text) combatDeps.showToast?.(text, false);
+      if (text) speakOverheadFromHunter(speakerHunterFor(nearest), text, { tone: 'warning', important: false });
     }
     if (!nearest.warningEscalated && nowMs() - nearest.warningEnteredAtMs >= num(rep.warningStaySeconds, 10) * 1000) {
       nearest.warningEscalated = true;
       const text = chooseLine(rep.escalationWarnings);
-      if (text) combatDeps.showToast?.(text, false);
+      if (text) speakOverheadFromHunter(speakerHunterFor(nearest), text, { tone: 'warning', important: false });
     }
   }
 
@@ -556,7 +597,8 @@
     const relation = relationshipState();
     if (!relation || memoryHas(relation, marker)) return;
     pushMemory(relation, marker);
-    combatDeps.showToast?.('The Porakaneki chief greets you.', true);
+    const text = chooseLine(cfg?.reputation?.greetingLines) || 'The Porakaneki chief greets you.';
+    speakOverheadFromWalker(walker, text, { tone: 'greeting' });
     state.greetings += 1;
   }
 
@@ -835,7 +877,8 @@
     const player = playerTilePosition();
     if (!player || Math.hypot(hunter.x - player.col, hunter.y - player.row) > num(cfg?.reputation?.greetingRadiusTiles, 3)) return;
     hunter.greetingDay = gameDay();
-    combatDeps.showToast?.('A Porakaneki hunter greets you.', true);
+    const text = chooseLine(cfg?.reputation?.greetingLines) || 'A Porakaneki hunter greets you.';
+    speakOverheadFromHunter(hunter, text, { tone: 'greeting' });
     state.greetings += 1;
   }
   function updateDetailedHunter(hunter, dt) {
@@ -1045,7 +1088,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `Porakaneki camps: v3 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} chunk=${d.chunkSizeTiles} player=${d.playerChunk ? `${d.playerChunk.x},${d.playerChunk.y}` : '-'} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ isSleepingHour, chunkOf, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount }),
+    __test: Object.freeze({ isSleepingHour, chunkOf, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, speakOverheadFromHunter, speakOverheadFromWalker }),
   });
 
   watchNamespace('BanditCombat', installBanditCombat);

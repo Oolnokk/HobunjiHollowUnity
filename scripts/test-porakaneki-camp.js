@@ -281,6 +281,43 @@ function smallCenters(debug) {
   assert.equal(stillTracked.materialized, false, 'sustained dormancy actually releases the entity back to plain abstract data');
   assert(hostileObjects.length < hostileCountWhileHidden, 'the released entity is spliced out of hostileObjects, not left as permanent dead weight');
 
+  // Warnings/greetings must read as an actual Porakaneki speaking -- the
+  // same overhead chathead+text bubble every other NPC's greeting uses
+  // (ambient-dialogue.js) -- not a generic toast with no speaker.
+  const toastCountBefore = toastLog.length;
+  const showCalls = [];
+  contextWindow.AmbientDialogue = { show: (...args) => { showCalls.push(args); return { fakeEvent: true }; } };
+  contextWindow.NpcAvatarPreview = { buildProfileFromNpcExport: npc => ({ fighter: { id: 'porakaneki_male' }, __npc: npc }) };
+  const fakeHunterEntity = { id: 'hunter_speak_test', avatarRef: { group: { fakeGroup: true } }, rosterRecord: { appearance: { speciesId: 'porakaneki', gender: 'male' }, equippedCosmetics: [], appliedDyes: {} } };
+  const fakeHunter = { entity: fakeHunterEntity };
+  const fakeWalker = { root: { fakeRoot: true }, rec: { id: 'porakaneki_chief' }, profile: { fighter: { id: 'chief_walker_profile' } } };
+
+  let ok = api.__test.speakOverheadFromHunter(fakeHunter, 'Go way. No want trouble', { tone: 'warning', important: false });
+  assert.equal(ok, true, 'speakOverheadFromHunter reports success when AmbientDialogue accepts the bubble');
+  assert.equal(showCalls.length, 1);
+  assert.equal(showCalls[0][0], fakeHunterEntity.avatarRef.group, 'bubble anchors to the speaking hunter\'s own avatar, not a generic point');
+  assert.equal(showCalls[0][1], 'Go way. No want trouble');
+  assert.equal(showCalls[0][2].mode, 'chathead', 'a resolved portrait profile means the little chathead icon renders, not plain overhead text');
+  assert.equal(showCalls[0][2].profile.fighter.id, 'porakaneki_male', 'chathead portrait resolves through the same rosterRecord->profile pipeline bandit/animal chatheads already use');
+  assert.equal(showCalls[0][2].profile.__npc, fakeHunterEntity.rosterRecord);
+  assert.equal(showCalls[0][2].tone, 'warning');
+  assert.equal(toastLog.length, toastCountBefore, 'no fallback toast fires once AmbientDialogue actually shows the bubble');
+
+  ok = api.__test.speakOverheadFromWalker(fakeWalker, 'Good to see you, friend.', { tone: 'greeting' });
+  assert.equal(ok, true);
+  assert.equal(showCalls.length, 2);
+  assert.equal(showCalls[1][0], fakeWalker.root, 'the named chief speaks from his own walker root, exactly like any other NPC greeting');
+  assert.equal(showCalls[1][2].profile, fakeWalker.profile, 'the chief already has a normal NPC portrait profile -- no rosterRecord bridge needed');
+  assert.equal(showCalls[1][2].mode, 'chathead');
+
+  // Falls back to the plain toast (not silence) when AmbientDialogue isn't available.
+  delete contextWindow.AmbientDialogue;
+  ok = api.__test.speakOverheadFromHunter(fakeHunter, 'This our spot, not yours. Leave.', { important: false });
+  assert.equal(ok, false);
+  assert.equal(showCalls.length, 2, 'no further AmbientDialogue calls once it is unavailable');
+  assert.equal(toastLog.length, toastCountBefore + 1);
+  assert.deepEqual(toastLog[toastLog.length - 1], { text: 'This our spot, not yours. Leave.', positive: false });
+
   console.log('Porakaneki distributed seasonal camp regression checks passed.');
 })().catch(error => {
   console.error(error);

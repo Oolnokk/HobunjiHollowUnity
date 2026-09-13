@@ -59,6 +59,11 @@
     "attackOnSightFavor": -5,
     "greetingFavorThreshold": 1,
     "greetingRadiusTiles": 3,
+    "greetingLines": [
+      "Good to see you, friend.",
+      "Welcome back to our camp.",
+      "You walk safe here."
+    ],
     "killPenalty": -1,
     "damageAttributionRadiusTiles": 14,
     "initializationMemoryEvent": "porakaneki_faction_initialized",
