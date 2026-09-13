@@ -1495,6 +1495,33 @@
           townReturnCol: 30, townReturnRow: 2,
           audioIndex: 'general',
         },
+        // Dev-only sibling to map_dev_arena, reachable solely through
+        // Settings' "Teleport to Wilderness Chunk Lab" button (see
+        // regenerateWildernessLab/teleportToWildernessLab in dev-spawner.js).
+        // Where the Testing Arena is a hand-authored empty room, this zone
+        // runs the SAME WildernessMapGenerator -> TerrainPreview ->
+        // _zoneLayouts -> buildZoneScene -> WildernessChunks pipeline every
+        // real wilderness zone uses, just sized down to a handful of 16-tile
+        // chunks instead of a full 200x200 zone -- small enough to isolate
+        // whether a perf/resource-leak issue lives in per-chunk terrain and
+        // foliage generation itself, and to give the existing "Show Chunk
+        // Grid"/"Audit Loaded Chunks" debug tools plus the Performance
+        // Profiler's live GPU geometry/texture counts something cheap and
+        // reproducible to check across a regenerate for whatever shouldn't
+        // survive a chunk unload/rebuild. cols/rows below are only the
+        // placeholder shown before the first regenerateWildernessLab() call
+        // replaces them via _zoneLayouts. No packSpecies/herbivoreSpecies
+        // pool, same as map_dev_arena, so it never spawns ambient wildlife or
+        // bandit camps on its own.
+        map_wilderness_lab: {
+          label: 'Wilderness Chunk Lab',
+          cols: 16, rows: 16,
+          groundColor: 0x556b4a, fogColor: 0x2a332a,
+          entryCol: 8, entryRow: 8,
+          exitCol: 1, exitRow: 1,
+          townReturnCol: 30, townReturnRow: 2,
+          audioIndex: 'general',
+        },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
 
@@ -8218,6 +8245,65 @@
           .finally(() => { _tothalShiftPromise = null; });
       }
       window.forceTothalShift = () => checkTothalShift(true);
+
+      // ── Wilderness Chunk Lab ──────────────────────────────────────────
+      // Runs the exact generation pipeline performTothalShift uses for a
+      // real zone (WildernessMapGenerator.generateWorkspace ->
+      // TerrainPreview.buildMergedZoneGrid -> a _zoneLayouts entry
+      // buildZoneScene can consume), but against map_wilderness_lab and
+      // sized to just a few WildernessChunks.constants.CHUNK_TILES-wide
+      // chunks instead of a full zone -- see that mapId's EXTERIOR_ZONES
+      // comment for why this exists. A fresh random seed every call, so
+      // repeated regeneration (see dev-spawner.js's
+      // regenerateWildernessLabInPlace) gives a new layout each time rather
+      // than rebuilding the same one, the way a real Tothal Shift would for
+      // a new year.
+      function regenerateWildernessLab(chunksPerSide = 1) {
+        if (typeof WildernessMapGenerator === 'undefined' || typeof TerrainPreview === 'undefined') {
+          debugLog('[wilderness-lab] generator not loaded', 'warn');
+          return false;
+        }
+        const mapId = 'map_wilderness_lab';
+        const chunkTiles = window.WildernessChunks?.constants?.CHUNK_TILES || 16;
+        const exportScale = 2; // WildernessMapGenerator's own GENERATION_TILE_SCALE post-layout upscale (generated width/height double on export).
+        const side = Math.max(1, Math.min(8, Math.round(Number(chunksPerSide) || 1)));
+        const internalSize = Math.max(4, Math.round((side * chunkTiles) / exportScale));
+        const seed = `wilderness_lab_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6)}`;
+        let workspace, merged;
+        try {
+          // Reuses map_northern_cliffs' terrain preset/boundary settings so
+          // the lab's terrain is representative of a real zone's generated
+          // plateaus/cliffs rather than the flatter 'custom' default.
+          workspace = WildernessMapGenerator.generateWorkspace(seed, {
+            width: internalSize, height: internalSize,
+            entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5,
+          });
+          merged = TerrainPreview.buildMergedZoneGrid(workspace, workspace.maps[0].id);
+        } catch (e) {
+          debugLog(`[wilderness-lab] generation failed: ${e.message}`, 'warn');
+          return false;
+        }
+        if (!merged) { debugLog('[wilderness-lab] no fold math available', 'warn'); return false; }
+        _zoneLayouts.set(mapId, {
+          cols: merged.cols, rows: merged.rows, tiles: [...merged.tiles.values()],
+          transitions: [], toTownExit: workspace.entry ? { col: workspace.entry.col, row: workspace.entry.row } : null,
+          mesas: merged.mesas, buildings: merged.buildings || [], decor: [], furniture: [],
+          dens: workspace.animalDens || [], rootTotems: workspace.rootTotems || [],
+          foliagePatches: workspace.foliagePatches || [], wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
+          ambushStations: workspace.ambushStations || [], localeInstances: [],
+        });
+        if (EXTERIOR_ZONES[mapId] && workspace.entry) {
+          EXTERIOR_ZONES[mapId].entryCol = workspace.entry.col;
+          EXTERIOR_ZONES[mapId].entryRow = workspace.entry.row;
+        }
+        window.WildlifeSpawn?.forgetZoneDenState(mapId);
+        window.BanditCamps?.forgetZoneState(mapId);
+        if (currentArea === mapId) _dirtyZoneScenes.add(mapId);
+        else _disposeZoneScene(mapId);
+        debugLog(`[wilderness-lab] generated ${side}x${side} chunk(s) (${merged.cols}x${merged.rows} tiles), seed ${seed}`);
+        return true;
+      }
+      window.__regenerateWildernessLab = regenerateWildernessLab; // Console/QA hook, mirrors window.forceTothalShift.
 
       // Wilderness fog-of-war, discovered-locale tracking, waypoints, and
       // full-screen Map panel rendering now live in
@@ -26546,6 +26632,7 @@
         getRainPlaneSettings: window.RainPlanes.getSettings,
         setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
+        regenerateWildernessLab,
       });
 
       window.MapLivePreviewRuntime?.init({

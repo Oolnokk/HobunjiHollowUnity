@@ -1892,6 +1892,25 @@
             </div>
             <button type="button" id="devTeleportArenaBtn" class="settings-small-btn">Teleport</button>
           </div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Teleport to Wilderness Chunk Lab</div>
+              <div class="settings-desc">Warp to a real procedurally generated wilderness zone sized down to just a few chunks, instead of a full map — for isolating terrain/foliage render cost and checking chunk unload/rebuild for anything that doesn't get released (pair with "Show Chunk Grid"/"Audit Loaded Chunks" below and the Performance Profiler's GPU counts). Press again to warp back.</div>
+            </div>
+            <select id="devWildernessLabSize" class="settings-small-btn" style="cursor:pointer" title="Chunks per side">
+              <option value="1">1 chunk</option>
+              <option value="4">2×2 chunks</option>
+              <option value="9">3×3 chunks</option>
+            </select>
+            <button type="button" id="devTeleportWildernessLabBtn" class="settings-small-btn">Teleport</button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Regenerate Wilderness Chunk Lab In Place</div>
+              <div class="settings-desc">While inside the lab: disposes and rebuilds every loaded chunk with a fresh random layout, without leaving. Repeat a few times and check whether GPU geometry/texture counts and the chunk residency audit return to the same baseline each time, or creep upward.</div>
+            </div>
+            <button type="button" id="devRegenerateWildernessLabBtn" class="settings-small-btn">Regenerate</button>
+          </div>
         </div>
       </div><!-- /mpSettings -->
 
