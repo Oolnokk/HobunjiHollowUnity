@@ -31,6 +31,27 @@
     }
   }
 
+  // V50 keeps the authoritative per-cell elevation map on its generated
+  // Roughbrick floor mesh because the standalone preview can query the scene
+  // directly. The game bridge needs that same map after the roots leave this
+  // iframe, so mirror it into exported metadata without changing V50 source.
+  function hydrateInteriorPlateauLevels() {
+    const shell = lastGeneratedLocale?.meta?.interiorShell;
+    if (!shell?.plateauModel || !localePreviewRoot?.traverse) return null;
+    let floor = null;
+    localePreviewRoot.traverse(object => {
+      if (floor) return;
+      const model = object.userData?.plateauModel;
+      if (object.userData?.wallBuilderRecipe === 'wallrecipe2.json' && model?.levelByCell) floor = object;
+    });
+    const floorModel = floor?.userData?.plateauModel;
+    if (!floorModel?.levelByCell) return shell.plateauModel;
+    shell.plateauModel.levelByCell = { ...floorModel.levelByCell };
+    if (Number.isFinite(Number(floorModel.stepHeight))) shell.plateauModel.stepHeight = Number(floorModel.stepHeight);
+    shell.plateauModel.runtimeLevelSource = floor.name || 'V50 Roughbrick floor mesh';
+    return shell.plateauModel;
+  }
+
   async function generateInteriorLocale(options = {}) {
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
@@ -48,6 +69,7 @@
     if (!lastGeneratedLocale || lastGeneratedLocale.meta?.environment !== 'interior') {
       throw new Error($('localeStatus')?.textContent || 'V50 did not produce an interior ruin.');
     }
+    hydrateInteriorPlateauLevels();
 
     return {
       seed: $('localeSeed').value,
@@ -188,7 +210,13 @@
       for (const value of tags.activators) aggregate.activators.add(value);
       for (const value of tags.access) aggregate.access.add(value);
       for (const entry of tags.unknown) aggregate.unknown.push({ seed:generated.seed, ...entry });
-      results.push({ seed:generated.seed, rooms:generated.locale?.meta?.interiorShell?.rooms?.length || 0, ...tags });
+      const levels = Object.values(generated.locale?.meta?.interiorShell?.plateauModel?.levelByCell || {}).map(Number);
+      results.push({
+        seed:generated.seed,
+        rooms:generated.locale?.meta?.interiorShell?.rooms?.length || 0,
+        negativeLevelCells:levels.filter(level => level < 0).length,
+        ...tags,
+      });
     }
     return {
       count,
@@ -203,6 +231,7 @@
   }
 
   function getState() {
+    hydrateInteriorPlateauLevels();
     return {
       seed: $('localeSeed')?.value || null,
       locale: cloneJson(lastGeneratedLocale),
@@ -228,6 +257,7 @@
     createRuntimeStoneLadder,
     inspectRuntimeTags,
     auditInteriorSeeds,
+    hydrateInteriorPlateauLevels,
     getState,
   });
 })();
