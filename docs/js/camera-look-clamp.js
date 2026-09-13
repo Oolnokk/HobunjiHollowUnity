@@ -19,9 +19,13 @@
 
   // Parser-time dev-playtest bootstrap. The random-ruin adapter now registers
   // V50 output as a real map_i_* building interior instead of dumping its
-  // scene graph into the Testing Arena.
+  // scene graph into the Testing Arena. Prototype hooks load between the
+  // generic dynamic-surface registry and the base ruin adapter so their
+  // interaction listener can claim only the structural controls the adapter
+  // does not yet own (ladders/transit doors) without duplicating base logic.
   if (document.readyState === 'loading') {
-    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50interior3"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50interior3"></scr' + 'ipt>');
+    document.write('<script src="js/dynamic-surfaces.js?v=20260913v50hooks1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260913v50hooks1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260913v50hooks1"></scr' + 'ipt>');
   }
 })();
