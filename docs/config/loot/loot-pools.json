@@ -33,6 +33,12 @@
         { "id": "meat", "itemKey": "puktukMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} }
       ]
     },
+    "creature_voorg-ass": {
+      "label": "Voorg-Ass",
+      "entries": [
+        { "id": "meat", "itemKey": "voorgAssMeat", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+      ]
+    },
     "creature_gar-wolf": {
       "label": "Gar-wolf",
       "entries": [
@@ -115,7 +121,7 @@
       "note": "metalBars/mysteryDye are generator entries (rollTreasureMetalKeys/rollTreasureDyeItemKeys in game.js) always rolled; gold is a plain ranged item roll in steps of 8; potion/combatManual/clothing are generator entries with their own internal randomization gated by this pool's chance.",
       "entries": [
         { "id": "metalBars", "kind": "generator", "generatorKey": "treasureMetalBars", "chance": 1, "conditions": {} },
-        { "id": "mysteryDye", "kind": "generator", "generatorKey": "treasureMysteryDye", "chance": 1, "conditions": {} },
+        { "id": "mysteryDye", "kind": "generator", "generatorKey": "treasureMysteryDyeItemKeys", "chance": 1, "conditions": {} },
         { "id": "gold", "kind": "range", "itemKey": "gold", "min": 10, "max": 42, "step": 8, "chance": 0.7, "conditions": {} },
         { "id": "potion", "kind": "generator", "generatorKey": "treasurePotion", "chance": 0.35, "conditions": {} },
         { "id": "combatManual", "kind": "generator", "generatorKey": "combatAbilityManual", "chance": 0.08, "conditions": {} },
