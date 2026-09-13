@@ -13,6 +13,7 @@ on:
       - 'docs/js/stable-animal-progression.js'
       - 'docs/js/stable-animal-perk-adjustments.js'
       - 'docs/js/stable-animal-training-refinements.js'
+      - 'docs/js/stable-animal-xp-events.js'
       - 'docs/js/stable-training-compendium-patch.js'
       - 'docs/js/farm-panel.js'
       - 'docs/js/farm-panel-core.js'
@@ -27,6 +28,7 @@ on:
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-training-refinements.js'
+      - 'scripts/test-stable-animal-xp-events.js'
       - 'scripts/test-stable-panel-training-ui.js'
       - 'scripts/test-stable-training-compendium-copy.js'
       - 'scripts/test-barn-incubator.js'
@@ -45,6 +47,7 @@ on:
       - 'docs/js/stable-animal-progression.js'
       - 'docs/js/stable-animal-perk-adjustments.js'
       - 'docs/js/stable-animal-training-refinements.js'
+      - 'docs/js/stable-animal-xp-events.js'
       - 'docs/js/stable-training-compendium-patch.js'
       - 'docs/js/farm-panel.js'
       - 'docs/js/farm-panel-core.js'
@@ -59,6 +62,7 @@ on:
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-training-refinements.js'
+      - 'scripts/test-stable-animal-xp-events.js'
       - 'scripts/test-stable-panel-training-ui.js'
       - 'scripts/test-stable-training-compendium-copy.js'
       - 'scripts/test-barn-incubator.js'
@@ -88,6 +92,7 @@ jobs:
           node --check docs/js/stable-animal-progression.js
           node --check docs/js/stable-animal-perk-adjustments.js
           node --check docs/js/stable-animal-training-refinements.js
+          node --check docs/js/stable-animal-xp-events.js
           node --check docs/js/stable-training-compendium-patch.js
           node --check docs/js/farm-panel.js
           node --check docs/js/farm-panel-core.js
@@ -103,6 +108,8 @@ jobs:
         run: node scripts/test-stable-animal-progression.js
       - name: Test stable training refinements
         run: node scripts/test-stable-animal-training-refinements.js
+      - name: Test stable animal XP events
+        run: node scripts/test-stable-animal-xp-events.js
       - name: Test native stable panel UI
         run: node scripts/test-stable-panel-training-ui.js
       - name: Test Stable Compendium copy
