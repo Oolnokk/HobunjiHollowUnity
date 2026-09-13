@@ -11137,7 +11137,7 @@
               if (isVisibleArea) {
                 this._updateStationWander(target, dt);
                 const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-                root.position.y += (wty - root.position.y) * 0.2;
+                root.position.y += (wty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap: same catch-up feel at any dt, not just one frame's worth per call.
                 if (this._moveSpeedTiles > 0.05) {
                   const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
                   root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
@@ -11154,7 +11154,7 @@
                 root.position.z = seatTransform.z;
                 const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
                 const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32;
-                root.position.y += (groundY + seatSink - root.position.y) * 0.18;
+                root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
                 root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
@@ -11280,7 +11280,7 @@
             }
             if (this.state === 'breakoff') this.state = 'idle';
             const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-            root.position.y += (ty - root.position.y) * 0.2;
+            root.position.y += (ty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap.
             // Bob animation when moving — mirrors the player's own
             // effort-based move bob (updateMovement): amplitude ramps from
             // the calm-walking baseline up to the full-effort peak as this
@@ -21448,9 +21448,15 @@
         // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
         // or a climbing hop's bounce, see player.climbHopBounce)
         const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
-        playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
-        playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
-        playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
+        // Exponential catch-up scaled by dt so the player mesh converges on its
+        // logical (wx, wz, targetY) target at the same real-time rate whether
+        // the frame budget is 8ms or 40ms — a plain per-frame `* 0.25` would
+        // visibly snap faster the instant the framerate jumps.
+        const _playerMeshSmoothXZ = 1 - Math.exp(-17.3 * dt);
+        const _playerMeshSmoothY  = 1 - Math.exp(-11.9 * dt);
+        playerMesh.position.x += (wx - playerMesh.position.x) * _playerMeshSmoothXZ;
+        playerMesh.position.z += (wz - playerMesh.position.z) * _playerMeshSmoothXZ;
+        playerMesh.position.y += (targetY - playerMesh.position.y) * _playerMeshSmoothY;
         // updateMountRide has already written the carrier's final smoothed
         // mesh transform this frame. In steady riding, use that exact render
         // position so rider and mount cannot trail each other through two
@@ -22627,7 +22633,7 @@
               } else {
                 proximityStr = windStrBase;
               }
-              vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * 0.15;
+              vm.material.uniforms.uStrength.value += (proximityStr - vm.material.uniforms.uStrength.value) * (1 - Math.exp(-9.8 * dt)); // Framerate-independent wind-strength catch-up.
             }
           }
           const windScale = windStrBase / 0.03;
