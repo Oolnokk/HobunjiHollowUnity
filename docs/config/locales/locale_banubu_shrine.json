@@ -15,32 +15,84 @@
   "cols": 10,
   "rows": 10,
   "tiles": {
-    "4,2": { "type": "path" },
-    "5,2": { "type": "rock" },
-    "3,3": { "type": "rock" },
-    "4,3": { "type": "path" },
-    "5,3": { "type": "rock" },
-    "2,4": { "type": "rock" },
-    "3,4": { "type": "grass" },
-    "4,4": { "type": "path" },
-    "5,4": { "type": "grass" },
-    "6,4": { "type": "grass" },
-    "2,5": { "type": "rock" },
-    "3,5": { "type": "grass" },
-    "4,5": { "type": "grass" },
-    "5,5": { "type": "grass" },
-    "6,5": { "type": "rock" },
-    "2,6": { "type": "rock" },
-    "3,6": { "type": "grass" },
-    "4,6": { "type": "grass" },
-    "5,6": { "type": "grass" },
-    "6,6": { "type": "rock" },
-    "7,6": { "type": "rock" },
-    "2,7": { "type": "rock" },
-    "3,7": { "type": "rock" },
-    "4,7": { "type": "rock" },
-    "5,7": { "type": "grass" },
-    "6,7": { "type": "rock" }
+    "4,2": {
+      "type": "path"
+    },
+    "5,2": {
+      "type": "rock"
+    },
+    "3,3": {
+      "type": "rock"
+    },
+    "4,3": {
+      "type": "path"
+    },
+    "5,3": {
+      "type": "rock"
+    },
+    "2,4": {
+      "type": "rock"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "path"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "grass"
+    },
+    "2,5": {
+      "type": "rock"
+    },
+    "3,5": {
+      "type": "grass"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "rock"
+    },
+    "2,6": {
+      "type": "rock"
+    },
+    "3,6": {
+      "type": "grass"
+    },
+    "4,6": {
+      "type": "grass"
+    },
+    "5,6": {
+      "type": "grass"
+    },
+    "6,6": {
+      "type": "rock"
+    },
+    "7,6": {
+      "type": "rock"
+    },
+    "2,7": {
+      "type": "rock"
+    },
+    "3,7": {
+      "type": "rock"
+    },
+    "4,7": {
+      "type": "rock"
+    },
+    "5,7": {
+      "type": "grass"
+    },
+    "6,7": {
+      "type": "rock"
+    }
   },
   "terrainAnchors": {
     "3,3": {
@@ -48,40 +100,207 @@
       "strength": "required",
       "weight": 1,
       "facing": "any",
-      "height": { "mode": "any", "min": null, "max": null }
+      "height": {
+        "mode": "any",
+        "min": null,
+        "max": null
+      }
     },
     "4,3": {
       "terrain": "free",
       "strength": "required",
       "weight": 1,
       "facing": "any",
-      "height": { "mode": "any", "min": null, "max": null }
+      "height": {
+        "mode": "any",
+        "min": null,
+        "max": null
+      }
     },
     "5,3": {
       "terrain": "free",
       "strength": "required",
       "weight": 1,
       "facing": "any",
-      "height": { "mode": "any", "min": null, "max": null }
+      "height": {
+        "mode": "any",
+        "min": null,
+        "max": null
+      }
+    },
+    "4,5": {
+      "terrain": "plateauCliff",
+      "strength": "required",
+      "weight": 1,
+      "facing": "north",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      }
     }
   },
   "embeddedTiles": {
-    "2,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "3,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "4,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "5,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "6,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "2,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "3,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "4,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "5,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "6,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "7,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "2,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "3,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "4,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "5,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-    "6,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true }
+    "2,5": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "3,5": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "4,5": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "5,5": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "6,5": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "2,6": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "3,6": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "4,6": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "5,6": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "6,6": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "7,6": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "2,7": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "3,7": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "4,7": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "5,7": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    },
+    "6,7": {
+      "terrain": "plateau",
+      "facing": "any",
+      "height": {
+        "mode": "relativeRange",
+        "min": 1,
+        "max": 32
+      },
+      "carveToLocaleFloor": true
+    }
   },
   "objects": [
     {
@@ -137,45 +356,212 @@
         "strength": "required",
         "weight": 1,
         "facing": "any",
-        "height": { "mode": "any", "min": null, "max": null }
+        "height": {
+          "mode": "any",
+          "min": null,
+          "max": null
+        }
       },
       "4,3": {
         "terrain": "free",
         "strength": "required",
         "weight": 1,
         "facing": "any",
-        "height": { "mode": "any", "min": null, "max": null }
+        "height": {
+          "mode": "any",
+          "min": null,
+          "max": null
+        }
       },
       "5,3": {
         "terrain": "free",
         "strength": "required",
         "weight": 1,
         "facing": "any",
-        "height": { "mode": "any", "min": null, "max": null }
+        "height": {
+          "mode": "any",
+          "min": null,
+          "max": null
+        }
+      },
+      "4,5": {
+        "terrain": "plateauCliff",
+        "strength": "required",
+        "weight": 1,
+        "facing": "north",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        }
       }
     },
     "embeddedTiles": {
-      "2,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "3,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "4,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "5,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "6,5": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "2,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "3,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "4,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "5,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "6,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "7,6": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "2,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "3,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "4,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "5,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true },
-      "6,7": { "terrain": "plateau", "facing": "any", "height": { "mode": "relativeRange", "min": 1, "max": 32 }, "carveToLocaleFloor": true }
+      "2,5": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "3,5": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "4,5": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "5,5": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "6,5": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "2,6": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "3,6": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "4,6": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "5,6": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "6,6": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "7,6": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "2,7": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "3,7": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "4,7": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "5,7": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      },
+      "6,7": {
+        "terrain": "plateau",
+        "facing": "any",
+        "height": {
+          "mode": "relativeRange",
+          "min": 1,
+          "max": 32
+        },
+        "carveToLocaleFloor": true
+      }
     },
-    "notes": "Northern Cliffs only. The exposed approach and mouth stay on one flat lower tier. Every authored tile behind that mouth line must overlap higher plateau mass and is carved down to the cave floor, so the locale genuinely enters the plateau instead of merely sitting beside it. The cave entrance prop renders at 2x its normal in-game cave scale."
+    "notes": "Northern Cliffs only. The exposed front stays on one flat lower tier; the first embedded row must form a north-facing INTERNAL plateau cliff above it (boundary escarpments are rejected), and the rear footprint is carved down to the cave floor. The cave entrance prop renders at 2x its normal in-game cave scale."
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",
-    "updatedAt": "2026-09-13T00:22:00.000Z"
+    "updatedAt": "2026-09-13T00:00:00.000Z"
   }
 }

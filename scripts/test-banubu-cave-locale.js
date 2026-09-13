@@ -32,6 +32,10 @@ for (const [key, rule] of Object.entries(embedded)) {
 const anchors = locale.terrainAnchors || {};
 const freeApproach = Object.values(anchors).filter(rule => rule.terrain === 'free' && rule.strength === 'required');
 assert(freeApproach.length >= 3, 'Banubu Cave needs a required open approach before the embedded plateau');
+const internalCliff = anchors['4,5'];
+assert(internalCliff, 'Banubu Cave needs an explicit cliff probe at the front of its embedded host');
+assert.strictEqual(internalCliff.terrain, 'plateauCliff', 'Banubu Cave must require an internal plateau cliff, not a boundary cliff');
+assert.strictEqual(internalCliff.facing, 'north', 'Banubu Cave plateau face must open north toward the authored mouth');
 assert.deepStrictEqual(locale.placement?.terrainAnchors, locale.terrainAnchors, 'editor-persistence terrain anchors must mirror runtime terrain anchors');
 assert.deepStrictEqual(locale.placement?.embeddedTiles, locale.embeddedTiles, 'editor-persistence embedded cells must mirror runtime embedded cells');
 

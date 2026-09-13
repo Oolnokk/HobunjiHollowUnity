@@ -121,9 +121,37 @@
     return rule;
   }
 
+  function scaledProbeEntries(record, scale) {
+    const output = new Map(); // Cliff probes expand only along their authored face so density scaling does not turn one cliff edge into a required solid NxN cliff block.
+    for (const [key, raw] of Object.entries(record || {})) {
+      const parsed = parseCellKey(key);
+      if (!parsed) continue;
+      const rule = normalizeProbe(raw, false);
+      const isCliff = rule.terrain === 'plateauCliff' || rule.terrain === 'boundaryCliff';
+      if (isCliff && rule.facing !== 'any' && scale > 1) {
+        for (let i = 0; i < scale; i++) {
+          const dx = rule.facing === 'west' ? 0 : rule.facing === 'east' ? scale - 1 : i;
+          const dy = rule.facing === 'north' ? 0 : rule.facing === 'south' ? scale - 1 : i;
+          const c = parsed.c * scale + dx;
+          const r = parsed.r * scale + dy;
+          output.set(sourceKey(c, r), { c, r, sourceC: parsed.c, sourceR: parsed.r, value: rule });
+        }
+        continue;
+      }
+      for (let dy = 0; dy < scale; dy++) {
+        for (let dx = 0; dx < scale; dx++) {
+          const c = parsed.c * scale + dx;
+          const r = parsed.r * scale + dy;
+          output.set(sourceKey(c, r), { c, r, sourceC: parsed.c, sourceR: parsed.r, value: rule });
+        }
+      }
+    }
+    return output;
+  }
+
   function compileLocale(locale, scale) {
     const tiles = scaledCellEntries(locale.tiles, scale, raw => ({ type: raw?.type || 'grass' })); // Expanded generated footprint tiles painted after a site is selected.
-    const probes = scaledCellEntries(locale.terrainAnchors, scale, raw => normalizeProbe(raw, false)); // Expanded non-generating environmental probes.
+    const probes = scaledProbeEntries(locale.terrainAnchors, scale); // Cliff probes become the correct face strip after tile-density expansion; ordinary probes still fill their scaled source cell.
     const embedded = scaledCellEntries(locale.embeddedTiles, scale, raw => normalizeProbe(raw, true)); // Expanded footprint cells that must overlap host terrain.
     const all = [...tiles.values(), ...probes.values(), ...embedded.values()]; // Every authored point constrains legal anchor bounds.
     if (!all.length || !tiles.size) return null;
