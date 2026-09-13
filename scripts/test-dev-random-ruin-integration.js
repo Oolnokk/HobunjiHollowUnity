@@ -2,6 +2,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -53,15 +54,23 @@ assert(coverage.includes('data.groundedToMovingPlatform && object?.parent'), 'pl
 assert(coverage.includes('effectiveUnhandled'), 'cross-layer audit must retain truly unhandled prototype objects');
 assert(coverage.includes('filterSeedAudit'), 'multi-seed audit must reconcile known cross-layer activator classes');
 
-// The hidden in-game generator must not discover furniture or load authored assets
-// from GitHub at runtime. The readable V50 file remains exact; debrisifier-01.js
-// swaps only its repository transport while executing devRuntime=1.
+// The recovered prototype file is immutable source-of-truth. Embedded mode patches
+// only four verified transport call sites in memory after reading these exact bytes.
+assert.equal(
+  crypto.createHash('sha256').update(debrisSource).digest('hex'),
+  '038a5d54c66b0ae2a9ceeb66967b9e5c32b616040f40b503eec59d5331885f40',
+  'readable V50 source must remain byte-for-byte identical to the recovered prototype source',
+);
 assert(debrisBootstrap.includes("params.get('devRuntime') === '1'"), 'Debris-ifier bootstrap must recognize hidden dev runtime mode');
 assert(debrisBootstrap.includes("const EMBEDDED_TREE = 'debrisifier-v50-embedded-tree.json'"), 'embedded runtime must name the committed local tree');
-assert(debrisBootstrap.includes('sourceText.replace(treeNeedle, treeReplacement).replace(rawNeedle, rawReplacement)'), 'embedded runtime must substitute both verified transport bindings');
+assert(debrisBootstrap.includes('.replace(treeNeedle, treeReplacement)'), 'embedded runtime must substitute the verified repository tree binding');
+assert(debrisBootstrap.includes('.replace(rawNeedle, rawReplacement)'), 'embedded runtime must substitute the verified raw asset helper');
+assert(debrisBootstrap.includes('.replace(brickNeedle, brickReplacement)'), 'embedded runtime must route the direct Roughbrick loader through the local helper');
+assert(debrisBootstrap.includes('.replace(decalNeedle, decalReplacement)'), 'embedded runtime must route direct mechanism decals through the local helper');
 assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href).href"), 'embedded runtime must map repo asset paths to the local docs origin');
 assert(debrisBootstrap.includes('refusing an unverified embedded patch'), 'embedded transport patch must fail closed if exact V50 bindings drift');
 assert(debrisBootstrap.includes("source.src = 'debrisifier-v50-source.js'"), 'direct Debris-ifier mode must keep loading the exact readable source file');
+assert.equal((debrisSource.match(/REPO_RAW_ROOT/g) || []).length, 4, 'V50 source gained an unaudited direct raw-repo transport use');
 new vm.Script(debrisBootstrap, { filename:'debrisifier-01.js' });
 new vm.Script(debrisSource, { filename:'debrisifier-v50-source.js' });
 
