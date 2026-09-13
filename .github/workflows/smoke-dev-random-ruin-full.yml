@@ -1,4 +1,4 @@
-# Temporary verification workflow; remove after the same-origin ruin smoke passes.
+# Temporary verification workflow; remove after the same-origin ruin smoke passes. Pass 2 audits every direct raw binding.
 name: Smoke Random Test Ruin Full Runtime
 
 on:
@@ -94,6 +94,7 @@ jobs:
               assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
               assert.equal(active.transport?.sameOrigin, true, JSON.stringify(active.transport));
               assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
+              assert.equal(active.transport?.patchedBindings, 4, JSON.stringify(active.transport));
               assert.match(active.furnitureStatus, /11 JSONs.*1 Runtime Authored.*10 Furniture Model Data/, active.furnitureStatus);
               if (active.negativeLevels > 0) assert.ok(active.ladders > 0, `negative floor tiers require ladder access: ${JSON.stringify(active)}`);
               activeRuns.push({ seed, ladders:active.ladders, negativeLevels:active.negativeLevels, furnitureStatus:active.furnitureStatus });
