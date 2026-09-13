@@ -1,6 +1,20 @@
 // Compatibility loader: persistence core + default save/load UX flow.
 // Kept at the historical path so existing pages do not need to change script order.
-document.write('<style>#localSaveStartupGate{font-family:"KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace!important}</style>');
+// Preload the loading percentage's Roman face under its own alias. The percent is
+// hidden until this face settles so it never flashes in a generic browser font.
+document.write('<style>@font-face{font-family:"HobunjiLoadingPercentRoman";src:url("assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf") format("truetype");font-display:block}#localSaveStartupGate{font-family:"KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace!important}#hlsPercent{font-family:"HobunjiLoadingPercentRoman","KhymeryyanRoman",serif!important;visibility:hidden}html.hls-loading-percent-font-ready #hlsPercent{visibility:visible}</style>');
+(() => {
+  const revealPercent = () => document.documentElement?.classList.add('hls-loading-percent-font-ready');
+  if (typeof FontFace !== 'function' || !document.fonts) {
+    revealPercent();
+    return;
+  }
+  const face = new FontFace('HobunjiLoadingPercentRoman', 'url("assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf")');
+  face.load()
+    .then(font => { document.fonts.add(font); revealPercent(); })
+    .catch(revealPercent);
+})();
+
 document.write('<script src="js/save-snapshot-core.js?v=20260904a"><\/script>');
 document.write('<script src="js/local-save-folder-core.js?v=20260812a"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260904a"><\/script>');
