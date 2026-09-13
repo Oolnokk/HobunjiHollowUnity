@@ -1,7 +1,7 @@
 // Boots the exact readable Debris-ifier V50 source and then exposes its dev API.
 // Direct tool usage executes the source byte-for-byte. The hidden in-game ruin
-// generator keeps the same source file and generator logic, but patches only its
-// repository transport at load time so generation is independent of live repo I/O.
+// generator keeps the same source file and generator logic, but applies a small
+// verified runtime patch set: local repo transport plus player-safe corridor sizing.
 (() => {
   'use strict';
 
@@ -31,7 +31,7 @@
     loadApi();
   }
 
-  function patchEmbeddedTransport(sourceText) {
+  function patchEmbeddedRuntime(sourceText) {
     const treeNeedle = "const REPO_TREE_URL='https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/git/trees/main?recursive=1';";
     const treeReplacement = `const REPO_TREE_URL='${EMBEDDED_TREE}';`;
     const rawNeedle = "function rawTextureUrl(path){return REPO_RAW_ROOT+String(path||'').replace(/^\\/+/, '');}";
@@ -41,27 +41,44 @@
     const decalNeedle = 'const texture=loader.load(REPO_RAW_ROOT+path,loaded=>';
     const decalReplacement = 'const texture=loader.load(rawTextureUrl(path),loaded=>';
 
-    for (const [label, needle] of [
-      ['repository-tree binding', treeNeedle],
-      ['raw-asset URL helper', rawNeedle],
-      ['Roughbrick loader', brickNeedle],
-      ['mechanism decal loader', decalNeedle],
-    ]) {
-      if (!sourceText.includes(needle)) throw new Error(`V50 ${label} changed; refusing an unverified embedded patch.`);
+    // The original preview's 3–4 half-cell hallways were authored for orbit-view
+    // inspection, not the game's collision radius. Runtime-only V50 generation
+    // uses 5–6 cells, which become 5–6 world units after the game's 2× X/Z scale.
+    const hallNeedle = 'const width=randomIntInclusive(rng,3,4),length=randomIntInclusive(rng,5,8);';
+    const hallReplacement = 'const width=randomIntInclusive(rng,5,6),length=randomIntInclusive(rng,5,8);';
+    const escapeHallNeedle = 'hallWidth=randomIntInclusive(rng,3,4),hallLen=10+rooms.length*3;';
+    const escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=10+rooms.length*3;';
+    const focusDoorNeedle = 'footprintWidth:cs*3,footprintDepth:cs,doorwayId:`${chosen.door.from}->${chosen.door.to}`,side:chosen.side';
+    const focusDoorReplacement = 'footprintWidth:cs*Math.max(3,Number(chosen.door.widthCells)||3),footprintDepth:cs,doorwayId:`${chosen.door.from}->${chosen.door.to}`,side:chosen.side';
+    const hallDoorNeedle = 'footprintWidth:network.cellSize*3,footprintDepth:network.cellSize,doorwayId:`${door.from}->${door.to}`';
+    const hallDoorReplacement = 'footprintWidth:network.cellSize*Math.max(3,Number(door.widthCells)||3),footprintDepth:network.cellSize,doorwayId:`${door.from}->${door.to}`';
+
+    const patches = [
+      ['repository-tree binding', treeNeedle, treeReplacement],
+      ['raw-asset URL helper', rawNeedle, rawReplacement],
+      ['Roughbrick loader', brickNeedle, brickReplacement],
+      ['mechanism decal loader', decalNeedle, decalReplacement],
+      ['hallway width', hallNeedle, hallReplacement],
+      ['escape hallway width', escapeHallNeedle, escapeHallReplacement],
+      ['focus doorway width', focusDoorNeedle, focusDoorReplacement],
+      ['hallway doorway width', hallDoorNeedle, hallDoorReplacement],
+    ];
+
+    let patched = sourceText;
+    for (const [label, needle, replacement] of patches) {
+      if (!patched.includes(needle)) throw new Error(`V50 ${label} changed; refusing an unverified embedded patch.`);
+      patched = patched.replace(needle, replacement);
     }
 
-    const patched = sourceText
-      .replace(treeNeedle, treeReplacement)
-      .replace(rawNeedle, rawReplacement)
-      .replace(brickNeedle, brickReplacement)
-      .replace(decalNeedle, decalReplacement);
     window.__debrisifierEmbeddedTransport = Object.freeze({
       active: true,
       sameOrigin: true,
       sourceSha256: SOURCE_SHA256,
       tree: EMBEDDED_TREE,
       expectedFurniturePaths: EMBEDDED_FURNITURE_COUNT,
-      patchedBindings: 4,
+      patchedBindings: patches.length,
+      runtimeHallwayWidthCells: [5, 6],
+      runtimeDoorwayUsesAuthoredWidth: true,
     });
     return patched;
   }
@@ -72,7 +89,7 @@
         if (!response.ok) throw new Error(`readable V50 source HTTP ${response.status}`);
         return response.text();
       })
-      .then(sourceText => injectSource(patchEmbeddedTransport(sourceText)))
+      .then(sourceText => injectSource(patchEmbeddedRuntime(sourceText)))
       .catch(error => fail(error?.message || String(error)));
     return;
   }
