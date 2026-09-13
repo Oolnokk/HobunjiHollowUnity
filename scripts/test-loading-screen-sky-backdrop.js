@@ -60,9 +60,8 @@ assert(Number(config.settings?.skyFocusOffsetX) === 8, `${configPath}: latest up
 assert(Number(config.settings?.skyFocusOffsetY) === 0, `${configPath}: latest uploaded skyFocusOffsetY must remain 0`);
 assert(Number(config.settings?.skyZoom) === 3.25, `${configPath}: shipped sky zoom must remain 3.25x`);
 
-assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913d'), `${bootstrapPath}: current backdrop bootstrap reference missing`);
-assert(bootstrapSource.includes('data-loading-sky-retry'), `${bootstrapPath}: DOM-ready backdrop retry guard missing`);
-assert(bootstrapSource.includes('#hobunjiLoadScreen>#hlsSkyBackdrop{z-index:0!important}'), `${bootstrapPath}: explicit runtime sky stacking contract missing`);
+// The compatibility loader may still prewarm the sky, but correctness must not depend on it.
+assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913d'), `${bootstrapPath}: compatibility backdrop bootstrap reference missing`);
 assert(runtimeSource.includes("document.getElementById('hobunjiLoadScreen')"), `${runtimePath}: must attach to the canonical loading-screen root`);
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getDebugState?.()'), `${runtimePath}: must reuse live skydome state when available`);
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getLightingState?.()'), `${runtimePath}: must reuse live skydome lighting when available`);
@@ -77,7 +76,14 @@ const runtimeMoonDraw = runtimeSource.indexOf("drawCelestial(state.context, dime
 const runtimeCloudDraw = runtimeSource.indexOf('drawClouds(state.context, dimensions.width, dimensions.height, center, sky, now)');
 assert(runtimeSunDraw >= 0 && runtimeMoonDraw > runtimeSunDraw && runtimeCloudDraw > runtimeMoonDraw, `${runtimePath}: clouds must composite after both sun and moon so they can occlude them`);
 
-assert(loadingRuntimeSource.includes('#hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden'), `${loadingRuntimePath}: loading root must remain the actual viewport clipping boundary`);
+assert(loadingRuntimeSource.includes("const SKY_BACKDROP_URL = 'js/loading-screen-sky-backdrop.js?v=20260913e'"), `${loadingRuntimePath}: loading runtime must own a cache-busted sky backdrop URL`);
+assert(loadingRuntimeSource.includes('function ensureSkyBackdropLoaded()'), `${loadingRuntimePath}: runtime-owned sky bootstrap missing`);
+assert(loadingRuntimeSource.includes("script.dataset.hobunjiLoadingSkyRuntime = '1'"), `${loadingRuntimePath}: runtime sky script marker missing`);
+assert(loadingRuntimeSource.includes('await Promise.all([ensureSkyBackdropLoaded(), ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()])'), `${loadingRuntimePath}: show() must wait for its own sky bootstrap alongside other loader resources`);
+assert(loadingRuntimeSource.includes("skyBackdrop=${window.LoadingScreenSkyBackdrop?.installed ? 'installed'"), `${loadingRuntimePath}: loader diagnostics must expose sky bootstrap state`);
+assert(loadingRuntimeSource.includes('#hobunjiLoadScreen{position:fixed;inset:0;z-index:9000;background:#000;display:none;overflow:hidden;pointer-events:none;isolation:isolate}'), `${loadingRuntimePath}: loading root must own an isolated stacking context`);
+assert(loadingRuntimeSource.includes('#hlsSkyBackdrop{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}'), `${loadingRuntimePath}: runtime must stack the sky canvas above the root background itself`);
+assert(loadingRuntimeSource.includes('z-index:1') && loadingRuntimeSource.includes('#hlsSkyDebug{z-index:2!important}'), `${loadingRuntimePath}: loader foreground/debug stacking contract missing`);
 assert(loadingRuntimeSource.includes('#hlsScriptViewport{position:absolute;top:0;width:min(42vw,540px);height:100%;overflow:visible;transform:translateX(-50%)'), `${loadingRuntimePath}: Tankan script viewport must span the real screen and not add internal top/bottom masks`);
 assert(loadingRuntimeSource.includes('const travel = viewportHeight + contentHeight'), `${loadingRuntimePath}: script scroll must travel across the full real viewport plus its own height`);
 assert(loadingRuntimeSource.includes('const scriptY = viewportHeight - travelPhase * travel'), `${loadingRuntimePath}: script scroll must enter from below and exit above the real viewport`);
