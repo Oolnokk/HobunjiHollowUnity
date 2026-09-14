@@ -31,7 +31,7 @@ assert.doesNotMatch(source, /material\.opacity\s*=|currentMaterial\.opacity\s*=/
   'xray parity never changes material opacity based on view angle');
 assert.doesNotMatch(source, /onBeforeRender\s*=|smoothstep\s*\(/,
   'xray parity installs no per-frame visibility hook or fade');
-assert.match(loader, /js\/hat-xray-head-facing\.js\?v=20260824a/,
-  'xray coplanar module still loads before game.js constructs the player overlay');
+assert.match(loader, /js\/hat-xray-head-facing\.js\?v=20260914nofacing1/,
+  'xray coplanar module loads with the no-facing cache revision before game.js constructs the player overlay');
 
 console.log('hat xray coplanar-only checks passed.');
