@@ -39,6 +39,19 @@ assert(vessel.includes('THREE.DoubleSide'));
 assert(vessel.includes('createEmptyLiquidGeometry'));
 assert(vessel.includes('hobunjiLinkedLiquidPlaceholder'));
 
+// Procedural Drenkirra/den nests deliberately keep their existing footprint
+// and woven colors, but their former capped-cylinder body + solid rim disc are
+// upgraded at group-build time to the exact hollow cup geometry and an open
+// hoop rim. This is what keeps visible eggs/babies from being buried by mesh.
+assert(vessel.includes('function upgradeProceduralNestToOpenCup(group, key)'));
+assert(vessel.includes("key !== 'nest' && key !== 'nestBranch'"));
+assert(vessel.includes("kind: 'cup'"));
+assert(vessel.includes('innerScale: 0.78'));
+assert(vessel.includes('basinDepth: 0.12'));
+assert(vessel.includes('createHoopGeometry(rimPart)'));
+assert(vessel.includes("hobunjiOpenNestSource = 'furniture-cup-preset'"));
+assert(vessel.includes('upgradeProceduralNestToOpenCup(group, key)'));
+
 // The procedural group remains the same object while an authored file is
 // loading. If richer authored data resolves, only the children captured from
 // the original fallback are swapped; later lights/interactions/helpers survive.
