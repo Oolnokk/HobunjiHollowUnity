@@ -27,6 +27,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate cloud-save scripts
+        run: |
+          node --check docs/js/google-drive-cloud-save.js
+          node --check docs/js/google-drive-cloud-save-conflict-guard.js
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
