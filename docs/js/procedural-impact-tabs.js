@@ -14,6 +14,13 @@
       const layoutFix = document.createElement('script'); // Forces the embedded author to consume all remaining panel height instead of the iframe's intrinsic viewport height.
       layoutFix.async = false;
       layoutFix.src = new URL('procedural-pants-rig-layout-fix.js', selfSrc).href;
+      layoutFix.addEventListener('load', () => {
+        const apply = document.createElement('script'); // Adds an explicit static beltline application path that works even before the procedural thigh/calf chain can be resolved.
+        apply.async = false;
+        apply.src = new URL('procedural-pants-rig-apply.js', selfSrc).href;
+        apply.addEventListener('error', () => console.error(`[Pants Rig] Failed to load Apply-to-NPC action ${apply.src}`));
+        document.head.appendChild(apply);
+      });
       layoutFix.addEventListener('error', () => console.error(`[Pants Rig] Failed to load layout fix ${layoutFix.src}`));
       document.head.appendChild(layoutFix);
     });
