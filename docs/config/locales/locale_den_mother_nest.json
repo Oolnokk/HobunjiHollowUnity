@@ -1,0 +1,63 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_den_mother_nest",
+  "name": "Den-Mother Nest Encounter",
+  "category": "den_encounter",
+  "singleton": false,
+  "description": "Reusable den encounter authored as one locale: the editable nest furniture, the Den-Mother spawn anchor, and the individually transformable egg/baby clutch spawn points. Species and reward item bind from the den that instantiates the locale. This is a terrain-neutral runtime-bound locale: it never paints cave or wilderness tiles.",
+  "tags": ["den", "wildlife", "nest", "encounter", "runtime-bound"],
+  "cols": 5,
+  "rows": 5,
+  "tiles": {},
+  "objects": [
+    {
+      "id": "den_nest",
+      "kind": "decor",
+      "key": "nest",
+      "label": "Den Nest",
+      "col": 1,
+      "row": 1,
+      "w": 2,
+      "h": 2,
+      "rot": 0,
+      "meta": { "denRole": "nest" }
+    }
+  ],
+  "npcAnchors": [
+    { "id": "den_mother", "col": 2, "row": 2, "facing": "south" }
+  ],
+  "connectors": [],
+  "placement": {
+    "mode": "den-interior",
+    "runtimeBound": true,
+    "terrainNeutral": true,
+    "maxInstances": 1,
+    "allowedZones": [],
+    "clearanceTiles": 0,
+    "requiresFlatGround": false,
+    "groundOnly": false,
+    "notes": "Runtime-bound to an already-generated den/cavern objective. No locale tiles are stamped: cave carving, wall visibility, and collision remain authoritative. Only the nest furniture, Den-Mother anchor, and clutch transforms are consumed by DenLocaleRuntime."
+  },
+  "meta": {
+    "createdAt": "2026-09-14T00:00:00.000Z",
+    "updatedAt": "2026-09-14T19:41:00.000Z",
+    "denEncounter": {
+      "version": 1,
+      "speciesBinding": "current-den-family",
+      "nest": {
+        "objectId": "den_nest",
+        "furnitureKey": "nest",
+        "transform": { "x": 0, "y": 0, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 1, "sy": 1, "sz": 1 }
+      },
+      "motherSpawn": {
+        "anchorId": "den_mother",
+        "transform": { "x": 0, "y": 0, "z": 0, "rx": 0, "ry": 180, "rz": 0, "sx": 1, "sy": 1, "sz": 1 }
+      },
+      "clutchSpawns": [
+        { "id": "clutch_1", "transform": { "x": -0.216, "y": 0, "z": 0.0864, "rx": 0, "ry": -9.17, "rz": 0, "sx": 1, "sy": 1, "sz": 1 } },
+        { "id": "clutch_2", "transform": { "x": 0.2016, "y": 0, "z": 0.1224, "rx": 0, "ry": 11.46, "rz": 0, "sx": 1, "sy": 1, "sz": 1 } },
+        { "id": "clutch_3", "transform": { "x": -0.0072, "y": 0, "z": -0.2016, "rx": 0, "ry": 2.29, "rz": 0, "sx": 1, "sy": 1, "sz": 1 } }
+      ]
+    }
+  }
+}

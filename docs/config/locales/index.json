@@ -63,6 +63,13 @@
       "name": "Porakaneki Chief Camp",
       "category": "porakaneki_chief_camp",
       "singleton": true
+    },
+    {
+      "id": "locale_den_mother_nest",
+      "file": "config/locales/locale_den_mother_nest.json",
+      "name": "Den-Mother Nest Encounter",
+      "category": "den_encounter",
+      "singleton": false
     }
   ]
 }
