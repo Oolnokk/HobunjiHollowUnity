@@ -11,7 +11,9 @@ const assert = (condition, message) => {
 };
 
 const primary = read('docs/js/folder-save-primary.js');
+const emptyBootstrap = read('docs/js/folder-save-empty-bootstrap.js');
 const bridge = read('docs/js/folder-save-onboarding-bridge.js');
+const creatorHandoff = read('docs/js/onboarding-character-creation-reload-handoff.js');
 const folderLoader = read('docs/js/local-save-folder.js');
 const onboardingLoader = read('docs/onboarding.js');
 const css = read('docs/folder-save-primary.css');
@@ -20,14 +22,18 @@ const startupGuard = read('docs/js/session-persistence-startup-guard.js');
 
 // Syntax parse without executing browser globals.
 new Function(primary);
+new Function(emptyBootstrap);
 new Function(bridge);
-console.log('OK  new folder-save modules parse as JavaScript');
+new Function(creatorHandoff);
+console.log('OK  folder-save lifecycle modules parse as JavaScript');
 
 const coreIndex = folderLoader.indexOf('local-save-folder-core.js');
 const primaryIndex = folderLoader.indexOf('folder-save-primary.js');
+const emptyBootstrapIndex = folderLoader.indexOf('folder-save-empty-bootstrap.js');
 const legacyFlowIndex = folderLoader.indexOf('local-save-flow.js');
 assert(coreIndex >= 0 && primaryIndex > coreIndex, 'primary folder layer loads after the existing persistence core');
-assert(legacyFlowIndex > primaryIndex, 'primary folder layer loads before the legacy reload-heavy UX flow');
+assert(emptyBootstrapIndex > primaryIndex, 'empty-folder bootstrap wraps the primary folder load behavior');
+assert(legacyFlowIndex > emptyBootstrapIndex, 'folder lifecycle layers load before the legacy reload-heavy UX flow');
 assert(folderLoader.includes('folder-save-primary.css'), 'primary folder hierarchy stylesheet is loaded by the compatibility entrypoint');
 
 const onboardingCoreIndex = onboardingLoader.indexOf('onboarding-core.js');
@@ -41,6 +47,12 @@ assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembere
 assert(bridge.includes('prepareBeforeOnboarding'), 'onboarding init waits for primary folder reconciliation');
 assert(bridge.includes('refreshFromStorage'), 'folder restore can rebuild save selection in place');
 assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge never reloads the site');
+
+assert(emptyBootstrap.includes('empty-folder-connected-awaiting-first-save'), 'a new empty folder is a valid first-run save destination');
+assert(emptyBootstrap.includes('No browser save is available to write'), 'empty-folder exception is narrowly limited to the expected no-browser-save bootstrap');
+assert(creatorHandoff.includes('flushPrimaryFolderBeforeReload'), 'character creator flushes the primary folder before its deliberate clean-session reload');
+assert(creatorHandoff.includes('await localSave.syncNow()'), 'creator folder flush completes before navigation begins');
+assert(creatorHandoff.includes('folderFlushFailures'), 'creator folder flush failures remain mobile-visible');
 
 assert(primary.includes('navigator.locks.request'), 'explicit folder operations use a cross-tab Web Lock when available');
 assert(primary.includes('dataLossRisk'), 'manual folder writes preserve the existing destructive-shrink confirmation guard');
@@ -64,6 +76,7 @@ assert(primary.includes("folderLabel.textContent = 'Primary Save Folder'"), 'sav
 assert(primary.includes("browserLabel.textContent = 'Browser Fallback'"), 'save selection labels browser storage as fallback');
 
 assert(primary.includes('__hobunjiFolderSavePrimaryDebug'), 'primary save behavior exposes mobile-readable diagnostics');
+assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first-run empty-folder state exposes mobile-readable diagnostics');
 assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes mobile-readable diagnostics');
 
 console.log('\nFolder-save primary regression checks passed.');
