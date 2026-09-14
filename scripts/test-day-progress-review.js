@@ -63,12 +63,19 @@ assert.deepEqual(
 );
 assert.equal(test.parseRewardText('-2 Pine Log').positive, false, 'losses are not misreported as received-item gains');
 
-assert.equal(test.crossesCivilMidnight(23.99, 24.01), true, 'natural drift crossing represented midnight opens the review');
+assert.equal(test.representedHour(0), 6, 'continuous review clock begins at the 06:00 raw-day rollover');
+assert.equal(test.representedHour(0.75), 24, 'time01 0.75 is continuous hour 24 even though the public full-day clock displays 00:00');
+assert.equal(test.representedHour(0.875), 27, 'post-midnight hours stay continuous through the raw 06:00 rollover boundary');
+assert.equal(test.crossesCivilMidnight(23.99, 24.01), true, 'continuous natural drift crossing represented midnight opens the review');
+assert.equal(test.crossesCivilMidnight(23, 24), true, 'one-hour sleep/wait step from 23:00 to midnight opens the review');
 assert.equal(test.crossesCivilMidnight(22, 23), false, 'ordinary pre-midnight clock movement does not open the review');
 assert.equal(test.crossesCivilMidnight(24, 25), false, 'post-midnight clock movement does not re-open the same review');
 assert.equal(test.rapportConversion(37, 0.10), 4, 'Rapport conversion uses the same Math.round behavior as NpcRapport.settle');
 assert.equal(test.rapportConversion(4, 0.10), 0, 'sub-half Favor conversion rounds to zero exactly like the social bridge');
 
+assert(source.includes('const fromHour = representedHour(before)'), 'natural midnight gate derives an unwrapped hour directly from time01');
+assert(source.includes('const fromHour = representedHour(startTime)'), 'sleep/wait midnight gate derives an unwrapped hour directly from time01');
+assert(!source.includes('const fromHour = calendarApi.getHour(startTime)'), 'sleep/wait gate must not use the wrapped public 0-23 display clock');
 assert(source.includes("confirm.addEventListener('click', runReviewAwarePassage, true)"), 'sleep/wait Confirm is intercepted in capture phase before CalendarSystem private listener');
 assert(source.includes("await requestMidnightReview({ source: kind"), 'sleep/wait hourly passage explicitly awaits the midnight review');
 assert(source.includes("requestMidnightReview({ source: 'natural'"), 'natural clock gate opens the same shared midnight review');
