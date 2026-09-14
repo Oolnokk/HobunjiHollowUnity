@@ -8,7 +8,7 @@
   // discarded when it is outside the player's unload radius without changing
   // maps, landmarks, fog-of-war, routes, or save data.
   const CHUNK_TILES = 16; // Used to convert tile coordinates into stable chunk keys and bounds.
-  const IMMEDIATE_RADIUS = 1; // Used to synchronously prime a safe 3x3 arrival neighborhood behind a black transition.
+  const IMMEDIATE_RADIUS = 0; // Keeps only the player's arrival chunk synchronous; surrounding chunks use the one-per-update stream queue.
   const LOAD_RADIUS = 2; // Used to stream a 5x5 neighborhood around the player's current chunk.
   const UNLOAD_RADIUS = 3; // Used as hysteresis so crossing a chunk edge does not immediately destroy the previous ring.
   const INACTIVE_UNLOAD_DELAY_S = 4; // Used to free a wilderness scene after the player remains in another area.
