@@ -1,0 +1,168 @@
+name: Temporary Puktuk init-order patch
+
+on:
+  push:
+    branches:
+      - chatgpt/puktuk-western-den-predator
+    paths:
+      - '.github/workflows/tmp-puktuk-init-order-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/puktuk-western-den-predator
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch runtime registration and regression
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          wildlife_path = Path('docs/js/wildlife-spawn.js')
+          wildlife = wildlife_path.read_text()
+          old = """  let deps = null;
+  function init(injectedDeps) { deps = injectedDeps; }
+"""
+          new = """  let deps = null;
+
+  // CreatureGenetics loads before this module, but its species bootstrap used
+  // to wait for DOMContentLoaded before wrapping WildlifeSpawn.init. game.js
+  // can initialize WildlifeSpawn before that event, so a real Western Slope
+  // session could keep the legacy Drenkirra/Uumkao'ii pools even though the
+  // isolated regression (which fired DOMContentLoaded first) passed. Keep an
+  // idempotent registration at the owning system's init boundary so runtime
+  // correctness no longer depends on document-event ordering.
+  function ensurePuktukRuntimeRegistration(injectedDeps) {
+    const creatureDb = injectedDeps?.CREATURE_DB;
+    const garWolf = creatureDb?.['gar-wolf'];
+    const predatorBaseline = garWolf || creatureDb?.grehlr || creatureDb?.drenkirra || {};
+    if (creatureDb) {
+      const existing = creatureDb.puktuk || {};
+      creatureDb.puktuk = {
+        ...predatorBaseline,
+        ...existing,
+        label: 'Puktuk',
+        hostile: true,
+        defaultSizeClass: 'medium',
+        modelWidth: Number(existing.modelWidth) || Number(garWolf?.modelWidth) || Number(predatorBaseline.modelWidth) || 1.9,
+        spriteAspect: Number(existing.spriteAspect) || Number(garWolf?.spriteAspect) || Number(predatorBaseline.spriteAspect) || (600 / 1375),
+        lootPool: 'creature_puktuk',
+        sprites: {
+          idle: 'assets/creaturesprites/puktuk_idle.png',
+          run: ['assets/creaturesprites/puktuk_run1.png', 'assets/creaturesprites/puktuk_run2.png'],
+        },
+      };
+    }
+
+    const westernZone = injectedDeps?.EXTERIOR_ZONES?.map_western_slope;
+    const herbivores = westernZone?.herbivoreSpecies;
+    let legacyDrenkirraRemoved = 0;
+    if (Array.isArray(herbivores)) {
+      for (let i = herbivores.length - 1; i >= 0; i--) {
+        if (herbivores[i] !== 'drenkirra') continue;
+        herbivores.splice(i, 1);
+        legacyDrenkirraRemoved++;
+      }
+    }
+    const packs = westernZone
+      ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
+      : null;
+    if (Array.isArray(packs) && !packs.includes('puktuk')) packs.push('puktuk');
+    const denSpecies = westernZone
+      ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
+      : null;
+    if (Array.isArray(denSpecies) && !denSpecies.includes('puktuk')) denSpecies.push('puktuk');
+
+    const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS;
+    if (denMotherDefs) {
+      const existingMother = denMotherDefs.puktuk || {};
+      denMotherDefs.puktuk = {
+        ...existingMother,
+        creatureKey: existingMother.creatureKey || 'puktuk',
+        nestItemKey: existingMother.nestItemKey ?? null,
+      };
+    }
+
+    const ready = !!creatureDb?.puktuk
+      && Array.isArray(denSpecies) && denSpecies.includes('puktuk')
+      && Array.isArray(packs) && packs.includes('puktuk');
+    window.__farmLog?.(`[puktuk] WildlifeSpawn.init fallback: ready=${ready ? 1 : 0} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, ready ? 'wildlife' : 'warn');
+    return ready;
+  }
+
+  function init(injectedDeps) {
+    ensurePuktukRuntimeRegistration(injectedDeps);
+    deps = injectedDeps;
+  }
+"""
+          if old not in wildlife:
+              raise SystemExit('wildlife-spawn init anchor not found')
+          wildlife_path.write_text(wildlife.replace(old, new, 1))
+
+          test_path = Path('scripts/test-puktuk-species.js')
+          test = test_path.read_text()
+          anchor = """assert.match(cavernSource, /window\\.WildlifeSpawn\\.denSpeciesFor\\(zoneId, mapId\\)[\\s\\S]*?nativeSpecies: \\[exactDenSpecies\\]/, 'Cavern residents and Den-Mothers use the same exact per-den species resolver');
+"""
+          assertion = anchor + """assert.match(wildlifeSource, /function ensurePuktukRuntimeRegistration\\(injectedDeps\\)[\\s\\S]*?function init\\(injectedDeps\\) \\{[\\s\\S]*?ensurePuktukRuntimeRegistration\\(injectedDeps\\)/, 'WildlifeSpawn.init owns an init-order-safe Puktuk fallback instead of relying only on DOMContentLoaded wrapping');
+"""
+          if anchor not in test:
+              raise SystemExit('Puktuk source-assertion anchor not found')
+          test = test.replace(anchor, assertion, 1)
+
+          runtime_anchor = """assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
+
+console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);
+"""
+          runtime_block = """assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
+
+// Reproduce the real failing order from the 2026-09-14 Western Slope snapshot:
+// WildlifeSpawn initializes before CreatureGenetics' DOMContentLoaded wrapper
+// gets a chance to run. The owning module must still register Puktuk directly.
+const directWildlifeWindow = { __farmLog() {} };
+const directWildlifeContext = vm.createContext({ window: directWildlifeWindow, console, Math, Set, Map });
+vm.runInContext(wildlifeSource, directWildlifeContext);
+const directCreatureDb = {
+  'gar-wolf': { label: 'Gar-wolf', modelWidth: 2, spriteAspect: 0.45, defaultSizeClass: 'medium', hostile: true },
+};
+const directWildlifeDeps = {
+  CREATURE_DB: directCreatureDb,
+  DEN_MOTHER_DEFS: {},
+  EXTERIOR_ZONES: {
+    map_western_slope: {
+      denSpecies: ['future-western-den-species'],
+      packSpecies: ['gar-wolf'],
+      herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'],
+    },
+  },
+};
+directWildlifeWindow.WildlifeSpawn.init(directWildlifeDeps);
+assert.equal(directCreatureDb.puktuk?.hostile, true, 'direct WildlifeSpawn.init creates the predator Puktuk even before DOMContentLoaded');
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild']);
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['future-western-den-species', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
+
+console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);
+"""
+          if runtime_anchor not in test:
+              raise SystemExit('Puktuk runtime-test anchor not found')
+          test_path.write_text(test.replace(runtime_anchor, runtime_block, 1))
+          PY
+
+          node --check docs/js/wildlife-spawn.js
+          node scripts/test-puktuk-species.js
+          rm .github/workflows/tmp-puktuk-init-order-fix.yml
+          git config user.name "Oolnokk"
+          git config user.email "155416726+Oolnokk@users.noreply.github.com"
+          git add docs/js/wildlife-spawn.js scripts/test-puktuk-species.js .github/workflows/tmp-puktuk-init-order-fix.yml
+          git commit -m "Make Puktuk den registration init-order safe"
+          git push origin HEAD:chatgpt/puktuk-western-den-predator
