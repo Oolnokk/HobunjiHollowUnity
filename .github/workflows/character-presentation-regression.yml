@@ -19,6 +19,7 @@ on:
       - 'docs/assets/portraitsprites/torso_porakaneki_m.png'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/combat/porakaneki-dagger-ranged.js'
+      - 'docs/js/drunk-prone-composition-bridge.js'
       - 'docs/js/ghostify.js'
       - 'docs/js/harlyao-night-march-atmosphere.js'
       - 'docs/js/harlyao-night-march-beacon.js'
@@ -39,6 +40,7 @@ on:
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
+      - 'scripts/test-drunk-prone-composition-bridge.js'
       - 'scripts/test-harlyao-calendar-markers.js'
       - 'scripts/test-harlyao-night-march.js'
       - 'scripts/test-harlyao-night-march-beacon.js'
@@ -85,6 +87,8 @@ jobs:
         run: node scripts/test-harlyao-calendar-markers.js
       - name: Mao-ao arm tint regression
         run: node scripts/test-maoao-arm-tint-runtime.js
+      - name: Procedural leg/prone/run regression
+        run: node scripts/test-drunk-prone-composition-bridge.js
       - name: NPC perspective-facing deadzone regression
         run: node scripts/test-npc-facing-deadzone.js
       - name: Shoulder camera character framing regression
