@@ -20,7 +20,7 @@ assert(game.includes('async function refreshForcedTothalActiveZone(mapId)'),
   'forced shifts need an active-zone visual refresh path');
 assert(game.includes("currentArea = 'town';") && game.includes('await enterZone(mapId, entryCol, entryRow);'),
   'active-zone refresh must leave the old scene before rebuilding and re-enter at the generated entry');
-assert(index.includes('js/wilderness-map-generator.js?v=20260914a'),
+assert(index.includes('js/wilderness-map-generator.js?v=20260914b'),
   'generator script version must change so existing same-year caches are invalidated after the plateau export fix');
 
 console.log('Force Tothal Shift regeneration regression passed.');

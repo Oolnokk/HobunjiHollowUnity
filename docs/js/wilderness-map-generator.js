@@ -22,10 +22,9 @@
 // GENERATION_TILE_SCALE x GENERATION_TILE_SCALE block) runs unconditionally,
 // matching the standalone tool exactly — every zone now exports at 2x the
 // width/height it generates at internally (e.g. a 100x100 zone exports as
-// 200x200). This matters beyond resolution: the Map Editor submap export
-// filter drops plateau groups below an absolute tile-count threshold, so
-// skipping this pass (as an earlier version of this file did) silently lost
-// more small plateaus' elevation than the standalone tool does.
+// 200x200). Plateau export preserves every non-empty paint group, including
+// all-ring one-cell terrace fragments, so density expansion cannot decide
+// whether generated elevation ownership survives export.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.WildernessMapGenerator = factory();
@@ -88,10 +87,9 @@
   // generated tile becomes a GENERATION_TILE_SCALE x GENERATION_TILE_SCALE
   // block of identical tiles (a lossless upscale — verified byte-for-byte
   // identical proportions/tile-type ratios against the standalone tool for a
-  // fixed seed). This isn't just cosmetic: the Map Editor submap export filter
-  // (hobunjiPlateauGroupsByPaintedFootprint) drops plateau groups below an
-  // absolute tile-count threshold, so skipping this pass silently drops more
-  // small plateaus (and their elevation) than the standalone tool does.
+  // fixed seed). Export preserves every non-empty plateau paint group, so this
+  // scale changes resolution only; it never decides whether a small terrace's
+  // elevation ownership survives Map Editor flattening.
   const GENERATION_TILE_SCALE = 2;
   const GREAT_BASIN_SPOON_BOWL_Y_RATIO = 0.80;
   const GREAT_BASIN_SPOON_BOWL_X_RATIO = 0.50;
@@ -634,7 +632,7 @@
     const cleanupAfterGradient = removeTinyGeneratedPlateauComponents();
     const sharedEdgesAfterCleanup = countPlateauSharedEdges();
     changed = Math.max(0, changed + raggification.added - raggification.removed - cleanup.removedTiles - cleanupAfterGradient.removedTiles);
-    logDebug(`broad causeway plateau fields: ${acceptedBlobs.length}/${blobCount} masses in ${causewayFields.length} fields, plateau tiles ${changed}/${targetPlateauTiles} target, shared edges ${sharedEdgesAfterCleanup} (${sharedEdgesBeforeCleanup} before smoothing), packed bleachers filled ${packedBleachers.filled}/retiered ${packedBleachers.retiered}/transition edges ${packedBleachers.transitionEdges}, smoothing filled ${smoothing.filled}/removed ${smoothing.removed}, outline rounding +${rounding.added}/-${rounding.removed} (${rounding.longRunsBefore}->${rounding.longRunsAfter} long straight runs, ${rounding.squareCornersBefore}->${rounding.squareCornersAfter} large square corners), post-raggification +${raggification.added}/-${raggification.removed} edge tiles (${raggification.longRunsBefore}->${raggification.longRunsAfter} long straight runs, ${raggification.squareCornersBefore}->${raggification.squareCornersAfter} large square corners), north-gradient clamped ${gradient.clamped}/lifted ${gradient.raisedNorthShoulders}, tiny crumbs removed ${cleanup.removedComponents + cleanupAfterGradient.removedComponents}/${cleanup.removedTiles + cleanupAfterGradient.removedTiles}`);
+    logDebug(`broad causeway plateau fields: ${acceptedBlobs.length}/${blobCount} masses in ${causewayFields.length} fields, plateau tiles ${changed}/${targetPlateauTiles} target, shared edges ${sharedEdgesAfterCleanup} (${sharedEdgesBeforeCleanup} before smoothing), packed bleachers filled ${packedBleachers.filled}/retiered ${packedBleachers.retiered}/transition edges ${packedBleachers.transitionEdges}, smoothing filled ${smoothing.filled}/removed ${smoothing.removed}, outline rounding +${rounding.added}/-${rounding.removed} (${rounding.longRunsBefore}->${rounding.longRunsAfter} long straight runs, ${rounding.squareCornersBefore}->${rounding.squareCornersAfter} large square corners), post-raggification +${raggification.added}/-${raggification.removed} edge tiles (${raggification.longRunsBefore}->${raggification.longRunsAfter} long straight runs, ${raggification.squareCornersBefore}->${raggification.squareCornersAfter} large square corners), north-gradient clamped ${gradient.clamped}/lifted ${gradient.raisedNorthShoulders}, tiny crumbs removed ${cleanup.removedComponents + cleanupAfterGradient.removedComponents}/${cleanup.removedTiles + cleanupAfterGradient.removedTiles}, terrace fragments merged ${cleanup.mergedComponents + cleanupAfterGradient.mergedComponents}/${cleanup.retieredTiles + cleanupAfterGradient.retieredTiles}`);
     if (acceptedBlobs.length < blobCount && changed < targetPlateauTiles * 0.90) warn(`plateaus: placed ${acceptedBlobs.length}/${blobCount}; remaining blobs could not find clustered causeway footprints`);
   }
 
@@ -642,6 +640,8 @@
     const visited = new Set();
     let removedComponents = 0;
     let removedTiles = 0;
+    let mergedComponents = 0;
+    let retieredTiles = 0;
     for (const start of allTiles()) {
       if (!start || start.elevation <= 0) continue;
       const startKey = tileKey(start.x, start.y);
@@ -650,7 +650,6 @@
       const stack = [start];
       while (stack.length) {
         const tile = stack.pop();
-        if (!tile || tile.elevation !== start.elevation) continue;
         const key = tileKey(tile.x, tile.y);
         if (visited.has(key)) continue;
         visited.add(key);
@@ -662,6 +661,38 @@
       const keySet = new Set(component.map(tile => tileKey(tile.x, tile.y)));
       const stats = plateauBlobStats(keySet);
       if (stats.area >= 12 && stats.interior >= 1) continue;
+
+      // Packed/ragged terraces routinely create tiny same-tier fragments that
+      // still touch a larger raised mass. Erasing those fragments to ground
+      // punches a one-source-cell pit, exported as a 2x2 ravine. Merge them
+      // into the dominant adjacent raised tier; only a truly isolated raised
+      // crumb with no positive-tier neighbor may be removed to ground.
+      const boundaryTierCounts = new Map(); // Counts positive cardinal tiers touching this fragment.
+      for (const tile of component) {
+        for (const neighbor of cardinalNeighbors(tile.x, tile.y)) {
+          if (!neighbor || neighbor.elevation <= 0 || keySet.has(tileKey(neighbor.x, neighbor.y))) continue;
+          const tier = clamp(Math.round(neighbor.elevation), 1, settings.maxTier);
+          boundaryTierCounts.set(tier, (boundaryTierCounts.get(tier) || 0) + 1);
+        }
+      }
+      if (boundaryTierCounts.size) {
+        const originalTier = Number(start.elevation) || 1; // Break equal-contact ties toward the smallest terrace step.
+        const mergeTier = Array.from(boundaryTierCounts.entries()).sort((a, b) =>
+          (b[1] - a[1]) ||
+          (Math.abs(a[0] - originalTier) - Math.abs(b[0] - originalTier)) ||
+          (a[0] - b[0])
+        )[0][0];
+        for (const tile of component) {
+          tile.elevation = mergeTier;
+          tile.height = mergeTier;
+          tile.terrain = 'plateau';
+          tile.generatedPlateauBlobId = tile.generatedPlateauBlobId || 'plateau_tiny_component_merge';
+          retieredTiles++;
+        }
+        mergedComponents++;
+        continue;
+      }
+
       for (const tile of component) {
         tile.elevation = 0;
         tile.height = 0;
@@ -671,7 +702,7 @@
       }
       removedComponents++;
     }
-    return { removedComponents, removedTiles };
+    return { removedComponents, removedTiles, mergedComponents, retieredTiles };
   }
 
   function choosePlateauBlobTargetArea(blobCount, areaScale) {
@@ -5777,44 +5808,21 @@
 
   function hobunjiPlateauGroupsByPaintedFootprint() {
     const sourceGroups = Array.isArray(map.plateauPaintGroups) ? map.plateauPaintGroups : [];
-    const scored = sourceGroups.map((group, index) => ({
-      group,
-      index,
-      interiorCount: group.interiorKeys ? group.interiorKeys.length : 0,
-      ringCount: group.ringKeys ? group.ringKeys.length : 0
+    // Every non-empty paint group carries elevation ownership. An all-ring
+    // group can be one valid source terrace cell expanded to 2x2; dropping it
+    // exposes root ground beneath the surrounding plateau. Empty child maps
+    // remain valid metadata-only children so the parent-owned ring resolves.
+    const exportable = sourceGroups.filter(group =>
+      (group.interiorKeys ? group.interiorKeys.length : 0) +
+      (group.ringKeys ? group.ringKeys.length : 0) > 0
+    );
+    const groups = exportable.map((group, outputIndex) => ({
+      id: group.id,
+      number: group.number || outputIndex + 1,
+      label: group.label || `Generated Plateau ${outputIndex + 1}`,
+      elevation: group.elevation,
+      color: group.color || HOBUNJI_PLATEAU_COLORS[outputIndex % HOBUNJI_PLATEAU_COLORS.length]
     }));
-    const minimumInterior = 4;
-    const minimumFootprint = 10;
-    // Border-escarpment groups always export regardless of size: dropping one
-    // as "tiny" doesn't just omit a small decorative plateau, it flattens a
-    // piece of the boundary cliff ring to grass (mergeZoneTilesInto downgrades
-    // an unassigned 'rock' tile to 'grass' — see its own comment), which is a
-    // visible hole/gap in what's supposed to be a continuous cliff wall.
-    let exportable = scored.filter(item => item.group.hasBorderEscarpment
-      || (item.interiorCount >= minimumInterior && item.interiorCount + item.ringCount >= minimumFootprint));
-    const droppedTiny = scored.length - exportable.length;
-    const maxSubmaps = 96;
-    const trimmable = exportable.filter(item => !item.group.hasBorderEscarpment);
-    if (trimmable.length > maxSubmaps) {
-      const keepIndices = new Set(exportable.filter(item => item.group.hasBorderEscarpment).map(item => item.index));
-      for (const item of trimmable
-        .sort((a, b) => (b.interiorCount + b.ringCount) - (a.interiorCount + a.ringCount))
-        .slice(0, maxSubmaps)) {
-        keepIndices.add(item.index);
-      }
-      exportable = exportable.filter(item => keepIndices.has(item.index)).sort((a, b) => a.index - b.index);
-    }
-    const groups = exportable.map((item, outputIndex) => {
-      const group = item.group;
-      return {
-        id: group.id,
-        number: group.number || outputIndex + 1,
-        label: group.label || `Generated Plateau ${outputIndex + 1}`,
-        elevation: group.elevation,
-        color: group.color || HOBUNJI_PLATEAU_COLORS[outputIndex % HOBUNJI_PLATEAU_COLORS.length]
-      };
-    });
-    if (droppedTiny || scored.length > groups.length) map.exportPlateauTinyGroupsSkipped = scored.length - groups.length;
     const byGroupId = new Map(groups.map(group => [group.id, group]));
     return { groups, byGroupId };
   }
@@ -6128,7 +6136,7 @@
       boundaryHeightScan: map.boundaryHeightScan || null,
       distantBoundaryLandscapes: map.distantBoundaryLandscapes || [],
       greatBasinEntry: map.greatBasinEntry || null,
-      note: `Flattened from WildernessMapGeneratorV44 after ${map.generationScale || 1}x tile-density expansion. Unsupported generated object types are encoded as supported editor tile types plus generatedObject metadata. Tiny canyon-cut plateau fragments may be root-only to keep Map Editor imports lightweight.`
+      note: `Flattened from WildernessMapGeneratorV44 after ${map.generationScale || 1}x tile-density expansion. Unsupported generated object types are encoded as supported editor tile types plus generatedObject metadata. Every non-empty plateau paint group is retained so generated elevation ownership survives export exactly.`
     };
 
     const submaps = [];
@@ -6185,7 +6193,7 @@
       `  source: ${map.sourceWidth || map.width}x${map.sourceHeight || map.height}, tile-density scale: ${map.generationScale || 1}x`,
       map.connectivity && map.connectivity.originalWalkableTilesBeforeDensityScale ? `  walkable source/export: ${map.connectivity.originalWalkableTilesBeforeDensityScale} -> ${map.connectivity.actualWalkableTilesAfterDensityScale}` : '  walkable source/export: not measured',
       `  tiles: ${tileCount}`,
-      `  plateau groups: ${workspace.plateauGroups.length}${map.exportPlateauTinyGroupsSkipped ? ` (${map.exportPlateauTinyGroupsSkipped} tiny/root-only groups skipped)` : ''}`,
+      `  plateau groups: ${workspace.plateauGroups.length}`,
       `  manual plateau ring tiles: ${map.plateauPaintGroups.reduce((sum, group) => sum + (group.ringKeys ? group.ringKeys.length : 0), 0)}`,
       `  manual plateau interior tiles: ${map.plateauPaintGroups.reduce((sum, group) => sum + (group.interiorKeys ? group.interiorKeys.length : 0), 0)}`,
       `  border escarpment tiles: ${allTiles().filter(tile => tile.borderEscarpment).length}`,
