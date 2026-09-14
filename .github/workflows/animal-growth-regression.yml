@@ -27,6 +27,7 @@ on:
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
+      - 'scripts/test-stable-animal-genotype-compose-dedupe.js'
       - 'scripts/test-stable-animal-progression-deps-bridge.js'
       - 'scripts/test-stable-animal-training-refinements.js'
       - 'scripts/test-stable-animal-xp-events.js'
@@ -62,6 +63,7 @@ on:
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
+      - 'scripts/test-stable-animal-genotype-compose-dedupe.js'
       - 'scripts/test-stable-animal-progression-deps-bridge.js'
       - 'scripts/test-stable-animal-training-refinements.js'
       - 'scripts/test-stable-animal-xp-events.js'
@@ -108,6 +110,8 @@ jobs:
         run: node scripts/test-animal-growth-kunji-shop.js
       - name: Test stable animal progression
         run: node scripts/test-stable-animal-progression.js
+      - name: Test genotype compose in-flight dedupe
+        run: node scripts/test-stable-animal-genotype-compose-dedupe.js
       - name: Test stable animal progression dependency bridge
         run: node scripts/test-stable-animal-progression-deps-bridge.js
       - name: Test stable training refinements
