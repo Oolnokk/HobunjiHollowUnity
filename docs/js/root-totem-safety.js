@@ -100,13 +100,30 @@
     return blockers;
   }
 
-  function tileIsWalkable(map, col, row, blockers) {
+  function tileIsWalkable(map, col, row, blockers, ownRootTotemId = null) {
     const tile = tileAt(map, col, row); // Candidate terrain record used for collision/terrain rejection.
     if (!tile) return false;
-    const type = String(tile.type || '').toLowerCase(); // Compared against obviously impassable exported terrain kinds.
+    const ownRootOverlay = tile.generatedObjectType === 'rootTotem' && (!ownRootTotemId || tile.generatedObjectId === ownRootTotemId); // Lets an existing checkpoint evaluate its own exported rock overlay as the walkable grass beneath it.
+    const type = ownRootOverlay ? 'grass' : String(tile.type || '').toLowerCase(); // Root Totem overlays replace the exported type with rock, so their own tile is normalized back to grass for safety checks.
     if (NON_WALKABLE_TILE_TYPES.has(type) || tile.water || tile.waterfall || tile.incline) return false;
-    if (tile.generatedObjectId || tile.generatedObjectType) return false;
+    if (!ownRootOverlay && (tile.generatedObjectId || tile.generatedObjectType)) return false;
+    if (!ownRootOverlay && type !== 'grass') return false; // Relocation only consumes ordinary grass so it never turns a path or special terrain tile into the Totem's rock overlay.
     return !(blockers || []).some(rect => rectContains(rect, col, row));
+  }
+
+  function moveRootTotemOverlay(map, totemId, from, to) {
+    const oldTile = tileAt(map, from.x, from.y); // Cleared so the old checkpoint position cannot remain as a ghost rock/collision tile.
+    if (oldTile?.generatedObjectType === 'rootTotem' && (!oldTile.generatedObjectId || oldTile.generatedObjectId === totemId)) {
+      oldTile.type = 'grass';
+      delete oldTile.generatedObjectId;
+      delete oldTile.generatedObjectType;
+    }
+    const newTile = tileAt(map, to.x, to.y); // Receives the same exported overlay contract used by wilderness-map-generator.js for a normally generated Root Totem.
+    if (newTile) {
+      newTile.type = 'rock';
+      newTile.generatedObjectId = totemId;
+      newTile.generatedObjectType = 'rootTotem';
+    }
   }
 
   function farEnoughFromThreats(col, row, threats, clearance) {
@@ -173,7 +190,7 @@
       const originalAnchor = totem.pathAnchor && Number.isFinite(Number(totem.pathAnchor.x)) && Number.isFinite(Number(totem.pathAnchor.y))
         ? { x: Math.round(Number(totem.pathAnchor.x)), y: Math.round(Number(totem.pathAnchor.y)) }
         : null; // Existing spawn tile is checked independently because it can be one tile closer to danger than the Totem itself.
-      const originalIsSafe = tileIsWalkable(map, original.x, original.y, blockers)
+      const originalIsSafe = tileIsWalkable(map, original.x, original.y, blockers, totem.id)
         && farEnoughFromThreats(original.x, original.y, threats, clearance)
         && (!originalAnchor || (tileIsWalkable(map, originalAnchor.x, originalAnchor.y, blockers) && farEnoughFromThreats(originalAnchor.x, originalAnchor.y, threats, clearance)));
       if (originalIsSafe) continue;
@@ -197,6 +214,7 @@
         occupiedTotems.add(`${original.x},${original.y}`);
         continue;
       }
+      moveRootTotemOverlay(map, totem.id, original, { x: best.col, y: best.row });
       totem.x = best.col;
       totem.y = best.row;
       totem.pathAnchor = { x: best.anchor.x, y: best.anchor.y };
