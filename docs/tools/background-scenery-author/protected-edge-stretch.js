@@ -1,46 +1,8 @@
 'use strict';
 
-// The side-by-side 3D comparison now boots the same automatic terrain-mapping
-// entrypoints used by the game before the preview script captures its left-hand
-// geometry. Keep these parser-blocking so CURRENT GAME AUTO cannot race the
-// direct-Jigsaw comparison on initial load.
-if (document.readyState === 'loading' && typeof document.write === 'function') {
-  if (!window.HobunjiSurfaceStretchUV) {
-    document.write('<script src="../../js/surface-stretch-uv-furniture.js?v=20260914boundary-current1"></script>');
-  }
-  if (!window.NaturalSurfaceJigsawExclusion) {
-    document.write('<script src="../../js/natural-surface-jigsaw-exclusion.js?v=20260914boundary-current1"></script>');
-  }
-  document.write('<script src="current-game-terrain-auto.js?v=20260914a"></script>');
-}
-
-// The author uses Three r128. Its WebGLRenderer exposes render on renderer
-// instances rather than on WebGLRenderer.prototype, while the shared gameplay
-// TerrainRenderChunks bootstrap uses the prototype as its automatic render-hook
-// attachment point. The gameplay API itself does not require that hook when a
-// tool calls bakeMesh() directly, so provide a tool-only compatibility method
-// long enough for the shared runtime to install its public APIs.
-if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof document.write === 'function') {
-  const rendererProto = window.THREE?.WebGLRenderer?.prototype;
-  let installedPrototypeShim = false;
-  if (rendererProto && typeof rendererProto.render !== 'function') {
-    const compatibilityRender = function hobunjiR128TerrainApiCompatibilityRender() {
-      // Three r128 renderer instances shadow this prototype member with their
-      // real render function. Reaching this method directly indicates an invalid
-      // renderer rather than a valid preview frame, so deliberately do nothing.
-    };
-    compatibilityRender.__hobunjiR128TerrainApiCompatibilityShim = true;
-    rendererProto.render = compatibilityRender;
-    installedPrototypeShim = true;
-  }
-  window.__hobunjiTerrainJigsawCompat = {
-    attempted: true,
-    installedPrototypeShim,
-    threeRevision: String(window.THREE?.REVISION || ''),
-  };
-  document.write('<script src="../../js/terrain-render-chunks.js?v=20260914r128compat1"></script>');
-}
-
+// TerrainJigsawUV is loaded explicitly by index.html before this author patch.
+// Keep this file focused on authored controls; do not bootstrap runtime scripts
+// from inside a parser-time authoring script.
 (() => {
   const Core = window.BackgroundScenery;
   if (!Core || Core.__jigsawSurfaceAuthorPatch) return;
@@ -65,7 +27,7 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
   let previewImage = null;
   let previewImagePath = '';
   let loadToken = 0;
-  let authorRevision = 0; // Used to prove in the 3D status that each authored jigsaw setting change reached the active map state.
+  let authorRevision = 0;
 
   function normalize(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
@@ -100,7 +62,7 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
     const background = activeMap.backgroundScenery && typeof activeMap.backgroundScenery === 'object'
       ? activeMap.backgroundScenery
       : {};
-    background.materialStretch = clone(stretch); // Used so the next Core.resolveConfig/rebuild reads the just-authored values instead of reconstructing the previous map values.
+    background.materialStretch = clone(stretch);
     activeMap.backgroundScenery = background;
   }
   function announceAuthorChange(reason) {

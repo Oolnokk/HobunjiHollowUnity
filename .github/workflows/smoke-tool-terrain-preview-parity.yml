@@ -12,7 +12,6 @@ on:
       - 'docs/js/natural-surface-materials.js'
       - 'docs/js/natural-surface-jigsaw-exclusion.js'
       - 'docs/js/terrain-render-chunks.js'
-      - 'docs/js/terrain-jigsaw-surface-split.js'
       - 'docs/js/house-pieces.js'
       - 'docs/config/natural-surface-materials.js'
       - 'docs/tools/map-editor/index.html'
@@ -20,8 +19,7 @@ on:
       - 'docs/tools/wilderness-generation-lab/**'
       - 'docs/tools/background-scenery-author/**'
       - 'scripts/test-tool-terrain-preview-parity.js'
-      - 'scripts/test-boundary-current-game-auto.js'
-      - 'scripts/test-terrain-jigsaw-surface-split.js'
+      - 'scripts/test-boundary-current-vs-jigsaw.js'
       - 'scripts/test-surface-stretch-uv.js'
       - 'scripts/test-farm-border-road-loader-order.js'
   workflow_dispatch:
@@ -48,19 +46,14 @@ jobs:
           node --check docs/js/map-editor-terrain-texture-fix.js
           node --check docs/js/tool-terrain-preview-parity.js
           node --check docs/js/natural-surface-jigsaw-exclusion.js
-          node --check docs/js/terrain-jigsaw-surface-split.js
           node --check docs/tools/background-scenery-author/protected-edge-stretch.js
-          node --check docs/tools/background-scenery-author/current-game-terrain-auto.js
           node --check docs/tools/background-scenery-author/scenery-3d-preview.js
 
       - name: Tool terrain parity regression
         run: node scripts/test-tool-terrain-preview-parity.js
 
-      - name: Boundary current-game-auto parity regression
-        run: node scripts/test-boundary-current-game-auto.js
-
-      - name: Segmented Jigsaw final-owner regression
-        run: node scripts/test-terrain-jigsaw-surface-split.js
+      - name: Boundary current-game-auto vs Jigsaw audit regression
+        run: node scripts/test-boundary-current-vs-jigsaw.js
 
       - name: Central surface stretch regression
         run: node scripts/test-surface-stretch-uv.js

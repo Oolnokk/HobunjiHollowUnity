@@ -1,7 +1,7 @@
 'use strict';
 
-const fs = require('fs'); // Used to statically verify the shared Tool Hub parity/bootstrap contracts without needing a browser.
-const path = require('path'); // Used to resolve repository-relative source files consistently.
+const fs = require('fs');
+const path = require('path');
 
 const root = process.env.HOBUNJI_REPO || path.join(__dirname, '..');
 const wrapper = fs.readFileSync(path.join(root, 'docs/js/panel-ui.js'), 'utf8');
@@ -72,26 +72,27 @@ for (const expected of [
 ]) {
   if (!jigsawAuthor.includes(expected)) throw new Error(`Boundary Terrain jigsaw author missing live-setting contract: ${expected}`);
 }
+if (jigsawAuthor.includes('document.write')) throw new Error('Boundary Terrain author reintroduced parser-time dependency injection.');
+
 for (const expected of [
   'function jigsawEnabled()',
-  'if (!jigsawEnabled()) return null',
   'edgePx: clamp',
   'edgeWorldWidth: clamp',
   'function ensureBakeUv(geometry)',
   'bakeGeometry.clearGroups()',
   'bakeMaterial.transparent = false',
-  'api.bakeMesh(temp,{...settings,force:true,disposeSource:true})',
-  'function settingsSummary()',
-  'JIGSAW DISABLED',
-  'JIGSAW ENABLED but 0 meshes baked',
-  'TerrainJigsawUV.bakeMesh missing',
-  'baker returned null',
-  'lastAuthorRevision',
+  'api.bakeMesh(temp',
+  "window.FarmCliffRockOutline?.applyRockMaterialAndTextureOutline?.(scene.children.slice())",
+  "left.textContent = 'CURRENT GAME AUTO'",
+  "right.textContent = 'DIRECT JIGSAW'",
+  'function semanticSurface(mesh)',
+  'function currentOwner(mesh)',
+  'direct Jigsaw baker returned null',
 ]) {
-  if (!boundaryPreview.includes(expected)) throw new Error(`Boundary Terrain 3D preview missing live-jigsaw contract: ${expected}`);
+  if (!boundaryPreview.includes(expected)) throw new Error(`Boundary Terrain 3D preview missing audited comparison contract: ${expected}`);
 }
 for (const expected of ['options.edgePx ?? DEFAULT_EDGE_PX', 'options.edgeWorldWidth ?? DEFAULT_EDGE_WORLD', 'edgePx/Math.max(1,size.width)', 'settings.edgeWorldWidth']) {
   if (!jigsawRuntime.includes(expected)) throw new Error(`runtime jigsaw baker no longer consumes an authored setting: ${expected}`);
 }
 if (parity.includes('Native full-PNG span <output')) throw new Error('obsolete full-PNG-span authoring control still present');
-console.log('Tool Hub terrain preview + Boundary Terrain jigsaw regression passed.');
+console.log('Tool Hub terrain preview + audited Boundary Terrain comparison regression passed.');

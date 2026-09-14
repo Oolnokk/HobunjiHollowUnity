@@ -14,13 +14,13 @@
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
-    // Shared-edge/adjacent-normal terrain surface recognition remains the semantic entrypoint. A later adapter swaps only its UV solver to segmented Jigsaw.
+    // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
     ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260907farmcliff1'],
     // A gradual 24° face chain may walk over a rounded ridge, so split upward terrain from cliff-facing triangles before the final side-only unwrap.
     ['NaturalSurfaceCliffRidgeIsolation', 'natural-surface-cliff-ridge-isolation.js?v=20260902a'],
-    // Repairs stranded/flat natural-surface PNGs and re-asks the current mapper owner for UVs when geometry changes.
+    // Used after every older natural-surface/runtime wrapper so flat fallback textures self-heal and legacy cliff UV repair cannot remain authoritative.
     ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902b'],
-    // Until the segmented-Jigsaw adapter installs below, keep ordinary TerrainJigsawUV from independently rebaking natural rocks/cliffs.
+    // Natural rocks/cliffs have their own authoritative UV mapper now; keep Terrain Jigsaw from cloning/reinterpreting those finished UVs.
     ['NaturalSurfaceJigsawExclusion', 'natural-surface-jigsaw-exclusion.js?v=20260902a'],
     // Faceted masonry keeps its authored texture-edge treatment and skips the general shell-outline pass; rounded meshes remain eligible for shells.
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
@@ -50,16 +50,14 @@
     // without changing the visible player/pet ordering that relies on depthWrite=false.
     ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20260906a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260909targetalpha2'],
-    // Natural-surface outline policy remains independent of final texture UV ownership.
+    // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
-    // Older builders still call the shared mapper; after TerrainJigsawSurfaceSplit installs those calls keep the same 24° face splitting but receive Jigsaw UVs.
+    // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
     ['WildernessCliffSurfaceParity', 'wilderness-cliff-surface-parity.js?v=20260907b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
-    // Preserves legacy Jigsaw -> natural repair -> chunking order. Natural repair delegates to the segmented-Jigsaw mapper once the next module installs.
+    // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
-    // Single-pass hybrid owner: current 24° face segmentation + actual Jigsaw UV bake per detected natural surface. It does not wrap renderer.render or replace materials.
-    ['TerrainJigsawSurfaceSplit', 'terrain-jigsaw-surface-split.js?v=20260914b'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
