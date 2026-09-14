@@ -5,7 +5,7 @@
 // terrain baker here too so the 3D author preview uses exactly the runtime UV
 // code instead of maintaining a second approximation.
 if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof document.write === 'function') {
-  document.write('<script src="../../js/terrain-render-chunks.js?v=20260822jigsaw1"></script>');
+  document.write('<script src="../../js/terrain-render-chunks.js?v=20260914jigsaw2"></script>');
 }
 
 (() => {
@@ -32,6 +32,7 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
   let previewImage = null;
   let previewImagePath = '';
   let loadToken = 0;
+  let authorRevision = 0; // Used to prove in the 3D status that each authored jigsaw setting change reached the active map state.
 
   function normalize(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
@@ -60,6 +61,28 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
 
   function materialStretch() { return activeConfig?.materialStretch || null; }
   function slot() { return materialStretch()?.slots?.[slotName] || null; }
+  function persistMaterialStretch() {
+    const stretch = materialStretch();
+    if (!activeMap || !stretch) return;
+    const background = activeMap.backgroundScenery && typeof activeMap.backgroundScenery === 'object'
+      ? activeMap.backgroundScenery
+      : {};
+    background.materialStretch = clone(stretch); // Used so the next Core.resolveConfig/rebuild reads the just-authored values instead of reconstructing the previous map values.
+    activeMap.backgroundScenery = background;
+  }
+  function announceAuthorChange(reason) {
+    persistMaterialStretch();
+    authorRevision++;
+    window.dispatchEvent(new CustomEvent('hobunji-jigsaw-author-change', {
+      detail: {
+        reason,
+        revision: authorRevision,
+        enabled: materialStretch()?.enabled !== false,
+        slotName,
+        slot: clone(slot() || {}),
+      },
+    }));
+  }
   function assetUrl(path) {
     const p=String(path||'').trim();
     if (!p) return '';
@@ -104,11 +127,11 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
     loadTexture();
   }
 
-  function updateSlot(mutator, reload=false) {
+  function updateSlot(mutator, reload=false, reason='slot-setting') {
     const s=slot(); if (!s) return;
     mutator(s);
     if (reload) loadTexture(); else drawPreview();
-    window.dispatchEvent(new CustomEvent('hobunji-jigsaw-author-change'));
+    announceAuthorChange(reason);
   }
 
   function loadTexture() {
@@ -166,16 +189,16 @@ if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof docum
       c.fillText('JIGSAW DOMAIN',pad+half+8,13);drawIslandTexture(c,previewImage,pad+half+8,labelH+pad,half,boxH);
       c.strokeStyle='#34d399';c.lineWidth=1.5;pathPoly(c,outer,pad+half+8,labelH+pad,half,boxH);c.stroke();pathPoly(c,hole,pad+half+8,labelH+pad,half,boxH);c.stroke();
     }
-    out.innerHTML=`${previewImage.naturalWidth}×${previewImage.naturalHeight}px source · ${s.protectedEdgePx}px border band<br>${Number(s.edgeWorldWidth).toFixed(2)}u boundary rig depth · runtime split = shared-edge connected components`;
+    out.innerHTML=`${materialStretch()?.enabled===false?'DISABLED · ':'enabled · '}${previewImage.naturalWidth}×${previewImage.naturalHeight}px source · ${s.protectedEdgePx}px border band<br>${Number(s.edgeWorldWidth).toFixed(2)}u boundary rig depth · author revision ${authorRevision}`;
   }
 
-  $('stretchEnabled').onchange=()=>{const m=materialStretch();if(!m)return;m.enabled=$('stretchEnabled').checked;drawPreview();window.dispatchEvent(new CustomEvent('hobunji-jigsaw-author-change'));};
+  $('stretchEnabled').onchange=()=>{const m=materialStretch();if(!m)return;m.enabled=$('stretchEnabled').checked;drawPreview();announceAuthorChange('enabled');};
   $('stretchSlot').onchange=()=>{slotName=$('stretchSlot').value;syncControls();};
   $('stretchMode').onchange=()=>{previewMode=$('stretchMode').value;drawPreview();};
-  $('stretchTexture').onchange=()=>updateSlot(s=>s.texture=$('stretchTexture').value.trim(),true);
-  $('stretchEdgePx').oninput=()=>updateSlot(s=>s.protectedEdgePx=clamp(finiteOr($('stretchEdgePx').value,0),0,256));
-  $('stretchWorldEdge').oninput=()=>updateSlot(s=>s.edgeWorldWidth=clamp(finiteOr($('stretchWorldEdge').value,.5),.05,8));
-  $('stretchReset').onclick=()=>{const m=materialStretch();if(!m)return;m.slots[slotName]=clone(DEFAULTS.slots[slotName]);syncControls();window.dispatchEvent(new CustomEvent('hobunji-jigsaw-author-change'));};
+  $('stretchTexture').onchange=()=>updateSlot(s=>s.texture=$('stretchTexture').value.trim(),true,'texture');
+  $('stretchEdgePx').oninput=()=>updateSlot(s=>s.protectedEdgePx=clamp(finiteOr($('stretchEdgePx').value,0),0,256),false,'edge-px');
+  $('stretchWorldEdge').oninput=()=>updateSlot(s=>s.edgeWorldWidth=clamp(finiteOr($('stretchWorldEdge').value,.5),.05,8),false,'edge-world');
+  $('stretchReset').onclick=()=>{const m=materialStretch();if(!m)return;m.slots[slotName]=clone(DEFAULTS.slots[slotName]);syncControls();announceAuthorChange('reset');};
   $('borderDepth').addEventListener('input',()=>queueMicrotask(drawPreview));
   window.addEventListener('resize',drawPreview);
   relabelUi();

@@ -23,6 +23,7 @@
   let viewMode = 'compare';
   let needsFit = true;
   let terrainConfig = null;
+  let lastAuthorRevision = 0; // Used in status text to prove which author-control revision was baked into this 3D preview.
   const textureCache = new Map();
 
   const originalResolveConfig = Core.resolveConfig.bind(Core);
@@ -123,10 +124,13 @@
   }
 
   function makeWorldMaterial(tex, kind) {
-    return new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshStandardMaterial({
       map: worldUvTexture(tex, terrainEntry(kind)),
       color: colorFor(kind), roughness:0.96, metalness:0, side:THREE.DoubleSide,
     });
+    material.name = `boundary_preview_${kind}`;
+    material.userData = Object.assign({}, material.userData, { terrainKey: kind, previewOwned: true });
+    return material;
   }
 
   function uvDiagnosticMaterial() {
@@ -188,6 +192,8 @@
     terrainRecords=[];scene=null;
   }
 
+  function jigsawEnabled() { return activeConfig?.materialStretch?.enabled !== false; }
+
   function slotSettings(slotName) {
     const stretch=activeConfig?.materialStretch;
     const s=stretch?.slots?.[slotName];
@@ -198,6 +204,7 @@
   }
 
   function installRecord(slotName, mesh) {
+    if (!jigsawEnabled()) return null;
     const api=window.TerrainJigsawUV;
     if(!api?.bakeMesh) return null;
     const ordinaryGeometry=mesh.geometry;
@@ -209,10 +216,15 @@
     const record={
       mesh,slotName,ordinaryGeometry,ordinaryMaterial,
       jigsawGeometry:temp.geometry,jigsawMaterial:temp.material,
-      debugMaterial:uvDiagnosticMaterial(),stats,
+      debugMaterial:uvDiagnosticMaterial(),stats,settings:{...settings},
     };
     terrainRecords.push(record);
     return record;
+  }
+
+  function settingsSummary() {
+    const g=slotSettings('grass'), c=slotSettings('cliff');
+    return `grass ${g.edgePx}px/${g.edgeWorldWidth.toFixed(2)}u · cliff ${c.edgePx}px/${c.edgeWorldWidth.toFixed(2)}u`;
   }
 
   async function rebuild() {
@@ -220,7 +232,7 @@
     initRenderer();
     if (!activeMap || !activeConfig) { setStatus('Load a map to build the 3D scenery preview.'); return; }
     const token=++buildToken;
-    setStatus('Building game boundary geometry + connected surface islands…');
+    setStatus(`Building game boundary geometry · ${jigsawEnabled()?'jigsaw enabled':'jigsaw disabled'} · ${settingsSummary()}…`);
     await loadTerrainConfig();
     const stretch=activeConfig.materialStretch || {};
     const grassSlot=stretch.slots?.grass || {texture:'assets/textures/wavy_surface.png'};
@@ -239,8 +251,8 @@
     const fill=new THREE.DirectionalLight(0x8fb7dc,.40);fill.position.set(activeMap.cols+18,16,activeMap.rows+18);scene.add(fill);
     addContextFloor(activeMap);
 
-    const grassOrd=makeWorldMaterial(grassTex,'grass');grassOrd.userData.previewOwned=true;
-    const cliffOrd=makeWorldMaterial(cliffTex,'cliff');cliffOrd.userData.previewOwned=true;
+    const grassOrd=makeWorldMaterial(grassTex,'grass');
+    const cliffOrd=makeWorldMaterial(cliffTex,'cliff');
     const pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1,metalness:0,side:THREE.DoubleSide});pathMat.userData.previewOwned=true;
 
     const deps={
@@ -255,16 +267,23 @@
     try { BorderTerrain.init(deps); BorderTerrain.buildTownBorderTerrain(); }
     catch(e){setStatus(`3D build failed: ${e.message}`);console.error(e);return;}
 
+    let candidates=0;
     scene.traverse(o=>{
       if(!o.isMesh)return;
-      if(o.material===grassOrd)installRecord('grass',o);
-      else if(o.material===cliffOrd)installRecord('cliff',o);
+      if(o.material===grassOrd){candidates++;installRecord('grass',o);}
+      else if(o.material===cliffOrd){candidates++;installRecord('cliff',o);}
     });
     applyVariant(viewMode==='protected'?'jigsaw':viewMode==='heatmap'?'heatmap':'ordinary');
     if(needsFit)fitCamera();needsFit=false;
     const islands=terrainRecords.reduce((n,r)=>n+(r.stats?.islands||0),0);
     const tris=terrainRecords.reduce((n,r)=>n+(r.stats?.triangles||0),0);
-    setStatus(`${terrainRecords.length} terrain mesh${terrainRecords.length===1?'':'es'} · ${islands} connected surface island${islands===1?'':'s'} · ${tris.toLocaleString()} triangles · shared runtime jigsaw baker`);
+    if (!jigsawEnabled()) {
+      setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} rendered with ordinary UVs · ${settingsSummary()} · author rev ${lastAuthorRevision}`);
+    } else if (!terrainRecords.length) {
+      setStatus(`JIGSAW ENABLED but 0 eligible textured meshes baked (${candidates} candidates) · ${settingsSummary()} · check texture loading · author rev ${lastAuthorRevision}`);
+    } else {
+      setStatus(`${terrainRecords.length}/${candidates} terrain mesh${terrainRecords.length===1?'':'es'} baked · ${islands} connected island${islands===1?'':'s'} · ${tris.toLocaleString()} triangles · ${settingsSummary()} · author rev ${lastAuthorRevision}`);
+    }
   }
 
   function setWire(material,on){
@@ -274,9 +293,10 @@
 
   function applyVariant(name) {
     const wire=!!$('preview3dWire')?.checked;
+    const canJigsaw=jigsawEnabled();
     for(const r of terrainRecords){
-      if(name==='jigsaw'){r.mesh.geometry=r.jigsawGeometry;r.mesh.material=r.jigsawMaterial;}
-      else if(name==='heatmap'){r.mesh.geometry=r.jigsawGeometry;r.mesh.material=r.debugMaterial;}
+      if(canJigsaw && name==='jigsaw'){r.mesh.geometry=r.jigsawGeometry;r.mesh.material=r.jigsawMaterial;}
+      else if(canJigsaw && name==='heatmap'){r.mesh.geometry=r.jigsawGeometry;r.mesh.material=r.debugMaterial;}
       else{r.mesh.geometry=r.ordinaryGeometry;r.mesh.material=r.ordinaryMaterial;}
       setWire(r.mesh.material,wire);
     }
@@ -303,15 +323,15 @@
   function render(){
     requestAnimationFrame(render);if(!renderer||!scene||host.style.display==='none')return;controls?.update();resizeRenderer();
     const w=canvas.clientWidth||1,h=canvas.clientHeight||1;renderer.setScissorTest(true);
-    if(viewMode==='compare'){const left=Math.floor(w/2);renderViewport(0,0,left,h,'ordinary');renderViewport(left,0,w-left,h,'jigsaw');}
-    else renderViewport(0,0,w,h,viewMode==='protected'?'jigsaw':viewMode==='heatmap'?'heatmap':'ordinary');
+    if(viewMode==='compare'){const left=Math.floor(w/2);renderViewport(0,0,left,h,'ordinary');renderViewport(left,0,w-left,h,jigsawEnabled()?'jigsaw':'ordinary');}
+    else renderViewport(0,0,w,h,jigsawEnabled()?(viewMode==='protected'?'jigsaw':viewMode==='heatmap'?'heatmap':'ordinary'):'ordinary');
     renderer.setScissorTest(false);updateCompareLabels();
   }
 
   function updateCompareLabels(){
     const l=$('preview3dLeftLabel'),r=$('preview3dRightLabel');if(!l||!r)return;
     const compare=viewMode==='compare';l.style.display=compare?'':'none';r.style.display=compare?'':'none';
-    l.textContent='CURRENT WORLD UV';r.textContent='JIGSAW SURFACE UV';
+    l.textContent='CURRENT WORLD UV';r.textContent=jigsawEnabled()?'JIGSAW SURFACE UV':'JIGSAW DISABLED';
   }
 
   function relabelModeUi(){
@@ -331,7 +351,7 @@
   $('preview3dWire')?.addEventListener('change',()=>applyVariant(viewMode==='protected'?'jigsaw':viewMode==='heatmap'?'heatmap':'ordinary'));
   $('preview3dFit')?.addEventListener('click',fitCamera);
   $('preview3dRebuild')?.addEventListener('click',()=>scheduleRebuild(0));
-  window.addEventListener('hobunji-jigsaw-author-change',()=>scheduleRebuild(80));
+  window.addEventListener('hobunji-jigsaw-author-change',event=>{lastAuthorRevision=Number(event.detail?.revision)||lastAuthorRevision;scheduleRebuild(20);});
   $('sideScroll')?.addEventListener('input',e=>{if(e.target?.id==='stretchMode'||e.target?.id==='stretchSlot')return;scheduleRebuild(170);},true);
   $('sideScroll')?.addEventListener('change',()=>scheduleRebuild(40),true);
   $('canvas')?.addEventListener('pointerup',()=>scheduleRebuild(30));
