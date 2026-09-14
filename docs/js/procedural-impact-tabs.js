@@ -7,7 +7,7 @@
   base.async = false;
   base.src = new URL('procedural-impact-tabs-base.js', selfSrc).href;
   base.addEventListener('load', () => {
-    const pants = document.createElement('script'); // Adds Pants as a first-class workspace inside the same Procedural Animation editor HUD/scene.
+    const pants = document.createElement('script'); // Makes Pants a first-class workspace inside this same Procedural Animation editor and its live avatar scene.
     pants.async = false;
     pants.src = new URL('procedural-pants-rig-author.js', selfSrc).href;
     pants.addEventListener('error', () => console.error(`[Pants Rig] Failed to load ${pants.src}`));
