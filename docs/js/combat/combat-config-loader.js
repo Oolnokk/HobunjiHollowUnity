@@ -93,6 +93,7 @@
     ['js/mastery-policy.js?v=20260826death1', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20260913hold1', () => !!window.InventoryHeldOverride],
+    ['js/clothing-weaving-system.js?v=20260913a', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/combat/technique-scrolls.js?v=20260910manuals1', () => !!window.TechniqueScrolls],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
