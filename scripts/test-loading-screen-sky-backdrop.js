@@ -102,7 +102,7 @@ assert(editorSource.includes('id="skyBackdrop"'), `${editorPath}: integrated sky
 assert(editorSource.includes('id="skyFocusOffsetX"') && editorSource.includes('id="skyFocusOffsetY"'), `${editorPath}: integrated sky offset controls missing`);
 assert(editorSource.includes('id="skyPreviewHour"'), `${editorPath}: day/night preview-hour control missing`);
 assert(editorSource.includes('id="skyZoom"'), `${editorPath}: sky zoom control missing`);
-assert(editorSource.includes('id="skyZoom" type="range" min="0.5" max="4"'), `${editorPath}: editor sky zoom slider must reach 4x`);
+assert(editorSource.includes('id="skyZoom" type="range" min="0.5" max="4" step="0.0125"'), `${editorPath}: editor sky zoom slider must reach 4x and represent the exact 2.4375x default`);
 assert(editorSource.includes('The sky is the actual preview backdrop behind the image, script, lore, and load percentage'), `${editorPath}: behind-content live sky workflow missing`);
 assert(editorSource.includes('body.previewOnly #skyFocusGuide'), `${editorPath}: focus guide must disappear in full preview mode`);
 assert(editorSource.includes('delete output.settings.skyPreviewHour'), `${editorPath}: editor-only preview hour must not leak into exported runtime config`);
@@ -115,9 +115,10 @@ assert(editorSource.includes('#scriptViewport{position:absolute;top:0;left:25%;w
 assert(editorSource.includes('travel=viewportHeight+contentHeight') && editorSource.includes('scriptY=viewportHeight-travelPhase*travel'), `${editorPath}: preview script must enter/exit across actual viewport edges`);
 assert(!editorSource.includes('contentHeight-viewportHeight'), `${editorPath}: legacy preview internal-window scroll range must not return`);
 assert(!editorSource.includes('els.scriptViewport.style.top=`${data.settings.scriptY}%`'), `${editorPath}: scriptY must not move the preview clipping viewport`);
-assert(editorSource.includes('scriptSize:160') && editorSource.includes('scriptY:45'), `${editorPath}: editor defaults retain the prior authoring preset unless imported/reset from the shipped config`);
+assert(editorSource.includes('scriptSize:120') && editorSource.includes('scriptY:45'), `${editorPath}: editor defaults must use the 25%-reduced 120px script size`);
 assert(editorSource.includes('columnSpacing:-.56') && editorSource.includes('scriptScrollSpeed:.03'), `${editorPath}: defaults must use the latest uploaded script composition`);
-assert(editorSource.includes('skyFocusOffsetX:8') && editorSource.includes('skyFocusOffsetY:0') && editorSource.includes('skyZoom:3.25'), `${editorPath}: editor defaults retain the prior authoring sky preset unless imported/reset from the shipped config`);
+assert(editorSource.includes('skyFocusOffsetX:8') && editorSource.includes('skyFocusOffsetY:0') && editorSource.includes('skyZoom:2.4375'), `${editorPath}: editor defaults must use the 25%-reduced 2.4375x sky zoom`);
+assert(editorSource.includes('previousCurrentDefaults') && editorSource.includes('scriptSize:120') && editorSource.includes('skyZoom:2.4375'), `${editorPath}: prior 160px/3.25x local editor defaults must migrate to the reduced preset`);
 assert(editorSource.includes(',.5,4)'), `${editorPath}: editor normalization/preview zoom ceiling must remain 4x`);
 const editorSunDraw = editorSource.indexOf('drawBody("sun",w,h,state)');
 const editorMoonDraw = editorSource.indexOf('drawBody("moon",w,h,state)');
