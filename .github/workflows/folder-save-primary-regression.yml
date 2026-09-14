@@ -10,7 +10,7 @@ on:
       - 'docs/onboarding-core.js'
       - 'docs/js/save-startup-gate.js'
       - 'docs/js/session-persistence-startup-guard.js'
-      - 'scripts/test-folder-save-primary.js'
+      - 'scripts/test-folder-save-*.js'
       - '.github/workflows/folder-save-primary-regression.yml'
   push:
     paths:
@@ -18,7 +18,7 @@ on:
       - 'docs/js/folder-save-*.js'
       - 'docs/folder-save-primary.css'
       - 'docs/onboarding.js'
-      - 'scripts/test-folder-save-primary.js'
+      - 'scripts/test-folder-save-*.js'
       - '.github/workflows/folder-save-primary-regression.yml'
 
 permissions:
@@ -36,5 +36,10 @@ jobs:
         run: |
           node --check docs/js/folder-save-primary.js
           node --check docs/js/folder-save-onboarding-bridge.js
+          node --check docs/js/folder-save-device-provenance.js
+          node --check docs/js/folder-save-runtime-flush.js
+          node --check docs/js/folder-save-quit-guard.js
       - name: Run folder save regression
-        run: node scripts/test-folder-save-primary.js
+        run: |
+          node scripts/test-folder-save-primary.js
+          node scripts/test-folder-save-runtime-integrity.js
