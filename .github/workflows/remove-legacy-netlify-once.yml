@@ -32,6 +32,10 @@ jobs:
               ],
               Path('docs/js/save-startup-gate.js'): [
                   ('Browser saves and Netlify Cloud Save still work.', 'Browser saves and Google Drive Cloud Save still work.'),
+                  ('window.NetlifyCloudSave?.openPanel', 'window.HobunjiCloudSave?.openPanel'),
+                  ('window.NetlifyCloudSave.openPanel()', 'window.HobunjiCloudSave.openPanel()'),
+                  ('Reload the Netlify deployment and try again.', 'Reload the game and try again.'),
+                  ('cloud: window.NetlifyCloudSave?.getStatus?.() || null,', 'cloud: window.HobunjiCloudSave?.getStatus?.() || null,'),
               ],
               Path('docs/js/google-drive-cloud-save.js'): [
                   ('  // Compatibility alias for older onboarding code; this no longer uses Netlify in any way.\n  window.NetlifyCloudSave = api;\n', ''),
