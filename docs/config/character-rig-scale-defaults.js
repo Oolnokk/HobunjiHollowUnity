@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 8; // Adds Harlyao as an explicit 1.2x Engh-sho whole-rig default while preserving Engh-sho proportions.
+  const VERSION = 9; // Adds the intentional +25% Mao-ao procedural-foot tuning while preserving all whole-rig scale defaults.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
@@ -30,6 +30,7 @@
     'mashtzarr::female': Object.freeze({ x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 }),
   });
   const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao' }); // Transform-equivalent NPC-only species inherit the same full-rig defaults; Harlyao stays explicit because it is 20% larger than Engh-sho.
+  const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.3125, female: 1.28125 }); // +25% over the canonical authored Mao-ao foot scales (1.05 male / 1.025 female).
 
   const normalizeSpecies = value => {
     const raw = String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
@@ -42,12 +43,24 @@
   const scaleFor = (species, gender) => VALUES[`${normalizeSpecies(species)}::${normalizeGender(gender)}`] || { x: 1, y: 1, head: 1, offsetY: 0 };
   const uniformScaleFor = (species, gender) => scaleFor(species, gender).x; // Back-compat for readers that only need one scalar.
 
+  function applyMaoaoFootScaleTuning() {
+    const footScale = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale; // Shared runtime/tool foot-scale table consumed when procedural feet attach.
+    if (!footScale) return false;
+    footScale['mao-ao'] ||= {};
+    footScale['mao-ao'].male = MAOAO_FOOT_SCALE.male;
+    footScale['mao-ao'].female = MAOAO_FOOT_SCALE.female;
+    return true;
+  }
+
+  applyMaoaoFootScaleTuning();
   window.HOBUNJI_CHARACTER_RIG_SCALE_DEFAULTS = VALUES;
   window.HobunjiCharacterRigScaleDefaults = Object.freeze({
     version: VERSION,
     coordinateSpace: 'character-floor-parent',
     values: VALUES,
     aliases: ALIASES,
+    maoaoFootScale: MAOAO_FOOT_SCALE,
+    applyMaoaoFootScaleTuning,
     scaleFor,
     uniformScaleFor,
   });
