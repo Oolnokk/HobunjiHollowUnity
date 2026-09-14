@@ -754,11 +754,6 @@
     }) || false;
   }
 
-  // Re-aim rate (rad/sec) for the lunge homing below -- same value and
-  // reasoning as the player's own lunge homing (game.js's
-  // LUNGE_HOMING_RATE in updateMovement).
-  const BANDIT_LUNGE_HOMING_RATE = 6;
-
   // Returns true while a lunge is in flight (caller should skip its own
   // normal movement/approach logic for the frame).
   function updateBanditLunge(c, dt, targetPlayer) {
@@ -771,32 +766,7 @@
       c._banditLungeStartY = c.y;
       c._banditLungeDistancePx = 0;
     }
-    // Re-aims c.facing toward the target's CURRENT position every
-    // frame, capped at BANDIT_LUNGE_HOMING_RATE -- mirrors the player's
-    // own lunge homing instead of Pounce's lock-at-fire-and-never-
-    // correct precedent this used to follow. Pounce's prey doesn't
-    // actively strafe against it; a human player does, and the swing's
-    // own hit-cone is narrow (13-42 degree half-angle) and was never
-    // re-checked against anything but the frozen fire-time angle, so
-    // even a moderate sidestep during the ~0.2-0.4s windup+strike
-    // window routinely carried the player clean outside the cone
-    // despite being well within range -- a systematic whiff source no
-    // amount of range-margin tuning (BANDIT_LUNGE_HALT_MARGIN) could
-    // fix, since that only ever widens the RANGE cushion, not the
-    // ANGULAR one. fireBandit*'s onStrike/spawnBanditTrailArc calls
-    // read c.facing live (not a fire-time-frozen local) so the eventual
-    // hit-check and the visual trail both land on wherever this homing
-    // actually ends up aiming.
-    if (targetPlayer.health > 0) {
-      const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-      const homingT = Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
-      c.facing += deps.angleDiff(desiredFacing, c.facing) * homingT;
-      const aimed = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing, c._banditLungeAimPitch || 0);
-      if (aimed) c._banditLungeAimPitch += (aimed.pitch - (c._banditLungeAimPitch || 0)) * homingT;
-      c._banditAimPitch = c._banditLungeAimPitch;
-      c._banditLungeDirX = Math.cos(c.facing);
-      c._banditLungeDirY = Math.sin(c.facing);
-    }
+    // Facing and lunge direction stay fixed after windup begins, leaving a real backstab window.
     c._banditLungeT = Math.max(0, c._banditLungeT - dt);
     const t = 1 - c._banditLungeT / c._banditLungeDur;
     const eased = 1 - Math.pow(1 - t, 3);
@@ -871,11 +841,10 @@
       // (on the final combo step) retreatT/resets comboIndex -- a
       // landing bandit attack was silently skipping its own cooldown
       // and never retreating after its 3-hit combo.
-      data: { isBandit: true, comboId: loadout.tap1, comboStep, sfxPitch },
+      data: { isBandit: true, attacker: c, comboId: loadout.tap1, comboStep, sfxPitch },
       onStrike: () => {
         c.telegraphState = 'strike';
-        // c.facing, not the fire-time aimAngle local -- see
-        // updateBanditLunge's homing comment.
+        // The hit and trail use the facing frozen when pre-windup alignment completed.
         spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           comboStepHit = true;
@@ -932,11 +901,10 @@
     let techHit = false;
     c._banditAction = window.Combat.beginStagedAction({
       windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
-      data: { isBandit: true }, // see fireBanditComboStep's matching comment
+      data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
       onStrike: () => {
         c.telegraphState = 'strike';
-        // c.facing, not the fire-time aimAngle local -- see
-        // updateBanditLunge's homing comment.
+        // The hit and trail use the facing frozen when pre-windup alignment completed.
         spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
         // def.attackTag (the bandit's real weapon material) determines
         // both the affliction and the impact sound -- see
@@ -988,11 +956,10 @@
     let techHit = false;
     c._banditAction = window.Combat.beginStagedAction({
       windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
-      data: { isBandit: true }, // see fireBanditComboStep's matching comment
+      data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
       onStrike: () => {
         c.telegraphState = 'strike';
-        // c.facing, not the fire-time aimAngle local -- see
-        // updateBanditLunge's homing comment.
+        // The hit and trail use the facing frozen when pre-windup alignment completed.
         spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
         // def.attackTag (bandit's real weapon material) drives both the
         // affliction and the impact sound -- see combat-charged-
@@ -1043,7 +1010,7 @@
     // parallel progress channel just for this) is an acceptable gap.
     window.Combat.beginStagedAction({
       windupS: 0.05, strikeS: 0.15, recoverS: 0,
-      data: { isBandit: true }, // see fireBanditComboStep's matching comment
+      data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
       onStrike: () => {
         // def.attackTag (bandit's real weapon material) drives both the
         // affliction and the impact sound -- matches
@@ -1425,28 +1392,7 @@
       return { aimAngle: towardAngle, moving };
     }
     if (c._banditAction) {
-      // Keep tracking the target's CURRENT position with c.facing for
-      // the rest of the windup/strike, even after updateBanditLunge's
-      // own translational movement already halted (see its own
-      // halt-margin comment). The real hit-check (fireBandit*'s
-      // onStrike) fires later and reads whatever c.facing is AT THAT
-      // MOMENT, but nothing kept re-aiming it once the lunge stopped
-      // moving early -- which happens routinely, e.g. a bandit that
-      // was already near point-blank when it committed to a short step
-      // like Forehand Swing halts its lunge almost immediately, then
-      // stood frozen facing a stale angle for the rest of the ~0.3s
-      // windup+strike with zero further correction. A player free to
-      // sidestep, unopposed, for that whole remaining window slips
-      // outside even a short-range cone without ever looking like they
-      // dodged anything -- a whiff that reads as "missed at point-blank
-      // range" in a combat log.
-      if (targetPlayer.health > 0) {
-        const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-        const homingT = Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
-        c.facing += deps.angleDiff(desiredFacing, c.facing) * homingT;
-        const aimed = window.Combat?.meleeAimSolution?.(c, targetPlayer, c.facing, c._banditAimPitch || 0);
-        if (aimed) c._banditAimPitch += (aimed.pitch - (c._banditAimPitch || 0)) * homingT;
-      }
+      // The transient lock is already gone: committed windup/strike facing stays fixed.
       return { aimAngle: c.facing, moving: false };
     }
 
@@ -1547,6 +1493,14 @@
       const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, travelSpeed, dt);
       return { aimAngle: towardAngle, moving };
     }
+    const alignment = window.Combat?.attackAlignmentStep?.(c, targetPlayer, dt, {
+      turnMultiplier: window.Combat?.postAttackTurnMultiplier?.(c) ?? 1,
+    }); // Shared ±45° gate turns before stamina is spent or any windup begins.
+    if (alignment && (!alignment.eligible || !alignment.aligned)) {
+      if (alignment.eligible) c.facing = alignment.nextFacing;
+      return { aimAngle: c.facing, moving: false };
+    }
+    if (alignment?.aligned) c.facing = alignment.desiredFacing;
     window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;

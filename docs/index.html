@@ -25,7 +25,7 @@
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20260909decouple1"></script>
+  <script src="js/input-bindings.js?v=20260914transienttarget1"></script>
   <!-- Bottom-of-screen contextual action prompt extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
@@ -111,10 +111,10 @@
   <script src="debug.js?v=20260905cacheaudit2"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260909controller1"></script>
+  <script src="config/scratchbones-config.js?v=20260914transienttarget1"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260826rigv9"></script>
-  <link rel="stylesheet" href="style.css?v=20260830mapwaypoint3">
+  <link rel="stylesheet" href="style.css?v=20260914transienttarget1">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Portrait system (ScratchbonesGame) -->
@@ -209,7 +209,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260825melee3"></script>
+  <script src="js/combat/combat-core.js?v=20260914targetconfig1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
@@ -220,9 +220,10 @@
   <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
   <script src="js/combat/combat-loadout.js?v=20260907alternatingneutral1"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
-  <script src="js/combat/combat-input.js?v=20260831heavyhold2"></script>
+  <script src="js/combat/combat-input.js?v=20260914transienttarget1"></script>
   <script src="js/combat/combat-combo.js?v=20260907strikehold1"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20260914followfix1"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260910review1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260829combatsfx1"></script>
@@ -241,7 +242,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260830campfire1"></script>
+  <script src="js/combat/combat-bandit.js?v=20260914transienttarget1"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -255,7 +256,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260910controller1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260914targetconfig1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2212,26 +2213,6 @@
       <button id="btnUtilityMenu" class="abt" aria-label="Hold for utility menu">
         <span class="abt-icon">🧭</span>
       </button>
-      <!-- Melee auto-target toggle: sits one step past 12:00, its own
-           original position unrelated to the ring shift above (see the CSS
-           comment). Melee-only and hidden until a melee weapon is out (see
-           updateMovement's weaponEngaged/activeTool checks); grayed out
-           with no targetable hostile nearby, lights up white the instant
-           one is (see .abt-target-ready), and turns solid red once
-           actually engaged (see .active, matching the other outer-ring
-           toggles' convention). Tap targets the closest hostile and turns
-           the toggle on; the hidden camera joystick's left/right then swaps
-           targets instead of rotating the camera while it's on. -->
-      <button id="btnMeleeAutoTarget" class="abt abt-hidden" aria-label="Toggle melee auto-target">
-        <span class="abt-icon">
-          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="8"></circle>
-            <circle cx="12" cy="12" r="4"></circle>
-            <circle cx="12" cy="12" r="0.6" fill="currentColor" stroke="none"></circle>
-          </svg>
-        </span>
-        <span class="abt-label">Auto-Target</span>
-      </button>
     </div>
     <!-- Action Arch: 0-size anchor at bottom-right corner, buttons extend along clock 9:10–11:50 -->
     <div id="actionStack">
@@ -2463,7 +2444,7 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
-  <script src="game.js?v=20260912patternlibrary-signretire1"></script>
+  <script src="game.js?v=20260914targetconfig1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260910controller1"></script>
   <script>

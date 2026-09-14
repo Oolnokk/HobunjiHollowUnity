@@ -7,6 +7,18 @@
     "slash": { "damage": 10, "halfConeDeg": 62, "rangeTiles": 2.4, "staminaCost": 20, "knockbackPxS": 520, "trailHalfWidthTiles": 1.35, "trailFarTiles": 2.4, "trailMaxAgeSeconds": 0.34 }
   },
 
+  "targeting": {
+    "attackAlignmentHalfConeDeg": 45,
+    "attackAlignmentToleranceDeg": 2,
+    "enemyAlignmentTurnRateDegS": 520,
+    "playerAlignmentMinS": 0.11,
+    "playerAlignmentMaxS": 0.22,
+    "alignmentEasing": "smoothstep",
+    "postAttackTurnRecoveryS": 0.28,
+    "postAttackTurnMinMultiplier": 0.06,
+    "postAttackTurnEasing": "smoothstep"
+  },
+
   "combo": {
     "RANGE_SCALE": 0.6, "LUNGE_SCALE": 1.5, "COMBO_RESET_S": 1.8,
     "sfxPitchByStep": [1.0, 1.5, 2.0],

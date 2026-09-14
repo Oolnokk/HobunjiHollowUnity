@@ -9,6 +9,7 @@
   window.__attackValuesConfigPromise = load.then(config => {
     if (!config) return null;
     window.__attackValuesConfig = config;
+    window.Combat?.applyTargetingConfig?.(config.targeting);
     window.Combat?.applyComboConfig?.(config.combo);
     window.Combat?.applyDeathMarkConfig?.(config.deathMark);
     window.Combat?.applyQuickAttackConfig?.(config.quickAttacks);

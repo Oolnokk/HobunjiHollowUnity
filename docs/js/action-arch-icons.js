@@ -60,16 +60,11 @@
       }
 
       /* Outermost permanent arch: exactly 25% larger hit areas than the authored 0.6-col controls. */
-      #toolSelect button:not(#btnMeleeAutoTarget),
+      #toolSelect button,
       #btnAmmoSelect, #potionBtn {
         width: clamp(33px, calc(0.75 * var(--col)), 46px) !important;
         height: clamp(33px, calc(0.75 * var(--col)), 46px) !important;
       }
-      #toolSelect #btnMeleeAutoTarget {
-        width: clamp(38px, calc(0.875 * var(--col)), 53px) !important;
-        height: clamp(38px, calc(0.875 * var(--col)), 53px) !important;
-      }
-
       .action-arch-png {
         width: 78%; height: 78%;
         display: block; margin: auto;

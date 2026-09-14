@@ -61,7 +61,7 @@
   function getReadyState() {
     const deps = window.Combat.deps;
     const equipped = currentQuickAttack();
-    const target = deps?.findAutoTarget?.() || null; // Used to follow the same auto-target evaluated by the actual Quick Attack.
+    const target = deps?.findMeleeAttackCandidate?.() || deps?.findAutoTarget?.() || null; // Tracks the eligible pre-windup cone even though melee no longer keeps a persistent lock.
     const root = targetRoot(target); // Used to anchor readiness to the target's live avatar.
     if (!deps || !equipped || !target || target.health <= 0 || !root) {
       return { deps, target, root, equipped, ready: false, conditions: null };
@@ -76,7 +76,10 @@
     const progression = weaponKey && state?.equipped?.attackId
       ? window.CombatProgression?.getEffects?.(weaponKey, state.equipped.attackId)
       : null;
-    const afflictions = progression?.afflictions || state?.equipped?.definition?.afflictions || [];
+    const rawAfflictions = progression?.afflictions || state?.equipped?.definition?.afflictions || []; // Progression returns a keyed effect map while base definitions use arrays.
+    const afflictions = Array.isArray(rawAfflictions)
+      ? rawAfflictions
+      : Object.entries(rawAfflictions || {}).filter(([, value]) => value === true || Number(value) > 0).map(([key]) => key);
     return [...new Set(afflictions.filter(Boolean).map(String))];
   }
 
@@ -263,6 +266,7 @@
   function attachReticle(state, nowMs) {
     const sight = ensureReticle();
     const scene = targetScene(state.target, state.root); // Used to keep every sprite layer in the same scene as its target.
+    state.root.updateWorldMatrix?.(true, true); // Refreshes moving-parent transforms before sampling the live avatar centroid.
     const anchor = window.WorldPopupText.avatarCentroidWorld(state.root); // Used to match the target body centroid used by ordinary world popup text.
     if (!scene || !anchor) {
       detachReticle();
@@ -342,10 +346,17 @@
     return state;
   }
 
+  let lastFrameError = null; // Exposed in the mobile debug snapshot if an unexpected renderer error occurs.
   function frame(nowMs) {
-    syncReadyTarget(nowMs);
+    requestAnimationFrame(frame); // Schedule first so one bad frame can never strand a visible world-space sprite.
+    try {
+      syncReadyTarget(nowMs);
+      lastFrameError = null;
+    } catch (error) {
+      lastFrameError = String(error?.message || error);
+      detachReticle();
+    }
     lastFrameMs = nowMs;
-    requestAnimationFrame(frame);
   }
 
   function debugEnabledFromUrl() {
@@ -399,6 +410,12 @@
       debugEnabled = !!enabled;
       updateDebugBadge(getReadyState());
     },
+    snapshot: () => ({
+      latestChange: 'Opportunity overlay follows the live target transform and self-hides when its condition ends.',
+      targetId: lastTarget?.id || null,
+      visible: !!reticle?.sprite?.visible,
+      lastFrameError,
+    }),
   };
 
   requestAnimationFrame(frame);

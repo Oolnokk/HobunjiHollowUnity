@@ -25,8 +25,6 @@
     action7: null,
     action8: null,
     swapTarget: null,
-    meleeTargetPrev: 'RightStickLeft',
-    meleeTargetNext: 'RightStickRight',
     toggleMount: 'Button10',
     weaponSwitch: 'Button11',
     utilityMenu: 'Button12',
@@ -60,7 +58,6 @@
     musicPause: 'Button9',
     musicScalePrev: 'Button14',
     musicScaleNext: 'Button15',
-    meleeAutoTargetToggle: 'Button3',
     socialWheel: 'Button15',
     itemSelect: 'Button4',
   }); // Canonical controller reset/fresh-player layout; kept in one map so legacy authored values cannot drift away from the shipped controller experience.
@@ -88,7 +85,6 @@
     { id: 'musicPause', label: 'Music: Pause', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicPause, devices: ['controller'], context: 'music' },
     { id: 'musicScalePrev', label: 'Music: Previous Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScalePrev, devices: ['controller'], context: 'music' },
     { id: 'musicScaleNext', label: 'Music: Next Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScaleNext, devices: ['controller'], context: 'music' },
-    { id: 'meleeAutoTargetToggle', label: 'Melee: Toggle Auto-Target', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.meleeAutoTargetToggle, devices: ['controller'], context: 'melee' },
   ]); // Controller-only schema is owned here so global gameplay config and unrelated camera work never need to author or migrate these rows.
 
   function removeLegacyControllerModeShift(modeShifts) {

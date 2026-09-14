@@ -30,11 +30,109 @@
   }
 
   const activeStaged = new Set();
+  const DEFAULT_TARGETING_CONFIG = Object.freeze({ // Safe synchronous policy used until authored attack values load.
+    attackAlignmentHalfConeDeg: 45,
+    attackAlignmentToleranceDeg: 2,
+    enemyAlignmentTurnRateDegS: 520,
+    playerAlignmentMinS: 0.11,
+    playerAlignmentMaxS: 0.22,
+    alignmentEasing: 'smoothstep',
+    postAttackTurnRecoveryS: 0.28,
+    postAttackTurnMinMultiplier: 0.06,
+    postAttackTurnEasing: 'smoothstep',
+  });
+  let targetingConfig = { ...DEFAULT_TARGETING_CONFIG }; // Runtime tuning replaced by applyTargetingConfig after JSON load.
   const MAX_MELEE_AIM_PITCH_RAD = THREE.MathUtils.degToRad(70);
   const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
   const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
   const activeMeleeColliderDebug = new Map(); // Recent real pie-prism volumes drawn by Show Hitboxes.
   let lastMelee3DResult = null; // Mobile-readable record of the latest 3D collider decision.
+
+  function signedAngleDelta(target, current) {
+    let delta = (Number(target) || 0) - (Number(current) || 0);
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    return delta;
+  }
+
+  function finiteTuning(value, fallback, minimum = 0) {
+    const parsed = Number(value); // Candidate authored value normalized before use by combat policy.
+    return Number.isFinite(parsed) ? Math.max(minimum, parsed) : fallback;
+  }
+
+  function applyTargetingConfig(config = {}) {
+    const next = { ...targetingConfig }; // Atomic replacement prevents callers observing a partly-applied policy.
+    next.attackAlignmentHalfConeDeg = finiteTuning(config.attackAlignmentHalfConeDeg, next.attackAlignmentHalfConeDeg);
+    next.attackAlignmentToleranceDeg = finiteTuning(config.attackAlignmentToleranceDeg, next.attackAlignmentToleranceDeg);
+    next.enemyAlignmentTurnRateDegS = finiteTuning(config.enemyAlignmentTurnRateDegS, next.enemyAlignmentTurnRateDegS);
+    next.playerAlignmentMinS = finiteTuning(config.playerAlignmentMinS, next.playerAlignmentMinS);
+    next.playerAlignmentMaxS = Math.max(next.playerAlignmentMinS, finiteTuning(config.playerAlignmentMaxS, next.playerAlignmentMaxS));
+    next.alignmentEasing = config.alignmentEasing === 'linear' ? 'linear' : 'smoothstep';
+    next.postAttackTurnRecoveryS = finiteTuning(config.postAttackTurnRecoveryS, next.postAttackTurnRecoveryS, 0.001);
+    next.postAttackTurnMinMultiplier = THREE.MathUtils.clamp(finiteTuning(config.postAttackTurnMinMultiplier, next.postAttackTurnMinMultiplier), 0, 1);
+    next.postAttackTurnEasing = config.postAttackTurnEasing === 'linear' ? 'linear' : 'smoothstep';
+    targetingConfig = next;
+  }
+
+  function configuredEase(progress, easing) {
+    const t = THREE.MathUtils.clamp(Number(progress) || 0, 0, 1); // Normalized time shared by alignment and recovery curves.
+    return easing === 'linear' ? t : t * t * (3 - 2 * t);
+  }
+
+  function attackAlignmentHalfConeRad() {
+    return THREE.MathUtils.degToRad(targetingConfig.attackAlignmentHalfConeDeg);
+  }
+
+  function playerAttackAlignmentDuration(deltaRad) {
+    const coneFraction = THREE.MathUtils.clamp(Math.abs(Number(deltaRad) || 0) / Math.max(0.0001, attackAlignmentHalfConeRad()), 0, 1); // Maps correction angle onto authored min/max glide time.
+    return THREE.MathUtils.lerp(targetingConfig.playerAlignmentMinS, targetingConfig.playerAlignmentMaxS, coneFraction);
+  }
+
+  function playerAttackAlignmentProgress(progress) {
+    return configuredEase(progress, targetingConfig.alignmentEasing);
+  }
+
+  function targetInsideAttackCone(attacker, target, facing = attacker?.facing || 0, halfConeRad = attackAlignmentHalfConeRad()) {
+    if (!attacker || !target || target.health <= 0) return false;
+    const desiredFacing = Math.atan2(target.y - attacker.y, target.x - attacker.x);
+    return Math.abs(signedAngleDelta(desiredFacing, facing)) <= halfConeRad;
+  }
+
+  function attackAlignmentStep(attacker, target, dt, options = {}) {
+    const facing = Number(options.facing ?? attacker?.facing) || 0; // Current heading used by every transient alignment caller.
+    const desiredFacing = target ? Math.atan2(target.y - attacker.y, target.x - attacker.x) : facing; // Live target bearing used only before windup begins.
+    const deltaRad = signedAngleDelta(desiredFacing, facing); // Smallest signed turn used for cone eligibility and this frame's step.
+    const halfConeRad = Number(options.halfConeRad) || attackAlignmentHalfConeRad(); // Optional override retained for diagnostics and future attacks.
+    if (!attacker || !target || target.health <= 0 || Math.abs(deltaRad) > halfConeRad) {
+      return { eligible: false, aligned: false, desiredFacing, nextFacing: facing, deltaRad };
+    }
+    const turnMultiplier = Math.max(0, Number(options.turnMultiplier ?? 1)); // Post-attack recovery can slow turning without discarding input.
+    const turnRateRadS = Math.max(0, Number(options.turnRateRadS) || THREE.MathUtils.degToRad(targetingConfig.enemyAlignmentTurnRateDegS)); // Authored enemy alignment speed.
+    const maxStep = turnRateRadS * turnMultiplier * Math.max(0, Number(dt) || 0);
+    const toleranceRad = THREE.MathUtils.degToRad(targetingConfig.attackAlignmentToleranceDeg); // Authored threshold that prevents sub-pixel windup delay.
+    const nextFacing = Math.abs(deltaRad) <= toleranceRad || maxStep >= Math.abs(deltaRad)
+      ? desiredFacing
+      : facing + Math.sign(deltaRad) * maxStep;
+    return {
+      eligible: true,
+      aligned: Math.abs(signedAngleDelta(desiredFacing, nextFacing)) <= toleranceRad,
+      desiredFacing,
+      nextFacing,
+      deltaRad,
+    };
+  }
+
+  function noteAttackFinished(actor, nowMs = performance.now()) {
+    if (actor) actor._attackTurnRecoveryStartedAtMs = nowMs; // Read by camera and enemy-turn updates during the short recovery ramp.
+  }
+
+  function postAttackTurnMultiplier(actor, nowMs = performance.now()) {
+    const startedAt = Number(actor?._attackTurnRecoveryStartedAtMs); // Timestamp written by noteAttackFinished after successful staged attacks.
+    if (!Number.isFinite(startedAt)) return 1;
+    const t = Math.max(0, Math.min(1, (nowMs - startedAt) / (targetingConfig.postAttackTurnRecoveryS * 1000)));
+    const eased = configuredEase(t, targetingConfig.postAttackTurnEasing); // Authored curve ramps without dropping accumulated look input.
+    return targetingConfig.postAttackTurnMinMultiplier + (1 - targetingConfig.postAttackTurnMinMultiplier) * eased;
+  }
 
   function combatActorHitbox(actor) {
     return window.RangedWeapons?.actorHitbox?.(actor) || null;
@@ -430,6 +528,8 @@
     if (action.phase === 'done') return;
     action.phase = 'done';
     activeStaged.delete(action);
+    const attacker = action.data?.attacker || (!action.data?.isBandit ? deps?.player : null); // Player is the default owner for legacy staged ability data.
+    noteAttackFinished(attacker);
     if (action.onComplete) action.onComplete(action);
   }
 
@@ -485,6 +585,13 @@
     beginStagedAction,
     cancelAllStaged,
     meleeAimSolution,
+    targetInsideAttackCone,
+    attackAlignmentStep,
+    playerAttackAlignmentDuration,
+    playerAttackAlignmentProgress,
+    applyTargetingConfig,
+    noteAttackFinished,
+    postAttackTurnMultiplier,
     meleeColliderVolume,
     meleeColliderWireframe,
     debugMeleeColliders,
@@ -501,6 +608,10 @@
     getMovementSpeedMul,
     get deps() { return deps; },
     MAX_MELEE_AIM_PITCH_RAD,
+    get targetingConfig() { return { ...targetingConfig }; },
+    get ATTACK_ALIGNMENT_HALF_CONE_RAD() { return attackAlignmentHalfConeRad(); },
+    get ATTACK_ALIGNMENT_TURN_RATE_RAD_S() { return THREE.MathUtils.degToRad(targetingConfig.enemyAlignmentTurnRateDegS); },
+    get POST_ATTACK_TURN_RECOVERY_S() { return targetingConfig.postAttackTurnRecoveryS; },
   };
   window.__melee3DDebug = {
     get lastResult() { return lastMelee3DResult; },

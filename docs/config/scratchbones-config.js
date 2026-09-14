@@ -287,8 +287,6 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
         { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
-        { "id": "meleeTargetPrev", "label": "Melee Auto-Target: Previous", "desktop": null, "controller": "RightStickLeft" },
-        { "id": "meleeTargetNext", "label": "Melee Auto-Target: Next", "desktop": null, "controller": "RightStickRight" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
         { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "KeyR", "controller": "Button11" },
         { "id": "utilityMenu", "label": "Utility Menu", "desktop": "KeyC", "controller": null },

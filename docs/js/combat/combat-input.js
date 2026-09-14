@@ -15,7 +15,13 @@
   const HOLD_THRESHOLD_S = 0.16;
 
   function makeSlotState() {
-    return { down: false, downAt: 0, holding: false };
+    return {
+      down: false, downAt: 0, holding: false,
+      alignmentRequest: null, // Cancel handle for an offensive hold that is still aligning before windup.
+      holdAbility: null, // Ability captured at the hold threshold so loadout swaps cannot change the pending action.
+      holdStarted: false, // Distinguishes a real hold windup from one still waiting for alignment.
+      releaseQueued: false, // Preserves an early release until transient alignment completes.
+    };
   }
   const slots = { 1: makeSlotState(), 2: makeSlotState() };
 
@@ -85,34 +91,69 @@
     return true;
   }
 
+  function runAfterAttackAlignment(callback) {
+    const requestAlignment = window.Combat.deps?.requestMeleeAttackAlignment; // game.js bridge that owns the short pre-windup target turn.
+    if (!requestAlignment) { callback(); return null; }
+    return requestAlignment(callback);
+  }
+
   function fireTap(slotIndex) {
     if (blockedBySwimming() || blockedByStagger()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
-    if (ability?.onTap) {
-      ability.onTap({ slotIndex, slotId });
-      return;
-    }
-    legacyTapFallback(slotIndex);
+    runAfterAttackAlignment(() => {
+      if (ability?.onTap) ability.onTap({ slotIndex, slotId });
+      else legacyTapFallback(slotIndex);
+    });
   }
 
   function startHold(slotIndex) {
-    if (blockedBySwimming() || blockedByStagger()) return;
+    const s = slots[slotIndex];
+    if (!s || blockedBySwimming() || blockedByStagger()) return;
     const slotId = 'hold' + slotIndex;
     const ability = abilityForSlot(slotId);
-    if (ability?.onHoldStart) ability.onHoldStart({ slotIndex, slotId });
+    s.holdAbility = ability;
+    s.holdStarted = false;
+    s.releaseQueued = false;
+    const start = () => {
+      s.alignmentRequest = null;
+      if ((!s.down && !s.releaseQueued) || !ability?.onHoldStart) return;
+      s.holdStarted = true;
+      ability.onHoldStart({ slotIndex, slotId });
+      if (s.releaseQueued) {
+        ability.onHoldEnd?.({ slotIndex, slotId });
+        s.holdStarted = false;
+        s.releaseQueued = false;
+      }
+    };
+    if (ability?.category === 'offensiveHold') {
+      let resolvedSynchronously = false;
+      const handle = runAfterAttackAlignment(() => { resolvedSynchronously = true; start(); });
+      if (!resolvedSynchronously) s.alignmentRequest = handle;
+    } else {
+      start();
+    }
   }
 
   function updateHold(slotIndex, dt) {
+    const s = slots[slotIndex];
+    if (!s?.holdStarted) return;
     const slotId = 'hold' + slotIndex;
-    const ability = abilityForSlot(slotId);
-    if (ability?.onHoldUpdate) ability.onHoldUpdate({ slotIndex, slotId }, dt);
+    s.holdAbility?.onHoldUpdate?.({ slotIndex, slotId }, dt);
   }
 
   function endHold(slotIndex) {
+    const s = slots[slotIndex];
+    if (!s) return;
     const slotId = 'hold' + slotIndex;
-    const ability = abilityForSlot(slotId);
-    if (ability?.onHoldEnd) ability.onHoldEnd({ slotIndex, slotId });
+    if (s.alignmentRequest && !s.holdStarted) {
+      s.releaseQueued = true;
+      return;
+    }
+    if (s.holdStarted) s.holdAbility?.onHoldEnd?.({ slotIndex, slotId });
+    s.holdStarted = false;
+    s.releaseQueued = false;
+    s.holdAbility = null;
   }
 
   // Call on pointerdown/touch-start for the given slot (1 or 2).
@@ -122,6 +163,11 @@
     s.down = true;
     s.downAt = now();
     s.holding = false;
+    s.alignmentRequest?.cancel?.();
+    s.alignmentRequest = null;
+    s.holdAbility = null;
+    s.holdStarted = false;
+    s.releaseQueued = false;
     emitState(slotIndex, 'press-start');
   }
 
@@ -145,8 +191,13 @@
   function cancelPress(slotIndex) {
     const s = slots[slotIndex];
     if (!s) return;
+    s.alignmentRequest?.cancel?.();
+    s.alignmentRequest = null;
     s.down = false;
     s.holding = false;
+    s.holdAbility = null;
+    s.holdStarted = false;
+    s.releaseQueued = false;
     emitState(slotIndex, 'press-cancel');
   }
 
@@ -156,8 +207,13 @@
     const s = slots[slotIndex];
     if (!s || !s.down) return;
     if (s.holding) endHold(slotIndex);
+    s.alignmentRequest?.cancel?.();
+    s.alignmentRequest = null;
     s.down = false;
     s.holding = false;
+    s.holdAbility = null;
+    s.holdStarted = false;
+    s.releaseQueued = false;
     emitState(slotIndex, 'press-abort');
   }
 
