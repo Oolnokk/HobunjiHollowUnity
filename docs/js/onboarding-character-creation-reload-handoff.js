@@ -11,8 +11,10 @@
     resumed: false,
     characterId: null,
     worldId: null,
+    folderFlushes: 0,
+    folderFlushFailures: 0,
     lastError: null,
-  }; // Mobile-readable handoff diagnostics.
+  }; // Mobile-readable handoff diagnostics, including the folder flush that now precedes the clean-page reload.
 
   function creatorConfirmIsStillMounted() {
     return !!document.querySelector('#ob-overlay #ob-start-btn');
@@ -38,6 +40,11 @@
     }
   }
 
+  function clearResumeMarker() {
+    try { sessionStorage.removeItem(RESUME_KEY); } catch (_) {}
+    status.armed = false;
+  }
+
   function takeResumeMarker() {
     try {
       const raw = sessionStorage.getItem(RESUME_KEY);
@@ -56,6 +63,29 @@
     return !!playerData
       && String(playerData.characterId || '') === String(marker?.characterId || '')
       && String(playerData.worldId || '') === String(marker?.worldId || '');
+  }
+
+  async function flushPrimaryFolderBeforeReload() {
+    const localSave = window.LocalSaveFolder; // Existing persistence API; explicit sync also arms autosync for a newly-chosen empty folder.
+    if (!localSave?.getStatus || !localSave?.syncNow) return true;
+    const current = localSave.getStatus(); // Permission/connection state captured before starting the creator handoff flush.
+    if (current.state !== 'ready' || !current.folderName) return true;
+
+    try {
+      const saved = await localSave.syncNow();
+      if (saved?.lastError || saved?.dataLossRisk) {
+        status.folderFlushFailures++;
+        status.lastError = saved.lastError || `Primary folder save was blocked: ${saved.dataLossRisk}`;
+        return false;
+      }
+      status.folderFlushes++;
+      status.lastError = null;
+      return true;
+    } catch (error) {
+      status.folderFlushFailures++;
+      status.lastError = error?.message || String(error);
+      return false;
+    }
   }
 
   function installInitResume() {
@@ -93,7 +123,7 @@
     return true;
   }
 
-  function onPlayerReadyBeforeOldPageGameBoot(event) {
+  async function onPlayerReadyBeforeOldPageGameBoot(event) {
     // Save-select Play should continue to enter gameplay without a reload.
     // Only the creator's Start Farming confirmation gets the clean-page handoff.
     if (!creatorConfirmIsStillMounted()) return;
@@ -105,6 +135,18 @@
     // persistence has already completed. Stop the remaining old-page game
     // listeners from initializing a renderer we are about to discard.
     event.stopImmediatePropagation();
+
+    // Folder saves are now the primary persistence path. Finish the first
+    // folder write (or the latest creator save) before discarding this page;
+    // relying on async beforeunload work here could lose a brand-new farmer on
+    // mobile or a fast navigation.
+    const folderSaved = await flushPrimaryFolderBeforeReload();
+    if (!folderSaved) {
+      clearResumeMarker();
+      alert('Your farmer was saved in the browser fallback, but the primary save folder could not be updated:\n' + (status.lastError || 'Unknown folder error') + '\n\nFix or change the save folder, then press Start Farming again.');
+      return;
+    }
+
     setTimeout(() => location.reload(), 0);
   }
 
