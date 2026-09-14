@@ -16,6 +16,10 @@ function loadScript(filename, id = '') {
 }
 
 async function start() {
+  if (new URLSearchParams(window.location.search).has('embedded')) {
+    await loadScript('embedded-layout.js', 'pantsRigEmbeddedLayout'); // Prevents the standalone <=760px media rules from visually clipping either authoring canvas inside Procedural Animation.
+  }
+
   try {
     await loadScript('portrait-runtime-bootstrap.js', 'pantsRigPortraitRuntimeBootstrap'); // Populates the full species/gender registry before app-base's boot() reads getPortraitFighters().
     await window.PantsRigPortraitBootstrap?.ready;
@@ -26,6 +30,7 @@ async function start() {
   await loadScript('app-base.js', 'pantsRigAuthorBase'); // Loads the preserved original Pants Rig Author only after portrait fighter discovery is complete.
   await loadScript('enhancements.js', 'pantsRigAuthorEnhancements'); // Adds repository-backed pants_basic loading and unmistakable weight-paint feedback.
   await loadScript('host-bridge.js', 'pantsRigAuthorHostBridge'); // Notifies the Procedural Animation host after completed authoring changes so its live 3D mesh can rebuild only when needed.
+  window.PantsRigEmbeddedLayout?.refit?.(); // Re-evaluates exact contain sizing now that both canvases and all authoring rows are fully initialized.
 }
 
 start().catch(error => {
