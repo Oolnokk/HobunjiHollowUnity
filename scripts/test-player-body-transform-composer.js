@@ -53,22 +53,25 @@ assert.ok(composer.includes('lastRenderDebug'), 'composer preserves temporary re
 assert.ok(composer.includes('baseWorldEulerDeg'), 'composer diagnostics expose the pre-delta quaternion-only orientation');
 assert.ok(composer.includes('composedWorldEulerDeg'), 'composer diagnostics expose orientation while the channel delta is applied');
 
-// Fine Hood trim is flattened into the front portrait canvas, so ordinary
-// material backface culling cannot hide it at oblique-but-still-front-facing
-// attack angles. Render one matched trimless portrait and blend to it using
-// the live plane-to-camera facing dot product instead of punching alpha holes.
-assert.ok(avatarPreview.includes('renderFineHoodHeadOnPair'), 'Fine Hood gets a matched trimless portrait render');
-assert.ok(avatarPreview.includes('variantLayers: null'), 'trimless render uses the resolved species-specific hood layer list');
-assert.ok(avatarPreview.includes('fineHoodTrimHeadOnThresholds'), 'Fine Hood head-on cone has explicit thresholds');
-assert.ok(avatarPreview.includes('frozenBreathingComposer'), 'paired portraits freeze breathing and expressions to the same instant');
-assert.ok(avatarPreview.includes('hobunjiFineHoodTrimlessMap'), 'front material receives the trimless portrait texture');
-assert.ok(avatarPreview.includes("new THREE.Vector3(0, 0, 1)"), 'head-on gating starts from the portrait plane front normal');
-assert.ok(avatarPreview.includes('transformDirection(this.matrixWorld)'), 'head-on gating follows the live transformed portrait orientation');
-assert.ok(avatarPreview.includes('worldFront.dot(toCamera)'), 'head-on gating compares the portrait normal with the camera direction');
-assert.ok(avatarPreview.includes('smoothstep('), 'trim visibility fades through the configured head-on cone');
-assert.ok(avatarPreview.includes('diffuseColor = mix(hobunjiFineHoodTrimlessDiffuse, diffuseColor'), 'off-axis pixels reveal the trimless portrait rather than transparency');
-assert.ok(avatarPreview.includes('/front_material$/i'), 'trim shader attaches only to front portrait materials');
-assert.doesNotMatch(avatarPreview, /gl_FrontFacing|THREE\.DoubleSide/, 'Fine Hood gating does not fall back to backface-only or two-sided rendering hacks');
+// Fine Hood trim is ordinary authored portrait art. It must not install a
+// camera-angle uniform, trimless fallback texture, smooth fade, hard cutoff, or
+// any other special facing behavior in the shared avatar renderer.
+assert.doesNotMatch(loader, /fine-hood-trim-head-facing\.js/i, 'Fine Hood angle-facing adapter is not bootstrapped');
+assert.doesNotMatch(
+  avatarPreview,
+  /FineHoodTrimHeadOn|fineHoodTrimHeadOn|hobunjiFineHoodTrim|finehood-trim-head-on/i,
+  'shared avatar preview contains no Fine Hood angle-gating state'
+);
+assert.doesNotMatch(
+  avatarPreview,
+  /hobunjiFineHoodTrimlessMap|renderFineHoodHeadOnPair|fineHoodTrimHeadOnThresholds/i,
+  'shared avatar preview contains no trimless Fine Hood render/shader path'
+);
+assert.match(
+  avatarPreview,
+  /await window\.renderPortraitProfile\(canvas, profile, renderOptions\);\s*return true;/,
+  'shared avatar preview renders the authored portrait directly'
+);
 
 assert.ok(attachments.includes("registerExternalRootProvider('equippedTool'"), 'tool visuals register in the attachment adapter');
 assert.ok(attachments.includes("registerExternalRootProvider('shoulderPets'"), 'shoulder pets register in the attachment adapter');
