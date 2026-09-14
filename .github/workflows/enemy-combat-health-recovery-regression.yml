@@ -1,0 +1,22 @@
+name: Enemy Combat Health Recovery Regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/combat/enemy-combat-health-recovery.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-enemy-combat-health-recovery.js'
+      - '.github/workflows/enemy-combat-health-recovery-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check runtime policy
+        run: node --check docs/js/combat/enemy-combat-health-recovery.js
+      - name: Syntax check combat loader
+        run: node --check docs/js/combat/combat-config-loader.js
+      - name: Enemy combat Health recovery regression
+        run: node scripts/test-enemy-combat-health-recovery.js
