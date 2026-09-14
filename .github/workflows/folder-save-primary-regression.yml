@@ -1,0 +1,40 @@
+name: Folder save primary regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/local-save-folder*.js'
+      - 'docs/js/folder-save-*.js'
+      - 'docs/folder-save-primary.css'
+      - 'docs/onboarding.js'
+      - 'docs/onboarding-core.js'
+      - 'docs/js/save-startup-gate.js'
+      - 'docs/js/session-persistence-startup-guard.js'
+      - 'scripts/test-folder-save-primary.js'
+      - '.github/workflows/folder-save-primary-regression.yml'
+  push:
+    paths:
+      - 'docs/js/local-save-folder*.js'
+      - 'docs/js/folder-save-*.js'
+      - 'docs/folder-save-primary.css'
+      - 'docs/onboarding.js'
+      - 'scripts/test-folder-save-primary.js'
+      - '.github/workflows/folder-save-primary-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  folder-save-primary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check folder save modules
+        run: |
+          node --check docs/js/folder-save-primary.js
+          node --check docs/js/folder-save-onboarding-bridge.js
+      - name: Run folder save regression
+        run: node scripts/test-folder-save-primary.js
