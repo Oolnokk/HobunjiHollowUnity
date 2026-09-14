@@ -31,7 +31,7 @@
     document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
     document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
     document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260914v50wallsinputs2"></scr' + 'ipt>');
     document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
     document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
     document.write('<script src="js/dev-random-ruin-interactions.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');

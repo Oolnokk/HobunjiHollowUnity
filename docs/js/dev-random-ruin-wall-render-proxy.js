@@ -13,6 +13,7 @@
   let preparedScene = null; // Used to detect scene swaps even if a stale V50 root survives briefly.
   let proxyRoot = null; // Used as the game-realm-only parent for all visible wall proxies.
   const proxies = new Set();
+  const hiddenSourceWalls = new Set(); // Wall-only material clones suppress the foreign draw without hiding V50's shared stone material on floors, ladders, and props.
 
   function activeScene() {
     if (GridTileAccessors.getCurrentArea?.() !== MAP_ID) return null;
@@ -27,6 +28,42 @@
   function sourceMaterials(mesh) {
     if (!mesh?.material) return [];
     return Array.isArray(mesh.material) ? mesh.material.filter(Boolean) : [mesh.material];
+  }
+
+  function originalSourceMaterials(mesh) {
+    const original = mesh?.userData?.devRuinWallOriginalMaterial;
+    if (!original) return sourceMaterials(mesh);
+    return Array.isArray(original) ? original.filter(Boolean) : [original];
+  }
+
+  function hideSourceWall(wall) {
+    if (!wall?.material) return false;
+    if (wall.userData?.devRuinWallOriginalMaterial) return true;
+    const original = wall.material;
+    const originals = Array.isArray(original) ? original.filter(Boolean) : [original];
+    const hidden = originals.map(material => material?.clone?.()).filter(Boolean);
+    if (!hidden.length || hidden.length !== originals.length) return false;
+    for (const material of hidden) {
+      material.visible = false;
+      material.userData = { ...(material.userData || {}), devRuinWallPrivateHiddenClone:true };
+      material.needsUpdate = true;
+    }
+    wall.userData.devRuinWallOriginalMaterial = original;
+    wall.userData.devRuinWallHiddenMaterials = hidden;
+    wall.material = Array.isArray(original) ? hidden : hidden[0];
+    hiddenSourceWalls.add(wall);
+    return true;
+  }
+
+  function restoreSourceWall(wall) {
+    if (!wall?.userData?.devRuinWallOriginalMaterial) return;
+    const original = wall.userData.devRuinWallOriginalMaterial;
+    const hidden = wall.userData.devRuinWallHiddenMaterials || [];
+    wall.material = original;
+    for (const material of hidden) material?.dispose?.();
+    delete wall.userData.devRuinWallOriginalMaterial;
+    delete wall.userData.devRuinWallHiddenMaterials;
+    hiddenSourceWalls.delete(wall);
   }
 
   function cloneGeometry(source) {
@@ -145,6 +182,7 @@
       delete sourceWall.userData.runtimeWallPlaneRenderRealm;
     }
     if (proxy?.userData) delete proxy.userData.sourceRuinWall;
+    restoreSourceWall(sourceWall);
     proxy?.geometry?.dispose?.();
     const materials = Array.isArray(proxy?.material) ? proxy.material : proxy?.material ? [proxy.material] : [];
     for (const material of materials) {
@@ -157,6 +195,7 @@
 
   function clearProxies() {
     for (const proxy of [...proxies]) disposeProxy(proxy);
+    for (const wall of [...hiddenSourceWalls]) restoreSourceWall(wall);
     proxyRoot?.parent?.remove?.(proxyRoot);
     proxyRoot = null;
     preparedRoot = null;
@@ -166,7 +205,7 @@
   function buildProxy(wall, scene) {
     const geometry = cloneGeometry(wall.geometry);
     if (!geometry) return null;
-    const source = sourceMaterials(wall)[0] || null;
+    const source = originalSourceMaterials(wall)[0] || null;
     const material = cloneMaterial(source);
     const proxy = new THREE.Mesh(geometry, material);
     proxy.name = `${wall.name || `ruin_wall_${wall.id}`}_runtime_render`;
@@ -193,7 +232,7 @@
       return null;
     }
     root.add(proxy);
-    if (!copySourceWorldTransform(wall, proxy, scene)) {
+    if (!copySourceWorldTransform(wall, proxy, scene) || !hideSourceWall(wall)) {
       disposeProxy(proxy);
       return null;
     }
@@ -222,13 +261,11 @@
       ensureProxyRoot(scene);
       resolvedRoot.traverse(object => {
         if (!object.userData?.ruinInteriorWall || !object.isMesh) return;
-        // The source mesh stays present for collision/bounds, but its iframe
-        // material never participates in the game renderer.
+        // Keep the structural source object visible for collision, but give only
+        // this wall private hidden material clones. V50 deliberately shares its
+        // stone material with floors, ladders, and props, so mutating the shared
+        // material would erase every carved-stone object from the framebuffer.
         object.visible = true;
-        for (const material of sourceMaterials(object)) {
-          material.visible = false;
-          material.needsUpdate = true;
-        }
         buildProxy(object, scene);
       });
     }
@@ -245,11 +282,12 @@
       proxy.visible = visible;
     }
 
-    // The older optional-wall controller may re-enable the source iframe
-    // materials earlier in the frame. Force source materials off after it runs.
+    // The older optional-wall controller may touch the source object earlier
+    // in the frame. Reassert only the private wall clones; never mutate the
+    // original shared stone material used by other V50 geometry.
     resolvedRoot.traverse(object => {
       if (!object.userData?.ruinInteriorWall || !object.isMesh) return;
-      for (const material of sourceMaterials(object)) material.visible = false;
+      for (const material of object.userData?.devRuinWallHiddenMaterials || []) material.visible = false;
     });
     return snapshot(resolvedRoot, scene);
   }
@@ -277,6 +315,14 @@
     const geometryProbeHits = live.filter(geometryProbe).length; // Used as a geometry sanity check, not as proof of framebuffer visibility.
     const rendererSubmittedProxies = live.filter(proxy => Number(proxy.userData?.devRuinRenderSubmitCount || 0) > 0).length; // Used to distinguish render-ready objects from meshes the renderer has actually visited.
     const renderSubmitCount = live.reduce((sum, proxy) => sum + Number(proxy.userData?.devRuinRenderSubmitCount || 0), 0); // Used as an aggregate render-submission diagnostic for mobile testing.
+    const sourceMaterialIsolation = live.filter(proxy => {
+      const wall = proxy.userData?.sourceRuinWall;
+      const hidden = wall?.userData?.devRuinWallHiddenMaterials || [];
+      const originals = originalSourceMaterials(wall);
+      return hidden.length > 0 &&
+        hidden.every(material => material?.visible === false && material?.userData?.devRuinWallPrivateHiddenClone) &&
+        originals.length > 0 && originals.every(material => material?.visible !== false);
+    }).length; // Proves hiding a wall did not hide the shared V50 stone material on ladders/floors/props.
     return {
       active: !!root && !!scene,
       enabled: desiredVisible(),
@@ -291,6 +337,7 @@
       geometryProbeHits,
       rendererSubmittedProxies,
       renderSubmitCount,
+      sourceMaterialIsolation,
       raycastableProxies: 0,
       interactionRaycastDisabled: live.filter(proxy => proxy.raycast !== THREE.Mesh.prototype.raycast).length,
       mainRealmMaterials: live.filter(proxy => proxy.material instanceof THREE.Material).length,

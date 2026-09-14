@@ -118,6 +118,7 @@ jobs:
               assert.equal(state.wallRender.raycastableProxies, 0, 'visual wall proxies must not participate in public interaction raycasts');
               assert.equal(state.wallRender.interactionRaycastDisabled, state.wallRender.renderProxyCount, 'every visual wall proxy must leave V50 interactables unobscured');
               assert.equal(state.wallRender.mainRealmMaterials, state.wallRender.renderProxyCount, 'visible wall materials must belong to the game THREE realm');
+              assert.equal(state.wallRender.sourceMaterialIsolation, state.wallRender.renderProxyCount, 'wall suppression must not hide V50 shared stone materials used by ladders, floors, and props');
               assert.equal(state.obsoleteToggle, false, 'obsolete wall visibility setting must be removed');
               assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
 
