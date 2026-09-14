@@ -7,11 +7,17 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
-const coreSource = fs.readFileSync(path.join(root, 'docs/js/pants-rig-core.js'), 'utf8');
-const appSource = fs.readFileSync(path.join(root, 'docs/tools/pants-rig-author/app.js'), 'utf8');
-const htmlSource = fs.readFileSync(path.join(root, 'docs/tools/pants-rig-author/index.html'), 'utf8');
-const configSource = fs.readFileSync(path.join(root, 'docs/config/pants-rigs.js'), 'utf8');
-const runtimeSource = fs.readFileSync(path.join(root, 'docs/js/pants-rig-runtime.js'), 'utf8');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const coreSource = read('docs/js/pants-rig-core.js');
+const appLoaderSource = read('docs/tools/pants-rig-author/app.js');
+const appBaseSource = read('docs/tools/pants-rig-author/app-base.js');
+const enhancementsSource = read('docs/tools/pants-rig-author/enhancements.js');
+const htmlSource = read('docs/tools/pants-rig-author/index.html');
+const configSource = read('docs/config/pants-rigs.js');
+const runtimeSource = read('docs/js/pants-rig-runtime.js');
+const proceduralLoaderSource = read('docs/js/procedural-impact-tabs.js');
+const proceduralBaseSource = read('docs/js/procedural-impact-tabs-base.js');
+const proceduralPantsSource = read('docs/js/procedural-pants-rig-author.js');
 
 const context = { globalThis: {} };
 context.globalThis.globalThis = context.globalThis;
@@ -65,7 +71,7 @@ assert.deepStrictEqual(Array.from(decoded.data), Array.from(dense), 'RLE weight 
 const validProject = {
   schema: Core.SCHEMA,
   garments: {
-    pants_1: {
+    pants_basic: {
       pantsBeltSpline: five,
       legOpenings: { left: five, right: five },
       legBones: {
@@ -86,15 +92,38 @@ assert.match(htmlSource, /id="pantsCanvas"/);
 assert.match(htmlSource, /id="portraitCanvas"/);
 assert.match(htmlSource, /id="weightChannel"/);
 assert.match(htmlSource, /id="legThickness"/);
-assert.match(appSource, /window\.getPortraitFighters/);
-assert.match(appSource, /NpcAvatarPreview\.renderProfileToCanvas/);
-assert.match(appSource, /Core\.buildLegOpeningFitControls/);
-assert.match(appSource, /Core\.encodeWeightGridRle/);
-assert.match(appSource, /window\.__pantsRigAuthorDebug/);
+
+assert.match(appLoaderSource, /app-base\.js/);
+assert.match(appLoaderSource, /enhancements\.js/);
+assert.match(appBaseSource, /window\.getPortraitFighters/);
+assert.match(appBaseSource, /NpcAvatarPreview\.renderProfileToCanvas/);
+assert.match(appBaseSource, /Core\.buildLegOpeningFitControls/);
+assert.match(appBaseSource, /Core\.encodeWeightGridRle/);
+assert.match(appBaseSource, /window\.__pantsRigAuthorDebug/);
+assert.match(enhancementsSource, /pants_basic\.png/);
+assert.match(enhancementsSource, /assets\/cosmetics\/clothes\/legs\/pants_basic\.png/);
+assert.match(enhancementsSource, /pantsWeightPaintOverlay/);
+assert.match(enhancementsSource, /setCharacter/);
+assert.match(enhancementsSource, /weight > 0 \? Math\.max\(42/);
+assert(fs.existsSync(path.join(root, 'docs/assets/cosmetics/clothes/legs/pants_basic.png')), 'repository pants_basic.png should exist on this branch');
+
 assert.match(configSource, /HOBUNJI_PANTS_RIGS/);
 assert.match(runtimeSource, /resolveSkinnedPixelWorldPosition/);
 assert.match(runtimeSource, /leftThigh/);
 assert.match(runtimeSource, /staticFitImageData/);
 assert.match(runtimeSource, /__pantsRigRuntimeDebug/);
+
+assert.match(proceduralLoaderSource, /procedural-impact-tabs-base\.js/);
+assert.match(proceduralLoaderSource, /procedural-pants-rig-author\.js/);
+assert.match(proceduralBaseSource, /installEditorLegBoneGuideBridge/);
+assert.match(proceduralPantsSource, /HobunjiGameplayBackdrop/);
+assert.match(proceduralPantsSource, /getAvatarModel/);
+assert.match(proceduralPantsSource, /left_thigh/);
+assert.match(proceduralPantsSource, /right_calf/);
+assert.match(proceduralPantsSource, /Live 3D/);
+assert.match(proceduralPantsSource, /authorApi\(\)\?\.setCharacter/);
+assert.match(proceduralPantsSource, /Core\.sampleWeights/);
+assert.match(proceduralPantsSource, /Core\.buildLegOpeningFitControls/);
+assert.match(proceduralPantsSource, /ProceduralPantsRigAuthor/);
 
 console.log('Pants rig author regression: PASS');
