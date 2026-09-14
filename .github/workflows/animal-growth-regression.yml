@@ -10,6 +10,7 @@ on:
       - 'docs/config/pieces/barn-incubator.json'
       - 'docs/config/shops/shop-stock.json'
       - 'docs/js/animal-growth.js'
+      - 'docs/js/animal-texture-sharing.js'
       - 'docs/js/stable-animal-progression.js'
       - 'docs/js/stable-animal-perk-adjustments.js'
       - 'docs/js/stable-animal-training-refinements.js'
@@ -26,6 +27,7 @@ on:
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
+      - 'scripts/test-animal-texture-sharing.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-progression-deps-bridge.js'
       - 'scripts/test-stable-animal-training-refinements.js'
@@ -45,6 +47,7 @@ on:
       - 'docs/config/pieces/barn-incubator.json'
       - 'docs/config/shops/shop-stock.json'
       - 'docs/js/animal-growth.js'
+      - 'docs/js/animal-texture-sharing.js'
       - 'docs/js/stable-animal-progression.js'
       - 'docs/js/stable-animal-perk-adjustments.js'
       - 'docs/js/stable-animal-training-refinements.js'
@@ -61,6 +64,7 @@ on:
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
+      - 'scripts/test-animal-texture-sharing.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-progression-deps-bridge.js'
       - 'scripts/test-stable-animal-training-refinements.js'
@@ -91,6 +95,7 @@ jobs:
           node --check docs/config/barn-incubator-config.js
           node --check docs/config/economy-progression.js
           node --check docs/js/animal-growth.js
+          node --check docs/js/animal-texture-sharing.js
           node --check docs/js/stable-animal-progression.js
           node --check docs/js/stable-animal-perk-adjustments.js
           node --check docs/js/stable-animal-training-refinements.js
@@ -104,6 +109,8 @@ jobs:
           node --check docs/js/format-utils.js
           node --check docs/js/general-store.js
           node --check docs/js/livestock-nursery-install-bridge.js
+      - name: Test shared animal texture residency
+        run: node scripts/test-animal-texture-sharing.js
       - name: Test Growth Tonic and Kunji shop
         run: node scripts/test-animal-growth-kunji-shop.js
       - name: Test stable animal progression

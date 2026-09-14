@@ -9,6 +9,7 @@
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20260912pets2' },
+    { globalKey: 'AnimalTextureSharing', src: 'js/animal-texture-sharing.js?v=20260914mount1' },
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
     { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260913xp1' },
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
@@ -33,6 +34,7 @@
     }
     const loadAt = index => {
       if (index >= featureScripts.length) {
+        window.AnimalTextureSharing?.install?.();
         window.AnimalGrowth?.install?.();
         window.StableAnimalProgression?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
@@ -60,6 +62,7 @@
   // afterward FarmPanel is a normal writable global again, so there is no
   // permanent proxy.
   const installNursery = () => window.LivestockNursery?.install?.();
+  const installAnimalTextureSharing = () => window.AnimalTextureSharing?.install?.();
   const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
   const installStableAnimalProgression = () => window.StableAnimalProgression?.install?.();
   const installStableAnimalTrainingRefinements = () => window.StableAnimalTrainingRefinements?.install?.();
@@ -171,6 +174,7 @@
   const installBridges = () => {
     installVegetationFoliageContractGuard();
     installNursery();
+    installAnimalTextureSharing();
     installAnimalGrowth();
     installStableAnimalProgression();
     installStableAnimalTrainingRefinements();
