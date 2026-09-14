@@ -10,6 +10,7 @@
     meshesSeen: 0,
     cliffsMapped: 0,
     grassJigsawBaked: 0,
+    materialsRestored: 0,
     failures: 0,
     lastError: '',
   };
@@ -25,8 +26,12 @@
     return [...meshes];
   }
 
+  function materialArray(value) {
+    return Array.isArray(value) ? value : [value];
+  }
+
   function terrainKey(mesh) {
-    const materials = Array.isArray(mesh?.material) ? mesh.material : [mesh?.material];
+    const materials = materialArray(mesh?.material);
     for (const material of materials) {
       const key = String(material?.userData?.terrainKey || '').toLowerCase();
       if (key) return key;
@@ -34,12 +39,54 @@
     return String(mesh?.userData?.terrainKey || '').toLowerCase();
   }
 
+  function copyTextureSampler(sourceTexture, targetTexture) {
+    if (!sourceTexture || !targetTexture) return;
+    targetTexture.wrapS = sourceTexture.wrapS;
+    targetTexture.wrapT = sourceTexture.wrapT;
+    targetTexture.repeat?.copy?.(sourceTexture.repeat);
+    targetTexture.offset?.copy?.(sourceTexture.offset);
+    targetTexture.center?.copy?.(sourceTexture.center);
+    targetTexture.rotation = sourceTexture.rotation;
+    targetTexture.matrixAutoUpdate = sourceTexture.matrixAutoUpdate;
+    targetTexture.needsUpdate = true;
+  }
+
+  function restorePreviewMaterialIdentity(mesh, originalMaterial) {
+    const mappedMaterial = mesh.material;
+    if (mappedMaterial === originalMaterial) return;
+
+    const mapped = materialArray(mappedMaterial);
+    const original = materialArray(originalMaterial);
+    for (let index = 0; index < original.length; index++) {
+      const target = original[index];
+      const source = mapped[index] || mapped[0];
+      if (!target || !source) continue;
+      copyTextureSampler(source.map, target.map);
+      target.userData = Object.assign({}, target.userData || {}, {
+        boundaryPreviewCurrentGameSampler: true,
+        boundaryPreviewCurrentGameMappedMaterialName: source.name || '',
+      });
+      target.needsUpdate = true;
+    }
+
+    mesh.material = originalMaterial;
+    stats.materialsRestored++;
+
+    for (const material of mapped) {
+      if (!material || original.includes(material)) continue;
+      try {
+        if (material.map && !original.some(item => item?.map === material.map)) material.map.dispose?.();
+      } catch (_) {}
+      try { material.dispose?.(); } catch (_) {}
+    }
+  }
+
   function tagNaturalCliff(mesh) {
     mesh.userData = Object.assign({}, mesh.userData || {}, {
       naturalSurface: 'cliffs',
       boundaryPreviewCurrentGameAuto: true,
     });
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const materials = materialArray(mesh.material);
     for (const material of materials) {
       if (!material) continue;
       material.userData = Object.assign({}, material.userData || {}, {
@@ -51,6 +98,8 @@
 
   function runCurrentGameAuto(mesh) {
     const key = terrainKey(mesh);
+    const originalMaterial = mesh.material;
+
     if (key === 'cliff') {
       tagNaturalCliff(mesh);
       const mapper = window.HobunjiSurfaceStretchUV;
@@ -58,7 +107,11 @@
         force: true,
         label: 'boundary-preview-current-game-auto',
       });
+      restorePreviewMaterialIdentity(mesh, originalMaterial);
       if (report) {
+        mesh.userData = Object.assign({}, mesh.userData || {}, {
+          boundaryPreviewCurrentGameOwner: report.finalOwner || report.mapping || 'HobunjiSurfaceStretchUV',
+        });
         stats.cliffsMapped++;
         return true;
       }
@@ -73,6 +126,7 @@
         force: true,
         disposeSource: true,
       });
+      restorePreviewMaterialIdentity(mesh, originalMaterial);
       if (report) {
         mesh.userData = Object.assign({}, mesh.userData || {}, {
           boundaryPreviewCurrentGameAuto: true,
