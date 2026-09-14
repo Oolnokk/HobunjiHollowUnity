@@ -183,6 +183,14 @@
   const DEV_SPAWN_BANDIT_RANKS = ['grunt', 'lieutenant', 'captain'];
   let devSpawnBanditTier = 0;
 
+  // Porakaneki hunters aren't a CREATURE_DB entry either (see
+  // porakaneki-camps-runtime.js's materializeHunter, which is the only other
+  // place that builds one) — addressed via the same 'porakaneki:<rank>'
+  // prefix trick the bandit buttons use. Only 'grunt' actually appears in a
+  // real camp today, but reusing the existing rank/tier grid instead of a
+  // bespoke single button gets tier variation for free.
+  const DEV_SPAWN_PORAKANEKI_KEY = 'porakaneki:hunter';
+
   // Same species FoliageGenerator builds for a real wilderness zone's
   // SHRUB tiles (see game.js's _buildZoneFloorMeshes) — spawning them here
   // lets a tree/stump's view-corridor culling and camera-occlusion fade
@@ -220,7 +228,9 @@
         const active = key === devSpawnSelectedKey ? ' fed-active' : '';
         return `<button type="button" class="fed-btn${active}" data-species="${deps.esc(key)}">🗡️ ${deps.esc(label)}</button>`;
       });
-      grid.innerHTML = creatureBtns.concat(banditBtns).join('');
+      const porakanekiActive = DEV_SPAWN_PORAKANEKI_KEY === devSpawnSelectedKey ? ' fed-active' : '';
+      const porakanekiBtn = `<button type="button" class="fed-btn${porakanekiActive}" data-species="${deps.esc(DEV_SPAWN_PORAKANEKI_KEY)}">🏹 Porakaneki Hunter</button>`;
+      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn]).join('');
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
@@ -341,6 +351,44 @@
     renderDevSpawnPanel();
   }
 
+  // Porakaneki counterpart to spawnDevArenaBandit. Real camp hunters start
+  // neutral (see porakaneki-camps-runtime.js's makeNeutral) and only turn
+  // hostile once provoked or Favor drops low enough — that transition logic
+  // lives entirely in the camp runtime's own per-tick hunter bookkeeping, not
+  // in BanditCombat itself, so a bare makeEntity() call here would otherwise
+  // default to attacking on sight like an ordinary spawned bandit. Zeroing
+  // aggroRangePx up front (the same field makeNeutral zeroes) reproduces the
+  // "not immediately hostile" behavior for a quick look/test without needing
+  // a real wilderness camp.
+  async function spawnDevArenaPorakaneki(tier) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    const cfg = await window.BanditCombat.loadGangConfig();
+    if (!cfg) { deps.showToast('Could not spawn Porakaneki — bandit-gang-config.json failed to load.', false); return; }
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return; // player left mid-await
+    const angle = Math.random() * Math.PI * 2;
+    const dist = deps.TILE * (1.5 + Math.random() * 2.5);
+    const x = deps.player.x + Math.cos(angle) * dist;
+    const y = deps.player.y + Math.sin(angle) * dist;
+    const creature = await window.BanditCombat.makeEntity({
+      ...cfg,
+      speciesWeights: { porakaneki: 1 },
+      rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
+    }, 'grunt', tier, x, y, {
+      zoneId: DEV_ARENA_ZONE_ID,
+      nameOverride: 'Porakaneki Hunter',
+      extra: { homeX: x, homeY: y, state: 'idle', isPorakanekiHunter: true },
+    });
+    if (!creature) { deps.showToast('Could not spawn Porakaneki Hunter — see console/log for details.', false); return; }
+    creature._porakanekiAggroRangePx = creature.def?.aggroRangePx ?? deps.TILE * 6;
+    if (creature.def) creature.def.aggroRangePx = 0;
+    deps.hostileObjects.add(creature);
+    _arenaSpawnedCreatures.add(creature);
+    const msg = `[dev-arena] spawned Porakaneki Hunter #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, maxHealth=${creature.maxHealth}) — neutral until provoked, attack it to test the hostile turn`;
+    window.__farmLog?.(msg, 'wildlife');
+    console.log(msg);
+    renderDevSpawnPanel();
+  }
+
   function devArenaAutoKillAll() {
     const toKill = [..._arenaSpawnedCreatures];
     for (const c of toKill) {
@@ -438,14 +486,21 @@
     const currentArea = deps.getCurrentArea();
     const devMode = deps.isDevMode();
     const showFarmEdit = devMode && currentArea === 'farm' && deps.isFarmOwner();
-    const showDevSpawn = false; // Arena spawning now lives inside the off-farm Map Edit panel, avoiding a slot collision.
-    if (!showDevSpawn && deps.getDebugWeather()) deps.setDebugWeather(null);
+    const showDevSpawn = false; // The standalone 🐾 icon stays retired — Map Edit's own "Creature Spawner" button (mapEditArenaSpawnBtn) opens the panel now instead.
+    // Whether the panel itself is allowed to be open right now. This used to
+    // be tied to showDevSpawn, but that's permanently false now that the
+    // icon is gone — which meant every subsequent call to this function
+    // (refreshActionBar alone calls it on nearly every player action) force-
+    // closed the panel again the instant Map Edit's button opened it via
+    // DevSpawner.toggle(), making that button look completely broken.
+    const spawnPanelAvailable = devMode && currentArea === DEV_ARENA_ZONE_ID;
+    if (!spawnPanelAvailable && deps.getDebugWeather()) deps.setDebugWeather(null);
     const farmBtn = document.getElementById('farmEditBtn');
     const spawnBtn = document.getElementById('devSpawnBtn');
     if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';
     if (spawnBtn) spawnBtn.style.display = showDevSpawn ? '' : 'none';
     if (!showFarmEdit && deps.getFarmEditMode()) deps.toggleFarmEditMode();
-    if (!showDevSpawn) {
+    if (!spawnPanelAvailable) {
       const panel = document.getElementById('devSpawnPanel');
       if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; spawnBtn?.classList.remove('fed-open'); }
     }
@@ -477,6 +532,8 @@
     document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => {
       if (devSpawnSelectedKey?.startsWith('bandit:')) {
         spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
+      } else if (devSpawnSelectedKey === DEV_SPAWN_PORAKANEKI_KEY) {
+        spawnDevArenaPorakaneki(devSpawnBanditTier);
       } else {
         spawnDevArenaCreature(devSpawnSelectedKey);
       }
