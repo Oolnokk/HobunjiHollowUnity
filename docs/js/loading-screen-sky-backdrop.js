@@ -7,14 +7,14 @@
 
   if (window.LoadingScreenSkyBackdrop?.installed) return;
 
-  const CONFIG_URL = 'config/loading-screens.json'; // Used by loadConfig() to share framing settings with the loading-screen tools/runtime.
-  const ASSET_BASE = 'assets/sky_sprites/'; // Used by loadAssets() to reuse the production sun, moon, and cloud sprites.
-  const CLOUD_NAMES = Array.from({ length: 8 }, (_, index) => `cloud${index + 1}.png`); // Used by loadAssets() and rebuildCloudAtlases().
-  const CLOUD_COUNTS = [24, 32, 42]; // Used by buildCloudAtlas() to match the production sky's three density bands.
-  const CLOUD_SPEEDS = [0.0018, 0.00105, 0.00055]; // Used by drawClouds() for the same relative cloud-band drift rates.
-  const VIEW_SPAN_U = 0.44; // Used by projection helpers as the unzoomed horizontal equirectangular window around the focused body.
-  const VIEW_SPAN_V = 0.34; // Used by projection helpers as the unzoomed vertical equirectangular window around the focused body.
-  const DEFAULT_SETTINGS = Object.freeze({ skyFocusOffsetX: 8, skyFocusOffsetY: 0, skyZoom: 3.25 }); // Used until loading-screens.json supplies tool-authored framing values.
+  const CONFIG_URL = 'config/loading-screens.json';
+  const ASSET_BASE = 'assets/sky_sprites/';
+  const CLOUD_NAMES = Array.from({ length: 8 }, (_, index) => `cloud${index + 1}.png`);
+  const CLOUD_COUNTS = [24, 32, 42];
+  const CLOUD_SPEEDS = [0.0018, 0.00105, 0.00055];
+  const VIEW_SPAN_U = 0.44;
+  const VIEW_SPAN_V = 0.34;
+  const DEFAULT_SETTINGS = Object.freeze({ skyFocusOffsetX: 8, skyFocusOffsetY: 0, skyZoom: 3.25 });
   const state = {
     config: null,
     canvas: null,
@@ -31,6 +31,7 @@
     startedAt: performance.now(),
     raf: null,
     lastFrame: null,
+    lastError: '',
   };
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -40,6 +41,17 @@
     const amount = clamp((value - a) / Math.max(0.000001, b - a), 0, 1);
     return amount * amount * (3 - 2 * amount);
   };
+
+  function logError(prefix, error) {
+    const message = error?.message || String(error || 'unknown error');
+    state.lastError = `${prefix}: ${message}`;
+    try { (window.__farmLog || console.warn)(`[loading-sky] ${state.lastError}`, 'warn'); } catch (_) {}
+  }
+
+  function safeCall(callback, fallback = null) {
+    try { return typeof callback === 'function' ? callback() : fallback; }
+    catch (_) { return fallback; }
+  }
 
   function currentSettings() {
     const configured = state.config?.settings || {};
@@ -58,7 +70,7 @@
       })
       .catch(error => {
         state.configReady = false;
-        try { (window.__farmLog || console.warn)(`[loading-sky] config fallback: ${error?.message || error}`, 'warn'); } catch (_) {}
+        logError('config fallback', error);
       });
   }
 
@@ -82,15 +94,24 @@
         state.cloudBucket = -1;
         state.moonDay = -1;
       })
-      .catch(error => {
-        try { (window.__farmLog || console.warn)(`[loading-sky] asset fallback: ${error?.message || error}`, 'warn'); } catch (_) {}
-      });
+      .catch(error => logError('asset fallback', error));
   }
 
-  function getHour() {
-    const debugHour = Number(window.HobunjiSkyDome?.getDebugState?.()?.hour);
+  function safeSkyDebug() {
+    return safeCall(() => window.HobunjiSkyDome?.getDebugState?.(), {}) || {};
+  }
+
+  function safeLightingState() {
+    return safeCall(() => window.HobunjiSkyDome?.getLightingState?.(), null)
+      || safeCall(() => window.WeatherFX?.getLightingState?.(), null)
+      || null;
+  }
+
+  function getHour(skyDebug = null) {
+    const debug = skyDebug || safeSkyDebug();
+    const debugHour = Number(debug?.hour);
     if (Number.isFinite(debugHour)) return mod(debugHour, 24);
-    const calendarHour = Number(window.CalendarSystem?.getHour?.());
+    const calendarHour = Number(safeCall(() => window.CalendarSystem?.getHour?.(), NaN));
     return Number.isFinite(calendarHour) ? mod(calendarHour, 24) : 12;
   }
 
@@ -118,10 +139,10 @@
   }
 
   function currentSkyState() {
-    const skyDebug = window.HobunjiSkyDome?.getDebugState?.() || {};
-    const hour = Number.isFinite(Number(skyDebug.hour)) ? Number(skyDebug.hour) : getHour();
+    const skyDebug = safeSkyDebug();
+    const hour = Number.isFinite(Number(skyDebug.hour)) ? Number(skyDebug.hour) : getHour(skyDebug);
     const night = nightFactor(hour);
-    const liveLight = window.HobunjiSkyDome?.getLightingState?.() || window.WeatherFX?.getLightingState?.() || null;
+    const liveLight = safeLightingState();
     const cloudCover = Number.isFinite(Number(skyDebug.cloudCover)) ? Number(skyDebug.cloudCover) : 0.34;
     const dayOfMonth = clamp(Math.round(Number(skyDebug.dayOfMonth) || 14), 1, 28);
     const stars = Number.isFinite(Number(skyDebug.stars)) ? Number(skyDebug.stars) : night * (1 - clamp(cloudCover * 0.78, 0, 0.82));
@@ -208,8 +229,7 @@
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
     }
-    const context = state.context;
-    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.context.setTransform(dpr, 0, 0, dpr, 0, 0);
     return { width, height, dpr };
   }
 
@@ -266,6 +286,7 @@
     canvas.width = 2048;
     canvas.height = 1024;
     const context = canvas.getContext('2d');
+    if (!context) return canvas;
     const countBoost = lerp(0.92, 2.55, sky.cloudCover);
     const spread = lerp(1, 2.15, sky.cloudCover);
     const count = Math.max(1, Math.round(CLOUD_COUNTS[bandIndex] * countBoost));
@@ -342,6 +363,7 @@
     source.width = width;
     source.height = height;
     const sourceContext = source.getContext('2d', { willReadFrequently: true });
+    if (!sourceContext) return source;
     sourceContext.drawImage(image, 0, 0, width, height);
     const input = sourceContext.getImageData(0, 0, width, height);
     const rgba = input.data;
@@ -375,6 +397,7 @@
     output.width = width;
     output.height = height;
     const outputContext = output.getContext('2d', { willReadFrequently: true });
+    if (!outputContext) return source;
     const outputImage = outputContext.createImageData(width, height);
     const destination = outputImage.data;
     for (let index = 0; index < width * height; index++) if (lit[index]) {
@@ -426,22 +449,28 @@
     context.fillRect(0, 0, width, height);
   }
 
-  function ensureDom() {
-    const root = document.getElementById('hobunjiLoadScreen');
+  function ensureDom(explicitRoot = null) {
+    const root = explicitRoot || document.getElementById('hobunjiLoadScreen');
     if (!root) return false;
     if (state.root !== root || !state.canvas?.isConnected) {
       state.root = root;
-      const canvas = document.createElement('canvas');
-      canvas.id = 'hlsSkyBackdrop';
-      canvas.setAttribute('aria-hidden', 'true');
+      let canvas = root.querySelector('#hlsSkyBackdrop');
+      if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'hlsSkyBackdrop';
+        canvas.setAttribute('aria-hidden', 'true');
+        root.insertBefore(canvas, root.firstChild);
+      }
       Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', zIndex: '0', pointerEvents: 'none' });
-      root.insertBefore(canvas, root.firstChild);
       state.canvas = canvas;
       state.context = canvas.getContext('2d', { alpha: false });
-      const debug = document.createElement('pre');
-      debug.id = 'hlsSkyDebug';
+      let debug = root.querySelector('#hlsSkyDebug');
+      if (!debug) {
+        debug = document.createElement('pre');
+        debug.id = 'hlsSkyDebug';
+        root.appendChild(debug);
+      }
       Object.assign(debug.style, { display: 'none', position: 'absolute', left: 'max(4vw,24px)', bottom: 'max(9vh,58px)', maxWidth: 'min(76vw,420px)', margin: '0', padding: '8px 10px', border: '1px solid rgba(255,255,255,.28)', borderRadius: '7px', background: 'rgba(0,0,0,.78)', color: '#dcecff', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap', pointerEvents: 'none', zIndex: '2' });
-      root.appendChild(debug);
       state.debug = debug;
     }
     return true;
@@ -452,23 +481,27 @@
     const runtimeDebug = state.root.querySelector('#hlsDebug');
     const visible = !!runtimeDebug?.classList?.contains('visible');
     state.debug.style.display = visible ? 'block' : 'none';
-    if (!visible || !frame) return;
-    state.debug.textContent = [
-      'SKY BACKDROP',
-      `focus=${frame.focusKind} hour=${frame.hour.toFixed(2)} night=${frame.night.toFixed(2)}`,
-      `focusUV=${frame.focus.u.toFixed(3)},${frame.focus.v.toFixed(3)} centerUV=${frame.center.u.toFixed(3)},${frame.center.v.toFixed(3)}`,
-      `toolOffset=${(frame.center.offsetX * 100).toFixed(1)}vw, ${(frame.center.offsetY * 100).toFixed(1)}vh zoom=${frame.center.zoom.toFixed(2)}x`,
-      `config=${state.configReady ? 'loaded' : 'fallback'} assets=${state.assetsReady ? 'loaded' : 'gradient-only'}`,
-      `cloudCover=${frame.cloudCover.toFixed(2)} bucket=${frame.cloudBucket} stars=${frame.stars.toFixed(2)}`,
-    ].join('\n');
+    if (!visible) return;
+    const lines = ['SKY BACKDROP'];
+    if (frame) {
+      lines.push(
+        `focus=${frame.focusKind} hour=${frame.hour.toFixed(2)} night=${frame.night.toFixed(2)}`,
+        `focusUV=${frame.focus.u.toFixed(3)},${frame.focus.v.toFixed(3)} centerUV=${frame.center.u.toFixed(3)},${frame.center.v.toFixed(3)}`,
+        `toolOffset=${(frame.center.offsetX * 100).toFixed(1)}vw, ${(frame.center.offsetY * 100).toFixed(1)}vh zoom=${frame.center.zoom.toFixed(2)}x`,
+        `config=${state.configReady ? 'loaded' : 'fallback'} assets=${state.assetsReady ? 'loaded' : 'gradient-only'}`,
+        `cloudCover=${frame.cloudCover.toFixed(2)} bucket=${frame.cloudBucket} stars=${frame.stars.toFixed(2)}`,
+      );
+    }
+    if (state.lastError) lines.push(`lastError=${state.lastError}`);
+    state.debug.textContent = lines.join('\n');
   }
 
-  function drawFrame(now) {
-    if (!ensureDom() || !state.context || !state.canvas) return;
+  function drawFrame(now, explicitRoot = null) {
+    if (!ensureDom(explicitRoot) || !state.context || !state.canvas) return false;
     const runtimeVisible = state.root.classList.contains('visible');
     if (!runtimeVisible) {
       updateDebug(state.lastFrame);
-      return;
+      return true;
     }
     const dimensions = resizeCanvas(state.canvas);
     const sky = currentSkyState();
@@ -485,11 +518,22 @@
     drawVignette(state.context, dimensions.width, dimensions.height);
     const frame = { ...sky, focus, focusKind: sky.focusKind, center };
     state.lastFrame = frame;
+    state.lastError = '';
     updateDebug(frame);
+    return true;
+  }
+
+  function safeDraw(now, explicitRoot = null) {
+    try { return drawFrame(now, explicitRoot); }
+    catch (error) {
+      logError('frame failed', error);
+      updateDebug(state.lastFrame);
+      return false;
+    }
   }
 
   function tick(now) {
-    drawFrame(now);
+    safeDraw(now);
     state.raf = requestAnimationFrame(tick);
   }
 
@@ -504,13 +548,15 @@
 
   window.LoadingScreenSkyBackdrop = Object.freeze({
     installed: true,
+    mount: root => safeDraw(performance.now(), root),
     getDebug: () => ({
       configReady: state.configReady,
       assetsReady: state.assetsReady,
       cloudBucket: state.cloudBucket,
       lastFrame: state.lastFrame,
+      lastError: state.lastError,
       settings: currentSettings(),
     }),
-    redraw: () => drawFrame(performance.now()),
+    redraw: () => safeDraw(performance.now()),
   });
 })();
