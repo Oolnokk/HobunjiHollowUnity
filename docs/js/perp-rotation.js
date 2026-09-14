@@ -9,7 +9,10 @@
   // game.js following the same window.<Namespace> + init(deps) pattern as
   // its sibling systems.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    installFarmAnimalsInitCapture();
+  }
 
   const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
   const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
@@ -28,10 +31,30 @@
   // without it, nearestDT can alternate signs and hard-snap the portrait
   // between both edges every frame.
   const PERP_CENTER_HYSTERESIS_RAD = THREE.MathUtils.degToRad(3);
-  const npcWalkerByPerpState = new WeakMap(); // Caches each NPC's persistent clamp state -> walker lookup for the perspective-aware path below.
-  let npcCameraSample = null; // Reused for several NPC clamps in the same frame-sized window so debug camera access does not allocate once per walker.
-  let npcCameraSampleAtMs = -Infinity; // Timestamp used by liveNpcCameraPosition to keep that shared camera sample very short-lived.
-  let npcWorldPosition = null; // Lazily-created THREE.Vector3 reused when an NPC root has a transformed parent and needs a true world position.
+
+  const subjectByPerpState = new WeakMap(); // Caches persistent clamp state -> live subject so screen-view lookup is O(1) after the first frame.
+  let farmAnimalObjects = null; // Captured from FarmAnimals.init; used to resolve farm livestock that do not live in Combat's creature registries.
+  let farmWorldObjects = null; // Fallback farm/world object registry; used when an animal is temporarily absent from animalObjects during a transition.
+  let cameraSample = null; // Reused across clamps in the same frame-sized window so camera debug access does not allocate per subject.
+  let cameraSampleAtMs = -Infinity; // Timestamp used by liveCameraPosition to keep the shared camera sample very short-lived.
+  let subjectWorldPosition = null; // Lazily-created THREE.Vector3 reused when a subject root has a transformed parent.
+
+  function captureFarmAnimalDeps(injectedDeps) {
+    farmAnimalObjects = injectedDeps?.animalObjects || farmAnimalObjects;
+    farmWorldObjects = injectedDeps?.worldObjects || farmWorldObjects;
+  }
+
+  function installFarmAnimalsInitCapture() {
+    const api = window.FarmAnimals;
+    if (!api?.init || api.init.__perpScreenViewCapture) return;
+    const originalInit = api.init;
+    function capturedFarmAnimalsInit(injectedDeps) {
+      captureFarmAnimalDeps(injectedDeps);
+      return originalInit.call(this, injectedDeps);
+    }
+    Object.defineProperty(capturedFarmAnimalsInit, '__perpScreenViewCapture', { value: true });
+    api.init = capturedFarmAnimalsInit;
+  }
 
   function cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition) {
     const worldX = Number(worldPosition?.x), worldZ = Number(worldPosition?.z);
@@ -44,48 +67,110 @@
     return [viewYawWorld + Math.PI / 2, viewYawWorld - Math.PI / 2];
   }
 
-  function liveNpcCameraPosition() {
+  function liveCameraPosition() {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (npcCameraSample && now - npcCameraSampleAtMs < 4) return npcCameraSample;
+    if (cameraSample && now - cameraSampleAtMs < 4) return cameraSample;
     const climbDebugPosition = window.__climbDebug?.getCameraDebug?.()?.camPos;
     const furnitureDebugPosition = window.__hobunjiFurnitureDebug?.camState?.position;
     const source = climbDebugPosition || furnitureDebugPosition;
     const x = Number(source?.x), y = Number(source?.y), z = Number(source?.z);
     if (![x, y, z].every(Number.isFinite)) return null;
-    npcCameraSample = { x, y, z };
-    npcCameraSampleAtMs = now;
-    return npcCameraSample;
+    cameraSample = { x, y, z };
+    cameraSampleAtMs = now;
+    return cameraSample;
   }
 
-  function npcWalkerForPerpState(state) {
-    if (!state || typeof state !== 'object') return null;
-    const cached = npcWalkerByPerpState.get(state);
-    if (cached?.perpState === state) return cached;
-    const walkers = window._npcWalkers;
-    if (!Array.isArray(walkers)) return null;
-    const walker = walkers.find(candidate => candidate?.perpState === state) || null;
-    if (walker) npcWalkerByPerpState.set(state, walker);
-    return walker;
-  }
-
-  function perspectiveNpcPerps(state, fallbackPerps) {
-    const walker = npcWalkerForPerpState(state);
-    const cameraPosition = walker ? liveNpcCameraPosition() : null;
-    if (!walker?.root || !cameraPosition) return fallbackPerps;
-    let worldPosition = walker.root.position;
-    if (typeof walker.root.getWorldPosition === 'function' && typeof THREE.Vector3 === 'function') {
-      npcWorldPosition ||= new THREE.Vector3();
-      worldPosition = walker.root.getWorldPosition(npcWorldPosition);
+  function findSubjectInCollection(collection, state, kind) {
+    if (!collection || !state) return null;
+    let values = collection;
+    if (typeof collection.values === 'function') values = collection.values();
+    if (!values || typeof values[Symbol.iterator] !== 'function') return null;
+    for (const candidate of values) {
+      if (candidate?.perpState === state) return { subject: candidate, kind };
     }
+    return null;
+  }
+
+  function subjectForPerpState(state) {
+    if (!state || typeof state !== 'object') return null;
+    const cached = subjectByPerpState.get(state);
+    if (cached?.subject?.perpState === state) return cached;
+
+    const combatDeps = window.Combat?.deps;
+    const sources = [
+      [window._npcWalkers, 'npc'],
+      [combatDeps?.hostileObjects, 'creature'],
+      [combatDeps?.companionObjects, 'companion'],
+      [combatDeps?.animalObjects, 'farm-animal'],
+      [farmAnimalObjects, 'farm-animal'],
+      [combatDeps?.worldObjects, 'world-animal'],
+      [farmWorldObjects, 'world-animal'],
+    ];
+    for (const [collection, kind] of sources) {
+      const found = findSubjectInCollection(collection, state, kind);
+      if (!found) continue;
+      subjectByPerpState.set(state, found);
+      return found;
+    }
+    return null;
+  }
+
+  function subjectRoot(subject) {
+    return subject?.root || subject?.avatarRef?.group || subject?.group || subject?.mesh || null;
+  }
+
+  function worldPositionForSubject(subject) {
+    const root = subjectRoot(subject);
+    if (root) {
+      let worldPosition = root.position;
+      if (typeof root.getWorldPosition === 'function' && typeof THREE.Vector3 === 'function') {
+        subjectWorldPosition ||= new THREE.Vector3();
+        worldPosition = root.getWorldPosition(subjectWorldPosition);
+      }
+      if ([Number(worldPosition?.x), Number(worldPosition?.z)].every(Number.isFinite)) return worldPosition;
+    }
+    const wx = Number(subject?.wx), wy = Number(subject?.wy), wz = Number(subject?.wz);
+    if ([wx, wz].every(Number.isFinite)) return { x: wx, y: Number.isFinite(wy) ? wy : 0, z: wz };
+    return null;
+  }
+
+  function perspectivePerpsForState(state, fallbackPerps) {
+    const entry = subjectForPerpState(state);
+    const cameraPosition = entry ? liveCameraPosition() : null;
+    const worldPosition = entry ? worldPositionForSubject(entry.subject) : null;
+    if (!entry || !cameraPosition || !worldPosition) return fallbackPerps;
     const resolved = cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition);
     if (!resolved) return fallbackPerps;
-    state.npcPerspectiveDebug = {
-      mode: 'npc-world-camera-bearing',
+
+    const mode = entry.kind === 'npc' ? 'npc-world-camera-bearing' : `${entry.kind}-world-camera-bearing`;
+    state.screenViewPerspectiveDebug = {
+      mode,
+      subjectKind: entry.kind,
       cameraPosition: { x: cameraPosition.x, y: cameraPosition.y, z: cameraPosition.z },
-      npcWorldPosition: { x: Number(worldPosition.x), y: Number(worldPosition.y), z: Number(worldPosition.z) },
+      subjectWorldPosition: { x: Number(worldPosition.x), y: Number(worldPosition.y) || 0, z: Number(worldPosition.z) },
       cameraPerpsRad: resolved.slice(),
     };
+    // Preserve the older NPC-specific debug record for existing pixel-probe
+    // consumers while every subject now uses the same shared resolver.
+    if (entry.kind === 'npc') {
+      state.npcPerspectiveDebug = {
+        mode,
+        cameraPosition: { ...state.screenViewPerspectiveDebug.cameraPosition },
+        npcWorldPosition: { ...state.screenViewPerspectiveDebug.subjectWorldPosition },
+        cameraPerpsRad: resolved.slice(),
+      };
+    }
     return resolved;
+  }
+
+  function applyPerspectiveDebugToProbe(state) {
+    const perspective = state?.screenViewPerspectiveDebug;
+    const probe = state?.pixelProbeDebug;
+    if (!perspective || !probe) return;
+    probe.cameraPerpsMode = perspective.mode;
+    probe.subjectKind = perspective.subjectKind;
+    probe.cameraPosition = { ...perspective.cameraPosition };
+    probe.subjectWorldPosition = { ...perspective.subjectWorldPosition };
   }
 
   // Keeps model rotation outside dead zones around each perp angle (radius given
@@ -101,6 +186,7 @@
   // flip fire a spurious snapTo while the model was stably locked near
   // the near perp, producing rapid alternation between two rotations.
   function perpClamp(state, rawTarget, perps, deadRad = PERP_DEAD_RAD) {
+    perps = perspectivePerpsForState(state, perps);
     if (!state.perpSides) state.perpSides = perps.map(() => null);
     if (!state.locked) state.locked = perps.map(() => false);
     let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
@@ -153,23 +239,18 @@
       wasLocked,
       isLocked,
     };
+    applyPerspectiveDebugToProbe(state);
     return { effectiveTarget, snapTo };
   }
 
   // Applies perpClamp to a rendered rotation. Callers keep `rawTarget` as
   // their authored/logical facing so stationary models can be re-clamped
   // whenever the camera azimuth changes instead of baking in an old result.
-  // NPC walkers use this function (the player calls perpClamp directly), so
-  // substitute the true NPC->camera world bearing here to account for the
-  // perspective camera's parallax away from the player/camera target.
+  // perpClamp itself resolves a subject-specific world-to-camera bearing,
+  // so NPCs, livestock, companions and combat creatures all share the same
+  // perspective-aware screen-view deadzone behavior.
   function clampedRotation(state, current, rawTarget, perps, lerp = 0.15, deadRad = PERP_DEAD_RAD) {
-    const resolvedPerps = perspectiveNpcPerps(state, perps);
-    const { effectiveTarget, snapTo } = perpClamp(state, rawTarget, resolvedPerps, deadRad);
-    if (state.npcPerspectiveDebug && state.pixelProbeDebug) {
-      state.pixelProbeDebug.cameraPerpsMode = state.npcPerspectiveDebug.mode;
-      state.pixelProbeDebug.cameraPosition = { ...state.npcPerspectiveDebug.cameraPosition };
-      state.pixelProbeDebug.subjectWorldPosition = { ...state.npcPerspectiveDebug.npcWorldPosition };
-    }
+    const { effectiveTarget, snapTo } = perpClamp(state, rawTarget, perps, deadRad);
     if (snapTo !== null || lerp >= 1) return effectiveTarget;
     return current + deps.angleDiff(effectiveTarget, current) * Math.max(0, lerp);
   }
@@ -219,6 +300,7 @@
   // converge to rawTarget as nearestAbs approaches deadRad), so unlike
   // perpClamp it needs no entry/exit hysteresis to avoid flicker.
   function creatureDeadzoneTarget(state, rawTarget, perps, deadRad, dt, moving) {
+    perps = perspectivePerpsForState(state, perps);
     let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
     for (let i = 0; i < perps.length; i++) {
       const dT = deps.angleDiff(rawTarget, perps[i]);
@@ -257,6 +339,7 @@
   // holds at whichever edge it's nearest, instead of visibly flip-flopping
   // in place with no motion to sell the "swap side" as a stride change.
   function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt, moving) {
+    perps = perspectivePerpsForState(state, perps);
     let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
     for (let i = 0; i < perps.length; i++) {
       const dT = deps.angleDiff(rawTarget, perps[i]);
@@ -291,11 +374,17 @@
     return best;
   }
 
+  // FarmAnimals is loaded before game.js but its deps arrive later via init().
+  // Wrapping here lets the shared rotation module see livestock positions
+  // without adding another dependency seam to game.js.
+  installFarmAnimalsInitCapture();
+
   window.PerpRotation = {
     init,
     perpClamp,
     clampedRotation,
     cameraRelativePerpsAtWorldPosition,
+    perspectivePerpsForState,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
     nearestCardinalAngle,
