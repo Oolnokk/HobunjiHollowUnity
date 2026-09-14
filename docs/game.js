@@ -7967,7 +7967,7 @@
       // every load. `silent` suppresses the "reshaped" toast for a same-year
       // session catch-up rebuild (nothing actually changed, just restoring
       // this session's in-memory cache) rather than a genuine new-year shift.
-      async function performTothalShift(year, { silent = false } = {}) {
+      async function performTothalShift(year, { silent = false, forceRegenerate = false } = {}) {
         if (typeof WildernessMapGenerator === 'undefined') {
           debugLog('Tothal Shift skipped: wilderness-map-generator.js not loaded', 'warn');
           return;
@@ -8001,7 +8001,7 @@
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
             const cacheKey = _tothalZoneCacheKey(worldId, year, zoneId);
-            const cached = await _loadTothalZoneCache(cacheKey);
+            const cached = forceRegenerate ? null : await _loadTothalZoneCache(cacheKey); // Explicit dev forcing must rebuild this deterministic same-year zone instead of replaying its IndexedDB cache.
             let workspace, merged;
             if (cached) {
               ({ workspace, merged } = cached);
@@ -8234,15 +8234,25 @@
       function checkTothalShift(force = false) {
         const year = currentTothalYear();
         const forceQuery = new URLSearchParams(location.search).get('tothal') === 'force';
+        const forceRegenerate = force || forceQuery; // Explicit dev/query forcing bypasses the deterministic same-year terrain cache.
         const alreadyCurrent = _loadTothalYear() === year;
-        if (!force && !forceQuery && _tothalShiftedThisSession && alreadyCurrent) return;
+        if (!forceRegenerate && _tothalShiftedThisSession && alreadyCurrent) return Promise.resolve();
         // Same year as last save but nothing built yet this session (a fresh
         // page load) — silently rebuild the same deterministic map instead of
         // announcing a "shift" that, from the player's perspective, never happened.
-        const silent = !force && !forceQuery && alreadyCurrent;
-        _tothalShiftPromise = performTothalShift(year, { silent })
+        const silent = !forceRegenerate && alreadyCurrent;
+        const activeForcedZone = forceRegenerate && typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.zoneMapIds().includes(currentArea)
+          ? currentArea : null; // Procedural zone whose already-built THREE.Scene must visibly follow a forced regeneration.
+        const shiftPromise = performTothalShift(year, { silent, forceRegenerate }); // Raw generation promise lets enterZone wait for generation without waiting on its own later live refresh.
+        _tothalShiftPromise = shiftPromise;
+        const completionPromise = shiftPromise
+          .then(async () => {
+            if (_tothalShiftPromise === shiftPromise) _tothalShiftPromise = null;
+            if (activeForcedZone) await refreshForcedTothalActiveZone(activeForcedZone);
+          })
           .catch(e => debugLog('Tothal Shift error: ' + e.message, 'warn'))
-          .finally(() => { _tothalShiftPromise = null; });
+          .finally(() => { if (_tothalShiftPromise === shiftPromise) _tothalShiftPromise = null; });
+        return completionPromise;
       }
       window.forceTothalShift = () => checkTothalShift(true);
 
@@ -13018,6 +13028,31 @@
           refreshActionBar();
           logMapSwap('exitBuilding', currentArea);
         });
+      }
+
+      // Explicit Force Tothal Shift is a dev action, so unlike an ordinary
+      // year rollover it should become visible immediately even when the
+      // player is already standing in the regenerated wilderness zone. Move
+      // the player meshes off the outgoing scene first, temporarily make town
+      // the active safe scene, then let normal enterZone/buildZoneScene tear
+      // down the dirty zone and rebuild it behind the screen transition. The
+      // player returns at the newly generated entry gate instead of retaining
+      // coordinates that may now be inside a cliff or water tile.
+      async function refreshForcedTothalActiveZone(mapId) {
+        if (currentArea !== mapId || !_dirtyZoneScenes.has(mapId)) return;
+        const oldScene = _zoneScenes.get(mapId)?.scene || null; // Scene still showing the pre-force terrain while its replacement waits in _zoneLayouts.
+        const zdef = EXTERIOR_ZONES[mapId]; // Newly updated entry coordinates are written here by performTothalShift.
+        const entryCol = zdef?.entryCol ?? 0; // Safe column for the regenerated zone.
+        const entryRow = zdef?.entryRow ?? 0; // Safe row for the regenerated zone.
+        const rebuild = async () => { // Performs the same dirty-zone rebuild enterZone already uses on the next ordinary visit.
+          oldScene?.remove(playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup);
+          currentArea = 'town';
+          _currentBuildingMapId = null;
+          await enterZone(mapId, entryCol, entryRow);
+        };
+        if (window.CalendarSystem?.runScreenTransition) await window.CalendarSystem.runScreenTransition(rebuild);
+        else await rebuild();
+        window.__farmLog?.(`[tothal] force-refreshed active zone ${mapId} at ${entryCol},${entryRow}`);
       }
 
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
