@@ -22,6 +22,7 @@
 
   const PUKTUK_KIND = 'puktuk'; // Used across genetics/render/spawn registration so the species key stays centralized.
   const PUKTUK_FOXTAIL_CHANCE = 0.08; // Used for fresh wild/livestock rolls; matches the existing 8% "rare pattern" tier.
+  const PUKTUK_VISUAL_SCALE = 0.75; // Applied to Puktuk's borrowed size and ground calibration so every size class stays uniformly 25% smaller.
   const PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'; // Used to replace Drenkirra only in the Western Incline/Slope zone.
   const VOORG_ASS_KIND = 'voorg-ass'; // Used across genetics/render/spawn/livestock registration for the Northern Cliffs species.
   const VOORG_ASS_NORTHERN_ZONE_ID = 'map_northern_cliffs'; // Used to replace only the Northern Cliffs wild Uumkao'ii population.
@@ -338,10 +339,11 @@
     const authored = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.sizeScales?.[sizeClass]; // Canonical Animation Author export.
     const x = Number(authored?.x); // Applied to the creature plane's local width.
     const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.
+    const speciesScale = kind === PUKTUK_KIND ? PUKTUK_VISUAL_SCALE : 1; // Used here so Puktuk can borrow Gar-wolf proportions without inheriting Gar-wolf's absolute visual size.
     return {
       sizeClass,
-      x: Number.isFinite(x) && x > 0 ? x : 1,
-      y: Number.isFinite(y) && y > 0 ? y : 1,
+      x: (Number.isFinite(x) && x > 0 ? x : 1) * speciesScale,
+      y: (Number.isFinite(y) && y > 0 ? y : 1) * speciesScale,
     };
   }
   function creatureGroundOffset(kind, genotypeOrSizeClass) {
@@ -350,7 +352,8 @@
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the same authored size row used by creatureSizeScale().
     const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Size aliases borrow floor calibration while visual aliases keep their own behavior.
     const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.
-    return Number.isFinite(authored) && authored > 0 ? authored : null; // Zero is the Rigging "Auto" sentinel; callers fall back to their existing half-height terrain baseline.
+    const speciesScale = kind === PUKTUK_KIND ? PUKTUK_VISUAL_SCALE : 1; // Used with Puktuk's visual scale so shrinking the borrowed rig does not leave the sprite floating above the ground.
+    return Number.isFinite(authored) && authored > 0 ? authored * speciesScale : null; // Zero is the Rigging "Auto" sentinel; callers fall back to their existing half-height terrain baseline.
   }
 
   function applyCreatureBillboardScale(group, sizeScale, heightMultiplier = 1) {
@@ -630,6 +633,7 @@
     if (!species) return false;
     species[PUKTUK_KIND] = {
       prefix: 'puktuk',
+      fullBaseRecolor: true, // Puktuk base art is a single recolorable body layer; recolor every opaque non-outline pixel before belly/foxtail overlays.
       base: {
         idle: 'assets/creaturesprites/puktuk_idle.png',
         run1: 'assets/creaturesprites/puktuk_run1.png',

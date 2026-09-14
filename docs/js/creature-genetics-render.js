@@ -163,16 +163,17 @@
   }
 
   const _recolorCache = new Map(); // key -> Promise<canvas>
-  async function recoloredBase(url, color, mask) {
-    const key = `base|${url}|${color}`;
+  async function recoloredBase(url, color, mask, allowUnmasked = false) {
+    const key = `base|${url}|${color}|full:${allowUnmasked}`;
     if (_recolorCache.has(key)) return _recolorCache.get(key);
     const promise = (async () => {
       const img = await loadImage(url);
-      if (!mask || mask.width !== img.naturalWidth || mask.height !== img.naturalHeight) return img;
+      const maskMatches = !!mask && mask.width === img.naturalWidth && mask.height === img.naturalHeight; // Used to choose authored-region recolor versus an explicitly allowed full-sprite recolor.
+      if (!maskMatches && !allowUnmasked) return img;
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      recolorPixels(px, hexToRgb(color), (i) => mask.data[i / 4]);
+      recolorPixels(px, hexToRgb(color), maskMatches ? (i) => mask.data[i / 4] : null);
       ctx.putImageData(data, 0, 0);
       return c;
     })().catch(err => { _recolorCache.delete(key); throw err; });
@@ -253,13 +254,14 @@
     const storedBaseColor = genotype?.base?.color; // Retained for the bodystripes overlay when its Drenkirra color roles swap.
     const bodyStripesColorSwap = usesDrenkirraBodyStripesColorSwap(kind, genotype); // Changes rendering only; the inherited genotype stays untouched.
     const baseColor = bodyStripesColorSwap ? genotype.bodystripes.color : storedBaseColor; // Effective body fill color for this frame.
+    const fullBaseRecolor = spec.fullBaseRecolor === true; // Used by species whose base sprite itself is the recolorable coat instead of requiring a separate region mask.
     // Only worth a warning if there was actually a base color to apply —
     // uumkaoii's genotype has no `base` layer at all (its two regions are
     // the fur/plates overlays below, not a recolored base), so baseColor is
     // always undefined for it and this would otherwise fire every call for
     // no reason.
-    if (baseColor && !mask) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
-    const baseSource = (baseColor && mask) ? await recoloredBase(baseUrl, baseColor, mask) : await loadImage(baseUrl);
+    if (baseColor && !mask && !fullBaseRecolor) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');
+    const baseSource = (baseColor && (mask || fullBaseRecolor)) ? await recoloredBase(baseUrl, baseColor, mask, fullBaseRecolor) : await loadImage(baseUrl);
     const tBase = performance.now();
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
@@ -301,7 +303,8 @@
     // fetch+decode (only nonzero the very first call all session), baseMs
     // covers the base sprite's network load + recolor pixel pass, patternMs
     // covers every enabled pattern layer's load+recolor combined.
-    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
+    const baseFillMode = !baseColor ? 'none' : fullBaseRecolor ? 'full-sprite' : mask ? 'mask' : 'missing-mask'; // Included in the in-game farm log so mobile builds can verify which recolor path actually ran.
+    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
     return c;
   }
 
