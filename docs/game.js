@@ -9261,6 +9261,10 @@
           if (tile.type === TileType.ROCK) {
             _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
+            // Connected undiggable footprints are emitted later by
+            // ZoneTerrainFeatures as one perimeter-only shell with one shared
+            // summit. Do not leave the old per-tile mound geometry underneath.
+            if (tile.rockKind === 'undiggableBoulder') continue;
             const { stoneGeo, grassGeo } = window.TerrainGeometry.buildRockTileGeo(c, r);
             if (tile.rockKind === 'diggableRockOre') {
               // Keep resource rocks out of the merged terrain buckets so a
@@ -9666,6 +9670,7 @@
           const featureMeshes = [
             ...(window.ZoneTerrainFeatures.buildZoneRampMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
             ...(window.ZoneTerrainFeatures.buildRampCurtainMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
+            ...(window.ZoneTerrainFeatures.buildUndiggableBoulderMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
             ...(window.ZoneTerrainFeatures.buildRockFormationMeshes(group, zGrid, ZCOLS, ZROWS, mapId, bounds) || []),
           ]; // Chunk-owned ramps and solved rock faces.
           for (const object of [...floorMeshes, ...featureMeshes]) {
