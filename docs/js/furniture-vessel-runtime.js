@@ -164,6 +164,21 @@
     return geometry;
   }
 
+  function createHoopGeometry(part) {
+    const t = part?.transform || {};
+    const segments = Math.max(3, Math.min(64, Math.round(Number(part?.segments) || 16)));
+    const outerRadius = 0.5 * Math.max(Number(t.sx) || 0.001, Number(t.sz) || 0.001);
+    const tubeRadius = Math.max(0.001, (Number(t.sy) || 0.05) * 0.5);
+    const geometry = new THREE.TorusGeometry(
+      Math.max(0.001, outerRadius - tubeRadius),
+      tubeRadius,
+      Math.max(4, Math.round(segments / 2)),
+      segments,
+    );
+    geometry.rotateX(Math.PI / 2);
+    return geometry;
+  }
+
   function createEmptyLiquidGeometry() {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
@@ -223,6 +238,49 @@
     });
   }
 
+  function upgradeProceduralNestToOpenCup(group, key) {
+    if (!group || (key !== 'nest' && key !== 'nestBranch')) return group;
+    const recipe = furniture.CATALOG?.[key] || [];
+    const bodyPart = recipe[0];
+    const rimPart = recipe[1];
+    const bodyMesh = group.children?.[0];
+    const rimMesh = group.children?.[1];
+    if (!bodyPart || !bodyMesh) return group;
+
+    // The old nest borrowed Bucket's capped cylinder + top disc, which visually
+    // covered most of the clutch. Reuse the Furniture Editor/Open Barrel cup
+    // proportions instead: a real cavity with no top cap, while preserving the
+    // existing nest diameter, taper, height, color, and footprint.
+    const cupPart = {
+      ...bodyPart,
+      kind: 'cup',
+      innerScale: 0.78,
+      basinDepth: 0.12,
+    };
+    bodyMesh.geometry?.dispose?.();
+    bodyMesh.geometry = createCupGeometry(cupPart);
+    for (const material of (Array.isArray(bodyMesh.material) ? bodyMesh.material : [bodyMesh.material]).filter(Boolean)) {
+      material.side = THREE.DoubleSide;
+      material.needsUpdate = true;
+    }
+    bodyMesh.userData.hobunjiHollowCup = true;
+    bodyMesh.userData.hobunjiOpenVessel = true;
+    bodyMesh.userData.hobunjiOpenNestBody = true;
+
+    // Keep the brighter woven rim from the previous nest silhouette, but make
+    // it a ring instead of a solid disc so eggs/babies remain visible through it.
+    if (rimPart && rimMesh) {
+      rimMesh.geometry?.dispose?.();
+      rimMesh.geometry = createHoopGeometry(rimPart);
+      rimMesh.userData.hobunjiOpenNestRim = true;
+    }
+
+    group.userData = group.userData || {};
+    group.userData.hobunjiOpenNest = true;
+    group.userData.hobunjiOpenNestSource = 'furniture-cup-preset';
+    return group;
+  }
+
   function adoptAuthoredVisual(target, fallbackChildren, data, baseColor) {
     const authoredRuntime = window.AuthoredFurniture;
     if (!target || !data || !authoredRuntime?.buildGroup || target.userData?.authoredFurnitureUpgraded) return false;
@@ -263,6 +321,7 @@
     }
 
     const group = originalBuildFurnitureGroup ? originalBuildFurnitureGroup(key, baseColor) : new THREE.Group();
+    upgradeProceduralNestToOpenCup(group, key);
     if (!group || !key || !authoredRuntime?.load || !authoredRuntime?.buildGroup) return group;
 
     const fallbackChildren = [...group.children];
