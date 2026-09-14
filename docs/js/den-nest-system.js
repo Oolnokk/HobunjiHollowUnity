@@ -150,6 +150,7 @@
   const NEST_CONTENT_MAX_RAY_DISTANCE = 24;
   const NEST_CONTENT_SPACING = 0.22;
   const NEST_EGG_HEIGHT = 0.34;
+  const NEST_BABY_BASKET_LIFT = 0.10;
   const NEST_CONTENT_OFFSETS = [
     [0, -0.10], [-0.22, 0.10], [0.22, 0.10], [0, 0.25],
   ];
@@ -170,6 +171,11 @@
     emojiEggs: 0,
     alphaAccepts: 0,
     alphaRejects: 0,
+    babyBuildAttempts: 0,
+    babyBuildFailures: 0,
+    lastBabyBuildStage: null,
+    lastBabyKind: null,
+    lastBabyRecordId: null,
     lastFocusedId: null,
     lastFocusedType: null,
     lastFocusedAlpha: null,
@@ -274,6 +280,7 @@
       });
     }
     record.root = null;
+    record.hitPlanes = [];
   }
 
   function _disposeNestContentState(state) {
@@ -288,12 +295,12 @@
     if (!state) {
       state = { nest, scene, mode, branch, records: [] };
       _nestContentStates.set(nest, state);
-      _activeNestContentStates.add(state);
     } else if (state.scene !== scene) {
       for (const record of state.records) _disposeContentRecord(record);
       state.records.length = 0;
       state.scene = scene;
     }
+    _activeNestContentStates.add(state); // A previously disposed session state can be revisited on the same nest object.
     state.mode = mode;
     state.branch = branch;
     state.seen = true;
@@ -350,6 +357,7 @@
     mesh.castShadow = false; mesh.receiveShadow = false;
     _tagAlphaPlane(mesh, art.canvas, false);
     record.root = mesh;
+    record.hitPlanes = [mesh];
     record.alphaSource = art.canvas;
     record.artSource = art.source;
     record.groundLift = NEST_EGG_HEIGHT / 2 + 0.035;
@@ -370,10 +378,11 @@
   }
 
   function _applyBabyGenotypeCanvas(record, canvas) {
-    if (!record?.root || !canvas) return;
+    if (!record?.root || !canvas) return false;
     const front = _canvasTexture(canvas);
     const back = _canvasTexture(canvas);
     back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
+    const hitPlanes = [];
     record.root.traverse(child => {
       if (!child?.material) return;
       const name = String(child.name || '');
@@ -382,79 +391,146 @@
         child.material.map = front;
         child.material.needsUpdate = true;
         _tagAlphaPlane(child, canvas, false);
+        hitPlanes.push(child);
       } else if (name.endsWith('_back_plane')) {
         child.material.map?.dispose?.();
         child.material.map = back;
         child.material.needsUpdate = true;
         _tagAlphaPlane(child, canvas, true);
+        hitPlanes.push(child);
       }
     });
     record.alphaSource = canvas;
-    record.alphaReady = true;
+    record.hitPlanes = hitPlanes;
+    record.alphaReady = hitPlanes.length > 0;
+    if (!record.alphaReady) {
+      front.dispose?.(); back.dispose?.();
+      _nestContentDebug.lastError = `Baby ${record.id} had no front/back sprite planes to target.`;
+      return false;
+    }
+    return true;
+  }
+
+  function _babyBuildFailure(record, stage, error) {
+    const message = String(error?.message || error || 'Unknown baby-render failure');
+    record.building = false;
+    record.retryAt = performance.now() + 750;
+    record.buildStage = `failed:${stage}`;
+    _nestContentDebug.babyBuildFailures++;
+    _nestContentDebug.lastBabyBuildStage = record.buildStage;
+    _nestContentDebug.lastBabyKind = record.kind || null;
+    _nestContentDebug.lastBabyRecordId = record.id;
+    _nestContentDebug.lastError = message;
+    window.__farmLog?.(`[nest-content] baby build failed stage=${stage} id=${record.id} kind=${record.kind || 'unknown'}: ${message}`, 'error');
   }
 
   async function _buildBabyContent(state, record) {
     if (record.disposed || record.root || record.building) return;
     record.building = true;
-    const nest = state.nest;
-    const kind = _babyKindForNest(nest);
-    const renderer = window.CreatureGeneticsRender;
-    const avatarApi = window.PNGPlaneAvatar;
-    const idleUrl = renderer?.SPECIES?.[kind]?.base?.idle;
-    if (!kind || !renderer || !avatarApi?.buildAnimalPlaneAvatarModel || !idleUrl) {
-      record.building = false;
-      record.retryAt = performance.now() + 500;
-      _nestContentDebug.lastError = `Waiting for nursery renderer metadata for ${nest.itemKey}.`;
-      return;
-    }
-
-    const babyScale = Number(window.LivestockNursery?.constants?.BABY_SCALE)
-      || Number(window.BARN_INCUBATOR_CONFIG?.visuals?.babyScale) || 0.3125;
-    const sleepScaleY = Number(window.BARN_INCUBATOR_CONFIG?.visuals?.sleepScaleY) || 0.5;
-    const speciesDef = window.CREATURE_DB?.[kind] || {};
-    const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
-    const adultWidth = kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[kind]) || 1.7);
-    const spriteAspect = Number(speciesDef.spriteAspect) || (600 / 1375);
-    const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(kind, nest.genotype) || { x: 1, y: 1 };
-    const modelWidth = adultWidth * babyScale;
-    const modelHeight = adultWidth * spriteAspect * babyScale;
-    const avatarRef = avatarApi.buildAnimalPlaneAvatarModel(THREE, idleUrl, {
-      modelWidth, modelHeight, name: `nest_sleep_${record.id}`, creatureId: kind,
-      headRig: renderer.headRigForKind?.(kind) || undefined,
-    });
-    if (!avatarRef?.group || record.disposed || state.scene !== record.scene) {
-      record.building = false;
-      record.retryAt = performance.now() + 500;
-      try { avatarRef?.dispose?.(); } catch (_) {}
-      return;
-    }
-    window.CreatureGenetics?.applyCreatureBillboardScale?.(avatarRef.group, sizeScale);
-    avatarRef.group.scale.y *= sleepScaleY;
-    const authoredGroundOffset = window.CreatureGenetics?.creatureGroundOffset?.(kind, nest.genotype);
-    const uprightGroundLift = Number.isFinite(authoredGroundOffset)
-      ? Math.max(0.03, authoredGroundOffset * babyScale)
-      : Math.max(0.03, modelHeight * (Number(sizeScale.y) || 1) / 2);
-    record.root = avatarRef.group;
-    record.avatarRef = avatarRef;
-    record.kind = kind;
-    record.groundLift = Math.max(0.02, uprightGroundLift * sleepScaleY);
-    record.root.rotation.y = (record.serial % 4) * Math.PI / 2;
-    state.scene.add(record.root);
-    record.building = false;
-    _layoutNestContent(state);
-
+    record.buildStage = 'resolve';
+    _nestContentDebug.babyBuildAttempts++;
+    _nestContentDebug.lastBabyBuildStage = record.buildStage;
+    _nestContentDebug.lastBabyRecordId = record.id;
+    let avatarRef = null;
     try {
-      const canvas = await renderer.composeFrame(kind, 'idle', nest.genotype, false);
-      if (record.disposed || state.scene !== record.scene) return;
-      if (canvas) _applyBabyGenotypeCanvas(record, canvas);
-    } catch (error) {
-      _nestContentDebug.lastError = String(error?.message || error);
-      window.__farmLog?.(`[nest-content] baby genotype compose failed for ${kind}: ${_nestContentDebug.lastError}`, 'warn');
+      const nest = state.nest;
+      const kind = _babyKindForNest(nest);
+      record.kind = kind;
+      _nestContentDebug.lastBabyKind = kind;
+      const renderer = window.CreatureGeneticsRender;
+      const avatarApi = window.PNGPlaneAvatar;
+      const idleUrl = renderer?.SPECIES?.[kind]?.base?.idle;
+      if (!kind || !renderer || !avatarApi?.buildAnimalPlaneAvatarModel || !idleUrl) {
+        record.building = false;
+        record.retryAt = performance.now() + 500;
+        record.buildStage = 'waiting-metadata';
+        _nestContentDebug.lastBabyBuildStage = record.buildStage;
+        _nestContentDebug.lastError = `Waiting for nursery renderer metadata for ${nest.itemKey} (kind=${kind || 'unresolved'}).`;
+        return;
+      }
+
+      const babyScale = Number(window.LivestockNursery?.constants?.BABY_SCALE)
+        || Number(window.BARN_INCUBATOR_CONFIG?.visuals?.babyScale) || 0.3125;
+      const sleepScaleY = Number(window.BARN_INCUBATOR_CONFIG?.visuals?.sleepScaleY) || 0.5;
+      const speciesDef = window.CREATURE_DB?.[kind] || {};
+      const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
+      const adultWidth = kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[kind]) || 1.7);
+      const spriteAspect = Number(speciesDef.spriteAspect) || (600 / 1375);
+      const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(kind, nest.genotype) || { x: 1, y: 1 };
+      const modelWidth = adultWidth * babyScale;
+      const modelHeight = adultWidth * spriteAspect * babyScale;
+
+      record.buildStage = 'avatar';
+      _nestContentDebug.lastBabyBuildStage = record.buildStage;
+      avatarRef = avatarApi.buildAnimalPlaneAvatarModel(THREE, idleUrl, {
+        modelWidth, modelHeight, name: `nest_sleep_${record.id}`, creatureId: kind,
+        headRig: renderer.headRigForKind?.(kind) || undefined,
+      });
+      if (!avatarRef?.group || record.disposed || state.scene !== record.scene) {
+        record.building = false;
+        record.retryAt = performance.now() + 500;
+        record.buildStage = 'avatar-unavailable';
+        _nestContentDebug.lastBabyBuildStage = record.buildStage;
+        try { avatarRef?.dispose?.(); } catch (_) {}
+        return;
+      }
+
+      record.buildStage = 'place';
+      _nestContentDebug.lastBabyBuildStage = record.buildStage;
+      window.CreatureGenetics?.applyCreatureBillboardScale?.(avatarRef.group, sizeScale);
+      avatarRef.group.scale.y *= sleepScaleY;
+      const authoredGroundOffset = window.CreatureGenetics?.creatureGroundOffset?.(kind, nest.genotype);
+      const uprightGroundLift = Number.isFinite(authoredGroundOffset)
+        ? Math.max(0.03, authoredGroundOffset * babyScale)
+        : Math.max(0.03, modelHeight * (Number(sizeScale.y) || 1) / 2);
+      record.root = avatarRef.group;
+      record.avatarRef = avatarRef;
+      record.groundLift = Math.max(0.02, uprightGroundLift * sleepScaleY) + NEST_BABY_BASKET_LIFT;
+      record.root.rotation.y = (record.serial % 4) * Math.PI / 2;
+      state.scene.add(record.root);
+      _layoutNestContent(state);
+
+      record.buildStage = 'compose';
+      _nestContentDebug.lastBabyBuildStage = record.buildStage;
+      let canvas = null;
       try {
-        const fallbackCanvas = await _loadImageCanvas(idleUrl);
-        if (!record.disposed && state.scene === record.scene) _applyBabyGenotypeCanvas(record, fallbackCanvas);
-      } catch (_) {}
+        canvas = await renderer.composeFrame(kind, 'idle', nest.genotype, false);
+      } catch (composeError) {
+        _nestContentDebug.lastError = String(composeError?.message || composeError);
+        window.__farmLog?.(`[nest-content] baby genotype compose failed for ${kind}; using raw idle art: ${_nestContentDebug.lastError}`, 'warn');
+      }
+      if (!canvas) {
+        record.buildStage = 'fallback-art';
+        _nestContentDebug.lastBabyBuildStage = record.buildStage;
+        canvas = await _loadImageCanvas(idleUrl);
+      }
+      if (record.disposed || state.scene !== record.scene) return;
+
+      record.buildStage = 'target-planes';
+      _nestContentDebug.lastBabyBuildStage = record.buildStage;
+      if (!_applyBabyGenotypeCanvas(record, canvas)) throw new Error(_nestContentDebug.lastError || 'Baby sprite planes were not targetable.');
+      record.buildStage = 'ready';
+      record.building = false;
+      record.retryAt = 0;
+      _nestContentDebug.lastBabyBuildStage = record.buildStage;
+      _nestContentDebug.lastError = null;
+    } catch (error) {
+      if (record.root && record.avatarRef === avatarRef) {
+        record.root.parent?.remove?.(record.root);
+        try { avatarRef?.dispose?.(); } catch (_) {}
+        record.root = null;
+        record.avatarRef = null;
+        record.hitPlanes = [];
+        record.alphaReady = false;
+      }
+      _babyBuildFailure(record, record.buildStage || 'unknown', error);
     }
+  }
+
+  function _queueBabyBuild(state, record) {
+    Promise.resolve(_buildBabyContent(state, record)).catch(error => {
+      _babyBuildFailure(record, record.buildStage || 'promise', error);
+    });
   }
 
   function _createContentRecord(state) {
@@ -466,16 +542,18 @@
       type,
       scene: state.scene,
       root: null,
+      hitPlanes: [],
       disposed: false,
       alphaReady: type === 'egg',
       building: false,
+      buildStage: type === 'baby' ? 'queued' : 'egg',
       retryAt: 0,
       groundLift: 0.06,
     }; // Session object backing exactly one visible/collectible clutch member.
     state.records.push(record);
     if (type === 'baby') {
       _nestContentDebug.babyContents++;
-      _buildBabyContent(state, record);
+      _queueBabyBuild(state, record);
     } else {
       _nestContentDebug.eggContents++;
       _buildEggContent(state, record);
@@ -498,7 +576,7 @@
     while (state.records.length < targetCount) _createContentRecord(state);
     for (const record of state.records) {
       if (record.type === 'baby' && !record.root && !record.disposed && !record.building
-        && performance.now() >= (Number(record.retryAt) || 0)) _buildBabyContent(state, record);
+        && performance.now() >= (Number(record.retryAt) || 0)) _queueBabyBuild(state, record);
     }
     _layoutNestContent(state);
     return state;
@@ -573,12 +651,13 @@
   }
 
   function _interactionRaycaster() {
-    const ray = deps.currentPlayerInteractionRay?.();
+    const ray = deps.currentPlayerInteractionRay?.() || deps.getPlayerInteractionRay?.() || deps.getPlayerAimRay?.();
     if (!ray?.origin || !ray?.direction) return null;
+    const origin = ray.origin.clone ? ray.origin.clone() : new THREE.Vector3(ray.origin.x, ray.origin.y, ray.origin.z);
     const direction = ray.direction.clone ? ray.direction.clone() : new THREE.Vector3(ray.direction.x, ray.direction.y, ray.direction.z);
     if (direction.lengthSq() <= 0.000001) return null;
     direction.normalize();
-    return new THREE.Raycaster(ray.origin, direction, 0, NEST_CONTENT_MAX_RAY_DISTANCE);
+    return new THREE.Raycaster(origin, direction, 0, NEST_CONTENT_MAX_RAY_DISTANCE);
   }
 
   function _nearestOpaqueContent(state) {
@@ -588,8 +667,17 @@
     let best = null;
     for (const record of state.records) {
       if (!record.root || record.disposed || (record.type === 'baby' && !record.alphaReady)) continue;
+      const hitPlanes = (record.hitPlanes || []).filter(plane => plane?.parent && plane.visible !== false);
+      if (!hitPlanes.length) continue;
       record.root.updateWorldMatrix?.(true, true);
-      const hits = raycaster.intersectObject(record.root, true);
+      let hits = [];
+      try {
+        hits = raycaster.intersectObjects(hitPlanes, false);
+      } catch (error) {
+        _nestContentDebug.lastError = `Nest ${record.type} raycast failed (${record.id}): ${String(error?.message || error)}`;
+        window.__farmLog?.(`[nest-content] ${_nestContentDebug.lastError}`, 'error');
+        continue;
+      }
       for (const hit of hits) {
         const alpha = _alphaAtIntersection(hit);
         if (alpha == null) continue;
@@ -713,6 +801,23 @@
 
   function debugSnapshot() {
     _syncCurrentNestContents();
+    const babyRecords = [];
+    for (const state of _activeNestContentStates) {
+      for (const record of state.records) {
+        if (record.type !== 'baby') continue;
+        babyRecords.push({
+          id: record.id,
+          kind: record.kind || null,
+          stage: record.buildStage || null,
+          building: !!record.building,
+          hasRoot: !!record.root,
+          alphaReady: !!record.alphaReady,
+          hitPlanes: record.hitPlanes?.length || 0,
+          groundLift: Number(record.groundLift) || 0,
+          retryInMs: Math.max(0, Math.round((Number(record.retryAt) || 0) - performance.now())),
+        });
+      }
+    }
     return {
       ..._nestContentDebug,
       area: deps?.getCurrentArea?.() || null,
@@ -721,9 +826,11 @@
       activeHoldContentId: _activeNestContentHoldId,
       focusedContentId: _lastFocusedNestContent?.record?.id || null,
       focusedItemKey: _lastFocusedNestContent?.nest?.itemKey || null,
+      babyRecords,
       nurseryBabyScale: Number(window.LivestockNursery?.constants?.BABY_SCALE)
         || Number(window.BARN_INCUBATOR_CONFIG?.visuals?.babyScale) || 0.3125,
       barnSleepScaleY: Number(window.BARN_INCUBATOR_CONFIG?.visuals?.sleepScaleY) || 0.5,
+      nestBabyBasketLift: NEST_BABY_BASKET_LIFT,
     };
   }
 
