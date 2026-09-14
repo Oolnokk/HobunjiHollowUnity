@@ -58,3 +58,5 @@ jobs:
         run: node scripts/test-den-locale-authoring.js
       - name: Test Puktuk den registration in isolation
         run: node scripts/test-puktuk-den-nest-registration.js
+      - name: Test held-hand ownership remains intact
+        run: node scripts/test-procedural-hand-fallback.js
