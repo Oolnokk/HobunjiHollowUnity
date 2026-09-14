@@ -15,6 +15,18 @@
   const FOOT_DONOR_SPECIES_ID = 'engh-sho'; // Used to clone the canonical feline procedural-foot config without duplicating its GLB/material data.
   const HAIR_SPECIES_ID = 'tletingan'; // Documents the cosmetic donor used by config/species/porakaneki.json for male hairstyles.
   const GENDERS = Object.freeze(['male']); // Used to keep the species male-only until authored female assets are intentionally added.
+  const ALLOWED_COSMETIC_IDS = Object.freeze([ // Replaces the merged Kenkari allow-list after portrait cosmetics load so only Porakaneki hair plus bandolier/body-wrap clothing survive inheritance.
+    'tl_forwardtuft_long',
+    'tl_forwardtuft_short',
+    'tl_longponytail',
+    'tl_splayedknot',
+    'tl_wildbeard',
+    'tl_braid-L',
+    'tl_braid-R',
+    'tl_braidcluster-R',
+    'bandolier1',
+    'tankan_bodywrap',
+  ]);
   const EXPECTED_ASSETS = Object.freeze({ // Exposed in mobile diagnostics so missing authored art is immediately visible.
     head: 'fightersprites/kenkari-m/head_porakaneki_m.png',
     headUntinted: 'fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki.png',
@@ -43,6 +55,7 @@
     handDonorSpecies: HAND_DONOR_SPECIES_ID,
     footDonorSpecies: FOOT_DONOR_SPECIES_ID,
     hairSpecies: HAIR_SPECIES_ID,
+    allowedCosmeticIds: [...ALLOWED_COSMETIC_IDS],
     expectedAssets: EXPECTED_ASSETS,
     appearanceConfigInstalled: false,
     rigProfilesInstalled: 0,
@@ -53,6 +66,8 @@
     footGlb: null,
     wardrobeResolverInstalled: false,
     paletteInheritanceInstalled: false,
+    cosmeticRestrictionsApplied: 0,
+    eyeDisksSuppressed: false,
     armMaskProfilesInstalled: 0,
   };
 
@@ -122,7 +137,7 @@
     }
     const wrapped = function resolvePorakanekiWardrobeLayers(option, fighter) {
       if (normalizeSpecies(fighter?.speciesId) !== SPECIES_ID) return baseResolve.apply(this, arguments);
-      const inheritedFighter = { ...fighter, speciesId: BODY_SPECIES_ID }; // Clothing/body variants resolve through Kenkari while direct Tletingan hair layer URLs remain authored by their cosmetic records.
+      const inheritedFighter = { ...fighter, speciesId: BODY_SPECIES_ID }; // Allowed Porakaneki bandolier/body-wrap sprites resolve through Kenkari while direct Tletingan hair layer URLs remain authored by their cosmetic records.
       return baseResolve.call(this, option, inheritedFighter);
     };
     wrapped.__hobunjiPorakanekiWardrobeInheritance = true;
@@ -152,16 +167,50 @@
     return inherited;
   }
 
+  function applyCosmeticRestrictions(cosmetics) {
+    const allowedByFighter = cosmetics?.allowedCosmeticsByFighter; // Final merged allow-list produced by portrait-utils; clamped here because parentSpecies otherwise re-adds Kenkari clothing and eye disks.
+    const forcedByFighter = cosmetics?.forcedCosmeticsByFighter; // Final forced-slot map; Porakaneki explicitly overrides inherited Kenkari eye/headwear choices to none.
+    let applied = 0;
+    for (const gender of GENDERS) {
+      const target = fighterFor(SPECIES_ID, gender); // Restriction target resolved from the live fighter registry so config-generated fighter ids stay authoritative.
+      if (!target) continue;
+
+      const allowedEntry = allowedByFighter?.[target.id]; // Existing object may carry future metadata in addition to its Set, so mutate the Set in place when possible.
+      const allowedSet = allowedEntry?.set;
+      if (allowedSet && typeof allowedSet.clear === 'function' && typeof allowedSet.add === 'function') {
+        allowedSet.clear();
+        for (const cosmeticId of ALLOWED_COSMETIC_IDS) allowedSet.add(cosmeticId);
+      } else if (allowedByFighter) {
+        allowedByFighter[target.id] = { ...(allowedEntry || {}), set: new Set(ALLOWED_COSMETIC_IDS) };
+      }
+
+      if (forcedByFighter) {
+        forcedByFighter[target.id] = {
+          ...(forcedByFighter[target.id] || {}),
+          eyes: 'none',
+          hat: 'none',
+          hood: 'none',
+        };
+      }
+
+      if (allowedByFighter || forcedByFighter) applied += 1;
+    }
+    status.cosmeticRestrictionsApplied = applied;
+    status.eyeDisksSuppressed = applied > 0;
+    return applied;
+  }
+
   function installPaletteInheritance() {
-    const baseLoad = window.loadPortraitCosmetics; // Shared async species/cosmetics loader; wrapping keeps the palette source live.
+    const baseLoad = window.loadPortraitCosmetics; // Shared async species/cosmetics loader; wrapping keeps the palette source live and clamps inherited cosmetics after its merge step.
     if (typeof baseLoad !== 'function') return false;
     if (baseLoad.__hobunjiPorakanekiPaletteInheritance) {
       status.paletteInheritanceInstalled = true;
       return true;
     }
-    const wrapped = async function loadPortraitCosmeticsWithPorakanekiPalette() {
+    const wrapped = async function loadPortraitCosmeticsWithPorakanekiOverrides() {
       const cosmetics = await baseLoad.apply(this, arguments);
       inheritKenkariBodyColors(cosmetics);
+      applyCosmeticRestrictions(cosmetics);
       return cosmetics;
     };
     wrapped.__hobunjiPorakanekiPaletteInheritance = true;
@@ -196,6 +245,7 @@
     return {
       ...status,
       rigProfilesPresent: Object.fromEntries(GENDERS.map(gender => [gender, !!characters[`${SPECIES_ID}::${gender}`]])),
+      allowedCosmeticIds: [...ALLOWED_COSMETIC_IDS],
       expectedAssets: { ...EXPECTED_ASSETS },
     };
   }
@@ -206,13 +256,15 @@
     handDonorSpeciesId: HAND_DONOR_SPECIES_ID,
     footDonorSpeciesId: FOOT_DONOR_SPECIES_ID,
     hairSpeciesId: HAIR_SPECIES_ID,
+    allowedCosmeticIds: ALLOWED_COSMETIC_IDS,
     expectedAssets: EXPECTED_ASSETS,
     install,
     inheritKenkariBodyColors,
+    applyCosmeticRestrictions,
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
-      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} armMask=${d.armMaskProfilesInstalled}/1 head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
+      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
     },
   });
 
