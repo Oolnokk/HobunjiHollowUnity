@@ -325,18 +325,29 @@
     return true;
   }
 
+  // Mirrors the repo's shared future-global hook pattern: chain any existing
+  // accessor instead of replacing it, then collapse back to a normal value
+  // property after the real module assigns the global. This matters because
+  // several gameplay modules hook the same parser-loaded globals.
   function watchGlobal(globalName, installer) {
     if (root[globalName]) { installer(root[globalName]); return; }
-    const descriptor = Object.getOwnPropertyDescriptor(root, globalName); // Existing descriptor is respected when another bootstrap shim owns the property.
+    const descriptor = Object.getOwnPropertyDescriptor(root, globalName); // Existing descriptor is chained so another bootstrap shim keeps its behavior.
     if (descriptor && descriptor.configurable === false) return;
-    let value = descriptor?.value; // Backing value used until the real global is assigned by its parser-loaded module.
+    const previousGet = descriptor?.get; // Called by the chained getter/setter when an earlier future-global hook exists.
+    const previousSet = descriptor?.set; // Receives the assignment first so the earlier hook stays inside this one.
+    let pending = descriptor && 'value' in descriptor ? descriptor.value : undefined; // Preserves a pre-existing plain value until the real module assignment arrives.
     Object.defineProperty(root, globalName, {
       configurable: true,
-      enumerable: descriptor?.enumerable ?? true,
-      get() { return value; },
-      set(next) { value = next; installer(next); },
+      enumerable: descriptor?.enumerable !== false,
+      get() { return previousGet ? previousGet.call(root) : pending; },
+      set(next) {
+        if (previousSet) previousSet.call(root, next);
+        const resolved = previousGet ? previousGet.call(root) : next; // Patched value is whatever the inner hook resolved the assignment to.
+        installer(resolved);
+        pending = resolved;
+        Object.defineProperty(root, globalName, { configurable: true, enumerable: true, writable: true, value: resolved });
+      },
     });
-    if (value) installer(value);
   }
 
   function debugSnapshot() {
