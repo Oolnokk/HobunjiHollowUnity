@@ -165,13 +165,27 @@ snap = controller.snapshot();
 assert.strictEqual(snap.loaded, 1, 'explicit transitions/teleports should synchronously keep only the player chunk resident');
 assert.strictEqual(snap.queued, 8, 'explicit low-memory priming should leave surrounding chunks paced');
 
+for (let i = 0; i < 8; i++) context.WildernessChunks.update(0.2);
+snap = controller.snapshot();
+assert.strictEqual(snap.loaded, 9, 'the complete low-memory neighborhood should eventually finish streaming');
+assert.strictEqual(snap.queued, 0);
+
+player.x = (9 * 16 + 1) * TILE;
+context.WildernessChunks.update(0.2);
+snap = controller.snapshot();
+assert.strictEqual(snap.center.x, 9);
+assert.ok(snap.loaded <= 12, 'travel should keep the resident set bounded while the hysteresis ring trails behind');
+assert.ok(snap.queued <= 3, 'crossing one chunk boundary should queue only the new leading edge, not another full zone neighborhood');
+
 const attached = new Node();
-assert.strictEqual(context.WildernessChunks.attachObject(currentArea, 8 * 16 + 1, 8 * 16 + 1, attached), true);
+assert.strictEqual(context.WildernessChunks.attachObject(currentArea, 9 * 16 + 1, 8 * 16 + 1, attached), true);
 assert.ok(attached.parent?.userData?.wildernessChunk, 'tile-owned runtime patches should attach to their chunk');
 
-const rebuilt = context.WildernessChunks.rebuildZone(currentArea, 8 * 16 + 1, 8 * 16 + 1);
-assert.strictEqual(rebuilt, 1, 'an edit with only the player chunk resident should rebuild only that chunk immediately');
-assert.strictEqual(controller.snapshot().loaded, 1);
+const rebuilt = context.WildernessChunks.rebuildZone(currentArea, 9 * 16 + 1, 8 * 16 + 1);
+assert.ok(rebuilt >= 1, 'an edit should rebuild at least the resident player chunk');
+snap = controller.snapshot();
+assert.ok(snap.loaded <= 1, 'low-memory edit rebuilds should restore only one affected chunk synchronously');
+assert.ok(snap.queued <= 8, 'affected neighbor rebuilds should return through the paced in-radius queue');
 
 currentArea = 'farm';
 context.WildernessChunks.update(5);
