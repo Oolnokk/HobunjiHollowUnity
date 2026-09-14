@@ -30,7 +30,16 @@ assert.deepEqual(porakaneki.male.portraitBodyLayers.map(layer => layer.url), [
 assert.equal(porakaneki.male.bodyColorRanges, undefined, 'Porakaneki must inherit live Kenkari ranges rather than freeze a duplicated palette snapshot');
 assert(porakaneki.male.allowedCosmetics.includes('appearance::Tletingan_M::tl_forwardtuft_long'));
 assert(porakaneki.male.allowedCosmetics.includes('appearance::Tletingan_M::tl_wildbeard'));
+assert(porakaneki.male.allowedCosmetics.includes('bandolier1'));
+assert(porakaneki.male.allowedCosmetics.includes('tankan_bodywrap'));
+assert(!porakaneki.male.allowedCosmetics.includes('appearance::Kenkari_M::kenk_eyedisks'), 'Porakaneki must never inherit Kenkari eye disks');
 assert(!porakaneki.male.allowedCosmetics.includes('appearance::Kenkari_M::kenk_forwardtuft_long'), 'Porakaneki hair must come from Tletingan/Slagothim, not Kenkari');
+assert(!porakaneki.male.allowedCosmetics.includes('tankan_tunic'), 'Porakaneki torso clothing is limited to bandoliers');
+assert(!porakaneki.male.allowedCosmetics.includes('rugged_poncho'), 'Porakaneki overwear is limited to body wraps');
+assert(!porakaneki.male.allowedCosmetics.includes('fine_poncho'), 'Porakaneki overwear is limited to body wraps');
+assert(!porakaneki.male.allowedCosmetics.includes('fine_hood'), 'Porakaneki may not inherit Kenkari hood clothing');
+assert(!porakaneki.male.allowedCosmetics.some(id => id.includes('appearance::hat::') || id.includes('kenk_bowlkasa')), 'Porakaneki may not inherit Kenkari headwear');
+assert.deepEqual(porakaneki.male.forcedCosmetics, { eyes: 'none', hat: 'none', hood: 'none' });
 assert(speciesIndex.entries.some(entry => entry.speciesId === 'porakaneki' && entry.path === './porakaneki.json'));
 assert.equal(speciesOverrides.npcs.porakaneki_chief.species, 'porakaneki');
 assert(fs.existsSync('docs/assets/fightersprites/kenkari-m/head_porakaneki_m.png'));
@@ -41,12 +50,29 @@ assert(fs.existsSync('docs/assets/portraitsprites/torso_porakaneki_m.png'));
 const fighters = [
   { id: 'porakaneki_male', speciesId: 'porakaneki', gender: 'male' },
   { id: 'kenkari_male', speciesId: 'kenkari', gender: 'male' },
-]; // Used by the palette bridge exactly as portrait-utils exposes its live fighter registry.
+]; // Used by the palette/cosmetic bridge exactly as portrait-utils exposes its live fighter registry.
 const cosmetics = {
   bodyColorRangesByGender: {
     kenkari_male: { A: { source: 'kenkari-male' } },
   },
-}; // Proves Porakaneki points at Kenkari's canonical live range object.
+  allowedCosmeticsByFighter: {
+    porakaneki_male: {
+      set: new Set([
+        'kenk_eyedisks',
+        'basic_headband',
+        'fine_hood',
+        'tankan_tunic',
+        'bandolier1',
+        'tankan_bodywrap',
+        'rugged_poncho',
+        'tl_forwardtuft_long',
+      ]),
+    },
+  },
+  forcedCosmeticsByFighter: {
+    porakaneki_male: { eyes: 'kenk_eyedisks', hat: 'basic_headband', hood: 'fine_hood' },
+  },
+}; // Proves the Porakaneki post-load clamp removes cosmetics reintroduced by Kenkari parent inheritance.
 const handProfileData = {
   speciesModels: { kenkari: 'avian', mashtzarr: 'pachyderm' },
   speciesScaleOverrides: {},
@@ -115,6 +141,15 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
 (async () => {
   const loadedCosmetics = await windowObject.loadPortraitCosmetics();
   assert.equal(loadedCosmetics.bodyColorRangesByGender.porakaneki_male, loadedCosmetics.bodyColorRangesByGender.kenkari_male);
+  const allowed = Array.from(loadedCosmetics.allowedCosmeticsByFighter.porakaneki_male.set).sort(); // Normalized in host realm for stable deep-equality assertions.
+  const expectedAllowed = Array.from(windowObject.HobunjiPorakanekiSpecies.allowedCosmeticIds).sort();
+  assert.deepEqual(allowed, expectedAllowed, 'runtime clamp must remove all inherited Kenkari cosmetics except the two allowed clothing pieces');
+  assert(!loadedCosmetics.allowedCosmeticsByFighter.porakaneki_male.set.has('kenk_eyedisks'));
+  assert(!loadedCosmetics.allowedCosmeticsByFighter.porakaneki_male.set.has('tankan_tunic'));
+  assert(!loadedCosmetics.allowedCosmeticsByFighter.porakaneki_male.set.has('rugged_poncho'));
+  assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.eyes, 'none');
+  assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hat, 'none');
+  assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hood, 'none');
 
   const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260912b');
   const scaleBootstrapIndex = bootstrapSource.indexOf('character-rig-scale.js?v=20260904i');
@@ -131,6 +166,9 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   assert.equal(debug.footGlb, 'assets/models/feet/foot_feline.glb');
   assert.equal(debug.wardrobeResolverInstalled, true);
   assert.equal(debug.paletteInheritanceInstalled, true);
+  assert.equal(debug.cosmeticRestrictionsApplied, 1);
+  assert.equal(debug.eyeDisksSuppressed, true);
+  assert.deepEqual(Array.from(debug.allowedCosmeticIds).sort(), expectedAllowed);
   assert.equal(debug.armMaskProfilesInstalled, 1);
   assert.equal(debug.hairSpecies, 'tletingan');
 
