@@ -102,6 +102,8 @@
   let _changePollTimer = null;
   let _lastObservedFingerprint = null; // Used by the change poll to skip filesystem writes when nothing changed.
   let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
+  let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
+  let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
   const _listeners = new Set();
 
   function getStatus() {
@@ -116,7 +118,63 @@
       portableFarmLayouts: _folderSupportsFarmLayouts,
       needsFarmLayoutUpgrade: _state === 'ready' && !_folderSupportsFarmLayouts,
       autoSyncArmed: _autoSyncArmed,
+      dataLossRisk: _lastDataLossRisk,
     };
+  }
+
+  function jsonSize(value) {
+    try { return JSON.stringify(value ?? null).length; } catch { return 0; }
+  }
+
+  // Every push (autosync included) overwrites the folder with whatever this
+  // browser currently has. If this browser's own save was damaged (a bug, a
+  // bad reset, an over-eager stale tab), that push would just as happily
+  // carry the damage into the folder -- silently, since nothing previously
+  // checked what was about to be destroyed. This compares the payload about
+  // to be written against the last folder content we actually know about and
+  // flags anything that looks like real data loss rather than a normal,
+  // intentional change (deleting a character on purpose, using up an item).
+  const DATA_LOSS_SHRINK_RATIO = 0.4; // an existing entity shrinking below 40% of its prior size is suspicious
+  const DATA_LOSS_MIN_OLD_SIZE = 200; // ignore trivially small entities to avoid false positives on brand-new characters
+
+  function describeDataLossRisk(oldMeta, newMeta) {
+    if (!oldMeta) return null; // no known baseline yet (e.g. first push into this folder) -- nothing to protect
+
+    const oldChars = oldMeta.characters || [];
+    const newChars = newMeta.characters || [];
+    const oldWorlds = oldMeta.worlds || [];
+    const newWorlds = newMeta.worlds || [];
+
+    if (oldChars.length > 0 && newChars.length < oldChars.length) {
+      return `would remove ${oldChars.length - newChars.length} character(s) that exist in the folder save`;
+    }
+    if (oldWorlds.length > 0 && newWorlds.length < oldWorlds.length) {
+      return `would remove ${oldWorlds.length - newWorlds.length} world(s) that exist in the folder save`;
+    }
+
+    const newCharById = new Map(newChars.filter(c => c?.id).map(c => [c.id, c]));
+    for (const oldChar of oldChars) {
+      if (!oldChar?.id) continue;
+      const newChar = newCharById.get(oldChar.id);
+      if (!newChar) continue;
+      const oldSize = jsonSize(oldChar);
+      if (oldSize >= DATA_LOSS_MIN_OLD_SIZE && jsonSize(newChar) < oldSize * DATA_LOSS_SHRINK_RATIO) {
+        return `"${oldChar.nickname || oldChar.id}" would shrink drastically (looks like lost inventory or progress)`;
+      }
+    }
+
+    const newWorldById = new Map(newWorlds.filter(w => w?.id).map(w => [w.id, w]));
+    for (const oldWorld of oldWorlds) {
+      if (!oldWorld?.id) continue;
+      const newWorld = newWorldById.get(oldWorld.id);
+      if (!newWorld) continue;
+      const oldSize = jsonSize(oldWorld);
+      if (oldSize >= DATA_LOSS_MIN_OLD_SIZE && jsonSize(newWorld) < oldSize * DATA_LOSS_SHRINK_RATIO) {
+        return `"${oldWorld.label || oldWorld.id}" would shrink drastically (looks like lost farm/world data)`;
+      }
+    }
+
+    return null;
   }
 
   function notify() {
@@ -336,6 +394,7 @@
     _lastError = folder.corruptFarmLayoutFiles.length
       ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}.`
       : '';
+    if (folder.exists) _lastKnownFolderMeta = folder.meta;
     return folder;
   }
 
@@ -349,13 +408,26 @@
     return false;
   }
 
-  async function _syncNowImpl({ automatic = false } = {}) {
+  async function _syncNowImpl({ automatic = false, force = false } = {}) {
     if (_state !== 'ready' || !_handle) return getStatus();
     if (automatic && !_autoSyncArmed) return getStatus();
 
     try {
       const meta = readBrowserMeta();
       if (!meta) throw new Error('No browser save is available to write.');
+
+      if (!force) {
+        const risk = describeDataLossRisk(_lastKnownFolderMeta, meta);
+        if (risk) {
+          _lastDataLossRisk = risk;
+          _lastError = `Skipped saving to the folder: this browser's save ${risk}. Save Now again to confirm the overwrite.`;
+          _lastAction = automatic ? 'autosync-blocked-data-loss' : 'save-blocked-data-loss';
+          notify();
+          return getStatus();
+        }
+      }
+      _lastDataLossRisk = null;
+
       const farmLayouts = readBrowserFarmLayouts(meta, true);
 
       await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
@@ -375,6 +447,7 @@
       });
       try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
 
+      _lastKnownFolderMeta = meta;
       _lastSyncedAt = savedAt;
       _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
       _lastError = '';
@@ -422,6 +495,7 @@
       const layoutsChanged = folderFarmLayoutsDiffer(folder.meta, browserLayouts, folder.farmLayouts);
       const changed = metaChanged || layoutsChanged;
 
+      _lastKnownFolderMeta = folder.meta;
       localStorage.setItem(SAVE_META_KEY, JSON.stringify(folder.meta));
       const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
       for (const [worldId, layout] of Object.entries(folder.farmLayouts || {})) {
@@ -512,6 +586,8 @@
       await idbSet(HANDLE_KEY, handle);
       _state = 'ready';
       _lastError = '';
+      _lastDataLossRisk = null;
+      _lastKnownFolderMeta = null; // a newly picked folder has no relation to any previous baseline
       stopAutoSync();
       await inspectConnectedFolder();
       _lastAction = 'folder-chosen-awaiting-choice';
@@ -565,6 +641,8 @@
     _farmLayoutCount = 0;
     _folderSupportsFarmLayouts = false;
     _lastObservedFingerprint = null;
+    _lastKnownFolderMeta = null;
+    _lastDataLossRisk = null;
     try { await idbDelete(HANDLE_KEY); } catch {}
     notify();
     return getStatus();

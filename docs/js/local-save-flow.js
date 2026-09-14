@@ -221,7 +221,18 @@
           return;
         }
 
-        const savedStatus = await localSave.syncNow();
+        let savedStatus = await localSave.syncNow();
+        if (savedStatus.dataLossRisk) {
+          const overwrite = confirm(
+            `Warning: this browser's save ${savedStatus.dataLossRisk}.\n\n` +
+            `Saving now would overwrite that folder data. Overwrite anyway?`
+          );
+          if (!overwrite) {
+            alert('Not saved to the folder, so the game was not quit. Check which browser/tab has the save you want before trying again.');
+            return;
+          }
+          savedStatus = await localSave.syncNow({ force: true });
+        }
         if (savedStatus.lastError) {
           alert('Could not save to the local folder, so the game was not quit:\n' + savedStatus.lastError);
           return;
