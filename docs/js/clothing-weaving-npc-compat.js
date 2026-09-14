@@ -4,6 +4,7 @@
   if (Number(window.ClothingWeavingNpcCompat?.version) >= 1) return;
 
   const PLAYER_COSMETIC_ID_KEY = '__loomPlayerCosmeticId'; // Preserves a crafted garment's unique player-side id while an NPC uses its authored base cosmetic id.
+  let npcWardrobeDeps = null; // Captured from NpcWardrobe.init so wardrobe take-back can restore the player's literal crafted instance identity without guessing through Combat deps.
 
   function baseCosmeticId(instance) {
     return instance?.baseCosmeticId || instance?.cosmeticId || null;
@@ -39,6 +40,14 @@
   function patchNpcWardrobe(api) {
     if (!api?.offerClothing || api.__clothingWeavingNpcCompat) return;
 
+    if (typeof api.init === 'function') {
+      const originalInit = api.init.bind(api); // Captures the wardrobe's own live gear/save dependencies while preserving its normal initialization.
+      api.init = function clothingWeavingNpcWardrobeInit(injected, ...rest) {
+        npcWardrobeDeps = injected;
+        return originalInit(injected, ...rest);
+      };
+    }
+
     const originalOffer = api.offerClothing.bind(api); // NPC wardrobe should judge/render the authored garment, not the unique player inventory id.
     api.offerClothing = function clothingWeavingOfferClothing(npcId, instance) {
       return originalOffer(npcId, npcSafeInstance(instance));
@@ -47,23 +56,17 @@
     if (typeof api.takeFromWardrobe === 'function') {
       const originalTake = api.takeFromWardrobe.bind(api); // Existing wardrobe transfer remains authoritative; the unique player id is restored afterward.
       api.takeFromWardrobe = function clothingWeavingTakeFromWardrobe(npcId, uid) {
-        const beforeGear = window.Combat?.deps?.gearInventory?.()
-          || window.Combat?.deps?.getGearInventory?.()
-          || null;
+        const beforeGear = npcWardrobeDeps?.getGearInventory?.() || null;
         const beforeUids = new Set((beforeGear?.clothingItems || []).map(item => item?.uid).filter(Boolean));
         const storedItem = api.getWardrobeContents?.(npcId)?.stored?.find(item => item?.uid === uid) || null;
         const playerCosmeticId = storedItem?.[PLAYER_COSMETIC_ID_KEY] || null;
         const result = originalTake(npcId, uid);
         if (!result || !playerCosmeticId) return result;
 
-        const gear = window.Combat?.deps?.gearInventory?.()
-          || window.Combat?.deps?.getGearInventory?.()
-          || beforeGear;
+        const gear = npcWardrobeDeps?.getGearInventory?.() || beforeGear;
         const restored = (gear?.clothingItems || []).find(item => !beforeUids.has(item?.uid)
           && item?.[PLAYER_COSMETIC_ID_KEY] === playerCosmeticId);
-        if (restored && restorePlayerCosmeticId(restored)) {
-          window.Combat?.deps?.saveGearInventory?.();
-        }
+        if (restored && restorePlayerCosmeticId(restored)) npcWardrobeDeps?.saveGearInventory?.();
         return result;
       };
     }
