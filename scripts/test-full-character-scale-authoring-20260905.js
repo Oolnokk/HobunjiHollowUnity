@@ -21,7 +21,7 @@ const expected = {
   'tletingan::female': { x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 },
   'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
   'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
-  'mao-ao::male': { x: 0.675, y: 0.9, head: 0.6, offsetY: 0 },
+  'mao-ao::male': { x: 0.7425, y: 0.99, head: 0.66, offsetY: 0 },
   'mao-ao::female': { x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 },
   'kenkari::male': { x: 1.225, y: 1.225, head: 1, offsetY: 0 },
   'kenkari::female': { x: 1.1, y: 1.1, head: 1, offsetY: 0 },
@@ -37,14 +37,14 @@ const portraitScales = {
   'mao-ao::female': 0.8,
   'kenkari::male': 0.75,
   'kenkari::female': 0.75,
-}; // Used below to lock intentional raw-PNG Head percentages; Mao-ao male is now 60% after the requested 20% whole-character reduction, while the other non-Mashtzarr profiles remain 75%.
-assert.ok(defaultsWindow.HobunjiCharacterRigScaleDefaults.version >= 10,
-  'Full Character Scale defaults must include the Mao-ao male 20% reduction');
+}; // Used below to lock intentional raw-PNG Head percentages; Mao-ao male is now 66% after the requested +10% adjustment from the reduced baseline, while the other non-Mashtzarr profiles remain 75%.
+assert.ok(defaultsWindow.HobunjiCharacterRigScaleDefaults.version >= 11,
+  'Full Character Scale defaults must include the Mao-ao male +10% adjustment');
 for (const [key, tuple] of Object.entries(expected)) {
   const [species, gender] = key.split('::');
   assert.deepStrictEqual(plainScale(defaultsWindow.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), tuple, `${key} scale tuple mismatch`);
   if (portraitScales[key]) {
-    const expectedRawHeadPercent = key === 'mao-ao::male' ? 60 : 75;
+    const expectedRawHeadPercent = key === 'mao-ao::male' ? 66 : 75;
     assert.ok(Math.abs(tuple.head * portraitScales[key] * 100 - expectedRawHeadPercent) < 1e-9, `${key} raw-PNG Head must equal ${expectedRawHeadPercent}%`);
   }
 }
