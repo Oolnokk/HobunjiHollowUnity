@@ -54,6 +54,9 @@
   // Used by makeArcMesh so every ring layer renders above ordinary ground
   // effects but behind character/creature avatar planes (renderOrder 2).
   const RESOURCE_RING_RENDER_ORDER = 1;
+  // Used by every colored fill and black outline so they occupy the exact
+  // same world-space Y plane; renderOrder handles which layer paints last.
+  const RESOURCE_FILL_Y_OFFSET = .004;
 
   function makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments) {
     const span = endDeg - startDeg;
@@ -85,7 +88,7 @@
     return geometry;
   }
 
-  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32, additive = false) {
+  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32, additive = false, renderOrderOffset = yOffset) {
     const geometry = makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments);
     geometry.translate(0, yOffset, 0);
     const material = new THREE.MeshBasicMaterial({
@@ -109,9 +112,10 @@
       ...(additive ? { blending: THREE.AdditiveBlending } : {}),
     });
     const mesh = new THREE.Mesh(geometry, material);
-    // Preserve the ring's tiny Y-based layer ordering without letting those
-    // offsets turn into four-digit render orders that paint over avatars.
-    mesh.renderOrder = RESOURCE_RING_RENDER_ORDER + yOffset;
+    // Keep world-space height independent from draw priority. Most callers
+    // still use yOffset for both; outlines can now paint last without being
+    // physically raised above the fill and shifting under perspective.
+    mesh.renderOrder = RESOURCE_RING_RENDER_ORDER + renderOrderOffset;
     return mesh;
   }
 
@@ -148,13 +152,13 @@
   // brightening it, is what actually reads as neon without any white in it.
   const GLOW_HALO_PAD_FRAC = ringConfig.neon.glowHaloPadFraction;
   const GLOW_HALO_OPACITY_MUL = ringConfig.neon.glowHaloOpacityMultiplier;
-  function makeGlowArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32) {
+  function makeGlowArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32, renderOrderOffset = yOffset) {
     const group = new THREE.Group();
     const width = outerRadius - innerRadius;
     const pad = width * GLOW_HALO_PAD_FRAC;
     const neon = neonizeColor(color);
-    group.add(makeArcMesh(innerRadius - pad, outerRadius + pad, startDeg, endDeg, neon, opacity * GLOW_HALO_OPACITY_MUL, yOffset - 0.0006, segments, true));
-    group.add(makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, neon, opacity, yOffset, segments));
+    group.add(makeArcMesh(innerRadius - pad, outerRadius + pad, startDeg, endDeg, neon, opacity * GLOW_HALO_OPACITY_MUL, yOffset - 0.0006, segments, true, renderOrderOffset - 0.0006));
+    group.add(makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, neon, opacity, yOffset, segments, false, renderOrderOffset));
     return group;
   }
 
@@ -214,7 +218,7 @@
     if (isExhaustedStamina) {
       if (displayFraction > 0) {
         const fillEnd = spec.start + (spec.end - spec.start) * displayFraction;
-        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start, fillEnd, spec.color, .95, spec.y + .004, 34));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start, fillEnd, spec.color, .95, spec.y + RESOURCE_FILL_Y_OFFSET, 34));
         boundaryPoints.add(displayFraction * max);
       }
       group.add(makeDashedArc(inner + radius * .04, outer - radius * .04, spec.start, spec.end, 0xffffff, .34, spec.y + .009));
@@ -249,7 +253,7 @@
       const normalPieces = max ? subtractRanges([{ start: 0, end: clamp(current, 0, max) }], claimed) : [];
       for (const p of normalPieces) {
         const sf = p.start / max, ef = p.end / max;
-        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, spec.color, .95, spec.y + .004, 34));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, spec.color, .95, spec.y + RESOURCE_FILL_Y_OFFSET, 34));
         boundaryPoints.add(p.start); boundaryPoints.add(p.end);
       }
 
@@ -257,7 +261,10 @@
         const def = RS.AFFLICTIONS[seg.id];
         const color = AFFLICTION_COLORS[seg.id] ?? 0xffffff;
         const sf = seg.start / max, ef = seg.end / max;
-        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, color, .95, spec.y + .006 + def.priority * .00001, 24));
+        // Preserve affliction priority in draw order while keeping every
+        // colored segment on the same physical plane as the normal fill.
+        const fillRenderOrder = spec.y + .006 + def.priority * .00001;
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, color, .95, spec.y + RESOURCE_FILL_Y_OFFSET, 24, fillRenderOrder));
         boundaryPoints.add(seg.start); boundaryPoints.add(seg.end);
       }
 
@@ -355,7 +362,10 @@
   function addSegmentOutlines(group, spec, radius, max, boundaryPoints) {
     const inner = radius * spec.innerMul, outer = radius * spec.outerMul;
     const rim = radius * .05;
-    const outlineY = spec.y + .05;
+    const outlineY = spec.y + RESOURCE_FILL_Y_OFFSET;
+    // Preserve the old high outline draw priority without physically lifting
+    // the border away from the fill and creating a perspective-space offset.
+    const outlineRenderOrder = spec.y + .05;
     // The colored fill itself is inset from inner/outer by radius*.02 (see
     // buildGroundResourceArc's "inner + radius*.02"/"outer - radius*.02") —
     // stopping the rim exactly at inner/outer left that inset strip as a
@@ -364,14 +374,14 @@
     // by a bit more than that inset closes the gap with real paint instead
     // of relying on the glow halo to visually paper over it.
     const fillOverlap = radius * .03;
-    group.add(makeArcMesh(inner - rim, inner + fillOverlap, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
-    group.add(makeArcMesh(outer - fillOverlap, outer + rim, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
+    group.add(makeArcMesh(inner - rim, inner + fillOverlap, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36, false, outlineRenderOrder));
+    group.add(makeArcMesh(outer - fillOverlap, outer + rim, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36, false, outlineRenderOrder));
 
     const halfWidthDeg = 2.6;
     for (const pt of boundaryPoints) {
       const frac = max ? clamp(pt / max, 0, 1) : 0;
       const angle = spec.start + (spec.end - spec.start) * frac;
-      group.add(makeArcMesh(inner - rim, outer + rim, angle - halfWidthDeg, angle + halfWidthDeg, OUTLINE_COLOR, .95, outlineY + .002, 4));
+      group.add(makeArcMesh(inner - rim, outer + rim, angle - halfWidthDeg, angle + halfWidthDeg, OUTLINE_COLOR, .95, outlineY, 4, false, outlineRenderOrder + .002));
     }
   }
 
