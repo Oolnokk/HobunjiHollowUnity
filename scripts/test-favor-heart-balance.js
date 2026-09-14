@@ -14,7 +14,7 @@ const states = new Map();
 const rewards = [];
 const consumedQuality = [];
 const inventory = { egg: 3 };
-const qualityBuckets = { egg: { 5: 2, 3: 1 } };
+const qualityBuckets = { egg: { 5: 3, 3: 0 } };
 let held = { kind: 'item', key: 'egg', def: { label: 'Egg', cookingDefaultStars: 3 } };
 
 function rawState(id) {
@@ -99,7 +99,9 @@ assert.equal(rewards.at(-1)?.text, '+10 Favor', 'player-facing Favor reward stay
 NpcGifting.offerGift({ rec: { id: 'multitrait' }, giftScore: 30 });
 assert.equal(rawState('multitrait').favor, 0.25, 'multi-trait gift is capped at ten Favor points before quality scaling');
 
-// The remaining egg is three-star, so the same loved result becomes six Favor points = .15 heart.
+// Make the remaining physical egg a three-star unit, then verify the same loved result scales down.
+qualityBuckets.egg[5] = 0;
+qualityBuckets.egg[3] = 1;
 NpcGifting.offerGift({ rec: { id: 'quality' }, giftScore: 10 });
 assert.equal(rawState('quality').favor, 0.15, 'three-star loved gift adds .15 heart');
 assert.equal(rewards.at(-1)?.text, '+6 Favor', 'three-star quality scales the visible Favor point award');
