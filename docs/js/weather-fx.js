@@ -21,7 +21,34 @@
   // camera position — likely stale/vestigial pre-existing behavior,
   // preserved as-is rather than "fixed" here).
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  const THUNDER_SFX = Object.freeze({
+    url: 'assets/audio/sfx/sfx_thunder1.mp3',
+    volume: 0.9,
+  }); // Existing finished weather one-shot; played once per lightning sequence.
+  let thunderPreload = null;
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    // Warm the real thunder recording once so a strike does not have to begin
+    // its first network/decode work at the exact frame the flash starts.
+    if (typeof Audio === 'function') {
+      thunderPreload = new Audio(THUNDER_SFX.url);
+      thunderPreload.preload = 'auto';
+      try { thunderPreload.load?.(); } catch (_) {}
+    }
+  }
+  function playThunderSfx() {
+    // Prefer the game's shared one-shot path so the global SFX volume and
+    // audio-enabled settings stay authoritative. The preload above still
+    // warms the browser cache even though AudioSystem creates the playback voice.
+    if (window.AudioSystem?.playObjectSfx) {
+      window.AudioSystem.playObjectSfx(THUNDER_SFX);
+      return;
+    }
+    if (typeof Audio !== 'function') return;
+    const snd = thunderPreload?.cloneNode?.(true) || new Audio(THUNDER_SFX.url);
+    snd.volume = THUNDER_SFX.volume;
+    try { snd.play?.()?.catch?.(() => {}); } catch (_) {}
+  }
   let debugWeatherOverride = null; // Read by updateRainState while Testing Arena weather buttons are active.
 
   const STORM_NAMES = [
@@ -388,6 +415,7 @@
       if (lightningTimer <= 0) {
         lightningStrikesRemaining = Math.random() < 0.30 ? 2 : 1;
         deps.setLightningAlpha(0.72);
+        playThunderSfx();
         lightningDecayRate = 0.72 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
         lightningTimer = LIGHTNING_AVG_INTERVAL_S * (0.4 + Math.random() * 1.2);
       }
