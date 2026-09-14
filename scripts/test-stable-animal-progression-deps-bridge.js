@@ -10,6 +10,7 @@ let farmInitDeps = null;
 let panelInitDeps = null;
 let progressionInstallCount = 0;
 let xpInstallCount = 0;
+let textureSharingInstallCount = 0;
 
 const context = {
   window: null,
@@ -28,6 +29,7 @@ context.ANIMAL_GROWTH_CONFIG = {};
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
 context.StableAnimalPerkAdjustments = {};
+context.AnimalTextureSharing = { install() { textureSharingInstallCount++; } };
 context.StableAnimalTrainingRefinements = { install() {} };
 context.StableAnimalXpEvents = { install() { xpInstallCount++; } };
 context.StableTrainingCompendiumPatch = {};
@@ -83,6 +85,7 @@ for (const methodName of ['getActiveCompanionId', 'getActiveMountId', 'getActive
   assert.equal(debug.getters[methodName].farm, true, `${methodName} is available to Stable progression`);
   assert.equal(debug.getters[methodName].panel, true, `${methodName} remains available from FarmPanel deps`);
 }
+assert(textureSharingInstallCount > 0, 'AnimalTextureSharing remains installed through the farm feature bridge');
 assert(progressionInstallCount > 0, 'StableAnimalProgression remains installed through the farm feature bridge');
 assert(xpInstallCount > 0, 'StableAnimalXpEvents remains installed through the farm feature bridge');
 
