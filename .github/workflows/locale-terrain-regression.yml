@@ -5,6 +5,7 @@ on:
     paths:
       - 'docs/config/locales/**'
       - 'docs/config/furniture-authored/nest*.json'
+      - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/locale-terrain-placement.js'
       - 'docs/js/locale-cave-runtime.js'
       - 'docs/js/zone-den-totem-features.js'
@@ -12,6 +13,7 @@ on:
       - 'docs/js/den-nest-system.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/puktuk-den-nest-registration.js'
+      - 'docs/js/wilderness-map-generator.js'
       - 'docs/tools/wilderness-generation-lab/**'
       - 'docs/tools/locale-editor/**'
       - 'scripts/test-locale-terrain-placement.js'
@@ -20,6 +22,7 @@ on:
       - 'scripts/test-den-nest-individual-content.js'
       - 'scripts/test-den-locale-runtime.js'
       - 'scripts/test-den-locale-authoring.js'
+      - 'scripts/test-puktuk-den-nest-registration.js'
       - '.github/workflows/locale-terrain-regression.yml'
   workflow_dispatch:
 
@@ -39,6 +42,7 @@ jobs:
           node --check docs/tools/locale-editor/den-encounter-authoring.js
           node --check docs/tools/locale-editor/locale-preview3d.js
           node --check docs/js/den-locale-runtime.js
+          node --check docs/js/puktuk-den-nest-registration.js
           node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles','previewRoot.remove(child)','parent !== previewRoot'])if(!s.includes(needle))throw new Error('missing '+needle);"
       - name: Test terrain-aware locale placement
         run: node scripts/test-locale-terrain-placement.js
@@ -46,9 +50,11 @@ jobs:
         run: node scripts/test-banubu-cave-locale.js
       - name: Test Banubu in real Wilderness Lab Northern Cliffs generation
         run: node scripts/test-banubu-wilderness-lab-generation.js
-      - name: Test individual den nest content
+      - name: Test individual den nest content and bootstrap isolation
         run: node scripts/test-den-nest-individual-content.js
       - name: Test den locale runtime behavior
         run: node scripts/test-den-locale-runtime.js
       - name: Test den locale editor export persistence
         run: node scripts/test-den-locale-authoring.js
+      - name: Test Puktuk den registration in isolation
+        run: node scripts/test-puktuk-den-nest-registration.js
