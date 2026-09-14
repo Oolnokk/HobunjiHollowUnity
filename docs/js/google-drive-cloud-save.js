@@ -924,8 +924,6 @@
 
   window.HobunjiCloudSave = api;
   window.GoogleDriveCloudSave = api;
-  // Compatibility alias for older onboarding code; this no longer uses Netlify in any way.
-  window.NetlifyCloudSave = api;
 
   // Mobile-accessible diagnostics and actions; no console is required to inspect Drive state.
   window.__hobunjiCloudSaveDebug = {

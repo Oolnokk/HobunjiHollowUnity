@@ -2,7 +2,6 @@
 
 Hobunji Hollow keeps the browser save (`localStorage`) as the live gameplay save and optionally mirrors the portable snapshot into a Google Drive folder chosen by the player.
 
-No Netlify Identity, Functions, or Blobs backend is required for cloud saves.
 
 ## Architecture
 
@@ -61,9 +60,3 @@ The Cloud Save panel contains an expandable debug block with:
 - dirty/autosync state
 
 The same information and actions remain available through `window.__hobunjiCloudSaveDebug` when a console is available. The same-revision guard also exposes `window.__hobunjiDriveConflictGuardDebug` for targeted diagnostics when a console is available.
-
-## Migration from the retired Netlify save backend
-
-The Drive client does not read Netlify Blobs. Before shutting down an old Netlify deployment that contains the only copy of a save, first load that save into a browser using the old build, then open the Drive-enabled build with the resulting browser save and push that browser copy to Drive.
-
-Once a browser has the desired local save, no Netlify account or backend data is needed by the new system.
