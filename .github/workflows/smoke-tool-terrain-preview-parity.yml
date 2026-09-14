@@ -52,7 +52,7 @@ jobs:
       - name: Tool terrain parity regression
         run: node scripts/test-tool-terrain-preview-parity.js
 
-      - name: Boundary current-game-auto vs Jigsaw audit regression
+      - name: Boundary authored-preview vs Jigsaw regression
         run: node scripts/test-boundary-current-vs-jigsaw.js
 
       - name: Central surface stretch regression

@@ -9,6 +9,7 @@ const parity = fs.readFileSync(path.join(root, 'docs/js/tool-terrain-preview-par
 const mapEditorFix = fs.readFileSync(path.join(root, 'docs/js/map-editor-terrain-texture-fix.js'), 'utf8');
 const mapEditor = fs.readFileSync(path.join(root, 'docs/tools/map-editor/index.html'), 'utf8');
 const cutscene = fs.readFileSync(path.join(root, 'docs/tools/cutscene-director/index.html'), 'utf8');
+const boundaryIndex = fs.readFileSync(path.join(root, 'docs/tools/background-scenery-author/index.html'), 'utf8');
 const jigsawAuthor = fs.readFileSync(path.join(root, 'docs/tools/background-scenery-author/protected-edge-stretch.js'), 'utf8');
 const boundaryPreview = fs.readFileSync(path.join(root, 'docs/tools/background-scenery-author/scenery-3d-preview.js'), 'utf8');
 const jigsawRuntime = fs.readFileSync(path.join(root, 'docs/js/terrain-render-chunks.js'), 'utf8');
@@ -75,24 +76,44 @@ for (const expected of [
 if (jigsawAuthor.includes('document.write')) throw new Error('Boundary Terrain author reintroduced parser-time dependency injection.');
 
 for (const expected of [
+  'installBoundaryR128JigsawApiBridge',
+  '../../js/terrain-render-chunks.js',
+  '../../js/border-terrain.js',
+]) {
+  if (!boundaryIndex.includes(expected)) throw new Error(`Boundary Terrain page missing clean Jigsaw/BorderTerrain bootstrap: ${expected}`);
+}
+for (const forbidden of [
+  '../../js/natural-surface-materials.js',
+  '../../js/surface-stretch-uv-furniture.js',
+  '../../js/farm-cliff-rock-outline.js',
+]) {
+  if (boundaryIndex.includes(forbidden)) throw new Error(`Boundary Terrain author should not load gameplay material wrappers: ${forbidden}`);
+}
+
+for (const expected of [
   'function jigsawEnabled()',
   'edgePx: clamp',
   'edgeWorldWidth: clamp',
   'function ensureBakeUv(geometry)',
   'bakeGeometry.clearGroups()',
   'bakeMaterial.transparent = false',
-  'api.bakeMesh(temp',
-  "window.FarmCliffRockOutline?.applyRockMaterialAndTextureOutline?.(scene.children.slice())",
-  "left.textContent = 'CURRENT GAME AUTO'",
-  "right.textContent = 'DIRECT JIGSAW'",
-  'function semanticSurface(mesh)',
-  'function currentOwner(mesh)',
-  'direct Jigsaw baker returned null',
+  'api.bakeMesh(temp,{...settings,force:true,disposeSource:true})',
+  'async function loadTerrainConfig()',
+  'function makeWorldMaterial(texture, kind)',
+  "const grassOrd = makeWorldMaterial(grassTexture, 'grass')",
+  "const cliffOrd = makeWorldMaterial(cliffTexture, 'cliff')",
+  "left.textContent = 'CURRENT WORLD UV'",
+  "right.textContent = 'JIGSAW SURFACE UV'",
+  'JIGSAW ENABLED but 0 meshes baked',
+  'baker returned null',
 ]) {
-  if (!boundaryPreview.includes(expected)) throw new Error(`Boundary Terrain 3D preview missing audited comparison contract: ${expected}`);
+  if (!boundaryPreview.includes(expected)) throw new Error(`Boundary Terrain 3D preview missing authored-vs-Jigsaw contract: ${expected}`);
+}
+for (const forbidden of ['FarmCliffRockOutline', 'CURRENT GAME AUTO', 'function semanticSurface(mesh)', 'function currentOwner(mesh)']) {
+  if (boundaryPreview.includes(forbidden)) throw new Error(`Boundary Terrain preview still contains gameplay-pipeline visual regression: ${forbidden}`);
 }
 for (const expected of ['options.edgePx ?? DEFAULT_EDGE_PX', 'options.edgeWorldWidth ?? DEFAULT_EDGE_WORLD', 'edgePx/Math.max(1,size.width)', 'settings.edgeWorldWidth']) {
   if (!jigsawRuntime.includes(expected)) throw new Error(`runtime jigsaw baker no longer consumes an authored setting: ${expected}`);
 }
 if (parity.includes('Native full-PNG span <output')) throw new Error('obsolete full-PNG-span authoring control still present');
-console.log('Tool Hub terrain preview + audited Boundary Terrain comparison regression passed.');
+console.log('Tool Hub terrain preview + Boundary authored-vs-Jigsaw regression passed.');

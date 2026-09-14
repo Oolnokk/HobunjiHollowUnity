@@ -11,33 +11,50 @@ const house = fs.readFileSync(path.join(root, 'docs/js/house-pieces.js'), 'utf8'
 const exclusion = fs.readFileSync(path.join(root, 'docs/js/natural-surface-jigsaw-exclusion.js'), 'utf8');
 
 for (const expected of [
-  '../../config/natural-surface-materials.js',
+  '../../js/terrain-render-chunks.js',
+  '../../js/border-terrain.js',
+  'installBoundaryR128JigsawApiBridge',
+  'AUTHORED PREVIEW',
+  'JIGSAW SURFACE UV',
+]) {
+  if (!index.includes(expected)) throw new Error(`Boundary author missing authored-preview dependency/label: ${expected}`);
+}
+
+for (const forbidden of [
   '../../js/natural-surface-materials.js',
   '../../js/surface-stretch-uv-furniture.js',
   '../../js/natural-surface-jigsaw-exclusion.js',
   '../../js/farm-cliff-rock-outline.js',
-  '../../js/terrain-render-chunks.js',
-  '../../js/border-terrain.js',
-  'installBoundaryR128JigsawApiBridge',
+  'current-game-terrain-auto',
+  'terrain-jigsaw-surface-split',
 ]) {
-  if (!index.includes(expected)) throw new Error(`Boundary author missing explicit shared-runtime dependency: ${expected}`);
+  if (index.includes(forbidden)) throw new Error(`Boundary author still loads a gameplay terrain wrapper that can alter the author preview: ${forbidden}`);
 }
 
-if (index.includes('current-game-terrain-auto')) throw new Error('Boundary author still loads the retired tool-side game imitation.');
-if (index.includes('terrain-jigsaw-surface-split')) throw new Error('Boundary author still loads the retired duplicate surface splitter.');
 if (author.includes('document.write')) throw new Error('Boundary Jigsaw author must not mutate parser script order with document.write.');
 if (author.includes('current-game-terrain-auto')) throw new Error('Boundary Jigsaw author still bootstraps the retired current-game adapter.');
 
 for (const expected of [
-  "window.FarmCliffRockOutline?.applyRockMaterialAndTextureOutline?.(scene.children.slice())",
-  'function semanticSurface(mesh)',
-  'function currentOwner(mesh)',
-  "left.textContent = 'CURRENT GAME AUTO'",
-  "right.textContent = 'DIRECT JIGSAW'",
-  'api.bakeMesh(temp',
+  'async function loadTerrainConfig()',
+  'function makeWorldMaterial(texture, kind)',
+  "const grassOrd = makeWorldMaterial(grassTexture, 'grass')",
+  "const cliffOrd = makeWorldMaterial(cliffTexture, 'cliff')",
+  'function textureSummary(grassTexture, cliffTexture, grassPath, cliffPath)',
+  "left.textContent = 'CURRENT WORLD UV'",
+  "right.textContent = 'JIGSAW SURFACE UV'",
+  'api.bakeMesh(temp,{...settings,force:true,disposeSource:true})',
   'scene.userData.terrainJigsawDisableAuto = true',
 ]) {
-  if (!preview.includes(expected)) throw new Error(`Boundary comparison is not using the audited game-vs-Jigsaw path: ${expected}`);
+  if (!preview.includes(expected)) throw new Error(`Boundary authored-vs-Jigsaw preview contract missing: ${expected}`);
+}
+
+for (const forbidden of [
+  'FarmCliffRockOutline',
+  'semanticSurface(mesh)',
+  'currentOwner(mesh)',
+  'CURRENT GAME AUTO',
+]) {
+  if (preview.includes(forbidden)) throw new Error(`Boundary author preview still contains the regressed gameplay-pipeline imitation: ${forbidden}`);
 }
 
 if (house.includes('TerrainJigsawSurfaceSplit')) throw new Error('Gameplay still loads the speculative duplicate segmented-Jigsaw owner.');
@@ -52,4 +69,4 @@ for (const retired of [
   if (fs.existsSync(path.join(root, retired))) throw new Error(`Retired terrain parity layer still exists: ${retired}`);
 }
 
-console.log('Boundary current-game-auto vs Direct Jigsaw audit regression passed.');
+console.log('Boundary authored-preview vs Direct Jigsaw regression passed.');
