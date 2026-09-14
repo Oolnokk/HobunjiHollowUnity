@@ -7,6 +7,7 @@
   const MAP_ID = 'map_i_dev_random_ruin';
   const CAPTURE_TTL_MS = 260;
   const LADDER_RANGE = 1.7;
+  const SEMANTIC_RESCAN_MS = 250;
   const SLOT_ACTIONS = ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2'];
   const TOUCH_BUTTON_IDS = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2'];
   const GridTileAccessors = window.GridTileAccessors;
@@ -25,6 +26,7 @@
   let ownsWorldList = false;
   let preparedRoot = null;
   let ladders = [];
+  let lastSemanticScanAt = -Infinity; // Used to discover V50 interactables that are appended after the ruin root first appears.
 
   const nativeDevInit = DevSpawner.init;
   DevSpawner.init = function (injectedDeps) {
@@ -121,15 +123,20 @@
     });
   }
 
-  function prepareSemanticObjects() {
+  function prepareSemanticObjects(now = performance.now()) {
     const root = ruinRoot();
-    if (root === preparedRoot) return;
-    preparedRoot = root;
-    ladders = [];
-    if (!root?.traverse) return;
+    if (root !== preparedRoot) {
+      preparedRoot = root;
+      ladders = [];
+      lastSemanticScanAt = -Infinity;
+    }
+    if (!root?.traverse || now - lastSemanticScanAt < SEMANTIC_RESCAN_MS) return;
+    lastSemanticScanAt = now;
+    const discoveredLadders = []; // Used to replace the live ladder list after each throttled V50 hierarchy rescan.
     root.traverse(object => {
-      if (object.userData?.generatedAccessType === 'stoneLadder') ladders.push(object);
+      if (object.userData?.generatedAccessType === 'stoneLadder') discoveredLadders.push(object);
     });
+    ladders = discoveredLadders;
     ladders.forEach(tagLadder);
   }
 
@@ -356,6 +363,7 @@
       lastAnchor = null;
       preparedRoot = null;
       ladders = [];
+      lastSemanticScanAt = -Infinity;
       return;
     }
     prepareSemanticObjects();
