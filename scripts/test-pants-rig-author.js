@@ -12,6 +12,7 @@ const coreSource = read('docs/js/pants-rig-core.js');
 const appLoaderSource = read('docs/tools/pants-rig-author/app.js');
 const appBaseSource = read('docs/tools/pants-rig-author/app-base.js');
 const enhancementsSource = read('docs/tools/pants-rig-author/enhancements.js');
+const hostBridgeSource = read('docs/tools/pants-rig-author/host-bridge.js');
 const htmlSource = read('docs/tools/pants-rig-author/index.html');
 const configSource = read('docs/config/pants-rigs.js');
 const runtimeSource = read('docs/js/pants-rig-runtime.js');
@@ -95,6 +96,7 @@ assert.match(htmlSource, /id="legThickness"/);
 
 assert.match(appLoaderSource, /app-base\.js/);
 assert.match(appLoaderSource, /enhancements\.js/);
+assert.match(appLoaderSource, /host-bridge\.js/);
 assert.match(appBaseSource, /window\.getPortraitFighters/);
 assert.match(appBaseSource, /NpcAvatarPreview\.renderProfileToCanvas/);
 assert.match(appBaseSource, /Core\.buildLegOpeningFitControls/);
@@ -105,6 +107,8 @@ assert.match(enhancementsSource, /assets\/cosmetics\/clothes\/legs\/pants_basic\
 assert.match(enhancementsSource, /pantsWeightPaintOverlay/);
 assert.match(enhancementsSource, /setCharacter/);
 assert.match(enhancementsSource, /weight > 0 \? Math\.max\(42/);
+assert.match(hostBridgeSource, /hobunji-pants-rig-changed/);
+assert.match(hostBridgeSource, /pointerup/);
 assert(fs.existsSync(path.join(root, 'docs/assets/cosmetics/clothes/legs/pants_basic.png')), 'repository pants_basic.png should exist on this branch');
 
 assert.match(configSource, /HOBUNJI_PANTS_RIGS/);
@@ -124,6 +128,11 @@ assert.match(proceduralPantsSource, /Live 3D/);
 assert.match(proceduralPantsSource, /authorApi\(\)\?\.setCharacter/);
 assert.match(proceduralPantsSource, /Core\.sampleWeights/);
 assert.match(proceduralPantsSource, /Core\.buildLegOpeningFitControls/);
+assert.match(proceduralPantsSource, /constructorNamed/);
+assert.match(proceduralPantsSource, /sourceTexture\.clone/);
+assert.match(proceduralPantsSource, /globalThreeRequired: false/);
+assert.doesNotMatch(proceduralPantsSource, /const THREE = window\.THREE/);
+assert.match(proceduralPantsSource, /hobunji-pants-rig-changed/);
 assert.match(proceduralPantsSource, /ProceduralPantsRigAuthor/);
 
 console.log('Pants rig author regression: PASS');
