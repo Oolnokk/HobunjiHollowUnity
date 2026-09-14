@@ -14,14 +14,12 @@
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
-    // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
+    // Retained for its proven shared-edge/adjacent-normal surface recognition and legacy callers. TerrainJigsawSurfaceSplit now owns final natural-terrain UVs.
     ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260907farmcliff1'],
     // A gradual 24° face chain may walk over a rounded ridge, so split upward terrain from cliff-facing triangles before the final side-only unwrap.
     ['NaturalSurfaceCliffRidgeIsolation', 'natural-surface-cliff-ridge-isolation.js?v=20260902a'],
-    // Used after every older natural-surface/runtime wrapper so flat fallback textures self-heal and legacy cliff UV repair cannot remain authoritative.
+    // Still repairs stranded/flat natural-surface PNGs. Its UV reassertion is blocked once segmented Jigsaw claims final ownership.
     ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902b'],
-    // Natural rocks/cliffs have their own authoritative UV mapper now; keep Terrain Jigsaw from cloning/reinterpreting those finished UVs.
-    ['NaturalSurfaceJigsawExclusion', 'natural-surface-jigsaw-exclusion.js?v=20260902a'],
     // Faceted masonry keeps its authored texture-edge treatment and skips the general shell-outline pass; rounded meshes remain eligible for shells.
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
@@ -50,17 +48,19 @@
     // without changing the visible player/pet ordering that relies on depthWrite=false.
     ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20260906a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260909targetalpha2'],
-    // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
+    // Natural-surface outline policy remains independent of final texture UV ownership.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
-    // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
+    // Older builders can still run their natural-surface prepass; segmented Jigsaw replaces those UVs before final render.
     ['WildernessCliffSurfaceParity', 'wilderness-cliff-surface-parity.js?v=20260907b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
-    // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
+    // Preserves legacy render/chunk ordering. The next module intercepts its Jigsaw API so natural terrain ends on segmented Jigsaw, not the old post-Jigsaw mapper.
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
+    // Hybrid final owner: keep the 24° shared-edge face splitting from the current mapper, then run the actual Jigsaw bake independently on each detected face.
+    ['TerrainJigsawSurfaceSplit', 'terrain-jigsaw-surface-split.js?v=20260914a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823a'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260823a'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
     [null, 'house-pieces-registry-stability.js?v=20260906a'],
