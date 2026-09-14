@@ -48,6 +48,7 @@ on:
       - 'scripts/test-harlyao-species.js'
       - 'scripts/test-harlyao-terror.js'
       - 'scripts/test-maoao-arm-tint-runtime.js'
+      - 'scripts/test-maoao-foot-scale-tuning.js'
       - 'scripts/test-npc-facing-deadzone.js'
       - 'scripts/test-porakaneki-camp.js'
       - 'scripts/test-porakaneki-camp-placement-policy.js'
@@ -87,6 +88,8 @@ jobs:
         run: node scripts/test-harlyao-calendar-markers.js
       - name: Mao-ao arm tint regression
         run: node scripts/test-maoao-arm-tint-runtime.js
+      - name: Mao-ao foot scale regression
+        run: node scripts/test-maoao-foot-scale-tuning.js
       - name: Procedural leg/prone/run regression
         run: node scripts/test-drunk-prone-composition-bridge.js
       - name: NPC perspective-facing deadzone regression
