@@ -35,7 +35,6 @@
       "sy": 1
     },
     "allowedCosmetics": [
-      "appearance::Kenkari_M::kenk_eyedisks",
       "appearance::Tletingan_M::tl_forwardtuft_long",
       "appearance::Tletingan_M::tl_forwardtuft_short",
       "appearance::Tletingan_M::tl_longponytail",
@@ -44,29 +43,15 @@
       "appearance::Tletingan_M::tl_braid-L",
       "appearance::Tletingan_M::tl_braid-R",
       "appearance::Tletingan_M::tl_braidcluster-R",
-      "appearance::hat::basic_headband",
-      "appearance::hat::leather_headband",
-      "appearance::Kenkari_M::kenk_bowlkasa",
-      "fine_hood",
-      "tankan_tunic",
       "bandolier1",
-      "tankan_bodywrap",
-      "rugged_poncho",
-      "fine_poncho"
+      "tankan_bodywrap"
     ],
     "forcedCosmetics": {
-      "eyes": "kenk_eyedisks"
+      "eyes": "none",
+      "hat": "none",
+      "hood": "none"
     },
     "cosmeticWeights": {
-      "hat": {
-        "none": 30,
-        "basic_headband": 30,
-        "kenk_bowlkasa": 40
-      },
-      "hood": {
-        "none": 80,
-        "fine_hood": 20
-      },
       "hairFront": {
         "none": 10,
         "forwardtuft_long": 45,
@@ -152,22 +137,6 @@
         "bright": {
           "min": 0.1,
           "max": 0.33
-        }
-      },
-      "hatHideRules": {
-        "basic_headband": {
-          "hideSlots": []
-        },
-        "leather_headband": {
-          "hideSlots": []
-        },
-        "kenk_bowlkasa": {
-          "hideSlots": [
-            "hairFront",
-            "hairBack",
-            "hairSide",
-            "hairSideL"
-          ]
         }
       },
       "clothingColors": {
