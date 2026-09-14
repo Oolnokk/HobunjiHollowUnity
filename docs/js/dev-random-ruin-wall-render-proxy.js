@@ -173,6 +173,12 @@
     proxy.userData.devRuinWallRenderProxy = true;
     proxy.userData.prototypeWallName = wall.name || null;
     proxy.userData.sourceRuinWall = wall;
+    proxy.userData.devRuinRenderSubmitCount = 0; // Used to prove the game renderer actually submitted this proxy for drawing.
+    proxy.userData.devRuinLastRenderAt = 0; // Used by diagnostics to show whether submission happened during the current runtime session.
+    proxy.onBeforeRender = () => {
+      proxy.userData.devRuinRenderSubmitCount = Number(proxy.userData.devRuinRenderSubmitCount || 0) + 1;
+      proxy.userData.devRuinLastRenderAt = performance.now();
+    };
     proxy.frustumCulled = false;
     proxy.castShadow = true;
     proxy.receiveShadow = true;
@@ -269,6 +275,8 @@
     const live = [...proxies].filter(proxy => proxy.parent === proxyRoot);
     const transformed = live.filter(proxy => matrixElementsAreFinite(proxy.matrixWorld)); // Used to distinguish attached proxies from valid placed proxies.
     const geometryProbeHits = live.filter(geometryProbe).length; // Used as a geometry sanity check, not as proof of framebuffer visibility.
+    const rendererSubmittedProxies = live.filter(proxy => Number(proxy.userData?.devRuinRenderSubmitCount || 0) > 0).length; // Used to distinguish render-ready objects from meshes the renderer has actually visited.
+    const renderSubmitCount = live.reduce((sum, proxy) => sum + Number(proxy.userData?.devRuinRenderSubmitCount || 0), 0); // Used as an aggregate render-submission diagnostic for mobile testing.
     return {
       active: !!root && !!scene,
       enabled: desiredVisible(),
@@ -281,6 +289,8 @@
         return proxy.visible !== false && materials.every(material => material?.visible !== false);
       }).length,
       geometryProbeHits,
+      rendererSubmittedProxies,
+      renderSubmitCount,
       raycastableProxies: 0,
       interactionRaycastDisabled: live.filter(proxy => proxy.raycast !== THREE.Mesh.prototype.raycast).length,
       mainRealmMaterials: live.filter(proxy => proxy.material instanceof THREE.Material).length,
