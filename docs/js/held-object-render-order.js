@@ -257,12 +257,26 @@
     });
   }
 
+  // Coalesced into a single flush per microtask turn rather than one
+  // microtask per add() call: combat VFX (lunge trail stamps, swing-cone
+  // ribbons) can call add() dozens of times within one frame, and each call
+  // previously queued its own redundant full-tree classification pass.
+  let pendingClassification = new Set();
+  let classificationScheduled = false;
+
+  function flushClassification() {
+    classificationScheduled = false;
+    const batch = pendingClassification;
+    pendingClassification = new Set();
+    for (const object of batch) classifyTree(object);
+  }
+
   function queueClassification(objects) {
-    const deferred = () => {
-      for (const object of objects) classifyTree(object);
-    };
-    if (typeof queueMicrotask === 'function') queueMicrotask(deferred);
-    else Promise.resolve().then(deferred);
+    for (const object of objects) pendingClassification.add(object);
+    if (classificationScheduled) return;
+    classificationScheduled = true;
+    if (typeof queueMicrotask === 'function') queueMicrotask(flushClassification);
+    else Promise.resolve().then(flushClassification);
   }
 
   // Scene.add has already been wrapped by natural-surface modules before this

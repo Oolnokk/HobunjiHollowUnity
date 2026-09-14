@@ -68,6 +68,15 @@
 
   function rewriteCurrencySubtree(root) {
     if (!root) return 0;
+    // Every formatCurrencyText pattern requires the literal substring "gold"
+    // (case-insensitively) somewhere in the text, so a single native
+    // textContent scan lets this bail out of an entire irrelevant subtree in
+    // one call instead of manually recursing into every child/text node.
+    // This observer watches the whole document.body, so during combat --
+    // constant DOM churn from damage numbers, HUD bars, hit-flash class
+    // toggles, none of it about currency -- that recursion used to run in
+    // full on every single mutation batch.
+    if (!/gold/i.test(root.textContent || '')) return 0;
     let changed = 0; // Used by diagnostics/tests to report how many visible text nodes were normalized.
     if (rewriteCurrencyTextNode(root)) changed++;
     const children = root.childNodes ? Array.from(root.childNodes) : [];
