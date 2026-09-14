@@ -12,6 +12,7 @@ const assert = (condition, message) => {
 
 const primary = read('docs/js/folder-save-primary.js');
 const emptyBootstrap = read('docs/js/folder-save-empty-bootstrap.js');
+const debugUi = read('docs/js/folder-save-debug-ui.js');
 const bridge = read('docs/js/folder-save-onboarding-bridge.js');
 const creatorHandoff = read('docs/js/onboarding-character-creation-reload-handoff.js');
 const folderLoader = read('docs/js/local-save-folder.js');
@@ -23,6 +24,7 @@ const startupGuard = read('docs/js/session-persistence-startup-guard.js');
 // Syntax parse without executing browser globals.
 new Function(primary);
 new Function(emptyBootstrap);
+new Function(debugUi);
 new Function(bridge);
 new Function(creatorHandoff);
 console.log('OK  folder-save lifecycle modules parse as JavaScript');
@@ -30,10 +32,12 @@ console.log('OK  folder-save lifecycle modules parse as JavaScript');
 const coreIndex = folderLoader.indexOf('local-save-folder-core.js');
 const primaryIndex = folderLoader.indexOf('folder-save-primary.js');
 const emptyBootstrapIndex = folderLoader.indexOf('folder-save-empty-bootstrap.js');
+const debugUiIndex = folderLoader.indexOf('folder-save-debug-ui.js');
 const legacyFlowIndex = folderLoader.indexOf('local-save-flow.js');
 assert(coreIndex >= 0 && primaryIndex > coreIndex, 'primary folder layer loads after the existing persistence core');
 assert(emptyBootstrapIndex > primaryIndex, 'empty-folder bootstrap wraps the primary folder load behavior');
-assert(legacyFlowIndex > emptyBootstrapIndex, 'folder lifecycle layers load before the legacy reload-heavy UX flow');
+assert(debugUiIndex > emptyBootstrapIndex, 'mobile diagnostics load after folder lifecycle wrappers');
+assert(legacyFlowIndex > debugUiIndex, 'folder lifecycle layers load before the legacy reload-heavy UX flow');
 assert(folderLoader.includes('folder-save-primary.css'), 'primary folder hierarchy stylesheet is loaded by the compatibility entrypoint');
 
 const onboardingCoreIndex = onboardingLoader.indexOf('onboarding-core.js');
@@ -75,8 +79,11 @@ assert(css.includes('#hobunjiEmptySaveFolder.folder-save-primary-action'), 'fres
 assert(primary.includes("folderLabel.textContent = 'Primary Save Folder'"), 'save selection labels folder storage as primary');
 assert(primary.includes("browserLabel.textContent = 'Browser Fallback'"), 'save selection labels browser storage as fallback');
 
-assert(primary.includes('__hobunjiFolderSavePrimaryDebug'), 'primary save behavior exposes mobile-readable diagnostics');
-assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first-run empty-folder state exposes mobile-readable diagnostics');
-assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes mobile-readable diagnostics');
+assert(primary.includes('__hobunjiFolderSavePrimaryDebug'), 'primary save behavior exposes diagnostics data');
+assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first-run empty-folder state exposes diagnostics data');
+assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes diagnostics data');
+assert(debugUi.includes("button.textContent = 'Save Diagnostics'"), 'Settings exposes a mobile-visible Save Diagnostics button');
+assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without requiring DevTools');
+assert(debugUi.includes('Latest: folder saves are primary'), 'Settings includes a short summary of the most recent save change');
 
 console.log('\nFolder-save primary regression checks passed.');
