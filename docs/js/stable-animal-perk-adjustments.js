@@ -13,6 +13,9 @@
   let mountDeps = null; // Captured from Mounts.init; temporarily scales only the existing riding inputs during mounted movement.
   let greetedDay = null;
   const greetedToday = new Set(); // Keys NPC + individual animal so each NPC can reward each greeted rapport-trained pet once per game day.
+  const genotypeComposeInflight = new Map(); // Shares only currently-running genotype canvas builds so per-frame companion retries cannot multiply the same allocation-heavy work.
+  let genotypeComposeRequests = 0; // Mobile-readable count of genotype compose requests routed through the guard.
+  let genotypeComposeDedupHits = 0; // Mobile-readable count of simultaneous duplicate requests that reused an existing in-flight promise.
 
   function replaceTree(role, definitions) {
     const tree = progression.trees?.[role];
@@ -54,6 +57,32 @@
   }
 
   progression.mountRidingModifiers = mountRidingModifiers;
+
+  function patchCreatureGeneticsRender(api) {
+    if (!api || api.__stableAnimalComposeDedupeWrapped || typeof api.composeFrame !== 'function' || typeof api.genotypeSignature !== 'function') return api;
+    const originalComposeFrame = api.composeFrame.bind(api); // Preserves the compositor as the single authority for actual canvas generation.
+    api.composeFrame = function stableAnimalComposeFrame(kind, frame, genotype, blinkShut = false) {
+      if (!genotype) return originalComposeFrame(kind, frame, genotype, blinkShut);
+      const signature = api.genotypeSignature(kind, genotype);
+      if (!signature || signature === 'none') return originalComposeFrame(kind, frame, genotype, blinkShut);
+      genotypeComposeRequests++;
+      const key = `${kind}|${frame}|${signature}|${blinkShut ? 'b' : 'o'}`; // Exact final-composite identity, matching the existing farm texture-cache dimensions.
+      const existing = genotypeComposeInflight.get(key);
+      if (existing) {
+        genotypeComposeDedupHits++;
+        return existing;
+      }
+      const promise = Promise.resolve().then(() => originalComposeFrame(kind, frame, genotype, blinkShut));
+      genotypeComposeInflight.set(key, promise);
+      const release = () => {
+        if (genotypeComposeInflight.get(key) === promise) genotypeComposeInflight.delete(key);
+      };
+      promise.then(release, release); // In-flight only: successful/failed composites are immediately released so existing renderer/texture caches retain normal lifetime ownership.
+      return promise;
+    };
+    api.__stableAnimalComposeDedupeWrapped = true;
+    return api;
+  }
 
   function patchMounts(api) {
     if (!api || api.__stableAnimalRidingPerksWrapped) return api;
@@ -222,6 +251,7 @@
     } catch (_) {}
   }
 
+  hookFutureGlobal('CreatureGeneticsRender', patchCreatureGeneticsRender);
   hookFutureGlobal('Mounts', patchMounts);
   hookFutureGlobal('AmbientDialogue', patchAmbientDialogue);
 
@@ -235,6 +265,11 @@
         greetingDay: greetedDay,
         greetedToday: [...greetedToday],
         mountDepsReady: !!mountDeps,
+        genotypeCompose: {
+          inFlight: genotypeComposeInflight.size,
+          requests: genotypeComposeRequests,
+          dedupHits: genotypeComposeDedupHits,
+        },
         mount: mountRidingModifiers(),
       };
     },
