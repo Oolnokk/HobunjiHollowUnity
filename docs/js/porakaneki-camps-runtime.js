@@ -909,30 +909,49 @@
     if (entity && (entity.areaId !== hunter.camp.zoneId || !entity.avatarRef?.group?.visible)) placeEntity(hunter);
   }
 
+  // One hunter's tick body throwing (a bad target, a missing dependency, a
+  // stale reference after teardown) must not wedge every hunter after it:
+  // this is a plain for-of over camp.hunters, so an uncaught exception here
+  // would otherwise propagate out and skip the rest of this camp (and every
+  // later camp/zone in updateAllHunters' own loop) on every subsequent frame
+  // forever, since the same hunter is reached at the same point each time --
+  // freezing it exactly where it stood (facing whichever plane happened to
+  // be camera-toward at that instant) while the rest of the world keeps
+  // running. Caught and logged the same way materializeHunter's own async
+  // failures already are, so a single bad hunter degrades instead of wedging.
+  function updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation) {
+    if (hunter.entity?.health <= 0 || hunter.killCounted && hunter.entity?.health <= 0) return;
+    if (sleeping) {
+      retireDormantEntity(hunter);
+      if (coarseDt > 0 || currentArea() === hunter.camp.zoneId) advanceAbstractHunter(hunter, coarseDt || dt);
+      return;
+    }
+    if (!sharesPlayerChunk(hunter)) {
+      retireDormantEntity(hunter);
+      if (coarseDt > 0) advanceAbstractHunter(hunter, coarseDt);
+      return;
+    }
+    hunter.dormantSinceMs = null;
+    if (!hunter.entity && !hunter.building) materializeHunter(hunter, generation).catch(error => window.__farmLog?.(`[porakaneki] materialize failed: ${error.message}`, 'warn'));
+    if (hunter.entity) { placeEntityIfDormant(hunter); updateDetailedHunter(hunter, dt); }
+  }
   function updateCampHunters(camp, dt, coarseDt) {
     ensureCampHunters(camp);
     updateViolence(camp);
     const generation = buildGeneration;
     const sleeping = isSleepingHour();
     for (const hunter of camp.hunters) {
-      if (hunter.entity?.health <= 0 || hunter.killCounted && hunter.entity?.health <= 0) continue;
-      if (sleeping) {
-        retireDormantEntity(hunter);
-        if (coarseDt > 0 || currentArea() === camp.zoneId) advanceAbstractHunter(hunter, coarseDt || dt);
-        continue;
-      }
-      if (!sharesPlayerChunk(hunter)) {
-        retireDormantEntity(hunter);
-        if (coarseDt > 0) advanceAbstractHunter(hunter, coarseDt);
-        continue;
-      }
-      hunter.dormantSinceMs = null;
-      if (!hunter.entity && !hunter.building) materializeHunter(hunter, generation).catch(error => window.__farmLog?.(`[porakaneki] materialize failed: ${error.message}`, 'warn'));
-      if (hunter.entity) { placeEntityIfDormant(hunter); updateDetailedHunter(hunter, dt); }
+      try { updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation); }
+      catch (error) { window.__farmLog?.(`[porakaneki] hunter tick failed (${hunter.id}): ${error?.message || error}`, 'warn'); }
     }
   }
   function updateAllHunters(dt, coarseDt) {
-    for (const zoneState of state.zones.values()) for (const camp of activeCamps(zoneState)) updateCampHunters(camp, dt, coarseDt); // Every map gets coarse life; only the player's chunk gets expensive simulation.
+    for (const zoneState of state.zones.values()) {
+      for (const camp of activeCamps(zoneState)) {
+        try { updateCampHunters(camp, dt, coarseDt); } // Every map gets coarse life; only the player's chunk gets expensive simulation.
+        catch (error) { window.__farmLog?.(`[porakaneki] camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
+      }
+    }
   }
 
   async function loadConfig() {
