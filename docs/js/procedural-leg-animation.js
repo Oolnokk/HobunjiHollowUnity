@@ -746,6 +746,7 @@
   }
 
   const STANCE_FRACTION = 0.62;
+  const STRIDE_REFERENCE_LEG_FRACTION = 0.30; // Converts the old height-tuned stride curve to a leg-length basis while preserving an average authored character's gait.
 
   // ── Debug leg-bone visualization ────────────────────────────────────
   // Same colored capsule-and-joint guides the furniture-avatar-author tool
@@ -873,6 +874,11 @@
       rightTarget: new THREE.Vector3(initialIdleRightX, radius * sphereScaleY, 0),
       leftRoll: 0,
       rightRoll: 0,
+      // Retained for getStandingPoseDebug() so gait scaling can be checked in-game/mobile without devtools.
+      gaitLegLength: 0,
+      gaitFullStride: 0,
+      gaitStrideLength: 0,
+      gaitCadenceHz: 0,
       wasGaiting: false,
       disposed: false,
     };
@@ -882,6 +888,12 @@
     // already built from the rough fixed-fraction guess).
     function syncHipX(side) {
       legChains[side].hip.position.x = side === 'left' ? state.idleLeftX : state.idleRightX;
+    }
+
+    function standingLegLength() {
+      const leftLength = Math.max(0.001, posteriorY - state.leftContactY); // Used with rightLength to drive stride from the left leg's actual standing anatomy.
+      const rightLength = Math.max(0.001, posteriorY - state.rightContactY); // Keeps stride current if a fallback foot is replaced by a GLB with a different contact height.
+      return (leftLength + rightLength) * 0.5;
     }
 
     // Solves the leg chain for `side` ('left'/'right') from that leg's own
@@ -1165,6 +1177,8 @@
       if (state.disposed) return;
       if (seatedPose) {
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
+        state.gaitStrideLength = 0;
+        state.gaitCadenceHz = 0;
         const pitchRad = (Number(seatedPose.normalDeg?.x) || 0) * SEATED_DEG;
         const rollRad = (Number(seatedPose.normalDeg?.z) || 0) * SEATED_DEG;
         const tiltEuler = new THREE.Euler(pitchRad, 0, rollRad, 'XYZ');
@@ -1189,6 +1203,8 @@
         // the same neutral/idle pose it uses for a stationary leg produces
         // exactly that straight-down hang, with no separate math needed.
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
+        state.gaitStrideLength = 0;
+        state.gaitCadenceHz = 0;
         const neutralPose = { travel: 0, lift: 0, planted: true };
         applyPose('left', state.leftContactY, state.idleLeftX, neutralPose, 11, dt);
         applyPose('right', state.rightContactY, state.idleRightX, neutralPose, 11, dt);
@@ -1208,11 +1224,17 @@
       const gaitTarget = isGaiting ? Math.sqrt(speedRatio) : 0;
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
-      const fullStride = modelHeight * (0.24 + 0.34 * Math.sqrt(speedRatio));
+      const gaitLegLength = standingLegLength(); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
+      const strideCurve = 0.24 + 0.34 * Math.sqrt(speedRatio); // Preserves the existing speed-to-stride response before anatomical normalization.
+      const fullStride = (gaitLegLength / STRIDE_REFERENCE_LEG_FRACTION) * strideCurve;
       const strideLength = fullStride * state.gaitStrength;
       const cadenceHz = isGaiting && fullStride > 0.001
         ? Math.max(0.55, Math.min(3.2, (speed * STANCE_FRACTION) / fullStride))
         : 0;
+      state.gaitLegLength = gaitLegLength;
+      state.gaitFullStride = fullStride;
+      state.gaitStrideLength = strideLength;
+      state.gaitCadenceHz = cadenceHz;
       const liftHeight = (radius * (0.35 + 1.35 * Math.sqrt(speedRatio)) + modelHeight * 0.012 * speedRatio) * state.gaitStrength;
       if (cadenceHz > 0.001) state.phase = (state.phase + dt * cadenceHz) % 1;
 
@@ -1248,10 +1270,19 @@
     function getStandingPoseDebug() {
       const leftBounds = footBoundsInRoot(state.left);
       const rightBounds = footBoundsInRoot(state.right);
+      const currentLegLength = standingLegLength(); // Shown in mobile-facing diagnostics so stride scaling can be verified without a console.
       return {
         coordinateSpace: 'avatar-floor-relative',
         floorY: 0,
         posteriorY,
+        gait: {
+          legLength: currentLegLength,
+          legLengthFractionOfModel: currentLegLength / Math.max(0.001, modelHeight),
+          fullStride: state.gaitFullStride,
+          strideLength: state.gaitStrideLength,
+          cadenceHz: state.gaitCadenceHz,
+          referenceLegFraction: STRIDE_REFERENCE_LEG_FRACTION,
+        },
         left: { targetY: state.leftTarget.y, contactY: state.leftContactY, bottomY: leftBounds?.min.y ?? null },
         right: { targetY: state.rightTarget.y, contactY: state.rightContactY, bottomY: rightBounds?.min.y ?? null },
       }; // Gives mobile-facing author diagnostics the rendered geometry bottoms instead of asking the user to infer the floor from camera perspective.
