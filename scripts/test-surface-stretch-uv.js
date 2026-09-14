@@ -45,7 +45,7 @@ class Geometry {
   }
   toNonIndexed() { return this.clone(); }
   computeBoundingBox() {
-    const position = this.attributes.position; // Used to calculate the bounding box API expected by the mapper.
+    const position = this.attributes.position;
     const min = { x: Infinity, y: Infinity, z: Infinity };
     const max = { x: -Infinity, y: -Infinity, z: -Infinity };
     for (let i = 0; i < position.count; i++) {
@@ -56,22 +56,22 @@ class Geometry {
   }
 }
 
-const logs = []; // Used to verify the mapper can route diagnostics through the game's mobile-visible debug sink.
+const logs = []; // Used to verify the mapper routes diagnostics through the game's mobile-visible debug sink.
 const windowMock = {
   THREE: { Vector3, BufferAttribute, MathUtils: { degToRad: degrees => degrees * Math.PI / 180 } },
   __farmLog: (message, level, category) => logs.push([message, level, category]),
 };
 windowMock.window = windowMock;
 
-const sourcePath = path.join(__dirname, '..', 'docs', 'js', 'surface-stretch-uv-furniture.js'); // Used to test the exact furniture-derived production mapper checked into the repo.
+const sourcePath = path.join(__dirname, '..', 'docs', 'js', 'surface-stretch-uv-furniture.js'); // Used to test the exact centralized production mapper checked into the repo.
 vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), {
   window: windowMock, console, Float32Array, Float64Array, Uint8Array, Map, Set, WeakSet, Math, Number, Array, Object, String, Infinity,
 });
 
 function fanPolygon(points) {
-  const centerX = points.reduce((sum, point) => sum + point[0], 0) / points.length; // Used as the fan triangulation center for the irregular flat-surface test.
-  const centerZ = points.reduce((sum, point) => sum + point[1], 0) / points.length; // Used as the fan triangulation center for the irregular flat-surface test.
-  const positions = []; // Used to create a non-indexed concave-ish Texas-like surface outline.
+  const centerX = points.reduce((sum, point) => sum + point[0], 0) / points.length; // Used as the fan triangulation center for irregular/rectangular planar tests.
+  const centerZ = points.reduce((sum, point) => sum + point[1], 0) / points.length; // Used as the fan triangulation center for irregular/rectangular planar tests.
+  const positions = [];
   for (let i = 0; i < points.length; i++) {
     const a = points[i];
     const b = points[(i + 1) % points.length];
@@ -82,14 +82,14 @@ function fanPolygon(points) {
 
 function foldedVerticalStrip(panelCount, stepDeg) {
   const points = [[0, 0]]; // Used as the shared-edge polyline defining a progressively turning vertical cliff.
-  let heading = 0; // Used to rotate each successive panel by stepDeg relative to its immediate neighbor.
+  let heading = 0;
   for (let i = 0; i < panelCount; i++) {
-    const previous = points[points.length - 1]; // Used as the shared lower/upper edge origin for the next panel.
-    const radians = heading * Math.PI / 180; // Used to convert the current panel heading into XZ displacement.
+    const previous = points[points.length - 1];
+    const radians = heading * Math.PI / 180;
     points.push([previous[0] + Math.cos(radians), previous[1] + Math.sin(radians)]);
     heading += stepDeg;
   }
-  const positions = []; // Used to triangulate every vertical panel with exact shared edge coordinates.
+  const positions = [];
   for (let i = 0; i < panelCount; i++) {
     const a = points[i], b = points[i + 1];
     positions.push(
@@ -100,21 +100,39 @@ function foldedVerticalStrip(panelCount, stepDeg) {
   return new Geometry(positions);
 }
 
+function nearlyEqual(a, b, tolerance = 1e-6) { return Math.abs(a - b) <= tolerance; }
+
 const mapper = windowMock.HobunjiSurfaceStretchUV; // Used by all regression cases below.
 if (!mapper?.installed) throw new Error('surface-stretch mapper did not install');
-if (mapper.snapshot().segmentation !== 'furniture-edge-adjacency') throw new Error('Expected furniture-style surface recognition');
+const mapperSnapshot = mapper.snapshot();
+if (mapperSnapshot.version !== 3 || mapperSnapshot.segmentation !== 'furniture-edge-adjacency' || mapperSnapshot.mapping !== 'edge-preserving-nine-slice') {
+  throw new Error(`Expected centralized v3 edge-preserving mapper: ${JSON.stringify(mapperSnapshot)}`);
+}
+if (!windowMock.HobunjiSurfacePerimeterFrame?.centralizedInSurfaceMapper) throw new Error('perimeter behavior is not centralized in HobunjiSurfaceStretchUV');
 
 const texasLike = fanPolygon([[0, 0], [4, 0], [5, 1], [4, 2], [4.5, 4], [2.5, 3.2], [1, 4], [0.5, 2.2], [-0.5, 1.5]]); // Used to prove one square PNG can fill an irregular connected planar outline.
 const texasMapped = mapper.mapGeometry(texasLike);
-const texasReport = texasMapped.userData.hobunjiSurfaceStretch; // Used to assert the irregular polygon remains one recognized surface with no fallback.
-if (texasReport.version !== 2 || texasReport.patchCount !== 1 || texasReport.fallbackCount !== 0) throw new Error(`Texas-like unwrap failed: ${JSON.stringify(texasReport)}`);
-const texasUv = texasMapped.getAttribute('uv'); // Used to prove real perimeter vertices are pinned to all four square texture corners.
+const texasReport = texasMapped.userData.hobunjiSurfaceStretch;
+if (texasReport.version !== 3 || texasReport.patchCount !== 1 || texasReport.fallbackCount !== 0) throw new Error(`Texas-like unwrap failed: ${JSON.stringify(texasReport)}`);
+const texasUv = texasMapped.getAttribute('uv');
 const corners = new Set();
 for (let i = 0; i < texasUv.count; i++) {
   const u = texasUv.getX(i), v = texasUv.getY(i);
   if ((u === 0 || u === 1) && (v === 0 || v === 1)) corners.add(`${u},${v}`);
 }
 if (corners.size !== 4) throw new Error(`Expected all four square UV corners, got ${Array.from(corners).join(' ')}`);
+
+const nativeScaleRect = mapper.mapGeometry(fanPolygon([[0, 0], [12, 0], [12, 6], [0, 6]])); // Used to prove protected borders keep constant perpendicular world size on differently-scaled axes.
+const nativeScaleReport = nativeScaleRect.userData.hobunjiSurfaceStretch;
+const edgeBand = nativeScaleReport.edgeBands[0];
+if (!edgeBand) throw new Error('Expected edge-band diagnostics for rectangular surface');
+if (!nearlyEqual(edgeBand.edgeWorldSize, 0.96)) throw new Error(`Expected 0.96-world-unit protected edge, got ${edgeBand.edgeWorldSize}`);
+if (!nearlyEqual(edgeBand.surfaceEdgeFractionU * edgeBand.projectedSpanU, 0.96) || !nearlyEqual(edgeBand.surfaceEdgeFractionV * edgeBand.projectedSpanV, 0.96)) {
+  throw new Error(`Protected edge changed perpendicular world size: ${JSON.stringify(edgeBand)}`);
+}
+if (!nearlyEqual(Math.min(edgeBand.surfaceEdgeFractionU, edgeBand.surfaceEdgeFractionV), 0.08) || !nearlyEqual(Math.max(edgeBand.surfaceEdgeFractionU, edgeBand.surfaceEdgeFractionV), 0.16)) {
+  throw new Error(`Expected 12x6 surface to use 8%/16% destination edge bands: ${JSON.stringify(edgeBand)}`);
+}
 
 const bentPositions = [
   0, 0, 0, 1, 0, 0, 1, 0, 1,
@@ -123,16 +141,18 @@ const bentPositions = [
   1, 0, 0, 1, 1, 1, 1, 0, 1,
 ]; // Used to prove a 90-degree hard corner becomes two separate texture surfaces.
 const bentMapped = mapper.mapGeometry(new Geometry(bentPositions));
-const bentReport = bentMapped.userData.hobunjiSurfaceStretch; // Used to assert hard-corner surface recognition rather than one global bounding-box stretch.
+const bentReport = bentMapped.userData.hobunjiSurfaceStretch;
 if (bentReport.patchCount !== 2 || bentReport.fallbackCount !== 0) throw new Error(`Bent-surface segmentation failed: ${JSON.stringify(bentReport)}`);
 
-const gradualMapped = mapper.mapGeometry(foldedVerticalStrip(4, 20)); // Used to distinguish furniture adjacency from the old seed/average-normal veto: total turn is 60°, but each shared edge changes only 20°.
-const gradualReport = gradualMapped.userData.hobunjiSurfaceStretch; // Used to require a gently curving cliff to remain one recognized surface.
+const gradualMapped = mapper.mapGeometry(foldedVerticalStrip(4, 20)); // Used to distinguish furniture adjacency from the old seed/average-normal veto.
+const gradualReport = gradualMapped.userData.hobunjiSurfaceStretch;
 if (gradualReport.patchCount !== 1) throw new Error(`Furniture adjacency should keep 20° local bends connected: ${JSON.stringify(gradualReport)}`);
 
-const boundedMapped = mapper.mapGeometry(foldedVerticalStrip(18, 0), { maxPatchWorldSize: 6 }); // Used to model the new farm-wide continuous immediate cliff wall.
-const boundedReport = boundedMapped.userData.hobunjiSurfaceStretch; // Used to prove a long connected wall receives several full-PNG UV islands without splitting its geometry.
-if (boundedReport.patchCount !== 3 || boundedReport.maxPatchWorldSize !== 6) throw new Error(`Bounded cliff-surface segmentation failed: ${JSON.stringify(boundedReport)}`);
+const formerlyBoundedMapped = mapper.mapGeometry(foldedVerticalStrip(18, 0), { maxPatchWorldSize: 6 }); // Used to prove the old six-unit patch hint is now a native texture-scale compatibility alias, not a surface splitter.
+const formerlyBoundedReport = formerlyBoundedMapped.userData.hobunjiSurfaceStretch;
+if (formerlyBoundedReport.patchCount !== 1 || formerlyBoundedReport.maxPatchWorldSize !== null || formerlyBoundedReport.edgeReferenceWorldSize !== 6 || !formerlyBoundedReport.legacyPatchHintIgnored) {
+  throw new Error(`Legacy patch hint was not converted to centralized native-scale behavior: ${JSON.stringify(formerlyBoundedReport)}`);
+}
 
 const multiPositions = [
   0, 0, 0, 1, 0, 0, 1, 0, 1,
@@ -141,23 +161,23 @@ const multiPositions = [
   0, 0, 1, 1, -1, 1, 0, -1, 1,
 ]; // Used to model a shared grass/cliff geometry with distinct material groups.
 const multi = new Geometry(multiPositions, [{ start: 0, count: 6, materialIndex: 0 }, { start: 6, count: 6, materialIndex: 1 }]);
-const seedUv = new Float32Array((multiPositions.length / 3) * 2); // Used to detect any accidental mutation of material-0 grass UVs.
+const seedUv = new Float32Array((multiPositions.length / 3) * 2); // Used to detect accidental mutation of material-0 grass UVs.
 for (let i = 0; i < seedUv.length; i++) seedUv[i] = 0.123 + i * 0.001;
 multi.setAttribute('uv', new BufferAttribute(seedUv, 2));
 const multiMapped = mapper.mapGeometry(multi, { materialIndex: 1 });
-const multiUv = multiMapped.getAttribute('uv'); // Used to compare preserved grass coordinates against their exact source values.
+const multiUv = multiMapped.getAttribute('uv');
 for (let i = 0; i < 6; i++) {
   if (Math.abs(multiUv.getX(i) - seedUv[i * 2]) > 1e-7 || Math.abs(multiUv.getY(i) - seedUv[i * 2 + 1]) > 1e-7) {
     throw new Error('Material-0 UVs changed while remapping material-1 cliffs');
   }
 }
-const multiReport = multiMapped.userData.hobunjiSurfaceStretch; // Used to assert only the selected cliff material group was processed.
+const multiReport = multiMapped.userData.hobunjiSurfaceStretch;
 if (multiReport.materialIndex !== 1 || multiReport.patchCount !== 1) throw new Error(`Material-slot unwrap failed: ${JSON.stringify(multiReport)}`);
 
-const stale = mapper.mapGeometry(fanPolygon([[0, 0], [2, 0], [2, 2], [0, 2]])); // Used to prove a v2 signature is not trusted after the UV attribute disappears downstream.
+const stale = mapper.mapGeometry(fanPolygon([[0, 0], [2, 0], [2, 2], [0, 2]])); // Used to prove a v3 signature is not trusted after the UV attribute disappears downstream.
 delete stale.attributes.uv;
-const rebuilt = mapper.mapGeometry(stale); // Used to force regeneration from topology rather than returning the stale signature unchanged.
-if (!rebuilt.getAttribute('uv') || rebuilt.getAttribute('uv').count !== rebuilt.getAttribute('position').count) throw new Error('Missing UVs were not regenerated despite a stale v2 signature');
+const rebuilt = mapper.mapGeometry(stale);
+if (!rebuilt.getAttribute('uv') || rebuilt.getAttribute('uv').count !== rebuilt.getAttribute('position').count) throw new Error('Missing UVs were not regenerated despite a stale v3 signature');
 
 if (!logs.some(entry => entry[2] === 'render')) throw new Error('Expected mobile-visible render diagnostics');
-console.log(JSON.stringify({ texas: texasReport, bent: bentReport, gradual: gradualReport, bounded: boundedReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));
+console.log(JSON.stringify({ texas: texasReport, nativeScale: edgeBand, bent: bentReport, gradual: gradualReport, legacyScaleAlias: formerlyBoundedReport, multi: multiReport, debug: mapper.snapshot() }, null, 2));
