@@ -18,6 +18,8 @@ on:
       - 'scripts/test-banubu-cave-locale.js'
       - 'scripts/test-banubu-wilderness-lab-generation.js'
       - 'scripts/test-den-nest-individual-content.js'
+      - 'scripts/test-den-locale-runtime.js'
+      - 'scripts/test-den-locale-authoring.js'
       - '.github/workflows/locale-terrain-regression.yml'
   workflow_dispatch:
 
@@ -44,5 +46,9 @@ jobs:
         run: node scripts/test-banubu-cave-locale.js
       - name: Test Banubu in real Wilderness Lab Northern Cliffs generation
         run: node scripts/test-banubu-wilderness-lab-generation.js
-      - name: Test authored den furniture and locale encounter transforms
+      - name: Test individual den nest content
         run: node scripts/test-den-nest-individual-content.js
+      - name: Test den locale runtime behavior
+        run: node scripts/test-den-locale-runtime.js
+      - name: Test den locale editor export persistence
+        run: node scripts/test-den-locale-authoring.js
