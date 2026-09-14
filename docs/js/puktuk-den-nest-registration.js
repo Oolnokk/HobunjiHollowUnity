@@ -9,7 +9,7 @@
   // load the locale adapter here rather than adding another unrelated bootstrap.
   function ensureDenLocaleRuntime() {
     if (window.DenLocaleRuntime) return true;
-    const src = 'js/den-locale-runtime.js?v=20260914a';
+    const src = 'js/den-locale-runtime.js?v=20260914b';
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}"><\/script>`);
       return true;
