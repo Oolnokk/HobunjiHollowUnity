@@ -106,8 +106,8 @@ assert.equal(creatureDb.puktuk.label, 'Puktuk');
 assert.equal(creatureDb.puktuk.defaultSizeClass, 'medium');
 assert.equal(creatureDb.puktuk.hostile, true);
 assert.equal(creatureDb.puktuk.lootPool, 'creature_puktuk');
-assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild']);
-assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), [], 'Western Slope den herd pool is empty so prey species cannot occupy dens');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['puktuk'], 'Western Slope den predator pool is Puktuk-only');
 assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
 
 console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);
