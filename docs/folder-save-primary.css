@@ -1,0 +1,213 @@
+/* Folder saves are the advertised persistence path. Browser storage remains the
+   runtime cache/fallback, so it stays available without competing visually. */
+
+.folder-save-primary-section {
+  padding: 14px;
+  border: 1px solid rgba(127, 232, 154, 0.38);
+  border-radius: 12px;
+  background: rgba(127, 232, 154, 0.075);
+  box-shadow: 0 0 22px rgba(127, 232, 154, 0.08);
+}
+
+.folder-save-primary-section .sl-section-label {
+  color: #b9f4c7;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.folder-save-primary-section .sl-local-save-row {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.folder-save-primary-section .sl-local-save-status {
+  flex: 1 1 100%;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.folder-save-primary-section .sl-local-save-btn,
+#hobunjiEmptySaveFolder.folder-save-primary-action {
+  min-height: 42px;
+  padding: 10px 15px;
+  border: 1px solid rgba(127, 232, 154, 0.48);
+  border-radius: 10px;
+  background: rgba(127, 232, 154, 0.13);
+  color: #dfffe7;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.folder-save-primary-hint {
+  flex: 1 1 100%;
+  color: #8fc99d;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.folder-save-browser-fallback {
+  margin-top: 8px;
+  padding: 6px 8px;
+  opacity: 0.58;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.folder-save-browser-fallback .sl-section-label {
+  font-size: 8px;
+}
+
+.folder-save-browser-fallback.folder-save-browser-fallback-active {
+  opacity: 0.9;
+}
+
+#hobunjiEmptySaveGate .folder-save-primary-copy {
+  padding: 10px 12px;
+  border: 1px solid rgba(127, 232, 154, 0.24);
+  border-radius: 10px;
+  background: rgba(127, 232, 154, 0.06);
+  color: #b9d8c0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+#hobunjiEmptySaveGate #hobunjiEmptySaveCloud {
+  flex: 0 1 auto;
+  opacity: 0.7;
+}
+
+#hobunjiEmptySaveGate #hobunjiEmptySaveCreate {
+  padding: 8px 14px;
+  font-size: 11px;
+  opacity: 0.78;
+}
+
+#localSaveFolderRow.folder-save-settings-primary {
+  padding: 14px;
+  border: 1px solid rgba(127, 232, 154, 0.35);
+  border-radius: 10px;
+  background: rgba(127, 232, 154, 0.055);
+}
+
+#localSaveFolderRow.folder-save-settings-primary .settings-name {
+  font-size: 14px;
+  color: #dfffe7;
+}
+
+#localSaveFolderRow.folder-save-settings-primary .settings-desc {
+  max-width: 760px;
+  line-height: 1.45;
+}
+
+#localSaveFolderRow.folder-save-settings-primary .settings-small-btn {
+  min-height: 34px;
+  padding: 7px 11px;
+}
+
+#localSaveFolderRow.folder-save-settings-primary #localSaveFolderSaveNowBtn,
+#localSaveFolderRow.folder-save-settings-primary #localSaveFolderChooseBtn,
+#localSaveFolderRow.folder-save-settings-primary #localSaveFolderReconnectBtn {
+  min-height: 40px;
+  padding: 9px 14px;
+  border-color: rgba(127, 232, 154, 0.42);
+  font-weight: 700;
+}
+
+.folder-save-settings-fallback-note {
+  flex-basis: 100%;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim, #99a);
+  opacity: 0.7;
+}
+
+#folderSavePrimaryGate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.94);
+  font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
+}
+
+.folder-save-primary-gate-card {
+  width: min(520px, 94vw);
+  padding: 20px;
+  border: 1px solid rgba(127, 232, 154, 0.34);
+  border-radius: 12px;
+  background: #101714;
+  color: #effff2;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.56);
+}
+
+.folder-save-primary-gate-title {
+  margin-bottom: 8px;
+  color: #dfffe7;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.folder-save-primary-gate-copy,
+.folder-save-primary-gate-status {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a9bcb0;
+}
+
+.folder-save-primary-gate-status {
+  min-height: 18px;
+  margin-top: 10px;
+}
+
+.folder-save-primary-gate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.folder-save-primary-gate-actions button {
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.folder-save-primary-gate-fallback {
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  color: #9eaaa2;
+  font-size: 10px;
+}
+
+.folder-save-primary-gate-main {
+  padding: 10px 14px;
+  border: 1px solid rgba(127, 232, 154, 0.48);
+  background: rgba(127, 232, 154, 0.14);
+  color: #eaffee;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .folder-save-primary-section {
+    padding: 11px;
+  }
+
+  .folder-save-primary-section .sl-local-save-btn,
+  #hobunjiEmptySaveFolder.folder-save-primary-action {
+    width: 100%;
+  }
+
+  .folder-save-primary-gate-actions {
+    flex-direction: column-reverse;
+  }
+
+  .folder-save-primary-gate-actions button {
+    width: 100%;
+  }
+}
