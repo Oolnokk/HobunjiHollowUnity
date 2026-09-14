@@ -40,6 +40,7 @@ on:
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
+      - 'scripts/test-character-rig-scale.js'
       - 'scripts/test-drunk-prone-composition-bridge.js'
       - 'scripts/test-full-character-scale-authoring-20260905.js'
       - 'scripts/test-harlyao-calendar-markers.js'
@@ -93,6 +94,8 @@ jobs:
         run: node scripts/test-maoao-foot-scale-tuning.js
       - name: Mao-ao full character scale regression
         run: node scripts/test-full-character-scale-authoring-20260905.js
+      - name: Whole-rig scale guard
+        run: node scripts/test-character-rig-scale.js
       - name: Procedural leg/prone/run regression
         run: node scripts/test-drunk-prone-composition-bridge.js
       - name: NPC perspective-facing deadzone regression
