@@ -1,5 +1,11 @@
 /* ── Hobunii Hollow — Onboarding overlay ─────────────────────────────── */
 
+/* Solid black, matching js/title-screen-runtime.js's "Press any input to
+   start" background exactly (not a translucent/blurred scrim) — the farm
+   itself is never rendered behind this (see game.js's gameLoop, which skips
+   renderer.render() entirely until gameStarted), so onboarding reads as a
+   continuation of the title screen's own boot sequence rather than a pause
+   menu laid over an already-running game. */
 #ob-overlay {
   position: fixed;
   inset: 0;
@@ -7,9 +13,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.90);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: #000;
   padding: 16px;
   overflow-y: auto;
   transition: opacity 0.4s;
@@ -20,16 +24,16 @@
   pointer-events: none;
 }
 
+/* No visible box: the card is just a layout wrapper now. Its content sits
+   directly on #ob-overlay's solid black, same as the title screen's own
+   text/logo have no panel behind them — one continuous black screen rather
+   than a green-tinted, bordered panel floating on top of it. */
 .ob-card {
   width: min(720px, 100%);
-  background: rgba(8, 18, 13, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 20px;
   padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.7);
   font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
   color: #f0ffe6;
 }
@@ -295,6 +299,58 @@
   text-transform: none;
   letter-spacing: 0;
   font-size: 10px;
+}
+
+/* Step indicator — Save Source → Character → World, see
+   onboarding-core.js's _stepIndicatorHtml(). */
+.sl-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+.sl-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.45;
+}
+.sl-step-active { opacity: 1; }
+.sl-step-done { opacity: 0.75; }
+.sl-step-num {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.sl-step-active .sl-step-num {
+  border-color: rgba(249, 226, 138, 0.6);
+  color: #f9e28a;
+  background: rgba(249, 226, 138, 0.1);
+}
+.sl-step-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.sl-step-sep {
+  width: 18px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Quick-resume button on the Save Source step */
+.sl-resume-section { align-items: center; }
+.sl-resume-btn {
+  width: 100%;
+  text-align: center;
 }
 
 /* Character grid */
@@ -566,6 +622,41 @@
   border-color: rgba(140, 190, 160, 0.55);
 }
 
+/* Collapsed-by-default wrapper for dev/testing-only controls (currently just
+   Database Source) — kept out of a regular player's way, expandable for
+   whoever actually needs it. */
+.sl-dev-details {
+  margin-top: 4px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 2px 10px;
+}
+.sl-dev-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 2px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8aad8f;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sl-dev-details > summary::-webkit-details-marker { display: none; }
+.sl-dev-details > summary::before {
+  content: '▸';
+  font-size: 10px;
+  color: #8aad8f;
+  transition: transform 0.12s;
+}
+.sl-dev-details[open] > summary::before { transform: rotate(90deg); }
+.sl-dev-details > summary:hover { color: #f0ffe6; }
+.sl-dev-details > summary:hover::before { color: #f0ffe6; }
+.sl-dev-details > *:not(summary) { margin-top: 6px; }
+.sl-dev-details > .sl-local-save-row:last-of-type,
+.sl-dev-details > .sl-dbsrc-row:last-child { margin-bottom: 8px; }
+
 /* Database Source toggle — see window.LocalDBOverrides (docs/js/local-db-overrides.js) */
 .sl-dbsrc-toggle {
   display: flex;
@@ -601,4 +692,6 @@
   .sl-char-portrait-wrap { width: 64px; height: 64px; }
   .sl-portrait-canvas { width: 64px; height: 64px; }
   .sl-world-card-wrap { min-width: 150px; }
+  .sl-step-label { display: none; }
+  .sl-step-sep { width: 10px; }
 }

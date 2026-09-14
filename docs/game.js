@@ -22339,7 +22339,12 @@
 
         if (!gameStarted) {
           window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
-          renderer.render(scene, camera);
+          // No renderer.render() here on purpose: the title screen and the
+          // onboarding overlay (docs/js/title-screen-runtime.js, onboarding.css's
+          // #ob-overlay) are both opaque, so a farm frame drawn underneath them
+          // would never be seen — only wasted GPU work every frame while the
+          // player is still picking a save/character/world. The first real
+          // frame renders the moment spawnPlayerAvatar flips gameStarted true.
           window.PerfProfiler?.end(gameLoopTotalPerf);
           requestAnimationFrame(gameLoop);
           return;
