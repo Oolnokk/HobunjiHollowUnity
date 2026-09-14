@@ -25,9 +25,11 @@ on:
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
+      - 'docs/js/wilderness-chunks.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
-      - 'scripts/test-stable-animal-genotype-compose-dedupe.js'
+      - 'scripts/test-mount-wilderness-allocation-hold.js'
+      - 'scripts/test-wilderness-chunks.js'
       - 'scripts/test-stable-animal-progression-deps-bridge.js'
       - 'scripts/test-stable-animal-training-refinements.js'
       - 'scripts/test-stable-animal-xp-events.js'
@@ -61,9 +63,11 @@ on:
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
+      - 'docs/js/wilderness-chunks.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
-      - 'scripts/test-stable-animal-genotype-compose-dedupe.js'
+      - 'scripts/test-mount-wilderness-allocation-hold.js'
+      - 'scripts/test-wilderness-chunks.js'
       - 'scripts/test-stable-animal-progression-deps-bridge.js'
       - 'scripts/test-stable-animal-training-refinements.js'
       - 'scripts/test-stable-animal-xp-events.js'
@@ -106,12 +110,15 @@ jobs:
           node --check docs/js/format-utils.js
           node --check docs/js/general-store.js
           node --check docs/js/livestock-nursery-install-bridge.js
+          node --check docs/js/wilderness-chunks.js
       - name: Test Growth Tonic and Kunji shop
         run: node scripts/test-animal-growth-kunji-shop.js
       - name: Test stable animal progression
         run: node scripts/test-stable-animal-progression.js
-      - name: Test genotype compose in-flight dedupe
-        run: node scripts/test-stable-animal-genotype-compose-dedupe.js
+      - name: Test mount/wilderness allocation serialization
+        run: node scripts/test-mount-wilderness-allocation-hold.js
+      - name: Test wilderness chunk lifecycle
+        run: node scripts/test-wilderness-chunks.js
       - name: Test stable animal progression dependency bridge
         run: node scripts/test-stable-animal-progression-deps-bridge.js
       - name: Test stable training refinements
