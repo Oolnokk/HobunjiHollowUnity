@@ -5,7 +5,7 @@
 //   - Kenkari male body/wardrobe sprites, attachment rig, and body colors.
 //   - Pachyderm hands and feline feet as explicit cross-species extremity donors.
 //   - Slagothim/Tletingan male hair cosmetics.
-//   - Porakaneki-specific head, untinted-head, and torso portrait sprites.
+//   - Porakaneki-specific head, rear-head, untinted-head, and torso portrait sprites.
 (() => {
   'use strict';
 
@@ -29,6 +29,7 @@
   ]);
   const EXPECTED_ASSETS = Object.freeze({ // Exposed in mobile diagnostics so missing or mis-resolved authored art is immediately visible.
     head: 'fightersprites/kenkari-m/head_porakaneki_m.png',
+    behindHead: 'fightersprites/special_cases/head-behind_porakaneki_m.png',
     headUntinted: 'fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki.png',
     headUntintedBlink: 'fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki_blink.png',
     torso: 'portraitsprites/torso_porakaneki_m.png',
@@ -59,6 +60,7 @@
     allowedCosmeticIds: [...ALLOWED_COSMETIC_IDS],
     expectedAssets: EXPECTED_ASSETS,
     appearanceConfigInstalled: false,
+    behindHeadInstalled: false,
     rigProfilesInstalled: 0,
     rigConfigCorrectionsReapplied: false,
     handModelInherited: false,
@@ -84,6 +86,17 @@
       playerSelectable: false,
     };
     status.appearanceConfigInstalled = true;
+    return true;
+  }
+
+  function installBehindHeadSprite() {
+    const headUrls = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.behindView?.headUrls; // Shared back-plane head registry consumed by portrait-utils._getBehindHeadUrl().
+    if (!headUrls) return false;
+    headUrls[SPECIES_ID] = {
+      ...(headUrls[SPECIES_ID] || {}),
+      male: EXPECTED_ASSETS.behindHead,
+    };
+    status.behindHeadInstalled = true;
     return true;
   }
 
@@ -275,6 +288,7 @@
 
   function install() {
     installAppearanceSpeciesConfig();
+    installBehindHeadSprite();
     installExtremityModels();
     installRigProfiles();
     installWardrobeResolver();
@@ -303,6 +317,7 @@
     allowedCosmeticIds: ALLOWED_COSMETIC_IDS,
     expectedAssets: EXPECTED_ASSETS,
     install,
+    installBehindHeadSprite,
     inheritKenkariBodyColors,
     applyCosmeticRestrictions,
     restrictPorakanekiBanditConfig,
@@ -310,7 +325,7 @@
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
-      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} banditWardrobeGuard=${d.banditWardrobeGuardInstalled} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 bodywrap=${d.expectedAssets.bodywrapMale} head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
+      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} banditWardrobeGuard=${d.banditWardrobeGuardInstalled} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 rearHead=${d.behindHeadInstalled ? d.expectedAssets.behindHead : '-'} bodywrap=${d.expectedAssets.bodywrapMale} head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
     },
   });
 
