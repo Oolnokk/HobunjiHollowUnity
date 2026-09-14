@@ -28,6 +28,8 @@ assert.deepEqual(
   'Puktuk Den-Mother registration must provide the live-birth baby item before game.js snapshots DEN_MOTHER_ITEM_KEYS',
 );
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.itemKinds.puktukBaby, 'puktuk', 'Puktuk baby must use the shared livestock item-to-species path');
+const denMotherItemKeys = Object.fromEntries(Object.values(windowStub.SCRATCHBONES_CONFIG.game.wildlife.denMothers).map(def => [def.creatureKey, def.nestItemKey]));
+assert.equal(denMotherItemKeys.puktuk, 'puktukBaby', 'game.js DEN_MOTHER_ITEM_KEYS snapshot must contain the Puktuk clutch reward');
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().configReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().livestockReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().initBridgeReady, true);
