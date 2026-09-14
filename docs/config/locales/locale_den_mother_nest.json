@@ -30,7 +30,7 @@
     }
   ],
   "npcAnchors": [
-    { "id": "den_mother", "col": 2, "row": 2, "facing": 180 }
+    { "id": "den_mother", "col": 2, "row": 2, "facing": "south" }
   ],
   "connectors": [],
   "placement": {
