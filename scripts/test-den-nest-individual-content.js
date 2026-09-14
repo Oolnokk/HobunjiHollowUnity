@@ -102,9 +102,13 @@ assert.match(localeEditor, /localeDenAddClutch[\s\S]*?localeDenDuplicate[\s\S]*?
 assert.match(localeEditor, /pointerdown[\s\S]*?pointermove[\s\S]*?transform\.x = snapValue\(world\.x\)[\s\S]*?transform\.z = snapValue\(world\.z\)/,
   'Den-Mother and clutch points can be dragged manually in the top-down plan');
 assert.match(localeEditor, /api\.getWorkspace = \(\) => mergeWorkspace\(rawGetWorkspace\(\)\)/,
-  'den encounter metadata is merged through the normal Locale Editor export/workspace bridge');
-assert.match(localeEditor, /LocalDBOverrides|WORKSPACE_KEY/,
-  'the sidecar persists into the Locale Editor workspace used by local overrides');
+  'den encounter metadata is merged through the normal Locale Editor workspace bridge');
+assert.match(localeEditor, /saveLocalesOverrideBtn[\s\S]*?map\(exportLocale\)[\s\S]*?setOverride\('locales'/,
+  'the local-override button explicitly exports den-aware locale documents instead of bypassing the sidecar');
+assert.match(localeEditor, /copyJsonBtn[\s\S]*?downloadJsonBtn[\s\S]*?stopImmediatePropagation/,
+  'Copy/Download export surfaces are intercepted before the inline editor can emit stale metadata');
+assert.match(localeEditor, /if \(store\.byLocale\[locale\.id\]\) return store\.byLocale\[locale\.id\];/,
+  'switching away and back cannot overwrite live den edits with the inline editor stale meta copy');
 assert.match(panelUi, /den-encounter-authoring\.js\?v=20260914a/,
   'the den authoring sidecar loads automatically whenever the Locale Editor opens');
 
@@ -116,15 +120,19 @@ assert.match(localeRuntime, /removeLegacyCavernMarker\(scene, nest\)[\s\S]*?Auth
   'the old 2x2 cavern box marker is replaced by the actual authored nest furniture');
 assert.match(localeRuntime, /AUTHORED_NEST_KEYS[\s\S]*?authoredDecorativeFurniture[\s\S]*?nestBranch/,
   'wildlife branch nests route through the same authored furniture runtime');
+assert.match(localeRuntime, /watchWildlifeSpawnAssignment[\s\S]*?Object\.getOwnPropertyDescriptor\(window, 'WildlifeSpawn'\)[\s\S]*?patchWildlifeSpawn/,
+  'runtime survives its actual pre-WildlifeSpawn script order by chaining a later-global assignment trap');
 assert.match(localeRuntime, /findCurrentDenMother[\s\S]*?creature\?\.isDenMother[\s\S]*?applyMotherTransform/,
   'the live cavern Den-Mother is resolved and driven from the locale spawn transform');
 assert.match(localeRuntime, /mother\.x = \(center\.x \+ t\.x\) \* denDeps\.TILE[\s\S]*?mother\.homeX = mother\.x[\s\S]*?mother\.groupRot = ry/,
-  'Den-Mother authored world offsets are converted to the creature simulation coordinate space and become its home/facing');
-assert.match(localeRuntime, /root\.position\.set\(center\.x \+ t\.x, floorY \+ base\.lift \+ t\.y, center\.z \+ t\.z\)/,
+  'Den-Mother authored world offsets are converted to creature simulation pixels and become its home/facing');
+assert.match(localeRuntime, /root\.position\.set\(base\.x \+ t\.x, base\.y \+ initial\.lift \+ t\.y, base\.z \+ t\.z\)/,
   'egg/baby roots consume locale transforms directly in Three world-space without multiplying offsets by TILE');
+assert.match(localeRuntime, /syncBranchNests[\s\S]*?decorateNest\(nest, \{ branch: true \}\)[\s\S]*?applyAuthoredClutch/,
+  'branch eggs/babies receive the same authored clutch layout while keeping nestBranch furniture');
 assert.match(localeRuntime, /const result = originalUpdate\(dt\);[\s\S]*?syncCurrentDen\(\);[\s\S]*?return result/,
   'authored transforms run after DenNestSystem layout so the old layout cannot overwrite them in the same frame');
 assert.match(puktukRegistration, /den-locale-runtime\.js\?v=20260914b/,
-  'game bootstrap cache-busts to the completed locale-driven runtime');
+  'game bootstrap points at the locale-driven runtime');
 
 console.log('Individual nest rendering plus authored furniture/locale/Den-Mother/clutch transform checks passed.');
