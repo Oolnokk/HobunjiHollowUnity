@@ -1,5 +1,19 @@
 'use strict';
 
+// The side-by-side 3D comparison now boots the same automatic terrain-mapping
+// entrypoints used by the game before the preview script captures its left-hand
+// geometry. Keep these parser-blocking so CURRENT GAME AUTO cannot race the
+// direct-Jigsaw comparison on initial load.
+if (document.readyState === 'loading' && typeof document.write === 'function') {
+  if (!window.HobunjiSurfaceStretchUV) {
+    document.write('<script src="../../js/surface-stretch-uv-furniture.js?v=20260914boundary-current1"></script>');
+  }
+  if (!window.NaturalSurfaceJigsawExclusion) {
+    document.write('<script src="../../js/natural-surface-jigsaw-exclusion.js?v=20260914boundary-current1"></script>');
+  }
+  document.write('<script src="current-game-terrain-auto.js?v=20260914a"></script>');
+}
+
 // The author uses Three r128. Its WebGLRenderer exposes render on renderer
 // instances rather than on WebGLRenderer.prototype, while the shared gameplay
 // TerrainRenderChunks bootstrap uses the prototype as its automatic render-hook
