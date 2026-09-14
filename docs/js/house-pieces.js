@@ -14,12 +14,14 @@
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
-    // Retained for its proven shared-edge/adjacent-normal surface recognition and legacy callers. TerrainJigsawSurfaceSplit now owns final natural-terrain UVs.
+    // Shared-edge/adjacent-normal terrain surface recognition remains the semantic entrypoint. A later adapter swaps only its UV solver to segmented Jigsaw.
     ['HobunjiSurfaceStretchUV', 'surface-stretch-uv-furniture.js?v=20260907farmcliff1'],
     // A gradual 24° face chain may walk over a rounded ridge, so split upward terrain from cliff-facing triangles before the final side-only unwrap.
     ['NaturalSurfaceCliffRidgeIsolation', 'natural-surface-cliff-ridge-isolation.js?v=20260902a'],
-    // Still repairs stranded/flat natural-surface PNGs. Its UV reassertion is blocked once segmented Jigsaw claims final ownership.
+    // Repairs stranded/flat natural-surface PNGs and re-asks the current mapper owner for UVs when geometry changes.
     ['NaturalSurfaceStretchRuntime', 'natural-surface-stretch-runtime.js?v=20260902b'],
+    // Until the segmented-Jigsaw adapter installs below, keep ordinary TerrainJigsawUV from independently rebaking natural rocks/cliffs.
+    ['NaturalSurfaceJigsawExclusion', 'natural-surface-jigsaw-exclusion.js?v=20260902a'],
     // Faceted masonry keeps its authored texture-edge treatment and skips the general shell-outline pass; rounded meshes remain eligible for shells.
     ['FacetedStructureShellReduction', 'faceted-structure-shell-reduction.js?v=20260905a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
@@ -51,16 +53,16 @@
     // Natural-surface outline policy remains independent of final texture UV ownership.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
-    // Older builders can still run their natural-surface prepass; segmented Jigsaw replaces those UVs before final render.
+    // Older builders still call the shared mapper; after TerrainJigsawSurfaceSplit installs those calls keep the same 24° face splitting but receive Jigsaw UVs.
     ['WildernessCliffSurfaceParity', 'wilderness-cliff-surface-parity.js?v=20260907b'],
     ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
-    // Preserves legacy render/chunk ordering. The next module intercepts its Jigsaw API so natural terrain ends on segmented Jigsaw, not the old post-Jigsaw mapper.
+    // Preserves legacy Jigsaw -> natural repair -> chunking order. Natural repair delegates to the segmented-Jigsaw mapper once the next module installs.
     ['NaturalSurfaceStretchPostJigsaw', 'natural-surface-stretch-post-jigsaw.js?v=20260902b'],
-    // Hybrid final owner: keep the 24° shared-edge face splitting from the current mapper, then run the actual Jigsaw bake independently on each detected face.
-    ['TerrainJigsawSurfaceSplit', 'terrain-jigsaw-surface-split.js?v=20260914a'],
+    // Single-pass hybrid owner: current 24° face segmentation + actual Jigsaw UV bake per detected natural surface. It does not wrap renderer.render or replace materials.
+    ['TerrainJigsawSurfaceSplit', 'terrain-jigsaw-surface-split.js?v=20260914b'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823a'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260823a'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
     [null, 'house-pieces-registry-stability.js?v=20260906a'],
