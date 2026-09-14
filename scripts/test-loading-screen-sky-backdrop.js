@@ -68,7 +68,7 @@ assert(runtimeSource.includes('window.HobunjiSkyDome?.getDebugState?.()'), `${ru
 assert(runtimeSource.includes('window.HobunjiSkyDome?.getLightingState?.()'), `${runtimePath}: must reuse live skydome lighting when available`);
 assert(runtimeSource.includes("focusKind: night >= 0.5 ? 'moon' : 'sun'"), `${runtimePath}: automatic day/night celestial focus rule missing`);
 assert(runtimeSource.includes('skyFocusOffsetX') && runtimeSource.includes('skyFocusOffsetY'), `${runtimePath}: tool-authored framing offsets missing`);
-assert(runtimeSource.includes('skyZoom: 3.25'), `${runtimePath}: 3.25x fallback sky zoom missing`);
+assert(runtimeSource.includes('skyZoom: 2.4375'), `${runtimePath}: 2.4375x reduced fallback sky zoom missing`);
 assert(runtimeSource.includes('0.5, 4'), `${runtimePath}: runtime sky zoom ceiling must remain 4x`);
 assert(runtimeSource.includes('VIEW_SPAN_U / zoom') && runtimeSource.includes('VIEW_SPAN_V / zoom'), `${runtimePath}: sky zoom must change the projected field of view`);
 assert(runtimeSource.includes('root.insertBefore(canvas, root.firstChild)'), `${runtimePath}: sky canvas must remain behind existing loading-screen foreground content`);
@@ -91,7 +91,7 @@ assert(loadingRuntimeSource.includes('const travel = viewportHeight + contentHei
 assert(loadingRuntimeSource.includes('const scriptY = viewportHeight - travelPhase * travel'), `${loadingRuntimePath}: script scroll must enter from below and exit above the real viewport`);
 assert(!loadingRuntimeSource.includes('contentHeight - viewportHeight'), `${loadingRuntimePath}: legacy internal-window scroll range must not return`);
 assert(!loadingRuntimeSource.includes("els.scriptViewport.style.top = `${settings.scriptY}%`"), `${loadingRuntimePath}: scriptY must no longer move a clipping viewport`);
-assert(loadingRuntimeSource.includes("scriptSize: 160, scriptY: 45") && loadingRuntimeSource.includes('columnSpacing: -0.56, scriptScrollSpeed: 0.03'), `${loadingRuntimePath}: synchronous first paint must match current runtime fallback script defaults`);
+assert(loadingRuntimeSource.includes("scriptSize: 120, scriptY: 45") && loadingRuntimeSource.includes('columnSpacing: -0.56, scriptScrollSpeed: 0.03'), `${loadingRuntimePath}: synchronous first paint must use the reduced 120px script default`);
 
 assert(skyDomeSource.includes('const CELESTIAL_RADIUS = 197'), `${skyDomePath}: expected celestial radius contract missing`);
 assert(skyDomeSource.includes('const CLOUD_RADII = [176, 184, 192]'), `${skyDomePath}: expected nearer cloud-shell radii missing`);
