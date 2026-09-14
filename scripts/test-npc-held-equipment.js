@@ -21,7 +21,8 @@ assert.match(source, /npcHeldClaimAwareSetSideIdle[\s\S]*if \(claims\[side\]\) r
 assert.match(source, /npcHeldClaimAwareUseIdlePose[\s\S]*!claims\.left[\s\S]*!claims\.right/, 'whole-rig fallback must preserve any claimed held-tool side');
 assert.match(source, /setHandClaims\(walker, owner, !!secondary\)[\s\S]*placeHandWorld\('right'/, 'the grip claim must be established before the held hand is placed');
 assert.match(source, /buildWatchman\(state, loadout\)[\s\S]*desiredWatchmanParent\(state\.walker\)/, 'watchman construction must use the scene-root holder parent');
-assert.match(loader, /js\/npc-held-equipment\.js\?v=20260914a/);
+assert.match(loader, /js\/npc-held-equipment\.js\?v=20260914b/);
+assert.match(loader, /NpcHeldEquipment\?\.version\) >= 2/);
 
 let receivedDeps = null; // Verifies the future NpcScheduling assignment is intercepted without changing its init contract.
 window.NpcScheduling = { init(deps) { receivedDeps = deps; return 'scheduler-result'; } };
