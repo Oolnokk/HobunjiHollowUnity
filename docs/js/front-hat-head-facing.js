@@ -13,6 +13,9 @@
 // front-only hats (e.g. the basic/leather headbands) fall back to their front
 // sprite there too, mirrored by the rear canvas's whole-image flip like any
 // other cosmetic with no dedicated back art.
+//
+// This module owns HAT facing only. Hood layers must remain untouched so a hood
+// such as Fine Hood cannot inherit a hat's angle-based visibility gate.
 (function (global) {
   'use strict';
 
@@ -57,25 +60,6 @@
 
   function hatHasRearLayer(profile) {
     return resolvedLayers(profile?.hat, profile).some(layer => layer?.pos === 'back');
-  }
-
-  function isFineHoodTrimLayer(layer) {
-    const url = String(layer?.url || '').toLowerCase().replace(/_/g, '-');
-    return url.includes('finehood') && url.includes('trim') && url.endsWith('.png');
-  }
-
-  function stripFineHoodTrim(profile) {
-    const hood = profile?.hood;
-    if (!hood) return hood;
-    const hoodLayers = resolvedLayers(hood, profile);
-    if (!hoodLayers.some(isFineHoodTrimLayer)) return hood;
-    return {
-      ...hood,
-      // resolveOptionLayers prefers variantLayers, so null it after resolving
-      // the species-specific layer set and make the trimless list authoritative.
-      variantLayers: null,
-      layers: hoodLayers.filter(layer => !isFineHoodTrimLayer(layer)),
-    };
   }
 
   function frozenBreathingComposer(renderOptions, nowMs) {
@@ -289,15 +273,11 @@
     const hatlessCanvas = document.createElement('canvas');
     hatlessCanvas.width = canvas.width;
     hatlessCanvas.height = canvas.height;
-    const frontOnlyRemovedProfile = {
+    const hatlessProfile = {
       ...profile,
       hat: NONE_HAT,
-      // If Fine Hood is also equipped, its face-opening trim is front-only too.
-      // Removing it here prevents the hatless fallback texture from ever
-      // reintroducing that trim when the hat gate switches off.
-      hood: stripFineHoodTrim(profile),
     };
-    await global.renderPortraitProfile(hatlessCanvas, frontOnlyRemovedProfile, pairedOptions);
+    await global.renderPortraitProfile(hatlessCanvas, hatlessProfile, pairedOptions);
 
     canvas.__hobunjiFrontHatlessCanvas = hatlessCanvas;
     canvas.__hobunjiFrontHatFacingDebug = {
