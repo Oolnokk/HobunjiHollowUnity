@@ -13,16 +13,16 @@
     catch (_) { return 'assets/textures/canvas.png'; }
   })();
 
-  // v4 generalizes v3's direct-grid-height snow renderer to also cover
-  // seasonal Coldmuck slush on every other outdoor zone — the same
-  // mechanism (tile height read straight from grid data, one synchronous
-  // whole-zone build, connected-surface stretch mapping, grass hidden
-  // underneath), just a different material. This replaces
+  // v7 treats snow/slush as shallow micro-plateaus rooted on each
+  // authored walkable surface. Where that surface ends, the raised cap
+  // inclines back down INSIDE its own tile and meets the tile boundary at
+  // the tile's own walkable elevation. A lower neighboring mesa tier is
+  // never used as the bottom of this side, so environment surfaces cannot
+  // leak down or bridge across real cliff faces. This still replaces
   // environment-surface-runtime.js's old triangle-scanning job-queue slush
   // system entirely, the same way v3 already replaced its snow job.
   const WESTERN_SLOPE_ID = 'map_western_slope';
   const PLATEAU_UNIT = 2.5;
-  const SURFACE_THICKNESS = 2.00;
   // How far the cap's top surface sits above the true tile height. Doubles
   // as the visual "sink" depth: the player and every creature are still
   // positioned at the real, unmodified ground height everywhere else in the
@@ -31,8 +31,8 @@
   // by this same amount — a real person, and every animal, standing in deep
   // snow, rather than a thin coat of white paint on flat pavement.
   const SURFACE_DEPTH = 0.22;
-  const EDGE_WIDTH = 0.075;
-  const EDGE_SEGMENTS = 4;
+  const EDGE_WIDTH = 0.22; // Horizontal run of a micro-plateau side; with 0.22 depth this is a clear ~45° incline.
+  const EDGE_HEIGHT_EPS = 0.025; // Shared-edge height tolerance used to decide whether two covered tiles are one walkable surface.
   const CHUNK_TILES = 16; // Output mesh partitioning only (frustum culling), applied after the whole zone is stretch-mapped as one connected surface below — never affects texture continuity.
   const LAND_TYPES = new Set(['grass', 'path', 'tilled', 'trench', 'raised', 'paddy', 'rock', 'shrub', 'cliff', 'ramp', 'weeds']);
   const WATER_TYPES = new Set(['water', 'river', 'stream', 'waterfall']);
@@ -92,19 +92,27 @@
     catch (_) { return ''; }
   }
 
+  // Every generated building/cavern map uses the map_i_ prefix; environment
+  // snow/slush is an exterior surface and must never follow a parent zone's
+  // name into one of those interiors (for example map_i_den_map_western_slope_*).
+  function isInteriorArea(area) {
+    return area.startsWith('map_i_');
+  }
+
   function isWesternSlope(area) {
-    return area === WESTERN_SLOPE_ID || area.includes('western_slope');
+    return area === WESTERN_SLOPE_ID;
   }
 
   // Approximates the real game's own isOutdoorArea() (farm/town/any zone),
   // which isn't reachable from here — this module isn't part of the
   // RainPlanes dependency-injection chain that carries the real check.
   function isOutdoorArea(area) {
-    return area === 'farm' || area === 'town' || area.startsWith('map_');
+    return area === 'farm' || area === 'town' || (area.startsWith('map_') && !isInteriorArea(area));
   }
 
   function resolveMode() {
     const area = currentArea();
+    if (isInteriorArea(area)) return 'none';
     if (isWesternSlope(area)) return 'snow';
     if (!isOutdoorArea(area)) return 'none';
     return currentSeasonName() === 'Coldmuck' ? 'slush' : 'none';
@@ -154,7 +162,7 @@
       let finalTexture = texture;
       try {
         if (typeof window.getShadeFillCanvas === 'function' && texture.image) {
-          const tinted = window.getShadeFillCanvas(texture.image, 'environment-snow-micro-plateau-v4|canvas.png|white', {
+          const tinted = window.getShadeFillCanvas(texture.image, 'environment-snow-micro-plateau-v7|canvas.png|white', {
             mode: 'shadeFill', rgb: [255, 255, 255], options: window.getPortraitTintingConfig?.() || {},
           });
           if (tinted) finalTexture = new THREE.CanvasTexture(tinted);
@@ -237,41 +245,34 @@
     return count ? sum / count : fallback;
   }
 
-  // Every tile's surface height comes straight from its own authored grid
-  // data — no reverse-engineering from rendered mesh geometry — so it's
-  // always exactly right, including on the real elevated plateau tiers.
-  function tileTopCorners(state, col, row) {
+  // Every tile's base corners come straight from its authored walkable
+  // height. The micro-plateau is then raised SURFACE_DEPTH above those
+  // corners; cliff-side shaping never changes or borrows the base height.
+  function tileSurfaceCorners(state, col, row) {
     if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return null;
     const cacheKey = row * state.cols + col;
-    if (state.topCache[cacheKey] !== undefined) return state.topCache[cacheKey];
+    if (state.surfaceCache[cacheKey] !== undefined) return state.surfaceCache[cacheKey];
     const tile = state.grid?.[row]?.[col];
     if (!tileCovered(tile)) {
-      state.topCache[cacheKey] = null;
+      state.surfaceCache[cacheKey] = null;
       return null;
     }
     const type = String(tile?.type || 'grass').toLowerCase();
     let corners;
     if (type !== 'ramp') {
-      const top = logicalSurfaceY(tile) + SURFACE_DEPTH;
-      corners = [top, top, top, top];
+      const surface = logicalSurfaceY(tile);
+      corners = [surface, surface, surface, surface];
     } else {
       const fallback = logicalSurfaceY(tile);
       corners = [
-        rampCornerY(state.grid, col, row, fallback) + SURFACE_DEPTH,
-        rampCornerY(state.grid, col + 1, row, fallback) + SURFACE_DEPTH,
-        rampCornerY(state.grid, col, row + 1, fallback) + SURFACE_DEPTH,
-        rampCornerY(state.grid, col + 1, row + 1, fallback) + SURFACE_DEPTH,
+        rampCornerY(state.grid, col, row, fallback),
+        rampCornerY(state.grid, col + 1, row, fallback),
+        rampCornerY(state.grid, col, row + 1, fallback),
+        rampCornerY(state.grid, col + 1, row + 1, fallback),
       ];
     }
-    state.topCache[cacheKey] = corners;
+    state.surfaceCache[cacheKey] = corners;
     return corners;
-  }
-
-  function addTopTile(pos, idx, col, row, corners) {
-    const base = pos.length / 3;
-    const [y00, y10, y01, y11] = corners;
-    pos.push(col,y00,row, col+1,y10,row, col,y01,row+1, col+1,y11,row+1);
-    idx.push(base,base+2,base+3, base,base+3,base+1);
   }
 
   function edgeCorners(corners, side) {
@@ -288,27 +289,51 @@
     return [corners[3], corners[1]];
   }
 
-  function addRoundedLip(pos, idx, col, row, side, edgeY) {
-    const dirs = { N:[0,-1], E:[1,0], S:[0,1], W:[-1,0] };
-    const d = dirs[side];
-    let ax, az, bx, bz;
-    if (side === 'N') { ax=col; az=row; bx=col+1; bz=row; }
-    else if (side === 'E') { ax=col+1; az=row; bx=col+1; bz=row+1; }
-    else if (side === 'S') { ax=col+1; az=row+1; bx=col; bz=row+1; }
-    else { ax=col; az=row+1; bx=col; bz=row; }
-    const [topA, topB] = edgeY;
-    let prevA = [ax, topA, az], prevB = [bx, topB, bz];
-    for (let segment = 1; segment <= EDGE_SEGMENTS; segment++) {
-      const t = segment / EDGE_SEGMENTS;
-      const outward = EDGE_WIDTH * Math.sin(t * Math.PI);
-      const drop = SURFACE_THICKNESS * (t * t * (3 - 2 * t));
-      const nextA = [ax + d[0] * outward, topA - drop, az + d[1] * outward];
-      const nextB = [bx + d[0] * outward, topB - drop, bz + d[1] * outward];
-      const base = pos.length / 3;
-      pos.push(...prevA, ...prevB, ...nextB, ...nextA);
-      idx.push(base,base+1,base+2, base,base+2,base+3);
-      prevA = nextA;
-      prevB = nextB;
+  function walkableEdgeContinuous(state, col, row, side, dc, dr, baseCorners) {
+    const neighbor = tileSurfaceCorners(state, col + dc, row + dr);
+    if (!neighbor) return false;
+    const ours = edgeCorners(baseCorners, side);
+    const theirs = neighborEdgeCorners(neighbor, side);
+    return Math.abs(ours[0] - theirs[0]) <= EDGE_HEIGHT_EPS && Math.abs(ours[1] - theirs[1]) <= EDGE_HEIGHT_EPS;
+  }
+
+  function addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed) {
+    const inset = Math.min(0.49, Math.max(0.001, EDGE_WIDTH));
+    const axis = [0, inset, 1 - inset, 1];
+    const smooth = value => {
+      const t = Math.max(0, Math.min(1, value));
+      return t * t * (3 - 2 * t);
+    };
+    const baseAt = (u, v) => {
+      const [y00, y10, y01, y11] = baseCorners;
+      const north = y00 * (1 - u) + y10 * u;
+      const south = y01 * (1 - u) + y11 * u;
+      return north * (1 - v) + south * v;
+    };
+    const depthFactor = (u, v) => {
+      let factor = 1;
+      if (exposed.N) factor = Math.min(factor, smooth(v / inset));
+      if (exposed.E) factor = Math.min(factor, smooth((1 - u) / inset));
+      if (exposed.S) factor = Math.min(factor, smooth((1 - v) / inset));
+      if (exposed.W) factor = Math.min(factor, smooth(u / inset));
+      return factor;
+    };
+
+    const base = pos.length / 3;
+    for (let j = 0; j < axis.length; j++) {
+      const v = axis[j];
+      for (let i = 0; i < axis.length; i++) {
+        const u = axis[i];
+        pos.push(col + u, baseAt(u, v) + SURFACE_DEPTH * depthFactor(u, v), row + v);
+      }
+    }
+    const width = axis.length;
+    for (let j = 0; j < width - 1; j++) for (let i = 0; i < width - 1; i++) {
+      const v00 = base + j * width + i;
+      const v10 = v00 + 1;
+      const v01 = v00 + width;
+      const v11 = v01 + 1;
+      idx.push(v00, v01, v11, v00, v11, v10);
     }
   }
 
@@ -344,7 +369,10 @@
     const mapper = window.HobunjiSurfaceStretchUV;
     if (typeof mapper?.mapGeometry === 'function') {
       try {
-        const mapped = mapper.mapGeometry(geometry, { label: `environment-snow-micro-plateau:${label}` });
+        const mapped = mapper.mapGeometry(geometry, {
+          label: `environment-snow-micro-plateau:${label}`,
+          angleToleranceDeg: 89, // Snow only: keep the flat cap and ~45° rooted micro-inclines in one connected stretch-to-fit UV mass.
+        });
         if (mapped?.getAttribute?.('uv')) return mapped;
       } catch (_) {}
     }
@@ -362,22 +390,16 @@
 
     for (let row = chunk.row; row < rowEnd; row++) {
       for (let col = chunk.col; col < colEnd; col++) {
-        const corners = tileTopCorners(state, col, row);
-        if (!corners) continue;
-        addTopTile(pos, idx, col, row, corners);
-        builtTiles++;
+        const baseCorners = tileSurfaceCorners(state, col, row);
+        if (!baseCorners) continue;
+        const exposed = { N:false, E:false, S:false, W:false }; // Marks only breaks in the authored walkable surface, never render-height gaps.
         for (const [side, dc, dr] of sides) {
-          const edge = edgeCorners(corners, side);
-          const neighbor = tileTopCorners(state, col + dc, row + dr);
-          if (neighbor) {
-            const other = neighborEdgeCorners(neighbor, side);
-            const oursMid = (edge[0] + edge[1]) * 0.5;
-            const theirsMid = (other[0] + other[1]) * 0.5;
-            if (oursMid <= theirsMid + 0.025) continue;
-          }
-          addRoundedLip(pos, idx, col, row, side, edge);
+          if (walkableEdgeContinuous(state, col, row, side, dc, dr, baseCorners)) continue;
+          exposed[side] = true;
           exposedEdges++;
         }
+        addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed);
+        builtTiles++;
       }
     }
   }
@@ -426,7 +448,7 @@
   // skips straight to the cheap planar UV).
   function buildZoneSurface(scene, grid, cols, rows, mode) {
     const started = now();
-    const state = { grid, cols, rows, topCache: new Array(cols * rows) };
+    const state = { grid, cols, rows, surfaceCache: new Array(cols * rows) };
     root = new window.THREE.Group();
     root.name = `hobunji_environment_surface_micro_plateau_${mode}`;
     root.userData.environmentSurfaceRuntime = true;
@@ -467,7 +489,7 @@
     lastBuildMs = now() - started;
     setGrassHidden(scene, true);
     grassHiddenScene = scene;
-    lastReason = `built ${builtTiles} ${mode} tile(s) in ${chunkCount} chunk mesh(es); ${exposedEdges} short edges (${lastBuildMs.toFixed(1)}ms)`;
+    lastReason = `built ${builtTiles} ${mode} tile(s) in ${chunkCount} chunk mesh(es); ${exposedEdges} rooted incline edges (${lastBuildMs.toFixed(1)}ms)`;
   }
 
   function resetForScene(scene, area, mode) {
@@ -528,11 +550,11 @@
     const mode = resolveMode();
     return {
       installed: true,
-      version: 4,
+      version: 7,
       active: Boolean(root),
       area: currentArea() || null,
       mode,
-      thickness: SURFACE_THICKNESS,
+      thickness: SURFACE_DEPTH,
       edgeWidth: EDGE_WIDTH,
       opacity: MODE_PRESETS[mode]?.opacity ?? null,
       builtTiles,
