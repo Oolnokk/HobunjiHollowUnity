@@ -23,6 +23,13 @@
 
   const TILT_CUTOFF_DEG = 35;
   const TILT_CUTOFF_DOT = Math.cos(TILT_CUTOFF_DEG * Math.PI / 180);
+  const AMBIENT_TALK_MIN_YAPS = 3; // Used as the hard lower bound for a finite ambient talking sequence.
+  const AMBIENT_TALK_AVERAGE_YAPS = 5; // Used by diagnostics/documentation as the intended ordinary ambient line density.
+  const AMBIENT_TALK_MAX_YAPS = 8; // Used as the hard upper bound so ambient chatheads never become rapid-fire or flickery.
+  const AMBIENT_TALK_SPAN_MS = 3600; // Used to spread the finite yap sequence across most of a normal 4.2 second ambient line.
+  const AMBIENT_TALK_OPEN_MIN_MS = 210; // Used to keep each yap visibly open long enough to read as speech instead of a flash.
+  const AMBIENT_TALK_OPEN_MAX_MS = 280; // Used to cap each mouth-open hold while still leaving broad neutral gaps between yaps.
+  const AMBIENT_TALK_COUNT_POOL = Object.freeze([3, 3, 4, 4, 5, 5, 5, 5, 5, 6, 6, 7, 8]); // Used as a weighted 3-8 distribution averaging almost exactly five yaps per ambient line.
 
   let pairedRenders = 0;
   let correctedBuilds = 0;
@@ -30,8 +37,72 @@
   let lastFacingDot = null;
   let lastYawDot = null;
   let lastUprightDot = null;
+  let ambientTalkSamples = 0; // Used by the mobile/debug snapshot to confirm ambient generic-talk sampling is active.
+  let ambientTimedYapsSuppressed = 0; // Used by diagnostics to show how many ambient syllable-timed yap requests were intentionally ignored.
 
   const NONE_HAT = Object.freeze({ id: 'none', label: 'No Hat', tintSlot: null, layers: [] });
+
+  function isAmbientSeatId(seatId) {
+    return String(seatId ?? '').startsWith('ambient:');
+  }
+
+  function ambientSeatHash(value) {
+    let hash = 2166136261; // Used to give each ambient chathead a stable yap count/timing without introducing per-frame randomness.
+    for (const char of String(value || '')) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    return hash >>> 0;
+  }
+
+  function ambientSeatStartMs(seatId) {
+    const finalToken = String(seatId ?? '').split(':').pop(); // Used to recover the performance.now() timestamp already embedded when AmbientDialogue creates the seat ID.
+    const parsed = Number(finalToken);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function ambientYapCount(seatId) {
+    const key = String(seatId ?? ''); // Used to choose one stable finite yap count for this ambient bubble.
+    const weighted = AMBIENT_TALK_COUNT_POOL[ambientSeatHash(`${key}:count`) % AMBIENT_TALK_COUNT_POOL.length];
+    return Math.min(AMBIENT_TALK_MAX_YAPS, Math.max(AMBIENT_TALK_MIN_YAPS, weighted));
+  }
+
+  function ambientTalkExpression(seatId) {
+    const key = String(seatId ?? ''); // Used to keep generic talking strictly scoped to ambient chathead seats.
+    if (!isAmbientSeatId(key)) return null;
+    const startedAt = ambientSeatStartMs(key); // Used to make the pattern finite from this bubble's actual creation time rather than looping forever.
+    const currentPerformanceMs = Number(global.performance?.now?.()); // Used with the performance-clock timestamp encoded in the ambient seat ID.
+    if (startedAt === null || !Number.isFinite(currentPerformanceMs)) return 'neutral';
+    const elapsedMs = Math.max(0, currentPerformanceMs - startedAt); // Used to find whether the current render falls inside one of this line's finite yap holds.
+    const yapCount = ambientYapCount(key); // Used to guarantee 3 minimum, about 5 average, and 8 maximum openings per ambient line.
+    const leadMs = 260 + (ambientSeatHash(`${key}:lead`) % 181); // Used to avoid starting every ambient line with an immediate mouth pop.
+    const usableMs = Math.max(1, AMBIENT_TALK_SPAN_MS - leadMs - 320); // Used to leave a resting tail after the last yap instead of flapping until disappearance.
+    const slotMs = usableMs / yapCount; // Used to spread the finite yaps broadly and evenly enough to avoid flicker.
+    ambientTalkSamples += 1;
+    for (let index = 0; index < yapCount; index += 1) {
+      const jitterLimitMs = Math.min(95, slotMs * 0.14); // Used to make spacing conversational without allowing adjacent yap holds to bunch together.
+      const jitterUnit = (ambientSeatHash(`${key}:jitter:${index}`) % 1001) / 1000 - 0.5; // Used as deterministic per-yap timing variation for this bubble.
+      const jitterMs = jitterUnit * jitterLimitMs * 2;
+      const pulseStartMs = leadMs + index * slotMs + slotMs * 0.18 + jitterMs; // Used as this yap's mouth-open start inside its broad timing slot.
+      const openRangeMs = AMBIENT_TALK_OPEN_MAX_MS - AMBIENT_TALK_OPEN_MIN_MS; // Used to vary the hold slightly while preserving a long readable opening.
+      const openMs = AMBIENT_TALK_OPEN_MIN_MS + (ambientSeatHash(`${key}:hold:${index}`) % (openRangeMs + 1)); // Used as this yap's finite mouth-open duration.
+      if (elapsedMs >= pulseStartMs && elapsedMs < pulseStartMs + openMs) return 'yap';
+    }
+    return 'neutral';
+  }
+
+  function installAmbientTimedYapGuard() {
+    const composer = global.portraitBreathingComposer; // Used to suppress only the obsolete ambient syllable-driven mouth flashes while preserving normal dialogue yaps.
+    if (!composer?.triggerYap) return false;
+    if (composer.__hobunjiAmbientGenericTalkGuardInstalled) return true;
+    const originalTriggerYap = composer.triggerYap; // Used by the wrapper below for every non-ambient seat without changing normal dialogue behavior.
+    composer.triggerYap = function triggerYapWithAmbientGenericTalk(seatId, opts = {}) {
+      if (isAmbientSeatId(seatId)) {
+        ambientTimedYapsSuppressed += 1;
+        return;
+      }
+      return originalTriggerYap.call(this, seatId, opts);
+    };
+    composer.__hobunjiAmbientGenericTalkGuardInstalled = true;
+    return true;
+  }
 
   function resolvedFighter(profile) {
     return typeof global.resolvePortraitFighter === 'function'
@@ -79,10 +150,13 @@
   }
 
   function frozenBreathingComposer(renderOptions, nowMs) {
+    installAmbientTimedYapGuard();
     const source = renderOptions?.breathingComposer ?? global.portraitBreathingComposer ?? null;
     if (!source) return null;
     return {
       getExpression(seatId) {
+        const ambientExpression = ambientTalkExpression(seatId); // Used to replace ambient lip-sync with a slow finite talking sequence while leaving all other seats untouched.
+        if (ambientExpression !== null) return ambientExpression;
         return typeof source.getExpression === 'function' ? source.getExpression(seatId, nowMs) : 'neutral';
       },
       getOverlayOnlyPoints(_ignoredNowMs, seatId) {
@@ -271,6 +345,7 @@
   preview.renderProfileToCanvas = async function renderProfileToCanvasWithFrontHatFacing(canvas, profile, renderOptions = {}) {
     if (!canvas || !profile) return previousRenderProfileToCanvas.apply(this, arguments);
 
+    installAmbientTimedYapGuard();
     const renderBehind = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
     const renderFrontComposite = !renderBehind
       && renderOptions?.onlyHeadSprite !== true
@@ -316,6 +391,8 @@
     return result;
   };
 
+  installAmbientTimedYapGuard();
+
   global.HobunjiFrontHatHeadFacing = Object.freeze({
     getDebug() {
       return {
@@ -331,6 +408,17 @@
         tiltCutoffDegrees: TILT_CUTOFF_DEG,
         transition: 'hard-step',
         facingSource: 'neck-bone',
+        ambientTalk: {
+          mode: 'finite-generic-pulses',
+          minYaps: AMBIENT_TALK_MIN_YAPS,
+          averageYaps: AMBIENT_TALK_AVERAGE_YAPS,
+          maxYaps: AMBIENT_TALK_MAX_YAPS,
+          spanMs: AMBIENT_TALK_SPAN_MS,
+          openMsRange: [AMBIENT_TALK_OPEN_MIN_MS, AMBIENT_TALK_OPEN_MAX_MS],
+          samples: ambientTalkSamples,
+          timedYapsSuppressed: ambientTimedYapsSuppressed,
+          guardInstalled: global.portraitBreathingComposer?.__hobunjiAmbientGenericTalkGuardInstalled === true,
+        },
       };
     },
   });
