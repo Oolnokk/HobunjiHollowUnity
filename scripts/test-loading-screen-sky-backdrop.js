@@ -51,14 +51,14 @@ assert(Number.isFinite(Number(config.settings?.skyFocusOffsetX)), `${configPath}
 assert(Number.isFinite(Number(config.settings?.skyFocusOffsetY)), `${configPath}: skyFocusOffsetY must be numeric`);
 assert(Number.isFinite(Number(config.settings?.skyZoom)), `${configPath}: skyZoom must be numeric`);
 assert(Number(config.settings?.loreSize) === 19, `${configPath}: uploaded loreSize must remain 19`);
-assert(Number(config.settings?.scriptSize) === 160, `${configPath}: latest uploaded scriptSize must remain 160`);
+assert(Number(config.settings?.scriptSize) === 120, `${configPath}: shipped scriptSize must remain 120 after the requested 25% reduction`);
 assert(Number(config.settings?.scriptY) === 45, `${configPath}: uploaded scriptY must remain 45`);
 assert(Number(config.settings?.columnSpacing) === -0.56, `${configPath}: uploaded columnSpacing must remain -0.56`);
 assert(Number(config.settings?.scriptScrollSpeed) === 0.03, `${configPath}: latest uploaded scriptScrollSpeed must remain 0.03`);
 assert(Number(config.settings?.loadPercent) === 63, `${configPath}: uploaded preview progress must remain 63`);
 assert(Number(config.settings?.skyFocusOffsetX) === 8, `${configPath}: latest uploaded skyFocusOffsetX must remain 8`);
 assert(Number(config.settings?.skyFocusOffsetY) === 0, `${configPath}: latest uploaded skyFocusOffsetY must remain 0`);
-assert(Number(config.settings?.skyZoom) === 3.25, `${configPath}: shipped sky zoom must remain 3.25x`);
+assert(Number(config.settings?.skyZoom) === 2.4375, `${configPath}: shipped sky zoom must remain 2.4375x after the requested 25% reduction`);
 
 // The compatibility loader may still prewarm the sky, but correctness must not depend on it.
 assert(bootstrapSource.includes('loading-screen-sky-backdrop.js?v=20260913e'), `${bootstrapPath}: compatibility backdrop prewarm reference missing`);
@@ -91,7 +91,7 @@ assert(loadingRuntimeSource.includes('const travel = viewportHeight + contentHei
 assert(loadingRuntimeSource.includes('const scriptY = viewportHeight - travelPhase * travel'), `${loadingRuntimePath}: script scroll must enter from below and exit above the real viewport`);
 assert(!loadingRuntimeSource.includes('contentHeight - viewportHeight'), `${loadingRuntimePath}: legacy internal-window scroll range must not return`);
 assert(!loadingRuntimeSource.includes("els.scriptViewport.style.top = `${settings.scriptY}%`"), `${loadingRuntimePath}: scriptY must no longer move a clipping viewport`);
-assert(loadingRuntimeSource.includes("scriptSize: 160, scriptY: 45") && loadingRuntimeSource.includes('columnSpacing: -0.56, scriptScrollSpeed: 0.03'), `${loadingRuntimePath}: synchronous first paint must match current shipped script defaults`);
+assert(loadingRuntimeSource.includes("scriptSize: 160, scriptY: 45") && loadingRuntimeSource.includes('columnSpacing: -0.56, scriptScrollSpeed: 0.03'), `${loadingRuntimePath}: synchronous first paint must match current runtime fallback script defaults`);
 
 assert(skyDomeSource.includes('const CELESTIAL_RADIUS = 197'), `${skyDomePath}: expected celestial radius contract missing`);
 assert(skyDomeSource.includes('const CLOUD_RADII = [176, 184, 192]'), `${skyDomePath}: expected nearer cloud-shell radii missing`);
@@ -115,9 +115,9 @@ assert(editorSource.includes('#scriptViewport{position:absolute;top:0;left:25%;w
 assert(editorSource.includes('travel=viewportHeight+contentHeight') && editorSource.includes('scriptY=viewportHeight-travelPhase*travel'), `${editorPath}: preview script must enter/exit across actual viewport edges`);
 assert(!editorSource.includes('contentHeight-viewportHeight'), `${editorPath}: legacy preview internal-window scroll range must not return`);
 assert(!editorSource.includes('els.scriptViewport.style.top=`${data.settings.scriptY}%`'), `${editorPath}: scriptY must not move the preview clipping viewport`);
-assert(editorSource.includes('scriptSize:160') && editorSource.includes('scriptY:45'), `${editorPath}: defaults must use the latest uploaded script sizing/position`);
+assert(editorSource.includes('scriptSize:160') && editorSource.includes('scriptY:45'), `${editorPath}: editor defaults retain the prior authoring preset unless imported/reset from the shipped config`);
 assert(editorSource.includes('columnSpacing:-.56') && editorSource.includes('scriptScrollSpeed:.03'), `${editorPath}: defaults must use the latest uploaded script composition`);
-assert(editorSource.includes('skyFocusOffsetX:8') && editorSource.includes('skyFocusOffsetY:0') && editorSource.includes('skyZoom:3.25'), `${editorPath}: latest uploaded sky framing plus 3.25x zoom must be the default`);
+assert(editorSource.includes('skyFocusOffsetX:8') && editorSource.includes('skyFocusOffsetY:0') && editorSource.includes('skyZoom:3.25'), `${editorPath}: editor defaults retain the prior authoring sky preset unless imported/reset from the shipped config`);
 assert(editorSource.includes(',.5,4)'), `${editorPath}: editor normalization/preview zoom ceiling must remain 4x`);
 const editorSunDraw = editorSource.indexOf('drawBody("sun",w,h,state)');
 const editorMoonDraw = editorSource.indexOf('drawBody("moon",w,h,state)');
