@@ -4,25 +4,6 @@
   const PUKTUK_KIND = 'puktuk'; // Species key shared by wild Puktuk, livestock, and the existing genotype renderer.
   const PUKTUK_BABY_ITEM_KEY = 'puktukBaby'; // Livestock item created when a Puktuk den baby is taken from its nest.
 
-  // Den encounter authoring is shared by every Den-Mother species. This bridge
-  // already occupies the parser-blocking point immediately before game.js, so
-  // load the locale adapter here rather than adding another unrelated bootstrap.
-  function ensureDenLocaleRuntime() {
-    if (window.DenLocaleRuntime) return true;
-    const src = 'js/den-locale-runtime.js?v=20260914b';
-    if (document.readyState === 'loading') {
-      document.write(`<script src="${src}"><\/script>`);
-      return true;
-    }
-    if (![...document.scripts].some(script => script.src?.includes('/den-locale-runtime.js'))) {
-      const script = document.createElement('script');
-      script.src = src;
-      script.async = false;
-      document.head.appendChild(script);
-    }
-    return true;
-  }
-
   function registerPuktukNestConfig() {
     const game = window.SCRATCHBONES_CONFIG?.game; // Config is loaded before this bridge and snapshotted later by game.js.
     if (!game) return false;
@@ -69,12 +50,15 @@
     return true;
   }
 
-  ensureDenLocaleRuntime();
+  // Keep this module deliberately species/config-only. DenLocaleRuntime is loaded
+  // as its own sibling entry by combat-config-loader.js; nesting document.write()
+  // from inside this parser-time module could disturb unrelated held-item/stance
+  // bootstrap ordering and made a den feature capable of breaking player hands.
   const configReady = registerPuktukNestConfig();
   const bridgeReady = installDenNestInitBridge();
 
   window.PuktukDenNestRegistration = {
-    version: 1,
+    version: 2,
     PUKTUK_KIND,
     PUKTUK_BABY_ITEM_KEY,
     registerPuktukNestConfig,
