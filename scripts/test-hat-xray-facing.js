@@ -20,18 +20,18 @@ assert.match(source, /player_avatar_\(front\|back\)_hat_xray_plane/, 'parity mod
 assert.match(source, /mesh\.position\.z = source\.position\.z;/,
   'skinned xray is returned to the exact portrait surface instead of floating in front');
 assert.match(source, /FRONT_XRAY_RENDER_ORDER = 2\.5/,
-  'front xray is ordered above body=2 but below shoulder pet=3 without a geometry offset');
-assert.match(source, /yawDot > 0 && uprightDot >= TILT_CUTOFF_DOT/,
-  'front xray uses the same binary 90-degree yaw and 35-degree tilt gate as front headwear');
-assert.match(source, /currentMaterial\.opacity = visible \? baseOpacity : 0;/,
-  'culled xray fragments are made fully transparent before alphaTest/depth write');
+  'front xray is ordered above body=2 but below shoulder pets without a geometry offset');
 assert.match(source, /assembly\.add = function addWithHatXrayParity/,
   'post-build xray additions are intercepted and corrected when they are created');
+assert.match(source, /angleVisibility:\s*'disabled'/,
+  'xray diagnostics make permanent angle-independent visibility explicit');
+assert.doesNotMatch(source, /TILT_CUTOFF|yawCutoff|tiltCutoff|FacingGate|worldFront|worldUp|toCamera|uprightDot|yawDot/i,
+  'xray parity contains no camera/head-angle cutoff calculations');
+assert.doesNotMatch(source, /material\.opacity\s*=|currentMaterial\.opacity\s*=/,
+  'xray parity never changes material opacity based on view angle');
+assert.doesNotMatch(source, /onBeforeRender\s*=|smoothstep\s*\(/,
+  'xray parity installs no per-frame visibility hook or fade');
 assert.match(loader, /js\/hat-xray-head-facing\.js\?v=20260824a/,
-  'xray parity module loads before game.js constructs the player overlay');
-assert.ok(
-  loader.indexOf('js/front-hat-head-facing.js') < loader.indexOf('js/hat-xray-head-facing.js'),
-  'xray parity wraps the final front-hat-aware avatar builder'
-);
+  'xray coplanar module still loads before game.js constructs the player overlay');
 
-console.log('hat xray facing parity checks passed.');
+console.log('hat xray coplanar-only checks passed.');
