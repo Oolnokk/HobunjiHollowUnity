@@ -798,17 +798,33 @@
     api.__hobunjiAlcoholInitHooked = true;
   }
 
+  // Other modules (stable-animal-progression.js, stable-animal-xp-events.js,
+  // ...) install this same "future global" pattern on several of the same
+  // names (DialogueContent chief among them) and chain onto whatever getter
+  // is already there via Object.getOwnPropertyDescriptor. The getter here
+  // used to be hardcoded to return undefined and the setter used to
+  // delete+reassign instead of chaining to any previous accessor, so a
+  // later module reading back "the value so far" through this getter always
+  // got undefined and could stomp a real assignment with it. Chain to the
+  // previous get/set (if any) and keep the resolved value in `pending` so
+  // this hook is transparent to whoever else is watching the same global.
   function hookFutureGlobal(name, patch) {
     if (window[name]) { patch(window[name]); return; }
     const descriptor = Object.getOwnPropertyDescriptor(window, name);
     if (descriptor && !descriptor.configurable) return;
+    const previousGet = descriptor?.get;
+    const previousSet = descriptor?.set;
+    let pending = descriptor && 'value' in descriptor ? descriptor.value : undefined;
     Object.defineProperty(window, name, {
       configurable: true,
-      get() { return undefined; },
+      enumerable: descriptor?.enumerable !== false,
+      get() { return previousGet ? previousGet.call(window) : pending; },
       set(value) {
-        delete window[name];
-        window[name] = value;
-        patch(value);
+        if (previousSet) previousSet.call(window, value);
+        const resolved = previousGet ? previousGet.call(window) : value;
+        patch(resolved);
+        pending = resolved;
+        Object.defineProperty(window, name, { configurable: true, enumerable: true, writable: true, value: resolved });
       }
     });
   }
