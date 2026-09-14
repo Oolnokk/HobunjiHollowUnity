@@ -105,8 +105,12 @@ assert.match(localeEditor, /api\.getWorkspace = \(\) => mergeWorkspace\(rawGetWo
   'den encounter metadata is merged through the normal Locale Editor workspace bridge');
 assert.match(localeEditor, /saveLocalesOverrideBtn[\s\S]*?map\(exportLocale\)[\s\S]*?setOverride\('locales'/,
   'the local-override button explicitly exports den-aware locale documents instead of bypassing the sidecar');
-assert.match(localeEditor, /copyJsonBtn[\s\S]*?downloadJsonBtn[\s\S]*?stopImmediatePropagation/,
-  'Copy/Download export surfaces are intercepted before the inline editor can emit stale metadata');
+assert.match(localeEditor, /function stopNativeExport\(event\)[\s\S]*?stopImmediatePropagation\(\)/,
+  'den-aware export hooks can suppress the stale inline export handler');
+assert.match(localeEditor, /copyJsonBtn[\s\S]*?copyButton\.addEventListener\('click'[\s\S]*?stopNativeExport\(event\)/,
+  'Copy JSON is intercepted by the den-aware export hook');
+assert.match(localeEditor, /downloadJsonBtn[\s\S]*?downloadButton\.addEventListener\('click'[\s\S]*?stopNativeExport\(event\)/,
+  'Download JSON is intercepted by the den-aware export hook');
 assert.match(localeEditor, /if \(store\.byLocale\[locale\.id\]\) return store\.byLocale\[locale\.id\];/,
   'switching away and back cannot overwrite live den edits with the inline editor stale meta copy');
 assert.match(panelUi, /den-encounter-authoring\.js\?v=20260914a/,
