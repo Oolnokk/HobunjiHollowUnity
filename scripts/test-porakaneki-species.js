@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const porakaneki = JSON.parse(fs.readFileSync('docs/config/species/porakaneki.json', 'utf8')); // Guards the authored NPC-only species contract.
 const speciesIndex = JSON.parse(fs.readFileSync('docs/config/species/index.json', 'utf8')); // Guards discoverability through the shared species loader.
 const speciesOverrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8')); // Guards the existing barbarian chief's authoritative species assignment.
+const bodywrapCosmetic = JSON.parse(fs.readFileSync('docs/config/cosmetics/clothes/overwear/tankan_bodywrap.json', 'utf8')); // Guards the exact Kenkari male overwear art Porakaneki must inherit.
 const runtimeSource = fs.readFileSync('docs/js/porakaneki-species-runtime.js', 'utf8'); // Executed against a minimal browser-shaped host to verify inheritance wiring.
 const bootstrapSource = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8'); // Guards load order before whole-rig scale initialization.
 
@@ -40,6 +41,13 @@ assert(!porakaneki.male.allowedCosmetics.includes('fine_poncho'), 'Porakaneki ov
 assert(!porakaneki.male.allowedCosmetics.includes('fine_hood'), 'Porakaneki may not inherit Kenkari hood clothing');
 assert(!porakaneki.male.allowedCosmetics.some(id => id.includes('appearance::hat::') || id.includes('kenk_bowlkasa')), 'Porakaneki may not inherit Kenkari headwear');
 assert.deepEqual(porakaneki.male.forcedCosmetics, { eyes: 'none', hat: 'none', hood: 'none' });
+assert.equal(bodywrapCosmetic.slot, 'overwear', 'Tankan Body Wrap must remain an overwear cosmetic, never a hood/facewrap');
+assert.equal(
+  bodywrapCosmetic.speciesVariants.kenkari_male.parts.torso.layers.back.image.url,
+  './assets/cosmetics/clothes/overwear/portrait/tankanbodywrap_kenk_m.png',
+  'Porakaneki male bodywrap inheritance must resolve to the Kenkari male bodywrap sprite',
+);
+assert(fs.existsSync('docs/assets/cosmetics/clothes/overwear/portrait/tankanbodywrap_kenk_m.png'), 'Kenkari male bodywrap sprite must exist');
 assert(speciesIndex.entries.some(entry => entry.speciesId === 'porakaneki' && entry.path === './porakaneki.json'));
 assert.equal(speciesOverrides.npcs.porakaneki_chief.species, 'porakaneki');
 assert(fs.existsSync('docs/assets/fightersprites/kenkari-m/head_porakaneki_m.png'));
@@ -77,6 +85,7 @@ const handProfileData = {
   speciesModels: { kenkari: 'avian', mashtzarr: 'pachyderm' },
   speciesScaleOverrides: {},
 }; // Proves Porakaneki explicitly resolves the Mashtzarr pachyderm hand-model mapping, not the Kenkari hand family.
+const banditEntityConfigs = []; // Captures final configs reaching the original BanditCombat.makeEntity implementation after the Porakaneki guard runs.
 const windowObject = {
   SCRATCHBONES_CONFIG: {
     game: {
@@ -110,8 +119,11 @@ const windowObject = {
       },
     },
   },
+  BanditCombat: {
+    makeEntity(config) { banditEntityConfigs.push(config); return { config }; },
+  },
   applyHobunjiAttachmentRigProfileCorrections: () => true,
-  resolveOptionLayers: (_option, fighter) => fighter.speciesId,
+  resolveOptionLayers: (option, fighter) => ({ optionId: option?.id || null, speciesId: fighter.speciesId, gender: fighter.gender }),
   getPortraitFighters: () => fighters,
   loadPortraitCosmetics: async () => cosmetics,
 }; // Minimal browser-shaped host used to exercise the bridge without loading the whole game.
@@ -134,9 +146,41 @@ assert.equal(porakanekiRig.anatomy.rigScaleX, 1.01);
 assert.equal(porakanekiRig.shoulderPerchRule.appearanceSpeciesId, 'porakaneki');
 assert.equal(porakanekiRig.posteriorRule.appearanceSpeciesId, 'porakaneki');
 assert.notEqual(porakanekiRig, windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['kenkari::male']);
-assert.equal(windowObject.resolveOptionLayers({}, fighters[0]), 'kenkari', 'Porakaneki body/wardrobe variants must resolve through Kenkari');
-assert.equal(windowObject.resolveOptionLayers({}, fighters[1]), 'kenkari', 'non-Porakaneki wardrobe resolution must remain untouched');
+const bodywrapResolution = windowObject.resolveOptionLayers({ id: 'tankan_bodywrap' }, fighters[0]); // Verifies the runtime keeps male gender while swapping only the Porakaneki species key to Kenkari.
+assert.equal(bodywrapResolution.speciesId, 'kenkari');
+assert.equal(bodywrapResolution.gender, 'male');
+assert.equal(bodywrapResolution.optionId, 'tankan_bodywrap');
+const ordinaryKenkariResolution = windowObject.resolveOptionLayers({ id: 'tankan_bodywrap' }, fighters[1]); // Ensures the wrapper leaves non-Porakaneki resolution untouched.
+assert.equal(ordinaryKenkariResolution.speciesId, 'kenkari');
+assert.equal(ordinaryKenkariResolution.gender, 'male');
 assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.profiles['porakaneki:male'].maskYScaleMultiplier, 1.14);
+
+const porakanekiBanditConfig = {
+  speciesWeights: { porakaneki: 1 },
+  clothingPool: {
+    slots: ['torso', 'overwear', 'hat', 'hood'],
+    itemsBySlot: {
+      torso: ['bandolier1'],
+      overwear: ['tankan_bodywrap'],
+      hat: ['appearance::hat::basic_headband'],
+      hood: ['fine_hood', 'facewrap'],
+    },
+    banditExclusiveIds: ['facewrap'],
+  },
+}; // Mirrors the dangerous shared bandit pool shape that previously let facewrap bypass the Porakaneki species whitelist.
+windowObject.BanditCombat.makeEntity(porakanekiBanditConfig);
+const guardedBanditConfig = banditEntityConfigs.at(-1); // Final config proves the shared entity factory sees only Porakaneki-approved clothing slots/items.
+assert.notEqual(guardedBanditConfig, porakanekiBanditConfig, 'Porakaneki guard must copy rather than mutate the shared bandit config');
+assert.deepEqual(Array.from(guardedBanditConfig.clothingPool.slots), ['torso', 'overwear']);
+assert.deepEqual(Array.from(guardedBanditConfig.clothingPool.itemsBySlot.torso), ['bandolier1']);
+assert.deepEqual(Array.from(guardedBanditConfig.clothingPool.itemsBySlot.overwear), ['tankan_bodywrap']);
+assert.deepEqual(Array.from(guardedBanditConfig.clothingPool.itemsBySlot.hat), []);
+assert.deepEqual(Array.from(guardedBanditConfig.clothingPool.itemsBySlot.hood), []);
+assert.deepEqual(Array.from(guardedBanditConfig.clothingPool.banditExclusiveIds), []);
+assert.deepEqual(porakanekiBanditConfig.clothingPool.banditExclusiveIds, ['facewrap'], 'shared source config must remain untouched for real bandits');
+const regularBanditConfig = { speciesWeights: { 'mao-ao': 1 }, clothingPool: { banditExclusiveIds: ['facewrap'] } }; // Proves real bandits retain their exclusive facewrap behavior.
+windowObject.BanditCombat.makeEntity(regularBanditConfig);
+assert.equal(banditEntityConfigs.at(-1), regularBanditConfig, 'non-Porakaneki bandit config must pass through unchanged');
 
 (async () => {
   const loadedCosmetics = await windowObject.loadPortraitCosmetics();
@@ -151,7 +195,7 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hat, 'none');
   assert.equal(loadedCosmetics.forcedCosmeticsByFighter.porakaneki_male.hood, 'none');
 
-  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260914a');
+  const porakanekiBootstrapIndex = bootstrapSource.indexOf('porakaneki-species-runtime.js?v=20260914b');
   const scaleBootstrapIndex = bootstrapSource.indexOf('character-rig-scale.js?v=20260904i');
   assert(porakanekiBootstrapIndex >= 0 && scaleBootstrapIndex > porakanekiBootstrapIndex,
     'Porakaneki profile inheritance must load before whole-rig scale installs profile defaults');
@@ -165,10 +209,12 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   assert.equal(debug.footDonorSpecies, 'engh-sho');
   assert.equal(debug.footGlb, 'assets/models/feet/foot_feline.glb');
   assert.equal(debug.wardrobeResolverInstalled, true);
+  assert.equal(debug.banditWardrobeGuardInstalled, true);
   assert.equal(debug.paletteInheritanceInstalled, true);
   assert.equal(debug.cosmeticRestrictionsApplied, 1);
   assert.equal(debug.eyeDisksSuppressed, true);
   assert.deepEqual(Array.from(debug.allowedCosmeticIds).sort(), expectedAllowed);
+  assert.equal(debug.expectedAssets.bodywrapMale, 'cosmetics/clothes/overwear/portrait/tankanbodywrap_kenk_m.png');
   assert.equal(debug.armMaskProfilesInstalled, 1);
   assert.equal(debug.hairSpecies, 'tletingan');
 
