@@ -322,7 +322,10 @@
       if (LOW_MEMORY_STREAMING) {
         const immediate = coords.shift(); // Used to restore the nearest edited chunk immediately while the seam halo returns through the paced queue.
         if (immediate) this.load(immediate.cx, immediate.cz);
-        for (const coord of coords) this.enqueue(coord.cx, coord.cz, chebyshev(coord.cx, coord.cz, this.centerCx, this.centerCz));
+        for (const coord of coords) {
+          const distance = chebyshev(coord.cx, coord.cz, this.centerCx, this.centerCz); // Used to keep staged rebuilds ordered consistently with ordinary neighborhood loads.
+          if (distance <= LOAD_RADIUS) this.enqueue(coord.cx, coord.cz, distance);
+        }
         this.streamCooldownSeconds = STREAM_BUILD_INTERVAL_S;
       } else {
         for (const coord of coords) this.load(coord.cx, coord.cz);
