@@ -25,7 +25,6 @@
     itemBtn: 'itemSelect',
     btnCallMount: 'toggleMount',
     btnUtilityMenu: 'utilityMenu',
-    btnMeleeAutoTarget: 'meleeAutoTargetToggle',
     btnSwapTarget: 'swapTarget',
   }); // Maps permanent arch controls to the same semantic actions exposed in Settings.
   const FIXED_MEANING_BY_BUTTON_ID = Object.freeze({
@@ -35,7 +34,6 @@
     itemBtn: 'ITEMS',
     btnCallMount: 'MOUNT',
     btnUtilityMenu: 'UTILITY',
-    btnMeleeAutoTarget: 'TARGET',
     btnSwapTarget: 'TARGET',
     btnAmmoSelect: 'AMMO',
     potionBtn: 'POTION',

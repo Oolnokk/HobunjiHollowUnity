@@ -1,0 +1,42 @@
+name: Transient attack alignment regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/style.css'
+      - 'docs/config/scratchbones-config.js'
+      - 'docs/js/input-bindings.js'
+      - 'docs/js/arch-button-labels.js'
+      - 'docs/js/action-arch-icons.js'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/combat/combat-input.js'
+      - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/combat/quick-attack-bonus-indicator.js'
+      - 'scripts/test-transient-attack-alignment.js'
+      - '.github/workflows/transient-attack-alignment-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/style.css'
+      - 'docs/config/scratchbones-config.js'
+      - 'docs/js/input-bindings.js'
+      - 'docs/js/arch-button-labels.js'
+      - 'docs/js/action-arch-icons.js'
+      - 'docs/js/combat/**'
+      - 'scripts/test-transient-attack-alignment.js'
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/test-transient-attack-alignment.js
+      - run: node scripts/test-controller-default-layout.js
+      - run: node scripts/test-controller-experience.js

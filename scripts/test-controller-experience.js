@@ -119,20 +119,19 @@ const gameplayCollisionBindings = liveResetBindings.controller; // Exercises con
 gameplayCollisionBindings.interact = 'Button0';
 gameplayCollisionBindings.uiConfirm = 'Button0';
 assert.equal(resetApi.resolveActionForButton('controller', 'Button0'), 'interact', 'generic gameplay dispatch ignores same-button menu context actions');
-gameplayCollisionBindings.meleeAutoTargetToggle = 'Button3';
+gameplayCollisionBindings.swapTarget = 'Button3';
 const contextualDown = new Set(['Button3']);
-assert.equal(resetApi.consumeControllerPress('meleeAutoTargetToggle', contextualDown, new Set(), true), true, 'contextual controller press resolves from the configured binding');
+assert.equal(resetApi.consumeControllerPress('swapTarget', contextualDown, new Set(), true), true, 'contextual controller press resolves from the configured binding');
 assert.equal(contextualDown.has('Button3'), false, 'contextual press is consumed before generic gameplay dispatch');
 const heldContextualDown = new Set(['Button3']);
-assert.equal(resetApi.consumeControllerPress('meleeAutoTargetToggle', heldContextualDown, new Set(['Button3']), true), false, 'held contextual binding does not re-edge-trigger');
+assert.equal(resetApi.consumeControllerPress('swapTarget', heldContextualDown, new Set(['Button3']), true), false, 'held contextual binding does not re-edge-trigger');
 assert.equal(heldContextualDown.has('Button3'), false, 'held contextual binding remains consumed while its context owns the input');
 
 assert.match(gameSource, /if \(!gamepadState\.uiOwned\) releaseControllerGameplayInput\('released to menu'\)/, 'opening a menu releases held gameplay actions exactly once');
 assert.match(gameSource, /if \(gamepadState\.primeButtonsOnResume\)[\s\S]{0,500}gamepadState\.previous = new Set\(down\)/, 'the button used to close a menu is primed instead of ghost-firing in gameplay');
 assert.match(gameSource, /gamepadState\.actionByButton\.set\(button, actionId\)[\s\S]{0,700}gamepadState\.actionByButton\.get\(button\)/, 'controller releases remain paired with the action originally pressed across mode-shift changes');
 assert.match(gameSource, /window\.HOBUNJI_CONTROLLER_STATUS = status/, 'controller state is exposed to in-game diagnostics');
-assert.match(gameSource, /InputBindings\?\.consumeControllerPress\?\.\('meleeAutoTargetToggle'/, 'gameplay delegates the melee contextual press to the binding API');
-assert.doesNotMatch(gameSource, /down\.has\('Button11'\)/, 'melee auto-target no longer bypasses configuration with a hardcoded R3 check');
+assert.doesNotMatch(gameSource, /meleeAutoTargetToggle|meleeTargetPrev|meleeTargetNext/, 'removed persistent melee targeting has no gameplay input path');
 assert.match(probeSource, /Controller: #\$\{controllerDebug\.index\}[\s\S]{0,260}owner=\$\{controllerDebug\.owner\}/, 'Pixel Probe includes controller identity and current input owner');
 assert.match(uiSource, /function adjustFocusedControl\(delta\)/, 'menu sliders, number inputs, and selects are controller-adjustable');
 assert.match(uiSource, /scrollStick[\s\S]{0,900}scrollTop \+=/, 'right stick scrolls long menu panes');
@@ -197,7 +196,7 @@ assert.match(actionLocksSource, /input-default-reset-ui\.js\?v=20260909controlle
 
 assert.match(bindingsSource, /id: 'uiOpenMenu'[\s\S]{0,180}context: 'menu'/, 'menu open/close schema is owned by the controller binding module');
 assert.match(bindingsSource, /id: 'musicNote1'[\s\S]{0,180}context: 'music'/, 'music controller schema is owned by the controller binding module');
-assert.match(bindingsSource, /id: 'meleeAutoTargetToggle'[\s\S]{0,220}context: 'melee'/, 'melee contextual schema is owned by the controller binding module');
+assert.doesNotMatch(bindingsSource, /meleeAutoTargetToggle|meleeTargetPrev|meleeTargetNext/, 'removed melee target toggles and cycles are absent from the binding schema');
 const controllerHelperIndex = indexSource.indexOf('js/controller-input.js?'); // Parser-order contract is version-agnostic so camera/game cache bumps cannot break this controller test.
 const bindingsHelperIndex = indexSource.indexOf('js/input-bindings.js?');
 const gameScriptIndex = indexSource.indexOf('game.js?');

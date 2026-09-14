@@ -23,7 +23,6 @@
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
       const btnCallMount = document.getElementById('btnCallMount');
-      const btnMeleeAutoTarget = document.getElementById('btnMeleeAutoTarget');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -4457,104 +4456,58 @@
         return { hits, message: hits > 1 ? `${verb} ${hits} creatures!` : `${verb} the ${lastName}!` };
       }
 
-      // Player-chosen override from swapAutoTarget(), preferred over the
-      // nearest-hostile default until it dies, leaves range/area, or the
-      // player swaps again. Cleared automatically once invalid.
+      // Ranged weapons retain a player-selected lock; melee targeting exists
+      // only for the few frames between an attack request and its windup.
       let manualAutoTarget = null;
-      let gameFrameSerial = 0; // Identifies the current animation frame for shared auto-target and profiler work.
-      let autoTargetCacheFrame = -1; // Prevents every hostile resource ring from repeating the same target search in one frame.
+      let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
+      let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
+      let autoTargetCacheFrame = -1; // Prevents repeated target searches within the same frame.
       let autoTargetCacheValue = null; // Stores the single target-selection result for autoTargetCacheFrame.
-      // Melee-only auto-target toggle (see updateMeleeAutoTarget below) —
-      // an opt-in aim assist the player switches on/off themselves (Shift-
-      // tap desktop, right-stick click controller, the arch's 6th mobile
-      // button), unlike the old always-on lock this replaced. Forced back
-      // off the instant a melee weapon isn't actually out (see
-      // meleeWeaponOut) so it never lingers into farming/ranged/bare hands.
-      let meleeAutoTargetOn = false;
-      let meleeAutoTargetFreeAim = false; // Mouse movement releases the lock without turning the targeting toggle off.
-      const MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD = 0.48; // Small 3D radius around the centered reticle used for reacquisition.
-      const DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX = 2; // Ignore sub-pixel noise, but any real desktop mouse movement breaks the lock.
 
-      // Find a hostile whose 3D portrait hitbox is close enough to the centered
-      // reticle. Expanding the same hitbox used by projectiles keeps reacquisition
-      // forgiving without making a target behind the player eligible.
-      function desktopAutoTargetNearReticle(maxDistanceWorld) {
-        const ray = currentPlayerInteractionRay();
-        if (ray && window.RangedWeapons?.focusCandidates && window.RangedWeapons?.actorHitbox) {
-          const candidates = Array.from(hostileObjects)
-            .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden)
-            .map(c => {
-              const hitbox = window.RangedWeapons.actorHitbox(c);
-              return hitbox?.box ? {
-                type: 'hostile',
-                id: c.id,
-                data: c,
-                box: hitbox.box.clone().expandByScalar(MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD),
-              } : null;
-            })
-            .filter(Boolean);
-          const focus = window.RangedWeapons.focusCandidates(candidates, maxDistanceWorld / TILE);
-          if (focus?.candidate?.data) return focus.candidate.data;
-        }
-        // Fallback for a not-yet-initialized renderer: use a small ground-space
-        // cone around the current aim bearing rather than nearest hostile.
-        const aim = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
+      function meleeWeaponOut() {
+        return heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+      }
+
+      function currentMeleeAimAngle() {
+        return activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
           : controllerLookActive ? controllerLookAngle
           : (isDesktop && mouseLookActive) ? mouseLookAngle
           : player.angle;
-        const radiusPx = MELEE_AUTO_TARGET_RETICLE_RADIUS_WORLD * TILE;
-        let best = null, bestDist = maxDistanceWorld;
-        const fx = Math.cos(aim), fy = Math.sin(aim);
+      }
+
+      function meleeAttackTargetCandidate() {
+        if (!meleeWeaponOut()) return null;
+        const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used by the shared ±45° cone.
+        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0); // Existing melee assist range remains authoritative.
+        let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
-          const along = dx * fx + dy * fy;
-          if (along < 0 || along > bestDist) continue;
-          const lateral = Math.abs(dx * fy - dy * fx);
-          if (lateral > radiusPx) continue;
           const dist = Math.hypot(dx, dy);
-          if (dist < bestDist) { best = c; bestDist = dist; }
+          if (dist > bestDist) continue;
+          if (!window.Combat?.targetInsideAttackCone?.(player, c, aimAngle)) continue;
+          best = c;
+          bestDist = dist;
         }
         return best;
       }
 
-      // Nearest live hostile in the player's current area within lock-on range, or
-      // the player's manually-swapped target if still valid, or null.
-      // Desktop melee only acquires while the targeting toggle is on. Once
-      // mouse-look releases a lock, it waits for the reticle to pass close to
-      // another hostile before reacquiring.
       function computeAutoTarget() {
-        const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
-        if (!meleeActive && !rangedActive) {
-          manualAutoTarget = null;
-          meleeAutoTargetFreeAim = false;
+        if (meleeWeaponOut()) {
+          const target = meleeAttackAlignment?.target;
+          if (target?.health > 0 && target.areaId === currentArea && !target._denHidden) return target;
           return null;
         }
-        if (meleeActive && isDesktop && !meleeAutoTargetOn) {
+        if (!rangedActive) {
           manualAutoTarget = null;
-          meleeAutoTargetFreeAim = false;
           return null;
         }
-        const maxDist = rangedActive
-          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
-          : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const maxDist = window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7;
         if (manualAutoTarget) {
           if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
-              Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) {
-            return manualAutoTarget;
-          }
+              Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) return manualAutoTarget;
           manualAutoTarget = null;
-        }
-        if (meleeActive && isDesktop && meleeAutoTargetOn) {
-          const reacquired = desktopAutoTargetNearReticle(maxDist);
-          if (reacquired) {
-            manualAutoTarget = reacquired;
-            meleeAutoTargetFreeAim = false;
-            return reacquired;
-          }
-          meleeAutoTargetFreeAim = true;
-          return null;
         }
         let best = null, bestDist = maxDist;
         for (const c of hostileObjects) {
@@ -4576,32 +4529,16 @@
         return autoTargetCacheValue;
       }
 
-      // Where a ranged shot currently flies, in the flat XY logical-angle
-      // convention (atan2(y,x), matching player.angle/facingAngle) — shared
-      // by RangedWeapons.init's getPlayerAimAngle (below) and
-      // updateToolMesh's ranged pose branch, which rotates the hands/tool
-      // to face this instantly rather than waiting on the body. Shoulder-
-      // surf mode uses the player-to-perspective-point horizontal direction;
-      // the ground-intersection bearing remains separate and serves only tile
-      // focus. The ordinary camera falls back to whatever auto-target lock (if
-      // any) is steering facing, then to plain body facing.
       function currentPlayerAimAngle() {
         if (activeCameraMode === SHOULDER_SURF_MODE) return shoulderPerspectiveFacingAngle();
         const target = findAutoTarget();
         return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
       }
 
-      // Vertical companion to currentPlayerAimAngle(), passed to RangedWeapons
-      // as getPlayerAimPitch. An auto-target lock assists elevation the same
-      // way it already assists heading — aiming at the target's actual
-      // rendered height rather than just its ground tile. With no lock,
-      // pitch reuses the existing camera-tilt input (shift-drag or
-      // shoulder-surf drag write cameraAngleOffsetDeg already) as manual
-      // up/down aim, rather than inventing a second control scheme.
       const MAX_RANGED_AIM_PITCH_RAD = THREE.MathUtils.degToRad(60);
       function currentPlayerAimPitch() {
         if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const direction = currentPlayerPerspectiveDirection(); // Carries the shared point's real verticality into ranged poses and launch pitch (origin defaults to the head anchor).
+          const direction = currentPlayerPerspectiveDirection();
           if (direction) {
             return window.FormatUtils.clamp(
               Math.asin(window.FormatUtils.clamp(direction.y, -1, 1)),
@@ -4621,12 +4558,9 @@
         return window.FormatUtils.clamp(-THREE.MathUtils.degToRad(cameraAngleOffsetDeg), -MAX_RANGED_AIM_PITCH_RAD, MAX_RANGED_AIM_PITCH_RAD);
       }
 
-      // Shared player melee direction. A hostile under the centered reticle
-      // converges from the player's body center to that same portrait Box3;
-      // otherwise the camera/facing yaw and pitch remain authoritative.
       function currentPlayerMeleeAimDirection() {
         if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const perspectiveDirection = currentPlayerPerspectiveDirection(); // Makes melee and lunge elevation converge on the same point as the head and muzzle.
+          const perspectiveDirection = currentPlayerPerspectiveDirection();
           if (perspectiveDirection) return perspectiveDirection;
         }
         const focused = window.RangedWeapons?.focusedHostile?.(24);
@@ -4646,152 +4580,93 @@
         return Math.asin(window.FormatUtils.clamp(Number(direction?.y) || 0, -1, 1));
       }
 
-      // Used by updateAmbientCues() to duck exploration/dawn music during a
-      // fight — true whenever any live hostile in the player's current area
-      // is actively chasing/attacking (state === 'chase'), regardless of
-      // whether the player currently has a weapon out (unlike
-      // findAutoTarget, which is gated on that — a wolf mid-charge should
-      // still cut the music even if the player hasn't drawn a weapon yet).
       function isPlayerInCombat() {
         for (const c of hostileObjects) {
-          if (c.health > 0 && c.areaId === currentArea && c.state === 'chase') return true;
+          if (c.health > 0 && c.areaId === currentArea && (c.state === 'chase' || c.state === 'searching')) return true;
         }
         return false;
       }
 
-      // Swap the auto-target to the CLOSEST hostile within a cone around
-      // `aimAngle` (excluding whatever is currently targeted) — the desktop
-      // swap-target input (mouse/right-stick direction) and the mobile
-      // swap-target stick button both drive this. If nothing qualifies in
-      // that direction, the target simply stays the same (returns false;
-      // manualAutoTarget is left untouched). Hardened the same way as
-      // findAutoTarget — a weapon has to actually be equipped, not just the
-      // weapon tool slot selected.
       const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
       function swapAutoTarget(aimAngle) {
-        const meleeActive = heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
-        if (!meleeActive && !rangedActive) return false;
+        if (!rangedActive) return false;
         const current = findAutoTarget();
-        const maxDist = rangedActive
-          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
-          : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const maxDist = window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7;
         let best = null, bestDist = Infinity;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c === current || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
           if (dist > maxDist || dist < 0.001 || dist >= bestDist) continue;
-          const angleToC = Math.atan2(dy, dx);
-          if (Math.abs(angleDiff(angleToC, aimAngle)) > SWAP_TARGET_HALF_CONE_RAD) continue;
-          bestDist = dist; best = c;
+          if (Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) > SWAP_TARGET_HALF_CONE_RAD) continue;
+          bestDist = dist;
+          best = c;
         }
         if (!best) return false;
         manualAutoTarget = best;
-        meleeAutoTargetFreeAim = false;
         invalidateAutoTargetCache();
         return true;
       }
 
-      // Melee-only auto-target: is the currently equipped/active tool a
-      // melee weapon? (Ranged/farm tools/bare hands never engage this —
-      // ranged already went fully manual last session.)
-      function meleeWeaponOut() {
-        return heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+      function finishMeleeAttackAlignment(alignment, runAttack) {
+        if (meleeAttackAlignment !== alignment) return;
+        meleeAttackAlignment = null; // Lock is off before the attack callback creates its windup.
+        invalidateAutoTargetCache();
+        if (!alignment.cancelled) runAttack();
       }
 
-      // "Am I roughly looking at a targetable hostile right now" — used
-      // only to decide whether starting a melee swing should auto-engage
-      // the toggle (see tryAutoEngageMeleeTarget below), not for anything
-      // continuous. Reads whichever look/aim signal is actually driving
-      // facing right now (shoulder-surf's camera reticle, manual mouse/
-      // stick look, or plain body facing) rather than just nearest-in-
-      // range regardless of where the player is pointed.
-      const MELEE_AUTO_TARGET_ENGAGE_CONE_RAD = Math.PI / 4;
-      function meleeAttackTargetCandidate() {
-        const aimAngle = activeCameraMode === SHOULDER_SURF_MODE ? mouseLookAngle
-          : controllerLookActive ? controllerLookAngle
-          : (isDesktop && mouseLookActive) ? mouseLookAngle
-          : player.angle;
-        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
-        let best = null, bestDist = maxDist;
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
-          const dx = c.x - player.x, dy = c.y - player.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > bestDist) continue;
-          if (Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) > MELEE_AUTO_TARGET_ENGAGE_CONE_RAD) continue;
-          bestDist = dist; best = c;
+      function requestMeleeAttackAlignment(runAttack) {
+        const target = meleeAttackTargetCandidate();
+        if (!target) {
+          runAttack();
+          return null;
         }
-        return best;
-      }
-
-      // Turns melee auto-target on the instant an attack is thrown while
-      // roughly looking at something targetable — lets a player who's
-      // never touched the toggle just swing at what they're already
-      // looking at and have it pick up from there. No-ops if already on, no
-      // melee weapon out, or nothing qualifies.
-      function tryAutoEngageMeleeTarget() {
-        if (isDesktop || meleeAutoTargetOn || !meleeWeaponOut()) return;
-        const candidate = meleeAttackTargetCandidate();
-        if (!candidate) return;
-        manualAutoTarget = candidate;
-        meleeAutoTargetOn = true;
+        meleeAttackAlignment?.cancel?.();
+        const alignment = {
+          target,
+          cancelled: false,
+          cancel() {
+            if (meleeAttackAlignment !== alignment) return;
+            alignment.cancelled = true;
+            meleeAttackAlignment = null;
+            invalidateAutoTargetCache();
+          },
+        }; // Handle retained by combat-input while an offensive hold waits to start.
+        meleeAttackAlignment = alignment;
         invalidateAutoTargetCache();
+        alignment.runAttack = () => finishMeleeAttackAlignment(alignment, runAttack);
+        return alignment;
       }
 
-      // Cycles melee auto-target's current lock among every hostile within
-      // range, ordered by angle around the player ("orbitally") — Shift+
-      // wheel desktop, right-stick tilt controller, and the hidden mobile
-      // joystick's left/right all drive this while a lock is already
-      // active. A no-op while auto-target is off (per spec, cycling only
-      // matters once there's something to cycle among) or with no
-      // candidates in range.
-      function cycleMeleeAutoTarget(direction) {
-        if (!meleeAutoTargetOn || !meleeWeaponOut()) return;
-        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
-        const candidates = Array.from(hostileObjects)
-          .filter(c => c.health > 0 && c.areaId === currentArea && !c._denHidden && Math.hypot(c.x - player.x, c.y - player.y) <= maxDist)
-          .map(c => ({ c, angle: Math.atan2(c.y - player.y, c.x - player.x) }))
-          .sort((a, b) => a.angle - b.angle);
-        if (!candidates.length) return;
-        const current = findAutoTarget();
-        let idx = candidates.findIndex(entry => entry.c === current);
-        idx = idx === -1 ? 0 : (idx + direction + candidates.length) % candidates.length;
-        manualAutoTarget = candidates[idx].c;
-        meleeAutoTargetFreeAim = false;
-        invalidateAutoTargetCache();
-      }
+      function updateMeleeAttackAlignment(dt) {
+        const alignment = meleeAttackAlignment;
+        if (!alignment) return;
+        const target = alignment.target;
+        const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Slows visible turn after an attack while continuing to consume input.
+        const step = meleeWeaponOut() && target?.areaId === currentArea
+          ? window.Combat?.attackAlignmentStep?.(player, target, dt, { facing: currentMeleeAimAngle(), turnMultiplier })
+          : null;
+        if (!step?.eligible) {
+          alignment.runAttack(); // Aim assist never blocks a manual attack when its target leaves the cone.
+          return;
+        }
 
-      // Drives melee auto-target's actual aim, once per frame (see its call
-      // site in gameLoop, right before updateMovement) — by simulating
-      // exactly the input a real mouse/stick would give, not a separate
-      // hard override: in shoulder-surf that means smoothly turning the
-      // camera itself (mouseLookAngle then follows for free via
-      // updateShoulderSurfReticleAim, same as manual mouse-look/the touch
-      // joystick already do); in the ordinary camera it means driving
-      // mouseLookAngle/controllerLookAngle directly, exactly the values
-      // manual input already feeds into updateMovement's FACING section.
-      const MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC = 320;
-      function updateMeleeAutoTarget(dt) {
-        if (!meleeWeaponOut()) { meleeAutoTargetOn = false; return; }
-        if (!meleeAutoTargetOn) return;
-        const target = findAutoTarget();
-        if (!target) return;
-        const aimAngle = Math.atan2(target.y - player.y, target.x - player.x);
+        const nextFacing = step.nextFacing;
+        mouseLookAngle = nextFacing;
+        targetAimAngle = nextFacing;
+        controllerLookAngle = nextFacing;
+        player.angle = nextFacing;
+        facingAngle = nextFacing;
         if (activeCameraMode === SHOULDER_SURF_MODE) {
-          const targetAzimuthDeg = wrapAzimuthDeg(-(aimAngle * 180 / Math.PI) - 90 - (cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0));
-          const diffDeg = angleDiff(THREE.MathUtils.degToRad(targetAzimuthDeg), THREE.MathUtils.degToRad(cameraAzimuthOffsetDeg)) * 180 / Math.PI;
-          const maxStepDeg = MELEE_AUTO_TARGET_CAMERA_DEG_PER_SEC * dt;
-          cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg + window.FormatUtils.clamp(diffDeg, -maxStepDeg, maxStepDeg));
+          const baseAzimuthDeg = cameraModeConfig(SHOULDER_SURF_MODE).azimuthDeg ?? 0; // Converts logical facing back into the camera's offset convention.
+          cameraAzimuthOffsetDeg = wrapAzimuthDeg(-(nextFacing * 180 / Math.PI) - 90 - baseAzimuthDeg);
         } else {
-          mouseLookAngle = aimAngle;
-          targetAimAngle = aimAngle;
           mouseLookActive = true;
-          lastMouseMoveTime = performance.now();
-          controllerLookAngle = aimAngle;
           controllerLookActive = true;
+          lastMouseMoveTime = performance.now();
         }
+        if (step.aligned) alignment.runAttack();
       }
 
       // Shared by hostiles, companions, and wandering creatures — covers every
@@ -5069,8 +4944,7 @@
           // melee-only auto-target toggle below); melee only shows it once
           // that toggle is actually on, so the ring never lies about a hit
           // that isn't really being auto-aimed.
-          const isTarget = !c.isCompanion && c === findAutoTarget()
-            && (activeTool === 'ranged' || meleeAutoTargetOn);
+          const isTarget = !c.isCompanion && c === findAutoTarget();
           const ringHud = window.ResourceRings.updateRingHud(c, ringScene, ringRadius, { isTarget });
           ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         }
@@ -5417,10 +5291,61 @@
       const WILDLIFE_VISUAL_LOD_SHOW_TILES = 24; // Used as the nearer wake boundary so wildlife does not flicker at one distance.
       const FAR_WILDLIFE_AI_TICK_INTERVAL_S = 0.2; // Used to advance calm hidden wildlife at 5 Hz with accumulated time instead of every render frame.
       const PREDATOR_SIGHT_INTERVAL_S = 0.25; // Used to stagger predator prey-acquisition decisions instead of repeating them every frame.
+      const ENEMY_SEARCH_DURATION_S = 3.4; // Time a hostile scans after the player leaves its shared ±45° sight cone.
+      const ENEMY_SEARCH_SWEEP_HALF_RAD = Math.PI * 0.85; // Alternating scan reaches well behind the creature before returning.
+      const ENEMY_SEARCH_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(190); // Base search rotation, also scaled by post-attack recovery.
+      const ENEMY_COMBAT_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(300); // Prevents chase facing from teleporting to the player every frame.
       const currentHostilesFrame = []; // Reused rather than allocated for every updateHostiles frame.
       const grazingPreyByPatchFrame = new Map(); // Reuses per-patch prey buckets while the player remains in one area.
       const EMPTY_GRAZING_PREY = Object.freeze([]); // Avoids allocating an empty fallback list for predators without a matching herbivore patch.
       let grazingPreyIndexArea = null; // Clears retained patch buckets when the active area changes.
+
+      function enemyAttackBusy(c) {
+        return !!(c._banditAction || c._banditLunging || c._rangedAction ||
+          window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c));
+      }
+
+      function enemyCanSeeTarget(c, target, maxDistancePx = Infinity) {
+        if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > maxDistancePx) return false;
+        return window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
+      }
+
+      function beginEnemySearch(c, target) {
+        c.state = 'searching';
+        c.targetPlayer = target;
+        c._enemySearchT = ENEMY_SEARCH_DURATION_S; // Countdown used by updateEnemySearch before the hostile gives up and returns.
+        c._enemySearchCenterFacing = c.facing || 0; // Sweep origin remembers the heading where sight was lost.
+        c._enemySearchOffset = 0; // Signed scan displacement accumulated around the remembered heading.
+        const lostSide = angleDiff(Math.atan2(target.y - c.y, target.x - c.x), c.facing || 0);
+        c._enemySearchDirection = lostSide >= 0 ? 1 : -1; // First scan turns toward the side where the player disappeared.
+      }
+
+      function updateEnemySearch(c, dt, target) {
+        c._enemySearchT = Math.max(0, (c._enemySearchT || 0) - dt);
+        if (enemyCanSeeTarget(c, target, c.def.aggroRangePx)) {
+          c.state = 'chase';
+          c.targetPlayer = target;
+          return c.facing || 0;
+        }
+        const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(c) ?? 1; // Search honors the same post-attack recovery slowdown.
+        c._enemySearchOffset = (c._enemySearchOffset || 0) + (c._enemySearchDirection || 1) * ENEMY_SEARCH_TURN_RATE_RAD_S * turnMultiplier * dt;
+        if (Math.abs(c._enemySearchOffset) >= ENEMY_SEARCH_SWEEP_HALF_RAD) {
+          c._enemySearchOffset = window.FormatUtils.clamp(c._enemySearchOffset, -ENEMY_SEARCH_SWEEP_HALF_RAD, ENEMY_SEARCH_SWEEP_HALF_RAD);
+          c._enemySearchDirection *= -1;
+        }
+        c.facing = (c._enemySearchCenterFacing || 0) + c._enemySearchOffset;
+        if (c._enemySearchT <= 0) {
+          c.state = 'return';
+          c.targetPlayer = null;
+        }
+        return c.facing;
+      }
+
+      function enemyAttackAlignment(c, target, dt) {
+        return window.Combat?.attackAlignmentStep?.(c, target, dt, {
+          turnMultiplier: window.Combat?.postAttackTurnMultiplier?.(c) ?? 1,
+        }) || { eligible: true, aligned: true, desiredFacing: Math.atan2(target.y - c.y, target.x - c.x), nextFacing: c.facing || 0 };
+      }
 
       function tickCreatureResources(c, dt, far = false) {
         const interval = far ? FAR_CREATURE_RESOURCE_TICK_INTERVAL_S : CREATURE_RESOURCE_TICK_INTERVAL_S; // Selects the active or distant maintenance cadence.
@@ -5439,7 +5364,7 @@
 
       function wildlifeVisualLodCanHide(c) {
         if (c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
-        if (c.state === 'chase' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
+        if (c.state === 'chase' || c.state === 'searching' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
         if (window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c)) return false;
         return true;
       }
@@ -5513,7 +5438,7 @@
           // chase them too, with nothing else here to change. The lock
           // persists for the rest of the chase so the creature doesn't
           // flicker between equally-near players every frame.
-          if (c.state !== 'chase') c.targetPlayer = null;
+          if (c.state !== 'chase' && c.state !== 'searching') c.targetPlayer = null;
           const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Cloud-forest schedule AI (js/wildlife-cloud-forest-behavior.js)
@@ -5567,8 +5492,17 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (def.hostile !== false && c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
-          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
+          if (def.hostile !== false && c.state !== 'chase' && c.state !== 'searching' && c.state !== 'fleeing-low-health' && !onFleeCooldown &&
+              distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC &&
+              enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
+            c.state = 'chase';
+            c.targetPlayer = targetPlayer;
+          }
+          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) {
+            c.state = 'return';
+          } else if (c.state === 'chase' && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
+            beginEnemySearch(c, targetPlayer);
+          }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
 
           // Patrol sighting: a predator that's out patrolling its route (or
@@ -5664,6 +5598,9 @@
                 }
               }
             }
+          } else if (c.state === 'searching') {
+            moving = false;
+            aimAngle = updateEnemySearch(c, entityDt, targetPlayer);
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.isBandit) {
@@ -5708,6 +5645,12 @@
                   ? TILE * (window.HobunjiDrenkirraPellet.tuning.PROJECTILE_RANGE_TILES * 0.92)
                   : creatureAimColliderReachPx(c);
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
+                const alignment = enemyAttackAlignment(c, targetPlayer, entityDt); // Delays the named attack until the shared cone turn is complete.
+                if (!alignment.eligible || !alignment.aligned) {
+                  if (alignment.eligible) c.facing = alignment.nextFacing;
+                  return false;
+                }
+                c.facing = alignment.desiredFacing;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 return !!(def.attacks?.length && window.Combat?.animalAttacks?.start(
@@ -5724,6 +5667,11 @@
               const pounceCapable = def.attacks?.includes('pounce');
               const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(c) : def.attackRangePx;
               if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
+                const alignment = enemyAttackAlignment(c, targetPlayer, entityDt); // Same transient pre-windup alignment used by bandits and the player.
+                if (!alignment.eligible || !alignment.aligned) {
+                  if (alignment.eligible) { c.facing = alignment.nextFacing; aimAngle = alignment.nextFacing; }
+                } else {
+                c.facing = alignment.desiredFacing;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
                 const hadNamedAttack = !!def.attacks?.length;
@@ -5765,6 +5713,7 @@
                       c.retreatT = JUMP_BACK_DUR_S;
                     },
                   });
+                }
                 }
               }
             }
@@ -5915,7 +5864,16 @@
             if (combatTarget && !c.prone) _updateCreatureHeadLookAtCombatTarget(c, combatTarget, entityDt, evasiveOrbitActive ? EVASIVE_ORBIT_HEAD_YAW_LIMIT_DEG : undefined);
             else _restoreCompanionHead(c, entityDt);
           }
-          c.facing = aimAngle;
+          const attackBusyNow = enemyAttackBusy(c); // Compared with the prior frame to start the shared turn-recovery ramp for every enemy attack system.
+          if (c._enemyAttackBusyLastFrame && !attackBusyNow) window.Combat?.noteAttackFinished?.(c);
+          c._enemyAttackBusyLastFrame = attackBusyNow;
+          if (c.state !== 'searching' && (c.state === 'chase' || def.hostile !== false)) {
+            const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(c) ?? 1; // Enemy turns slow to near-zero after attacking, then smoothly recover.
+            const maxTurn = ENEMY_COMBAT_TURN_RATE_RAD_S * turnMultiplier * entityDt;
+            c.facing = (c.facing || 0) + window.FormatUtils.clamp(angleDiff(aimAngle, c.facing || 0), -maxTurn, maxTurn);
+          } else {
+            c.facing = aimAngle;
+          }
           // Grehlr foraging (js/wildlife-grehlr-foraging.js) — deliberately
           // placed after the livestock-look/combat-head-nod block above so
           // its eating-dip/fishing-lookdown head pitch wins this frame's
@@ -16104,33 +16062,11 @@
         }
 
         // ── Facing ────────────────────────────────────────────
-        // Auto-targeting only engages while an actual weapon item is
-        // equipped in the weapon slot (not just the slot being active).
-        const weaponEngaged = heldMode === 'tool' && ((activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged));
-        btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
+        // Persistent target swapping is ranged-only; melee alignment is automatic and transient.
+        const rangedTargetingEngaged = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        btnSwapTarget?.classList.toggle('abt-hidden', !rangedTargetingEngaged);
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
-        // Melee auto-target's sixth arch button: hidden entirely unless
-        // melee is actually out; otherwise grayed out (base style) until a
-        // targetable hostile is in range (.abt-target-ready lights it up),
-        // and solid once actually engaged (.active).
-        const meleeOutNow = meleeWeaponOut();
-        btnMeleeAutoTarget?.classList.toggle('abt-hidden', !meleeOutNow);
-        if (meleeOutNow) {
-          btnMeleeAutoTarget?.classList.toggle('abt-target-ready', !!findAutoTarget());
-          btnMeleeAutoTarget?.classList.toggle('active', meleeAutoTargetOn);
-        }
-
-        // The old always-on auto-aim lock (hard-overrode facing the instant
-        // a weapon was out and a hostile was in range, "absolute priority
-        // over mouse-look/right-stick") is gone — replaced by
-        // updateMeleeAutoTarget(), called once per frame before this
-        // function, which drives melee-only, opt-in target tracking by
-        // simulating the same mouse-move/right-stick-tilt input a real
-        // player would give (mouseLookAngle/controllerLookAngle in the
-        // ordinary camera, cameraAzimuthOffsetDeg in shoulder-surf), so it
-        // flows through the exact same catch-up branches below/above rather
-        // than a separate override. Ranged weapons are unaffected — see
-        // getPlayerAimAngle/currentPlayerAimAngle for their own aim.
+        // Melee aim assist is intentionally invisible and exists only immediately before windup.
         if (characterViewMode.enabled) {
           facingAngle = characterViewMode.lockedFacingAngle;
           player.angle = characterViewMode.lockedPlayerAngle;
@@ -22409,7 +22345,7 @@
           const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
           pollControllerInput();
           applyControllerCameraLook(dt);
-          updateMeleeAutoTarget(dt);
+          updateMeleeAttackAlignment(dt);
           updateMovement(dt);
           window.PerfProfiler?.end(inputPerf);
           const wildernessChunkPerf = window.PerfProfiler?.begin('wilderness chunks'); // Measures chunk streaming/build spikes in the existing mobile profiler.
@@ -22567,29 +22503,14 @@
           if (!cameraDragAllowed()) {
             cameraDragPointerId = null;
             hideCameraJoystick();
-          } else if (meleeAutoTargetOn && meleeWeaponOut()) {
-            // While melee auto-target is locked on, this same hidden stick
-            // swaps targets left/right instead of rotating the camera —
-            // akin to the controller's right-stick-tilt cycling. Edge-
-            // triggered off the raw X value (not cameraJoystickX, which is
-            // already deadzone/response-curved for the camera-rotate case)
-            // so one full push-past-threshold reads as exactly one cycle
-            // step, the same discrete feel as the controller's synthesized
-            // RightStickLeft/RightStickRight buttons.
-            const past = Math.abs(cameraJoystickX) >= CAMERA_JOYSTICK_DEADZONE * 2;
-            if (past && !_cameraJoystickTargetCyclePast) cycleMeleeAutoTarget(cameraJoystickX > 0 ? 1 : -1);
-            _cameraJoystickTargetCyclePast = past;
           } else if (cameraJoystickX !== 0 || cameraJoystickY !== 0) {
-            _cameraJoystickTargetCyclePast = false;
+            const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Preserves every touch-stick sample while scaling its visible camera motion.
+            const turnRate = CAMERA_JOYSTICK_DEG_PER_SEC * turnMultiplier;
             const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
-              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt)
-              : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - cameraJoystickX * CAMERA_JOYSTICK_DEG_PER_SEC * dt, -clampDeg, clampDeg);
-            // Inverted relative to X on purpose — matches the desktop
-            // Shift-drag/plain-mouselook convention just below (+movementY
-            // pitches the same way), whereas the raw touch delta this knob
-            // is built from reads the other way for vertical.
-            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + cameraJoystickY * CAMERA_JOYSTICK_DEG_PER_SEC * dt);
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - cameraJoystickX * turnRate * dt)
+              : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - cameraJoystickX * turnRate * dt, -clampDeg, clampDeg);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + cameraJoystickY * turnRate * dt);
           }
         }
         if (activeCameraMode === SHOULDER_SURF_MODE && !_shoulderSurfBootSnapped) {
@@ -23790,7 +23711,7 @@
               } else {
                 actionHeldDown = true;
                 _pressSlot = _weaponSlotFor(act);
-                if (_pressSlot) { tryAutoEngageMeleeTarget(); window.Combat.input.pressStart(_pressSlot); }
+                if (_pressSlot) { window.Combat.input.pressStart(_pressSlot); }
               }
             });
 
@@ -24101,22 +24022,7 @@
         window.Mounts?.toggleMount();
       });
 
-      // Melee auto-target's sixth outer-ring button: a plain tap toggles —
-      // off turns it on and locks the closest hostile in range (no facing
-      // cone required, unlike the attack-triggered auto-engage), on turns
-      // it back off. No-ops if melee isn't out or (turning on) nothing is
-      // in range.
-      btnMeleeAutoTarget?.addEventListener('pointerdown', ev => {
-        ev.preventDefault();
-        if (!meleeWeaponOut()) return;
-        if (meleeAutoTargetOn) { meleeAutoTargetOn = false; manualAutoTarget = null; meleeAutoTargetFreeAim = false; return; }
-        const target = findAutoTarget();
-        if (!target) return;
-        manualAutoTarget = target;
-        meleeAutoTargetOn = true;
-        meleeAutoTargetFreeAim = false;
-      });
-
+      // Swap Target button remains ranged-only; melee selects automatically at attack time.
       // Swap Target button: its own dedicated drag-direction stick (separate
       // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
       // behavior disabled). Pushing it toward a hostile swaps auto-targeting
@@ -24493,7 +24399,6 @@
         const weaponSlot = weaponActionSlot(actionId);
         if (weaponSlot) {
           if (actionId === 'action1') actionHeldDown = true;
-          tryAutoEngageMeleeTarget();
           window.Combat.input.pressStart(weaponSlot);
           return;
         }
@@ -24520,11 +24425,6 @@
           swapAutoTarget(aimAngle);
           return;
         }
-        // Right-stick tilt (controller only — desktop cycles via Shift+
-        // wheel instead) — a no-op unless melee auto-target is already on,
-        // per cycleMeleeAutoTarget's own gate.
-        if (actionId === 'meleeTargetPrev') { cycleMeleeAutoTarget(-1); return; }
-        if (actionId === 'meleeTargetNext') { cycleMeleeAutoTarget(1); return; }
         if (actionId === 'cycleToolAction') {
           const actions = toolActions[activeTool];
           const idx = actions.indexOf(activeAction);
@@ -24584,7 +24484,8 @@
           return;
         }
         const clampDeg = Number.isFinite(Number(desktopControlsConfig().cameraRotateClampDeg)) ? Number(desktopControlsConfig().cameraRotateClampDeg) : 45;
-        const turnRate = CONTROLLER_LOOK_DEG_PER_SEC * s_controllerLookSensitivity; // Used for frame-rate-independent right-stick yaw and pitch.
+        const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Inputs remain live; only their visible turn rate is eased after attacks.
+        const turnRate = CONTROLLER_LOOK_DEG_PER_SEC * s_controllerLookSensitivity * turnMultiplier; // Used for frame-rate-independent right-stick yaw and pitch.
         cameraAzimuthOffsetDeg = freeRotateCameraActive()
           ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt)
           : window.FormatUtils.clamp(cameraAzimuthOffsetDeg - controllerCameraX * turnRate * dt, -clampDeg, clampDeg);
@@ -24702,15 +24603,8 @@
         if ((Number(pad.axes[2]) || 0) >= axisPress) down.add('RightStickRight');
         if ((Number(pad.axes[3]) || 0) <= -axisPress) down.add('RightStickUp');
         if ((Number(pad.axes[3]) || 0) >= axisPress) down.add('RightStickDown');
-        if (window.InputBindings?.consumeControllerPress?.('meleeAutoTargetToggle', down, gamepadState.previous, meleeWeaponOut())) {
-          meleeAutoTargetOn = !meleeAutoTargetOn;
-          manualAutoTarget = null;
-          meleeAutoTargetFreeAim = false;
-          showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
-        }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = heldShift.label || 'mode shift'; }
-        if (meleeAutoTargetOn && meleeWeaponOut()) { controllerCameraX = 0; controllerCameraY = 0; rightStickOwner = 'target cycle'; }
         if (gamepadState.primeButtonsOnResume) {
           // A menu-closing B/View press must not become a fresh gameplay
           // Dodge/action press on the very next frame. Seed edge state from
@@ -25007,11 +24901,6 @@
           runInputAction(boundDesktopActionUp, 'release');
         }
         if (key === 'shift') {
-          const heldMs = performance.now() - (_shiftDownAt ?? 0);
-          if (!menuOpen && !_shiftDragged && heldMs < desktopTapWindowMs() && meleeWeaponOut()) {
-            meleeAutoTargetOn = !meleeAutoTargetOn;
-            showToast(meleeAutoTargetOn ? 'Auto-Target: On' : 'Auto-Target: Off', meleeAutoTargetOn);
-          }
           _shiftDownAt = null;
           return;
         }
@@ -25052,15 +24941,6 @@
         if (window.__mapEditorGizmoActive) { e.preventDefault(); return true; }
         if (menuOpen || farmEditMode) return false;
         const dir = e.deltaY > 0 ? 1 : -1;
-        // Shift+wheel cycles melee auto-target's lock orbitally around the
-        // player instead of zooming — only once a lock is already active,
-        // same "nothing happens if it's off" rule the controller/mobile
-        // cycling inputs follow.
-        if (e.shiftKey && meleeAutoTargetOn && meleeWeaponOut()) {
-          e.preventDefault();
-          cycleMeleeAutoTarget(dir);
-          return true;
-        }
         const heldEntrySelectorKind = window._desktopSelectionArc?.heldSelectionKind?.(); // Includes keyboard/controller and pointer-held action buttons.
         if (isDesktop && (potionAction3Press.down || heldEntrySelectorKind === 'potions')) {
           e.preventDefault();
@@ -25162,7 +25042,6 @@
       let cameraDragPointerId = null;
       let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
       let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
-      let _cameraJoystickTargetCyclePast = false; // edge-detect state for melee auto-target cycling, see gameLoop's joystick consumption
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
@@ -25274,7 +25153,6 @@
               return;
             }
             if (weaponSlot) {
-              tryAutoEngageMeleeTarget();
               desktopWeaponPointerSlots.set(e.button, weaponSlot);
               if (weaponSlot === 1) actionHeldDown = true;
               window.Combat.input.pressStart(weaponSlot);
@@ -25403,15 +25281,6 @@
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
           if (window.PixelProbe?.armed) return;
-          // Desktop auto-target is intentionally loose: micro pointer noise is
-          // ignored, but any real mouse movement releases the camera from its
-          // current target. The toggle stays on so simply moving the reticle
-          // back over an enemy reacquires it.
-          if (isDesktop && meleeAutoTargetOn && meleeWeaponOut() &&
-              Math.hypot(Number(e.movementX) || 0, Number(e.movementY) || 0) > DESKTOP_AUTO_TARGET_MOUSE_BREAK_PX) {
-            manualAutoTarget = null;
-            meleeAutoTargetFreeAim = true;
-          }
           // Shoulder-surf gets mouse-look "for free" here: plain mouse
           // movement drives the camera exactly like Shift+drag does
           // everywhere else, no modifier key needed, and freeRotateCameraActive()
@@ -25421,7 +25290,8 @@
           // otherwise, same as it always has.
           if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
-            const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
+            const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Applies slowdown without ignoring any movementX/Y deltas.
+            const degPerPx = (Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15) * turnMultiplier;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
             cameraAzimuthOffsetDeg = freeRotateCameraActive()
               ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
@@ -25595,10 +25465,25 @@
         get rangedIsLoaded() { return equipmentSlots.ranged ? window.RangedWeapons?.isLoaded?.(equipmentSlots.ranged) !== false : null; },
         get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
         get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
-        get meleeAutoTargetOn() { return meleeAutoTargetOn; },
-        setMeleeAutoTargetOn: (v) => { meleeAutoTargetOn = !!v; },
-        get meleeAutoTarget() { const t = findAutoTarget(); return t ? { x: t.x, y: t.y, id: t.id } : null; },
-        cycleMeleeAutoTargetDebug: (dir) => cycleMeleeAutoTarget(dir),
+        meleeAttackAlignmentSnapshot: () => {
+          const target = meleeAttackAlignment?.target;
+          return {
+            latestChange: 'Melee locks only inside the shared ±45° cone, clears before windup, and post-attack look input is scaled rather than dropped.',
+            active: !!meleeAttackAlignment,
+            target: target ? { id: target.id, x: target.x, y: target.y } : null,
+            turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(player) ?? 1,
+          };
+        },
+        enemyPerceptionSnapshot: () => Array.from(hostileObjects)
+          .filter(c => c.health > 0 && c.areaId === currentArea)
+          .map(c => ({
+            id: c.id,
+            state: c.state,
+            facingDeg: Math.round((c.facing || 0) * 180 / Math.PI),
+            seesPlayer: enemyCanSeeTarget(c, player, c.def.aggroRangePx),
+            attackBusy: enemyAttackBusy(c),
+            turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(c) ?? 1,
+          })),
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
         setOutlines: (v) => { s_outlines = !!v; },
@@ -25746,12 +25631,15 @@
         },
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getActiveScene: window.GridTileAccessors.getActiveScene,
+        camera, // Opportunity indicator uses the live camera plane for its layered follow motion.
         getPlayerMeleeAimDirection: currentPlayerMeleeAimDirection,
         getPlayerMeleeAimPitch: currentPlayerMeleeAimPitch,
         getPlayerPerspectiveTarget: currentPlayerPerspectiveTarget,
         getHeldMode: () => heldMode,
         getActiveTool: () => activeTool,
-        getMeleeReticleTarget: () => findAutoTarget() || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
+        getMeleeReticleTarget: () => meleeAttackAlignment?.target || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
+        findMeleeAttackCandidate: meleeAttackTargetCandidate,
+        requestMeleeAttackAlignment,
         inCone,
         damageCreature,
         damagePlayer,

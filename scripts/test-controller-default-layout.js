@@ -16,8 +16,6 @@ const expectedController = {
   action7: null,
   action8: null,
   swapTarget: null,
-  meleeTargetPrev: 'RightStickLeft',
-  meleeTargetNext: 'RightStickRight',
   toggleMount: 'Button10',
   weaponSwitch: 'Button11',
   utilityMenu: 'Button12',
@@ -51,7 +49,6 @@ const expectedController = {
   musicPause: 'Button9',
   musicScalePrev: 'Button14',
   musicScaleNext: 'Button15',
-  meleeAutoTargetToggle: 'Button3',
   socialWheel: 'Button15',
   itemSelect: 'Button4',
 }; // Exact approved controller JSON binding map; changing a shipped default must intentionally update this fixture.
