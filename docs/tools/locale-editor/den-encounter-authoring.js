@@ -11,7 +11,6 @@
   const STORE_KEY = 'hobunji_locale_editor_den_encounters_v1';
   const DEFAULT_TRANSFORM = Object.freeze({ x:0, y:0, z:0, rx:0, ry:0, rz:0, sx:1, sy:1, sz:1 });
   const TRANSFORM_FIELDS = ['x','y','z','rx','ry','rz','sx','sy','sz'];
-  const POSITION_FIELDS = new Set(['x','y','z']);
   const ROTATION_FIELDS = new Set(['rx','ry','rz']);
 
   let store = loadStore();
@@ -21,12 +20,14 @@
   let selectedTarget = 'mother';
   let dragging = null;
   let dragPointerId = null;
+  let exportHooksInstalled = false;
 
-  function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   function finite(value, fallback = 0) {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : fallback;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
   }
+
   function normalizedTransform(raw) {
     const t = raw || {};
     return {
@@ -35,6 +36,7 @@
       sx: finite(t.sx, 1) || 1, sy: finite(t.sy, 1) || 1, sz: finite(t.sz, 1) || 1,
     };
   }
+
   function sanitizeEncounter(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const nest = raw.nest || {};
@@ -61,6 +63,7 @@
       })),
     };
   }
+
   function defaultEncounter(locale) {
     const nestObject = (locale?.objects || []).find(object => object?.key === 'nest' || object?.meta?.denRole === 'nest');
     const mother = (locale?.npcAnchors || []).find(anchor => anchor?.id === 'den_mother');
@@ -84,27 +87,41 @@
     } catch (_) {}
     return { schema:'hobunji_locale_den_encounters.v1', byLocale:{} };
   }
+
   function saveStore() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
-    catch (error) { debug(`den store save failed: ${error.message}`); }
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(store));
+    } catch (error) {
+      debug(`den store save failed: ${error.message}`);
+    }
   }
-  function bridge() { return window._localeEditorBridge || null; }
+
+  function bridge() {
+    return window._localeEditorBridge || null;
+  }
+
   function rawWorkspaceSnapshot() {
     try {
       if (rawGetWorkspace) return rawGetWorkspace();
       return bridge()?.getWorkspace?.() || null;
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
+
   function rawActiveLocale() {
     const workspace = rawWorkspaceSnapshot();
     return workspace?.locales?.find(locale => locale.id === workspace.activeId) || null;
   }
+
   function persistedEncounter(locale) {
     return sanitizeEncounter(locale?.meta?.denEncounter);
   }
+
   function shouldAuthor(locale) {
     return !!locale && (locale.category === 'den_encounter' || !!locale?.meta?.denEncounter || !!store.byLocale[locale.id]);
   }
+
   function ensureEncounter(locale, { create = false } = {}) {
     if (!locale?.id) return null;
     if (!store.byLocale[locale.id]) {
@@ -114,13 +131,7 @@
     }
     return store.byLocale[locale.id] ? sanitizeEncounter(store.byLocale[locale.id]) : null;
   }
-  function commitEncounter(localeId, encounter, message = '') {
-    if (!localeId || !encounter) return;
-    store.byLocale[localeId] = sanitizeEncounter(encounter);
-    saveStore();
-    syncWorkspaceStorage();
-    if (message) debug(message);
-  }
+
   function mergeLocale(locale) {
     const output = clone(locale);
     if (!output?.id) return output;
@@ -129,10 +140,38 @@
     output.meta = { ...(output.meta || {}), denEncounter: clone(sanitizeEncounter(encounter)) };
     return output;
   }
+
   function mergeWorkspace(workspace) {
     const output = clone(workspace || { locales:[] });
     output.locales = (output.locales || []).map(mergeLocale);
     return output;
+  }
+
+  // Mirrors the Locale Editor's private buildExport() exactly, then composes
+  // the den sidecar onto meta. The editor's Copy/Download/Local Override buttons
+  // cannot see this closure directly, so capture-phase hooks below use this copy.
+  function exportLocale(locale) {
+    const m = mergeLocale(locale);
+    if (!m) return null;
+    return {
+      schema: 'hobunji_locale.v1',
+      id: m.id,
+      name: m.name,
+      category: m.category,
+      singleton: m.singleton,
+      description: m.description,
+      tags: m.tags,
+      cols: m.cols,
+      rows: m.rows,
+      tiles: m.tiles,
+      objects: m.objects,
+      npcAnchors: m.npcAnchors,
+      connectors: m.connectors,
+      terrainAnchors: m.terrainAnchors || {},
+      embeddedTiles: m.embeddedTiles || {},
+      placement: m.placement,
+      meta: m.meta,
+    };
   }
 
   function patchBridge() {
@@ -147,42 +186,153 @@
     api.__denEncounterAuthoringBridge = { rawGetWorkspace };
     return true;
   }
+
   function patchWorkspaceStorage() {
     if (window.__localeDenEncounterStoragePatched || typeof Storage === 'undefined') return;
     window.__localeDenEncounterStoragePatched = true;
     nativeStorageSetItem = Storage.prototype.setItem;
     Storage.prototype.setItem = function denEncounterStorageSetItem(key, value) {
       if (this === localStorage && key === WORKSPACE_KEY) {
-        try { value = JSON.stringify(mergeWorkspace(JSON.parse(value))); } catch (_) {}
+        try {
+          value = JSON.stringify(mergeWorkspace(JSON.parse(value)));
+        } catch (_) {}
       }
       return nativeStorageSetItem.call(this, key, value);
     };
   }
+
   function syncWorkspaceStorage() {
     const workspace = rawWorkspaceSnapshot();
     if (!workspace) return;
     try {
       const setter = nativeStorageSetItem || Storage.prototype.setItem;
       setter.call(localStorage, WORKSPACE_KEY, JSON.stringify(mergeWorkspace(workspace)));
-    } catch (error) { debug(`workspace den merge failed: ${error.message}`); }
+    } catch (error) {
+      debug(`workspace den merge failed: ${error.message}`);
+    }
   }
 
+  // Import repository/workspace metadata only when this browser has no authored
+  // sidecar for the locale yet. Once the user edits a den encounter, the sidecar
+  // is the live authority; switching to another locale and back must not replace
+  // it with the stale private ws.meta copy the inline editor still holds.
   function reconcileFromRawLocale(locale) {
     if (!locale?.id) return null;
+    if (store.byLocale[locale.id]) return store.byLocale[locale.id];
     const fromLocale = persistedEncounter(locale);
     if (fromLocale) {
-      const previous = store.byLocale[locale.id];
-      if (!previous || JSON.stringify(previous) !== JSON.stringify(fromLocale)) {
-        store.byLocale[locale.id] = fromLocale;
-        saveStore();
-      }
-      return store.byLocale[locale.id];
+      store.byLocale[locale.id] = fromLocale;
+      saveStore();
+      return fromLocale;
     }
-    if (locale.category === 'den_encounter' && !store.byLocale[locale.id]) {
+    if (locale.category === 'den_encounter') {
       store.byLocale[locale.id] = defaultEncounter(locale);
       saveStore();
     }
     return store.byLocale[locale.id] || null;
+  }
+
+  function showStatus(message) {
+    const status = document.getElementById('statusPill');
+    if (!status) return;
+    status.textContent = message;
+    setTimeout(() => {
+      if (status.textContent === message) status.textContent = 'Ready';
+    }, 3500);
+  }
+
+  function mergedActiveJson() {
+    const locale = rawActiveLocale();
+    const exported = locale ? exportLocale(locale) : null;
+    return exported ? JSON.stringify(exported, null, 2) : '';
+  }
+
+  function syncJsonPreview() {
+    const preview = document.getElementById('jsonPreview');
+    const locale = rawActiveLocale();
+    if (!preview || !locale || !shouldAuthor(locale)) return;
+    const text = mergedActiveJson();
+    if (preview.value !== text) preview.value = text;
+  }
+
+  function stopNativeExport(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  function installExportHooks() {
+    if (exportHooksInstalled) return true;
+    const copyButton = document.getElementById('copyJsonBtn');
+    const downloadButton = document.getElementById('downloadJsonBtn');
+    const localButton = document.getElementById('saveLocalesOverrideBtn');
+    if (!copyButton || !downloadButton || !localButton) return false;
+    exportHooksInstalled = true;
+
+    copyButton.addEventListener('click', event => {
+      const locale = rawActiveLocale();
+      if (!locale || !shouldAuthor(locale)) return;
+      stopNativeExport(event);
+      const text = mergedActiveJson();
+      const fallback = () => {
+        const preview = document.getElementById('jsonPreview');
+        if (preview) {
+          preview.value = text;
+          preview.select();
+          try { document.execCommand('copy'); } catch (_) {}
+        }
+        showStatus('Copied den encounter JSON.');
+      };
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(() => showStatus('Copied den encounter JSON to clipboard.'))
+          .catch(fallback);
+      } else fallback();
+    }, true);
+
+    downloadButton.addEventListener('click', event => {
+      const locale = rawActiveLocale();
+      if (!locale || !shouldAuthor(locale)) return;
+      stopNativeExport(event);
+      const text = mergedActiveJson();
+      const blob = new Blob([text], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${locale.id}.json`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      showStatus(`Downloaded ${locale.id}.json with den encounter transforms.`);
+    }, true);
+
+    localButton.addEventListener('click', event => {
+      const locale = rawActiveLocale();
+      if (!locale || !shouldAuthor(locale)) return;
+      stopNativeExport(event);
+      const ldb = window.LocalDBOverrides;
+      if (!ldb?.setOverride) {
+        showStatus('Local override system unavailable.');
+        return;
+      }
+      const workspace = rawWorkspaceSnapshot();
+      const locales = (workspace?.locales || []).map(exportLocale);
+      ldb.setOverride('locales', { locales });
+      const status = document.getElementById('localesOverrideStatus');
+      const saved = ldb.listStatuses?.().find(item => item.id === 'locales');
+      if (status) status.textContent = saved?.savedAt
+        ? `override saved ${new Date(saved.savedAt).toLocaleTimeString()}`
+        : 'override saved';
+      showStatus(`Saved ${locales.length} locale(s) as a local override with den encounter transforms.`);
+    }, true);
+    return true;
+  }
+
+  function commitEncounter(localeId, encounter, message = '') {
+    if (!localeId || !encounter) return;
+    store.byLocale[localeId] = sanitizeEncounter(encounter);
+    saveStore();
+    syncWorkspaceStorage();
+    syncJsonPreview();
+    if (message) debug(message);
   }
 
   function targetDescriptor(encounter, value = selectedTarget) {
@@ -195,6 +345,7 @@
     const point = encounter.clutchSpawns[index];
     return point ? { type:'clutch', index, label:point.id, transform:point.transform } : null;
   }
+
   function mutateSelected(locale, mutator, message) {
     const encounter = ensureEncounter(locale, { create:true });
     const target = targetDescriptor(encounter);
@@ -211,11 +362,13 @@
     const min = isScale ? ' min="0.01"' : '';
     return `<div><label>${label}</label><input id="denTf_${field}" type="number" step="${step}"${min}></div>`;
   }
+
   function injectUi() {
     if (document.getElementById('localeDenEncounterSection')) return;
     const validation = document.getElementById('validateList')?.closest('.section');
     const host = validation?.parentElement || document.getElementById('sidebar-scroll');
     if (!host) return;
+
     const section = document.createElement('div');
     section.id = 'localeDenEncounterSection';
     section.className = 'section';
@@ -235,73 +388,105 @@
         <div class="muted" style="margin-top:5px">Orange diamond = Den-Mother · cyan circles = possible clutch slots · gold square = nest center. Drag a point to tune X/Z without disturbing its other transform values.</div>
         <div class="muted" id="localeDenDebug" style="margin-top:4px"></div>
       </div>`;
-    if (validation) host.insertBefore(section, validation); else host.appendChild(section);
+    if (validation) host.insertBefore(section, validation);
+    else host.appendChild(section);
 
     document.getElementById('localeDenEnable').addEventListener('click', () => {
       const locale = rawActiveLocale();
       if (!locale) return;
       store.byLocale[locale.id] = defaultEncounter(locale);
-      saveStore(); syncWorkspaceStorage(); selectedTarget = 'mother'; renderAll();
+      saveStore();
+      syncWorkspaceStorage();
+      selectedTarget = 'mother';
+      renderAll();
     });
-    document.getElementById('localeDenTarget').addEventListener('change', event => { selectedTarget = event.target.value; renderControls(); drawPlan(); });
+
+    document.getElementById('localeDenTarget').addEventListener('change', event => {
+      selectedTarget = event.target.value;
+      renderControls();
+      drawPlan();
+    });
+
     document.getElementById('localeDenAddClutch').addEventListener('click', () => {
-      const locale = rawActiveLocale(); if (!locale) return;
+      const locale = rawActiveLocale();
+      if (!locale) return;
       const encounter = ensureEncounter(locale, { create:true });
       let serial = encounter.clutchSpawns.length + 1;
       while (encounter.clutchSpawns.some(point => point.id === `clutch_${serial}`)) serial++;
       const prior = targetDescriptor(encounter);
       const transform = prior?.type === 'clutch' ? clone(prior.transform) : { ...DEFAULT_TRANSFORM };
-      transform.x += 0.12; transform.z += 0.12;
+      transform.x += 0.12;
+      transform.z += 0.12;
       encounter.clutchSpawns.push({ id:`clutch_${serial}`, transform:normalizedTransform(transform) });
       selectedTarget = `clutch:${encounter.clutchSpawns.length - 1}`;
-      commitEncounter(locale.id, encounter, `added ${encounter.clutchSpawns.at(-1).id}`); renderAll();
+      commitEncounter(locale.id, encounter, `added ${encounter.clutchSpawns.at(-1).id}`);
+      renderAll();
     });
+
     document.getElementById('localeDenDuplicate').addEventListener('click', () => {
-      const locale = rawActiveLocale(); if (!locale) return;
+      const locale = rawActiveLocale();
+      if (!locale) return;
       const encounter = ensureEncounter(locale, { create:true });
       const target = targetDescriptor(encounter);
       if (!target) return;
       let serial = encounter.clutchSpawns.length + 1;
       while (encounter.clutchSpawns.some(point => point.id === `clutch_${serial}`)) serial++;
-      const transform = normalizedTransform(target.transform); transform.x += 0.12; transform.z += 0.12;
+      const transform = normalizedTransform(target.transform);
+      transform.x += 0.12;
+      transform.z += 0.12;
       encounter.clutchSpawns.push({ id:`clutch_${serial}`, transform });
       selectedTarget = `clutch:${encounter.clutchSpawns.length - 1}`;
-      commitEncounter(locale.id, encounter, `duplicated ${target.label} as clutch_${serial}`); renderAll();
+      commitEncounter(locale.id, encounter, `duplicated ${target.label} as clutch_${serial}`);
+      renderAll();
     });
+
     document.getElementById('localeDenRemove').addEventListener('click', () => {
-      const locale = rawActiveLocale(); if (!locale) return;
+      const locale = rawActiveLocale();
+      if (!locale) return;
       const encounter = ensureEncounter(locale);
       const target = targetDescriptor(encounter);
       if (!target || target.type !== 'clutch') return;
       const removed = encounter.clutchSpawns.splice(target.index, 1)[0];
-      selectedTarget = encounter.clutchSpawns.length ? `clutch:${Math.min(target.index, encounter.clutchSpawns.length - 1)}` : 'mother';
-      commitEncounter(locale.id, encounter, `removed ${removed?.id || 'clutch point'}`); renderAll();
+      selectedTarget = encounter.clutchSpawns.length
+        ? `clutch:${Math.min(target.index, encounter.clutchSpawns.length - 1)}`
+        : 'mother';
+      commitEncounter(locale.id, encounter, `removed ${removed?.id || 'clutch point'}`);
+      renderAll();
     });
+
     document.getElementById('localeDenReset').addEventListener('click', () => {
-      const locale = rawActiveLocale(); if (!locale) return;
-      mutateSelected(locale, (transform, target) => Object.assign(transform, DEFAULT_TRANSFORM, target.type === 'mother' ? { ry:180 } : {}), 'reset selected den transform');
+      const locale = rawActiveLocale();
+      if (!locale) return;
+      mutateSelected(locale, (transform, target) => {
+        Object.assign(transform, DEFAULT_TRANSFORM, target.type === 'mother' ? { ry:180 } : {});
+      }, 'reset selected den transform');
     });
+
     for (const field of TRANSFORM_FIELDS) {
       document.getElementById(`denTf_${field}`).addEventListener('input', event => {
-        const locale = rawActiveLocale(); if (!locale) return;
+        const locale = rawActiveLocale();
+        if (!locale) return;
         const fallback = field[0] === 's' ? 1 : 0;
-        mutateSelected(locale, transform => { transform[field] = finite(event.target.value, fallback); }, '');
+        mutateSelected(locale, transform => {
+          transform[field] = finite(event.target.value, fallback);
+        }, '');
       });
     }
 
     const canvas = document.getElementById('localeDenPlan');
-    canvas.addEventListener('pointerdown', event => beginPlanDrag(event));
-    canvas.addEventListener('pointermove', event => updatePlanDrag(event));
+    canvas.addEventListener('pointerdown', beginPlanDrag);
+    canvas.addEventListener('pointermove', updatePlanDrag);
     const endDrag = event => {
       if (dragPointerId !== event.pointerId) return;
       try { canvas.releasePointerCapture(event.pointerId); } catch (_) {}
-      dragging = null; dragPointerId = null;
+      dragging = null;
+      dragPointerId = null;
     };
     canvas.addEventListener('pointerup', endDrag);
     canvas.addEventListener('pointercancel', endDrag);
   }
 
-  function renderTargetOptions(locale, encounter) {
+  function renderTargetOptions(encounter) {
     const select = document.getElementById('localeDenTarget');
     if (!select || !encounter) return;
     const options = [
@@ -309,28 +494,42 @@
       ['mother', 'Den-Mother spawn'],
       ...encounter.clutchSpawns.map((point, index) => [`clutch:${index}`, `Clutch ${index + 1} · ${point.id}`]),
     ];
-    if (!options.some(([value]) => value === selectedTarget)) selectedTarget = encounter.clutchSpawns.length ? 'clutch:0' : 'mother';
+    if (!options.some(([value]) => value === selectedTarget)) {
+      selectedTarget = encounter.clutchSpawns.length ? 'clutch:0' : 'mother';
+    }
     select.innerHTML = options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
     select.value = selectedTarget;
     const remove = document.getElementById('localeDenRemove');
     if (remove) remove.disabled = targetDescriptor(encounter)?.type !== 'clutch';
   }
+
   function renderControls() {
     const locale = rawActiveLocale();
     const controls = document.getElementById('localeDenControls');
     const inactive = document.getElementById('localeDenInactive');
     const tag = document.getElementById('localeDenEncounterTag');
     if (!controls || !inactive || !tag) return;
+
     const active = shouldAuthor(locale);
     controls.style.display = active ? '' : 'none';
     inactive.style.display = active ? 'none' : '';
-    if (!locale) { tag.textContent = 'no locale'; return; }
-    if (!active) { tag.textContent = 'inactive'; return; }
+    if (!locale) {
+      tag.textContent = 'no locale';
+      return;
+    }
+    if (!active) {
+      tag.textContent = 'inactive';
+      return;
+    }
+
     const encounter = ensureEncounter(locale, { create:locale.category === 'den_encounter' });
-    if (!encounter) { tag.textContent = 'not initialized'; return; }
+    if (!encounter) {
+      tag.textContent = 'not initialized';
+      return;
+    }
     store.byLocale[locale.id] = encounter;
     tag.textContent = `${encounter.clutchSpawns.length} clutch slots`;
-    renderTargetOptions(locale, encounter);
+    renderTargetOptions(encounter);
     const target = targetDescriptor(encounter);
     if (!target) return;
     for (const field of TRANSFORM_FIELDS) {
@@ -340,15 +539,19 @@
   }
 
   function planGeometry(canvas) {
-    const width = canvas.width, height = canvas.height;
+    const width = canvas.width;
+    const height = canvas.height;
     const halfSpan = 1.35;
     const scale = Math.min(width, height) / (halfSpan * 2);
     return {
-      width, height, scale, cx:width / 2, cz:height / 2,
+      width,
+      height,
+      scale,
       toCanvas: (x, z) => ({ x:width / 2 + x * scale, y:height / 2 + z * scale }),
       toWorld: (x, y) => ({ x:(x - width / 2) / scale, z:(y - height / 2) / scale }),
     };
   }
+
   function drawPlan() {
     const canvas = document.getElementById('localeDenPlan');
     const locale = rawActiveLocale();
@@ -357,35 +560,57 @@
     const ctx = canvas.getContext('2d');
     const g = planGeometry(canvas);
     ctx.clearRect(0, 0, g.width, g.height);
-    ctx.fillStyle = '#081018'; ctx.fillRect(0, 0, g.width, g.height);
-    ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 1;
+    ctx.fillStyle = '#081018';
+    ctx.fillRect(0, 0, g.width, g.height);
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    ctx.lineWidth = 1;
     for (let d = -1.25; d <= 1.251; d += .25) {
-      const a = g.toCanvas(d, -1.35), b = g.toCanvas(d, 1.35); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-      const c = g.toCanvas(-1.35, d), e = g.toCanvas(1.35, d); ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+      const a = g.toCanvas(d, -1.35);
+      const b = g.toCanvas(d, 1.35);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const c = g.toCanvas(-1.35, d);
+      const e = g.toCanvas(1.35, d);
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(e.x, e.y); ctx.stroke();
     }
     if (!encounter) return;
+
     const center = g.toCanvas(0, 0);
-    ctx.fillStyle = '#f4c542'; ctx.fillRect(center.x - 8, center.y - 8, 16, 16);
-    ctx.strokeStyle = '#ffe38b'; ctx.strokeRect(center.x - 10, center.y - 10, 20, 20);
+    ctx.fillStyle = '#f4c542';
+    ctx.fillRect(center.x - 8, center.y - 8, 16, 16);
+    ctx.strokeStyle = '#ffe38b';
+    ctx.strokeRect(center.x - 10, center.y - 10, 20, 20);
 
     const drawPoint = (targetValue, transform, type, label) => {
-      const p = g.toCanvas(transform.x, transform.z);
-      const selected = selectedTarget === targetValue;
+      const point = g.toCanvas(transform.x, transform.z);
+      const isSelected = selectedTarget === targetValue;
       ctx.save();
-      ctx.lineWidth = selected ? 3 : 1.5;
-      ctx.strokeStyle = selected ? '#ffffff' : type === 'mother' ? '#ffb35c' : '#67e8f9';
+      ctx.lineWidth = isSelected ? 3 : 1.5;
+      ctx.strokeStyle = isSelected ? '#ffffff' : type === 'mother' ? '#ffb35c' : '#67e8f9';
       ctx.fillStyle = type === 'mother' ? 'rgba(245,167,66,.75)' : 'rgba(103,232,249,.66)';
       ctx.beginPath();
       if (type === 'mother') {
-        ctx.moveTo(p.x, p.y - 9); ctx.lineTo(p.x + 9, p.y); ctx.lineTo(p.x, p.y + 9); ctx.lineTo(p.x - 9, p.y); ctx.closePath();
-      } else ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
-      ctx.fill(); ctx.stroke();
-      ctx.font = '10px system-ui'; ctx.fillStyle = '#dbeafe'; ctx.fillText(label, p.x + 11, p.y - 8);
+        ctx.moveTo(point.x, point.y - 9);
+        ctx.lineTo(point.x + 9, point.y);
+        ctx.lineTo(point.x, point.y + 9);
+        ctx.lineTo(point.x - 9, point.y);
+        ctx.closePath();
+      } else {
+        ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = '10px system-ui';
+      ctx.fillStyle = '#dbeafe';
+      ctx.fillText(label, point.x + 11, point.y - 8);
       ctx.restore();
     };
+
     drawPoint('mother', encounter.motherSpawn.transform, 'mother', 'mother');
-    encounter.clutchSpawns.forEach((point, index) => drawPoint(`clutch:${index}`, point.transform, 'clutch', String(index + 1)));
+    encounter.clutchSpawns.forEach((point, index) => {
+      drawPoint(`clutch:${index}`, point.transform, 'clutch', String(index + 1));
+    });
   }
+
   function hitPlanTarget(event) {
     const canvas = document.getElementById('localeDenPlan');
     const locale = rawActiveLocale();
@@ -399,25 +624,33 @@
       { value:'mother', transform:encounter.motherSpawn.transform },
       ...encounter.clutchSpawns.map((point, index) => ({ value:`clutch:${index}`, transform:point.transform })),
     ];
-    let best = null, bestD = 18;
+    let best = null;
+    let bestDistance = 18;
     for (const candidate of candidates) {
-      const p = g.toCanvas(candidate.transform.x, candidate.transform.z);
-      const d = Math.hypot(sx - p.x, sy - p.y);
-      if (d <= bestD) { best = candidate; bestD = d; }
+      const point = g.toCanvas(candidate.transform.x, candidate.transform.z);
+      const distance = Math.hypot(sx - point.x, sy - point.y);
+      if (distance <= bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
     }
     return best ? { ...best, sx, sy, world:g.toWorld(sx, sy) } : null;
   }
+
   function beginPlanDrag(event) {
     if (event.button != null && event.button !== 0) return;
     const hit = hitPlanTarget(event);
     if (!hit) return;
     selectedTarget = hit.value;
-    dragging = hit.value; dragPointerId = event.pointerId;
+    dragging = hit.value;
+    dragPointerId = event.pointerId;
     const canvas = document.getElementById('localeDenPlan');
     try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
-    renderControls(); drawPlan();
+    renderControls();
+    drawPlan();
     event.preventDefault();
   }
+
   function updatePlanDrag(event) {
     if (!dragging || dragPointerId !== event.pointerId) return;
     const canvas = document.getElementById('localeDenPlan');
@@ -428,9 +661,13 @@
     const snapInput = document.getElementById('localeDenSnap');
     const snap = Math.max(0, finite(snapInput?.value, .01));
     const snapValue = value => snap > 0 ? Math.round(value / snap) * snap : value;
-    const locale = rawActiveLocale(); if (!locale) return;
+    const locale = rawActiveLocale();
+    if (!locale) return;
     selectedTarget = dragging;
-    mutateSelected(locale, transform => { transform.x = snapValue(world.x); transform.z = snapValue(world.z); }, '');
+    mutateSelected(locale, transform => {
+      transform.x = snapValue(world.x);
+      transform.z = snapValue(world.z);
+    }, '');
     event.preventDefault();
   }
 
@@ -439,7 +676,13 @@
     if (target) target.textContent = message;
     console.log('[LocaleDenEncounterEditor]', message);
   }
-  function renderAll() { renderControls(); drawPlan(); }
+
+  function renderAll() {
+    renderControls();
+    drawPlan();
+    syncJsonPreview();
+  }
+
   function pollActiveLocale() {
     const locale = rawActiveLocale();
     const id = locale?.id || '';
@@ -449,12 +692,21 @@
       selectedTarget = 'mother';
       renderAll();
       debug(locale ? `editing ${locale.id}` : 'no active locale');
+    } else {
+      // The inline editor can rewrite jsonPreview after any ordinary locale edit.
+      // Recompose the den metadata so the visible JSON always matches export.
+      syncJsonPreview();
     }
   }
+
   function boot() {
-    if (!bridge() || !document.getElementById('sidebar-scroll')) { setTimeout(boot, 40); return; }
+    if (!bridge() || !document.getElementById('sidebar-scroll')) {
+      setTimeout(boot, 40);
+      return;
+    }
     patchBridge();
     patchWorkspaceStorage();
+    installExportHooks();
     const workspace = rawWorkspaceSnapshot();
     for (const locale of workspace?.locales || []) reconcileFromRawLocale(locale);
     injectUi();
@@ -464,9 +716,10 @@
   }
 
   window.LocaleDenEncounterAuthoring = {
-    version: 1,
+    version: 2,
     activeEncounter: () => clone(ensureEncounter(rawActiveLocale())),
     mergeLocale,
+    exportLocale,
     debugSnapshot: () => {
       const locale = rawActiveLocale();
       const encounter = locale ? ensureEncounter(locale) : null;
@@ -477,6 +730,7 @@
         clutchSpawnCount: encounter?.clutchSpawns?.length || 0,
         motherTransform: clone(encounter?.motherSpawn?.transform || null),
         nestTransform: clone(encounter?.nest?.transform || null),
+        exportHooksInstalled,
       };
     },
   };
