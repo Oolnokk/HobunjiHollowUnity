@@ -15,6 +15,14 @@
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
   ];
+  const STABLE_ROLE_DEP_METHODS = Object.freeze([
+    'getActiveCompanionId',
+    'getActiveMountId',
+    'getActiveShoulderPetId',
+  ]); // Mirrored from FarmPanel deps into the FarmAnimals deps object retained by Stable progression.
+
+  let stableProgressionFarmDeps = null; // Captured FarmAnimals deps object; StableAnimalProgression keeps this exact reference.
+  let stableProgressionPanelDeps = null; // Captured FarmPanel deps object; authoritative source for active animal IDs.
 
   function ensureFeaturesLoaded() {
     if (document.readyState === 'loading') {
@@ -58,6 +66,70 @@
   const installStableAnimalXpEvents = () => window.StableAnimalXpEvents?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
 
+  // FarmPanel's native Stable renderer intentionally blocks the old progression
+  // render wrapper, but that also blocks the old FarmPanel.init dependency
+  // capture. StableAnimalProgression then falls back to its FarmAnimals deps,
+  // which own stable storage but not the active companion/mount/shoulder IDs.
+  // Mirror only those live role getters into the already-captured FarmAnimals
+  // deps object so every XP source sees the active animal again without
+  // reintroducing the retired Stable UI decorator.
+  function syncStableProgressionRoleDeps() {
+    const target = stableProgressionFarmDeps; // Mutated in place because StableAnimalProgression retains this object reference.
+    const source = stableProgressionPanelDeps; // Supplies the authoritative active-role getter functions.
+    if (!target || !source) return false;
+    let changed = false; // Reported by diagnostics/tests when a missing getter is repaired.
+    for (const methodName of STABLE_ROLE_DEP_METHODS) {
+      if (typeof target[methodName] === 'function') continue;
+      const sourceMethod = source[methodName]; // Proxied rather than snapshotted so later active-animal changes remain live.
+      if (typeof sourceMethod !== 'function') continue;
+      try {
+        target[methodName] = (...args) => sourceMethod.apply(source, args);
+        changed = true;
+      } catch (error) {
+        console.warn(`[FarmFeatures] could not mirror ${methodName} into Stable progression deps.`, error);
+      }
+    }
+    return changed;
+  }
+
+  function installStableProgressionDepsBridge() {
+    const farmAnimals = window.FarmAnimals; // Wrapped here to remember the deps object progression captures during FarmAnimals.init.
+    if (farmAnimals && typeof farmAnimals.init === 'function' && !farmAnimals.init.__stableProgressionDepsBridge) {
+      const originalFarmInit = farmAnimals.init; // Preserved so existing AnimalGrowth/progression wrappers remain in the chain.
+      const wrappedFarmInit = function stableProgressionDepsFarmInit(injectedDeps, ...rest) {
+        stableProgressionFarmDeps = injectedDeps || null;
+        const result = originalFarmInit.call(this, injectedDeps, ...rest); // Existing FarmAnimals initialization remains authoritative.
+        syncStableProgressionRoleDeps();
+        return result;
+      };
+      Object.defineProperty(wrappedFarmInit, '__stableProgressionDepsBridge', { value: true });
+      farmAnimals.init = wrappedFarmInit;
+    }
+
+    const farmPanel = window.FarmPanel; // Wrapped separately because its deps contain the active stable-role getters missing above.
+    if (farmPanel && typeof farmPanel.init === 'function' && !farmPanel.init.__stableProgressionDepsBridge) {
+      const originalPanelInit = farmPanel.init; // Preserved so the native Stable renderer and core panel still initialize normally.
+      const wrappedPanelInit = function stableProgressionDepsPanelInit(injectedDeps, ...rest) {
+        stableProgressionPanelDeps = injectedDeps || null;
+        syncStableProgressionRoleDeps();
+        const result = originalPanelInit.call(this, injectedDeps, ...rest); // Native Stable panel captures its own deps as before.
+        syncStableProgressionRoleDeps();
+        return result;
+      };
+      Object.defineProperty(wrappedPanelInit, '__stableProgressionDepsBridge', { value: true });
+      farmPanel.init = wrappedPanelInit;
+    }
+
+    window.__stableAnimalProgressionDepsDebug = () => ({
+      farmDepsReady: !!stableProgressionFarmDeps,
+      panelDepsReady: !!stableProgressionPanelDeps,
+      getters: Object.fromEntries(STABLE_ROLE_DEP_METHODS.map(methodName => [methodName, {
+        farm: typeof stableProgressionFarmDeps?.[methodName] === 'function',
+        panel: typeof stableProgressionPanelDeps?.[methodName] === 'function',
+      }])),
+    });
+  }
+
   // The vegetation extraction currently has one ROCK fallback that can publish a
   // plain {_windAmp: 0} sentinel into vegFoliageMeshes when no mound geometry was
   // generated. The render loop's public contract is stricter: every active entry
@@ -82,8 +154,8 @@
     };
 
     for (const methodName of ['buildTileMeshes', 'refreshTileMesh', 'rebuildWeedTiles']) {
+      if (typeof vegetation[methodName] !== 'function') continue;
       const original = vegetation[methodName];
-      if (typeof original !== 'function') continue;
       const wrapped = function foliageContractGuardedRebuild(...args) {
         const result = original.apply(this, args);
         pruneInvalidFoliage();
@@ -102,6 +174,7 @@
     installAnimalGrowth();
     installStableAnimalProgression();
     installStableAnimalTrainingRefinements();
+    installStableProgressionDepsBridge();
     installStableAnimalXpEvents();
     installBarnIncubator();
   };
