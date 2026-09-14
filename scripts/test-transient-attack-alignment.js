@@ -38,6 +38,10 @@ assert.match(input, /ability\?\.category === 'offensiveHold'/, 'offensive holds 
 assert.match(input, /releaseQueued/, 'release input survives an alignment that spans multiple frames');
 
 assert.match(game, /function requestMeleeAttackAlignment\(/, 'game owns a transient melee alignment request');
+assert.match(game, /PLAYER_ATTACK_ALIGNMENT_MIN_S = 0\.11/, 'small corrections retain a short but visible glide');
+assert.match(game, /PLAYER_ATTACK_ALIGNMENT_MAX_S = 0\.22/, 'a full-cone correction cannot complete as an 87ms snap');
+assert.match(game, /function easedAttackAlignmentProgress\([\s\S]{0,180}t \* t \* \(3 - 2 \* t\)/, 'player alignment eases in and out');
+assert.match(game, /if \(initialStep\?\.aligned\)[\s\S]{0,100}runAttack\(\)/, 'an already-aligned attack still begins without artificial latency');
 assert.match(game, /meleeAttackAlignment = null; \/\/ Lock is off before the attack callback creates its windup\./, 'lock clears before windup starts');
 assert.match(game, /function enemyCanSeeTarget\([\s\S]{0,260}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
 assert.match(game, /state = 'searching'/, 'enemies search after losing sight');

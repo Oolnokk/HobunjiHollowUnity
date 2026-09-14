@@ -4458,6 +4458,8 @@
 
       // Ranged weapons retain a player-selected lock; melee targeting exists
       // only for the few frames between an attack request and its windup.
+      const PLAYER_ATTACK_ALIGNMENT_MIN_S = 0.11; // Shortest visible glide used by requestMeleeAttackAlignment for small corrections.
+      const PLAYER_ATTACK_ALIGNMENT_MAX_S = 0.22; // Longest visible glide used for a target at the edge of the ±45° cone.
       let manualAutoTarget = null;
       let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
@@ -4616,15 +4618,34 @@
         if (!alignment.cancelled) runAttack();
       }
 
+      function easedAttackAlignmentProgress(progress) {
+        const t = window.FormatUtils.clamp(progress, 0, 1); // Normalized alignment time supplied by updateMeleeAttackAlignment.
+        return t * t * (3 - 2 * t);
+      }
+
       function requestMeleeAttackAlignment(runAttack) {
         const target = meleeAttackTargetCandidate();
         if (!target) {
           runAttack();
           return null;
         }
+        const startFacing = currentMeleeAimAngle(); // Stable beginning of the eased camera/body rotation.
+        const initialStep = window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: startFacing }); // Detects an already-aligned target without adding input latency.
+        if (initialStep?.aligned) {
+          runAttack();
+          return null;
+        }
+        const coneFraction = window.FormatUtils.clamp(
+          Math.abs(initialStep?.deltaRad || 0) / (window.Combat?.ATTACK_ALIGNMENT_HALF_CONE_RAD || Math.PI / 4),
+          0,
+          1,
+        ); // Scales the glide so small assists do not delay attacks as long as a full 45° turn.
         meleeAttackAlignment?.cancel?.();
         const alignment = {
           target,
+          startFacing,
+          elapsedS: 0, // Accumulated by updateMeleeAttackAlignment until durationS is reached.
+          durationS: PLAYER_ATTACK_ALIGNMENT_MIN_S + (PLAYER_ATTACK_ALIGNMENT_MAX_S - PLAYER_ATTACK_ALIGNMENT_MIN_S) * coneFraction, // Distance-scaled easing duration used before windup.
           cancelled: false,
           cancel() {
             if (meleeAttackAlignment !== alignment) return;
@@ -4645,14 +4666,20 @@
         const target = alignment.target;
         const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Slows visible turn after an attack while continuing to consume input.
         const step = meleeWeaponOut() && target?.areaId === currentArea
-          ? window.Combat?.attackAlignmentStep?.(player, target, dt, { facing: currentMeleeAimAngle(), turnMultiplier })
+          ? window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: currentMeleeAimAngle() })
           : null;
         if (!step?.eligible) {
           alignment.runAttack(); // Aim assist never blocks a manual attack when its target leaves the cone.
           return;
         }
 
-        const nextFacing = step.nextFacing;
+        alignment.elapsedS = Math.min(alignment.durationS, alignment.elapsedS + Math.max(0, dt) * turnMultiplier);
+        const progress = alignment.durationS > 0 ? alignment.elapsedS / alignment.durationS : 1; // Drives the smoothstep rather than an abrupt constant-rate snap.
+        const easedProgress = easedAttackAlignmentProgress(progress); // Softens both the initial camera pull and the final settling motion.
+        const startToTarget = angleDiff(step.desiredFacing, alignment.startFacing); // Re-evaluated so a moving target remains correctly aligned at the end.
+        const nextFacing = progress >= 1
+          ? step.desiredFacing
+          : alignment.startFacing + startToTarget * easedProgress;
         mouseLookAngle = nextFacing;
         targetAimAngle = nextFacing;
         controllerLookAngle = nextFacing;
@@ -4666,7 +4693,7 @@
           controllerLookActive = true;
           lastMouseMoveTime = performance.now();
         }
-        if (step.aligned) alignment.runAttack();
+        if (progress >= 1) alignment.runAttack();
       }
 
       // Shared by hostiles, companions, and wandering creatures — covers every
@@ -25468,9 +25495,14 @@
         meleeAttackAlignmentSnapshot: () => {
           const target = meleeAttackAlignment?.target;
           return {
-            latestChange: 'Melee locks only inside the shared ±45° cone, clears before windup, and post-attack look input is scaled rather than dropped.',
+            latestChange: 'Momentary melee alignment now glides over 0.11–0.22 seconds with smoothstep easing; already-aligned attacks remain immediate.',
             active: !!meleeAttackAlignment,
             target: target ? { id: target.id, x: target.x, y: target.y } : null,
+            elapsedS: meleeAttackAlignment?.elapsedS || 0,
+            durationS: meleeAttackAlignment?.durationS || 0,
+            progress: meleeAttackAlignment?.durationS
+              ? window.FormatUtils.clamp(meleeAttackAlignment.elapsedS / meleeAttackAlignment.durationS, 0, 1)
+              : 0,
             turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(player) ?? 1,
           };
         },
