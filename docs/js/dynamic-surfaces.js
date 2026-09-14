@@ -9,6 +9,7 @@
   const blockers = new Map();
   const pits = new Map();
   const beforeRenderClients = new Set();
+  const blockerFilters = new Set();
 
   const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const evalValue = (value, ...args) => typeof value === 'function' ? value(...args) : value;
@@ -91,6 +92,23 @@
     return null;
   }
 
+  function addBlockerFilter(fn) {
+    if (typeof fn !== 'function') return () => {};
+    blockerFilters.add(fn);
+    return () => blockerFilters.delete(fn);
+  }
+
+  function passesBlockerFilters(record, x, z, context) {
+    for (const filter of [...blockerFilters]) {
+      try {
+        if (filter(record, x, z, context) === false) return false;
+      } catch (err) {
+        console.warn('[DynamicSurfaces] blocker filter failed', err);
+      }
+    }
+    return true;
+  }
+
   function blockerAt(x, z, options = {}) {
     const radius = number(options.radius, 0);
     const actorHeight = number(options.actorHeight, 1.25);
@@ -98,7 +116,9 @@
       if (!recordEnabled(record)) continue;
       const bounds = recordBounds(record);
       if (!contains(bounds, x, z, radius)) continue;
-      if (typeof record.blocksAt === 'function' && !record.blocksAt(x, z, actorHeight, record)) continue;
+      if (typeof record.blocksAt === 'function' && !record.blocksAt(x, z, actorHeight, record, radius, options)) continue;
+      const context = { radius, actorHeight, bounds, options };
+      if (!passesBlockerFilters(record, x, z, context)) continue;
       return { id: record.id, bounds, record };
     }
     return null;
@@ -122,6 +142,7 @@
       blockers: [...blockers.values()].map(record => ({ id: record.id, scope: record.scope, enabled: recordEnabled(record), bounds: recordBounds(record) })),
       pits: [...pits.values()].map(record => ({ id: record.id, scope: record.scope, enabled: recordEnabled(record), bounds: recordBounds(record) })),
       frameClients: beforeRenderClients.size,
+      blockerFilters: blockerFilters.size,
     };
   }
 
@@ -146,7 +167,7 @@
   window.DynamicSurfaces = Object.freeze({
     registerSurface, registerBlocker, registerPit,
     remove, clearScope, sampleSupport, pointInPit, blockerAt,
-    addBeforeRenderClient, debugSnapshot,
+    addBlockerFilter, addBeforeRenderClient, debugSnapshot,
   });
 
   installRendererHook();
