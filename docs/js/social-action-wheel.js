@@ -79,6 +79,7 @@
   let centerLabel = null;
   let debugOutput = null;
   let mobileButton = null;
+  let cachedCenter = null; // Refreshed on open/resize only; selectFromPoint runs on every pointermove and must not force layout.
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
@@ -703,6 +704,10 @@ ${outerRules}
     return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, radius: rect.width / 2 } : null;
   }
 
+  function refreshCachedCenter() {
+    cachedCenter = wheelCenter();
+  }
+
   function selectFromVector(x, y) {
     const magnitude = Math.hypot(x, y);
     if (magnitude < 0.28) {
@@ -716,7 +721,7 @@ ${outerRules}
   }
 
   function selectFromPoint(clientX, clientY) {
-    const center = wheelCenter();
+    const center = cachedCenter; // Cache-only read: this runs on every pointermove while the wheel is open and must never force a layout.
     if (!center) return;
     const dx = clientX - center.x;
     const dy = clientY - center.y;
@@ -763,6 +768,7 @@ ${outerRules}
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
     mobileButton?.classList.add('active');
+    refreshCachedCenter(); // One layout read here instead of one per pointermove for the life of the hold.
     setSelected(-1);
     updateDebug();
     return true;
@@ -777,6 +783,7 @@ ${outerRules}
     state.selectedIndex = -1;
     state.lock?.release?.();
     state.lock = null;
+    cachedCenter = null;
     overlay?.classList.remove('open');
     overlay?.setAttribute('aria-hidden', 'true');
     mobileButton?.classList.remove('active');
@@ -895,6 +902,7 @@ ${outerRules}
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('keyup', onKeyUp, true);
     window.addEventListener('blur', () => { if (state.open && !state.latched) closeWheel(false); });
+    window.addEventListener('resize', () => { if (state.open) refreshCachedCenter(); });
 
     setInterval(() => {
       bindMobileDodge();
