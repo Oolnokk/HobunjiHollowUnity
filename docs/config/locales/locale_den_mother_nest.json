@@ -4,17 +4,11 @@
   "name": "Den-Mother Nest Encounter",
   "category": "den_encounter",
   "singleton": false,
-  "description": "Reusable den encounter authored as one locale: the editable nest furniture, the Den-Mother spawn anchor, and the individually transformable egg/baby clutch spawn points. Species and reward item bind from the den that instantiates the locale.",
-  "tags": ["den", "wildlife", "nest", "encounter"],
+  "description": "Reusable den encounter authored as one locale: the editable nest furniture, the Den-Mother spawn anchor, and the individually transformable egg/baby clutch spawn points. Species and reward item bind from the den that instantiates the locale. This is a terrain-neutral runtime-bound locale: it never paints cave or wilderness tiles.",
+  "tags": ["den", "wildlife", "nest", "encounter", "runtime-bound"],
   "cols": 5,
   "rows": 5,
-  "tiles": {
-    "0,0":{"type":"dirt"},"1,0":{"type":"dirt"},"2,0":{"type":"dirt"},"3,0":{"type":"dirt"},"4,0":{"type":"dirt"},
-    "0,1":{"type":"dirt"},"1,1":{"type":"dirt"},"2,1":{"type":"dirt"},"3,1":{"type":"dirt"},"4,1":{"type":"dirt"},
-    "0,2":{"type":"dirt"},"1,2":{"type":"dirt"},"2,2":{"type":"dirt"},"3,2":{"type":"dirt"},"4,2":{"type":"dirt"},
-    "0,3":{"type":"dirt"},"1,3":{"type":"dirt"},"2,3":{"type":"dirt"},"3,3":{"type":"dirt"},"4,3":{"type":"dirt"},
-    "0,4":{"type":"dirt"},"1,4":{"type":"dirt"},"2,4":{"type":"dirt"},"3,4":{"type":"dirt"},"4,4":{"type":"dirt"}
-  },
+  "tiles": {},
   "objects": [
     {
       "id": "den_nest",
@@ -35,16 +29,18 @@
   "connectors": [],
   "placement": {
     "mode": "den-interior",
+    "runtimeBound": true,
+    "terrainNeutral": true,
     "maxInstances": 1,
     "allowedZones": [],
     "clearanceTiles": 0,
-    "requiresFlatGround": true,
-    "groundOnly": true,
-    "notes": "Instantiated against the generated cavern's existing 2x2 den objective footprint. The locale origin is aligned so den_nest occupies that footprint; species/reward binding remains data-driven from the exterior den family."
+    "requiresFlatGround": false,
+    "groundOnly": false,
+    "notes": "Runtime-bound to an already-generated den/cavern objective. No locale tiles are stamped: cave carving, wall visibility, and collision remain authoritative. Only the nest furniture, Den-Mother anchor, and clutch transforms are consumed by DenLocaleRuntime."
   },
   "meta": {
     "createdAt": "2026-09-14T00:00:00.000Z",
-    "updatedAt": "2026-09-14T00:00:00.000Z",
+    "updatedAt": "2026-09-14T19:41:00.000Z",
     "denEncounter": {
       "version": 1,
       "speciesBinding": "current-den-family",
