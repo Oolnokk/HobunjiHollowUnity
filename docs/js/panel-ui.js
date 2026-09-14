@@ -550,4 +550,9 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   localePreview3dScript.src = 'locale-preview3d.js?v=20260913a';
   localePreview3dScript.defer = true;
   document.head.appendChild(localePreview3dScript);
+
+  const localeDenEncounterScript = document.createElement('script'); // Adds reusable Den-Mother/nest/clutch transform authoring and workspace export merging.
+  localeDenEncounterScript.src = 'den-encounter-authoring.js?v=20260914a';
+  localeDenEncounterScript.defer = true;
+  document.head.appendChild(localeDenEncounterScript);
 }
