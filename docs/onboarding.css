@@ -24,16 +24,16 @@
   pointer-events: none;
 }
 
+/* No visible box: the card is just a layout wrapper now. Its content sits
+   directly on #ob-overlay's solid black, same as the title screen's own
+   text/logo have no panel behind them — one continuous black screen rather
+   than a green-tinted, bordered panel floating on top of it. */
 .ob-card {
   width: min(720px, 100%);
-  background: rgba(8, 18, 13, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 20px;
   padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.7);
   font-family: 'KhymeryyanRomanLetters+Numbers', 'DM Mono', ui-monospace, monospace;
   color: #f0ffe6;
 }
@@ -621,6 +621,41 @@
   background: rgba(120, 200, 150, 0.16);
   border-color: rgba(140, 190, 160, 0.55);
 }
+
+/* Collapsed-by-default wrapper for dev/testing-only controls (currently just
+   Database Source) — kept out of a regular player's way, expandable for
+   whoever actually needs it. */
+.sl-dev-details {
+  margin-top: 4px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 2px 10px;
+}
+.sl-dev-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 2px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8aad8f;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sl-dev-details > summary::-webkit-details-marker { display: none; }
+.sl-dev-details > summary::before {
+  content: '▸';
+  font-size: 10px;
+  color: #8aad8f;
+  transition: transform 0.12s;
+}
+.sl-dev-details[open] > summary::before { transform: rotate(90deg); }
+.sl-dev-details > summary:hover { color: #f0ffe6; }
+.sl-dev-details > summary:hover::before { color: #f0ffe6; }
+.sl-dev-details > *:not(summary) { margin-top: 6px; }
+.sl-dev-details > .sl-local-save-row:last-of-type,
+.sl-dev-details > .sl-dbsrc-row:last-child { margin-bottom: 8px; }
 
 /* Database Source toggle — see window.LocalDBOverrides (docs/js/local-db-overrides.js) */
 .sl-dbsrc-toggle {

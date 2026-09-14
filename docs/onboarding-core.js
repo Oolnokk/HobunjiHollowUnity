@@ -854,14 +854,14 @@
         ? `<button type="button" class="sl-local-save-btn" data-dbsrc-clear="${esc(s.id)}">Clear</button>` : '';
       return `<div class="sl-dbsrc-row"><span class="sl-dbsrc-name">${esc(s.label)}</span><span class="sl-local-save-status">${statusTxt}</span>${clearBtn}</div>`;
     }).join('');
-    return `<div class="sl-section sl-local-save-section">
-      <div class="sl-section-label">Database Source <span class="sl-char-ref">— edited via docs/tools, test here before committing</span></div>
+    return `<details class="sl-dev-details">
+      <summary>🛠 Dev: Database Source <span class="sl-char-ref">— edited via docs/tools, test here before committing</span></summary>
       <div class="sl-local-save-row">
         <label class="sl-dbsrc-toggle"><input type="radio" name="sl-dbsrc-mode" value="repo"${mode === 'repo' ? ' checked' : ''}> Repo (committed)</label>
         <label class="sl-dbsrc-toggle"><input type="radio" name="sl-dbsrc-mode" value="local"${mode === 'local' ? ' checked' : ''}> Local overrides</label>
       </div>
       ${rows}
-    </div>`;
+    </details>`;
   }
 
   // Numbered progress strip shown at the top of every save-select step —
