@@ -23,13 +23,13 @@
     const style = document.createElement('style');
     style.id = `${MODULE_ID}Style`;
     style.textContent = `
-+/* The switchbox script loads much later than onboarding. Keep its injected section
-+   invisible until this guard confirms it belongs to the World step, preventing
-+   even a one-frame character-creator height collapse. */
-+#${SECTION_ID}:not([data-world-select-placed="1"]){display:none!important}
-+#${SECTION_ID}[data-world-select-placed="1"]{display:flex}
-+#${SECTION_ID} .ob-world-switchbox-details{width:100%;box-sizing:border-box}
-+`;
+/* The switchbox script loads much later than onboarding. Keep its injected section
+   invisible until this guard confirms it belongs to the World step, preventing
+   even a one-frame character-creator height collapse. */
+#${SECTION_ID}:not([data-world-select-placed="1"]){display:none!important}
+#${SECTION_ID}[data-world-select-placed="1"]{display:flex}
+#${SECTION_ID} .ob-world-switchbox-details{width:100%;box-sizing:border-box}
+`;
     document.head.appendChild(style);
   }
 
