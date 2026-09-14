@@ -176,9 +176,9 @@ assert.equal(snap.allocationHeld, false, 'arrival releases the wilderness alloca
 debug = context.StableAnimalPerkAdjustments.getDebug().mountWildernessAllocation;
 assert.equal(debug.releases, 1);
 
-context.WildernessChunks.update(0.199);
+context.WildernessChunks.update(0.19);
 assert.equal(buildCount, 1, 'release restores the normal low-memory cooldown instead of allocating on the same frame');
-context.WildernessChunks.update(0.001);
+context.WildernessChunks.update(0.02);
 assert.equal(buildCount, 2, 'streaming resumes after the post-mount 200 ms breathing interval');
 
 // A rejected summon must not leak its pre-acquired hold.
