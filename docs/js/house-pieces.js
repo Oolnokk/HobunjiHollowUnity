@@ -60,7 +60,7 @@
     ['TerrainJigsawSurfaceSplit', 'terrain-jigsaw-surface-split.js?v=20260914a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823a'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260823a'],
     ['HousePieces', 'house-pieces-core.js?v=20260815b'],
     [null, 'house-pieces-registry-stability.js?v=20260906a'],
