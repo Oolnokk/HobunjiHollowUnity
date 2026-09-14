@@ -20,7 +20,76 @@
   // declared in game.js instead of moving here, since this module's own
   // functions never actually read them.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+
+  // CreatureGenetics loads before this module, but its species bootstrap used
+  // to wait for DOMContentLoaded before wrapping WildlifeSpawn.init. game.js
+  // can initialize WildlifeSpawn before that event, so a real Western Slope
+  // session could keep the legacy Drenkirra/Uumkao'ii pools even though the
+  // isolated regression (which fired DOMContentLoaded first) passed. Keep an
+  // idempotent registration at the owning system's init boundary so runtime
+  // correctness no longer depends on document-event ordering.
+  function ensurePuktukRuntimeRegistration(injectedDeps) {
+    const creatureDb = injectedDeps?.CREATURE_DB;
+    const garWolf = creatureDb?.['gar-wolf'];
+    const predatorBaseline = garWolf || creatureDb?.grehlr || creatureDb?.drenkirra || {};
+    if (creatureDb) {
+      const existing = creatureDb.puktuk || {};
+      creatureDb.puktuk = {
+        ...predatorBaseline,
+        ...existing,
+        label: 'Puktuk',
+        hostile: true,
+        defaultSizeClass: 'medium',
+        modelWidth: Number(existing.modelWidth) || Number(garWolf?.modelWidth) || Number(predatorBaseline.modelWidth) || 1.9,
+        spriteAspect: Number(existing.spriteAspect) || Number(garWolf?.spriteAspect) || Number(predatorBaseline.spriteAspect) || (600 / 1375),
+        lootPool: 'creature_puktuk',
+        sprites: {
+          idle: 'assets/creaturesprites/puktuk_idle.png',
+          run: ['assets/creaturesprites/puktuk_run1.png', 'assets/creaturesprites/puktuk_run2.png'],
+        },
+      };
+    }
+
+    const westernZone = injectedDeps?.EXTERIOR_ZONES?.map_western_slope;
+    const herbivores = westernZone?.herbivoreSpecies;
+    let legacyDrenkirraRemoved = 0;
+    if (Array.isArray(herbivores)) {
+      for (let i = herbivores.length - 1; i >= 0; i--) {
+        if (herbivores[i] !== 'drenkirra') continue;
+        herbivores.splice(i, 1);
+        legacyDrenkirraRemoved++;
+      }
+    }
+    const packs = westernZone
+      ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
+      : null;
+    if (Array.isArray(packs) && !packs.includes('puktuk')) packs.push('puktuk');
+    const denSpecies = westernZone
+      ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
+      : null;
+    if (Array.isArray(denSpecies) && !denSpecies.includes('puktuk')) denSpecies.push('puktuk');
+
+    const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS;
+    if (denMotherDefs) {
+      const existingMother = denMotherDefs.puktuk || {};
+      denMotherDefs.puktuk = {
+        ...existingMother,
+        creatureKey: existingMother.creatureKey || 'puktuk',
+        nestItemKey: existingMother.nestItemKey ?? null,
+      };
+    }
+
+    const ready = !!creatureDb?.puktuk
+      && Array.isArray(denSpecies) && denSpecies.includes('puktuk')
+      && Array.isArray(packs) && packs.includes('puktuk');
+    window.__farmLog?.(`[puktuk] WildlifeSpawn.init fallback: ready=${ready ? 1 : 0} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, ready ? 'wildlife' : 'warn');
+    return ready;
+  }
+
+  function init(injectedDeps) {
+    ensurePuktukRuntimeRegistration(injectedDeps);
+    deps = injectedDeps;
+  }
 
   // Once a den's whole pack/herd is wiped, it stays empty — no ambient
   // scatter-spawning — until the next in-game day, when a fresh pack
