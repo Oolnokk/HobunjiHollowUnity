@@ -99,8 +99,14 @@ jobs:
               assert.equal(state.wallSource.meshVisible, state.wallSource.count, 'all source wall transforms must remain enabled');
               assert.equal(state.wallRender.sourceWalls, state.wallSource.count, 'render proxy should cover every source wall');
               assert.equal(state.wallRender.renderProxyCount, state.wallRender.sourceWalls, 'each source wall must have a parent-realm proxy');
+              assert.equal(state.wallRender.proxyRootAttached, true, 'wall proxies must be parented directly into the active game scene');
+              assert.equal(state.wallRender.transformSyncedProxies, state.wallRender.renderProxyCount, 'every wall proxy must have a finite copied world transform');
               assert.equal(state.wallRender.proxyMaterialsVisible, state.wallRender.renderProxyCount, 'all wall proxy materials must render');
-              assert.ok(state.wallRender.raycastableProxies > 0, 'wall proxies must be raycast-visible, not merely present in scene graph');
+              assert.ok(state.wallRender.geometryProbeHits > 0, 'rebuilt wall geometry must accept direct mesh intersection probes');
+              assert.ok(state.wallRender.rendererSubmittedProxies > 0, 'the game renderer must actually submit wall proxy geometry for drawing');
+              assert.ok(state.wallRender.renderSubmitCount > 0, 'wall render submission counter must advance after entering the ruin');
+              assert.equal(state.wallRender.raycastableProxies, 0, 'visual wall proxies must not participate in public interaction raycasts');
+              assert.equal(state.wallRender.interactionRaycastDisabled, state.wallRender.renderProxyCount, 'every visual wall proxy must leave V50 interactables unobscured');
               assert.equal(state.wallRender.mainRealmMaterials, state.wallRender.renderProxyCount, 'visible wall materials must belong to the game THREE realm');
               assert.equal(state.obsoleteToggle, false, 'obsolete wall visibility setting must be removed');
               assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
