@@ -3,9 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const root = process.env.HOBUNJI_REPO || path.join(__dirname, '..');
-const wrapper = fs.readFileSync(path.join(root, 'docs/tools/background-scenery-author/current-game-terrain-auto.js'), 'utf8');
-const impl = fs.readFileSync(path.join(root, 'docs/tools/background-scenery-author/current-game-terrain-auto-impl.js'), 'utf8');
-const source = `${wrapper}\n${impl}`;
+const source = fs.readFileSync(path.join(root, 'docs/tools/background-scenery-author/current-game-terrain-auto.js'), 'utf8');
 
 for (const expected of [
   '../../config/natural-surface-materials.js',
@@ -16,23 +14,22 @@ for (const expected of [
   "const FINAL_OWNER = 'surface-split-jigsaw-v2'",
   'finalOwnerCounts',
   'boundaryPreviewCurrentGameOwner',
-  'CURRENT AUTO rockified',
-  'MutationObserver',
+  'loadScriptOnce',
+  'dependenciesReady',
+  "preview3dRebuild')?.click",
 ]) {
   if (!source.includes(expected)) throw new Error(`Boundary CURRENT GAME AUTO parity contract missing: ${expected}`);
 }
 if (source.includes('restorePreviewMaterialIdentity')) {
   throw new Error('Boundary CURRENT GAME AUTO must retain the game-produced material instead of restoring the clean editor material.');
 }
-for (const expected of [
-  'current-game-terrain-auto-impl.js',
-  '__boundaryCurrentGameAutoObserver?.disconnect?.()',
-  'current === lastWritten',
-  '__boundaryCurrentGameAutoSafeObserver',
-]) {
-  if (!wrapper.includes(expected)) throw new Error(`Boundary CURRENT GAME AUTO freeze guard missing: ${expected}`);
+if (source.includes('document.write')) {
+  throw new Error('Boundary CURRENT GAME AUTO must never block the parser with document.write.');
 }
-if (wrapper.includes('new MutationObserver(() => queueMicrotask(append))')) {
-  throw new Error('Boundary CURRENT GAME AUTO wrapper reintroduced the self-triggering microtask observer loop.');
+if (source.includes('MutationObserver')) {
+  throw new Error('Boundary CURRENT GAME AUTO status diagnostics must not mutate-observe their own status element.');
 }
-console.log('Boundary CURRENT GAME AUTO full-pipeline + freeze-guard regression passed.');
+if (source.includes('current-game-terrain-auto-impl.js')) {
+  throw new Error('Boundary CURRENT GAME AUTO must be a single nonblocking script, not a nested parser-loaded implementation.');
+}
+console.log('Boundary CURRENT GAME AUTO full-pipeline + nonblocking bootstrap regression passed.');
