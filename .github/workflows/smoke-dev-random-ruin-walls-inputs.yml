@@ -9,7 +9,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -35,95 +35,100 @@ jobs:
           echo $! >/tmp/hobunji-http.pid
 
       - name: Browser smoke
+        timeout-minutes: 5
         run: |
           cat > /tmp/ruin-smoke.cjs <<'NODE'
           const { chromium } = require(process.cwd() + '/node_modules/playwright');
           const assert = require('node:assert/strict');
 
           (async () => {
-            const browser = await chromium.launch({ headless:true });
-            const page = await browser.newPage({ viewport:{ width:1024, height:768 } });
-            const pageErrors = [];
-            page.on('pageerror', error => pageErrors.push(String(error?.stack || error)));
-            page.on('console', msg => {
-              const text = msg.text();
-              if (msg.type() === 'error') console.log('[browser console error]', text);
-            });
-            await page.addInitScript(() => localStorage.setItem('hobunjiDevMode', '1'));
-            await page.goto('http://127.0.0.1:4173/index.html', { waitUntil:'domcontentloaded', timeout:120000 });
-            await page.waitForFunction(() =>
-              !!window.DevRandomRuin?.generate &&
-              !!window.DevRandomRuinWallPlanes?.snapshot &&
-              !!window.DevRandomRuinWallRenderProxy?.snapshot &&
-              !!window.DevRandomRuinInteractions?.snapshot &&
-              !!window.WorldPopupText?.debugSnapshot &&
-              !!window.GridTileAccessors?.getCurrentArea,
-              null, { timeout:120000 });
+            let browser = null;
+            try {
+              browser = await chromium.launch({ headless:true });
+              const page = await browser.newPage({ viewport:{ width:1024, height:768 } });
+              const pageErrors = [];
+              page.on('pageerror', error => pageErrors.push(String(error?.stack || error)));
+              page.on('console', msg => {
+                const text = msg.text();
+                if (msg.type() === 'error') console.log('[browser console error]', text);
+              });
+              await page.addInitScript(() => localStorage.setItem('hobunjiDevMode', '1'));
+              await page.goto('http://127.0.0.1:4173/index.html', { waitUntil:'domcontentloaded', timeout:90000 });
+              await page.waitForFunction(() =>
+                !!window.DevRandomRuin?.generate &&
+                !!window.DevRandomRuinWallPlanes?.snapshot &&
+                !!window.DevRandomRuinWallRenderProxy?.snapshot &&
+                !!window.DevRandomRuinInteractions?.snapshot &&
+                !!window.WorldPopupText?.debugSnapshot &&
+                !!window.GridTileAccessors?.getCurrentArea,
+                null, { timeout:90000 });
 
-            const generated = await page.evaluate(async () => await window.DevRandomRuin.generate(0x5eed1234));
-            assert.equal(generated, true, 'ruin generation should succeed');
-            await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
-            await page.waitForTimeout(1800);
+              const generated = await page.evaluate(async () => await window.DevRandomRuin.generate(0x5eed1234));
+              assert.equal(generated, true, 'ruin generation should succeed');
+              await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() === 'map_i_dev_random_ruin', null, { timeout:30000 });
+              await page.waitForTimeout(1800);
 
-            const state = await page.evaluate(() => ({
-              area: window.GridTileAccessors.getCurrentArea(),
-              wallSource: window.DevRandomRuinWallPlanes.snapshot(),
-              wallRender: window.DevRandomRuinWallRenderProxy.snapshot(),
-              interactions: window.DevRandomRuinInteractions.snapshot(),
-              popup: window.WorldPopupText.debugSnapshot(),
-              obsoleteToggle: !!document.getElementById('devRandomRuinWallPlanesRow'),
-              persistedToggle: localStorage.getItem('hobunjiDevRandomRuinWallPlanes'),
-              ladderNodes: (() => {
-                const root = window.GridTileAccessors.getActiveScene()?.children?.find?.(o => /^dev_v50_ruin_/.test(o?.name || ''));
-                const rows = [];
-                root?.traverse?.(o => {
-                  if (o.userData?.generatedAccessType === 'stoneLadder') {
-                    rows.push({
-                      name:o.name || '',
-                      tagged:o.userData?.devRuinInteractionType || '',
-                      childNames:(o.children || []).filter(c => c.isMesh).map(c => c.name || ''),
-                    });
-                  }
-                });
-                return rows;
-              })(),
-            }));
+              const state = await page.evaluate(() => ({
+                area: window.GridTileAccessors.getCurrentArea(),
+                wallSource: window.DevRandomRuinWallPlanes.snapshot(),
+                wallRender: window.DevRandomRuinWallRenderProxy.snapshot(),
+                interactions: window.DevRandomRuinInteractions.snapshot(),
+                popup: window.WorldPopupText.debugSnapshot(),
+                obsoleteToggle: !!document.getElementById('devRandomRuinWallPlanesRow'),
+                persistedToggle: localStorage.getItem('hobunjiDevRandomRuinWallPlanes'),
+                ladderNodes: (() => {
+                  const root = window.GridTileAccessors.getActiveScene()?.children?.find?.(o => /^dev_v50_ruin_/.test(o?.name || ''));
+                  const rows = [];
+                  root?.traverse?.(o => {
+                    if (o.userData?.generatedAccessType === 'stoneLadder') {
+                      rows.push({
+                        name:o.name || '',
+                        tagged:o.userData?.devRuinInteractionType || '',
+                        childNames:(o.children || []).filter(c => c.isMesh).map(c => c.name || ''),
+                      });
+                    }
+                  });
+                  return rows;
+                })(),
+              }));
 
-            console.log(JSON.stringify(state, null, 2));
-            assert.equal(state.area, 'map_i_dev_random_ruin');
-            assert.equal(state.wallSource.enabled, true, 'structural wall switch must be permanently enabled');
-            assert.ok(state.wallSource.count > 0, 'V50 must generate wall source meshes');
-            assert.equal(state.wallSource.meshVisible, state.wallSource.count, 'all source wall transforms must remain enabled');
-            assert.equal(state.wallRender.sourceWalls, state.wallSource.count, 'render proxy should cover every source wall');
-            assert.equal(state.wallRender.renderProxyCount, state.wallRender.sourceWalls, 'each source wall must have a parent-realm proxy');
-            assert.equal(state.wallRender.proxyMaterialsVisible, state.wallRender.renderProxyCount, 'all wall proxy materials must render');
-            assert.ok(state.wallRender.raycastableProxies > 0, 'wall proxies must be raycast-visible, not merely present in scene graph');
-            assert.equal(state.wallRender.mainRealmMaterials, state.wallRender.renderProxyCount, 'visible wall materials must belong to the game THREE realm');
-            assert.equal(state.obsoleteToggle, false, 'obsolete wall visibility setting must be removed');
-            assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
+              console.log(JSON.stringify(state, null, 2));
+              assert.equal(state.area, 'map_i_dev_random_ruin');
+              assert.equal(state.wallSource.enabled, true, 'structural wall switch must be permanently enabled');
+              assert.ok(state.wallSource.count > 0, 'V50 must generate wall source meshes');
+              assert.equal(state.wallSource.meshVisible, state.wallSource.count, 'all source wall transforms must remain enabled');
+              assert.equal(state.wallRender.sourceWalls, state.wallSource.count, 'render proxy should cover every source wall');
+              assert.equal(state.wallRender.renderProxyCount, state.wallRender.sourceWalls, 'each source wall must have a parent-realm proxy');
+              assert.equal(state.wallRender.proxyMaterialsVisible, state.wallRender.renderProxyCount, 'all wall proxy materials must render');
+              assert.ok(state.wallRender.raycastableProxies > 0, 'wall proxies must be raycast-visible, not merely present in scene graph');
+              assert.equal(state.wallRender.mainRealmMaterials, state.wallRender.renderProxyCount, 'visible wall materials must belong to the game THREE realm');
+              assert.equal(state.obsoleteToggle, false, 'obsolete wall visibility setting must be removed');
+              assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
 
-            assert.ok(state.interactions.bridgeInstalled, 'ruin interactions should bridge into normal world prompt list');
-            assert.ok(state.interactions.rows.length > 0, 'spawn should expose at least the normal Leave Test Ruin interaction');
-            assert.ok(state.popup.interactionRows.length > 0, 'WorldPopupText should own the visible interaction list');
-            assert.ok(state.popup.interactionRows.every(row => row.inputActionId), 'interaction rows should carry semantic input action ids');
-            assert.ok(state.popup.interactionRows.every(row => row.inputHint), 'interaction rows should carry real binding labels');
-            assert.ok(state.popup.interactionRows.every(row => row.inputColor), 'interaction rows should carry action-arch input colors');
+              assert.ok(state.interactions.bridgeInstalled, 'ruin interactions should bridge into normal world prompt list');
+              assert.ok(state.interactions.rows.length > 0, 'spawn should expose at least the normal Leave Test Ruin interaction');
+              assert.ok(state.popup.interactionRows.length > 0, 'WorldPopupText should own the visible interaction list');
+              assert.ok(state.popup.interactionRows.every(row => row.inputActionId), 'interaction rows should carry semantic input action ids');
+              assert.ok(state.popup.interactionRows.every(row => row.inputHint), 'interaction rows should carry real binding labels');
+              assert.ok(state.popup.interactionRows.every(row => row.inputColor), 'interaction rows should carry action-arch input colors');
 
-            for (const ladder of state.ladderNodes) {
-              assert.match(ladder.name, /^dev_ruin_stone_ladder_/, 'V50 ladder root should have a semantic runtime name');
-              assert.equal(ladder.tagged, 'stoneLadder', 'V50 ladder root should carry runtime interaction tag');
-              assert.ok(ladder.childNames.length > 0, 'ladder should contain raycastable child meshes');
-              assert.ok(ladder.childNames.every(name => /^dev_ruin_stone_ladder_\d+_part_\d+$/.test(name)), 'ladder rung/rail children should be named for Pixel Probe and parent resolution');
+              for (const ladder of state.ladderNodes) {
+                assert.match(ladder.name, /^dev_ruin_stone_ladder_/, 'V50 ladder root should have a semantic runtime name');
+                assert.equal(ladder.tagged, 'stoneLadder', 'V50 ladder root should carry runtime interaction tag');
+                assert.ok(ladder.childNames.length > 0, 'ladder should contain raycastable child meshes');
+                assert.ok(ladder.childNames.every(name => /^dev_ruin_stone_ladder_\d+_part_\d+$/.test(name)), 'ladder rung/rail children should be named for Pixel Probe and parent resolution');
+              }
+
+              if (pageErrors.length) {
+                console.log('Page errors:', pageErrors.join('\n---\n'));
+                throw new Error(`browser raised ${pageErrors.length} page error(s)`);
+              }
+            } finally {
+              await browser?.close?.();
             }
-
-            if (pageErrors.length) {
-              console.log('Page errors:', pageErrors.join('\n---\n'));
-              throw new Error(`browser raised ${pageErrors.length} page error(s)`);
-            }
-            await browser.close();
           })().catch(error => {
             console.error(error);
-            process.exitCode = 1;
+            process.exit(1);
           });
           NODE
           node /tmp/ruin-smoke.cjs
