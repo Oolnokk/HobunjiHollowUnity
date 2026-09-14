@@ -4,17 +4,21 @@ on:
   push:
     paths:
       - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/clothing-weight-dodge-policy.js'
       - 'docs/js/clothing-weaving-npc-compat.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-clothing-weaving-system.js'
+      - 'scripts/test-clothing-weight-dodge-policy.js'
       - 'scripts/test-clothing-weaving-npc-compat.js'
       - '.github/workflows/clothing-weaving-regression.yml'
   pull_request:
     paths:
       - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/clothing-weight-dodge-policy.js'
       - 'docs/js/clothing-weaving-npc-compat.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-clothing-weaving-system.js'
+      - 'scripts/test-clothing-weight-dodge-policy.js'
       - 'scripts/test-clothing-weaving-npc-compat.js'
       - '.github/workflows/clothing-weaving-regression.yml'
   workflow_dispatch:
@@ -30,9 +34,12 @@ jobs:
       - name: Syntax checks
         run: |
           node --check docs/js/clothing-weaving-system.js
+          node --check docs/js/clothing-weight-dodge-policy.js
           node --check docs/js/clothing-weaving-npc-compat.js
           node --check docs/js/combat/combat-config-loader.js
       - name: Clothing weaving regression
         run: node scripts/test-clothing-weaving-system.js
+      - name: Clothing dodge policy regression
+        run: node scripts/test-clothing-weight-dodge-policy.js
       - name: NPC wardrobe compatibility regression
         run: node scripts/test-clothing-weaving-npc-compat.js
