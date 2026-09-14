@@ -9,6 +9,7 @@ No Netlify Identity, Functions, or Blobs backend is required for cloud saves.
 - `docs/js/save-snapshot-core.js` captures/restores the same `hobunjiSaveMeta` + `hobunji_farm_layout_v3:*` boundary used by the local-folder backup.
 - `docs/js/google-drive-cloud-save-config.js` contains the browser-visible Google OAuth/Picker identifiers.
 - `docs/js/google-drive-cloud-save.js` owns Google Identity Services authorization, Google Picker folder selection, Drive REST reads/writes, autosync, conflict handling, and mobile-visible diagnostics.
+- `docs/js/google-drive-cloud-save-conflict-guard.js` catches the rare case where two devices independently write different saves with the same app revision number; it pauses autosync and surfaces a mobile-visible resolution warning.
 - The selected Drive folder is remembered locally by folder ID. The OAuth access token is **not** persisted to `localStorage`.
 - The Drive file is named `Hobunji Hollow Save.json` and contains a revisioned envelope around the normal Hobunji save snapshot.
 
@@ -41,7 +42,8 @@ That scope is intended for files the app creates or files/folders the player exp
 4. After a successful explicit sync, autosync is armed.
 5. Local changes are detected by the existing save snapshot fingerprint and uploaded on the autosync interval.
 6. If Drive's revision differs from the revision this browser last synced, autosync pauses and the UI asks which copy to keep.
-7. Losing Drive authorization/network access never removes or blocks the browser save. The panel exposes the failure and allows reconnection without DevTools.
+7. If two devices ever produce the same revision number with different fingerprints, the conflict guard disables autosync, disconnects the Drive session without forgetting the folder or touching the local save, and shows a visible warning requiring an explicit push or pull.
+8. Losing Drive authorization/network access never removes or blocks the browser save. The panel exposes the failure and allows reconnection without DevTools.
 
 ## Authorization lifetime
 
@@ -58,7 +60,7 @@ The Cloud Save panel contains an expandable debug block with:
 - local link revision/fingerprint state
 - dirty/autosync state
 
-The same information and actions remain available through `window.__hobunjiCloudSaveDebug` when a console is available.
+The same information and actions remain available through `window.__hobunjiCloudSaveDebug` when a console is available. The same-revision guard also exposes `window.__hobunjiDriveConflictGuardDebug` for targeted diagnostics when a console is available.
 
 ## Migration from the retired Netlify save backend
 
