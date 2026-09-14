@@ -15,13 +15,19 @@
   let dialogueDeps = null; // Captured from DialogueContent.init so spillover can reuse the authoritative NPC record collection.
   let giftingDeps = null; // Captured from NpcGifting.init so gift quality follows the exact held stack being consumed.
   let activeGiftContext = null; // Set only during NpcGifting.offerGift so gift Favor can see the selected item's star tier.
-  const stateProxyCache = new WeakMap(); // Keeps one stable Favor-aware proxy per relationship state object.
+  const stateProxyCache = new WeakMap(); // Keeps one stable Rapport-rollover-aware proxy per relationship state object.
+  const pendingRapportRollover = new WeakMap(); // Raw state -> expected Favor-point gain after NpcRapport clears Rapport at civil midnight.
 
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const roundHeart = value => Math.round(finite(value, 0) * HEART_PRECISION) / HEART_PRECISION;
   const favorPointsToHearts = points => finite(points, 0) / FAVOR_POINTS_PER_HEART;
   const heartsToFavorPoints = hearts => finite(hearts, 0) * FAVOR_POINTS_PER_HEART;
+
+  function rapportToFavorRate() {
+    const authored = window.SCRATCHBONES_CONFIG?.game?.socialRelationships?.rapportToFavorRate;
+    return Math.max(0, finite(authored, 0.10));
+  }
 
   function hasScaleMarker(memory) {
     return Array.isArray(memory) && memory.some(entry => entry?.event === MIGRATION_EVENT || entry?.type === MIGRATION_EVENT);
@@ -77,19 +83,38 @@
     if (stateProxyCache.has(rawState)) return stateProxyCache.get(rawState);
     const proxy = new Proxy(rawState, {
       set(target, property, value, receiver) {
+        if (property === 'rapport') {
+          const before = Math.max(0, finite(target.rapport, 0));
+          const next = Math.max(0, finite(value, before));
+          if (before > 0 && next === 0) {
+            const favorPoints = Math.round(before * rapportToFavorRate());
+            if (favorPoints > 0) pendingRapportRollover.set(target, favorPoints);
+            else pendingRapportRollover.delete(target);
+          } else if (next > 0) {
+            pendingRapportRollover.delete(target);
+          }
+          return Reflect.set(target, property, value, receiver);
+        }
         if (property !== 'favor') return Reflect.set(target, property, value, receiver);
-        const currentHearts = finite(target.favor, 0);
+
         const requestedAbsolute = Number(value);
         if (!Number.isFinite(requestedAbsolute)) return Reflect.set(target, property, value, receiver);
-        // External systems historically mutate `state.favor += N` directly.
-        // The getter still exposes permanent heart progress for every existing
-        // threshold reader, while the setter interprets that delta as Favor
-        // points. NpcRapport's +10 midnight assignment therefore becomes +.25
-        // heart without rewriting its event-driven rollover internals.
-        const requestedPointDelta = requestedAbsolute - currentHearts;
-        target.favor = roundHeart(currentHearts + favorPointsToHearts(requestedPointDelta));
-        addScaleMarker(target);
-        return true;
+        const currentHearts = finite(target.favor, 0);
+        const requestedDelta = requestedAbsolute - currentHearts;
+        const expectedRolloverPoints = pendingRapportRollover.get(target);
+        pendingRapportRollover.delete(target);
+
+        // NpcRapport is the one runtime that still mutates state.favor
+        // directly: it first clears positive Rapport to zero, then assigns
+        // current Favor + Math.round(oldRapport * rate). Recognizing that
+        // exact sequence lets ordinary absolute `state.favor = X` assignments
+        // (faction initialization, tests, authored state) remain heart-space.
+        if (Number.isFinite(expectedRolloverPoints) && Math.abs(requestedDelta - expectedRolloverPoints) < 0.000001) {
+          target.favor = roundHeart(currentHearts + favorPointsToHearts(expectedRolloverPoints));
+          addScaleMarker(target);
+          return true;
+        }
+        return Reflect.set(target, property, value, receiver);
       },
     });
     stateProxyCache.set(rawState, proxy);
