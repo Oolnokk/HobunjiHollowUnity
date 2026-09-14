@@ -5,7 +5,7 @@
 
   const STORAGE_VERSION = 1; // Used to invalidate incompatible persisted daily-ledger shapes cleanly.
   const STORAGE_PREFIX = 'hobunji_day_progress_review_v1'; // Used to keep one resumable ledger per world.
-  const CIVIL_MIDNIGHT_HOUR = 24; // Used because the full-day clock represents midnight as hour 24 before raw-day rollover at 06:00.
+  const CIVIL_MIDNIGHT_HOUR = 24; // Continuous review-clock midnight; public CalendarSystem.getHour intentionally wraps this same instant to 0.
   const NATURAL_WRITE_MAX = 0.02; // Mirrors CalendarSystem's natural-frame write discriminator so explicit time skips remain untouched.
   const PASSAGE_FIRST_TICK_MS = 1000; // Mirrors CalendarSystem's private first sleep/wait tick so this review-aware confirm preserves pacing.
   const PASSAGE_TICK_DECAY = 0.8; // Mirrors CalendarSystem's private 20% per-hour acceleration for sleep/wait.
@@ -14,7 +14,7 @@
   const REVIEW_ROOT_ID = 'hobunjiDayProgressReview'; // Used to reuse one full-screen modal across every midnight.
   const DEBUG_BUTTON_ID = 'dayProgressReviewDebugButton'; // Used to keep the mobile-accessible test control idempotent.
   const DEBUG_PANEL_ID = 'devSpawnPanel'; // Existing in-game Dev Tools panel receiving the review test button.
-  const CHANGE_SUMMARY = 'Added midnight day progress review with staged currency/XP, relationship conversion, and received-item reveals.'; // Exposed in debug output as the latest change summary.
+  const CHANGE_SUMMARY = 'Fixed midnight review triggering and post-midnight ledger ownership against the full-day clock\'s wrapped 0-23 display hour.'; // Exposed in debug output as the latest change summary.
 
   let calendarApi = null; // Captured CalendarSystem namespace used by civil-time checks and formatting.
   let calendarDeps = null; // Captured CalendarSystem.init dependencies used by the review-aware sleep/wait passage runner.
@@ -66,9 +66,10 @@
     return `${STORAGE_PREFIX}:${worldId()}`;
   }
 
-  function representedHour() {
-    const hour = finiteNumber(calendarApi?.getHour?.(), NaN); // Current represented 06:00→30:00 clock hour.
-    return Number.isFinite(hour) ? hour : finiteNumber(calendarDeps?.MORNING_HOUR, 6);
+  function representedHour(time01 = calendarDeps?.calendar?.time01) {
+    const morningHour = finiteNumber(calendarDeps?.MORNING_HOUR, 6); // Internal rollover hour used as the continuous clock origin.
+    const clockHours = Math.max(0.000001, finiteNumber(calendarDeps?.NIGHT_HOUR, morningHour + 24) - morningHour); // Full represented day span; Sky Dome expands this to 24 hours before CalendarSystem init completes.
+    return morningHour + finiteNumber(time01, 0) * clockHours;
   }
 
   function rawDay() {
@@ -397,8 +398,8 @@
   }
 
   function crossesCivilMidnight(fromHour, toHour) {
-    const from = finiteNumber(fromHour, NaN); // Starting represented hour used by both natural and sleep/wait crossing checks.
-    const to = finiteNumber(toHour, NaN); // Proposed represented hour used by both natural and sleep/wait crossing checks.
+    const from = finiteNumber(fromHour, NaN); // Starting continuous represented hour used by both natural and sleep/wait crossing checks.
+    const to = finiteNumber(toHour, NaN); // Proposed continuous represented hour used by both natural and sleep/wait crossing checks.
     return Number.isFinite(from) && Number.isFinite(to) && from < CIVIL_MIDNIGHT_HOUR && to >= CIVIL_MIDNIGHT_HOUR;
   }
 
@@ -431,8 +432,8 @@
         if (activeReviewPromise) return; // Natural clock remains pinned immediately before midnight until Continue resolves the review.
 
         const scaledNext = before + delta * naturalClockScale(); // Exact value CalendarSystem's underlying setter would accept for this frame.
-        const fromHour = calendarApi?.getHour?.(before); // Represented start hour used to detect the one civil-midnight boundary.
-        const toHour = calendarApi?.getHour?.(scaledNext); // Represented scaled destination hour used to avoid opening the review early.
+        const fromHour = representedHour(before); // Continuous start hour used because public CalendarSystem.getHour wraps midnight to 0.
+        const toHour = representedHour(scaledNext); // Continuous scaled destination used to detect the actual 24:00 crossing.
         if (shouldPauseNaturalMidnight(fromHour, toHour)) {
           requestMidnightReview({ source: 'natural', day: calendarDeps?.calendar?.day, time01: before });
           return;
@@ -469,8 +470,8 @@
     const startDay = finiteNumber(calendar.day, 1); // Raw simulation day before this passage hour.
     const startTime = finiteNumber(calendar.time01, 0); // Normalized clock position before this passage hour.
     const target = calendarApi.previewAfterHours(1, startDay, startTime); // CalendarSystem's own exact one-hour destination.
-    const fromHour = calendarApi.getHour(startTime); // Represented starting clock hour used for civil-midnight detection.
-    const toHour = target.day === startDay ? calendarApi.getHour(target.time01) : fromHour; // Same-raw-day target hour; raw rollover at 06:00 is not a civil midnight.
+    const fromHour = representedHour(startTime); // Continuous starting hour; player-facing getHour() wraps 24:00 to 0:00.
+    const toHour = target.day === startDay ? representedHour(target.time01) : fromHour; // Same-raw-day target hour; raw rollover at 06:00 is not a civil midnight.
 
     if (target.day === startDay && crossesCivilMidnight(fromHour, toHour)) {
       await requestMidnightReview({ source: kind, day: startDay, time01: startTime });
@@ -970,6 +971,7 @@
       rawDay: rawDay(),
       civilOrdinal: civilOrdinal(),
       representedHour: representedHour(),
+      wrappedDisplayHour: finiteNumber(calendarApi?.getHour?.(), NaN),
       currentDayKey: currentDayKey(),
       ledgerDayKey: state?.dayKey || null,
       reviewedDayKey: state?.reviewedDayKey || null,
@@ -1020,7 +1022,7 @@
     debugSnapshot,
     showSampleReview,
     resetLedger,
-    _test: Object.freeze({ parseRewardText, rewardBucket, crossesCivilMidnight, rapportConversion }),
+    _test: Object.freeze({ parseRewardText, rewardBucket, representedHour, crossesCivilMidnight, rapportConversion }),
   });
   window.__dayProgressReviewDebug = Object.freeze({ snapshot: debugSnapshot, showCurrent: () => showSnapshot(buildReviewSnapshot({ source: 'debug-current' }), { markReviewed: false }), showSample: showSampleReview, reset: resetLedger });
 })();
