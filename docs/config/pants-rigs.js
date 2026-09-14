@@ -1,6 +1,4 @@
 // Authored pants-rig data. The Pants Rig Author exports this schema.
-// Garments stay empty until a pants PNG has been authored; character entries are
-// created by the authoring tool as each species/gender beltline is drawn.
 (function (global) {
   'use strict';
 
@@ -9,7 +7,12 @@
     ? existing
     : {
         schema: 'hobunji.pants-rigs.v1',
-        garments: {},
+        garments: {
+          pants_basic: {
+            image: 'assets/cosmetics/clothes/legs/pants_basic.png',
+            sourceSize: { width: 0, height: 0 },
+          },
+        },
         characters: {},
       };
 })(typeof window !== 'undefined' ? window : globalThis);
