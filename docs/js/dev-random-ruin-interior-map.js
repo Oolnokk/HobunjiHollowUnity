@@ -28,9 +28,6 @@
   let returnAnchor = null;
   let generatorFrame = null;
   let generatorApi = null;
-  let currentControl = null;
-  let promptOwned = false;
-  let previousControllerInteractDown = false;
   let frameLastMs = performance.now();
 
   function devModeEnabled() {
@@ -336,7 +333,7 @@
   }
 
   function clearRuntime(removeMap=true) {
-    DS.clearScope(SCOPE); if(promptOwned) window.ActionPromptUI?.hideActionPrompt?.(); promptOwned=false;currentControl=null;
+    DS.clearScope(SCOPE);
     if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);} if(removeMap) buildingScenes?.delete(MAP_ID);
     ruin=null;
     // A reroll deliberately keeps the hidden V50 realm alive. Its API's
@@ -346,19 +343,10 @@
     const badge=document.getElementById('devRandomRuinBadge'); if(badge) badge.style.display='none';
   }
 
-  function controlPoint(c){ return c.point ? new THREE.Vector3(c.point.x,0,c.point.z) : centerFor(c.object); }
-  function updatePrompt(px,pz){ let nearest=null,best=CONTROL_RANGE*CONTROL_RANGE; for(const c of ruin.controls){const p=controlPoint(c),d=(p.x-px)**2+(p.z-pz)**2;if(d<=best){best=d;nearest=c;}}
-    currentControl=nearest; if(nearest){window.ActionPromptUI?.showActionPrompt?.({actionId:'interact',touchIcon:'✋',verb:nearest.label,onPress:nearest.onPress,statusText:`DEV RUIN · ${nearest.kind}`,statusType:''});promptOwned=true;
-      const bind=window.InputBindings?.getCurrentBindings?.()?.controller?.interact; const idx=String(bind||'').startsWith('Button')?Number(String(bind).slice(6)):NaN; let down=false;
-      if(Number.isInteger(idx)) for(const pad of navigator.getGamepads?.()||[]) if(pad?.buttons?.[idx]?.pressed) down=true; if(down&&!previousControllerInteractDown) nearest.onPress?.(); previousControllerInteractDown=down;
-    } else {previousControllerInteractDown=false;if(promptOwned)window.ActionPromptUI?.hideActionPrompt?.();promptOwned=false;}}
-
-  document.addEventListener('keydown',e=>{if(!ruin||!currentControl||ruin.falling)return;const bind=window.InputBindings?.getCurrentBindings?.()?.desktop?.interact;if(bind&&String(bind).split('+').pop().trim()===e.code){e.preventDefault();e.stopImmediatePropagation();currentControl.onPress?.();}},true);
-
   function positionInfo(px,py){const x=px/deps.TILE,z=py/deps.TILE;return{x,z,blocker:DS.blockerAt(x,z,{radius:PLAYER_RADIUS,actorHeight:1.25}),pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};}
   function reconcilePlayer(now){if(ruin.falling){const f=ruin.falling,t=clamp((now-f.startedAt)/FALL_MS,0,1);deps.player.x=f.x;deps.player.y=f.y;if(deps.playerMesh?.position)deps.playerMesh.position.y=ruin.supportY-1.8*t;if(t>=1){deps.player.x=f.safe.x;deps.player.y=f.safe.y;ruin.falling=null;}return;}
     let info=positionInfo(deps.player.x,deps.player.y);if(info.blocker){deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;info=positionInfo(deps.player.x,deps.player.y);} if(info.pit&&!info.support){ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,safe:{...ruin.lastSafePx}};window.ResourceSystem?.spendFooting?.(deps.player,35,'test ruin fall');return;}
-    const ny=info.support?.y??0,same=info.support?.id===ruin.supportId;if(!same&&ny-ruin.supportY>MAX_STEP_HEIGHT){deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;return;} ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};if(!info.pit||info.support)ruin.lastSafePx={...ruin.lastAcceptedPx};ruin.supportId=info.support?.id||null;ruin.supportY=ny;if(info.support&&deps.playerMesh?.position)deps.playerMesh.position.y=ny;updatePrompt(info.x,info.z);}
+    const ny=info.support?.y??0,same=info.support?.id===ruin.supportId;if(!same&&ny-ruin.supportY>MAX_STEP_HEIGHT){deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;return;} ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};if(!info.pit||info.support)ruin.lastSafePx={...ruin.lastAcceptedPx};ruin.supportId=info.support?.id||null;ruin.supportY=ny;if(info.support&&deps.playerMesh?.position)deps.playerMesh.position.y=ny;}
 
   function updateMechanisms(dt){ruin.api.syncPressurePlates(ruin.localeRoot);ruin.api.tickRuntime(dt);for(const m of ruin.mechanisms.values()){const linked=m.root.userData?.linkedPressurePlateRoot||m.root.userData?.linkedCubePuzzleRoot;if(!linked)m.progress+=clamp(m.target-m.progress,-dt*1.55,dt*1.55);ruin.api.applyProgress(m.root,m.progress);}for(const a of ruin.activators){const m=ruin.mechanisms.get(a.userData?.linkedMechanismId);if(m&&!['pressurePlate','linkedCubePillars'].includes(a.userData?.activatorType))ruin.api.applyProgress(a,m.progress);}}
   DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateMechanisms(dt);reconcilePlayer(now);});
@@ -367,5 +355,5 @@
   function installSettingsButton(){if(!devModeEnabled())return;const arena=document.getElementById('devTeleportArenaBtn');if(!arena||document.getElementById('devRandomTestRuinBtn'))return;const row=document.createElement('div');row.className='settings-row';row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only V50 ruin as a real interior map with 2x horizontal tiles and enter it. Nothing is saved.</div></div><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';arena.closest('.settings-row')?.insertAdjacentElement('afterend',row);row.querySelector('button')?.addEventListener('click',()=>generate(randomSeed()));}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:CONTROL_RANGE})):[],getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),dynamic:DS.debugSnapshot()}:null});
 })();

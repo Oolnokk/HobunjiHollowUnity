@@ -1,8 +1,7 @@
 // Dev Random Test Ruin — V50 prototype hook coverage, batch 1.
-// Loaded after DynamicSurfaces and before dev-random-ruin-interior-map.js so
-// keyboard interaction priority can be claimed for prototype-only controls,
-// while the frame client is installed later (after the base adapter) and can
-// present its prompt last. This module deliberately augments the base adapter
+// Loaded after DynamicSurfaces and before dev-random-ruin-interior-map.js.
+// Prototype-only controls are exported to the shared ruin interaction list;
+// this module deliberately augments the base adapter
 // instead of duplicating its linked-cube/mechanism/push-block implementation.
 (() => {
   'use strict';
@@ -32,9 +31,6 @@
   let transitDoors = [];
   let ladders = [];
   let audit = emptyAudit();
-  let nearestExtraControl = null;
-  let promptOwned = false;
-  let previousControllerInteractDown = false;
   let frameClientInstalled = false;
   let wrapperInstalled = false;
   let buildSerial = 0;
@@ -369,63 +365,8 @@
     extraControls = [];
     transitDoors = [];
     ladders = [];
-    nearestExtraControl = null;
-    previousControllerInteractDown = false;
-    if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
-    promptOwned = false;
     if (resetAudit) audit = emptyAudit();
   }
-
-  function controlPoint(control) {
-    return centerFor(control.object);
-  }
-  function updateExtraPrompt() {
-    if (!root || deps?.getCurrentArea?.() !== MAP_ID || !deps?.player || !deps?.TILE) {
-      nearestExtraControl = null;
-      return;
-    }
-    const p = currentPlayerWorld();
-    let nearest = null;
-    let best = CONTROL_RANGE * CONTROL_RANGE;
-    for (const control of extraControls) {
-      const point = controlPoint(control);
-      const distanceSq = (point.x-p.x)**2 + (point.z-p.z)**2;
-      if (distanceSq <= best) { best = distanceSq; nearest = control; }
-    }
-    nearestExtraControl = nearest;
-    if (!nearest) {
-      if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
-      promptOwned = false;
-      previousControllerInteractDown = false;
-      return;
-    }
-    const label = typeof nearest.label === 'function' ? nearest.label() : nearest.label;
-    window.ActionPromptUI?.showActionPrompt?.({
-      actionId:'interact', touchIcon:'✋', verb:label, onPress:nearest.onPress,
-      statusText:`DEV RUIN · ${nearest.kind}`, statusType:'',
-    });
-    promptOwned = true;
-
-    const bind = window.InputBindings?.getCurrentBindings?.()?.controller?.interact;
-    const index = String(bind || '').startsWith('Button') ? Number(String(bind).slice(6)) : NaN;
-    let down = false;
-    if (Number.isInteger(index)) for (const pad of navigator.getGamepads?.() || [])
-      if (pad?.buttons?.[index]?.pressed) down = true;
-    if (down && !previousControllerInteractDown) nearest.onPress?.();
-    previousControllerInteractDown = down;
-  }
-
-  // Registered before the base adapter's own capture listener. We only stop
-  // propagation when one of our genuinely-extra controls is focused; all base
-  // linked-cube/push-block/activator interactions continue to its listener.
-  document.addEventListener('keydown', event => {
-    if (!nearestExtraControl || deps?.getCurrentArea?.() !== MAP_ID) return;
-    const bind = window.InputBindings?.getCurrentBindings?.()?.desktop?.interact;
-    if (!bind || String(bind).split('+').pop().trim() !== event.code) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    nearestExtraControl.onPress?.();
-  }, true);
 
   function activeGeneratedRoot() {
     if (deps?.getCurrentArea?.() !== MAP_ID) return null;
@@ -460,7 +401,6 @@
     const dt = clamp((now-last)/1000, 0, .05);
     frameUpdate._last = now;
     for (const door of transitDoors) updateTransitDoor(door, dt);
-    updateExtraPrompt(); // Installed after the base adapter so our prompt wins only for extra controls.
   }
 
   async function waitForGeneratedRoot(serial) {
@@ -545,6 +485,7 @@
   window.DevRandomRuinPrototypeHooks = Object.freeze({
     rebuild: () => { if (root) buildAuditForRoot(root); },
     snapshot,
+    getInteractionControls: () => root ? extraControls.map(control => ({ ...control, range:CONTROL_RANGE })) : [],
     clear: () => clearHookState(),
   });
 })();

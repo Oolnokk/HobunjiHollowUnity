@@ -122,7 +122,9 @@ jobs:
               assert.equal(state.obsoleteToggle, false, 'obsolete wall visibility setting must be removed');
               assert.equal(state.persistedToggle, null, 'persisted wall-off preference must be cleared');
 
-              assert.ok(state.interactions.bridgeInstalled, 'ruin interactions should bridge into normal world prompt list');
+              assert.equal(state.interactions.nativeProviderMode, true, 'ruin interactions should use direct runtime providers');
+              assert.equal(state.interactions.customPromptBridgeInstalled, false, 'ruin interactions must not wrap the custom ActionPromptUI');
+              assert.ok(state.interactions.providerCount >= 2, 'base and prototype ruin controls should both feed the shared input list');
               assert.ok(state.interactions.rows.length > 0, 'spawn should expose at least the normal Leave Test Ruin interaction');
               assert.ok(state.popup.interactionRows.length > 0, 'WorldPopupText should own the visible interaction list');
               assert.ok(state.popup.interactionRows.every(row => row.inputActionId), 'interaction rows should carry semantic input action ids');

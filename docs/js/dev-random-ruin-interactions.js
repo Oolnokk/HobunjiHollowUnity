@@ -1,11 +1,10 @@
-// Bridges Random Test Ruin dev interactions into the game's ordinary world
-// interaction input-list popup. It also exposes V50 stone ladders as real
+// Feeds Random Test Ruin runtime controls directly into the game's ordinary
+// world interaction input-list popup. It also exposes V50 stone ladders as real
 // nearby interactions instead of leaving their unnamed rung meshes opaque.
 (() => {
   'use strict';
 
   const MAP_ID = 'map_i_dev_random_ruin';
-  const CAPTURE_TTL_MS = 260;
   const LADDER_RANGE = 1.7;
   const SEMANTIC_RESCAN_MS = 250;
   const SLOT_ACTIONS = ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2'];
@@ -15,12 +14,8 @@
   const DevSpawner = window.DevSpawner;
   if (!GridTileAccessors || !DS || !DevSpawner) return;
 
-  const captured = new Map();
   const controllerDown = new Map();
   let deps = null;
-  let bridgeInstalled = false;
-  let nativeShow = null;
-  let nativeHide = null;
   let lastRows = [];
   let lastAnchor = null;
   let ownsWorldList = false;
@@ -186,35 +181,6 @@
     return best;
   }
 
-  function isDevRuinPrompt(options) {
-    return inRuin() && String(options?.statusText || '').startsWith('DEV RUIN ·');
-  }
-
-  function installBridge() {
-    if (bridgeInstalled) return true;
-    const api = window.ActionPromptUI;
-    if (!api?.showActionPrompt || !api?.hideActionPrompt) return false;
-    nativeShow = api.showActionPrompt.bind(api);
-    nativeHide = api.hideActionPrompt.bind(api);
-    try {
-      api.showActionPrompt = options => {
-        if (!isDevRuinPrompt(options)) return nativeShow(options);
-        const kind = String(options.statusText || '').slice('DEV RUIN ·'.length).trim().toLowerCase();
-        const label = String(options.verb || 'Interact');
-        const key = `${kind}|${label}`;
-        captured.set(key, { key, kind, label, touchIcon:options.touchIcon || '✋', onPress:options.onPress, seenAt:performance.now() });
-        nativeHide();
-        return true;
-      };
-      api.hideActionPrompt = (...args) => nativeHide(...args);
-      bridgeInstalled = true;
-      return true;
-    } catch (error) {
-      console.warn('[Random Test Ruin interactions] could not wrap ActionPromptUI', error);
-      return false;
-    }
-  }
-
   function supportCandidatesForLadder(ladder) {
     const matrix = matrixFromForeign(ladder);
     if (!matrix) return [];
@@ -277,15 +243,57 @@
     return true;
   }
 
-  function currentRows(now = performance.now()) {
-    for (const [key, entry] of captured) if (now - entry.seenAt > CAPTURE_TTL_MS) captured.delete(key);
+  function controlWorldPoint(control, owner) {
+    const point = control?.point;
+    if (Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.z))) {
+      return new THREE.Vector3(Number(point.x), Number(point.y) || 0, Number(point.z));
+    }
+    return owner ? worldPosition(owner) : null;
+  }
+
+  function providerRows(now = performance.now()) {
     const player = playerWorldPosition();
-    const rows = [...captured.values()].map(entry => {
-      const owner = nearestOwnerForKind(entry.kind);
-      const pos = owner && worldPosition(owner);
-      const distance = player && pos ? Math.hypot(pos.x - player.x, pos.z - player.z) : Infinity;
-      return { ...entry, owner, distance };
-    });
+    if (!player) return [];
+    const providers = [
+      ['interior', window.DevRandomRuin],
+      ['prototype', window.DevRandomRuinPrototypeHooks],
+    ];
+    const rows = [];
+    const seen = new Set();
+    for (const [source, provider] of providers) {
+      const controls = provider?.getInteractionControls?.() || [];
+      for (let index = 0; index < controls.length; index++) {
+        const control = controls[index];
+        if (!control || typeof control.onPress !== 'function') continue;
+        const kind = String(control.kind || 'interactive').toLowerCase();
+        const owner = control.object || (control.point ? ruinRoot() : nearestOwnerForKind(kind));
+        const point = controlWorldPoint(control, owner);
+        const distance = point ? Math.hypot(point.x - player.x, point.z - player.z) : Infinity;
+        const range = Math.max(.1, Number(control.range) || LADDER_RANGE);
+        if (distance > range) continue;
+        const labelValue = typeof control.label === 'function' ? control.label() : control.label;
+        const label = String(labelValue || 'Interact');
+        const identity = `${kind}|${owner?.id || owner?.name || ''}|${label}`;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        rows.push({
+          key:`${source}|${index}|${identity}`,
+          kind,
+          label,
+          touchIcon:control.touchIcon || '✋',
+          owner,
+          distance,
+          onPress:control.onPress,
+          seenAt:now,
+          source,
+        });
+      }
+    }
+    return rows;
+  }
+
+  function currentRows(now = performance.now()) {
+    const rows = providerRows(now);
     const ladderHit = nearestLadder();
     if (ladderHit && !rows.some(row => row.owner === ladderHit.ladder || row.kind === 'ladder')) {
       rows.push({
@@ -297,6 +305,7 @@
         distance:ladderHit.distance,
         onPress:() => climbLadder(ladderHit.ladder),
         seenAt:now,
+        source:'semantic-ladder',
       });
     }
     return rows
@@ -353,9 +362,7 @@
   }
 
   function renderWorldList() {
-    installBridge();
     if (!inRuin()) {
-      captured.clear();
       lastRows = [];
       clearTouchButtons();
       if (ownsWorldList) window.WorldPopupText?.clearInteractionPrompts?.();
@@ -481,7 +488,9 @@
     snapshot() {
       return {
         active:inRuin(),
-        bridgeInstalled,
+        nativeProviderMode:true,
+        customPromptBridgeInstalled:false,
+        providerCount:[window.DevRandomRuin, window.DevRandomRuinPrototypeHooks].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
         rows:lastRows.map(row => ({ label:row.label, kind:row.kind, inputAction:row.inputAction, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null })),
         ownerName:lastAnchor?.name || null,
