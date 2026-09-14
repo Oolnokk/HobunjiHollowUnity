@@ -22,17 +22,19 @@
   // proxies before the adapter resolves moving geometry. Motion/egress integration
   // loads after the base adapter so it can carry riders and repair missing recovery
   // access against the final V50 scene graph. Wall rendering is transferred into
-  // the parent game's THREE realm while retaining V50 geometry/transforms, and the
-  // final interaction bridge converts DEV RUIN prompts to normal world input lists.
+  // the parent game's THREE realm while retaining V50 geometry/transforms. Precise
+  // collision refinement then trims broad-phase AABB false positives against those
+  // actual V50 mesh footprints before normal movement reconciliation runs.
   if (document.readyState === 'loading') {
-    document.write('<script src="js/dynamic-surfaces.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-hit-puzzles-loader.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-interactions.js?v=20260914v50interactions1"></scr' + 'ipt>');
-    document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260914v50interactions1"></scr' + 'ipt>');
+    document.write('<script src="js/dynamic-surfaces.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-hit-puzzles-loader.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-interior-map.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-interactions.js?v=20260914v50collision1"></scr' + 'ipt>');
+    document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20260914v50collision1"></scr' + 'ipt>');
   }
 })();
