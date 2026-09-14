@@ -27,11 +27,12 @@
     'bandolier1',
     'tankan_bodywrap',
   ]);
-  const EXPECTED_ASSETS = Object.freeze({ // Exposed in mobile diagnostics so missing authored art is immediately visible.
+  const EXPECTED_ASSETS = Object.freeze({ // Exposed in mobile diagnostics so missing or mis-resolved authored art is immediately visible.
     head: 'fightersprites/kenkari-m/head_porakaneki_m.png',
     headUntinted: 'fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki.png',
     headUntintedBlink: 'fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki_blink.png',
     torso: 'portraitsprites/torso_porakaneki_m.png',
+    bodywrapMale: 'cosmetics/clothes/overwear/portrait/tankanbodywrap_kenk_m.png',
   });
   const KENKARI_ARM_MASK_SETTINGS = Object.freeze({ // Mirrors the canonical Kenkari male authored arm-cloud cutout profile.
     maskYScaleMultiplier: 1.14,
@@ -68,6 +69,7 @@
     paletteInheritanceInstalled: false,
     cosmeticRestrictionsApplied: 0,
     eyeDisksSuppressed: false,
+    banditWardrobeGuardInstalled: false,
     armMaskProfilesInstalled: 0,
   };
 
@@ -137,7 +139,7 @@
     }
     const wrapped = function resolvePorakanekiWardrobeLayers(option, fighter) {
       if (normalizeSpecies(fighter?.speciesId) !== SPECIES_ID) return baseResolve.apply(this, arguments);
-      const inheritedFighter = { ...fighter, speciesId: BODY_SPECIES_ID }; // Allowed Porakaneki bandolier/body-wrap sprites resolve through Kenkari while direct Tletingan hair layer URLs remain authored by their cosmetic records.
+      const inheritedFighter = { ...fighter, speciesId: BODY_SPECIES_ID }; // Preserves Porakaneki gender while selecting the matching Kenkari body/wardrobe variant; male bodywrap therefore resolves to tankanbodywrap_kenk_m.png.
       return baseResolve.call(this, option, inheritedFighter);
     };
     wrapped.__hobunjiPorakanekiWardrobeInheritance = true;
@@ -200,6 +202,47 @@
     return applied;
   }
 
+  function restrictPorakanekiBanditConfig(config) {
+    const speciesWeights = config?.speciesWeights; // Identifies calls that deliberately hard-force the shared bandit entity builder to Porakaneki.
+    const activeSpecies = Object.entries(speciesWeights || {}).filter(([, weight]) => Number(weight) > 0).map(([speciesId]) => normalizeSpecies(speciesId)); // Used to avoid changing ordinary multi-species bandit generation.
+    if (activeSpecies.length !== 1 || activeSpecies[0] !== SPECIES_ID) return config;
+    const clothingPool = config?.clothingPool || {}; // Source bandit pool is copied so combat tuning remains shared while wardrobe rules become Porakaneki-specific.
+    return {
+      ...config,
+      clothingPool: {
+        ...clothingPool,
+        slots: ['torso', 'overwear'],
+        itemsBySlot: {
+          ...(clothingPool.itemsBySlot || {}),
+          torso: ['bandolier1'],
+          overwear: ['tankan_bodywrap'],
+          hat: [],
+          hood: [],
+        },
+        banditExclusiveIds: [],
+      },
+    };
+  }
+
+  function installBanditWardrobeGuard(api = window.BanditCombat) {
+    const baseMakeEntity = api?.makeEntity; // Shared bandit entity factory also used by Porakaneki camp hunters and the dev spawner.
+    if (typeof baseMakeEntity !== 'function') return false;
+    if (baseMakeEntity.__hobunjiPorakanekiWardrobeGuard) {
+      status.banditWardrobeGuardInstalled = true;
+      return true;
+    }
+    const wrapped = function makeEntityWithPorakanekiWardrobeGuard() {
+      const args = [...arguments]; // Forwarded unchanged except for a Porakaneki-only config copy in argument zero.
+      args[0] = restrictPorakanekiBanditConfig(args[0]);
+      return baseMakeEntity.apply(this, args);
+    };
+    wrapped.__hobunjiPorakanekiWardrobeGuard = true;
+    wrapped.__hobunjiPorakanekiWardrobeOriginal = baseMakeEntity;
+    api.makeEntity = wrapped;
+    status.banditWardrobeGuardInstalled = true;
+    return true;
+  }
+
   function installPaletteInheritance() {
     const baseLoad = window.loadPortraitCosmetics; // Shared async species/cosmetics loader; wrapping keeps the palette source live and clamps inherited cosmetics after its merge step.
     if (typeof baseLoad !== 'function') return false;
@@ -235,6 +278,7 @@
     installExtremityModels();
     installRigProfiles();
     installWardrobeResolver();
+    installBanditWardrobeGuard();
     installPaletteInheritance();
     installArmMaskProfiles();
     return debugSnapshot();
@@ -261,12 +305,17 @@
     install,
     inheritKenkariBodyColors,
     applyCosmeticRestrictions,
+    restrictPorakanekiBanditConfig,
+    installBanditWardrobeGuard,
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
-      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
+      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} banditWardrobeGuard=${d.banditWardrobeGuardInstalled} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 bodywrap=${d.expectedAssets.bodywrapMale} head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
     },
   });
 
   install();
+  if (!status.banditWardrobeGuardInstalled && typeof window.addEventListener === 'function') {
+    window.addEventListener('load', () => installBanditWardrobeGuard(), { once: true });
+  }
 })();
