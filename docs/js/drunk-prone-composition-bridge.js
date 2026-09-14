@@ -12,7 +12,12 @@
 //      stale knockback state are cancelled while the entity is down;
 //   6) immediately before each render, the current player low-Footing pitch/
 //      roll is re-published as an additive composer channel after gameplay has
-//      resolved facing/auto-target yaw for the frame.
+//      resolved facing/auto-target yaw for the frame;
+//   7) the player blends from the ordinary procedural walk into a distinct
+//      running gait at high movement speed, while non-animal combatants use
+//      that run gait only during their active chase/combat state;
+//   8) the Debug tab exposes a Leg Bone Debug checkbox wired to the same
+//      shared bone-guide toggle as the existing keyboard shortcut.
 (() => {
   'use strict';
 
@@ -26,11 +31,213 @@
   const DRUNK_CHANNEL = 'drunk';
   const DRUNK_PRIORITY = 200;
   const DEG = Math.PI / 180;
+  const RUN_STANCE_FRACTION = 0.44; // Below 0.5 creates a brief two-feet-off-ground overlap that visually distinguishes running from walking.
+  const RUN_PLAYER_BLEND_START = 0.42; // Used to keep low analog-stick movement on the ordinary walk gait.
+  const RUN_PLAYER_BLEND_FULL = 0.70; // Used to make normal full-speed player movement fully commit to the run gait.
+  const RUN_MIN_CADENCE_HZ = 1.25; // Used to keep long-legged runners from turning a large stride into a slow-motion gait.
+  const RUN_MAX_CADENCE_HZ = 3.4; // Used to keep short-legged runners from becoming a foot-blur at ordinary movement speeds.
   const banditStateByLegHandle = new WeakMap(); // Binds a pre-entity bandit leg attachment to its entity once makeEntity finishes.
   const banditStates = new Set(); // Iterated only at render time to compose visible sway without touching persistent facing state.
 
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function smoothstep01(value) {
+    const t = clamp01(value);
+    return t * t * (3 - 2 * t);
+  }
+
+  function damp(current, target, lambda, dt) {
+    return current + (target - current) * (1 - Math.exp(-Math.max(0, lambda) * Math.max(0, dt)));
+  }
+
+  function legPart(root, name) {
+    return root?.getObjectByName?.(name) || null;
+  }
+
+  function runPoseAtPhase(phase, strideLength, liftHeight) {
+    const cycle = ((phase % 1) + 1) % 1;
+    if (cycle < RUN_STANCE_FRACTION) {
+      const stanceT = cycle / RUN_STANCE_FRACTION;
+      return { travel: strideLength * (0.5 - stanceT), lift: 0, swingWave: 0 };
+    }
+    const swingT = (cycle - RUN_STANCE_FRACTION) / Math.max(0.0001, 1 - RUN_STANCE_FRACTION);
+    const eased = smoothstep01(swingT);
+    const swingWave = Math.max(0, Math.sin(Math.PI * swingT));
+    return {
+      travel: -strideLength / 2 + strideLength * eased,
+      lift: Math.pow(swingWave, 1.15) * liftHeight,
+      swingWave,
+    };
+  }
+
+  function syncBoneGuideLength(parent, length) {
+    for (const child of Array.from(parent?.children || [])) {
+      if (!child?.isMesh || child.geometry?.type !== 'CylinderGeometry') continue;
+      child.scale.y = length;
+      child.position.y = -length * 0.5;
+    }
+  }
+
+  function makeRunGaitController(THREEArg, handle, mode) {
+    if (!handle?.group || !window.LegBones?.solveTwoBoneLeg) return null;
+    const readStandingDebug = typeof handle.getStandingPoseDebug === 'function'
+      ? handle.getStandingPoseDebug.bind(handle)
+      : null;
+    const root = handle.group;
+    const state = {
+      mode, // Used by the mobile-readable standing-pose diagnostic to distinguish player-speed and hostile-combat running.
+      phase: 0,
+      blend: 0,
+      stride: 0,
+      cadenceHz: 0,
+      speed: 0,
+      active: false,
+      currentFoot: new THREEArg.Vector3(),
+      effectiveHip: new THREEArg.Vector3(),
+      runTarget: new THREEArg.Vector3(),
+      blendedTarget: new THREEArg.Vector3(),
+    };
+    const referenceSpeed = Math.max(0.1,
+      Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.referenceSpeedWorldUnitsPerSecond) || 4.3);
+
+    function applySide(side, pose, legLength, contactY) {
+      const hip = legPart(root, `${side}_hip`);
+      const thigh = legPart(root, `${side}_thigh`);
+      const calf = legPart(root, `${side}_calf`);
+      const foot = legPart(root, `${side}_foot`);
+      if (!hip || !thigh || !calf || !foot) return;
+
+      // Read the just-resolved ordinary gait target after the core + drunken
+      // layer have both run, then blend toward the separate run target. This
+      // gives walk<->run transitions instead of snapping between two solvers.
+      root.updateMatrixWorld?.(true);
+      foot.getWorldPosition(state.currentFoot);
+      root.worldToLocal(state.currentFoot);
+      state.effectiveHip.copy(hip.position).add(thigh.position); // Preserves low-Footing/drunk thigh offsets already composed by drunk-locomotion.js.
+      state.runTarget.set(
+        state.effectiveHip.x,
+        contactY + pose.lift,
+        state.effectiveHip.z + pose.travel,
+      );
+      state.blendedTarget.copy(state.currentFoot).lerp(state.runTarget, state.blend);
+
+      // A run needs visibly flexed knees instead of merely stretching the
+      // existing straight-leg walk farther. Flex peaks through the swing and
+      // eases almost straight during the planted phase.
+      const bendDegX = -(5 + 23 * pose.swingWave) * state.blend;
+      const solved = window.LegBones.solveTwoBoneLeg(THREEArg, {
+        hip: state.effectiveHip,
+        foot: state.blendedTarget,
+        bendDegX,
+        bendDegZ: 0,
+      });
+      thigh.quaternion.copy(solved.thighQuaternion);
+      calf.position.set(0, -solved.thighLength, 0);
+      calf.quaternion.copy(solved.calfLocalQuaternion);
+      foot.position.set(0, -solved.calfLength, 0);
+      // Do NOT touch foot.quaternion here. drunk-locomotion.js has already
+      // composed its tracked foot twist onto it this frame; preserving that
+      // keeps running compatible with low-Footing/drunken gait effects.
+      syncBoneGuideLength(thigh, solved.thighLength);
+      syncBoneGuideLength(calf, solved.calfLength);
+    }
+
+    function update(dt, speedWorldUnitsPerSecond, requestedRun, suppressed, seatedPose) {
+      const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
+      const shouldRun = !suppressed && !seatedPose && speed > 0.02 ? clamp01(requestedRun) : 0;
+      state.blend = damp(state.blend, shouldRun, shouldRun > state.blend ? 10 : 14, dt);
+      state.speed = speed;
+      state.active = state.blend > 0.01;
+      if (!state.active) {
+        state.stride = 0;
+        state.cadenceHz = 0;
+        return;
+      }
+
+      const debug = readStandingDebug?.();
+      const leftContactY = Number(debug?.left?.contactY);
+      const rightContactY = Number(debug?.right?.contactY);
+      const debugLegLength = Number(debug?.gait?.legLength);
+      const fallbackLegLength = Number.isFinite(Number(debug?.posteriorY))
+        ? Math.max(0.001, Number(debug.posteriorY) - (Number.isFinite(leftContactY) ? leftContactY : 0))
+        : 0.30;
+      const legLength = Math.max(0.001, Number.isFinite(debugLegLength) ? debugLegLength : fallbackLegLength);
+      const speedRatio = clamp01(speed / referenceSpeed);
+      const strideLength = legLength * (1.30 + 0.60 * Math.sqrt(speedRatio)); // Long legs gain proportionally more ground per running step.
+      const liftHeight = legLength * (0.14 + 0.11 * speedRatio); // Run-specific knee/foot clearance, deliberately larger than the walk lift.
+      const cadenceHz = Math.max(RUN_MIN_CADENCE_HZ, Math.min(RUN_MAX_CADENCE_HZ,
+        (speed * 0.52) / Math.max(0.001, strideLength)));
+      state.stride = strideLength;
+      state.cadenceHz = cadenceHz;
+      if (dt > 0) state.phase = (state.phase + dt * cadenceHz) % 1;
+
+      const leftPose = runPoseAtPhase(state.phase, strideLength, liftHeight);
+      const rightPose = runPoseAtPhase(state.phase + 0.5, strideLength, liftHeight);
+      applySide('left', leftPose, legLength, Number.isFinite(leftContactY) ? leftContactY : 0);
+      applySide('right', rightPose, legLength, Number.isFinite(rightContactY) ? rightContactY : 0);
+    }
+
+    if (readStandingDebug) {
+      handle.getStandingPoseDebug = function standingPoseWithRunDebug() {
+        const debug = readStandingDebug() || {};
+        return {
+          ...debug,
+          run: {
+            mode: state.mode,
+            active: state.active,
+            blend: state.blend,
+            stride: state.stride,
+            cadenceHz: state.cadenceHz,
+            speed: state.speed,
+            stanceFraction: RUN_STANCE_FRACTION,
+          },
+        };
+      };
+    }
+    return { update, state };
+  }
+
+  function playerRunBlend(speedWorldUnitsPerSecond) {
+    const referenceSpeed = Math.max(0.1,
+      Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.referenceSpeedWorldUnitsPerSecond) || 4.3);
+    const ratio = Math.max(0, Number(speedWorldUnitsPerSecond) || 0) / referenceSpeed;
+    return smoothstep01((ratio - RUN_PLAYER_BLEND_START) / Math.max(0.001, RUN_PLAYER_BLEND_FULL - RUN_PLAYER_BLEND_START));
+  }
+
+  function installLegBoneDebugCheckbox() {
+    if (document.getElementById('debugLegBonesCheckbox')) return true;
+    const filterTabs = document.getElementById('debugFilterTabs');
+    if (!filterTabs?.parentNode) return false;
+    const row = document.createElement('label'); // Used as the mobile/desktop Debug-tab control for the shared procedural leg-bone guides.
+    row.id = 'debugLegBonesRow';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:0 12px 7px;flex-shrink:0;font-size:11px;color:#d1d5db;cursor:pointer;user-select:none';
+    row.innerHTML = '<input id="debugLegBonesCheckbox" type="checkbox" style="width:auto;margin:0"><span><b>Leg Bone Debug</b> — show hip, thigh, knee, and calf guides</span>';
+    filterTabs.parentNode.insertBefore(row, filterTabs);
+    const checkbox = row.querySelector('#debugLegBonesCheckbox');
+    if (checkbox) {
+      checkbox.checked = !!legApi.showBones;
+      checkbox.addEventListener('change', () => legApi.setShowBones?.(checkbox.checked));
+    }
+    return true;
+  }
+
+  // Keep the new checkbox synchronized with the existing B-key shortcut and
+  // any author/debug tool that calls the shared setShowBones API directly.
+  if (typeof legApi.setShowBones === 'function' && !legApi.__debugCheckboxSyncInstalled) {
+    const previousSetShowBones = legApi.setShowBones.bind(legApi);
+    legApi.setShowBones = function setShowBonesWithDebugCheckbox(visible) {
+      previousSetShowBones(visible);
+      const checkbox = document.getElementById('debugLegBonesCheckbox');
+      if (checkbox) checkbox.checked = !!legApi.showBones;
+    };
+    legApi.__debugCheckboxSyncInstalled = true;
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', installLegBoneDebugCheckbox, { once: true });
+  } else {
+    installLegBoneDebugCheckbox();
   }
 
   function banditFootingLoss(entity) {
@@ -123,13 +330,18 @@
         banditState.handle = handle;
         banditStateByLegHandle.set(handle, banditState);
         banditStates.add(banditState);
+        const runGait = makeRunGaitController(THREEArg, handle, 'combat-chase'); // Used only while this humanoid hostile is actively chasing/fighting.
 
         if (typeof handle.update === 'function') {
           const previousBanditUpdate = handle.update.bind(handle);
           handle.update = function proneExclusiveBanditLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
             const prone = !!banditState.entity?.prone;
             if (prone) clearBanditTransientMotion(banditState.entity);
-            return previousBanditUpdate(dt, speedWorldUnitsPerSecond, !!suppressed || prone, seatedPose);
+            const effectiveSuppressed = !!suppressed || prone;
+            const result = previousBanditUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose);
+            const activelyInCombat = banditState.entity?.state === 'chase'; // BanditCombat uses chase as the exact actively-engaged state; idle/return/patrol remain ordinary walks.
+            runGait?.update(dt, speedWorldUnitsPerSecond, activelyInCombat ? 1 : 0, effectiveSuppressed, seatedPose);
+            return result;
           };
         }
 
@@ -145,9 +357,13 @@
 
       if (String(options.name || '').toLowerCase() !== 'player' || typeof handle.update !== 'function') return handle;
       const previousUpdate = handle.update.bind(handle);
+      const runGait = makeRunGaitController(THREEArg, handle, 'player-speed'); // Used to blend analog walking into the player's normal full-speed running gait.
       handle.update = function proneAwarePlayerLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
         const player = window.Combat?.deps?.player;
-        return previousUpdate(dt, speedWorldUnitsPerSecond, !!suppressed || !!player?.prone, seatedPose);
+        const effectiveSuppressed = !!suppressed || !!player?.prone;
+        const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose);
+        runGait?.update(dt, speedWorldUnitsPerSecond, playerRunBlend(speedWorldUnitsPerSecond), effectiveSuppressed, seatedPose);
+        return result;
       };
       return handle;
     };
@@ -274,6 +490,7 @@
 
   window.HobunjiDrunkProneCompositionBridge = Object.freeze({
     banditFootingLoss,
+    installLegBoneDebugCheckbox,
     getDebug() {
       const player = window.Combat?.deps?.player;
       return {
@@ -283,6 +500,7 @@
         effectiveFootingMax: player ? Number(RS.getEffectiveMax(player, 'footing')) || 0 : 0,
         drunkenFooting: Number(player?.afflictions?.drunkenFooting) || 0,
         activeBanditSwayStates: banditStates.size,
+        legBoneDebugVisible: !!legApi.showBones,
         portraitFaceCulling: 'material-frontside',
         forcedPortraitDoubleSide: false,
         drunkWalk: window.HobunjiDrunkWalk?.getDebug?.() || null,
