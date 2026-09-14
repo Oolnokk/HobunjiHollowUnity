@@ -4458,8 +4458,6 @@
 
       // Ranged weapons retain a player-selected lock; melee targeting exists
       // only for the few frames between an attack request and its windup.
-      const PLAYER_ATTACK_ALIGNMENT_MIN_S = 0.11; // Shortest visible glide used by requestMeleeAttackAlignment for small corrections.
-      const PLAYER_ATTACK_ALIGNMENT_MAX_S = 0.22; // Longest visible glide used for a target at the edge of the ±45° cone.
       let manualAutoTarget = null;
       let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
@@ -4618,11 +4616,6 @@
         if (!alignment.cancelled) runAttack();
       }
 
-      function easedAttackAlignmentProgress(progress) {
-        const t = window.FormatUtils.clamp(progress, 0, 1); // Normalized alignment time supplied by updateMeleeAttackAlignment.
-        return t * t * (3 - 2 * t);
-      }
-
       function requestMeleeAttackAlignment(runAttack) {
         const target = meleeAttackTargetCandidate();
         if (!target) {
@@ -4635,17 +4628,12 @@
           runAttack();
           return null;
         }
-        const coneFraction = window.FormatUtils.clamp(
-          Math.abs(initialStep?.deltaRad || 0) / (window.Combat?.ATTACK_ALIGNMENT_HALF_CONE_RAD || Math.PI / 4),
-          0,
-          1,
-        ); // Scales the glide so small assists do not delay attacks as long as a full 45° turn.
         meleeAttackAlignment?.cancel?.();
         const alignment = {
           target,
           startFacing,
           elapsedS: 0, // Accumulated by updateMeleeAttackAlignment until durationS is reached.
-          durationS: PLAYER_ATTACK_ALIGNMENT_MIN_S + (PLAYER_ATTACK_ALIGNMENT_MAX_S - PLAYER_ATTACK_ALIGNMENT_MIN_S) * coneFraction, // Distance-scaled easing duration used before windup.
+          durationS: window.Combat?.playerAttackAlignmentDuration?.(initialStep?.deltaRad) ?? 0, // Shared targeting policy owns the distance-scaled glide tuning.
           cancelled: false,
           cancel() {
             if (meleeAttackAlignment !== alignment) return;
@@ -4675,7 +4663,7 @@
 
         alignment.elapsedS = Math.min(alignment.durationS, alignment.elapsedS + Math.max(0, dt) * turnMultiplier);
         const progress = alignment.durationS > 0 ? alignment.elapsedS / alignment.durationS : 1; // Drives the smoothstep rather than an abrupt constant-rate snap.
-        const easedProgress = easedAttackAlignmentProgress(progress); // Softens both the initial camera pull and the final settling motion.
+        const easedProgress = window.Combat?.playerAttackAlignmentProgress?.(progress) ?? progress; // Shared targeting policy selects the authored curve.
         const startToTarget = angleDiff(step.desiredFacing, alignment.startFacing); // Re-evaluated so a moving target remains correctly aligned at the end.
         const nextFacing = progress >= 1
           ? step.desiredFacing

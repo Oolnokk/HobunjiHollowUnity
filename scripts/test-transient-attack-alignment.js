@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8');
 const game = read('docs/game.js');
 const core = read('docs/js/combat/combat-core.js');
+const loader = read('docs/js/combat/combat-config-loader.js');
 const input = read('docs/js/combat/combat-input.js');
 const bandit = read('docs/js/combat/combat-bandit.js');
 const indicator = read('docs/js/combat/quick-attack-bonus-indicator.js');
@@ -14,6 +15,7 @@ const html = read('docs/index.html');
 const style = read('docs/style.css');
 const bindings = read('docs/js/input-bindings.js');
 const config = read('docs/config/scratchbones-config.js');
+const attackValues = read('docs/config/combat/attack-values.json'); // Authored targeting policy validated separately from input configuration.
 
 for (const path of [
   'docs/game.js',
@@ -28,8 +30,11 @@ for (const path of [
   new vm.Script(read(path), { filename: path });
 }
 
-assert.match(core, /ATTACK_ALIGNMENT_HALF_CONE_RAD = Math\.PI \/ 4/, 'shared attack/sight cone is exactly ±45 degrees');
-assert.match(core, /POST_ATTACK_TURN_MIN_MULTIPLIER = 0\.06/, 'post-attack turning starts near zero without reaching zero');
+assert.match(attackValues, /"attackAlignmentHalfConeDeg": 45/, 'shared attack/sight cone is configurable and defaults to ±45 degrees');
+assert.match(attackValues, /"postAttackTurnMinMultiplier": 0\.06/, 'post-attack minimum turn speed is configurable');
+assert.match(attackValues, /"playerAlignmentMinS": 0\.11[\s\S]*"playerAlignmentMaxS": 0\.22/, 'player alignment glide range is authored in combat config');
+assert.match(core, /function applyTargetingConfig\(/, 'combat core owns targeting configuration');
+assert.match(loader, /applyTargetingConfig\?\.\(config\.targeting\)/, 'combat config loader applies authored targeting policy');
 assert.match(core, /function attackAlignmentStep\(/, 'shared alignment helper exists');
 assert.match(core, /function postAttackTurnMultiplier\(/, 'shared recovery ramp exists');
 
@@ -38,9 +43,11 @@ assert.match(input, /ability\?\.category === 'offensiveHold'/, 'offensive holds 
 assert.match(input, /releaseQueued/, 'release input survives an alignment that spans multiple frames');
 
 assert.match(game, /function requestMeleeAttackAlignment\(/, 'game owns a transient melee alignment request');
-assert.match(game, /PLAYER_ATTACK_ALIGNMENT_MIN_S = 0\.11/, 'small corrections retain a short but visible glide');
-assert.match(game, /PLAYER_ATTACK_ALIGNMENT_MAX_S = 0\.22/, 'a full-cone correction cannot complete as an 87ms snap');
-assert.match(game, /function easedAttackAlignmentProgress\([\s\S]{0,180}t \* t \* \(3 - 2 \* t\)/, 'player alignment eases in and out');
+assert.match(game, /playerAttackAlignmentDuration\?\.\(initialStep\?\.deltaRad\)/, 'game delegates player glide duration to shared targeting policy');
+assert.match(game, /playerAttackAlignmentProgress\?\.\(progress\)/, 'game delegates player easing to shared targeting policy');
+assert.doesNotMatch(game, /PLAYER_ATTACK_ALIGNMENT_(?:MIN|MAX)_S|function easedAttackAlignmentProgress/, 'game has no private alignment tuning');
+assert.match(core, /configuredEase\(progress, targetingConfig\.alignmentEasing\)/, 'player alignment easing is configurable');
+assert.match(core, /configuredEase\(t, targetingConfig\.postAttackTurnEasing\)/, 'post-attack recovery easing is configurable');
 assert.match(game, /if \(initialStep\?\.aligned\)[\s\S]{0,100}runAttack\(\)/, 'an already-aligned attack still begins without artificial latency');
 assert.match(game, /meleeAttackAlignment = null; \/\/ Lock is off before the attack callback creates its windup\./, 'lock clears before windup starts');
 assert.match(game, /function enemyCanSeeTarget\([\s\S]{0,260}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
@@ -49,6 +56,31 @@ assert.match(game, /function updateEnemySearch\(/, 'enemy scanning can reacquire
 assert.match(game, /postAttackTurnMultiplier\?\.\(player\)/, 'player look inputs are rate-scaled after attacks');
 assert.match(game, /postAttackTurnMultiplier\?\.\(c\)/, 'enemy turning is rate-scaled after attacks');
 assert.doesNotMatch(game, /meleeAutoTargetOn|cycleMeleeAutoTarget|tryAutoEngageMeleeTarget/, 'persistent melee lock code is gone');
+
+const runtime = { window: {}, performance: { now: () => 1000 } }; // Minimal browser surface used to prove targeting overrides change runtime behavior.
+runtime.THREE = { MathUtils: {
+  degToRad: degrees => degrees * Math.PI / 180,
+  radToDeg: radians => radians * 180 / Math.PI,
+  clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+  lerp: (from, to, amount) => from + (to - from) * amount,
+} };
+vm.runInNewContext(core, runtime);
+runtime.window.Combat.applyTargetingConfig({
+  attackAlignmentHalfConeDeg: 30,
+  playerAlignmentMinS: 0.2,
+  playerAlignmentMaxS: 0.4,
+  alignmentEasing: 'linear',
+  postAttackTurnRecoveryS: 0.5,
+  postAttackTurnMinMultiplier: 0.2,
+  postAttackTurnEasing: 'linear',
+});
+assert(Math.abs(runtime.window.Combat.ATTACK_ALIGNMENT_HALF_CONE_RAD - Math.PI / 6) < 1e-9, 'authored cone updates the shared runtime getter');
+assert(Math.abs(runtime.window.Combat.playerAttackAlignmentDuration(Math.PI / 12) - 0.3) < 1e-9, 'authored glide range controls player alignment duration');
+assert.equal(runtime.window.Combat.playerAttackAlignmentProgress(0.25), 0.25, 'authored alignment easing changes the live curve');
+const recoveringActor = {}; // Actor timestamp verifies authored post-attack duration, floor, and easing together.
+runtime.window.Combat.noteAttackFinished(recoveringActor, 1000);
+assert.equal(runtime.window.Combat.postAttackTurnMultiplier(recoveringActor, 1000), 0.2, 'authored recovery floor applies immediately');
+assert(Math.abs(runtime.window.Combat.postAttackTurnMultiplier(recoveringActor, 1250) - 0.6) < 1e-9, 'authored recovery duration and easing control the midpoint');
 
 assert.match(bandit, /attackAlignmentStep\?\.\(c, targetPlayer, dt/, 'bandits align before attack windup');
 assert.doesNotMatch(bandit, /BANDIT_LUNGE_HOMING_RATE/, 'bandits do not home after committing an attack');

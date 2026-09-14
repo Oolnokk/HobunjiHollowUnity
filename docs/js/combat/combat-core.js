@@ -30,11 +30,18 @@
   }
 
   const activeStaged = new Set();
-  const ATTACK_ALIGNMENT_HALF_CONE_RAD = Math.PI / 4; // Shared ±45° eligibility cone used by pre-windup aim assist and hostile sight.
-  const ATTACK_ALIGNMENT_TOLERANCE_RAD = THREE.MathUtils.degToRad(2); // Ends transient alignment close enough to avoid delaying windup for sub-pixel jitter.
-  const ATTACK_ALIGNMENT_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(520); // Used by player and enemy pre-windup alignment for a fast, readable snap.
-  const POST_ATTACK_TURN_RECOVERY_S = 0.28; // Duration used to ease camera/enemy turning back to full speed after an attack.
-  const POST_ATTACK_TURN_MIN_MULTIPLIER = 0.06; // Keeps all mouse/stick input counted while making the first post-attack frame feel nearly locked.
+  const DEFAULT_TARGETING_CONFIG = Object.freeze({ // Safe synchronous policy used until authored attack values load.
+    attackAlignmentHalfConeDeg: 45,
+    attackAlignmentToleranceDeg: 2,
+    enemyAlignmentTurnRateDegS: 520,
+    playerAlignmentMinS: 0.11,
+    playerAlignmentMaxS: 0.22,
+    alignmentEasing: 'smoothstep',
+    postAttackTurnRecoveryS: 0.28,
+    postAttackTurnMinMultiplier: 0.06,
+    postAttackTurnEasing: 'smoothstep',
+  });
+  let targetingConfig = { ...DEFAULT_TARGETING_CONFIG }; // Runtime tuning replaced by applyTargetingConfig after JSON load.
   const MAX_MELEE_AIM_PITCH_RAD = THREE.MathUtils.degToRad(70);
   const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
   const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
@@ -48,7 +55,44 @@
     return delta;
   }
 
-  function targetInsideAttackCone(attacker, target, facing = attacker?.facing || 0, halfConeRad = ATTACK_ALIGNMENT_HALF_CONE_RAD) {
+  function finiteTuning(value, fallback, minimum = 0) {
+    const parsed = Number(value); // Candidate authored value normalized before use by combat policy.
+    return Number.isFinite(parsed) ? Math.max(minimum, parsed) : fallback;
+  }
+
+  function applyTargetingConfig(config = {}) {
+    const next = { ...targetingConfig }; // Atomic replacement prevents callers observing a partly-applied policy.
+    next.attackAlignmentHalfConeDeg = finiteTuning(config.attackAlignmentHalfConeDeg, next.attackAlignmentHalfConeDeg);
+    next.attackAlignmentToleranceDeg = finiteTuning(config.attackAlignmentToleranceDeg, next.attackAlignmentToleranceDeg);
+    next.enemyAlignmentTurnRateDegS = finiteTuning(config.enemyAlignmentTurnRateDegS, next.enemyAlignmentTurnRateDegS);
+    next.playerAlignmentMinS = finiteTuning(config.playerAlignmentMinS, next.playerAlignmentMinS);
+    next.playerAlignmentMaxS = Math.max(next.playerAlignmentMinS, finiteTuning(config.playerAlignmentMaxS, next.playerAlignmentMaxS));
+    next.alignmentEasing = config.alignmentEasing === 'linear' ? 'linear' : 'smoothstep';
+    next.postAttackTurnRecoveryS = finiteTuning(config.postAttackTurnRecoveryS, next.postAttackTurnRecoveryS, 0.001);
+    next.postAttackTurnMinMultiplier = THREE.MathUtils.clamp(finiteTuning(config.postAttackTurnMinMultiplier, next.postAttackTurnMinMultiplier), 0, 1);
+    next.postAttackTurnEasing = config.postAttackTurnEasing === 'linear' ? 'linear' : 'smoothstep';
+    targetingConfig = next;
+  }
+
+  function configuredEase(progress, easing) {
+    const t = THREE.MathUtils.clamp(Number(progress) || 0, 0, 1); // Normalized time shared by alignment and recovery curves.
+    return easing === 'linear' ? t : t * t * (3 - 2 * t);
+  }
+
+  function attackAlignmentHalfConeRad() {
+    return THREE.MathUtils.degToRad(targetingConfig.attackAlignmentHalfConeDeg);
+  }
+
+  function playerAttackAlignmentDuration(deltaRad) {
+    const coneFraction = THREE.MathUtils.clamp(Math.abs(Number(deltaRad) || 0) / Math.max(0.0001, attackAlignmentHalfConeRad()), 0, 1); // Maps correction angle onto authored min/max glide time.
+    return THREE.MathUtils.lerp(targetingConfig.playerAlignmentMinS, targetingConfig.playerAlignmentMaxS, coneFraction);
+  }
+
+  function playerAttackAlignmentProgress(progress) {
+    return configuredEase(progress, targetingConfig.alignmentEasing);
+  }
+
+  function targetInsideAttackCone(attacker, target, facing = attacker?.facing || 0, halfConeRad = attackAlignmentHalfConeRad()) {
     if (!attacker || !target || target.health <= 0) return false;
     const desiredFacing = Math.atan2(target.y - attacker.y, target.x - attacker.x);
     return Math.abs(signedAngleDelta(desiredFacing, facing)) <= halfConeRad;
@@ -58,19 +102,20 @@
     const facing = Number(options.facing ?? attacker?.facing) || 0; // Current heading used by every transient alignment caller.
     const desiredFacing = target ? Math.atan2(target.y - attacker.y, target.x - attacker.x) : facing; // Live target bearing used only before windup begins.
     const deltaRad = signedAngleDelta(desiredFacing, facing); // Smallest signed turn used for cone eligibility and this frame's step.
-    const halfConeRad = Number(options.halfConeRad) || ATTACK_ALIGNMENT_HALF_CONE_RAD; // Optional override retained for diagnostics and future attacks.
+    const halfConeRad = Number(options.halfConeRad) || attackAlignmentHalfConeRad(); // Optional override retained for diagnostics and future attacks.
     if (!attacker || !target || target.health <= 0 || Math.abs(deltaRad) > halfConeRad) {
       return { eligible: false, aligned: false, desiredFacing, nextFacing: facing, deltaRad };
     }
     const turnMultiplier = Math.max(0, Number(options.turnMultiplier ?? 1)); // Post-attack recovery can slow turning without discarding input.
-    const turnRateRadS = Math.max(0, Number(options.turnRateRadS) || ATTACK_ALIGNMENT_TURN_RATE_RAD_S); // Shared fast alignment speed.
+    const turnRateRadS = Math.max(0, Number(options.turnRateRadS) || THREE.MathUtils.degToRad(targetingConfig.enemyAlignmentTurnRateDegS)); // Authored enemy alignment speed.
     const maxStep = turnRateRadS * turnMultiplier * Math.max(0, Number(dt) || 0);
-    const nextFacing = Math.abs(deltaRad) <= ATTACK_ALIGNMENT_TOLERANCE_RAD || maxStep >= Math.abs(deltaRad)
+    const toleranceRad = THREE.MathUtils.degToRad(targetingConfig.attackAlignmentToleranceDeg); // Authored threshold that prevents sub-pixel windup delay.
+    const nextFacing = Math.abs(deltaRad) <= toleranceRad || maxStep >= Math.abs(deltaRad)
       ? desiredFacing
       : facing + Math.sign(deltaRad) * maxStep;
     return {
       eligible: true,
-      aligned: Math.abs(signedAngleDelta(desiredFacing, nextFacing)) <= ATTACK_ALIGNMENT_TOLERANCE_RAD,
+      aligned: Math.abs(signedAngleDelta(desiredFacing, nextFacing)) <= toleranceRad,
       desiredFacing,
       nextFacing,
       deltaRad,
@@ -84,9 +129,9 @@
   function postAttackTurnMultiplier(actor, nowMs = performance.now()) {
     const startedAt = Number(actor?._attackTurnRecoveryStartedAtMs); // Timestamp written by noteAttackFinished after successful staged attacks.
     if (!Number.isFinite(startedAt)) return 1;
-    const t = Math.max(0, Math.min(1, (nowMs - startedAt) / (POST_ATTACK_TURN_RECOVERY_S * 1000)));
-    const eased = t * t * (3 - 2 * t); // Smoothstep ramps quickly without dropping any accumulated look input.
-    return POST_ATTACK_TURN_MIN_MULTIPLIER + (1 - POST_ATTACK_TURN_MIN_MULTIPLIER) * eased;
+    const t = Math.max(0, Math.min(1, (nowMs - startedAt) / (targetingConfig.postAttackTurnRecoveryS * 1000)));
+    const eased = configuredEase(t, targetingConfig.postAttackTurnEasing); // Authored curve ramps without dropping accumulated look input.
+    return targetingConfig.postAttackTurnMinMultiplier + (1 - targetingConfig.postAttackTurnMinMultiplier) * eased;
   }
 
   function combatActorHitbox(actor) {
@@ -542,6 +587,9 @@
     meleeAimSolution,
     targetInsideAttackCone,
     attackAlignmentStep,
+    playerAttackAlignmentDuration,
+    playerAttackAlignmentProgress,
+    applyTargetingConfig,
     noteAttackFinished,
     postAttackTurnMultiplier,
     meleeColliderVolume,
@@ -560,9 +608,10 @@
     getMovementSpeedMul,
     get deps() { return deps; },
     MAX_MELEE_AIM_PITCH_RAD,
-    ATTACK_ALIGNMENT_HALF_CONE_RAD,
-    ATTACK_ALIGNMENT_TURN_RATE_RAD_S,
-    POST_ATTACK_TURN_RECOVERY_S,
+    get targetingConfig() { return { ...targetingConfig }; },
+    get ATTACK_ALIGNMENT_HALF_CONE_RAD() { return attackAlignmentHalfConeRad(); },
+    get ATTACK_ALIGNMENT_TURN_RATE_RAD_S() { return THREE.MathUtils.degToRad(targetingConfig.enemyAlignmentTurnRateDegS); },
+    get POST_ATTACK_TURN_RECOVERY_S() { return targetingConfig.postAttackTurnRecoveryS; },
   };
   window.__melee3DDebug = {
     get lastResult() { return lastMelee3DResult; },
