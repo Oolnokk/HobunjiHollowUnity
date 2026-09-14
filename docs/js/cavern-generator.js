@@ -35,10 +35,10 @@
   function nativeSpeciesFor(mapId) {
     const zoneId = window.WildlifeSpawn.denCavernZoneOf(mapId);
     const zoneDef = deps.EXTERIOR_ZONES[zoneId];
-    const denSpecies = zoneDef?.denSpecies || [];
+    const exactDenSpecies = window.WildlifeSpawn.denSpeciesFor(zoneId, mapId); // Same per-den deterministic authored species used by exterior den guards.
     const packSpecies = zoneDef?.packSpecies || [];
     const herbivoreSpecies = zoneDef?.herbivoreSpecies || [];
-    if (denSpecies.length) return { zoneId, nativeSpecies: denSpecies };
+    if (exactDenSpecies) return { zoneId, nativeSpecies: [exactDenSpecies] };
     const hasPack = packSpecies.length, hasHerd = herbivoreSpecies.length;
     const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denpop') : Math.random;
     const useHerd = hasHerd && (!hasPack || rng() < 0.5);

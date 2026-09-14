@@ -20,8 +20,9 @@ assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*pukt
 assert.match(geneticsSource, /itemKey: 'puktukWool'[\s\S]*verb: 'Shear'/, 'Puktuk livestock production uses the existing wool item');
 assert.deepEqual(loot.pools?.creature_puktuk?.entries?.map(entry => entry.itemKey), ['puktukMeat'], 'Puktuk has its own meat drop pool');
 assert.match(cookingSource, /"puktukWool"\s*:\s*\{[\s\S]*?"name"\s*:\s*"Puktuk Wool"[\s\S]*?"Heavy"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
-assert.match(wildlifeSource, /const explicitDenSpecies = zdef\?\.denSpecies \|\| \[\][\s\S]*?const pool = explicitDenSpecies\.length \? explicitDenSpecies/, 'Exterior den spawning prefers an authored denSpecies pool');
-assert.match(cavernSource, /const denSpecies = zoneDef\?\.denSpecies \|\| \[\][\s\S]*?if \(denSpecies\.length\) return \{ zoneId, nativeSpecies: denSpecies \}/, 'Cavern den spawning prefers the same authored denSpecies pool');
+assert.match(wildlifeSource, /function denSpeciesFor\(zoneId, cavernMapId\)[\s\S]*?_denspecies[\s\S]*?return pool\[Math\.floor\(rng\(\) \* pool\.length\)\]/, 'Explicit denSpecies resolves to one deterministic exact species per den');
+assert.match(wildlifeSource, /const explicitSpeciesKey = denSpeciesFor\(zoneId, cavernMapId\)/, 'Exterior den guards use the shared exact per-den species resolver');
+assert.match(cavernSource, /window\.WildlifeSpawn\.denSpeciesFor\(zoneId, mapId\)[\s\S]*?nativeSpecies: \[exactDenSpecies\]/, 'Cavern residents and Den-Mothers use the same exact per-den species resolver');
 
 let rngState = 0x51f15e; // Used by deterministic Math.random so the rarity assertion cannot become flaky in CI.
 const seededMath = Object.create(Math); // Used by the VM runtime while retaining all native Math helpers.

@@ -278,6 +278,13 @@
     return false;
   }
 
+  function denSpeciesFor(zoneId, cavernMapId) {
+    const pool = deps.EXTERIOR_ZONES[zoneId]?.denSpecies || [];
+    if (!pool.length) return null;
+    const rng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denspecies'); // One stable exact species identity per den, shared by exterior and cavern generation.
+    return pool[Math.floor(rng() * pool.length)] || null;
+  }
+
   function spawnPackAtDen(zoneId, den, denKey) {
     const zdef = deps.EXTERIOR_ZONES[zoneId];
     const cavernMapId = denCavernMapId(zoneId, den.id);
@@ -285,11 +292,11 @@
     // of general pack/herd ecology. Legacy zones without denSpecies retain
     // the existing deterministic pack-vs-herd choice so this stays fully
     // backward-compatible.
-    const explicitDenSpecies = zdef?.denSpecies || [];
+    const explicitSpeciesKey = denSpeciesFor(zoneId, cavernMapId); // Exact authored den identity, stable for this den across respawns and shared with CavernGenerator.
     const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
     const popRng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop');
-    const useHerd = !explicitDenSpecies.length && hasHerd && (!hasPack || popRng() < 0.5);
-    const pool = explicitDenSpecies.length ? explicitDenSpecies : (useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies);
+    const useHerd = !explicitSpeciesKey && hasHerd && (!hasPack || popRng() < 0.5);
+    const pool = explicitSpeciesKey ? [explicitSpeciesKey] : (useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies);
     if (!pool || !pool.length) {
       window.__farmLog?.(`[wildlife] ${denKey}: no denSpecies/packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
       return;
@@ -298,7 +305,7 @@
     // zone with multiple pack or multiple herd species) and how many still
     // vary per spawn cycle — only the pack-vs-herd identity itself is
     // pinned to the den.
-    const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
+    const speciesKey = explicitSpeciesKey || pool[Math.floor(deps.rnd() * pool.length)];
     const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey); // Explicit den pools can still contain a species authored as part of the zone's herbivore ecology.
     // Every same-family member of this pack (e.g. gar-wolf + alpha, or
     // the whole uumkaoii-wild herd) shares one rolled-once "family"
@@ -677,6 +684,7 @@
     denKeyFor,
     denCavernMapId,
     denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
+    denSpeciesFor,
     denKeyForCavern,
     denGenotypeFamily,
     getOrMakeDenGenotype,
