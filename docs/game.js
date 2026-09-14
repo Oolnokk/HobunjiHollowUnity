@@ -22118,7 +22118,9 @@
           loadBtn.style.display = status.state === 'ready' ? '' : 'none';
           if (status.state === 'ready') {
             const when = status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleTimeString() : 'never';
-            statusEl.textContent = `Saving to "${status.folderName}" — last synced ${when}.`;
+            statusEl.textContent = status.dataLossRisk
+              ? `Autosave to "${status.folderName}" paused — this browser's save ${status.dataLossRisk}. Use Save Now to confirm an overwrite. Last synced ${when}.`
+              : `Saving to "${status.folderName}" — last synced ${when}.`;
           } else if (status.state === 'needs-permission') {
             statusEl.textContent = `Folder "${status.folderName}" needs permission again this session.`;
           } else if (status.state === 'error') {
@@ -22135,7 +22137,17 @@
         changeBtn.addEventListener('click', () => window.LocalSaveFolder.changeFolder());
         reconnectBtn.addEventListener('click', () => window.LocalSaveFolder.reconnect());
         saveNowBtn.addEventListener('click', async () => {
-          const status = await window.LocalSaveFolder.syncNow();
+          let status = await window.LocalSaveFolder.syncNow();
+          if (status.dataLossRisk) {
+            const overwrite = confirm(
+              `Warning: this browser's save ${status.dataLossRisk}.\n\nOverwrite the folder anyway?`
+            );
+            if (!overwrite) {
+              showToast('Save to folder cancelled to avoid overwriting a larger save.', false);
+              return;
+            }
+            status = await window.LocalSaveFolder.syncNow({ force: true });
+          }
           showToast(status.lastError ? ('Local save failed: ' + status.lastError) : 'Saved to local folder.', !status.lastError);
         });
         loadBtn.addEventListener('click', async () => {
