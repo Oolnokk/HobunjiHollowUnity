@@ -8,11 +8,17 @@
   // discarded when it is outside the player's unload radius without changing
   // maps, landmarks, fog-of-war, routes, or save data.
   const CHUNK_TILES = 16; // Used to convert tile coordinates into stable chunk keys and bounds.
-  const IMMEDIATE_RADIUS = 1; // Used to synchronously prime a safe 3x3 arrival neighborhood behind a black transition.
-  const LOAD_RADIUS = 2; // Used to stream a 5x5 neighborhood around the player's current chunk.
-  const UNLOAD_RADIUS = 3; // Used as hysteresis so crossing a chunk edge does not immediately destroy the previous ring.
+  const IMMEDIATE_RADIUS = 0; // Keeps only the player's arrival chunk synchronous; surrounding chunks use the paced stream queue.
+  const LOW_MEMORY_STREAMING = (() => {
+    const deviceMemoryGb = Number(globalThis.navigator?.deviceMemory); // Used to detect browsers that explicitly report a small device-memory budget.
+    const coarsePointer = !!globalThis.matchMedia?.('(pointer: coarse)')?.matches; // Used as the mobile fallback when Device Memory is unavailable or rounded.
+    return coarsePointer || (Number.isFinite(deviceMemoryGb) && deviceMemoryGb > 0 && deviceMemoryGb <= 6);
+  })(); // Used below to reduce wilderness residency and leave GC breathing room on phones/low-memory devices.
+  const LOAD_RADIUS = LOW_MEMORY_STREAMING ? 1 : 2; // Used to request a 3x3 mobile/low-memory neighborhood or the normal 5x5 desktop neighborhood.
+  const UNLOAD_RADIUS = LOW_MEMORY_STREAMING ? 2 : 3; // Used as a smaller low-memory hysteresis ring so old chunks are released sooner while travel remains stable.
+  const STREAM_BUILD_INTERVAL_S = LOW_MEMORY_STREAMING ? 0.2 : 0; // Used by updateActive to pace low-memory chunk allocation to at most five new chunks per second.
   const INACTIVE_UNLOAD_DELAY_S = 4; // Used to free a wilderness scene after the player remains in another area.
-  const MAX_STREAM_BUILDS_PER_UPDATE = 1; // Used to spread outer-ring construction across frames.
+  const MAX_STREAM_BUILDS_PER_UPDATE = 1; // Used to cap each eligible streaming tick to a single chunk build.
   const DEBUG_REFRESH_MS = 250; // Used to keep mobile diagnostic text inexpensive.
 
   let deps = null; // Receives the current-area/player accessors supplied by game.js.
@@ -129,6 +135,7 @@
       this.centerCx = null;
       this.centerCz = null;
       this.inactiveSeconds = 0;
+      this.streamCooldownSeconds = 0; // Used by updateActive to leave idle/GC time between low-memory chunk builds.
       this.builds = 0;
       this.unloads = 0;
       this.rebuilds = 0;
@@ -237,6 +244,7 @@
       for (const key of [...this.loaded.keys()]) this.unload(key);
       this.centerCx = null;
       this.centerCz = null;
+      this.streamCooldownSeconds = 0;
     }
 
     setCenter(col, row) {
@@ -269,19 +277,24 @@
       requests.sort((a, b) => a.distance - b.distance || a.cz - b.cz || a.cx - b.cx);
       for (const request of requests) this.load(request.cx, request.cz);
       this.enqueueNeighborhood(this.centerCx, this.centerCz);
+      this.streamCooldownSeconds = STREAM_BUILD_INTERVAL_S;
       refreshDebugText(true);
       return this;
     }
 
-    updateActive(col, row) {
+    updateActive(col, row, dt = 0) {
       this.inactiveSeconds = 0;
       this.setCenter(col, row);
+      const elapsed = Math.max(0, Number(dt) || 0); // Used to count down the low-memory allocation interval without tying it to frame rate.
+      this.streamCooldownSeconds = Math.max(0, this.streamCooldownSeconds - elapsed);
       if (!this.queue.size) return; // Steady state once the neighborhood is fully streamed in — skip the array copy/sort below entirely.
+      if (this.streamCooldownSeconds > 0) return; // Low-memory mode still unloads every frame above, but delays the next allocation-heavy build.
       const queue = [...this.queue.values()]
         .sort((a, b) => a.distance - b.distance || a.cz - b.cz || a.cx - b.cx);
       for (let i = 0; i < Math.min(MAX_STREAM_BUILDS_PER_UPDATE, queue.length); i++) {
         this.load(queue[i].cx, queue[i].cz);
       }
+      this.streamCooldownSeconds = STREAM_BUILD_INTERVAL_S;
     }
 
     updateInactive(dt) {
@@ -306,10 +319,20 @@
         chebyshev(a.cx, a.cz, this.centerCx, this.centerCz) -
         chebyshev(b.cx, b.cz, this.centerCx, this.centerCz)
       );
-      for (const coord of coords) this.load(coord.cx, coord.cz);
-      this.rebuilds += coords.length;
+      if (LOW_MEMORY_STREAMING) {
+        const immediate = coords.shift(); // Used to restore the nearest edited chunk immediately while the seam halo returns through the paced queue.
+        if (immediate) this.load(immediate.cx, immediate.cz);
+        for (const coord of coords) {
+          const distance = chebyshev(coord.cx, coord.cz, this.centerCx, this.centerCz); // Used to keep staged rebuilds ordered consistently with ordinary neighborhood loads.
+          if (distance <= LOAD_RADIUS) this.enqueue(coord.cx, coord.cz, distance);
+        }
+        this.streamCooldownSeconds = STREAM_BUILD_INTERVAL_S;
+      } else {
+        for (const coord of coords) this.load(coord.cx, coord.cz);
+      }
+      this.rebuilds += keys.length;
       refreshDebugText(true);
-      return coords.length;
+      return keys.length;
     }
 
     attachObject(col, row, object) {
@@ -334,6 +357,8 @@
         loadRadius: LOAD_RADIUS,
         unloadRadius: UNLOAD_RADIUS,
         immediateRadius: IMMEDIATE_RADIUS,
+        lowMemoryStreaming: LOW_MEMORY_STREAMING,
+        streamBuildIntervalMs: Math.round(STREAM_BUILD_INTERVAL_S * 1000),
       };
     }
   }
@@ -377,7 +402,7 @@
     const player = deps.player;
     for (const controller of zones.values()) {
       if (controller === active && player) {
-        controller.updateActive(player.x / deps.TILE, player.y / deps.TILE);
+        controller.updateActive(player.x / deps.TILE, player.y / deps.TILE, dt);
       } else {
         controller.updateInactive(dt);
       }
@@ -390,6 +415,8 @@
       chunkTiles: CHUNK_TILES,
       loadRadius: LOAD_RADIUS,
       unloadRadius: UNLOAD_RADIUS,
+      lowMemoryStreaming: LOW_MEMORY_STREAMING,
+      streamBuildIntervalMs: Math.round(STREAM_BUILD_INTERVAL_S * 1000),
       debugVisible,
       activeArea: deps?.getCurrentArea?.() || null,
       lastResidencyAudit,
@@ -505,7 +532,10 @@
     const data = snapshot();
     const lines = [
       'Wilderness chunks: ' + CHUNK_TILES + 'x' + CHUNK_TILES + ' tiles',
-      'active=' + (data.activeArea || '(none)') + ' load=' + LOAD_RADIUS + ' unload=' + UNLOAD_RADIUS,
+      'mode=' + (data.lowMemoryStreaming ? 'low-memory' : 'standard') +
+        ' active=' + (data.activeArea || '(none)') +
+        ' load=' + LOAD_RADIUS + ' unload=' + UNLOAD_RADIUS +
+        ' pace=' + data.streamBuildIntervalMs + 'ms',
     ];
     const persisted = window.__wildernessChunkPersistenceDebug?.(); // Adds save-state coverage to the mobile status panel.
     if (persisted) {
@@ -582,6 +612,8 @@
       IMMEDIATE_RADIUS,
       LOAD_RADIUS,
       UNLOAD_RADIUS,
+      STREAM_BUILD_INTERVAL_S,
+      LOW_MEMORY_STREAMING,
       INACTIVE_UNLOAD_DELAY_S,
     }),
   };

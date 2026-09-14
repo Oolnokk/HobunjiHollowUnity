@@ -5953,28 +5953,26 @@
       { isSubmap: true, parentMapId: rootId, plateauGroupId: group.id, elevation: group.elevation, anchorC, anchorR }
     );
 
-    // A border-escarpment group's height varies tile-by-tile (see
-    // targetBoundaryHeight), so it's frequently thin enough to be ALL ring /
-    // zero interior by this system's ring-vs-interior split (isManualPlateau-
-    // RingTile) — excluding ring tiles here would then paint nothing and this
-    // whole group's submap comes back null, which orphans its mask in
-    // mergeZoneTilesInto (the group has no matching submap, so its cells fall
-    // through to plain ungraded grass instead of the raised cliff they should
-    // be). A thin cliff strip has no meaningful margin-vs-top distinction
-    // anyway — buildPlateauMesa computes its own outer blend band from the
-    // mask regardless of this ring flag — so paint every cell for these.
-    const paintRingToo = !!sourceGroup.hasBorderEscarpment;
-    let paintedTiles = 0;
+    // Plateau ring cells belong to the parent mask. mergeZoneTilesInto stakes
+    // those cells as low-side inclines before recursively merging this child.
+    // Painting a ring cell into the child overwrites that incline at the
+    // plateau's upper tier, creating the bare `tier_seam` cliff path.
+    //
+    // Thin boundary groups can legitimately be all-ring. They still need a
+    // matching child map so their parent mask is resolved, so an empty child
+    // is intentional metadata rather than a reason to repaint the ring.
+    let paintedTiles = 0; // Counts child-owned plateau-top tiles; zero is valid for thin all-ring boundary groups.
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const sourceTile = tileAt(anchorC + c, anchorR + r);
         if (!sourceTile || sourceTile.plateauGroupId !== group.id) continue;
-        if (sourceTile.plateauRing && !paintRingToo) continue;
+        if (sourceTile.plateauRing) continue;
         hobunjiSetTile(submap, c, r, hobunjiSubmapTileRecord(sourceTile, overlayByTile));
         paintedTiles++;
       }
     }
-    return paintedTiles ? submap : null;
+    if (!paintedTiles) submap.generatedMetadataOnlyPlateau = true;
+    return submap;
   }
 
   function hobunjiSimplifyNodes(points, limit = 160) {

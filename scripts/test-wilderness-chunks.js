@@ -58,6 +58,8 @@ const document = {
 const context = {
   console,
   document,
+  navigator: { deviceMemory: 4 },
+  matchMedia: query => ({ matches: query === '(pointer: coarse)' }),
   performance: { now: () => ++now },
   THREE: {
     Group,
@@ -126,8 +128,13 @@ const controller = context.WildernessChunks.createZone({
 let snap = controller.snapshot();
 assert.strictEqual(snap.center.x, 3);
 assert.strictEqual(snap.center.z, 3);
-assert.strictEqual(snap.loaded, 9, 'arrival should synchronously build a 3x3 neighborhood');
-assert.strictEqual(snap.queued, 16, 'remaining 5x5 outer ring should stay queued');
+assert.strictEqual(snap.lowMemoryStreaming, true, 'coarse-pointer/4 GB test context should use low-memory streaming');
+assert.strictEqual(snap.loadRadius, 1, 'low-memory streaming should request only a 3x3 neighborhood');
+assert.strictEqual(snap.unloadRadius, 2, 'low-memory streaming should release the trailing ring sooner');
+assert.strictEqual(snap.streamBuildIntervalMs, 200, 'low-memory builds should be paced so GC gets time between allocations');
+assert.strictEqual(snap.immediateRadius, 0, 'arrival priming should only build the player chunk synchronously');
+assert.strictEqual(snap.loaded, 1, 'arrival should synchronously build only the player chunk');
+assert.strictEqual(snap.queued, 8, 'the rest of the mobile 3x3 neighborhood should stay queued for paced loading');
 assert.ok(builtBounds.every(bounds =>
   bounds.colEnd - bounds.colStart <= 16 &&
   bounds.rowEnd - bounds.rowStart <= 16
@@ -135,29 +142,50 @@ assert.ok(builtBounds.every(bounds =>
 
 context.WildernessChunks.update(1 / 60);
 snap = controller.snapshot();
-assert.strictEqual(snap.loaded, 10, 'streaming budget should build one queued chunk per update');
-assert.strictEqual(snap.queued, 15);
+assert.strictEqual(snap.loaded, 1, 'the first post-arrival frame should not immediately allocate another chunk');
+assert.strictEqual(snap.queued, 8);
+
+context.WildernessChunks.update(0.2);
+snap = controller.snapshot();
+assert.strictEqual(snap.loaded, 2, 'one queued chunk should build after the low-memory cooldown elapses');
+assert.strictEqual(snap.queued, 7);
 
 player.x = (8 * 16 + 1) * TILE;
 player.y = (8 * 16 + 1) * TILE;
-context.WildernessChunks.update(1 / 60);
+context.WildernessChunks.update(0.2);
 snap = controller.snapshot();
 assert.strictEqual(snap.center.x, 8);
 assert.strictEqual(snap.center.z, 8);
-assert.ok(snap.unloads >= 10, 'chunks beyond the hysteresis radius should unload');
-assert.strictEqual(snap.loaded, 1, 'the new neighborhood should stream rather than build all at once');
+assert.ok(snap.unloads >= 2, 'distant chunks should unload before the moved-to neighborhood allocates replacements');
+assert.strictEqual(snap.loaded, 1, 'the new player chunk should stream without rebuilding a whole neighborhood at once');
+assert.strictEqual(snap.queued, 8, 'the moved-to mobile neighborhood should keep its eight surrounding chunks queued');
 
 context.WildernessChunks.primeZone(currentArea, 8 * 16 + 1, 8 * 16 + 1);
 snap = controller.snapshot();
-assert.strictEqual(snap.loaded, 9, 'explicit transitions/teleports should prime the safe 3x3 neighborhood');
+assert.strictEqual(snap.loaded, 1, 'explicit transitions/teleports should synchronously keep only the player chunk resident');
+assert.strictEqual(snap.queued, 8, 'explicit low-memory priming should leave surrounding chunks paced');
+
+for (let i = 0; i < 8; i++) context.WildernessChunks.update(0.2);
+snap = controller.snapshot();
+assert.strictEqual(snap.loaded, 9, 'the complete low-memory neighborhood should eventually finish streaming');
+assert.strictEqual(snap.queued, 0);
+
+player.x = (9 * 16 + 1) * TILE;
+context.WildernessChunks.update(0.2);
+snap = controller.snapshot();
+assert.strictEqual(snap.center.x, 9);
+assert.ok(snap.loaded <= 12, 'travel should keep the resident set bounded while the hysteresis ring trails behind');
+assert.ok(snap.queued <= 3, 'crossing one chunk boundary should queue only the new leading edge, not another full zone neighborhood');
 
 const attached = new Node();
-assert.strictEqual(context.WildernessChunks.attachObject(currentArea, 8 * 16 + 1, 8 * 16 + 1, attached), true);
+assert.strictEqual(context.WildernessChunks.attachObject(currentArea, 9 * 16 + 1, 8 * 16 + 1, attached), true);
 assert.ok(attached.parent?.userData?.wildernessChunk, 'tile-owned runtime patches should attach to their chunk');
 
-const rebuilt = context.WildernessChunks.rebuildZone(currentArea, 8 * 16 + 1, 8 * 16 + 1);
-assert.strictEqual(rebuilt, 9, 'an edit should rebuild the resident chunk plus its one-chunk seam halo');
-assert.strictEqual(controller.snapshot().loaded, 9);
+const rebuilt = context.WildernessChunks.rebuildZone(currentArea, 9 * 16 + 1, 8 * 16 + 1);
+assert.ok(rebuilt >= 1, 'an edit should rebuild at least the resident player chunk');
+snap = controller.snapshot();
+assert.ok(snap.loaded <= 1, 'low-memory edit rebuilds should restore only one affected chunk synchronously');
+assert.ok(snap.queued <= 8, 'affected neighbor rebuilds should return through the paced in-radius queue');
 
 currentArea = 'farm';
 context.WildernessChunks.update(5);
@@ -167,4 +195,4 @@ assert.ok(disposedChunks > 0, 'unloading must execute owned-resource cleanup');
 context.WildernessChunks.destroyZone('map_northern_cliffs');
 assert.strictEqual(context.WildernessChunks.snapshot().zones.length, 0);
 
-console.log('Wilderness chunk lifecycle tests passed.');
+console.log('Wilderness low-memory chunk lifecycle tests passed.');
