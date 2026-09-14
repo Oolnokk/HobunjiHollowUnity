@@ -25,6 +25,9 @@
       followerWobbleFrequency:2.4, rootLockFraction:0.12, rootLockTransition:0.1, envelopeRadialQuantile:0.58,
       glowCount:3, glowRadius:0.12, glowSpriteScale:1, glowBottleYScale:0.8, glowRopeLength:0.22, glowRopeRadius:0.012, glowWindResponse:1,
     },
+    placement: {
+      combatPoiClearanceTiles:12,
+    },
     canonicalRecipe: {
       seedU32:7319, sourceTree:'shadewood', treeCount:3, height:1.35, turns:1.75, radiusStart:0, radiusEnd:0.11,
       crossSectionScaleStart:0.27, crossSectionScaleEnd:0.14, hostSway:0.11, hostSamples:30, followerWobble:0.018,
@@ -88,3 +91,11 @@
   };
   window.HOBUNJI_ROOT_TOTEM_CONFIG=freeze(cfg);
 })();
+
+// Root Totem placement safety is a runtime/generation companion to this config.
+// Loading it here keeps the safety rule available whether this config is parsed
+// before or after WildernessMapGenerator / TemporaryLocales.
+if (typeof document !== 'undefined' && document.currentScript) {
+  const rootTotemSafetySrc = new URL('../js/root-totem-safety.js', document.currentScript.src).href; // Loaded synchronously so RootTotemSafety can hook later generator/runtime globals before world generation starts.
+  document.write(`<script src="${rootTotemSafetySrc}"><\/script>`);
+}
