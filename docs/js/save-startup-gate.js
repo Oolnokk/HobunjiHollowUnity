@@ -293,7 +293,7 @@
     try {
       let status = localSave.getStatus();
       if (!localSave.isSupported?.()) {
-        alert('Local save folders are not supported in this browser. Browser saves and Netlify Cloud Save still work.');
+        alert('Local save folders are not supported in this browser. Browser saves and Google Drive Cloud Save still work.');
         return;
       }
       if (status.state !== 'ready') {
@@ -347,10 +347,10 @@
       </div>`;
 
     gate.querySelector('#hobunjiEmptySaveCloud')?.addEventListener('click', () => {
-      if (window.NetlifyCloudSave?.openPanel) {
-        window.NetlifyCloudSave.openPanel();
+      if (window.HobunjiCloudSave?.openPanel) {
+        window.HobunjiCloudSave.openPanel();
       } else {
-        alert('Cloud Save has not initialized yet. Reload the Netlify deployment and try again.');
+        alert('Cloud Save has not initialized yet. Reload the game and try again.');
       }
     });
 
@@ -412,7 +412,7 @@
       freshCreatorPresent: !!getFreshCreatorCard(),
       gatePresent: !!document.getElementById(GATE_ID),
       creationChosen,
-      cloud: window.NetlifyCloudSave?.getStatus?.() || null,
+      cloud: window.HobunjiCloudSave?.getStatus?.() || null,
       localFolder: window.LocalSaveFolder?.getStatus?.() || null,
       saveSelect: {
         portraitBackingSize: SAVE_PORTRAIT_BACKING_SIZE,

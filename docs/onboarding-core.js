@@ -1090,10 +1090,10 @@
     });
 
     _el.querySelector('#slSourceCloud')?.addEventListener('click', () => {
-      if (window.NetlifyCloudSave?.openPanel) {
-        window.NetlifyCloudSave.openPanel();
+      if (window.HobunjiCloudSave?.openPanel) {
+        window.HobunjiCloudSave.openPanel();
       } else {
-        alert('Cloud Save has not initialized yet. Reload the Netlify deployment and try again.');
+        alert('Cloud Save has not initialized yet. Reload the game and try again.');
       }
     });
 
