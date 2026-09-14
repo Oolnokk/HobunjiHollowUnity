@@ -108,6 +108,7 @@
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
     ['js/npc-social-relationship-bridge-v2.js?v=20260914favor1', () => !!window.NpcRapport?.eventDriven],
     ['js/generic-hud-icons.js?v=20260905a', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
+    ['js/favor-popup-points-bridge.js?v=20260914a', () => Number(window.FavorPopupPointsBridge?.version) >= 1],
     ['js/sleep-passage-action-bridge.js?v=20260914a', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 1],
     ['js/day-progress-review.js?v=20260914b', () => Number(window.DayProgressReview?.version) >= 1],
     ['js/day-progress-review-relationship-ui.js?v=20260914a', () => Number(window.DayProgressReviewRelationshipUi?.version) >= 1],
@@ -135,7 +136,7 @@
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
     ['js/wildlife-cloud-forest-behavior.js?v=20260829a', () => !!window.HobunjiCloudForestWildlife],
-    ['js/wildlife-grehlr-foraging.js?v=20260829a', () => !!window.HobunjiGrehlrForaging],
+    ['js/wildlife-grehlr-foraging.js?v=20260829a', () => !!window.HobunjiCloudForestWildlife],
   ];
 
   function loadModule(src, alreadyLoaded) {
