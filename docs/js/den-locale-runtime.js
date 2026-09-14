@@ -3,35 +3,39 @@
 
   const LOCALE_ID = 'locale_den_mother_nest';
   const LOCALE_URL = `config/locales/${LOCALE_ID}.json`;
-  const DEFAULT_TRANSFORM = Object.freeze({ x:0, y:0, z:0, rx:0, ry:0, rz:0, sx:1, sy:1, sz:1 });
   const DEG = Math.PI / 180;
   const AUTHORED_NEST_KEYS = new Set(['nest', 'nestBranch']);
+
   let locale = null;
   let encounter = null;
   let denDeps = null;
   let wildlifeDeps = null;
   let installed = false;
   let wildlifeInstalled = false;
+  let wildlifeWatchInstalled = false;
   let lastError = null;
   let lastAppliedArea = null;
   let lastMotherApplied = null;
   let lastFurnitureUpgrade = null;
   let branchSyncAt = 0;
+
   const rootState = new WeakMap();
   const motherState = new WeakMap();
   const nestSequences = new WeakMap();
   const cavernFurnitureState = new WeakMap();
 
-  const finite = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
-  function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+  const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+
   function normalizedTransform(raw) {
     const t = raw || {};
     return {
-      x:finite(t.x), y:finite(t.y), z:finite(t.z),
-      rx:finite(t.rx), ry:finite(t.ry), rz:finite(t.rz),
-      sx:finite(t.sx,1) || 1, sy:finite(t.sy,1) || 1, sz:finite(t.sz,1) || 1,
+      x: finite(t.x), y: finite(t.y), z: finite(t.z),
+      rx: finite(t.rx), ry: finite(t.ry), rz: finite(t.rz),
+      sx: finite(t.sx, 1) || 1, sy: finite(t.sy, 1) || 1, sz: finite(t.sz, 1) || 1,
     };
   }
+
   function parseLocale(data) {
     const den = data?.meta?.denEncounter;
     if (!data || data.schema !== 'hobunji_locale.v1' || !den || !Array.isArray(den.clutchSpawns)) {
@@ -57,8 +61,11 @@
       const override = window.LocalDBOverrides.getOverride?.('locales');
       const locales = Array.isArray(override) ? override : override?.locales;
       return Array.isArray(locales) ? locales.find(item => item?.id === LOCALE_ID) || null : null;
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
+
   function loadLocaleDocument() {
     const local = localOverrideLocale();
     if (local) return Promise.resolve(clone(local));
@@ -83,13 +90,20 @@
   }
   preloadAuthoredNestFurniture();
 
-  function decorateNest(nest) {
+  function decorateNest(nest, { branch = false } = {}) {
     if (!nest || !encounter) return nest;
-    nest.localeId = locale.id;
-    nest.nestFurnitureKey = encounter.nest?.furnitureKey || 'nest';
-    nest.nestFurnitureTransform = { ...encounter.nest.transform };
-    nest.clutchSpawnTransforms = encounter.clutchSpawns.map(point => ({ id:point.id, ...point.transform }));
-    nest.denMotherSpawnTransform = { ...encounter.motherSpawn.transform };
+    nest.localeId = locale?.id || LOCALE_ID;
+    nest.clutchSpawnTransforms = encounter.clutchSpawns.map(point => ({ id: point.id, ...point.transform }));
+    if (branch) {
+      // Branch nests share the authored clutch layout, but keep their own smaller
+      // furniture key/pose instead of inheriting the cavern's 2x2 basket transform.
+      nest.nestFurnitureKey = 'nestBranch';
+      nest.nestFurnitureTransform = normalizedTransform(null);
+    } else {
+      nest.nestFurnitureKey = encounter.nest?.furnitureKey || 'nest';
+      nest.nestFurnitureTransform = { ...encounter.nest.transform };
+      nest.denMotherSpawnTransform = { ...encounter.motherSpawn.transform };
+    }
     return nest;
   }
 
@@ -99,22 +113,26 @@
     map.set = function denLocaleMapSet(key, value) {
       return originalSet(key, decorateNest(value));
     };
-    Object.defineProperty(map, '__hobunjiDenLocaleWrapped', { value:true, configurable:true });
+    Object.defineProperty(map, '__hobunjiDenLocaleWrapped', { value: true, configurable: true });
     for (const nest of map.values()) decorateNest(nest);
   }
 
-  function contentRoots(scene) {
+  function contentRoots(scene, nestId = null) {
     if (!scene) return [];
-    const roots = [];
-    for (const child of scene.children || []) {
-      if (/^nest_.+_egg$/.test(child?.name || '') || /^nest_sleep_/.test(child?.name || '')) roots.push(child);
-    }
-    return roots;
+    const idText = nestId == null ? null : String(nestId);
+    return (scene.children || []).filter(child => {
+      const name = String(child?.name || '');
+      const isNestContent = /^nest_.+_egg$/.test(name) || /^nest_sleep_/.test(name);
+      return isNestContent && (!idText || name.includes(idText));
+    });
   }
 
   function sequenceFor(nest, roots) {
     let seq = nestSequences.get(nest);
-    if (!seq) { seq = { roots:[], indices:new WeakMap() }; nestSequences.set(nest, seq); }
+    if (!seq) {
+      seq = { roots: [], indices: new WeakMap() };
+      nestSequences.set(nest, seq);
+    }
     for (const root of roots) {
       if (seq.indices.has(root)) continue;
       const index = seq.roots.length;
@@ -124,30 +142,52 @@
     return seq;
   }
 
-  function nestCenter(nest) {
-    return { x: nest.col + nest.w * 0.5, z: nest.row + nest.h * 0.5 };
-  }
-  function nestFloorY(nest) {
-    if (Number.isFinite(Number(nest?.floorY))) return Number(nest.floorY);
-    const center = nestCenter(nest);
-    const surface = denDeps?.activeSurfaceYAtWorld?.(center.x, center.z);
-    return Number.isFinite(Number(surface)) ? Number(surface) : 0;
+  function cavernNestBase(nest) {
+    const x = finite(nest?.col) + finite(nest?.w, 2) * 0.5;
+    const z = finite(nest?.row) + finite(nest?.h, 2) * 0.5;
+    const explicitY = Number(nest?.floorY);
+    const surface = denDeps?.activeSurfaceYAtWorld?.(x, z);
+    return { x, y: Number.isFinite(explicitY) ? explicitY : (Number.isFinite(Number(surface)) ? Number(surface) : 0), z };
   }
 
-  function applyRootTransform(root, nest, authored) {
-    if (!root || !nest || !authored) return;
-    const floorY = nestFloorY(nest);
-    let base = rootState.get(root);
-    if (!base) {
-      base = { lift:root.position.y - floorY, scale:root.scale.clone() };
-      rootState.set(root, base);
+  function branchNestBase(nest, branch) {
+    const fallbackY = branch
+      ? (finite(branch.baseWorldY) + finite(branch.tipWorldY)) * 0.5
+      : 0;
+    return {
+      x: finite(nest?.x) / Math.max(0.0001, finite(denDeps?.TILE, 1)),
+      y: Number.isFinite(Number(nest?.worldY)) ? Number(nest.worldY) : fallbackY,
+      z: finite(nest?.y) / Math.max(0.0001, finite(denDeps?.TILE, 1)),
+    };
+  }
+
+  function applyRootTransform(root, nest, authored, base) {
+    if (!root || !nest || !authored || !base) return;
+    let initial = rootState.get(root);
+    if (!initial) {
+      initial = {
+        lift: root.position.y - base.y,
+        scale: root.scale.clone(),
+      };
+      rootState.set(root, initial);
     }
     const t = normalizedTransform(authored);
-    const center = nestCenter(nest);
-    root.position.set(center.x + t.x, floorY + base.lift + t.y, center.z + t.z);
+    root.position.set(base.x + t.x, base.y + initial.lift + t.y, base.z + t.z);
     root.rotation.set(t.rx * DEG, t.ry * DEG, t.rz * DEG, 'YXZ');
-    root.scale.set(base.scale.x * t.sx, base.scale.y * t.sy, base.scale.z * t.sz);
+    root.scale.set(initial.scale.x * t.sx, initial.scale.y * t.sy, initial.scale.z * t.sz);
     root.updateMatrixWorld?.(true);
+  }
+
+  function applyAuthoredClutch(nest, roots, base) {
+    const points = nest?.clutchSpawnTransforms;
+    if (!nest || !roots?.length || !Array.isArray(points) || !points.length) return;
+    const sequence = sequenceFor(nest, roots);
+    for (const root of roots) {
+      const index = sequence.indices.get(root);
+      if (!Number.isInteger(index)) continue;
+      const authored = points[index] || points[index % points.length];
+      if (authored) applyRootTransform(root, nest, authored, base);
+    }
   }
 
   function findCurrentDenMother(area) {
@@ -158,10 +198,11 @@
     }
     return null;
   }
+
   function applyMotherTransform(mother, nest) {
     if (!mother || !nest?.denMotherSpawnTransform || !denDeps?.TILE) return false;
     const t = normalizedTransform(nest.denMotherSpawnTransform);
-    const center = nestCenter(nest);
+    const center = cavernNestBase(nest);
     let state = motherState.get(mother);
     const group = mother.avatarRef?.group;
     if (!state) {
@@ -171,11 +212,15 @@
       };
       motherState.set(mother, state);
     }
+
+    // Creature simulation positions are pixels; locale authoring is in Three
+    // world units. Convert only X/Z here. Vertical lift remains a world unit.
     mother.x = (center.x + t.x) * denDeps.TILE;
     mother.y = (center.z + t.z) * denDeps.TILE;
     mother.homeX = mother.x;
     mother.homeY = mother.y;
     mother.groundLift = state.groundLift + t.y;
+
     const ry = t.ry * DEG;
     mother.groupRot = ry;
     mother.pngRot = ry;
@@ -187,7 +232,7 @@
       if (state.scale) group.scale.set(state.scale.x * t.sx, state.scale.y * t.sy, state.scale.z * t.sz);
       group.updateMatrixWorld?.(true);
     }
-    lastMotherApplied = { areaId:mother.areaId || null, x:t.x, y:t.y, z:t.z, ry:t.ry };
+    lastMotherApplied = { areaId: mother.areaId || null, x: t.x, y: t.y, z: t.z, ry: t.ry };
     return true;
   }
 
@@ -199,10 +244,11 @@
       for (const material of (Array.isArray(child.material) ? child.material : [child.material]).filter(Boolean)) material.dispose?.();
     });
   }
+
   function isLegacyCavernNestMarker(child, nest) {
     if (!child?.isMesh || !child.geometry?.parameters || !child.material?.color) return false;
     const p = child.geometry.parameters;
-    const center = nestCenter(nest);
+    const center = cavernNestBase(nest);
     return Math.abs(Number(p.width) - 2) < .001
       && Math.abs(Number(p.height) - .12) < .001
       && Math.abs(Number(p.depth) - 2) < .001
@@ -210,21 +256,24 @@
       && Math.abs(child.position.x - center.x) < .01
       && Math.abs(child.position.z - center.z) < .01;
   }
+
   function removeLegacyCavernMarker(scene, nest) {
     const marker = (scene?.children || []).find(child => isLegacyCavernNestMarker(child, nest));
     if (!marker) return false;
     disposeObject(marker);
     return true;
   }
+
   function applyNestFurnitureTransform(group, nest) {
     if (!group || !nest) return;
     const t = normalizedTransform(nest.nestFurnitureTransform || encounter?.nest?.transform);
-    const center = nestCenter(nest);
-    group.position.set(center.x + t.x, nestFloorY(nest) + t.y, center.z + t.z);
+    const center = cavernNestBase(nest);
+    group.position.set(center.x + t.x, center.y + t.y, center.z + t.z);
     group.rotation.set(t.rx * DEG, t.ry * DEG, t.rz * DEG, 'YXZ');
     group.scale.set(t.sx, t.sy, t.sz);
     group.updateMatrixWorld?.(true);
   }
+
   function ensureCavernNestFurniture(nest, scene) {
     if (!nest || !scene || !encounter || !window.AuthoredFurniture) return;
     let state = cavernFurnitureState.get(nest);
@@ -233,12 +282,16 @@
       return;
     }
     if (state?.building) return;
-    state = { scene, group:null, building:true };
+
+    state = { scene, group: null, building: true };
     cavernFurnitureState.set(nest, state);
     const key = nest.nestFurnitureKey || encounter.nest?.furnitureKey || 'nest';
     Promise.resolve(window.AuthoredFurniture.load?.(key)).then(data => {
-      if (!data || cavernFurnitureState.get(nest) !== state) return;
-      if (state.scene !== scene) return;
+      if (cavernFurnitureState.get(nest) !== state || state.scene !== scene) return;
+      if (!data) {
+        state.building = false;
+        return;
+      }
       removeLegacyCavernMarker(scene, nest);
       const group = window.AuthoredFurniture.buildGroup(data, 0xc9a227);
       group.name = `den_locale_furniture_${key}`;
@@ -267,77 +320,146 @@
     const group = window.AuthoredFurniture.buildGroup(data, 0xc9a227);
     group.name = `den_locale_furniture_${furnitureKey}`;
     group.userData.denLocaleFurniture = true;
+    group.userData.authoredFurnitureKey = furnitureKey;
     group.position.set(Number(col) + w * .5, 0, Number(row) + d * .5);
     group.rotation.y = finite(rotYDeg) * DEG;
     targetScene?.add?.(group);
     lastFurnitureUpgrade = `spawn:${furnitureKey}`;
-    return { mesh:group, light:null, sfxSource:null, authored:true };
+    return { mesh: group, light: null, sfxSource: null, authored: true };
   }
 
   function upgradeBranchNestFurniture() {
-    const now = performance.now?.() || Date.now();
+    const now = globalThis.performance?.now?.() || Date.now();
     if (now < branchSyncAt) return;
     branchSyncAt = now + 500;
     const area = denDeps?.getCurrentArea?.();
-    if (!area || !window.AuthoredFurniture?.peek?.('nestBranch')) return;
+    if (!area) return;
     const branches = window.ClimbSystem?.debugBranchesFor?.(area) || [];
-    const data = window.AuthoredFurniture.peek('nestBranch');
+    const data = window.AuthoredFurniture?.peek?.('nestBranch');
     for (const branch of branches) {
       const nest = branch?.nest;
-      const prior = nest?.mesh;
-      if (!nest || !prior?.parent || prior.userData?.authoredFurnitureKey === 'nestBranch') continue;
+      if (!nest) continue;
+      decorateNest(nest, { branch: true });
+      const prior = nest.mesh;
+      if (!data || !prior?.parent || prior.userData?.authoredFurnitureKey === 'nestBranch') continue;
       const parent = prior.parent;
       const group = window.AuthoredFurniture.buildGroup(data, 0xc9a227);
       group.name = 'den_locale_furniture_nestBranch';
       group.userData.denLocaleFurniture = true;
+      group.userData.authoredFurnitureKey = 'nestBranch';
       group.position.copy(prior.position);
       group.rotation.copy(prior.rotation);
       group.scale.copy(prior.scale);
       parent.add(group);
-      parent.remove(prior);
       nest.mesh = group;
       disposeObject(prior);
       lastFurnitureUpgrade = `branch:${area}`;
     }
   }
 
+  function syncBranchNests(area) {
+    const branches = window.ClimbSystem?.debugBranchesFor?.(area) || [];
+    for (const branch of branches) {
+      const nest = branch?.nest;
+      const scene = nest?.mesh?.parent || null;
+      if (!nest || !scene) continue;
+      decorateNest(nest, { branch: true });
+      const roots = contentRoots(scene, nest.id);
+      applyAuthoredClutch(nest, roots, branchNestBase(nest, branch));
+    }
+  }
+
   function syncCurrentDen() {
-    if (!denDeps || !encounter) { upgradeBranchNestFurniture(); return; }
-    upgradeBranchNestFurniture();
+    if (!denDeps || !encounter) return;
     const area = denDeps.getCurrentArea?.();
+    if (!area) return;
+
+    upgradeBranchNestFurniture();
+    syncBranchNests(area);
+
     const nest = denDeps._denNests?.get?.(area);
     const scene = denDeps._buildingScenes?.get?.(area)?.scene;
     if (!nest || !scene) return;
+
     decorateNest(nest);
     ensureCavernNestFurniture(nest, scene);
-    const roots = contentRoots(scene);
-    const seq = sequenceFor(nest, roots);
-    for (const root of roots) {
-      const index = seq.indices.get(root);
-      const authored = nest.clutchSpawnTransforms?.[index]
-        || nest.clutchSpawnTransforms?.[index % Math.max(1, nest.clutchSpawnTransforms.length)];
-      if (authored) applyRootTransform(root, nest, authored);
-    }
+    applyAuthoredClutch(nest, contentRoots(scene), cavernNestBase(nest));
     applyMotherTransform(findCurrentDenMother(area), nest);
     lastAppliedArea = area;
   }
 
-  function installWildlifeBridge() {
-    if (wildlifeInstalled || !window.WildlifeSpawn?.init) return false;
-    wildlifeInstalled = true;
-    const api = window.WildlifeSpawn;
+  function patchWildlifeSpawn(api) {
+    if (!api?.init) return api;
+    if (api.__denLocaleAuthoredEncounterBridge) {
+      wildlifeInstalled = true;
+      return api;
+    }
     const originalInit = api.init.bind(api);
     api.init = function denLocaleWildlifeInit(injectedDeps) {
       wildlifeDeps = injectedDeps;
       preloadAuthoredNestFurniture();
       if (injectedDeps?.makeDecorativeFurnitureMesh && !injectedDeps.makeDecorativeFurnitureMesh.__denLocaleAuthoredNestBridge) {
         const originalFurniture = injectedDeps.makeDecorativeFurnitureMesh.bind(injectedDeps);
-        const wrapped = (col, row, key, targetScene, area, rotYDeg) => authoredDecorativeFurniture(originalFurniture, col, row, key, targetScene, area, rotYDeg);
+        const wrapped = (col, row, key, targetScene, area, rotYDeg) =>
+          authoredDecorativeFurniture(originalFurniture, col, row, key, targetScene, area, rotYDeg);
         wrapped.__denLocaleAuthoredNestBridge = true;
         injectedDeps.makeDecorativeFurnitureMesh = wrapped;
       }
       return originalInit(injectedDeps);
     };
+    api.__denLocaleAuthoredEncounterBridge = true;
+    wildlifeInstalled = true;
+    return api;
+  }
+
+  function installWildlifeBridge() {
+    if (window.WildlifeSpawn?.init) {
+      patchWildlifeSpawn(window.WildlifeSpawn);
+      return true;
+    }
+    return false;
+  }
+
+  // den-locale-runtime is intentionally loaded from combat-config-loader before
+  // wildlife-spawn.js's parser-time script tag. Chain onto any pre-existing
+  // WildlifeSpawn assignment trap rather than replacing it; several wildlife
+  // behavior modules use the same load-order-safe pattern.
+  function watchWildlifeSpawnAssignment() {
+    if (installWildlifeBridge()) return true;
+    if (wildlifeWatchInstalled) return true;
+    const existing = Object.getOwnPropertyDescriptor(window, 'WildlifeSpawn');
+    if (existing && !existing.configurable) return false;
+    wildlifeWatchInstalled = true;
+
+    if (existing && typeof existing.set === 'function') {
+      const chainedSet = existing.set;
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: true,
+        enumerable: existing.enumerable,
+        get: existing.get,
+        set(value) {
+          chainedSet.call(window, value);
+          patchWildlifeSpawn(window.WildlifeSpawn);
+        },
+      });
+      return true;
+    }
+
+    let current = existing && Object.prototype.hasOwnProperty.call(existing, 'value') ? existing.value : undefined;
+    Object.defineProperty(window, 'WildlifeSpawn', {
+      configurable: true,
+      enumerable: true,
+      get() { return current; },
+      set(value) {
+        current = patchWildlifeSpawn(value);
+        Object.defineProperty(window, 'WildlifeSpawn', {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: current,
+        });
+      },
+    });
     return true;
   }
 
@@ -360,8 +482,9 @@
     if (originalUpdate) {
       api.updateNestInteraction = function denLocaleUpdate(dt) {
         const result = originalUpdate(dt);
-        // Run after DenNestSystem's own layout pass so authored transforms are
-        // authoritative for the frame rather than immediately overwritten.
+        // DenNestSystem lays out its fallback positions first. Authored locale
+        // transforms then win for the final rendered frame, while old/unconverted
+        // nests continue to use the fallback path unchanged.
         syncCurrentDen();
         return result;
       };
@@ -369,11 +492,11 @@
     return true;
   }
 
-  installWildlifeBridge();
+  watchWildlifeSpawnAssignment();
   installDenNestBridge();
 
   window.DenLocaleRuntime = {
-    version: 2,
+    version: 3,
     ready,
     locale: () => locale,
     encounter: () => encounter,
@@ -382,6 +505,8 @@
     debugSnapshot: () => ({
       installed,
       wildlifeInstalled,
+      wildlifeWatchInstalled,
+      wildlifeDepsReady: !!wildlifeDeps,
       loaded: !!encounter,
       source: localOverrideLocale() ? 'local-override' : 'repo',
       localeId: locale?.id || null,
