@@ -5,6 +5,7 @@ const path = require('path'); // Resolves repository-relative paths from this sc
 
 const root = process.env.HOBUNJI_REPO || path.join(__dirname, '..');
 const split = fs.readFileSync(path.join(root, 'docs/js/terrain-jigsaw-surface-split.js'), 'utf8');
+const exclusion = fs.readFileSync(path.join(root, 'docs/js/natural-surface-jigsaw-exclusion.js'), 'utf8');
 const loader = fs.readFileSync(path.join(root, 'docs/js/house-pieces.js'), 'utf8');
 const boundary = fs.readFileSync(path.join(root, 'docs/tools/background-scenery-author/index.html'), 'utf8');
 
@@ -32,6 +33,22 @@ for (const forbidden of [
   if (split.includes(forbidden)) throw new Error(`segmented Jigsaw must not install competing live ownership: ${forbidden}`);
 }
 
+for (const expected of [
+  "const FINAL_OWNER = 'surface-split-jigsaw-v2'",
+  'const WALL_NORMAL_Y_MAX = 0.55',
+  'texture.wrapS = THREE.RepeatWrapping',
+  'texture.wrapT = THREE.ClampToEdgeWrapping',
+  "texture.name = `${sourceMaterial.map.name || 'natural'}__jigsaw_repeatU`",
+  'width > 4 && height > 4',
+  'patchMapperAfterSegmentedJigsaw()',
+  '=== Segmented Jigsaw material parity ===',
+]) {
+  if (!exclusion.includes(expected)) throw new Error(`segmented Jigsaw material-parity contract missing: ${expected}`);
+}
+if (!/Object\.defineProperty\(window, 'TerrainJigsawSurfaceSplit'/.test(exclusion)) {
+  throw new Error('material parity must install immediately when the later segmented-Jigsaw API becomes available.');
+}
+
 if (!loader.includes("['TerrainJigsawSurfaceSplit', 'terrain-jigsaw-surface-split.js?v=20260914b']")) {
   throw new Error('HousePieces does not load the single-pass segmented Jigsaw adapter.');
 }
@@ -52,4 +69,4 @@ if (!(protectedIndex >= 0 && boundarySplitIndex > protectedIndex && previewIndex
   throw new Error('Boundary Terrain must install the r128 baker bridge, then segmented Jigsaw, then its 3D comparison preview.');
 }
 
-console.log('Segmented Jigsaw single-owner regression passed.');
+console.log('Segmented Jigsaw single-owner + material-parity regression passed.');
