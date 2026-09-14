@@ -401,10 +401,9 @@
   }
 
   // WeatherFX originally owns the same 2D lighting/lantern canvas before and
-  // after this patch. The only change here is that its outdoor base tint now
-  // reads the exact same 24-hour state as the skydome. This removes the
-  // overnight 22:00-06:00 disagreement between WeatherFX's legacy stops and
-  // the full-day sky stops without changing the rendering architecture.
+  // after this patch. This shared pass reads the exact same 24-hour + overcast
+  // state as the skydome and now also applies the skydome's ambient-darkness
+  // lantern activation curve to outdoor player/watch lantern masks.
   let lightingDeps = null;
   let lastUnifiedLightingDraw = 0;
   const lightCamRight = new window.THREE.Vector3();
@@ -420,7 +419,14 @@
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
-  function drawLanternMasksCompat() {
+  function currentOutdoorLanternActivation() {
+    const value = window.HobunjiSkyDome?.getLanternActivationStrength?.(); // Used by outdoor lantern masks so weather/daylight and lantern visibility share one darkness threshold.
+    return Number.isFinite(value) ? clamp01(value) : 1;
+  }
+
+  function drawLanternMasksCompat(activation = 1) {
+    const lanternStrength = clamp01(activation); // Scales all player/watch mask alphas while the ambient-light threshold fades lanterns on or off.
+    if (lanternStrength <= 0) return;
     const ctx = lightingDeps.lctx;
     const carriers = [{
       x: lightingDeps.player.x / lightingDeps.TILE,
@@ -442,11 +448,11 @@
       if (!(shineR > 0)) continue;
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha})`);
-      grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha})`);
+      grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * lanternStrength})`);
+      grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha * lanternStrength})`);
       grad.addColorStop(
         Math.min(1, clarityFrac + lanternTuning.softTransitionFraction),
-        `rgba(0,0,0,${lanternTuning.softMaskAlpha})`,
+        `rgba(0,0,0,${lanternTuning.softMaskAlpha * lanternStrength})`,
       );
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
@@ -520,8 +526,8 @@
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
       ctx.fillRect(0, 0, rect.width, rect.height);
-      // Enclosed areas still need the carried lantern to clear the darkness layer.
-      drawLanternMasksCompat();
+      // Enclosed areas still need the carried lantern fully active regardless of outdoor weather/daylight.
+      drawLanternMasksCompat(1);
       drawFurnitureLightMasksCompat();
       if (sceneTransAlpha > 0) {
         ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
@@ -536,8 +542,8 @@
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
-    // Same original local-light behavior; no horizon/depth masking or canvas proxy.
-    drawLanternMasksCompat();
+    // Outdoor carried/watch lanterns fade on only once effective ambient darkness crosses the shared threshold.
+    drawLanternMasksCompat(currentOutdoorLanternActivation());
     drawFurnitureLightMasksCompat();
 
     if (lightningAlpha > 0) {
@@ -595,6 +601,7 @@
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
         undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
+        outdoorLanternActivation: currentOutdoorLanternActivation(),
         renderingMode: 'original-skydome-visibility-only',
         lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
         moonIllumination: currentMoonIllumination(),
