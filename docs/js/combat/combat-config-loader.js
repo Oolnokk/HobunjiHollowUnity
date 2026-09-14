@@ -107,6 +107,7 @@
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
     ['js/npc-social-relationship-bridge-v2.js?v=20260906dance1', () => !!window.NpcRapport?.eventDriven],
     ['js/generic-hud-icons.js?v=20260905a', () => Number(window.HobunjiGenericHudIcons?.version) >= 1],
+    ['js/sleep-passage-action-bridge.js?v=20260914a', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 1],
     ['js/day-progress-review.js?v=20260914b', () => Number(window.DayProgressReview?.version) >= 1],
     ['js/menu-tab-icon-only.js?v=20260907a', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
     ['js/npc-social-seating-bridge.js?v=20260904a', () => !!window.HobunjiNpcSocialSeating],
