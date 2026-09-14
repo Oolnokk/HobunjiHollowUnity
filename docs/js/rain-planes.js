@@ -1,34 +1,53 @@
 (() => {
   'use strict';
 
-  // Camera sheets and experimental map-row bands share one dynamically-sized mesh pool.
+  // Rain and Western Slope blizzard share the same plane pool and placement/update logic.
   let deps = null;
   let group = null;
-  let sourceTexture = null;
+  let rainSourceTexture = null;
+  const blizzardSourceTextures = [];
   let attachedScene = null;
   const layers = [];
   let cameraForward = null; // Reused by update() to avoid per-frame allocation.
   let cameraEuler = null; // Supplies independently-toggleable camera X/Y/Z rotation.
+  let rowTravelCoordinate = 0; // Player travel projected onto the current precipitation-row axis; preserves walking-through-row parallax while yaw rotates around the player.
+  let rowLastPlayerX = null;
+  let rowLastPlayerZ = null;
 
   const RAW_SPRITE_LEAN_DEG = -30; // Native procedural streak lean before correction.
   const SPRITE_PRE_ROTATION_DEG = 30; // Corrects the native sprite so neutral rain points down.
+  const WESTERN_SLOPE_ID = 'map_western_slope'; // Western Slope swaps snow content into the ordinary rain planes.
+  const BLIZZARD_AUDIO_RAIN_STRENGTH = 1; // Used only while mixing BGS so the blizzard gets a quiet wind bed instead of full rain-strength wind.
 
   const CAMERA_CONFIG = [
     { distance: 4.5, repeatX: 6.0, repeatY: 5.0, speed: 1.08, opacity: 0.20 },
     { distance: 8.0, repeatX: 9.0, repeatY: 6.8, speed: 0.78, opacity: 0.15 },
     { distance: 12.5, repeatX: 12.0, repeatY: 9.0, speed: 0.55, opacity: 0.10 },
   ];
+
+  const BLIZZARD_PRESET = Object.freeze({
+    density: 2000,
+    windDirection: 250,
+    windSpeed: 850,
+    gravity: 70,
+    gusts: 0,
+    streakChance: 1,
+    textureWidth: 640,
+    textureHeight: 360,
+    seed: 1592594996,
+  }); // Matches the accepted prototype settings; only the plane content differs from rain at runtime.
+
   const settings = {
     mode: 'rows', // Row Bands is the production default; Arena buttons can compare both modes.
-    lockRowZ: true, // Locks each experimental band to a world-Z row.
-    followScreenX: true, // Slides a row band along X to keep it centered in view.
+    lockRowZ: true, // Locks each experimental band to a row in the player-centered precipitation frame.
+    followScreenX: true, // Slides a row band laterally within its rotated plane to keep it centered in view.
     followCameraY: true, // Slides a row band vertically along the camera's view ray.
     inheritRotationX: false, // Applies camera pitch to each plane.
-    inheritRotationY: false, // Keeps row planes world-aligned instead of inheriting camera yaw.
+    inheritRotationY: false, // Camera-sheet mode toggle; row mode always follows camera yaw as one player-centered lattice.
     inheritRotationZ: false, // Applies camera roll to each plane.
     scaleWithCameraDistance: false, // Optional old behavior; off keeps row-band depth visually legible.
-    speedMultiplier: 3, // Global rain UV speed, exposed in the Testing Arena.
-    rowSpacingTiles: 2.5, // Controls the world-Z distance between experimental bands.
+    speedMultiplier: 3, // Global precipitation UV speed, exposed in the Testing Arena.
+    rowSpacingTiles: 2.5, // Controls distance between precipitation bands along the camera-yaw row axis.
     frontCount: 5, // Number of nearest row bands kept active toward the camera.
     behindCount: 12, // Number of nearest row bands kept active behind the player.
   };
@@ -38,7 +57,67 @@
     return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
   }
 
-  function createSourceTexture() {
+  function mulberry32(seed) {
+    return () => {
+      seed |= 0;
+      seed = seed + 0x6D2B79F5 | 0;
+      let value = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
+      return ((value ^ value >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function isWesternSlopeBlizzardActive() {
+    return Boolean(
+      deps
+      && deps.getCurrentArea?.() === WESTERN_SLOPE_ID
+      && deps.isOutdoorArea?.()
+      && deps.calendar?.isRaining
+    );
+  }
+
+  function installBlizzardAudioRouting() {
+    const music = window.Music;
+    if (!music || music.__westernSlopeBlizzardAudioRoutingInstalled) return;
+    if (typeof music.updateRainAudio !== 'function' || typeof music.updateExteriorBgs !== 'function') return;
+
+    const priorUpdateRainAudio = music.updateRainAudio;
+    const priorUpdateExteriorBgs = music.updateExteriorBgs;
+
+    music.updateRainAudio = function (...args) {
+      if (!isWesternSlopeBlizzardActive()) return priorUpdateRainAudio.apply(this, args);
+
+      // Reuse the rain audio mixer's own fade/stop path by presenting this one
+      // precipitation case as dry. This fades gentle/mid/heavy rain to zero
+      // without reaching into music-system.js's private looping-BGS registry.
+      const priorRaining = deps.calendar.isRaining;
+      deps.calendar.isRaining = false;
+      try {
+        return priorUpdateRainAudio.apply(this, args);
+      } finally {
+        deps.calendar.isRaining = priorRaining;
+      }
+    };
+
+    music.updateExteriorBgs = function (...args) {
+      if (!isWesternSlopeBlizzardActive()) return priorUpdateExteriorBgs.apply(this, args);
+
+      // The ordinary exterior mixer already owns the real wind recordings and
+      // smooth BGS fades. Feed it a deliberately low weather strength so a
+      // blizzard gets one subtle wind layer instead of the stronger rain mix.
+      const priorRainStrength = deps.calendar.rainStrength;
+      deps.calendar.rainStrength = BLIZZARD_AUDIO_RAIN_STRENGTH;
+      try {
+        return priorUpdateExteriorBgs.apply(this, args);
+      } finally {
+        deps.calendar.rainStrength = priorRainStrength;
+      }
+    };
+
+    music.__westernSlopeBlizzardAudioRoutingInstalled = true;
+  }
+
+  function createRainSourceTexture() {
     const THREE = deps.THREE;
     cameraForward = new THREE.Vector3(0, 0, -1);
     const canvas = document.createElement('canvas');
@@ -77,27 +156,87 @@
     return texture;
   }
 
-  function mulberry32(seed) {
-    return () => {
-      seed |= 0;
-      seed = seed + 0x6D2B79F5 | 0;
-      let value = Math.imul(seed ^ seed >>> 15, 1 | seed);
-      value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
-      return ((value ^ value >>> 14) >>> 0) / 4294967296;
-    };
+  function putSnowPixel(imageData, x, y, alpha) {
+    const width = imageData.width;
+    const height = imageData.height;
+    x = ((x % width) + width) % width;
+    y = ((y % height) + height) % height;
+    const index = (y * width + x) * 4;
+    const a = Math.max(imageData.data[index + 3], alpha);
+    imageData.data[index] = 255;
+    imageData.data[index + 1] = 255;
+    imageData.data[index + 2] = 255;
+    imageData.data[index + 3] = a;
+  }
+
+  function createBlizzardSourceTexture(layerIndex) {
+    const THREE = deps.THREE;
+    const width = BLIZZARD_PRESET.textureWidth;
+    const height = BLIZZARD_PRESET.textureHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(width, height);
+    const random = mulberry32((BLIZZARD_PRESET.seed + layerIndex * 0x9E3779B9) >>> 0);
+
+    // The first prototype rendered a 640x360 field of tiny, hard white pixels.
+    // Split that density across the three authored depth families while keeping
+    // every flake one-to-a-few literal pixels with no glow or filtering.
+    const layerDensityScale = [0.46, 0.34, 0.20][layerIndex % 3];
+    const referenceArea = 1280 * 720;
+    const areaScale = (width * height) / referenceArea;
+    const count = Math.max(1, Math.round(BLIZZARD_PRESET.density * areaScale * layerDensityScale));
+    const windRadians = BLIZZARD_PRESET.windDirection * Math.PI / 180;
+    const streakDX = Math.cos(windRadians);
+    const streakDY = Math.sin(windRadians);
+    const depthLengths = [5, 3, 2];
+    const maxLength = depthLengths[layerIndex % depthLengths.length];
+
+    for (let i = 0; i < count; i++) {
+      const x = Math.floor(random() * width);
+      const y = Math.floor(random() * height);
+      const alpha = Math.round(155 + random() * 100);
+      const length = 1 + Math.floor(random() * maxLength);
+      for (let s = 0; s < length; s++) {
+        const px = Math.round(x - streakDX * s);
+        const py = Math.round(y - streakDY * s);
+        putSnowPixel(imageData, px, py, Math.max(64, alpha - s * 26));
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function cloneConfiguredTexture(source, config, index) {
+    const THREE = deps.THREE;
+    const texture = source.clone();
+    texture.image = source.image;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(config.repeatX, config.repeatY);
+    texture.offset.set(index * 0.173, index * 0.317);
+    texture.minFilter = source.minFilter;
+    texture.magFilter = source.magFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    return texture;
   }
 
   function makeLayer(index) {
     const THREE = deps.THREE;
-    const config = CAMERA_CONFIG[index % CAMERA_CONFIG.length];
-    const texture = sourceTexture.clone();
-    texture.image = sourceTexture.image;
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(config.repeatX, config.repeatY);
-    texture.offset.set(index * 0.173, index * 0.317);
-    texture.needsUpdate = true;
+    const configIndex = index % CAMERA_CONFIG.length;
+    const config = CAMERA_CONFIG[configIndex];
+    const rainTexture = cloneConfiguredTexture(rainSourceTexture, config, index);
+    const blizzardTexture = cloneConfiguredTexture(blizzardSourceTextures[configIndex], config, index);
     const material = new THREE.MeshBasicMaterial({
-      map: texture,
+      map: rainTexture,
       color: 0xcce8ff,
       transparent: true,
       opacity: 0,
@@ -113,33 +252,66 @@
     mesh.userData.isBillboard = true;
     mesh.visible = false;
     group.add(mesh);
-    return { mesh, material, texture, config, rowKey: null, currentOpacity: 0 };
+    return {
+      mesh,
+      material,
+      texture: rainTexture,
+      rainTexture,
+      blizzardTexture,
+      contentKind: 'rain',
+      config,
+      rowKey: null,
+      currentOpacity: 0,
+    };
   }
 
   function ensureLayerCount(count) {
     while (layers.length < count) layers.push(makeLayer(layers.length));
   }
 
+  function setLayerContent(layer, kind) {
+    if (layer.contentKind === kind) return;
+    const texture = kind === 'blizzard' ? layer.blizzardTexture : layer.rainTexture;
+    layer.texture = texture;
+    layer.material.map = texture;
+    layer.material.color.set(kind === 'blizzard' ? 0xffffff : 0xcce8ff);
+    layer.material.needsUpdate = true;
+    layer.contentKind = kind;
+  }
+
+  function setAllLayerContent(kind) {
+    layers.forEach(layer => setLayerContent(layer, kind));
+  }
+
+  function resetRowFrameTracking() {
+    rowTravelCoordinate = 0;
+    rowLastPlayerX = null;
+    rowLastPlayerZ = null;
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     const THREE = deps.THREE;
-    sourceTexture = createSourceTexture();
+    rainSourceTexture = createRainSourceTexture();
+    blizzardSourceTextures.length = 0;
+    for (let i = 0; i < CAMERA_CONFIG.length; i++) blizzardSourceTextures.push(createBlizzardSourceTexture(i));
     cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     group = new THREE.Group();
     group.name = 'world_rain_planes';
     group.userData.isBillboard = true;
     ensureLayerCount(3);
+    installBlizzardAudioRouting();
   }
 
   function advanceTexture(layer, dt, speedMultiplier) {
-    // Canvas UV origin makes positive Y offset move the drawn drops downward on screen.
+    // The same UV movement drives both rain and snow; Western Slope only swaps plane content.
     layer.texture.offset.y = (layer.texture.offset.y + dt * layer.config.speed * speedMultiplier) % 1;
   }
 
-  function applyPlaneRotation(mesh) {
+  function applyPlaneRotation(mesh, yawOverride = null) {
     mesh.rotation.set(
       settings.inheritRotationX ? cameraEuler.x : 0,
-      settings.inheritRotationY ? cameraEuler.y : 0,
+      Number.isFinite(yawOverride) ? yawOverride : (settings.inheritRotationY ? cameraEuler.y : 0),
       settings.inheritRotationZ ? cameraEuler.z : 0,
       'YXZ',
     );
@@ -167,20 +339,27 @@
     });
   }
 
-  function desiredRows(playerZ, towardCameraSign) {
+  function desiredRows(playerRowCoordinate) {
     const spacing = settings.rowSpacingTiles;
     const rows = [];
-    const gridPosition = playerZ / spacing;
+    const gridPosition = playerRowCoordinate / spacing;
     const addDirection = (sign, count, side) => {
       const firstIndex = sign > 0 ? Math.floor(gridPosition) + 1 : Math.ceil(gridPosition) - 1;
       const maxDistance = Math.max(spacing, spacing * count);
       for (let i = 0; i < count; i++) {
-        const z = (firstIndex + sign * i) * spacing;
-        rows.push({ z, side, distance: Math.abs(z - playerZ), maxDistance, order: i });
+        const rowCoordinate = (firstIndex + sign * i) * spacing;
+        rows.push({
+          rowCoordinate,
+          side,
+          distance: Math.abs(rowCoordinate - playerRowCoordinate),
+          maxDistance,
+          order: i,
+        });
       }
     };
-    addDirection(towardCameraSign, settings.frontCount, 'front');
-    addDirection(-towardCameraSign, settings.behindCount, 'behind');
+    // Local +Z is defined as the camera-facing direction, so "front" is always positive in this frame.
+    addDirection(1, settings.frontCount, 'front');
+    addDirection(-1, settings.behindCount, 'behind');
     return rows;
   }
 
@@ -188,7 +367,7 @@
     ensureLayerCount(Math.max(3, assignments.length));
     const unused = new Set(layers);
     const claimed = assignments.map(assignment => {
-      const key = `${assignment.side}:${assignment.z}`;
+      const key = `${assignment.side}:${assignment.rowCoordinate}`;
       const layer = [...unused].find(candidate => candidate.rowKey === key) || null;
       if (layer) unused.delete(layer);
       return { assignment, key, layer };
@@ -207,27 +386,60 @@
   function updateRowLayers(dt, context) {
     const playerX = deps.player.x / deps.TILE;
     const playerZ = deps.player.y / deps.TILE;
-    const towardCameraSign = Math.sign(context.camera.position.z - playerZ) || 1;
-    const active = assignRowLayers(desiredRows(playerZ, towardCameraSign));
+    const horizontalForwardLength = Math.hypot(cameraForward.x, cameraForward.z);
+    // PlaneGeometry faces +Z at yaw 0. Rotate that local +Z to point back toward
+    // the camera, so the entire row lattice rotates around the player's X/Z.
+    const rowYaw = horizontalForwardLength > 0.0001
+      ? Math.atan2(-cameraForward.x, -cameraForward.z)
+      : cameraEuler.y;
+    const cosYaw = Math.cos(rowYaw);
+    const sinYaw = Math.sin(rowYaw);
+
+    // Keep the old "walking through equally spaced rows" effect. Rotation alone
+    // does not change row phase; only player movement projected along the current
+    // row axis advances the scalar lattice coordinate.
+    if (rowLastPlayerX !== null && rowLastPlayerZ !== null) {
+      const dx = playerX - rowLastPlayerX;
+      const dz = playerZ - rowLastPlayerZ;
+      const rowAxisX = sinYaw;
+      const rowAxisZ = cosYaw;
+      rowTravelCoordinate += dx * rowAxisX + dz * rowAxisZ;
+    }
+    rowLastPlayerX = playerX;
+    rowLastPlayerZ = playerZ;
+
+    // Transform camera X/Z into the unrotated row frame. In that frame the old
+    // north/south row math remains valid and camera yaw can never make the ray
+    // denominator collapse toward zero.
+    const cameraDX = context.camera.position.x - playerX;
+    const cameraDZ = context.camera.position.z - playerZ;
+    const localCameraX = cameraDX * cosYaw - cameraDZ * sinYaw;
+    const localCameraZ = cameraDX * sinYaw + cameraDZ * cosYaw;
+    const localForwardX = cameraForward.x * cosYaw - cameraForward.z * sinYaw;
+    const localForwardZ = cameraForward.x * sinYaw + cameraForward.z * cosYaw;
+
+    const active = assignRowLayers(desiredRows(rowTravelCoordinate));
     const activeLayers = new Set(active.map(entry => entry.layer));
     layers.forEach(layer => { if (!activeLayers.has(layer)) layer.mesh.visible = false; });
 
     for (const { assignment, layer } of active) {
       const { mesh, material, config } = layer;
       const cameraRelativeDistance = config.distance;
-      const z = settings.lockRowZ
-        ? assignment.z
-        : context.camera.position.z + cameraForward.z * cameraRelativeDistance;
+      const localZ = settings.lockRowZ
+        ? assignment.rowCoordinate - rowTravelCoordinate
+        : localCameraZ + localForwardZ * cameraRelativeDistance;
       let rayDistance = Math.abs(cameraRelativeDistance);
-      if (settings.lockRowZ && Math.abs(cameraForward.z) > 0.001) {
-        rayDistance = (z - context.camera.position.z) / cameraForward.z;
+      if (settings.lockRowZ && Math.abs(localForwardZ) > 0.001) {
+        rayDistance = (localZ - localCameraZ) / localForwardZ;
       }
       const sizingDistance = Math.max(0.5, Math.abs(rayDistance));
       const scaleDistance = settings.scaleWithCameraDistance ? sizingDistance : 8;
       const viewHeight = 2 * scaleDistance * context.halfFovTan;
-      const x = settings.followScreenX
-        ? context.camera.position.x + cameraForward.x * rayDistance
-        : playerX;
+      const localX = settings.followScreenX
+        ? localCameraX + localForwardX * rayDistance
+        : 0;
+      const x = playerX + localX * cosYaw + localZ * sinYaw;
+      const z = playerZ - localX * sinYaw + localZ * cosYaw;
       const y = settings.followCameraY
         ? context.camera.position.y + cameraForward.y * rayDistance
         : deps.getPlayerGroundY() + viewHeight * 0.5;
@@ -237,7 +449,7 @@
       layer.currentOpacity += (targetOpacity - layer.currentOpacity) * fadeLerp;
       material.opacity = layer.currentOpacity;
       mesh.position.set(x, y, z);
-      applyPlaneRotation(mesh);
+      applyPlaneRotation(mesh, rowYaw);
       mesh.scale.set(viewHeight * context.aspect * 1.8, viewHeight * 1.8, 1);
       mesh.renderOrder = 900 + Math.max(0, 20 - Math.round(sizingDistance));
       mesh.visible = layer.currentOpacity > 0.001 || targetOpacity > 0;
@@ -245,24 +457,44 @@
     }
   }
 
+  function hideLayers() {
+    layers.forEach(layer => {
+      layer.mesh.visible = false;
+      layer.currentOpacity = 0;
+      layer.material.opacity = 0;
+      layer.rowKey = null;
+    });
+    resetRowFrameTracking();
+  }
+
   function update(dt) {
     if (!deps || !group) return;
     const activeScene = deps.getActiveScene();
-    const raining = deps.isOutdoorArea() && deps.calendar.isRaining;
+    const area = deps.getCurrentArea?.() ?? null;
+    const precipitating = deps.isOutdoorArea() && deps.calendar.isRaining;
+    const contentKind = area === WESTERN_SLOPE_ID ? 'blizzard' : 'rain';
+
     if (activeScene !== attachedScene) {
       attachedScene?.remove(group);
       activeScene?.add(group);
       attachedScene = activeScene;
+      resetRowFrameTracking();
     }
-    group.visible = raining;
-    if (!raining) return;
+
+    group.visible = precipitating;
+    if (!precipitating) {
+      hideLayers();
+      return;
+    }
+
+    ensureLayerCount(settings.mode === 'rows' ? Math.max(3, settings.frontCount + settings.behindCount) : 3);
+    setAllLayerContent(contentKind);
 
     const THREE = deps.THREE;
     const camera = deps.camera;
     camera.getWorldDirection(cameraForward);
     cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
-    // rainStrength is the weather system's precipitation-rate value. Strength 2
-    // is the normal-rain baseline; fractional/future values interpolate too.
+    // Both rain and Western Slope snow use this exact precipitation-rate path.
     const precipitationRate = clampNumber(deps.calendar.rainStrength, 0.1, 6, 2);
     const precipitationRatio = precipitationRate / 2;
     const context = {
@@ -298,12 +530,25 @@
   }
 
   function getDebugState() {
+    const area = deps?.getCurrentArea?.() ?? null;
+    const blizzardActive = Boolean(group?.visible && area === WESTERN_SLOPE_ID && deps?.calendar?.isRaining);
+    const horizontalForwardLength = cameraForward ? Math.hypot(cameraForward.x, cameraForward.z) : 0;
+    const rowYaw = horizontalForwardLength > 0.0001
+      ? Math.atan2(-cameraForward.x, -cameraForward.z)
+      : (cameraEuler?.y || 0);
     return {
       initialized: Boolean(group),
       visible: Boolean(group?.visible),
-      area: deps?.getCurrentArea?.() ?? null,
+      area,
       strength: deps?.calendar?.rainStrength ?? 0,
+      precipitationRenderer: blizzardActive ? 'rain-logic+blizzard-content' : 'rain',
+      precipitationLayout: settings.mode === 'rows' ? 'player-centered-camera-yaw-rows' : 'camera-sheets',
+      rowYawRadians: rowYaw,
+      rowTravelCoordinate,
       layerCount: layers.filter(layer => layer.mesh.visible).length,
+      blizzardPreset: { ...BLIZZARD_PRESET },
+      activeContent: blizzardActive ? 'blizzard' : 'rain',
+      blizzardAudioRouting: Boolean(window.Music?.__westernSlopeBlizzardAudioRoutingInstalled),
       settings: getSettings(),
       renderer: deps?.renderer?.info?.render ? { ...deps.renderer.info.render } : null,
     };
