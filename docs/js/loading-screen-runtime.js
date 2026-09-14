@@ -18,7 +18,7 @@
   const MAP_CALL_RE = /\b(?:enterZone|performTravel|doTravel|setCurrentArea)\b/; // Used to recognize world-map travel callbacks before their expensive work begins.
   const DEFAULT_SETTINGS = Object.freeze({
     scriptSide: 'left', imageScale: 1, panRange: 7, panSpeed: 0.055,
-    manualSpeed: 150, loreSize: 19, scriptSize: 160, scriptY: 45,
+    manualSpeed: 150, loreSize: 19, scriptSize: 120, scriptY: 45,
     columnSpacing: -0.56, scriptScrollSpeed: 0.03,
   }); // Used for the synchronous first paint before loading-screens.json finishes fetching.
   const FALLBACK_TIPS = Object.freeze([
