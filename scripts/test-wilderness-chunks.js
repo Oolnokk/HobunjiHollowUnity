@@ -126,8 +126,9 @@ const controller = context.WildernessChunks.createZone({
 let snap = controller.snapshot();
 assert.strictEqual(snap.center.x, 3);
 assert.strictEqual(snap.center.z, 3);
-assert.strictEqual(snap.loaded, 9, 'arrival should synchronously build a 3x3 neighborhood');
-assert.strictEqual(snap.queued, 16, 'remaining 5x5 outer ring should stay queued');
+assert.strictEqual(snap.immediateRadius, 0, 'arrival priming should only build the player chunk synchronously');
+assert.strictEqual(snap.loaded, 1, 'arrival should synchronously build only the player chunk');
+assert.strictEqual(snap.queued, 24, 'the rest of the 5x5 neighborhood should stay queued for staged loading');
 assert.ok(builtBounds.every(bounds =>
   bounds.colEnd - bounds.colStart <= 16 &&
   bounds.rowEnd - bounds.rowStart <= 16
@@ -135,8 +136,8 @@ assert.ok(builtBounds.every(bounds =>
 
 context.WildernessChunks.update(1 / 60);
 snap = controller.snapshot();
-assert.strictEqual(snap.loaded, 10, 'streaming budget should build one queued chunk per update');
-assert.strictEqual(snap.queued, 15);
+assert.strictEqual(snap.loaded, 2, 'streaming budget should build one queued chunk per update');
+assert.strictEqual(snap.queued, 23);
 
 player.x = (8 * 16 + 1) * TILE;
 player.y = (8 * 16 + 1) * TILE;
@@ -144,20 +145,22 @@ context.WildernessChunks.update(1 / 60);
 snap = controller.snapshot();
 assert.strictEqual(snap.center.x, 8);
 assert.strictEqual(snap.center.z, 8);
-assert.ok(snap.unloads >= 10, 'chunks beyond the hysteresis radius should unload');
+assert.ok(snap.unloads >= 2, 'chunks beyond the hysteresis radius should unload');
 assert.strictEqual(snap.loaded, 1, 'the new neighborhood should stream rather than build all at once');
+assert.strictEqual(snap.queued, 24, 'a moved-to neighborhood should keep all non-player chunks queued');
 
 context.WildernessChunks.primeZone(currentArea, 8 * 16 + 1, 8 * 16 + 1);
 snap = controller.snapshot();
-assert.strictEqual(snap.loaded, 9, 'explicit transitions/teleports should prime the safe 3x3 neighborhood');
+assert.strictEqual(snap.loaded, 1, 'explicit transitions/teleports should synchronously keep only the player chunk resident');
+assert.strictEqual(snap.queued, 24, 'explicit priming should leave surrounding chunks staged');
 
 const attached = new Node();
 assert.strictEqual(context.WildernessChunks.attachObject(currentArea, 8 * 16 + 1, 8 * 16 + 1, attached), true);
 assert.ok(attached.parent?.userData?.wildernessChunk, 'tile-owned runtime patches should attach to their chunk');
 
 const rebuilt = context.WildernessChunks.rebuildZone(currentArea, 8 * 16 + 1, 8 * 16 + 1);
-assert.strictEqual(rebuilt, 9, 'an edit should rebuild the resident chunk plus its one-chunk seam halo');
-assert.strictEqual(controller.snapshot().loaded, 9);
+assert.strictEqual(rebuilt, 1, 'an edit should rebuild only the resident player chunk while neighboring chunks remain queued');
+assert.strictEqual(controller.snapshot().loaded, 1);
 
 currentArea = 'farm';
 context.WildernessChunks.update(5);
