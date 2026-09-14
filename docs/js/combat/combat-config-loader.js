@@ -90,7 +90,7 @@
     ['js/crop-sprite-art.js?v=20260814a', () => !!window.HobunjiCropSpriteArt],
     ['js/heftroot-billboard-bridge.js?v=20260814a', () => !!window.HobunjiHeftrootBillboardBridge],
     ['js/crop-billboard-presentation.js?v=20260814a', () => !!window.HobunjiCropBillboardPresentation],
-    ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropBillboardPresentation],
+    ['js/crop-ready-presentation.js?v=20260818a', () => !!window.HobunjiCropReadyPresentation],
     ['js/mastery-policy.js?v=20260826death1', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20260913hold1', () => !!window.InventoryHeldOverride],
