@@ -181,14 +181,10 @@ const attached = new Node();
 assert.strictEqual(context.WildernessChunks.attachObject(currentArea, 9 * 16 + 1, 8 * 16 + 1, attached), true);
 assert.ok(attached.parent?.userData?.wildernessChunk, 'tile-owned runtime patches should attach to their chunk');
 
-const loadedBeforeRebuild = controller.snapshot().loaded;
 const rebuilt = context.WildernessChunks.rebuildZone(currentArea, 9 * 16 + 1, 8 * 16 + 1);
 assert.ok(rebuilt >= 1, 'an edit should rebuild at least the resident player chunk');
 snap = controller.snapshot();
-assert.ok(
-  snap.loaded <= loadedBeforeRebuild - rebuilt + 1,
-  'low-memory edit rebuilds should restore at most one affected resident chunk synchronously while untouched hysteresis chunks remain resident'
-);
+assert.ok(snap.loaded <= 1, 'low-memory edit rebuilds should restore only one affected chunk synchronously');
 assert.ok(snap.queued <= 8, 'affected neighbor rebuilds should return through the paced in-radius queue');
 
 currentArea = 'farm';
