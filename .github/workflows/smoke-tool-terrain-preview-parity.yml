@@ -10,6 +10,7 @@ on:
       - 'docs/js/tool-terrain-preview-parity.js'
       - 'docs/js/surface-stretch-uv-furniture.js'
       - 'docs/js/natural-surface-materials.js'
+      - 'docs/js/natural-surface-jigsaw-exclusion.js'
       - 'docs/js/terrain-render-chunks.js'
       - 'docs/js/terrain-jigsaw-surface-split.js'
       - 'docs/js/house-pieces.js'
@@ -45,6 +46,7 @@ jobs:
           node --check docs/js/panel-ui.js
           node --check docs/js/map-editor-terrain-texture-fix.js
           node --check docs/js/tool-terrain-preview-parity.js
+          node --check docs/js/natural-surface-jigsaw-exclusion.js
           node --check docs/js/terrain-jigsaw-surface-split.js
           node --check docs/tools/background-scenery-author/protected-edge-stretch.js
           node --check docs/tools/background-scenery-author/scenery-3d-preview.js
