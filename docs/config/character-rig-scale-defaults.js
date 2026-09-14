@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 10; // Reduces the Mao-ao male whole-character tuple by 20% while preserving its authored proportions and prior foot tuning.
+  const VERSION = 11; // Raises the current Mao-ao male whole-character tuple by 10% while preserving its proportions and prior foot tuning.
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8823529411764706, offsetY: 0 }),
     'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
@@ -22,7 +22,7 @@
     'engh-sho::female': Object.freeze({ x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 }),
     'harlyao::male': Object.freeze({ x: 0.96, y: 1.014, head: 0.9473684210526315, offsetY: 0 }),
     'harlyao::female': Object.freeze({ x: 0.954, y: 0.972, head: 0.9473684210526315, offsetY: 0 }),
-    'mao-ao::male': Object.freeze({ x: 0.675, y: 0.9, head: 0.6, offsetY: 0 }),
+    'mao-ao::male': Object.freeze({ x: 0.7425, y: 0.99, head: 0.66, offsetY: 0 }),
     'mao-ao::female': Object.freeze({ x: 1.045, y: 1.30625, head: 0.9375, offsetY: 0 }),
     'kenkari::male': Object.freeze({ x: 1.225, y: 1.225, head: 1, offsetY: 0 }),
     'kenkari::female': Object.freeze({ x: 1.1, y: 1.1, head: 1, offsetY: 0 }),
