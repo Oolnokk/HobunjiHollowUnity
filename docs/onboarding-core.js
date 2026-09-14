@@ -300,6 +300,10 @@
   let _selWorldId  = null;   // selected world id, or 'new' for new world
   let _newWorldName = '';    // in-progress name typed for a not-yet-created world
   let _flowStep    = null;   // 'save-select' | 'char-create'
+  // Within 'save-select', the wizard sub-step: save source is resolved first
+  // (it decides which characters/worlds even exist to pick from), then
+  // character, then world — see buildSaveSelectHTML()/rerenderSaveSelect().
+  let _saveFlowStep = null;  // 'source' | 'character' | 'world'
 
   // ── Utilities ─────────────────────────────────────────────────────────
   function esc(s) {
@@ -860,12 +864,76 @@
     </div>`;
   }
 
+  // Numbered progress strip shown at the top of every save-select step —
+  // the whole point of splitting this into steps is that the player always
+  // knows where they are in Source → Character → World, so this renders on
+  // all three.
+  function _stepIndicatorHtml(step) {
+    const steps = [
+      { key: 'source',    label: 'Save Source' },
+      { key: 'character', label: 'Character' },
+      { key: 'world',     label: 'World' },
+    ];
+    const idx = steps.findIndex(s => s.key === step);
+    return `<div class="sl-steps">${steps.map((s, i) => `
+      <div class="sl-step${i === idx ? ' sl-step-active' : ''}${i < idx ? ' sl-step-done' : ''}">
+        <span class="sl-step-num">${i + 1}</span><span class="sl-step-label">${esc(s.label)}</span>
+      </div>`).join('<div class="sl-step-sep"></div>')}</div>`;
+  }
+
   function buildSaveSelectHTML() {
-    const meta     = _saveMeta || makeSaveMeta();
-    const chars    = meta.characters || [];
-    const selChar  = chars.find(c => c.id === _selCharId) || null;
-    const worlds   = selChar ? worldsForCharacter(meta, selChar.id) : [];
-    const selWorld = (_selWorldId && _selWorldId !== 'new') ? worlds.find(w => w.id === _selWorldId) : null;
+    if (_saveFlowStep === 'character') return buildCharacterStepHTML();
+    if (_saveFlowStep === 'world')     return buildWorldStepHTML();
+    return buildSaveSourceStepHTML();
+  }
+
+  // ── Step 1: where do this session's saves come from ──────────────────
+  // Resolved before character/world even render, since restoring from Cloud
+  // or a Local Folder replaces the whole character/world list those later
+  // steps read from (both restore actions end in a page reload, re-entering
+  // here with the restored data now living in "This Browser").
+  function buildSaveSourceStepHTML() {
+    const meta        = _saveMeta || makeSaveMeta();
+    const chars       = meta.characters || [];
+    const resumeChar  = chars.find(c => c.id === _selCharId) || null;
+    const resumeWorlds = resumeChar ? worldsForCharacter(meta, resumeChar.id) : [];
+    const resumeWorld  = (_selWorldId && _selWorldId !== 'new') ? resumeWorlds.find(w => w.id === _selWorldId) : null;
+
+    const resumeHtml = (resumeChar && resumeWorld) ? `
+      <div class="sl-section sl-resume-section">
+        <button class="ob-start-btn sl-resume-btn" id="slQuickResume" type="button">▶ Resume — ${esc(resumeChar.nickname || 'Farmer')} on ${esc(resumeWorld.label || 'Hobunji Hollow')}</button>
+      </div>` : '';
+
+    return `<div class="ob-card sl-card">
+      <div class="ob-title">🌿 Hobunji Hollow</div>
+      ${_stepIndicatorHtml('source')}
+      ${resumeHtml}
+      <div class="sl-section">
+        <div class="sl-section-label">This Browser</div>
+        <div style="padding:4px 4px 8px;line-height:1.45;color:var(--ob-muted,#aeb9bd);">${
+          chars.length ? `${chars.length} farmer${chars.length === 1 ? '' : 's'} saved in this browser.` : `No farmers saved in this browser yet.`
+        }</div>
+      </div>
+      ${_localSaveFolderSectionHtml()}
+      <div class="sl-section sl-local-save-section">
+        <div class="sl-section-label">Cloud</div>
+        <div class="sl-local-save-row">
+          <span class="sl-local-save-status">Sign in to sync saves across devices.</span>
+          <button type="button" class="sl-local-save-btn" id="slSourceCloud">☁ Cloud Save</button>
+        </div>
+      </div>
+      ${_dbSourceSectionHtml()}
+      <div class="sl-footer">
+        <span></span>
+        <button class="ob-start-btn" id="slSourceContinue" type="button">Choose Your Farmer →</button>
+      </div>
+    </div>`;
+  }
+
+  // ── Step 2: character ─────────────────────────────────────────────────
+  function buildCharacterStepHTML() {
+    const meta  = _saveMeta || makeSaveMeta();
+    const chars = meta.characters || [];
 
     const charCardsHtml = chars.map(c => `
       <button class="sl-char-card${c.id === _selCharId ? ' sl-selected' : ''}" data-sl-char="${esc(c.id)}" type="button">
@@ -882,8 +950,39 @@
       <div class="sl-char-name">New Farmer</div>
     </button>`;
 
-    let worldSectionHtml = '';
-    if (selChar) {
+    return `<div class="ob-card sl-card">
+      <div class="ob-title">🌿 Hobunji Hollow</div>
+      ${_stepIndicatorHtml('character')}
+      <div class="sl-section">
+        <div class="sl-section-label">Choose Your Farmer</div>
+        <div class="sl-char-grid">${charCardsHtml}${newCharHtml}</div>
+      </div>
+      <div class="sl-footer">
+        <button class="ob-tab ob-back-tab" id="slBackToSource" type="button">← Back</button>
+        <span style="display:flex;gap:8px;align-items:center;">
+          ${_selCharId ? `<button class="sl-delete-btn" id="slDeleteChar" type="button">🗑 Delete</button>` : ''}
+          <button class="ob-start-btn" id="slCharNext" type="button"${_selCharId ? '' : ' disabled'}>Choose Your World →</button>
+        </span>
+      </div>
+    </div>`;
+  }
+
+  // ── Step 3: world ──────────────────────────────────────────────────────
+  function buildWorldStepHTML() {
+    const meta    = _saveMeta || makeSaveMeta();
+    const chars   = meta.characters || [];
+    const selChar = chars.find(c => c.id === _selCharId) || null;
+    if (!selChar) {
+      // Next is disabled on the character step without a selection, so this
+      // shouldn't normally happen — fall back rather than render a broken card.
+      _saveFlowStep = 'character';
+      return buildCharacterStepHTML();
+    }
+    const worlds   = worldsForCharacter(meta, selChar.id);
+    const selWorld = (_selWorldId && _selWorldId !== 'new') ? worlds.find(w => w.id === _selWorldId) : null;
+
+    let worldSectionHtml;
+    {
       const worldCardsHtml = worlds.map(w => {
         const owner = isWorldOwner(w, selChar.id);
         const actionBtn = owner
@@ -953,20 +1052,15 @@
       }
     }
 
-    const canPlay = selChar && (_selWorldId === 'new' || selWorld || worlds.length === 0);
+    const canPlay = _selWorldId === 'new' || selWorld || worlds.length === 0;
     const playLabel = (!selWorld && _selWorldId !== 'new' && worlds.length === 0) ? '🌱 Start New World' : '▶ Play';
 
     return `<div class="ob-card sl-card">
       <div class="ob-title">🌿 Hobunji Hollow</div>
-      ${_localSaveFolderSectionHtml()}
-      <div class="sl-section">
-        <div class="sl-section-label">Choose Your Farmer</div>
-        <div class="sl-char-grid">${charCardsHtml}${newCharHtml}</div>
-      </div>
-      ${_dbSourceSectionHtml()}
+      ${_stepIndicatorHtml('world')}
       ${worldSectionHtml}
       <div class="sl-footer">
-        ${selChar ? `<button class="sl-delete-btn" id="slDeleteChar" type="button">🗑 Delete Character</button>` : '<span></span>'}
+        <button class="ob-tab ob-back-tab" id="slBackToCharacter" type="button">← Back</button>
         <button class="ob-start-btn" id="slPlay" type="button"${canPlay ? '' : ' disabled'}>${playLabel}</button>
       </div>
     </div>`;
@@ -984,7 +1078,60 @@
     });
   }
 
-  function attachSaveSelectListeners() {
+  // ── Step 1 listeners: save source ─────────────────────────────────────
+  function attachSaveSourceListeners() {
+    if (!_el) return;
+
+    _el.querySelector('#slQuickResume')?.addEventListener('click', _playSaveSelect);
+
+    _el.querySelector('#slSourceContinue')?.addEventListener('click', () => {
+      _saveFlowStep = 'character';
+      rerenderSaveSelect();
+    });
+
+    _el.querySelector('#slSourceCloud')?.addEventListener('click', () => {
+      if (window.NetlifyCloudSave?.openPanel) {
+        window.NetlifyCloudSave.openPanel();
+      } else {
+        alert('Cloud Save has not initialized yet. Reload the Netlify deployment and try again.');
+      }
+    });
+
+    // Local Save Folder controls — see _localSaveFolderSectionHtml above and
+    // docs/js/local-save-folder.js for the actual folder/IndexedDB/File
+    // System Access API work.
+    const lsf = window.LocalSaveFolder;
+    if (lsf) {
+      _el.querySelector('#slLocalSaveChoose')?.addEventListener('click', () => lsf.chooseFolder());
+      _el.querySelector('#slLocalSaveChange')?.addEventListener('click', () => lsf.changeFolder());
+      _el.querySelector('#slLocalSaveReconnect')?.addEventListener('click', () => lsf.reconnect());
+      _el.querySelector('#slLocalSaveLoad')?.addEventListener('click', async () => {
+        if (!confirm('Load characters and worlds from your local folder? This overwrites your current browser save and reloads the page.')) return;
+        const result = await lsf.loadFromFolder();
+        alert(result.message);
+        if (result.ok) location.reload();
+      });
+    }
+
+    // Database Source controls — see _dbSourceSectionHtml above and
+    // docs/js/local-db-overrides.js. Changing the mode takes effect on the
+    // NEXT load (game.js/combat-config-loader.js only read it at boot), so a
+    // reload is needed to actually see it in-game.
+    const ldb = window.LocalDBOverrides;
+    if (ldb) {
+      _el.querySelectorAll('input[name="sl-dbsrc-mode"]').forEach(radio => radio.addEventListener('change', () => {
+        ldb.setSourceMode(radio.value);
+        rerenderSaveSelect();
+      }));
+      _el.querySelectorAll('[data-dbsrc-clear]').forEach(btn => btn.addEventListener('click', () => {
+        ldb.clearOverride(btn.dataset.dbsrcClear);
+        rerenderSaveSelect();
+      }));
+    }
+  }
+
+  // ── Step 2 listeners: character ───────────────────────────────────────
+  function attachCharacterListeners() {
     if (!_el) return;
 
     _el.querySelectorAll('[data-sl-char]').forEach(btn => btn.addEventListener('click', () => {
@@ -992,6 +1139,59 @@
       if (_selCharId !== newId) { _selCharId = newId; _selWorldId = null; _newWorldName = ''; }
       rerenderSaveSelect();
     }));
+
+    const newCharBtn = _el.querySelector('#slNewChar');
+    if (newCharBtn) newCharBtn.addEventListener('click', () => {
+      _state     = makeDefaultState('mao-ao', 'male');
+      _activeTab = 'appearance';
+      _colorAIdx = 0;
+      _colorBIdx = 0;
+      _flowStep  = 'char-create';
+      rerender();
+      ensureCosmetics().then(() => schedulePreviewRender());
+    });
+
+    const deleteBtn = _el.querySelector('#slDeleteChar');
+    if (deleteBtn) deleteBtn.addEventListener('click', () => {
+      if (!_selCharId || !_saveMeta) return;
+      if (!confirm('Delete this character and all worlds they own? This cannot be undone.')) return;
+      _saveMeta.characters = (_saveMeta.characters || []).filter(c => c.id !== _selCharId);
+      // Worlds this character owns are deleted outright; worlds where they were
+      // only a farmhand keep going for the owner, minus this character's membership.
+      _saveMeta.worlds     = (_saveMeta.worlds || []).filter(w => w.ownerCharacterId !== _selCharId);
+      _saveMeta.worlds.forEach(w => {
+        removeFarmhand(w, _selCharId);
+        if (w.members) delete w.members[_selCharId];
+      });
+      saveSaveMeta(_saveMeta);
+      _selCharId  = _saveMeta.characters[0]?.id ?? null;
+      _selWorldId = null;
+      if (!_saveMeta.characters.length) {
+        _state = makeDefaultState('mao-ao', 'male');
+        _activeTab = 'appearance'; _colorAIdx = 0; _colorBIdx = 0;
+        _flowStep = 'char-create';
+        rerender();
+        ensureCosmetics().then(() => schedulePreviewRender());
+      } else {
+        rerenderSaveSelect();
+      }
+    });
+
+    _el.querySelector('#slBackToSource')?.addEventListener('click', () => {
+      _saveFlowStep = 'source';
+      rerenderSaveSelect();
+    });
+
+    _el.querySelector('#slCharNext')?.addEventListener('click', () => {
+      if (!_selCharId) return;
+      _saveFlowStep = 'world';
+      rerenderSaveSelect();
+    });
+  }
+
+  // ── Step 3 listeners: world ────────────────────────────────────────────
+  function attachWorldListeners() {
+    if (!_el) return;
 
     _el.querySelectorAll('[data-sl-world]').forEach(btn => btn.addEventListener('click', () => {
       _selWorldId = btn.dataset.slWorld;
@@ -1060,83 +1260,22 @@
       newWorldNameInput.focus();
     }
 
-    const newCharBtn = _el.querySelector('#slNewChar');
-    if (newCharBtn) newCharBtn.addEventListener('click', () => {
-      _state     = makeDefaultState('mao-ao', 'male');
-      _activeTab = 'appearance';
-      _colorAIdx = 0;
-      _colorBIdx = 0;
-      _flowStep  = 'char-create';
-      rerender();
-      ensureCosmetics().then(() => schedulePreviewRender());
-    });
-
-    const deleteBtn = _el.querySelector('#slDeleteChar');
-    if (deleteBtn) deleteBtn.addEventListener('click', () => {
-      if (!_selCharId || !_saveMeta) return;
-      if (!confirm('Delete this character and all worlds they own? This cannot be undone.')) return;
-      _saveMeta.characters = (_saveMeta.characters || []).filter(c => c.id !== _selCharId);
-      // Worlds this character owns are deleted outright; worlds where they were
-      // only a farmhand keep going for the owner, minus this character's membership.
-      _saveMeta.worlds     = (_saveMeta.worlds || []).filter(w => w.ownerCharacterId !== _selCharId);
-      _saveMeta.worlds.forEach(w => {
-        removeFarmhand(w, _selCharId);
-        if (w.members) delete w.members[_selCharId];
-      });
-      saveSaveMeta(_saveMeta);
-      _selCharId  = _saveMeta.characters[0]?.id ?? null;
-      _selWorldId = null;
-      if (!_saveMeta.characters.length) {
-        _state = makeDefaultState('mao-ao', 'male');
-        _activeTab = 'appearance'; _colorAIdx = 0; _colorBIdx = 0;
-        _flowStep = 'char-create';
-        rerender();
-        ensureCosmetics().then(() => schedulePreviewRender());
-      } else {
-        rerenderSaveSelect();
-      }
+    _el.querySelector('#slBackToCharacter')?.addEventListener('click', () => {
+      _saveFlowStep = 'character';
+      rerenderSaveSelect();
     });
 
     const playBtn = _el.querySelector('#slPlay');
     if (playBtn) playBtn.addEventListener('click', _playSaveSelect);
-
-    // Local Save Folder controls — see _localSaveFolderSectionHtml above and
-    // docs/js/local-save-folder.js for the actual folder/IndexedDB/File
-    // System Access API work.
-    const lsf = window.LocalSaveFolder;
-    if (lsf) {
-      _el.querySelector('#slLocalSaveChoose')?.addEventListener('click', () => lsf.chooseFolder());
-      _el.querySelector('#slLocalSaveChange')?.addEventListener('click', () => lsf.changeFolder());
-      _el.querySelector('#slLocalSaveReconnect')?.addEventListener('click', () => lsf.reconnect());
-      _el.querySelector('#slLocalSaveLoad')?.addEventListener('click', async () => {
-        if (!confirm('Load characters and worlds from your local folder? This overwrites your current browser save and reloads the page.')) return;
-        const result = await lsf.loadFromFolder();
-        alert(result.message);
-        if (result.ok) location.reload();
-      });
-    }
-
-    // Database Source controls — see _dbSourceSectionHtml above and
-    // docs/js/local-db-overrides.js. Changing the mode takes effect on the
-    // NEXT load (game.js/combat-config-loader.js only read it at boot), so a
-    // reload is needed to actually see it in-game.
-    const ldb = window.LocalDBOverrides;
-    if (ldb) {
-      _el.querySelectorAll('input[name="sl-dbsrc-mode"]').forEach(radio => radio.addEventListener('change', () => {
-        ldb.setSourceMode(radio.value);
-        rerenderSaveSelect();
-      }));
-      _el.querySelectorAll('[data-dbsrc-clear]').forEach(btn => btn.addEventListener('click', () => {
-        ldb.clearOverride(btn.dataset.dbsrcClear);
-        rerenderSaveSelect();
-      }));
-    }
   }
 
   function rerenderSaveSelect() {
     if (!_el) return;
+    if (!_saveFlowStep) _saveFlowStep = 'source';
     _el.innerHTML = buildSaveSelectHTML();
-    attachSaveSelectListeners();
+    if (_saveFlowStep === 'character')      attachCharacterListeners();
+    else if (_saveFlowStep === 'world')     attachWorldListeners();
+    else                                    attachSaveSourceListeners();
     if (_cosmetics) {
       _renderSaveSelectPortraits();
     } else {
@@ -1146,6 +1285,7 @@
 
   function _showSaveSelect() {
     _flowStep = 'save-select';
+    if (!_saveFlowStep) _saveFlowStep = 'source';
     rerenderSaveSelect();
   }
 
@@ -1679,9 +1819,10 @@
 
     // Re-renders the save-select screen's Local Save Folder row whenever its
     // status changes (e.g. a folder picker resolving, or the periodic
-    // auto-sync ticking) — subscribed once here rather than inside
-    // attachSaveSelectListeners (which reruns on every rerenderSaveSelect
-    // and would otherwise stack a fresh subscription each time).
+    // auto-sync ticking) — subscribed once here rather than inside the
+    // per-step attach*Listeners functions (which rerun on every
+    // rerenderSaveSelect and would otherwise stack a fresh subscription
+    // each time).
     window.LocalSaveFolder?.onChange(() => { if (_flowStep === 'save-select') rerenderSaveSelect(); });
     if (!options?.resetProfile) {
       // New multi-save system: show save select if any characters exist
@@ -1762,6 +1903,7 @@
     _selCharId  = null;
     _selWorldId = null;
     _flowStep   = null;
+    _saveFlowStep = null;
   }
 
   window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta };
