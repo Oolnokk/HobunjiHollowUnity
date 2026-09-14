@@ -4,6 +4,9 @@ on:
   push:
     paths:
       - 'docs/js/day-progress-review.js'
+      - 'docs/js/day-progress-review-relationship-ui.js'
+      - 'docs/js/favor-heart-balance.js'
+      - 'docs/js/favor-popup-points-bridge.js'
       - 'docs/js/sleep-passage-action-bridge.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/combat/combat-config-loader.js'
@@ -11,12 +14,16 @@ on:
       - 'docs/js/map-layout-system.js'
       - 'docs/js/sky-dome.js'
       - 'scripts/test-day-progress-review.js'
+      - 'scripts/test-favor-heart-balance.js'
       - 'scripts/test-sleep-passage-action-bridge.js'
       - 'scripts/test-npc-rapport-wrapped-midnight.js'
       - '.github/workflows/day-progress-review-regression.yml'
   pull_request:
     paths:
       - 'docs/js/day-progress-review.js'
+      - 'docs/js/day-progress-review-relationship-ui.js'
+      - 'docs/js/favor-heart-balance.js'
+      - 'docs/js/favor-popup-points-bridge.js'
       - 'docs/js/sleep-passage-action-bridge.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
       - 'docs/js/combat/combat-config-loader.js'
@@ -24,6 +31,7 @@ on:
       - 'docs/js/map-layout-system.js'
       - 'docs/js/sky-dome.js'
       - 'scripts/test-day-progress-review.js'
+      - 'scripts/test-favor-heart-balance.js'
       - 'scripts/test-sleep-passage-action-bridge.js'
       - 'scripts/test-npc-rapport-wrapped-midnight.js'
       - '.github/workflows/day-progress-review-regression.yml'
@@ -44,12 +52,18 @@ jobs:
       - name: Syntax check midnight review integration
         run: |
           node --check docs/js/day-progress-review.js
+          node --check docs/js/day-progress-review-relationship-ui.js
+          node --check docs/js/favor-heart-balance.js
+          node --check docs/js/favor-popup-points-bridge.js
           node --check docs/js/sleep-passage-action-bridge.js
           node --check docs/js/npc-social-relationship-bridge-v2.js
           node --check docs/js/combat/combat-config-loader.js
           node --check scripts/test-day-progress-review.js
+          node --check scripts/test-favor-heart-balance.js
           node --check scripts/test-sleep-passage-action-bridge.js
           node --check scripts/test-npc-rapport-wrapped-midnight.js
+      - name: Test Favor point and heart balance
+        run: node scripts/test-favor-heart-balance.js
       - name: Test farmhouse bed shared Sleep passage routing
         run: node scripts/test-sleep-passage-action-bridge.js
       - name: Test day review wrapped-midnight clock integration
