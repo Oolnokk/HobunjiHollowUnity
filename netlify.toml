@@ -1,6 +1,0 @@
-[build]
-  # Optional static hosting only. Cloud saves no longer depend on Netlify Functions, Identity, or Blobs.
-  publish = "docs"
-
-[build.processing]
-  skip_processing = true
