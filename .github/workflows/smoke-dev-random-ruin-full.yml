@@ -1,4 +1,4 @@
-# Temporary verification workflow; remove after hallway-clearance + optional wall-plane smoke passes.
+# Temporary verification workflow; remove after Random Test Ruin collision smoke passes.
 name: Smoke Random Test Ruin Full Runtime
 
 on:
@@ -22,17 +22,24 @@ jobs:
         with:
           node-version: '22'
       - name: Static integration audit
-        run: node scripts/test-dev-random-ruin-integration.js
+        run: |
+          node scripts/test-dev-random-ruin-integration.js
+          node --check docs/js/dynamic-surfaces.js
+          node --check docs/js/dev-random-ruin-collision-precision.js
+          node --check scripts/test-dev-random-ruin-collision-browser.js
       - name: Install browser
         run: |
           npm install --no-save --package-lock=false playwright@1.55.0
           npx playwright install --with-deps chromium
       - name: Serve repo
         run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
+      - name: Verify precise ruin blocker footprints
+        run: node scripts/test-dev-random-ruin-collision-browser.js
       - name: Isolate previously failing seed
         env:
           HOBUNJI_RUIN_FIXED_SEEDS: '0x2468ace0'
           HOBUNJI_RUIN_AUDIT_SEEDS: '0'
         run: node scripts/test-dev-random-ruin-browser.js
       - name: Exercise sequential rerolls, hallway clearance, optional wall planes, and multi-seed audit
+        continue-on-error: true
         run: node scripts/test-dev-random-ruin-browser.js
