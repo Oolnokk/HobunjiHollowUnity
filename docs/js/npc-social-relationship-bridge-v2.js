@@ -47,9 +47,14 @@
   }
   function clockHour() { return num(window.CalendarSystem?.getHour?.(), NaN); }
   function socialDay() {
+    const debug = window.CalendarSystem?.timeDebugSnapshot?.(); // Civil bridge snapshot is preferred because the full-day display clock intentionally wraps midnight to 0.
+    const civilDay = Number(debug?.civilDay); // Player-facing day already corrected for the 00:00→05:59 interval by MapLayoutSystem's calendar bridge.
+    if (Number.isFinite(civilDay)) return Math.max(0, Math.floor(civilDay));
     const day = rawDay();
     const hour = clockHour();
-    return window.CalendarSystem?.constants?.FULL_DAY_CYCLE && Number.isFinite(hour) && hour >= 24 ? day + 1 : day;
+    const rolloverHour = num(window.CalendarSystem?.constants?.DAY_ROLLOVER_HOUR, 6); // Fallback wrapped-clock boundary used when the civil snapshot bridge is unavailable.
+    const fullDay = !!window.CalendarSystem?.constants?.FULL_DAY_CYCLE; // Distinguishes the 24-hour wrapped clock from the older daytime-only clock.
+    return fullDay && Number.isFinite(hour) && hour >= 0 && hour < rolloverHour ? day + 1 : day;
   }
   function absoluteGameMinute() {
     const minutes = Math.max(1, num(config.representedMinutesPerDay, DEFAULTS.representedMinutesPerDay));

@@ -32,7 +32,7 @@ assert.doesNotMatch(loaderSource, /npc-social-relationship-bridge\.js\?v=/, 'boo
 
 let rawDay = 3; // Simulation-day index used to prove the social day still changes at midnight rather than 06:00.
 let time01 = 0.50; // Normalized 24-hour simulation time used by the accepted-sip cooldown.
-let clockHour = 18; // Displayed hour, including CalendarSystem's 24..30 post-midnight range.
+let clockHour = 18; // Player-facing full-day hour; Sky Dome wraps midnight from 23.xx to 0.xx.
 let gameRandom = 0.49; // Seeded hidden roll source; 0.49 maps to d100 result 50.
 let performanceNow = 0; // Monotonic real-time clock advanced explicitly by dance tests so Rapport-per-second behavior is deterministic.
 let bottleRemaining = 4; // Bottle state used to detect a genuinely consumed NPC sip.
@@ -98,9 +98,9 @@ assert.equal(rapport.config.drinkAcceptedCooldownMinutes, 30, 'accepted-sip cool
 rapport.adjust('midnight_npc', 50, 'test_before_midnight');
 rapport.adjust('getter_npc', 40, 'test_relationship_getter');
 assert.equal(relation('midnight_npc').favor, 0, 'Rapport remains temporary before midnight');
-clockHour = 24.01;
+clockHour = 0.01;
 time01 = 18.01 / 24;
-assert.equal(rapport.currentGameDay(), 4, 'social day advances at midnight while raw simulation day is still 3');
+assert.equal(rapport.currentGameDay(), 4, 'social day advances at wrapped midnight while raw simulation day is still 3');
 assert.equal(dialogueStub.getNpcDlgState('getter_npc').favor, 4, 'ordinary relationship reads settle midnight conversion without a timer');
 assert.equal(dialogueStub.getNpcDlgState('getter_npc').rapport, 0, 'ordinary relationship reads reset prior-day Rapport before returning state');
 assert.equal(rapport.get('midnight_npc'), 0, 'first Rapport access after midnight settles and resets Rapport');
@@ -114,9 +114,9 @@ assert.equal(rapport.get('gift_npc'), 0, 'gift reactions do not get diverted int
 assert.equal(relation('gift_npc').favor, 8, 'gift keeps the authored immediate permanent Favor delta');
 assert.equal(giftingStub.getNpcGiftOfferAction({ rec: { id: 'gift_npc' } }), null, 'gift action hides after one gift that social day');
 assert.equal(giftingStub.offerGift({ rec: { id: 'gift_npc', name: 'Gift NPC' } }), false, 'execution independently blocks a second same-day gift');
-clockHour = 24.1;
+clockHour = 0.1;
 time01 = 18.1 / 24;
-assert.equal(rapport.canGiftToday('gift_npc'), true, 'gift eligibility resets at midnight');
+assert.equal(rapport.canGiftToday('gift_npc'), true, 'gift eligibility resets at wrapped midnight');
 
 clockHour = 12;
 rawDay = 5;
