@@ -2,6 +2,9 @@
 // This tool has its own before/after jigsaw comparison. Do not let the generic
 // Tool Hub parity wrapper replace these materials/UVs after the preview builds.
 window.__hobunjiToolTerrainParityBootstrap = true;
+const parityPanelMute = document.createElement('style'); // Hides the generic parity author panel if the parent Tool Hub injected it before this iframe finished parsing.
+parityPanelMute.textContent = '#hobunjiTerrainParityPanel{display:none!important}';
+(document.head || document.documentElement).appendChild(parityPanelMute);
 
 (() => {
   const THREE = window.THREE;
@@ -229,16 +232,76 @@ window.__hobunjiToolTerrainParityBootstrap = true;
     };
   }
 
-  function installRecord(slotName, mesh) {
+  function ensureBakeUv(geometry) {
+    const position = geometry?.getAttribute?.('position');
+    if (!position) return false;
+    const existingUv = geometry.getAttribute('uv');
+    if (existingUv?.count === position.count) return true;
+    const uv = new Float32Array(position.count * 2); // Fallback only: project X/Z world coordinates so the runtime baker always receives the UV attribute its output copier expects.
+    for (let i = 0; i < position.count; i++) {
+      uv[i * 2] = position.getX(i);
+      uv[i * 2 + 1] = position.getZ(i);
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return true;
+  }
+
+  function candidateState(mesh) {
+    const position = mesh?.geometry?.getAttribute?.('position');
+    const uv = mesh?.geometry?.getAttribute?.('uv');
+    const material = mesh?.material;
+    return {
+      isMesh: !!mesh?.isMesh,
+      positions: position?.count || 0,
+      uvs: uv?.count || 0,
+      indexed: !!mesh?.geometry?.index,
+      groups: mesh?.geometry?.groups?.length || 0,
+      hasMap: !!material?.map,
+      transparent: !!material?.transparent,
+      opacity: Number(material?.opacity ?? 1),
+    };
+  }
+
+  function installRecord(slotName, mesh, failures) {
     if (!jigsawEnabled()) return null;
     const api = window.TerrainJigsawUV;
-    if (!api?.bakeMesh || !mesh?.material?.map) return null;
+    if (!api?.bakeMesh) {
+      failures.push(`${slotName}: TerrainJigsawUV.bakeMesh missing`);
+      return null;
+    }
+    if (!mesh?.material?.map) {
+      failures.push(`${slotName}: material.map missing`);
+      return null;
+    }
+
     const ordinaryGeometry = mesh.geometry;
     const ordinaryMaterial = mesh.material;
-    const temp = new THREE.Mesh(ordinaryGeometry.clone(), ordinaryMaterial);
+    const bakeGeometry = ordinaryGeometry.clone(); // The comparison keeps the untouched world-UV geometry on the left.
+    if (!ensureBakeUv(bakeGeometry)) {
+      failures.push(`${slotName}: position attribute missing`);
+      bakeGeometry.dispose?.();
+      return null;
+    }
+    bakeGeometry.clearGroups(); // Each BorderTerrain candidate is deliberately a single-material mesh; stale/nonzero material groups would make runtime materialAt() reject its triangles.
+
+    const bakeMaterial = ordinaryMaterial.clone();
+    bakeMaterial.map = ordinaryMaterial.map; // Keep the decoded PNG attached while normalizing eligibility flags for the runtime baker.
+    bakeMaterial.transparent = false;
+    bakeMaterial.opacity = 1;
+    bakeMaterial.depthWrite = true;
+    bakeMaterial.needsUpdate = true;
+
+    const temp = new THREE.Mesh(bakeGeometry, bakeMaterial);
     const settings = slotSettings(slotName);
-    const stats=api.bakeMesh(temp,{...settings,force:true,disposeSource:true});
-    if (!stats) return null;
+    const before = candidateState(temp);
+    const stats = api.bakeMesh(temp,{...settings,force:true,disposeSource:true});
+    bakeMaterial.dispose?.();
+    if (!stats) {
+      failures.push(`${slotName}: baker returned null [pos ${before.positions}, uv ${before.uvs}, map ${before.hasMap?'yes':'no'}, transparent ${before.transparent?'yes':'no'}, opacity ${before.opacity}, groups ${before.groups}]`);
+      try { temp.geometry?.dispose?.(); } catch (_) {}
+      return null;
+    }
+
     const record = {
       mesh, slotName, ordinaryGeometry, ordinaryMaterial,
       jigsawGeometry:temp.geometry, jigsawMaterial:temp.material,
@@ -318,10 +381,11 @@ window.__hobunjiToolTerrainParityBootstrap = true;
     }
 
     let candidates = 0;
+    const failures = [];
     scene.traverse(object => {
       if (!object.isMesh) return;
-      if (object.material === grassOrd) { candidates++; installRecord('grass', object); }
-      else if (object.material === cliffOrd) { candidates++; installRecord('cliff', object); }
+      if (object.material === grassOrd) { candidates++; installRecord('grass', object, failures); }
+      else if (object.material === cliffOrd) { candidates++; installRecord('cliff', object, failures); }
     });
 
     applyVariant(viewMode==='protected' ? 'jigsaw' : viewMode==='heatmap' ? 'heatmap' : 'ordinary');
@@ -331,12 +395,14 @@ window.__hobunjiToolTerrainParityBootstrap = true;
     const islands = terrainRecords.reduce((sum,record)=>sum+(record.stats?.islands||0),0);
     const triangles = terrainRecords.reduce((sum,record)=>sum+(record.stats?.triangles||0),0);
     const textures = textureSummary(grassTexture, cliffTexture, grassPath, cliffPath);
+    const baker = window.TerrainJigsawUV?.bakeMesh ? 'baker OK' : 'BAKER MISSING';
     if (!jigsawEnabled()) {
-      setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} · ${textures} · ${settingsSummary()} · author rev ${lastAuthorRevision}`);
+      setStatus(`JIGSAW DISABLED · ${candidates} terrain candidate${candidates===1?'':'s'} · ${textures} · ${settingsSummary()} · ${baker} · author rev ${lastAuthorRevision}`);
     } else if (!terrainRecords.length) {
-      setStatus(`JIGSAW ENABLED but 0 eligible textured meshes baked (${candidates} candidates) · ${textures} · ${settingsSummary()} · author rev ${lastAuthorRevision}`);
+      const why = failures.length ? ` · ${[...new Set(failures)].slice(0,3).join(' | ')}` : '';
+      setStatus(`JIGSAW ENABLED but 0 meshes baked (${candidates} candidates) · ${textures} · ${settingsSummary()} · ${baker}${why} · author rev ${lastAuthorRevision}`);
     } else {
-      setStatus(`${terrainRecords.length}/${candidates} terrain meshes baked · ${islands} connected islands · ${triangles.toLocaleString()} triangles · ${textures} · ${settingsSummary()} · author rev ${lastAuthorRevision}`);
+      setStatus(`${terrainRecords.length}/${candidates} terrain meshes baked · ${islands} connected islands · ${triangles.toLocaleString()} triangles · ${textures} · ${settingsSummary()} · ${baker} · author rev ${lastAuthorRevision}`);
     }
   }
 
