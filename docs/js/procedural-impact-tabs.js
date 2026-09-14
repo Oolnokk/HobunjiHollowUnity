@@ -10,6 +10,13 @@
     const pants = document.createElement('script'); // Makes Pants a first-class workspace inside this same Procedural Animation editor and its live avatar scene.
     pants.async = false;
     pants.src = new URL('procedural-pants-rig-author.js', selfSrc).href;
+    pants.addEventListener('load', () => {
+      const layoutFix = document.createElement('script'); // Forces the embedded author to consume all remaining panel height instead of the iframe's intrinsic viewport height.
+      layoutFix.async = false;
+      layoutFix.src = new URL('procedural-pants-rig-layout-fix.js', selfSrc).href;
+      layoutFix.addEventListener('error', () => console.error(`[Pants Rig] Failed to load layout fix ${layoutFix.src}`));
+      document.head.appendChild(layoutFix);
+    });
     pants.addEventListener('error', () => console.error(`[Pants Rig] Failed to load ${pants.src}`));
     document.head.appendChild(pants);
   });
