@@ -3,7 +3,7 @@
 
   if (window.DevArenaNestSpawner?.version >= 1) return;
 
-  const VERSION = 1;
+  const VERSION = 2;
   const ARENA_ID = 'map_dev_arena';
   const DEFAULT_CLUTCH = 3;
   const NEST_COLOR = 0x7a5b3a;
@@ -242,21 +242,35 @@
   }
 
   function patchGlobal(name, patcher) {
-    const existing = window[name];
-    if (existing) {
-      patcher(existing);
+    const current = window[name];
+    if (current) {
+      patcher(current);
       return;
     }
     const descriptor = Object.getOwnPropertyDescriptor(window, name);
-    if (descriptor && !descriptor.configurable) return;
-    let stored = existing;
+    if (descriptor && descriptor.configurable === false) return;
+
+    // Several gameplay modules observe late-created globals such as DevSpawner.
+    // Never replace their accessor: chain it, then patch the value that the prior
+    // getter/setter resolved. Replacing that chain used to disconnect
+    // PlayerBodyAttachmentBridge, leaving procedural hands without toolHolder deps.
+    const previousGet = descriptor?.get;
+    const previousSet = descriptor?.set;
+    let stored = descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+      ? descriptor.value
+      : undefined;
+
     Object.defineProperty(window, name, {
       configurable: true,
-      enumerable: true,
-      get: () => stored,
-      set: value => {
-        stored = value;
-        patcher(value);
+      enumerable: descriptor?.enumerable ?? true,
+      get() {
+        return previousGet ? previousGet.call(window) : stored;
+      },
+      set(value) {
+        if (previousSet) previousSet.call(window, value);
+        else stored = value;
+        const resolved = previousGet ? previousGet.call(window) : stored;
+        patcher(resolved || value);
       },
     });
   }
