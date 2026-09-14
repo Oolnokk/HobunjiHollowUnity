@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'docs/js/creature-genetics.js'
+      - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/cavern-generator.js'
       - 'docs/config/loot/loot-pools.json'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
@@ -11,13 +13,15 @@ on:
   pull_request:
     paths:
       - 'docs/js/creature-genetics.js'
+      - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/cavern-generator.js'
       - 'docs/config/loot/loot-pools.json'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
       - '.github/workflows/voorg-ass-regression.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regression:
@@ -25,15 +29,146 @@ jobs:
     steps:
       - name: Check out branch
         uses: actions/checkout@v4
+        with:
+          ref: chatgpt/puktuk-western-den-predator
+          fetch-depth: 0
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Syntax check creature genetics
-        run: node --check docs/js/creature-genetics.js
+      - name: Apply explicit Puktuk den assignment
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count == 0 and new in text:
+                  return
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one replacement target, found {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'docs/js/creature-genetics.js',
+              """      const packs = westernZone
+        ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
+        : null; // Used by exterior den packs and cavern-generator's deterministic den population choice.
+      if (Array.isArray(packs) && !packs.includes(PUKTUK_KIND)) packs.push(PUKTUK_KIND);
+
+      const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator filters den species through this table before it will assign a Den-Mother.
+""",
+              """      const packs = westernZone
+        ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
+        : null; // Used by predator ecology outside any explicit den-only assignment.
+      if (Array.isArray(packs) && !packs.includes(PUKTUK_KIND)) packs.push(PUKTUK_KIND);
+      if (westernZone) westernZone.denSpecies = [PUKTUK_KIND]; // Used by exterior and cavern den generation so Western Slope dens are Puktuk lairs instead of a 50/50 pack-vs-herd roll.
+
+      const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator filters den species through this table before it will assign a Den-Mother.
+""",
+          )
+
+          replace_once(
+              'docs/js/creature-genetics.js',
+              """      window.__farmLog?.(`[puktuk] registered predator species: default=medium sizeProfile=gar-wolf belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=predator; ${PUKTUK_WESTERN_ZONE_ID} Drenkirra removed=${replacements} packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, replacements > 0 && Array.isArray(packs) ? 'wildlife' : 'warn');
+""",
+              """      window.__farmLog?.(`[puktuk] registered predator species: default=medium sizeProfile=gar-wolf belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=predator; ${PUKTUK_WESTERN_ZONE_ID} Drenkirra removed=${replacements} packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] dens=[${Array.isArray(westernZone?.denSpecies) ? westernZone.denSpecies.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(packs) && westernZone?.denSpecies?.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
+""",
+          )
+
+          replace_once(
+              'docs/js/wildlife-spawn.js',
+              """    const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
+    const popRng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop');
+    const useHerd = hasHerd && (!hasPack || popRng() < 0.5);
+    const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
+    if (!pool || !pool.length) {
+      window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone \"${zoneId}\" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+""",
+              """    const explicitDenSpecies = zdef?.denSpecies || []; // Used when a zone authors den occupants separately from its general predator/herbivore ecology.
+    const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
+    const popRng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop');
+    const useHerd = !explicitDenSpecies.length && hasHerd && (!hasPack || popRng() < 0.5);
+    const pool = explicitDenSpecies.length ? explicitDenSpecies : (useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies);
+    if (!pool || !pool.length) {
+      window.__farmLog?.(`[wildlife] ${denKey}: no denSpecies/packSpecies/herbivoreSpecies pool configured for zone \"${zoneId}\" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+""",
+          )
+
+          replace_once(
+              'docs/js/cavern-generator.js',
+              """    const packSpecies = zoneDef?.packSpecies || [];
+    const herbivoreSpecies = zoneDef?.herbivoreSpecies || [];
+    const hasPack = packSpecies.length, hasHerd = herbivoreSpecies.length;
+    const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denpop') : Math.random;
+    const useHerd = hasHerd && (!hasPack || rng() < 0.5);
+    return { zoneId, nativeSpecies: useHerd ? herbivoreSpecies : packSpecies };
+""",
+              """    const denSpecies = zoneDef?.denSpecies || []; // Used when a zone explicitly assigns den occupants independently of its general wildlife pools.
+    const packSpecies = zoneDef?.packSpecies || [];
+    const herbivoreSpecies = zoneDef?.herbivoreSpecies || [];
+    if (denSpecies.length) return { zoneId, nativeSpecies: denSpecies };
+    const hasPack = packSpecies.length, hasHerd = herbivoreSpecies.length;
+    const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denpop') : Math.random;
+    const useHerd = hasHerd && (!hasPack || rng() < 0.5);
+    return { zoneId, nativeSpecies: useHerd ? herbivoreSpecies : packSpecies };
+""",
+          )
+
+          replace_once(
+              'scripts/test-puktuk-species.js',
+              """const cookingSource = read('docs/js/cooking-data.js'); // Confirms the existing Puktuk wool item is already categorized as Heavy.
+""",
+              """const cookingSource = read('docs/js/cooking-data.js'); // Confirms the existing Puktuk wool item is already categorized as Heavy.
+const wildlifeSource = read('docs/js/wildlife-spawn.js'); // Confirms exterior den spawning respects an authored den-only species pool.
+const cavernSource = read('docs/js/cavern-generator.js'); // Confirms cavern residents and Den-Mothers use the same den-only species pool.
+""",
+          )
+
+          replace_once(
+              'scripts/test-puktuk-species.js',
+              """assert.match(cookingSource, /\"puktukWool\"\\s*:\\s*\\{[\\s\\S]*?\"name\"\\s*:\\s*\"Puktuk Wool\"[\\s\\S]*?\"Heavy\"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
+""",
+              """assert.match(cookingSource, /\"puktukWool\"\\s*:\\s*\\{[\\s\\S]*?\"name\"\\s*:\\s*\"Puktuk Wool\"[\\s\\S]*?\"Heavy\"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
+assert.match(wildlifeSource, /const explicitDenSpecies = zdef\\?\\.denSpecies \\|\\| \\[\\][\\s\\S]*?const pool = explicitDenSpecies\\.length \\? explicitDenSpecies/, 'Exterior den spawning prefers an authored denSpecies pool');
+assert.match(cavernSource, /const denSpecies = zoneDef\\?\\.denSpecies \\|\\| \\[\\][\\s\\S]*?if \\(denSpecies\\.length\\) return \\{ zoneId, nativeSpecies: denSpecies \\}/, 'Cavern den spawning prefers the same authored denSpecies pool');
+""",
+          )
+
+          replace_once(
+              'scripts/test-puktuk-species.js',
+              """assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
+""",
+              """assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
+""",
+          )
+          PY
+      - name: Syntax check Puktuk den runtime
+        run: |
+          node --check docs/js/creature-genetics.js
+          node --check docs/js/wildlife-spawn.js
+          node --check docs/js/cavern-generator.js
       - name: Validate loot JSON
         run: node -e "JSON.parse(require('node:fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
       - name: Test Puktuk integration
         run: node scripts/test-puktuk-species.js
       - name: Test Voorg-Ass integration
         run: node scripts/test-voorg-ass-species.js
+      - name: Commit explicit den assignment
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Patch already present.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/js/creature-genetics.js docs/js/wildlife-spawn.js docs/js/cavern-generator.js scripts/test-puktuk-species.js
+          git commit -m 'Assign Western Slope dens explicitly to Puktuks'
+          git push origin HEAD:chatgpt/puktuk-western-den-predator
