@@ -47,6 +47,10 @@ for (const expected of [
   'queueRedraw()',
   'NaturalSurfaceMaterials',
   'toolTerrainPreviewMaterialPreserved',
+  'function patchResolvePreviewMat()',
+  'terrainKey:String(key',
+  'hobunjiTerrainConfiguredTexture',
+  'hydrateMaterial(material, mapId, key)',
   'return mesh',
 ]) {
   if (!mapEditorFix.includes(expected)) throw new Error(`Map Editor texture fix missing contract: ${expected}`);
@@ -73,10 +77,15 @@ for (const expected of [
   'if (!jigsawEnabled()) return null',
   'edgePx: clamp',
   'edgeWorldWidth: clamp',
+  'function ensureBakeUv(geometry)',
+  'bakeGeometry.clearGroups()',
+  'bakeMaterial.transparent = false',
   'api.bakeMesh(temp,{...settings,force:true,disposeSource:true})',
   'function settingsSummary()',
   'JIGSAW DISABLED',
-  'JIGSAW ENABLED but 0 eligible textured meshes baked',
+  'JIGSAW ENABLED but 0 meshes baked',
+  'TerrainJigsawUV.bakeMesh missing',
+  'baker returned null',
   'lastAuthorRevision',
 ]) {
   if (!boundaryPreview.includes(expected)) throw new Error(`Boundary Terrain 3D preview missing live-jigsaw contract: ${expected}`);
