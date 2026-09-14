@@ -9,13 +9,14 @@
   const MOUNT_ACCEL_PER_RANK = 0.10;
   const MOUNT_MANEUVER_PER_RANK = 0.08;
   const MOUNT_CLIMB_PER_RANK = 0.10;
+  const MOUNT_WILDERNESS_HOLD_REASON = 'mount-rush-in'; // Shared with WildernessChunks so the summoned actor and queued terrain never allocate in the same window.
 
   let mountDeps = null; // Captured from Mounts.init; temporarily scales only the existing riding inputs during mounted movement.
   let greetedDay = null;
   const greetedToday = new Set(); // Keys NPC + individual animal so each NPC can reward each greeted rapport-trained pet once per game day.
-  const genotypeComposeInflight = new Map(); // Shares only currently-running genotype canvas builds so per-frame companion retries cannot multiply the same allocation-heavy work.
-  let genotypeComposeRequests = 0; // Mobile-readable count of genotype compose requests routed through the guard.
-  let genotypeComposeDedupHits = 0; // Mobile-readable count of simultaneous duplicate requests that reused an existing in-flight promise.
+  let mountWildernessHoldActive = false; // Tracks the caller-owned wilderness allocation hold independently of script load order.
+  let mountWildernessHoldAcquires = 0; // Mobile-readable count proving summon starts acquired the allocation budget.
+  let mountWildernessHoldReleases = 0; // Mobile-readable count proving arrival/cancel/failure paths released the budget again.
 
   function replaceTree(role, definitions) {
     const tree = progression.trees?.[role];
@@ -58,29 +59,25 @@
 
   progression.mountRidingModifiers = mountRidingModifiers;
 
-  function patchCreatureGeneticsRender(api) {
-    if (!api || api.__stableAnimalComposeDedupeWrapped || typeof api.composeFrame !== 'function' || typeof api.genotypeSignature !== 'function') return api;
-    const originalComposeFrame = api.composeFrame.bind(api); // Preserves the compositor as the single authority for actual canvas generation.
-    api.composeFrame = function stableAnimalComposeFrame(kind, frame, genotype, blinkShut = false) {
-      if (!genotype) return originalComposeFrame(kind, frame, genotype, blinkShut);
-      const signature = api.genotypeSignature(kind, genotype);
-      if (!signature || signature === 'none') return originalComposeFrame(kind, frame, genotype, blinkShut);
-      genotypeComposeRequests++;
-      const key = `${kind}|${frame}|${signature}|${blinkShut ? 'b' : 'o'}`; // Exact final-composite identity, matching the existing farm texture-cache dimensions.
-      const existing = genotypeComposeInflight.get(key);
-      if (existing) {
-        genotypeComposeDedupHits++;
-        return existing;
-      }
-      const promise = Promise.resolve().then(() => originalComposeFrame(kind, frame, genotype, blinkShut));
-      genotypeComposeInflight.set(key, promise);
-      const release = () => {
-        if (genotypeComposeInflight.get(key) === promise) genotypeComposeInflight.delete(key);
-      };
-      promise.then(release, release); // In-flight only: successful/failed composites are immediately released so existing renderer/texture caches retain normal lifetime ownership.
-      return promise;
-    };
-    api.__stableAnimalComposeDedupeWrapped = true;
+  function setMountWildernessHold(active) {
+    const next = !!active;
+    if (next === mountWildernessHoldActive) return next;
+    mountWildernessHoldActive = next;
+    if (next) mountWildernessHoldAcquires++;
+    else mountWildernessHoldReleases++;
+    window.WildernessChunks?.setAllocationHold?.(MOUNT_WILDERNESS_HOLD_REASON, next);
+    return next;
+  }
+
+  function syncMountWildernessHold(api) {
+    return setMountWildernessHold(api?.rideState === 'rushingIn');
+  }
+
+  function patchWildernessChunks(api) {
+    if (!api || typeof api.setAllocationHold !== 'function') return api;
+    // If script order caused the mount to acquire first, replay the current
+    // state into the newly-available chunk streamer without changing counters.
+    api.setAllocationHold(MOUNT_WILDERNESS_HOLD_REASON, mountWildernessHoldActive);
     return api;
   }
 
@@ -91,7 +88,21 @@
       const originalInit = api.init.bind(api);
       api.init = function stableAnimalRidingInit(injectedDeps) {
         mountDeps = injectedDeps;
-        return originalInit(injectedDeps);
+        const result = originalInit(injectedDeps);
+        syncMountWildernessHold(api);
+        return result;
+      };
+    }
+
+    if (typeof api.toggleMount === 'function') {
+      const originalToggleMount = api.toggleMount.bind(api);
+      api.toggleMount = function stableAnimalSerializedMountToggle(...args) {
+        // Acquire BEFORE beginSummonMount constructs the genotype-bearing
+        // creature, so a queued wilderness build cannot share that allocation
+        // window. If summon is rejected, finally sees state 'none' and releases.
+        if (api.rideState === 'none') setMountWildernessHold(true);
+        try { return originalToggleMount(...args); }
+        finally { syncMountWildernessHold(api); }
       };
     }
 
@@ -134,11 +145,16 @@
     if (typeof api.updateMountRide === 'function') {
       const originalRideUpdate = api.updateMountRide.bind(api);
       api.updateMountRide = function stableAnimalCliffSpeedUpdate(dt, ...rest) {
+        // Covers arrival, death, indoor-boundary dismissal, and any future
+        // state-machine exit: the finally block releases the chunk hold as
+        // soon as the real mount state is no longer rushingIn.
+        if (api.rideState === 'rushingIn') setMountWildernessHold(true);
         const modifiers = mountRidingModifiers();
         const scaledDt = api.rideState === 'climbLeap'
           ? Number(dt) * modifiers.cliffClimbSpeed
           : dt;
-        return originalRideUpdate(scaledDt, ...rest);
+        try { return originalRideUpdate(scaledDt, ...rest); }
+        finally { syncMountWildernessHold(api); }
       };
     }
 
@@ -251,7 +267,7 @@
     } catch (_) {}
   }
 
-  hookFutureGlobal('CreatureGeneticsRender', patchCreatureGeneticsRender);
+  hookFutureGlobal('WildernessChunks', patchWildernessChunks);
   hookFutureGlobal('Mounts', patchMounts);
   hookFutureGlobal('AmbientDialogue', patchAmbientDialogue);
 
@@ -265,10 +281,12 @@
         greetingDay: greetedDay,
         greetedToday: [...greetedToday],
         mountDepsReady: !!mountDeps,
-        genotypeCompose: {
-          inFlight: genotypeComposeInflight.size,
-          requests: genotypeComposeRequests,
-          dedupHits: genotypeComposeDedupHits,
+        mountWildernessAllocation: {
+          held: mountWildernessHoldActive,
+          reason: MOUNT_WILDERNESS_HOLD_REASON,
+          acquires: mountWildernessHoldAcquires,
+          releases: mountWildernessHoldReleases,
+          chunkApiReady: typeof window.WildernessChunks?.setAllocationHold === 'function',
         },
         mount: mountRidingModifiers(),
       };
