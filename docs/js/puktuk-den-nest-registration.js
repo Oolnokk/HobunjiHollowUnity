@@ -51,9 +51,9 @@
   }
 
   // Keep this module deliberately species/config-only. DenLocaleRuntime is loaded
-  // as its own sibling entry by combat-config-loader.js; nesting document.write()
-  // from inside this parser-time module could disturb unrelated held-item/stance
-  // bootstrap ordering and made a den feature capable of breaking player hands.
+  // as its own sibling entry by combat-config-loader.js; nesting another parser-time
+  // script injection here could disturb unrelated held-item/stance bootstrap ordering
+  // and made a den feature capable of breaking player hands.
   const configReady = registerPuktukNestConfig();
   const bridgeReady = installDenNestInitBridge();
 
