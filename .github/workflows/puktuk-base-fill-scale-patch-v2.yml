@@ -1,0 +1,173 @@
+name: Retry Puktuk base fill and scale patch
+
+on:
+  push:
+    branches:
+      - chatgpt/puktuk-base-fill-scale
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/puktuk-base-fill-scale
+          fetch-depth: 0
+
+      - name: Patch source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'missing anchor: {label}')
+              return text.replace(old, new, 1)
+
+          p = Path('docs/js/creature-genetics.js')
+          s = p.read_text()
+          old = '  const PUKTUK_FOXTAIL_CHANCE = 0.08; // Used for fresh wild/livestock rolls; matches the existing 8% "rare pattern" tier.\n'
+          s = replace_once(s, old, old + "  const PUKTUK_VISUAL_SCALE = 0.75; // Applied to Puktuk's borrowed size and ground calibration so every size class stays uniformly 25% smaller.\n", 'visual scale constant')
+
+          old = (
+              "    const x = Number(authored?.x); // Applied to the creature plane's local width.\n"
+              "    const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.\n"
+              "    return {\n"
+              "      sizeClass,\n"
+              "      x: Number.isFinite(x) && x > 0 ? x : 1,\n"
+              "      y: Number.isFinite(y) && y > 0 ? y : 1,\n"
+              "    };\n"
+          )
+          new = (
+              "    const x = Number(authored?.x); // Applied to the creature plane's local width.\n"
+              "    const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.\n"
+              "    const speciesScale = kind === PUKTUK_KIND ? PUKTUK_VISUAL_SCALE : 1; // Used here so Puktuk can borrow Gar-wolf proportions without inheriting Gar-wolf's absolute visual size.\n"
+              "    return {\n"
+              "      sizeClass,\n"
+              "      x: (Number.isFinite(x) && x > 0 ? x : 1) * speciesScale,\n"
+              "      y: (Number.isFinite(y) && y > 0 ? y : 1) * speciesScale,\n"
+              "    };\n"
+          )
+          s = replace_once(s, old, new, 'creatureSizeScale')
+
+          old = (
+              "    const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.\n"
+              "    return Number.isFinite(authored) && authored > 0 ? authored : null; // Zero is the Rigging \"Auto\" sentinel; callers fall back to their existing half-height terrain baseline.\n"
+          )
+          new = (
+              "    const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.\n"
+              "    const speciesScale = kind === PUKTUK_KIND ? PUKTUK_VISUAL_SCALE : 1; // Used with Puktuk's visual scale so shrinking the borrowed rig does not leave the sprite floating above the ground.\n"
+              "    return Number.isFinite(authored) && authored > 0 ? authored * speciesScale : null; // Zero is the Rigging \"Auto\" sentinel; callers fall back to their existing half-height terrain baseline.\n"
+          )
+          s = replace_once(s, old, new, 'creatureGroundOffset')
+
+          old = "    species[PUKTUK_KIND] = {\n      prefix: 'puktuk',\n      base: {\n"
+          new = "    species[PUKTUK_KIND] = {\n      prefix: 'puktuk',\n      fullBaseRecolor: true, // Puktuk base art is a single recolorable body layer; recolor every opaque non-outline pixel before belly/foxtail overlays.\n      base: {\n"
+          s = replace_once(s, old, new, 'Puktuk renderer registration')
+          p.write_text(s)
+
+          p = Path('docs/js/creature-genetics-render.js')
+          s = p.read_text()
+          old = (
+              "  async function recoloredBase(url, color, mask) {\n"
+              "    const key = `base|${url}|${color}`;\n"
+              "    if (_recolorCache.has(key)) return _recolorCache.get(key);\n"
+              "    const promise = (async () => {\n"
+              "      const img = await loadImage(url);\n"
+              "      if (!mask || mask.width !== img.naturalWidth || mask.height !== img.naturalHeight) return img;\n"
+              "      const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });\n"
+              "      ctx.drawImage(img, 0, 0);\n"
+              "      const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;\n"
+              "      recolorPixels(px, hexToRgb(color), (i) => mask.data[i / 4]);\n"
+              "      ctx.putImageData(data, 0, 0);\n"
+              "      return c;\n"
+              "    })().catch(err => { _recolorCache.delete(key); throw err; });\n"
+              "    _recolorCache.set(key, promise);\n"
+              "    return promise;\n"
+              "  }\n"
+          )
+          new = (
+              "  async function recoloredBase(url, color, mask, allowUnmasked = false) {\n"
+              "    const key = `base|${url}|${color}|full:${allowUnmasked}`;\n"
+              "    if (_recolorCache.has(key)) return _recolorCache.get(key);\n"
+              "    const promise = (async () => {\n"
+              "      const img = await loadImage(url);\n"
+              "      const maskMatches = !!mask && mask.width === img.naturalWidth && mask.height === img.naturalHeight; // Used to choose authored-region recolor versus an explicitly allowed full-sprite recolor.\n"
+              "      if (!maskMatches && !allowUnmasked) return img;\n"
+              "      const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });\n"
+              "      ctx.drawImage(img, 0, 0);\n"
+              "      const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;\n"
+              "      recolorPixels(px, hexToRgb(color), maskMatches ? (i) => mask.data[i / 4] : null);\n"
+              "      ctx.putImageData(data, 0, 0);\n"
+              "      return c;\n"
+              "    })().catch(err => { _recolorCache.delete(key); throw err; });\n"
+              "    _recolorCache.set(key, promise);\n"
+              "    return promise;\n"
+              "  }\n"
+          )
+          s = replace_once(s, old, new, 'recoloredBase')
+
+          old = "    const baseColor = bodyStripesColorSwap ? genotype.bodystripes.color : storedBaseColor; // Effective body fill color for this frame.\n    // Only worth a warning if there was actually a base color to apply —\n"
+          new = "    const baseColor = bodyStripesColorSwap ? genotype.bodystripes.color : storedBaseColor; // Effective body fill color for this frame.\n    const fullBaseRecolor = spec.fullBaseRecolor === true; // Used by species whose base sprite itself is the recolorable coat instead of requiring a separate region mask.\n    // Only worth a warning if there was actually a base color to apply —\n"
+          s = replace_once(s, old, new, 'compose base mode')
+
+          old = "    if (baseColor && !mask) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');\n    const baseSource = (baseColor && mask) ? await recoloredBase(baseUrl, baseColor, mask) : await loadImage(baseUrl);\n"
+          new = "    if (baseColor && !mask && !fullBaseRecolor) window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no base mask found — base fur will render unrecolored`, 'wildlife');\n    const baseSource = (baseColor && (mask || fullBaseRecolor)) ? await recoloredBase(baseUrl, baseColor, mask, fullBaseRecolor) : await loadImage(baseUrl);\n"
+          s = replace_once(s, old, new, 'compose base source')
+
+          old = "    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');\n"
+          new = "    const baseFillMode = !baseColor ? 'none' : fullBaseRecolor ? 'full-sprite' : mask ? 'mask' : 'missing-mask'; // Included in the in-game farm log so mobile builds can verify which recolor path actually ran.\n    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');\n"
+          s = replace_once(s, old, new, 'render debug log')
+          p.write_text(s)
+
+          p = Path('scripts/test-puktuk-species.js')
+          s = p.read_text()
+          old = "const geneticsSource = read('docs/js/creature-genetics.js'); // Runtime under test: Puktuk genetics, renderer registration, and wildlife bootstrap.\n"
+          s = replace_once(s, old, old + "const rendererSource = read('docs/js/creature-genetics-render.js'); // Shared compositor under test: consumes Puktuk's full-base recolor opt-in.\n", 'renderer test source')
+          old = "assert.match(geneticsSource, /const PUKTUK_FOXTAIL_CHANCE = 0\\.08/, 'Puktuk foxtail uses the rare 8% fresh-roll rate');\n"
+          s = replace_once(s, old, old + "assert.match(geneticsSource, /const PUKTUK_VISUAL_SCALE = 0\\.75/, 'Puktuk applies a species-only 75% visual scale to every borrowed size class');\nassert.match(rendererSource, /spec\\.fullBaseRecolor === true/, 'Shared compositor consumes species opt-in for full base recoloring');\n", 'new static assertions')
+
+          old = (
+              "assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGenetics.creatureSizeScale('puktuk', 'small'))), { sizeClass: 'small', x: 0.35, y: 0.35 });\n"
+              "assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGenetics.creatureSizeScale('puktuk', 'medium'))), { sizeClass: 'medium', x: 1, y: 1 });\n"
+              "assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGenetics.creatureSizeScale('puktuk', 'large'))), { sizeClass: 'large', x: 1.5, y: 1.5 });\n"
+              "assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'small'), 0.11);\n"
+              "assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'medium'), 0.33);\n"
+              "assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'large'), 0.5);\n"
+          )
+          new = (
+              "const approx = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: expected ${expected}, got ${actual}`); // Used for scaled decimal rig values that are not always exactly representable in binary floats.\n"
+              "for (const [sizeClass, expectedScale, expectedGround] of [\n"
+              "  ['small', 0.2625, 0.0825],\n"
+              "  ['medium', 0.75, 0.2475],\n"
+              "  ['large', 1.125, 0.375],\n"
+              "]) {\n"
+              "  const scale = windowStub.CreatureGenetics.creatureSizeScale('puktuk', sizeClass); // Verifies all three existing Gar-wolf-derived rows receive the same 75% species multiplier.\n"
+              "  assert.equal(scale.sizeClass, sizeClass);\n"
+              "  approx(scale.x, expectedScale, `${sizeClass} width scale`);\n"
+              "  approx(scale.y, expectedScale, `${sizeClass} height scale`);\n"
+              "  approx(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', sizeClass), expectedGround, `${sizeClass} ground offset`);\n"
+              "}\n"
+          )
+          s = replace_once(s, old, new, 'scale assertions')
+          old = "assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGeneticsRender.SPECIES.puktuk.patterns)), ['belly', 'foxtail']);\n"
+          s = replace_once(s, old, old + "assert.equal(windowStub.CreatureGeneticsRender.SPECIES.puktuk.fullBaseRecolor, true, 'Puktuk opts into tinting its whole opaque base sprite before overlays');\n", 'renderer registration assertion')
+          p.write_text(s)
+          PY
+
+      - name: Run regression test
+        run: node scripts/test-puktuk-species.js
+
+      - name: Commit clean patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/puktuk-base-fill-scale-patch.yml .github/workflows/puktuk-base-fill-scale-patch-v2.yml
+          git add docs/js/creature-genetics.js docs/js/creature-genetics-render.js scripts/test-puktuk-species.js
+          git commit -m "Fix Puktuk base fill and visual scale"
+          git push origin HEAD:chatgpt/puktuk-base-fill-scale
