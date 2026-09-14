@@ -5,6 +5,7 @@ const editor = fs.readFileSync('docs/tools/procedural-animation-editor/index.htm
 const panelUi = fs.readFileSync('docs/js/panel-ui.js', 'utf8'); // Confirms the adapter loads only for the intended tool path.
 const adapterLoader = fs.readFileSync('docs/js/procedural-impact-tabs.js', 'utf8'); // Confirms the small loader preserves Impact and adds Pants inside the same tool.
 const adapter = fs.readFileSync('docs/js/procedural-impact-tabs-base.js', 'utf8'); // Verifies the original Impact tab/modal integration contract after modularization.
+const pantsLayout = fs.readFileSync('docs/js/procedural-pants-rig-layout-fix.js', 'utf8'); // Guards the embedded Pants author's full-height host allocation.
 
 assert(editor.includes('<summary><b>Baked impact blend space</b>'), 'source blendspace section is missing');
 assert(editor.includes('id="gameModalOverlayRoot"'), 'procedural editor modal host is missing');
@@ -14,6 +15,12 @@ assert(panelUi.includes('procedural-animation-editor'), 'PanelUI does not scope 
 assert(panelUi.includes('procedural-impact-tabs.js?v='), 'PanelUI does not load the Impact/Pants adapter');
 assert(adapterLoader.includes('procedural-impact-tabs-base.js'), 'adapter loader does not preserve the original Impact implementation');
 assert(adapterLoader.includes('procedural-pants-rig-author.js'), 'adapter loader does not integrate Pants Rig into Procedural Animation');
+assert(adapterLoader.includes('procedural-pants-rig-layout-fix.js'), 'adapter loader does not install the Pants full-height layout correction');
+assert(pantsLayout.includes('display:flex!important'), 'Pants panel must use a definite flex height chain instead of intrinsic iframe sizing');
+assert(pantsLayout.includes('flex:1 1 0!important'), 'Pants author iframe must own the remaining vertical space');
+assert(pantsLayout.includes('height:0!important'), 'Pants author iframe/body must suppress intrinsic iframe height during flex sizing');
+assert(pantsLayout.includes('flex:0 0 auto!important'), 'Pants status must remain a compact non-growing footer');
+assert(pantsLayout.includes('ProceduralPantsRigLayoutFix'), 'Pants layout correction must expose mobile-readable allocation diagnostics');
 
 for (const contract of [
   'impactAuthoringTabPanel',
