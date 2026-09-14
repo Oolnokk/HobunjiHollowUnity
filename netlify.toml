@@ -1,10 +1,6 @@
 [build]
-  # Static game; Netlify still installs package.json dependencies for Functions.
+  # Optional static hosting only. Cloud saves no longer depend on Netlify Functions, Identity, or Blobs.
   publish = "docs"
-
-[functions]
-  directory = "netlify/functions"
-  node_bundler = "esbuild"
 
 [build.processing]
   skip_processing = true
