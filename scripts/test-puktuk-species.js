@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Used so the same regression test can run in-repo or against a staged checkout.
 const read = relativePath => fs.readFileSync(path.join(ROOT, relativePath), 'utf8'); // Used to keep all fixture reads rooted consistently.
 const geneticsSource = read('docs/js/creature-genetics.js'); // Runtime under test: Puktuk genetics, renderer registration, and wildlife bootstrap.
+const rendererSource = read('docs/js/creature-genetics-render.js'); // Shared compositor under test: consumes Puktuk's full-base recolor opt-in.
 const loot = JSON.parse(read('docs/config/loot/loot-pools.json')); // Confirms killed Puktuk resolve to an authored item pool.
 const cookingSource = read('docs/js/cooking-data.js'); // Confirms the existing Puktuk wool item is already categorized as Heavy.
 const wildlifeSource = read('docs/js/wildlife-spawn.js'); // Confirms exterior den spawning prefers explicit den occupants without replacing general ecology.
@@ -14,6 +15,8 @@ const cavernSource = read('docs/js/cavern-generator.js'); // Confirms cavern res
 assert.match(geneticsSource, /puktuk:\s*\['belly', 'foxtail'\]/, 'Puktuk exposes the belly and foxtail pattern layers');
 assert.match(geneticsSource, /puktuk:\s*new Set\(\['belly'\]\)/, 'Puktuk belly is authored as always-present');
 assert.match(geneticsSource, /const PUKTUK_FOXTAIL_CHANCE = 0\.08/, 'Puktuk foxtail uses the rare 8% fresh-roll rate');
+assert.match(geneticsSource, /const PUKTUK_VISUAL_SCALE = 0\.75/, 'Puktuk applies a species-only 75% visual scale to every borrowed size class');
+assert.match(rendererSource, /spec\.fullBaseRecolor === true/, 'Shared compositor consumes species opt-in for full base recoloring');
 assert.match(geneticsSource, /puktuk:\s*'gar-wolf'/, 'Puktuk reuses Gar-wolf size calibration without a render alias');
 assert.match(geneticsSource, /PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'/, 'Puktuk targets the Western Incline/Slope zone');
 assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*puktuk_run2\.png/, 'Puktuk base animation sprites are registered');
@@ -83,12 +86,18 @@ for (let i = 0; i < 500; i++) {
   assert.equal(child.belly.copies, 2);
 }
 
-assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGenetics.creatureSizeScale('puktuk', 'small'))), { sizeClass: 'small', x: 0.35, y: 0.35 });
-assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGenetics.creatureSizeScale('puktuk', 'medium'))), { sizeClass: 'medium', x: 1, y: 1 });
-assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGenetics.creatureSizeScale('puktuk', 'large'))), { sizeClass: 'large', x: 1.5, y: 1.5 });
-assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'small'), 0.11);
-assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'medium'), 0.33);
-assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'large'), 0.5);
+const approx = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1e-9, `${label}: expected ${expected}, got ${actual}`); // Used for scaled decimal rig values that are not always exactly representable in binary floats.
+for (const [sizeClass, expectedScale, expectedGround] of [
+  ['small', 0.2625, 0.0825],
+  ['medium', 0.75, 0.2475],
+  ['large', 1.125, 0.375],
+]) {
+  const scale = windowStub.CreatureGenetics.creatureSizeScale('puktuk', sizeClass); // Verifies all three existing Gar-wolf-derived rows receive the same 75% species multiplier.
+  assert.equal(scale.sizeClass, sizeClass);
+  approx(scale.x, expectedScale, `${sizeClass} width scale`);
+  approx(scale.y, expectedScale, `${sizeClass} height scale`);
+  approx(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', sizeClass), expectedGround, `${sizeClass} ground offset`);
+}
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources.puktuk.itemKey, 'puktukWool');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources.puktuk.verb, 'Shear');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.animalWidths.puktuk, 1.9);
@@ -100,6 +109,7 @@ windowStub.WildlifeSpawn = { init(injectedDeps) { receivedWildlifeDeps = injecte
 assert.equal(typeof listeners.DOMContentLoaded, 'function', 'genetics module registered its pre-game DOMContentLoaded registration hook');
 listeners.DOMContentLoaded();
 assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGeneticsRender.SPECIES.puktuk.patterns)), ['belly', 'foxtail']);
+assert.equal(windowStub.CreatureGeneticsRender.SPECIES.puktuk.fullBaseRecolor, true, 'Puktuk opts into tinting its whole opaque base sprite before overlays');
 
 const wildlifeDeps = { // Represents the live registries game.js passes to WildlifeSpawn.init.
   CREATURE_DB: creatureDb,
