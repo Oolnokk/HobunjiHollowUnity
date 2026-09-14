@@ -2,7 +2,6 @@
 
 Hobunji Hollow keeps the browser save (`localStorage`) as the live gameplay save and optionally mirrors the portable snapshot into a Google Drive folder chosen by the player.
 
-
 ## Architecture
 
 - `docs/js/save-snapshot-core.js` captures/restores the same `hobunjiSaveMeta` + `hobunji_farm_layout_v3:*` boundary used by the local-folder backup.
@@ -19,8 +18,8 @@ A Google Cloud project is required once for the deployed game.
 1. Enable **Google Drive API** and **Google Picker API**.
 2. Configure the OAuth consent screen.
 3. Create an **OAuth 2.0 Client ID** of type **Web application**.
-4. Add every real game origin that should be allowed to authorize, for example the production site and any deliberate test origin.
-5. Create an API key for Picker. Restrict it to **Websites**, allowing the game referrers **and `https://docs.google.com/*`** because Picker runs inside a Google-hosted iframe. Under API restrictions, allow **Google Picker API** and **Google Drive API**.
+4. Add `https://oolnokk.github.io` as the production **Authorized JavaScript origin**. Add additional test origins only when deliberately needed; OAuth origins do not include URL paths.
+5. Create an API key for Picker. Restrict it to **Websites**, allowing `https://oolnokk.github.io/HobunjiHollowUnity/*` and **`https://docs.google.com/*`** because Picker runs inside a Google-hosted iframe. Under API restrictions, allow **Google Picker API** and **Google Drive API**.
 6. Copy the OAuth client ID, API key, and numeric Google Cloud project number into `docs/js/google-drive-cloud-save-config.js` as `clientId`, `apiKey`, and `appId`.
 
 These three values are public browser configuration, not client secrets. Do not add an OAuth client secret to the game.
