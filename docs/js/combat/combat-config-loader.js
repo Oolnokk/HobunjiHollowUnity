@@ -101,6 +101,7 @@
     ['js/alcohol-gameplay-bridge.js?v=20260828treecover1', () => !!window.HobunjiDrunkGameplayBridge],
     ['js/npc-gifting.js?v=20260831a', () => !!window.NpcGifting],
     ['js/npc-wardrobe.js?v=20260831a', () => !!window.NpcWardrobe],
+    ['js/clothing-weaving-npc-compat.js?v=20260913a', () => Number(window.ClothingWeavingNpcCompat?.version) >= 1],
     ['js/npc-furniture-wardrobe-bridge-v4.js?v=20260904placeholder2', () => Number(window.NpcFurnitureWardrobes?.version) >= 4],
     ['config/npcs/social-relations.js?v=20260904a', () => !!window.HobunjiNpcSocialRelationsConfig],
     ['js/npc-social-relationship-bridge-v2.js?v=20260906dance1', () => !!window.NpcRapport?.eventDriven],
