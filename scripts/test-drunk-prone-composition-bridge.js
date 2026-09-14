@@ -117,8 +117,15 @@ const THREE = {
   WebGLRenderer,
 };
 
+const documentStub = {
+  readyState: 'loading',
+  addEventListener() {},
+  getElementById() { return null; },
+};
+
 const context = {
   console,
+  document: documentStub,
   window: {
     ResourceSystem,
     ProceduralLegAnimation,
@@ -133,6 +140,7 @@ const context = {
     },
   },
 };
+context.window.document = documentStub;
 context.globalThis = context.window;
 vm.createContext(context);
 vm.runInContext(source, context, { filename: modulePath });
@@ -141,6 +149,18 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.doesNotMatch(source, /THREE\.DoubleSide|preserveBanditFacingSide/, 'bandit sway never overrides portrait material culling');
   assert.ok(source.includes("portraitFaceCulling: 'material-frontside'"), 'bridge diagnostics expose normal FrontSide culling');
   assert.ok(source.includes('forcedPortraitDoubleSide: false'), 'bridge diagnostics expose that two-sided portrait forcing is disabled');
+
+  // Separate run-gait contract: player speed blends into running, humanoid
+  // hostiles run only while the shared hostile pipeline says they are in the
+  // active chase/combat state, and the run cycle is materially distinct from
+  // the ordinary walk (stance < 0.5 gives a brief flight overlap).
+  assert.match(source, /const RUN_STANCE_FRACTION = 0\.44/, 'run gait keeps a distinct airborne-overlap stance fraction');
+  assert.match(source, /function playerRunBlend\(speedWorldUnitsPerSecond\)/, 'player locomotion has an explicit walk-to-run blend');
+  assert.match(source, /banditState\.entity\?\.state === 'chase'/, 'non-animal hostiles enter run gait only during active chase/combat');
+  assert.match(source, /legLength \* \(1\.30 \+ 0\.60 \* Math\.sqrt\(speedRatio\)\)/, 'run stride scales directly from measured leg length');
+  assert.match(source, /bendDegX = -\(5 \+ 23 \* pose\.swingWave\)/, 'run gait adds swing-phase knee flex instead of only stretching walk reach');
+  assert.match(source, /debugLegBonesCheckbox/, 'Debug tab exposes the requested Leg Bone Debug checkbox');
+  assert.match(source, /Leg Bone Debug/, 'debug checkbox has a player-readable label');
 
   // Drunken Footing still caps standing entities.
   assert.strictEqual(ResourceSystem.getEffectiveMax(player, 'footing'), 70);
