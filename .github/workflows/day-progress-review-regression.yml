@@ -1,0 +1,50 @@
+name: Midnight Day Review Regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/day-progress-review.js'
+      - 'docs/js/npc-social-relationship-bridge-v2.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/calendar-system.js'
+      - 'docs/js/map-layout-system.js'
+      - 'docs/js/sky-dome.js'
+      - 'scripts/test-day-progress-review.js'
+      - 'scripts/test-npc-rapport-wrapped-midnight.js'
+      - '.github/workflows/day-progress-review-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/day-progress-review.js'
+      - 'docs/js/npc-social-relationship-bridge-v2.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/calendar-system.js'
+      - 'docs/js/map-layout-system.js'
+      - 'docs/js/sky-dome.js'
+      - 'scripts/test-day-progress-review.js'
+      - 'scripts/test-npc-rapport-wrapped-midnight.js'
+      - '.github/workflows/day-progress-review-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check midnight review integration
+        run: |
+          node --check docs/js/day-progress-review.js
+          node --check docs/js/npc-social-relationship-bridge-v2.js
+          node --check docs/js/combat/combat-config-loader.js
+          node --check scripts/test-day-progress-review.js
+          node --check scripts/test-npc-rapport-wrapped-midnight.js
+      - name: Test day review wrapped-midnight clock integration
+        run: node scripts/test-day-progress-review.js
+      - name: Test Rapport settlement at wrapped civil midnight
+        run: node scripts/test-npc-rapport-wrapped-midnight.js
