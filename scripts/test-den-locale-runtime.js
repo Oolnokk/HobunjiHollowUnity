@@ -116,12 +116,12 @@ async function main() {
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'den-locale-runtime.js' });
 
-  assert.equal(context.DenLocaleRuntime.version, 3, 'reviewed runtime version is installed');
+  assert.equal(context.DenLocaleRuntime.version, 4, 'reviewed runtime version is installed');
   const wildlifeDescriptor = Object.getOwnPropertyDescriptor(context, 'WildlifeSpawn');
   assert.equal(typeof wildlifeDescriptor?.set, 'function', 'runtime traps the later WildlifeSpawn assignment when loaded first');
 
-  // Simulate the real index.html ordering: wildlife-spawn.js assigns its API only
-  // after den-locale-runtime.js has already executed from combat-config-loader.
+  // Simulate the real parser ordering: wildlife-spawn.js assigns its API after
+  // den-locale-runtime.js has executed as a normal combat-loader sibling module.
   context.WildlifeSpawn = {
     init() { originalWildlifeInitCalls++; },
     updateHostileSpawning() {},
@@ -172,7 +172,7 @@ async function main() {
 
   await context.DenLocaleRuntime.ready;
   await Promise.resolve(); // allow init's ready.then(...) bridge to run
-  context.DenLocaleRuntime.syncCurrentDen();
+  assert.equal(context.DenLocaleRuntime.syncCurrentDen(), true, 'public sync reports success without replacing the original den API');
 
   assert.equal(cavernNest.localeId, 'locale_den_mother_nest', 'cavern nest receives locale metadata');
   assert.equal(cavernNest.clutchSpawnTransforms.length, 3, 'cavern nest receives authored clutch slots');
@@ -218,7 +218,7 @@ async function main() {
   zoneScene.add(branchRoot);
 
   currentArea = 'map_zone';
-  context.DenLocaleRuntime.syncCurrentDen();
+  assert.equal(context.DenLocaleRuntime.syncCurrentDen(), true);
   assert.equal(branchNest.nestFurnitureKey, 'nestBranch', 'branch encounter keeps the small branch furniture key');
   assert.equal(branchNest.clutchSpawnTransforms.length, 3, 'branch nest receives authored clutch slots');
   approx(branchRoot.position.x, 10 - 0.30, 'branch clutch X uses authored slot relative to branch nest center');
@@ -226,11 +226,25 @@ async function main() {
   approx(branchRoot.position.z, 20 + 0.22, 'branch clutch Z uses authored slot relative to branch nest center');
   approx(branchRoot.scale.y, 0.4 * 1.10, 'branch sleeper keeps its barn flattening while authored Y scale multiplies it');
 
+  // A den-authoring exception must not escape through updateNestInteraction and
+  // prevent unrelated later frame systems (weapon stance / procedural hands) from running.
+  const realBranchLookup = context.ClimbSystem.debugBranchesFor;
+  context.ClimbSystem.debugBranchesFor = () => { throw new Error('intentional den sync failure'); };
+  assert.doesNotThrow(() => context.DenNestSystem.updateNestInteraction(1 / 60),
+    'den locale integration must fail closed inside the gameplay interaction frame');
+  assert.equal(context.DenNestSystem.updateNestInteraction(1 / 60), 'nest-update',
+    'den locale wrapper must preserve the original interaction return value after a sync failure');
+  const failedDebug = context.DenLocaleRuntime.debugSnapshot();
+  assert.ok(failedDebug.syncFailureCount >= 2, 'sync failures are counted for in-game diagnostics');
+  assert.equal(failedDebug.lastSyncContext, 'nest-interaction');
+  context.ClimbSystem.debugBranchesFor = realBranchLookup;
+  assert.equal(context.DenLocaleRuntime.syncCurrentDen(), true, 'den locale recovers on the next healthy frame');
+
   const debug = context.DenLocaleRuntime.debugSnapshot();
   assert.equal(debug.wildlifeInstalled, true, 'debug confirms WildlifeSpawn bridge installed');
   assert.equal(debug.lastMotherApplied.areaId, 'map_i_test_den', 'debug records actual transformed Den-Mother');
 
-  console.log('Den locale runtime load-order, Den-Mother transform, cavern clutch, and branch clutch behavior passed.');
+  console.log('Den locale load-order, frame isolation, Den-Mother transform, cavern clutch, and branch clutch behavior passed.');
 }
 
 main().catch(error => {
