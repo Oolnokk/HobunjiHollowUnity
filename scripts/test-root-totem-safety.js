@@ -19,7 +19,7 @@ function grassWorkspace() {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) tiles[`${col},${row}`] = { type: 'grass', elevTier: 0 };
   }
-  return {
+  const workspace = {
     maps: [{ id: 'map_test', cols, rows, tiles, buildings: [], transitions: [] }],
     rootTotems: [
       { id: 'unsafe', x: 12, y: 12, pathAnchor: { x: 13, y: 12 } },
@@ -27,7 +27,14 @@ function grassWorkspace() {
     ],
     animalDens: [{ id: 'den', x: 15, y: 12, w: 3, h: 3, mouthAnchor: { x: 16, y: 15 } }],
     localeInstances: [],
-  };
+  }; // Mimics the final exported workspace shape consumed by game.js.
+  for (const totem of workspace.rootTotems) {
+    const tile = tiles[`${totem.x},${totem.y}`]; // Recreates wilderness-map-generator.js's rootTotem rock overlay contract.
+    tile.type = 'rock';
+    tile.generatedObjectId = totem.id;
+    tile.generatedObjectType = 'rootTotem';
+  }
+  return workspace;
 }
 
 function distanceToRect(point, rect) {
@@ -70,7 +77,12 @@ const moved = workspace.rootTotems[0]; // Unsafe first-quadrant checkpoint shoul
 assert(moved.x < 30 && moved.y < 30, 'Relocated Root Totem must stay in its original quadrant.');
 assert(distanceToRect(moved, workspace.animalDens[0]) >= 12, 'Root Totem tile must keep the configured distance from the den footprint.');
 assert(distanceToRect(moved.pathAnchor, workspace.animalDens[0]) >= 12, 'Actual revive pathAnchor must keep the same den clearance.');
+assert.strictEqual(workspace.maps[0].tiles['12,12'].type, 'grass', 'Old Root Totem overlay must be restored instead of leaving a ghost rock tile.');
+assert(!workspace.maps[0].tiles['12,12'].generatedObjectType, 'Old Root Totem overlay metadata must be cleared.');
+assert.strictEqual(workspace.maps[0].tiles[`${moved.x},${moved.y}`].generatedObjectType, 'rootTotem', 'Relocated Root Totem must carry the normal exported overlay at its new tile.');
+assert.strictEqual(workspace.maps[0].tiles[`${moved.x},${moved.y}`].generatedObjectId, moved.id, 'Relocated Root Totem overlay must retain the checkpoint object id.');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(workspace.rootTotems[1])), { id: 'safe', x: 45, y: 45, pathAnchor: { x: 46, y: 45 } }, 'Already-safe Root Totems should not move.');
+assert.strictEqual(workspace.maps[0].tiles['45,45'].generatedObjectType, 'rootTotem', 'Already-safe Root Totem overlay must stay intact.');
 
 const zoneTiles = Array.from({ length: 60 }, () => Array.from({ length: 60 }, () => ({ occupiedBy: null }))); // Mimics BanditCamps/PorakanekiCamps' copied TemporaryLocales zone view.
 for (const totem of workspace.rootTotems) zoneTiles[totem.y][totem.x].occupiedBy = 'root-totem-blocker';
