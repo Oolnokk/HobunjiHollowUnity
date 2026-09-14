@@ -22,6 +22,7 @@
   let matchedMaterials = 0; // Exposed for mobile/manual diagnostics.
   let hydratedCount = 0; // Exposed for mobile/manual diagnostics.
   let failedCount = 0; // Exposed for mobile/manual diagnostics.
+  let resolverWrapped = false; // Records whether the editor's real resolvePreviewMat(mapId,key) path is intercepted.
 
   function queueRedraw() {
     if (redrawFrame) return;
@@ -151,30 +152,36 @@
     return output;
   }
 
-  function hydrateMaterial(material, mapId) {
-    if (!material || hydratedMaterials.has(material) || pendingMaterials.has(material)) return;
-    if (material.map && !material.map?.userData?.hobunjiTerrainFallbackPlaceholder) {
-      hydratedMaterials.add(material);
-      return;
-    }
-    const key = inferTerrainKey(material);
+  function hydrateMaterial(material, mapId, explicitKey = '') {
+    if (!material || pendingMaterials.has(material)) return;
+    const key = String(explicitKey || inferTerrainKey(material)).toLowerCase();
     if (!key) return;
     const override = mapOverride(mapId, key);
     if (!override?.texture) return;
+    const configuredUrl = canonicalTerrainTextureUrl(override.texture);
+    if (hydratedMaterials.has(material) && material.map && material.userData?.hobunjiTerrainConfiguredTexture === configuredUrl) return;
 
-    material.userData = Object.assign({}, material.userData, { terrainKey: key });
+    material.userData = Object.assign({}, material.userData, { terrainKey:key });
     pendingMaterials.add(material);
     matchedMaterials++;
     baseTexture(override.texture).then(source => {
       pendingMaterials.delete(material);
       if (!source) { failedCount++; queueRedraw(); return; }
       try {
+        const oldMap = material.map;
         const texture = makePreviewTexture(source, override);
         material.map = texture;
         material.color?.set?.(0xffffff);
+        material.userData = Object.assign({}, material.userData, {
+          terrainKey:key,
+          hobunjiTerrainConfiguredTexture:configuredUrl,
+        });
         material.needsUpdate = true;
         hydratedMaterials.add(material);
         hydratedCount++;
+        if (oldMap && oldMap !== texture && oldMap.userData?.hobunjiTerrainFallbackPlaceholder) {
+          try { oldMap.dispose?.(); } catch (_) {}
+        }
       } catch (error) {
         failedCount++;
         console.warn(`[map-editor-terrain-texture-fix] failed to hydrate ${key}:`, error);
@@ -215,18 +222,36 @@
     if (!loaderProto.__hobunjiMapEditorTextureLoadWrapped) {
       const originalLoad = loaderProto.load;
       loaderProto.load = function mapEditorTextureAwareLoad(url, onLoad, onProgress, onError) {
-        const raw = String(url || '');
-        const canonical = /(?:^|\/)assets\/textures\/|^[^/\\]+\.png(?:[?#].*)?$/i.test(raw)
-          ? canonicalTerrainTextureUrl(raw)
-          : url; // Repairs both bare filenames and incorrectly nested repo-relative terrain texture URLs.
         const wrappedLoad = texture => {
           try { onLoad?.(texture); }
           finally { queueRedraw(); }
         };
-        return originalLoad.call(this, canonical, wrappedLoad, onProgress, onError);
+        return originalLoad.call(this, url, wrappedLoad, onProgress, onError);
       };
       loaderProto.__hobunjiMapEditorTextureLoadWrapped = true;
     }
+    return true;
+  }
+
+  function patchResolvePreviewMat() {
+    const current = window.resolvePreviewMat;
+    if (typeof current !== 'function') return false;
+    if (current.__hobunjiTerrainTextureWrapped) { resolverWrapped = true; return true; }
+    const original = current;
+    const wrapped = function mapEditorConfiguredPreviewMaterial(mapId, key) {
+      const material = original.apply(this, arguments);
+      if (material) {
+        material.name = material.name || `map_editor_${key}`;
+        material.userData = Object.assign({}, material.userData, { terrainKey:String(key || '').toLowerCase() });
+        if (terrainConfig) hydrateMaterial(material, mapId, key);
+        else loadTerrainConfig().then(() => hydrateMaterial(material, mapId, key));
+      }
+      return material;
+    };
+    wrapped.__hobunjiTerrainTextureWrapped = true;
+    wrapped.__hobunjiTerrainTextureOriginal = original;
+    window.resolvePreviewMat = wrapped;
+    resolverWrapped = true;
     return true;
   }
 
@@ -248,26 +273,33 @@
     return true;
   }
 
+  function exposeApi() {
+    window.HobunjiMapEditorTerrainTextureFix = {
+      installed: true,
+      queueRedraw,
+      hydrateScene,
+      canonicalTerrainTextureUrl,
+      snapshot: () => ({
+        liveRenderers: liveRenderers.size,
+        matchedMaterials,
+        hydratedMaterials: hydratedCount,
+        failedMaterials: failedCount,
+        activeMapId: activeMap()?.id || null,
+        configLoaded: !!terrainConfig,
+        resolverWrapped,
+      }),
+    };
+  }
+
   function install() {
     const threeReady = patchThree();
+    const resolverReady = patchResolvePreviewMat();
     const materialReady = patchNaturalSurfaceMaterialReplacement();
     loadTerrainConfig();
-    if (threeReady && materialReady) {
-      window.HobunjiMapEditorTerrainTextureFix = {
-        installed: true,
-        queueRedraw,
-        hydrateScene,
-        canonicalTerrainTextureUrl,
-        snapshot: () => ({
-          liveRenderers: liveRenderers.size,
-          matchedMaterials,
-          hydratedMaterials: hydratedCount,
-          failedMaterials: failedCount,
-          activeMapId: activeMap()?.id || null,
-          configLoaded: !!terrainConfig,
-        }),
-      };
+    if (threeReady && resolverReady) {
+      exposeApi();
       queueRedraw();
+      if (!materialReady) setTimeout(patchNaturalSurfaceMaterialReplacement, 80);
       return;
     }
     setTimeout(install, 40);
