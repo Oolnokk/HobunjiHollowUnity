@@ -281,24 +281,17 @@
   function spawnPackAtDen(zoneId, den, denKey) {
     const zdef = deps.EXTERIOR_ZONES[zoneId];
     const cavernMapId = denCavernMapId(zoneId, den.id);
-    // Pack-vs-herd used to be re-rolled fresh every spawn cycle from the
-    // general mutable RNG stream — independent of the den's cavern
-    // interior, which picks its own Den-Mother/creature-spawn species from
-    // a FIXED roll keyed to the den's own identity (see
-    // cavern-generator.js's nativeSpeciesFor). When a zone configures both
-    // a packSpecies and a herbivoreSpecies pool, that let the exterior and
-    // interior of the same den independently land on different answers —
-    // confirmed directly: a den with gar-wolves guarding the mouth turned
-    // out to be full of drenkirra inside. Same formula, same deterministic
-    // per-den seed (mapId + '_denpop') as nativeSpeciesFor, so a den's
-    // population type is one fixed identity everywhere it's decided, not
-    // two independent coin flips that happen to usually agree.
+    // Zones may author denSpecies when den occupants should be independent
+    // of general pack/herd ecology. Legacy zones without denSpecies retain
+    // the existing deterministic pack-vs-herd choice so this stays fully
+    // backward-compatible.
+    const explicitDenSpecies = zdef?.denSpecies || [];
     const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
     const popRng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop');
-    const useHerd = hasHerd && (!hasPack || popRng() < 0.5);
-    const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
+    const useHerd = !explicitDenSpecies.length && hasHerd && (!hasPack || popRng() < 0.5);
+    const pool = explicitDenSpecies.length ? explicitDenSpecies : (useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies);
     if (!pool || !pool.length) {
-      window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+      window.__farmLog?.(`[wildlife] ${denKey}: no denSpecies/packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
       return;
     }
     // Which INDIVIDUAL species within that fixed pool (relevant only for a
@@ -306,6 +299,7 @@
     // vary per spawn cycle — only the pack-vs-herd identity itself is
     // pinned to the den.
     const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
+    const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey); // Explicit den pools can still contain a species authored as part of the zone's herbivore ecology.
     // Every same-family member of this pack (e.g. gar-wolf + alpha, or
     // the whole uumkaoii-wild herd) shares one rolled-once "family"
     // genotype — see getOrMakeDenGenotype.
@@ -350,7 +344,7 @@
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
       const opts = { homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype };
-      assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, useHerd);
+      assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
       else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
@@ -382,9 +376,9 @@
       // once per zone per session so this doesn't spam every
       // DEN_CHECK_INTERVAL_S.
       const zdef = deps.EXTERIOR_ZONES[currentArea];
-      if ((zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
+      if ((zdef?.denSpecies?.length || zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
         _loggedMissingDenZones.add(currentArea);
-        window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
+        window.__farmLog?.(`[wildlife] zone "${currentArea}" has a denSpecies/packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
       }
       return;
     }

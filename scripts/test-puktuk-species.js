@@ -8,6 +8,8 @@ const read = relativePath => fs.readFileSync(path.join(ROOT, relativePath), 'utf
 const geneticsSource = read('docs/js/creature-genetics.js'); // Runtime under test: Puktuk genetics, renderer registration, and wildlife bootstrap.
 const loot = JSON.parse(read('docs/config/loot/loot-pools.json')); // Confirms killed Puktuk resolve to an authored item pool.
 const cookingSource = read('docs/js/cooking-data.js'); // Confirms the existing Puktuk wool item is already categorized as Heavy.
+const wildlifeSource = read('docs/js/wildlife-spawn.js'); // Confirms exterior den spawning prefers explicit den occupants without replacing general ecology.
+const cavernSource = read('docs/js/cavern-generator.js'); // Confirms cavern residents and Den-Mothers consume that same explicit den pool.
 
 assert.match(geneticsSource, /puktuk:\s*\['belly', 'foxtail'\]/, 'Puktuk exposes the belly and foxtail pattern layers');
 assert.match(geneticsSource, /puktuk:\s*new Set\(\['belly'\]\)/, 'Puktuk belly is authored as always-present');
@@ -18,6 +20,8 @@ assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*pukt
 assert.match(geneticsSource, /itemKey: 'puktukWool'[\s\S]*verb: 'Shear'/, 'Puktuk livestock production uses the existing wool item');
 assert.deepEqual(loot.pools?.creature_puktuk?.entries?.map(entry => entry.itemKey), ['puktukMeat'], 'Puktuk has its own meat drop pool');
 assert.match(cookingSource, /"puktukWool"\s*:\s*\{[\s\S]*?"name"\s*:\s*"Puktuk Wool"[\s\S]*?"Heavy"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
+assert.match(wildlifeSource, /const explicitDenSpecies = zdef\?\.denSpecies \|\| \[\][\s\S]*?const pool = explicitDenSpecies\.length \? explicitDenSpecies/, 'Exterior den spawning prefers an authored denSpecies pool');
+assert.match(cavernSource, /const denSpecies = zoneDef\?\.denSpecies \|\| \[\][\s\S]*?if \(denSpecies\.length\) return \{ zoneId, nativeSpecies: denSpecies \}/, 'Cavern den spawning prefers the same authored denSpecies pool');
 
 let rngState = 0x51f15e; // Used by deterministic Math.random so the rarity assertion cannot become flaky in CI.
 const seededMath = Object.create(Math); // Used by the VM runtime while retaining all native Math helpers.
@@ -98,7 +102,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGeneticsRender.SPE
 const wildlifeDeps = { // Represents the live registries game.js passes to WildlifeSpawn.init.
   CREATURE_DB: creatureDb,
   DEN_MOTHER_DEFS: { 'gar-wolf': { creatureKey: 'gar-wolf-den-mother', nestItemKey: 'garWolfBaby' } },
-  EXTERIOR_ZONES: { map_western_slope: { packSpecies: ['gar-wolf'], herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'] } },
+  EXTERIOR_ZONES: { map_western_slope: { denSpecies: ['future-western-den-species'], packSpecies: ['gar-wolf'], herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'] } },
 };
 assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'ok');
 assert.equal(receivedWildlifeDeps, wildlifeDeps);
@@ -106,8 +110,9 @@ assert.equal(creatureDb.puktuk.label, 'Puktuk');
 assert.equal(creatureDb.puktuk.defaultSizeClass, 'medium');
 assert.equal(creatureDb.puktuk.hostile, true);
 assert.equal(creatureDb.puktuk.lootPool, 'creature_puktuk');
-assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), [], 'Western Slope den herd pool is empty so prey species cannot occupy dens');
-assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['puktuk'], 'Western Slope den predator pool is Puktuk-only');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild'], 'Puktuk registration does not erase unrelated Western Slope herbivore ecology');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk'], 'Puktuk is added to general predator ecology without erasing existing pack species');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['future-western-den-species', 'puktuk'], 'Puktuk is appended to the explicit den pool without erasing future authored den species');
 assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
 
 console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);

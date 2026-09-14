@@ -29,23 +29,16 @@
   // Den-Mother's nest) rather than one small room.
   const TARGET_TILES_MIN = 70, TARGET_TILES_MAX = 130;
 
-  // Mirrors spawnPackAtDen's own "predator pack XOR herbivore herd, never
-  // both" design (wildlife-spawn.js) — that system rolls a den's exterior
-  // population as EITHER a pack OR a herd, deciding fresh per den, falling
-  // back to whichever pool the zone actually has if only one exists. This
-  // used to combine packSpecies+herbivoreSpecies into one pool
-  // unconditionally, so a zone with both (e.g. Northern Cliffs: grehlr +
-  // uumkao'ii-wild) could put a herbivore in the SAME den as its predator
-  // pack — both eligible as Den-Mother and as regular spawns at once,
-  // reading as if they shared one den. Seeded off mapId (not the exterior
-  // system's own rnd stream — a den's cavern is a separate, deterministic
-  // roll) so repeated lookups for the same den (Den-Mother pick, then
-  // creature-spawn pick) always agree with each other.
+  // Mirrors spawnPackAtDen's den population resolution. A zone-authored
+  // denSpecies list overrides general pack/herd ecology; legacy zones without
+  // one retain the deterministic predator-pack XOR herbivore-herd choice.
   function nativeSpeciesFor(mapId) {
     const zoneId = window.WildlifeSpawn.denCavernZoneOf(mapId);
     const zoneDef = deps.EXTERIOR_ZONES[zoneId];
+    const denSpecies = zoneDef?.denSpecies || [];
     const packSpecies = zoneDef?.packSpecies || [];
     const herbivoreSpecies = zoneDef?.herbivoreSpecies || [];
+    if (denSpecies.length) return { zoneId, nativeSpecies: denSpecies };
     const hasPack = packSpecies.length, hasHerd = herbivoreSpecies.length;
     const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denpop') : Math.random;
     const useHerd = hasHerd && (!hasPack || rng() < 0.5);
