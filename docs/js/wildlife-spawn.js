@@ -20,7 +20,76 @@
   // declared in game.js instead of moving here, since this module's own
   // functions never actually read them.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+
+  // CreatureGenetics loads before this module, but its species bootstrap used
+  // to wait for DOMContentLoaded before wrapping WildlifeSpawn.init. game.js
+  // can initialize WildlifeSpawn before that event, so a real Western Slope
+  // session could keep the legacy Drenkirra/Uumkao'ii pools even though the
+  // isolated regression (which fired DOMContentLoaded first) passed. Keep an
+  // idempotent registration at the owning system's init boundary so runtime
+  // correctness no longer depends on document-event ordering.
+  function ensurePuktukRuntimeRegistration(injectedDeps) {
+    const creatureDb = injectedDeps?.CREATURE_DB;
+    const garWolf = creatureDb?.['gar-wolf'];
+    const predatorBaseline = garWolf || creatureDb?.grehlr || creatureDb?.drenkirra || {};
+    if (creatureDb) {
+      const existing = creatureDb.puktuk || {};
+      creatureDb.puktuk = {
+        ...predatorBaseline,
+        ...existing,
+        label: 'Puktuk',
+        hostile: true,
+        defaultSizeClass: 'medium',
+        modelWidth: Number(existing.modelWidth) || Number(garWolf?.modelWidth) || Number(predatorBaseline.modelWidth) || 1.9,
+        spriteAspect: Number(existing.spriteAspect) || Number(garWolf?.spriteAspect) || Number(predatorBaseline.spriteAspect) || (600 / 1375),
+        lootPool: 'creature_puktuk',
+        sprites: {
+          idle: 'assets/creaturesprites/puktuk_idle.png',
+          run: ['assets/creaturesprites/puktuk_run1.png', 'assets/creaturesprites/puktuk_run2.png'],
+        },
+      };
+    }
+
+    const westernZone = injectedDeps?.EXTERIOR_ZONES?.map_western_slope;
+    const herbivores = westernZone?.herbivoreSpecies;
+    let legacyDrenkirraRemoved = 0;
+    if (Array.isArray(herbivores)) {
+      for (let i = herbivores.length - 1; i >= 0; i--) {
+        if (herbivores[i] !== 'drenkirra') continue;
+        herbivores.splice(i, 1);
+        legacyDrenkirraRemoved++;
+      }
+    }
+    const packs = westernZone
+      ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
+      : null;
+    if (Array.isArray(packs) && !packs.includes('puktuk')) packs.push('puktuk');
+    const denSpecies = westernZone
+      ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
+      : null;
+    if (Array.isArray(denSpecies) && !denSpecies.includes('puktuk')) denSpecies.push('puktuk');
+
+    const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS;
+    if (denMotherDefs) {
+      const existingMother = denMotherDefs.puktuk || {};
+      denMotherDefs.puktuk = {
+        ...existingMother,
+        creatureKey: existingMother.creatureKey || 'puktuk',
+        nestItemKey: existingMother.nestItemKey ?? null,
+      };
+    }
+
+    const ready = !!creatureDb?.puktuk
+      && Array.isArray(denSpecies) && denSpecies.includes('puktuk')
+      && Array.isArray(packs) && packs.includes('puktuk');
+    window.__farmLog?.(`[puktuk] WildlifeSpawn.init fallback: ready=${ready ? 1 : 0} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, ready ? 'wildlife' : 'warn');
+    return ready;
+  }
+
+  function init(injectedDeps) {
+    ensurePuktukRuntimeRegistration(injectedDeps);
+    deps = injectedDeps;
+  }
 
   // Once a den's whole pack/herd is wiped, it stays empty — no ambient
   // scatter-spawning — until the next in-game day, when a fresh pack
@@ -278,34 +347,35 @@
     return false;
   }
 
+  function denSpeciesFor(zoneId, cavernMapId) {
+    const pool = deps.EXTERIOR_ZONES[zoneId]?.denSpecies || [];
+    if (!pool.length) return null;
+    const rng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denspecies'); // One stable exact species identity per den, shared by exterior and cavern generation.
+    return pool[Math.floor(rng() * pool.length)] || null;
+  }
+
   function spawnPackAtDen(zoneId, den, denKey) {
     const zdef = deps.EXTERIOR_ZONES[zoneId];
     const cavernMapId = denCavernMapId(zoneId, den.id);
-    // Pack-vs-herd used to be re-rolled fresh every spawn cycle from the
-    // general mutable RNG stream — independent of the den's cavern
-    // interior, which picks its own Den-Mother/creature-spawn species from
-    // a FIXED roll keyed to the den's own identity (see
-    // cavern-generator.js's nativeSpeciesFor). When a zone configures both
-    // a packSpecies and a herbivoreSpecies pool, that let the exterior and
-    // interior of the same den independently land on different answers —
-    // confirmed directly: a den with gar-wolves guarding the mouth turned
-    // out to be full of drenkirra inside. Same formula, same deterministic
-    // per-den seed (mapId + '_denpop') as nativeSpeciesFor, so a den's
-    // population type is one fixed identity everywhere it's decided, not
-    // two independent coin flips that happen to usually agree.
+    // Zones may author denSpecies when den occupants should be independent
+    // of general pack/herd ecology. Legacy zones without denSpecies retain
+    // the existing deterministic pack-vs-herd choice so this stays fully
+    // backward-compatible.
+    const explicitSpeciesKey = denSpeciesFor(zoneId, cavernMapId); // Exact authored den identity, stable for this den across respawns and shared with CavernGenerator.
     const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
     const popRng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop');
-    const useHerd = hasHerd && (!hasPack || popRng() < 0.5);
-    const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
+    const useHerd = !explicitSpeciesKey && hasHerd && (!hasPack || popRng() < 0.5);
+    const pool = explicitSpeciesKey ? [explicitSpeciesKey] : (useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies);
     if (!pool || !pool.length) {
-      window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+      window.__farmLog?.(`[wildlife] ${denKey}: no denSpecies/packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
       return;
     }
     // Which INDIVIDUAL species within that fixed pool (relevant only for a
     // zone with multiple pack or multiple herd species) and how many still
     // vary per spawn cycle — only the pack-vs-herd identity itself is
     // pinned to the den.
-    const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
+    const speciesKey = explicitSpeciesKey || pool[Math.floor(deps.rnd() * pool.length)];
+    const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey); // Explicit den pools can still contain a species authored as part of the zone's herbivore ecology.
     // Every same-family member of this pack (e.g. gar-wolf + alpha, or
     // the whole uumkaoii-wild herd) shares one rolled-once "family"
     // genotype — see getOrMakeDenGenotype.
@@ -350,7 +420,7 @@
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
       const opts = { homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype };
-      assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, useHerd);
+      assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
       else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
@@ -382,9 +452,9 @@
       // once per zone per session so this doesn't spam every
       // DEN_CHECK_INTERVAL_S.
       const zdef = deps.EXTERIOR_ZONES[currentArea];
-      if ((zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
+      if ((zdef?.denSpecies?.length || zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
         _loggedMissingDenZones.add(currentArea);
-        window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
+        window.__farmLog?.(`[wildlife] zone "${currentArea}" has a denSpecies/packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
       }
       return;
     }
@@ -683,6 +753,7 @@
     denKeyFor,
     denCavernMapId,
     denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
+    denSpeciesFor,
     denKeyForCavern,
     denGenotypeFamily,
     getOrMakeDenGenotype,

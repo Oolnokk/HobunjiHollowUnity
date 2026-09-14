@@ -8,6 +8,8 @@ const read = relativePath => fs.readFileSync(path.join(ROOT, relativePath), 'utf
 const geneticsSource = read('docs/js/creature-genetics.js'); // Runtime under test: Puktuk genetics, renderer registration, and wildlife bootstrap.
 const loot = JSON.parse(read('docs/config/loot/loot-pools.json')); // Confirms killed Puktuk resolve to an authored item pool.
 const cookingSource = read('docs/js/cooking-data.js'); // Confirms the existing Puktuk wool item is already categorized as Heavy.
+const wildlifeSource = read('docs/js/wildlife-spawn.js'); // Confirms exterior den spawning prefers explicit den occupants without replacing general ecology.
+const cavernSource = read('docs/js/cavern-generator.js'); // Confirms cavern residents and Den-Mothers consume that same explicit den pool.
 
 assert.match(geneticsSource, /puktuk:\s*\['belly', 'foxtail'\]/, 'Puktuk exposes the belly and foxtail pattern layers');
 assert.match(geneticsSource, /puktuk:\s*new Set\(\['belly'\]\)/, 'Puktuk belly is authored as always-present');
@@ -18,6 +20,10 @@ assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*pukt
 assert.match(geneticsSource, /itemKey: 'puktukWool'[\s\S]*verb: 'Shear'/, 'Puktuk livestock production uses the existing wool item');
 assert.deepEqual(loot.pools?.creature_puktuk?.entries?.map(entry => entry.itemKey), ['puktukMeat'], 'Puktuk has its own meat drop pool');
 assert.match(cookingSource, /"puktukWool"\s*:\s*\{[\s\S]*?"name"\s*:\s*"Puktuk Wool"[\s\S]*?"Heavy"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
+assert.match(wildlifeSource, /function denSpeciesFor\(zoneId, cavernMapId\)[\s\S]*?_denspecies[\s\S]*?return pool\[Math\.floor\(rng\(\) \* pool\.length\)\]/, 'Explicit denSpecies resolves to one deterministic exact species per den');
+assert.match(wildlifeSource, /const explicitSpeciesKey = denSpeciesFor\(zoneId, cavernMapId\)/, 'Exterior den guards use the shared exact per-den species resolver');
+assert.match(cavernSource, /window\.WildlifeSpawn\.denSpeciesFor\(zoneId, mapId\)[\s\S]*?nativeSpecies: \[exactDenSpecies\]/, 'Cavern residents and Den-Mothers use the same exact per-den species resolver');
+assert.match(wildlifeSource, /function ensurePuktukRuntimeRegistration\(injectedDeps\)[\s\S]*?function init\(injectedDeps\) \{[\s\S]*?ensurePuktukRuntimeRegistration\(injectedDeps\)/, 'WildlifeSpawn.init owns an init-order-safe Puktuk fallback instead of relying only on DOMContentLoaded wrapping');
 
 let rngState = 0x51f15e; // Used by deterministic Math.random so the rarity assertion cannot become flaky in CI.
 const seededMath = Object.create(Math); // Used by the VM runtime while retaining all native Math helpers.
@@ -51,8 +57,8 @@ const windowStub = {
 const context = vm.createContext({ window: windowStub, console, Math: seededMath, performance: { now: () => 0 }, Set }); // Runs only the isolated genetics module with browser globals stubbed.
 vm.runInContext(geneticsSource, context);
 
-const creatureDb = { // Supplies the two existing species Puktuk intentionally borrows baseline data from.
-  'gar-wolf': { label: 'Gar-wolf', modelWidth: 2, spriteAspect: 0.45, defaultSizeClass: 'medium' },
+const creatureDb = { // Supplies the existing species Puktuk intentionally borrows baseline data from.
+  'gar-wolf': { label: 'Gar-wolf', modelWidth: 2, spriteAspect: 0.45, defaultSizeClass: 'medium', hostile: true, diet: 'carnivore' },
   'uumkaoii-wild': { label: "Wild Uumkao'ii", modelWidth: 1.5, spriteAspect: 0.5, defaultSizeClass: 'large', hostile: false, sprites: { idle: 'u', run: ['u1', 'u2'] } },
 };
 windowStub.CreatureGenetics.init({ creatureDb, CREATURE_DB: creatureDb, clamp: (value, min, max) => Math.max(min, Math.min(max, value)) });
@@ -86,6 +92,7 @@ assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'large')
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources.puktuk.itemKey, 'puktukWool');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources.puktuk.verb, 'Shear');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.animalWidths.puktuk, 1.9);
+assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.diet.puktuk, 'predator');
 
 windowStub.CreatureGeneticsRender = { SPECIES: { grehlr: { patterns: [] } } }; // Supplies the real shared renderer registry that the module extends before game startup.
 let receivedWildlifeDeps = null; // Used to prove the wrapper still delegates to the original WildlifeSpawn.init with the same dependency object.
@@ -96,14 +103,45 @@ assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGeneticsRender.SPE
 
 const wildlifeDeps = { // Represents the live registries game.js passes to WildlifeSpawn.init.
   CREATURE_DB: creatureDb,
-  EXTERIOR_ZONES: { map_western_slope: { herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'] } },
+  DEN_MOTHER_DEFS: { 'gar-wolf': { creatureKey: 'gar-wolf-den-mother', nestItemKey: 'garWolfBaby' } },
+  EXTERIOR_ZONES: { map_western_slope: { denSpecies: ['future-western-den-species'], packSpecies: ['gar-wolf'], herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'] } },
 };
 assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'ok');
 assert.equal(receivedWildlifeDeps, wildlifeDeps);
 assert.equal(creatureDb.puktuk.label, 'Puktuk');
 assert.equal(creatureDb.puktuk.defaultSizeClass, 'medium');
-assert.equal(creatureDb.puktuk.hostile, false);
+assert.equal(creatureDb.puktuk.hostile, true);
 assert.equal(creatureDb.puktuk.lootPool, 'creature_puktuk');
-assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['puktuk', 'uumkaoii-wild']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild'], 'Puktuk registration does not erase unrelated Western Slope herbivore ecology');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk'], 'Puktuk is added to general predator ecology without erasing existing pack species');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['future-western-den-species', 'puktuk'], 'Puktuk is appended to the explicit den pool without erasing future authored den species');
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
 
-console.log(`PASS Puktuk species integration (foxtail ${foxtailCount}/5000)`);
+// Reproduce the live failure order from the Western Slope snapshot: the
+// WildlifeSpawn owner initializes before the genetics DOMContentLoaded wrapper.
+const directWildlifeWindow = { __farmLog() {} };
+const directWildlifeContext = vm.createContext({ window: directWildlifeWindow, console, Math, Set, Map });
+vm.runInContext(wildlifeSource, directWildlifeContext);
+const directCreatureDb = {
+  'gar-wolf': { label: 'Gar-wolf', modelWidth: 2, spriteAspect: 0.45, defaultSizeClass: 'medium', hostile: true },
+};
+const directWildlifeDeps = {
+  CREATURE_DB: directCreatureDb,
+  DEN_MOTHER_DEFS: {},
+  EXTERIOR_ZONES: {
+    map_western_slope: {
+      denSpecies: ['future-western-den-species'],
+      packSpecies: ['gar-wolf'],
+      herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'],
+    },
+  },
+};
+directWildlifeWindow.WildlifeSpawn.init(directWildlifeDeps);
+assert.equal(directCreatureDb.puktuk?.hostile, true, 'direct WildlifeSpawn.init creates the predator Puktuk before DOMContentLoaded');
+assert.equal(directCreatureDb.puktuk?.defaultSizeClass, 'medium');
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild']);
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.EXTERIOR_ZONES.map_western_slope.denSpecies)), ['future-western-den-species', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(directWildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
+
+console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);

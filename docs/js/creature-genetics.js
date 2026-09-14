@@ -38,7 +38,7 @@
     const widths = livestockCfg.animalWidths || (livestockCfg.animalWidths = {}); // Used by farm-animals.js and nursery/incubator previews.
     widths[PUKTUK_KIND] = Number(widths['gar-wolf']) || 1.9;
     const diets = livestockCfg.diet || (livestockCfg.diet = {}); // Used by barn trough feeding rules.
-    diets[PUKTUK_KIND] = 'prey';
+    diets[PUKTUK_KIND] = 'predator';
     const resources = livestockCfg.resources || (livestockCfg.resources = {}); // Used by the generic livestock collection/cooldown path.
     resources[PUKTUK_KIND] = { itemKey: 'puktukWool', cooldownDays: 1, verb: 'Shear' };
     return true;
@@ -663,18 +663,18 @@
     wildlifeApi.init = function puktukAwareWildlifeInit(injectedDeps) {
       configurePuktukStaticData();
       const creatureDb = injectedDeps?.CREATURE_DB; // Live creature registry used by dev spawning, wilderness spawning, and companion/farm rendering.
-      const garWolf = creatureDb?.['gar-wolf']; // Supplies only the requested medium baseline dimensions; genetics separately reuses Gar-wolf size-class scaling.
-      const preyBaseline = creatureDb?.['uumkaoii-wild'] || creatureDb?.uumkaoii || creatureDb?.drenkirra || {}; // Supplies ordinary prey movement/health fields without inheriting Drenkirra-specific art.
+      const garWolf = creatureDb?.['gar-wolf']; // Supplies predator behavior/stats plus the requested medium baseline dimensions.
+      const predatorBaseline = garWolf || creatureDb?.grehlr || creatureDb?.drenkirra || {}; // Keeps Puktuk on the predator side even if a stripped test registry omits Gar-wolf.
       if (creatureDb) {
         const existing = creatureDb[PUKTUK_KIND] || {}; // Preserves any future authored Puktuk-only fields while enforcing the required new species data.
         creatureDb[PUKTUK_KIND] = {
-          ...preyBaseline,
+          ...predatorBaseline,
           ...existing,
           label: 'Puktuk',
-          hostile: false,
+          hostile: true,
           defaultSizeClass: 'medium',
-          modelWidth: Number(existing.modelWidth) || Number(garWolf?.modelWidth) || Number(preyBaseline.modelWidth) || 1.9,
-          spriteAspect: Number(existing.spriteAspect) || Number(garWolf?.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),
+          modelWidth: Number(existing.modelWidth) || Number(garWolf?.modelWidth) || Number(predatorBaseline.modelWidth) || 1.9,
+          spriteAspect: Number(existing.spriteAspect) || Number(garWolf?.spriteAspect) || Number(predatorBaseline.spriteAspect) || (600 / 1375),
           lootPool: 'creature_puktuk',
           sprites: {
             idle: 'assets/creaturesprites/puktuk_idle.png',
@@ -683,17 +683,35 @@
         };
       }
 
-      const westernZone = injectedDeps?.EXTERIOR_ZONES?.[PUKTUK_WESTERN_ZONE_ID]; // Shared zone object also read by cavern dens, keeping exterior/interior populations consistent.
-      const herbivores = westernZone?.herbivoreSpecies; // Mutated in-place so any existing references see the Drenkirra→Puktuk replacement.
-      let replacements = 0;
+      const westernZone = injectedDeps?.EXTERIOR_ZONES?.[PUKTUK_WESTERN_ZONE_ID]; // Shared zone object read by both exterior and cavern den population selectors.
+      const herbivores = westernZone?.herbivoreSpecies; // General herbivore ecology remains independent of den occupants.
+      let legacyDrenkirraRemoved = 0;
       if (Array.isArray(herbivores)) {
-        for (let i = 0; i < herbivores.length; i++) {
+        for (let i = herbivores.length - 1; i >= 0; i--) {
           if (herbivores[i] !== 'drenkirra') continue;
-          herbivores[i] = PUKTUK_KIND;
-          replacements++;
+          herbivores.splice(i, 1);
+          legacyDrenkirraRemoved++;
         }
       }
-      window.__farmLog?.(`[puktuk] registered species: default=medium sizeProfile=gar-wolf belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool; ${PUKTUK_WESTERN_ZONE_ID} Drenkirra replacements=${replacements} herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, replacements > 0 ? 'wildlife' : 'warn');
+      const packs = westernZone
+        ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
+        : null; // General predator ecology; Puktuk remains available outside its explicit den assignment.
+      if (Array.isArray(packs) && !packs.includes(PUKTUK_KIND)) packs.push(PUKTUK_KIND);
+      const denSpecies = westernZone
+        ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
+        : null; // Explicit den-only occupants. Future Western Slope den species can be authored here without changing pack/herd ecology.
+      if (Array.isArray(denSpecies) && !denSpecies.includes(PUKTUK_KIND)) denSpecies.push(PUKTUK_KIND);
+
+      const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator filters den species through this table before it will assign a Den-Mother.
+      if (denMotherDefs) {
+        const existingMother = denMotherDefs[PUKTUK_KIND] || {}; // Preserves a future authored nest reward while making Puktuk itself a valid mother until unique mother art/data exists.
+        denMotherDefs[PUKTUK_KIND] = {
+          ...existingMother,
+          creatureKey: existingMother.creatureKey || PUKTUK_KIND,
+          nestItemKey: existingMother.nestItemKey ?? null,
+        };
+      }
+      window.__farmLog?.(`[puktuk] registered predator species: default=medium sizeProfile=gar-wolf belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=predator; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && Array.isArray(packs) && packs.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
       return originalInit.call(this, injectedDeps);
     };
     wildlifeApi.__puktukBootstrapInstalled = true;
