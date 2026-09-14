@@ -18,6 +18,8 @@
   let lastMotherApplied = null;
   let lastFurnitureUpgrade = null;
   let branchSyncAt = 0;
+  let syncFailureCount = 0;
+  let lastSyncContext = null;
 
   const rootState = new WeakMap();
   const motherState = new WeakMap();
@@ -388,6 +390,24 @@
     lastAppliedArea = area;
   }
 
+  // This adapter is called from DenNestSystem's interaction path, which sits in
+  // the main gameplay frame. A den authoring/render bug must never abort that
+  // frame and strand unrelated systems (notably WeaponToolStances/procedural
+  // hands) in their fallback pose. Preserve the original interaction result and
+  // fail closed to the legacy nest layout while surfacing the error in debug.
+  function safeSyncCurrentDen(context = 'manual') {
+    try {
+      syncCurrentDen();
+      return true;
+    } catch (error) {
+      syncFailureCount += 1;
+      lastSyncContext = context;
+      lastError = String(error?.message || error);
+      if (syncFailureCount <= 3) console.warn(`[den-locale] ${context} sync failed; keeping gameplay frame alive:`, error);
+      return false;
+    }
+  }
+
   function patchWildlifeSpawn(api) {
     if (!api?.init) return api;
     if (api.__denLocaleAuthoredEncounterBridge) {
@@ -420,9 +440,9 @@
     return false;
   }
 
-  // den-locale-runtime is intentionally loaded from combat-config-loader before
-  // wildlife-spawn.js's parser-time script tag. Chain onto any pre-existing
-  // WildlifeSpawn assignment trap rather than replacing it; several wildlife
+  // combat-config-loader owns this module as an ordinary sibling parser entry
+  // before wildlife-spawn.js. Chain onto any pre-existing WildlifeSpawn
+  // assignment trap rather than nesting another script load; several wildlife
   // behavior modules use the same load-order-safe pattern.
   function watchWildlifeSpawnAssignment() {
     if (installWildlifeBridge()) return true;
@@ -475,7 +495,7 @@
       ready.then(() => {
         installNestMap(injectedDeps?._denNests);
         for (const nest of injectedDeps?._denNests?.values?.() || []) decorateNest(nest);
-        syncCurrentDen();
+        safeSyncCurrentDen('locale-ready');
       });
       return originalInit(injectedDeps);
     };
@@ -484,8 +504,9 @@
         const result = originalUpdate(dt);
         // DenNestSystem lays out its fallback positions first. Authored locale
         // transforms then win for the final rendered frame, while old/unconverted
-        // nests continue to use the fallback path unchanged.
-        syncCurrentDen();
+        // nests continue to use the fallback path unchanged. The den adapter is
+        // isolated so an authored-data error cannot stop later frame systems.
+        safeSyncCurrentDen('nest-interaction');
         return result;
       };
     }
@@ -496,12 +517,12 @@
   installDenNestBridge();
 
   window.DenLocaleRuntime = {
-    version: 3,
+    version: 4,
     ready,
     locale: () => locale,
     encounter: () => encounter,
     decorateNest,
-    syncCurrentDen,
+    syncCurrentDen: () => safeSyncCurrentDen('public'),
     debugSnapshot: () => ({
       installed,
       wildlifeInstalled,
@@ -517,6 +538,8 @@
       lastMotherApplied,
       lastFurnitureUpgrade,
       lastAppliedArea,
+      syncFailureCount,
+      lastSyncContext,
       lastError,
     }),
   };
