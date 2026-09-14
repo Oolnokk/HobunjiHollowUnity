@@ -51,8 +51,8 @@ const windowStub = {
 const context = vm.createContext({ window: windowStub, console, Math: seededMath, performance: { now: () => 0 }, Set }); // Runs only the isolated genetics module with browser globals stubbed.
 vm.runInContext(geneticsSource, context);
 
-const creatureDb = { // Supplies the two existing species Puktuk intentionally borrows baseline data from.
-  'gar-wolf': { label: 'Gar-wolf', modelWidth: 2, spriteAspect: 0.45, defaultSizeClass: 'medium' },
+const creatureDb = { // Supplies the existing species Puktuk intentionally borrows baseline data from.
+  'gar-wolf': { label: 'Gar-wolf', modelWidth: 2, spriteAspect: 0.45, defaultSizeClass: 'medium', hostile: true, diet: 'carnivore' },
   'uumkaoii-wild': { label: "Wild Uumkao'ii", modelWidth: 1.5, spriteAspect: 0.5, defaultSizeClass: 'large', hostile: false, sprites: { idle: 'u', run: ['u1', 'u2'] } },
 };
 windowStub.CreatureGenetics.init({ creatureDb, CREATURE_DB: creatureDb, clamp: (value, min, max) => Math.max(min, Math.min(max, value)) });
@@ -86,6 +86,7 @@ assert.equal(windowStub.CreatureGenetics.creatureGroundOffset('puktuk', 'large')
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources.puktuk.itemKey, 'puktukWool');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.resources.puktuk.verb, 'Shear');
 assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.animalWidths.puktuk, 1.9);
+assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.diet.puktuk, 'predator');
 
 windowStub.CreatureGeneticsRender = { SPECIES: { grehlr: { patterns: [] } } }; // Supplies the real shared renderer registry that the module extends before game startup.
 let receivedWildlifeDeps = null; // Used to prove the wrapper still delegates to the original WildlifeSpawn.init with the same dependency object.
@@ -96,14 +97,17 @@ assert.deepEqual(JSON.parse(JSON.stringify(windowStub.CreatureGeneticsRender.SPE
 
 const wildlifeDeps = { // Represents the live registries game.js passes to WildlifeSpawn.init.
   CREATURE_DB: creatureDb,
-  EXTERIOR_ZONES: { map_western_slope: { herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'] } },
+  DEN_MOTHER_DEFS: { 'gar-wolf': { creatureKey: 'gar-wolf-den-mother', nestItemKey: 'garWolfBaby' } },
+  EXTERIOR_ZONES: { map_western_slope: { packSpecies: ['gar-wolf'], herbivoreSpecies: ['drenkirra', 'uumkaoii-wild'] } },
 };
 assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'ok');
 assert.equal(receivedWildlifeDeps, wildlifeDeps);
 assert.equal(creatureDb.puktuk.label, 'Puktuk');
 assert.equal(creatureDb.puktuk.defaultSizeClass, 'medium');
-assert.equal(creatureDb.puktuk.hostile, false);
+assert.equal(creatureDb.puktuk.hostile, true);
 assert.equal(creatureDb.puktuk.lootPool, 'creature_puktuk');
-assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['puktuk', 'uumkaoii-wild']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.herbivoreSpecies)), ['uumkaoii-wild']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_western_slope.packSpecies)), ['gar-wolf', 'puktuk']);
+assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.puktuk)), { creatureKey: 'puktuk', nestItemKey: null });
 
-console.log(`PASS Puktuk species integration (foxtail ${foxtailCount}/5000)`);
+console.log(`PASS Puktuk predator/den integration (foxtail ${foxtailCount}/5000)`);
