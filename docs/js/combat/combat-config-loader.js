@@ -128,6 +128,7 @@
     ['js/combat/combat-death-mark.js?v=20260903a', () => !!window.HobunjiDeathMark],
     ['js/combat/combat-drenkirra-pellet.js?v=20260827treecover1', () => !!window.HobunjiDrenkirraPellet],
     ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260826drenkirra1', () => !!window.HobunjiGrehlrDrenkirraFollowup],
+    ['js/puktuk-den-nest-registration.js?v=20260914a', () => Number(window.PuktukDenNestRegistration?.version) >= 1],
     ['js/wildlife-territorial.js?v=20260828animalvoices1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
     ['js/wildlife-cloud-forest-behavior.js?v=20260829a', () => !!window.HobunjiCloudForestWildlife],
