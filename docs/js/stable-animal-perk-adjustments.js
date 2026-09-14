@@ -9,10 +9,16 @@
   const MOUNT_ACCEL_PER_RANK = 0.10;
   const MOUNT_MANEUVER_PER_RANK = 0.08;
   const MOUNT_CLIMB_PER_RANK = 0.10;
+  const AMBIENT_REACTION_AFTER_GREETING_MS = 450; // Used to leave a short conversational beat after the greeting fully fades before one animal reaction is shown.
+  const AMBIENT_REACTION_GREETING_GRACE_MS = 700; // Used to briefly hold animal reactions that arrive before their paired player greeting in the same proximity update.
+  const AMBIENT_SEQUENCE_TRACE_LIMIT = 16;
 
   let mountDeps = null; // Captured from Mounts.init; temporarily scales only the existing riding inputs during mounted movement.
   let greetedDay = null;
   const greetedToday = new Set(); // Keys NPC + individual animal so each NPC can reward each greeted rapport-trained pet once per game day.
+  const pendingAnimalReactions = new Map(); // Used to combine same-NPC mount/companion/shoulder-pet reactions into one random follow-up.
+  const recentPlayerGreetings = new Map(); // Used to anchor an animal follow-up after the greeting that actually rendered for that NPC.
+  const ambientSequenceTrace = []; // Used by getDebug() so mobile testing can verify greeting -> queued candidates -> one rendered follow-up without a console.
 
   function replaceTree(role, definitions) {
     const tree = progression.trees?.[role];
@@ -125,6 +131,11 @@
   }
 
   function roleActor(role) {
+    if (role === 'mount') {
+      const ride = window.Mounts?.rideEntity;
+      if (!ride || ride.health <= 0 || ride.avatarRef?.group?.visible === false) return null;
+      return ride;
+    }
     const combat = window.Combat?.deps;
     const player = combat?.player;
     const area = combat?.getCurrentArea?.();
@@ -139,6 +150,18 @@
     return null;
   }
 
+  function animalForAmbientTarget(options) {
+    const targetRoot = options?.faceTarget?.root;
+    if (!targetRoot) return null;
+    for (const role of ['companion', 'mount', 'shoulderPet']) {
+      const entry = progression.activeEntryForRole?.(role);
+      const actor = roleActor(role);
+      if (!entry || !actor || actor.avatarRef?.group !== targetRoot) continue;
+      return { role, entry, actor };
+    }
+    return null;
+  }
+
   function currentSocialDay() {
     const rapportDay = Number(window.NpcRapport?.currentGameDay?.());
     if (Number.isFinite(rapportDay)) return Math.floor(rapportDay);
@@ -147,16 +170,10 @@
   }
 
   function rapportAnimalForGreeting(options) {
-    const targetRoot = options?.faceTarget?.root;
-    if (!targetRoot) return null;
-    for (const role of ['companion', 'shoulderPet']) {
-      const entry = progression.activeEntryForRole?.(role);
-      const actor = roleActor(role);
-      if (!entry || !actor || actor.avatarRef?.group !== targetRoot) continue;
-      if (progression.perkRank(entry, 'rapportBond') <= 0) continue;
-      return { role, entry, actor };
-    }
-    return null;
+    const animal = animalForAmbientTarget(options);
+    if (!animal || animal.role === 'mount') return null;
+    if (progression.perkRank(animal.entry, 'rapportBond') <= 0) return null;
+    return animal;
   }
 
   function greetingRapportReason(animalId) {
@@ -185,10 +202,118 @@
     return window.NpcRapport?.adjust?.(npcId, PET_GREETING_RAPPORT, greetingRapportReason(animal.entry.id)) || 0;
   }
 
+  function sequenceNow() {
+    return Number(globalThis.performance?.now?.()) || Date.now();
+  }
+
+  function traceAmbientSequence(type, details = {}) {
+    ambientSequenceTrace.push({ type, at: Math.round(sequenceNow()), ...details });
+    if (ambientSequenceTrace.length > AMBIENT_SEQUENCE_TRACE_LIMIT) {
+      ambientSequenceTrace.splice(0, ambientSequenceTrace.length - AMBIENT_SEQUENCE_TRACE_LIMIT);
+    }
+  }
+
   function patchAmbientDialogue(api) {
     if (!api || api.__stableAnimalGreetingRapportWrapped || typeof api.show !== 'function') return api;
     const originalShow = api.show.bind(api);
+
+    function clearPendingTimer(pending) {
+      if (!pending?.timer) return;
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+
+    function liveGreetingFor(npcId, now = sequenceNow()) {
+      const greeting = recentPlayerGreetings.get(npcId) || null;
+      if (!greeting) return null;
+      if (now <= greeting.endAt + 1500) return greeting;
+      recentPlayerGreetings.delete(npcId);
+      return null;
+    }
+
+    function flushAnimalReaction(npcId) {
+      const pending = pendingAnimalReactions.get(npcId);
+      if (!pending) return null;
+      pending.timer = null;
+      const now = sequenceNow();
+      const greeting = liveGreetingFor(npcId, now);
+      if (greeting && now < greeting.endAt + AMBIENT_REACTION_AFTER_GREETING_MS) {
+        scheduleAnimalReaction(npcId, greeting.endAt + AMBIENT_REACTION_AFTER_GREETING_MS - now);
+        return null;
+      }
+      const candidates = [...pending.candidates.values()];
+      pendingAnimalReactions.delete(npcId);
+      if (!candidates.length) return null;
+      const chosen = candidates[Math.floor(Math.random() * candidates.length)] || candidates[0];
+      const animal = rapportAnimalForGreeting(chosen.options);
+      const result = originalShow(chosen.target, chosen.text, chosen.options);
+      if (result && animal) awardGreetingRapport(chosen.options, animal);
+      traceAmbientSequence('reaction-shown', {
+        npcId,
+        animalId: chosen.animal.entry.id,
+        role: chosen.animal.role,
+        candidateCount: candidates.length,
+      });
+      return result;
+    }
+
+    function scheduleAnimalReaction(npcId, delayMs) {
+      const pending = pendingAnimalReactions.get(npcId);
+      if (!pending) return;
+      clearPendingTimer(pending);
+      pending.timer = setTimeout(() => flushAnimalReaction(npcId), Math.max(0, Number(delayMs) || 0));
+    }
+
+    function queueAnimalReaction(target, text, options, animal) {
+      const npcId = String(options?.speakerId || '');
+      if (!npcId) return null;
+      let pending = pendingAnimalReactions.get(npcId);
+      if (!pending) {
+        pending = { candidates: new Map(), timer: null };
+        pendingAnimalReactions.set(npcId, pending);
+      }
+      pending.candidates.set(animal.entry.id, { target, text, options: { ...options }, animal });
+      const now = sequenceNow();
+      const greeting = liveGreetingFor(npcId, now);
+      const delay = greeting
+        ? Math.max(0, greeting.endAt + AMBIENT_REACTION_AFTER_GREETING_MS - now)
+        : AMBIENT_REACTION_GREETING_GRACE_MS;
+      scheduleAnimalReaction(npcId, delay);
+      traceAmbientSequence('reaction-queued', {
+        npcId,
+        animalId: animal.entry.id,
+        role: animal.role,
+        candidateCount: pending.candidates.size,
+        waitingForGreeting: !greeting,
+      });
+      return { queued: true, speakerId: npcId, animalId: animal.entry.id, role: animal.role };
+    }
+
     api.show = function stableAnimalGreetingRapportShow(target, text, options = {}) {
+      const npcId = String(options?.speakerId || '');
+      const playerGreeting = !!(npcId && options.greeting === true && options.directedAtPlayer === true);
+      if (playerGreeting) {
+        const result = originalShow(target, text, options);
+        if (result) {
+          const startedAt = Number(result.startedAt);
+          const durationMs = Number(result.durationMs);
+          const now = sequenceNow();
+          const endAt = (Number.isFinite(startedAt) ? startedAt : now)
+            + (Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 4200);
+          recentPlayerGreetings.set(npcId, { startedAt: Number.isFinite(startedAt) ? startedAt : now, endAt });
+          traceAmbientSequence('greeting-shown', { npcId, endAt: Math.round(endAt) });
+          if (pendingAnimalReactions.has(npcId)) {
+            scheduleAnimalReaction(npcId, Math.max(0, endAt + AMBIENT_REACTION_AFTER_GREETING_MS - now));
+          }
+        }
+        return result;
+      }
+
+      const ambientAnimal = animalForAmbientTarget(options);
+      if (npcId && ambientAnimal && options.directedAtPlayer === true) {
+        return queueAnimalReaction(target, text, options, ambientAnimal);
+      }
+
       const animal = rapportAnimalForGreeting(options);
       const result = originalShow(target, text, options);
       // Only a line that actually rendered counts as the animal being greeted.
@@ -236,6 +361,19 @@
         greetedToday: [...greetedToday],
         mountDepsReady: !!mountDeps,
         mount: mountRidingModifiers(),
+        ambientReactionTiming: {
+          afterGreetingMs: AMBIENT_REACTION_AFTER_GREETING_MS,
+          greetingGraceMs: AMBIENT_REACTION_GREETING_GRACE_MS,
+        },
+        pendingAmbientReactions: [...pendingAnimalReactions.entries()].map(([npcId, pending]) => ({
+          npcId,
+          candidates: [...pending.candidates.values()].map(candidate => ({
+            animalId: candidate.animal.entry.id,
+            role: candidate.animal.role,
+          })),
+        })),
+        recentPlayerGreetings: [...recentPlayerGreetings.entries()].map(([npcId, greeting]) => ({ npcId, ...greeting })),
+        ambientSequenceTrace: ambientSequenceTrace.map(entry => ({ ...entry })),
       };
     },
   });
