@@ -1,0 +1,38 @@
+name: Clothing Weaving Regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/clothing-weaving-npc-compat.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-clothing-weaving-system.js'
+      - 'scripts/test-clothing-weaving-npc-compat.js'
+      - '.github/workflows/clothing-weaving-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/clothing-weaving-npc-compat.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-clothing-weaving-system.js'
+      - 'scripts/test-clothing-weaving-npc-compat.js'
+      - '.github/workflows/clothing-weaving-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check docs/js/clothing-weaving-system.js
+          node --check docs/js/clothing-weaving-npc-compat.js
+          node --check docs/js/combat/combat-config-loader.js
+      - name: Clothing weaving regression
+        run: node scripts/test-clothing-weaving-system.js
+      - name: NPC wardrobe compatibility regression
+        run: node scripts/test-clothing-weaving-npc-compat.js
