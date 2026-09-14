@@ -1,28 +1,36 @@
 (() => {
   'use strict';
 
-  const THREE = window.THREE; // Used to reconstruct the same shared-edge surface segmentation as HobunjiSurfaceStretchUV before delegating each surface to TerrainJigsawUV.
-  const jigsaw = window.TerrainJigsawUV; // Used as the authoritative UV baker whose visual result is preserved on each detected terrain face.
-  if (!THREE || !jigsaw?.bakeMesh || jigsaw.__hobunjiSurfaceSplitFinalInstalled) return;
+  // Hybrid natural-terrain UV owner.
+  //
+  // Keep HobunjiSurfaceStretchUV's useful behavior — splitting a cliff/rock mesh
+  // into separate surfaces by shared-edge normal continuity — but use the actual
+  // TerrainJigsawUV baker for the UVs inside each detected surface. This module
+  // deliberately does NOT wrap renderer.render(), TerrainJigsawUV.scanScene(), or
+  // replace live materials. It only replaces UV geometry when a natural-surface
+  // mapper call occurs, so there is one owner instead of two systems fighting on
+  // every frame.
+  const THREE = window.THREE;
+  const jigsaw = window.TerrainJigsawUV;
+  const mapper = window.HobunjiSurfaceStretchUV;
+  if (!THREE || !jigsaw?.bakeMesh || !mapper?.installed || window.TerrainJigsawSurfaceSplit?.installed) return;
 
-  const OWNER = 'surface-split-jigsaw-v1'; // Used to make final UV ownership explicit to later natural-surface/runtime repair passes.
-  const DEFAULT_SPLIT_ANGLE_DEG = 24; // Matches HobunjiSurfaceStretchUV's furniture-style adjacent-face split threshold.
-  const SCAN_INTERVAL_MS = 250; // Bounds the final-owner scene traversal while still picking up newly generated/rebuilt terrain promptly.
-  const QUANT_SCALE = 1e6; // Used to weld non-indexed corners back into logical shared-edge topology for segmentation only.
+  const OWNER = 'surface-split-jigsaw-v2';
+  const DEFAULT_SPLIT_ANGLE_DEG = 24;
+  const QUANT_SCALE = 1e6;
+  const wrappedBake = jigsaw.bakeMesh;
+  const baseBake = wrappedBake.__hobunjiNaturalSurfacePostJigsawOriginal || wrappedBake;
+  const originalMapMesh = mapper.mapMesh;
+  const originalRemapNatural = mapper.remapNaturalTerrainMesh;
   const stats = {
-    segmentedBakes: 0,
-    surfacesBaked: 0,
-    trianglesBaked: 0,
-    meshesClaimed: 0,
-    scanPasses: 0,
-    skippedCurrentSignature: 0,
+    bakes: 0,
+    surfaces: 0,
+    triangles: 0,
+    meshes: 0,
+    cacheHits: 0,
     failures: 0,
-  }; // Used by Pixel Probe/debug callers to verify that jigsaw, not the old surface mapper, owns the final UVs.
-  const lastScanAt = new WeakMap(); // Throttles the extra natural-terrain pass independently of TerrainJigsawUV's general scan.
-
-  const wrappedBakeBeforeInstall = jigsaw.bakeMesh; // Public bake function as installed by the post-jigsaw guard, if present.
-  const baseBake = wrappedBakeBeforeInstall.__hobunjiNaturalSurfacePostJigsawOriginal || wrappedBakeBeforeInstall; // Bypasses the old "jigsaw then reassert current mapper" manual wrapper on temporary per-surface meshes.
-  const previousScan = typeof jigsaw.scanScene === 'function' ? jigsaw.scanScene.bind(jigsaw) : null; // Preserves ordinary terrain jigsaw processing before the natural-surface final pass.
+    last: [],
+  };
 
   function finite(value, fallback) {
     const number = Number(value);
@@ -43,26 +51,24 @@
 
   function isNaturalTerrainMesh(mesh) {
     if (!mesh?.isMesh || mesh.isSkinnedMesh || mesh.isInstancedMesh || !mesh.geometry) return false;
-    const materials = materialArray(mesh);
-    return materials.some((material, index) => naturalSurfaceFor(mesh, material, index));
+    return materialArray(mesh).some((material, index) => !!naturalSurfaceFor(mesh, material, index));
   }
 
-  function shouldSurfaceSplit(mesh, options = {}) {
-    if (Number.isFinite(Number(options.surfaceSplitAngleDeg))) return true;
-    if (/\/tools\/background-scenery-author\//.test(location.pathname)) return true; // The comparison tool should show the same split-jigsaw result that gameplay uses on cliffs.
-    return isNaturalTerrainMesh(mesh);
+  function eligibleNaturalMaterial(mesh, material, materialIndex) {
+    return !!(
+      naturalSurfaceFor(mesh, material, materialIndex)
+      && material?.map
+      && !material.transparent
+      && Number(material.opacity ?? 1) >= 0.99
+    );
   }
 
   function splitAngleFor(mesh, options = {}) {
-    const explicit = Number(options.surfaceSplitAngleDeg);
+    const explicit = Number(options.surfaceSplitAngleDeg ?? options.angleToleranceDeg);
     if (Number.isFinite(explicit)) return Math.max(1, Math.min(89, explicit));
     const tagged = Number(mesh?.userData?.terrainJigsawSplitAngleDeg);
     if (Number.isFinite(tagged)) return Math.max(1, Math.min(89, tagged));
     return DEFAULT_SPLIT_ANGLE_DEG;
-  }
-
-  function eligibleMaterial(material) {
-    return !!(material?.map && !material.transparent && Number(material.opacity ?? 1) >= 0.99);
   }
 
   function materialIndexForElement(geometry, element) {
@@ -87,7 +93,7 @@
     if (!position) return null;
     let uv = geometry.getAttribute('uv');
     if (uv?.count === position.count && Number(uv.itemSize || 0) >= 2) return uv;
-    const values = new Float32Array(position.count * 2); // TerrainJigsawUV requires a writable UV attribute even though it replaces its values.
+    const values = new Float32Array(position.count * 2);
     for (let index = 0; index < position.count; index++) {
       values[index * 2] = position.getX(index);
       values[index * 2 + 1] = position.getZ(index);
@@ -97,7 +103,7 @@
     return uv;
   }
 
-  function collectSurfaceTriangles(geometry, mesh, splitAngleDeg) {
+  function collectSurfaces(geometry, mesh, splitAngleDeg) {
     const position = geometry.getAttribute('position');
     const materials = materialArray(mesh);
     const triangleCount = Math.floor(position.count / 3);
@@ -108,7 +114,7 @@
       const base = triangleIndex * 3;
       const materialIndex = materialIndexForElement(geometry, base);
       const material = materials[materialIndex] || materials[0];
-      if (!eligibleMaterial(material)) continue;
+      if (!eligibleNaturalMaterial(mesh, material, materialIndex)) continue;
 
       const keys = [vertexKey(position, base), vertexKey(position, base + 1), vertexKey(position, base + 2)];
       const a = new THREE.Vector3(position.getX(base), position.getY(base), position.getZ(base));
@@ -117,7 +123,7 @@
       const cross = new THREE.Vector3().crossVectors(b.clone().sub(a), c.clone().sub(a));
       const normal = cross.lengthSq() > 1e-16 ? cross.normalize() : new THREE.Vector3(0, 1, 0);
       const localIndex = triangles.length;
-      triangles.push({ triangleIndex, base, materialIndex, keys, normal, component: -1 });
+      triangles.push({ base, materialIndex, keys, normal, component: -1 });
 
       for (let edge = 0; edge < 3; edge++) {
         const key = `${materialIndex}:${edgeKey(keys[edge], keys[(edge + 1) % 3])}`;
@@ -130,11 +136,9 @@
     const neighbors = Array.from({ length: triangles.length }, () => []);
     for (const owners of edgeOwners.values()) {
       if (owners.length < 2) continue;
-      for (let i = 0; i < owners.length; i++) {
-        for (let j = i + 1; j < owners.length; j++) {
-          neighbors[owners[i]].push(owners[j]);
-          neighbors[owners[j]].push(owners[i]);
-        }
+      for (let i = 0; i < owners.length; i++) for (let j = i + 1; j < owners.length; j++) {
+        neighbors[owners[i]].push(owners[j]);
+        neighbors[owners[j]].push(owners[i]);
       }
     }
 
@@ -153,7 +157,7 @@
         for (const neighborIndex of neighbors[currentIndex]) {
           const neighbor = triangles[neighborIndex];
           if (neighbor.component >= 0) continue;
-          if (current.materialIndex !== neighbor.materialIndex) continue;
+          if (neighbor.materialIndex !== current.materialIndex) continue;
           if (current.normal.dot(neighbor.normal) + 1e-7 < cosThreshold) continue;
           neighbor.component = id;
           stack.push(neighborIndex);
@@ -161,92 +165,93 @@
       }
       surfaces.push({ id, materialIndex: triangles[start].materialIndex, members });
     }
-
     return { triangles, surfaces };
   }
 
-  function copyTrianglePositions(sourcePosition, surface, topology) {
+  function copySurfacePositions(position, surface, topology) {
     const values = new Float32Array(surface.members.length * 9);
     let write = 0;
     for (const localTriangleIndex of surface.members) {
       const triangle = topology.triangles[localTriangleIndex];
       for (let corner = 0; corner < 3; corner++) {
         const sourceIndex = triangle.base + corner;
-        values[write++] = sourcePosition.getX(sourceIndex);
-        values[write++] = sourcePosition.getY(sourceIndex);
-        values[write++] = sourcePosition.getZ(sourceIndex);
+        values[write++] = position.getX(sourceIndex);
+        values[write++] = position.getY(sourceIndex);
+        values[write++] = position.getZ(sourceIndex);
       }
     }
     return values;
   }
 
-  function textureDimensions(material) {
-    const image = material?.map?.image || material?.map?.source?.data;
-    return `${Number(image?.naturalWidth || image?.width || 0)}x${Number(image?.naturalHeight || image?.height || 0)}`;
+  function textureState(mesh) {
+    return materialArray(mesh).map((material, index) => {
+      const image = material?.map?.image || material?.map?.source?.data;
+      const width = Number(image?.naturalWidth || image?.width || 0);
+      const height = Number(image?.naturalHeight || image?.height || 0);
+      const state = String(material?.map?.userData?.hobunjiAuthoredSurfaceState || '');
+      return `${index}:${width}x${height}:${state}`;
+    }).join('|');
   }
 
-  function finalSignature(mesh, geometry, splitAngleDeg, options) {
-    const materials = materialArray(mesh);
-    const textureState = materials.map((material, index) => `${index}:${textureDimensions(material)}:${String(material?.map?.userData?.hobunjiAuthoredSurfaceState || '')}`).join('|');
-    return `${OWNER}|angle=${splitAngleDeg}|edgePx=${finite(options.edgePx, jigsaw.defaults?.edgePx ?? 16)}|edgeWorld=${finite(options.edgeWorldWidth, jigsaw.defaults?.edgeWorldWidth ?? 0.5)}|positions=${geometry.getAttribute('position')?.count || 0}|textures=${textureState}`;
+  function signatureFor(mesh, geometry, splitAngleDeg, options) {
+    const edgePx = finite(options.edgePx, jigsaw.defaults?.edgePx ?? 16);
+    const edgeWorldWidth = finite(options.edgeWorldWidth, jigsaw.defaults?.edgeWorldWidth ?? 0.5);
+    return `${OWNER}|angle=${splitAngleDeg}|edgePx=${edgePx}|edgeWorld=${edgeWorldWidth}|positions=${geometry.getAttribute('position')?.count || 0}|textures=${textureState(mesh)}`;
   }
 
-  function cloneJigsawMaterial(material, repeatU) {
-    if (!material) return material;
-    const clone = material.clone();
-    clone.userData = Object.assign({}, material.userData || {}, { terrainJigsawMaterial: true, terrainJigsawFinalOwner: OWNER });
-    if (material.map) {
-      const texture = material.map.clone();
-      texture.wrapS = repeatU ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-      texture.wrapT = THREE.ClampToEdgeWrapping;
-      texture.repeat.set(1, 1);
-      texture.offset.set(0, 0);
-      texture.center?.set?.(0, 0);
-      texture.rotation = 0;
-      texture.matrixAutoUpdate = true;
-      texture.needsUpdate = true;
-      clone.map = texture;
+  function disposeTempJigsawMaterial(material, sourceMap) {
+    const list = Array.isArray(material) ? material : [material];
+    for (const item of list) {
+      if (!item) continue;
+      try { if (item.map && item.map !== sourceMap) item.map.dispose?.(); } catch (_) {}
+      try { item.dispose?.(); } catch (_) {}
     }
-    clone.needsUpdate = true;
-    return clone;
-  }
-
-  function disposeOwnedMaterial(material) {
-    if (material?.userData?.terrainJigsawFinalOwner !== OWNER) return;
-    try { material.map?.dispose?.(); } catch (_) {}
-    try { material.dispose?.(); } catch (_) {}
   }
 
   function segmentedBake(mesh, options = {}) {
-    if (!mesh?.isMesh || !mesh.geometry) return null;
-    const splitAngleDeg = splitAngleFor(mesh, options);
+    if (!isNaturalTerrainMesh(mesh)) return null;
     const sourceGeometry = mesh.geometry;
-    const working = sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry.clone(); // Independent corners are required because detected faces intentionally become UV seams.
-    const uv = seedUv(working);
-    const position = working.getAttribute('position');
-    if (!position || !uv) { working.dispose?.(); stats.failures++; return null; }
-
-    const signature = finalSignature(mesh, working, splitAngleDeg, options);
-    if (!options.force && sourceGeometry.userData?.terrainJigsawSurfaceSplitSignature === signature && mesh.userData?.terrainJigsawFinalOwner === OWNER) {
-      working.dispose?.();
-      stats.skippedCurrentSignature++;
-      return mesh.userData?.terrainJigsawStats || sourceGeometry.userData?.terrainJigsawStats || null;
+    const splitAngleDeg = splitAngleFor(mesh, options);
+    const expectedSignature = signatureFor(mesh, sourceGeometry, splitAngleDeg, options);
+    const sourcePosition = sourceGeometry.getAttribute?.('position');
+    const sourceUv = sourceGeometry.getAttribute?.('uv');
+    if (!options.force
+        && mesh.userData?.terrainJigsawFinalOwner === OWNER
+        && sourceGeometry.userData?.terrainJigsawSurfaceSplitSignature === expectedSignature
+        && sourcePosition
+        && sourceUv?.count === sourcePosition.count
+        && Number(sourceUv.itemSize || 0) >= 2) {
+      stats.cacheHits++;
+      return mesh.userData.terrainJigsawStats || sourceGeometry.userData.terrainJigsawStats || null;
     }
 
-    const topology = collectSurfaceTriangles(working, mesh, splitAngleDeg);
-    if (!topology.surfaces.length) { working.dispose?.(); stats.failures++; return null; }
+    const working = sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry.clone();
+    const uv = seedUv(working);
+    const position = working.getAttribute('position');
+    if (!position || !uv) {
+      working.dispose?.();
+      stats.failures++;
+      return null;
+    }
+
+    const topology = collectSurfaces(working, mesh, splitAngleDeg);
+    if (!topology.surfaces.length) {
+      working.dispose?.();
+      stats.failures++;
+      return null;
+    }
 
     const materials = materialArray(mesh);
-    const repeatByMaterial = new Map();
-    let islands = 0;
-    let triangles = 0;
     let successfulSurfaces = 0;
+    let triangles = 0;
+    let islands = 0;
 
     for (const surface of topology.surfaces) {
       const sourceMaterial = materials[surface.materialIndex] || materials[0];
-      if (!eligibleMaterial(sourceMaterial)) continue;
+      if (!eligibleNaturalMaterial(mesh, sourceMaterial, surface.materialIndex)) continue;
+
       const tempGeometry = new THREE.BufferGeometry();
-      const tempPositions = copyTrianglePositions(position, surface, topology);
+      const tempPositions = copySurfacePositions(position, surface, topology);
       tempGeometry.setAttribute('position', new THREE.BufferAttribute(tempPositions, 3));
       tempGeometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((tempPositions.length / 3) * 2), 2));
       const tempMaterial = sourceMaterial.clone();
@@ -261,10 +266,11 @@
         force: true,
         disposeSource: false,
       });
-      tempMaterial.dispose?.();
+
       if (!result) {
-        tempMesh.geometry?.dispose?.();
-        if (tempMesh.geometry !== tempGeometry) tempGeometry.dispose?.();
+        try { tempMaterial.dispose?.(); } catch (_) {}
+        try { tempMesh.geometry?.dispose?.(); } catch (_) {}
+        if (tempMesh.geometry !== tempGeometry) try { tempGeometry.dispose?.(); } catch (_) {}
         stats.failures++;
         continue;
       }
@@ -272,6 +278,14 @@
       const bakedGeometry = tempMesh.geometry;
       const bakedUv = bakedGeometry.getAttribute('uv');
       const bakedIndex = bakedGeometry.index;
+      if (!bakedUv) {
+        disposeTempJigsawMaterial(tempMesh.material, sourceMaterial.map);
+        try { bakedGeometry.dispose?.(); } catch (_) {}
+        if (bakedGeometry !== tempGeometry) try { tempGeometry.dispose?.(); } catch (_) {}
+        stats.failures++;
+        continue;
+      }
+
       let element = 0;
       for (const localTriangleIndex of surface.members) {
         const triangle = topology.triangles[localTriangleIndex];
@@ -280,17 +294,14 @@
           uv.setXY(triangle.base + corner, bakedUv.getX(bakedVertex), bakedUv.getY(bakedVertex));
         }
       }
-      const bakedMaterial = Array.isArray(tempMesh.material) ? tempMesh.material[0] : tempMesh.material;
-      if (bakedMaterial?.map?.wrapS === THREE.RepeatWrapping) repeatByMaterial.set(surface.materialIndex, true);
+
+      successfulSurfaces++;
       islands += Number(result.islands || 1);
       triangles += Number(result.triangles || surface.members.length);
-      successfulSurfaces++;
-      if (bakedMaterial && bakedMaterial !== sourceMaterial) {
-        try { if (bakedMaterial.map && bakedMaterial.map !== sourceMaterial.map) bakedMaterial.map.dispose?.(); } catch (_) {}
-        try { bakedMaterial.dispose?.(); } catch (_) {}
-      }
-      bakedGeometry.dispose?.();
-      if (bakedGeometry !== tempGeometry) tempGeometry.dispose?.();
+      disposeTempJigsawMaterial(tempMesh.material, sourceMaterial.map);
+      if (tempMaterial !== tempMesh.material) try { tempMaterial.dispose?.(); } catch (_) {}
+      try { bakedGeometry.dispose?.(); } catch (_) {}
+      if (bakedGeometry !== tempGeometry) try { tempGeometry.dispose?.(); } catch (_) {}
     }
 
     if (!successfulSurfaces) {
@@ -300,132 +311,112 @@
     }
 
     uv.needsUpdate = true;
+    const report = {
+      version: 4,
+      segmentation: 'furniture-edge-adjacency',
+      mapping: 'segmented-jigsaw',
+      patchCount: successfulSurfaces,
+      surfaces: successfulSurfaces,
+      islands,
+      triangles,
+      splitAngleDeg,
+      edgePx: finite(options.edgePx, jigsaw.defaults?.edgePx ?? 16),
+      edgeWorldWidth: finite(options.edgeWorldWidth, jigsaw.defaults?.edgeWorldWidth ?? 0.5),
+      finalOwner: OWNER,
+    };
+    const finalSignature = signatureFor(mesh, working, splitAngleDeg, options);
     working.userData = Object.assign({}, working.userData || {}, {
       terrainJigsawBaked: true,
       terrainJigsawFinalOwner: OWNER,
-      terrainJigsawSurfaceSplitSignature: signature,
-      hobunjiSurfaceStretchSignature: null,
-      hobunjiSurfaceStretch: null,
+      terrainJigsawSurfaceSplitSignature: finalSignature,
+      terrainJigsawStats: report,
+      hobunjiSurfaceStretchSignature: finalSignature,
+      hobunjiSurfaceStretch: report,
     });
-    const nextMaterials = materials.map((material, index) => eligibleMaterial(material) ? cloneJigsawMaterial(material, !!repeatByMaterial.get(index)) : material);
-    const oldMaterials = materials.slice();
+
     mesh.geometry = working;
-    mesh.material = Array.isArray(mesh.material) ? nextMaterials : nextMaterials[0];
+    // IMPORTANT: leave mesh.material exactly as-is. NaturalSurfaceMaterials owns
+    // the decoded/tinted PNG and other meshes may share that material/texture.
     mesh.userData = Object.assign({}, mesh.userData || {}, {
-      terrainJigsawIgnore: false,
+      terrainJigsawIgnore: true,
       terrainJigsawBaked: true,
       terrainJigsawFinalOwner: OWNER,
       terrainJigsawSplitAngleDeg: splitAngleDeg,
+      terrainJigsawStats: report,
       terrainGeometryRevision: (Number(mesh.userData?.terrainGeometryRevision) || 0) + 1,
-      terrainJigsawStats: {
-        islands,
-        surfaces: successfulSurfaces,
-        triangles,
-        verticesBefore: sourceGeometry.getAttribute('position')?.count || 0,
-        verticesAfter: working.getAttribute('position')?.count || 0,
-        edgePx: finite(options.edgePx, jigsaw.defaults?.edgePx ?? 16),
-        edgeWorldWidth: finite(options.edgeWorldWidth, jigsaw.defaults?.edgeWorldWidth ?? 0.5),
-        splitAngleDeg,
-        finalOwner: OWNER,
-      },
     });
-    for (let index = 0; index < oldMaterials.length; index++) if (oldMaterials[index] !== nextMaterials[index]) disposeOwnedMaterial(oldMaterials[index]);
+
     if (options.disposeSource !== false && sourceGeometry !== working) {
       try { sourceGeometry.dispose?.(); } catch (_) {}
     }
-    stats.segmentedBakes++;
-    stats.surfacesBaked += successfulSurfaces;
-    stats.trianglesBaked += triangles;
-    stats.meshesClaimed++;
-    return mesh.userData.terrainJigsawStats;
+    stats.bakes++;
+    stats.surfaces += successfulSurfaces;
+    stats.triangles += triangles;
+    stats.meshes++;
+    stats.last.push({ name: mesh.name || '(unnamed)', surfaces: successfulSurfaces, triangles, splitAngleDeg });
+    while (stats.last.length > 8) stats.last.shift();
+    return report;
   }
 
-  function publicBake(mesh, options = {}) {
-    if (shouldSurfaceSplit(mesh, options)) {
-      if (mesh?.userData) delete mesh.userData.terrainJigsawIgnore;
-      return segmentedBake(mesh, options);
+  function wrappedMapMesh(mesh, options = {}) {
+    if (isNaturalTerrainMesh(mesh)) return segmentedBake(mesh, options);
+    return originalMapMesh?.call(this, mesh, options) || null;
+  }
+
+  function wrappedRemapNatural(mesh, label = '') {
+    if (isNaturalTerrainMesh(mesh)) return segmentedBake(mesh, { label });
+    return originalRemapNatural?.call(this, mesh, label) || null;
+  }
+
+  mapper.mapMesh = wrappedMapMesh;
+  mapper.remapNaturalTerrainMesh = wrappedRemapNatural;
+  wrappedMapMesh.__hobunjiSegmentedJigsawOwner = OWNER;
+  wrappedRemapNatural.__hobunjiSegmentedJigsawOwner = OWNER;
+
+  // The old cross-mesh plateau adapter deliberately combined touching plateau
+  // cliffs into one UV solve. That contradicts the requested per-face reset, so
+  // restore the underlying plateau builders if that adapter already wrapped them.
+  const plateau = window.ZonePlateauMesa;
+  if (plateau?.buildZoneMesaMeshes?.__hobunjiCrossMeshCliffUvOriginal) {
+    plateau.buildZoneMesaMeshes = plateau.buildZoneMesaMeshes.__hobunjiCrossMeshCliffUvOriginal;
+  }
+  if (plateau?.rebuildZoneMesaMeshes?.__hobunjiCrossMeshCliffUvOriginal) {
+    plateau.rebuildZoneMesaMeshes = plateau.rebuildZoneMesaMeshes.__hobunjiCrossMeshCliffUvOriginal;
+  }
+
+  function diagnostics() {
+    const lines = [
+      '',
+      '=== Segmented Jigsaw final UV diagnostics ===',
+      `Installed=true owner=${OWNER} split=${DEFAULT_SPLIT_ANGLE_DEG}deg bakes=${stats.bakes} meshes=${stats.meshes} surfaces=${stats.surfaces} triangles=${stats.triangles} cacheHits=${stats.cacheHits} failures=${stats.failures}`,
+    ];
+    for (const entry of stats.last.slice(-5)) {
+      lines.push(`  ${entry.name} surfaces=${entry.surfaces} triangles=${entry.triangles} split=${entry.splitAngleDeg}deg`);
     }
-    return wrappedBakeBeforeInstall.call(jigsaw, mesh, options);
+    return lines.join('\n');
   }
 
-  function scanFinalNaturalSurfaces(scene, now = performance.now()) {
-    if (!scene?.isScene || scene.userData?.terrainJigsawDisableAuto) return 0;
-    const previous = lastScanAt.get(scene) ?? -Infinity;
-    if (now - previous < SCAN_INTERVAL_MS) return 0;
-    lastScanAt.set(scene, now);
-    stats.scanPasses++;
-    let made = 0;
-    scene.traverse(object => {
-      if (!isNaturalTerrainMesh(object)) return;
-      const angle = splitAngleFor(object, {});
-      const geometry = object.geometry;
-      if (object.userData?.terrainJigsawFinalOwner === OWNER && geometry?.userData?.terrainJigsawSurfaceSplitSignature) {
-        const signature = finalSignature(object, geometry, angle, {});
-        if (geometry.userData.terrainJigsawSurfaceSplitSignature === signature) return;
-      }
-      if (object.userData) delete object.userData.terrainJigsawIgnore;
-      const result = segmentedBake(object, { force: true, disposeSource: true, surfaceSplitAngleDeg: angle });
-      if (result) made++;
-    });
-    return made;
+  function installProbeDiagnostics() {
+    const result = document?.getElementById?.('debugProbeResult');
+    if (!result || result.__hobunjiSegmentedJigsawObserver || typeof MutationObserver !== 'function') return false;
+    const marker = '=== Segmented Jigsaw final UV diagnostics ===';
+    const append = () => {
+      const text = String(result.textContent || '');
+      if (!text || text.includes(marker) || !text.startsWith('Pixel Probe report')) return;
+      result.textContent = text + diagnostics();
+    };
+    const observer = new MutationObserver(() => queueMicrotask(append));
+    observer.observe(result, { childList: true, subtree: true, characterData: true });
+    result.__hobunjiSegmentedJigsawObserver = observer;
+    return true;
   }
-
-  function scanScene(scene, now = performance.now()) {
-    let ordinary = 0;
-    if (previousScan) {
-      const natural = [];
-      scene?.traverse?.(object => {
-        if (!isNaturalTerrainMesh(object)) return;
-        natural.push([object, object.userData?.terrainJigsawIgnore]);
-        object.userData = Object.assign({}, object.userData || {}, { terrainJigsawIgnore: true }); // Prevents the old unsplit auto scan from doing throwaway work on natural cliffs before the final segmented pass.
-      });
-      ordinary = Number(previousScan(scene, now)) || 0;
-      for (const [object, previousIgnore] of natural) {
-        if (!object?.userData) continue;
-        if (previousIgnore) object.userData.terrainJigsawIgnore = previousIgnore;
-        else delete object.userData.terrainJigsawIgnore;
-      }
-    }
-    return ordinary + scanFinalNaturalSurfaces(scene, now);
-  }
-
-  function protectFinalOwnership() {
-    const mapper = window.HobunjiSurfaceStretchUV;
-    if (mapper?.remapNaturalTerrainMesh && !mapper.remapNaturalTerrainMesh.__hobunjiJigsawFinalProtected) {
-      const previousRemap = mapper.remapNaturalTerrainMesh;
-      function protectedRemap(mesh, label = '') {
-        const position = mesh?.geometry?.getAttribute?.('position');
-        const uv = mesh?.geometry?.getAttribute?.('uv');
-        if (mesh?.userData?.terrainJigsawFinalOwner === OWNER && position && uv?.count === position.count && Number(uv.itemSize || 0) >= 2) {
-          if (mesh.userData) delete mesh.userData.terrainJigsawIgnore;
-          return mesh.userData.terrainJigsawStats || mesh.geometry?.userData?.terrainJigsawStats || { mapping: OWNER, label };
-        }
-        return previousRemap.call(this, mesh, label);
-      }
-      protectedRemap.__hobunjiJigsawFinalProtected = true;
-      protectedRemap.__hobunjiJigsawFinalOriginal = previousRemap;
-      mapper.remapNaturalTerrainMesh = protectedRemap;
-    }
-
-    const plateau = window.ZonePlateauMesa;
-    if (plateau?.buildZoneMesaMeshes?.__hobunjiCrossMeshCliffUvOriginal) plateau.buildZoneMesaMeshes = plateau.buildZoneMesaMeshes.__hobunjiCrossMeshCliffUvOriginal;
-    if (plateau?.rebuildZoneMesaMeshes?.__hobunjiCrossMeshCliffUvOriginal) plateau.rebuildZoneMesaMeshes = plateau.rebuildZoneMesaMeshes.__hobunjiCrossMeshCliffUvOriginal;
-  }
-
-  jigsaw.bakeMesh = publicBake;
-  jigsaw.scanScene = scanScene;
-  jigsaw.__hobunjiSurfaceSplitFinalInstalled = true;
-  jigsaw.__hobunjiSurfaceSplitFinalOwner = OWNER;
-  protectFinalOwnership();
-  if (typeof queueMicrotask === 'function') queueMicrotask(protectFinalOwnership);
-  window.addEventListener?.('DOMContentLoaded', protectFinalOwnership, { once: true });
+  if (!installProbeDiagnostics()) window.addEventListener?.('DOMContentLoaded', installProbeDiagnostics, { once: true });
 
   window.TerrainJigsawSurfaceSplit = {
     installed: true,
     owner: OWNER,
     splitAngleDeg: DEFAULT_SPLIT_ANGLE_DEG,
     bakeMesh: segmentedBake,
-    scanScene: scanFinalNaturalSurfaces,
-    snapshot() { return Object.assign({}, stats); },
+    snapshot: () => Object.assign({}, stats, { last: stats.last.slice() }),
   };
 })();
