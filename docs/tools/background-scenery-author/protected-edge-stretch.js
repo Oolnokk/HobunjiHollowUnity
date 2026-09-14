@@ -1,11 +1,30 @@
 'use strict';
 
-// The author does not load the gameplay HousePieces bootstrap, which normally
-// brings TerrainRenderChunks/TerrainJigsawUV in synchronously. Load that shared
-// terrain baker here too so the 3D author preview uses exactly the runtime UV
-// code instead of maintaining a second approximation.
+// The author uses Three r128. Its WebGLRenderer exposes render on renderer
+// instances rather than on WebGLRenderer.prototype, while the shared gameplay
+// TerrainRenderChunks bootstrap uses the prototype as its automatic render-hook
+// attachment point. The gameplay API itself does not require that hook when a
+// tool calls bakeMesh() directly, so provide a tool-only compatibility method
+// long enough for the shared runtime to install its public APIs.
 if (!window.TerrainJigsawUV && document.readyState === 'loading' && typeof document.write === 'function') {
-  document.write('<script src="../../js/terrain-render-chunks.js?v=20260914jigsaw2"></script>');
+  const rendererProto = window.THREE?.WebGLRenderer?.prototype;
+  let installedPrototypeShim = false;
+  if (rendererProto && typeof rendererProto.render !== 'function') {
+    const compatibilityRender = function hobunjiR128TerrainApiCompatibilityRender() {
+      // Three r128 renderer instances shadow this prototype member with their
+      // real render function. Reaching this method directly indicates an invalid
+      // renderer rather than a valid preview frame, so deliberately do nothing.
+    };
+    compatibilityRender.__hobunjiR128TerrainApiCompatibilityShim = true;
+    rendererProto.render = compatibilityRender;
+    installedPrototypeShim = true;
+  }
+  window.__hobunjiTerrainJigsawCompat = {
+    attempted: true,
+    installedPrototypeShim,
+    threeRevision: String(window.THREE?.REVISION || ''),
+  };
+  document.write('<script src="../../js/terrain-render-chunks.js?v=20260914r128compat1"></script>');
 }
 
 (() => {
