@@ -172,8 +172,8 @@
     if (/(?:rock[_ -]?formation)/.test(label)) return { surface: 'rocks', slot: null, reason: 'rock-formation' };
     if (/plateau|mesa/.test(label) && Array.isArray(mesh.material) && mesh.material.length > 1) return { surface: 'cliffs', slot: 1, reason: 'named-multimaterial-mesa' };
 
-    const steepRatio = geometrySteepRatio(mesh.geometry); // Used only after stronger semantic/name checks so arbitrary non-terrain meshes never pay the fallback cost unless their material is a known legacy terrain color.
-    if (steepRatio >= STEEP_RATIO_MIN && materials.some(material => LEGACY_CLIFF_COLORS.has(materialHex(material)))) {
+    const legacyColor = materials.some(material => LEGACY_CLIFF_COLORS.has(materialHex(material))); // Used to prevent slope analysis from touching unrelated buildings/furniture in old previews.
+    if (legacyColor && geometrySteepRatio(mesh.geometry) >= STEEP_RATIO_MIN) {
       return { surface: 'cliffs', slot: null, reason: 'legacy-steep-color' };
     }
     return null;

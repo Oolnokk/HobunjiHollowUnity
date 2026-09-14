@@ -24,6 +24,8 @@ for (const expected of [
   "terrainKey === 'cliff'",
   "terrainKey === 'rock'",
   "new Set(['6a6460', '79807c', '6b5638'])",
+  'const legacyColor = materials.some',
+  'legacyColor && geometrySteepRatio',
   'STEEP_RATIO_MIN',
   'HobunjiToolTerrainParity',
   'sourcePixelWorldSizeX',
