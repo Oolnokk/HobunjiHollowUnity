@@ -23,7 +23,6 @@
 
   let deps = null; // Receives the current-area/player accessors supplied by game.js.
   const zones = new Map(); // Stores one ZoneChunkController per built wilderness map.
-  const allocationHolds = new Set(); // Reason-keyed holds stop only queued allocation-heavy chunk builds while other expensive systems initialize.
   let debugVisible = false; // Controls the optional in-world chunk cages and fixed diagnostic overlay.
   let lastDebugRefreshAt = 0; // Throttles DOM diagnostic updates.
   let lastResidencyAudit = null; // Stores the latest button-driven orphan/out-of-radius chunk scan for mobile copy/reporting.
@@ -31,24 +30,6 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     wireDebugUi();
-  }
-
-  function setAllocationHold(reason, active = true) {
-    const key = String(reason || 'unspecified'); // Stable caller-owned key allows independent systems to acquire/release without clearing one another.
-    const wasHeld = allocationHolds.size > 0;
-    if (active) allocationHolds.add(key);
-    else allocationHolds.delete(key);
-    const held = allocationHolds.size > 0;
-    if (wasHeld && !held) {
-      // Do not allocate a queued terrain chunk on the exact frame another
-      // allocation-heavy operation releases its hold. Low-memory devices get
-      // the normal GC breathing interval again; desktop remains immediate.
-      for (const controller of zones.values()) {
-        controller.streamCooldownSeconds = Math.max(controller.streamCooldownSeconds, STREAM_BUILD_INTERVAL_S);
-      }
-    }
-    refreshDebugText(true);
-    return held;
   }
 
   function clamp(value, min, max) {
@@ -307,7 +288,6 @@
       const elapsed = Math.max(0, Number(dt) || 0); // Used to count down the low-memory allocation interval without tying it to frame rate.
       this.streamCooldownSeconds = Math.max(0, this.streamCooldownSeconds - elapsed);
       if (!this.queue.size) return; // Steady state once the neighborhood is fully streamed in — skip the array copy/sort below entirely.
-      if (allocationHolds.size) return; // Recenter/unload/queue still ran above; only allocation waits while another expensive runtime operation owns the budget.
       if (this.streamCooldownSeconds > 0) return; // Low-memory mode still unloads every frame above, but delays the next allocation-heavy build.
       const queue = [...this.queue.values()]
         .sort((a, b) => a.distance - b.distance || a.cz - b.cz || a.cx - b.cx);
@@ -437,8 +417,6 @@
       unloadRadius: UNLOAD_RADIUS,
       lowMemoryStreaming: LOW_MEMORY_STREAMING,
       streamBuildIntervalMs: Math.round(STREAM_BUILD_INTERVAL_S * 1000),
-      allocationHeld: allocationHolds.size > 0,
-      allocationHoldReasons: [...allocationHolds],
       debugVisible,
       activeArea: deps?.getCurrentArea?.() || null,
       lastResidencyAudit,
@@ -557,8 +535,7 @@
       'mode=' + (data.lowMemoryStreaming ? 'low-memory' : 'standard') +
         ' active=' + (data.activeArea || '(none)') +
         ' load=' + LOAD_RADIUS + ' unload=' + UNLOAD_RADIUS +
-        ' pace=' + data.streamBuildIntervalMs + 'ms' +
-        ' hold=' + (data.allocationHeld ? data.allocationHoldReasons.join(',') : '-'),
+        ' pace=' + data.streamBuildIntervalMs + 'ms',
     ];
     const persisted = window.__wildernessChunkPersistenceDebug?.(); // Adds save-state coverage to the mobile status panel.
     if (persisted) {
@@ -626,7 +603,6 @@
     rebuildZone,
     attachObject,
     update,
-    setAllocationHold,
     snapshot,
     toggleDebug,
     auditResidency,
