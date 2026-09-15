@@ -21,6 +21,12 @@ assert(source.includes('Use Browser Autosave'), 'reload gate exposes browser aut
 assert(source.includes('Use Save Folder'), 'reload gate preserves an explicit folder restore choice');
 assert(source.includes('Deliberately do NOT auto-load'), 'remembered ready folders are never silently loaded at startup');
 
+assert(source.includes('HobunjiSaveSyncStore?.getCurrentEnvelope'), 'reload recovery checks durable IndexedDB when localStorage is missing or unreadable');
+assert(source.includes('HobunjiSaveEnvelope?.verify?.(envelope)'), 'durable fallback envelope is hash-verified before it becomes an offered recovery source');
+assert(source.includes('snapshot.apply(browser.envelope.snapshot)'), 'choosing the durable browser fallback can repair localStorage without reading the folder');
+assert(source.includes("appendEvent?.('BROWSER FALLBACK RESTORED'"), 'durable browser recovery is recorded for mobile diagnostics');
+assert(source.includes('durableRecoveries'), 'durable fallback restores remain visible in diagnostics');
+
 const browserButtonIndex = source.indexOf('data-folder-use-browser');
 const folderButtonIndex = source.indexOf('data-folder-use-folder');
 assert(browserButtonIndex >= 0 && folderButtonIndex > browserButtonIndex, 'browser autosave choice is presented before the folder restore choice');
@@ -44,4 +50,4 @@ const emptyBootstrapIndex = loader.indexOf('folder-save-empty-bootstrap.js');
 assert(coreIndex >= 0 && policyIndex > coreIndex && canonicalIndex > policyIndex, 'browser-only autosave policy wraps the legacy core before V3 captures its methods');
 assert(primaryIndex >= 0 && reloadChoiceIndex > primaryIndex && emptyBootstrapIndex > reloadChoiceIndex, 'reload-choice policy replaces startup behavior after primary UI exists and before later folder wrappers');
 
-console.log('OK  every desktop reload offers browser autosave before any explicit folder restore, while automatic folder writes stay disabled');
+console.log('OK  every desktop reload offers browser autosave/durable recovery before any explicit folder restore, while automatic folder writes stay disabled');
