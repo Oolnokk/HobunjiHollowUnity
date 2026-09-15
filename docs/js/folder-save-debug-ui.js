@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
-  const CHANGE_SUMMARY = 'Latest: normal gameplay save writes commit the canonical V3 envelope durably and queue linked Drive without polling or forced OAuth; startup reconciles a remembered mobile Drive link before save selection, and legacy Cloud Save restore buttons now route to Google Drive.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes now share three-way reconciliation; divergent external folder changes are blocked before V2/V3 writes, while legacy Netlify/local-save-flow code is no longer active in production.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -30,6 +30,7 @@
       googleDriveRestoreBridge: safeSnapshot(() => window.__hobunjiGoogleDriveLegacyCloudBridgeDebug?.snapshot?.()),
       folder: safeSnapshot(() => window.LocalSaveFolder?.getStatus?.()),
       folderV3: safeSnapshot(() => window.__hobunjiFolderSaveV3Debug?.snapshot?.()),
+      folderV3Reconciliation: safeSnapshot(() => window.__hobunjiFolderSaveV3ReconciliationDebug?.snapshot?.()),
       primaryUx: safeSnapshot(() => window.__hobunjiFolderSavePrimaryDebug?.snapshot?.()),
       onboarding: safeSnapshot(() => window.__hobunjiFolderSaveOnboardingDebug?.snapshot?.()),
       emptyFolderBootstrap: safeSnapshot(() => window.__hobunjiFolderSaveEmptyBootstrapDebug?.snapshot?.()),
