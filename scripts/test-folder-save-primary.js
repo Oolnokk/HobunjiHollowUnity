@@ -93,7 +93,7 @@ assert(syncStore.includes('OAuth tokens must not be persisted'), 'durable sync s
 assert(coordinator.includes('snapshot.capture({ strict: true })'), 'save coordinator captures the existing portable browser-save boundary strictly');
 assert(coordinator.includes('store.commitEnvelope'), 'save coordinator commits the canonical envelope to durable local storage');
 assert(coordinator.includes('HobunjiGoogleDriveSaveStartup?.prepareBeforeOnboarding'), 'coordinator delegates no-folder startup to the linked Drive preflight gate');
-assert(coordinator.includes('FolderSavePrimary.prepareBeforeOnboarding'), 'coordinator preserves existing desktop folder startup ownership when supported');
+assert(coordinator.includes('FolderSavePrimary?.prepareBeforeOnboarding'), 'coordinator preserves existing desktop folder startup ownership when supported');
 assert(driveConfig.includes("scope: 'https://www.googleapis.com/auth/drive.file'"), 'Drive configuration is permanently limited to the narrow drive.file scope');
 assert(driveTransport.includes("let accessToken = ''"), 'Drive OAuth access token is memory-only transport state');
 assert(driveTransport.includes("method: 'PATCH'"), 'Drive updates reuse the linked file id with PATCH instead of creating duplicates');
@@ -103,7 +103,7 @@ assert(driveUi.includes("ROW_ID = 'googleDriveSaveRow'"), 'Settings exposes a de
 assert(driveUi.includes('!folderSupported && Boolean(status?.configured)'), 'Drive becomes visually primary when browser folder access is unavailable');
 assert(driveUi.includes('gameIsRunning()'), 'Drive UI blocks hot-loading a remote save into a running world');
 assert(driveStartup.includes("GATE_ID = 'googleDriveSaveStartupGate'"), 'remembered mobile Drive links get a dedicated pre-onboarding authorization gate');
-assert(driveStartup.includes("'Use Local Save Offline'"), 'Drive startup authorization can always be bypassed in favor of the durable local save');
+assert(driveStartup.includes('Use Local Save Offline'), 'Drive startup authorization can always be bypassed in favor of the durable local save');
 assert(driveStartup.includes("decision.state === 'external-only-change'"), 'safe remote-only startup changes are pulled before onboarding initializes');
 assert(driveStartup.includes("decision.state === 'local-only-change'"), 'safe local-only startup changes can sync after Drive preflight');
 assert(driveStartup.includes('showResolutionGate(decision, localEnvelope)'), 'first-link ambiguity and divergent conflicts require an explicit direction');
