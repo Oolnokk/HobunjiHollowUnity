@@ -22,9 +22,13 @@ const context = vm.createContext({
 vm.runInContext(layoutSource, context, { filename: 'tankan-script-layout.js' });
 const layout = context.window.TankanScriptLayout;
 assert(layout?.installed, 'TankanScriptLayout should install');
+assert.equal(layout.version, 2, 'font-loading fix should stay active');
 assert.equal(layout.defaults.columnSpacingEm, -0.55, 'loading-screen column spacing should stay canonical');
 assert.equal(layout.defaults.glyphAdvanceEm, 0.56, 'loading-screen glyph advance should stay canonical');
 assert(layout.fontUrl.includes('tankanscript_rotated_flipped_horiz.otf'), 'must use the loading-screen rotated/flipped Tankan font');
+assert(!layoutSource.includes('document.fonts.check('), 'do not preflight Tankan with FontFaceSet.check; it can silently accept fallback rendering');
+assert(layoutSource.includes('refusing to rasterize with a fallback font'), 'canvas renderer must fail closed instead of drawing a fallback font');
+assert(layoutSource.includes('document.fonts.add(loadedFace)'), 'the loaded Tankan FontFace must be explicitly registered before canvas rendering');
 
 const measured = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddingEm: 0 });
 assert.equal(measured.columnCount, 2, 'one word should equal one vertical column');
@@ -63,5 +67,6 @@ const loader = read('docs/tools/furniture-avatar-author/foliage-furniture-mode.j
 const layoutLoad = loader.indexOf('tankan-script-layout.js');
 const decalsLoad = loader.indexOf('furniture-decals.js');
 assert(layoutLoad >= 0 && decalsLoad > layoutLoad, 'editor must load TankanScriptLayout before furniture decals');
+assert(loader.includes('tankan-script-layout.js?v=20260915tankan3'), 'editor must cache-bust the fixed Tankan font loader');
 
 console.log('furniture Tankan decal checks passed');
