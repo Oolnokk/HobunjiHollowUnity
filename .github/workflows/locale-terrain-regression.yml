@@ -15,7 +15,10 @@ on:
       - 'docs/js/panel-ui.js'
       - 'docs/js/puktuk-den-nest-registration.js'
       - 'docs/js/procedural-dance-mode.js'
+      - 'docs/js/procedural-dance-mode-base.js'
       - 'docs/js/procedural-editor-idle-arm-parity.js'
+      - 'docs/js/character-joint-motion-parity.js'
+      - 'docs/js/attachment-rig-latest-authored-snapshot.js'
       - 'docs/js/wilderness-map-generator.js'
       - 'docs/tools/wilderness-generation-lab/**'
       - 'docs/tools/locale-editor/**'
@@ -28,6 +31,7 @@ on:
       - 'scripts/test-puktuk-den-nest-registration.js'
       - 'scripts/test-dev-arena-nest-spawner-hook-chain.js'
       - 'scripts/test-procedural-editor-idle-arms.js'
+      - 'scripts/test-character-joint-motion-parity.js'
       - '.github/workflows/locale-terrain-regression.yml'
   workflow_dispatch:
 
@@ -50,6 +54,9 @@ jobs:
           node --check docs/js/puktuk-den-nest-registration.js
           node --check docs/js/dev-arena-nest-spawner.js
           node --check docs/js/procedural-editor-idle-arm-parity.js
+          node --check docs/js/character-joint-motion-parity.js
+          node --check docs/js/procedural-dance-mode.js
+          node --check docs/js/procedural-dance-mode-base.js
           node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles','previewRoot.remove(child)','parent !== previewRoot'])if(!s.includes(needle))throw new Error('missing '+needle);"
       - name: Test terrain-aware locale placement
         run: node scripts/test-locale-terrain-placement.js
@@ -71,3 +78,5 @@ jobs:
         run: node scripts/test-procedural-hand-fallback.js
       - name: Test procedural editor idle arm parity
         run: node scripts/test-procedural-editor-idle-arms.js
+      - name: Test live posterior hips and authored Dance shoulders
+        run: node scripts/test-character-joint-motion-parity.js
