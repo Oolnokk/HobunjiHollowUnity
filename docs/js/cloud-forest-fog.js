@@ -56,6 +56,7 @@
       clarityMaskAlpha: 0.80,
       softMaskAlpha: 0.28,
       softTransitionFraction: 0.18,
+      weatherTintRetentionAlpha: 0.20,
     }),
   });
   let tuning = {
@@ -109,6 +110,10 @@
         softTransitionFraction: clamp01(finiteOr(
           lantern.softTransitionFraction,
           DEFAULT_TUNING.lantern.softTransitionFraction,
+        )),
+        weatherTintRetentionAlpha: clamp01(finiteOr(
+          lantern.weatherTintRetentionAlpha,
+          DEFAULT_TUNING.lantern.weatherTintRetentionAlpha,
         )),
       },
     };
@@ -424,7 +429,32 @@
     return Number.isFinite(value) ? clamp01(value) : 1;
   }
 
-  function drawLanternMasksCompat(activation = 1) {
+  function currentOutdoorWeatherTintState() {
+    const state = window.HobunjiSkyDome?.getLightingState?.(); // Supplies the already-authoritative overcast color used by the outdoor overlay.
+    const overcast = clamp01(state?.overcast); // Scales the tint retained inside outdoor light masks without changing darkness or lantern activation.
+    if (!state || overcast <= 0 || tuning.lantern.weatherTintRetentionAlpha <= 0) return null;
+    return {
+      r: Math.max(0, Math.min(255, finiteOr(state.r, 255))),
+      g: Math.max(0, Math.min(255, finiteOr(state.g, 255))),
+      b: Math.max(0, Math.min(255, finiteOr(state.b, 255))),
+      alpha: clamp01(overcast * tuning.lantern.weatherTintRetentionAlpha),
+    };
+  }
+
+  function addWeatherTintStops(grad, weatherTint, centerStrength, clarityStrength, softStrength, clarityFrac, softTransitionFraction) {
+    const centerAlpha = weatherTint.alpha * centerStrength; // Reapplies only the weather coloration removed at the brightest center of a local-light mask.
+    const clarityAlpha = weatherTint.alpha * clarityStrength; // Reapplies the same coloration through the authored clear-radius portion of the mask.
+    const softAlpha = weatherTint.alpha * softStrength; // Reapplies a small amount through the feathered edge so the weather tint does not visibly ring around the light.
+    grad.addColorStop(0, `rgba(${weatherTint.r},${weatherTint.g},${weatherTint.b},${centerAlpha})`);
+    grad.addColorStop(clarityFrac, `rgba(${weatherTint.r},${weatherTint.g},${weatherTint.b},${clarityAlpha})`);
+    grad.addColorStop(
+      Math.min(1, clarityFrac + softTransitionFraction),
+      `rgba(${weatherTint.r},${weatherTint.g},${weatherTint.b},${softAlpha})`,
+    );
+    grad.addColorStop(1, `rgba(${weatherTint.r},${weatherTint.g},${weatherTint.b},0)`);
+  }
+
+  function drawLanternMasksCompat(activation = 1, preserveOutdoorWeatherTint = false) {
     const lanternStrength = clamp01(activation); // Scales all player/watch mask alphas while the ambient-light threshold fades lanterns on or off.
     if (lanternStrength <= 0) return;
     const ctx = lightingDeps.lctx;
@@ -460,10 +490,36 @@
       ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below to put back weather color without restoring the darkness the lantern just removed.
+    if (weatherTint) {
+      ctx.globalCompositeOperation = 'multiply';
+      for (const carrier of carriers) {
+        const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
+        if (!center.visible) continue;
+        const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles);
+        if (!(shineR > 0)) continue;
+        const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
+        const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+        addWeatherTintStops(
+          grad,
+          weatherTint,
+          lanternTuning.centerMaskAlpha * lanternStrength,
+          lanternTuning.clarityMaskAlpha * lanternStrength,
+          lanternTuning.softMaskAlpha * lanternStrength,
+          clarityFrac,
+          lanternTuning.softTransitionFraction,
+        );
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  function drawFurnitureLightMasksCompat() {
+  function drawFurnitureLightMasksCompat(preserveOutdoorWeatherTint = false) {
     const ctx = lightingDeps.lctx;
     const visible = [];
     for (const light of lightingDeps.getFurnitureLightSources()) {
@@ -487,6 +543,29 @@
       ctx.beginPath();
       ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below so static outdoor lights preserve the same weather coloration as carried/watch lanterns.
+    if (weatherTint) {
+      ctx.globalCompositeOperation = 'multiply';
+      for (const { light, center, shineR } of visible) {
+        const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
+        const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+        const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+        addWeatherTintStops(
+          grad,
+          weatherTint,
+          strength,
+          strength * 0.78,
+          strength * 0.22,
+          clarityFrac,
+          0.3,
+        );
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     ctx.globalCompositeOperation = 'source-over';
@@ -542,9 +621,9 @@
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
-    // Outdoor carried/watch lanterns fade on only once effective ambient darkness crosses the shared threshold.
-    drawLanternMasksCompat(currentOutdoorLanternActivation());
-    drawFurnitureLightMasksCompat();
+    // Outdoor carried/watch lanterns still clear darkness, but preserve a configurable amount of the active weather tint.
+    drawLanternMasksCompat(currentOutdoorLanternActivation(), true);
+    drawFurnitureLightMasksCompat(true);
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
@@ -602,6 +681,7 @@
         undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
         outdoorLanternActivation: currentOutdoorLanternActivation(),
+        outdoorWeatherTintRetention: currentOutdoorWeatherTintState()?.alpha ?? 0,
         renderingMode: 'original-skydome-visibility-only',
         lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',
         moonIllumination: currentMoonIllumination(),
