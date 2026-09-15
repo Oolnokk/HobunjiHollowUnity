@@ -4219,6 +4219,7 @@
 
       let lastMeleeHeightBlock = null; // Persistent mobile-readable record of the latest rejected cross-height weapon hit.
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        if (performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
         // their own swept 3D Box3 collision and deliberately bypass this.

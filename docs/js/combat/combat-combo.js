@@ -257,7 +257,14 @@
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
-        data: { comboId: id, comboStep, sfxPitch },
+        data: {
+          comboId: id, comboStep, sfxPitch,
+          meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
+            yaw: deps.player.angle,
+            lungePx: deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)),
+            source: step.name,
+          }),
+        },
       });
     }
 

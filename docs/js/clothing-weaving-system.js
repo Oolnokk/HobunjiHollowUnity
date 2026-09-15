@@ -98,6 +98,15 @@
     return equippedClothItems().reduce((sum, item) => sum + itemWeightUnits(item), 0);
   }
 
+  function outfitItemsFromRoster(roster) {
+    const slots = roster?.cosmeticSlots || {}; // Maps each NPC cosmetic id back to the same clothing slot used by player gear.
+    return (roster?.equippedCosmetics || []).map(cosmeticId => ({ cosmeticId, slot: slots[cosmeticId] || '' }));
+  }
+
+  function totalOutfitWeight(items) {
+    return (items || []).reduce((sum, item) => sum + itemWeightUnits(item), 0);
+  }
+
   function armorStats(weight = totalEquippedWeight()) {
     const units = Math.max(0, Number(weight) || 0);
     return {
@@ -111,6 +120,13 @@
       dodgeEfficacy: Math.max(TUNING.minDodgeEfficacy, 1 - units * TUNING.dodgePenaltyPerUnit),
       combatMoveMul: Math.max(TUNING.minCombatMoveMul, 1 - units * TUNING.combatMovePenaltyPerUnit),
     };
+  }
+
+  function armorStatsForEntity(entity) {
+    if (entity === currentPlayer()) return armorStats();
+    const explicitWeight = Number(entity?.outfitWeightUnits); // Spawn-time NPC total avoids rebuilding its immutable roster every damage frame.
+    if (Number.isFinite(explicitWeight) && explicitWeight >= 0) return armorStats(explicitWeight);
+    return armorStats(totalOutfitWeight(outfitItemsFromRoster(entity?.rosterRecord)));
   }
 
   function currentPlayer() { return window.Combat?.deps?.player || window.__hobunjiFurnitureDebug?.playerState || null; }
@@ -133,8 +149,9 @@
 
     const originalDamage = RS.applyDamage.bind(RS); // Preserves every pre-existing combat/affliction wrapper beneath armor defense.
     RS.applyDamage = function clothingWeightDamage(entity, amount, opts = {}) {
-      if (entity === window.Combat?.deps?.player && !opts?.ignoreArmorWeight) {
-        amount *= armorStats().damageTakenMul;
+      const usesOutfitWeight = entity === window.Combat?.deps?.player || entity?._usesOutfitWeight; // Player and clothed combat NPCs share one armor calculation.
+      if (usesOutfitWeight && !opts?.ignoreArmorWeight) {
+        amount *= armorStatsForEntity(entity).damageTakenMul;
       }
       return originalDamage(entity, amount, opts);
     };
@@ -142,7 +159,7 @@
 
     const originalFooting = RS.spendFooting.bind(RS); // Preserves perk resistance and prone handling beneath cloth resistance.
     RS.spendFooting = function clothingWeightFooting(entity, amount, reason = 'hit') {
-      if (entity === window.Combat?.deps?.player) amount *= armorStats().footingTakenMul;
+      if (entity === window.Combat?.deps?.player || entity?._usesOutfitWeight) amount *= armorStatsForEntity(entity).footingTakenMul;
       return originalFooting(entity, amount, reason);
     };
     RS.spendFooting.__clothingWeightArmor = true;
@@ -1104,7 +1121,10 @@
     standardWeightFor,
     itemWeightUnits,
     totalEquippedWeight,
+    outfitItemsFromRoster,
+    totalOutfitWeight,
     armorStats,
+    armorStatsForEntity,
     combatActive,
     learnOwnedBlueprints,
     renderPatternedSprite,

@@ -340,6 +340,13 @@
         },
         onComplete: stopPlayerHeavyFire,
         onCancel: stopPlayerHeavyFire,
+        data: {
+          meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
+            yaw: deps.player.angle,
+            lungePx: deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)),
+            source: 'Charged Breaker',
+          }),
+        },
       });
     }
 

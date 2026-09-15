@@ -164,6 +164,19 @@ assert(Math.abs(footingSeen - 93.7) < 1e-9, '1.8 units reduce footing loss by 6.
 assert(Math.abs(windowStub.Combat.getMovementSpeedMul() - 0.9676) < 1e-9, 'recent combat applies only the weight movement penalty');
 assert.equal(api.debugSnapshot().mounted, false, 'stale rideEntity reference alone does not count as mounted');
 
+const banditRoster = {
+  equippedCosmetics: ['tankan_bodywrap', 'fine_hood', 'bandolier1'],
+  cosmeticSlots: { tankan_bodywrap: 'overwear', fine_hood: 'hood', bandolier1: 'torso' },
+}; // Models a real rolled enemy outfit, including the deliberately weightless non-cloth bandolier.
+const banditItems = api.outfitItemsFromRoster(banditRoster); // Shared roster conversion used by enemy spawn-time profiling.
+assert.equal(api.totalOutfitWeight(banditItems), 6, 'enemy outfit totals use the same 4-unit overwear and 2-unit hood baselines as player gear');
+const bandit = { isBandit: true, _usesOutfitWeight: true, outfitWeightUnits: 6, rosterRecord: banditRoster }; // Clothed combat NPC routed through shared armor hooks.
+windowStub.ResourceSystem.applyDamage(bandit, 100, {});
+assert(Math.abs(damageSeen - 85) < 1e-9, '6-unit enemy outfit reduces direct damage by the shared 15% defense');
+windowStub.ResourceSystem.spendFooting(bandit, 100, 'test');
+assert(Math.abs(footingSeen - 79) < 1e-9, '6-unit enemy outfit reduces Footing loss by the shared 21% resistance');
+assert(Math.abs(api.armorStatsForEntity(bandit).combatMoveMul - 0.892) < 1e-9, 'enemy movement reads the same weight curve');
+
 player.dodging = true;
 player.dodgeT = 0.5;
 player.invulnUntil = now + 380;

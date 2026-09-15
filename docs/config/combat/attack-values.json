@@ -199,7 +199,18 @@
     "BASE_ATTACK_DAMAGE": 17,
     "attackRangeTiles": 0.9, "attackHalfConeDeg": 44, "attackStaminaCost": 12,
     "attackCooldownSCaptain": 0.95, "attackCooldownSOther": 1.15,
-    "targetTurnRateRadS": 6
+    "targetTurnRateRadS": 6,
+    "enemyDodge": {
+      "chanceByRank": { "grunt": 0.34, "lieutenant": 0.52, "captain": 0.7 },
+      "reactionDelayS": 0.055,
+      "cooldownS": 1.15,
+      "staminaCost": 18,
+      "speedPxS": 600,
+      "durationS": 0.22,
+      "iframeMs": 380,
+      "lungeThreatFraction": 0.72,
+      "reachPaddingTiles": 0.18
+    }
   },
 
   "creatures": {

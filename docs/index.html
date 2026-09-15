@@ -209,7 +209,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260914targetconfig1"></script>
+  <script src="js/combat/combat-core.js?v=20260915enemydodge1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
@@ -221,13 +221,13 @@
   <script src="js/combat/combat-loadout.js?v=20260907alternatingneutral1"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260914transienttarget1"></script>
-  <script src="js/combat/combat-combo.js?v=20260907strikehold1"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/combat-combo.js?v=20260915enemydodge1"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20260915enemydodge1"></script>
   <script src="js/combat/quick-attack-bonus-indicator.js?v=20260914followfix1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260910review1"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260915enemydodge1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260829combatsfx1"></script>
-  <script src="js/combat/combat-flurry.js?v=20260829combatsfx1"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260915enemydodge1"></script>
+  <script src="js/combat/combat-flurry.js?v=20260915enemydodge1"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
@@ -243,6 +243,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/combat-bandit.js?v=20260914transienttarget1"></script>
+  <script src="js/combat/combat-enemy-dodge.js?v=20260915a"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -256,7 +257,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260914targetconfig1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260915enemydodge1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -392,7 +393,7 @@
        then), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.BanditCombatLog.init(...) during its own setup. -->
-  <script src="js/bandit-combat-log.js?v=20260807a"></script>
+  <script src="js/bandit-combat-log.js?v=20260915enemydodge1"></script>
   <!-- Wilderness AI snapshot capture, AI/Claude review tool for the whole
        Porakaneki camp network + den wildlife (window.WildernessAiSnapshot) —
        reads window.PorakanekiCamps/window.CalendarSystem at capture time

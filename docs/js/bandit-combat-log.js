@@ -57,6 +57,8 @@ Bandit-only fields:
   hold1CdT            seconds left before Charged Breaker (hold1) can be re-rolled as an opener (0 = available); lieutenant/captain only
   guarding/guardCdT   captain only: 1 if Counter Shield's guard window is currently active (incoming player hits are reduced ${Math.round(window.BanditCombat.GUARD_DAMAGE_ABSORB * 100)}% and answered with a riposte), and seconds left before the next window opens
   cloth               worn cosmetics as slot:cosmeticId:dyeId, semicolon-separated ("-" = nothing rolled, should be rare -- see fillProbabilityByRank)
+  weight/defMul/footMul/moveMul/dodgeEff   shared outfit-weight totals and their resulting damage-taken, Footing-taken, combat-movement, and dodge-efficacy multipliers (PLAYER reports these too)
+  dodging/dodgeT/dodgeCdT   whether a dodge roll is active, seconds remaining in it, and seconds before this bandit may dodge again (PLAYER reports dodging/dodgeT; dodgeCdT is bandit-only)
   idle/settleT        idle=1 means no staged action is in flight AND the brief post-swing settle window (BANDIT_TOOL_SETTLE_S) has elapsed -- the bandit is truly at rest, not just between windup/strike. settleT is seconds left in that settle window (0 outside it). stanceMatch/bodyLeanDeg below are only meaningful (worth flagging as a bug) once idle=1 -- mid-swing or mid-settle they're expected to differ from their "rest" values.
   stanceAnim/stanceExpected/stanceMatch   stanceAnim is the bandit's CURRENT rest-pose style (c._banditSwingAnim: sweep|thrust); stanceExpected is what its equipped weapon's own animStyle says it should be (banditNaturalSwing(def) -- sweep for hatchet/fishingmace, thrust for the rest); stanceMatch=0 while idle=1 means the idle stance is stuck showing a DIFFERENT ability's style than the one its weapon actually plays at rest (this exact bug happened once already -- Quick Attack/Charged Breaker hardcode their own anim/pose and finishBanditAction has to reset it back afterward).
   facingDeg/groupRotDeg/bodyLeanDeg   facingDeg is c.facing (the bandit's true aim/facing angle, degrees) and groupRotDeg is c.groupRot (its avatar body's actual rendered rotation.y, in the portrait-rig's own reflected+offset space -- see updateCreatureMesh's rawTargetRotY) -- these are NOT the same convention and are not meant to numerically match. bodyLeanDeg is the signed difference between groupRotDeg and where the body SHOULD be sitting at rest for the current facingDeg (0 = body exactly at its rest angle); a large bodyLeanDeg while idle=1 means the avatar body is stuck leaned into a swing that already ended -- the other half of the same class of bug as stanceMatch above (this also happened once already, from the settle window not reasserting the lean on both the weapon and the body together).
@@ -84,6 +86,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
     if (c.state === 'idle') return `idle; distPlayer=${distP}px > aggroRangePx=${Math.round(def.aggroRangePx)}px, not aggro'd yet. nearest=${nearestOtherTxt}`;
     if (c.state === 'return') return `returning home; player out of leashRangePx=${Math.round(def.leashRangePx)}px or too far from its own homeX/Y`;
     if (c.state !== 'chase') return `state=${c.state}, not currently in combat`;
+    if (c._enemyDodge) return `dodging ${c._enemyDodge.source || 'player melee'}; dodgeT=${(c.dodgeT || 0).toFixed(2)}s`;
+    if (c._enemyDodgePending) return `reacting to ${c._enemyDodgePending.threat?.source || 'player melee'}; dodge begins in ${(c._enemyDodgePending.remainingS || 0).toFixed(2)}s`;
     if (c._banditGuardUntil > performance.now()) return `guarding (Counter Shield window open) while otherwise ${c.retreatT > 0 ? 'retreating' : c._banditAction ? 'mid-swing' : 'approaching/attacking'} -- an incoming hit right now gets reduced and answered with a riposte`;
     if (c.retreatT > 0) return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after ${c._banditComboIndex === 0 ? 'finishing its 3-step Combo (tap1) or a Quick Attack/Charged Breaker' : 'an unexpected mid-combo retreat -- flag as a possible state bug'}`;
     if (c._banditAction) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking'} an ability swing (tState=${c.telegraphState}); distPlayer=${distP}px`;
@@ -168,8 +172,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
     const currentArea = deps.getCurrentArea();
     const companions = [...deps.companionObjects].filter(c => c.areaId === currentArea);
     const all = [player, ...deps.arenaSpawnedCreatures, ...companions];
+    const playerArmor = window.ClothingWeavingSystem?.armorStatsForEntity?.(player) || {}; // Shared live player outfit result shown beside the NPC result for mobile comparison.
     const lines = [`--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${deps.getDevGlobalSpeedMul()} ---`,
-      `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / deps.TILE)},${Math.floor(player.y / deps.TILE)})`];
+      `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / deps.TILE)},${Math.floor(player.y / deps.TILE)}) weight=${Number(playerArmor.weightUnits || 0).toFixed(1)} defMul=${Number(playerArmor.damageTakenMul || 1).toFixed(3)} footMul=${Number(playerArmor.footingTakenMul || 1).toFixed(3)} moveMul=${Number(playerArmor.combatMoveMul || 1).toFixed(3)} dodgeEff=${Number(playerArmor.dodgeEfficacy || 1).toFixed(3)} dodging=${player.dodging ? 1 : 0} dodgeT=${Number(player.dodgeT || 0).toFixed(2)}`];
     for (const c of deps.arenaSpawnedCreatures) {
       const def = c.def || {};
       const nearestTxt = _combatLogNearestOther(c, all);
@@ -181,6 +186,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           : '-';
         const loadout = def.banditAbilityLoadout || {};
         const loadoutTxt = `${loadout.tap1 || '-'}/${loadout.tap2 || '-'}/${loadout.hold1 || '-'}/${loadout.hold2 || '-'}`;
+        const armor = window.EnemyDodge?.armorStats?.(c) || {}; // Spawn-profiled NPC outfit result used by defense, movement, and dodge behavior.
         lines.push([
           `ENTITY kind=${kind}`, `id=${c.id}`, `rank=${c.banditRank}`, `tier=${c.banditTier}`, `mastery=${c.banditMastery}`,
           `species=${r.appearance?.speciesId}/${r.appearance?.gender}`,
@@ -192,7 +198,11 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           `guarding=${c._banditGuardUntil > performance.now() ? 1 : 0}`, `guardCdT=${(c._banditGuardCdT || 0).toFixed(2)}`,
           `wpn=${def.weaponKey || 'none'}`, `wpnMeshOK=${c.banditWeaponMeshAttached ? 1 : 0}`, `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`,
           `aggroPx=${Math.round(def.aggroRangePx || 0)}`, `leashPx=${Math.round(def.leashRangePx || 0)}`, `atkRangePx=${Math.round(def.attackRangePx || 0)}`,
-          `cloth=${clothTxt}`, _combatLogBanditStance(c, def), `nearestOther=${nearestTxt}`,
+          `cloth=${clothTxt}`, `weight=${Number(armor.weightUnits || 0).toFixed(1)}`,
+          `defMul=${Number(armor.damageTakenMul || 1).toFixed(3)}`, `footMul=${Number(armor.footingTakenMul || 1).toFixed(3)}`,
+          `moveMul=${Number(armor.combatMoveMul || 1).toFixed(3)}`, `dodgeEff=${Number(armor.dodgeEfficacy || 1).toFixed(3)}`,
+          `dodging=${c.dodging ? 1 : 0}`, `dodgeT=${Number(c.dodgeT || 0).toFixed(2)}`, `dodgeCdT=${Number(c._enemyDodgeCooldownT || 0).toFixed(2)}`,
+          _combatLogBanditStance(c, def), `nearestOther=${nearestTxt}`,
           `why="${_combatLogBanditWhy(c, def, player, nearestTxt)}"`,
         ].join(' '));
       } else {

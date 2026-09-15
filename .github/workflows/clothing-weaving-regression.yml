@@ -6,20 +6,44 @@ on:
       - 'docs/js/clothing-weaving-system.js'
       - 'docs/js/clothing-weight-dodge-policy.js'
       - 'docs/js/clothing-weaving-npc-compat.js'
+      - 'docs/js/combat/combat-enemy-dodge.js'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/combat/combat-combo.js'
+      - 'docs/js/combat/combat-quickattacks.js'
+      - 'docs/js/combat/combat-charged-breaker.js'
+      - 'docs/js/combat/combat-counter-shield.js'
+      - 'docs/js/combat/combat-flurry.js'
+      - 'docs/js/bandit-combat-log.js'
+      - 'docs/game.js'
+      - 'docs/config/combat/attack-values.json'
+      - 'docs/index.html'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-clothing-weaving-system.js'
       - 'scripts/test-clothing-weight-dodge-policy.js'
       - 'scripts/test-clothing-weaving-npc-compat.js'
+      - 'scripts/test-enemy-dodge-outfit-weight.js'
       - '.github/workflows/clothing-weaving-regression.yml'
   pull_request:
     paths:
       - 'docs/js/clothing-weaving-system.js'
       - 'docs/js/clothing-weight-dodge-policy.js'
       - 'docs/js/clothing-weaving-npc-compat.js'
+      - 'docs/js/combat/combat-enemy-dodge.js'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/combat/combat-combo.js'
+      - 'docs/js/combat/combat-quickattacks.js'
+      - 'docs/js/combat/combat-charged-breaker.js'
+      - 'docs/js/combat/combat-counter-shield.js'
+      - 'docs/js/combat/combat-flurry.js'
+      - 'docs/js/bandit-combat-log.js'
+      - 'docs/game.js'
+      - 'docs/config/combat/attack-values.json'
+      - 'docs/index.html'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-clothing-weaving-system.js'
       - 'scripts/test-clothing-weight-dodge-policy.js'
       - 'scripts/test-clothing-weaving-npc-compat.js'
+      - 'scripts/test-enemy-dodge-outfit-weight.js'
       - '.github/workflows/clothing-weaving-regression.yml'
   workflow_dispatch:
 
@@ -37,9 +61,20 @@ jobs:
           node --check docs/js/clothing-weight-dodge-policy.js
           node --check docs/js/clothing-weaving-npc-compat.js
           node --check docs/js/combat/combat-config-loader.js
+          node --check docs/js/combat/combat-core.js
+          node --check docs/js/combat/combat-enemy-dodge.js
+          node --check docs/js/combat/combat-combo.js
+          node --check docs/js/combat/combat-quickattacks.js
+          node --check docs/js/combat/combat-charged-breaker.js
+          node --check docs/js/combat/combat-counter-shield.js
+          node --check docs/js/combat/combat-flurry.js
+          node --check docs/js/bandit-combat-log.js
+          node -e "JSON.parse(require('fs').readFileSync('docs/config/combat/attack-values.json', 'utf8'))"
       - name: Clothing weaving regression
         run: node scripts/test-clothing-weaving-system.js
       - name: Clothing dodge policy regression
         run: node scripts/test-clothing-weight-dodge-policy.js
       - name: NPC wardrobe compatibility regression
         run: node scripts/test-clothing-weaving-npc-compat.js
+      - name: Enemy dodge and shared outfit weight regression
+        run: node scripts/test-enemy-dodge-outfit-weight.js

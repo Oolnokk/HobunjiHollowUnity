@@ -482,6 +482,12 @@
             deps.awardWeaponMasteryXp();
           }
         },
+        data: {
+          meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
+            yaw: deps.player.angle,
+            source: 'Counter Shield',
+          }),
+        },
       });
     }
 
