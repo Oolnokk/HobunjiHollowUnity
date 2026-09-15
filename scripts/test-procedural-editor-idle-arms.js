@@ -27,8 +27,8 @@ function makeHand(name, x, y, z = 0) {
   };
 }
 
-// Reproduces the real procedural editor convention captured in mobile diagnostics:
-// a negative handAttachX places LeftHand at that negative X and RightHand at +X.
+// Keep one already-existing pair at the historical procedural-editor sign convention
+// so the compatibility acquisition path remains covered too.
 const left = makeHand('Preview_LeftHand', -0.2, 0.45);
 const right = makeHand('Preview_RightHand', 0.2, 0.45);
 const torso = {
@@ -44,6 +44,10 @@ const model = {
   userData: { portraitModelHeight: 1, portraitModelWidth: 0.9, handAttachX: -0.2, handAttachY: 0.45 },
   children: [left, right, torso],
   parent: null,
+  add(...objects) {
+    for (const object of objects) { object.parent = this; this.children.push(object); }
+    return this;
+  },
   getObjectByName(name) {
     let found = null;
     this.traverse(node => { if (!found && node.name === name) found = node; });
@@ -107,6 +111,29 @@ assert.strictEqual(frames.length, 1, 'idle-arm parity adapter should schedule it
 frames.shift()();
 assert.strictEqual(typeof scene.onBeforeRender, 'function', 'idle-arm parity adapter should attach a final scene pre-render hook');
 
+// Reproduce the editor's current hand builder after the bridge has seen the avatar.
+// The builder supplies the old reversed sides; the root.add boundary must normalize
+// them immediately, before any render/parity frame runs.
+const generatedHandsRoot = {
+  name: 'Preview_procedural_hands',
+  children: [],
+  parent: null,
+  add(...objects) {
+    for (const object of objects) { object.parent = this; this.children.push(object); }
+    return this;
+  },
+  updateMatrixWorld() {},
+  worldToLocal(point) { return point; },
+};
+model.add(generatedHandsRoot);
+const generatedLeft = makeHand('Generated_LeftHand', -0.2, 0.45);
+const generatedRight = makeHand('Generated_RightHand', 0.2, 0.45);
+generatedHandsRoot.add(generatedLeft);
+generatedHandsRoot.add(generatedRight);
+assert.strictEqual(generatedLeft.position.x, 0.2, 'new LeftHand wrappers should be corrected at construction to gameplay left=-handAttachX');
+assert.strictEqual(generatedRight.position.x, -0.2, 'new RightHand wrappers should be corrected at construction to gameplay right=+handAttachX');
+assert(diagnostics.some(entry => /Corrected newly generated editor hand/.test(entry.message)), 'construction-side correction should be visible in mobile Diagnostics');
+
 scene.onBeforeRender();
 assert(Math.abs(left.position.x - 0.25) < 1e-9, 'left idle hand should use the canonical left shoulder X');
 assert(Math.abs(left.position.y - 0.2) < 1e-9, 'left idle hand should use posterior Y minus authored arm length at zero idle phase');
@@ -117,13 +144,15 @@ assert(Math.abs(right.position.z - (0.003 * Math.cos(0.28))) < 1e-9, 'right idle
 
 const firstDebug = windowObject.HobunjiProceduralEditorIdleArms.getDebug();
 assert.strictEqual(firstDebug.identitySource, 'avatar-asset-url', 'portrait asset filenames should recover species/gender when editor model metadata does not publish identity');
-assert.strictEqual(firstDebug.left.atLegacyIdleDefault, true, 'real editor left=handAttachX/right=-handAttachX idle should be recognized as acquireable default state');
-assert.strictEqual(firstDebug.right.atLegacyIdleDefault, true, 'real editor right-hand legacy sign should be recognized too');
-assert.strictEqual(firstDebug.left.reason, 'claimed-legacy-idle', 'debug state should say when parity claimed the legacy editor idle');
+assert.strictEqual(firstDebug.left.atLegacyIdleDefault, true, 'already-existing reversed LeftHand should remain an acquireable compatibility default');
+assert.strictEqual(firstDebug.right.atLegacyIdleDefault, true, 'already-existing reversed RightHand should remain an acquireable compatibility default');
+assert.strictEqual(firstDebug.left.reason, 'claimed-legacy-reversed-idle', 'debug state should identify compatibility acquisition rather than call it the normal editor convention');
+assert.strictEqual(firstDebug.generationBridge.installed, true, 'debug state should expose that the generated-hand construction bridge is installed');
+assert.strictEqual(firstDebug.generationBridge.correctedCount, 2, 'debug state should count both generated wrappers normalized at construction');
 assert.strictEqual(firstDebug.posteriorY, 0.3, 'debug state should expose canonical posterior Y');
 assert.strictEqual(firstDebug.armLengthWorldY, -0.1, 'debug state should expose the literal authored arm-length Y contribution');
 assert(diagnostics.some(entry => /Resolved gameplay\/Attack Editor free-hand profile/.test(entry.message)), 'resolved species/gender/profile should be visible in the editor Diagnostics panel');
-assert(diagnostics.some(entry => /Idle-arm parity diagnostic/.test(entry.message) && entry.extra?.left?.atLegacyIdleDefault), 'mobile Diagnostics should include hand positions, targets, legacy-idle acquisition, and ownership state');
+assert(diagnostics.some(entry => /Idle-arm parity diagnostic/.test(entry.message) && entry.extra?.left?.atLegacyIdleDefault), 'mobile Diagnostics should include hand positions, targets, compatibility acquisition, and ownership state');
 
 // Rig-coordinate shoulders are authored against the 0.9 runtime width. A half-width
 // preview like Garanki's 0.45-wide model must therefore halve shoulder X before placement.
@@ -169,11 +198,13 @@ assert.match(source, /armLengthHeightPercentOffset/, 'editor idle arms must cons
 assert.match(source, /npcId/, 'editor idle arms must use the live NPC id when preview metadata omits species/gender');
 assert.match(source, /npc-database/, 'editor idle arms must support NPC-database identity resolution');
 assert.match(source, /repositoryCommit/, 'NPC identity lookup must stay pinned to the preview repository revision');
-assert.match(source, /side === 'left' \? x : -x/, 'legacy editor idle acquisition must match the real left=handAttachX/right=-handAttachX convention');
+assert.match(source, /side === 'left' \? -x : x/, 'normal generated/editor idle convention must exactly match gameplay left=-handAttachX/right=+handAttachX');
+assert.match(source, /side === 'left' \? x : -x/, 'old reversed editor convention should remain only as compatibility acquisition');
+assert.match(source, /hobunjiGameplaySideHandRootAdd/, 'new generated wrappers must be normalized at their construction boundary, not only after a render frame');
 assert.match(source, /currentWidth \/ authoredWidth/, 'authored shoulder X must scale from the 0.9 runtime basis to the current preview width');
 assert.match(source, /avatar-asset-url/, 'editor idle arms should retain portrait-asset identity recovery as a no-fetch fallback');
 assert.match(source, /hand\.position\.copy\(target\)/, 'editor idle arms must drive the existing generated hand wrapper instead of creating a duplicate hand rig');
 assert.match(source, /explicit-animation-owner/, 'editor idle arms must retain explicit animation ownership diagnostics');
 assert.match(source, /hook was replaced/, 'editor idle arms must self-heal if another editor writer replaces the final hook');
 
-console.log('procedural editor idle arms: real legacy signs + NPC identity fallback + scaled shoulders + mobile diagnostics PASS');
+console.log('procedural editor idle arms: construction-side parity + legacy compatibility + NPC identity + scaled shoulders + diagnostics PASS');
