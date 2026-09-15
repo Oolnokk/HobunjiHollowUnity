@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/character-joint-motion-parity.js'), 'utf8');
+const forearmSource = fs.readFileSync(path.join(root, 'docs/js/procedural-hand-forearm-alignment-runtime.js'), 'utf8');
 const editorBootstrap = fs.readFileSync(path.join(root, 'docs/js/procedural-dance-mode.js'), 'utf8');
 const preservedEditorAdapter = fs.readFileSync(path.join(root, 'docs/js/procedural-dance-mode-base.js'), 'utf8');
 const latestBootstrap = fs.readFileSync(path.join(root, 'docs/js/attachment-rig-latest-authored-snapshot.js'), 'utf8');
@@ -53,7 +54,7 @@ const profiles = {
     },
     anatomy: { portraitScale: 1 },
     handShoulderRule: { runtimeBaseWidth: 0.9 },
-    shoulderPerchRule: { portraitModelHeight: 0.9 },
+    shoulderPerchRule: {},
   },
 };
 
@@ -82,14 +83,15 @@ const sandbox = {
 };
 vm.runInNewContext(source, sandbox, { filename: 'character-joint-motion-parity.js' });
 
-assert.strictEqual(windowObject.HobunjiCharacterJointMotionParity?.installed, true, 'joint parity API should install');
+const api = windowObject.HobunjiCharacterJointMotionParity;
+assert.strictEqual(api?.installed, true, 'joint parity API should install');
 
 // The sidecar loads before ProceduralLegAnimation in gameplay. Assignment must be
 // intercepted and attach() wrapped so the existing handle follows CURRENT profile Y.
 windowObject.ProceduralLegAnimation = {
   attach(_THREE, _parent, _options) { return rawHandle; },
 };
-const avatarRoot = { userData: { portraitModelHeight: 0.9, handAttachY: 0.423 }, parent: null };
+const avatarRoot = { userData: { portraitModelHeight: 0.9, portraitModelWidth: 0.9, handAttachY: 0.423 }, parent: null };
 const handle = windowObject.ProceduralLegAnimation.attach(null, null, {
   name: 'player', speciesId: 'mao-ao', gender: 'male', modelHeight: 0.9, handAttachY: 0.423, avatarRoot,
 });
@@ -107,42 +109,63 @@ assert.strictEqual(updateCalls, 1, 'wrapped update must preserve the original le
 assert(Math.abs(leftHip.position.y - 0.4725) < 1e-12, 'left hip must follow a posterior rule that changed after attach');
 assert(Math.abs(rightHip.position.y - 0.4725) < 1e-12, 'right hip must follow a posterior rule that changed after attach');
 assert(Math.abs(handle.standingPosteriorY - 0.4725) < 1e-12, 'standing posterior getter must not freeze attach-time Y');
+
+// Full-character / child scaling can change modelHeight after attachment. Hip Y must
+// recompute from the CURRENT portrait height rather than the attach-time option.
+avatarRoot.userData.portraitModelHeight = 0.45;
+handle.update(1 / 60, 4, false, null);
+assert.strictEqual(updateCalls, 2, 'dynamic-height sync must still execute the original movement update exactly once');
+assert(Math.abs(leftHip.position.y - 0.23625) < 1e-12, 'left hip must scale with live portrait height');
+assert(Math.abs(rightHip.position.y - 0.23625) < 1e-12, 'right hip must scale with live portrait height');
 const poseDebug = handle.getStandingPoseDebug();
-assert(Math.abs(poseDebug.livePosteriorY - 0.4725) < 1e-12, 'mobile diagnostics must expose the live posterior Y');
+assert(Math.abs(poseDebug.livePosteriorY - 0.23625) < 1e-12, 'mobile diagnostics must expose the live scaled posterior Y');
+assert(Math.abs(poseDebug.posteriorY - 0.23625) < 1e-12, 'legacy posteriorY debug field must not contradict the live hip');
 assert.strictEqual(poseDebug.posteriorSource, 'species+gender-current-profile');
 
-// Restore the real latest male value before the shoulder/perch sanity test.
+// Preview fallback shoulder coordinates use the same fixed 0.9 character basis as the
+// existing idle-arm parity. A half-size actor should therefore get half-size shoulders;
+// portraitScale must not be incorrectly used as the coordinate denominator.
 profiles['mao-ao::male'].posteriorRule.heightPercentFromFloor = 47.59386702606408;
-const sanity = windowObject.HobunjiCharacterJointMotionParity.maoAoShoulderSanity('male');
+const halfSizeModel = { userData: { portraitModelWidth: 0.45, portraitModelHeight: 0.45 }, parent: null };
+const halfShoulder = api.resolveShoulderForAvatar(halfSizeModel, 'left', { speciesId: 'mao-ao', gender: 'male' });
+assert(halfShoulder, 'preview shoulder fallback must resolve species+gender identity supplied by the caller');
+assert.strictEqual(halfShoulder.source, 'authored-runtime-basis-fallback');
+assert(Math.abs(halfShoulder.position.x - 0.1525554542608865 * 0.5) < 1e-12, 'preview shoulder X must scale from the 0.9 runtime basis');
+assert(Math.abs(halfShoulder.position.y - 0.6292184955362587 * 0.5) < 1e-12, 'preview shoulder Y must scale from the 0.9 runtime basis');
+
+const sanity = api.maoAoShoulderSanity('male');
 assert(sanity, 'Mao-ao male shoulder/perch sanity diagnostic should resolve');
 assert(Math.abs(sanity.leftDeltaFromPerch) < 0.01, 'Mao-ao male left hand shoulder Y should be near shoulder-pet perch Y');
 assert(Math.abs(sanity.rightDeltaFromPerch) < 0.03, 'Mao-ao male right hand shoulder Y should be near shoulder-pet perch Y');
 assert.strictEqual(sanity.likelyAuthoringError, false, 'close Mao-ao male shoulder/perch Ys prove this is an interpretation bug, not a shoulder authoring bug');
 
-// The current authored files must retain those intended values; this catches a future
-// regression that accidentally tests only our VM fixture instead of repository data.
+// The repository's authored files must retain the actual values, not merely the VM fixture.
 assert(latestSnapshot.includes('"mao-ao::male":{"posteriorRule":{"heightPercentOffset":-12.906132973935925,"heightPercentFromFloor":47.59386702606408'),
   'latest authored snapshot must provide Mao-ao male posterior Y');
 assert.match(maoShoulders, /'mao-ao::male'[\s\S]*leftHandShoulder:[\s\S]*y:\s*0\.6292184955362587[\s\S]*rightHandShoulder:[\s\S]*y:\s*0\.6455541403639915/,
   'latest Mao-ao shoulder authoring must remain close to the shoulder-pet perch');
 
-// Preview bootstrap must install shared joint parity BEFORE the preserved Dance adapter,
-// which itself remains the existing generated-feet/idle-hand integration rather than a rewrite.
-const jointIndex = editorBootstrap.indexOf('character-joint-motion-parity.js');
-const baseIndex = editorBootstrap.indexOf('procedural-dance-mode-base.js');
+// Preview bootstrap must install shared joint parity BEFORE the preserved Dance adapter.
+// Match the queue entries rather than comments containing the same filenames.
+const jointIndex = editorBootstrap.indexOf("new URL('character-joint-motion-parity.js");
+const baseIndex = editorBootstrap.indexOf("new URL('procedural-dance-mode-base.js");
 assert(jointIndex >= 0 && baseIndex > jointIndex, 'procedural editor must load joint parity before its existing Dance adapter');
 assert.match(preservedEditorAdapter, /installEditorGeneratedFeetDanceBridge/, 'preserved Dance adapter must still install the generated-feet bridge');
 assert.match(latestBootstrap, /character-rig-maoao-authored-20260905\.js[\s\S]*character-joint-motion-parity\.js/,
   'game bootstrap must install joint parity after latest rig + Mao shoulder authoring');
 
-// Guard the exact bad preview heuristic. It can remain as the pre-correction Dance
-// implementation for compatibility, but the shared sidecar must explicitly replace its
-// shoulder origin with authored anchors before rendering.
-assert.match(danceCore, /SHOULDER_X_FRACTION\s*=\s*0\.62/, 'test fixture expects the legacy Dance shoulder heuristic to still exist upstream');
-assert.match(source, /resolveShoulderForRig/, 'game Dance correction must resolve authored shoulder anchors');
+// The preview still has a legacy virtual-arm heuristic upstream, so the sidecar must
+// replace that pivot after Dance solves. Gameplay must NOT receive the same heuristic
+// translation: its actual shoulder bug belongs to forearm orientation only.
+assert.match(danceCore, /SHOULDER_X_FRACTION\s*=\s*0\.62/, 'test fixture expects the legacy preview Dance shoulder heuristic upstream');
 assert.match(source, /correctPreviewDanceShoulders/, 'preview Dance correction must resolve authored shoulder anchors');
 assert.match(source, /patchPreviewHipLines/, 'preview movement hip bridge must follow the live posterior profile');
+assert.doesNotMatch(source, /legacyShoulder|installDanceShoulderSentinels|PRE_SYNC_ORDER|DANCE_SYNC_ORDER/,
+  'shared parity must not translate gameplay Dance hands by the preview-only heuristic');
+assert.match(forearmSource, /HobunjiCharacterPortraitAnchorSpace/, 'gameplay forearm alignment must use shared portrait-bound character anchors');
+assert.match(forearmSource, /metricsForAvatarRoot[\s\S]*resolveAnchor/, 'gameplay forearm alignment must resolve shoulders for the current actor scale and portrait placement');
+assert.match(forearmSource, /attachment-rig-profile-portrait-resolved/, 'gameplay diagnostics must identify portrait-resolved shoulder coordinates');
 assert.match(source, /profilePercentFromFloor/, 'diagnostics must expose which authored posterior percent drove the hip');
 assert.match(source, /maoAoShoulderSanity/, 'diagnostics must expose shoulder-perch versus hand-shoulder Y comparison');
 
-console.log('character joint motion parity: live posterior hips + authored Dance shoulders + Mao-ao perch sanity PASS');
+console.log('character joint motion parity: live posterior hips + portrait-resolved gameplay shoulders + preview shoulder correction + Mao-ao perch sanity PASS');
