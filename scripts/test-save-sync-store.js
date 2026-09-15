@@ -23,13 +23,14 @@ function makeSnapshot(value = 1) {
 }
 
 async function main() {
+  const storeSource = read('docs/js/save-sync-store.js'); // Source assertions below protect the real IndexedDB transaction boundary that the in-memory test backend cannot model.
   const memory = new Map(); // Injected backend lets the regression exercise store semantics without a browser IndexedDB implementation.
   const window = { crypto: webcrypto, __hobunjiSaveSyncMemoryStorage: memory }; // Browser-global state consumed by production modules.
   const context = vm.createContext({ window, TextEncoder, console, Map }); // VM context exposes only APIs the tested modules require.
   window.window = window;
 
   vm.runInContext(read('docs/js/save-sync-envelope.js'), context, { filename: 'save-sync-envelope.js' });
-  vm.runInContext(read('docs/js/save-sync-store.js'), context, { filename: 'save-sync-store.js' });
+  vm.runInContext(storeSource, context, { filename: 'save-sync-store.js' });
 
   const envelopeApi = window.HobunjiSaveEnvelope; // Creates real production envelopes for durable-store tests.
   const store = window.HobunjiSaveSyncStore; // Production store API exercised through the injected transactional memory backend.
@@ -50,6 +51,11 @@ async function main() {
   assert.equal(await store.clearPending('drive', { expectedContentHash: envelopeB.contentHash }), true, 'matching upload completion clears its pending marker');
   assert.equal(await store.getPending('drive'), null, 'cleared pending marker is removed without deleting current local state');
   assert.equal((await store.getCurrentEnvelope()).contentHash, envelopeB.contentHash, 'clearing transport queue never deletes the current envelope');
+
+  assert(storeSource.includes("db.transaction(STORE_NAME, 'readwrite')") && storeSource.includes('async function deleteKeyIf'), 'production store has a readwrite conditional-delete transaction');
+  assert(storeSource.includes('return deleteKeyIf(key, pending =>'), 'hash-guarded pending completion uses the atomic conditional-delete helper');
+  const clearPendingBody = storeSource.slice(storeSource.indexOf('async function clearPending'), storeSource.indexOf('async function setBaseline'));
+  assert(!clearPendingBody.includes('await readKey(key)'), 'hash comparison is not performed in a separate readonly transaction before deletion');
 
   await store.setBaseline('drive', envelopeA);
   assert.equal((await store.getBaseline('drive')).contentHash, envelopeA.contentHash, 'last-common baseline retains the known shared hash');
