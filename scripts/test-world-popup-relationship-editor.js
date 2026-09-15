@@ -15,7 +15,7 @@ const generic = read('docs/js/generic-hud-icons.js'); // Used as the pre-v3 visu
 
 assert.doesNotThrow(() => new vm.Script(helper), 'world popup relationship editor helper parses');
 assert.doesNotThrow(() => new vm.Script(bridge), 'relationship position bridge parses');
-assert.match(editor, /world-popup-relationship-editor\.js/, 'Popup Text Editor loads the relationship helper');
+assert.match(editor, /world-popup-relationship-editor\.js\?v=20260915c/, 'Popup Text Editor cache-busts the v6 relationship helper');
 assert.doesNotMatch(editor, /relationship-popup-editor-preview\.js/, 'Popup Text Editor does not depend on the mistaken Ambient Dialogue preview helper');
 assert.match(helper, /Overhead Rapport \/ Favor/, 'Popup Text Editor exposes relationship controls');
 assert.match(helper, /Rapport \+10/, 'positive Rapport preview is available');
@@ -28,17 +28,27 @@ assert.match(helper, /showRelationshipChange\(root, kind, amount, \{ amountIsPoi
 assert.match(helper, /id: 'popup_preview_character'/, 'editor has an immediate deterministic preview character');
 assert.match(helper, /async function ensureVisibleAvatar/, 'editor can render a preview avatar independently of repository NPC loading');
 assert.match(helper, /await render\(FALLBACK_NPC\)/, 'fallback uses the editor real portrait/avatar renderer rather than a dummy mesh');
+assert.match(helper, /renderGeneration\(\) > generationBeforeFallback \+ 1/, 'fallback detects when a repository render supersedes its generation');
+assert.match(helper, /fallbackAvatar = 'superseded'/, 'superseded fallback is treated as a normal race outcome rather than an error');
 assert.match(helper, /if \(!avatarModel\(\)\) ensureVisibleAvatar\(\)/, 'diagnostic loop repairs a missing avatar while the large NPC database is still loading');
 assert.match(helper, /target = Array\.isArray\(npcList\) && npcList\.length \? \(npcList\[index\] \|\| npcList\[0\]\) : FALLBACK_NPC/, 'Retry avatar also works before repository NPCs are available');
+
+assert.match(editor, /html,body\{height:100dvh\}/, 'mobile editor uses the dynamic viewport height');
+assert.match(editor, /#app\{display:flex;flex-direction:column;height:100dvh;min-height:100dvh\}/, 'mobile editor uses a viewport-bounded column layout');
+assert.match(editor, /#preview\{order:0;flex:0 0 56dvh;min-height:260px;max-height:64dvh\}/, 'mobile 3D preview is the first pane with a guaranteed visible height');
+assert.match(editor, /#controls\{order:1;flex:1 1 auto;min-height:0;overflow:auto/, 'mobile controls scroll beneath the preview instead of pushing it off screen');
 
 assert.match(helper, /position:fixed!important/, 'diagnostics are fixed to the viewport');
 assert.match(helper, /top:max\(8px,env\(safe-area-inset-top\)\)!important/, 'diagnostics are top-anchored instead of following Android bottom-viewport changes');
 assert.match(helper, /bottom:auto!important/, 'diagnostics do not use the moving bottom edge as their anchor');
+assert.match(helper, /max-height:34px!important/, 'diagnostics start collapsed so they cannot obscure the 3D preview');
+assert.match(helper, /data-toggle[^>]*style[^>]*>Show</, 'collapsed diagnostics expose an explicit Show control');
 assert.match(helper, /document\.body\.appendChild\(panel\)/, 'diagnostics are not parented under the moving preview container');
 assert.match(helper, /transform:none!important/, 'diagnostics explicitly disable transform movement');
 assert.match(helper, /transition:none!important/, 'diagnostics explicitly disable easing/transitions');
 assert.match(helper, /animation:none!important/, 'diagnostics explicitly disable CSS animations');
 assert.match(helper, /visualTop=/, 'copied diagnostics report Android visual viewport offset');
+assert.match(helper, /preview=\$\{preview \?/, 'copied diagnostics report whether the 3D preview intersects the visible viewport');
 assert.match(helper, /debug panel=/, 'copied diagnostics report the panel screen position and computed motion styles');
 assert.match(helper, /Retry avatar/, 'diagnostics retain the avatar retry action');
 assert.match(helper, /ResizeObserver loop completed with undelivered notifications/, 'benign Android ResizeObserver warning is explicitly filtered from failure diagnostics');
@@ -72,4 +82,4 @@ for (const [label, bridgePattern, genericPattern] of [
 }
 
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/hud/generic_icons/icon_heart.png')), 'runtime heart asset exists');
-console.log('Popup Text Editor avatar fallback, fixed diagnostics, and relationship head-anchor checks passed.');
+console.log('Popup Text Editor mobile visibility, fallback race, diagnostics, and relationship head-anchor checks passed.');
