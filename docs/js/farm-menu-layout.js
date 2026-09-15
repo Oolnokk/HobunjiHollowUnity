@@ -39,7 +39,7 @@
         width: 100%;
         display: grid;
         grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
-        gap: 12px;
+        gap: 16px;
         align-items: start;
         box-sizing: border-box;
         margin-top: 10px;
@@ -48,10 +48,10 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 0;
       }
       .farm-menu-column-label {
-        padding: 0 2px 2px;
+        padding: 0 2px 7px;
         color: var(--muted, #999);
         font-size: 10px;
         font-weight: 800;
@@ -61,21 +61,25 @@
       #${WORKSPACE_ID} > .farm-menu-column > .farm-section {
         min-width: 0;
         box-sizing: border-box;
-        padding: 10px;
-        border: 1px solid var(--border, #4b443a);
-        border-radius: 9px;
-        background: rgba(0, 0, 0, .10);
+        padding: 11px 2px 13px;
+        border: 0;
+        border-top: 1px solid color-mix(in srgb, var(--border, #4b443a) 78%, transparent);
+        border-radius: 0;
+        background: transparent;
+      }
+      #${WORKSPACE_ID} > .farm-menu-column > .farm-menu-column-label + .farm-section {
+        border-top: 0;
+        padding-top: 2px;
       }
       #${ANIMALS_COLUMN_ID} > .farm-section[data-farm-menu-kind="livestock"] {
-        border-color: color-mix(in srgb, var(--accent, #d9ad65) 52%, var(--border, #4b443a));
-        background: color-mix(in srgb, var(--accent, #d9ad65) 5%, rgba(0, 0, 0, .10));
+        background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #d9ad65) 5%, transparent), transparent 55%);
       }
       #${BREEDING_ACTIONS_ID} {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         gap: 7px;
         align-items: stretch;
-        margin: 2px 0 7px;
+        margin: 4px 0 8px;
         padding: 7px;
         border: 1px solid color-mix(in srgb, var(--accent, #d9ad65) 55%, var(--border, #4b443a));
         border-radius: 8px;
@@ -91,16 +95,16 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
-        margin: 4px 0 8px;
-        padding: 7px 8px;
+        margin: 6px 0 9px;
+        padding: 6px 8px;
         border-left: 3px solid color-mix(in srgb, var(--accent, #d9ad65) 65%, transparent);
         background: rgba(255, 255, 255, .025);
       }
       #${ACTIVE_BREEDING_ID}[hidden] { display: none !important; }
       .farm-animal-subsection {
-        margin-top: 7px;
-        padding-top: 7px;
-        border-top: 1px solid color-mix(in srgb, var(--border, #4b443a) 78%, transparent);
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid color-mix(in srgb, var(--border, #4b443a) 72%, transparent);
       }
       .farm-animal-subsection-title {
         display: flex;
@@ -118,10 +122,10 @@
       }
       #${STABLE_GROUP_ID} {
         margin-top: 10px;
-        padding: 8px;
-        border: 1px solid color-mix(in srgb, var(--border, #4b443a) 85%, transparent);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, .025);
+        padding: 7px 8px;
+        border-top: 0;
+        border-left: 3px solid color-mix(in srgb, var(--accent, #d9ad65) 55%, transparent);
+        background: color-mix(in srgb, var(--accent, #d9ad65) 4%, transparent);
       }
       #${STABLE_GROUP_ID} .farm-animal-subsection-title {
         color: var(--accent, #d9ad65);
@@ -133,11 +137,11 @@
         scrollbar-gutter: stable;
         overscroll-behavior: contain;
       }
-      #farmLivestockList > .farm-note[data-farm-menu-empty="world"] {
+      #${WORLD_GROUP_ID} .farm-note[data-farm-menu-empty="world"] {
         margin: 5px 0;
       }
       @media (max-width: 900px) {
-        #${WORKSPACE_ID} { grid-template-columns: minmax(0, 1fr); }
+        #${WORKSPACE_ID} { grid-template-columns: minmax(0, 1fr); gap: 8px; }
         #${BREEDING_ACTIONS_ID} { grid-template-columns: minmax(0, 1fr); }
       }
     `;
@@ -275,8 +279,6 @@
     if (!nursery) return;
 
     const allRows = [...container.querySelectorAll('.farm-row.livestock-trait-row')]; // Includes rows already inside our groups on repeat passes.
-    const taggedWorldRows = allRows.filter(row => row.dataset.nurseryWorldLivestockId); // Canonical world/stable split supplied by LivestockNursery.
-    if (allRows.length && !taggedWorldRows.length) return;
 
     let worldGroup = document.getElementById(WORLD_GROUP_ID);
     if (!worldGroup || !container.contains(worldGroup)) {
@@ -380,7 +382,7 @@
     try {
       ensureStyles();
       ensureWorkspace();
-      const livestockSection = document.getElementById('farmLivestockList')?.closest('.farm-section') || null; // Used as the one authoritative Animals & Breeding card.
+      const livestockSection = document.getElementById('farmLivestockList')?.closest('.farm-section') || null; // Used as the one authoritative Animals & Breeding section.
       if (livestockSection) livestockSection.dataset.farmMenuKind = 'livestock';
       ensureBreedingActions(livestockSection);
       ensureActiveBreedingGroup(livestockSection);
@@ -407,7 +409,7 @@
     const worldRows = document.querySelectorAll('#' + WORLD_GROUP_ID + ' .farm-row.livestock-trait-row').length;
     const stableRows = document.querySelectorAll('#' + STABLE_GROUP_ID + ' .farm-row.livestock-trait-row').length;
     return {
-      mostRecentChange: 'Farm tab uses two top-level columns, breeding actions are promoted, farm/stable candidates are split, and Nursery controller focus/scroll survive selected-state rerenders.',
+      mostRecentChange: 'Farm tab uses two flat top-level columns, breeding actions are promoted, farm/stable candidates are split, and Nursery controller focus/scroll survive selected-state rerenders.',
       installed,
       workspace: !!document.getElementById(WORKSPACE_ID),
       animalsColumnSections: [...document.querySelectorAll('#' + ANIMALS_COLUMN_ID + ' > .farm-section')].map(section => section.dataset.farmMenuKind || classifySection(section)),
