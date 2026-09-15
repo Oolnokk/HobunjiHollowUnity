@@ -4461,6 +4461,9 @@
       // only for the few frames between an attack request and its windup.
       let manualAutoTarget = null;
       let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
+      let meleeAttackTargetLock = null; // Selected once per transient activation and reused by every melee-target consumer until release.
+      let meleeAttackTargetLockSerial = 0; // Identifies each acquisition in the existing mobile-readable alignment diagnostics.
+      let lastMeleeAttackTargetLock = { serial: 0, targetId: null, releaseReason: 'not-acquired' }; // Reports the latest lock lifecycle after it turns off.
       let meleeAttackFacingCommit = null; // Frozen screen-correct heading carried through the melee windup/attack.
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
       let autoTargetCacheFrame = -1; // Prevents repeated target searches within the same frame.
@@ -4491,6 +4494,7 @@
 
       function meleeAttackTargetCandidate() {
         if (!meleeWeaponOut()) return null;
+        if (meleeAttackTargetLock) return meleeAttackTargetLock; // Never rescan surrounding enemies while this activation owns a target.
         const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used by the shared ±45° cone.
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0); // Existing melee assist range remains authoritative.
         let best = null, bestDist = maxDist, bestAimError = Infinity;
@@ -4512,10 +4516,31 @@
         return best;
       }
 
+      function acquireMeleeAttackTargetLock() {
+        const target = meleeAttackTargetCandidate();
+        if (!target) return null;
+        meleeAttackTargetLock = target;
+        meleeAttackTargetLockSerial++;
+        lastMeleeAttackTargetLock = {
+          serial: meleeAttackTargetLockSerial,
+          targetId: target.id ?? target.creatureKey ?? target.def?.label ?? null,
+          releaseReason: null,
+        };
+        invalidateAutoTargetCache();
+        return target;
+      }
+
+      function releaseMeleeAttackTargetLock(target, reason) {
+        if (meleeAttackTargetLock !== target) return;
+        meleeAttackTargetLock = null;
+        lastMeleeAttackTargetLock = { ...lastMeleeAttackTargetLock, releaseReason: reason };
+        invalidateAutoTargetCache();
+      }
+
       function computeAutoTarget() {
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
         if (meleeWeaponOut()) {
-          const target = meleeAttackAlignment?.target;
+          const target = meleeAttackTargetLock;
           if (target?.health > 0 && target.areaId === currentArea && !target._denHidden) return target;
           return null;
         }
@@ -4632,13 +4657,14 @@
       function finishMeleeAttackAlignment(alignment, runAttack) {
         if (meleeAttackAlignment !== alignment) return;
         meleeAttackAlignment = null; // Raw release; combat-input defers this until the windup has inherited the aligned heading.
-        invalidateAutoTargetCache();
+        releaseMeleeAttackTargetLock(alignment.target, alignment.cancelled ? 'cancelled' : 'aligned');
         if (!alignment.cancelled) runAttack();
       }
 
       function requestMeleeAttackAlignment(runAttack) {
         meleeAttackFacingCommit = null; // Every attack owns a fresh heading.
-        const target = meleeAttackTargetCandidate();
+        meleeAttackAlignment?.cancel?.(); // End any older activation before the next activation is allowed to select.
+        const target = acquireMeleeAttackTargetLock();
         if (!target) {
           runAttack();
           return null;
@@ -4647,10 +4673,13 @@
         const initialStep = window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: startFacing }); // Detects an already-aligned target without adding input latency.
         if (initialStep?.aligned) {
           commitMeleeAttackFacing(initialStep.desiredFacing);
-          runAttack();
+          try {
+            runAttack();
+          } finally {
+            releaseMeleeAttackTargetLock(target, 'already-aligned');
+          }
           return null;
         }
-        meleeAttackAlignment?.cancel?.();
         const alignment = {
           target,
           startFacing,
@@ -4662,11 +4691,10 @@
             if (meleeAttackAlignment !== alignment) return;
             alignment.cancelled = true;
             meleeAttackAlignment = null;
-            invalidateAutoTargetCache();
+            releaseMeleeAttackTargetLock(alignment.target, 'cancelled');
           },
         }; // Handle retained by combat-input while an offensive hold waits to start.
         meleeAttackAlignment = alignment;
-        invalidateAutoTargetCache();
         alignment.runAttack = () => finishMeleeAttackAlignment(alignment, runAttack);
         return alignment;
       }
@@ -25555,11 +25583,15 @@
         get shoulderSurfCombatStance() { return shoulderSurfCombatStanceActive(); },
         get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
         meleeAttackAlignmentSnapshot: () => {
-          const target = meleeAttackAlignment?.target;
+          const target = meleeAttackTargetLock;
           return {
-            latestChange: 'Momentary melee alignment now glides over 0.11–0.22 seconds with smoothstep easing; already-aligned attacks remain immediate.',
+            latestChange: 'Momentary melee auto-target selects one entity per activation and never rescans until that activation releases.',
             active: !!meleeAttackAlignment,
-            target: target ? { id: target.id, x: target.x, y: target.y } : null,
+            targetLocked: !!meleeAttackTargetLock,
+            activationSerial: lastMeleeAttackTargetLock.serial,
+            lastTargetId: lastMeleeAttackTargetLock.targetId,
+            releaseReason: lastMeleeAttackTargetLock.releaseReason,
+            target: target ? { id: target.id ?? target.creatureKey ?? target.def?.label ?? null, x: target.x, y: target.y } : null,
             elapsedS: meleeAttackAlignment?.elapsedS || 0,
             durationS: meleeAttackAlignment?.durationS || 0,
             progress: meleeAttackAlignment?.durationS
@@ -25731,7 +25763,7 @@
         getPlayerPerspectiveTarget: currentPlayerPerspectiveTarget,
         getHeldMode: () => heldMode,
         getActiveTool: () => activeTool,
-        getMeleeReticleTarget: () => meleeAttackAlignment?.target || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
+        getMeleeReticleTarget: () => meleeAttackTargetLock || window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data || null,
         findMeleeAttackCandidate: meleeAttackTargetCandidate,
         requestMeleeAttackAlignment,
         inCone,
