@@ -12,8 +12,8 @@
   const SESSION_KEY = 'hobunjiDriveIdentityProbe.v1'; // Non-secret prior sample retained only for this tab/session so reloads do not lose the comparison.
 
   let samples = 0; // Number of successful metadata/hash samples captured in this page session.
-  let stableIdentityPasses = 0; // Count of comparisons where the same file id survived a Drive version change.
-  let identityFailures = 0; // Count of comparisons where the linked cloud file id unexpectedly changed.
+  let stableIdentityPasses = 0; // Count of real probe runs where the same file id survived a Drive version change.
+  let identityFailures = 0; // Count of real probe runs where the linked cloud file id unexpectedly changed.
   let lastSample = null; // Latest sample displayed to the user and diagnostics.
   let lastComparison = 'not-run'; // Human-readable probe outcome.
   let lastError = ''; // Latest probe error visible in Save Diagnostics.
@@ -47,14 +47,12 @@
       message: 'Baseline recorded. Edit/save the same desktop file through Drive for Desktop, wait for Drive to sync, then run the probe again.',
     };
     if (previous.fileId !== current.fileId) {
-      identityFailures++;
       return {
         state: 'file-id-changed',
         message: `FAIL: Drive file id changed (${short(previous.fileId, 10)} → ${short(current.fileId, 10)}). The desktop write appears to have replaced the cloud object instead of updating it in place.`,
       };
     }
     if (previous.version !== current.version) {
-      stableIdentityPasses++;
       return {
         state: 'stable-id-version-advanced',
         message: `PASS: same Drive file id; Drive version advanced ${previous.version || '?'} → ${current.version || '?'}. Desktop mirroring preserved cloud identity.`,
@@ -136,6 +134,8 @@
       const previous = readPreviousSample();
       const comparison = compareSamples(previous, sample);
       samples++;
+      if (comparison.state === 'stable-id-version-advanced') stableIdentityPasses++;
+      if (comparison.state === 'file-id-changed') identityFailures++;
       lastSample = sample;
       lastComparison = comparison.state;
       rememberSample(sample);
@@ -181,7 +181,7 @@
   driveApi()?.onChange?.(renderAvailability);
 
   window.HobunjiGoogleDriveIdentityProbe = Object.freeze({
-    compareSamples, // Pure comparison helper exposed so CI can lock down the same-id/version-advance acceptance criterion.
+    compareSamples, // Side-effect-free classification helper exposed so CI can lock down the exact acceptance criterion.
     run: () => {
       const button = document.getElementById(BUTTON_ID);
       if (!button) throw new Error('Drive Identity Probe button is not available yet.');
