@@ -37,7 +37,6 @@
   },
   "relationshipHeart": {
     "opacity": 0.9,
-    "glowPx": 29,
-    "spacingPercent": 14
+    "glowPx": 29
   }
 }
