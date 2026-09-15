@@ -83,22 +83,34 @@
 
   function fitToContainer(text, options = {}) {
     const layout = measure(text, options);
+    const hasContainerWidth = Number.isFinite(Number(options.containerWidthPx));
+    const hasContainerHeight = Number.isFinite(Number(options.containerHeightPx));
     const containerWidthPx = Math.max(1, Math.round(finiteOr(options.containerWidthPx, layout.widthPx))); // Explicit UI-like container width; defaults to the natural text width.
     const containerHeightPx = Math.max(1, Math.round(finiteOr(options.containerHeightPx, layout.heightPx))); // Explicit UI-like container height; defaults to the natural text height.
-    const fitScale = Math.min(1, containerWidthPx / layout.widthPx, containerHeightPx / layout.heightPx); // Never grow text just because its container grew; only shrink when it would overflow.
-    const renderedWidthPx = layout.widthPx * fitScale;
-    const renderedHeightPx = layout.heightPx * fitScale;
+    const referenceGlyphScaleX = clamp(finiteOr(options.fitReferenceGlyphScaleX, 1), 0.25, 2.5); // Furniture passes its 1.2 baseline so only user growth beyond that baseline consumes extra box room.
+    const referenceGlyphScaleY = clamp(finiteOr(options.fitReferenceGlyphScaleY, 1), 0.25, 2.5);
+    const visualWidthPx = layout.widthPx + Math.max(0, layout.glyphScaleX - referenceGlyphScaleX) * layout.fontSizePx;
+    const visualHeightPx = layout.heightPx + Math.max(0, layout.glyphScaleY - referenceGlyphScaleY) * layout.fontSizePx;
+    const widthFit = hasContainerWidth ? containerWidthPx / visualWidthPx : 1;
+    const heightFit = hasContainerHeight ? containerHeightPx / visualHeightPx : 1;
+    const fitScale = Math.min(1, widthFit, heightFit); // Never grow text just because its container grew; only shrink when rendered text would overflow.
+    const renderedLayoutWidthPx = layout.widthPx * fitScale;
+    const renderedLayoutHeightPx = layout.heightPx * fitScale;
     return {
       ...layout,
       naturalWidthPx: layout.widthPx,
       naturalHeightPx: layout.heightPx,
+      visualWidthPx,
+      visualHeightPx,
       containerWidthPx,
       containerHeightPx,
       fitScale,
-      renderedWidthPx,
-      renderedHeightPx,
-      offsetXPx: (containerWidthPx - renderedWidthPx) / 2,
-      offsetYPx: (containerHeightPx - renderedHeightPx) / 2,
+      renderedWidthPx: visualWidthPx * fitScale,
+      renderedHeightPx: visualHeightPx * fitScale,
+      renderedLayoutWidthPx,
+      renderedLayoutHeightPx,
+      offsetXPx: (containerWidthPx - renderedLayoutWidthPx) / 2,
+      offsetYPx: (containerHeightPx - renderedLayoutHeightPx) / 2,
     };
   }
 
