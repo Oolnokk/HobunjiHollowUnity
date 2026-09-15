@@ -4,7 +4,7 @@
   'use strict';
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : new URL('./onboarding.js', location.href); // Resolves sibling scripts correctly from GitHub Pages, GitHack, or local hosting.
   const coreUrl = new URL('onboarding-core.js?v=20260907charcreator1', selfUrl).href; // Loads the legacy onboarding/save core first.
-  const folderSaveBridgeUrl = new URL('js/folder-save-onboarding-bridge.js?v=20260914a', selfUrl).href; // Delays the first save-select snapshot until the primary folder has reconciled and supports in-page restores without a site reload.
+  const folderSaveBridgeUrl = new URL('js/folder-save-onboarding-bridge.js?v=20260915driveb', selfUrl).href; // Delays save-selection initialization until the coordinator resolves desktop-folder or mobile-Drive startup reconciliation.
   const viewportFitUrl = new URL('js/onboarding-viewport-fit.js?v=20260913viewportfit1', selfUrl).href; // Keeps creator/save cards inside the live viewport and exposes visible overflow diagnostics.
   const switchboxPlacementUrl = new URL('js/onboarding-switchbox-placement.js?v=20260913switchboxworld1', selfUrl).href; // Keeps the dev switchbox out of character creation and collapses it on the World step.
   const mashtzarrFemaleUrl = new URL('js/onboarding-character-creation-mashtzarr-female.js?v=20260907charcreator21', selfUrl).href; // Uses the real female Mashtzarr body/profile while temporarily borrowing male hairstyle controls and excluding facial hair.
