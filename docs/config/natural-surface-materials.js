@@ -17,6 +17,17 @@
   window.NaturalSurfaceMaterialConfig = {
     schema: 'hobunji_natural_surface_materials.v1',
     texture: 'assets/textures/carved_smooth.png',
+
+    // Experimental protected-edge treatment is deliberately scoped to the
+    // water-bank outline overlay and Western Slope snow only. Grass keeps its
+    // normal terrain-material mapping, while slush / cliffs / rocks remain on
+    // their established render paths.
+    perimeterFrame: {
+      sourceEdgeFraction: 0.45,
+      tileRingWorldWidth: 1,
+      scope: 'water-and-snow',
+    },
+
     surfaces: {
       trunks: {
         enabled: true,
