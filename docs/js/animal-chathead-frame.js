@@ -327,6 +327,22 @@
     return String(kind || '').split('-').filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
   }
 
+  function normalizeExtendedSpeciesAssetUrls() {
+    const species = global.CreatureGeneticsRender?.SPECIES || {}; // Holds the post-renderer species records installed by creature-genetics.js.
+    const docsBase = new URL('../../', global.location.href); // Resolves game-relative assets from the nested docs/tools/animation-author page back to docs/.
+    const rewrite = value => { // Recursively fixes only repository asset strings while leaving flags, arrays, colors, and metadata intact.
+      if (typeof value === 'string') return value.startsWith('assets/') ? new URL(value, docsBase).href : value;
+      if (Array.isArray(value)) {
+        for (let index = 0; index < value.length; index++) value[index] = rewrite(value[index]);
+        return value;
+      }
+      if (!value || typeof value !== 'object') return value;
+      for (const key of Object.keys(value)) value[key] = rewrite(value[key]);
+      return value;
+    };
+    for (const kind of REQUIRED_KINDS) if (species[kind]) rewrite(species[kind]);
+  }
+
   function refreshPickerFromRenderer() {
     const select = global.document?.getElementById('maaCreatureSpecies'); // Updated in place so the author's normal change handler continues driving frame selection.
     const species = global.CreatureGeneticsRender?.SPECIES; // Canonical renderer registry after creature-genetics.js applies runtime extensions.
@@ -391,6 +407,7 @@
       requestGameplayCreatureExtensions();
       return false;
     }
+    normalizeExtendedSpeciesAssetUrls();
     const pickerClean = refreshPickerFromRenderer(); // Adds any species installed after the author's original picker-population pass.
     status.rendererMissing = [];
     status.pickerMissing = missingPickerKinds();
