@@ -62,8 +62,24 @@
   }
 
   function zoneDims(zoneId) {
-    const def = deps?.EXTERIOR_ZONES?.[zoneId] || window.EXTERIOR_ZONES?.[zoneId] || null; // Live dimensions preferred over today's 200×200 fallback.
-    return { cols: Math.max(1, Number(def?.cols) || 200), rows: Math.max(1, Number(def?.rows) || 200) };
+    // deps.zoneLayouts holds each wilderness zone's real PROCEDURALLY
+    // GENERATED dimensions (see game.js's own ZCOLS/ZROWS: `zoneData?.cols ||
+    // zdef?.cols`, the same precedence used here) -- EXTERIOR_ZONES[zoneId]'s
+    // own cols/rows are a pre-procedural-generation placeholder (22x16/50x40)
+    // that every wilderness zone's actual generated terrain (~200x200, see
+    // wilderness-map-generator.js's GENERATION_TILE_SCALE export) long since
+    // outgrew. Reading that placeholder first (as this used to) meant every
+    // route/chunk computation below ran against a route only 1-3 chunks wide
+    // instead of the real map's ~13 -- the "whole zone traverse" collapsed
+    // into a sliver near one corner of the actual terrain, so the army (and
+    // its beacon) never actually covered ground a player exploring the real
+    // map would cross paths with.
+    const live = deps?.zoneLayouts?.get?.(zoneId) || window.zoneLayouts?.get?.(zoneId) || null;
+    const def = deps?.EXTERIOR_ZONES?.[zoneId] || window.EXTERIOR_ZONES?.[zoneId] || null; // Fallback only for a zone with no live layout yet.
+    return {
+      cols: Math.max(1, Number(live?.cols) || Number(def?.cols) || 200),
+      rows: Math.max(1, Number(live?.rows) || Number(def?.rows) || 200),
+    };
   }
 
   function coarseStateFor(day, hour, config = cfg, dimsOverride = null) {
@@ -105,8 +121,20 @@
 
   function hourlyState() {
     const day = civilDay(); // Part of cache key so a new civil day can rotate zone at midnight.
-    const hour = Math.floor(gameHour()); // Hidden schedule intentionally ignores minute/second progression.
-    const key = `${day}:${hour}`; // Sole key permitted to trigger offscreen chunk calculation.
+    const hour = gameHour(); // Full precision -- coarseStateFor buckets this into its own stepHours-sized slot.
+    // Bucketing by whole game-hours regardless of the configured coarseStepHours
+    // used to mean the offscreen chunk only ever advanced once per game hour no
+    // matter how fine activeHours.coarseStepHours was set -- with routeChunks
+    // (~13, one whole zone's width) spread across only the resulting 6 once-an-
+    // hour jumps, the coarse position leapt 2-3 chunks at a time and skipped
+    // most chunks along the route outright, so a player chasing the beacon
+    // almost never landed in the same chunk before the next jump moved it 32-48
+    // tiles away again. Bucketing by the configured step instead lets a smaller
+    // coarseStepHours (see config/harlyao-night-march.json) actually produce
+    // smaller, chunk-by-chunk advances a player on foot can keep up with.
+    const stepHours = Math.max(0.25, Number(cfg?.activeHours?.coarseStepHours) || 1);
+    const bucket = Math.floor(hour / stepHours);
+    const key = `${day}:${bucket}`; // Sole key permitted to trigger offscreen chunk calculation.
     if (key !== scheduleKey) {
       scheduleKey = key;
       scheduled = coarseStateFor(day, hour);
