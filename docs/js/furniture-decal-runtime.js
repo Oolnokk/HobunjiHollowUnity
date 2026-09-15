@@ -12,8 +12,11 @@
   const DEG = Math.PI / 180;
   const TANKAN_SOURCE_TYPE = 'tankanText';
   const TANKAN_SETTINGS_VERSION = 2;
-  // Matches the normalized furniture-author baseline. Glyph scale 1.2 means a
-  // normalized glyph-size value of 1.0 is 20% larger than the old rendering.
+  const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
+  const TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8;
+  const TANKAN_EXTRA_COLUMN_WIDTH_FACTOR = 0.2;
+  const TANKAN_PADDING_X_EM = 0.8;
+  const TANKAN_PADDING_Y_EM = 0.28;
   const TANKAN_BASELINE = Object.freeze({
     columnSpacingEm: -0.35,
     glyphAdvanceEm: 0.6,
@@ -30,6 +33,7 @@
   const SCRIPT_SRC = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Resolves the shared Tankan helper from nested previews.
   const textureCache = new Map(); // Resolved decal source key -> shared THREE.Texture used by all furniture instances.
   let tankanLayoutPromise = null; // Shared async helper load so text decals can appear when this runtime is loaded directly.
+  let cachedTankanBaselineLayout = null; // Used by natural auto-sizing so runtime matches the author exactly.
 
   const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -43,7 +47,7 @@
   }
 
   function resolvedImageSource(record) {
-    const raw = String(record?.runtimeImageSource || record?.imageSource || record?.imageName || '').trim(); // Browser texture URL after author-path normalization.
+    const raw = String(record?.runtimeImageSource || record?.imageSource || record?.imageName || '').trim();
     if (!raw || /^(?:data|blob):/i.test(raw)) return raw;
     const docsAsset = raw.lastIndexOf('docs/assets/');
     if (docsAsset >= 0) return raw.slice(docsAsset + 5);
@@ -74,7 +78,7 @@
         if (window.TankanScriptLayout?.installed) finish();
         return;
       }
-      const script = document.createElement('script'); // Text-decals only; image decals remain independent.
+      const script = document.createElement('script');
       try { script.src = SCRIPT_SRC ? new URL('tankan-script-layout.js', SCRIPT_SRC).href : 'js/tankan-script-layout.js'; }
       catch (_) { script.src = 'js/tankan-script-layout.js'; }
       script.async = false;
@@ -99,19 +103,73 @@
       columnSpacingEm: clamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
       glyphAdvanceEm: clamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
       glyphScale: clamp(TANKAN_BASELINE.glyphScale * finiteOr(record.tankanGlyphSize, 1), 0.25, 2.5),
+      paddingXEm: TANKAN_PADDING_X_EM,
+      paddingYEm: TANKAN_PADDING_Y_EM,
       color: String(record.tankanColor || TANKAN_BASELINE.color),
     };
   }
 
+  function measureTankanLayout(text, options = {}) {
+    if (window.TankanScriptLayout?.measure) return window.TankanScriptLayout.measure(text, options);
+    const columnSpacingEm = clamp(finiteOr(options.columnSpacingEm, TANKAN_BASELINE.columnSpacingEm), -0.95, 4);
+    const glyphAdvanceEm = clamp(finiteOr(options.glyphAdvanceEm, TANKAN_BASELINE.glyphAdvanceEm), 0.1, 4);
+    const fontSizePx = Math.max(16, finiteOr(options.fontSizePx, 128));
+    const paddingEm = Math.max(0, finiteOr(options.paddingEm, 0.28));
+    const paddingXEm = Math.max(0, finiteOr(options.paddingXEm, paddingEm));
+    const paddingYEm = Math.max(0, finiteOr(options.paddingYEm, paddingEm));
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    const columnCount = Math.max(1, words.length);
+    const longestWord = Math.max(1, ...words.map(word => Array.from(word).length));
+    const glyphAdvancePx = fontSizePx * glyphAdvanceEm;
+    const columnAdvancePx = fontSizePx * Math.max(0.05, 1 + columnSpacingEm);
+    const paddingXPx = fontSizePx * paddingXEm;
+    const paddingYPx = fontSizePx * paddingYEm;
+    const contentWidth = fontSizePx + (columnCount - 1) * columnAdvancePx;
+    const contentHeight = longestWord * glyphAdvancePx;
+    return {
+      columnCount,
+      longestWord,
+      widthPx: Math.max(1, Math.ceil(contentWidth + paddingXPx * 2 - 1e-9)),
+      heightPx: Math.max(1, Math.ceil(contentHeight + paddingYPx * 2 - 1e-9)),
+    };
+  }
+
+  function baselineTankanLayout() {
+    if (cachedTankanBaselineLayout) return cachedTankanBaselineLayout;
+    cachedTankanBaselineLayout = measureTankanLayout(TANKAN_BASELINE_TEXT, {
+      columnSpacingEm: TANKAN_BASELINE.columnSpacingEm,
+      glyphAdvanceEm: TANKAN_BASELINE.glyphAdvanceEm,
+      glyphScale: TANKAN_BASELINE.glyphScale,
+      paddingXEm: TANKAN_PADDING_X_EM,
+      paddingYEm: TANKAN_PADDING_Y_EM,
+      color: TANKAN_BASELINE.color,
+    });
+    return cachedTankanBaselineLayout;
+  }
+
+  function tankanNaturalWidthFactor(record, layout) {
+    const options = tankanTextureOptions(record);
+    const baselineAdvance = Math.max(0.05, 1 + TANKAN_BASELINE.columnSpacingEm);
+    const currentAdvance = Math.max(0.05, 1 + options.columnSpacingEm);
+    const extraColumns = Math.max(0, (layout?.columnCount || 1) - 1);
+    return Math.max(0.05, TANKAN_SINGLE_COLUMN_WIDTH_FACTOR + extraColumns * TANKAN_EXTRA_COLUMN_WIDTH_FACTOR * (currentAdvance / baselineAdvance));
+  }
+
+  function tankanNaturalHeightFactor(record, layout) {
+    const baseLayout = baselineTankanLayout();
+    const liveLayout = layout || measureTankanLayout(record?.tankanText, tankanTextureOptions(record));
+    return Math.max(0.05, (liveLayout?.heightPx || baseLayout.heightPx) / baseLayout.heightPx);
+  }
+
   function tankanTextureKey(record) {
     const options = tankanTextureOptions(record);
-    return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.color}`;
+    return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.paddingXEm ?? ''}\u0000${options.paddingYEm ?? ''}\u0000${options.color}`;
   }
 
   function tankanTextureFor(record) {
     const key = tankanTextureKey(record);
     if (textureCache.has(key)) return textureCache.get(key);
-    const canvas = document.createElement('canvas'); // One transparent pixel until the exact Tankan face is ready.
+    const canvas = document.createElement('canvas');
     canvas.width = 1;
     canvas.height = 1;
     const texture = configureTexture(new THREE.CanvasTexture(canvas));
@@ -130,7 +188,7 @@
   }
 
   function imageTextureFor(record) {
-    const source = resolvedImageSource(record); // Cache key and TextureLoader URL.
+    const source = resolvedImageSource(record);
     if (!source) return null;
     const key = `image:${source}`;
     if (textureCache.has(key)) return textureCache.get(key);
@@ -157,10 +215,10 @@
   }
 
   function matchingSurface(data, record) {
-    const surfaces = Array.isArray(data?.recognizedSurfaces) ? data.recognizedSurfaces : []; // Exact authored face frame for this decal.
+    const surfaces = Array.isArray(data?.recognizedSurfaces) ? data.recognizedSurfaces : [];
     const direct = surfaces.find(surface => surface?.id === record?.surfaceId);
     if (direct) return direct;
-    const priorFaces = new Set(Array.isArray(record?.surfaceFaces) ? record.surfaceFaces : []); // Recovers regenerated surface ids by face membership.
+    const priorFaces = new Set(Array.isArray(record?.surfaceFaces) ? record.surfaceFaces : []);
     let best = null;
     let bestScore = -Infinity;
     for (const surface of surfaces) {
@@ -185,20 +243,22 @@
         opacity: clamp(finiteOr(record?.opacity, 1), 0, 1),
       };
     }
+    const layout = measureTankanLayout(record.tankanText, tankanTextureOptions(record));
     return {
       offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
       offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
-      width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
-      height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
+      width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)) * tankanNaturalWidthFactor(record, layout),
+      height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)) * tankanNaturalHeightFactor(record, layout),
       rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
       normalOffset: Math.max(0.0002, TANKAN_BASELINE.normalOffset + finiteOr(record.normalOffset, 0)),
       opacity: clamp(finiteOr(record.opacity, TANKAN_BASELINE.opacity), 0, 1),
+      tankanLayout: layout,
     };
   }
 
   function addDecal(group, data, record) {
     if (!record || record.visible === false || !hasVisualSource(record)) return null;
-    const surface = matchingSurface(data, record); // Surface-local size, position, normal, and orientation.
+    const surface = matchingSurface(data, record);
     const partMesh = surface ? group?.userData?.meshById?.get?.(surface.partId) : null;
     if (!surface || !partMesh) return null;
 
@@ -214,7 +274,7 @@
     const center = basisU.clone().multiplyScalar(centerU)
       .addScaledVector(basisV, centerV)
       .addScaledVector(normal, centroid.dot(normal));
-    const transform = resolvedTransform(record); // Converts normalized Tankan controls to renderer-space values.
+    const transform = resolvedTransform(record);
 
     const width = spanU * transform.width;
     const height = spanV * transform.height;
@@ -238,6 +298,7 @@
       decalSourceType: isTankanTextDecal(record) ? TANKAN_SOURCE_TYPE : 'image',
       surfaceId: surface.id || null,
       authoredPartId: surface.partId || null,
+      tankanLayout: transform.tankanLayout || null,
     };
     mesh.castShadow = false;
     mesh.receiveShadow = false;
@@ -257,9 +318,9 @@
   }
 
   function addDecals(group, data) {
-    const records = Array.isArray(data?.decals) ? data.decals : []; // Editable decal records exported by Furniture + Avatar Author.
+    const records = Array.isArray(data?.decals) ? data.decals : [];
     if (!records.length || !group?.userData?.meshById) return group;
-    const meshes = []; // Stored on the group for diagnostics and later runtime extensions.
+    const meshes = [];
     for (const record of records) {
       const mesh = addDecal(group, data, record);
       if (mesh) meshes.push(mesh);
@@ -270,7 +331,7 @@
     return group;
   }
 
-  const originalBuildGroup = authored.buildGroup.__furnitureDecalRuntimeOriginal || authored.buildGroup.bind(authored); // Preserved so wrapper remains composable.
+  const originalBuildGroup = authored.buildGroup.__furnitureDecalRuntimeOriginal || authored.buildGroup.bind(authored);
   function buildGroup(data, baseColor) {
     return addDecals(originalBuildGroup(data, baseColor), data);
   }
@@ -287,5 +348,7 @@
     isTankanTextDecal,
     tankanTextureOptions,
     resolvedTransform,
+    tankanNaturalWidthFactor,
+    tankanNaturalHeightFactor,
   };
 })();
