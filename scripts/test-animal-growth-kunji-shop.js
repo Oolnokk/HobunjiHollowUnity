@@ -8,6 +8,7 @@ const growthConfigSource = fs.readFileSync('docs/config/animal-growth-config.js'
 const growthSource = fs.readFileSync('docs/js/animal-growth.js', 'utf8');
 const shopConfig = JSON.parse(fs.readFileSync('docs/config/shops/shop-stock.json', 'utf8'));
 const generalStoreSource = fs.readFileSync('docs/js/general-store.js', 'utf8');
+const lootRollingSource = fs.readFileSync('docs/js/loot-rolling.js', 'utf8'); // Used to pin shop-stock seller synchronization into the contextual Shop action.
 
 const stable = [];
 const inventory = { gold: 2000, growthTonic: 2 };
@@ -103,9 +104,10 @@ assert.ok(kunji, 'Kunji potion shop is authored in shop-stock.json');
 assert.deepEqual(kunji.dialogueAccess.sellerIds, ['kinami_kunji', 'kaboku_kunji'], 'both Kunji shopkeepers expose the shop');
 assert.ok(kunji.dialogueAccess.businessMaps.includes('map_i_kunjis_potions_F1'), 'Kunji shop is limited to the potion shop floor');
 const tonic = kunji.goods.find(item => item.key === 'growthTonic');
-assert.equal(tonic.price, 500, 'Growth Tonic price is authored as 500g and can be edited in shop stock');
+assert.equal(tonic.price, 200, 'Growth Tonic price is authored as 200g');
 assert.equal(tonic.gives.growthTonic, 1, 'Growth Tonic shop row grants the shared tonic item');
 const healing = kunji.goods.find(item => item.alchemyRecipeId === 'healingPotion');
+assert.equal(healing.price, 200, 'Healing Potion price is authored as 200g');
 assert.equal(healing.alchemyPotencyTier, 0, 'shop Healing Potion uses the basic brewed potency tier');
 
 const generalStore = shopConfig.shops.generalStoreWares; // Used to verify Funji's basic cooking stock without duplicating the authored goods elsewhere.
@@ -130,5 +132,8 @@ assert.match(generalStoreSource, /AlchemySystem\.ensureRecipeItemDef/, 'configur
 assert.match(generalStoreSource, /CookingSystem\?\.recordItemQuality/, 'configured food quality is recorded in CookingSystem when a shop purchase is added');
 assert.match(generalStoreSource, /addedAmount = Math\.max\(0, nextAmount - previousAmount\)/, 'shop quality tracking records only units that fit under the stack cap');
 assert.match(generalStoreSource, /state\.specialized/, 'specialized shops reuse the General Store menu without clothing/sell categories');
+assert.match(lootRollingSource, /syncGeneralStoreSellerIds/, 'shop loading synchronizes authored sellers into the contextual Shop action');
+assert.match(lootRollingSource, /shop\?\.menuId !== 'generalStore'/, 'contextual Shop seller synchronization is limited to General Store-surface shops');
+assert.match(lootRollingSource, /shop\?\.dialogueAccess\?\.sellerIds/, 'contextual Shop seller synchronization reads the authoritative dialogueAccess seller list');
 
 console.log('animal growth + configured shop tests passed');
