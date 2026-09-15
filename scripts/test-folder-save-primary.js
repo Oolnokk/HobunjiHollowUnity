@@ -10,6 +10,10 @@ const assert = (condition, message) => {
   console.log('OK ', message);
 };
 
+const envelope = read('docs/js/save-sync-envelope.js');
+const reconciliation = read('docs/js/save-reconciliation.js');
+const syncStore = read('docs/js/save-sync-store.js');
+const coordinator = read('docs/js/save-coordinator.js');
 const primary = read('docs/js/folder-save-primary.js');
 const emptyBootstrap = read('docs/js/folder-save-empty-bootstrap.js');
 const debugUi = read('docs/js/folder-save-debug-ui.js');
@@ -22,19 +26,32 @@ const core = read('docs/js/local-save-folder-core.js');
 const startupGuard = read('docs/js/session-persistence-startup-guard.js');
 
 // Syntax parse without executing browser globals.
+new Function(envelope);
+new Function(reconciliation);
+new Function(syncStore);
+new Function(coordinator);
 new Function(primary);
 new Function(emptyBootstrap);
 new Function(debugUi);
 new Function(bridge);
 new Function(creatorHandoff);
-console.log('OK  folder-save lifecycle modules parse as JavaScript');
+console.log('OK  persistence lifecycle modules parse as JavaScript');
 
+const envelopeIndex = folderLoader.indexOf('save-sync-envelope.js');
+const reconciliationIndex = folderLoader.indexOf('save-reconciliation.js');
+const syncStoreIndex = folderLoader.indexOf('save-sync-store.js');
+const coordinatorIndex = folderLoader.indexOf('save-coordinator.js');
 const coreIndex = folderLoader.indexOf('local-save-folder-core.js');
 const primaryIndex = folderLoader.indexOf('folder-save-primary.js');
 const emptyBootstrapIndex = folderLoader.indexOf('folder-save-empty-bootstrap.js');
 const debugUiIndex = folderLoader.indexOf('folder-save-debug-ui.js');
 const legacyFlowIndex = folderLoader.indexOf('local-save-flow.js');
-assert(coreIndex >= 0 && primaryIndex > coreIndex, 'primary folder layer loads after the existing persistence core');
+assert(envelopeIndex >= 0, 'canonical save envelope loads from the persistence entrypoint');
+assert(reconciliationIndex > envelopeIndex, 'three-way reconciliation loads after canonical envelope support');
+assert(syncStoreIndex > reconciliationIndex, 'durable sync store loads after reconciliation primitives');
+assert(coordinatorIndex > syncStoreIndex, 'save coordinator loads after its durable sync-store dependency');
+assert(coreIndex > coordinatorIndex, 'transport-neutral sync foundation loads before the existing filesystem core');
+assert(primaryIndex > coreIndex, 'primary folder layer loads after the existing persistence core');
 assert(emptyBootstrapIndex > primaryIndex, 'empty-folder bootstrap wraps the primary folder load behavior');
 assert(debugUiIndex > emptyBootstrapIndex, 'mobile diagnostics load after folder lifecycle wrappers');
 assert(legacyFlowIndex > debugUiIndex, 'folder lifecycle layers load before the legacy reload-heavy UX flow');
@@ -45,6 +62,15 @@ const bridgeIndex = onboardingLoader.indexOf('folder-save-onboarding-bridge.js')
 const reloadHandoffIndex = onboardingLoader.indexOf('onboarding-character-creation-reload-handoff.js');
 assert(bridgeIndex > onboardingCoreIndex, 'folder/onboarding bridge loads after onboarding core exists');
 assert(reloadHandoffIndex > bridgeIndex, 'folder/onboarding bridge is installed before later onboarding wrappers');
+assert(onboardingLoader.includes('20260915savev3a'), 'creator handoff cache key advances with the durable-save integration');
+
+assert(envelope.includes("FORMAT = 'hobunji-primary-save'"), 'canonical envelope uses a stable portable save format identifier');
+assert(envelope.includes("subtle.digest('SHA-256'"), 'canonical envelope hashes gameplay content with SHA-256');
+assert(reconciliation.includes("return result('conflict', 'preserve-both'"), 'three-way reconciliation preserves both branches on divergent edits');
+assert(syncStore.includes('commitEnvelope'), 'durable sync store exposes the atomic local commit primitive');
+assert(syncStore.includes('OAuth tokens must not be persisted'), 'durable sync store rejects OAuth-token persistence');
+assert(coordinator.includes('snapshot.capture({ strict: true })'), 'save coordinator captures the existing portable browser-save boundary strictly');
+assert(coordinator.includes('store.commitEnvelope'), 'save coordinator commits the canonical envelope to durable local storage');
 
 assert(primary.includes('prepareBeforeOnboarding'), 'primary layer exposes pre-onboarding folder reconciliation');
 assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembered ready folders automatically load before save selection');
@@ -54,7 +80,10 @@ assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge 
 
 assert(emptyBootstrap.includes('empty-folder-connected-awaiting-first-save'), 'a new empty folder is a valid first-run save destination');
 assert(emptyBootstrap.includes('No browser save is available to write'), 'empty-folder exception is narrowly limited to the expected no-browser-save bootstrap');
-assert(creatorHandoff.includes('flushPrimaryFolderBeforeReload'), 'character creator flushes the primary folder before its deliberate clean-session reload');
+assert(creatorHandoff.includes('commitDurableBeforeReload'), 'character creator commits durable local state before its deliberate clean-session reload');
+assert(creatorHandoff.includes("coordinator.commitCurrent({ reason: 'character-creator-start' })"), 'creator handoff uses the transport-neutral durable save coordinator');
+assert(creatorHandoff.includes('durableCommitFailures'), 'creator durable-commit failures remain mobile-visible');
+assert(creatorHandoff.includes('flushPrimaryFolderBeforeReload'), 'character creator still flushes the primary folder after the durable commit');
 assert(creatorHandoff.includes('await localSave.syncNow()'), 'creator folder flush completes before navigation begins');
 assert(creatorHandoff.includes('folderFlushFailures'), 'creator folder flush failures remain mobile-visible');
 
@@ -84,6 +113,7 @@ assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first
 assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes diagnostics data');
 assert(debugUi.includes("button.textContent = 'Save Diagnostics'"), 'Settings exposes a mobile-visible Save Diagnostics button');
 assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without requiring DevTools');
-assert(debugUi.includes('Latest: Quit now flushes live gameplay'), 'Settings includes a short summary of the most recent save change');
+assert(debugUi.includes('HobunjiSaveCoordinator?.getStatus'), 'mobile diagnostics include the durable local save coordinator');
+assert(debugUi.includes('three-way sync foundation is loaded for Drive work'), 'Settings includes a short summary of the latest persistence change');
 
 console.log('\nFolder-save primary regression checks passed.');
