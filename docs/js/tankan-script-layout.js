@@ -81,6 +81,27 @@
     };
   }
 
+  function fitToContainer(text, options = {}) {
+    const layout = measure(text, options);
+    const containerWidthPx = Math.max(1, Math.round(finiteOr(options.containerWidthPx, layout.widthPx))); // Explicit UI-like container width; defaults to the natural text width.
+    const containerHeightPx = Math.max(1, Math.round(finiteOr(options.containerHeightPx, layout.heightPx))); // Explicit UI-like container height; defaults to the natural text height.
+    const fitScale = Math.min(1, containerWidthPx / layout.widthPx, containerHeightPx / layout.heightPx); // Never grow text just because its container grew; only shrink when it would overflow.
+    const renderedWidthPx = layout.widthPx * fitScale;
+    const renderedHeightPx = layout.heightPx * fitScale;
+    return {
+      ...layout,
+      naturalWidthPx: layout.widthPx,
+      naturalHeightPx: layout.heightPx,
+      containerWidthPx,
+      containerHeightPx,
+      fitScale,
+      renderedWidthPx,
+      renderedHeightPx,
+      offsetXPx: (containerWidthPx - renderedWidthPx) / 2,
+      offsetYPx: (containerHeightPx - renderedHeightPx) / 2,
+    };
+  }
+
   function ensureFontLoaded() {
     if (fontPromise) return fontPromise;
     if (typeof FontFace !== 'function' || typeof document === 'undefined' || !document.fonts) {
@@ -118,9 +139,9 @@
     if (typeof document !== 'undefined' && document.fonts && fontState !== 'loaded') {
       throw new Error(`Tankan font is ${fontState}; refusing to rasterize with a fallback font.`);
     }
-    const layout = measure(text, options);
-    canvas.width = layout.widthPx;
-    canvas.height = layout.heightPx;
+    const layout = fitToContainer(text, options);
+    canvas.width = layout.containerWidthPx;
+    canvas.height = layout.containerHeightPx;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -130,15 +151,17 @@
     ctx.textBaseline = 'middle';
     for (let columnIndex = 0; columnIndex < layout.words.length; columnIndex++) {
       const word = layout.words[columnIndex];
-      const x = layout.paddingXPx + layout.fontSizePx / 2 + columnIndex * layout.columnAdvancePx;
+      const naturalX = layout.paddingXPx + layout.fontSizePx / 2 + columnIndex * layout.columnAdvancePx;
+      const x = layout.offsetXPx + naturalX * layout.fitScale;
       const glyphs = Array.from(word);
       for (let glyphIndex = 0; glyphIndex < glyphs.length; glyphIndex++) {
-        const y = layout.paddingYPx + layout.glyphAdvancePx * (glyphIndex + 0.5);
-        // Scale around this glyph cell's center only. Neighbor positions remain governed
-        // solely by glyphAdvancePx/columnAdvancePx, so X/Y glyph size cannot push text around.
+        const naturalY = layout.paddingYPx + layout.glyphAdvancePx * (glyphIndex + 0.5);
+        const y = layout.offsetYPx + naturalY * layout.fitScale;
+        // X/Y glyph controls shape each glyph inside its fixed cell. fitScale is a
+        // separate uniform overflow response for the complete text block/container.
         ctx.save();
         ctx.translate(x, y);
-        ctx.scale(layout.glyphScaleX, layout.glyphScaleY);
+        ctx.scale(layout.glyphScaleX * layout.fitScale, layout.glyphScaleY * layout.fitScale);
         ctx.fillText(glyphs[glyphIndex], 0, 0);
         ctx.restore();
       }
@@ -147,7 +170,7 @@
   }
 
   function createCanvas(text, options = {}) {
-    if (typeof document === 'undefined') return { canvas: null, layout: measure(text, options) };
+    if (typeof document === 'undefined') return { canvas: null, layout: fitToContainer(text, options) };
     const canvas = document.createElement('canvas');
     const layout = renderToCanvas(canvas, text, options);
     return { canvas, layout };
@@ -155,12 +178,13 @@
 
   window.TankanScriptLayout = {
     installed: true,
-    version: 5,
+    version: 6,
     fontFamily: FONT_FAMILY,
     fontUrl: FONT_URL,
     defaults: DEFAULTS,
     splitWords,
     measure,
+    fitToContainer,
     ensureFontLoaded,
     renderToCanvas,
     createCanvas,
