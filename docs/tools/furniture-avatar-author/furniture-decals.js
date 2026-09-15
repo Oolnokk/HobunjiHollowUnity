@@ -162,6 +162,8 @@ function tankanTextureOptions(record) {
     glyphAdvanceEm: dclamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
     glyphScaleX: dclamp(TANKAN_BASELINE.glyphScaleX * finiteOr(record.tankanGlyphSizeX, 1), 0.25, 2.5),
     glyphScaleY: dclamp(TANKAN_BASELINE.glyphScaleY * finiteOr(record.tankanGlyphSizeY, 1), 0.25, 2.5),
+    fitReferenceGlyphScaleX: TANKAN_BASELINE.glyphScaleX,
+    fitReferenceGlyphScaleY: TANKAN_BASELINE.glyphScaleY,
     paddingXEm: TANKAN_PADDING_X_EM,
     paddingYEm: TANKAN_PADDING_Y_EM,
     color: record.tankanColor || TANKAN_BASELINE.color,
@@ -238,14 +240,19 @@ function tankanContainerState(record) {
   const options = tankanTextureOptions(record);
   const layout = measureTankanLayout(record?.tankanText, options);
   const container = tankanContainerPixels(record);
-  const fitScale = Math.min(1, container.widthPx / layout.widthPx, container.heightPx / layout.heightPx);
+  const fontSizePx = Math.max(16, finiteOr(options.fontSizePx, 128));
+  const visualWidthPx = layout.widthPx + Math.max(0, options.glyphScaleX - options.fitReferenceGlyphScaleX) * fontSizePx;
+  const visualHeightPx = layout.heightPx + Math.max(0, options.glyphScaleY - options.fitReferenceGlyphScaleY) * fontSizePx;
+  const fitScale = Math.min(1, container.widthPx / visualWidthPx, container.heightPx / visualHeightPx);
   return {
     layout,
+    visualWidthPx,
+    visualHeightPx,
     containerWidthPx: container.widthPx,
     containerHeightPx: container.heightPx,
     fitScale,
-    renderedWidthPx: layout.widthPx * fitScale,
-    renderedHeightPx: layout.heightPx * fitScale,
+    renderedWidthPx: visualWidthPx * fitScale,
+    renderedHeightPx: visualHeightPx * fitScale,
   };
 }
 
@@ -665,7 +672,7 @@ function renderTankanDebug(record = selectedDecal()) {
   const container = tankanContainerState(record);
   const layout = container.layout;
   const fitLabel = container.fitScale < 0.9995 ? `fit-down ${container.fitScale.toFixed(2)}×` : 'natural size';
-  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph X ${finiteOr(record.tankanGlyphSizeX, 1).toFixed(2)}× · glyph Y ${finiteOr(record.tankanGlyphSizeY, 1).toFixed(2)}× · container ${finiteOr(record.width, 1).toFixed(2)}×${finiteOr(record.height, 1).toFixed(2)} · ${fitLabel} · natural ${layout.widthPx}×${layout.heightPx}px in ${container.containerWidthPx}×${container.containerHeightPx}px`;
+  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph X ${finiteOr(record.tankanGlyphSizeX, 1).toFixed(2)}× · glyph Y ${finiteOr(record.tankanGlyphSizeY, 1).toFixed(2)}× · container ${finiteOr(record.width, 1).toFixed(2)}×${finiteOr(record.height, 1).toFixed(2)} · ${fitLabel} · visual ${Math.round(container.visualWidthPx)}×${Math.round(container.visualHeightPx)}px in ${container.containerWidthPx}×${container.containerHeightPx}px`;
 }
 
 function renderDecalEditor() {
@@ -834,5 +841,5 @@ updateStats = function updateStatsWithDecals(...args) {
 
 installDecalUi();
 rebuildDecals({ prune: false });
-log?.('Furniture decal authoring ready. Latest change: Tankan Width/Height are now UI-like container dimensions; text stays at natural glyph size and only uniformly fits down on overflow.');
+log?.('Furniture decal authoring ready. Latest change: Tankan Width/Height are UI-like container dimensions; text stays natural-size until content or glyph growth would overflow, then uniformly fits down.');
 })();
