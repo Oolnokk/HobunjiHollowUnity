@@ -133,7 +133,36 @@ assert.match(generalStoreSource, /CookingSystem\?\.recordItemQuality/, 'configur
 assert.match(generalStoreSource, /addedAmount = Math\.max\(0, nextAmount - previousAmount\)/, 'shop quality tracking records only units that fit under the stack cap');
 assert.match(generalStoreSource, /state\.specialized/, 'specialized shops reuse the General Store menu without clothing/sell categories');
 assert.match(lootRollingSource, /syncGeneralStoreSellerIds/, 'shop loading synchronizes authored sellers into the contextual Shop action');
-assert.match(lootRollingSource, /shop\?\.menuId !== 'generalStore'/, 'contextual Shop seller synchronization is limited to General Store-surface shops');
-assert.match(lootRollingSource, /shop\?\.dialogueAccess\?\.sellerIds/, 'contextual Shop seller synchronization reads the authoritative dialogueAccess seller list');
 
-console.log('animal growth + configured shop tests passed');
+const contextualShopNpcIds = ['furunji_funji', 'foroji_funji']; // Used as the pre-load contextual Shop whitelist to prove Kunji sellers are added from shop stock.
+let appliedShopStockCount = 0; // Used to prove normal shop-stock application still runs after seller synchronization.
+const lootContext = { // Used to execute the real LootRolling loader against the authored shop stock without a browser/network dependency.
+  console,
+  window: {
+    SCRATCHBONES_CONFIG: {
+      game: { mobileControls: { generalStoreButton: { npcIds: contextualShopNpcIds } } },
+    },
+    LocalDBOverrides: {
+      loadDatabase(id) {
+        return Promise.resolve(id === 'shopStock' ? shopConfig : { pools: {} });
+      },
+    },
+  },
+};
+lootContext.window.window = lootContext.window;
+vm.runInNewContext(lootRollingSource, lootContext, { filename: 'loot-rolling.js' });
+lootContext.window.LootRolling.init({
+  applyLoadedShopStock() { appliedShopStockCount++; },
+});
+lootContext.window.LootRolling.loadLootShopConfig().then(() => {
+  assert.deepEqual(
+    contextualShopNpcIds,
+    ['furunji_funji', 'foroji_funji', 'kinami_kunji', 'kaboku_kunji'],
+    'contextual Shop action inherits both Kunji sellers from shop-stock dialogueAccess',
+  );
+  assert.equal(appliedShopStockCount, 1, 'shop stock still applies once after contextual seller synchronization');
+  console.log('animal growth + configured shop tests passed');
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
