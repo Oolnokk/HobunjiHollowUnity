@@ -30,6 +30,7 @@
   }
 
   const activeStaged = new Set();
+  let stagedActionSerial = 0; // Gives enemy reactions one stable identity per player windup so failed rolls cannot repeat every frame.
   const DEFAULT_TARGETING_CONFIG = Object.freeze({ // Safe synchronous policy used until authored attack values load.
     attackAlignmentHalfConeDeg: 45,
     attackAlignmentToleranceDeg: 2,
@@ -489,6 +490,7 @@
 
   function beginStagedAction(opts) {
     const action = {
+      id: ++stagedActionSerial,
       windupS: Math.max(0, opts.windupS || 0),
       strikeS: Math.max(0, opts.strikeS || 0),
       recoverS: Math.max(0, opts.recoverS || 0),
@@ -515,6 +517,39 @@
       finishStagedAction(action);
     }
     return action;
+  }
+
+  function playerMeleeThreat(rangePx, halfConeRad, options = {}) {
+    return Object.freeze({
+      rangePx: Math.max(0, Number(rangePx) || 0),
+      halfConeRad: Math.max(0, Number(halfConeRad) || 0),
+      lungePx: Math.max(0, Number(options.lungePx) || 0),
+      yaw: Number.isFinite(Number(options.yaw)) ? Number(options.yaw) : null,
+      source: String(options.source || 'melee'),
+    });
+  }
+
+  function currentPlayerMeleeThreat() {
+    let best = null; // Soonest unresolved impact is the one an enemy should react to when rapid attacks overlap.
+    for (const action of activeStaged) {
+      const threat = action.data?.meleeThreat;
+      if (!threat || action.data?.isBandit || action.cancelled || action.phase === 'done' || action.strikeFired) continue;
+      const timeToImpactS = Math.max(0, action.windupS - action.t); // Zero remains a valid last-moment reaction window for released held attacks.
+      if (!best || timeToImpactS < best.timeToImpactS) {
+        best = {
+          id: action.id,
+          phase: action.phase,
+          timeToImpactS,
+          attacker: deps?.player || null,
+          rangePx: threat.rangePx,
+          halfConeRad: threat.halfConeRad,
+          lungePx: threat.lungePx,
+          yaw: threat.yaw,
+          source: threat.source,
+        };
+      }
+    }
+    return best;
   }
 
   function fireStagedStrike(action) {
@@ -584,6 +619,8 @@
     unregisterWeaponAction,
     resolveWeaponHit,
     beginStagedAction,
+    playerMeleeThreat,
+    currentPlayerMeleeThreat,
     cancelAllStaged,
     meleeAimSolution,
     targetInsideAttackCone,

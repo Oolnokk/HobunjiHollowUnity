@@ -129,6 +129,12 @@
         },
         onComplete: finishHeavyTelegraph,
         onCancel: finishHeavyTelegraph,
+        data: {
+          meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
+            yaw: strikeAngle,
+            source: `Flurry Strike ${strikeIndex}`,
+          }),
+        },
       });
 
       count += 1;

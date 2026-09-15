@@ -234,6 +234,13 @@
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
+        data: {
+          meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
+            yaw: deps.player.angle,
+            lungePx: deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)),
+            source: def.label,
+          }),
+        },
       });
     }
 
