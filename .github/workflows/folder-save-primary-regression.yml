@@ -55,6 +55,7 @@ jobs:
           node --check docs/js/save-durable-checkpoint.js
           node --check docs/js/google-drive-save-config.js
           node --check docs/js/google-drive-save-transport.js
+          node --check docs/js/google-drive-save-link-safety.js
           node --check docs/js/google-drive-save-ui.js
           node --check docs/js/google-drive-save-startup.js
           node --check docs/js/google-drive-save-legacy-cloud-bridge.js
@@ -71,6 +72,7 @@ jobs:
           node scripts/test-save-coordinator.js
           node scripts/test-save-durable-checkpoint.js
           node scripts/test-google-drive-save-transport.js
+          node scripts/test-google-drive-save-link-safety.js
           node scripts/test-google-drive-save-legacy-cloud-bridge.js
           node scripts/test-folder-save-v3-canonical.js
           node scripts/test-folder-save-primary.js
