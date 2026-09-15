@@ -22,15 +22,17 @@ const context = vm.createContext({
 vm.runInContext(layoutSource, context, { filename: 'tankan-script-layout.js' });
 const layout = context.window.TankanScriptLayout;
 assert(layout?.installed, 'TankanScriptLayout should install');
-assert.equal(layout.version, 4, 'independent glyph scaling and axis-specific padding should stay active');
+assert.equal(layout.version, 5, 'independent X/Y glyph scaling should stay active');
 assert.equal(layout.defaults.columnSpacingEm, -0.55, 'loading-screen column spacing should stay canonical');
 assert.equal(layout.defaults.glyphAdvanceEm, 0.56, 'loading-screen glyph advance should stay canonical');
-assert.equal(layout.defaults.glyphScale, 1, 'shared layout should remain neutral unless the furniture author requests glyph scaling');
+assert.equal(layout.defaults.glyphScale, 1, 'legacy shared glyph scale should remain neutral');
+assert.equal(layout.defaults.glyphScaleX, 1, 'shared X glyph scale should remain neutral');
+assert.equal(layout.defaults.glyphScaleY, 1, 'shared Y glyph scale should remain neutral');
 assert(layout.fontUrl.includes('tankanscript_rotated_flipped_horiz.otf'), 'must use the rotated/flipped Tankan font');
 assert(!layoutSource.includes('document.fonts.check('), 'do not preflight Tankan with FontFaceSet.check; it can silently accept fallback rendering');
 assert(layoutSource.includes('refusing to rasterize with a fallback font'), 'canvas renderer must fail closed instead of drawing a fallback font');
 assert(layoutSource.includes('document.fonts.add(loadedFace)'), 'the loaded Tankan FontFace must be explicitly registered before canvas rendering');
-assert(layoutSource.includes('ctx.scale(layout.glyphScale, layout.glyphScale)'), 'glyph size should scale each glyph inside its already-positioned cell');
+assert(layoutSource.includes('ctx.scale(layout.glyphScaleX, layout.glyphScaleY)'), 'renderer must scale each glyph independently on X and Y around its fixed cell center');
 assert(layoutSource.includes('paddingXEm') && layoutSource.includes('paddingYEm'), 'shared Tankan layout must support independent horizontal/vertical padding');
 
 const measured = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddingEm: 0 });
@@ -40,11 +42,21 @@ assert(Math.abs(measured.glyphAdvancePx - 56) < 1e-9, '.56em glyph advance shoul
 assert(Math.abs(measured.columnAdvancePx - 45) < 1e-9, '-.55em margin should produce .45em column advance');
 assert.equal(measured.widthPx, 145, 'two canonical columns should occupy 1.45em');
 assert.equal(measured.heightPx, 392, 'seven glyphs at .56em should occupy 3.92em');
-const scaled = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddingEm: 0, glyphScale: 1.8 });
-assert.equal(scaled.widthPx, measured.widthPx, 'glyph size must not change column positions or layout width');
-assert.equal(scaled.heightPx, measured.heightPx, 'glyph size must not change glyph advance or layout height');
-assert.equal(scaled.glyphAdvancePx, measured.glyphAdvancePx, 'glyph size must not alter glyph advance');
-assert.equal(scaled.columnAdvancePx, measured.columnAdvancePx, 'glyph size must not alter word-column advance');
+const scaledX = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddingEm: 0, glyphScaleX: 1.8, glyphScaleY: 1 });
+const scaledY = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddingEm: 0, glyphScaleX: 1, glyphScaleY: 1.8 });
+for (const scaled of [scaledX, scaledY]) {
+  assert.equal(scaled.widthPx, measured.widthPx, 'glyph X/Y size must not change column positions or layout width');
+  assert.equal(scaled.heightPx, measured.heightPx, 'glyph X/Y size must not change glyph advance or layout height');
+  assert.equal(scaled.glyphAdvancePx, measured.glyphAdvancePx, 'glyph X/Y size must not alter glyph advance');
+  assert.equal(scaled.columnAdvancePx, measured.columnAdvancePx, 'glyph X/Y size must not alter word-column advance');
+}
+assert.equal(scaledX.glyphScaleX, 1.8);
+assert.equal(scaledX.glyphScaleY, 1);
+assert.equal(scaledY.glyphScaleX, 1);
+assert.equal(scaledY.glyphScaleY, 1.8);
+const legacyUniform = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddingEm: 0, glyphScale: 1.6 });
+assert.equal(legacyUniform.glyphScaleX, 1.6, 'legacy uniform scale should feed X when axis scale is absent');
+assert.equal(legacyUniform.glyphScaleY, 1.6, 'legacy uniform scale should feed Y when axis scale is absent');
 
 // Furniture uses wider horizontal transparent padding so natural plane width can
 // track raster width exactly while matching the empirically desired 0.8/1.0 widths.
@@ -52,7 +64,8 @@ const furnitureOptions = {
   fontSizePx: 100,
   columnSpacingEm: -0.35,
   glyphAdvanceEm: 0.6,
-  glyphScale: 1.2,
+  glyphScaleX: 1.2,
+  glyphScaleY: 1.2,
   paddingXEm: 0.8,
   paddingYEm: 0.28,
 };
@@ -78,11 +91,15 @@ assert(editor.includes("const TANKAN_SOURCE_TYPE = 'tankanText'"));
 assert(editor.includes('addFurnitureTankanText'));
 assert(editor.includes('decalTankanColumnSpacing'));
 assert(editor.includes('decalTankanGlyphAdvance'));
-assert(editor.includes('decalTankanGlyphSize'));
+assert(editor.includes('decalTankanGlyphSizeX'));
+assert(editor.includes('decalTankanGlyphSizeY'));
 assert(editor.includes('tankanSettingsVersion: TANKAN_SETTINGS_VERSION'));
+assert(editor.includes('const TANKAN_SETTINGS_VERSION = 3'), 'axis-specific author records should use Tankan settings version 3');
+assert(editor.includes('priorUniformSize'), 'v2 uniform glyph-size records must migrate to both X and Y');
 assert(editor.includes('columnSpacingEm: -0.35'), 'normalized spacing zero must resolve to the supplied authored -0.35em reference');
 assert(editor.includes('glyphAdvanceEm: 0.6'), 'normalized advance 1.0 must resolve to the supplied authored .6em reference');
-assert(editor.includes('glyphScale: 1.2'), 'normalized glyph size 1.0 must render 20% larger than before');
+assert(editor.includes('glyphScaleX: 1.2'), 'normalized glyph X 1.0 must render 20% larger than the old baseline');
+assert(editor.includes('glyphScaleY: 1.2'), 'normalized glyph Y 1.0 must render 20% larger than the old baseline');
 assert(editor.includes("color: '#000000'"), 'new Tankan text should default to black');
 assert(editor.includes('opacity: 0.5'), 'new Tankan text should default to the supplied 0.5 opacity');
 assert(editor.includes('TANKAN_PADDING_X_EM = 0.8'), 'editor must use calibrated horizontal Tankan padding');
@@ -104,7 +121,9 @@ const runtime = read('docs/js/furniture-decal-runtime.js');
 assert(runtime.includes('new THREE.CanvasTexture(canvas)'), 'runtime should use generated transparent canvas textures for Tankan text');
 assert(runtime.includes('ensureTankanLayout'), 'runtime should self-load the shared layout helper when necessary');
 assert(runtime.includes('authoredTankanDecalCount'), 'runtime diagnostics should expose text decal count');
-assert(runtime.includes('record.tankanGlyphSize'), 'runtime must honor independent glyph size');
+assert(runtime.includes("normalizedGlyphSize(record, 'x')"), 'runtime must honor normalized glyph X size');
+assert(runtime.includes("normalizedGlyphSize(record, 'y')"), 'runtime must honor normalized glyph Y size');
+assert(runtime.includes('record?.tankanGlyphSize'), 'runtime must preserve v2 uniform glyph-size compatibility');
 assert(runtime.includes('record.tankanGlyphAdvance'), 'runtime must honor normalized glyph advance');
 assert(runtime.includes('record.tankanColumnSpacing'), 'runtime must honor normalized column spacing');
 assert(runtime.includes('TANKAN_PADDING_X_EM = 0.8'), 'runtime must use the same calibrated horizontal padding as the editor');
@@ -117,7 +136,7 @@ const loader = read('docs/tools/furniture-avatar-author/foliage-furniture-mode.j
 const layoutLoad = loader.indexOf('tankan-script-layout.js');
 const decalsLoad = loader.indexOf('furniture-decals.js');
 assert(layoutLoad >= 0 && decalsLoad > layoutLoad, 'editor must load TankanScriptLayout before furniture decals');
-assert(loader.includes('tankan-script-layout.js?v=20260915tankan5'), 'editor must cache-bust the axis-padding/no-squeeze layout');
-assert(loader.includes('furniture-decals.js?v=20260915tankan5'), 'editor must cache-bust the natural Tankan sizing author');
+assert(loader.includes('tankan-script-layout.js?v=20260915tankan6'), 'editor must cache-bust independent X/Y Tankan layout scaling');
+assert(loader.includes('furniture-decals.js?v=20260915tankan6'), 'editor must cache-bust the X/Y Tankan author controls');
 
 console.log('furniture Tankan decal checks passed');
