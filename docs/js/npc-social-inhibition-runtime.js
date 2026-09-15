@@ -28,34 +28,35 @@
 
   // These are deliberate character reads from the current NPC database bios.
   // They are intentionally authored character-by-character rather than from a
-  // gender rule. Pahu remains unusually uninhibited; most adults now sit high
-  // enough that alcohol meaningfully changes whether they will actually dance.
+  // gender rule. Pahu remains unusually uninhibited; most restrained adults
+  // sit high enough that alcohol meaningfully changes whether they will dance
+  // without making the first offered drink nearly impossible to accept.
   // An authored rec.personality.inhibition always wins over this table.
   const BASE_OVERRIDES = Object.freeze({
-    garanki_gabu: 68,          // cheerful/curious, but not an automatic dance joiner
-    gorobi_ginju: 86,          // friendly but proud/competitive patriarch
-    gikali_ginju: 88,          // explicitly anxious and competition-conscious
-    aliri_ginju: 68,           // dutiful, competitive, watches her brother
+    garanki_gabu: 62,          // cheerful/curious, but still somewhat self-conscious
+    gorobi_ginju: 72,          // friendly but proud/competitive patriarch
+    gikali_ginju: 78,          // explicitly anxious and competition-conscious
+    aliri_ginju: 62,           // dutiful, competitive, watches her brother
     gantami_ginju: 20,         // habitual little rascal; children stay spontaneous
-    leaf: 94,                  // quiet, restrained, grumpy recluse
+    leaf: 76,                  // quiet, restrained, grumpy recluse
     pahu: 12,                  // silly, warm festival-lover who pulls Leaf out
-    furunji_funji: 90,         // warm but worn-down widowed shopkeeper
-    foroji_funji: 96,          // performs readily, but personally dancing is another matter
-    kzubug: 90,                // gentle older smith, strongly responsibility-minded
-    sloomi: 60,                // soft-spoken, but fierce when emotionally engaged
-    hreesh: 72,                // blunt innkeeper; relatively relaxed, not shameless
-    jubmir: 64,                // caring trader carrying a concealed noble identity
-    father_hunundi_hodu: 96,   // priest/protector: high responsibility and decorum
-    namui_u_hakaru: 88,        // wanted, deliberately trying to live an honest life
-    takua_ao_hakaru: 82,       // wanted, actively seeking honest work/responsibility
-    kaboku_kunji: 90,          // kind, giving older man who avoids household conflict
-    kinami_kunji: 92,          // status-conscious gossip who polices other people's behavior
-    teacup_unumanuk: 88,       // clan eldress and nightly religious leader
-    spearhead_unumanuk: 97,    // watch captain/father; safety and duty first
-    oddclaw_unumanuk: 84,      // young watch member: playful streak, still self-conscious
-    dzibim_khibu: 82,
-    dzahiri_khibu: 78,
-    nashka_khibu: 68,
+    furunji_funji: 74,         // warm but worn-down widowed shopkeeper
+    foroji_funji: 68,          // performs readily, but personally dancing is another matter
+    kzubug: 74,                // gentle older smith, strongly responsibility-minded
+    sloomi: 54,                // soft-spoken, but fierce when emotionally engaged
+    hreesh: 64,                // blunt innkeeper; relatively relaxed, not shameless
+    jubmir: 58,                // caring trader carrying a concealed noble identity
+    father_hunundi_hodu: 82,   // priest/protector: high responsibility and decorum
+    namui_u_hakaru: 74,        // wanted, deliberately trying to live an honest life
+    takua_ao_hakaru: 68,       // wanted, actively seeking honest work/responsibility
+    kaboku_kunji: 72,          // kind, giving older man who avoids household conflict
+    kinami_kunji: 82,          // status-conscious gossip who polices other people's behavior
+    teacup_unumanuk: 78,       // clan eldress and nightly religious leader
+    spearhead_unumanuk: 84,    // watch captain/father; safety and duty first
+    oddclaw_unumanuk: 66,      // young watch member: playful streak, still self-conscious
+    dzibim_khibu: 68,
+    dzahiri_khibu: 66,
+    nashka_khibu: 56,
   });
 
   const state = {
