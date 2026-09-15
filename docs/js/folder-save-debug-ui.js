@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
-  const CHANGE_SUMMARY = 'Latest: Quit and Start Farming now commit a hashed durable local save before folder writes; the three-way sync foundation is loaded for Drive work.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: desktop folders now gain a verified hobunji-primary-save.json V3 canonical file while the existing split V2 files remain recovery mirrors.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -24,6 +24,7 @@
       },
       coordinator: safeSnapshot(() => window.HobunjiSaveCoordinator?.getStatus?.()),
       folder: safeSnapshot(() => window.LocalSaveFolder?.getStatus?.()),
+      folderV3: safeSnapshot(() => window.__hobunjiFolderSaveV3Debug?.snapshot?.()),
       primaryUx: safeSnapshot(() => window.__hobunjiFolderSavePrimaryDebug?.snapshot?.()),
       onboarding: safeSnapshot(() => window.__hobunjiFolderSaveOnboardingDebug?.snapshot?.()),
       emptyFolderBootstrap: safeSnapshot(() => window.__hobunjiFolderSaveEmptyBootstrapDebug?.snapshot?.()),
