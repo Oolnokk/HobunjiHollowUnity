@@ -284,7 +284,7 @@
         flex-wrap:wrap;
       }
       #mpInventory.inv-mode-gear .inv-info .ii-tool-mastery-track {
-        height:max(3px,calc(var(--gear-info-font) * .55));
+        height:max(3px,.55em) !important;
       }
       #mpInventory.inv-mode-gear .inv-info .ii-desc {
         flex:1 1 auto !important;
