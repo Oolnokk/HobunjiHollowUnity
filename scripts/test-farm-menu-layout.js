@@ -9,8 +9,8 @@ const bridgeSource = fs.readFileSync('docs/js/livestock-nursery-install-bridge.j
 assert.match(layoutSource, /grid-template-columns:\s*minmax\(0,\s*1\.15fr\)\s+minmax\(300px,\s*\.85fr\)/, 'desktop Farm workspace uses the formerly empty right side');
 assert.match(layoutSource, /#mpFarm \{\s*overflow:\s*hidden;/s, 'desktop Farm pane delegates scrolling to its full-height columns');
 assert.match(layoutSource, /#mpFarm \.farm-pane \{[\s\S]*height:\s*100%;[\s\S]*min-height:\s*0;/, 'Farm pane fills the available menu body height');
-assert.match(layoutSource, /#farmMenuWorkspace[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;[\s\S]*height:\s*0;/, 'Farm workspace consumes the remaining height below the Farm header');
-assert.match(layoutSource, /#\$\{ANIMALS_COLUMN_ID\}, #\$\{OPERATIONS_COLUMN_ID\}[\s\S]*overflow-y:\s*auto;/, 'desktop Farm columns own the vertical scroll instead of an inner roster list');
+assert.match(layoutSource, /#\$\{WORKSPACE_ID\} \{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;[\s\S]*height:\s*0;/, 'Farm workspace consumes the remaining height below the Farm header');
+assert.match(layoutSource, /#\$\{ANIMALS_COLUMN_ID\}, #\$\{OPERATIONS_COLUMN_ID\} \{[\s\S]*overflow-y:\s*auto;/, 'desktop Farm columns own the vertical scroll instead of an inner roster list');
 assert.match(layoutSource, /#farmLivestockList \{[\s\S]*max-height:\s*none !important;[\s\S]*overflow:\s*visible !important;/, 'livestock roster no longer inherits the old 320px nested scroller');
 assert.match(layoutSource, /@media \(max-width: 900px\)/, 'Farm workspace collapses back to one column on narrow screens');
 assert.match(layoutSource, /#mpFarm \{ overflow-y: auto; overflow-x: hidden; \}/, 'narrow layouts return to one ordinary pane-level scroll');
