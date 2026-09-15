@@ -10,9 +10,9 @@
     "interaction": "centeredFiveRow"
   },
   "floatPlus": {
-    "worldHeight": 0.36,
-    "xOffsetPercent": 10,
-    "yOffsetPercent": 13,
+    "worldHeight": 0.19,
+    "xOffsetPercent": 43,
+    "yOffsetPercent": 17,
     "lifetimeMs": 1150
   },
   "centeredFiveRow": {
@@ -32,6 +32,7 @@
     "favor": "#ff9fd7",
     "currency": "#76a58e",
     "loot": "#ffffff",
-    "interaction": "#ffffff"
+    "interaction": "#ffffff",
+    "conditionReady": "#fff4e2"
   }
 }
