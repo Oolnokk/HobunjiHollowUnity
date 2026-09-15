@@ -14,6 +14,7 @@ const envelope = read('docs/js/save-sync-envelope.js');
 const reconciliation = read('docs/js/save-reconciliation.js');
 const syncStore = read('docs/js/save-sync-store.js');
 const coordinator = read('docs/js/save-coordinator.js');
+const canonicalV3 = read('docs/js/folder-save-v3-canonical.js');
 const primary = read('docs/js/folder-save-primary.js');
 const emptyBootstrap = read('docs/js/folder-save-empty-bootstrap.js');
 const debugUi = read('docs/js/folder-save-debug-ui.js');
@@ -30,6 +31,7 @@ new Function(envelope);
 new Function(reconciliation);
 new Function(syncStore);
 new Function(coordinator);
+new Function(canonicalV3);
 new Function(primary);
 new Function(emptyBootstrap);
 new Function(debugUi);
@@ -42,6 +44,7 @@ const reconciliationIndex = folderLoader.indexOf('save-reconciliation.js');
 const syncStoreIndex = folderLoader.indexOf('save-sync-store.js');
 const coordinatorIndex = folderLoader.indexOf('save-coordinator.js');
 const coreIndex = folderLoader.indexOf('local-save-folder-core.js');
+const canonicalV3Index = folderLoader.indexOf('folder-save-v3-canonical.js');
 const primaryIndex = folderLoader.indexOf('folder-save-primary.js');
 const emptyBootstrapIndex = folderLoader.indexOf('folder-save-empty-bootstrap.js');
 const debugUiIndex = folderLoader.indexOf('folder-save-debug-ui.js');
@@ -51,7 +54,8 @@ assert(reconciliationIndex > envelopeIndex, 'three-way reconciliation loads afte
 assert(syncStoreIndex > reconciliationIndex, 'durable sync store loads after reconciliation primitives');
 assert(coordinatorIndex > syncStoreIndex, 'save coordinator loads after its durable sync-store dependency');
 assert(coreIndex > coordinatorIndex, 'transport-neutral sync foundation loads before the existing filesystem core');
-assert(primaryIndex > coreIndex, 'primary folder layer loads after the existing persistence core');
+assert(canonicalV3Index > coreIndex, 'canonical V3 filesystem adapter loads after the V2 filesystem core exists');
+assert(primaryIndex > canonicalV3Index, 'primary folder UX wraps the V3-aware filesystem API');
 assert(emptyBootstrapIndex > primaryIndex, 'empty-folder bootstrap wraps the primary folder load behavior');
 assert(debugUiIndex > emptyBootstrapIndex, 'mobile diagnostics load after folder lifecycle wrappers');
 assert(legacyFlowIndex > debugUiIndex, 'folder lifecycle layers load before the legacy reload-heavy UX flow');
@@ -71,6 +75,10 @@ assert(syncStore.includes('commitEnvelope'), 'durable sync store exposes the ato
 assert(syncStore.includes('OAuth tokens must not be persisted'), 'durable sync store rejects OAuth-token persistence');
 assert(coordinator.includes('snapshot.capture({ strict: true })'), 'save coordinator captures the existing portable browser-save boundary strictly');
 assert(coordinator.includes('store.commitEnvelope'), 'save coordinator commits the canonical envelope to durable local storage');
+assert(canonicalV3.includes("CANONICAL_FILE_NAME = 'hobunji-primary-save.json'"), 'filesystem adapter uses one stable canonical filename');
+assert(canonicalV3.includes('roundTrip.contentHash !== envelope.contentHash'), 'canonical filesystem writes are read back and hash-verified');
+assert(canonicalV3.includes("canonicalError = `Canonical V3 save is invalid and was not bypassed"), 'invalid V3 files are never silently bypassed with V2 recovery data');
+assert(canonicalV3.includes("clearCanonicalCache({ source: 'v2-loaded' })"), 'V2 fallback remains explicit when no canonical file exists');
 
 assert(primary.includes('prepareBeforeOnboarding'), 'primary layer exposes pre-onboarding folder reconciliation');
 assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembered ready folders automatically load before save selection');
@@ -114,6 +122,7 @@ assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconc
 assert(debugUi.includes("button.textContent = 'Save Diagnostics'"), 'Settings exposes a mobile-visible Save Diagnostics button');
 assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without requiring DevTools');
 assert(debugUi.includes('HobunjiSaveCoordinator?.getStatus'), 'mobile diagnostics include the durable local save coordinator');
-assert(debugUi.includes('three-way sync foundation is loaded for Drive work'), 'Settings includes a short summary of the latest persistence change');
+assert(debugUi.includes('__hobunjiFolderSaveV3Debug'), 'mobile diagnostics include canonical V3 filesystem status');
+assert(debugUi.includes('desktop folders now gain a verified hobunji-primary-save.json V3 canonical file'), 'Settings includes a short summary of the latest persistence change');
 
 console.log('\nFolder-save primary regression checks passed.');
