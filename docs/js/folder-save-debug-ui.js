@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
-  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes now share three-way reconciliation; divergent external folder changes are blocked before V2/V3 writes, while legacy Netlify/local-save-flow code is no longer active in production.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes share three-way reconciliation; linked Drive sessions also preflight again after foreground/reconnect when a valid in-memory token exists, without opening OAuth or hot-loading active gameplay.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -26,6 +26,7 @@
       durableCheckpoint: safeSnapshot(() => window.__hobunjiSaveCheckpointDebug?.snapshot?.()),
       googleDrive: safeSnapshot(() => window.HobunjiGoogleDriveSave?.getStatus?.()),
       googleDriveUi: safeSnapshot(() => window.__hobunjiGoogleDriveSaveUIDebug?.snapshot?.()),
+      googleDriveLifecycle: safeSnapshot(() => window.__hobunjiGoogleDriveSaveLifecycleDebug?.snapshot?.()),
       googleDriveStartup: safeSnapshot(() => window.__hobunjiGoogleDriveSaveStartupDebug?.snapshot?.()),
       googleDriveRestoreBridge: safeSnapshot(() => window.__hobunjiGoogleDriveLegacyCloudBridgeDebug?.snapshot?.()),
       folder: safeSnapshot(() => window.LocalSaveFolder?.getStatus?.()),
