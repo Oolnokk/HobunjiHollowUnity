@@ -370,7 +370,7 @@
     const x = Number(model?.userData?.handAttachX);
     const y = Number(model?.userData?.handAttachY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x: side === 'left' ? -x : x, y, z: 0 };
+    return { x: side === 'left' ? x : -x, y, z: 0 };
   }
 
   function toHandParentLocal(model, hand, point) {
@@ -567,7 +567,7 @@
       active,
       reason: active ? 'canonical-idle' : (left.reason === 'hand-not-built-yet' || right.reason === 'hand-not-built-yet') ? 'waiting-for-hands' : 'explicit-animation-owner',
       ...diagnostic,
-      latestChange: 'NPC previews now resolve species/gender from npcId + the preview repository revision, and authored shoulder X is scaled from its 0.9 runtime basis to the current preview width before default hand placement.',
+      latestChange: 'NPC previews now resolve species/gender from npcId + the preview repository revision, authored shoulder X is scaled from its 0.9 runtime basis to the current preview width, and the editor legacy handAttach sign convention is recognized before claiming a default hand.',
     };
     maybeLogStatus(debugSnapshot, forceLog);
     return active;
