@@ -2,6 +2,8 @@
 // first, then run the preserved Dance/feet/idle-hands adapter. Keeping this tiny
 // wrapper means the editor and gameplay consume the same posterior/shoulder rules
 // without duplicating them into the giant authoring HTML.
+// `procedural-dance-mode-base.js` remains the owner of `procedural-editor-idle-arm-parity.js`;
+// this wrapper only guarantees that joint/profile parity is installed before that chain.
 (() => {
   'use strict';
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
