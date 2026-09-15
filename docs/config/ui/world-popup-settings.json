@@ -10,14 +10,10 @@
     "interaction": "centeredFiveRow"
   },
   "floatPlus": {
-    "worldHeight": 0.19,
-    "xOffsetPercent": 43,
-    "yOffsetPercent": 17,
+    "worldHeight": 0.13,
+    "xOffsetPercent": 50,
+    "yOffsetPercent": -10,
     "lifetimeMs": 1150
-  },
-  "relationshipHeart": {
-    "opacity": 0.8,
-    "glowPx": 20
   },
   "centeredFiveRow": {
     "worldHeight": 0.32,
@@ -38,5 +34,10 @@
     "loot": "#ffffff",
     "interaction": "#ffffff",
     "conditionReady": "#fff4e2"
+  },
+  "relationshipHeart": {
+    "opacity": 0.9,
+    "glowPx": 29,
+    "spacingPercent": 14
   }
 }
