@@ -15,6 +15,10 @@
     "yOffsetPercent": 17,
     "lifetimeMs": 1150
   },
+  "relationshipHeart": {
+    "opacity": 0.8,
+    "glowPx": 20
+  },
   "centeredFiveRow": {
     "worldHeight": 0.32,
     "xOffsetPercent": 40,
