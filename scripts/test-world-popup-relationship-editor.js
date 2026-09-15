@@ -9,7 +9,7 @@ const vm = require('node:vm'); // Used to syntax-check both standalone browser h
 const root = path.resolve(__dirname, '..'); // Used as the repository root for every source read below.
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8'); // Used to keep fixture reads concise.
 const editor = read('docs/tools/world-popup-editor/index.html'); // Used to verify the Popup Text Editor loads its relationship helper.
-const helper = read('docs/js/world-popup-relationship-editor.js'); // Used to validate controls and screen-fixed diagnostics.
+const helper = read('docs/js/world-popup-relationship-editor.js'); // Used to validate controls, fallback avatar boot, and screen-fixed diagnostics.
 const bridge = read('docs/js/favor-popup-points-bridge.js'); // Used as the shared gameplay/editor relationship renderer and anchor owner.
 const generic = read('docs/js/generic-hud-icons.js'); // Used as the pre-v3 visual contract that still emits relationship events.
 
@@ -25,13 +25,23 @@ assert.match(helper, /Favor -10/, 'negative Favor preview is available');
 assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position3/, 'Popup Text Editor loads the shared gameplay position bridge');
 assert.match(helper, /showRelationshipChange\(root, kind, amount, \{ amountIsPoints: true \}\)/, 'editor controls route through the shared relationship API against the live avatar root');
 
+assert.match(helper, /id: 'popup_preview_character'/, 'editor has an immediate deterministic preview character');
+assert.match(helper, /async function ensureVisibleAvatar/, 'editor can render a preview avatar independently of repository NPC loading');
+assert.match(helper, /await render\(FALLBACK_NPC\)/, 'fallback uses the editor real portrait/avatar renderer rather than a dummy mesh');
+assert.match(helper, /if \(!avatarModel\(\)\) ensureVisibleAvatar\(\)/, 'diagnostic loop repairs a missing avatar while the large NPC database is still loading');
+assert.match(helper, /target = Array\.isArray\(npcList\) && npcList\.length \? \(npcList\[index\] \|\| npcList\[0\]\) : FALLBACK_NPC/, 'Retry avatar also works before repository NPCs are available');
+
 assert.match(helper, /position:fixed!important/, 'diagnostics are fixed to the viewport');
+assert.match(helper, /top:max\(8px,env\(safe-area-inset-top\)\)!important/, 'diagnostics are top-anchored instead of following Android bottom-viewport changes');
+assert.match(helper, /bottom:auto!important/, 'diagnostics do not use the moving bottom edge as their anchor');
 assert.match(helper, /document\.body\.appendChild\(panel\)/, 'diagnostics are not parented under the moving preview container');
 assert.match(helper, /transform:none!important/, 'diagnostics explicitly disable transform movement');
 assert.match(helper, /transition:none!important/, 'diagnostics explicitly disable easing/transitions');
 assert.match(helper, /animation:none!important/, 'diagnostics explicitly disable CSS animations');
+assert.match(helper, /visualTop=/, 'copied diagnostics report Android visual viewport offset');
 assert.match(helper, /debug panel=/, 'copied diagnostics report the panel screen position and computed motion styles');
 assert.match(helper, /Retry avatar/, 'diagnostics retain the avatar retry action');
+assert.match(helper, /ResizeObserver loop completed with undelivered notifications/, 'benign Android ResizeObserver warning is explicitly filtered from failure diagnostics');
 assert.match(helper, /window\.addEventListener\('unhandledrejection'/, 'diagnostics capture async boot failures');
 assert.match(helper, /window\.addEventListener\('error'/, 'diagnostics capture JS/resource failures');
 
@@ -62,4 +72,4 @@ for (const [label, bridgePattern, genericPattern] of [
 }
 
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/hud/generic_icons/icon_heart.png')), 'runtime heart asset exists');
-console.log('Popup Text Editor fixed diagnostics and relationship head-anchor checks passed.');
+console.log('Popup Text Editor avatar fallback, fixed diagnostics, and relationship head-anchor checks passed.');
