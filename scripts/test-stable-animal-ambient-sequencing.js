@@ -39,6 +39,13 @@ function advance(ms) {
   now = target;
 }
 
+class FakeStorage {
+  constructor() { this.values = new Map(); }
+  getItem(key) { return this.values.has(String(key)) ? this.values.get(String(key)) : null; }
+  setItem(key, value) { this.values.set(String(key), String(value)); }
+}
+
+const localStorage = new FakeStorage(); // Used to reproduce AmbientDialogue's private tryGreeting ledger write without routing that greeting through the public show method.
 const player = { id: 'player' };
 const entries = {
   companion: { id: 'comp1', role: 'companion', animalPerks: { rapportBond: 1 } },
@@ -64,6 +71,8 @@ const context = {
   Math: Object.create(Math),
   setTimeout: setFakeTimeout,
   clearTimeout: clearFakeTimeout,
+  Storage: FakeStorage,
+  localStorage,
   StableAnimalProgression: progression,
   Combat: {
     deps: {
@@ -82,6 +91,7 @@ const context = {
     },
   },
   AmbientDialogue: {
+    init() { return this; },
     show(target, text, options = {}) {
       shown.push({ target, text, options, at: now });
       return { startedAt: now, durationMs: Number(options.durationMs) || 4200 };
@@ -94,12 +104,23 @@ context.Math.random = () => 0.5; // Three queued candidates -> index 1, the moun
 
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/js/stable-animal-perk-adjustments.js', 'utf8'), context, { filename: 'stable-animal-perk-adjustments.js' });
+context.AmbientDialogue.init({ getPendingRequestGreeting: () => null });
 
-context.AmbientDialogue.show({}, 'Hello there!', {
-  speakerId: 'friend1',
-  greeting: true,
-  directedAtPlayer: true,
-});
+function writeGreetingLedger(keys) {
+  localStorage.setItem('hobunjiAmbientGreetings.v1:test-world', JSON.stringify({ day: 1, keys }));
+}
+
+function privateGreeting(npcId, text) {
+  const greetingKey = `1:${npcId}>player`; // Used to reproduce tryGreeting's ledger key exactly before its private lexical show() call.
+  const current = JSON.parse(localStorage.getItem('hobunjiAmbientGreetings.v1:test-world') || '{"day":1,"keys":[]}'); // Used to preserve earlier same-day greeting entries exactly like AmbientDialogue's ledger.
+  writeGreetingLedger([...new Set([...(current.keys || []), greetingKey])]);
+  shown.push({ target: {}, text, options: { speakerId: npcId, greeting: true, directedAtPlayer: true }, at: now, privatePath: true });
+}
+
+// Regression: real proximity greetings use AmbientDialogue's private lexical show(),
+// so the public show wrapper never sees them. The persisted greeting ledger must
+// still become the authoritative event-time signal for the animal follow-up.
+privateGreeting('friend1', 'Hello there!');
 context.AmbientDialogue.show({}, 'Companion reaction', {
   speakerId: 'friend1',
   directedAtPlayer: true,
@@ -116,22 +137,42 @@ context.AmbientDialogue.show({}, 'Shoulder reaction', {
   faceTarget: { root: shoulderPet.avatarRef.group },
 });
 
-assert.equal(shown.length, 1, 'the ordinary greeting renders immediately while animal reactions queue');
+assert.equal(shown.length, 1, 'the private ordinary greeting renders immediately while animal reactions queue');
 assert.equal(shown[0].text, 'Hello there!');
-
-advance(4649);
-assert.equal(shown.length, 1, 'no animal reaction overlaps the greeting or its post-greeting beat');
+advance(4199);
+assert.equal(shown.length, 1, 'no animal reaction overlaps the private 4200 ms greeting');
 advance(1);
-assert.equal(shown.length, 2, 'exactly one animal reaction renders after the greeting finishes');
+assert.equal(shown.length, 2, 'exactly one animal reaction renders the instant the greeting finishes');
 assert.equal(shown[1].text, 'Mount reaction', 'one random candidate is selected from companion, mount, and shoulder-pet reactions');
-assert.equal(shown[1].at, 5650, 'the follow-up waits for the full 4200 ms greeting plus a 450 ms beat');
+assert.equal(shown[1].at, 5200, 'the follow-up has zero post-greeting pause');
 assert.equal(rapportCalls.length, 0, 'unchosen rapport-trained pets do not receive greeting rapport');
 
+// Regression for the opposite ordering: StableAnimalProgression can notice the
+// pet before AmbientDialogue's 300 ms greeting dwell gate fires. The later ledger
+// write must replace the short grace timer with the greeting's full end time.
+context.AmbientDialogue.show({}, 'Early companion reaction', {
+  speakerId: 'friend2',
+  directedAtPlayer: true,
+  faceTarget: { root: companion.avatarRef.group },
+});
+advance(300);
+privateGreeting('friend2', 'A slightly later hello!');
+assert.equal(shown.length, 3, 'the early animal reaction remains queued when the delayed private greeting starts');
+advance(4199);
+assert.equal(shown.length, 3, 'the rescheduled early reaction still cannot overlap the greeting');
+advance(1);
+assert.equal(shown.length, 4, 'the early reaction is released exactly when the later greeting ends');
+assert.equal(shown[3].text, 'Early companion reaction');
+assert.equal(shown[3].at, 9700, 'the race-path follow-up also has zero post-greeting pause');
+assert.equal(rapportCalls.length, 1, 'the chosen rapport-trained companion receives one greeting rapport award');
+
 const debug = context.StableAnimalPerkAdjustments.getDebug();
-assert.equal(debug.pendingAmbientReactions.length, 0, 'the candidate queue is emptied after one follow-up is chosen');
-assert(debug.ambientSequenceTrace.some(row => row.type === 'greeting-shown'), 'debug trace records the greeting');
-assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-queued').at(-1).candidateCount, 3, 'debug trace exposes all three coalesced candidates');
-assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown').length, 1, 'debug trace proves only one follow-up rendered');
-assert.equal(debug.ambientSequenceTrace.find(row => row.type === 'reaction-shown').role, 'mount', 'debug trace records which role won the random choice');
+assert.equal(debug.ambientReactionTiming.afterGreetingMs, 0, 'debug timing exposes the requested zero post-greeting pause');
+assert.equal(debug.greetingLedgerHookInstalled, true, 'debug confirms the event-driven private-greeting hook is installed');
+assert.equal(debug.pendingAmbientReactions.length, 0, 'the candidate queue is emptied after each follow-up is chosen');
+assert(debug.ambientSequenceTrace.some(row => row.type === 'greeting-shown' && row.source === 'ledger'), 'debug trace records private greetings observed through the ledger');
+assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-queued').some(row => row.candidateCount === 3), true, 'debug trace exposes all three coalesced candidates');
+assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown').length, 2, 'debug trace proves one follow-up rendered for each greeting');
+assert.equal(debug.ambientSequenceTrace.filter(row => row.type === 'reaction-shown')[0].role, 'mount', 'debug trace records which role won the random three-way choice');
 
 console.log('Stable animal ambient sequencing regression tests passed.');
