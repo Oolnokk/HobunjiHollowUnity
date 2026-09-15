@@ -5,7 +5,7 @@
   if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return;
 
   const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the shared runtime relationship bridge from this editor helper.
-  const POSITION_BRIDGE_URL = MODULE_SRC ? new URL('favor-popup-points-bridge.js?v=20260915position3', MODULE_SRC).href : '../../js/favor-popup-points-bridge.js?v=20260915position3'; // Used to run the exact gameplay relationship renderer in the editor.
+  const POSITION_BRIDGE_URL = MODULE_SRC ? new URL('favor-popup-points-bridge.js?v=20260915position4', MODULE_SRC).href : '../../js/favor-popup-points-bridge.js?v=20260915position4'; // Used to run the exact gameplay relationship renderer in the editor.
   const FALLBACK_NPC = Object.freeze({ // Used only so the preview never waits on the large repository NPC database before showing a real PNG-plane character.
     id: 'popup_preview_character',
     name: 'Preview Character',
@@ -30,7 +30,7 @@
   const previewScene = () => editorValue('previewScene'); // Used to report renderer initialization state.
   const npcs = () => editorValue('npcs'); // Used to report NPC database state and retry the current character.
   const renderAvatar = () => editorValue('renderAvatar'); // Used to render either a repository NPC or the immediate fallback preview character.
-  const renderGeneration = () => Number(editorValue('renderGeneration')) || 0; // Used to detect when the repository avatar intentionally supersedes an in-flight fallback render.
+  const renderGeneration = () => Number(editorValue('renderGeneration')) || 0; // Used to distinguish a superseded fallback render from an actual fallback failure.
   const statusFunction = () => editorValue('status'); // Used to preserve the editor's normal status messaging.
 
   function rememberError(message) {
@@ -104,17 +104,16 @@
       }
       state.fallbackAvatar = 'rendering';
       refreshDiagnostics();
+      const generationBeforeFallback = renderGeneration(); // Used to detect when the repository NPC render supersedes this fallback while its portrait assets are still resolving.
       try {
         await window.NpcAvatarPreview?.ensurePortraitCosmetics?.({ assetBase: '../../assets/', configBase: '../../config/' });
         if (!force && avatarModel()) {
           state.fallbackAvatar = 'not-needed';
           return true;
         }
-        const generationBeforeFallback = renderGeneration(); // Used to recognize the editor's intended generation-cancellation when a real NPC starts rendering first.
         await render(FALLBACK_NPC);
         if (!avatarModel()) {
-          const repositoryWonRace = renderGeneration() > generationBeforeFallback + 1 || (Array.isArray(npcs()) && npcs().length > 0); // Used to treat a later repository render as success rather than a fallback failure.
-          if (repositoryWonRace) {
+          if (renderGeneration() > generationBeforeFallback + 1) {
             state.fallbackAvatar = 'superseded';
             return true;
           }
@@ -124,6 +123,10 @@
         bindBridge();
         return true;
       } catch (error) {
+        if (avatarModel()) {
+          state.fallbackAvatar = 'superseded';
+          return true;
+        }
         state.fallbackAvatar = 'failed';
         rememberError(`Fallback avatar failed: ${error.stack || error.message}`);
         return false;
@@ -158,16 +161,16 @@
   }
 
   function updateRelationshipStatus() {
-    const node = document.getElementById('relationshipPopupPreviewDebug'); // Used to show whether the editor is truly using the shared v3 renderer.
+    const node = document.getElementById('relationshipPopupPreviewDebug'); // Used to show whether the editor is truly using the shared renderer.
     if (!node) return;
-    node.textContent = `shared position renderer: ${Number(window.FavorPopupPointsBridge?.version) >= 3 ? 'v3 ready' : state.bridgeLoad} · popup bridge ${Number(popupRuntime()?.__favorPopupPointsBridgeVersion) || 0}`;
+    node.textContent = `shared position renderer: ${Number(window.FavorPopupPointsBridge?.version) || state.bridgeLoad} · popup bridge ${Number(popupRuntime()?.__favorPopupPointsBridgeVersion) || 0}`;
   }
 
   async function play(kind, amount) {
     await ensureVisibleAvatar();
     await ensurePositionBridge();
     bindBridge();
-    const runtime = popupRuntime(); // Used as the shared WorldPopupText API after the v3 position bridge installs.
+    const runtime = popupRuntime(); // Used as the shared WorldPopupText API after the position bridge installs.
     const root = avatarHolder(); // Used as the selected character's actual Three.js anchor root.
     if (!avatarModel() || !root || typeof runtime?.showRelationshipChange !== 'function') {
       rememberError('Cannot play relationship popup: avatar model, avatar holder, or shared popup API is not ready.');
@@ -189,8 +192,8 @@
     const bridge = window.FavorPopupPointsBridge?.snapshot?.() || null; // Used to expose the renderer's current avatar-local head anchor and world coordinate.
     const cfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {}; // Used to expose configured Three.js URLs when module boot fails.
     const panel = document.getElementById('worldPopupEditorDiagnostics'); // Used to verify that diagnostics themselves stay fixed to the viewport.
+    const preview = document.getElementById('preview')?.getBoundingClientRect?.(); // Used to prove whether the actual 3D pane intersects the visible viewport on mobile/desktop-mode browsers.
     const visualViewport = window.visualViewport; // Used to distinguish Android visual-viewport movement from actual CSS panel motion.
-    const preview = document.getElementById('preview'); // Used to prove that the 3D pane itself intersects the visible viewport on mobile.
     let modelBounds = 'n/a';
     try {
       if (model && THREE?.Box3 && THREE?.Vector3) {
@@ -199,7 +202,6 @@
       }
     } catch (error) { modelBounds = `error: ${error.message}`; }
     const rect = panel?.getBoundingClientRect?.();
-    const previewRect = preview?.getBoundingClientRect?.();
     return {
       helper: 6,
       bridgeLoad: state.bridgeLoad,
@@ -218,7 +220,7 @@
       avatar: { holder: !!holder, children: Number(holder?.children?.length) || 0, model: !!model, bounds: modelBounds },
       relationship: { active: Number(bridge?.activeRelationshipPopups) || 0, anchor: bridge?.lastAnchor || null, disposed: bridge?.lastDisposedReason || null },
       viewport: { innerHeight: window.innerHeight, visualTop: Number(visualViewport?.offsetTop) || 0, visualHeight: Number(visualViewport?.height) || window.innerHeight },
-      preview: previewRect ? { top: previewRect.top, bottom: previewRect.bottom, height: previewRect.height, visible: previewRect.bottom > 0 && previewRect.top < (Number(visualViewport?.height) || window.innerHeight) } : null,
+      preview: preview ? { top: preview.top, bottom: preview.bottom, height: preview.height, visible: preview.bottom > 0 && preview.top < (Number(visualViewport?.height) || window.innerHeight) } : null,
       panel: rect ? { position: getComputedStyle(panel).position, top: rect.top, bottom: rect.bottom, height: rect.height, transform: getComputedStyle(panel).transform, transition: getComputedStyle(panel).transitionProperty, animation: getComputedStyle(panel).animationName } : null,
       status: document.getElementById('status')?.textContent?.trim() || '(none)',
       errors: [...state.errors],
@@ -238,7 +240,7 @@
       `avatar holder=${data.avatar.holder ? 'yes' : 'NO'} children=${data.avatar.children} model=${data.avatar.model ? 'yes' : 'NO'} bounds=${data.avatar.bounds}`,
       `relationship active=${data.relationship.active} anchor=${anchor ? `${anchor.source} world=(${Number(anchor.world?.x).toFixed(3)},${Number(anchor.world?.y).toFixed(3)},${Number(anchor.world?.z).toFixed(3)})` : 'none yet'} disposed=${data.relationship.disposed || 'none'}`,
       `viewport innerH=${data.viewport.innerHeight.toFixed(1)} visualTop=${data.viewport.visualTop.toFixed(1)} visualH=${data.viewport.visualHeight.toFixed(1)}`,
-      `preview=${preview ? `top=${preview.top.toFixed(1)} bottom=${preview.bottom.toFixed(1)} h=${preview.height.toFixed(1)} visible=${preview.visible ? 'YES' : 'NO'}` : 'not mounted'}`,
+      `preview=${preview ? `top=${preview.top.toFixed(1)} bottom=${preview.bottom.toFixed(1)} h=${preview.height.toFixed(1)} visible=${preview.visible ? 'YES' : 'NO'}` : 'missing'}`,
       `debug panel=${panel ? `${panel.position} top=${panel.top.toFixed(1)} bottom=${panel.bottom.toFixed(1)} h=${panel.height.toFixed(1)} transform=${panel.transform} transition=${panel.transition} animation=${panel.animation}` : 'not mounted'}`,
       `status: ${data.status}`,
       `Three URL: ${data.three.url}`,
