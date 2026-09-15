@@ -16,7 +16,7 @@ document.write('<script src="js/folder-save-primary.js?v=20260914a"><\/script>')
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20260914a"><\/script>');
-document.write('<script src="js/folder-save-quit-guard.js?v=20260915savev3a"><\/script>');
+document.write('<script src="js/folder-save-quit-guard.js?v=20260915driveb"><\/script>');
 document.write('<script src="js/folder-save-debug-ui.js?v=20260915savev3a"><\/script>');
 document.write('<script src="js/google-drive-save-ui.js?v=20260915a"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260904a"><\/script>');
