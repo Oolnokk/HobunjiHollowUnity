@@ -319,7 +319,7 @@ assert.equal(context.FarmPanel.stableTrainingDebug().adultCount, 3, 'grown Stabl
 assert.doesNotMatch(source, /leveling coming soon/i, 'farm-panel.js itself contains no obsolete leveling placeholder');
 assert.match(source, /function renderStablePanelNative\(/, 'Stable UI is rendered directly by farm-panel.js, not by a post-render decorator');
 assert.match(source, /stableAgeSection\('🐣 Baby Animals'/, 'native Stable renderer owns the baby grouping instead of relying on a retired decorator');
-assert.match(source, /growth\(\)\?\.growStableBaby/, 'native Stable growth delegates to the shared AnimalGrowth lifecycle');
+assert.match(source, /api\?\.growStableBaby\?\.\(entry\.id/, 'native Stable growth delegates to the shared AnimalGrowth lifecycle');
 assert.match(source, /armNativeInstallOnFarmPanelPublication/, 'browser parser timing is handled at the FarmPanel publication boundary');
 
 console.log('Native Stable panel training + age-section regression tests passed.');
