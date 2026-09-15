@@ -50,6 +50,7 @@ jobs:
           node --check docs/js/puktuk-den-nest-registration.js
           node --check docs/js/dev-arena-nest-spawner.js
           node --check docs/js/procedural-editor-idle-arm-parity.js
+          node -e "const fs=require('fs');const s=fs.readFileSync('docs/tools/locale-editor/locale-preview3d.js','utf8');for(const needle of ['Host above Δ≥+1','setRelativeHeight(1, null)','THREE.OrbitControls','cave_small.glb','embeddedTiles','previewRoot.remove(child)','parent !== previewRoot'])if(!s.includes(needle))throw new Error('missing '+needle);"
       - name: Test terrain-aware locale placement
         run: node scripts/test-locale-terrain-placement.js
       - name: Test Banubu authored cave rules and runtime parity
