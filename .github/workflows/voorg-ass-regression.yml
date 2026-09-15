@@ -3,17 +3,37 @@ name: Voorg-Ass regression
 on:
   push:
     paths:
+      - 'docs/config/attachment-rig-profiles.js'
       - 'docs/js/creature-genetics.js'
+      - 'docs/js/creature-genetics-render.js'
+      - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/character-action-locks.js'
+      - 'docs/assets/creaturesprites/puktuk_eye.png'
+      - 'docs/assets/creaturesprites/puktuk_blink.png'
+      - 'docs/tools/animation-author/index.html'
       - 'docs/config/loot/loot-pools.json'
+      - 'scripts/test-attachment-rig-master.js'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
+      - 'scripts/test-new-creature-rig-coordinates.js'
+      - 'scripts/test-puktuk-voorg-canonical-rig.js'
       - '.github/workflows/voorg-ass-regression.yml'
   pull_request:
     paths:
+      - 'docs/config/attachment-rig-profiles.js'
       - 'docs/js/creature-genetics.js'
+      - 'docs/js/creature-genetics-render.js'
+      - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/character-action-locks.js'
+      - 'docs/assets/creaturesprites/puktuk_eye.png'
+      - 'docs/assets/creaturesprites/puktuk_blink.png'
+      - 'docs/tools/animation-author/index.html'
       - 'docs/config/loot/loot-pools.json'
+      - 'scripts/test-attachment-rig-master.js'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
+      - 'scripts/test-new-creature-rig-coordinates.js'
+      - 'scripts/test-puktuk-voorg-canonical-rig.js'
       - '.github/workflows/voorg-ass-regression.yml'
 
 permissions:
@@ -31,9 +51,19 @@ jobs:
           node-version: '20'
       - name: Syntax check creature genetics
         run: node --check docs/js/creature-genetics.js
+      - name: Syntax check Rig Coordinates helper
+        run: node --check docs/js/animal-chathead-frame.js
+      - name: Syntax check canonical attachment rig
+        run: node --check docs/config/attachment-rig-profiles.js
       - name: Validate loot JSON
         run: node -e "JSON.parse(require('node:fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
+      - name: Test attachment rig master
+        run: node scripts/test-attachment-rig-master.js
       - name: Test Puktuk integration
         run: node scripts/test-puktuk-species.js
       - name: Test Voorg-Ass integration
         run: node scripts/test-voorg-ass-species.js
+      - name: Test new livestock Rig Coordinates integration
+        run: node scripts/test-new-creature-rig-coordinates.js
+      - name: Test canonical livestock rig and Puktuk eyes
+        run: node scripts/test-puktuk-voorg-canonical-rig.js

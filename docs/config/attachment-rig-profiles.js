@@ -85,6 +85,8 @@
     ['gar-wolf',[0,0.14184834174882754,0.2761841625577698],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.26545210788556156,0.07486897921502367],[[1.5,1.5],[1,1],[0.35,0.35]],null],
     ['dabinggi-hound',[0,0.12212625800404886,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[0.01,-0.20203700498816118,0.09104867302389968],[[2,2],[1,1],[0.35,0.35]],null],
     ['uumkaoii',[0,0.26595632314682005,0.02],'built-in-approved-rig-json-v1524',null,null,null,[0.01,-0.3636087789187775,-0.18395679109723],[[1.5,1.5],[1,1],[0.2,0.2]],null],
+    ['puktuk',[0,0.16937859550590686,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.29715994741785007,-0.0010889163404909086],[[1,1],[0.6,0.6],[0.3,0.3]],null],
+    ['voorg-ass',[-0.0016655977917167481,0.12286908956931555,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0.01,-0.33453636625016553,0.0181046276028018],[[0.97,0.97],[0.75,0.75],[0.27,0.27]],null],
   ];
   const staleCreatureShoulderGrips = Object.freeze({
     drenkirra: Object.freeze([
@@ -100,6 +102,8 @@
     'gar-wolf': Object.freeze({ large: 0.50, medium: 0.33, small: 0.11 }),
     'dabinggi-hound': Object.freeze({ large: 0.50, medium: 0.27, small: 0.09 }),
     uumkaoii: Object.freeze({ large: 0.69, medium: 0.48, small: 0.09 }),
+    puktuk: Object.freeze({ large: 0.40, medium: 0.24, small: 0.12 }),
+    'voorg-ass': Object.freeze({ large: 0.26, medium: 0.325, small: 0.11 }),
   });
   const creatureChatheadFrames = Object.freeze({
     grehlr: Object.freeze({ x: 0.12899040207823892, y: 0.38396704728631864, width: 0.24202339114154608, height: 0.3445860779359126, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
@@ -107,6 +111,8 @@
     'dabinggi-hound': Object.freeze({ x: 0.05321196485715341, y: 0.2621006265961596, width: 0.17863723264419087, height: 0.350903183334192, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     drenkirra: Object.freeze({ x: 0.1925, y: 0.3575, width: 0.2078, height: 0.305, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     uumkaoii: Object.freeze({ x: 0.009564166583519832, y: 0.2923510947804583, width: 0.4656387672084861, height: 0.47038721094834346, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    puktuk: Object.freeze({ x: 0.17142091899942474, y: 0.11029044613093768, width: 0.27636019798104444, height: 0.601013493102534, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    'voorg-ass': Object.freeze({ x: 0.1235, y: 0.14, width: 0.3074, height: 0.3325, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
   });
 
   const masterCharacters = {};
@@ -147,6 +153,7 @@
 
   const masterCreatures = {};
   for (const [kind, saddle, saddleSource, saddleOffset, saddlePixel, midlineSearchRadiusPx, shoulderGrip, scales, grehlrSizeScaleDefaultVersion] of creatureRecords) {
+    const creatureAuthoredSource = (kind === 'puktuk' || kind === 'voorg-ass') ? 'animation-author-export-2026-09-15' : 'authored-2026-08-28-attachpointsv1'; // New livestock uses the user's final September 15 Rig Coordinates export rather than an older analogue.
     const saddleRule = saddleSource === 'highest-opaque-pixel-along-idle-sprite-midline'
       ? { source: saddleSource, heightPercentOffset: saddleOffset, defaultRuleVersion: 3, sourcePixel: { x: saddlePixel[0], y: saddlePixel[1] }, midlineSearchRadiusPx, authoredDefaultVersion: 6, authoredFixed: true, recalculateOnPreview: false }
       : { source: saddleSource, defaultRuleVersion: 3, authoredDefaultVersion: 6, authoredFixed: true, recalculateOnPreview: false };
@@ -157,9 +164,9 @@
       kind, chatheadFrame: { ...creatureChatheadFrames[kind] },
       anchors: { saddle: identityAnchor(saddle), shoulderGrip: identityAnchor(shoulderGrip, -61) },
       saddleRule,
-      shoulderGripRule: { source: 'authored-2026-08-28-attachpointsv1', coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
+      shoulderGripRule: { source: creatureAuthoredSource, coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
       sizeScales, groundOffsets: { ...(creatureGroundOffsets[kind] || { large:0, medium:0, small:0 }) },
-      sizeScaleRule: { version:1, axes:'png-plane-local-x-y', zScale:1, applicationOrder:'before-outer-prism-and-world-bounds', authoredDefaultVersion:6, authoredFixed:true },
+      sizeScaleRule: { version:1, axes:'png-plane-local-x-y', zScale:1, applicationOrder:'before-outer-prism-and-world-bounds', authoredDefaultVersion:6, authoredFixed:true, ...((kind === 'puktuk' || kind === 'voorg-ass') ? { source: creatureAuthoredSource } : {}) },
       shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 5,
       sizeScalePercentages: {
         large: { x: sizeScales.large.x * 100, y: sizeScales.large.y * 100 },

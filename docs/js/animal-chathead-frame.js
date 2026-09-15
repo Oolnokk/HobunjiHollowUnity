@@ -288,3 +288,278 @@
   installAuthorThreeCompatibility();
   installNpcPreviewBridge();
 })();
+
+// The Animation Author loads creature-genetics-render.js directly, while the
+// game later extends that renderer from creature-genetics.js. Keep the target
+// picker on the same live registry as gameplay instead of maintaining another
+// hard-coded animal list in the authoring tool.
+(function installAnimationAuthorCreatureRegistrySync(global) {
+  'use strict';
+  if (typeof location === 'undefined' || !/\/tools\/animation-author\//.test(location.pathname || '')) return;
+
+  const REQUIRED_KINDS = Object.freeze(['puktuk', 'voorg-ass']); // Used to verify the two runtime-extended livestock species reached both renderer and picker.
+  const DISPLAY_LABELS = Object.freeze({ puktuk: 'Puktuk', 'voorg-ass': 'Vorg-Ass' }); // Used only when the picker needs an option appended before its ordinary population pass.
+  const STATUS_KEY = 'animationAuthorCreatureRegistrySync'; // Used by the mobile-safe debug object exposed below.
+  const statusRoot = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {}; // Stores picker diagnostics beside the existing Rig Coordinates diagnostics.
+  const status = statusRoot[STATUS_KEY] ||= { state: 'waiting-for-renderer', attempts: 0, loads: 0, pickerRefreshes: 0, rendererMissing: [...REQUIRED_KINDS], pickerMissing: [...REQUIRED_KINDS], lastError: null }; // Exposed so a mobile test can report exactly which layer is stale.
+  let intervalId = null; // Polls until the dynamically loaded repository renderer and its extension module are both ready.
+  let scriptRequested = false; // Prevents duplicate creature-genetics.js script requests during repository startup.
+
+  function missingRendererKinds() {
+    const species = global.CreatureGeneticsRender?.SPECIES || {}; // Read by the same picker population code inside the Animation Author.
+    return REQUIRED_KINDS.filter(kind => !species[kind]);
+  }
+
+  function pickerValues(select) {
+    const options = Array.from(select?.options || []); // Used to compare the rendered select against the live renderer registry.
+    return options.map(option => String(option?.value || ''));
+  }
+
+  function missingPickerKinds() {
+    const select = global.document?.getElementById('maaCreatureSpecies'); // The existing Add creature target species select.
+    const values = pickerValues(select); // Used to report which required livestock kinds are still absent from the UI.
+    return REQUIRED_KINDS.filter(kind => !values.includes(kind));
+  }
+
+  function displayLabel(kind) {
+    const explicit = DISPLAY_LABELS[kind]; // Keeps the two known livestock names in their authored capitalization.
+    if (explicit) return explicit;
+    return String(kind || '').split('-').filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+  }
+
+  function normalizeExtendedSpeciesAssetUrls() {
+    const species = global.CreatureGeneticsRender?.SPECIES || {}; // Holds the post-renderer species records installed by creature-genetics.js.
+    const docsBase = new URL('../../', global.location.href); // Resolves game-relative assets from the nested docs/tools/animation-author page back to docs/.
+    const rewrite = value => { // Recursively fixes only repository asset strings while leaving flags, arrays, colors, and metadata intact.
+      if (typeof value === 'string') return value.startsWith('assets/') ? new URL(value, docsBase).href : value;
+      if (Array.isArray(value)) {
+        for (let index = 0; index < value.length; index++) value[index] = rewrite(value[index]);
+        return value;
+      }
+      if (!value || typeof value !== 'object') return value;
+      for (const key of Object.keys(value)) value[key] = rewrite(value[key]);
+      return value;
+    };
+    for (const kind of REQUIRED_KINDS) if (species[kind]) rewrite(species[kind]);
+  }
+
+  function refreshPickerFromRenderer() {
+    const select = global.document?.getElementById('maaCreatureSpecies'); // Updated in place so the author's normal change handler continues driving frame selection.
+    const species = global.CreatureGeneticsRender?.SPECIES; // Canonical renderer registry after creature-genetics.js applies runtime extensions.
+    if (!select || !species) return false;
+    const existing = new Set(pickerValues(select)); // Used to append only registry species that the current picker population missed.
+    const previousValue = String(select.value || ''); // Restored after appending so this background repair never changes the user's current target selection.
+    let changed = false; // Tracks whether this pass actually repaired the visible species list.
+    for (const kind of Object.keys(species)) {
+      if (existing.has(kind)) continue;
+      const option = global.document.createElement?.('option'); // Uses the native select option surface rather than replacing Animation Author UI code.
+      if (!option) continue;
+      option.value = kind;
+      option.textContent = displayLabel(kind);
+      if (typeof select.appendChild === 'function') select.appendChild(option);
+      else select.append?.(option);
+      existing.add(kind);
+      changed = true;
+    }
+    if (previousValue && existing.has(previousValue)) select.value = previousValue;
+    if (changed) status.pickerRefreshes += 1;
+    status.pickerMissing = missingPickerKinds();
+    return status.pickerMissing.length === 0;
+  }
+
+  function requestGameplayCreatureExtensions() {
+    if (scriptRequested || !global.CreatureGeneticsRender?.SPECIES) return false;
+    scriptRequested = true;
+    const script = global.document?.createElement?.('script'); // Loads the same runtime species-extension module gameplay relies on.
+    if (!script) {
+      status.state = 'script-element-unavailable';
+      return false;
+    }
+    const sourceUrl = new URL('../../js/creature-genetics.js?v=20260915-rig-picker-v1', global.location.href).href; // Commit-relative URL keeps RawGitHack test builds on one repository revision.
+    script.src = sourceUrl;
+    script.async = false;
+    script.dataset ||= {};
+    script.dataset.hobunjiAnimationAuthorCreatureRegistry = 'v1';
+    script.onload = () => {
+      status.loads += 1;
+      status.lastError = null;
+      syncNow('creature-genetics-loaded');
+    };
+    script.onerror = () => {
+      status.state = 'creature-genetics-load-failed';
+      status.lastError = sourceUrl;
+    };
+    const parent = global.document.head || global.document.documentElement; // Uses a normal document script parent in both desktop and mobile browsers.
+    if (!parent?.appendChild) {
+      status.state = 'script-parent-unavailable';
+      return false;
+    }
+    parent.appendChild(script);
+    return true;
+  }
+
+  function syncNow(reason = 'poll') {
+    status.attempts += 1;
+    status.lastReason = reason;
+    status.rendererMissing = missingRendererKinds();
+    if (status.rendererMissing.length) {
+      status.state = global.CreatureGeneticsRender?.SPECIES ? 'loading-gameplay-creature-extensions' : 'waiting-for-renderer';
+      requestGameplayCreatureExtensions();
+      return false;
+    }
+    normalizeExtendedSpeciesAssetUrls();
+    const pickerClean = refreshPickerFromRenderer(); // Adds any species installed after the author's original picker-population pass.
+    status.rendererMissing = [];
+    status.pickerMissing = missingPickerKinds();
+    status.state = pickerClean ? 'clean' : 'waiting-for-picker';
+    if (pickerClean && intervalId != null) {
+      global.clearInterval?.(intervalId);
+      intervalId = null;
+    }
+    return pickerClean;
+  }
+
+  if (typeof global.setInterval === 'function') intervalId = global.setInterval(() => syncNow('poll'), 50);
+  syncNow('install');
+  global.HobunjiAnimationAuthorCreatureRegistrySync = Object.freeze({
+    syncNow: () => syncNow('manual-debug'),
+    missingRendererKinds,
+    missingPickerKinds,
+    getStatus: () => ({ ...status, rendererMissing: [...(status.rendererMissing || [])], pickerMissing: [...(status.pickerMissing || [])] }),
+  });
+})(window);
+
+// Rig Coordinates predates Puktuk and Vorg-ass. If an older embedded editor
+// snapshot omits them, restore the repository's same-kind canonical profiles
+// through the editor's own import path. Analogue seeding is retained only as
+// a compatibility fallback for older repository revisions without final data.
+(function installAnimationAuthorNewCreatureRigSync(global) {
+  'use strict';
+  if (typeof location === 'undefined' || !/\/tools\/animation-author\//.test(location.pathname || '')) return;
+
+  const RIG_SCHEMA = 'hobunji.attachment-rig-profiles.v10'; // Used by the existing Rig import bridge when it receives the augmented profile library.
+  const SEED_SOURCES = Object.freeze({ puktuk: 'gar-wolf', 'voorg-ass': 'uumkaoii' }); // Used only to give the two new species editable first-pass coordinates.
+  const STATUS_KEY = 'animationAuthorNewCreatureRigSync'; // Used by the mobile-safe debug status exposed below.
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+  const statusRoot = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  const status = statusRoot[STATUS_KEY] ||= { state: 'waiting-for-rig', repairs: 0, lastReason: null, missing: Object.keys(SEED_SOURCES) };
+  let queuedTimer = null; // Used to serialize this import after the older creature and shoulder repair bridges.
+
+  function missingKinds(live) {
+    return Object.keys(SEED_SOURCES).filter(kind => !live?.creatures?.[kind]);
+  }
+
+  function canonicalProfile(kind) {
+    return global.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.[kind]
+      || global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]
+      || null;
+  }
+
+  function sourceProfile(live, sourceKind) {
+    return live?.creatures?.[sourceKind]
+      || global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[sourceKind]
+      || global.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.[sourceKind]
+      || null;
+  }
+
+  function seededProfile(kind, sourceKind, live) {
+    const source = sourceProfile(live, sourceKind);
+    if (!source) return null;
+    const profile = clone(source);
+    profile.kind = kind;
+    delete profile.chatheadFrame;
+    profile.authoringSeed = { sourceKind, version: 1, status: 'needs-authoring' };
+    profile.saddleRule = { ...(profile.saddleRule || {}), source: `rig-coordinates-seed:${sourceKind}`, authoredFixed: false, recalculateOnPreview: false };
+    profile.shoulderGripRule = { ...(profile.shoulderGripRule || {}), source: `rig-coordinates-seed:${sourceKind}`, authoredFixed: false, recalculateOnPreview: false };
+    profile.sizeScaleRule = { ...(profile.sizeScaleRule || {}), source: `rig-coordinates-seed:${sourceKind}`, authoredFixed: false };
+    return profile;
+  }
+
+  function attachImportFile(input, file) {
+    try {
+      if (typeof global.DataTransfer === 'function') {
+        const transfer = new global.DataTransfer();
+        transfer.items.add(file);
+        input.files = transfer.files;
+        return true;
+      }
+    } catch (_) {}
+    try {
+      Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function repairNow(reason = 'manual-debug') {
+    queuedTimer = null;
+    const api = global.MultiAvatarAnimationAuthor;
+    const input = global.document?.getElementById('maaImportInput');
+    if (!api?.getAttachmentRigProfiles || !input || typeof global.File !== 'function') {
+      status.state = 'waiting-for-rig';
+      status.lastReason = reason;
+      return false;
+    }
+
+    const live = api.getAttachmentRigProfiles();
+    const missing = missingKinds(live);
+    status.missing = [...missing];
+    status.lastReason = reason;
+    if (!missing.length) {
+      status.state = 'clean';
+      return false;
+    }
+
+    const repaired = clone(live || {});
+    repaired.characters ||= {};
+    repaired.creatures ||= {};
+    const unresolved = [];
+    for (const kind of missing) {
+      const canonical = canonicalProfile(kind); // September 15 authoring is authoritative once the repository master contains it.
+      const replacement = canonical ? clone(canonical) : seededProfile(kind, SEED_SOURCES[kind], repaired);
+      if (replacement) repaired.creatures[kind] = replacement;
+      else unresolved.push(kind);
+    }
+    if (unresolved.length) {
+      status.state = 'canonical-or-seed-source-missing';
+      status.missing = unresolved;
+      status.lastReason = `${reason}: ${unresolved.join(', ')}`;
+      return false;
+    }
+
+    const guard = global.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD;
+    const payload = guard?.reconcileRigExport
+      ? guard.reconcileRigExport({ schema: RIG_SCHEMA, profiles: repaired })
+      : { schema: RIG_SCHEMA, profiles: repaired };
+    const file = new global.File([JSON.stringify(payload)], 'hobunji_attachment_rig_new_creature_sync.json', { type: 'application/json' });
+    if (!attachImportFile(input, file)) {
+      status.state = 'file-bridge-unavailable';
+      return false;
+    }
+
+    status.state = 'repair-dispatched';
+    status.repairs += 1;
+    status.missing = [];
+    status.lastReason = `${reason}: ${missing.join(', ')}`;
+    input.dispatchEvent(new Event('change', { bubbles: false }));
+    return true;
+  }
+
+  function queueRepair(reason, delayMs = 900) {
+    if (queuedTimer != null) global.clearTimeout(queuedTimer);
+    queuedTimer = global.setTimeout(() => repairNow(reason), delayMs);
+  }
+
+  global.document?.addEventListener('click', event => {
+    const target = event.target?.closest?.('#maaRigTab, #maaNewBtn');
+    if (!target) return;
+    if (target.id === 'maaRigTab' || (target.id === 'maaNewBtn' && global.document.body?.dataset?.animationAuthorMode === 'rig')) {
+      queueRepair(target.id === 'maaRigTab' ? 'rig-tab-open' : 'rig-new-reset');
+    }
+  }, true);
+
+  global.HobunjiAnimationAuthorNewCreatureRigSync = Object.freeze({
+    repairNow: () => repairNow('manual-debug'),
+    missingKinds: () => missingKinds(global.MultiAvatarAnimationAuthor?.getAttachmentRigProfiles?.() || {}),
+    getStatus: () => ({ ...status, missing: [...(status.missing || [])] }),
+  });
+})(window);
