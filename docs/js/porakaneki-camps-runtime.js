@@ -12,17 +12,18 @@
   // Generated residents use the same loose planner-like neutral behavior as the
   // previous single-camp implementation: hunt, wander, socialize, investigate
   // nearby stimuli, or drift around home. Full humanoid/combat simulation exists
-  // only while an individual shares the player's wilderness chunk. Everywhere
-  // else the character is an abstract position/activity updated every few
-  // seconds.
+  // while an individual is inside a distance-based player bubble; a wider exit
+  // radius provides hysteresis so crossing an arbitrary tile/chunk boundary can
+  // never make a nearby resident disappear. Everywhere else the character is an
+  // abstract position/activity updated every few seconds.
   const CONFIG_URL = 'config/porakaneki-camp.json'; // Network/population/LOD/reputation tuning loaded once at startup.
   const SMALL_LOCALE_URL = 'config/locales/locale_porakaneki_camp_small.json'; // Little procedural-only camp footprint.
-  const CHIEF_LOCALE_URL = 'config/locales/locale_porakaneki_camp_chief.json'; // Large seasonally migrating chief-camp footprint.
+  const CHIEF_LOCALE_URL = 'config/locales/locale_porakaneki_camp_chief.json'; // Large seasonal named-chief camp footprint.
   const SPECIES_ID = 'porakaneki'; // Forced species for every generated camp resident.
-  const DORMANT_AREA_PREFIX = '__porakaneki_dormant__:'; // Removes hidden/off-chunk residents from the normal hostile loop.
-  const TICK_INTERVAL_S = 0.20; // Neutral LOD/planning cadence; hostile combat still uses the normal combat loop.
+  const DORMANT_AREA_PREFIX = '__porakaneki_dormant__:'; // Removes hidden/off-radius residents from the normal hostile loop.
+  const TICK_INTERVAL_S = 0.20; // Neutral planner/LOD cadence; actual entity movement/render/combat stays in the normal hostile loop.
   const PROVOKE_SECONDS = 45; // Temporary same-camp self-defense window after an assault without permanent Favor loss.
-  const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-chunk/sleeping hunter's real entity is actually torn down -- long enough that stepping back and forth across a chunk edge doesn't thrash rebuild it, short enough that wandering the wilderness for a while doesn't leave dozens of "abstract" residents permanently retained as full live entities (see hideEntity's DORMANT_AREA_PREFIX comment: they're meant to collapse back to plain data, not just go invisible).
+  const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-radius/sleeping hunter's real entity is torn down.
 
   let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects.
   let schedulingDeps = null; // Captured from NpcScheduling.init; live named-chief walker.
@@ -31,7 +32,7 @@
   let chiefLocaleDef = null; // Parsed large chief-camp locale.
   let gangCfg = null; // Existing humanoid combat balance reused by generated residents.
   let tickAccum = 0; // Accumulates detailed neutral update time.
-  let coarseAccum = 0; // Accumulates off-chunk abstract update time.
+  let coarseAccum = 0; // Accumulates off-radius abstract update time.
   let buildGeneration = 0; // Invalidates asynchronous entity builds after wilderness regeneration.
 
   const state = {
@@ -51,22 +52,22 @@
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const nowMs = () => typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   const rand = () => {
-    const value = combatDeps?.rnd?.(); // Uses the world's normal RNG when available for moment-to-moment behavior.
+    const value = combatDeps?.rnd?.();
     return Number.isFinite(value) ? value : Math.random();
   };
 
   function currentArea() { return combatDeps?.getCurrentArea?.() || null; }
   function gameHour() {
-    const value = Number(window.CalendarSystem?.getHour?.()); // Same 24-hour clock normal NPC planning uses.
+    const value = Number(window.CalendarSystem?.getHour?.());
     return Number.isFinite(value) ? ((value % 24) + 24) % 24 : 12;
   }
   function gameDay() {
-    const raw = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay); // Stable day key for greetings/nightly tent choice.
+    const raw = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay);
     if (Number.isFinite(raw)) return Math.max(0, Math.floor(raw));
     return Math.max(0, Math.floor(Number(combatDeps?.calendar?.day ?? 0) || 0));
   }
   function generationYear() {
-    const year = Number(window.CalendarSystem?.yearNumber?.()); // Matches the Tothal wilderness-generation cycle used by game.js.
+    const year = Number(window.CalendarSystem?.yearNumber?.());
     return Number.isFinite(year) ? Math.max(1, Math.floor(year)) : 1;
   }
   function currentSeasonName() {
@@ -78,18 +79,18 @@
     return map[seasonName] || cfg?.wildernessZones?.[0] || null;
   }
   function isSleepingHour(hour = gameHour()) {
-    const start = num(cfg?.schedule?.sleepStartHour, 22); // Shared night schedule for generated residents and the named chief.
+    const start = num(cfg?.schedule?.sleepStartHour, 22);
     const wake = num(cfg?.schedule?.wakeHour, 6);
     return start > wake ? (hour >= start || hour < wake) : (hour >= start && hour < wake);
   }
 
   function hashSeed(text) {
-    let h = 2166136261 >>> 0; // Deterministic FNV-style seed used for generation-stable camp placement/population.
+    let h = 2166136261 >>> 0;
     for (const ch of String(text || '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
     return h >>> 0;
   }
   function seededRng(text) {
-    let a = hashSeed(text) || 0x9e3779b9; // Mulberry32 keeps each Tothal generation reproducible.
+    let a = hashSeed(text) || 0x9e3779b9;
     return () => {
       a |= 0; a = a + 0x6D2B79F5 | 0;
       let t = Math.imul(a ^ a >>> 15, 1 | a);
@@ -98,13 +99,13 @@
     };
   }
   function integerRoll(rng, min, max) {
-    const lo = Math.floor(Math.min(min, max)), hi = Math.floor(Math.max(min, max)); // Inclusive deterministic integer roll for camp/population counts.
+    const lo = Math.floor(Math.min(min, max)), hi = Math.floor(Math.max(min, max));
     return lo + Math.floor(rng() * (hi - lo + 1));
   }
 
   function buildZoneView(zoneId, layout) {
     if (!layout?.cols || !layout?.rows || !combatDeps) return null;
-    const cols = layout.cols, rows = layout.rows; // Sparse generated-layout dimensions inflated for TemporaryLocales site fitting.
+    const cols = layout.cols, rows = layout.rows;
     const tiles = Array.from({ length: rows }, () => new Array(cols).fill(null));
     const objects = [];
     for (const source of (layout.tiles || [])) {
@@ -117,7 +118,7 @@
         waterfall: source.type === combatDeps.TileType?.WATERFALL,
         terrain: source.type,
         occupiedBy: null,
-      }; // TemporaryLocales fields only; the generated terrain itself remains untouched.
+      };
       tiles[source.r][source.c] = tile;
       if (source.type === combatDeps.TileType?.SHRUB || source.type === combatDeps.TileType?.ROCK) {
         const id = `porakaneki_clutter_${source.c}_${source.r}`;
@@ -126,7 +127,7 @@
       }
     }
 
-    let blockerSeq = 0; // Unique occupancy ids for generated structures/landmarks copied into the site-fit view.
+    let blockerSeq = 0;
     const blockRect = (col, row, w = 1, h = 1) => {
       if (!Number.isFinite(col) || !Number.isFinite(row)) return;
       const id = `porakaneki_blocker_${blockerSeq++}`;
@@ -141,17 +142,13 @@
     for (const totem of (layout.rootTotems || [])) blockRect(totem.x ?? totem.col, totem.y ?? totem.row, totem.w || 1, totem.h || 1);
     for (const instance of (layout.localeInstances || [])) for (const object of (instance.objects || [])) blockRect(object.x, object.y, object.w || 1, object.h || 1);
 
-    const zoneDef = combatDeps.EXTERIOR_ZONES?.[zoneId]; // Entry fallback for layouts without an explicit to-town exit.
+    const zoneDef = combatDeps.EXTERIOR_ZONES?.[zoneId];
     const entry = layout.toTownExit
       ? { x: layout.toTownExit.col, y: layout.toTownExit.row }
       : (Number.isFinite(zoneDef?.entryCol) ? { x: zoneDef.entryCol, y: zoneDef.entryRow } : null);
     return { cols, rows, tiles, objects, entry };
   }
 
-  // Below this separation, two materialized humanoid portraits (modelWidth
-  // ~0.9 tiles -- see avatarCfg.worldModelWidth in buildBanditAvatar) read as
-  // visually stacked/coplanar rather than as two distinct residents standing
-  // near each other.
   const MIN_HUNTER_SEPARATION_TILES = 0.75;
   function _tooCloseToAvoidPoint(col, row, avoidPoints) {
     if (!avoidPoints || !avoidPoints.length) return false;
@@ -159,18 +156,10 @@
     return false;
   }
   function pointIsOpen(zoneState, col, row, avoidPoints) {
-    const c = Math.floor(col), r = Math.floor(row); // Abstract residents still respect the runtime occupancy view.
+    const c = Math.floor(col), r = Math.floor(row);
     const tile = zoneState?.view?.tiles?.[r]?.[c];
     return !!tile && !tile.water && !tile.waterfall && !tile.occupiedBy && !_tooCloseToAvoidPoint(col, row, avoidPoints);
   }
-  // avoidPoints (optional [{col,row}, ...]) keeps this from resolving to a
-  // point another hunter has already claimed this same pass -- without it,
-  // several hunters waking from the same jittered sleep point (see
-  // sleepPointFor: they commonly share one tent) all independently walk this
-  // same deterministic search and land on the exact same candidate, so the
-  // whole handful materializes stacked on top of each other instead of
-  // standing apart (see placeEntity, the only caller that has other hunters'
-  // positions to pass).
   function nearestOpenPoint(zoneState, col, row, avoidPoints) {
     const cols = zoneState?.view?.cols || 1, rows = zoneState?.view?.rows || 1;
     const baseCol = clamp(col, 1.25, Math.max(1.25, cols - 1.25));
@@ -183,21 +172,17 @@
         if (pointIsOpen(zoneState, candidate.col, candidate.row, avoidPoints)) return candidate;
       }
     }
-    // Every candidate within range is already claimed (a small camp with
-    // more waking residents than clear standing room) -- fall back to the
-    // unclaimed-only search's own best point rather than degrading all the
-    // way to the exact base point every other stuck hunter is also trying.
     if (avoidPoints?.length) return nearestOpenPoint(zoneState, col, row);
     return { col: baseCol, row: baseRow };
   }
   function randomPointAround(camp, origin, minRadius, maxRadius, rng = rand) {
-    const angle = rng() * Math.PI * 2; // Fresh direction prevents route-like repeated movement.
+    const angle = rng() * Math.PI * 2;
     const distance = minRadius + rng() * Math.max(0, maxRadius - minRadius);
     return nearestOpenPoint(camp.zoneState, origin.col + Math.cos(angle) * distance, origin.row + Math.sin(angle) * distance);
   }
 
   function propsForInstance(view, instance) {
-    return (view?.objects || []).filter(object => object.temporaryLocaleInstanceId === instance?.id); // Runtime render list for one stamped/reserved locale.
+    return (view?.objects || []).filter(object => object.temporaryLocaleInstanceId === instance?.id);
   }
   function centerForInstance(instance) {
     return instance ? { col: instance.site.x + instance.site.w * 0.5, row: instance.site.y + instance.site.h * 0.5 } : null;
@@ -219,13 +204,13 @@
       warningEnteredAtMs: 0,
       warningInitialShown: false,
       warningEscalated: false,
-    }; // Self-contained camp state lets small camps remain stable while the chief camp migrates independently.
+    };
   }
 
   function teardownEntity(hunter) {
     const entity = hunter?.entity;
     if (!entity) return;
-    const index = combatDeps?.hostileObjects?.indexOf?.(entity); // Only removes this generated Porakaneki entity from the shared combat array.
+    const index = combatDeps?.hostileObjects?.indexOf?.(entity);
     if (index >= 0) combatDeps.hostileObjects.splice(index, 1);
     entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
     entity.groundShadow?.parent?.remove?.(entity.groundShadow);
@@ -265,22 +250,15 @@
 
   function smallCampCountForZone(zoneId) {
     const small = cfg?.smallCamps || {};
-    const rng = seededRng(`${generationYear()}:${zoneId}:porakaneki-small-count`); // Stable 2-4 roll for this wilderness generation.
+    const rng = seededRng(`${generationYear()}:${zoneId}:porakaneki-small-count`);
     return integerRoll(rng, num(small.minPerZone, 2), num(small.maxPerZone, 4));
   }
   function smallResidentCount(zoneId, campIndex) {
     const small = cfg?.smallCamps || {};
-    const rng = seededRng(`${generationYear()}:${zoneId}:porakaneki-small-${campIndex}:population`); // Each little camp gets its own stable 2-4 resident roll.
+    const rng = seededRng(`${generationYear()}:${zoneId}:porakaneki-small-${campIndex}:population`);
     return integerRoll(rng, num(small.minResidents, 2), num(small.maxResidents, 4));
   }
 
-  // Symmetric counterpart to bandit-camps.js's own porakanekiAvoidPoints:
-  // bandit camps for a zone are normally seeded lazily, well after this
-  // zone's Porakaneki sites already exist, so that side does the real work
-  // for the common ordering. This only matters on the rarer reverse order
-  // (a bandit camp already stamped into this zone before Porakaneki's own
-  // eager world-boot build reaches it) -- same reasoning, just avoiding the
-  // other system's sites instead.
   function banditCampAvoidPoints(zoneId, minDistance) {
     if (!(minDistance > 0)) return [];
     const recs = window.BanditCamps?.campInstances?.get?.(zoneId);
@@ -301,11 +279,8 @@
       chiefReservation: null,
       chiefCamp: null,
       smallCamps: [],
-    }; // One persistent runtime camp network for this generated wilderness layout.
+    };
 
-    // Reserve the large site FIRST in every zone. Only one reservation is
-    // activated/rendered at a time, but keeping a silent reservation elsewhere
-    // guarantees a seasonal migration never has to evict or reshuffle small camps.
     zoneState.chiefReservation = window.TemporaryLocales.stamp(view, chiefLocaleDef, {
       rng: seededRng(`${generationYear()}:${zoneId}:porakaneki-chief-site`),
       clearableTypes: new Set(),
@@ -356,7 +331,7 @@
   function deactivateChiefCamp(zoneState) {
     if (!zoneState?.chiefCamp) return;
     teardownCamp(zoneState.chiefCamp);
-    zoneState.chiefCamp = null; // Reservation remains silently stamped so the site is available next season/year.
+    zoneState.chiefCamp = null;
   }
   function syncChiefCamp() {
     const season = currentSeasonName();
@@ -375,7 +350,7 @@
   }
   function ensureWorldCamps() {
     if (!cfg || !combatDeps || !smallLocaleDef || !chiefLocaleDef || !window.TemporaryLocales) return false;
-    for (const zoneId of (cfg.wildernessZones || [])) ensureZoneState(zoneId); // Builds little camps on every generated wilderness map, not only the current one.
+    for (const zoneId of (cfg.wildernessZones || [])) ensureZoneState(zoneId);
     syncChiefCamp();
     return state.zones.size > 0;
   }
@@ -386,7 +361,7 @@
   function currentZoneState() { return state.zones.get(currentArea()) || null; }
 
   function tentMesh() {
-    const group = new THREE.Group(); // Lightweight shared tent render used by both small and chief camps.
+    const group = new THREE.Group();
     const shell = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.2, 5, 1, false, -Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x8b7656, side: THREE.DoubleSide }));
     shell.position.y = 0.6;
     shell.castShadow = true;
@@ -399,7 +374,7 @@
     return group;
   }
   function crateMesh() {
-    const group = new THREE.Group(); // Fallback supplies mesh for crateStack locale props.
+    const group = new THREE.Group();
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.65, 0.75), new THREE.MeshLambertMaterial({ color: 0x6b4d2c }));
     box.position.y = 0.325;
     box.castShadow = true;
@@ -407,7 +382,7 @@
     return group;
   }
   function campfireMesh() {
-    const built = window.ProceduralFurniture?.buildFurnitureGroup?.('campfire', 0x6b4a28); // Prefer existing player-furniture campfire art when available.
+    const built = window.ProceduralFurniture?.buildFurnitureGroup?.('campfire', 0x6b4a28);
     if (built) return built;
     const group = new THREE.Group();
     const flame = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.48, 6), new THREE.MeshBasicMaterial({ color: 0xff8a22 }));
@@ -419,7 +394,7 @@
     if (!camp || currentArea() !== camp.zoneId || typeof THREE === 'undefined') return;
     const zone = combatDeps.zoneScenes?.get?.(camp.zoneId);
     if (!zone?.scene) return;
-    const live = new Set(); // Removes stale prop meshes after wilderness regeneration/deactivation.
+    const live = new Set();
     for (const prop of camp.props) {
       live.add(prop.id);
       const prior = camp.propMeshes.get(prop.id);
@@ -435,7 +410,7 @@
       zone.scene.add(mesh);
       let light = null;
       if (prop.key === 'campfire') {
-        light = new THREE.PointLight(0xff7722, 1.1, 3.2); // One modest local light per active rendered campfire.
+        light = new THREE.PointLight(0xff7722, 1.1, 3.2);
         light.position.set(col, y + 0.45, row);
         light.userData.furnitureLightMask = true;
         zone.scene.add(light);
@@ -446,22 +421,22 @@
   }
   function ensureCurrentCampMeshes() {
     const zoneState = currentZoneState();
-    for (const camp of activeCamps(zoneState)) ensureCampMeshes(camp); // Inactive chief reservations are deliberately never rendered.
+    for (const camp of activeCamps(zoneState)) ensureCampMeshes(camp);
   }
 
   function tentCenters(camp) {
-    return (camp?.props || []).filter(prop => prop.type === 'tent').map(prop => ({ col: prop.x + (prop.w || 1) * 0.5, row: prop.y + (prop.h || 1) * 0.5 })); // Shared nightly sleep pool; no permanent tent ownership.
+    return (camp?.props || []).filter(prop => prop.type === 'tent').map(prop => ({ col: prop.x + (prop.w || 1) * 0.5, row: prop.y + (prop.h || 1) * 0.5 }));
   }
 
   function chiefWalker() {
-    const id = cfg?.reputation?.npcId || 'porakaneki_chief'; // Named chief remains a normal NPC walker/social target.
+    const id = cfg?.reputation?.npcId || 'porakaneki_chief';
     return schedulingDeps?.npcWalkers?.find?.(walker => walker?.rec?.id === id) || null;
   }
   function authorChiefBehavior() {
     const camp = state.zones.get(state.chiefZoneId)?.chiefCamp;
     const walker = chiefWalker();
     if (!camp || !walker?.rec || !window.NpcScheduling?.registerNpcStations) return false;
-    const key = `${state.chiefSeason}:${camp.id}:${camp.center.col.toFixed(2)}:${camp.center.row.toFixed(2)}`; // Rewrites only on seasonal migration or wilderness regeneration.
+    const key = `${state.chiefSeason}:${camp.id}:${camp.center.col.toFixed(2)}:${camp.center.row.toFixed(2)}`;
     if (state.chiefBehaviorKey === key && walker.rec.scheduleHooks?.__porakanekiCampRuntime) return true;
 
     const role = 'porakaneki-chief-sleep';
@@ -473,7 +448,7 @@
       r: tent.row,
       pose: 'lie',
       roles: [role],
-    })), camp.zoneId); // The chief can use any tent in the current large camp rather than owning a fixed coordinate.
+    })), camp.zoneId);
 
     walker.rec.gender = 'male';
     walker.rec.species = SPECIES_ID;
@@ -481,7 +456,7 @@
     walker.rec.scheduleHooks = {
       ...(walker.rec.scheduleHooks || {}),
       defaultMapId: camp.zoneId,
-      defaultPosition: { c: camp.center.col, r: camp.center.row }, // Spawn fallback only; daytime behavior remains planner-driven.
+      defaultPosition: { c: camp.center.col, r: camp.center.row },
       __porakanekiCampRuntime: true,
       rules: [],
     };
@@ -489,20 +464,20 @@
       { id: 'porakaneki_sleep_late', activity: 'goToRole', obligation: 'plan', window: ['22:00', '23:59'], destinationRole: role, destinationArea: camp.zoneId, activityLabel: 'sleeping' },
       { id: 'porakaneki_sleep_early', activity: 'goToRole', obligation: 'plan', window: ['00:00', '06:00'], destinationRole: role, destinationArea: camp.zoneId, activityLabel: 'sleeping' },
       { id: 'porakaneki_day', activity: 'break', obligation: 'leisure', window: ['06:00', '22:00'], destinationArea: camp.zoneId, activityLabel: 'around the chief camp' },
-    ]; // Daytime intentionally falls through the normal free-time planner instead of fixed work/patrol points.
+    ];
     state.chiefBehaviorKey = key;
     return true;
   }
 
   function relationshipState() {
-    const id = cfg?.reputation?.npcId || 'porakaneki_chief'; // Chief relationship record is the tribe-wide persistent Favor score.
+    const id = cfg?.reputation?.npcId || 'porakaneki_chief';
     return window.DialogueContent?.getNpcDlgState?.(id) || window.DialogueContent?.npcDlgState?.get?.(id) || null;
   }
   function memoryHas(relation, event) { return !!relation?.memory?.some?.(entry => entry?.event === event || entry?.type === event); }
   function pushMemory(relation, event) {
     if (!relation) return;
     relation.memory ||= [];
-    relation.memory.push({ event, day: gameDay(), ts: Date.now() }); // Minimal serializable relationship-memory event.
+    relation.memory.push({ event, day: gameDay(), ts: Date.now() });
     if (relation.memory.length > 50) relation.memory.shift();
   }
   function initializeReputation() {
@@ -531,13 +506,8 @@
 
   function chooseLine(lines) {
     if (!Array.isArray(lines) || !lines.length) return '';
-    return lines[Math.floor(rand() * lines.length)] || lines[0]; // Keeps repeated camp approaches from always using the same warning.
+    return lines[Math.floor(rand() * lines.length)] || lines[0];
   }
-  // Warnings/greetings are meant to read as an actual Porakaneki speaking,
-  // the same overhead chathead+text bubble every other NPC's greeting uses
-  // (see ambient-dialogue.js) -- not a generic HUD toast with no speaker.
-  // Falls back to the toast only if AmbientDialogue or a live avatar to
-  // anchor the bubble to isn't available (e.g. very first tick after boot).
   function speakOverheadFromWalker(walker, text, options = {}) {
     if (text && walker?.root && window.AmbientDialogue?.show) {
       const shown = window.AmbientDialogue.show(walker.root, text, {
@@ -548,19 +518,15 @@
       });
       if (shown) return true;
     }
-    if (text) combatDeps.showToast?.(text, options.important !== false);
+    if (text && options.allowToastFallback !== false) combatDeps.showToast?.(text, options.important !== false);
     return false;
   }
   function speakOverheadFromHunter(hunter, text, options = {}) {
     const entity = hunter?.entity;
-    if (text && entity?.avatarRef?.group && window.AmbientDialogue?.show) {
-      // rosterRecord is the same {name, appearance, equippedCosmetics,
-      // appliedDyes} shape bandit/animal roster records already use to
-      // build a portrait -- Porakaneki inherits Kenkari's registered
-      // portrait fighter (see porakaneki-species-runtime.js), so this
-      // resolves through the exact same pipeline as any other NPC.
+    const anchor = entity?.avatarRef?.group;
+    if (text && anchor?.visible && entity.areaId === hunter?.camp?.zoneId && window.AmbientDialogue?.show) {
       const profile = window.NpcAvatarPreview?.buildProfileFromNpcExport?.(entity.rosterRecord) || null;
-      const shown = window.AmbientDialogue.show(entity.avatarRef.group, text, {
+      const shown = window.AmbientDialogue.show(anchor, text, {
         speakerId: entity.id,
         profile,
         mode: profile ? 'chathead' : 'overhead',
@@ -568,11 +534,19 @@
       });
       if (shown) return true;
     }
-    if (text) combatDeps.showToast?.(text, options.important !== false);
+    if (text && options.allowToastFallback !== false) combatDeps.showToast?.(text, options.important !== false);
     return false;
   }
   function speakerHunterFor(camp) {
-    return camp?.hunters?.find(hunter => hunter.entity) || null; // Whichever resident is actually materialized speaks for the camp.
+    const player = playerTilePosition();
+    const candidates = (camp?.hunters || []).filter(hunter => {
+      const entity = hunter?.entity;
+      return entity?.health > 0 && entity.areaId === camp.zoneId && !!entity.avatarRef?.group?.visible;
+    });
+    if (!candidates.length) return null;
+    if (!player) return candidates[0];
+    candidates.sort((a, b) => Math.hypot(a.x - player.col, a.y - player.row) - Math.hypot(b.x - player.col, b.y - player.row));
+    return candidates[0];
   }
   function resetCampWarning(camp) {
     if (!camp) return;
@@ -597,16 +571,24 @@
     }
     for (const camp of camps) if (camp !== nearest) resetCampWarning(camp);
     if (!nearest || nearestDistance > num(rep.warningRadiusTiles, 10)) { resetCampWarning(nearest); return; }
-    if (!nearest.warningEnteredAtMs) nearest.warningEnteredAtMs = nowMs();
+
+    // A warning is not considered delivered until a real materialized hunter
+    // successfully owns an Ambient Dialogue bubble. This avoids the old race
+    // where territory detection ran before async materialization, consumed the
+    // one-shot flag, and permanently degraded the warning to a HUD toast.
     if (!nearest.warningInitialShown) {
-      nearest.warningInitialShown = true;
       const text = chooseLine(rep.initialWarnings);
-      if (text) speakOverheadFromHunter(speakerHunterFor(nearest), text, { tone: 'warning', important: false });
+      const speaker = speakerHunterFor(nearest);
+      if (text && speaker && speakOverheadFromHunter(speaker, text, { tone: 'warning', important: false, allowToastFallback: false })) {
+        nearest.warningInitialShown = true;
+        nearest.warningEnteredAtMs = nowMs();
+      }
+      return;
     }
     if (!nearest.warningEscalated && nowMs() - nearest.warningEnteredAtMs >= num(rep.warningStaySeconds, 10) * 1000) {
-      nearest.warningEscalated = true;
       const text = chooseLine(rep.escalationWarnings);
-      if (text) speakOverheadFromHunter(speakerHunterFor(nearest), text, { tone: 'warning', important: false });
+      const speaker = speakerHunterFor(nearest);
+      if (text && speaker && speakOverheadFromHunter(speaker, text, { tone: 'warning', important: false, allowToastFallback: false })) nearest.warningEscalated = true;
     }
   }
 
@@ -625,6 +607,8 @@
     state.greetings += 1;
   }
 
+  // Kept for debug/test compatibility with older snapshots; chunk equality is
+  // no longer the LOD gate. The real gate below is radial and hysteretic.
   function chunkSizeTiles() { return Math.max(2, Math.floor(num(cfg?.behavior?.fullSimulationChunkTiles, 10))); }
   function chunkOf(col, row) {
     const size = chunkSizeTiles();
@@ -634,17 +618,35 @@
     if (!combatDeps?.player || !combatDeps?.TILE) return null;
     return { col: combatDeps.player.x / combatDeps.TILE, row: combatDeps.player.y / combatDeps.TILE };
   }
-  function sharesPlayerChunk(hunter) {
-    if (!hunter || currentArea() !== hunter.camp.zoneId) return false;
+  function fullSimulationRadiusTiles() {
+    return Math.max(2, num(cfg?.behavior?.fullSimulationRadiusTiles, chunkSizeTiles() * 1.2));
+  }
+  function fullSimulationReleaseRadiusTiles() {
+    const enter = fullSimulationRadiusTiles();
+    return Math.max(enter + 0.5, num(cfg?.behavior?.fullSimulationReleaseRadiusTiles, enter + 4));
+  }
+  function detailedEntityActive(hunter) {
+    const entity = hunter?.entity;
+    return !!entity && entity.areaId === hunter.camp.zoneId && !!entity.avatarRef?.group?.visible;
+  }
+  function simulationDistanceToPlayer(hunter) {
+    if (!hunter || currentArea() !== hunter.camp.zoneId) return Infinity;
     const player = playerTilePosition();
-    if (!player) return false;
-    const a = chunkOf(hunter.x, hunter.y), b = chunkOf(player.col, player.row);
-    return a.x === b.x && a.y === b.y;
+    if (!player) return Infinity;
+    return Math.hypot(hunter.x - player.col, hunter.y - player.row);
+  }
+  function sharesPlayerChunk(hunter) {
+    const distance = simulationDistanceToPlayer(hunter);
+    if (!Number.isFinite(distance)) return false;
+    // Once live, keep the resident live until the wider release radius. That
+    // prevents edge oscillation/rebuild thrash and, unlike the old exact 10x10
+    // chunk comparison, has no invisible boundary that can cut through a camp.
+    return distance <= (detailedEntityActive(hunter) ? fullSimulationReleaseRadiusTiles() : fullSimulationRadiusTiles());
   }
 
   function weaponRoll(rng = rand) {
     const shapes = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'daggerSword'];
-    return shapes[Math.floor(rng() * shapes.length)] || shapes[0]; // Independent sample per resident; duplicates are deliberately legal.
+    return shapes[Math.floor(rng() * shapes.length)] || shapes[0];
   }
   function weaponDef(shapeKey) {
     const metalKey = cfg?.equipment?.weaponMetalKey || 'nativeCopper';
@@ -659,7 +661,7 @@
   }
   function randomCampPoint(camp, rng = rand) {
     const radius = num(cfg?.behavior?.campSocialRadiusTiles, 8);
-    return randomPointAround(camp, camp.center, 1.5, radius, rng); // Broad home area, never one assigned standing point.
+    return randomPointAround(camp, camp.center, 1.5, radius, rng);
   }
   function ensureCampHunters(camp) {
     if (!camp?.center) return;
@@ -684,7 +686,7 @@
         greetingDay: -1,
         lastHealth: null,
         killCounted: false,
-      }); // Entire small-camp population is procedural; the named chief exists only through chiefWalker().
+      });
     }
   }
 
@@ -707,7 +709,7 @@
       ['wander', Math.max(0, num(weights.wander, 0.24))],
       ['socialize', Math.max(0, num(weights.socialize, 0.16))],
       ['camp', Math.max(0, num(weights.camp, 0.08))],
-    ]; // Loose opportunity selection mirrors normal NPC free-time behavior instead of a patrol script.
+    ];
     const total = entries.reduce((sum, [, weight]) => sum + weight, 0) || 1;
     let roll = rand() * total, activity = 'wander';
     for (const [name, weight] of entries) { roll -= weight; if (roll <= 0) { activity = name; break; } }
@@ -732,7 +734,7 @@
   function sleepPointFor(hunter) {
     if (hunter.sleepDay === gameDay() && hunter.sleepPoint) return hunter.sleepPoint;
     const tents = tentCenters(hunter.camp);
-    const rng = seededRng(`${generationYear()}:${hunter.camp.id}:sleep:${gameDay()}:${hunter.index}`); // Night-stable, but rerolled every day and never permanently assigned.
+    const rng = seededRng(`${generationYear()}:${hunter.camp.id}:sleep:${gameDay()}:${hunter.index}`);
     const tent = tents.length ? tents[Math.floor(rng() * tents.length)] : hunter.camp.center;
     hunter.sleepDay = gameDay();
     hunter.sleepPoint = nearestOpenPoint(hunter.camp.zoneState, tent.col + (rng() - 0.5) * 0.5, tent.row + (rng() - 0.5) * 0.5);
@@ -762,7 +764,7 @@
   function hideEntity(hunter) {
     const entity = hunter?.entity;
     if (!entity) return;
-    const wasDetailed = entity.areaId === hunter.camp.zoneId && !!entity.avatarRef?.group?.visible; // Capture transform once when collapsing; repeated coarse ticks must not snap abstract movement backward.
+    const wasDetailed = entity.areaId === hunter.camp.zoneId && !!entity.avatarRef?.group?.visible;
     if (wasDetailed) { hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE; }
     entity.areaId = `${DORMANT_AREA_PREFIX}${hunter.camp.zoneId}`;
     if (entity.avatarRef?.group) entity.avatarRef.group.visible = false;
@@ -771,21 +773,6 @@
     if (entity._banditRangedToolHolder) entity._banditRangedToolHolder.visible = false;
     entity.vx = 0; entity.vy = 0;
   }
-  // hideEntity above only ever toggles visibility -- called every ~0.2s
-  // tick for every sleeping/off-chunk hunter, it must stay cheap and
-  // reversible so a player oscillating right at a chunk edge doesn't
-  // rebuild the same entity every tick. But left there forever, a fully
-  // materialized entity (real avatar mesh/geometry/textures, and a
-  // permanent slot in combatDeps.hostileObjects that every hostile update
-  // pass has to at least glance at) never actually goes away: every camp a
-  // player has ever wandered near over a session stays "abstract" in name
-  // only, silently accumulating live entities and GPU resources forever.
-  // This is what makes that collapse real: once a hunter has been hidden
-  // continuously for DORMANT_ENTITY_RELEASE_S, actually tear its entity
-  // down (teardownEntity disposes the mesh and splices it out of
-  // hostileObjects) rather than just hiding it -- materializeHunter already
-  // rebuilds on demand the next time this specific hunter shares the
-  // player's chunk again.
   function retireDormantEntity(hunter) {
     if (!hunter?.entity) return;
     hideEntity(hunter);
@@ -795,11 +782,6 @@
   function placeEntity(hunter) {
     const entity = hunter?.entity, camp = hunter?.camp;
     if (!entity || !camp || currentArea() !== camp.zoneId) return false;
-    // Several hunters commonly share one tent's jittered sleep point (see
-    // sleepPointFor), so without steering clear of camp-mates that already
-    // have a standing entity here, this deterministic search would put every
-    // one of them on the same tile the moment they all wake and materialize
-    // together -- see nearestOpenPoint's avoidPoints comment.
     const avoidPoints = [];
     for (const other of camp.hunters) {
       if (other === hunter || !other.entity || other.entity.areaId !== camp.zoneId || !other.entity.avatarRef?.group?.visible) continue;
@@ -839,7 +821,7 @@
         rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
       }, 'grunt', 0, hunter.x * combatDeps.TILE, hunter.y * combatDeps.TILE, {
         zoneId: camp.zoneId,
-        nameOverride: 'Porakaneki Hunter', // Appearance still rolls procedurally through BanditCombat's normal roster generator.
+        nameOverride: 'Porakaneki Hunter',
         defOverride: {
           label: 'Porakaneki Hunter',
           weaponKey: weapon.weaponKey,
@@ -869,17 +851,48 @@
   function makeNeutral(entity, hunter) {
     if (!entity || entity.health <= 0) return;
     entity._porakanekiAggroRangePx ??= num(entity.def?.aggroRangePx, combatDeps.TILE * 6);
-    if (entity.def) entity.def.aggroRangePx = 0;
-    entity.state = `porakaneki:${hunter.activity}`;
+    entity._porakanekiBaseMoveSpeed ??= num(entity.def?.moveSpeed, 118);
+    const neutralSpeed = num(cfg?.behavior?.travelSpeedTilesPerSecond, 1.05) * combatDeps.TILE;
+    if (entity.def) {
+      entity.def.aggroRangePx = 0;
+      entity.def.moveSpeed = neutralSpeed;
+    }
+
+    // The Porakaneki planner owns only WHAT the resident wants to do and WHERE
+    // its next target is. The ordinary hostile loop owns actual per-frame travel,
+    // collision, facing, portrait front/back selection, procedural feet and
+    // animation. Using its existing `return -> homeX/homeY` travel state gives us
+    // that renderer/locomotion path without letting its fallback wander AI fight
+    // the Porakaneki planner.
+    entity._porakanekiPlannerControlled = true;
+    entity._porakanekiActivity = hunter.activity;
+    if (hunter.target) {
+      entity.homeX = hunter.target.col * combatDeps.TILE;
+      entity.homeY = hunter.target.row * combatDeps.TILE;
+    } else {
+      entity.homeX = entity.x;
+      entity.homeY = entity.y;
+    }
+    entity.state = 'return';
     entity._banditAction = null;
     entity._rangedAction = null;
     entity._rangedMode = false;
-    entity.wanderTarget = null;
+    // If updateHostiles notices it has reached home before the next 5 Hz
+    // planner tick and momentarily changes `return` to `idle`, pin its fallback
+    // wander target to the current spot so it cannot choose a competing route.
+    entity.wanderTarget = { x: entity.x, y: entity.y };
+    entity.wanderT = 9999;
   }
   function makeHostile(entity) {
     if (!entity || entity.health <= 0) return;
     entity._porakanekiAggroRangePx ??= num(entity.def?.aggroRangePx, combatDeps.TILE * 6);
-    if (entity.def) entity.def.aggroRangePx = entity._porakanekiAggroRangePx;
+    if (entity.def) {
+      entity.def.aggroRangePx = entity._porakanekiAggroRangePx;
+      if (Number.isFinite(entity._porakanekiBaseMoveSpeed)) entity.def.moveSpeed = entity._porakanekiBaseMoveSpeed;
+    }
+    entity._porakanekiPlannerControlled = false;
+    entity.wanderTarget = null;
+    entity.wanderT = 0;
     entity.state = 'chase';
   }
   function campProvoked(camp) { return nowMs() < num(camp?.provokedUntilMs, 0); }
@@ -895,7 +908,7 @@
       const previous = Number.isFinite(hunter.lastHealth) ? hunter.lastHealth : num(entity.maxHealth, entity.health);
       const health = num(entity.health, 0);
       const close = Math.hypot(hunter.x - player.col, hunter.y - player.row) <= radius;
-      if (health < previous && close) camp.provokedUntilMs = Math.max(camp.provokedUntilMs, nowMs() + PROVOKE_SECONDS * 1000); // Only this camp joins immediate self-defense.
+      if (health < previous && close) camp.provokedUntilMs = Math.max(camp.provokedUntilMs, nowMs() + PROVOKE_SECONDS * 1000);
       if (previous > 0 && health <= 0 && !hunter.killCounted && close) {
         hunter.killCounted = true;
         adjustFavor(-Math.abs(num(cfg?.reputation?.killPenalty, -1)), `porakaneki_kill_${camp.id}_${hunter.index}`);
@@ -909,10 +922,11 @@
     if (hunter.greetingDay === gameDay() || favor() < num(cfg?.reputation?.greetingFavorThreshold, 1) || !sharesPlayerChunk(hunter)) return;
     const player = playerTilePosition();
     if (!player || Math.hypot(hunter.x - player.col, hunter.y - player.row) > num(cfg?.reputation?.greetingRadiusTiles, 3)) return;
-    hunter.greetingDay = gameDay();
     const text = chooseLine(cfg?.reputation?.greetingLines) || 'A Porakaneki hunter greets you.';
-    speakOverheadFromHunter(hunter, text, { tone: 'greeting' });
-    state.greetings += 1;
+    if (speakOverheadFromHunter(hunter, text, { tone: 'greeting' })) {
+      hunter.greetingDay = gameDay();
+      state.greetings += 1;
+    }
   }
   function updateDetailedHunter(hunter, dt) {
     const entity = hunter.entity;
@@ -920,21 +934,14 @@
     hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE;
     if (favor() <= num(cfg?.reputation?.attackOnSightFavor, -5) || campProvoked(hunter.camp)) { makeHostile(entity); return; }
 
-    makeNeutral(entity, hunter);
     hunter.decisionT -= dt;
     const reached = hunter.target && Math.hypot(hunter.target.col - hunter.x, hunter.target.row - hunter.y) < 0.75;
     if (!hunter.target || hunter.decisionT <= 0 || reached) {
       chooseHunterActivity(hunter);
       const min = num(cfg?.behavior?.decisionMinSeconds, 4), max = Math.max(min, num(cfg?.behavior?.decisionMaxSeconds, 11));
       hunter.decisionT = min + rand() * (max - min);
-      makeNeutral(entity, hunter);
     }
-    if (hunter.target) {
-      const tx = hunter.target.col * combatDeps.TILE, ty = hunter.target.row * combatDeps.TILE;
-      entity.facing = Math.atan2(ty - entity.y, tx - entity.x);
-      combatDeps.moveCreatureToward?.(entity, tx, ty, num(cfg?.behavior?.travelSpeedTilesPerSecond, 1.05) * combatDeps.TILE, dt);
-      hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE;
-    }
+    makeNeutral(entity, hunter);
     maybeHunterGreeting(hunter);
   }
   function placeEntityIfDormant(hunter) {
@@ -942,16 +949,6 @@
     if (entity && (entity.areaId !== hunter.camp.zoneId || !entity.avatarRef?.group?.visible)) placeEntity(hunter);
   }
 
-  // One hunter's tick body throwing (a bad target, a missing dependency, a
-  // stale reference after teardown) must not wedge every hunter after it:
-  // this is a plain for-of over camp.hunters, so an uncaught exception here
-  // would otherwise propagate out and skip the rest of this camp (and every
-  // later camp/zone in updateAllHunters' own loop) on every subsequent frame
-  // forever, since the same hunter is reached at the same point each time --
-  // freezing it exactly where it stood (facing whichever plane happened to
-  // be camera-toward at that instant) while the rest of the world keeps
-  // running. Caught and logged the same way materializeHunter's own async
-  // failures already are, so a single bad hunter degrades instead of wedging.
   function updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation) {
     if (hunter.entity?.health <= 0 || hunter.killCounted && hunter.entity?.health <= 0) return;
     if (sleeping) {
@@ -981,7 +978,7 @@
   function updateAllHunters(dt, coarseDt) {
     for (const zoneState of state.zones.values()) {
       for (const camp of activeCamps(zoneState)) {
-        try { updateCampHunters(camp, dt, coarseDt); } // Every map gets coarse life; only the player's chunk gets expensive simulation.
+        try { updateCampHunters(camp, dt, coarseDt); }
         catch (error) { window.__farmLog?.(`[porakaneki] camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
       }
     }
@@ -1018,9 +1015,12 @@
     initializeReputation();
     authorChiefBehavior();
     ensureCurrentCampMeshes();
+    // Start/promote nearby residents before attempting territory speech. Async
+    // portrait construction may still finish on a later tick, in which case the
+    // warning remains pending rather than being consumed as a toast.
+    updateAllHunters(step, coarseStep);
     updateTerritoryWarnings();
     maybeChiefGreeting();
-    updateAllHunters(step, coarseStep);
   }
 
   function installBanditCombat(api = window.BanditCombat) {
@@ -1065,23 +1065,42 @@
   }
 
   function campDebug(camp) {
+    const player = playerTilePosition();
     return {
       id: camp.id,
       kind: camp.kind,
       center: { col: Number(camp.center.col.toFixed(1)), row: Number(camp.center.row.toFixed(1)) },
       residents: camp.residentTarget,
       provoked: campProvoked(camp),
-      hunters: camp.hunters.map(hunter => ({
-        index: hunter.index,
-        weapon: hunter.weaponShape,
-        activity: hunter.activity,
-        x: Number(hunter.x.toFixed(1)), y: Number(hunter.y.toFixed(1)),
-        chunk: chunkOf(hunter.x, hunter.y),
-        fullSimulation: sharesPlayerChunk(hunter),
-        materialized: !!hunter.entity,
-        visible: !!hunter.entity?.avatarRef?.group?.visible,
-        health: hunter.entity ? hunter.entity.health : null,
-      })),
+      hunters: camp.hunters.map(hunter => {
+        const entity = hunter.entity;
+        const group = entity?.avatarRef?.group;
+        const simX = entity && combatDeps?.TILE ? entity.x / combatDeps.TILE : null;
+        const simY = entity && combatDeps?.TILE ? entity.y / combatDeps.TILE : null;
+        const renderX = Number.isFinite(Number(group?.position?.x)) ? Number(group.position.x) : null;
+        const renderY = Number.isFinite(Number(group?.position?.z)) ? Number(group.position.z) : null;
+        const renderDelta = simX != null && simY != null && renderX != null && renderY != null ? Math.hypot(renderX - simX, renderY - simY) : null;
+        const distance = player && camp.zoneId === currentArea() ? Math.hypot(hunter.x - player.col, hunter.y - player.row) : null;
+        return {
+          index: hunter.index,
+          weapon: hunter.weaponShape,
+          activity: hunter.activity,
+          x: Number(hunter.x.toFixed(1)), y: Number(hunter.y.toFixed(1)),
+          chunk: chunkOf(hunter.x, hunter.y),
+          distanceToPlayer: distance == null ? null : Number(distance.toFixed(2)),
+          lodRadius: detailedEntityActive(hunter) ? fullSimulationReleaseRadiusTiles() : fullSimulationRadiusTiles(),
+          fullSimulation: sharesPlayerChunk(hunter),
+          materialized: !!entity,
+          visible: !!group?.visible,
+          registered: !!entity && !!combatDeps?.hostileObjects?.includes?.(entity),
+          entityState: entity?.state || null,
+          plannerControlled: !!entity?._porakanekiPlannerControlled,
+          simPosition: simX == null ? null : { x: Number(simX.toFixed(2)), y: Number(simY.toFixed(2)) },
+          renderPosition: renderX == null ? null : { x: Number(renderX.toFixed(2)), y: Number(renderY.toFixed(2)) },
+          renderDelta: renderDelta == null ? null : Number(renderDelta.toFixed(3)),
+          health: entity ? entity.health : null,
+        };
+      }),
     };
   }
   function debugSnapshot() {
@@ -1112,6 +1131,9 @@
       favor: relation ? num(relation.favor, 0) : null,
       attackOnSight: !!relation && !!cfg && num(relation.favor, 0) <= num(cfg.reputation?.attackOnSightFavor, -5),
       chunkSizeTiles: chunkSizeTiles(),
+      fullSimulationRadiusTiles: fullSimulationRadiusTiles(),
+      fullSimulationReleaseRadiusTiles: fullSimulationReleaseRadiusTiles(),
+      playerTile: player ? { col: Number(player.col.toFixed(2)), row: Number(player.row.toFixed(2)) } : null,
       playerChunk: player ? chunkOf(player.col, player.row) : null,
       totalSmallCamps,
       totalActiveCamps: totalSmallCamps + (state.chiefZoneId && state.zones.get(state.chiefZoneId)?.chiefCamp ? 1 : 0),
@@ -1131,16 +1153,16 @@
     version: 3,
     update,
     ensureWorldCamps,
-    ensureCampStamp: ensureWorldCamps, // Backward-compatible debug/test alias from the earlier single-camp runtime.
+    ensureCampStamp: ensureWorldCamps,
     initializeReputation,
     favor,
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `Porakaneki camps: v3 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} chunk=${d.chunkSizeTiles} player=${d.playerChunk ? `${d.playerChunk.x},${d.playerChunk.y}` : '-'} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `Porakaneki camps: v3 season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ isSleepingHour, chunkOf, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, speakOverheadFromHunter, speakOverheadFromWalker }),
+    __test: Object.freeze({ isSleepingHour, chunkOf, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, speakOverheadFromHunter, speakOverheadFromWalker }),
   });
 
   watchNamespace('BanditCombat', installBanditCombat);
