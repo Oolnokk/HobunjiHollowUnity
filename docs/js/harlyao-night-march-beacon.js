@@ -42,10 +42,16 @@
   }
 
   function zoneDims(zoneId) {
+    // See harlyao-night-march-runtime.js's zoneDims: EXTERIOR_ZONES[zoneId]'s
+    // own cols/rows are a stale pre-procedural-generation placeholder, not
+    // the real ~200x200 generated terrain -- deps.zoneLayouts carries the
+    // actual live dimensions the march itself now computes chunks against,
+    // and the beacon has to agree or it points at the wrong-scale spot.
+    const live = deps?.zoneLayouts?.get?.(zoneId) || window.zoneLayouts?.get?.(zoneId) || null;
     const def = deps?.EXTERIOR_ZONES?.[zoneId] || window.EXTERIOR_ZONES?.[zoneId] || null;
     return {
-      cols: Math.max(1, Number(def?.cols) || FALLBACK_MAP_TILES),
-      rows: Math.max(1, Number(def?.rows) || FALLBACK_MAP_TILES),
+      cols: Math.max(1, Number(live?.cols) || Number(def?.cols) || FALLBACK_MAP_TILES),
+      rows: Math.max(1, Number(live?.rows) || Number(def?.rows) || FALLBACK_MAP_TILES),
     };
   }
 

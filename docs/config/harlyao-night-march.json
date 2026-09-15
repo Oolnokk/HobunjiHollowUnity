@@ -5,7 +5,7 @@
   "activeHours": {
     "start": 0,
     "end": 6,
-    "coarseStepHours": 1
+    "coarseStepHours": 0.4
   },
   "routesClockwise": [
     {
