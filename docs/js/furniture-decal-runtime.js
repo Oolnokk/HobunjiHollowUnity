@@ -11,20 +11,43 @@
 
   const DEG = Math.PI / 180;
   const TANKAN_SOURCE_TYPE = 'tankanText';
-  const SCRIPT_SRC = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Used to resolve the shared Tankan layout helper when this runtime is loaded from a nested preview.
+  const TANKAN_SETTINGS_VERSION = 2;
+  // Matches the normalized furniture-author baseline. Glyph scale 1.2 means a
+  // normalized glyph-size value of 1.0 is 20% larger than the old rendering.
+  const TANKAN_BASELINE = Object.freeze({
+    columnSpacingEm: -0.35,
+    glyphAdvanceEm: 0.6,
+    glyphScale: 1.2,
+    color: '#000000',
+    offsetU: 0,
+    offsetV: -0.055,
+    width: 0.96,
+    height: 0.96,
+    rotationDeg: 0,
+    normalOffset: 0.003,
+    opacity: 0.5,
+  });
+  const SCRIPT_SRC = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Resolves the shared Tankan helper from nested previews.
   const textureCache = new Map(); // Resolved decal source key -> shared THREE.Texture used by all furniture instances.
-  let tankanLayoutPromise = null; // Shared async helper load so text decals can appear even when this runtime was loaded directly instead of by the furniture editor.
+  let tankanLayoutPromise = null; // Shared async helper load so text decals can appear when this runtime is loaded directly.
+
+  const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
   function isTankanTextDecal(record) {
     return record?.sourceType === TANKAN_SOURCE_TYPE || (!!record?.tankanText && !record?.imageSource);
   }
 
+  function isNormalizedTankan(record) {
+    return isTankanTextDecal(record) && Number(record?.tankanSettingsVersion) >= TANKAN_SETTINGS_VERSION;
+  }
+
   function resolvedImageSource(record) {
-    const raw = String(record?.runtimeImageSource || record?.imageSource || record?.imageName || '').trim(); // Used as the browser texture URL after author-path normalization.
+    const raw = String(record?.runtimeImageSource || record?.imageSource || record?.imageName || '').trim(); // Browser texture URL after author-path normalization.
     if (!raw || /^(?:data|blob):/i.test(raw)) return raw;
-    const docsAsset = raw.lastIndexOf('docs/assets/'); // Used to turn author-relative ../../../docs/assets/... paths into game-relative assets/....
+    const docsAsset = raw.lastIndexOf('docs/assets/');
     if (docsAsset >= 0) return raw.slice(docsAsset + 5);
-    const cleaned = raw.replace(/^(?:\.\.\/)+/, '').replace(/^docs\//, ''); // Used for repository paths already near the docs root.
+    const cleaned = raw.replace(/^(?:\.\.\/)+/, '').replace(/^docs\//, '');
     if (cleaned.startsWith('textures/')) return `assets/${cleaned}`;
     return cleaned;
   }
@@ -51,7 +74,7 @@
         if (window.TankanScriptLayout?.installed) finish();
         return;
       }
-      const script = document.createElement('script'); // Used by text decals only; image decals remain completely independent of the Tankan helper.
+      const script = document.createElement('script'); // Text-decals only; image decals remain independent.
       try { script.src = SCRIPT_SRC ? new URL('tankan-script-layout.js', SCRIPT_SRC).href : 'js/tankan-script-layout.js'; }
       catch (_) { script.src = 'js/tankan-script-layout.js'; }
       script.async = false;
@@ -63,14 +86,32 @@
     return tankanLayoutPromise;
   }
 
+  function tankanTextureOptions(record) {
+    if (!isNormalizedTankan(record)) {
+      return {
+        columnSpacingEm: finiteOr(record?.tankanColumnSpacingEm, -0.55),
+        glyphAdvanceEm: finiteOr(record?.tankanGlyphAdvanceEm, 0.56),
+        glyphScale: 1,
+        color: String(record?.tankanColor || TANKAN_BASELINE.color),
+      };
+    }
+    return {
+      columnSpacingEm: clamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
+      glyphAdvanceEm: clamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
+      glyphScale: clamp(TANKAN_BASELINE.glyphScale * finiteOr(record.tankanGlyphSize, 1), 0.25, 2.5),
+      color: String(record.tankanColor || TANKAN_BASELINE.color),
+    };
+  }
+
   function tankanTextureKey(record) {
-    return `tankan:${record?.tankanText || ''}\u0000${record?.tankanColumnSpacingEm ?? ''}\u0000${record?.tankanGlyphAdvanceEm ?? ''}\u0000${record?.tankanColor || ''}`;
+    const options = tankanTextureOptions(record);
+    return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.color}`;
   }
 
   function tankanTextureFor(record) {
     const key = tankanTextureKey(record);
     if (textureCache.has(key)) return textureCache.get(key);
-    const canvas = document.createElement('canvas'); // Starts as one transparent pixel until the Tankan font/layout helper is ready.
+    const canvas = document.createElement('canvas'); // One transparent pixel until the exact Tankan face is ready.
     canvas.width = 1;
     canvas.height = 1;
     const texture = configureTexture(new THREE.CanvasTexture(canvas));
@@ -79,21 +120,17 @@
       if (!layout?.renderToCanvas) throw new Error('TankanScriptLayout unavailable');
       return Promise.resolve(layout.ensureFontLoaded?.()).then(() => layout);
     }).then(layout => {
-      const rendered = layout.renderToCanvas(canvas, record.tankanText, {
-        columnSpacingEm: record.tankanColumnSpacingEm,
-        glyphAdvanceEm: record.tankanGlyphAdvanceEm,
-        color: record.tankanColor || layout.defaults?.color || '#ffffff',
-      });
+      const rendered = layout.renderToCanvas(canvas, record.tankanText, tankanTextureOptions(record));
       texture.userData = { ...(texture.userData || {}), tankanLayout: rendered || null };
       texture.needsUpdate = true;
     }).catch(error => {
-      console.warn(`[furniture decal] failed to render Tankān text ${JSON.stringify(record?.tankanText || '')}`, error);
+      console.warn(`[furniture decal] failed to render Tankan text ${JSON.stringify(record?.tankanText || '')}`, error);
     });
     return texture;
   }
 
   function imageTextureFor(record) {
-    const source = resolvedImageSource(record); // Used as the cache key and TextureLoader URL.
+    const source = resolvedImageSource(record); // Cache key and TextureLoader URL.
     if (!source) return null;
     const key = `image:${source}`;
     if (textureCache.has(key)) return textureCache.get(key);
@@ -120,10 +157,10 @@
   }
 
   function matchingSurface(data, record) {
-    const surfaces = Array.isArray(data?.recognizedSurfaces) ? data.recognizedSurfaces : []; // Used to recover the exact authored face frame for this decal.
+    const surfaces = Array.isArray(data?.recognizedSurfaces) ? data.recognizedSurfaces : []; // Exact authored face frame for this decal.
     const direct = surfaces.find(surface => surface?.id === record?.surfaceId);
     if (direct) return direct;
-    const priorFaces = new Set(Array.isArray(record?.surfaceFaces) ? record.surfaceFaces : []); // Used when surface ids were regenerated but face membership stayed stable.
+    const priorFaces = new Set(Array.isArray(record?.surfaceFaces) ? record.surfaceFaces : []); // Recovers regenerated surface ids by face membership.
     let best = null;
     let bestScore = -Infinity;
     for (const surface of surfaces) {
@@ -136,32 +173,56 @@
     return best;
   }
 
+  function resolvedTransform(record) {
+    if (!isNormalizedTankan(record)) {
+      return {
+        offsetU: finiteOr(record?.offsetU, 0),
+        offsetV: finiteOr(record?.offsetV, 0),
+        width: Math.max(0.001, finiteOr(record?.width, 0.5)),
+        height: Math.max(0.001, finiteOr(record?.height, 0.5)),
+        rotationDeg: finiteOr(record?.rotationDeg, 0),
+        normalOffset: Math.max(0.0002, finiteOr(record?.normalOffset, 0.003)),
+        opacity: clamp(finiteOr(record?.opacity, 1), 0, 1),
+      };
+    }
+    return {
+      offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
+      offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
+      width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
+      height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
+      rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
+      normalOffset: Math.max(0.0002, TANKAN_BASELINE.normalOffset + finiteOr(record.normalOffset, 0)),
+      opacity: clamp(finiteOr(record.opacity, TANKAN_BASELINE.opacity), 0, 1),
+    };
+  }
+
   function addDecal(group, data, record) {
     if (!record || record.visible === false || !hasVisualSource(record)) return null;
-    const surface = matchingSurface(data, record); // Used for surface-local size, position, normal, and orientation.
-    const partMesh = surface ? group?.userData?.meshById?.get?.(surface.partId) : null; // Decal child follows this authored part's transforms and animations.
+    const surface = matchingSurface(data, record); // Surface-local size, position, normal, and orientation.
+    const partMesh = surface ? group?.userData?.meshById?.get?.(surface.partId) : null;
     if (!surface || !partMesh) return null;
 
-    const bounds = surface.bounds || {}; // Used to convert author fractional decal dimensions into local world units.
+    const bounds = surface.bounds || {};
     const spanU = Math.max(0.001, (Number(bounds.maxU) || 0) - (Number(bounds.minU) || 0));
     const spanV = Math.max(0.001, (Number(bounds.maxV) || 0) - (Number(bounds.minV) || 0));
-    const basisU = vector3(surface.basisU).normalize(); // Used as the decal plane's horizontal axis.
-    const basisV = vector3(surface.basisV).normalize(); // Used as the decal plane's vertical axis.
-    const normal = vector3(surface.localNormal).normalize(); // Used to lift the decal just off the furniture face.
-    const centroid = vector3(surface.localCentroid); // Used to recover the face plane offset from the part origin.
+    const basisU = vector3(surface.basisU).normalize();
+    const basisV = vector3(surface.basisV).normalize();
+    const normal = vector3(surface.localNormal).normalize();
+    const centroid = vector3(surface.localCentroid);
     const centerU = ((Number(bounds.minU) || 0) + (Number(bounds.maxU) || 0)) / 2;
     const centerV = ((Number(bounds.minV) || 0) + (Number(bounds.maxV) || 0)) / 2;
     const center = basisU.clone().multiplyScalar(centerU)
       .addScaledVector(basisV, centerV)
-      .addScaledVector(normal, centroid.dot(normal)); // Same recognized-surface frame used by the authoring tool.
+      .addScaledVector(normal, centroid.dot(normal));
+    const transform = resolvedTransform(record); // Converts normalized Tankan controls to renderer-space values.
 
-    const width = spanU * Math.max(0.001, Number(record.width) || 0.5); // Author width is a fraction of recognized face width.
-    const height = spanV * Math.max(0.001, Number(record.height) || 0.5); // Author height is a fraction of recognized face height.
+    const width = spanU * transform.width;
+    const height = spanV * transform.height;
     const material = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       map: textureFor(record),
       transparent: true,
-      opacity: Math.max(0, Math.min(1, Number(record.opacity ?? 1))),
+      opacity: transform.opacity,
       alphaTest: 0.001,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -169,7 +230,7 @@
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material); // Runtime decal visual attached directly to its authored part.
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
     mesh.name = record.name || 'Furniture Decal';
     mesh.userData = {
       furnitureDecal: true,
@@ -182,15 +243,15 @@
     mesh.receiveShadow = false;
     mesh.raycast = () => {};
 
-    const halfU = spanU / 2; // Used to interpret author offsetU in half-surface-span units.
-    const halfV = spanV / 2; // Used to interpret author offsetV in half-surface-span units.
+    const halfU = spanU / 2;
+    const halfV = spanV / 2;
     mesh.position.copy(center)
-      .addScaledVector(basisU, (Number(record.offsetU) || 0) * halfU)
-      .addScaledVector(basisV, (Number(record.offsetV) || 0) * halfV)
-      .addScaledVector(normal, Math.max(0.0002, Number(record.normalOffset) || 0.003));
-    const basis = new THREE.Matrix4().makeBasis(basisU, basisV, normal); // Used to align the plane exactly to the recognized furniture surface.
+      .addScaledVector(basisU, transform.offsetU * halfU)
+      .addScaledVector(basisV, transform.offsetV * halfV)
+      .addScaledVector(normal, transform.normalOffset);
+    const basis = new THREE.Matrix4().makeBasis(basisU, basisV, normal);
     mesh.quaternion.setFromRotationMatrix(basis);
-    mesh.rotateZ((Number(record.rotationDeg) || 0) * DEG);
+    mesh.rotateZ(transform.rotationDeg * DEG);
     partMesh.add(mesh);
     return mesh;
   }
@@ -209,7 +270,7 @@
     return group;
   }
 
-  const originalBuildGroup = authored.buildGroup.__furnitureDecalRuntimeOriginal || authored.buildGroup.bind(authored); // Preserved so the wrapper remains composable with other authored-furniture runtimes.
+  const originalBuildGroup = authored.buildGroup.__furnitureDecalRuntimeOriginal || authored.buildGroup.bind(authored); // Preserved so wrapper remains composable.
   function buildGroup(data, baseColor) {
     return addDecals(originalBuildGroup(data, baseColor), data);
   }
@@ -224,5 +285,7 @@
     textureCache,
     ensureTankanLayout,
     isTankanTextDecal,
+    tankanTextureOptions,
+    resolvedTransform,
   };
 })();
