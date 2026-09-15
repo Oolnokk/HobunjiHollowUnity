@@ -28,10 +28,13 @@ function basicDom() {
 
 async function main() {
   const loader = read('docs/js/local-save-folder.js');
+  const coordinatorIndex = loader.indexOf('save-coordinator.js');
+  const coreIndex = loader.indexOf('local-save-folder-core.js');
   const provenanceIndex = loader.indexOf('folder-save-device-provenance.js');
   const runtimeIndex = loader.indexOf('folder-save-runtime-flush.js');
   const quitIndex = loader.indexOf('folder-save-quit-guard.js');
   const legacyIndex = loader.indexOf('local-save-flow.js');
+  assert.ok(coordinatorIndex >= 0 && coreIndex > coordinatorIndex, 'durable save coordinator should load before external persistence transports');
   assert.ok(provenanceIndex >= 0 && runtimeIndex > provenanceIndex, 'runtime flush should load after folder provenance wrappers');
   assert.ok(quitIndex > runtimeIndex, 'quit guard should load after the runtime flush bridge');
   assert.ok(legacyIndex > quitIndex, 'quit guard must register before the legacy quit flow');
@@ -132,8 +135,8 @@ async function main() {
     console.log('OK  Resume provenance shows folder source and same/different-device status without naming devices');
   }
 
-  // 3) Guard ordering: Quit must commit live runtime state before it asks the
-  // folder layer to serialize localStorage, and only reload after both finish.
+  // 3) Guard ordering: Quit must capture live runtime state, make that snapshot
+  // durable locally, then mirror to the folder, then reload.
   {
     const source = read('docs/js/folder-save-quit-guard.js');
     const sequence = [];
@@ -167,13 +170,59 @@ async function main() {
         HobunjiRuntimeSave: {
           flushNow() { sequence.push('runtime'); return { ok: true, captured: true }; },
         },
+        HobunjiSaveCoordinator: {
+          async commitCurrent() { sequence.push('durable'); return { ok: true }; },
+        },
         addEventListener() {},
       },
     });
     vm.runInContext(source, context, { filename: 'folder-save-quit-guard.js' });
     await context.window.FolderSaveQuitGuard.guardedQuit(button);
-    assert.deepEqual(sequence, ['runtime', 'folder', 'reload'], 'Quit must save runtime → folder → reload, in that order');
-    console.log('OK  guarded Quit flushes live runtime before the primary folder and reload');
+    assert.deepEqual(sequence, ['runtime', 'durable', 'folder', 'reload'], 'Quit must save runtime → durable local → folder → reload, in that order');
+    console.log('OK  guarded Quit commits durable local state before the primary folder and reload');
+  }
+
+  // 4) A real durable-store failure must stop external overwrite/navigation, so
+  // the player can retry while the freshly-flushed localStorage state remains intact.
+  {
+    const source = read('docs/js/folder-save-quit-guard.js');
+    const sequence = [];
+    const alerts = [];
+    const button = { disabled: false, textContent: '🚪 Quit', dataset: {} };
+    const folderStatus = {
+      supported: true,
+      state: 'ready',
+      folderName: 'Hobunji Save',
+      autoSyncArmed: true,
+      lastError: null,
+      dataLossRisk: null,
+    };
+    const context = vm.createContext({
+      console,
+      confirm: () => true,
+      alert: message => alerts.push(message),
+      location: { reload() { sequence.push('reload'); } },
+      document: { addEventListener() {} },
+      window: {
+        LocalSaveFolder: {
+          isSupported: () => true,
+          getStatus: () => ({ ...folderStatus }),
+          async syncNow() { sequence.push('folder'); return { ...folderStatus }; },
+        },
+        HobunjiRuntimeSave: {
+          flushNow() { sequence.push('runtime'); return { ok: true, captured: true }; },
+        },
+        HobunjiSaveCoordinator: {
+          async commitCurrent() { sequence.push('durable-failed'); return { ok: false, error: 'IDB write failed' }; },
+        },
+        addEventListener() {},
+      },
+    });
+    vm.runInContext(source, context, { filename: 'folder-save-quit-guard.js' });
+    await context.window.FolderSaveQuitGuard.guardedQuit(button);
+    assert.deepEqual(sequence, ['runtime', 'durable-failed'], 'durable failure stops before folder overwrite or reload');
+    assert.match(alerts[0] || '', /durable local save storage/i, 'durable failure is visible without DevTools');
+    console.log('OK  durable-store failures stop folder overwrite and navigation');
   }
 
   console.log('\nFolder save runtime integrity checks passed.');
