@@ -87,7 +87,7 @@
     grass:  {},
     gravel: { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6, pitchMul: 1.2, volumeMul: 0.9 },
     hard:   { urls: HARD_FOOTSTEP_URLS, volumeMul: 1.0 },
-    snow:   { urls: SNOW_FOOTSTEP_URLS, volumeMul: 1.0 },
+    snow:   { urls: SNOW_FOOTSTEP_URLS, volumeMul: 3.0 },
     water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
   });
 
