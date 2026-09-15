@@ -13,7 +13,7 @@ const decalMeshes = new Map();
 const decalTextureCache = new Map();
 const TANKAN_SOURCE_TYPE = 'tankanText';
 const IMAGE_SOURCE_TYPE = 'image';
-const TANKAN_SETTINGS_VERSION = 2;
+const TANKAN_SETTINGS_VERSION = 3;
 const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
 const TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8;
 const TANKAN_EXTRA_COLUMN_WIDTH_FACTOR = 0.2;
@@ -23,7 +23,8 @@ const TANKAN_PADDING_Y_EM = 0.28;
 const TANKAN_BASELINE = Object.freeze({
   columnSpacingEm: -0.35,
   glyphAdvanceEm: 0.6,
-  glyphScale: 1.2,
+  glyphScaleX: 1.2,
+  glyphScaleY: 1.2,
   color: '#000000',
   offsetU: 0,
   offsetV: -0.055,
@@ -48,13 +49,15 @@ function isTankanTextDecal(record) {
 }
 
 function normalizedTankanRecord(record) {
-  const alreadyNormalized = Number(record?.tankanSettingsVersion) >= TANKAN_SETTINGS_VERSION;
-  if (alreadyNormalized) {
+  const settingsVersion = Number(record?.tankanSettingsVersion) || 0;
+  if (settingsVersion >= 2) {
+    const priorUniformSize = Math.max(0.001, finiteOr(record.tankanGlyphSize, 1)); // Version 2 stored one glyph-size value; migrate it to both axes.
     return {
       tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
       tankanColumnSpacing: finiteOr(record.tankanColumnSpacing, 0),
       tankanGlyphAdvance: Math.max(0.001, finiteOr(record.tankanGlyphAdvance, 1)),
-      tankanGlyphSize: Math.max(0.001, finiteOr(record.tankanGlyphSize, 1)),
+      tankanGlyphSizeX: Math.max(0.001, finiteOr(record.tankanGlyphSizeX, priorUniformSize)),
+      tankanGlyphSizeY: Math.max(0.001, finiteOr(record.tankanGlyphSizeY, priorUniformSize)),
       tankanColor: String(record.tankanColor || TANKAN_BASELINE.color),
       offsetU: finiteOr(record.offsetU, 0),
       offsetV: finiteOr(record.offsetV, 0),
@@ -77,7 +80,8 @@ function normalizedTankanRecord(record) {
     tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
     tankanColumnSpacing: legacyColumnSpacing - TANKAN_BASELINE.columnSpacingEm,
     tankanGlyphAdvance: legacyGlyphAdvance / TANKAN_BASELINE.glyphAdvanceEm,
-    tankanGlyphSize: 1,
+    tankanGlyphSizeX: 1,
+    tankanGlyphSizeY: 1,
     tankanColor: String(record?.tankanColor || TANKAN_BASELINE.color),
     offsetU: legacyOffsetU - TANKAN_BASELINE.offsetU,
     offsetV: legacyOffsetV - TANKAN_BASELINE.offsetV,
@@ -158,7 +162,8 @@ function tankanTextureOptions(record) {
   return {
     columnSpacingEm: dclamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
     glyphAdvanceEm: dclamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
-    glyphScale: dclamp(TANKAN_BASELINE.glyphScale * finiteOr(record.tankanGlyphSize, 1), 0.25, 2.5),
+    glyphScaleX: dclamp(TANKAN_BASELINE.glyphScaleX * finiteOr(record.tankanGlyphSizeX, 1), 0.25, 2.5),
+    glyphScaleY: dclamp(TANKAN_BASELINE.glyphScaleY * finiteOr(record.tankanGlyphSizeY, 1), 0.25, 2.5),
     paddingXEm: TANKAN_PADDING_X_EM,
     paddingYEm: TANKAN_PADDING_Y_EM,
     color: record.tankanColor || TANKAN_BASELINE.color,
@@ -202,7 +207,8 @@ function baselineTankanLayout() {
   cachedTankanBaselineLayout = measureTankanLayout(TANKAN_BASELINE_TEXT, {
     columnSpacingEm: TANKAN_BASELINE.columnSpacingEm,
     glyphAdvanceEm: TANKAN_BASELINE.glyphAdvanceEm,
-    glyphScale: TANKAN_BASELINE.glyphScale,
+    glyphScaleX: TANKAN_BASELINE.glyphScaleX,
+    glyphScaleY: TANKAN_BASELINE.glyphScaleY,
     paddingXEm: TANKAN_PADDING_X_EM,
     paddingYEm: TANKAN_PADDING_Y_EM,
     color: TANKAN_BASELINE.color,
@@ -266,7 +272,7 @@ function buildDecalTexturePair(image) {
 function decalTextureKey(record) {
   if (isTankanTextDecal(record)) {
     const options = tankanTextureOptions(record);
-    return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.paddingXEm}\u0000${options.paddingYEm}\u0000${options.color}`;
+    return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm}\u0000${options.paddingYEm}\u0000${options.color}`;
   }
   return `image:${record.imageSource || ''}`;
 }
@@ -479,7 +485,8 @@ function addTankanTextDecal() {
     tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
     tankanColumnSpacing: 0,
     tankanGlyphAdvance: 1,
-    tankanGlyphSize: 1,
+    tankanGlyphSizeX: 1,
+    tankanGlyphSizeY: 1,
     tankanColor: TANKAN_BASELINE.color,
     offsetU: 0,
     offsetV: 0,
@@ -584,7 +591,8 @@ function updateSelectedDecalFromUi({ recordHistory = true } = {}) {
     record.tankanText = dq('decalTankanText')?.value || '';
     record.tankanColumnSpacing = dclamp(dq('decalTankanColumnSpacing')?.value ?? 0, -0.6, 4.35);
     record.tankanGlyphAdvance = dclamp(dq('decalTankanGlyphAdvance')?.value ?? 1, 1 / 6, 20 / 3);
-    record.tankanGlyphSize = dclamp(dq('decalTankanGlyphSize')?.value ?? 1, 0.25, 2);
+    record.tankanGlyphSizeX = dclamp(dq('decalTankanGlyphSizeX')?.value ?? 1, 0.25, 2);
+    record.tankanGlyphSizeY = dclamp(dq('decalTankanGlyphSizeY')?.value ?? 1, 0.25, 2);
     record.tankanColor = dq('decalTankanColor')?.value || TANKAN_BASELINE.color;
   }
   buildDecalMesh(record);
@@ -624,7 +632,7 @@ function renderTankanDebug(record = selectedDecal()) {
   if (!record || !isTankanTextDecal(record)) { readout.textContent = ''; return; }
   const layout = measureTankanLayout(record.tankanText, tankanTextureOptions(record));
   const transform = resolvedDecalTransform(record);
-  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph size ${finiteOr(record.tankanGlyphSize, 1).toFixed(2)}× · auto block ${transform.width.toFixed(2)}×${transform.height.toFixed(2)} · texture ${layout.widthPx}×${layout.heightPx}`;
+  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph X ${finiteOr(record.tankanGlyphSizeX, 1).toFixed(2)}× · glyph Y ${finiteOr(record.tankanGlyphSizeY, 1).toFixed(2)}× · auto block ${transform.width.toFixed(2)}×${transform.height.toFixed(2)} · texture ${layout.widthPx}×${layout.heightPx}`;
 }
 
 function renderDecalEditor() {
@@ -648,7 +656,8 @@ function renderDecalEditor() {
     dq('decalTankanText').value = record.tankanText;
     dq('decalTankanColumnSpacing').value = record.tankanColumnSpacing;
     dq('decalTankanGlyphAdvance').value = record.tankanGlyphAdvance;
-    dq('decalTankanGlyphSize').value = record.tankanGlyphSize;
+    dq('decalTankanGlyphSizeX').value = record.tankanGlyphSizeX;
+    dq('decalTankanGlyphSizeY').value = record.tankanGlyphSizeY;
     dq('decalTankanColor').value = record.tankanColor;
   }
   const label = dq('decalSurfaceReadout');
@@ -680,7 +689,7 @@ function installDecalUi() {
       <div id="decalTankanFields" class="hidden">
         <label>Tankan-script text</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
         <div class="g2"><div><label>Word-column spacing</label><input id="decalTankanColumnSpacing" type="number" min="-0.6" max="4.35" step="0.05"></div><div><label>Glyph advance</label><input id="decalTankanGlyphAdvance" type="number" min="0.1667" max="6.6667" step="0.05"></div></div>
-        <div class="g2"><div><label>Glyph size</label><input id="decalTankanGlyphSize" type="number" min="0.25" max="2" step="0.05"></div><div><label>Text color</label><input id="decalTankanColor" type="color" value="#000000"></div></div>
+        <div class="g3"><div><label>Glyph size X</label><input id="decalTankanGlyphSizeX" type="number" min="0.25" max="2" step="0.05"></div><div><label>Glyph size Y</label><input id="decalTankanGlyphSizeY" type="number" min="0.25" max="2" step="0.05"></div><div><label>Text color</label><input id="decalTankanColor" type="color" value="#000000"></div></div>
         <div id="decalTankanReadout" class="readout muted" style="margin-top:6px"></div>
       </div>
       <div class="g2"><div><label>U offset</label><input id="decalOffsetU" type="number" step="0.02"></div><div><label>V offset</label><input id="decalOffsetV" type="number" step="0.02"></div></div>
@@ -698,7 +707,7 @@ function installDecalUi() {
     const file = event.target?.files?.[0];
     if (file && decalFileTargetSurfaceId) addDecalFromFile(file, decalFileTargetSurfaceId);
   });
-  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSize','decalTankanColor']) {
+  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSizeX','decalTankanGlyphSizeY','decalTankanColor']) {
     dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
   }
   dq('decalTankanText')?.addEventListener('input', () => {
@@ -790,5 +799,5 @@ updateStats = function updateStatsWithDecals(...args) {
 
 installDecalUi();
 rebuildDecals({ prune: false });
-log?.('Furniture decal authoring ready. Latest change: Tankan text auto-sizes from its layout, preserving glyph thickness across word-column counts.');
+log?.('Furniture decal authoring ready. Latest change: Tankan glyph size now has independent X/Y controls without changing glyph centers, advance, or column spacing.');
 })();
