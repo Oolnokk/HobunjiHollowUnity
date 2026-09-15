@@ -1,5 +1,14 @@
 // Procedural Animation Editor: gameplay/Attack Editor free-hand idle parity.
-// Owns only un-authored generated hands; explicit arm animation always wins.
+//
+// IMPORTANT COORDINATE CONTRACT
+// -----------------------------
+// Attachment-rig shoulder/posterior coordinates live in the character's
+// floor-relative visual parent, exactly like Animation Author's Full Character
+// Scale workspace. The procedural editor's generated hand wrappers, however,
+// are descendants of the lifted portrait model. Canonical targets therefore
+// MUST be transformed from character-floor-parent space into the hand wrapper's
+// actual parent space. Treating floor coordinates as portrait-local adds the
+// portrait's +height/2 lift a second time and visually pins hands to shoulders.
 (function (global) {
   'use strict';
 
@@ -18,6 +27,7 @@
   const npcLookupByRevision = new Map();
   const generationBridgeByModel = new WeakMap();
   const patchedHandRoots = new WeakSet();
+
   let generationCorrectionCount = 0;
   let lastGenerationCorrection = null;
   let activeScene = null;
@@ -192,7 +202,8 @@
   function npcLookupStatus(model) {
     const revision = npcRevision(model);
     const state = npcLookupByRevision.get(revision);
-    return state ? { revision, state: state.state, url: state.url, count: state.count || 0, error: state.error || null } : { revision, state: 'idle', url: npcDatabaseUrl(model), count: 0, error: null };
+    return state ? { revision, state: state.state, url: state.url, count: state.count || 0, error: state.error || null }
+      : { revision, state: 'idle', url: npcDatabaseUrl(model), count: 0, error: null };
   }
 
   function ensureNpcIdentityLookup(model) {
@@ -256,14 +267,71 @@
     return found;
   }
 
-  function modelLocalHandPosition(model, hand) {
-    if (!model || !hand) return null;
-    if (hand.parent === model) return hand.position?.clone?.() || null;
-    const Vector3 = model.position?.constructor;
-    if (!Vector3 || !hand.getWorldPosition || !model.worldToLocal) return null;
-    model.updateMatrixWorld?.(true);
+  function vectorJson(value) {
+    return value ? { x: Number(value.x) || 0, y: Number(value.y) || 0, z: Number(value.z) || 0 } : null;
+  }
+
+  function pointCtor(model) {
+    return model?.position?.constructor || null;
+  }
+
+  // Same parent contract used by Full Character Scale: hands/feet/portrait are
+  // interpreted around a floor-relative visual root, then that root may itself
+  // receive whole-character X/Y scale. Never rewrite local rig coordinates for
+  // the full-character scale; let parent transforms carry them together.
+  function floorParentFor(model) {
+    const explicit = model?.userData?.proceduralHandParent;
+    if (explicit?.isObject3D) return explicit;
+    for (let node = model?.parent; node; node = node.parent) {
+      const state = node.userData?.hobunjiCharacterRigScaleState;
+      if (state?.groundRelative && state?.coordinateSpace === 'character-floor-parent') return node;
+      // The procedural editor's portrait is normally a direct child of its
+      // locomotion/floor root. Stop there rather than climbing into Scene.
+      if (node === model.parent) return node;
+    }
+    return model?.parent || model || null;
+  }
+
+  function transformPoint(source, target, point, model) {
+    const Vector3 = pointCtor(model);
+    if (!Vector3 || !source || !target) return null;
+    const value = new Vector3(Number(point?.x) || 0, Number(point?.y) || 0, Number(point?.z) || 0);
+    if (source === target) return value;
+    if (!source.localToWorld || !target.worldToLocal) return null;
+    source.updateWorldMatrix?.(true, false);
+    source.updateMatrixWorld?.(true);
+    target.updateWorldMatrix?.(true, false);
+    target.updateMatrixWorld?.(true);
+    source.localToWorld(value);
+    target.worldToLocal(value);
+    return value;
+  }
+
+  function pointWorld(source, point, model) {
+    const Vector3 = pointCtor(model);
+    if (!Vector3 || !source?.localToWorld) return null;
+    const value = new Vector3(Number(point?.x) || 0, Number(point?.y) || 0, Number(point?.z) || 0);
+    source.updateWorldMatrix?.(true, false);
+    source.updateMatrixWorld?.(true);
+    return source.localToWorld(value);
+  }
+
+  function worldPointTo(source, worldPoint, model) {
+    const Vector3 = pointCtor(model);
+    if (!Vector3 || !source?.worldToLocal || !worldPoint) return null;
+    const value = new Vector3(Number(worldPoint.x) || 0, Number(worldPoint.y) || 0, Number(worldPoint.z) || 0);
+    source.updateWorldMatrix?.(true, false);
+    source.updateMatrixWorld?.(true);
+    return source.worldToLocal(value);
+  }
+
+  function handPositionInSpace(hand, space, model) {
+    const Vector3 = pointCtor(model);
+    if (!Vector3 || !hand || !space || !hand.getWorldPosition) return null;
+    hand.updateWorldMatrix?.(true, false);
     hand.updateMatrixWorld?.(true);
-    return model.worldToLocal(hand.getWorldPosition(new Vector3()));
+    const world = hand.getWorldPosition(new Vector3());
+    return worldPointTo(space, world, model);
   }
 
   function positionDistanceSquared(a, b) {
@@ -272,41 +340,6 @@
     const dy = (Number(a.y) || 0) - (Number(b.y) || 0);
     const dz = (Number(a.z) || 0) - (Number(b.z) || 0);
     return dx * dx + dy * dy + dz * dz;
-  }
-
-  function profileFromBrokenShoulderDefault(model, modelHeight) {
-    const leftPosition = modelLocalHandPosition(model, handFor(model, 'left'));
-    const rightPosition = modelLocalHandPosition(model, handFor(model, 'right'));
-    if (!leftPosition || !rightPosition) return null;
-    let best = null;
-    for (const profile of uniqueCharacterProfiles()) {
-      const scale = previewShoulderScale(model, profile);
-      const left = scaledShoulder(profile, 'left', scale);
-      const right = scaledShoulder(profile, 'right', scale);
-      if (!left || !right) continue;
-      const score = positionDistanceSquared(leftPosition, left) + positionDistanceSquared(rightPosition, right);
-      if (!best || score < best.score) best = { profile, score };
-    }
-    const tolerance = Math.max(0.0004, modelHeight * DEFAULT_REACQUIRE_FRACTION);
-    return best && best.score <= tolerance * tolerance * 2 ? best.profile : null;
-  }
-
-  function resolveProfile(model, modelHeight) {
-    const identity = identityForModel(model);
-    const directProfile = profileForIdentity(identity);
-    if (directProfile) {
-      inferredProfileCache.set(model, { profile: directProfile, identity });
-      return { profile: directProfile, identity };
-    }
-    const cached = inferredProfileCache.get(model);
-    if (cached?.profile) return { profile: cached.profile, identity: { ...cached.identity, source: `${cached.identity?.source || 'inferred'}-cache` } };
-    const inferred = profileFromBrokenShoulderDefault(model, modelHeight);
-    if (inferred) {
-      const inferredIdentity = { species: inferred.species, gender: inferred.gender, source: 'shoulder-position-match' };
-      inferredProfileCache.set(model, { profile: inferred, identity: inferredIdentity });
-      return { profile: inferred, identity: inferredIdentity };
-    }
-    return { profile: null, identity };
   }
 
   function previewModelHeight(model) {
@@ -321,16 +354,23 @@
     return Math.max(0.05, planeHeight || DEFAULT_RUNTIME_WIDTH);
   }
 
-  function previewShoulderScale(model, profile) {
+  // This is only the baked avatar-size ratio (e.g. a half-sized child portrait),
+  // not Full Character Scale. CharacterRigScale lives on the floor parent and is
+  // intentionally left to the transform hierarchy, matching that tool's contract.
+  function bakedAvatarCoordinateScale(model, profile) {
     const currentWidth = Number(model?.userData?.portraitModelWidth) || Number(model?.userData?.gameWorldModelBaseWidth) || DEFAULT_RUNTIME_WIDTH;
     const authoredWidth = Number(profile?.handShoulderRule?.runtimeBaseWidth) || DEFAULT_RUNTIME_WIDTH;
     return authoredWidth > 0 ? currentWidth / authoredWidth : 1;
   }
 
-  function scaledShoulder(profile, side, scale) {
+  function scaledShoulderFloor(profile, side, bakedScale) {
     const raw = profile?.anchors?.[side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder']?.position;
     if (!raw) return null;
-    return { x: (Number(raw.x) || 0) * scale, y: (Number(raw.y) || 0) * scale, z: (Number(raw.z) || 0) * scale };
+    return {
+      x: (Number(raw.x) || 0) * bakedScale,
+      y: (Number(raw.y) || 0) * bakedScale,
+      z: (Number(raw.z) || 0) * bakedScale,
+    };
   }
 
   function posteriorY(profile, modelHeight, handAttachY) {
@@ -345,12 +385,15 @@
 
   function idleFallbackOffset(side, modelHeight, nowMs) {
     const phase = nowMs * FALLBACK_IDLE_PHASE_RATE + (side === 'right' ? 0.28 : 0);
-    return { y: modelHeight * 0.0045 * Math.sin(phase), z: modelHeight * 0.003 * Math.cos(phase) };
+    return {
+      y: modelHeight * 0.0045 * Math.sin(phase),
+      z: modelHeight * 0.003 * Math.cos(phase),
+    };
   }
 
-  function canonicalIdleTarget(model, profile, side, modelHeight, nowMs) {
-    const shoulderScale = previewShoulderScale(model, profile);
-    const shoulder = scaledShoulder(profile, side, shoulderScale);
+  function canonicalFloorTarget(model, profile, side, modelHeight, nowMs) {
+    const bakedScale = bakedAvatarCoordinateScale(model, profile);
+    const shoulder = scaledShoulderFloor(profile, side, bakedScale);
     if (!shoulder) return null;
     const armLengthPercent = Number(profile?.anatomy?.armLengthHeightPercentOffset);
     const armLengthY = Number.isFinite(armLengthPercent) ? -modelHeight * armLengthPercent / 100 : 0;
@@ -360,9 +403,10 @@
       x: shoulder.x,
       y: posterior + armLengthY + fallback.y,
       z: fallback.z,
+      coordinateSpace: 'character-floor-parent',
       shoulder,
       rawShoulder: profile?.anchors?.[side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder']?.position || null,
-      shoulderScale,
+      bakedAvatarCoordinateScale: bakedScale,
       posteriorY: posterior,
       armLengthPercent: Number.isFinite(armLengthPercent) ? armLengthPercent : 0,
       armLengthY,
@@ -370,33 +414,33 @@
     };
   }
 
-  function gameplayEditorIdleTarget(model, side) {
+  // Generated wrappers are initially authored in PORTRAIT-MODEL local space.
+  // This is only an acquisition/default test and must not be mixed with the
+  // canonical floor-relative attachment-rig target above.
+  function gameplayModelIdleTarget(model, side) {
     const x = Number(model?.userData?.handAttachX);
     const y = Number(model?.userData?.handAttachY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    // Matches docs/js/procedural-hand-attachments.js exactly: left=-handAttachX, right=+handAttachX.
     return { x: side === 'left' ? -x : x, y, z: 0 };
   }
 
-  function legacyReversedEditorIdleTarget(model, side) {
+  function legacyReversedModelIdleTarget(model, side) {
     const x = Number(model?.userData?.handAttachX);
     const y = Number(model?.userData?.handAttachY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    // Compatibility only for older procedural-editor builds that created the wrappers on the opposite sides.
     return { x: side === 'left' ? x : -x, y, z: 0 };
   }
 
   function positionNear(position, target, epsilon) {
-    return !!(position && target && Math.abs(position.x - target.x) <= epsilon && Math.abs(position.y - target.y) <= epsilon && Math.abs(position.z - target.z) <= epsilon);
-  }
-
-  function vectorJson(value) {
-    return value ? { x: Number(value.x) || 0, y: Number(value.y) || 0, z: Number(value.z) || 0 } : null;
+    return !!(position && target
+      && Math.abs(position.x - target.x) <= epsilon
+      && Math.abs(position.y - target.y) <= epsilon
+      && Math.abs(position.z - target.z) <= epsilon);
   }
 
   function normalizeGeneratedHandWrapper(model, hand, side) {
-    const gameplayIdle = gameplayEditorIdleTarget(model, side);
-    const legacyIdle = legacyReversedEditorIdleTarget(model, side);
+    const gameplayIdle = gameplayModelIdleTarget(model, side);
+    const legacyIdle = legacyReversedModelIdleTarget(model, side);
     if (!gameplayIdle || !legacyIdle || !hand?.position) return false;
     const modelHeight = previewModelHeight(model);
     const epsilon = Math.max(0.00025, modelHeight * DEFAULT_REACQUIRE_FRACTION);
@@ -483,21 +527,70 @@
     };
   }
 
-  function toHandParentLocal(model, hand, point) {
-    const Vector3 = model?.position?.constructor;
-    if (!Vector3 || !hand?.parent) return null;
-    const local = new Vector3(Number(point?.x) || 0, Number(point?.y) || 0, Number(point?.z) || 0);
-    if (hand.parent === model) return local;
-    if (!model.localToWorld || !hand.parent.worldToLocal) return null;
-    model.updateMatrixWorld?.(true);
-    hand.parent.updateMatrixWorld?.(true);
-    return hand.parent.worldToLocal(model.localToWorld(local));
+  function modelIdleInHandParent(model, hand, side, legacy = false) {
+    const source = legacy ? legacyReversedModelIdleTarget(model, side) : gameplayModelIdleTarget(model, side);
+    return source ? transformPoint(model, hand?.parent, source, model) : null;
   }
 
-  function handSummary(model, side) {
-    const hand = handFor(model, side);
-    if (!hand) return { side, available: false };
-    return { side, available: true, name: hand.name || null, parent: hand.parent?.name || hand.parent?.type || null, localPosition: vectorJson(hand.position), modelLocalPosition: vectorJson(modelLocalHandPosition(model, hand)) };
+  function floorTargetInHandParent(model, hand, floorPoint) {
+    const floorParent = floorParentFor(model);
+    return floorParent ? transformPoint(floorParent, hand?.parent, floorPoint, model) : null;
+  }
+
+  function floorSpaceSummary(model) {
+    const floorParent = floorParentFor(model);
+    const origin = floorParent ? transformPoint(model, floorParent, { x: 0, y: 0, z: 0 }, model) : null;
+    const scaleState = floorParent?.userData?.hobunjiCharacterRigScaleState || null;
+    return {
+      coordinateSpace: 'character-floor-parent',
+      floorParent: floorParent?.name || floorParent?.type || null,
+      portraitOriginInFloor: vectorJson(origin),
+      portraitLiftY: origin ? Number(origin.y) || 0 : Number(model?.position?.y) || 0,
+      fullCharacterScaleState: scaleState ? {
+        factor: scaleState.factor || null,
+        groundRelative: !!scaleState.groundRelative,
+        coordinateSpace: scaleState.coordinateSpace || null,
+      } : null,
+      contract: 'Full Character Scale: local hand/shoulder/posterior coordinates remain floor-relative; parent transform owns whole-character scale.',
+    };
+  }
+
+  function profileFromBrokenShoulderDefault(model, modelHeight) {
+    const floorParent = floorParentFor(model);
+    const left = handFor(model, 'left');
+    const right = handFor(model, 'right');
+    const leftPosition = floorParent ? handPositionInSpace(left, floorParent, model) : null;
+    const rightPosition = floorParent ? handPositionInSpace(right, floorParent, model) : null;
+    if (!leftPosition || !rightPosition) return null;
+    let best = null;
+    for (const profile of uniqueCharacterProfiles()) {
+      const scale = bakedAvatarCoordinateScale(model, profile);
+      const leftShoulder = scaledShoulderFloor(profile, 'left', scale);
+      const rightShoulder = scaledShoulderFloor(profile, 'right', scale);
+      if (!leftShoulder || !rightShoulder) continue;
+      const score = positionDistanceSquared(leftPosition, leftShoulder) + positionDistanceSquared(rightPosition, rightShoulder);
+      if (!best || score < best.score) best = { profile, score };
+    }
+    const tolerance = Math.max(0.0004, modelHeight * DEFAULT_REACQUIRE_FRACTION);
+    return best && best.score <= tolerance * tolerance * 2 ? best.profile : null;
+  }
+
+  function resolveProfile(model, modelHeight) {
+    const identity = identityForModel(model);
+    const directProfile = profileForIdentity(identity);
+    if (directProfile) {
+      inferredProfileCache.set(model, { profile: directProfile, identity });
+      return { profile: directProfile, identity };
+    }
+    const cached = inferredProfileCache.get(model);
+    if (cached?.profile) return { profile: cached.profile, identity: { ...cached.identity, source: `${cached.identity?.source || 'inferred'}-cache` } };
+    const inferred = profileFromBrokenShoulderDefault(model, modelHeight);
+    if (inferred) {
+      const inferredIdentity = { species: inferred.species, gender: inferred.gender, source: 'shoulder-position-match' };
+      inferredProfileCache.set(model, { profile: inferred, identity: inferredIdentity });
+      return { profile: inferred, identity: inferredIdentity };
+    }
+    return { profile: null, identity };
   }
 
   function metadataSummary(value) {
@@ -505,6 +598,23 @@
     if (typeof value !== 'object') return { type: typeof value, value: String(value).slice(0, 160) };
     const identity = identityFromObject(value, 'diagnostic');
     return { type: Array.isArray(value) ? 'array' : 'object', keys: Object.keys(value).slice(0, 24), identity: identity ? { species: identity.species, gender: identity.gender } : null };
+  }
+
+  function handSummary(model, side) {
+    const hand = handFor(model, side);
+    if (!hand) return { side, available: false };
+    const floorParent = floorParentFor(model);
+    const Vector3 = pointCtor(model);
+    const world = Vector3 && hand.getWorldPosition ? hand.getWorldPosition(new Vector3()) : null;
+    return {
+      side,
+      available: true,
+      name: hand.name || null,
+      parent: hand.parent?.name || hand.parent?.type || null,
+      handParentLocal: vectorJson(hand.position),
+      floorLocal: floorParent ? vectorJson(handPositionInSpace(hand, floorParent, model)) : null,
+      world: vectorJson(world),
+    };
   }
 
   function ownershipFor(hand) {
@@ -516,14 +626,15 @@
   function syncSide(model, profile, side, modelHeight, nowMs, forceReacquire) {
     const hand = handFor(model, side);
     if (!hand) return { side, available: false, owns: false, reason: 'hand-not-built-yet' };
-    const targetInfo = canonicalIdleTarget(model, profile, side, modelHeight, nowMs);
-    if (!targetInfo) return { side, available: true, owns: false, reason: 'missing-shoulder' };
-    const target = toHandParentLocal(model, hand, targetInfo);
-    const shoulder = toHandParentLocal(model, hand, targetInfo.shoulder);
-    const gameplayInfo = gameplayEditorIdleTarget(model, side);
-    const legacyInfo = legacyReversedEditorIdleTarget(model, side);
-    const gameplayIdle = gameplayInfo ? toHandParentLocal(model, hand, gameplayInfo) : null;
-    const legacyIdle = legacyInfo ? toHandParentLocal(model, hand, legacyInfo) : null;
+    const floorParent = floorParentFor(model);
+    if (!floorParent) return { side, available: true, owns: false, reason: 'floor-parent-missing' };
+
+    const targetFloor = canonicalFloorTarget(model, profile, side, modelHeight, nowMs);
+    if (!targetFloor) return { side, available: true, owns: false, reason: 'missing-shoulder' };
+    const target = floorTargetInHandParent(model, hand, targetFloor);
+    const shoulder = floorTargetInHandParent(model, hand, targetFloor.shoulder);
+    const gameplayIdle = modelIdleInHandParent(model, hand, side, false);
+    const legacyIdle = modelIdleInHandParent(model, hand, side, true);
     if (!target || !shoulder) return { side, available: true, owns: false, reason: 'missing-three-bridge' };
 
     const ownership = ownershipFor(hand);
@@ -536,13 +647,40 @@
     if (forceReacquire || atShoulderDefault || atGameplayIdleDefault || atLegacyIdleDefault) ownership.owns = true;
     else if (ownership.owns && !stillOurWrite) ownership.owns = false;
 
+    const Vector3 = pointCtor(model);
+    const currentWorld = Vector3 && hand.getWorldPosition ? hand.getWorldPosition(new Vector3()) : null;
+    const currentFloor = currentWorld ? worldPointTo(floorParent, currentWorld, model) : null;
+    const targetWorld = pointWorld(floorParent, targetFloor, model);
+    const shoulderWorld = pointWorld(floorParent, targetFloor.shoulder, model);
     const base = {
-      side, available: true, owns: ownership.owns, current: vectorJson(hand.position), handName: hand.name || null,
-      handParent: hand.parent?.name || hand.parent?.type || null, shoulder: vectorJson(shoulder), rawShoulder: vectorJson(targetInfo.rawShoulder),
-      shoulderScale: targetInfo.shoulderScale, gameplayIdle: vectorJson(gameplayIdle), legacyReversedIdle: vectorJson(legacyIdle), target: vectorJson(target),
-      atShoulderDefault, atGameplayIdleDefault, atLegacyIdleDefault, stillOurWrite,
-      posteriorY: targetInfo.posteriorY, armLengthPercent: targetInfo.armLengthPercent, armLengthY: targetInfo.armLengthY,
-      idleOffset: { ...targetInfo.fallback },
+      side,
+      available: true,
+      owns: ownership.owns,
+      handName: hand.name || null,
+      handParent: hand.parent?.name || hand.parent?.type || null,
+      currentHandParentLocal: vectorJson(hand.position),
+      currentFloorLocal: vectorJson(currentFloor),
+      currentWorld: vectorJson(currentWorld),
+      shoulderFloorLocal: vectorJson(targetFloor.shoulder),
+      shoulderHandParentLocal: vectorJson(shoulder),
+      shoulderWorld: vectorJson(shoulderWorld),
+      rawShoulder: vectorJson(targetFloor.rawShoulder),
+      targetFloorLocal: vectorJson(targetFloor),
+      targetHandParentLocal: vectorJson(target),
+      targetWorld: vectorJson(targetWorld),
+      verticalArmDropFloor: Number(targetFloor.shoulder.y) - Number(targetFloor.y),
+      bakedAvatarCoordinateScale: targetFloor.bakedAvatarCoordinateScale,
+      gameplayIdleHandParentLocal: vectorJson(gameplayIdle),
+      legacyReversedIdleHandParentLocal: vectorJson(legacyIdle),
+      atShoulderDefault,
+      atGameplayIdleDefault,
+      atLegacyIdleDefault,
+      stillOurWrite,
+      posteriorY: targetFloor.posteriorY,
+      armLengthPercent: targetFloor.armLengthPercent,
+      armLengthY: targetFloor.armLengthY,
+      idleOffset: { ...targetFloor.fallback },
+      coordinateSpace: 'character-floor-parent -> actual-hand-parent',
     };
     if (!ownership.owns) return { ...base, reason: 'explicit-animation-owner' };
 
@@ -550,7 +688,11 @@
     hand.updateMatrix?.();
     hand.updateMatrixWorld?.(true);
     ownership.lastWritten = target.clone();
-    const reason = atGameplayIdleDefault ? 'claimed-gameplay-idle' : atLegacyIdleDefault ? 'claimed-legacy-reversed-idle' : atShoulderDefault ? 'claimed-shoulder-default' : forceReacquire ? 'reacquired-after-dance' : 'canonical-idle';
+    const reason = atGameplayIdleDefault ? 'claimed-gameplay-idle'
+      : atLegacyIdleDefault ? 'claimed-legacy-reversed-idle'
+      : atShoulderDefault ? 'claimed-shoulder-default'
+      : forceReacquire ? 'reacquired-after-dance'
+      : 'canonical-idle';
     return { ...base, owns: true, reason, position: vectorJson(target) };
   }
 
@@ -561,6 +703,7 @@
       repositoryCommit: model?.userData?.repositoryCommit || null,
       npcIdentityLookup: npcLookupStatus(model),
       generationBridge: generationBridgeStatus(model),
+      floorSpace: floorSpaceSummary(model),
       modelHeight,
       modelWidth: Number(model?.userData?.portraitModelWidth) || null,
       modelScale: vectorJson(model?.scale),
@@ -573,7 +716,7 @@
       left: handSummary(model, 'left'),
       right: handSummary(model, 'right'),
       profileCount: uniqueCharacterProfiles().length,
-      hint: 'Identity priority: character rig/avatar metadata -> NPC database by npcId at repositoryCommit -> portrait asset URL -> shoulder-position fallback.',
+      hint: 'Canonical shoulder/posterior coordinates are character-floor-parent local, matching Full Character Scale; generated wrappers are portrait descendants and require an explicit space conversion.',
     };
   }
 
@@ -585,22 +728,24 @@
       profile: `${profile.species}::${profile.gender}`,
       identitySource: resolved.identity?.source || 'profile',
       identityEvidence: resolved.identity?.evidence || null,
+      floorSpace: floorSpaceSummary(model),
       modelHeight,
       modelWidth: Number(model?.userData?.portraitModelWidth) || null,
       modelScale: vectorJson(model.scale),
       handAttachX: Number(model.userData?.handAttachX),
       handAttachY: Number(model.userData?.handAttachY),
       posteriorY: posteriorY(profile, modelHeight, model.userData?.handAttachY),
-      shoulderScale: previewShoulderScale(model, profile),
-      shoulderRuntimeBaseWidth: Number(profile?.handShoulderRule?.runtimeBaseWidth) || DEFAULT_RUNTIME_WIDTH,
+      bakedAvatarCoordinateScale: bakedAvatarCoordinateScale(model, profile),
+      fullCharacterScaleAppliedByParent: !!floorParentFor(model)?.userData?.hobunjiCharacterRigScaleState,
       armLengthHeightPercentOffset: armLengthPercent,
       armLengthWorldY: -modelHeight * armLengthPercent / 100,
       npcIdentityLookup: npcLookupStatus(model),
       generationBridge: generationBridgeStatus(model),
       hook: { attached: !!(activeScene && activeScene.onBeforeRender === sceneBeforeRenderWrapper), attachCount: hookAttachCount, scene: activeScene?.name || activeScene?.type || 'scene' },
-      left, right,
+      left,
+      right,
       dance: dance ? { enabled: !!dance.enabled, armStyle: dance.armStyle || 'none' } : null,
-      rule: 'gameplay hand side convention -> scaled authored shoulder X + floor-relative posterior Y - arm length + shared idle fallback',
+      rule: 'Full Character Scale floor-parent contract -> baked avatar-size coordinates -> posterior/arm idle target -> convert into generated hand parent',
     };
   }
 
@@ -615,7 +760,10 @@
 
   function applyIdleArmParity(nowMs = performance.now(), forceLog = false) {
     const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
-    if (!model) { debugSnapshot = { ...debugSnapshot, active: false, reason: 'waiting-for-preview', hookAttachCount }; return false; }
+    if (!model) {
+      debugSnapshot = { ...debugSnapshot, active: false, reason: 'waiting-for-preview', hookAttachCount };
+      return false;
+    }
 
     installGenerationSideBridge(model);
     if (model !== lastModel) {
@@ -623,6 +771,7 @@
       lastProfileSignature = '';
       lastStatusSignature = '';
       lastUnresolvedSignature = '';
+      editorLog('[Idle arms] Avatar changed; using Full Character Scale floor-parent coordinate contract.', 'info', floorSpaceSummary(model));
     }
 
     const dance = global.ProceduralDanceMode?.getDebug?.() || null;
@@ -630,7 +779,16 @@
     const forceReacquire = explicitDanceWasActive && !explicitDance;
     explicitDanceWasActive = explicitDance;
     if (explicitDance) {
-      debugSnapshot = { installed: true, active: false, reason: `dance:${dance.armStyle}`, model: model.name || null, dance, generationBridge: generationBridgeStatus(model), hookAttachCount };
+      debugSnapshot = {
+        installed: true,
+        active: false,
+        reason: `dance:${dance.armStyle}`,
+        model: model.name || null,
+        dance,
+        floorSpace: floorSpaceSummary(model),
+        generationBridge: generationBridgeStatus(model),
+        hookAttachCount,
+      };
       if (forceLog) editorLog('[Idle arms] Explicit Dance arm style owns the hands.', 'info', debugSnapshot);
       return false;
     }
@@ -652,7 +810,7 @@
     const profileSignature = `${profile.species || resolved.identity?.species || '?'}::${profile.gender || resolved.identity?.gender || '?'}:${resolved.identity?.source || 'profile'}`;
     if (profileSignature !== lastProfileSignature) {
       lastProfileSignature = profileSignature;
-      editorLog('[Idle arms] Resolved gameplay/Attack Editor free-hand profile.', 'info', {
+      editorLog('[Idle arms] Resolved gameplay/Attack Editor free-hand profile in Full Character Scale coordinate space.', 'info', {
         model: model.name || null,
         npcId: model?.userData?.npcId || null,
         profile: `${profile.species}::${profile.gender}`,
@@ -660,7 +818,8 @@
         identityEvidence: resolved.identity?.evidence || null,
         modelHeight,
         modelWidth: Number(model?.userData?.portraitModelWidth) || null,
-        shoulderScale: previewShoulderScale(model, profile),
+        floorSpace: floorSpaceSummary(model),
+        bakedAvatarCoordinateScale: bakedAvatarCoordinateScale(model, profile),
         handAttachX: Number(model.userData?.handAttachX),
         handAttachY: Number(model.userData?.handAttachY),
         posteriorY: posteriorY(profile, modelHeight, model.userData?.handAttachY),
@@ -676,9 +835,11 @@
     debugSnapshot = {
       installed: true,
       active,
-      reason: active ? 'canonical-idle' : (left.reason === 'hand-not-built-yet' || right.reason === 'hand-not-built-yet') ? 'waiting-for-hands' : 'explicit-animation-owner',
+      reason: active ? 'canonical-idle'
+        : (left.reason === 'hand-not-built-yet' || right.reason === 'hand-not-built-yet') ? 'waiting-for-hands'
+        : 'explicit-animation-owner',
       ...diagnostic,
-      latestChange: 'Generated Left/Right hand wrappers are normalized at construction to gameplay left=-handAttachX/right=+handAttachX; reversed editor placement remains compatibility-only. Canonical idle then uses scaled authored shoulder X, posterior Y, authored arm length, and shared idle motion.',
+      latestChange: 'Idle targets now use the same floor-relative parent contract as Animation Author Full Character Scale. The portrait +height/2 lift is removed during floor->hand-parent conversion instead of being added onto the hand a second time.',
     };
     maybeLogStatus(debugSnapshot, forceLog);
     return active;
@@ -701,7 +862,11 @@
     sceneBeforeRenderWrapper = wrapper;
     scene.onBeforeRender = wrapper;
     hookAttachCount += 1;
-    editorLog(replacingLostHook ? '[Idle arms] Scene pre-render hook was replaced; idle-arm parity reattached.' : '[Idle arms] Final pre-render parity hook attached to procedural editor scene.', replacingLostHook ? 'warn' : 'info', { reason, hookAttachCount, chainedPreviousCallback: !!previous });
+    editorLog(
+      replacingLostHook ? '[Idle arms] Scene pre-render hook was replaced; idle-arm parity reattached.' : '[Idle arms] Final pre-render parity hook attached to procedural editor scene.',
+      replacingLostHook ? 'warn' : 'info',
+      { reason, hookAttachCount, chainedPreviousCallback: !!previous },
+    );
     return true;
   }
 
@@ -709,7 +874,9 @@
     const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
     if (model) installGenerationSideBridge(model);
     const scene = global.HobunjiGameplayBackdrop?.getScene?.() || null;
-    if (scene && (scene !== activeScene || scene.onBeforeRender !== sceneBeforeRenderWrapper)) attachToScene(scene, scene === activeScene ? 'hook-replaced' : 'scene-changed');
+    if (scene && (scene !== activeScene || scene.onBeforeRender !== sceneBeforeRenderWrapper)) {
+      attachToScene(scene, scene === activeScene ? 'hook-replaced' : 'scene-changed');
+    }
     requestAnimationFrame(refreshSceneBinding);
   }
 
@@ -723,8 +890,16 @@
       if (!model) return null;
       const modelHeight = previewModelHeight(model);
       const resolved = resolveProfile(model, modelHeight);
-      const target = resolved.profile ? canonicalIdleTarget(model, resolved.profile, side, modelHeight, nowMs) : null;
-      return target ? { ...target, profile: `${resolved.profile.species}::${resolved.profile.gender}`, identitySource: resolved.identity?.source || 'profile' } : null;
+      const floorTarget = resolved.profile ? canonicalFloorTarget(model, resolved.profile, side, modelHeight, nowMs) : null;
+      const hand = handFor(model, side);
+      return floorTarget ? {
+        ...floorTarget,
+        floorTarget: vectorJson(floorTarget),
+        handParentTarget: hand ? vectorJson(floorTargetInHandParent(model, hand, floorTarget)) : null,
+        floorSpace: floorSpaceSummary(model),
+        profile: `${resolved.profile.species}::${resolved.profile.gender}`,
+        identitySource: resolved.identity?.source || 'profile',
+      } : null;
     },
   };
 
