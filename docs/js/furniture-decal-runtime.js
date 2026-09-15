@@ -11,7 +11,8 @@
 
   const DEG = Math.PI / 180;
   const TANKAN_SOURCE_TYPE = 'tankanText';
-  const TANKAN_SETTINGS_VERSION = 2;
+  const TANKAN_SETTINGS_VERSION = 3;
+  const TANKAN_NORMALIZED_VERSION = 2;
   const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
   const TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8;
   const TANKAN_EXTRA_COLUMN_WIDTH_FACTOR = 0.2;
@@ -20,7 +21,8 @@
   const TANKAN_BASELINE = Object.freeze({
     columnSpacingEm: -0.35,
     glyphAdvanceEm: 0.6,
-    glyphScale: 1.2,
+    glyphScaleX: 1.2,
+    glyphScaleY: 1.2,
     color: '#000000',
     offsetU: 0,
     offsetV: -0.055,
@@ -43,7 +45,13 @@
   }
 
   function isNormalizedTankan(record) {
-    return isTankanTextDecal(record) && Number(record?.tankanSettingsVersion) >= TANKAN_SETTINGS_VERSION;
+    return isTankanTextDecal(record) && Number(record?.tankanSettingsVersion) >= TANKAN_NORMALIZED_VERSION;
+  }
+
+  function normalizedGlyphSize(record, axis) {
+    const uniform = Math.max(0.001, finiteOr(record?.tankanGlyphSize, 1)); // Version-2 normalized records used one shared glyph-size value.
+    const value = axis === 'x' ? record?.tankanGlyphSizeX : record?.tankanGlyphSizeY;
+    return Math.max(0.001, finiteOr(value, uniform));
   }
 
   function resolvedImageSource(record) {
@@ -95,14 +103,16 @@
       return {
         columnSpacingEm: finiteOr(record?.tankanColumnSpacingEm, -0.55),
         glyphAdvanceEm: finiteOr(record?.tankanGlyphAdvanceEm, 0.56),
-        glyphScale: 1,
+        glyphScaleX: 1,
+        glyphScaleY: 1,
         color: String(record?.tankanColor || TANKAN_BASELINE.color),
       };
     }
     return {
       columnSpacingEm: clamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
       glyphAdvanceEm: clamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
-      glyphScale: clamp(TANKAN_BASELINE.glyphScale * finiteOr(record.tankanGlyphSize, 1), 0.25, 2.5),
+      glyphScaleX: clamp(TANKAN_BASELINE.glyphScaleX * normalizedGlyphSize(record, 'x'), 0.25, 2.5),
+      glyphScaleY: clamp(TANKAN_BASELINE.glyphScaleY * normalizedGlyphSize(record, 'y'), 0.25, 2.5),
       paddingXEm: TANKAN_PADDING_X_EM,
       paddingYEm: TANKAN_PADDING_Y_EM,
       color: String(record.tankanColor || TANKAN_BASELINE.color),
@@ -139,7 +149,8 @@
     cachedTankanBaselineLayout = measureTankanLayout(TANKAN_BASELINE_TEXT, {
       columnSpacingEm: TANKAN_BASELINE.columnSpacingEm,
       glyphAdvanceEm: TANKAN_BASELINE.glyphAdvanceEm,
-      glyphScale: TANKAN_BASELINE.glyphScale,
+      glyphScaleX: TANKAN_BASELINE.glyphScaleX,
+      glyphScaleY: TANKAN_BASELINE.glyphScaleY,
       paddingXEm: TANKAN_PADDING_X_EM,
       paddingYEm: TANKAN_PADDING_Y_EM,
       color: TANKAN_BASELINE.color,
@@ -163,7 +174,7 @@
 
   function tankanTextureKey(record) {
     const options = tankanTextureOptions(record);
-    return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.paddingXEm ?? ''}\u0000${options.paddingYEm ?? ''}\u0000${options.color}`;
+    return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm ?? ''}\u0000${options.paddingYEm ?? ''}\u0000${options.color}`;
   }
 
   function tankanTextureFor(record) {
@@ -341,6 +352,7 @@
 
   window.FurnitureDecalRuntime = {
     installed: true,
+    settingsVersion: TANKAN_SETTINGS_VERSION,
     addDecals,
     resolvedImageSource,
     textureCache,
