@@ -10,7 +10,10 @@ const source = fs.readFileSync(path.join(root, 'docs/js/google-drive-save-legacy
 new Function(source);
 assert(source.includes("CLOUD_BUTTON_SELECTOR = '#hobunjiEmptySaveCloud, #slSourceCloud'"), 'existing fresh-browser/onboarding Cloud buttons are reused rather than duplicated');
 assert(source.includes("button.textContent !== '☁ Google Drive'") && source.includes("button.textContent = '☁ Google Drive'"), 'legacy Cloud controls are relabeled Google Drive in place');
-assert(source.includes("event.stopImmediatePropagation()"), 'capture bridge stops legacy Netlify click handlers before they run');
+assert(source.includes("sectionLabel.textContent = 'Google Drive'"), 'onboarding Cloud section itself is relabeled Google Drive');
+assert(source.includes("FRESH_FOLDER_BUTTON_ID = 'hobunjiEmptySaveFolder'"), 'fresh-browser local-folder affordance is explicitly managed by the Drive migration bridge');
+assert(source.includes("freshFolderButton.style.display = 'none'"), 'unsupported mobile folder restore control is hidden instead of advertising a dead path');
+assert(source.includes("event.stopImmediatePropagation()"), 'capture bridge stops obsolete Cloud click handlers before they run');
 assert(source.includes('drive.linkExistingFile()'), 'restore gesture starts with exact-file Google Picker linking');
 assert(source.includes("state === 'external-only-no-baseline'"), 'fresh-device Drive-only restore is recognized as safe to pull');
 assert(source.includes("state === 'external-only-change'"), 'trusted remote-only changes are safe to pull from the restore action');
