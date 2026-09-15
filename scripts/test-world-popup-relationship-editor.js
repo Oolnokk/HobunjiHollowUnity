@@ -22,7 +22,7 @@ assert.match(helper, /Rapport \+10/, 'positive Rapport preview is available');
 assert.match(helper, /Rapport -10/, 'negative Rapport preview is available');
 assert.match(helper, /Favor \+10/, 'positive Favor preview is available');
 assert.match(helper, /Favor -10/, 'negative Favor preview is available');
-assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position4/, 'Popup Text Editor loads the shared relationship bridge from its commit-pinned path');
+assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position5/, 'Popup Text Editor loads the shared relationship bridge from its commit-pinned path');
 assert.match(helper, /showRelationshipChange\(root, kind, amount, \{ amountIsPoints: true \}\)/, 'editor controls route through the shared relationship API against the live avatar root');
 
 assert.match(helper, /id: 'popup_preview_character'/, 'editor has an immediate deterministic preview character');
@@ -55,13 +55,17 @@ assert.match(helper, /ResizeObserver loop completed with undelivered notificatio
 assert.match(helper, /window\.addEventListener\('unhandledrejection'/, 'diagnostics capture async boot failures');
 assert.match(helper, /window\.addEventListener\('error'/, 'diagnostics capture JS/resource failures');
 
-assert.match(bridge, /version: 5/, 'shared relationship popup bridge is v5');
+assert.match(bridge, /version: 6/, 'shared relationship popup bridge is v6');
 assert.match(bridge, /layoutLikeChathead/, 'relationship popup uses a chathead-style two-part layout');
 assert.match(bridge, /group\.add\(heartPart\.plane, valuePart\.plane\)/, 'heart and signed value are separate children of one billboard group');
 assert.match(bridge, /canvas\.width = 200;\s*canvas\.height = 200;/, 'heart uses the same square-canvas shape as a chathead');
 assert.match(bridge, /CHATHEAD_GAP_RATIO = 0\.14/, 'relationship layout retains the ambient chathead proportional gap');
 assert.doesNotMatch(bridge, /POPUP_WIDTH = 360|POPUP_HEIGHT = 112/, 'old combined 360x112 relationship rectangle is gone');
-assert.doesNotMatch(bridge, /new THREE\.PlaneGeometry\(aspect, 1\).*combined/s, 'relationship popup no longer relies on one combined icon+text plane');
+assert.match(bridge, /window\.HobunjiSpritePngSurface \|\| window\.HobunjiPngPlaneUnlit/, 'heart reuses the canonical PNG-plane surface API');
+assert.match(bridge, /pngSurface\.makeCanvasTexture\(THREE, canvas, 'relationship_heart_texture'\)/, 'heart texture uses the same canvas-texture factory as working avatar/tool PNG planes');
+assert.match(bridge, /pngSurface\.makeMaterial\(THREE, texture, 'relationship_heart_material', materialOverrides\)/, 'heart material uses the same material factory as working avatar/tool PNG planes');
+assert.match(bridge, /nonTransparentPixels/, 'heart diagnostics report whether the tinted canvas actually contains visible alpha');
+assert.match(bridge, /canonicalPngSurface/, 'heart diagnostics report whether the canonical PNG-plane helper was present');
 assert.match(bridge, /relationshipOriginWorld/, 'relationship motion starts from inside the avatar rather than a fixed above-head point');
 assert.match(bridge, /source: 'portrait-local-upper-body'/, 'portrait metadata drives the pop-out origin');
 assert.match(bridge, /addScaledVector\(cameraRight, event\.worldHeight \* POP_RIGHT_RATIO \* travel\)/, 'relationship popup travels screen-right as it emerges');
@@ -85,4 +89,4 @@ for (const [label, bridgePattern, genericPattern] of [
 }
 
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/hud/generic_icons/icon_heart.png')), 'runtime heart asset exists');
-console.log('Popup Text Editor mobile visibility, chathead-style relationship layout, diagonal pop motion, diagnostics, and avatar fallback checks passed.');
+console.log('Popup Text Editor mobile visibility, canonical PNG-plane relationship heart, chathead-style layout, diagonal pop motion, diagnostics, and avatar fallback checks passed.');
