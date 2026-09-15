@@ -210,7 +210,7 @@
           "icon": "🧪",
           "name": "Healing Potion",
           "desc": "A basic restorative potion prepared for everyday injuries.",
-          "price": 100,
+          "price": 200,
           "alchemyRecipeId": "healingPotion",
           "alchemyPotencyTier": 0,
           "quantity": 1,
@@ -221,7 +221,7 @@
           "icon": "🌱",
           "name": "Growth Tonic",
           "desc": "Matures one baby farm or Stable animal into an adult.",
-          "price": 500,
+          "price": 200,
           "gives": {
             "growthTonic": 1
           },

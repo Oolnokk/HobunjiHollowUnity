@@ -120,7 +120,7 @@ assert(
   incubatorFishingDays >= incubatorTarget.min && incubatorFishingDays <= incubatorTarget.max,
   `Incubator should cost ${incubatorTarget.min}-${incubatorTarget.max} beginner fishing days, got ${incubatorFishingDays.toFixed(3)}`
 );
-assert.equal(growthTonic.price, 500, 'Growth Tonic reference buy price remains 500g');
+assert.equal(growthTonic.price, 200, 'Growth Tonic reference buy price is 200g');
 assert.equal(incubator.price, 5000, 'Incubator reference buy price remains 5000g');
 
 console.log(

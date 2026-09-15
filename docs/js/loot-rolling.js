@@ -19,6 +19,19 @@
   let _shopStock = {};
   let _lootShopConfigPromise = null;
 
+  function syncGeneralStoreSellerIds() {
+    const shopButton = window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton; // Used to keep the contextual Shop action aligned with authored shop sellers.
+    if (!shopButton) return;
+    const sellerIds = Array.isArray(shopButton.npcIds) ? shopButton.npcIds : (shopButton.npcIds = []); // Mutated in place so any already-captured button config sees newly loaded sellers.
+    Object.values(_shopStock).forEach(shop => {
+      if (shop?.menuId !== 'generalStore') return;
+      const authoredSellerIds = Array.isArray(shop?.dialogueAccess?.sellerIds) ? shop.dialogueAccess.sellerIds : []; // Used to add every seller for shops rendered through the General Store surface.
+      authoredSellerIds.forEach(npcId => {
+        if (npcId && !sellerIds.includes(npcId)) sellerIds.push(npcId);
+      });
+    });
+  }
+
   function loadLootShopConfig() {
     if (_lootShopConfigPromise) return _lootShopConfigPromise;
     // Routed through window.LocalDBOverrides.loadDatabase() (see
@@ -32,7 +45,11 @@
       loadOne('shopStock', 'config/shops/shop-stock.json'),
     ]).then(([lootData, shopData]) => {
       _lootPools = lootData?.pools || {};
-      if (shopData?.shops) { _shopStock = shopData.shops; deps.applyLoadedShopStock(); }
+      if (shopData?.shops) {
+        _shopStock = shopData.shops;
+        syncGeneralStoreSellerIds();
+        deps.applyLoadedShopStock();
+      }
     });
     return _lootShopConfigPromise;
   }
