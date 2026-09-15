@@ -1,0 +1,35 @@
+name: Seat surface placement regression
+
+on:
+  push:
+    paths:
+      - 'docs/index.html'
+      - 'docs/js/seat-surface-placement-transform.js'
+      - 'scripts/test-interior-seat-surface-post-transform.js'
+      - '.github/workflows/seat-surface-placement-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/index.html'
+      - 'docs/js/seat-surface-placement-transform.js'
+      - 'scripts/test-interior-seat-surface-post-transform.js'
+      - '.github/workflows/seat-surface-placement-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check seat surface placement adapter
+        run: |
+          node --check docs/js/seat-surface-placement-transform.js
+          node --check scripts/test-interior-seat-surface-post-transform.js
+      - name: Test transformed interior seat surfaces
+        run: node scripts/test-interior-seat-surface-post-transform.js
