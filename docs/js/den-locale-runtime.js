@@ -17,6 +17,7 @@
   let lastAppliedArea = null;
   let lastMotherApplied = null;
   let lastFurnitureUpgrade = null;
+  let lastBranchNestMotion = null; // Used by debugSnapshot to compare branch nest simulation height with the rendered authored furniture height.
   let branchSyncAt = 0;
   let syncFailureCount = 0;
   let lastSyncContext = null;
@@ -161,6 +162,27 @@
       y: Number.isFinite(Number(nest?.worldY)) ? Number(nest.worldY) : fallbackY,
       z: finite(nest?.y) / Math.max(0.0001, finite(denDeps?.TILE, 1)),
     };
+  }
+
+  // ClimbSystem owns the branch-nest fall timer/easing and writes nest.worldY.
+  // Authored locale furniture owns the visible replacement Group, so mirror only
+  // that authoritative height here instead of starting a second fall animation.
+  function syncBranchNestFurnitureHeight(nest) {
+    const group = nest?.mesh;
+    const worldY = Number(nest?.worldY);
+    if (!group?.position || group.userData?.authoredFurnitureKey !== 'nestBranch' || !Number.isFinite(worldY)) return false;
+    group.position.y = worldY;
+    group.updateMatrixWorld?.(true);
+    lastBranchNestMotion = {
+      id: nest.id || null,
+      areaId: nest.areaId || null,
+      falling: !!nest.falling,
+      fallen: !!nest.fallen,
+      worldY,
+      meshY: Number(group.position.y),
+      meshName: group.name || null,
+    };
+    return true;
   }
 
   function applyRootTransform(root, nest, authored, base) {
@@ -343,7 +365,11 @@
       if (!nest) continue;
       decorateNest(nest, { branch: true });
       const prior = nest.mesh;
-      if (!data || !prior?.parent || prior.userData?.authoredFurnitureKey === 'nestBranch') continue;
+      if (!data || !prior?.parent) continue;
+      if (prior.userData?.authoredFurnitureKey === 'nestBranch') {
+        syncBranchNestFurnitureHeight(nest);
+        continue;
+      }
       const parent = prior.parent;
       const group = window.AuthoredFurniture.buildGroup(data, 0xc9a227);
       group.name = 'den_locale_furniture_nestBranch';
@@ -354,6 +380,7 @@
       group.scale.copy(prior.scale);
       parent.add(group);
       nest.mesh = group;
+      syncBranchNestFurnitureHeight(nest);
       disposeObject(prior);
       lastFurnitureUpgrade = `branch:${area}`;
     }
@@ -366,6 +393,7 @@
       const scene = nest?.mesh?.parent || null;
       if (!nest || !scene) continue;
       decorateNest(nest, { branch: true });
+      syncBranchNestFurnitureHeight(nest);
       const roots = contentRoots(scene, nest.id);
       applyAuthoredClutch(nest, roots, branchNestBase(nest, branch));
     }
@@ -537,6 +565,7 @@
       motherSpawn: encounter?.motherSpawn?.transform || null,
       lastMotherApplied,
       lastFurnitureUpgrade,
+      lastBranchNestMotion,
       lastAppliedArea,
       syncFailureCount,
       lastSyncContext,
