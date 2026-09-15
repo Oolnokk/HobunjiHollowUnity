@@ -104,10 +104,11 @@ const rawMap = {
 const effective = window.MapLayoutSystem.getEffectiveMapData(rawMap); // Used as the runtime map copy game.js will later build into a scene.
 
 assert.strictEqual(rawMap.furniture[0].itemKey, 'chairSimpleFurniture', 'raw/editor map data must remain unchanged');
-assert.notStrictEqual(effective.furniture[0].itemKey, 'chairSimpleFurniture', 'transformed seats should receive a runtime-only alias item key');
-assert.strictEqual(effective.furniture[1].itemKey, 'tableRoundFurniture', 'non-seat furniture must not be aliased');
+assert.strictEqual(effective.furniture[0].itemKey, 'chairSimpleFurniture', 'transformed seats must keep the original item key used by the visual renderer');
+assert.strictEqual(effective.furniture[1].itemKey, 'tableRoundFurniture', 'non-seat furniture must remain untouched');
+assert(effective.furniture[0].seatSurfaceFurnitureKey?.startsWith('__seat_surface_xform_'), 'transformed seats should carry a separate runtime-only seat metadata key');
 
-const fullAliasKey = Object.keys(decorativeFurnitureDefs).find(key => decorativeFurnitureDefs[key].itemKey === effective.furniture[0].itemKey); // Used to inspect the seat alias chosen for player/automatic seating.
+const fullAliasKey = effective.furniture[0].seatSurfaceFurnitureKey; // Used to inspect the transformed seat metadata key while the visible furniture keeps its base item key.
 assert(fullAliasKey, 'transformed chair alias definition should be registered');
 assert.strictEqual(decorativeFurnitureDefs[fullAliasKey].sit, true, 'runtime alias must preserve the base chair sit behavior');
 const fullData = window.AuthoredFurniture.peek(fullAliasKey); // Used to verify the private gameplay seat resolver will see transformed local anchor data.
@@ -147,12 +148,13 @@ assert(Math.abs(stationSeat.x - fullSeat.x) < 1e-9, 'bound NPC and player seat X
 assert(Math.abs(stationSeat.z - fullSeat.z) < 1e-9, 'bound NPC and player seat Z should resolve to the same transformed surface');
 assert(Math.abs(stationSeat.y - fullSeat.y) < 1e-9, 'bound NPC and player seat Y should resolve to the same transformed surface');
 
-const built = window.ProceduralFurniture.buildFurnitureGroup(fullAliasKey); // Used to prove aliasing interaction metadata does not fork the visible furniture recipe.
-assert.strictEqual(built.builtKey, 'chairSimple', 'runtime alias visuals should delegate to the original furniture key');
+const built = window.ProceduralFurniture.buildFurnitureGroup('chairSimple'); // Used as a control proving the adapter no longer intercepts or rewrites furniture rendering.
+assert.strictEqual(built.builtKey, 'chairSimple', 'ordinary furniture rendering should remain on the original builder/key');
 assert.deepStrictEqual(visualCalls, ['chairSimple']);
 
 const secondPass = window.MapLayoutSystem.getEffectiveMapData(effective); // Used to ensure harmless re-resolution does not stack the same transform into seat metadata twice.
-assert.strictEqual(secondPass.furniture[0].itemKey, effective.furniture[0].itemKey, 'effective map seat aliasing should be idempotent');
+assert.strictEqual(secondPass.furniture[0].itemKey, effective.furniture[0].itemKey, 'effective map visual item key should remain stable');
+assert.strictEqual(secondPass.furniture[0].seatSurfaceFurnitureKey, effective.furniture[0].seatSurfaceFurnitureKey, 'effective map seat metadata key should be idempotent');
 assert.strictEqual(window.SeatSurfacePlacementTransform.debugSnapshot().aliasesCreated, 2, 'one player/auto-seat alias and one already-translated bound-station alias should be sufficient');
 assert(farmLog.some(line => line.includes('[seat-surface] seat_transform_test')), 'seat transform should emit a mobile-readable farm log diagnostic');
 

@@ -182,7 +182,7 @@ const chairMap = {
   }],
 }; // Used to force the production adapter through its full Three.js plane-orientation transform.
 const chairEffective = window.MapLayoutSystem.getEffectiveMapData(chairMap); // Used to obtain the runtime alias that carries transformed authored metadata.
-const chairAliasKey = Object.keys(decorativeFurnitureDefs).find(key => decorativeFurnitureDefs[key].itemKey === chairEffective.furniture[0].itemKey); // Used to resolve the alias definition selected for the transformed chair.
+const chairAliasKey = chairEffective.furniture[0].seatSurfaceFurnitureKey; // Used to resolve transformed seat metadata without replacing the chair's real visual item key.
 const transformedChairData = window.AuthoredFurniture.peek(chairAliasKey); // Used to inspect the production-derived seat plane rather than a duplicated formula.
 const transformedChairAnchor = transformedChairData.seatAnchors[0]; // Used to validate the non-uniformly scaled authored seat plane.
 const expectedChairPitch = Math.atan(Math.tan(-5 * Math.PI / 180) * (1.5 / 0.5)) * 180 / Math.PI; // Used as an independent analytic result for an X-only tilted plane under Y/Z scale.
@@ -198,7 +198,7 @@ const templeBenchPiece = (templeMap.furniture || []).find(piece =>
 ); // Used to target the existing transformed two-seat temple bench that reproduces the reported class of bug in real map data.
 assert(templeBenchPiece, 'temple map should contain the known post-transformed two-seat bench regression fixture');
 const benchEffective = window.MapLayoutSystem.getEffectiveMapData({ id: 'temple_bench_regression', furniture: [templeBenchPiece] }); // Used to run the real saved placement through production aliasing.
-const benchAliasKey = Object.keys(decorativeFurnitureDefs).find(key => decorativeFurnitureDefs[key].itemKey === benchEffective.furniture[0].itemKey); // Used to resolve the real bench placement's runtime alias.
+const benchAliasKey = benchEffective.furniture[0].seatSurfaceFurnitureKey; // Used to resolve the real bench placement's runtime seat metadata key while its visual key remains benchFurniture.
 const transformedBenchData = window.AuthoredFurniture.peek(benchAliasKey); // Used to verify every authored bench seat inherits the saved post transform.
 assert.strictEqual(transformedBenchData.seatAnchors.length, benchData.seatAnchors.length, 'all authored bench seat surfaces must survive the transform');
 for (let index = 0; index < benchData.seatAnchors.length; index += 1) {
@@ -212,5 +212,6 @@ assert(Math.abs(transformedBenchData.footprint.d - benchData.footprint.d * 0.75)
 const expectedBenchPitch = Math.atan(Math.tan(-5 * Math.PI / 180) * (Number(templeBenchPiece.postSY || 1) / 0.75)) * 180 / Math.PI; // Used as the independent expected plane tilt for the real bench's Y/Z scale.
 assert(Math.abs(transformedBenchData.seatAnchors[0].rotationDeg.x - expectedBenchPitch) < 1e-9, 'real bench seat plane pitch should follow its non-uniform scale');
 assert.strictEqual(templeBenchPiece.itemKey, 'benchFurniture', 'runtime transformation must not mutate the real saved temple furniture record');
+assert.strictEqual(benchEffective.furniture[0].itemKey, 'benchFurniture', 'runtime transformation must not replace the temple bench visual item key');
 
 console.log('Interior seat surface Three.js math regression passed.');

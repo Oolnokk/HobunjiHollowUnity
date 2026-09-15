@@ -63,8 +63,10 @@
   }
 
   function aliasRecordForPiece(piece) {
-    const itemKey = String(piece?.itemKey || ''); // Used to detect an effective map that has already passed through this adapter.
-    const resolvedKey = furnitureKeyForItemKey(itemKey); // Used to map the runtime alias item key back to its alias record without persisting extra marker fields.
+    const metadataKey = String(piece?.seatSurfaceFurnitureKey || ''); // Used to detect an effective map that already carries runtime-only transformed seat metadata while its visual item key stays untouched.
+    if (metadataKey && aliasByKey.has(metadataKey)) return aliasByKey.get(metadataKey);
+    const itemKey = String(piece?.itemKey || ''); // Used only for compatibility with effective maps created by the earlier visual-alias implementation in the same page session.
+    const resolvedKey = furnitureKeyForItemKey(itemKey); // Used to recognize that legacy alias item key without making new maps depend on it.
     return resolvedKey ? (aliasByKey.get(resolvedKey) || null) : null;
   }
 
@@ -242,7 +244,7 @@
       furnitureChanged = true;
       state.furnitureInstancesTransformed += 1;
       state.lastFurnitureId = String(piece.id || sourceId);
-      return { ...piece, itemKey: alias.aliasItemKey };
+      return { ...piece, seatSurfaceFurnitureKey: alias.aliasKey }; // Runtime-only interaction metadata: the original itemKey remains the sole visual/render key.
     });
 
     if (!furnitureChanged) return mapData;
@@ -464,7 +466,7 @@
 
   installFarmEditorCapture();
   installAuthoredFurnitureAliases();
-  installVisualAliasBridge();
+  // Do not install the visual alias bridge: transformed seats retain their real itemKey/render key, and only seating metadata uses the synthetic key.
   installMapLayoutBridge();
   state.installed = true;
 
