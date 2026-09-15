@@ -15,6 +15,7 @@ on:
       - 'docs/js/combat/combat-bandit.js'
       - 'docs/js/combat/quick-attack-bonus-indicator.js'
       - 'scripts/test-transient-attack-alignment.js'
+      - 'scripts/test-melee-reticle-alignment.js'
       - '.github/workflows/transient-attack-alignment-regression.yml'
   push:
     branches: [main]
@@ -28,6 +29,7 @@ on:
       - 'docs/js/action-arch-icons.js'
       - 'docs/js/combat/**'
       - 'scripts/test-transient-attack-alignment.js'
+      - 'scripts/test-melee-reticle-alignment.js'
 
 jobs:
   regression:
@@ -37,6 +39,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: node scripts/test-melee-reticle-alignment.js
       - run: node scripts/test-transient-attack-alignment.js
       - run: node scripts/test-controller-default-layout.js
       - run: node scripts/test-controller-experience.js
