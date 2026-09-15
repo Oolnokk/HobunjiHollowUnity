@@ -89,6 +89,45 @@
     });
   }
 
+  async function deleteKeyIf(key, predicate) {
+    if (injectedMemory) {
+      const current = injectedMemory.has(key) ? clone(injectedMemory.get(key)) : null; // Test backend performs compare+delete synchronously, matching one IDB readwrite transaction.
+      if (!predicate(current)) return false;
+      injectedMemory.delete(key);
+      return true;
+    }
+
+    const db = await openDb(); // One connection owns the read-and-conditional-delete transaction below.
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite'); // Same-store write transactions cannot interleave, so a newer queued save cannot appear between comparison and delete.
+      const store = transaction.objectStore(STORE_NAME); // Pending marker is read and, when still expected, removed inside this one transaction.
+      const request = store.get(key); // Current pending value observed under the transaction's serialization boundary.
+      let deleted = false; // Returned only after the transaction commits successfully.
+
+      request.onsuccess = () => {
+        const current = request.result ?? null;
+        if (!predicate(current)) return;
+        store.delete(key);
+        deleted = true;
+      };
+      request.onerror = () => transaction.abort();
+      transaction.oncomplete = () => {
+        db.close();
+        resolve(deleted);
+      };
+      transaction.onerror = () => {
+        const error = transaction.error || request.error || new Error(`Could not conditionally delete sync state "${key}".`);
+        db.close();
+        reject(error);
+      };
+      transaction.onabort = () => {
+        const error = transaction.error || request.error || new Error(`Conditional sync-state delete for "${key}" was aborted.`);
+        db.close();
+        reject(error);
+      };
+    });
+  }
+
   function pendingKey(target) {
     return `pending:${String(target || '')}`;
   }
@@ -129,12 +168,15 @@
 
   async function clearPending(target, { expectedContentHash = null } = {}) {
     const key = pendingKey(target); // Pending queue key removed only if it still describes the write the caller completed.
-    if (expectedContentHash) {
-      const pending = await readKey(key); // Current queued write checked to avoid clearing a newer save that raced with an older upload.
-      if (pending?.envelope?.contentHash && pending.envelope.contentHash !== expectedContentHash) return false;
+    if (!expectedContentHash) {
+      await writeBatch([], [key]); // Explicit unconditional clears (unlink/pull) intentionally discard whichever pending marker currently exists.
+      return true;
     }
-    await writeBatch([], [key]);
-    return true;
+
+    return deleteKeyIf(key, pending => {
+      const currentHash = pending?.envelope?.contentHash || null; // Compare is evaluated inside the same readwrite transaction as deletion.
+      return currentHash === expectedContentHash;
+    }); // A newer autosave transaction cannot be deleted by completion of an older Drive upload.
   }
 
   async function setBaseline(target, envelope = null) {
