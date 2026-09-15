@@ -111,6 +111,8 @@
       glyphAdvanceEm: clamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
       glyphScaleX: clamp(TANKAN_BASELINE.glyphScaleX * normalizedGlyphSize(record, 'x'), 0.25, 2.5),
       glyphScaleY: clamp(TANKAN_BASELINE.glyphScaleY * normalizedGlyphSize(record, 'y'), 0.25, 2.5),
+      fitReferenceGlyphScaleX: TANKAN_BASELINE.glyphScaleX,
+      fitReferenceGlyphScaleY: TANKAN_BASELINE.glyphScaleY,
       paddingXEm: TANKAN_PADDING_X_EM,
       paddingYEm: TANKAN_PADDING_Y_EM,
       color: String(record.tankanColor || TANKAN_BASELINE.color),
@@ -180,14 +182,19 @@
     const options = tankanTextureOptions(record);
     const layout = measureTankanLayout(record?.tankanText, options);
     const container = tankanContainerPixels(record);
-    const fitScale = Math.min(1, container.widthPx / layout.widthPx, container.heightPx / layout.heightPx);
+    const fontSizePx = Math.max(16, finiteOr(options.fontSizePx, 128));
+    const visualWidthPx = layout.widthPx + Math.max(0, options.glyphScaleX - options.fitReferenceGlyphScaleX) * fontSizePx;
+    const visualHeightPx = layout.heightPx + Math.max(0, options.glyphScaleY - options.fitReferenceGlyphScaleY) * fontSizePx;
+    const fitScale = Math.min(1, container.widthPx / visualWidthPx, container.heightPx / visualHeightPx);
     return {
       layout,
+      visualWidthPx,
+      visualHeightPx,
       containerWidthPx: container.widthPx,
       containerHeightPx: container.heightPx,
       fitScale,
-      renderedWidthPx: layout.widthPx * fitScale,
-      renderedHeightPx: layout.heightPx * fitScale,
+      renderedWidthPx: visualWidthPx * fitScale,
+      renderedHeightPx: visualHeightPx * fitScale,
     };
   }
 
