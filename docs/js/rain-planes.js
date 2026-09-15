@@ -18,7 +18,7 @@
   const RAW_SPRITE_LEAN_DEG = -30; // Native procedural streak lean before correction.
   const SPRITE_PRE_ROTATION_DEG = 30; // Corrects the native sprite so neutral rain points down.
   const WESTERN_SLOPE_ID = 'map_western_slope'; // Western Slope swaps snow content into the ordinary rain planes.
-  const BLIZZARD_AUDIO_RAIN_STRENGTH = 1; // Used only while mixing BGS so the blizzard gets a quiet wind bed instead of full rain-strength wind.
+  const BLIZZARD_AUDIO_RAIN_STRENGTH = 3; // Full storm-strength exterior wind, matching the rain mix's maximum weather intensity.
 
   const CAMERA_CONFIG = [
     { distance: 4.5, repeatX: 6.0, repeatY: 5.0, speed: 1.08, opacity: 0.20 },
@@ -104,8 +104,8 @@
       if (!isWesternSlopeBlizzardActive()) return priorUpdateExteriorBgs.apply(this, args);
 
       // The ordinary exterior mixer already owns the real wind recordings and
-      // smooth BGS fades. Feed it a deliberately low weather strength so a
-      // blizzard gets one subtle wind layer instead of the stronger rain mix.
+      // smooth BGS fades. Feed it full weather strength so blizzard wind sits
+      // at the same storm-scale mix level used by rain instead of a quiet bed.
       const priorRainStrength = deps.calendar.rainStrength;
       deps.calendar.rainStrength = BLIZZARD_AUDIO_RAIN_STRENGTH;
       try {
@@ -569,6 +569,7 @@
       blizzardPreset: { ...BLIZZARD_PRESET },
       activeContent: blizzardActive ? 'blizzard' : 'rain',
       blizzardAudioRouting: Boolean(window.Music?.__westernSlopeBlizzardAudioRoutingInstalled),
+      blizzardAudioRainStrength: BLIZZARD_AUDIO_RAIN_STRENGTH,
       settings: getSettings(),
       renderer: deps?.renderer?.info?.render ? { ...deps.renderer.info.render } : null,
     };
