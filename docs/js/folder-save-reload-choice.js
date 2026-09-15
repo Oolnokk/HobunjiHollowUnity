@@ -16,6 +16,7 @@
   let startupMode = 'pending'; // Latest resolved startup direction for diagnostics.
   let gatesShown = 0; // Count of reload-recovery choices displayed.
   let browserChoices = 0; // Count of times the browser autosave was deliberately kept.
+  let durableRecoveries = 0; // Count of times IndexedDB restored a missing/unreadable localStorage autosave after the user chose browser recovery.
   let folderChoices = 0; // Count of explicit folder restores selected from the reload gate.
   let lastError = ''; // Latest startup-choice failure visible in Save Diagnostics.
 
@@ -30,16 +31,34 @@
       .replace(/'/g, '&#39;');
   }
 
-  function readBrowserSummary() {
+  function localStorageSummary() {
     try {
       const raw = localStorage.getItem(SAVE_META_KEY);
       if (!raw) return { available: false, farmers: 0, worlds: 0 };
       const meta = JSON.parse(raw);
-      const farmers = Array.isArray(meta?.characters) ? meta.characters.length : 0;
-      const worlds = Array.isArray(meta?.worlds) ? meta.worlds.length : 0;
-      return { available: true, farmers, worlds };
+      if (!meta || !Array.isArray(meta.characters) || !Array.isArray(meta.worlds)) return { available: false, farmers: 0, worlds: 0 };
+      return { available: true, farmers: meta.characters.length, worlds: meta.worlds.length };
     } catch {
       return { available: false, farmers: 0, worlds: 0 };
+    }
+  }
+
+  async function resolveBrowserFallback() {
+    const browser = localStorageSummary(); // Synchronous browser autosave is preferred because a crash may occur after localStorage saved but before the IndexedDB checkpoint finished.
+    if (browser.available) return { ...browser, source: 'localStorage', envelope: null };
+
+    try {
+      const envelope = await window.HobunjiSaveSyncStore?.getCurrentEnvelope?.() || null; // Durable local authority is the second recovery layer when localStorage is missing/unreadable.
+      if (!envelope) return { available: false, farmers: 0, worlds: 0, source: 'none', envelope: null };
+      const verified = await window.HobunjiSaveEnvelope?.verify?.(envelope);
+      if (!verified?.ok) return { available: false, farmers: 0, worlds: 0, source: 'invalid-durable', envelope: null };
+      const meta = envelope.snapshot?.meta || {};
+      const farmers = Array.isArray(meta.characters) ? meta.characters.length : 0;
+      const worlds = Array.isArray(meta.worlds) ? meta.worlds.length : 0;
+      return { available: true, farmers, worlds, source: 'durable', envelope };
+    } catch (error) {
+      lastError = String(error?.message || error);
+      return { available: false, farmers: 0, worlds: 0, source: 'durable-error', envelope: null };
     }
   }
 
@@ -66,11 +85,22 @@
     document.getElementById(GATE_ID)?.remove();
   }
 
-  function showReloadChoice(status) {
+  async function restoreDurableFallback(browser) {
+    if (browser?.source !== 'durable' || !browser.envelope) return;
+    const verified = await window.HobunjiSaveEnvelope?.verify?.(browser.envelope); // Reverify immediately before applying durable content to browser storage.
+    if (!verified?.ok) throw new Error('The durable browser autosave failed verification and was not restored.');
+    const snapshot = window.HobunjiSaveSnapshot;
+    if (!snapshot?.apply) throw new Error('The browser autosave restore adapter is unavailable.');
+    snapshot.apply(browser.envelope.snapshot); // Explicit browser choice repairs localStorage from IndexedDB without touching the save folder.
+    durableRecoveries++;
+    try { await window.HobunjiSaveSyncStore?.appendEvent?.('BROWSER FALLBACK RESTORED', { contentHash: browser.envelope.contentHash }); } catch {}
+  }
+
+  function showReloadChoice(status, browser) {
     gatesShown++;
     return new Promise(resolve => {
       removeGate();
-      const browser = readBrowserSummary(); // Existing localStorage autosave survives accidental page/app closes and is never modified by merely showing this gate.
+      const sourceLabel = browser.source === 'durable' ? 'durable browser recovery copy' : 'browser autosave';
       const gate = document.createElement('div');
       gate.id = GATE_ID;
       gate.setAttribute('role', 'dialog');
@@ -84,8 +114,8 @@
           </div>
           <div class="folder-save-primary-gate-status" data-folder-reload-summary>
             ${browser.available
-              ? `Browser autosave: ${browser.farmers} farmer${browser.farmers === 1 ? '' : 's'} · ${browser.worlds} world${browser.worlds === 1 ? '' : 's'}.`
-              : 'No readable browser autosave is available on this device.'}
+              ? `${sourceLabel}: ${browser.farmers} farmer${browser.farmers === 1 ? '' : 's'} · ${browser.worlds} world${browser.worlds === 1 ? '' : 's'}.`
+              : 'No readable browser autosave or durable browser recovery copy is available on this device.'}
             Remembered folder: “${esc(status.folderName || 'Save Folder')}”.
           </div>
           <div class="folder-save-primary-gate-status" data-folder-reload-status></div>
@@ -100,12 +130,23 @@
       const folderButton = gate.querySelector('[data-folder-use-folder]'); // Explicit destructive direction: validated folder contents replace the browser working copy.
       const statusEl = gate.querySelector('[data-folder-reload-status]');
 
-      browserButton?.addEventListener('click', () => {
-        browserChoices++;
-        startupMode = 'browser-autosave';
-        lastError = '';
-        removeGate();
-        resolve(startupMode);
+      browserButton?.addEventListener('click', async () => {
+        browserButton.disabled = true;
+        if (folderButton) folderButton.disabled = true;
+        try {
+          if (statusEl && browser.source === 'durable') statusEl.textContent = 'Restoring the durable browser recovery copy…';
+          await restoreDurableFallback(browser); // No-op when ordinary localStorage is already the selected fallback.
+          browserChoices++;
+          startupMode = browser.source === 'durable' ? 'browser-durable-recovered' : 'browser-autosave';
+          lastError = '';
+          removeGate();
+          resolve(startupMode);
+        } catch (error) {
+          lastError = String(error?.message || error);
+          if (statusEl) statusEl.textContent = `${lastError} The save folder was not touched.`;
+          browserButton.disabled = false;
+          if (folderButton) folderButton.disabled = false;
+        }
       }, { once: true });
 
       folderButton?.addEventListener('click', async () => {
@@ -156,9 +197,10 @@
         startupMode = 'browser-no-folder';
         return startupMode;
       }
+      const browser = await resolveBrowserFallback(); // Determine both localStorage and durable-IDB recovery availability before offering any folder direction.
       // Deliberately do NOT auto-load even when permission is already ready.
       // A remembered folder must never outrank the crash-recovery browser autosave without a fresh user choice.
-      return showReloadChoice(save.getStatus());
+      return showReloadChoice(save.getStatus(), browser);
     })().catch(error => {
       lastError = String(error?.message || error);
       startupMode = 'browser-fallback-after-gate-error';
@@ -171,12 +213,13 @@
   primary.prepareBeforeOnboarding = prepareBeforeOnboarding;
   primary.markFolderAlreadyApplied = () => {}; // Every real page reload asks again, including deliberate reloads after a folder restore.
 
-  window.FolderSaveReloadChoice = Object.freeze({ prepareBeforeOnboarding });
+  window.FolderSaveReloadChoice = Object.freeze({ prepareBeforeOnboarding, resolveBrowserFallback });
   window.__hobunjiFolderSaveReloadChoiceDebug = {
     snapshot: () => ({
       startupMode,
       gatesShown,
       browserChoices,
+      durableRecoveries,
       folderChoices,
       gateVisible: Boolean(document.getElementById(GATE_ID)),
       lastError: lastError || null,
