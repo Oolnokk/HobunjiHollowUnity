@@ -110,8 +110,10 @@ assert(coordinator.includes('snapshot.capture({ strict: true })'), 'save coordin
 assert(coordinator.includes('store.commitEnvelope'), 'save coordinator commits the canonical envelope to durable local storage');
 assert(coordinator.includes('HobunjiGoogleDriveSaveStartup?.prepareBeforeOnboarding'), 'coordinator delegates no-folder startup to the linked Drive preflight gate');
 assert(coordinator.includes('FolderSavePrimary?.prepareBeforeOnboarding'), 'coordinator preserves existing desktop folder startup ownership when supported');
-assert(checkpoint.includes("key === 'hobunjiSaveMeta'"), 'ordinary gameplay metadata writes schedule durable checkpoints');
-assert(checkpoint.includes("key.startsWith('hobunji_farm_layout_v3:')"), 'ordinary farm-layout writes schedule durable checkpoints');
+assert(checkpoint.includes("const SAVE_META_KEY = 'hobunjiSaveMeta'"), 'durable checkpoint watches the canonical gameplay metadata key');
+assert(checkpoint.includes('value === SAVE_META_KEY'), 'ordinary gameplay metadata writes schedule durable checkpoints');
+assert(checkpoint.includes("const FARM_LAYOUT_PREFIX = 'hobunji_farm_layout_v3:'"), 'durable checkpoint watches canonical farm-layout keys');
+assert(checkpoint.includes('value.startsWith(FARM_LAYOUT_PREFIX)'), 'ordinary farm-layout writes schedule durable checkpoints');
 assert(checkpoint.includes('pendingTargets'), 'routine checkpoints atomically queue linked external transports');
 assert(driveConfig.includes("scope: 'https://www.googleapis.com/auth/drive.file'"), 'Drive configuration is permanently limited to the narrow drive.file scope');
 assert(driveTransport.includes("let accessToken = ''"), 'Drive OAuth access token is memory-only transport state');
