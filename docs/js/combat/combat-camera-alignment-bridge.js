@@ -9,6 +9,7 @@
 
   const VERSION = 4;
   const EPSILON = 1e-8;
+  const LUNGE_CANCEL_RANGE_MULTIPLIER = 0.5; // Used only by lunge stop tests; authored strike/hit reach remains full length.
   let rangedInitWrapped = false; // Exposed in debugSnapshot() to verify the ranged initialization boundary was patched once.
   let combatInitWrapped = false; // Exposed in debugSnapshot() to verify the combat initialization boundary was patched once.
   let cameraRayDepsProvided = false; // Exposed to verify ranged-camera-focus receives the true camera-origin ray through its compatibility dependency.
@@ -274,6 +275,12 @@
         player.lungeDistancePx = Math.max(0, Number(profile.distancePx) || 0);
         player.lungeHopUnits = Math.max(0, Number(profile.hopUnits) || 0);
         player.lungeAimPitch = Number.isFinite(Number(profile.pitch)) ? Number(profile.pitch) : pitch;
+        if (player.lungeHitTest && Number.isFinite(Number(hitTest?.rangePx))) {
+          player.lungeHitTest = {
+            ...player.lungeHitTest,
+            rangePx: Math.max(0, Number(hitTest.rangePx) || 0) * LUNGE_CANCEL_RANGE_MULTIPLIER,
+          };
+        }
         lungeSweepAnchor = { x: Number(player.x) || 0, y: Number(player.y) || 0 };
         lungeAuthorityCount++;
         lastLunge = {
@@ -284,6 +291,7 @@
           pitchRad: player.lungeAimPitch,
           distancePx: player.lungeDistancePx,
           attackRangePx: Number(hitTest?.rangePx) || null,
+          cancelRangePx: Number(player.lungeHitTest?.rangePx) || null,
         };
       } catch (error) {
         recordError('lunge-ray', error);
@@ -469,7 +477,7 @@
         attempted: { ...current },
         stopped: { x: player.x, y: player.y },
         segmentLengthPx: segmentLength,
-        attackRangePx: Number(hitTest?.rangePx) || 0,
+        cancelRangePx: Number(hitTest?.rangePx) || 0,
         halfConeRad: Number(hitTest?.halfConeRad) || 0,
       };
       return true;
