@@ -6,6 +6,7 @@
   const VOORG_ASS_KIND = 'voorg-ass'; // Species key used to register Northern Cliffs Voorg-Asses with the shared den system.
   const VOORG_ASS_ZONE_ID = 'map_northern_cliffs'; // Exterior-zone key whose cavern dens should use Voorg-Ass occupants.
   const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Livestock item created when a Voorg-Ass den baby is taken from its nest.
+  const GREHLR_KIND = 'grehlr'; // Existing Northern Cliffs den species preserved when an explicit den roster is first authored.
 
   function registerDenNestConfig() {
     const game = window.SCRATCHBONES_CONFIG?.game; // Config is loaded before this bridge and snapshotted later by game.js.
@@ -60,9 +61,24 @@
 
   function registerVoorgAssDenRuntime(injectedDeps) {
     const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_ZONE_ID]; // Shared live zone object consumed by cavern den population selection.
+    const hadExplicitDenSpecies = Array.isArray(northernZone?.denSpecies); // Used so converting legacy ecology to an explicit den roster does not erase existing den species.
+    const legacyPackSpecies = !hadExplicitDenSpecies && Array.isArray(northernZone?.packSpecies)
+      ? [...northernZone.packSpecies]
+      : []; // Existing predator den candidates copied only when this bridge is creating the explicit roster for the first time.
+    const grehlrWasEligible = !hadExplicitDenSpecies && (
+      legacyPackSpecies.includes(GREHLR_KIND)
+      || (Array.isArray(northernZone?.herbivoreSpecies) && northernZone.herbivoreSpecies.includes(GREHLR_KIND))
+    ); // Grehlr historically reached Northern Cliffs dens through the legacy pack/herd resolver and must survive the switch to explicit denSpecies.
+
     const denSpecies = northernZone
-      ? (Array.isArray(northernZone.denSpecies) ? northernZone.denSpecies : (northernZone.denSpecies = []))
-      : null; // Explicit den occupants remain separate from the ordinary herbivore roster.
+      ? (hadExplicitDenSpecies ? northernZone.denSpecies : (northernZone.denSpecies = []))
+      : null; // Explicit den occupants override ordinary pack/herd ecology, so seed legacy occupants before adding Voorg-Ass.
+    if (Array.isArray(denSpecies) && !hadExplicitDenSpecies) {
+      for (const speciesKey of legacyPackSpecies) {
+        if (speciesKey && !denSpecies.includes(speciesKey)) denSpecies.push(speciesKey);
+      }
+      if (grehlrWasEligible && !denSpecies.includes(GREHLR_KIND)) denSpecies.push(GREHLR_KIND);
+    }
     if (Array.isArray(denSpecies) && !denSpecies.includes(VOORG_ASS_KIND)) denSpecies.push(VOORG_ASS_KIND);
 
     const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator rejects den species that lack a corresponding Den-Mother definition.
@@ -75,10 +91,12 @@
       };
     }
 
+    const grehlrPreserved = !grehlrWasEligible || denSpecies?.includes(GREHLR_KIND); // Legacy Northern Cliffs Grehlr eligibility is part of successful registration.
     const ready = Array.isArray(denSpecies)
       && denSpecies.includes(VOORG_ASS_KIND)
+      && grehlrPreserved
       && denMotherDefs?.[VOORG_ASS_KIND]?.creatureKey === VOORG_ASS_KIND;
-    window.__farmLog?.(`[voorg-ass] den registration zone=${VOORG_ASS_ZONE_ID} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] denMother=${denMotherDefs?.[VOORG_ASS_KIND]?.creatureKey || 'missing'} reward=${denMotherDefs?.[VOORG_ASS_KIND]?.nestItemKey || 'missing'}`, ready ? 'wildlife' : 'warn');
+    window.__farmLog?.(`[voorg-ass] den registration zone=${VOORG_ASS_ZONE_ID} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] grehlrPreserved=${grehlrPreserved ? 1 : 0} denMother=${denMotherDefs?.[VOORG_ASS_KIND]?.creatureKey || 'missing'} reward=${denMotherDefs?.[VOORG_ASS_KIND]?.nestItemKey || 'missing'}`, ready ? 'wildlife' : 'warn');
     return ready;
   }
 
@@ -146,12 +164,13 @@
   const wildlifeBridgeReady = watchWildlifeSpawnAssignment();
 
   window.PuktukDenNestRegistration = {
-    version: 3,
+    version: 2,
     PUKTUK_KIND,
     PUKTUK_BABY_ITEM_KEY,
     VOORG_ASS_KIND,
     VOORG_ASS_ZONE_ID,
     VOORG_ASS_BABY_ITEM_KEY,
+    GREHLR_KIND,
     registerPuktukNestConfig: registerDenNestConfig,
     registerPuktukBabyItem: registerDenBabyItems,
     registerDenNestConfig,
