@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/inventory-character-effects.js', 'utf8');
+const compactToolSource = fs.readFileSync('docs/js/inventory-gear-compact-effects.js', 'utf8');
+const xControlSource = fs.readFileSync('docs/js/hud-x-control-polish.js', 'utf8');
 const dodgeSource = fs.readFileSync('docs/js/combat/combat-blink-dodge.js', 'utf8');
 const loaderSource = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
@@ -18,6 +20,8 @@ const api = windowStub.InventoryCharacterEffects;
 assert(api, 'InventoryCharacterEffects exports its runtime API');
 assert.equal(api.version, 1, 'character effects module version is available to the bootstrap loader');
 assert.match(loaderSource, /inventory-character-effects\.js\?v=20260915a/, 'combat bootstrap loads the character-effects module');
+assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=20260915a/, 'combat bootstrap loads the compact Tool Effects presentation');
+assert.match(loaderSource, /hud-x-control-polish\.js\?v=20260915a/, 'combat bootstrap loads shared X-control presentation after generic HUD icons');
 
 // Layout regressions: InventoryUI injects generic .gear-stat-list flex/scroll rules later,
 // so the effects module must use a more-specific selector for the intended two-column grid.
@@ -35,6 +39,43 @@ assert.match(
   source,
   /#mpInventory\.inv-mode-gear \.gear-owned-section \{[\s\S]*?flex:1 1 auto;[\s\S]*?overflow-y:auto;/,
   'only the variable-size owned Gear collection is allowed to consume the remaining scrollable space',
+);
+
+// Tool Effects must divide the available column height between every rendered tool card,
+// stack chips vertically, and undo the global 11px readability floor only in this compact readout.
+assert.match(
+  compactToolSource,
+  /#mpInventory \.gear-tool-stats > \.gear-stat-list \{[\s\S]*?display:flex !important;[\s\S]*?flex-direction:column !important;[\s\S]*?overflow:hidden !important;/,
+  'Tool Effects list is a non-scrolling vertical stack with enough selector strength to beat generic inventory rules',
+);
+assert.match(
+  compactToolSource,
+  /#mpInventory \.gear-tool-stats \.gear-stat-item \{[\s\S]*?flex:1 1 0;[\s\S]*?min-height:0;[\s\S]*?overflow:hidden;/,
+  'Tool Effects cards share the available height instead of growing from their content',
+);
+assert.match(
+  compactToolSource,
+  /#mpInventory \.gear-tool-stats \.gear-stat-chips \{[\s\S]*?flex-direction:column;[\s\S]*?flex-wrap:nowrap;/,
+  'mastery, quality, and effect chips stack vertically inside each shortened tool card',
+);
+assert.match(
+  compactToolSource,
+  /MIN_EFFECT_FONT_PX = 5\.5[\s\S]*?--gear-tool-card-font[\s\S]*?data-menu-font-floor/,
+  'Tool Effects can reduce text below the global inventory floor when required to keep every card visible',
+);
+
+// Generic semantic X glyphs are PNG-backed; their source pixels are black, so the shared control style must whiten them and center the common close/unequip buttons.
+assert.match(
+  xControlSource,
+  /\.generic-hud-icon\.generic-hud-icon-x \{[\s\S]*?filter:brightness\(0\) invert\(1\);/,
+  'generic X icon art is forced white everywhere it is used',
+);
+assert.match(xControlSource, /#mpClose/, 'main menu close control receives shared X fitting');
+assert.match(xControlSource, /\.ies-unequip/, 'gear unequip/unassign controls receive shared X fitting');
+assert.match(
+  xControlSource,
+  /:has\(> \.generic-hud-icon-x\) \{[\s\S]*?display:inline-grid;[\s\S]*?place-items:center;[\s\S]*?padding:0 !important;/,
+  'symbol-only X controls center the icon inside their own button box instead of using text padding',
 );
 
 const player = { maxHealth: 100, maxStamina: 80, maxFooting: 50 };
