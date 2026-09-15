@@ -12,15 +12,21 @@
     characterId: null,
     worldId: null,
     durableCommits: 0,
+    queuedDriveCommits: 0,
     durableCommitFallbacks: 0,
     durableCommitFailures: 0,
     folderFlushes: 0,
     folderFlushFailures: 0,
     lastError: null,
-  }; // Mobile-readable handoff diagnostics for the durable commit and desktop folder flush that precede the clean-page reload.
+  }; // Mobile-readable handoff diagnostics for the durable commit, Drive queue marker, and desktop folder flush before reload.
 
   function creatorConfirmIsStillMounted() {
     return !!document.querySelector('#ob-overlay #ob-start-btn');
+  }
+
+  function pendingTransportTargets() {
+    const driveStatus = window.HobunjiGoogleDriveSave?.getStatus?.(); // Linked Drive identity queues this creator save without requiring network/auth before reload.
+    return driveStatus?.linked ? ['drive'] : [];
   }
 
   function writeResumeMarker(playerData) {
@@ -76,9 +82,11 @@
       return false;
     }
     try {
-      const result = await coordinator.commitCurrent({ reason: 'character-creator-start' }); // The creator has already written its player/world data to localStorage before this capture listener runs.
+      const pendingTargets = pendingTransportTargets(); // Pending upload marker is committed atomically with the local envelope when Drive is linked.
+      const result = await coordinator.commitCurrent({ reason: 'character-creator-start', pendingTargets }); // Creator data already exists in localStorage before this capture listener runs.
       if (result?.ok) {
         status.durableCommits++;
+        if (pendingTargets.includes('drive')) status.queuedDriveCommits++;
         status.lastError = null;
         return true;
       }
@@ -172,8 +180,8 @@
     event.stopImmediatePropagation();
 
     // First make the completed browser save durable in the transport-neutral
-    // local sync store. External folder/Drive work must never be the only copy
-    // protecting a brand-new farmer during this clean-page handoff.
+    // local sync store. A linked Drive target is only queued here; auth/network
+    // work happens later and can never block creation of the farmer.
     const durableSaved = await commitDurableBeforeReload();
     if (!durableSaved) {
       clearResumeMarker();
