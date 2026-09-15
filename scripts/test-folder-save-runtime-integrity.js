@@ -21,6 +21,7 @@ function makeStorage(initial = {}) {
 function basicDom() {
   return {
     body: null,
+    readyState: 'loading',
     addEventListener() {},
     getElementById() { return null; },
   };
@@ -34,11 +35,14 @@ async function main() {
   const runtimeIndex = loader.indexOf('folder-save-runtime-flush.js');
   const quitIndex = loader.indexOf('folder-save-quit-guard.js');
   const legacyIndex = loader.indexOf('local-save-flow.js');
+  const netlifyIndex = loader.indexOf('netlify-cloud-save.js');
   assert.ok(coordinatorIndex >= 0 && coreIndex > coordinatorIndex, 'durable save coordinator should load before external persistence transports');
   assert.ok(provenanceIndex >= 0 && runtimeIndex > provenanceIndex, 'runtime flush should load after folder provenance wrappers');
   assert.ok(quitIndex > runtimeIndex, 'quit guard should load after the runtime flush bridge');
-  assert.ok(legacyIndex > quitIndex, 'quit guard must register before the legacy quit flow');
-  console.log('OK  folder save runtime modules load in safe orchestration order');
+  assert.equal(legacyIndex, -1, 'legacy local-save-flow must stay out of the production loader');
+  assert.equal(netlifyIndex, -1, 'legacy Netlify cloud transport must stay out of the production loader');
+  assert.ok(read('docs/js/folder-save-quit-guard.js').includes('installQuitButton'), 'quit guard owns the Quit control after retiring local-save-flow');
+  console.log('OK  V3 runtime modules own save orchestration without legacy flow activation');
 
   // 1) Prove the exact Grehlr failure class is closed: livestock collection can
   // no longer update the live bag and save livestock while leaving member
@@ -121,7 +125,7 @@ async function main() {
       window: {
         LocalSaveFolder: localSave,
         HobunjiSaveSyncStore: {
-          async getCurrentEnvelope() { return { ...currentEnvelope }; },
+          async getCurrentEnvelope() { return currentEnvelope ? { ...currentEnvelope } : null; },
         },
         crypto: { randomUUID: () => 'device-unused-random-id' },
       },
@@ -177,7 +181,9 @@ async function main() {
       alert: message => { throw new Error('Unexpected alert: ' + message); },
       location: { reload() { sequence.push('reload'); } },
       document: {
+        readyState: 'loading',
         addEventListener() {},
+        getElementById() { return null; },
       },
       window: {
         LocalSaveFolder: {
@@ -225,7 +231,7 @@ async function main() {
       confirm: () => true,
       alert: message => alerts.push(message),
       location: { reload() { sequence.push('reload'); } },
-      document: { addEventListener() {} },
+      document: { readyState: 'loading', addEventListener() {}, getElementById() { return null; } },
       window: {
         LocalSaveFolder: {
           isSupported: () => true,
