@@ -58,8 +58,6 @@ const legacyUniform = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddin
 assert.equal(legacyUniform.glyphScaleX, 1.6, 'legacy uniform scale should feed X when axis scale is absent');
 assert.equal(legacyUniform.glyphScaleY, 1.6, 'legacy uniform scale should feed Y when axis scale is absent');
 
-// Furniture uses wider horizontal transparent padding so natural plane width can
-// track raster width exactly while matching the empirically desired 0.8/1.0 widths.
 const furnitureOptions = {
   fontSizePx: 100,
   columnSpacingEm: -0.35,
@@ -96,6 +94,8 @@ assert(editor.includes('decalTankanGlyphSizeY'));
 assert(editor.includes('tankanSettingsVersion: TANKAN_SETTINGS_VERSION'));
 assert(editor.includes('const TANKAN_SETTINGS_VERSION = 3'), 'axis-specific author records should use Tankan settings version 3');
 assert(editor.includes('priorUniformSize'), 'v2 uniform glyph-size records must migrate to both X and Y');
+assert(editor.includes('finiteOr(record.tankanGlyphSizeX, priorUniformSize)'), 'v2 migration should feed prior uniform size into X');
+assert(editor.includes('finiteOr(record.tankanGlyphSizeY, priorUniformSize)'), 'v2 migration should feed prior uniform size into Y');
 assert(editor.includes('columnSpacingEm: -0.35'), 'normalized spacing zero must resolve to the supplied authored -0.35em reference');
 assert(editor.includes('glyphAdvanceEm: 0.6'), 'normalized advance 1.0 must resolve to the supplied authored .6em reference');
 assert(editor.includes('glyphScaleX: 1.2'), 'normalized glyph X 1.0 must render 20% larger than the old baseline');
@@ -124,6 +124,7 @@ assert(runtime.includes('authoredTankanDecalCount'), 'runtime diagnostics should
 assert(runtime.includes("normalizedGlyphSize(record, 'x')"), 'runtime must honor normalized glyph X size');
 assert(runtime.includes("normalizedGlyphSize(record, 'y')"), 'runtime must honor normalized glyph Y size');
 assert(runtime.includes('record?.tankanGlyphSize'), 'runtime must preserve v2 uniform glyph-size compatibility');
+assert(runtime.includes('TANKAN_NORMALIZED_VERSION = 2'), 'runtime must keep reading version-2 normalized records');
 assert(runtime.includes('record.tankanGlyphAdvance'), 'runtime must honor normalized glyph advance');
 assert(runtime.includes('record.tankanColumnSpacing'), 'runtime must honor normalized column spacing');
 assert(runtime.includes('TANKAN_PADDING_X_EM = 0.8'), 'runtime must use the same calibrated horizontal padding as the editor');
