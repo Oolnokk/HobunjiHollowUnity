@@ -19,8 +19,9 @@ document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/s
 document.write('<script src="js/folder-save-device-provenance.js?v=20260915drivec"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-quit-guard.js?v=20260915drivec"><\/script>');
-document.write('<script src="js/folder-save-debug-ui.js?v=20260915driveg"><\/script>');
+document.write('<script src="js/folder-save-debug-ui.js?v=20260915driveh"><\/script>');
 document.write('<script src="js/google-drive-save-ui.js?v=20260915a"><\/script>');
+document.write('<script src="js/google-drive-save-conflict-ui.js?v=20260915a"><\/script>');
 document.write('<script src="js/google-drive-save-lifecycle.js?v=20260915a"><\/script>');
 document.write('<script src="js/google-drive-save-startup.js?v=20260915c"><\/script>');
 document.write('<script src="js/google-drive-save-legacy-cloud-bridge.js?v=20260915c"><\/script>');
