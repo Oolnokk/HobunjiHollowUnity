@@ -36,9 +36,10 @@ assert.equal(measured.heightPx, 392, 'seven glyphs at .56em should occupy 3.92em
 
 // Guard the shared renderer against drifting away from the loading screen that defines the desired look.
 const loadingScreen = read('docs/js/loading-screen-runtime.js');
-assert(loadingScreen.includes('tankanscript_rotated_flipped_horiz.otf'), 'loading screen must still use the rotated/flipped Tankan OTF');
+assert(loadingScreen.includes("const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'"), 'loading screen must still use the canonical rotated/flipped Tankan OTF');
 assert(loadingScreen.includes('columnSpacing: -0.55'), 'loading-screen default column spacing changed; update TankanScriptLayout with it');
 assert(loadingScreen.includes('height:.56em;line-height:.56em'), 'loading-screen glyph advance changed; update TankanScriptLayout with it');
+assert(loadingScreen.includes("split(/\\s+/).filter(Boolean)"), 'loading screen should still split words into separate vertical columns');
 
 const editor = read('docs/tools/furniture-avatar-author/furniture-decals.js');
 assert(editor.includes("const TANKAN_SOURCE_TYPE = 'tankanText'"));
@@ -48,6 +49,8 @@ assert(editor.includes('decalTankanGlyphAdvance'));
 assert(editor.includes('version: 2'));
 assert(editor.includes('sourceTypes: [IMAGE_SOURCE_TYPE, TANKAN_SOURCE_TYPE]'));
 assert(editor.includes('decalTextureKey'), 'async text edits need a stale-texture guard');
+assert(!editor.includes('\u0101') && !editor.includes('\u0100'), 'canonical project spelling is Tankan; do not introduce macrons into the editor');
+assert(editor.includes('Add Tankan Text'), 'editor should expose the Tankan text decal action with canonical spelling');
 
 const runtime = read('docs/js/furniture-decal-runtime.js');
 assert(runtime.includes('new THREE.CanvasTexture(canvas)'), 'runtime should use generated transparent canvas textures for Tankan text');
