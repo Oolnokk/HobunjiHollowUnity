@@ -729,24 +729,24 @@
 
     const section = document.createElement('div');
     section.id = 'livestockNurserySection';
-    section.style.cssText = 'border:1px solid var(--border,#4b443a);border-radius:9px;padding:10px;margin:0 0 10px;background:rgba(255,220,160,.055);';
-    section.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;">
+    section.style.cssText = 'border:1px solid var(--border,#4b443a);border-radius:8px;padding:7px 8px;margin:0 0 8px;background:rgba(255,220,160,.055);';
+    section.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
       <strong>🍼 Nursery · ${babyList.length} babies</strong>
       <span style="font-size:11px;${warning ? 'color:#ff9b80;font-weight:700;' : 'color:var(--muted,#999);'}">Adults ${count}/${capacity} barn spaces</span>
     </div>
-    <div style="font-size:11px;color:var(--muted,#999);line-height:1.35;margin-bottom:8px;">Babies stay babies indefinitely. Grow Up is one-way. Up to ${NURSERY_VISIBLE_LIMIT} are visible inside at once, rerolled every visit.</div>`;
+    <div style="font-size:10px;color:var(--muted,#999);line-height:1.25;margin-bottom:5px;">Babies stay babies indefinitely. Grow Up is one-way. Up to ${NURSERY_VISIBLE_LIMIT} are visible inside at once.</div>`;
 
-    const stack = document.createElement('div');
-    stack.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+    const stack = document.createElement('div'); // Compact scroll area keeps a large Nursery from consuming the Farm tab.
+    stack.style.cssText = 'display:flex;flex-direction:column;gap:3px;max-height:132px;overflow-y:auto;overscroll-behavior:contain;padding-right:2px;';
     for (const entry of babyList) {
       const summary = babySummary(entry);
       const selected = entry.id === selectedBabyId;
       const row = document.createElement('button');
       row.type = 'button';
-      row.style.cssText = `width:100%;text-align:left;border:1px solid ${selected ? 'var(--accent,#d9ad65)' : 'var(--border,#444)'};border-radius:7px;background:${selected ? 'rgba(217,173,101,.12)' : 'rgba(0,0,0,.12)'};color:inherit;padding:7px 8px;cursor:pointer;`;
-      const colorsHtml = summary.colors.map(color => `<span title="${escapeHtml(color.label)}: ${escapeHtml(color.colorName || color.color || '')}" style="display:inline-block;width:10px;height:10px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:${escapeHtml(color.color || '#777')};margin-right:2px;vertical-align:-1px;"></span>`).join('');
-      row.innerHTML = `<div style="display:flex;gap:6px;align-items:center;"><span>${SPECIES_ICONS[entry.kind] || '🐾'}</span><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(entry.name)}</strong><span style="font-size:10px;color:var(--muted,#999);">${escapeHtml(summary.size)}</span></div>
-        <div style="font-size:10px;color:var(--muted,#999);margin-top:3px;line-height:1.3;">${colorsHtml} ${escapeHtml(summary.colors.map(color => color.colorName || color.label).join(', ') || 'Default colors')} · ${escapeHtml(summary.special.join(', '))}</div>`;
+      row.style.cssText = `width:100%;text-align:left;border:1px solid ${selected ? 'var(--accent,#d9ad65)' : 'var(--border,#444)'};border-radius:6px;background:${selected ? 'rgba(217,173,101,.12)' : 'rgba(0,0,0,.12)'};color:inherit;padding:4px 6px;cursor:pointer;`;
+      const colorsHtml = summary.colors.map(color => `<span title="${escapeHtml(color.label)}: ${escapeHtml(color.colorName || color.color || '')}" style="display:inline-block;width:9px;height:9px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:${escapeHtml(color.color || '#777')};margin-right:2px;vertical-align:-1px;"></span>`).join('');
+      row.innerHTML = `<div style="display:flex;gap:5px;align-items:center;"><span>${SPECIES_ICONS[entry.kind] || '🐾'}</span><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(entry.name)}</strong><span style="font-size:10px;color:var(--muted,#999);">${escapeHtml(summary.size)}</span></div>
+        <div style="font-size:9px;color:var(--muted,#999);margin-top:2px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${colorsHtml} ${escapeHtml(summary.colors.map(color => color.colorName || color.label).join(', ') || 'Default colors')} · ${escapeHtml(summary.special.join(', '))}</div>`;
       row.addEventListener('click', () => { selectedBabyId = entry.id; queuePanelDecoration(); });
       stack.appendChild(row);
     }
@@ -761,7 +761,7 @@
     const selected = babyList.find(entry => entry.id === selectedBabyId);
     if (selected) {
       const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#444);';
+      actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid var(--border,#444);';
       const rename = document.createElement('button');
       rename.className = 'settings-small-btn';
       rename.textContent = 'Rename';
@@ -803,15 +803,33 @@
     container.prepend(section);
   }
 
+  function worldLivestockRowsById(container, records) {
+    const rows = [...container.querySelectorAll('.farm-row.livestock-trait-row')]; // Used to bind a fresh FarmPanel render before Nursery rows are hidden.
+    const taggedRows = rows.filter(row => row.dataset.nurseryWorldLivestockId); // Used to distinguish a repeat decoration from a fresh core render.
+    if (!taggedRows.length && rows.length >= records.length) {
+      records.forEach((entry, index) => {
+        const row = rows[index]; // FarmPanel renders every world livestock row before any personal-Stable breeding rows.
+        if (!row || entry?.id == null) return;
+        row.dataset.nurseryWorldLivestockId = String(entry.id);
+      });
+    }
+    const byId = new Map(); // Used by repeated decorations so row removal never shifts animal identity by array index.
+    for (const row of rows) {
+      const id = row.dataset.nurseryWorldLivestockId; // Only world rows receive this tag; Stable breeding rows stay untouched.
+      if (id) byId.set(id, row);
+    }
+    return byId;
+  }
+
   function decorateLivestockList() {
     const container = document.getElementById('farmLivestockList');
     if (!container) return;
     normalizeLifeStages();
     container.querySelector('#livestockNurserySection')?.remove();
     const records = currentLivestock();
-    const rows = [...container.querySelectorAll('.farm-row.livestock-trait-row')];
-    records.forEach((entry, index) => {
-      const row = rows[index];
+    const rowById = worldLivestockRowsById(container, records); // Keeps each saved world animal paired to its own rendered row across repeated observer passes.
+    records.forEach(entry => {
+      const row = rowById.get(String(entry.id));
       if (!row) return;
       if (isBaby(entry)) {
         row.remove();
@@ -886,17 +904,43 @@
     queuePanelDecoration();
   }
 
+  function farmMenuDebugSnapshot(records) {
+    const container = typeof document !== 'undefined' ? document.getElementById('farmLivestockList') : null; // Used to compare persistent livestock with the currently rendered Farm rows.
+    const rows = container ? [...container.querySelectorAll('.farm-row.livestock-trait-row')] : []; // Used to count world and personal-Stable rows separately.
+    const renderedWorldIds = new Set(rows.map(row => row.dataset.nurseryWorldLivestockId).filter(Boolean)); // Used to expose any adult that is saved but missing from the Farm menu.
+    const stable = panelDeps?.getStable?.() || []; // Used to verify personal-Stable breeding candidates independently of world livestock.
+    const barnAssignments = {}; // Used to make the saved 4/4-style barn occupancy directly inspectable on mobile.
+    for (const entry of records) {
+      const barnId = entry.barnId || '(outdoors/nursery)'; // Used as the grouping key for the saved-state occupancy diagnostic.
+      barnAssignments[barnId] = (barnAssignments[barnId] || 0) + 1;
+    }
+    return {
+      savedWorldCount: records.length,
+      savedAdultCount: records.filter(entry => !isBaby(entry)).length,
+      savedBabyCount: records.filter(isBaby).length,
+      renderedWorldIds: [...renderedWorldIds],
+      missingRenderedAdults: records.filter(entry => !isBaby(entry) && !renderedWorldIds.has(String(entry.id))).map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, barnId: entry.barnId })),
+      savedStableCount: stable.length,
+      renderedStableBreedingRows: rows.filter(row => !row.dataset.nurseryWorldLivestockId).length,
+      barnAssignments,
+    };
+  }
+
   function debugSnapshot() {
     const nursery = (buildingDeps?.getFarmBuildings?.() || []).find(isNurseryBuilding) || null;
+    const records = currentLivestock(); // Reused across the new Farm-menu integrity diagnostics to avoid duplicate save parses.
+    const babyRecords = records.filter(isBaby); // Reused for the snapshot's baby list/count.
+    const adultRecords = records.filter(entry => !isBaby(entry)); // Reused for the snapshot's adult count.
     return {
-      mostRecentChange: 'Nursery babies are 25% larger and 25% slower than the previous swarm tuning.',
+      mostRecentChange: 'Farm livestock rows now bind by animal ID; repeated Nursery decoration cannot delete adults or Stable breeding rows, and the Nursery list is compact/scrollable.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
-      babies: babies().map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),
-      babyCount: babies().length,
-      adults: adultCount(),
+      babies: babyRecords.map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),
+      babyCount: babyRecords.length,
+      adults: adultRecords.length,
       adultCapacity: adultCapacity(),
-      overCapacityBy: Math.max(0, adultCount() - adultCapacity()),
+      overCapacityBy: Math.max(0, adultRecords.length - adultCapacity()),
+      farmMenu: farmMenuDebugSnapshot(records),
       visibleLimit: NURSERY_VISIBLE_LIMIT,
       visibleIds: [...swarmVisibleIds],
       babyScale: BABY_SCALE,
