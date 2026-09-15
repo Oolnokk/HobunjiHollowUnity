@@ -76,6 +76,8 @@ async function main() {
   let originalWildlifeInitCalls = 0;
   let originalNestInitCalls = 0;
   let currentArea = 'map_i_test_den';
+  let nowMs = 1000; // Used to advance the branch-furniture upgrade throttle deterministically in this runtime test.
+  let authoredFurnitureData = null; // Used to enable authored nestBranch replacement only for the branch-nest portion of the test.
   const branchesByArea = new Map();
 
   const context = {
@@ -92,7 +94,7 @@ async function main() {
     String,
     RegExp,
     JSON,
-    performance: { now: () => 1000 },
+    performance: { now: () => nowMs },
     fetch: async () => ({ ok: true, json: async () => JSON.parse(JSON.stringify(locale)) }),
     LocalDBOverrides: {
       getSourceMode: () => 'repo',
@@ -100,8 +102,12 @@ async function main() {
     },
     AuthoredFurniture: {
       load: async () => null,
-      peek: () => null,
-      buildGroup: () => group('authored'),
+      peek: () => authoredFurnitureData,
+      buildGroup(data) {
+        const built = group(`authored_${data?.key || 'furniture'}`);
+        built.userData.authoredFurnitureKey = data?.key || null;
+        return built;
+      },
     },
     ClimbSystem: {
       debugBranchesFor: area => branchesByArea.get(area) || [],
@@ -180,7 +186,7 @@ async function main() {
   const centerX = 11;
   const centerZ = 21;
   approx(mother.x, (centerX + 0.25) * 32, 'Den-Mother X converts authored world offset to simulation pixels');
-  approx(mother.y, (centerZ - 0.50) * 32, 'Den-Mother Z converts authored world offset to simulation Y pixels');
+  approx(mother.y, (centerZ - 0.50) * 32, 'Den-Mother Z converts authored spawn to simulation Y pixels');
   approx(mother.homeX, mother.x, 'Den-Mother homeX follows authored spawn');
   approx(mother.homeY, mother.y, 'Den-Mother homeY follows authored spawn');
   approx(mother.groundLift, 0.50, 'Den-Mother authored vertical offset remains in world units');
@@ -217,14 +223,41 @@ async function main() {
   branchRoot.scale.set(0.5, 0.4, 0.5);
   zoneScene.add(branchRoot);
 
+  authoredFurnitureData = { key: 'nestBranch', footprint: { w: 1, d: 1 }, parts: [] };
+  nowMs = 1600;
   currentArea = 'map_zone';
   assert.equal(context.DenLocaleRuntime.syncCurrentDen(), true);
   assert.equal(branchNest.nestFurnitureKey, 'nestBranch', 'branch encounter keeps the small branch furniture key');
   assert.equal(branchNest.clutchSpawnTransforms.length, 3, 'branch nest receives authored clutch slots');
+  assert.equal(branchNest.mesh.userData.authoredFurnitureKey, 'nestBranch', 'legacy branch furniture is upgraded to the authored locale nestBranch');
+  approx(branchNest.mesh.position.y, 4, 'authored branch furniture starts at the branch nest simulation height');
   approx(branchRoot.position.x, 10 - 0.30, 'branch clutch X uses authored slot relative to branch nest center');
   approx(branchRoot.position.y, 4 + 0.25 + 0.08, 'branch clutch Y preserves sleeper lift plus authored lift');
   approx(branchRoot.position.z, 20 + 0.22, 'branch clutch Z uses authored slot relative to branch nest center');
   approx(branchRoot.scale.y, 0.4 * 1.10, 'branch sleeper keeps its barn flattening while authored Y scale multiplies it');
+
+  // ClimbSystem owns the real fall easing and updates worldY before the locale
+  // interaction sync. Simulate one of those fall frames: the authored furniture
+  // and its clutch content must consume the same lowered Y instead of floating
+  // at the branch's original height.
+  const authoredBranchMesh = branchNest.mesh;
+  const authoredBranchX = authoredBranchMesh.position.x;
+  const authoredBranchZ = authoredBranchMesh.position.z;
+  branchNest.fallen = true;
+  branchNest.falling = true;
+  branchNest.worldY = 1.25;
+  nowMs = 1700;
+  assert.equal(context.DenLocaleRuntime.syncCurrentDen(), true, 'branch fall frame sync succeeds');
+  assert.equal(branchNest.mesh, authoredBranchMesh, 'fall sync keeps the existing authored branch furniture instance');
+  approx(authoredBranchMesh.position.x, authoredBranchX, 'fall sync leaves authored branch furniture X untouched');
+  approx(authoredBranchMesh.position.y, 1.25, 'authored branch furniture follows ClimbSystem worldY during the fall');
+  approx(authoredBranchMesh.position.z, authoredBranchZ, 'fall sync leaves authored branch furniture Z untouched');
+  approx(branchRoot.position.y, 1.25 + 0.25 + 0.08, 'branch clutch follows the falling nest while preserving sleeper and authored lift');
+  const fallDebug = context.DenLocaleRuntime.debugSnapshot().lastBranchNestMotion;
+  assert.equal(fallDebug.id, branchNest.id, 'debug identifies the branch nest whose authored visual was synchronized');
+  assert.equal(fallDebug.falling, true, 'debug exposes the active falling state');
+  approx(fallDebug.worldY, 1.25, 'debug exposes branch nest simulation Y');
+  approx(fallDebug.meshY, 1.25, 'debug exposes matching rendered branch nest Y');
 
   // A den-authoring exception must not escape through updateNestInteraction and
   // prevent unrelated later frame systems (weapon stance / procedural hands) from running.
@@ -244,7 +277,7 @@ async function main() {
   assert.equal(debug.wildlifeInstalled, true, 'debug confirms WildlifeSpawn bridge installed');
   assert.equal(debug.lastMotherApplied.areaId, 'map_i_test_den', 'debug records actual transformed Den-Mother');
 
-  console.log('Den locale load-order, frame isolation, Den-Mother transform, cavern clutch, and branch clutch behavior passed.');
+  console.log('Den locale load-order, frame isolation, Den-Mother transform, cavern clutch, branch clutch, and falling authored branch-nest behavior passed.');
 }
 
 main().catch(error => {
