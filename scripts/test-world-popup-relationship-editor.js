@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 'use strict';
 
-const assert = require('node:assert/strict'); // Used to fail when the Popup Text Editor relationship preview or position bridge drifts from the intended contract.
-const fs = require('node:fs'); // Used to read editor/runtime source files directly.
-const path = require('node:path'); // Used to resolve repository-relative fixture paths.
-const vm = require('node:vm'); // Used to syntax-check both standalone browser helpers.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 
-const root = path.resolve(__dirname, '..'); // Used as the repository root for every source read below.
-const read = relative => fs.readFileSync(path.join(root, relative), 'utf8'); // Used to keep fixture reads concise.
-const editor = read('docs/tools/world-popup-editor/index.html'); // Used to verify the Popup Text Editor loads its relationship helper.
-const helper = read('docs/js/world-popup-relationship-editor.js'); // Used to validate controls, fallback avatar boot, and screen-fixed diagnostics.
-const bridge = read('docs/js/favor-popup-points-bridge.js'); // Used as the shared gameplay/editor relationship renderer and anchor owner.
-const generic = read('docs/js/generic-hud-icons.js'); // Used as the pre-v4 visual contract that still emits relationship events.
+const root = path.resolve(__dirname, '..');
+const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+const editor = read('docs/tools/world-popup-editor/index.html');
+const helper = read('docs/js/world-popup-relationship-editor.js');
+const bridge = read('docs/js/favor-popup-points-bridge.js');
+const generic = read('docs/js/generic-hud-icons.js');
 
 assert.doesNotThrow(() => new vm.Script(helper), 'world popup relationship editor helper parses');
-assert.doesNotThrow(() => new vm.Script(bridge), 'relationship position bridge parses');
+assert.doesNotThrow(() => new vm.Script(bridge), 'relationship popup bridge parses');
 assert.match(editor, /world-popup-relationship-editor\.js\?v=20260915c/, 'Popup Text Editor cache-busts the v6 relationship helper');
 assert.doesNotMatch(editor, /relationship-popup-editor-preview\.js/, 'Popup Text Editor does not depend on the mistaken Ambient Dialogue preview helper');
 assert.match(helper, /Overhead Rapport \/ Favor/, 'Popup Text Editor exposes relationship controls');
@@ -22,7 +22,7 @@ assert.match(helper, /Rapport \+10/, 'positive Rapport preview is available');
 assert.match(helper, /Rapport -10/, 'negative Rapport preview is available');
 assert.match(helper, /Favor \+10/, 'positive Favor preview is available');
 assert.match(helper, /Favor -10/, 'negative Favor preview is available');
-assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position4/, 'Popup Text Editor loads the alpha-cutout relationship bridge');
+assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position4/, 'Popup Text Editor loads the shared relationship bridge from its commit-pinned path');
 assert.match(helper, /showRelationshipChange\(root, kind, amount, \{ amountIsPoints: true \}\)/, 'editor controls route through the shared relationship API against the live avatar root');
 
 assert.match(helper, /id: 'popup_preview_character'/, 'editor has an immediate deterministic preview character');
@@ -55,17 +55,22 @@ assert.match(helper, /ResizeObserver loop completed with undelivered notificatio
 assert.match(helper, /window\.addEventListener\('unhandledrejection'/, 'diagnostics capture async boot failures');
 assert.match(helper, /window\.addEventListener\('error'/, 'diagnostics capture JS/resource failures');
 
-assert.match(bridge, /version: 4/, 'shared relationship position bridge is v4');
-assert.match(bridge, /RELATIONSHIP_ALPHA_TEST = 0\.001/, 'relationship plane uses the same tiny alpha cutout threshold as working PNG-plane materials');
-assert.match(bridge, /alphaTest: RELATIONSHIP_ALPHA_TEST/, 'relationship MeshBasicMaterial applies the alpha cutout at creation');
-assert.match(bridge, /material\.alphaTest = RELATIONSHIP_ALPHA_TEST/, 'relationship hardening preserves the alpha cutout after creation');
-assert.match(bridge, /avatarRootWithPortraitMetadata/, 'relationship anchor resolves the avatar transform that owns portrait metadata');
-assert.match(bridge, /portraitModelHeight/, 'relationship anchor uses authored portrait height');
-assert.match(bridge, /portraitVerticalPlacementRatio/, 'relationship anchor uses authored portrait vertical placement');
-assert.match(bridge, /avatarRoot\.localToWorld\(point\)/, 'relationship head position is transformed from avatar-local to world space every frame');
-assert.match(bridge, /const anchor = relationshipHeadAnchorWorld\(event\.root\)/, 'active relationship popups recompute their head anchor every update');
-assert.doesNotMatch(bridge, /new THREE\.Box3\(\)\.setFromObject\(root\)/, 'relationship positioning no longer caches a Box3 world-Y head offset');
-assert.match(bridge, /anchor\.y \+= 0\.075 \* \(1 - Math\.pow\(1 - progress, 2\)\)/, 'relationship rise matches core Float+ rise distance');
+assert.match(bridge, /version: 5/, 'shared relationship popup bridge is v5');
+assert.match(bridge, /layoutLikeChathead/, 'relationship popup uses a chathead-style two-part layout');
+assert.match(bridge, /group\.add\(heartPart\.plane, valuePart\.plane\)/, 'heart and signed value are separate children of one billboard group');
+assert.match(bridge, /canvas\.width = 200;\s*canvas\.height = 200;/, 'heart uses the same square-canvas shape as a chathead');
+assert.match(bridge, /CHATHEAD_GAP_RATIO = 0\.14/, 'relationship layout retains the ambient chathead proportional gap');
+assert.doesNotMatch(bridge, /POPUP_WIDTH = 360|POPUP_HEIGHT = 112/, 'old combined 360x112 relationship rectangle is gone');
+assert.doesNotMatch(bridge, /new THREE\.PlaneGeometry\(aspect, 1\).*combined/s, 'relationship popup no longer relies on one combined icon+text plane');
+assert.match(bridge, /relationshipOriginWorld/, 'relationship motion starts from inside the avatar rather than a fixed above-head point');
+assert.match(bridge, /source: 'portrait-local-upper-body'/, 'portrait metadata drives the pop-out origin');
+assert.match(bridge, /addScaledVector\(cameraRight, event\.worldHeight \* POP_RIGHT_RATIO \* travel\)/, 'relationship popup travels screen-right as it emerges');
+assert.match(bridge, /addScaledVector\(cameraUp, event\.worldHeight \* POP_UP_RATIO \* travel\)/, 'relationship popup travels screen-up as it emerges');
+assert.match(bridge, /START_GROUP_SCALE = 0\.58/, 'relationship popup begins small');
+assert.match(bridge, /END_GROUP_SCALE = 1\.32/, 'relationship popup grows while travelling');
+assert.match(bridge, /Math\.pow\(1 - progress, 1\.12\)/, 'relationship popup fades continuously while growing');
+assert.match(bridge, /HEART_RENDER_ORDER = 1211/, 'heart uses the ambient chathead render-order band');
+assert.match(bridge, /VALUE_RENDER_ORDER = 1210/, 'signed value uses the ambient text render-order band');
 assert.match(bridge, /plane\.userData\.noOutline = true/, 'relationship popup remains excluded from inverted-shell outlines');
 assert.match(bridge, /plane\.userData\.hobunjiWorldTextOverlay = true/, 'relationship popup remains tagged for the world-text overlay path');
 
@@ -74,15 +79,10 @@ for (const [label, bridgePattern, genericPattern] of [
   ['Favor heart color', /FAVOR_HEART_COLOR = '#ff8fbd'/, /FAVOR_HEART_COLOR = '#ff8fbd'/],
   ['gain number color', /RELATIONSHIP_GAIN_COLOR = '#66d96f'/, /RELATIONSHIP_GAIN_COLOR = '#66d96f'/],
   ['loss number color', /RELATIONSHIP_LOSS_COLOR = '#ff5b5b'/, /RELATIONSHIP_LOSS_COLOR = '#ff5b5b'/],
-  ['canvas width', /POPUP_WIDTH = 360/, /canvas\.width = 360/],
-  ['canvas height', /POPUP_HEIGHT = 112/, /canvas\.height = 112/],
-  ['heart size', /ICON_SIZE = 76/, /const iconSize = 76/],
-  ['fade timing', /progress < 0\.72 \? 1 : \(1 - progress\) \/ 0\.28/, /progress < 0\.72 \? 1 : \(1 - progress\) \/ 0\.28/],
-  ['settle timing', /1\.08 - 0\.08 \* Math\.min\(1, progress \/ 0\.24\)/, /1\.08 - 0\.08 \* Math\.min\(1, progress \/ 0\.24\)/],
 ]) {
   assert.match(bridge, bridgePattern, `shared renderer retains gameplay ${label}`);
   assert.match(generic, genericPattern, `generic event layer still exposes ${label}`);
 }
 
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/hud/generic_icons/icon_heart.png')), 'runtime heart asset exists');
-console.log('Popup Text Editor mobile visibility, fallback race, alpha cutout probe, diagnostics, and relationship head-anchor checks passed.');
+console.log('Popup Text Editor mobile visibility, chathead-style relationship layout, diagonal pop motion, diagnostics, and avatar fallback checks passed.');
