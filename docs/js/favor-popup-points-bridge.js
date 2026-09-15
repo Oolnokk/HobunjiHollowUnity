@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (Number(window.FavorPopupPointsBridge?.version) >= 3) return;
+  if (Number(window.FavorPopupPointsBridge?.version) >= 4) return;
 
   const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the shared HUD heart asset from this runtime module in both game and editor paths.
   const HEART_URL = MODULE_SRC ? new URL('../assets/hud/generic_icons/icon_heart.png', MODULE_SRC).href : 'assets/hud/generic_icons/icon_heart.png'; // Used as the one relationship popup heart image source.
@@ -10,19 +10,20 @@
   const RELATIONSHIP_GAIN_COLOR = '#66d96f'; // Used by positive relationship deltas.
   const RELATIONSHIP_LOSS_COLOR = '#ff5b5b'; // Used by negative relationship deltas.
   const RELATIONSHIP_RENDER_ORDER = 1200; // Used to keep relationship text in the same overlay band as WorldPopupText.
+  const RELATIONSHIP_ALPHA_TEST = 0.001; // Matches the working PNG-plane material path and force-discards fully transparent texels before blending.
   const POPUP_WIDTH = 360; // Used by the relationship texture canvas.
   const POPUP_HEIGHT = 112; // Used by the relationship texture canvas.
   const ICON_SIZE = 76; // Used by the relationship heart inside the canvas.
   const DEFAULT_WORLD_HEIGHT = 0.36; // Used when Float+ size metadata is unavailable.
   const DEFAULT_LIFETIME_MS = 1150; // Used when Float+ timing metadata is unavailable.
-  const relationshipPopups = []; // Used as the v3-owned active relationship popup list.
+  const relationshipPopups = []; // Used as the v4-owned active relationship popup list.
   const debugState = { hardenedPopups: 0, lastHardenedPopup: null, lastAnchor: null, lastDisposedReason: null, depsCaptured: false }; // Used by mobile/editor diagnostics.
   let deps = null; // Used as the current WorldPopupText Three.js/camera dependency bag.
   let heartImagePromise = null; // Used to load and reuse icon_heart.png once.
 
   function convertFavorHeartDelta(kind, amount) {
     if (kind !== 'favor') return amount;
-    const points = window.NpcFavorBalance?.heartsToFavorPoints?.(amount); // Used to preserve the v2 bridge's Favor point display contract.
+    const points = window.NpcFavorBalance?.heartsToFavorPoints?.(amount); // Used to preserve the bridge's Favor point display contract.
     return Number.isFinite(Number(points)) ? Number(points) : amount;
   }
 
@@ -125,6 +126,7 @@
     const material = event.material || plane.material; // Used to preserve transparent world-text rendering through other runtime passes.
     if (material) {
       material.transparent = true;
+      material.alphaTest = RELATIONSHIP_ALPHA_TEST;
       material.depthTest = false;
       material.depthWrite = false;
       material.fog = false;
@@ -138,6 +140,7 @@
       value: event.value,
       renderOrder: Number(plane.renderOrder) || 0,
       layerMask: Number(plane.layers?.mask) || 0,
+      alphaTest: Number(material?.alphaTest) || 0,
       at: Date.now(),
     };
     return event;
@@ -191,7 +194,7 @@
     texture.needsUpdate = true;
     const aspect = POPUP_WIDTH / POPUP_HEIGHT; // Used to preserve the texture's authored proportions.
     const geometry = new THREE.PlaneGeometry(aspect, 1); // Used as the camera-facing relationship billboard geometry.
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide }); // Used to match core popup visibility behavior.
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: RELATIONSHIP_ALPHA_TEST, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide }); // Uses the same cutout threshold as working PNG planes so alpha-zero canvas texels cannot become a black quad.
     const plane = new THREE.Mesh(geometry, material); // Used as the live world-space relationship visual.
     const worldHeight = Math.max(0.18, Number(api.defaults?.floatPlus?.worldHeight) || DEFAULT_WORLD_HEIGHT); // Used to reuse the Float+ physical scale.
     plane.scale.setScalar(worldHeight);
@@ -258,28 +261,28 @@
   function install() {
     const api = window.WorldPopupText;
     if (!api) return false;
-    if (Number(api.__favorPopupPointsBridgeVersion) >= 3) return true;
+    if (Number(api.__favorPopupPointsBridgeVersion) >= 4) return true;
 
     const originalInit = typeof api.init === 'function' ? api.init.bind(api) : null; // Used to preserve the complete existing WorldPopupText initialization chain while capturing its dependency bag.
     const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null; // Used to preserve core/generic popup updates before relationship popup updates.
     const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null; // Used to preserve every preexisting popup cleanup path.
-    const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null; // Used to append v3 anchor diagnostics without replacing existing debug fields.
+    const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null; // Used to append v4 anchor diagnostics without replacing existing debug fields.
 
     if (originalInit) {
-      api.init = function favorPopupV3Init(injectedDeps, ...args) {
+      api.init = function favorPopupV4Init(injectedDeps, ...args) {
         bindDeps(injectedDeps);
         return originalInit(injectedDeps, ...args);
       };
     }
     if (originalUpdate) {
-      api.update = function favorPopupV3Update(now, ...args) {
+      api.update = function favorPopupV4Update(now, ...args) {
         const result = originalUpdate(now, ...args);
         updateRelationshipPopups(now);
         return result;
       };
     }
     if (originalClear) {
-      api.clear = function favorPopupV3Clear(...args) {
+      api.clear = function favorPopupV4Clear(...args) {
         clearRelationshipPopups();
         return originalClear(...args);
       };
@@ -290,21 +293,22 @@
     api.showRapportChange = api.showRapportGain;
     api.showFavorChange = (root, amount, options) => spawnRelationshipPopup(root, 'favor', amount, options);
     api.relationshipHeadAnchorWorld = root => relationshipHeadAnchorWorld(root);
-    api.debugSnapshot = function favorPopupV3DebugSnapshot() {
+    api.debugSnapshot = function favorPopupV4DebugSnapshot() {
       const base = originalDebugSnapshot ? originalDebugSnapshot() : {};
       return {
         ...base,
         relationshipPositionBridge: {
-          version: 3,
+          version: 4,
           active: relationshipPopups.length,
           depsCaptured: debugState.depsCaptured,
+          alphaTest: RELATIONSHIP_ALPHA_TEST,
           lastAnchor: debugState.lastAnchor,
           lastDisposedReason: debugState.lastDisposedReason,
         },
       };
     };
     api.__favorPopupPointsBridge = true;
-    api.__favorPopupPointsBridgeVersion = 3;
+    api.__favorPopupPointsBridgeVersion = 4;
     return true;
   }
 
@@ -317,19 +321,20 @@
   }
 
   window.FavorPopupPointsBridge = Object.freeze({
-    version: 3,
+    version: 4,
     install,
     bindDeps,
     relationshipHeadAnchorWorld,
     snapshot() {
       return {
-        version: 3,
+        version: 4,
         activeRelationshipPopups: relationshipPopups.length,
         hardenedPopups: debugState.hardenedPopups,
         lastHardenedPopup: debugState.lastHardenedPopup,
         lastAnchor: debugState.lastAnchor,
         lastDisposedReason: debugState.lastDisposedReason,
         depsCaptured: debugState.depsCaptured,
+        alphaTest: RELATIONSHIP_ALPHA_TEST,
         popupBridgeVersion: Number(window.WorldPopupText?.__favorPopupPointsBridgeVersion) || 0,
       };
     },
