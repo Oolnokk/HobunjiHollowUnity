@@ -22,7 +22,7 @@ const context = vm.createContext({
 vm.runInContext(layoutSource, context, { filename: 'tankan-script-layout.js' });
 const layout = context.window.TankanScriptLayout;
 assert(layout?.installed, 'TankanScriptLayout should install');
-assert.equal(layout.version, 5, 'independent X/Y glyph scaling should stay active');
+assert.equal(layout.version, 6, 'container fit-down rendering and independent X/Y glyph scaling should stay active');
 assert.equal(layout.defaults.columnSpacingEm, -0.55, 'loading-screen column spacing should stay canonical');
 assert.equal(layout.defaults.glyphAdvanceEm, 0.56, 'loading-screen glyph advance should stay canonical');
 assert.equal(layout.defaults.glyphScale, 1, 'legacy shared glyph scale should remain neutral');
@@ -32,7 +32,9 @@ assert(layout.fontUrl.includes('tankanscript_rotated_flipped_horiz.otf'), 'must 
 assert(!layoutSource.includes('document.fonts.check('), 'do not preflight Tankan with FontFaceSet.check; it can silently accept fallback rendering');
 assert(layoutSource.includes('refusing to rasterize with a fallback font'), 'canvas renderer must fail closed instead of drawing a fallback font');
 assert(layoutSource.includes('document.fonts.add(loadedFace)'), 'the loaded Tankan FontFace must be explicitly registered before canvas rendering');
-assert(layoutSource.includes('ctx.scale(layout.glyphScaleX, layout.glyphScaleY)'), 'renderer must scale each glyph independently on X and Y around its fixed cell center');
+assert(layoutSource.includes('fitToContainer'), 'shared Tankan layout must expose UI-like container fitting');
+assert(layoutSource.includes('Math.min(1, containerWidthPx / layout.widthPx, containerHeightPx / layout.heightPx)'), 'container fitting must never enlarge text and must uniformly shrink only on overflow');
+assert(layoutSource.includes('ctx.scale(layout.glyphScaleX * layout.fitScale, layout.glyphScaleY * layout.fitScale)'), 'glyph X/Y shape and the overflow fit-down scale must remain separate');
 assert(layoutSource.includes('paddingXEm') && layoutSource.includes('paddingYEm'), 'shared Tankan layout must support independent horizontal/vertical padding');
 
 const measured = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddingEm: 0 });
@@ -58,6 +60,26 @@ const legacyUniform = layout.measure('Hobunji Hollow', { fontSizePx: 100, paddin
 assert.equal(legacyUniform.glyphScaleX, 1.6, 'legacy uniform scale should feed X when axis scale is absent');
 assert.equal(legacyUniform.glyphScaleY, 1.6, 'legacy uniform scale should feed Y when axis scale is absent');
 
+const roomy = layout.fitToContainer('Hobunji Hollow', {
+  fontSizePx: 100,
+  paddingEm: 0,
+  containerWidthPx: measured.widthPx * 2,
+  containerHeightPx: measured.heightPx * 2,
+});
+assert.equal(roomy.fitScale, 1, 'a larger container must not enlarge text');
+assert.equal(roomy.renderedWidthPx, measured.widthPx, 'a larger container must preserve natural text width');
+assert.equal(roomy.renderedHeightPx, measured.heightPx, 'a larger container must preserve natural text height');
+assert(roomy.offsetXPx > 0 && roomy.offsetYPx > 0, 'natural text should be centered inside extra container room');
+const tight = layout.fitToContainer('Hobunji Hollow', {
+  fontSizePx: 100,
+  paddingEm: 0,
+  containerWidthPx: measured.widthPx,
+  containerHeightPx: measured.heightPx / 2,
+});
+assert.equal(tight.fitScale, 0.5, 'overflow should uniformly fit text down to the limiting container axis');
+assert.equal(tight.renderedHeightPx, measured.heightPx / 2, 'fit-down should exactly satisfy the limiting height');
+assert.equal(tight.renderedWidthPx, measured.widthPx / 2, 'fit-down must preserve the complete text block aspect ratio');
+
 const furnitureOptions = {
   fontSizePx: 100,
   columnSpacingEm: -0.35,
@@ -73,10 +95,16 @@ const furnitureThree = layout.measure('Hobunji Hollow X', furnitureOptions);
 assert.equal(furnitureOne.widthPx, 260, 'one-column furniture Tankan raster should be 2.6em wide');
 assert.equal(furnitureTwo.widthPx, 325, 'two-column furniture Tankan raster should be 3.25em wide');
 assert.equal(furnitureThree.widthPx, 390, 'three-column furniture Tankan raster should be 3.9em wide');
-assert(Math.abs(furnitureOne.widthPx / furnitureTwo.widthPx - 0.8) < 1e-9, 'one column should naturally resolve to normalized width 0.8');
-assert(Math.abs(furnitureThree.widthPx / furnitureTwo.widthPx - 1.2) < 1e-9, 'three columns should naturally resolve to normalized width 1.2');
+assert(Math.abs(furnitureOne.widthPx / furnitureTwo.widthPx - 0.8) < 1e-9, 'one column natural text width should remain 0.8 of the baseline two-column width');
+assert(Math.abs(furnitureThree.widthPx / furnitureTwo.widthPx - 1.2) < 1e-9, 'three columns natural text width should remain 1.2 of the baseline two-column width');
 assert.equal(furnitureOne.heightPx, furnitureTwo.heightPx, 'adding a same-height word column must not change natural text height');
 assert.equal(furnitureTwo.heightPx, furnitureThree.heightPx, 'adding a short third column must not change natural text height');
+const furnitureBoxOne = layout.fitToContainer('Hobunji', { ...furnitureOptions, containerWidthPx: furnitureTwo.widthPx, containerHeightPx: furnitureTwo.heightPx });
+const furnitureBoxTwo = layout.fitToContainer('Hobunji Hollow', { ...furnitureOptions, containerWidthPx: furnitureTwo.widthPx, containerHeightPx: furnitureTwo.heightPx });
+const furnitureBoxThree = layout.fitToContainer('Hobunji Hollow X', { ...furnitureOptions, containerWidthPx: furnitureTwo.widthPx, containerHeightPx: furnitureTwo.heightPx });
+assert.equal(furnitureBoxOne.fitScale, 1, 'one-column text should stay natural size inside the baseline container');
+assert.equal(furnitureBoxTwo.fitScale, 1, 'baseline two-column text should exactly fit its baseline container');
+assert(Math.abs(furnitureBoxThree.fitScale - furnitureTwo.widthPx / furnitureThree.widthPx) < 1e-9, 'three-column text should only shrink because it exceeds the same container width');
 
 const loadingScreen = read('docs/js/loading-screen-runtime.js');
 assert(loadingScreen.includes("const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'"), 'loading screen must still use the rotated/flipped Tankan OTF');
@@ -104,16 +132,23 @@ assert(editor.includes("color: '#000000'"), 'new Tankan text should default to b
 assert(editor.includes('opacity: 0.5'), 'new Tankan text should default to the supplied 0.5 opacity');
 assert(editor.includes('TANKAN_PADDING_X_EM = 0.8'), 'editor must use calibrated horizontal Tankan padding');
 assert(editor.includes('TANKAN_PADDING_Y_EM = 0.28'), 'editor must preserve the prior vertical Tankan padding');
-assert(editor.includes('TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8'), 'editor must preserve the one-column width calibration');
-assert(editor.includes('TANKAN_EXTRA_COLUMN_WIDTH_FACTOR = 0.2'), 'editor must widen naturally by one calibrated column increment');
-assert(editor.includes('tankanNaturalWidthFactor'), 'editor must auto-size Tankan width from column count');
-assert(editor.includes('tankanNaturalHeightFactor'), 'editor must auto-size Tankan height from row count');
-assert(editor.includes('tankanSizing: \'natural-auto-block\''), 'exports must declare natural Tankan auto-sizing');
-assert(editor.includes('width: 1') && editor.includes('height: 1'), 'new Tankan text width/height controls should be normalized to 1.0');
+assert(editor.includes('tankanContainerPixels'), 'editor must convert Width/Height into real text-container canvas dimensions');
+assert(editor.includes('tankanContainerState'), 'editor must calculate overflow without tying container size to text scale');
+assert(editor.includes('tankanRenderOptions'), 'editor texture rendering must receive explicit container dimensions');
+assert(editor.includes('Math.min(1, container.widthPx / layout.widthPx, container.heightPx / layout.heightPx)'), 'editor container must fit down only when natural text overflows');
+assert(editor.includes('width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1))'), 'Tankan plane width must now be the authored container width directly');
+assert(editor.includes('height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1))'), 'Tankan plane height must now be the authored container height directly');
+assert(!editor.includes('* tankanNaturalWidthFactor(record, layout)'), 'container width must not be multiplied by natural text width anymore');
+assert(!editor.includes('* tankanNaturalHeightFactor(record, layout)'), 'container height must not be multiplied by natural text height anymore');
+assert(editor.includes("tankanSizing: 'container-fit-down-v1'"), 'exports must declare UI-like Tankan container sizing');
+assert(editor.includes("id=\"decalWidthLabel\">Width scale"), 'editor must have a dynamic width label');
+assert(editor.includes("tank an ? 'Container width' : 'Width scale'".replace('tank an', 'tankan')), 'Tankan Width should be labeled as a container control');
+assert(editor.includes('width: 1') && editor.includes('height: 1'), 'new Tankan text container controls should be normalized to 1.0');
 assert(editor.includes('normalOffset: 0'), 'new Tankan text lift control should be normalized to zero');
-assert(editor.includes('version: 3'));
+assert(editor.includes('version: 4'), 'decal authoring metadata should record the container sizing model');
 assert(editor.includes('sourceTypes: [IMAGE_SOURCE_TYPE, TANKAN_SOURCE_TYPE]'));
 assert(editor.includes('decalTextureKey'), 'async text edits need a stale-texture guard');
+assert(editor.includes('options.containerWidthPx') || editor.includes('containerWidthPx'), 'container dimensions must participate in Tankan texture generation/cache identity');
 assert(!editor.includes('\u0101') && !editor.includes('\u0100'), 'canonical project spelling is Tankan; do not introduce macrons into the editor');
 assert(editor.includes('Add Tankan Text'), 'editor should expose the Tankan text decal action with canonical spelling');
 
@@ -128,16 +163,20 @@ assert(runtime.includes('TANKAN_NORMALIZED_VERSION = 2'), 'runtime must keep rea
 assert(runtime.includes('record.tankanGlyphAdvance'), 'runtime must honor normalized glyph advance');
 assert(runtime.includes('record.tankanColumnSpacing'), 'runtime must honor normalized column spacing');
 assert(runtime.includes('TANKAN_PADDING_X_EM = 0.8'), 'runtime must use the same calibrated horizontal padding as the editor');
-assert(runtime.includes('TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8'), 'runtime must use the same one-column natural width as the editor');
-assert(runtime.includes('tankanNaturalWidthFactor'), 'runtime must auto-size width instead of squeezing wider canvases');
-assert(runtime.includes('tankanNaturalHeightFactor'), 'runtime must auto-size height from the Tankan layout');
+assert(runtime.includes('tankanContainerPixels'), 'runtime must create the same explicit Tankan container as the editor');
+assert(runtime.includes('tankanContainerState'), 'runtime must calculate the same overflow fit-down state as the editor');
+assert(runtime.includes('tankanRenderOptions'), 'runtime must pass container dimensions into shared Tankan rendering');
+assert(runtime.includes('width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1))'), 'runtime Tankan plane width must be the authored container width directly');
+assert(runtime.includes('height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1))'), 'runtime Tankan plane height must be the authored container height directly');
+assert(!runtime.includes('* tankanNaturalWidthFactor(record, layout)'), 'runtime must not scale the container plane from natural text width');
+assert(!runtime.includes('* tankanNaturalHeightFactor(record, layout)'), 'runtime must not scale the container plane from natural text height');
 assert(!runtime.includes('\u0101') && !runtime.includes('\u0100'), 'runtime warnings must keep canonical Tankan spelling');
 
 const loader = read('docs/tools/furniture-avatar-author/foliage-furniture-mode.js');
 const layoutLoad = loader.indexOf('tankan-script-layout.js');
 const decalsLoad = loader.indexOf('furniture-decals.js');
 assert(layoutLoad >= 0 && decalsLoad > layoutLoad, 'editor must load TankanScriptLayout before furniture decals');
-assert(loader.includes('tankan-script-layout.js?v=20260915tankan6'), 'editor must cache-bust independent X/Y Tankan layout scaling');
-assert(loader.includes('furniture-decals.js?v=20260915tankan6'), 'editor must cache-bust the X/Y Tankan author controls');
+assert(loader.includes('tankan-script-layout.js?v=20260915tankan7'), 'editor must cache-bust Tankan container-fit rendering');
+assert(loader.includes('furniture-decals.js?v=20260915tankan7'), 'editor must cache-bust the Tankan container author behavior');
 
 console.log('furniture Tankan decal checks passed');
