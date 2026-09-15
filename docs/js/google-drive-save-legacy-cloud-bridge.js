@@ -90,9 +90,8 @@
   function relabelLegacyCloudButtons() {
     relabelScheduled = false;
     for (const button of document.querySelectorAll(CLOUD_BUTTON_SELECTOR)) {
-      const next = '☁ Google Drive'; // Existing DOM ids/listeners remain intact; capture-phase routing below prevents the old Netlify bubble handler from running.
-      if (button.textContent !== next) {
-        button.textContent = next;
+      if (button.textContent !== '☁ Google Drive') {
+        button.textContent = '☁ Google Drive'; // Existing DOM ids/listeners remain intact; capture routing below prevents old Netlify handlers from receiving the gesture.
         button.title = 'Restore or link the canonical Hobunji save through Google Drive';
         relabelCount++;
       }
