@@ -57,6 +57,7 @@ jobs:
           node --check docs/js/google-drive-save-transport.js
           node --check docs/js/google-drive-save-link-safety.js
           node --check docs/js/google-drive-save-ui.js
+          node --check docs/js/google-drive-save-conflict-ui.js
           node --check docs/js/google-drive-save-lifecycle.js
           node --check docs/js/google-drive-save-startup.js
           node --check docs/js/google-drive-save-legacy-cloud-bridge.js
@@ -76,6 +77,7 @@ jobs:
           node scripts/test-google-drive-save-transport.js
           node scripts/test-google-drive-save-link-safety.js
           node scripts/test-google-drive-save-legacy-cloud-bridge.js
+          node scripts/test-google-drive-save-conflict-ui.js
           node scripts/test-google-drive-save-lifecycle.js
           node scripts/test-google-drive-save-startup.js
           node scripts/test-folder-save-v3-canonical.js
