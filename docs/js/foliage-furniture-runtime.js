@@ -263,13 +263,17 @@
   return api;
 });
 
-// Baked full-size wilderness trees are optional. Load their adapter here
-// because this module is already part of every wilderness-capable game boot and
-// runs after foliage-generator.js. The adapter wraps the current public tree
-// builders only after GLBs have loaded; absent assets keep the procedural path.
+// Full-size wilderness tree GLBs are opt-in. Load their adapter here because
+// this module is already part of every wilderness-capable game boot and runs
+// after foliage-generator.js. A saved explicit tree mode is preserved; brand-
+// new/default state is seeded to procedural before the adapter reads its mode.
 (function autoLoadBakedTreeAssets(root) {
   if (!root?.document || root.__treeAssetLibraryBootstrapped) return;
   root.__treeAssetLibraryBootstrapped = true;
+  const TREE_MODE_KEY = 'hobunji_tree_asset_mode_v1'; // Used below to seed the tree adapter's persisted source-mode preference on first boot.
+  try {
+    if (root.localStorage?.getItem(TREE_MODE_KEY) === null) root.localStorage.setItem(TREE_MODE_KEY, 'procedural');
+  } catch (_) {}
   const activate = () => {
     try { root.TreeAssetLibrary?.install?.(root.FoliageGenerator); }
     catch (error) { console.warn('[TreeAssetLibrary] optional baked-tree install failed:', error); }
