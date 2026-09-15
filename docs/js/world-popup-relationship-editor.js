@@ -365,7 +365,7 @@
       }
     });
     panel.querySelector('[data-debug-toggle]').addEventListener('click', event => {
-      const output = panel.querySelector('[data-debug-output');
+      const output = panel.querySelector('[data-debug-output]');
       const hidden = output?.style.display === 'none';
       if (output) output.style.display = hidden ? '' : 'none';
       event.currentTarget.textContent = hidden ? 'Hide' : 'Show';
