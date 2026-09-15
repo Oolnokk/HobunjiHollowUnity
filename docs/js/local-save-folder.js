@@ -5,7 +5,7 @@ document.write('<script src="js/session-persistence-startup-guard.js?v=20260913a
 document.write('<script src="js/save-snapshot-core.js?v=20260904a"><\/script>');
 document.write('<script src="js/save-sync-envelope.js?v=20260915a"><\/script>');
 document.write('<script src="js/save-reconciliation.js?v=20260915a"><\/script>');
-document.write('<script src="js/save-sync-store.js?v=20260915a"><\/script>');
+document.write('<script src="js/save-sync-store.js?v=20260915b"><\/script>');
 document.write('<script src="js/save-coordinator.js?v=20260915driveb"><\/script>');
 document.write('<script src="js/google-drive-save-config.js?v=20260915a"><\/script>');
 document.write('<script src="js/google-drive-save-transport.js?v=20260915a"><\/script>');
@@ -16,7 +16,7 @@ document.write('<script src="js/folder-save-local-autosave-policy.js?v=20260915a
 document.write('<script src="js/folder-save-v3-canonical.js?v=20260915a"><\/script>');
 document.write('<script src="js/folder-save-v3-reconciliation.js?v=20260915a"><\/script>');
 document.write('<script src="js/folder-save-primary.js?v=20260914a"><\/script>');
-document.write('<script src="js/folder-save-reload-choice.js?v=20260915a"><\/script>');
+document.write('<script src="js/folder-save-reload-choice.js?v=20260915b"><\/script>');
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20260915drivec"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20260914a"><\/script>');
