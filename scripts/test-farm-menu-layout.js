@@ -23,6 +23,8 @@ assert.match(layoutSource, /STABLE_HEADING_ID = 'farmStableBreedingHeading'/, 'p
 assert.match(layoutSource, /Direct rows only: no nested Farm\/Stable wrappers remain/, 'Farm-vs-Stable organization explicitly keeps roster rows direct');
 assert.match(layoutSource, /LEGACY_GROUP_IDS = \['farmWorldLivestockGroup', 'farmStableBreedingGroup'\]/, 'hot reload removes the previous nested-group presentation');
 assert.match(layoutSource, /row\.dataset\.nurseryWorldLivestockId/, 'Farm-vs-Stable separation reuses the Nursery row identity contract');
+assert.match(layoutSource, /const alreadyOrdered = currentManaged\.length === desiredNodes\.length/, 'flat roster checks its current order before moving nodes');
+assert.match(layoutSource, /if \(!alreadyOrdered\) desiredNodes\.forEach/, 'observer passes stop mutating once the flat roster order is correct');
 assert.match(layoutSource, /nurseryFocusIndex = index/, 'controller-owned Nursery focus remembers the selected baby index');
 assert.match(layoutSource, /nurseryScrollTop = scroll\.scrollTop/, 'Nursery local scroll position is remembered while navigating');
 assert.match(layoutSource, /button\.focus\(\{ preventScroll: true \}\)/, 'replacement Nursery row receives focus without browser scroll snapping');
