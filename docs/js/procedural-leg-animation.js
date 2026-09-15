@@ -386,14 +386,15 @@
       const cleanOriginalHex = /^#[0-9a-f]{6}$/i.test(String(originalMaterialHex || ''))
         ? String(originalMaterialHex).toUpperCase()
         : null;
-      const cacheKey = role === 'body' ? 'body' : `${role}|${cleanOriginalHex || 'fallback'}`;
+      const cacheKey = role === 'body' || role === 'bone'
+        ? role
+        : `${role}|${cleanOriginalHex || 'fallback'}`;
       if (promises.has(cacheKey)) return promises.get(cacheKey);
       let promise;
       if (role === 'bone') {
-        // The old flat GLB material is the color authority for claws/nails.
-        // Run carved_smooth.png through the SAME shade/body-fill method as body
-        // sprites, using that original bland material hex as both target and reference.
-        const baseHex = cleanOriginalHex || cfg().boneColorHex || '#D8C7A3';
+        // Match the sloth/pachyderm hand claw/nail slot exactly: the shared
+        // fixed bone color is authoritative, never the old GLB material color.
+        const baseHex = window.HobunjiHandModelProfiles?.data?.colors?.bone || cfg().boneColorHex || '#D8C7A3';
         promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: baseHex }, baseHex, 1, `${speciesId}_foot_bone_${baseHex.slice(1)}`, '');
       } else if (role === 'keratin') {
         const baseHex = cleanOriginalHex || cfg().keratinColorHex || '#44484D';
@@ -696,16 +697,18 @@
         const role = roles[material.name] || 'body';
         const originalHex = material.color?.isColor ? `#${material.color.getHexString()}` : null;
         const texture = textureForMaterial.get(material) || defaultTexture;
-        // See buildFallbackFoot's comment on unlit vs lit materials.
+        // See buildFallbackFoot's comment on unlit vs lit materials. Bone-role
+        // claws/nails also mirror the hand material's double-sided behavior.
         const spritePngSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit;
+        const side = role === 'bone' ? THREE.DoubleSide : THREE.FrontSide;
         const cloned = spritePngSurface?.makeMaterial
-          ? spritePngSurface.makeMaterial(THREE, texture, material.name, { color: 0xffffff })
+          ? spritePngSurface.makeMaterial(THREE, texture, material.name, { color: 0xffffff, side })
           : new THREE.MeshBasicMaterial({
               map: texture,
               color: 0xffffff,
               transparent: true,
               alphaTest: 0.001,
-              side: THREE.FrontSide,
+              side,
               depthTest: true,
               depthWrite: true,
               opacity: 1,
