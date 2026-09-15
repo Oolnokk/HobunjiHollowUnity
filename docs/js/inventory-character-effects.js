@@ -114,32 +114,61 @@
     const style = document.createElement('style'); // Presentation is isolated here so inventory-ui.js remains responsible for the surrounding gear layout.
     style.id = STYLE_ID;
     style.textContent = `
+      /* Gear mode reclaims the old hidden item-grid height so the loadout and owned-gear selector get separate vertical regions. */
+      #mpInventory.inv-mode-gear .inv-equip-section {
+        height:calc(21 * var(--inv-row));
+        max-height:calc(21 * var(--inv-row));
+        overflow-y:auto;
+        overflow-x:hidden;
+        box-sizing:border-box;
+      }
+      #mpInventory.inv-mode-gear .gear-loadout-grid {
+        height:calc(12.2 * var(--inv-row));
+        min-height:calc(12.2 * var(--inv-row));
+        max-height:calc(12.2 * var(--inv-row));
+        box-sizing:border-box;
+        overflow:hidden;
+        margin-bottom:calc(1.1 * var(--inv-gap));
+      }
+      #mpInventory.inv-mode-gear .gear-owned-section {
+        position:relative;
+        z-index:0;
+        margin-top:0;
+        padding-top:0;
+      }
       #mpInventory .gear-outfit-stats.gear-character-effects-host {
-        padding:0; border:0; background:none; overflow:visible; gap:var(--inv-gap);
+        padding:0; border:0; background:none; overflow:hidden; gap:var(--inv-gap);
       }
       #mpInventory .gear-outfit-stats.gear-character-effects-host > .gear-loadout-heading { display:none; }
       #mpInventory .gear-character-effects-card {
-        flex:1 1 0; min-height:0; padding:calc(.5 * var(--inv-gap));
+        flex:1 1 0; min-height:0; padding:calc(.35 * var(--inv-gap));
         border:1px solid #ffffff17; border-radius:var(--inv-radius); background:#0000001c;
         display:flex; flex-direction:column; overflow:hidden;
       }
       #mpInventory .gear-character-effects-card .gear-loadout-heading {
-        flex:0 0 auto; min-height:calc(1.15 * var(--inv-row));
+        flex:0 0 auto; min-height:calc(1.05 * var(--inv-row));
       }
       #mpInventory .gear-effects-list {
-        flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:2px;
-        overflow-y:auto; scrollbar-width:thin;
+        flex:1 1 auto; min-height:0;
+        display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+        grid-auto-flow:row; align-content:start; gap:1px 4px;
+        overflow:hidden;
       }
       #mpInventory .gear-effect-row {
-        flex:0 0 auto; min-width:0; display:flex; align-items:baseline; justify-content:space-between; gap:5px;
-        padding:2px 4px; border:1px solid #ffffff10; border-radius:calc(.65 * var(--inv-radius)); background:#ffffff05;
-        font-size:var(--inv-font-xs); line-height:1.25;
+        min-width:0; display:flex; align-items:baseline; justify-content:space-between; gap:3px;
+        padding:1px 2px; border:1px solid #ffffff0d; border-radius:calc(.55 * var(--inv-radius)); background:#ffffff04;
+        font-size:clamp(11px,calc(.56 * var(--inv-row)),13px); line-height:1.04;
       }
-      #mpInventory .gear-effect-label { min-width:0; color:#c8d8ca; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      #mpInventory .gear-effect-value { flex:0 0 auto; color:#f7e9a7; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
+      #mpInventory .gear-effect-label {
+        min-width:0; color:#c8d8ca; white-space:normal; overflow-wrap:anywhere; line-height:1.02;
+      }
+      #mpInventory .gear-effect-value {
+        flex:0 0 auto; color:#f7e9a7; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap;
+      }
       #mpInventory .gear-effect-row.literal .gear-effect-value { color:#d8eef7; }
-      @media (pointer:coarse) {
-        #mpInventory .gear-effect-row { padding:3px 4px; }
+      @media (max-width:720px) {
+        #mpInventory .gear-effect-row { gap:2px; padding:1px; font-size:clamp(11px,calc(.52 * var(--inv-row)),12px); }
+        #mpInventory .gear-effects-list { gap:1px 2px; }
       }
     `;
     document.head.appendChild(style);
