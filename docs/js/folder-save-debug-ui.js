@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
-  const CHANGE_SUMMARY = 'Latest: desktop folders now gain a verified hobunji-primary-save.json V3 canonical file while the existing split V2 files remain recovery mirrors.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Google Drive now uses the canonical V3 save envelope, keeps OAuth tokens memory-only, and linked saves are queued durably before Quit or Start Farming can navigate away.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -13,7 +13,7 @@
   }
 
   function diagnosticsSnapshot() {
-    const creatorPatch = window.hobunjiOnboardingCharacterCreationReloadHandoff; // Existing creator handoff debug/status object, including durable/folder flush counts.
+    const creatorPatch = window.hobunjiOnboardingCharacterCreationReloadHandoff; // Existing creator handoff debug/status object, including durable/folder/Drive queue counts.
     return {
       change: CHANGE_SUMMARY.replace(/^Latest:\s*/i, ''),
       syncFoundation: {
@@ -23,6 +23,8 @@
         durableStoreReady: Boolean(window.HobunjiSaveSyncStore?.commitEnvelope),
       },
       coordinator: safeSnapshot(() => window.HobunjiSaveCoordinator?.getStatus?.()),
+      googleDrive: safeSnapshot(() => window.HobunjiGoogleDriveSave?.getStatus?.()),
+      googleDriveUi: safeSnapshot(() => window.__hobunjiGoogleDriveSaveUIDebug?.snapshot?.()),
       folder: safeSnapshot(() => window.LocalSaveFolder?.getStatus?.()),
       folderV3: safeSnapshot(() => window.__hobunjiFolderSaveV3Debug?.snapshot?.()),
       primaryUx: safeSnapshot(() => window.__hobunjiFolderSavePrimaryDebug?.snapshot?.()),
@@ -35,6 +37,7 @@
       page: {
         href: location.href,
         visibility: document.visibilityState,
+        online: typeof navigator !== 'undefined' ? navigator.onLine : null,
         onboardingVisible: Boolean(document.getElementById('ob-overlay')),
       },
     };
