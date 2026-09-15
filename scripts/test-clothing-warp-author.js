@@ -1,0 +1,26 @@
+'use strict';
+const fs = require('fs');
+const assert = require('assert');
+const html = fs.readFileSync('docs/tools/clothing-warp-author/index.html', 'utf8');
+const script = (html.match(/<script>([\s\S]*?)<\/script>/) || [])[1] || '';
+
+assert(html.includes('Fallback Cosmetic Author'), 'fallback cosmetic author title missing');
+assert(html.includes('id="species"'), 'target species selector missing');
+assert(html.includes('id="gender"'), 'target gender selector missing');
+assert(html.includes('id="cosmetic"'), 'cosmetic selector missing');
+assert(html.includes('id="sourceVariant"'), 'cross-species/gender source selector missing');
+assert(html.includes('3×3 deformation mesh'), '3x3 mesh authoring UI missing');
+assert(script.includes("text(r+'docs/js/portrait-utils.js')"), 'shared portrait runtime is not loaded');
+assert(script.includes("text(r+'docs/js/npc-avatar-preview-utils.js')"), 'shared portrait preview adapter is not loaded');
+assert(script.includes('rectGrid(bounds)'), 'source alpha bounds are not converted into a 3x3 mesh');
+assert(script.includes('for(let r=0;r<2;r++)for(let c=0;c<2;c++)'), '2x2-cell / 3x3-control-point warp is missing');
+assert(script.includes('S.layers.map(l=>warpCanvas'), 'all source layers are not deformed in tandem');
+assert(script.includes('fallbackDeformations'), 'config-ready fallbackDeformations JSON is missing');
+assert(script.includes("coordinateSpace:'portrait-200x200'"), 'fallback mesh coordinate space is not serialized');
+assert(script.includes('sourceVariant:S.sourceVariant'), 'source variant is not serialized');
+assert(script.includes('sourcePoints:S.sourceGrid'), 'source mesh points are not serialized');
+assert(script.includes('destinationPoints:S.destGrid'), 'destination mesh points are not serialized');
+assert(html.includes('id="expLegacy"') && html.includes('id="expDebug"') && html.includes('id="expResize"'), 'experimental feature toggles missing');
+assert(html.includes('id="legacyCard" class="card experimental" hidden'), 'legacy advanced tooling is not disabled by default');
+assert(script.includes("f.src='advanced.html'"), 'legacy advanced author is not preserved behind experimental toggle');
+console.log('fallback cosmetic author checks passed');
