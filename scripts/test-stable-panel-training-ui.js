@@ -88,6 +88,11 @@ function descendantsByClass(root, className) {
   return out;
 }
 
+function stableRowById(root, stableId) {
+  const rows = descendantsByClass(root, 'stable-training-row'); // Used to find the native row after any Stable rerender.
+  return rows.find(row => row.dataset.stableTrainingId === stableId) || null;
+}
+
 function allText(root) {
   const parts = [];
   const queue = [root];
@@ -101,12 +106,14 @@ function allText(root) {
 }
 
 const stable = [
-  { id: 'hound1', kind: 'dabinggi-hound', name: 'Moro', role: 'companion', level: 0, stableXp: 0, animalPerks: {} },
-  { id: 'mount1', kind: 'gar-wolf', name: 'Grubble', role: 'mount', level: 2, stableXp: 9, animalPerks: {} },
+  { id: 'hound1', kind: 'dabinggi-hound', name: 'Moro', role: 'companion', lifeStage: 'baby', level: 0, stableXp: 0, animalPerks: {} },
+  { id: 'hound2', kind: 'dabinggi-hound', name: 'Tavi', role: 'companion', lifeStage: 'adult', level: 1, stableXp: 5, animalPerks: {} },
+  { id: 'mount1', kind: 'gar-wolf', name: 'Grubble', role: 'mount', lifeStage: 'adult', level: 2, stableXp: 9, animalPerks: {} },
 ];
 let activeCompanionId = null;
 let activeMountId = null;
 let saveCount = 0;
+let growthCount = 0; // Counts native Stable growth requests delegated through AnimalGrowth.
 let writtenCoreScript = '';
 const stableList = new FakeElement('div');
 
@@ -163,6 +170,28 @@ const refinements = {
   companionCombatModifiers() { return { damage: 1, cooldown: 1, range: 1, staminaCost: 1 }; },
 };
 
+const animalGrowth = {
+  CONFIG: {
+    item: { label: 'Growth Tonic', icon: '🧪' },
+    stable: { growAndEquipOnRoleClick: true },
+  },
+  isBaby: entry => entry?.lifeStage === 'baby',
+  normalizeStableLifeStages() {},
+  growthTonicCount: () => 2,
+  growStableBaby(stableId, options = {}) {
+    const entry = stable.find(candidate => candidate.id === stableId); // Used to reproduce AnimalGrowth's Stable lookup.
+    if (!entry || entry.lifeStage !== 'baby') return { ok: false, message: 'That Stable baby was not found.' };
+    entry.lifeStage = 'adult';
+    growthCount++;
+    if (options.equip) {
+      if (entry.role === 'mount') activeMountId = entry.id;
+      else activeCompanionId = entry.id;
+    }
+    context.FarmPanel.renderStablePanel();
+    return { ok: true, entry, equipped: !!options.equip, message: `${entry.name} grew up.` };
+  },
+};
+
 const legacyFarmPanel = { init() {}, renderStablePanel() { throw new Error('legacy Stable renderer should have been replaced'); } };
 const context = {
   window: null,
@@ -170,6 +199,7 @@ const context = {
   console,
   StableAnimalProgression: progression,
   StableAnimalTrainingRefinements: refinements,
+  AnimalGrowth: animalGrowth,
   CreatureGenetics: {
     stableEntryRole: entry => entry.role,
     defaultLivestockName: kind => kind,
@@ -237,30 +267,59 @@ context.FarmPanel.init({
 });
 context.FarmPanel.renderStablePanel();
 
-assert.equal(stableList.children.length, 2, 'native Stable renderer creates one main container per stabled animal');
-assert.match(stableList.children[0].innerHTML, /Companion · Lv\. 0\/10/, 'Stable row directly shows the level-10 cap');
-assert.doesNotMatch(stableList.children[0].innerHTML, /leveling coming soon/i, 'authoritative Stable row no longer contains the placeholder');
-assert.equal(descendantsByClass(stableList.children[0], 'stable-entry-perk-tree').length, 0, 'tree starts collapsed');
+const ageSections = descendantsByClass(stableList, 'stable-age-section'); // Used to verify the native renderer owns both age groups.
+assert.equal(ageSections.length, 2, 'native Stable renderer creates Baby and Adult sections');
+assert.match(allText(ageSections[0]), /Baby Animals/, 'first Stable age group is the baby section');
+assert.match(allText(ageSections[1]), /Adult Animals/, 'second Stable age group is the adult section');
+assert.equal(descendantsByClass(ageSections[0], 'stable-training-row').length, 1, 'baby section contains only Stable babies');
+assert.equal(descendantsByClass(ageSections[1], 'stable-training-row').length, 2, 'adult section contains only Stable adults');
 
-stableList.children[0].listeners.click({ target: { closest: () => null } });
-assert.equal(descendantsByClass(stableList.children[0], 'stable-entry-perk-tree').length, 1, 'tapping an animal container expands its tree');
-assert.equal(descendantsByClass(stableList.children[1], 'stable-entry-perk-tree').length, 0, 'other animal remains collapsed');
-assert.match(allText(stableList.children[0]), /General Companion Training/, 'expanded companion shows general training');
-assert.match(allText(stableList.children[0]), /Dabinggi Hound Combat/, 'expanded companion shows its species combat branch');
-assert.match(allText(stableList.children[0]), /Toxic Pounce/, 'species combat perk is rendered inside the actual card');
+let babyRow = stableRowById(stableList, 'hound1'); // Re-read after each native rerender because rows are rebuilt.
+let companionRow = stableRowById(stableList, 'hound2'); // Used for companion training expansion assertions.
+let mountRow = stableRowById(stableList, 'mount1'); // Used for mount training expansion assertions.
+assert.ok(babyRow && companionRow && mountRow, 'all saved Stable animals render inside an age section');
+assert.match(babyRow.innerHTML, /Baby · Companion · Lv\. 0\/10/, 'baby row is visibly labeled and keeps the level cap');
+assert.equal(descendantsByClass(babyRow, 'stable-grow-btn').length, 1, 'baby row exposes the Growth Tonic maturation control');
+assert.match(companionRow.innerHTML, /Companion · Lv\. 1\/10/, 'adult companion directly shows the level-10 cap');
+assert.doesNotMatch(companionRow.innerHTML, /leveling coming soon/i, 'authoritative Stable row no longer contains the placeholder');
+assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 0, 'tree starts collapsed');
 
-stableList.children[1].listeners.click({ target: { closest: () => null } });
-assert.equal(descendantsByClass(stableList.children[0], 'stable-entry-perk-tree').length, 0, 'opening another animal collapses the first tree');
-assert.equal(descendantsByClass(stableList.children[1], 'stable-entry-perk-tree').length, 1, 'second animal tree opens');
-assert.match(allText(stableList.children[1]), /Mount Training/, 'mount card renders its riding tree');
+companionRow.listeners.click({ target: { closest: () => null } });
+companionRow = stableRowById(stableList, 'hound2');
+mountRow = stableRowById(stableList, 'mount1');
+assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 1, 'tapping an adult companion expands its tree');
+assert.equal(descendantsByClass(mountRow, 'stable-entry-perk-tree').length, 0, 'other adult animal remains collapsed');
+assert.match(allText(companionRow), /General Companion Training/, 'expanded companion shows general training');
+assert.match(allText(companionRow), /Dabinggi Hound Combat/, 'expanded companion shows its species combat branch');
+assert.match(allText(companionRow), /Toxic Pounce/, 'species combat perk is rendered inside the actual card');
 
-stableList.children[1].listeners.click({ target: { closest: () => null } });
-assert.equal(descendantsByClass(stableList.children[1], 'stable-entry-perk-tree').length, 0, 'tapping the open animal collapses it');
+mountRow.listeners.click({ target: { closest: () => null } });
+companionRow = stableRowById(stableList, 'hound2');
+mountRow = stableRowById(stableList, 'mount1');
+assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 0, 'opening another animal collapses the first tree');
+assert.equal(descendantsByClass(mountRow, 'stable-entry-perk-tree').length, 1, 'second adult animal tree opens');
+assert.match(allText(mountRow), /Mount Training/, 'mount card renders its riding tree');
+
+mountRow.listeners.click({ target: { closest: () => null } });
+mountRow = stableRowById(stableList, 'mount1');
+assert.equal(descendantsByClass(mountRow, 'stable-entry-perk-tree').length, 0, 'tapping the open animal collapses it');
 assert.equal(context.FarmPanel.stableTrainingDebug().expandedStableId, null, 'debug state agrees that every tree is collapsed');
+assert.equal(context.FarmPanel.stableTrainingDebug().babyCount, 1, 'Stable diagnostics report the saved baby count');
+assert.equal(context.FarmPanel.stableTrainingDebug().adultCount, 2, 'Stable diagnostics report the saved adult count');
 assert.equal(saveCount, 0, 'expanding/collapsing UI does not mutate the save');
+
+babyRow = stableRowById(stableList, 'hound1');
+const growButton = descendantsByClass(babyRow, 'stable-grow-btn')[0]; // Used to prove the native baby control delegates to AnimalGrowth.
+growButton.listeners.click({ stopPropagation() {} });
+assert.equal(growthCount, 1, 'native Stable Grow Up delegates exactly once to AnimalGrowth');
+assert.equal(stable.find(entry => entry.id === 'hound1').lifeStage, 'adult', 'delegated Stable growth moves the baby into the adult life stage');
+assert.equal(context.FarmPanel.stableTrainingDebug().babyCount, 0, 'native age groups refresh after a baby grows up');
+assert.equal(context.FarmPanel.stableTrainingDebug().adultCount, 3, 'grown Stable baby immediately appears in the adult count');
 
 assert.doesNotMatch(source, /leveling coming soon/i, 'farm-panel.js itself contains no obsolete leveling placeholder');
 assert.match(source, /function renderStablePanelNative\(/, 'Stable UI is rendered directly by farm-panel.js, not by a post-render decorator');
+assert.match(source, /stableAgeSection\('🐣 Baby Animals'/, 'native Stable renderer owns the baby grouping instead of relying on a retired decorator');
+assert.match(source, /growth\(\)\?\.growStableBaby/, 'native Stable growth delegates to the shared AnimalGrowth lifecycle');
 assert.match(source, /armNativeInstallOnFarmPanelPublication/, 'browser parser timing is handled at the FarmPanel publication boundary');
 
-console.log('Native Stable panel training UI regression tests passed.');
+console.log('Native Stable panel training + age-section regression tests passed.');
