@@ -15,8 +15,6 @@ const TANKAN_SOURCE_TYPE = 'tankanText';
 const IMAGE_SOURCE_TYPE = 'image';
 const TANKAN_SETTINGS_VERSION = 3;
 const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
-const TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8;
-const TANKAN_EXTRA_COLUMN_WIDTH_FACTOR = 0.2;
 const TANKAN_PADDING_X_EM = 0.8;
 const TANKAN_PADDING_Y_EM = 0.28;
 // Visual reference taken from the supplied authored Hobunji Hollow text decal.
@@ -37,7 +35,7 @@ const TANKAN_BASELINE = Object.freeze({
 let selectedDecalId = null;
 let decalFileTargetSurfaceId = null;
 let tankanInputTimer = null; // Keeps mobile text entry responsive without rebuilding a texture on every keystroke synchronously.
-let cachedTankanBaselineLayout = null; // Used by auto-sizing so all Tankan text keeps a stable physical glyph thickness.
+let cachedTankanBaselineLayout = null; // Anchors the pixel density of the UI-like text container to the normalized Hobunji Hollow reference.
 
 function ensureDecalState() {
   if (!Array.isArray(state.decals)) state.decals = [];
@@ -217,17 +215,47 @@ function baselineTankanLayout() {
 }
 
 function tankanNaturalWidthFactor(record, layout) {
-  const options = tankanTextureOptions(record);
-  const baselineAdvance = Math.max(0.05, 1 + TANKAN_BASELINE.columnSpacingEm);
-  const currentAdvance = Math.max(0.05, 1 + options.columnSpacingEm);
-  const extraColumns = Math.max(0, (layout?.columnCount || 1) - 1);
-  return Math.max(0.05, TANKAN_SINGLE_COLUMN_WIDTH_FACTOR + extraColumns * TANKAN_EXTRA_COLUMN_WIDTH_FACTOR * (currentAdvance / baselineAdvance));
+  const baseLayout = baselineTankanLayout();
+  const liveLayout = layout || measureTankanLayout(record?.tankanText, tankanTextureOptions(record));
+  return Math.max(0.001, liveLayout.widthPx / baseLayout.widthPx);
 }
 
 function tankanNaturalHeightFactor(record, layout) {
   const baseLayout = baselineTankanLayout();
   const liveLayout = layout || measureTankanLayout(record?.tankanText, tankanTextureOptions(record));
-  return Math.max(0.05, (liveLayout?.heightPx || baseLayout.heightPx) / baseLayout.heightPx);
+  return Math.max(0.001, liveLayout.heightPx / baseLayout.heightPx);
+}
+
+function tankanContainerPixels(record) {
+  const baseLayout = baselineTankanLayout();
+  return {
+    widthPx: Math.max(1, Math.round(baseLayout.widthPx * Math.max(0.001, finiteOr(record?.width, 1)))),
+    heightPx: Math.max(1, Math.round(baseLayout.heightPx * Math.max(0.001, finiteOr(record?.height, 1)))),
+  };
+}
+
+function tankanContainerState(record) {
+  const options = tankanTextureOptions(record);
+  const layout = measureTankanLayout(record?.tankanText, options);
+  const container = tankanContainerPixels(record);
+  const fitScale = Math.min(1, container.widthPx / layout.widthPx, container.heightPx / layout.heightPx);
+  return {
+    layout,
+    containerWidthPx: container.widthPx,
+    containerHeightPx: container.heightPx,
+    fitScale,
+    renderedWidthPx: layout.widthPx * fitScale,
+    renderedHeightPx: layout.heightPx * fitScale,
+  };
+}
+
+function tankanRenderOptions(record) {
+  const container = tankanContainerPixels(record);
+  return {
+    ...tankanTextureOptions(record),
+    containerWidthPx: container.widthPx,
+    containerHeightPx: container.heightPx,
+  };
 }
 
 function resolvedDecalTransform(record) {
@@ -243,16 +271,17 @@ function resolvedDecalTransform(record) {
       tankanLayout: null,
     };
   }
-  const layout = measureTankanLayout(record.tankanText, tankanTextureOptions(record));
+  const container = tankanContainerState(record);
   return {
     offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
     offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
-    width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)) * tankanNaturalWidthFactor(record, layout),
-    height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)) * tankanNaturalHeightFactor(record, layout),
+    width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
+    height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
     rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
     normalOffset: Math.max(0.0002, TANKAN_BASELINE.normalOffset + finiteOr(record.normalOffset, 0)),
     opacity: dclamp(record.opacity ?? TANKAN_BASELINE.opacity, 0, 1),
-    tankanLayout: layout,
+    tankanLayout: container.layout,
+    tankanFitScale: container.fitScale,
   };
 }
 
@@ -271,8 +300,8 @@ function buildDecalTexturePair(image) {
 
 function decalTextureKey(record) {
   if (isTankanTextDecal(record)) {
-    const options = tankanTextureOptions(record);
-    return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm}\u0000${options.paddingYEm}\u0000${options.color}`;
+    const options = tankanRenderOptions(record);
+    return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm}\u0000${options.paddingYEm}\u0000${options.containerWidthPx}\u0000${options.containerHeightPx}\u0000${options.color}`;
   }
   return `image:${record.imageSource || ''}`;
 }
@@ -285,7 +314,7 @@ function buildTankanDecalTexture(record) {
   const layout = window.TankanScriptLayout;
   if (!layout?.createCanvas) return Promise.reject(new Error('TankanScriptLayout is unavailable. Reload the editor so the shared script renderer can load.'));
   return Promise.resolve(layout.ensureFontLoaded?.()).then(() => {
-    const result = layout.createCanvas(record.tankanText, tankanTextureOptions(record));
+    const result = layout.createCanvas(record.tankanText, tankanRenderOptions(record));
     if (!result?.canvas) throw new Error('Could not create Tankan-script canvas.');
     const texture = configureDecalTexture(new THREE.CanvasTexture(result.canvas));
     texture.userData = { ...(texture.userData || {}), tankanLayout: result.layout || null };
@@ -373,7 +402,7 @@ function buildDecalMesh(record) {
   const mesh = new THREE.Mesh(geometry, material);
   const textureKey = decalTextureKey(record);
   mesh.name = record.name || 'Furniture Decal';
-  mesh.userData = { type: 'furnitureDecal', id: record.id, surfaceId: group.id, decalTextureKey: textureKey };
+  mesh.userData = { type: 'furnitureDecal', id: record.id, surfaceId: group.id, decalTextureKey: textureKey, tankanFitScale: transform.tankanFitScale ?? null };
   mesh.raycast = () => {};
 
   const halfU = frame.dimensions.width / 2;
@@ -411,7 +440,10 @@ function buildDecalMesh(record) {
       live.material.map = textures.map;
       live.material.alphaMap = textures.alphaMap || null;
       live.material.needsUpdate = true;
-      if (isTankanTextDecal(record) && textures.layout) live.userData.tankanLayout = textures.layout;
+      if (isTankanTextDecal(record) && textures.layout) {
+        live.userData.tankanLayout = textures.layout;
+        live.userData.tankanFitScale = textures.layout.fitScale ?? live.userData.tankanFitScale;
+      }
       renderTankanDebug(record);
     }
   }).catch(error => log?.(`Decal source failed (${record.imageName || record.name || record.id}): ${error.message}`, 'warn'));
@@ -502,7 +534,7 @@ function addTankanTextDecal() {
   renderDecalUi();
   updateStats?.();
   queueUndoHistory?.('add Tankan text decal');
-  log?.(`Added normalized Tankan-script text to ${surface.recognizedType || 'surface'} with automatic no-squeeze sizing.`);
+  log?.(`Added normalized Tankan-script text to ${surface.recognizedType || 'surface'} in a UI-like fit container.`);
 }
 
 function requestDecalImage() {
@@ -630,9 +662,10 @@ function renderTankanDebug(record = selectedDecal()) {
   const readout = dq('decalTankanReadout');
   if (!readout || (record?.id && record.id !== selectedDecalId)) return;
   if (!record || !isTankanTextDecal(record)) { readout.textContent = ''; return; }
-  const layout = measureTankanLayout(record.tankanText, tankanTextureOptions(record));
-  const transform = resolvedDecalTransform(record);
-  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph X ${finiteOr(record.tankanGlyphSizeX, 1).toFixed(2)}× · glyph Y ${finiteOr(record.tankanGlyphSizeY, 1).toFixed(2)}× · auto block ${transform.width.toFixed(2)}×${transform.height.toFixed(2)} · texture ${layout.widthPx}×${layout.heightPx}`;
+  const container = tankanContainerState(record);
+  const layout = container.layout;
+  const fitLabel = container.fitScale < 0.9995 ? `fit-down ${container.fitScale.toFixed(2)}×` : 'natural size';
+  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph X ${finiteOr(record.tankanGlyphSizeX, 1).toFixed(2)}× · glyph Y ${finiteOr(record.tankanGlyphSizeY, 1).toFixed(2)}× · container ${finiteOr(record.width, 1).toFixed(2)}×${finiteOr(record.height, 1).toFixed(2)} · ${fitLabel} · natural ${layout.widthPx}×${layout.heightPx}px in ${container.containerWidthPx}×${container.containerHeightPx}px`;
 }
 
 function renderDecalEditor() {
@@ -652,6 +685,8 @@ function renderDecalEditor() {
   dq('decalOpacity').value = record.opacity;
   dq('decalVisible').checked = record.visible !== false;
   dq('decalTankanFields')?.classList.toggle('hidden', !tankan);
+  if (dq('decalWidthLabel')) dq('decalWidthLabel').textContent = tankan ? 'Container width' : 'Width scale';
+  if (dq('decalHeightLabel')) dq('decalHeightLabel').textContent = tankan ? 'Container height' : 'Height scale';
   if (tankan) {
     dq('decalTankanText').value = record.tankanText;
     dq('decalTankanColumnSpacing').value = record.tankanColumnSpacing;
@@ -678,7 +713,7 @@ function installDecalUi() {
   panel.id = 'furnitureDecalPanel';
   panel.className = 'section';
   panel.innerHTML = `<h2>Surface Decals</h2>
-    <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. Tankan text keeps glyph thickness stable as word columns are added and widens/tallens the decal block automatically instead of squeezing text thinner.</div>
+    <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. For Tankan text, Width/Height define a 2D container: text stays at its authored glyph size and spacing while there is room, and only uniformly scales down when it would overflow the box.</div>
     <div class="g2"><button id="addFurnitureDecal" class="ok">＋ Add Image to Selected Surface</button><button id="addFurnitureTankanText" class="ok">＋ Add Tankan Text</button></div>
     <button id="retargetFurnitureDecal" style="width:100%;margin-top:6px">Retarget Selected Decal</button>
     <input id="furnitureDecalFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
@@ -693,7 +728,7 @@ function installDecalUi() {
         <div id="decalTankanReadout" class="readout muted" style="margin-top:6px"></div>
       </div>
       <div class="g2"><div><label>U offset</label><input id="decalOffsetU" type="number" step="0.02"></div><div><label>V offset</label><input id="decalOffsetV" type="number" step="0.02"></div></div>
-      <div class="g2"><div><label>Width scale</label><input id="decalWidth" type="number" min="0.001" step="0.02"></div><div><label>Height scale</label><input id="decalHeight" type="number" min="0.001" step="0.02"></div></div>
+      <div class="g2"><div><label id="decalWidthLabel">Width scale</label><input id="decalWidth" type="number" min="0.001" step="0.02"></div><div><label id="decalHeightLabel">Height scale</label><input id="decalHeight" type="number" min="0.001" step="0.02"></div></div>
       <div class="g3"><div><label>Rotation°</label><input id="decalRotation" type="number" step="1"></div><div><label>Surface-lift offset</label><input id="decalLift" type="number" step="0.001"></div><div><label>Opacity</label><input id="decalOpacity" type="number" min="0" max="1" step="0.05"></div></div>
       <label class="row"><input id="decalVisible" type="checkbox"> Visible</label>
       <div class="g2"><button id="centerFurnitureDecal">Center</button><button id="fitFurnitureDecal">Fit Surface</button></div>
@@ -754,13 +789,13 @@ exportData = function exportFurnitureWithDecals(...args) {
   const data = originalDecalExport(...args);
   data.decals = dclone(ensureDecalState());
   data.decalAuthoring = {
-    version: 3,
+    version: 4,
     coordinateSpace: 'recognized-surface-local',
     sizeUnits: 'surface-fraction',
     offsetUnits: 'half-surface-span',
     sourceTypes: [IMAGE_SOURCE_TYPE, TANKAN_SOURCE_TYPE],
     tankanLayout: 'vertical-word-columns',
-    tankanSizing: 'natural-auto-block',
+    tankanSizing: 'container-fit-down-v1',
   };
   return data;
 };
@@ -799,5 +834,5 @@ updateStats = function updateStatsWithDecals(...args) {
 
 installDecalUi();
 rebuildDecals({ prune: false });
-log?.('Furniture decal authoring ready. Latest change: Tankan glyph size now has independent X/Y controls without changing glyph centers, advance, or column spacing.');
+log?.('Furniture decal authoring ready. Latest change: Tankan Width/Height are now UI-like container dimensions; text stays at natural glyph size and only uniformly fits down on overflow.');
 })();
