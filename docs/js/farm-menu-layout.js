@@ -344,15 +344,11 @@
     const stableHeading = ensureRosterHeading(container, STABLE_HEADING_ID, 'Your Stable', 'breeding candidates only');
     stableHeading.hidden = stableRows.length === 0;
 
-    // Reappend in final visual order. Every row stays a direct child of the
-    // one roster list, so there is no card/list/list nesting and no extra
-    // scroll container around Farm-vs-Stable groups.
-    container.appendChild(nursery);
-    container.appendChild(worldHeading);
-    worldRows.forEach(row => container.appendChild(row));
-    emptyWorldNotes.forEach(note => container.appendChild(note));
-    container.appendChild(stableHeading);
-    stableRows.forEach(row => container.appendChild(row));
+    const desiredNodes = [nursery, worldHeading, ...worldRows, ...emptyWorldNotes, stableHeading, ...stableRows]; // Used as the one flat visual order for every roster element we manage.
+    const managed = new Set(desiredNodes); // Used to ignore any future unrelated child FarmPanel may add to the roster container.
+    const currentManaged = [...container.children].filter(child => managed.has(child)); // Used to make this mutation-observer presentation pass idempotent.
+    const alreadyOrdered = currentManaged.length === desiredNodes.length && desiredNodes.every((node, index) => currentManaged[index] === node); // Prevents our own node moves from generating another observer pass once the roster is already correct.
+    if (!alreadyOrdered) desiredNodes.forEach(node => container.appendChild(node));
   }
 
   function nurseryScrollRegion(section) {
