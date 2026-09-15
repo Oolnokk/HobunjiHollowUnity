@@ -46,6 +46,7 @@ jobs:
           node --check docs/js/save-reconciliation.js
           node --check docs/js/save-sync-store.js
           node --check docs/js/save-coordinator.js
+          node --check docs/js/folder-save-v3-canonical.js
           node --check docs/js/folder-save-primary.js
           node --check docs/js/folder-save-onboarding-bridge.js
           node --check docs/js/folder-save-device-provenance.js
@@ -56,5 +57,6 @@ jobs:
           node scripts/test-save-sync-foundation.js
           node scripts/test-save-sync-store.js
           node scripts/test-save-coordinator.js
+          node scripts/test-folder-save-v3-canonical.js
           node scripts/test-folder-save-primary.js
           node scripts/test-folder-save-runtime-integrity.js
