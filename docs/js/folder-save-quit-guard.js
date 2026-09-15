@@ -1,12 +1,12 @@
-// Folder Save Quit Guard — replaces the legacy Quit click path in capture phase.
-// Live gameplay is persisted first, then committed to the durable sync store,
-// then the primary folder is written, then the page may reload.
+// Folder Save Quit Guard — owns the Quit-to-save-selection control and its safe
+// persistence sequence. Live gameplay is persisted first, then committed to the
+// durable sync store, then the primary folder is written, then the page may reload.
 (() => {
   'use strict';
 
   if (window.FolderSaveQuitGuard) return;
 
-  const QUIT_BUTTON_ID = 'menuQuitBtn'; // Existing menu Quit button intercepted before local-save-flow's bubble listener.
+  const QUIT_BUTTON_ID = 'menuQuitBtn'; // Stable menu Quit control created by this module and intercepted in capture phase below.
   let busy = false; // Prevents double-clicks from starting overlapping runtime/durable/folder saves.
   let quitAttempts = 0; // Mobile-visible count of guarded quit attempts.
   let successfulDurableCommits = 0; // Mobile-visible count of sync-store commits completed before quit reloads.
@@ -22,6 +22,30 @@
   function pendingTransportTargets() {
     const driveStatus = window.HobunjiGoogleDriveSave?.getStatus?.(); // Linked Drive identity is enough to queue; authorization/network work happens separately.
     return driveStatus?.linked ? ['drive'] : [];
+  }
+
+  function installQuitButton() {
+    if (document.getElementById(QUIT_BUTTON_ID)) return true;
+    const controls = document.querySelector('#menuPanel .mp-ctrls'); // Existing menu control strip receives the persistence-owned Quit action.
+    if (!controls) return false;
+
+    const button = document.createElement('button'); // Created here so retiring local-save-flow cannot remove the only Quit affordance.
+    button.type = 'button';
+    button.id = QUIT_BUTTON_ID;
+    button.className = 'mp-ctrl-btn danger';
+    button.title = 'Quit to save selection';
+    button.setAttribute('aria-label', 'Quit to save selection');
+    button.textContent = '🚪 Quit';
+    Object.assign(button.style, {
+      width: 'auto',
+      minWidth: '72px',
+      padding: '0 9px',
+      whiteSpace: 'nowrap',
+    });
+
+    const closeButton = controls.querySelector('#mpClose'); // Quit stays immediately before the existing menu close button as in the retired flow.
+    controls.insertBefore(button, closeButton || null);
+    return true;
   }
 
   function setBusy(button, value, label = 'Saving…') {
@@ -166,12 +190,16 @@
   }
 
   document.addEventListener('click', event => {
-    const button = event.target?.closest?.(`#${QUIT_BUTTON_ID}`); // Existing Quit control intercepted before the older bubble-phase handler.
+    const button = event.target?.closest?.(`#${QUIT_BUTTON_ID}`); // Persistence-owned Quit control is handled before any unrelated bubble listeners.
     if (!button) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     guardedQuit(button);
   }, true);
+
+  const install = () => installQuitButton(); // Explicit helper used at DOM readiness and exposed for diagnostics/tests.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
+  else install();
 
   // A browser refresh/close that bypasses the menu cannot await IndexedDB or
   // folder I/O, but the live localStorage snapshot itself is synchronous.
@@ -180,10 +208,11 @@
     window.HobunjiRuntimeSave?.flushNow?.({ reason: 'beforeunload' });
   }, { capture: true });
 
-  window.FolderSaveQuitGuard = { guardedQuit };
+  window.FolderSaveQuitGuard = { guardedQuit, installQuitButton };
   window.__hobunjiFolderSaveQuitDebug = {
     snapshot: () => ({
       busy,
+      quitButtonPresent: Boolean(document.getElementById(QUIT_BUTTON_ID)),
       quitAttempts,
       successfulDurableCommits,
       queuedDriveCommits,
