@@ -136,10 +136,11 @@ async function main() {
   }
 
   // 3) Guard ordering: Quit must capture live runtime state, make that snapshot
-  // durable locally, then mirror to the folder, then reload.
+  // durable locally + queue linked Drive atomically, then mirror to folder, then reload.
   {
     const source = read('docs/js/folder-save-quit-guard.js');
     const sequence = [];
+    let durableOptions = null; // Captures the coordinator call so the test can prove linked Drive is queued at the durable boundary.
     const button = {
       disabled: false,
       textContent: '🚪 Quit',
@@ -167,11 +168,14 @@ async function main() {
           getStatus: () => ({ ...folderStatus }),
           async syncNow() { sequence.push('folder'); return { ...folderStatus }; },
         },
+        HobunjiGoogleDriveSave: {
+          getStatus() { return { linked: true, state: 'auth-required' }; },
+        },
         HobunjiRuntimeSave: {
           flushNow() { sequence.push('runtime'); return { ok: true, captured: true }; },
         },
         HobunjiSaveCoordinator: {
-          async commitCurrent() { sequence.push('durable'); return { ok: true }; },
+          async commitCurrent(options) { durableOptions = options; sequence.push('durable'); return { ok: true }; },
         },
         addEventListener() {},
       },
@@ -179,7 +183,9 @@ async function main() {
     vm.runInContext(source, context, { filename: 'folder-save-quit-guard.js' });
     await context.window.FolderSaveQuitGuard.guardedQuit(button);
     assert.deepEqual(sequence, ['runtime', 'durable', 'folder', 'reload'], 'Quit must save runtime → durable local → folder → reload, in that order');
-    console.log('OK  guarded Quit commits durable local state before the primary folder and reload');
+    assert.deepEqual(durableOptions?.pendingTargets, ['drive'], 'linked Drive is queued atomically with the durable Quit save even when authorization is absent');
+    assert.equal(context.window.__hobunjiFolderSaveQuitDebug.snapshot().queuedDriveCommits, 1, 'mobile diagnostics count the queued Drive commit');
+    console.log('OK  guarded Quit durably queues Drive before the primary folder and reload');
   }
 
   // 4) A real durable-store failure must stop external overwrite/navigation, so
@@ -208,6 +214,9 @@ async function main() {
           isSupported: () => true,
           getStatus: () => ({ ...folderStatus }),
           async syncNow() { sequence.push('folder'); return { ...folderStatus }; },
+        },
+        HobunjiGoogleDriveSave: {
+          getStatus() { return { linked: true, state: 'auth-required' }; },
         },
         HobunjiRuntimeSave: {
           flushNow() { sequence.push('runtime'); return { ok: true, captured: true }; },
