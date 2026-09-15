@@ -6,6 +6,8 @@ on:
       - 'docs/config/npcs/social-relations.js'
       - 'docs/config/maps/map_i_temple.json'
       - 'docs/config/maps/map_i_temple_basement_hunundi.json'
+      - 'docs/js/character-action-locks.js'
+      - 'docs/js/npc-performance-reaction-lock-runtime.js'
       - 'docs/js/map-layout-system.js'
       - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
@@ -34,6 +36,7 @@ on:
       - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-interior-fire-floor.js'
       - 'scripts/test-interior-fire-void.js'
+      - 'scripts/test-kurraya-performance-reaction-lock.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
@@ -51,6 +54,8 @@ on:
       - 'docs/config/npcs/social-relations.js'
       - 'docs/config/maps/map_i_temple.json'
       - 'docs/config/maps/map_i_temple_basement_hunundi.json'
+      - 'docs/js/character-action-locks.js'
+      - 'docs/js/npc-performance-reaction-lock-runtime.js'
       - 'docs/js/map-layout-system.js'
       - 'docs/js/npc-gifting.js'
       - 'docs/js/npc-social-relationship-bridge-v2.js'
@@ -79,6 +84,7 @@ on:
       - 'scripts/test-generic-hud-icons.js'
       - 'scripts/test-interior-fire-floor.js'
       - 'scripts/test-interior-fire-void.js'
+      - 'scripts/test-kurraya-performance-reaction-lock.js'
       - 'scripts/test-npc-gifting-multitrait.js'
       - 'scripts/test-npc-social-rapport-wardrobes.js'
       - 'scripts/test-npc-social-seating.js'
@@ -108,6 +114,8 @@ jobs:
       - name: Syntax check NPC social modules
         run: |
           node --check docs/config/npcs/social-relations.js
+          node --check docs/js/character-action-locks.js
+          node --check docs/js/npc-performance-reaction-lock-runtime.js
           node --check docs/js/map-layout-system.js
           node --check docs/js/npc-gifting.js
           node --check docs/js/npc-social-relationship-bridge-v2.js
@@ -137,6 +145,7 @@ jobs:
           node --check scripts/test-generic-hud-icons.js
           node --check scripts/test-interior-fire-floor.js
           node --check scripts/test-interior-fire-void.js
+          node --check scripts/test-kurraya-performance-reaction-lock.js
           node --check scripts/test-npc-gifting-multitrait.js
           node --check scripts/test-npc-social-seating.js
           node --check scripts/test-npc-swig-offer-cooldown.js
@@ -149,6 +158,8 @@ jobs:
           node --check scripts/generate-placeholder-wardrobes.js
       - name: Test continuous player-dance Rapport rate
         run: node scripts/test-dance-rapport-rate.js
+      - name: Test Kurraya performer physical-reaction lock
+        run: node scripts/test-kurraya-performance-reaction-lock.js
       - name: Test generic HUD icon replacement and rapport popup integration
         run: node scripts/test-generic-hud-icons.js
       - name: Test interior fire, floor, environment, updated church, and civil midnight integration
