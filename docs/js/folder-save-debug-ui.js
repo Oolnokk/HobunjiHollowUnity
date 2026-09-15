@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
-  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes share three-way reconciliation; linked Drive sessions also preflight again after foreground/reconnect when a valid in-memory token exists, without opening OAuth or hot-loading active gameplay.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes share three-way reconciliation; Drive file-id switches reset old baselines, startup can Keep Both without overwriting, and authorized sessions preflight again after foreground/reconnect.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -25,6 +25,7 @@
       coordinator: safeSnapshot(() => window.HobunjiSaveCoordinator?.getStatus?.()),
       durableCheckpoint: safeSnapshot(() => window.__hobunjiSaveCheckpointDebug?.snapshot?.()),
       googleDrive: safeSnapshot(() => window.HobunjiGoogleDriveSave?.getStatus?.()),
+      googleDriveLinkSafety: safeSnapshot(() => window.__hobunjiGoogleDriveLinkSafetyDebug?.snapshot?.()),
       googleDriveUi: safeSnapshot(() => window.__hobunjiGoogleDriveSaveUIDebug?.snapshot?.()),
       googleDriveLifecycle: safeSnapshot(() => window.__hobunjiGoogleDriveSaveLifecycleDebug?.snapshot?.()),
       googleDriveStartup: safeSnapshot(() => window.__hobunjiGoogleDriveSaveStartupDebug?.snapshot?.()),
