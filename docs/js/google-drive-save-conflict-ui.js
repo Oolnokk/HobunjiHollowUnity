@@ -11,13 +11,17 @@
   const KEEP_BOTH_ID = 'googleDriveKeepBothBtn'; // Explicit non-destructive acknowledgement that leaves both preserved branches untouched.
   const USE_LOCAL_BUTTON_ID = 'googleDriveSaveUseLocalBtn'; // Existing destructive local-wins action relabeled more precisely while conflict UI is active.
   const USE_DRIVE_BUTTON_ID = 'googleDriveSaveUseDriveBtn'; // Existing destructive Drive-wins action relabeled more precisely while conflict UI is active.
+  const UNLINK_BUTTON_ID = 'googleDriveSaveUnlinkBtn'; // Existing unlink action intercepted so unresolved conflict metadata cannot be discarded casually.
 
   let scheduled = false; // Coalesces settings/transport mutations into one asynchronous conflict refresh.
   let keepBothAcknowledgements = 0; // Mobile-visible count of deliberate no-overwrite acknowledgements.
+  let unlinkAttempts = 0; // Count of Settings unlink gestures handled by the conflict-aware guard.
+  let conflictUnlinks = 0; // Count of confirmed unlinks that deliberately discarded an unresolved conflict record.
+  let unlinkBusy = false; // Prevents repeated taps from racing unlink/store cleanup.
   let lastConflictKind = null; // Latest durable conflict kind rendered into Settings.
   let lastLocalHash = null; // Latest local branch hash shown to the player.
   let lastExternalHash = null; // Latest external/Drive branch hash shown to the player.
-  let lastError = ''; // Latest conflict-panel refresh failure visible in Save Diagnostics.
+  let lastError = ''; // Latest conflict-panel refresh/unlink failure visible in Save Diagnostics.
 
   function storeApi() { return window.HobunjiSaveSyncStore || null; }
   function driveApi() { return window.HobunjiGoogleDriveSave || null; }
@@ -109,6 +113,43 @@
     }
   }
 
+  async function conflictAwareUnlink(button) {
+    if (unlinkBusy) return;
+    unlinkBusy = true;
+    unlinkAttempts++;
+    lastError = '';
+    const oldLabel = button?.textContent || 'Unlink'; // Existing label restored even if unlink is cancelled or fails.
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Checking…';
+    }
+
+    try {
+      const conflict = await storeApi()?.getConflict?.(TARGET_ID) || null; // Fresh durable read avoids relying on potentially stale panel-render state.
+      const hasConflict = Boolean(conflict?.local?.contentHash && conflict?.external?.contentHash);
+      const message = hasConflict
+        ? 'An unresolved Google Drive conflict is still preserved in this browser.\n\nUnlinking will NOT delete this device\'s save or the Google Drive file, but this browser will forget the preserved conflict copy, common baseline, pending Drive queue, and link metadata. You would need to link the Drive file again to compare the branches later.\n\nUnlink anyway?'
+        : 'Unlink Google Drive from this browser? Your Drive file and local save are not deleted.';
+      if (!confirm(message)) return { cancelled: true, conflictPreserved: hasConflict };
+
+      if (hasConflict) conflictUnlinks++;
+      const result = await driveApi()?.unlink?.(); // Transport performs the canonical link/baseline/conflict/pending cleanup only after the explicit warning.
+      await window.HobunjiGoogleDriveSaveUI?.refresh?.();
+      scheduleRefresh();
+      return result;
+    } catch (error) {
+      lastError = String(error?.message || error);
+      alert('Google Drive Save:\n' + lastError);
+      return null;
+    } finally {
+      unlinkBusy = false;
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = oldLabel;
+      }
+    }
+  }
+
   async function refresh() {
     scheduled = false;
     const panel = installPanel();
@@ -156,6 +197,16 @@
     requestAnimationFrame(() => refresh().catch(() => {}));
   }
 
+  // Capture phase replaces only the base Settings unlink click so conflict-aware
+  // warning/cleanup happens before google-drive-save-ui.js's ordinary handler.
+  document.addEventListener('click', event => {
+    const button = event.target?.closest?.(`#${UNLINK_BUTTON_ID}`);
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    conflictAwareUnlink(button);
+  }, true);
+
   const observer = new MutationObserver(scheduleRefresh); // Settings DOM and Drive row visibility can change after this module loads.
   const begin = () => {
     if (!document.body) return;
@@ -167,11 +218,14 @@
 
   driveApi()?.onChange?.(scheduleRefresh); // Successful conflict resolution clears the durable record and hides this panel immediately.
 
-  window.HobunjiGoogleDriveConflictUI = Object.freeze({ refresh });
+  window.HobunjiGoogleDriveConflictUI = Object.freeze({ refresh, conflictAwareUnlink });
   window.__hobunjiGoogleDriveConflictUIDebug = {
     snapshot: () => ({
       visible: document.getElementById(PANEL_ID)?.style.display !== 'none',
       keepBothAcknowledgements,
+      unlinkAttempts,
+      conflictUnlinks,
+      unlinkBusy,
       lastConflictKind,
       lastLocalHash,
       lastExternalHash,
