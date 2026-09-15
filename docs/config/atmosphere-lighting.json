@@ -13,6 +13,7 @@
     "centerMaskAlpha": 0.92,
     "clarityMaskAlpha": 0.8,
     "softMaskAlpha": 0.28,
-    "softTransitionFraction": 0.18
+    "softTransitionFraction": 0.18,
+    "weatherTintRetentionAlpha": 0.2
   }
 }
