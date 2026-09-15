@@ -39,7 +39,7 @@ assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.itemKinds.voorgAssBab
 const denMotherItemKeys = Object.fromEntries(Object.values(windowStub.SCRATCHBONES_CONFIG.game.wildlife.denMothers).map(def => [def.creatureKey, def.nestItemKey]));
 assert.equal(denMotherItemKeys.puktuk, 'puktukBaby', 'game.js DEN_MOTHER_ITEM_KEYS snapshot must contain the Puktuk clutch reward');
 assert.equal(denMotherItemKeys['voorg-ass'], 'voorgAssBaby', 'game.js DEN_MOTHER_ITEM_KEYS snapshot must contain the Voorg-Ass clutch reward');
-assert.equal(windowStub.PuktukDenNestRegistration.version, 3);
+assert.equal(windowStub.PuktukDenNestRegistration.version, 2);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().configReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().livestockReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().voorgConfigReady, true);
@@ -85,20 +85,26 @@ const wildlifeDeps = {
   },
   DEN_MOTHER_DEFS: {
     'gar-wolf': { creatureKey: 'gar-wolf-den-mother', nestItemKey: 'garWolfBaby' },
+    grehlr: { creatureKey: 'grehlr-den-mother', nestItemKey: 'grehlrBaby' },
   },
 };
 assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'wildlife-initialized');
 assert.equal(originalWildlifeInitDeps, wildlifeDeps, 'WildlifeSpawn.init must still receive the untouched dependency object');
 assert.deepEqual(
   JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.denSpecies)),
-  ['voorg-ass'],
-  'Northern Cliffs must explicitly assign Voorg-Ass as a den species instead of relying on the herbivore roster',
+  ['grehlr', 'voorg-ass'],
+  'Authoring explicit Northern Cliffs den species must preserve Grehlr while adding Voorg-Ass',
 );
 assert.deepEqual(
   JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS['voorg-ass'])),
   { creatureKey: 'voorg-ass', nestItemKey: 'voorgAssBaby' },
   'Runtime den assignment must satisfy CavernGenerator Den-Mother filtering',
 );
-assert(logs.some(entry => /\[voorg-ass\] den registration .*dens=\[voorg-ass\].*reward=voorgAssBaby/.test(entry.message) && entry.channel === 'wildlife'), 'mobile-visible diagnostics must report successful Voorg-Ass den registration');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(wildlifeDeps.DEN_MOTHER_DEFS.grehlr)),
+  { creatureKey: 'grehlr-den-mother', nestItemKey: 'grehlrBaby' },
+  'Existing Grehlr Den-Mother authoring must remain untouched',
+);
+assert(logs.some(entry => /\[voorg-ass\] den registration .*dens=\[grehlr,voorg-ass\].*grehlrPreserved=1.*reward=voorgAssBaby/.test(entry.message) && entry.channel === 'wildlife'), 'mobile-visible diagnostics must report successful mixed Grehlr + Voorg-Ass den registration');
 
-console.log('Puktuk + Voorg-Ass den clutch registration regression passed.');
+console.log('Puktuk + Grehlr + Voorg-Ass den clutch registration regression passed.');
