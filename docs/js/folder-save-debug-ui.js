@@ -4,8 +4,8 @@
   'use strict';
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
-  const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent folder-save UX change.
-  const CHANGE_SUMMARY = 'Latest: Quit now flushes live gameplay before the folder write, and Resume shows the folder source plus same/different-device last-writer status.'; // Human-readable current-change summary requested for mobile testing.
+  const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
+  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes now share three-way reconciliation; Drive file-id switches reset old baselines, conflicts show both preserved branches with Keep Both/replace choices, and the Settings identity probe can verify Drive-for-Desktop keeps one file id while Drive version advances.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -13,10 +13,28 @@
   }
 
   function diagnosticsSnapshot() {
-    const creatorPatch = window.hobunjiOnboardingCharacterCreationReloadHandoff; // Existing creator handoff debug/status object, including folder flush counts.
+    const creatorPatch = window.hobunjiOnboardingCharacterCreationReloadHandoff; // Existing creator handoff debug/status object, including durable/folder/Drive queue counts.
     return {
       change: CHANGE_SUMMARY.replace(/^Latest:\s*/i, ''),
+      syncFoundation: {
+        envelopeFormat: window.HobunjiSaveEnvelope?.FORMAT || null,
+        envelopeVersion: window.HobunjiSaveEnvelope?.FORMAT_VERSION || null,
+        reconciliationReady: Boolean(window.HobunjiSaveReconciliation?.decide),
+        durableStoreReady: Boolean(window.HobunjiSaveSyncStore?.commitEnvelope),
+      },
+      coordinator: safeSnapshot(() => window.HobunjiSaveCoordinator?.getStatus?.()),
+      durableCheckpoint: safeSnapshot(() => window.__hobunjiSaveCheckpointDebug?.snapshot?.()),
+      googleDrive: safeSnapshot(() => window.HobunjiGoogleDriveSave?.getStatus?.()),
+      googleDriveLinkSafety: safeSnapshot(() => window.__hobunjiGoogleDriveLinkSafetyDebug?.snapshot?.()),
+      googleDriveUi: safeSnapshot(() => window.__hobunjiGoogleDriveSaveUIDebug?.snapshot?.()),
+      googleDriveConflictUi: safeSnapshot(() => window.__hobunjiGoogleDriveConflictUIDebug?.snapshot?.()),
+      googleDriveIdentityProbe: safeSnapshot(() => window.__hobunjiGoogleDriveIdentityProbeDebug?.snapshot?.()),
+      googleDriveLifecycle: safeSnapshot(() => window.__hobunjiGoogleDriveSaveLifecycleDebug?.snapshot?.()),
+      googleDriveStartup: safeSnapshot(() => window.__hobunjiGoogleDriveSaveStartupDebug?.snapshot?.()),
+      googleDriveRestoreBridge: safeSnapshot(() => window.__hobunjiGoogleDriveLegacyCloudBridgeDebug?.snapshot?.()),
       folder: safeSnapshot(() => window.LocalSaveFolder?.getStatus?.()),
+      folderV3: safeSnapshot(() => window.__hobunjiFolderSaveV3Debug?.snapshot?.()),
+      folderV3Reconciliation: safeSnapshot(() => window.__hobunjiFolderSaveV3ReconciliationDebug?.snapshot?.()),
       primaryUx: safeSnapshot(() => window.__hobunjiFolderSavePrimaryDebug?.snapshot?.()),
       onboarding: safeSnapshot(() => window.__hobunjiFolderSaveOnboardingDebug?.snapshot?.()),
       emptyFolderBootstrap: safeSnapshot(() => window.__hobunjiFolderSaveEmptyBootstrapDebug?.snapshot?.()),
@@ -27,6 +45,7 @@
       page: {
         href: location.href,
         visibility: document.visibilityState,
+        online: typeof navigator !== 'undefined' ? navigator.onLine : null,
         onboardingVisible: Boolean(document.getElementById('ob-overlay')),
       },
     };

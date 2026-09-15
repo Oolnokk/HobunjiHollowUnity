@@ -21,6 +21,7 @@ function makeStorage(initial = {}) {
 function basicDom() {
   return {
     body: null,
+    readyState: 'loading',
     addEventListener() {},
     getElementById() { return null; },
   };
@@ -28,14 +29,20 @@ function basicDom() {
 
 async function main() {
   const loader = read('docs/js/local-save-folder.js');
+  const coordinatorIndex = loader.indexOf('save-coordinator.js');
+  const coreIndex = loader.indexOf('local-save-folder-core.js');
   const provenanceIndex = loader.indexOf('folder-save-device-provenance.js');
   const runtimeIndex = loader.indexOf('folder-save-runtime-flush.js');
   const quitIndex = loader.indexOf('folder-save-quit-guard.js');
   const legacyIndex = loader.indexOf('local-save-flow.js');
+  const netlifyIndex = loader.indexOf('netlify-cloud-save.js');
+  assert.ok(coordinatorIndex >= 0 && coreIndex > coordinatorIndex, 'durable save coordinator should load before external persistence transports');
   assert.ok(provenanceIndex >= 0 && runtimeIndex > provenanceIndex, 'runtime flush should load after folder provenance wrappers');
   assert.ok(quitIndex > runtimeIndex, 'quit guard should load after the runtime flush bridge');
-  assert.ok(legacyIndex > quitIndex, 'quit guard must register before the legacy quit flow');
-  console.log('OK  folder save runtime modules load in safe orchestration order');
+  assert.equal(legacyIndex, -1, 'legacy local-save-flow must stay out of the production loader');
+  assert.equal(netlifyIndex, -1, 'legacy Netlify cloud transport must stay out of the production loader');
+  assert.ok(read('docs/js/folder-save-quit-guard.js').includes('installQuitButton'), 'quit guard owns the Quit control after retiring local-save-flow');
+  console.log('OK  V3 runtime modules own save orchestration without legacy flow activation');
 
   // 1) Prove the exact Grehlr failure class is closed: livestock collection can
   // no longer update the live bag and save livestock while leaving member
@@ -81,8 +88,8 @@ async function main() {
     console.log('OK  live Grehlr resource inventory is persisted before folder mirroring');
   }
 
-  // 2) Prove portable saves carry an anonymous last-writer installation id and
-  // the onboarding text can distinguish this installation from another one.
+  // 2) V3 provenance must come from the canonical envelope, not transport-only
+  // timestamps injected into gameplay metadata. Legacy per-entity stamps remain readable.
   {
     const source = read('docs/js/folder-save-device-provenance.js');
     const meta = {
@@ -90,7 +97,8 @@ async function main() {
       characters: [{ id: 'char-a', nickname: 'Tester' }],
       worlds: [{ id: 'world-a', label: 'Hollow' }],
     };
-    const localStorage = makeStorage({ hobunjiSaveMeta: JSON.stringify(meta) });
+    const originalMetaRaw = JSON.stringify(meta); // Exact gameplay blob compared after folder sync to prove provenance no longer mutates it.
+    const localStorage = makeStorage({ hobunjiSaveMeta: originalMetaRaw, 'hobunjiSaveDeviceId.v1': 'device-this-installation' });
     const folderStatus = {
       state: 'ready',
       folderName: 'Hobunji Save',
@@ -98,6 +106,11 @@ async function main() {
       lastError: null,
       dataLossRisk: null,
     };
+    let currentEnvelope = {
+      writerId: 'device-this-installation',
+      writtenAt: 1000,
+      contentHash: 'sha256:same-device',
+    }; // Durable V3 envelope provenance can change independently of gameplay metadata.
     const localSave = {
       getStatus() { return { ...folderStatus }; },
       async syncNow() { return { ...folderStatus }; },
@@ -111,32 +124,44 @@ async function main() {
       requestAnimationFrame(fn) { fn(); },
       window: {
         LocalSaveFolder: localSave,
-        crypto: { randomUUID: () => 'device-this-installation' },
+        HobunjiSaveSyncStore: {
+          async getCurrentEnvelope() { return currentEnvelope ? { ...currentEnvelope } : null; },
+        },
+        crypto: { randomUUID: () => 'device-unused-random-id' },
       },
     });
     vm.runInContext(source, context, { filename: 'folder-save-device-provenance.js' });
 
     await localSave.syncNow();
-    const stamped = JSON.parse(localStorage.getItem('hobunjiSaveMeta'));
-    assert.equal(stamped.worlds[0].folderSaveProvenance.lastWriterDeviceId, 'device-this-installation', 'world save should remember anonymous last writer');
-    assert.equal(stamped.characters[0].folderSaveProvenance.lastWriterDeviceId, 'device-this-installation', 'character save should remember anonymous last writer');
-    assert.ok(Number(stamped.worlds[0].folderSaveProvenance.writtenAt) > 0, 'save provenance should remember overwrite time');
+    assert.equal(localStorage.getItem('hobunjiSaveMeta'), originalMetaRaw, 'folder sync must not inject transport provenance into gameplay save metadata');
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /From “Hobunji Save”/);
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on this device/);
+    assert.equal(context.window.FolderSaveDeviceProvenance.latestProvenance().source, 'canonical-envelope', 'canonical envelope is the primary V3 provenance source');
 
-    stamped.worlds[0].folderSaveProvenance.lastWriterDeviceId = 'device-other-installation';
-    stamped.worlds[0].folderSaveProvenance.writtenAt += 1000;
-    localStorage.setItem('hobunjiSaveMeta', JSON.stringify(stamped));
+    currentEnvelope = {
+      writerId: 'device-other-installation',
+      writtenAt: 2000,
+      contentHash: 'sha256:other-device',
+    };
+    await context.window.FolderSaveDeviceProvenance.refreshEnvelopeProvenance();
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on a different device/);
     assert.ok(!context.window.FolderSaveDeviceProvenance.sourceLine().includes('device-other-installation'), 'UI must not expose the anonymous device id itself');
-    console.log('OK  Resume provenance shows folder source and same/different-device status without naming devices');
+
+    currentEnvelope = null;
+    const legacy = JSON.parse(originalMetaRaw);
+    legacy.worlds[0].folderSaveProvenance = { version: 1, lastWriterDeviceId: 'device-this-installation', writtenAt: 500 };
+    localStorage.setItem('hobunjiSaveMeta', JSON.stringify(legacy));
+    await context.window.FolderSaveDeviceProvenance.refreshEnvelopeProvenance();
+    assert.equal(context.window.FolderSaveDeviceProvenance.latestProvenance().source, 'legacy-entity', 'pre-V3 per-entity provenance remains a read-only compatibility fallback');
+    console.log('OK  V3 provenance stays outside gameplay content while legacy provenance remains readable');
   }
 
-  // 3) Guard ordering: Quit must commit live runtime state before it asks the
-  // folder layer to serialize localStorage, and only reload after both finish.
+  // 3) Guard ordering: Quit must capture live runtime state, make that snapshot
+  // durable locally + queue linked Drive atomically, then mirror to folder, then reload.
   {
     const source = read('docs/js/folder-save-quit-guard.js');
     const sequence = [];
+    let durableOptions = null; // Captures the coordinator call so the test can prove linked Drive is queued at the durable boundary.
     const button = {
       disabled: false,
       textContent: '🚪 Quit',
@@ -156,7 +181,9 @@ async function main() {
       alert: message => { throw new Error('Unexpected alert: ' + message); },
       location: { reload() { sequence.push('reload'); } },
       document: {
+        readyState: 'loading',
         addEventListener() {},
+        getElementById() { return null; },
       },
       window: {
         LocalSaveFolder: {
@@ -164,16 +191,70 @@ async function main() {
           getStatus: () => ({ ...folderStatus }),
           async syncNow() { sequence.push('folder'); return { ...folderStatus }; },
         },
+        HobunjiGoogleDriveSave: {
+          getStatus() { return { linked: true, state: 'auth-required' }; },
+        },
         HobunjiRuntimeSave: {
           flushNow() { sequence.push('runtime'); return { ok: true, captured: true }; },
+        },
+        HobunjiSaveCoordinator: {
+          async commitCurrent(options) { durableOptions = options; sequence.push('durable'); return { ok: true }; },
         },
         addEventListener() {},
       },
     });
     vm.runInContext(source, context, { filename: 'folder-save-quit-guard.js' });
     await context.window.FolderSaveQuitGuard.guardedQuit(button);
-    assert.deepEqual(sequence, ['runtime', 'folder', 'reload'], 'Quit must save runtime → folder → reload, in that order');
-    console.log('OK  guarded Quit flushes live runtime before the primary folder and reload');
+    assert.deepEqual(sequence, ['runtime', 'durable', 'folder', 'reload'], 'Quit must save runtime → durable local → folder → reload, in that order');
+    assert.deepEqual(durableOptions?.pendingTargets, ['drive'], 'linked Drive is queued atomically with the durable Quit save even when authorization is absent');
+    assert.equal(context.window.__hobunjiFolderSaveQuitDebug.snapshot().queuedDriveCommits, 1, 'mobile diagnostics count the queued Drive commit');
+    console.log('OK  guarded Quit durably queues Drive before the primary folder and reload');
+  }
+
+  // 4) A real durable-store failure must stop external overwrite/navigation, so
+  // the player can retry while the freshly-flushed localStorage state remains intact.
+  {
+    const source = read('docs/js/folder-save-quit-guard.js');
+    const sequence = [];
+    const alerts = [];
+    const button = { disabled: false, textContent: '🚪 Quit', dataset: {} };
+    const folderStatus = {
+      supported: true,
+      state: 'ready',
+      folderName: 'Hobunji Save',
+      autoSyncArmed: true,
+      lastError: null,
+      dataLossRisk: null,
+    };
+    const context = vm.createContext({
+      console,
+      confirm: () => true,
+      alert: message => alerts.push(message),
+      location: { reload() { sequence.push('reload'); } },
+      document: { readyState: 'loading', addEventListener() {}, getElementById() { return null; } },
+      window: {
+        LocalSaveFolder: {
+          isSupported: () => true,
+          getStatus: () => ({ ...folderStatus }),
+          async syncNow() { sequence.push('folder'); return { ...folderStatus }; },
+        },
+        HobunjiGoogleDriveSave: {
+          getStatus() { return { linked: true, state: 'auth-required' }; },
+        },
+        HobunjiRuntimeSave: {
+          flushNow() { sequence.push('runtime'); return { ok: true, captured: true }; },
+        },
+        HobunjiSaveCoordinator: {
+          async commitCurrent() { sequence.push('durable-failed'); return { ok: false, error: 'IDB write failed' }; },
+        },
+        addEventListener() {},
+      },
+    });
+    vm.runInContext(source, context, { filename: 'folder-save-quit-guard.js' });
+    await context.window.FolderSaveQuitGuard.guardedQuit(button);
+    assert.deepEqual(sequence, ['runtime', 'durable-failed'], 'durable failure stops before folder overwrite or reload');
+    assert.match(alerts[0] || '', /durable local save storage/i, 'durable failure is visible without DevTools');
+    console.log('OK  durable-store failures stop folder overwrite and navigation');
   }
 
   console.log('\nFolder save runtime integrity checks passed.');

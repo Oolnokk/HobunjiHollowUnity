@@ -112,6 +112,18 @@
   font-weight: 700;
 }
 
+#localSaveFolderRow.folder-save-settings-secondary {
+  opacity: 0.58;
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: none;
+}
+
+#localSaveFolderRow.folder-save-settings-secondary .settings-name {
+  color: var(--text, #eef3f6);
+  font-size: inherit;
+}
+
 .folder-save-settings-fallback-note {
   flex-basis: 100%;
   font-size: 10px;
@@ -120,7 +132,89 @@
   opacity: 0.7;
 }
 
-#folderSavePrimaryGate {
+.google-drive-save-title {
+  margin-top: 10px;
+}
+
+.google-drive-save-row {
+  padding: 11px;
+  border: 1px solid rgba(120, 160, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(120, 160, 255, 0.035);
+}
+
+.google-drive-save-row.google-drive-save-primary {
+  padding: 14px;
+  border-color: rgba(106, 167, 255, 0.46);
+  background: rgba(106, 167, 255, 0.085);
+  box-shadow: 0 0 22px rgba(106, 167, 255, 0.08);
+}
+
+.google-drive-save-title-primary {
+  color: #bcd6ff;
+  font-weight: 700;
+}
+
+.google-drive-save-row.google-drive-save-primary .settings-name {
+  color: #d9e7ff;
+  font-size: 14px;
+}
+
+.google-drive-save-row .settings-desc {
+  max-width: 760px;
+  line-height: 1.45;
+}
+
+.google-drive-save-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.google-drive-save-status {
+  flex: 1 1 100%;
+  min-height: 18px;
+  color: #b9c9e5;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.google-drive-save-detail {
+  flex: 1 1 100%;
+  min-height: 14px;
+  color: var(--text-dim, #99a);
+  font-size: 10px;
+  line-height: 1.45;
+  opacity: 0.82;
+}
+
+.google-drive-save-row .settings-small-btn {
+  min-height: 34px;
+  padding: 7px 11px;
+}
+
+.google-drive-save-row.google-drive-save-primary #googleDriveSaveLinkBtn,
+.google-drive-save-row.google-drive-save-primary #googleDriveSaveCreateBtn,
+.google-drive-save-row.google-drive-save-primary #googleDriveSaveSyncBtn {
+  min-height: 40px;
+  padding: 9px 14px;
+  border-color: rgba(106, 167, 255, 0.48);
+  font-weight: 700;
+}
+
+.google-drive-resolution-btn {
+  border-color: rgba(255, 198, 90, 0.5) !important;
+  background: rgba(255, 198, 90, 0.1) !important;
+}
+
+.google-drive-secondary-btn {
+  opacity: 0.72;
+}
+
+#folderSavePrimaryGate,
+#googleDriveSaveStartupGate {
   position: fixed;
   inset: 0;
   z-index: 2147483647;
@@ -141,6 +235,21 @@
   background: #101714;
   color: #effff2;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.56);
+}
+
+.google-drive-startup-card {
+  border-color: rgba(106, 167, 255, 0.42);
+  background: #10151e;
+}
+
+.google-drive-startup-card .folder-save-primary-gate-title {
+  color: #d9e7ff;
+}
+
+.google-drive-startup-main {
+  border-color: rgba(106, 167, 255, 0.5) !important;
+  background: rgba(106, 167, 255, 0.15) !important;
+  color: #eef5ff !important;
 }
 
 .folder-save-primary-gate-title {
@@ -200,6 +309,11 @@
 
   .folder-save-primary-section .sl-local-save-btn,
   #hobunjiEmptySaveFolder.folder-save-primary-action {
+    width: 100%;
+  }
+
+  .google-drive-save-controls .settings-small-btn {
+    flex: 1 1 100%;
     width: 100%;
   }
 

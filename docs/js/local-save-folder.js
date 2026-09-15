@@ -1,16 +1,31 @@
-// Compatibility loader: persistence core + default save/load UX flow.
+// Compatibility loader: V3 durable-save foundation + desktop folder + Google Drive UX.
 // Kept at the historical path so existing pages do not need to change script order.
-document.write('<style>#localSaveStartupGate{font-family:"KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace!important}</style>');
-document.write('<link rel="stylesheet" href="folder-save-primary.css?v=20260914a">');
+document.write('<link rel="stylesheet" href="folder-save-primary.css?v=20260915driveb">');
 document.write('<script src="js/session-persistence-startup-guard.js?v=20260913a"><\/script>');
 document.write('<script src="js/save-snapshot-core.js?v=20260904a"><\/script>');
+document.write('<script src="js/save-sync-envelope.js?v=20260915a"><\/script>');
+document.write('<script src="js/save-reconciliation.js?v=20260915a"><\/script>');
+document.write('<script src="js/save-sync-store.js?v=20260915b"><\/script>');
+document.write('<script src="js/save-coordinator.js?v=20260915driveb"><\/script>');
+document.write('<script src="js/google-drive-save-config.js?v=20260915a"><\/script>');
+document.write('<script src="js/google-drive-save-transport.js?v=20260915a"><\/script>');
+document.write('<script src="js/google-drive-save-link-safety.js?v=20260915b"><\/script>');
+document.write('<script src="js/save-durable-checkpoint.js?v=20260915a"><\/script>');
 document.write('<script src="js/local-save-folder-core.js?v=20260812a"><\/script>');
+document.write('<script src="js/folder-save-local-autosave-policy.js?v=20260915a"><\/script>');
+document.write('<script src="js/folder-save-v3-canonical.js?v=20260915a"><\/script>');
+document.write('<script src="js/folder-save-v3-reconciliation.js?v=20260915a"><\/script>');
 document.write('<script src="js/folder-save-primary.js?v=20260914a"><\/script>');
+document.write('<script src="js/folder-save-reload-choice.js?v=20260915b"><\/script>');
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
-document.write('<script src="js/folder-save-device-provenance.js?v=20260914a"><\/script>');
+document.write('<script src="js/folder-save-device-provenance.js?v=20260915drivec"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20260914a"><\/script>');
-document.write('<script src="js/folder-save-quit-guard.js?v=20260914a"><\/script>');
-document.write('<script src="js/folder-save-debug-ui.js?v=20260914a"><\/script>');
-document.write('<script src="js/netlify-cloud-save.js?v=20260904a"><\/script>');
-document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');
+document.write('<script src="js/folder-save-quit-guard.js?v=20260915drivec"><\/script>');
+document.write('<script src="js/folder-save-debug-ui.js?v=20260915drivei"><\/script>');
+document.write('<script src="js/google-drive-save-ui.js?v=20260915a"><\/script>');
+document.write('<script src="js/google-drive-save-conflict-ui.js?v=20260915b"><\/script>');
+document.write('<script src="js/google-drive-save-identity-probe.js?v=20260915b"><\/script>');
+document.write('<script src="js/google-drive-save-lifecycle.js?v=20260915a"><\/script>');
+document.write('<script src="js/google-drive-save-startup.js?v=20260915c"><\/script>');
+document.write('<script src="js/google-drive-save-legacy-cloud-bridge.js?v=20260915c"><\/script>');
 document.write('<script src="js/save-startup-gate.js?v=20260910review1"><\/script>');
