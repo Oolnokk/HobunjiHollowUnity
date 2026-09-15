@@ -7,32 +7,87 @@
 const dq = id => document.getElementById(id);
 const dclone = value => value == null ? value : JSON.parse(JSON.stringify(value));
 const dclamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
+const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const decalMeshes = new Map();
 const decalTextureCache = new Map();
 const TANKAN_SOURCE_TYPE = 'tankanText';
 const IMAGE_SOURCE_TYPE = 'image';
-const TANKAN_FALLBACK_DEFAULTS = Object.freeze({ columnSpacingEm: -0.55, glyphAdvanceEm: 0.56, color: '#ffffff' });
+const TANKAN_SETTINGS_VERSION = 2;
+// Visual reference taken from the supplied authored Hobunji Hollow text decal.
+const TANKAN_BASELINE = Object.freeze({
+  columnSpacingEm: -0.35,
+  glyphAdvanceEm: 0.6,
+  glyphScale: 1.2,
+  color: '#000000',
+  offsetU: 0,
+  offsetV: -0.055,
+  width: 0.96,
+  height: 0.96,
+  rotationDeg: 0,
+  normalOffset: 0.003,
+  opacity: 0.5,
+});
 let selectedDecalId = null;
 let decalFileTargetSurfaceId = null;
-let tankanInputTimer = null; // Used to keep mobile text entry responsive without rebuilding a texture on every keystroke synchronously.
+let tankanInputTimer = null; // Keeps mobile text entry responsive without rebuilding a texture on every keystroke synchronously.
 
 function ensureDecalState() {
   if (!Array.isArray(state.decals)) state.decals = [];
   return state.decals;
 }
 
-function tankanDefaults() {
-  return window.TankanScriptLayout?.defaults || TANKAN_FALLBACK_DEFAULTS;
-}
-
 function isTankanTextDecal(record) {
   return record?.sourceType === TANKAN_SOURCE_TYPE || (!!record?.tankanText && !record?.imageSource);
 }
 
-function normalizeDecal(record = {}) {
-  const defaults = tankanDefaults();
-  const sourceType = record.sourceType === TANKAN_SOURCE_TYPE || record.tankanText ? TANKAN_SOURCE_TYPE : IMAGE_SOURCE_TYPE;
+function normalizedTankanRecord(record) {
+  const alreadyNormalized = Number(record?.tankanSettingsVersion) >= TANKAN_SETTINGS_VERSION;
+  if (alreadyNormalized) {
+    return {
+      tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
+      tankanColumnSpacing: finiteOr(record.tankanColumnSpacing, 0),
+      tankanGlyphAdvance: Math.max(0.001, finiteOr(record.tankanGlyphAdvance, 1)),
+      tankanGlyphSize: Math.max(0.001, finiteOr(record.tankanGlyphSize, 1)),
+      tankanColor: String(record.tankanColor || TANKAN_BASELINE.color),
+      offsetU: finiteOr(record.offsetU, 0),
+      offsetV: finiteOr(record.offsetV, 0),
+      width: Math.max(0.001, finiteOr(record.width, 1)),
+      height: Math.max(0.001, finiteOr(record.height, 1)),
+      rotationDeg: finiteOr(record.rotationDeg, 0),
+      normalOffset: finiteOr(record.normalOffset, 0),
+      opacity: dclamp(record.opacity ?? TANKAN_BASELINE.opacity, 0, 1),
+    };
+  }
+
+  // Legacy records stored renderer-space values directly. Convert them so the
+  // supplied authored appearance becomes the clean 0/1 normalized baseline.
+  const legacyColumnSpacing = finiteOr(record?.tankanColumnSpacingEm, TANKAN_BASELINE.columnSpacingEm);
+  const legacyGlyphAdvance = finiteOr(record?.tankanGlyphAdvanceEm, TANKAN_BASELINE.glyphAdvanceEm);
+  const legacyOffsetU = finiteOr(record?.offsetU, TANKAN_BASELINE.offsetU);
+  const legacyOffsetV = finiteOr(record?.offsetV, TANKAN_BASELINE.offsetV);
+  const legacyWidth = Math.max(0.001, finiteOr(record?.width, TANKAN_BASELINE.width));
+  const legacyHeight = Math.max(0.001, finiteOr(record?.height, TANKAN_BASELINE.height));
+  const legacyLift = finiteOr(record?.normalOffset, TANKAN_BASELINE.normalOffset);
   return {
+    tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
+    tankanColumnSpacing: legacyColumnSpacing - TANKAN_BASELINE.columnSpacingEm,
+    tankanGlyphAdvance: legacyGlyphAdvance / TANKAN_BASELINE.glyphAdvanceEm,
+    // A normalized 1.0 intentionally renders 20% larger than the pre-setting glyph size.
+    tankanGlyphSize: 1,
+    tankanColor: String(record?.tankanColor || TANKAN_BASELINE.color),
+    offsetU: legacyOffsetU - TANKAN_BASELINE.offsetU,
+    offsetV: legacyOffsetV - TANKAN_BASELINE.offsetV,
+    width: legacyWidth / TANKAN_BASELINE.width,
+    height: legacyHeight / TANKAN_BASELINE.height,
+    rotationDeg: finiteOr(record?.rotationDeg, 0) - TANKAN_BASELINE.rotationDeg,
+    normalOffset: legacyLift - TANKAN_BASELINE.normalOffset,
+    opacity: dclamp(record?.opacity ?? TANKAN_BASELINE.opacity, 0, 1),
+  };
+}
+
+function normalizeDecal(record = {}) {
+  const sourceType = record.sourceType === TANKAN_SOURCE_TYPE || record.tankanText ? TANKAN_SOURCE_TYPE : IMAGE_SOURCE_TYPE;
+  const common = {
     id: record.id || uid('decal'),
     name: record.name || (sourceType === TANKAN_SOURCE_TYPE ? 'Tankan Text' : 'Furniture Decal'),
     sourceType,
@@ -43,17 +98,18 @@ function normalizeDecal(record = {}) {
     imageSource: record.imageSource || null,
     imageName: record.imageName || '',
     tankanText: String(record.tankanText || ''),
-    tankanColumnSpacingEm: Number.isFinite(Number(record.tankanColumnSpacingEm)) ? Number(record.tankanColumnSpacingEm) : defaults.columnSpacingEm,
-    tankanGlyphAdvanceEm: Number.isFinite(Number(record.tankanGlyphAdvanceEm)) ? Number(record.tankanGlyphAdvanceEm) : defaults.glyphAdvanceEm,
-    tankanColor: String(record.tankanColor || defaults.color || '#ffffff'),
-    offsetU: Number.isFinite(Number(record.offsetU)) ? Number(record.offsetU) : 0,
-    offsetV: Number.isFinite(Number(record.offsetV)) ? Number(record.offsetV) : 0,
-    width: Math.max(.001, Number(record.width) || .5),
-    height: Math.max(.001, Number(record.height) || .5),
-    rotationDeg: Number(record.rotationDeg) || 0,
-    normalOffset: Math.max(.0002, Number(record.normalOffset) || .003),
+    visible: record.visible !== false,
+  };
+  if (sourceType === TANKAN_SOURCE_TYPE) return { ...common, ...normalizedTankanRecord(record) };
+  return {
+    ...common,
+    offsetU: finiteOr(record.offsetU, 0),
+    offsetV: finiteOr(record.offsetV, 0),
+    width: Math.max(0.001, finiteOr(record.width, 0.5)),
+    height: Math.max(0.001, finiteOr(record.height, 0.5)),
+    rotationDeg: finiteOr(record.rotationDeg, 0),
+    normalOffset: Math.max(0.0002, finiteOr(record.normalOffset, 0.003)),
     opacity: dclamp(record.opacity ?? 1, 0, 1),
-    visible: record.visible !== false
   };
 }
 
@@ -89,8 +145,38 @@ function decalSurface(record) {
 function surfaceDimensions(group) {
   const b = group?.bounds || {};
   return {
-    width: Math.max(.001, Number(b.maxU) - Number(b.minU) || .001),
-    height: Math.max(.001, Number(b.maxV) - Number(b.minV) || .001)
+    width: Math.max(0.001, Number(b.maxU) - Number(b.minU) || 0.001),
+    height: Math.max(0.001, Number(b.maxV) - Number(b.minV) || 0.001),
+  };
+}
+
+function tankanTextureOptions(record) {
+  return {
+    columnSpacingEm: dclamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
+    glyphAdvanceEm: dclamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
+    glyphScale: dclamp(TANKAN_BASELINE.glyphScale * finiteOr(record.tankanGlyphSize, 1), 0.25, 2.5),
+    color: record.tankanColor || TANKAN_BASELINE.color,
+  };
+}
+
+function resolvedDecalTransform(record) {
+  if (!isTankanTextDecal(record)) {
+    return {
+      offsetU: record.offsetU,
+      offsetV: record.offsetV,
+      width: record.width,
+      height: record.height,
+      rotationDeg: record.rotationDeg,
+      normalOffset: record.normalOffset,
+    };
+  }
+  return {
+    offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
+    offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
+    width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
+    height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
+    rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
+    normalOffset: Math.max(0.0002, TANKAN_BASELINE.normalOffset + finiteOr(record.normalOffset, 0)),
   };
 }
 
@@ -104,22 +190,13 @@ function configureDecalTexture(texture) {
 }
 
 function buildDecalTexturePair(image) {
-  // MeshBasicMaterial reads the alpha channel directly from an RGBA color map.
-  // Keeping the source image avoids tainting a canvas for cross-origin catalog assets.
   return { map: configureDecalTexture(new THREE.Texture(image)), alphaMap: null };
-}
-
-function tankanTextureOptions(record) {
-  return {
-    columnSpacingEm: record.tankanColumnSpacingEm,
-    glyphAdvanceEm: record.tankanGlyphAdvanceEm,
-    color: record.tankanColor,
-  };
 }
 
 function decalTextureKey(record) {
   if (isTankanTextDecal(record)) {
-    return `tankan:${record.tankanText}\u0000${record.tankanColumnSpacingEm}\u0000${record.tankanGlyphAdvanceEm}\u0000${record.tankanColor}`;
+    const options = tankanTextureOptions(record);
+    return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.color}`;
   }
   return `image:${record.imageSource || ''}`;
 }
@@ -143,15 +220,11 @@ function buildTankanDecalTexture(record) {
 function loadImageDecalTexture(source) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    // Network-backed catalog paths may resolve cross-origin; request anonymous CORS before src is assigned.
     if (!/^(?:data|blob):/i.test(source)) image.crossOrigin = 'anonymous';
     image.decoding = 'async';
     image.onload = () => {
-      try {
-        resolve(buildDecalTexturePair(image));
-      } catch (error) {
-        reject(new Error(`Could not preserve decal transparency: ${error.message}`));
-      }
+      try { resolve(buildDecalTexturePair(image)); }
+      catch (error) { reject(new Error(`Could not preserve decal transparency: ${error.message}`)); }
     };
     image.onerror = () => reject(new Error('Could not load decal image (network/CORS).'));
     image.src = source;
@@ -206,22 +279,23 @@ function buildDecalMesh(record) {
   const frame = group ? localSurfaceFrame(group) : null;
   if (!group || !partMesh || !frame) return null;
 
-  const width = Math.max(.001, frame.dimensions.width * record.width);
-  const height = Math.max(.001, frame.dimensions.height * record.height);
+  const transform = resolvedDecalTransform(record); // Converts normalized Tankan controls to the authored visual baseline.
+  const width = Math.max(0.001, frame.dimensions.width * transform.width);
+  const height = Math.max(0.001, frame.dimensions.height * transform.height);
   const geometry = new THREE.PlaneGeometry(width, height);
   const material = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
     opacity: record.opacity,
-    alphaTest: .001,
+    alphaTest: 0.001,
     depthWrite: false,
     side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2
+    polygonOffsetUnits: -2,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  const textureKey = decalTextureKey(record); // Used to reject stale async texture work when text is edited rapidly.
+  const textureKey = decalTextureKey(record); // Rejects stale async texture work when text is edited rapidly.
   mesh.name = record.name || 'Furniture Decal';
   mesh.userData = { type: 'furnitureDecal', id: record.id, surfaceId: group.id, decalTextureKey: textureKey };
   mesh.raycast = () => {};
@@ -229,25 +303,25 @@ function buildDecalMesh(record) {
   const halfU = frame.dimensions.width / 2;
   const halfV = frame.dimensions.height / 2;
   mesh.position.copy(frame.center)
-    .addScaledVector(frame.u, record.offsetU * halfU)
-    .addScaledVector(frame.v, record.offsetV * halfV)
-    .addScaledVector(frame.normal, record.normalOffset);
+    .addScaledVector(frame.u, transform.offsetU * halfU)
+    .addScaledVector(frame.v, transform.offsetV * halfV)
+    .addScaledVector(frame.normal, transform.normalOffset);
   const basis = new THREE.Matrix4().makeBasis(frame.u, frame.v, frame.normal);
   mesh.quaternion.setFromRotationMatrix(basis);
-  mesh.rotateZ(record.rotationDeg * DEG);
+  mesh.rotateZ(transform.rotationDeg * DEG);
   partMesh.add(mesh);
   decalMeshes.set(record.id, mesh);
 
   if (selectedDecalId === record.id) {
     const points = [
-      new THREE.Vector3(-width / 2, -height / 2, .0005),
-      new THREE.Vector3(width / 2, -height / 2, .0005),
-      new THREE.Vector3(width / 2, height / 2, .0005),
-      new THREE.Vector3(-width / 2, height / 2, .0005)
+      new THREE.Vector3(-width / 2, -height / 2, 0.0005),
+      new THREE.Vector3(width / 2, -height / 2, 0.0005),
+      new THREE.Vector3(width / 2, height / 2, 0.0005),
+      new THREE.Vector3(-width / 2, height / 2, 0.0005),
     ];
     const outline = new THREE.LineLoop(
       new THREE.BufferGeometry().setFromPoints(points),
-      new THREE.LineBasicMaterial({ color: 0x65b8ff, depthTest: false, transparent: true, opacity: .95 })
+      new THREE.LineBasicMaterial({ color: 0x65b8ff, depthTest: false, transparent: true, opacity: 0.95 }),
     );
     outline.renderOrder = 999;
     outline.raycast = () => {};
@@ -295,7 +369,7 @@ function baseRecordForSurface(surface) {
     surfacePartId: surface.partId,
     surfaceType: surface.recognizedType,
     surfaceFaces: [...(surface.faceIndices || [])],
-    normalOffset: .003,
+    normalOffset: 0.003,
   };
 }
 
@@ -310,8 +384,8 @@ function addDecalFromFile(file, surfaceId) {
       sourceType: IMAGE_SOURCE_TYPE,
       imageSource: String(reader.result || ''),
       imageName: file.name,
-      width: .5,
-      height: .5,
+      width: 0.5,
+      height: 0.5,
     });
     ensureDecalState().push(record);
     selectedDecalId = record.id;
@@ -327,17 +401,23 @@ function addDecalFromFile(file, surfaceId) {
 function addTankanTextDecal() {
   const surface = selectedSurfaceForDecal();
   if (!surface) { log?.('Select a recognized furniture surface first.', 'warn'); return; }
-  const defaults = tankanDefaults();
   const record = normalizeDecal({
     ...baseRecordForSurface(surface),
     name: 'Tankan Text',
     sourceType: TANKAN_SOURCE_TYPE,
     tankanText: 'Hobunji Hollow',
-    tankanColumnSpacingEm: defaults.columnSpacingEm,
-    tankanGlyphAdvanceEm: defaults.glyphAdvanceEm,
-    tankanColor: defaults.color || '#ffffff',
-    width: .42,
-    height: .82,
+    tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
+    tankanColumnSpacing: 0,
+    tankanGlyphAdvance: 1,
+    tankanGlyphSize: 1,
+    tankanColor: TANKAN_BASELINE.color,
+    offsetU: 0,
+    offsetV: 0,
+    width: 1,
+    height: 1,
+    rotationDeg: 0,
+    normalOffset: 0,
+    opacity: TANKAN_BASELINE.opacity,
   });
   ensureDecalState().push(record);
   selectedDecalId = record.id;
@@ -345,7 +425,7 @@ function addTankanTextDecal() {
   renderDecalUi();
   updateStats?.();
   queueUndoHistory?.('add Tankan text decal');
-  log?.(`Added Tankan-script text to ${surface.recognizedType || 'surface'} using loading-screen spacing defaults.`);
+  log?.(`Added normalized Tankan-script text to ${surface.recognizedType || 'surface'}.`);
 }
 
 function requestDecalImage() {
@@ -385,7 +465,7 @@ function deleteSelectedDecal() {
 function duplicateSelectedDecal() {
   const record = selectedDecal();
   if (!record) return;
-  const copy = normalizeDecal({ ...dclone(record), id: uid('decal'), name: `${record.name} Copy`, offsetU: record.offsetU + .08, offsetV: record.offsetV + .08 });
+  const copy = normalizeDecal({ ...dclone(record), id: uid('decal'), name: `${record.name} Copy`, offsetU: record.offsetU + 0.08, offsetV: record.offsetV + 0.08 });
   ensureDecalState().push(copy);
   selectedDecalId = copy.id;
   buildDecalMesh(copy);
@@ -399,8 +479,8 @@ function fitSelectedDecal() {
   if (!record) return;
   record.offsetU = 0;
   record.offsetV = 0;
-  record.width = .96;
-  record.height = .96;
+  record.width = isTankanTextDecal(record) ? 1 : 0.96;
+  record.height = isTankanTextDecal(record) ? 1 : 0.96;
   buildDecalMesh(record);
   renderDecalUi();
   queueUndoHistory?.('fit furniture decal');
@@ -419,20 +499,23 @@ function centerSelectedDecal() {
 function updateSelectedDecalFromUi({ recordHistory = true } = {}) {
   const record = selectedDecal();
   if (!record) return;
+  const tankan = isTankanTextDecal(record);
   record.name = dq('decalName')?.value.trim() || record.name;
-  record.offsetU = Number(dq('decalOffsetU')?.value) || 0;
-  record.offsetV = Number(dq('decalOffsetV')?.value) || 0;
-  record.width = Math.max(.001, Number(dq('decalWidth')?.value) || record.width);
-  record.height = Math.max(.001, Number(dq('decalHeight')?.value) || record.height);
-  record.rotationDeg = Number(dq('decalRotation')?.value) || 0;
-  record.normalOffset = Math.max(.0002, Number(dq('decalLift')?.value) || .003);
-  record.opacity = dclamp(dq('decalOpacity')?.value ?? 1, 0, 1);
+  record.offsetU = finiteOr(dq('decalOffsetU')?.value, 0);
+  record.offsetV = finiteOr(dq('decalOffsetV')?.value, 0);
+  record.width = Math.max(0.001, finiteOr(dq('decalWidth')?.value, record.width));
+  record.height = Math.max(0.001, finiteOr(dq('decalHeight')?.value, record.height));
+  record.rotationDeg = finiteOr(dq('decalRotation')?.value, 0);
+  record.normalOffset = tankan ? finiteOr(dq('decalLift')?.value, 0) : Math.max(0.0002, finiteOr(dq('decalLift')?.value, 0.003));
+  record.opacity = dclamp(dq('decalOpacity')?.value ?? (tankan ? TANKAN_BASELINE.opacity : 1), 0, 1);
   record.visible = dq('decalVisible')?.checked !== false;
-  if (isTankanTextDecal(record)) {
+  if (tankan) {
+    record.tankanSettingsVersion = TANKAN_SETTINGS_VERSION;
     record.tankanText = dq('decalTankanText')?.value || '';
-    record.tankanColumnSpacingEm = dclamp(dq('decalTankanColumnSpacing')?.value ?? tankanDefaults().columnSpacingEm, -0.95, 4);
-    record.tankanGlyphAdvanceEm = dclamp(dq('decalTankanGlyphAdvance')?.value ?? tankanDefaults().glyphAdvanceEm, .1, 4);
-    record.tankanColor = dq('decalTankanColor')?.value || '#ffffff';
+    record.tankanColumnSpacing = dclamp(dq('decalTankanColumnSpacing')?.value ?? 0, -0.6, 4.35);
+    record.tankanGlyphAdvance = dclamp(dq('decalTankanGlyphAdvance')?.value ?? 1, 1 / 6, 20 / 3);
+    record.tankanGlyphSize = dclamp(dq('decalTankanGlyphSize')?.value ?? 1, 0.25, 2);
+    record.tankanColor = dq('decalTankanColor')?.value || TANKAN_BASELINE.color;
   }
   buildDecalMesh(record);
   renderDecalList();
@@ -474,7 +557,7 @@ function renderTankanDebug(record = selectedDecal()) {
     readout.textContent = 'Tankan renderer unavailable.';
     return;
   }
-  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · glyph advance ${layout.glyphAdvanceEm.toFixed(2)}em · column spacing ${layout.columnSpacingEm.toFixed(2)}em · texture ${layout.widthPx}×${layout.heightPx}`;
+  readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph size ${finiteOr(record.tankanGlyphSize, 1).toFixed(2)}× · texture ${layout.widthPx}×${layout.heightPx}`;
 }
 
 function renderDecalEditor() {
@@ -483,6 +566,7 @@ function renderDecalEditor() {
   const record = selectedDecal();
   editor.classList.toggle('hidden', !record);
   if (!record) return;
+  const tankan = isTankanTextDecal(record);
   dq('decalName').value = record.name;
   dq('decalOffsetU').value = record.offsetU;
   dq('decalOffsetV').value = record.offsetV;
@@ -492,14 +576,22 @@ function renderDecalEditor() {
   dq('decalLift').value = record.normalOffset;
   dq('decalOpacity').value = record.opacity;
   dq('decalVisible').checked = record.visible !== false;
-  const tankanFields = dq('decalTankanFields');
-  tankanFields?.classList.toggle('hidden', !isTankanTextDecal(record));
-  if (isTankanTextDecal(record)) {
+  dq('decalTankanFields')?.classList.toggle('hidden', !tankan);
+  if (tankan) {
     dq('decalTankanText').value = record.tankanText;
-    dq('decalTankanColumnSpacing').value = record.tankanColumnSpacingEm;
-    dq('decalTankanGlyphAdvance').value = record.tankanGlyphAdvanceEm;
+    dq('decalTankanColumnSpacing').value = record.tankanColumnSpacing;
+    dq('decalTankanGlyphAdvance').value = record.tankanGlyphAdvance;
+    dq('decalTankanGlyphSize').value = record.tankanGlyphSize;
     dq('decalTankanColor').value = record.tankanColor;
   }
+  const normalizedLabels = {
+    decalOffsetULabel: tankan ? 'U offset (0 = reference)' : 'U offset (-1…1)',
+    decalOffsetVLabel: tankan ? 'V offset (0 = reference)' : 'V offset (-1…1)',
+    decalWidthLabel: tankan ? 'Width scale (1.0 = reference)' : 'Width (surface fraction)',
+    decalHeightLabel: tankan ? 'Height scale (1.0 = reference)' : 'Height (surface fraction)',
+    decalLiftLabel: tankan ? 'Surface lift offset (0 = reference)' : 'Surface lift',
+  };
+  for (const [id, text] of Object.entries(normalizedLabels)) if (dq(id)) dq(id).textContent = text;
   const label = dq('decalSurfaceReadout');
   if (label) label.textContent = `${decalSurfaceLabel(record)} · ${decalSourceLabel(record)}`;
   renderTankanDebug(record);
@@ -518,7 +610,7 @@ function installDecalUi() {
   panel.id = 'furnitureDecalPanel';
   panel.className = 'section';
   panel.innerHTML = `<h2>Surface Decals</h2>
-    <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. Tankan text uses the loading screen's rotated/flipped font, vertical word columns, .56em glyph advance, and -.55em default column spacing.</div>
+    <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. Tankan controls are normalized around the supplied authored look: 0 for offsets/spacing and 1.0 for scales. Glyph size changes only the glyph inside each fixed cell.</div>
     <div class="g2"><button id="addFurnitureDecal" class="ok">＋ Add Image to Selected Surface</button><button id="addFurnitureTankanText" class="ok">＋ Add Tankan Text</button></div>
     <button id="retargetFurnitureDecal" style="width:100%;margin-top:6px">Retarget Selected Decal</button>
     <input id="furnitureDecalFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
@@ -528,13 +620,13 @@ function installDecalUi() {
       <label>Name</label><input id="decalName" type="text">
       <div id="decalTankanFields" class="hidden">
         <label>Tankan-script text</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
-        <div class="g2"><div><label>Word-column spacing (em)</label><input id="decalTankanColumnSpacing" type="number" min="-0.95" max="4" step="0.05"></div><div><label>Glyph advance (em)</label><input id="decalTankanGlyphAdvance" type="number" min="0.1" max="4" step="0.01"></div></div>
-        <label>Text color</label><input id="decalTankanColor" type="color" value="#ffffff">
+        <div class="g3"><div><label>Word-column spacing (0 = reference)</label><input id="decalTankanColumnSpacing" type="number" min="-0.6" max="4.35" step="0.05" value="0"></div><div><label>Glyph advance (1.0 = reference)</label><input id="decalTankanGlyphAdvance" type="number" min="0.1667" max="6.6667" step="0.05" value="1"></div><div><label>Glyph size (1.0 = +20%)</label><input id="decalTankanGlyphSize" type="number" min="0.25" max="2" step="0.05" value="1"></div></div>
+        <label>Text color</label><input id="decalTankanColor" type="color" value="#000000">
         <div id="decalTankanReadout" class="readout muted" style="margin-top:6px"></div>
       </div>
-      <div class="g2"><div><label>U offset (-1…1)</label><input id="decalOffsetU" type="number" step="0.02"></div><div><label>V offset (-1…1)</label><input id="decalOffsetV" type="number" step="0.02"></div></div>
-      <div class="g2"><div><label>Width (surface fraction)</label><input id="decalWidth" type="number" min="0.001" step="0.02"></div><div><label>Height (surface fraction)</label><input id="decalHeight" type="number" min="0.001" step="0.02"></div></div>
-      <div class="g3"><div><label>Rotation°</label><input id="decalRotation" type="number" step="1"></div><div><label>Surface lift</label><input id="decalLift" type="number" min="0.0002" step="0.001"></div><div><label>Opacity</label><input id="decalOpacity" type="number" min="0" max="1" step="0.05"></div></div>
+      <div class="g2"><div><label id="decalOffsetULabel">U offset (-1…1)</label><input id="decalOffsetU" type="number" step="0.02"></div><div><label id="decalOffsetVLabel">V offset (-1…1)</label><input id="decalOffsetV" type="number" step="0.02"></div></div>
+      <div class="g2"><div><label id="decalWidthLabel">Width (surface fraction)</label><input id="decalWidth" type="number" min="0.001" step="0.02"></div><div><label id="decalHeightLabel">Height (surface fraction)</label><input id="decalHeight" type="number" min="0.001" step="0.02"></div></div>
+      <div class="g3"><div><label>Rotation°</label><input id="decalRotation" type="number" step="1"></div><div><label id="decalLiftLabel">Surface lift</label><input id="decalLift" type="number" step="0.001"></div><div><label>Opacity</label><input id="decalOpacity" type="number" min="0" max="1" step="0.05"></div></div>
       <label class="row"><input id="decalVisible" type="checkbox"> Visible</label>
       <div class="g2"><button id="centerFurnitureDecal">Center</button><button id="fitFurnitureDecal">Fit Surface</button></div>
       <div class="g2"><button id="duplicateFurnitureDecal">Duplicate</button><button id="deleteFurnitureDecal" class="bad">Delete</button></div>
@@ -547,7 +639,7 @@ function installDecalUi() {
     const file = event.target?.files?.[0];
     if (file && decalFileTargetSurfaceId) addDecalFromFile(file, decalFileTargetSurfaceId);
   });
-  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanColor']) {
+  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSize','decalTankanColor']) {
     dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
   }
   dq('decalTankanText')?.addEventListener('input', () => {
@@ -594,12 +686,14 @@ exportData = function exportFurnitureWithDecals(...args) {
   const data = originalDecalExport(...args);
   data.decals = dclone(ensureDecalState());
   data.decalAuthoring = {
-    version: 2,
+    version: 3,
     coordinateSpace: 'recognized-surface-local',
     sizeUnits: 'surface-fraction',
     offsetUnits: 'half-surface-span',
     sourceTypes: [IMAGE_SOURCE_TYPE, TANKAN_SOURCE_TYPE],
-    tankanLayout: 'vertical-word-columns'
+    tankanLayout: 'vertical-word-columns',
+    tankanSettings: 'normalized-v2',
+    tankanBaseline: dclone(TANKAN_BASELINE),
   };
   return data;
 };
@@ -638,5 +732,5 @@ updateStats = function updateStatsWithDecals(...args) {
 
 installDecalUi();
 rebuildDecals({ prune: false });
-log?.('Furniture decal authoring ready. Select a surface, then add an image or editable Tankan-script text decal.');
+log?.('Furniture decal authoring ready. Select a surface, then add an image or normalized Tankan-script text decal.');
 })();
