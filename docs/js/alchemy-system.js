@@ -384,15 +384,22 @@
     const inventoryState = ownedRecipeItems().map(entry => `${entry.itemKey}:${entry.count}`).sort();
     return JSON.stringify([resourceBuckets, afflictionBuckets, inventoryState, activeEffects.map(effect => effect.recipeId).sort(), !!deps?.getInCombat?.()]);
   }
+  let _lastContextCheckAt = 0; // contextSignature() walks the whole inventory and JSON.stringifies it — too costly to run at 60fps unthrottled.
+  const CONTEXT_CHECK_INTERVAL_S = 0.25; // Bucketed to /5 already, so a quarter-second staleness here is imperceptible.
   function update() {
     const now = performance.now() / 1000; // Shared active-effect clock.
     const before = activeEffects.length; // Used to refresh the shared buff bar only on expiry.
     activeEffects = activeEffects.filter(effect => effect.expiresAt > now);
-    if (before !== activeEffects.length) window.EffectBuffBar?.refresh(true);
+    const expired = before !== activeEffects.length;
+    if (expired) window.EffectBuffBar?.refresh(true);
+    // An expiry always forces an immediate re-check (rare, and the recipeId
+    // list inside the signature just changed); otherwise poll on a throttle.
+    if (!expired && now - _lastContextCheckAt < CONTEXT_CHECK_INTERVAL_S) return;
+    _lastContextCheckAt = now;
     const signature = contextSignature();
     if (signature !== lastContextSignature) {
       lastContextSignature = signature;
-      document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail: { type: before !== activeEffects.length ? 'buff-expired' : 'context' } }));
+      document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail: { type: expired ? 'buff-expired' : 'context' } }));
     }
   }
   function ownedRecipeItems(filter = () => true) { return Object.keys(deps?.inventory || {}).map(itemKey => ({ itemKey, count: deps.inventory[itemKey] || 0, payload: POTION_ITEMS[itemKey] || parseBrewedItemKey(itemKey) })).filter(entry => entry.count > 0 && entry.payload?.recipeId && filter(RECIPE_DEFS[entry.payload.recipeId], entry)); } // Inventory query.

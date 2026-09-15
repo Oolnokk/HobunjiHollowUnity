@@ -543,6 +543,7 @@
 
   function update(dt) {
     updateMeleeTrails(dt);
+    if (activeStaged.size === 0) return; // Common case (no attack in progress) skips the defensive copy below entirely.
     for (const action of Array.from(activeStaged)) updateStagedAction(action, dt);
   }
 

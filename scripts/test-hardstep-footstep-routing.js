@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 
 const audioSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'audio-system.js'), 'utf8');
-const played = []; // Used below to prove PATH/den/mine/building routing selects one of the authored hardstep files.
+const played = []; // Used below to prove hard and Western Slope snow routing select the authored recorded-footstep files.
 const createdAudio = []; // Used below to prove repeated footsteps reuse startup-preloaded voices instead of constructing disposable Audio elements.
 const logs = []; // Used below to prove the mobile-readable surface-change diagnostic is emitted without a browser console.
 
@@ -37,6 +37,7 @@ class FakeAudio {
 
 const TileType = Object.freeze({
   GRASS: 'grass',
+  WEEDS: 'weeds',
   PATH: 'path',
   RIVER: 'river',
   STREAM: 'stream',
@@ -48,9 +49,10 @@ const TileType = Object.freeze({
   TRENCH: 'trench',
   ROCK: 'rock',
   SHRUB: 'shrub',
+  CLIFF: 'cliff',
 });
 
-const deterministicMath = Object.create(Math); // Forces repeated road footsteps to choose the same hardstep URL so pool reuse is directly testable.
+const deterministicMath = Object.create(Math); // Forces repeated recorded footsteps to choose the first URL so pool reuse is directly testable.
 deterministicMath.random = () => 0;
 
 const context = {
@@ -110,8 +112,22 @@ assert.strictEqual(audio.footstepSurfaceKey('building:general_store', TileType.G
 assert.strictEqual(audio.footstepSurfaceKey('interior', TileType.GRASS), 'hard', 'generic interior areas should use hardstep');
 assert.strictEqual(audio.footstepSurfaceKey('map_hobunji_town', TileType.GRASS), 'grass', 'ordinary grass should remain grassstep');
 assert.strictEqual(audio.footstepSurfaceKey('map_hobunji_town', TileType.RIVER), 'water', 'water should remain waterstep');
+
+const westernSlopeSnowTypes = [ // Mirrors EnvironmentSurfaceMicroPlateau LAND_TYPES; every entry should sound like the snow cap actually rendered above it.
+  TileType.GRASS, TileType.WEEDS, TileType.PATH, TileType.TILLED, TileType.TRENCH,
+  TileType.RAISED, TileType.PADDY, TileType.ROCK, TileType.SHRUB, TileType.CLIFF, TileType.RAMP,
+];
+for (const type of westernSlopeSnowTypes) {
+  assert.strictEqual(audio.footstepSurfaceKey('map_western_slope', type), 'snow', `Western Slope ${type} should use snowstep`);
+}
+assert.strictEqual(audio.footstepSurfaceKey('map_western_slope', TileType.RIVER), 'water', 'Western Slope river should remain waterstep');
+assert.strictEqual(audio.footstepSurfaceKey('map_western_slope', TileType.STREAM), 'water', 'Western Slope stream should remain waterstep');
+assert.strictEqual(audio.footstepSurfaceKey('map_western_slope', TileType.WATERFALL), 'water', 'Western Slope waterfall should remain waterstep');
+assert.strictEqual(audio.footstepSurfaceKey('map_i_den_map_western_slope_1', TileType.GRASS), 'hard', 'Western Slope den interiors should remain hardstep');
+
 assert.match(audioSource, /HARD_FOOTSTEP_TARGET_DBFS\s*=\s*-6\b/, 'hardstep source should declare the requested -6 dBFS normalization target');
 assert.match(audioSource, /hardFootstepNormalizationGainByUrl/, 'hardstep source should cache per-file normalization gains');
+assert.match(audioSource, /SNOW_FOOTSTEP_URLS/, 'snowstep source should own and preload the authored Western Slope recordings');
 assert.match(audioSource, /footstepAudioPools/, 'recorded footsteps should have a reusable media pool');
 assert.match(audioSource, /installFootstepAudioUnlock/, 'recorded footsteps should prime their persistent voices from real user gestures');
 assert.match(audioSource, /playbackFailures/, 'mobile diagnostics should expose native media playback failures instead of swallowing them');
@@ -124,15 +140,25 @@ assert.strictEqual(played.length, 2, 'two dry road steps should each issue one p
 assert.match(played[0], /^assets\/audio\/sfx\/footsteps\/hardstep_1\.mp3$/, 'deterministic road step should use the first authored hardstep');
 assert.strictEqual(played[1], played[0], 'deterministic repeated step should request the same hardstep recording');
 assert.strictEqual(createdAudio.length, createdAfterInit, 'repeated footsteps should reuse the preloaded pool instead of allocating new Audio elements');
-const debug = audio.footstepSfxDebugSnapshot();
+let debug = audio.footstepSfxDebugSnapshot();
 assert.strictEqual(debug.surfaceKey, 'hard', 'debug snapshot should expose the resolved hard surface');
 assert.strictEqual(debug.url, played[1], 'debug snapshot should expose the selected hardstep file');
 assert.ok(debug.playbackRequests >= 2, 'debug snapshot should count actual media playback requests');
-assert.ok(debug.poolUrlCount >= 4, 'startup should preload hard plus configured grass/gravel/water recording pools');
-assert.ok(logs.some(line => line.includes('surface=hard')), 'surface changes should be visible in the in-game debug log');
+assert.ok(debug.poolUrlCount >= 12, 'startup should preload snow/hard plus configured grass/gravel/water recording pools');
+assert.ok(logs.some(line => line.includes('surface=hard')), 'hard surface changes should be visible in the in-game debug log');
+
+played.length = 0;
+audio.playFootstepSfx('map_western_slope', { type: TileType.GRASS, water: 8 });
+assert.strictEqual(played.length, 1, 'a snow-covered Western Slope tile should play only its snow contact surface, not a water moisture layer');
+assert.match(played[0], /^assets\/audio\/sfx\/footsteps\/sfx_snowstep_1\.mp3$/, 'deterministic Western Slope step should use the first authored snowstep');
+assert.strictEqual(createdAudio.length, createdAfterInit, 'snow footsteps should reuse their startup-preloaded pool');
+debug = audio.footstepSfxDebugSnapshot();
+assert.strictEqual(debug.surfaceKey, 'snow', 'debug snapshot should expose the resolved snow surface');
+assert.strictEqual(debug.url, played[0], 'debug snapshot should expose the selected snowstep file');
+assert.ok(logs.some(line => line.includes('surface=snow')), 'snow surface changes should be visible in the in-game debug log');
 
 const strideState = {}; // Used to prove the player cadence accumulator still reaches a footfall after enough actual distance.
 assert.strictEqual(audio.footstepAdvance(strideState, 20, 50), false, 'partial stride should not fire early');
 assert.strictEqual(audio.footstepAdvance(strideState, 31, 50), true, 'crossing the stride distance should fire a footstep');
 
-console.log('Hardstep footstep routing/playback regression: PASS');
+console.log('Hardstep/snowstep footstep routing/playback regression: PASS');
