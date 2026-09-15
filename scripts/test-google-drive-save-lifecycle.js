@@ -7,8 +7,16 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/google-drive-save-lifecycle.js'), 'utf8');
+const loader = fs.readFileSync(path.join(root, 'docs/js/local-save-folder.js'), 'utf8');
 
 async function main() {
+  new Function(source);
+  const uiIndex = loader.indexOf('google-drive-save-ui.js'); // Lifecycle status refresh depends on the Drive Settings surface being available first.
+  const lifecycleIndex = loader.indexOf('google-drive-save-lifecycle.js'); // Production lifecycle module under test.
+  const startupIndex = loader.indexOf('google-drive-save-startup.js'); // Startup authorization gate remains separate and loads after passive session lifecycle checks.
+  assert.ok(uiIndex >= 0 && lifecycleIndex > uiIndex, 'Drive lifecycle reconciliation loads after Drive Settings/transport UI');
+  assert.ok(startupIndex > lifecycleIndex, 'pre-onboarding Drive startup gate loads after lifecycle reconciliation hooks');
+
   const windowListeners = new Map(); // Captures online/pageshow handlers without a browser event loop.
   const documentListeners = new Map(); // Captures visibility handler for foreground checks.
   let syncCalls = 0; // Counts transport preflights and verifies they are strictly non-interactive.
