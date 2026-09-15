@@ -13,6 +13,7 @@
   const ACTIVE_BREEDING_ID = 'farmActiveBreedingGroup';
   const WORLD_HEADING_ID = 'farmWorldLivestockHeading';
   const STABLE_HEADING_ID = 'farmStableBreedingHeading';
+  const WORLD_IDENTITY_SENTINEL_ID = 'farmWorldLivestockIdentitySentinel';
   const NURSERY_SCROLL_CLASS = 'farm-nursery-scroll';
   const LEGACY_GROUP_IDS = ['farmWorldLivestockGroup', 'farmStableBreedingGroup'];
 
@@ -322,6 +323,24 @@
     return heading;
   }
 
+  function ensureWorldIdentitySentinel(container, rosterRows) {
+    let sentinel = document.getElementById(WORLD_IDENTITY_SENTINEL_ID);
+    const hasTaggedWorldRow = rosterRows.some(row => row.dataset.nurseryWorldLivestockId); // Used to know whether a real surviving world row already keeps Nursery's ID binding in repeat-pass mode.
+    const needsSentinel = !hasTaggedWorldRow && rosterRows.length > 0; // Covers the all-world-babies-removed + Stable-candidates-remain edge without affecting empty rosters.
+    if (needsSentinel && (!sentinel || !container.contains(sentinel))) {
+      sentinel = document.createElement('div'); // Hidden row exists only so LivestockNursery never mistakes surviving Stable rows for a fresh world-row prefix on its next observer pass.
+      sentinel.id = WORLD_IDENTITY_SENTINEL_ID;
+      sentinel.className = 'farm-row livestock-trait-row';
+      sentinel.dataset.nurseryWorldLivestockId = '__farm_menu_identity_sentinel__';
+      sentinel.hidden = true;
+      container.appendChild(sentinel);
+    } else if (!needsSentinel && sentinel?.parentElement === container) {
+      sentinel.remove();
+      sentinel = null;
+    }
+    return sentinel;
+  }
+
   function organizeLivestockCandidates() {
     const container = document.getElementById('farmLivestockList');
     if (!container) return;
@@ -332,7 +351,8 @@
     if (!nursery) return;
 
     flattenLegacyRosterGroups(container);
-    const rows = [...container.querySelectorAll(':scope > .farm-row.livestock-trait-row')]; // Direct rows only: no nested Farm/Stable wrappers remain.
+    const rows = [...container.querySelectorAll(':scope > .farm-row.livestock-trait-row')].filter(row => row.id !== WORLD_IDENTITY_SENTINEL_ID); // Direct real rows only: no nested wrappers or hidden identity sentinel.
+    ensureWorldIdentitySentinel(container, rows);
     const worldRows = rows.filter(row => row.dataset.nurseryWorldLivestockId);
     const stableRows = rows.filter(row => !row.dataset.nurseryWorldLivestockId);
     const legacyStableHeader = [...container.querySelectorAll(':scope > .farm-note')].find(note => /your stable\s*\(breeding only/i.test(note.textContent || ''));
@@ -344,8 +364,8 @@
     const stableHeading = ensureRosterHeading(container, STABLE_HEADING_ID, 'Your Stable', 'breeding candidates only');
     stableHeading.hidden = stableRows.length === 0;
 
-    const desiredNodes = [nursery, worldHeading, ...worldRows, ...emptyWorldNotes, stableHeading, ...stableRows]; // Used as the one flat visual order for every roster element we manage.
-    const managed = new Set(desiredNodes); // Used to ignore any future unrelated child FarmPanel may add to the roster container.
+    const desiredNodes = [nursery, worldHeading, ...worldRows, ...emptyWorldNotes, stableHeading, ...stableRows]; // Used as the one flat visual order for every visible roster element we manage.
+    const managed = new Set(desiredNodes); // Used to ignore the hidden identity sentinel and any future unrelated child FarmPanel may add.
     const currentManaged = [...container.children].filter(child => managed.has(child)); // Used to make this mutation-observer presentation pass idempotent.
     const alreadyOrdered = currentManaged.length === desiredNodes.length && desiredNodes.every((node, index) => currentManaged[index] === node); // Prevents our own node moves from generating another observer pass once the roster is already correct.
     if (!alreadyOrdered) desiredNodes.forEach(node => container.appendChild(node));
@@ -456,7 +476,7 @@
     const nurserySection = document.getElementById('livestockNurserySection');
     const nurseryScroll = nurseryScrollRegion(nurserySection);
     const roster = document.getElementById('farmLivestockList');
-    const directRows = roster ? [...roster.querySelectorAll(':scope > .farm-row.livestock-trait-row')] : [];
+    const directRows = roster ? [...roster.querySelectorAll(':scope > .farm-row.livestock-trait-row')].filter(row => row.id !== WORLD_IDENTITY_SENTINEL_ID) : [];
     return {
       mostRecentChange: 'Farm animal UI is flat: one full-height scrolling animal column, direct Farm/Stable roster rows, prominent breeding actions, and Nursery controller focus/scroll continuity.',
       installed,
@@ -466,6 +486,7 @@
       rosterDirectRows: directRows.length,
       worldCandidateRows: directRows.filter(row => row.dataset.nurseryWorldLivestockId).length,
       stableCandidateRows: directRows.filter(row => !row.dataset.nurseryWorldLivestockId).length,
+      worldIdentitySentinel: !!document.getElementById(WORLD_IDENTITY_SENTINEL_ID),
       legacyNestedGroupsRemaining: LEGACY_GROUP_IDS.filter(id => !!document.getElementById(id)),
       nurseryFocusIndex,
       nurseryScrollTop,
