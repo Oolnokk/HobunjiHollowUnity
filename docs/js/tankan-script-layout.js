@@ -19,6 +19,8 @@
     columnSpacingEm: -0.55,
     glyphAdvanceEm: 0.56,
     glyphScale: 1,
+    glyphScaleX: 1,
+    glyphScaleY: 1,
     fontSizePx: 128,
     paddingEm: 0.28,
     color: '#ffffff',
@@ -38,10 +40,13 @@
 
   function optionsWithDefaults(options = {}) {
     const paddingEm = clamp(finiteOr(options.paddingEm, DEFAULTS.paddingEm), 0, 4); // Legacy all-sides padding remains the fallback for both axes.
+    const glyphScale = clamp(finiteOr(options.glyphScale, DEFAULTS.glyphScale), 0.25, 2.5); // Legacy uniform scale remains a fallback for both glyph axes.
     return {
       columnSpacingEm: clamp(finiteOr(options.columnSpacingEm, DEFAULTS.columnSpacingEm), -0.95, 4),
       glyphAdvanceEm: clamp(finiteOr(options.glyphAdvanceEm, DEFAULTS.glyphAdvanceEm), 0.1, 4),
-      glyphScale: clamp(finiteOr(options.glyphScale, DEFAULTS.glyphScale), 0.25, 2.5),
+      glyphScale,
+      glyphScaleX: clamp(finiteOr(options.glyphScaleX, glyphScale), 0.25, 2.5),
+      glyphScaleY: clamp(finiteOr(options.glyphScaleY, glyphScale), 0.25, 2.5),
       fontSizePx: clamp(finiteOr(options.fontSizePx, DEFAULTS.fontSizePx), 16, 512),
       paddingEm,
       paddingXEm: clamp(finiteOr(options.paddingXEm, paddingEm), 0, 4),
@@ -130,10 +135,10 @@
       for (let glyphIndex = 0; glyphIndex < glyphs.length; glyphIndex++) {
         const y = layout.paddingYPx + layout.glyphAdvancePx * (glyphIndex + 0.5);
         // Scale around this glyph cell's center only. Neighbor positions remain governed
-        // solely by glyphAdvancePx/columnAdvancePx, so glyph size cannot push text around.
+        // solely by glyphAdvancePx/columnAdvancePx, so X/Y glyph size cannot push text around.
         ctx.save();
         ctx.translate(x, y);
-        ctx.scale(layout.glyphScale, layout.glyphScale);
+        ctx.scale(layout.glyphScaleX, layout.glyphScaleY);
         ctx.fillText(glyphs[glyphIndex], 0, 0);
         ctx.restore();
       }
@@ -150,7 +155,7 @@
 
   window.TankanScriptLayout = {
     installed: true,
-    version: 4,
+    version: 5,
     fontFamily: FONT_FAMILY,
     fontUrl: FONT_URL,
     defaults: DEFAULTS,
