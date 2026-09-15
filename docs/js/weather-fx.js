@@ -253,6 +253,23 @@
     }
   }
 
+  // Keyframe stops: [hour, r, g, b, alpha]. Static data — hoisted out of
+  // _computeRawLightingState so it isn't reallocated every frame (that
+  // function is called unconditionally from gameLoop every non-paused frame).
+  const _LIGHTING_STOPS = [
+    [6.0,  40,  30, 80, 0.55],  // pre-dawn: deep blue-purple
+    [6.5,  220, 100, 40, 0.38], // sunrise: warm orange-red
+    [7.5,  240, 160, 60, 0.22], // early morning: golden
+    [9.0,  255, 230, 180, 0.08],// morning: near-clear
+    [12.0, 255, 245, 210, 0.04],// noon: very clear, slight warm
+    [15.0, 255, 225, 160, 0.10],// afternoon: slight golden
+    [17.5, 255, 160, 60, 0.28], // late afternoon: amber
+    [18.5, 220, 90,  30, 0.42], // sunset: deep orange
+    [19.5, 130, 50,  80, 0.52], // dusk: purple-red
+    [20.5, 30,  30,  80, 0.62], // early night: dark blue
+    [22.0, 10,  10,  40, 0.72], // full night
+  ];
+
   function _computeRawLightingState() {
     const calendar = deps.calendar;
     const hour = window.CalendarSystem.getHour(); // 6..22
@@ -260,20 +277,7 @@
     const isRaining = calendar.isRaining;
     const isStorm = isRaining && calendar.rainStrength >= 3;
 
-    // Keyframe stops: [hour, r, g, b, alpha]
-    const stops = [
-      [6.0,  40,  30, 80, 0.55],  // pre-dawn: deep blue-purple
-      [6.5,  220, 100, 40, 0.38], // sunrise: warm orange-red
-      [7.5,  240, 160, 60, 0.22], // early morning: golden
-      [9.0,  255, 230, 180, 0.08],// morning: near-clear
-      [12.0, 255, 245, 210, 0.04],// noon: very clear, slight warm
-      [15.0, 255, 225, 160, 0.10],// afternoon: slight golden
-      [17.5, 255, 160, 60, 0.28], // late afternoon: amber
-      [18.5, 220, 90,  30, 0.42], // sunset: deep orange
-      [19.5, 130, 50,  80, 0.52], // dusk: purple-red
-      [20.5, 30,  30,  80, 0.62], // early night: dark blue
-      [22.0, 10,  10,  40, 0.72], // full night
-    ];
+    const stops = _LIGHTING_STOPS;
 
     // Interpolate between stops
     let r = 10, g = 10, b = 40, a = 0.72;

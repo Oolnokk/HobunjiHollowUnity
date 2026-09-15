@@ -8837,6 +8837,11 @@
       // Reused every frame by occlusionSafeCameraPosition — a fresh
       // THREE.Raycaster per call would just be needless per-frame garbage.
       const _cameraOcclusionRaycaster = new THREE.Raycaster();
+      // Reused for every _cameraOcclusionRaycaster.set(origin, direction) call
+      // below (up to several per frame during the seated side-search) instead
+      // of allocating two new THREE.Vector3 each time.
+      const _cameraOcclusionOriginVec = new THREE.Vector3();
+      const _cameraOcclusionDirVec = new THREE.Vector3();
       // Camera azimuth (radians, rotated from due-south toward east) for the active
       // mode. Everything except "fishing" stays at 0 (camera due south, as before).
       function activeCameraAzimuthRad() {
@@ -11546,7 +11551,15 @@
         // NPC detection below running so a frozen villager is still talkable.
         if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
           updateNpcVisitorArrivals(dt);
-          for (const w of [...npcWalkers]) { w.update(dt); if (npcWalkers.includes(w)) _tickNpcPortraitLife(w, dt); }
+          // Backwards indexed loop (not `for...of [...npcWalkers]`) so a walker
+          // that despawns itself mid-update (npcWalkers.splice in
+          // despawnNpcVisitor above) is tolerated without cloning the whole
+          // array or doing an O(n) `.includes()` check every iteration.
+          for (let i = npcWalkers.length - 1; i >= 0; i--) {
+            const w = npcWalkers[i];
+            w.update(dt);
+            if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
+          }
           _logGarankiDiagnostic(dt);
         }
         let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
@@ -16727,8 +16740,9 @@
         }
       }
 
+      const _worldToOverlayVec = new THREE.Vector3(); // Reused per call instead of allocating — called once per active overlay particle every frame.
       function worldToOverlay(x, y, z) {
-        const v = new THREE.Vector3(x, y, z);
+        const v = _worldToOverlayVec.set(x, y, z);
         v.project(camera);
         return {
           x: (v.x * 0.5 + 0.5) * _threeRect.width,
@@ -18893,7 +18907,10 @@
           let directHitDistance = null;
           let chosenSideOffsetDeg = 0;
           if (obstacles && obstacles.length) {
-            _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
+            _cameraOcclusionRaycaster.set(
+              _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
+              _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
+            );
             // A chair can put the seated target much closer than 0.3 tiles to
             // a wall. Use a short near plane there so the wall is not skipped;
             // ordinary standing cameras retain the player-avoidance distance.
@@ -18929,8 +18946,8 @@
                       z: -dir.x * Math.sin(a) + dir.z * Math.cos(a),
                     };
                     _cameraOcclusionRaycaster.set(
-                      new THREE.Vector3(lookAtX, lookAtY, lookAtZ),
-                      new THREE.Vector3(candidateDir.x, candidateDir.y, candidateDir.z),
+                      _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
+                      _cameraOcclusionDirVec.set(candidateDir.x, candidateDir.y, candidateDir.z),
                     );
                     _cameraOcclusionRaycaster.near = 0.02;
                     _cameraOcclusionRaycaster.far = dist;
@@ -19965,6 +19982,7 @@
       // through anim's bespoke per-style formula — see the pose-driven
       // branch at the top of updateToolMesh's style if/else chain.
       let combatSwingPose = null;
+      const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
@@ -20998,8 +21016,21 @@
           // without needing a dedicated bespoke formula per style.
           const pose = combatSwingPose;
           const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
-          const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
-          const returnNeutral = { ...neutral, ...(pose.returnNeutral || {}) };
+          // pose/styleNeutral are stable references for the whole windup/strike/
+          // return of a single swing (only reassigned at swing start/end), so
+          // the merge below is memoized on those two references instead of
+          // rebuilding both objects every frame of every attack.
+          let neutral, returnNeutral;
+          if (_toolMeshPoseMergeCache.pose === pose && _toolMeshPoseMergeCache.styleNeutral === styleNeutral) {
+            ({ neutral, returnNeutral } = _toolMeshPoseMergeCache);
+          } else {
+            neutral = { ...styleNeutral, ...(pose.neutral || {}) };
+            returnNeutral = { ...neutral, ...(pose.returnNeutral || {}) };
+            _toolMeshPoseMergeCache.pose = pose;
+            _toolMeshPoseMergeCache.styleNeutral = styleNeutral;
+            _toolMeshPoseMergeCache.neutral = neutral;
+            _toolMeshPoseMergeCache.returnNeutral = returnNeutral;
+          }
           toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
           const sign = combatSwingSign;
           const power = combatSwingPower;

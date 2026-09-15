@@ -29,6 +29,7 @@
   // the player is lerping back off the mount. 'rushingOut': the (now
   // riderless) mount is dashing away off-screen before despawning.
   let mountRideState = 'none';
+  let _lastMountActiveClass = null; // Caches the last DOM class write so updateMountRide's every-frame call only touches the DOM when the active state actually flips.
   let mountRideEntity = null;
   let mountAngle = 0;              // the mount's own heading; momentum-turned in updateMountedMovement
   let mountCurrentSpeedPxS = 0;    // the mount's current forward speed (momentum — see MOUNT_TURN_RATE_MIN/MAX)
@@ -442,7 +443,11 @@
   }
 
   function updateMountRide(dt) {
-    deps.btnCallMount?.classList.toggle('active', mountRideState !== 'none');
+    const mountActive = mountRideState !== 'none';
+    if (mountActive !== _lastMountActiveClass) {
+      _lastMountActiveClass = mountActive;
+      deps.btnCallMount?.classList.toggle('active', mountActive);
+    }
     if (mountRideState === 'none') return;
     const m = mountRideEntity;
     if (!m || m.health <= 0) {
