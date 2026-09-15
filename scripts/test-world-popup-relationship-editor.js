@@ -15,15 +15,18 @@ const generic = read('docs/js/generic-hud-icons.js');
 
 assert.doesNotThrow(() => new vm.Script(helper), 'world popup relationship editor helper parses');
 assert.doesNotThrow(() => new vm.Script(bridge), 'relationship popup bridge parses');
-assert.match(editor, /world-popup-relationship-editor\.js\?v=20260915c/, 'Popup Text Editor cache-busts the v6 relationship helper');
+assert.match(editor, /world-popup-relationship-editor\.js\?v=20260915c/, 'Popup Text Editor cache-busts the relationship helper');
 assert.doesNotMatch(editor, /relationship-popup-editor-preview\.js/, 'Popup Text Editor does not depend on the mistaken Ambient Dialogue preview helper');
 assert.match(helper, /Overhead Rapport \/ Favor/, 'Popup Text Editor exposes relationship controls');
 assert.match(helper, /Rapport \+10/, 'positive Rapport preview is available');
 assert.match(helper, /Rapport -10/, 'negative Rapport preview is available');
 assert.match(helper, /Favor \+10/, 'positive Favor preview is available');
 assert.match(helper, /Favor -10/, 'negative Favor preview is available');
-assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position5/, 'Popup Text Editor loads the shared relationship bridge from its commit-pinned path');
+assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position6/, 'Popup Text Editor loads the v6 shared relationship bridge');
 assert.match(helper, /showRelationshipChange\(root, kind, amount, \{ amountIsPoints: true \}\)/, 'editor controls route through the shared relationship API against the live avatar root');
+assert.match(helper, /helper: 7/, 'editor diagnostics identify the PNG-heart diagnostic helper revision');
+assert.match(helper, /heart=.*alphaPixels=/, 'copied diagnostics expose relationship heart alpha information');
+assert.match(helper, /pngSurface=/, 'copied diagnostics report canonical PNG surface availability');
 
 assert.match(helper, /id: 'popup_preview_character'/, 'editor has an immediate deterministic preview character');
 assert.match(helper, /async function ensureVisibleAvatar/, 'editor can render a preview avatar independently of repository NPC loading');
