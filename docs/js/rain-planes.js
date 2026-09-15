@@ -13,6 +13,7 @@
   let rowTravelCoordinate = 0; // Player travel projected onto the current precipitation-row axis; preserves walking-through-row parallax while yaw rotates around the player.
   let rowLastPlayerX = null;
   let rowLastPlayerZ = null;
+  let initCount = 0; // Exposed in getDebugState() to catch accidental precipitation reinitialization during store/interior transitions.
 
   const RAW_SPRITE_LEAN_DEG = -30; // Native procedural streak lean before correction.
   const SPRITE_PRE_ROTATION_DEG = 30; // Corrects the native sprite so neutral rain points down.
@@ -291,6 +292,14 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    initCount++;
+    if (group) {
+      // Scene transitions should never rebuild the precipitation pool. Refreshing
+      // deps is sufficient and avoids orphaning the old layer meshes if init is
+      // accidentally reached again while entering/leaving an interior.
+      installBlizzardAudioRouting();
+      return;
+    }
     const THREE = deps.THREE;
     rainSourceTexture = createRainSourceTexture();
     blizzardSourceTextures.length = 0;
@@ -531,20 +540,31 @@
 
   function getDebugState() {
     const area = deps?.getCurrentArea?.() ?? null;
+    const activeScene = deps?.getActiveScene?.() ?? null;
     const blizzardActive = Boolean(group?.visible && area === WESTERN_SLOPE_ID && deps?.calendar?.isRaining);
     const horizontalForwardLength = cameraForward ? Math.hypot(cameraForward.x, cameraForward.z) : 0;
     const rowYaw = horizontalForwardLength > 0.0001
       ? Math.atan2(-cameraForward.x, -cameraForward.z)
       : (cameraEuler?.y || 0);
+    let precipitationGroupCount = 0;
+    activeScene?.traverse?.(node => {
+      if (node?.name === 'world_rain_planes') precipitationGroupCount++;
+    });
     return {
       initialized: Boolean(group),
+      initCount,
+      repeatedInitCount: Math.max(0, initCount - 1),
       visible: Boolean(group?.visible),
       area,
+      attachedScene: attachedScene?.name || attachedScene?.uuid || null,
+      groupParent: group?.parent?.name || group?.parent?.uuid || null,
+      precipitationGroupCount,
       strength: deps?.calendar?.rainStrength ?? 0,
       precipitationRenderer: blizzardActive ? 'rain-logic+blizzard-content' : 'rain',
       precipitationLayout: settings.mode === 'rows' ? 'player-centered-camera-yaw-rows' : 'camera-sheets',
       rowYawRadians: rowYaw,
       rowTravelCoordinate,
+      layerPoolSize: layers.length,
       layerCount: layers.filter(layer => layer.mesh.visible).length,
       blizzardPreset: { ...BLIZZARD_PRESET },
       activeContent: blizzardActive ? 'blizzard' : 'rain',
@@ -575,6 +595,7 @@ if (!window.HobunjiSkyDome) {
 // otherwise they would paint over buildings. This guard also keeps the skydome exterior-only.
 if (window.HobunjiSkyDome && window.RainPlanes) {
   let skyDeps = null; // Captured from RainPlanes.init; used to locate the same active scene and outdoor-area state as the rain/skydome runtime.
+  let guardedSkyScene = null; // Keys the cached sky root so getObjectByName never traverses a stable scene every frame.
   let guardedSkyRoot = null; // Remembers the current area scene's skydome root so material traversal only happens on scene changes.
   const priorRainInit = window.RainPlanes.init;
   const priorRainUpdate = window.RainPlanes.update;
@@ -584,13 +605,12 @@ if (window.HobunjiSkyDome && window.RainPlanes) {
   };
   window.RainPlanes.update = function (dt) {
     const result = priorRainUpdate.call(this, dt);
-    const scene = skyDeps?.getActiveScene?.();
-    const skyRoot = scene?.getObjectByName?.('hobunji_dynamic_skydome') || null;
-    if (skyRoot) {
-      skyRoot.visible = skyDeps.isOutdoorArea?.() !== false;
-      if (skyRoot !== guardedSkyRoot) {
-        guardedSkyRoot = skyRoot;
-        skyRoot.traverse(node => {
+    const scene = skyDeps?.getActiveScene?.() || null;
+    if (scene !== guardedSkyScene || !guardedSkyRoot || guardedSkyRoot.parent !== scene) {
+      guardedSkyScene = scene;
+      guardedSkyRoot = scene?.getObjectByName?.('hobunji_dynamic_skydome') || null;
+      if (guardedSkyRoot) {
+        guardedSkyRoot.traverse(node => {
           if (node.material?.transparent) {
             node.material.depthTest = true;
             node.material.depthWrite = false;
@@ -599,6 +619,7 @@ if (window.HobunjiSkyDome && window.RainPlanes) {
         });
       }
     }
+    if (guardedSkyRoot) guardedSkyRoot.visible = skyDeps.isOutdoorArea?.() !== false;
     return result;
   };
 }

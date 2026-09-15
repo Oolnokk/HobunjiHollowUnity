@@ -148,6 +148,9 @@
 
   const imageCache = new Map();
   const activeArmClipsByCanvas = new WeakMap();
+  const armClipStateCache = new Map(); // Reuses expensive source-pixel arm cuts across repeated portrait redraws and area transitions.
+  const armClipCacheStats = { hits: 0, misses: 0, builds: 0 }; // Exposed by debugSnapshot() so mobile profiling can confirm the cache is actually winning.
+  const ARM_CLIP_CACHE_LIMIT = 64; // Bounds cached processed arm canvases while still covering every authored species/gender/profile variant in normal play.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
 
@@ -454,34 +457,75 @@
     return canvas;
   }
 
-  async function buildArmClipState(profile) {
+  function transformSignature(xform) {
+    return [xform?.ax, xform?.ay, xform?.sx, xform?.sy]
+      .map(value => finite(value, 0).toFixed(5))
+      .join(',');
+  }
+
+  function resolveArmClipRequest(profile) {
     const fighter = resolvedFighterFor(profile);
     const maskLayer = fighter?.opacityMaskLayer || profile?.fighter?.opacityMaskLayer || null;
     const armLayers = (fighter?.bodyLayers || profile?.fighter?.bodyLayers || [])
       .filter(layer => /arm[lr]/i.test(String(layer?.id || '')) && layer?.url);
     if (!maskLayer?.url || !armLayers.length) return null;
 
-    const [maskImage, ...armImages] = await Promise.all([
-      loadImage(maskLayer.url),
-      ...armLayers.map(layer => loadImage(layer.url)),
-    ]);
-    if (!maskImage) return null;
-
     const settings = resolveArmMaskSettings(fighter);
     const maskXform = scaleMaskY(xformFor(maskLayer), settings.maskYScaleMultiplier);
     maskXform.ax += settings.axOffset;
+    const arms = armLayers.map((layer, index) => ({
+      layer,
+      index,
+      xform: xformFor(layer),
+    }));
+    const cacheKey = JSON.stringify({
+      profileKey: settings.profileKey,
+      settings: [
+        settings.maskYScaleMultiplier,
+        settings.axOffset,
+        settings.cutThreshold,
+        settings.wobbleStrength,
+        settings.wobbleScale,
+        settings.outlineWidth,
+        settings.seed,
+      ],
+      mask: [String(maskLayer.url), transformSignature(maskXform)],
+      arms: arms.map(({ layer, index, xform }) => [
+        String(layer?.url || ''),
+        String(layer?.id || index),
+        transformSignature(xform),
+      ]),
+    });
+    return { maskLayer, arms, settings, maskXform, cacheKey };
+  }
+
+  async function buildArmClipStateUncached(request) {
+    armClipCacheStats.builds++;
+    const [maskImage, ...armImages] = await Promise.all([
+      loadImage(request.maskLayer.url),
+      ...request.arms.map(({ layer }) => loadImage(layer.url)),
+    ]);
+    if (!maskImage) return null;
 
     const clips = new Map();
-    for (let index = 0; index < armLayers.length; index++) {
+    for (let index = 0; index < request.arms.length; index++) {
       const armImage = armImages[index];
-      const armLayer = armLayers[index];
+      const { layer: armLayer, xform: armXform } = request.arms[index];
       if (!armImage || !armLayer?.url) continue;
       clips.set(
         String(armLayer.url),
-        buildClippedArmImage(armImage, xformFor(armLayer), maskImage, maskXform, settings, `${settings.profileKey}:${armLayer.id || index}`)
+        buildClippedArmImage(
+          armImage,
+          armXform,
+          maskImage,
+          request.maskXform,
+          request.settings,
+          `${request.settings.profileKey}:${armLayer.id || index}`,
+        ),
       );
     }
     if (!clips.size) return null;
+    const settings = request.settings;
     return {
       clips,
       settings,
@@ -491,6 +535,46 @@
         settings.cutThreshold.toFixed(4), settings.wobbleStrength.toFixed(4),
         settings.wobbleScale.toFixed(4), settings.outlineWidth, settings.seed,
       ].join(':'),
+    };
+  }
+
+  function trimArmClipStateCache() {
+    while (armClipStateCache.size > ARM_CLIP_CACHE_LIMIT) {
+      const oldestKey = armClipStateCache.keys().next().value;
+      armClipStateCache.delete(oldestKey);
+    }
+  }
+
+  function buildArmClipState(profile) {
+    const request = resolveArmClipRequest(profile);
+    if (!request) return Promise.resolve(null);
+    const cached = armClipStateCache.get(request.cacheKey);
+    if (cached) {
+      armClipCacheStats.hits++;
+      armClipStateCache.delete(request.cacheKey);
+      armClipStateCache.set(request.cacheKey, cached);
+      return cached;
+    }
+
+    armClipCacheStats.misses++;
+    const pending = buildArmClipStateUncached(request);
+    armClipStateCache.set(request.cacheKey, pending);
+    trimArmClipStateCache();
+    pending.catch(() => {
+      if (armClipStateCache.get(request.cacheKey) === pending) armClipStateCache.delete(request.cacheKey);
+    });
+    return pending;
+  }
+
+  function armClipCacheDebugSnapshot() {
+    const attempts = armClipCacheStats.hits + armClipCacheStats.misses;
+    return {
+      entries: armClipStateCache.size,
+      limit: ARM_CLIP_CACHE_LIMIT,
+      hits: armClipCacheStats.hits,
+      misses: armClipCacheStats.misses,
+      builds: armClipCacheStats.builds,
+      hitRate: attempts ? armClipCacheStats.hits / attempts : 0,
     };
   }
 
@@ -565,6 +649,7 @@
     authoredProfiles: AUTHORED_PROFILES,
     profileKeyFor: fighterProfileKey,
     resolveSettingsFor: resolveArmMaskSettings,
+    debugSnapshot: armClipCacheDebugSnapshot,
     get maskYScaleMultiplier() { return MASK_Y_SCALE_MULTIPLIER; },
     get configuredArmMaskYScaleMultiplier() { return resolveArmMaskSettings(null).maskYScaleMultiplier; },
     get configuredAxOffset() { return resolveArmMaskSettings(null).axOffset; },
