@@ -15,6 +15,7 @@ on:
       - 'scripts/test-ranged-camera-ray-authority.js'
       - 'scripts/test-ranged-camera-focus.js'
       - 'scripts/test-combat-camera-alignment.js'
+      - 'scripts/test-reticle-hitbox-lunge-stop.js'
       - '.github/workflows/ranged-camera-focus-regression.yml'
   push:
     paths:
@@ -30,6 +31,7 @@ on:
       - 'scripts/test-ranged-camera-ray-authority.js'
       - 'scripts/test-ranged-camera-focus.js'
       - 'scripts/test-combat-camera-alignment.js'
+      - 'scripts/test-reticle-hitbox-lunge-stop.js'
       - '.github/workflows/ranged-camera-focus-regression.yml'
 
 jobs:
@@ -52,3 +54,5 @@ jobs:
         run: node scripts/test-ranged-camera-focus.js
       - name: Run camera-authoritative alignment regression
         run: node scripts/test-combat-camera-alignment.js
+      - name: Run exact reticle hitbox and swept lunge-stop regression
+        run: node scripts/test-reticle-hitbox-lunge-stop.js
