@@ -56,10 +56,10 @@
   //
   // Each surface's clip list normally comes from config
   // (audio.footsteps.surfaces[key].urls, see scratchbones-config.js) —
-  // FOOTSTEP_POST_FX also carries the dedicated hard-step URLs so the newly
-  // authored recordings work immediately without duplicating the rest of
-  // the large audio config. The remaining fields are oscillator+noise synth
-  // fallback tuning used when no urls are configured for a surface.
+  // FOOTSTEP_POST_FX also carries the dedicated hard-step and snow-step URLs
+  // so runtime-owned surface recordings work immediately without duplicating
+  // them into the large audio config. The remaining fields are oscillator+
+  // noise synth fallback tuning used when no urls are configured for a surface.
   const FOOTSTEP_BASE = Object.freeze({
     waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.6,
   });
@@ -68,6 +68,14 @@
     'assets/audio/sfx/footsteps/hardstep_1.mp3',
     'assets/audio/sfx/footsteps/hardstep_2.mp3',
     'assets/audio/sfx/footsteps/hardstep_3.mp3',
+  ]);
+  const SNOW_FOOTSTEP_URLS = Object.freeze([ // Used by the Western Slope snow surface and startup footstep preloading below.
+    'assets/audio/sfx/footsteps/sfx_snowstep_1.mp3',
+    'assets/audio/sfx/footsteps/sfx_snowstep_2.mp3',
+    'assets/audio/sfx/footsteps/sfx_snowstep_3.mp3',
+    'assets/audio/sfx/footsteps/sfx_snowstep_4.mp3',
+    'assets/audio/sfx/footsteps/sfx_snowstep_5.mp3',
+    'assets/audio/sfx/footsteps/sfx_snowstep_6.mp3',
   ]);
   const HARD_FOOTSTEP_TARGET_DBFS = -6; // Used by the one-time decoder scan below to peak-normalize every hard-step recording consistently.
   const HARD_FOOTSTEP_TARGET_PEAK = Math.pow(10, HARD_FOOTSTEP_TARGET_DBFS / 20); // Converts the authored dBFS target to the linear amplitude used by Web Audio.
@@ -79,11 +87,12 @@
     grass:  {},
     gravel: { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6, pitchMul: 1.2, volumeMul: 0.9 },
     hard:   { urls: HARD_FOOTSTEP_URLS, volumeMul: 1.0 },
+    snow:   { urls: SNOW_FOOTSTEP_URLS, volumeMul: 1.0 },
     water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
   });
 
   function configuredFootstepUrls() {
-    const urls = new Set(HARD_FOOTSTEP_URLS); // Includes the runtime-owned hard surface even though it is not duplicated in config.
+    const urls = new Set([...HARD_FOOTSTEP_URLS, ...SNOW_FOOTSTEP_URLS]); // Includes both runtime-owned recorded surfaces even though neither is duplicated in config.
     const surfaces = gameAudioConfig().footsteps?.surfaces || {};
     for (const surface of Object.values(surfaces)) {
       if (surface?.url) urls.add(surface.url);
@@ -310,6 +319,10 @@
   // — that plus distance falloff made a companion's own footsteps nearly
   // silent even standing right next to the player.
   const FOOTSTEP_QUIET_SCALE = 0.7;
+  const WESTERN_SLOPE_ID = 'map_western_slope'; // Used by snow footstep routing to scope the permanent snow cap to the exterior zone only.
+  const WESTERN_SLOPE_SNOW_TILE_TYPES = new Set([ // Mirrors EnvironmentSurfaceMicroPlateau LAND_TYPES and is consulted only when a footfall is emitted.
+    'grass', 'path', 'tilled', 'trench', 'raised', 'paddy', 'rock', 'shrub', 'cliff', 'ramp', 'weeds',
+  ]);
 
   function isHardFootstepArea(area) {
     const areaId = String(area || '');
@@ -318,15 +331,24 @@
       || areaId.startsWith('map_i_den_');
   }
 
+  function isWesternSlopeSnowFootstepTile(area, type) {
+    return String(area || '') === WESTERN_SLOPE_ID
+      && type != null
+      && WESTERN_SLOPE_SNOW_TILE_TYPES.has(String(type).toLowerCase());
+  }
+
   // Grass = grassstep. Roads (TileType.PATH), natural dens, all mine areas,
-  // and every building interior = hardstep. Other hard-packed/exposed ground
-  // — tilled or raised soil, dug trenches, rock, shrub, ramps — remains
-  // gravelstep. Anything that actually holds standing water (river/stream/
-  // waterfall/paddy) = waterstep — this is "swimming" territory, not a
-  // moisture blend (see playFootstepSfx for the blend on non-water ground).
+  // and every building interior = hardstep. Western Slope's permanent snow
+  // cap overrides the ordinary material for exactly the land tile types the
+  // renderer covers (including paddy); river/stream/waterfall stay water.
+  // Other hard-packed/exposed ground — tilled or raised soil, dug trenches,
+  // rock, shrub, ramps — remains gravelstep. Outside Western Slope, anything
+  // that actually holds standing water (river/stream/waterfall/paddy) =
+  // waterstep rather than a moisture blend.
   function footstepSurfaceKey(area, type) {
     if (isHardFootstepArea(area)) return 'hard';
     if (area === 'interior' || deps._isBuildingArea(area)) return 'hard';
+    if (isWesternSlopeSnowFootstepTile(area, type)) return 'snow';
     const TileType = deps.TileType;
     switch (type) {
       case TileType.PADDY:
@@ -493,9 +515,10 @@
   // waterstep clip scaled by the tile's moisture (tile.water, 0..
   // MAX_WATER) — a bone-dry tile blends none in, a fully flooded one
   // blends it in at FOOTSTEP_WATER_BLEND_MAX (80%) of the footstep's own
-  // volume. Actual water tiles (river/stream/paddy/waterfall) already
-  // resolve straight to the 'water' surface via footstepSurfaceKey and
-  // skip this blend — they're pure waterstep, not a blend target.
+  // volume. Western Slope snow is the raised contact surface itself, so it
+  // deliberately suppresses that underlying moisture blend. Actual water
+  // tiles (river/stream/waterfall, plus paddy outside Western Slope) already
+  // resolve straight to 'water' and skip the blend as well.
   function playFootstepSfx(area, tile, volumeScale = 1, pan = 0, opts = {}) {
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false) return;
@@ -534,7 +557,7 @@
       * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
     playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
 
-    if (surfaceKey !== 'water') {
+    if (surfaceKey !== 'water' && surfaceKey !== 'snow') {
       playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan, heavy);
     }
   }
