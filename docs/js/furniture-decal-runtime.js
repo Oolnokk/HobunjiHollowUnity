@@ -10,7 +10,14 @@
   }
 
   const DEG = Math.PI / 180;
-  const textureCache = new Map(); // Resolved decal URL -> shared THREE.Texture used by all furniture instances.
+  const TANKAN_SOURCE_TYPE = 'tankanText';
+  const SCRIPT_SRC = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Used to resolve the shared Tankan layout helper when this runtime is loaded from a nested preview.
+  const textureCache = new Map(); // Resolved decal source key -> shared THREE.Texture used by all furniture instances.
+  let tankanLayoutPromise = null; // Shared async helper load so text decals can appear even when this runtime was loaded directly instead of by the furniture editor.
+
+  function isTankanTextDecal(record) {
+    return record?.sourceType === TANKAN_SOURCE_TYPE || (!!record?.tankanText && !record?.imageSource);
+  }
 
   function resolvedImageSource(record) {
     const raw = String(record?.runtimeImageSource || record?.imageSource || record?.imageName || '').trim(); // Used as the browser texture URL after author-path normalization.
@@ -22,25 +29,90 @@
     return cleaned;
   }
 
-  function textureFor(record) {
-    const source = resolvedImageSource(record); // Used as the cache key and TextureLoader URL.
-    if (!source) return null;
-    if (textureCache.has(source)) return textureCache.get(source);
-    const texture = new THREE.TextureLoader().load(source, loaded => {
-      loaded.format = THREE.RGBAFormat;
-      loaded.premultiplyAlpha = false;
-      if ('colorSpace' in loaded && THREE.SRGBColorSpace) loaded.colorSpace = THREE.SRGBColorSpace;
-      else if (THREE.sRGBEncoding != null) loaded.encoding = THREE.sRGBEncoding;
-      loaded.needsUpdate = true;
-    }, undefined, error => {
-      console.warn(`[furniture decal] failed to load ${source}`, error);
-    });
+  function configureTexture(texture) {
     texture.format = THREE.RGBAFormat;
     texture.premultiplyAlpha = false;
     if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
     else if (THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding;
-    textureCache.set(source, texture);
+    texture.needsUpdate = true;
     return texture;
+  }
+
+  function ensureTankanLayout() {
+    if (window.TankanScriptLayout?.installed) return Promise.resolve(window.TankanScriptLayout);
+    if (tankanLayoutPromise) return tankanLayoutPromise;
+    if (typeof document === 'undefined') return Promise.resolve(null);
+    tankanLayoutPromise = new Promise(resolve => {
+      const finish = () => resolve(window.TankanScriptLayout?.installed ? window.TankanScriptLayout : null);
+      const existing = document.querySelector?.('script[data-hobunji-tankan-layout]');
+      if (existing) {
+        existing.addEventListener?.('load', finish, { once: true });
+        existing.addEventListener?.('error', () => resolve(null), { once: true });
+        if (window.TankanScriptLayout?.installed) finish();
+        return;
+      }
+      const script = document.createElement('script'); // Used by text decals only; image decals remain completely independent of the Tankan helper.
+      try { script.src = SCRIPT_SRC ? new URL('tankan-script-layout.js', SCRIPT_SRC).href : 'js/tankan-script-layout.js'; }
+      catch (_) { script.src = 'js/tankan-script-layout.js'; }
+      script.async = false;
+      script.dataset.hobunjiTankanLayout = '1';
+      script.onload = finish;
+      script.onerror = () => resolve(null);
+      (document.head || document.documentElement).appendChild(script);
+    });
+    return tankanLayoutPromise;
+  }
+
+  function tankanTextureKey(record) {
+    return `tankan:${record?.tankanText || ''}\u0000${record?.tankanColumnSpacingEm ?? ''}\u0000${record?.tankanGlyphAdvanceEm ?? ''}\u0000${record?.tankanColor || ''}`;
+  }
+
+  function tankanTextureFor(record) {
+    const key = tankanTextureKey(record);
+    if (textureCache.has(key)) return textureCache.get(key);
+    const canvas = document.createElement('canvas'); // Starts as one transparent pixel until the Tankan font/layout helper is ready.
+    canvas.width = 1;
+    canvas.height = 1;
+    const texture = configureTexture(new THREE.CanvasTexture(canvas));
+    textureCache.set(key, texture);
+    ensureTankanLayout().then(layout => {
+      if (!layout?.renderToCanvas) throw new Error('TankanScriptLayout unavailable');
+      return Promise.resolve(layout.ensureFontLoaded?.()).then(() => layout);
+    }).then(layout => {
+      const rendered = layout.renderToCanvas(canvas, record.tankanText, {
+        columnSpacingEm: record.tankanColumnSpacingEm,
+        glyphAdvanceEm: record.tankanGlyphAdvanceEm,
+        color: record.tankanColor || layout.defaults?.color || '#ffffff',
+      });
+      texture.userData = { ...(texture.userData || {}), tankanLayout: rendered || null };
+      texture.needsUpdate = true;
+    }).catch(error => {
+      console.warn(`[furniture decal] failed to render Tankān text ${JSON.stringify(record?.tankanText || '')}`, error);
+    });
+    return texture;
+  }
+
+  function imageTextureFor(record) {
+    const source = resolvedImageSource(record); // Used as the cache key and TextureLoader URL.
+    if (!source) return null;
+    const key = `image:${source}`;
+    if (textureCache.has(key)) return textureCache.get(key);
+    const texture = new THREE.TextureLoader().load(source, loaded => {
+      configureTexture(loaded);
+    }, undefined, error => {
+      console.warn(`[furniture decal] failed to load ${source}`, error);
+    });
+    configureTexture(texture);
+    textureCache.set(key, texture);
+    return texture;
+  }
+
+  function textureFor(record) {
+    return isTankanTextDecal(record) ? tankanTextureFor(record) : imageTextureFor(record);
+  }
+
+  function hasVisualSource(record) {
+    return isTankanTextDecal(record) ? !!String(record?.tankanText || '').trim() : !!resolvedImageSource(record);
   }
 
   function vector3(values) {
@@ -65,7 +137,7 @@
   }
 
   function addDecal(group, data, record) {
-    if (!record || record.visible === false || !record.imageSource) return null;
+    if (!record || record.visible === false || !hasVisualSource(record)) return null;
     const surface = matchingSurface(data, record); // Used for surface-local size, position, normal, and orientation.
     const partMesh = surface ? group?.userData?.meshById?.get?.(surface.partId) : null; // Decal child follows this authored part's transforms and animations.
     if (!surface || !partMesh) return null;
@@ -102,6 +174,7 @@
     mesh.userData = {
       furnitureDecal: true,
       decalId: record.id || null,
+      decalSourceType: isTankanTextDecal(record) ? TANKAN_SOURCE_TYPE : 'image',
       surfaceId: surface.id || null,
       authoredPartId: surface.partId || null,
     };
@@ -132,6 +205,7 @@
     }
     group.userData.authoredDecalMeshes = meshes;
     group.userData.authoredDecalCount = meshes.length;
+    group.userData.authoredTankanDecalCount = meshes.filter(mesh => mesh.userData?.decalSourceType === TANKAN_SOURCE_TYPE).length;
     return group;
   }
 
@@ -148,5 +222,7 @@
     addDecals,
     resolvedImageSource,
     textureCache,
+    ensureTankanLayout,
+    isTankanTextDecal,
   };
 })();
