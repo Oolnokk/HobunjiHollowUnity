@@ -10,6 +10,7 @@ document.write('<script src="js/save-sync-store.js?v=20260915a"><\/script>');
 document.write('<script src="js/save-coordinator.js?v=20260915driveb"><\/script>');
 document.write('<script src="js/google-drive-save-config.js?v=20260915a"><\/script>');
 document.write('<script src="js/google-drive-save-transport.js?v=20260915a"><\/script>');
+document.write('<script src="js/google-drive-save-link-safety.js?v=20260915a"><\/script>');
 document.write('<script src="js/save-durable-checkpoint.js?v=20260915a"><\/script>');
 document.write('<script src="js/local-save-folder-core.js?v=20260812a"><\/script>');
 document.write('<script src="js/folder-save-v3-canonical.js?v=20260915a"><\/script>');
