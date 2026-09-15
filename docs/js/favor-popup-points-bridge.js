@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (Number(window.FavorPopupPointsBridge?.version) >= 7) return;
+  if (Number(window.FavorPopupPointsBridge?.version) >= 8) return;
 
   const MODULE_SRC = document.currentScript?.src || '';
   const HEART_URL = MODULE_SRC ? new URL('../assets/hud/generic_icons/icon_heart.png', MODULE_SRC).href : 'assets/hud/generic_icons/icon_heart.png';
@@ -16,20 +16,9 @@
   const HEART_WORLD_RATIO = 0.90;
   const VALUE_WORLD_RATIO = 0.78;
   const CHATHEAD_GAP_RATIO = 0.14;
-  const HEART_MAX_OPACITY = 0.80;
-  const HEART_GLOW_BLUR_PX = 20;
-
-  // Must stay in lockstep with docs/config/ui/world-popup-settings.json.
-  // This bridge uses Float+ presentation even though ordinary favor reward rows remain assigned to centeredFiveRow.
-  const FLOAT_PLUS = Object.freeze({
-    worldHeight: 0.19,
-    xOffsetPercent: 43,
-    yOffsetPercent: 17,
-    lifetimeMs: 1150,
-    riseWorld: 0.075,
-    swayHeightRatio: 0.12,
-    fadeStart: 0.72,
-  });
+  const FLOAT_PLUS_MOTION = Object.freeze({ riseWorld: 0.075, swayHeightRatio: 0.12, fadeStart: 0.72 });
+  const DEFAULT_FLOAT_PLUS = Object.freeze({ worldHeight: 0.19, xOffsetPercent: 43, yOffsetPercent: 17, lifetimeMs: 1150 });
+  const DEFAULT_HEART_STYLE = Object.freeze({ opacity: 0.80, glowPx: 20 });
 
   const relationshipPopups = [];
   const debugState = {
@@ -43,6 +32,53 @@
   };
   let deps = null;
   let heartImagePromise = null;
+  let editorControlRetry = 0;
+  let liveSettings = {
+    floatPlus: { ...DEFAULT_FLOAT_PLUS },
+    relationshipHeart: { ...DEFAULT_HEART_STYLE },
+  };
+
+  const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  function captureSettings(value) {
+    if (!value || typeof value !== 'object') return liveSettings;
+    const incomingFloat = value.floatPlus || {};
+    const incomingHeart = value.relationshipHeart || {};
+    liveSettings = {
+      ...liveSettings,
+      floatPlus: {
+        worldHeight: clamp(finite(incomingFloat.worldHeight, liveSettings.floatPlus.worldHeight), 0.02, 1),
+        xOffsetPercent: clamp(finite(incomingFloat.xOffsetPercent, liveSettings.floatPlus.xOffsetPercent), -100, 100),
+        yOffsetPercent: clamp(finite(incomingFloat.yOffsetPercent, liveSettings.floatPlus.yOffsetPercent), -100, 100),
+        lifetimeMs: Math.max(100, finite(incomingFloat.lifetimeMs, liveSettings.floatPlus.lifetimeMs)),
+      },
+      relationshipHeart: {
+        opacity: clamp(finite(incomingHeart.opacity, liveSettings.relationshipHeart.opacity), 0, 1),
+        glowPx: clamp(finite(incomingHeart.glowPx, liveSettings.relationshipHeart.glowPx), 0, 40),
+      },
+    };
+    syncEditorHeartControls();
+    return liveSettings;
+  }
+
+  function currentFloatPlus() {
+    return liveSettings.floatPlus || DEFAULT_FLOAT_PLUS;
+  }
+
+  function currentHeartStyle() {
+    return liveSettings.relationshipHeart || DEFAULT_HEART_STYLE;
+  }
+
+  function editorValue(expression) {
+    if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return undefined;
+    try { return (0, eval)(expression); } catch (_) { return undefined; }
+  }
+
+  function editorSettingsObject() {
+    const value = editorValue('settings');
+    return value && typeof value === 'object' ? value : null;
+  }
 
   function convertFavorHeartDelta(kind, amount) {
     if (kind !== 'favor') return amount;
@@ -118,7 +154,7 @@
   function floatPlusAnchorWorld(root) {
     const THREE = deps?.THREE || window.THREE;
     if (!THREE || !root) return null;
-
+    const cfg = currentFloatPlus();
     const avatarRoot = avatarRootWithPortraitMetadata(root) || root;
     const hasPortrait = Number.isFinite(Number(avatarRoot.userData?.portraitModelHeight));
     const height = hasPortrait ? Number(avatarRoot.userData.portraitModelHeight) : 1;
@@ -128,8 +164,8 @@
     const verticalOffset = (placementRatio - 0.5) * height;
     const combinedHeight = height * 0.5 + verticalOffset;
     const local = new THREE.Vector3(
-      width * FLOAT_PLUS.xOffsetPercent / 100,
-      verticalOffset + combinedHeight * FLOAT_PLUS.yOffsetPercent / 100,
+      width * cfg.xOffsetPercent / 100,
+      verticalOffset + combinedHeight * cfg.yOffsetPercent / 100,
       0,
     );
 
@@ -139,36 +175,35 @@
       const fallback = window.WorldPopupText?.avatarCentroidWorld?.(root);
       if (!fallback) return null;
       local.copy(fallback);
-      local.x += width * FLOAT_PLUS.xOffsetPercent / 100;
-      local.y += combinedHeight * FLOAT_PLUS.yOffsetPercent / 100;
+      local.x += width * cfg.xOffsetPercent / 100;
+      local.y += combinedHeight * cfg.yOffsetPercent / 100;
     }
 
     debugState.lastAnchor = {
-      source: 'float-plus',
+      source: 'float-plus-live-settings',
       height,
       width,
       placementRatio,
-      xOffsetPercent: FLOAT_PLUS.xOffsetPercent,
-      yOffsetPercent: FLOAT_PLUS.yOffsetPercent,
+      xOffsetPercent: cfg.xOffsetPercent,
+      yOffsetPercent: cfg.yOffsetPercent,
       world: { x: local.x, y: local.y, z: local.z },
       at: Date.now(),
     };
     return local;
   }
 
-  function floatPlusFrame(root, progress, eventHeight = FLOAT_PLUS.worldHeight) {
+  function floatPlusFrame(root, progress, eventHeight) {
     const THREE = deps?.THREE || window.THREE;
     const camera = deps?.camera;
     if (!THREE || !camera) return null;
     const center = floatPlusAnchorWorld(root);
     if (!center) return null;
-
     const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-    center.addScaledVector(cameraRight, Math.sin(progress * Math.PI) * eventHeight * FLOAT_PLUS.swayHeightRatio);
-    center.y += FLOAT_PLUS.riseWorld * (1 - Math.pow(1 - progress, 2));
-    const opacity = progress < FLOAT_PLUS.fadeStart
+    center.addScaledVector(cameraRight, Math.sin(progress * Math.PI) * eventHeight * FLOAT_PLUS_MOTION.swayHeightRatio);
+    center.y += FLOAT_PLUS_MOTION.riseWorld * (1 - Math.pow(1 - progress, 2));
+    const opacity = progress < FLOAT_PLUS_MOTION.fadeStart
       ? 1
-      : Math.max(0, (1 - progress) / (1 - FLOAT_PLUS.fadeStart));
+      : Math.max(0, (1 - progress) / (1 - FLOAT_PLUS_MOTION.fadeStart));
     return { position: center, quaternion: camera.quaternion, opacity };
   }
 
@@ -216,16 +251,15 @@
 
   function makeHeartMask(image, color) {
     const mask = document.createElement('canvas');
-    mask.width = 200;
-    mask.height = 200;
+    mask.width = 240;
+    mask.height = 240;
     const context = mask.getContext('2d');
     context.clearRect(0, 0, mask.width, mask.height);
     let usedFallbackGlyph = false;
-
     if (image) {
       const sourceW = Math.max(1, Number(image.naturalWidth || image.width) || 1);
       const sourceH = Math.max(1, Number(image.naturalHeight || image.height) || 1);
-      const drawW = 154;
+      const drawW = 184;
       const drawH = drawW * sourceH / sourceW;
       const x = (mask.width - drawW) * 0.5;
       const y = (mask.height - drawH) * 0.5;
@@ -236,31 +270,34 @@
       context.globalCompositeOperation = 'source-over';
     } else {
       usedFallbackGlyph = true;
-      context.font = '700 142px serif';
+      context.font = '700 170px serif';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
       context.fillStyle = color;
-      context.fillText('♥', mask.width / 2, mask.height / 2 + 4);
+      context.fillText('♥', mask.width / 2, mask.height / 2 + 5);
     }
     return { mask, usedFallbackGlyph };
   }
 
   function makeHeartPart(image, color) {
     const THREE = deps?.THREE || window.THREE;
+    const style = currentHeartStyle();
     const canvas = document.createElement('canvas');
-    canvas.width = 200;
-    canvas.height = 200;
+    canvas.width = 240;
+    canvas.height = 240;
     const context = canvas.getContext('2d');
     const { mask, usedFallbackGlyph } = makeHeartMask(image, color);
 
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.save();
-    context.shadowColor = color;
-    context.shadowBlur = HEART_GLOW_BLUR_PX;
-    context.shadowOffsetX = 0;
-    context.shadowOffsetY = 0;
-    context.drawImage(mask, 0, 0);
-    context.restore();
+    if (style.glowPx > 0) {
+      context.save();
+      context.shadowColor = color;
+      context.shadowBlur = style.glowPx;
+      context.shadowOffsetX = 0;
+      context.shadowOffsetY = 0;
+      context.drawImage(mask, 0, 0);
+      context.restore();
+    }
     context.drawImage(mask, 0, 0);
 
     let nonTransparentPixels = -1;
@@ -288,7 +325,7 @@
       : RELATIONSHIP_ALPHA_TEST;
     const materialOverrides = {
       transparent: true,
-      opacity: HEART_MAX_OPACITY,
+      opacity: style.opacity,
       alphaTest,
       depthTest: false,
       depthWrite: false,
@@ -313,8 +350,8 @@
       canonicalTextureFactory: !!pngSurface?.makeCanvasTexture,
       canonicalMaterialFactory: !!pngSurface?.makeMaterial,
       alphaTest,
-      maxOpacity: HEART_MAX_OPACITY,
-      glowBlurPx: HEART_GLOW_BLUR_PX,
+      maxOpacity: style.opacity,
+      glowBlurPx: style.glowPx,
       url: HEART_URL,
       at: Date.now(),
     };
@@ -385,10 +422,8 @@
       kind: event.kind,
       value: event.value,
       layout: 'chathead-style-heart-plus-value',
-      animation: 'floatPlus',
       childPlanes: parts.length,
       heartUsesCanonicalPngSurface: !!debugState.lastHeart?.canonicalMaterialFactory,
-      heartMaxOpacity: HEART_MAX_OPACITY,
       alphaTest: Number(event?.heartPart?.material?.alphaTest) || RELATIONSHIP_ALPHA_TEST,
       at: Date.now(),
     };
@@ -421,10 +456,10 @@
     if (!api || !THREE || !root || !value) return null;
     const scene = rootScene(root);
     if (!scene) return null;
-
     const image = await loadHeartImage();
     if (!root.parent || rootScene(root) !== scene) return null;
 
+    const cfg = currentFloatPlus();
     const heartColor = relationshipHeartColor(kind);
     const numberColor = relationshipNumberColor(value);
     const label = `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
@@ -432,19 +467,16 @@
     const valuePart = makeValuePart(label, numberColor);
     const group = new THREE.Group();
     group.name = `relationship_popup_${kind}`;
-    layoutLikeChathead(group, heartPart, valuePart, FLOAT_PLUS.worldHeight);
+    layoutLikeChathead(group, heartPart, valuePart, cfg.worldHeight);
 
-    const initialFrame = floatPlusFrame(root, 0, FLOAT_PLUS.worldHeight);
-    if (!initialFrame) {
+    const frame = floatPlusFrame(root, 0, cfg.worldHeight);
+    if (!frame) {
       disposePart(heartPart);
       disposePart(valuePart);
       return null;
     }
-    group.position.copy(initialFrame.position);
-    group.quaternion.copy(initialFrame.quaternion);
-    group.scale.setScalar(1);
-    heartPart.material.opacity = HEART_MAX_OPACITY;
-    valuePart.material.opacity = 1;
+    group.position.copy(frame.position);
+    group.quaternion.copy(frame.quaternion);
 
     const event = {
       kind,
@@ -453,8 +485,8 @@
       heartPart,
       valuePart,
       startedAt: performance.now(),
-      lifetimeMs: FLOAT_PLUS.lifetimeMs,
-      worldHeight: FLOAT_PLUS.worldHeight,
+      lifetimeMs: cfg.lifetimeMs,
+      worldHeight: cfg.worldHeight,
       value,
       heartColor,
       numberColor,
@@ -465,19 +497,31 @@
   }
 
   function updateRelationshipPopups(now) {
+    const camera = deps?.camera;
+    if (!camera) return;
+    const cfg = currentFloatPlus();
+    const style = currentHeartStyle();
     for (let index = relationshipPopups.length - 1; index >= 0; index--) {
       const event = relationshipPopups[index];
       const progress = Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
+      if (!event.root?.parent || progress >= 1) {
+        disposeRelationshipPopup(event, !event.root?.parent ? 'detached-root' : 'expired');
+        relationshipPopups.splice(index, 1);
+        continue;
+      }
+      if (Math.abs(event.worldHeight - cfg.worldHeight) > 0.000001) {
+        event.worldHeight = cfg.worldHeight;
+        layoutLikeChathead(event.group, event.heartPart, event.valuePart, event.worldHeight);
+      }
       const frame = floatPlusFrame(event.root, progress, event.worldHeight);
-      if (!frame || !event.root?.parent || progress >= 1) {
-        disposeRelationshipPopup(event, !frame ? 'missing-float-plus-frame' : !event.root?.parent ? 'detached-root' : 'expired');
+      if (!frame) {
+        disposeRelationshipPopup(event, 'missing-anchor');
         relationshipPopups.splice(index, 1);
         continue;
       }
       event.group.position.copy(frame.position);
       event.group.quaternion.copy(frame.quaternion);
-      event.group.scale.setScalar(1);
-      event.heartPart.material.opacity = HEART_MAX_OPACITY * frame.opacity;
+      event.heartPart.material.opacity = frame.opacity * style.opacity;
       event.valuePart.material.opacity = frame.opacity;
     }
   }
@@ -486,56 +530,155 @@
     if (!nextDeps) return false;
     deps = nextDeps;
     debugState.depsCaptured = !!(deps?.THREE && deps?.camera);
+    injectEditorHeartControls();
     return debugState.depsCaptured;
+  }
+
+  function syncEditorHeartControls() {
+    const host = document.getElementById('relationshipHeartStyleControls');
+    if (!host) return;
+    const style = currentHeartStyle();
+    const opacity = host.querySelector('[data-heart-opacity]');
+    const glow = host.querySelector('[data-heart-glow]');
+    const opacityOut = host.querySelector('[data-heart-opacity-value]');
+    const glowOut = host.querySelector('[data-heart-glow-value]');
+    if (opacity && document.activeElement !== opacity) opacity.value = String(Math.round(style.opacity * 100));
+    if (glow && document.activeElement !== glow) glow.value = String(Math.round(style.glowPx));
+    if (opacityOut) opacityOut.textContent = `${Math.round(style.opacity * 100)}%`;
+    if (glowOut) glowOut.textContent = `${Math.round(style.glowPx)}px`;
+  }
+
+  function updateEditorSettingsFromHeartControls(host) {
+    const editorSettings = editorSettingsObject();
+    if (!editorSettings) return false;
+    editorSettings.relationshipHeart = {
+      ...(editorSettings.relationshipHeart || {}),
+      opacity: clamp(finite(host.querySelector('[data-heart-opacity]')?.value, 80) / 100, 0, 1),
+      glowPx: clamp(finite(host.querySelector('[data-heart-glow]')?.value, 20), 0, 40),
+    };
+    captureSettings(editorSettings);
+    const normalized = window.WorldPopupText?.applySettings?.(editorSettings);
+    if (normalized) captureSettings(normalized);
+    const json = document.getElementById('json');
+    if (json) json.textContent = JSON.stringify(editorSettings, null, 2);
+    return true;
+  }
+
+  function previewHeartStyle() {
+    if (!deps?.playerRoot) return;
+    clearRelationshipPopups();
+    spawnRelationshipPopup(deps.playerRoot, 'rapport', 10, { amountIsPoints: true }).catch(() => {});
+  }
+
+  function injectEditorHeartControls() {
+    if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return false;
+    const section = document.getElementById('relationshipPopupPreviewSection');
+    if (!section) {
+      if (!editorControlRetry) {
+        editorControlRetry = window.setInterval(() => {
+          if (injectEditorHeartControls()) {
+            clearInterval(editorControlRetry);
+            editorControlRetry = 0;
+          }
+        }, 150);
+      }
+      return false;
+    }
+    const help = section.querySelector('.help');
+    if (help) help.textContent = 'Uses the same live Float+ placement and motion as ordinary Float+ text. Heart opacity and glow are relationship-only styling.';
+    let host = document.getElementById('relationshipHeartStyleControls');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'relationshipHeartStyleControls';
+      host.innerHTML = `
+        <div class="sliderRow">
+          <label for="relationshipHeartOpacity">Heart opacity / transparency</label>
+          <output id="relationshipHeartOpacityValue" data-heart-opacity-value></output>
+          <small>Lower values make the heart more transparent; the signed number is unaffected.</small>
+          <input id="relationshipHeartOpacity" data-heart-opacity type="range" min="0" max="100" step="1">
+        </div>
+        <div class="sliderRow">
+          <label for="relationshipHeartGlow">Heart glow</label>
+          <output id="relationshipHeartGlowValue" data-heart-glow-value></output>
+          <small>Soft same-color glow baked into the heart texture.</small>
+          <input id="relationshipHeartGlow" data-heart-glow type="range" min="0" max="40" step="1">
+        </div>
+      `;
+      const buttons = section.querySelector('.buttons');
+      section.insertBefore(host, buttons || section.querySelector('#relationshipPopupPreviewDebug'));
+      host.addEventListener('input', () => {
+        if (!updateEditorSettingsFromHeartControls(host)) return;
+        syncEditorHeartControls();
+        previewHeartStyle();
+      });
+    }
+    const editorSettings = editorSettingsObject();
+    if (editorSettings) captureSettings(editorSettings);
+    syncEditorHeartControls();
+    return true;
   }
 
   function install() {
     const api = window.WorldPopupText;
     if (!api) return false;
-    if (Number(api.__favorPopupPointsBridgeVersion) >= 7) return true;
+    if (Number(api.__favorPopupPointsBridgeVersion) >= 8) {
+      injectEditorHeartControls();
+      return true;
+    }
 
     const originalInit = typeof api.init === 'function' ? api.init.bind(api) : null;
     const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null;
     const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null;
+    const originalApplySettings = typeof api.applySettings === 'function' ? api.applySettings.bind(api) : null;
     const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null;
 
     if (originalInit) {
-      api.init = function favorPopupV7Init(injectedDeps, ...args) {
+      api.init = function favorPopupV8Init(injectedDeps, ...args) {
         bindDeps(injectedDeps);
         return originalInit(injectedDeps, ...args);
       };
     }
     if (originalUpdate) {
-      api.update = function favorPopupV7Update(now, ...args) {
+      api.update = function favorPopupV8Update(now, ...args) {
         const result = originalUpdate(now, ...args);
         updateRelationshipPopups(now);
         return result;
       };
     }
     if (originalClear) {
-      api.clear = function favorPopupV7Clear(...args) {
+      api.clear = function favorPopupV8Clear(...args) {
         clearRelationshipPopups();
         return originalClear(...args);
       };
     }
+    if (originalApplySettings) {
+      api.applySettings = function favorPopupV8ApplySettings(settings, ...args) {
+        const result = originalApplySettings(settings, ...args);
+        captureSettings(result || settings);
+        return result;
+      };
+    }
+
+    const editorSettings = editorSettingsObject();
+    if (editorSettings) captureSettings(editorSettings);
 
     api.showRelationshipChange = (root, kind, amount, options) => spawnRelationshipPopup(root, kind === 'favor' ? 'favor' : 'rapport', amount, options);
     api.showRapportGain = (root, amount, options) => spawnRelationshipPopup(root, 'rapport', amount, options);
     api.showRapportChange = api.showRapportGain;
     api.showFavorChange = (root, amount, options) => spawnRelationshipPopup(root, 'favor', amount, options);
     api.relationshipHeadAnchorWorld = root => floatPlusAnchorWorld(root);
-    api.debugSnapshot = function favorPopupV7DebugSnapshot() {
+    api.debugSnapshot = function favorPopupV8DebugSnapshot() {
       const base = originalDebugSnapshot ? originalDebugSnapshot() : {};
       return {
         ...base,
         relationshipPositionBridge: {
-          version: 7,
+          version: 8,
           active: relationshipPopups.length,
           depsCaptured: debugState.depsCaptured,
           layout: 'chathead-style-heart-plus-value',
-          animation: 'floatPlus',
-          floatPlus: { ...FLOAT_PLUS },
-          heart: { maxOpacity: HEART_MAX_OPACITY, glowBlurPx: HEART_GLOW_BLUR_PX },
+          motion: 'floatPlus-live-settings',
+          floatPlus: { ...currentFloatPlus() },
+          heartStyle: { ...currentHeartStyle() },
           lastHeart: debugState.lastHeart,
           lastLayout: debugState.lastLayout,
           lastAnchor: debugState.lastAnchor,
@@ -544,7 +687,8 @@
       };
     };
     api.__favorPopupPointsBridge = true;
-    api.__favorPopupPointsBridgeVersion = 7;
+    api.__favorPopupPointsBridgeVersion = 8;
+    injectEditorHeartControls();
     return true;
   }
 
@@ -557,13 +701,15 @@
   }
 
   window.FavorPopupPointsBridge = Object.freeze({
-    version: 7,
+    version: 8,
     install,
     bindDeps,
+    captureSettings,
     relationshipHeadAnchorWorld: floatPlusAnchorWorld,
+    injectEditorHeartControls,
     snapshot() {
       return {
-        version: 7,
+        version: 8,
         activeRelationshipPopups: relationshipPopups.length,
         hardenedPopups: debugState.hardenedPopups,
         lastHardenedPopup: debugState.lastHardenedPopup,
@@ -573,9 +719,9 @@
         lastDisposedReason: debugState.lastDisposedReason,
         depsCaptured: debugState.depsCaptured,
         layout: 'chathead-style-heart-plus-value',
-        animation: 'floatPlus',
-        floatPlus: { ...FLOAT_PLUS },
-        heart: { maxOpacity: HEART_MAX_OPACITY, glowBlurPx: HEART_GLOW_BLUR_PX },
+        motion: 'floatPlus-live-settings',
+        floatPlus: { ...currentFloatPlus() },
+        heartStyle: { ...currentHeartStyle() },
         popupBridgeVersion: Number(window.WorldPopupText?.__favorPopupPointsBridgeVersion) || 0,
       };
     },
