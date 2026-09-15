@@ -288,3 +288,131 @@
   installAuthorThreeCompatibility();
   installNpcPreviewBridge();
 })();
+
+// Rig Coordinates predates Puktuk and Vorg-ass. Keep the editor's embedded
+// five-creature snapshot intact, then seed only missing new species through
+// its own import path. These are deliberately editable starting coordinates,
+// not fake human-approved attachment values.
+(function installAnimationAuthorNewCreatureRigSync(global) {
+  'use strict';
+  if (typeof location === 'undefined' || !/\/tools\/animation-author\//.test(location.pathname || '')) return;
+
+  const RIG_SCHEMA = 'hobunji.attachment-rig-profiles.v10'; // Used by the existing Rig import bridge when it receives the augmented profile library.
+  const SEED_SOURCES = Object.freeze({ puktuk: 'gar-wolf', 'voorg-ass': 'uumkaoii' }); // Used only to give the two new species editable first-pass coordinates.
+  const STATUS_KEY = 'animationAuthorNewCreatureRigSync'; // Used by the mobile-safe debug status exposed below.
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+  const statusRoot = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  const status = statusRoot[STATUS_KEY] ||= { state: 'waiting-for-rig', repairs: 0, lastReason: null, missing: Object.keys(SEED_SOURCES) };
+  let queuedTimer = null; // Used to serialize this import after the older creature and shoulder repair bridges.
+
+  function missingKinds(live) {
+    return Object.keys(SEED_SOURCES).filter(kind => !live?.creatures?.[kind]);
+  }
+
+  function sourceProfile(live, sourceKind) {
+    return live?.creatures?.[sourceKind]
+      || global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[sourceKind]
+      || global.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.[sourceKind]
+      || null;
+  }
+
+  function seededProfile(kind, sourceKind, live) {
+    const source = sourceProfile(live, sourceKind);
+    if (!source) return null;
+    const profile = clone(source);
+    profile.kind = kind;
+    delete profile.chatheadFrame;
+    profile.authoringSeed = { sourceKind, version: 1, status: 'needs-authoring' };
+    profile.saddleRule = { ...(profile.saddleRule || {}), source: `rig-coordinates-seed:${sourceKind}`, authoredFixed: false, recalculateOnPreview: false };
+    profile.shoulderGripRule = { ...(profile.shoulderGripRule || {}), source: `rig-coordinates-seed:${sourceKind}`, authoredFixed: false, recalculateOnPreview: false };
+    profile.sizeScaleRule = { ...(profile.sizeScaleRule || {}), source: `rig-coordinates-seed:${sourceKind}`, authoredFixed: false };
+    return profile;
+  }
+
+  function attachImportFile(input, file) {
+    try {
+      if (typeof global.DataTransfer === 'function') {
+        const transfer = new global.DataTransfer();
+        transfer.items.add(file);
+        input.files = transfer.files;
+        return true;
+      }
+    } catch (_) {}
+    try {
+      Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function repairNow(reason = 'manual-debug') {
+    queuedTimer = null;
+    const api = global.MultiAvatarAnimationAuthor;
+    const input = global.document?.getElementById('maaImportInput');
+    if (!api?.getAttachmentRigProfiles || !input || typeof global.File !== 'function') {
+      status.state = 'waiting-for-rig';
+      status.lastReason = reason;
+      return false;
+    }
+
+    const live = api.getAttachmentRigProfiles();
+    const missing = missingKinds(live);
+    status.missing = [...missing];
+    status.lastReason = reason;
+    if (!missing.length) {
+      status.state = 'clean';
+      return false;
+    }
+
+    const repaired = clone(live || {});
+    repaired.characters ||= {};
+    repaired.creatures ||= {};
+    const unresolved = [];
+    for (const kind of missing) {
+      const seed = seededProfile(kind, SEED_SOURCES[kind], repaired);
+      if (seed) repaired.creatures[kind] = seed;
+      else unresolved.push(kind);
+    }
+    if (unresolved.length) {
+      status.state = 'seed-source-missing';
+      status.missing = unresolved;
+      status.lastReason = `${reason}: ${unresolved.join(', ')}`;
+      return false;
+    }
+
+    const guard = global.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD;
+    const payload = guard?.reconcileRigExport
+      ? guard.reconcileRigExport({ schema: RIG_SCHEMA, profiles: repaired })
+      : { schema: RIG_SCHEMA, profiles: repaired };
+    const file = new global.File([JSON.stringify(payload)], 'hobunji_attachment_rig_new_creature_sync.json', { type: 'application/json' });
+    if (!attachImportFile(input, file)) {
+      status.state = 'file-bridge-unavailable';
+      return false;
+    }
+
+    status.state = 'repair-dispatched';
+    status.repairs += 1;
+    status.missing = [];
+    status.lastReason = `${reason}: ${missing.join(', ')}`;
+    input.dispatchEvent(new Event('change', { bubbles: false }));
+    return true;
+  }
+
+  function queueRepair(reason, delayMs = 900) {
+    if (queuedTimer != null) global.clearTimeout(queuedTimer);
+    queuedTimer = global.setTimeout(() => repairNow(reason), delayMs);
+  }
+
+  global.document?.addEventListener('click', event => {
+    const target = event.target?.closest?.('#maaRigTab, #maaNewBtn');
+    if (!target) return;
+    if (target.id === 'maaRigTab' || (target.id === 'maaNewBtn' && global.document.body?.dataset?.animationAuthorMode === 'rig')) {
+      queueRepair(target.id === 'maaRigTab' ? 'rig-tab-open' : 'rig-new-reset');
+    }
+  }, true);
+
+  global.HobunjiAnimationAuthorNewCreatureRigSync = Object.freeze({
+    repairNow: () => repairNow('manual-debug'),
+    missingKinds: () => missingKinds(global.MultiAvatarAnimationAuthor?.getAttachmentRigProfiles?.() || {}),
+    getStatus: () => ({ ...status, missing: [...(status.missing || [])] }),
+  });
+})(window);
