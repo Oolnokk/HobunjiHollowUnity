@@ -27,35 +27,35 @@
   const ARM_STYLES = Object.freeze(['overhead-punch', 'tpose-jiggle']);
 
   // These are deliberate character reads from the current NPC database bios.
-  // Every other NPC still receives a description-derived value through
-  // deriveBaseInhibition(), so adding a new database entry never leaves the
-  // system without a personality value. An authored rec.personality.inhibition
-  // always wins over both this table and the heuristic.
+  // They are intentionally authored character-by-character rather than from a
+  // gender rule. Pahu remains unusually uninhibited; most adults now sit high
+  // enough that alcohol meaningfully changes whether they will actually dance.
+  // An authored rec.personality.inhibition always wins over this table.
   const BASE_OVERRIDES = Object.freeze({
-    garanki_gabu: 32,          // cheerful, curious, oblivious to social risk
-    gorobi_ginju: 58,          // friendly but proud/competitive patriarch
-    gikali_ginju: 76,          // explicitly anxious and competition-conscious
-    aliri_ginju: 62,           // dutiful, competitive, watches her brother
-    gantami_ginju: 14,         // habitual little rascal
-    leaf: 82,                  // quiet, restrained, grumpy recluse
+    garanki_gabu: 68,          // cheerful/curious, but not an automatic dance joiner
+    gorobi_ginju: 86,          // friendly but proud/competitive patriarch
+    gikali_ginju: 88,          // explicitly anxious and competition-conscious
+    aliri_ginju: 68,           // dutiful, competitive, watches her brother
+    gantami_ginju: 20,         // habitual little rascal; children stay spontaneous
+    leaf: 94,                  // quiet, restrained, grumpy recluse
     pahu: 12,                  // silly, warm festival-lover who pulls Leaf out
-    furunji_funji: 64,         // warm but worn-down widowed shopkeeper
-    foroji_funji: 8,           // bard who actively chooses music over inheritance
-    kzubug: 64,                // gentle older smith, strongly responsibility-minded
-    sloomi: 51,                // soft-spoken, but fierce when emotionally engaged
-    hreesh: 38,                // blunt innkeeper; low concern for looking proper
-    jubmir: 57,                // caring trader carrying a concealed noble identity
-    father_hunundi_hodu: 81,   // priest/protector: high responsibility and decorum
-    namui_u_hakaru: 69,        // wanted, deliberately trying to live an honest life
-    takua_ao_hakaru: 65,       // wanted, actively seeking honest work/responsibility
-    kaboku_kunji: 66,          // kind, giving older man who avoids household conflict
-    kinami_kunji: 90,          // status-conscious gossip who polices other people's behavior
-    teacup_unumanuk: 83,       // clan eldress and nightly religious leader
-    spearhead_unumanuk: 86,    // watch captain/father; safety and duty first
-    oddclaw_unumanuk: 34,      // young animal-loving watch member challenging his father
-    dzibim_khibu: 57,
-    dzahiri_khibu: 54,
-    nashka_khibu: 43,
+    furunji_funji: 90,         // warm but worn-down widowed shopkeeper
+    foroji_funji: 96,          // performs readily, but personally dancing is another matter
+    kzubug: 90,                // gentle older smith, strongly responsibility-minded
+    sloomi: 60,                // soft-spoken, but fierce when emotionally engaged
+    hreesh: 72,                // blunt innkeeper; relatively relaxed, not shameless
+    jubmir: 64,                // caring trader carrying a concealed noble identity
+    father_hunundi_hodu: 96,   // priest/protector: high responsibility and decorum
+    namui_u_hakaru: 88,        // wanted, deliberately trying to live an honest life
+    takua_ao_hakaru: 82,       // wanted, actively seeking honest work/responsibility
+    kaboku_kunji: 90,          // kind, giving older man who avoids household conflict
+    kinami_kunji: 92,          // status-conscious gossip who polices other people's behavior
+    teacup_unumanuk: 88,       // clan eldress and nightly religious leader
+    spearhead_unumanuk: 97,    // watch captain/father; safety and duty first
+    oddclaw_unumanuk: 84,      // young watch member: playful streak, still self-conscious
+    dzibim_khibu: 82,
+    dzahiri_khibu: 78,
+    nashka_khibu: 68,
   });
 
   const state = {
@@ -91,8 +91,8 @@
   }
 
   function deriveBaseInhibition(rec) {
-    let score = 52;
-    const reasons = ['neutral adult baseline 52'];
+    let score = 64;
+    const reasons = ['neutral adult baseline 64'];
     const text = recText(rec);
     const add = (pattern, amount, reason) => {
       if (!pattern.test(text)) return;
@@ -100,11 +100,11 @@
       reasons.push(`${amount >= 0 ? '+' : ''}${amount} ${reason}`);
     };
 
-    add(/\b(child|little brother|little sister)\b/, -14, 'childlike spontaneity');
-    add(/\b(young|younger)\b/, -5, 'youth');
-    add(/\b(old|elder|eldress|late middle aged|late-middle-aged)\b/, 7, 'age/responsibility');
-    add(/\b(cheerful|silly|rascal|festival lover|festival-lover|bard|performer|busk|play(?:s|ing)? music)\b/, -16, 'playful/performative temperament');
-    add(/\b(warm|blunt|outgoing|oblivious)\b/, -5, 'low social self-monitoring');
+    add(/\b(child|little brother|little sister)\b/, -18, 'childlike spontaneity');
+    add(/\b(young|younger)\b/, -4, 'youth');
+    add(/\b(old|elder|eldress|late middle aged|late-middle-aged)\b/, 8, 'age/responsibility');
+    add(/\b(cheerful|silly|rascal|festival lover|festival-lover|bard|performer|busk|play(?:s|ing)? music)\b/, -10, 'playful/performative temperament');
+    add(/\b(warm|blunt|outgoing|oblivious)\b/, -4, 'low social self-monitoring');
     add(/\b(quiet|soft-spoken|restrained|reserved|shy)\b/, 10, 'reserved temperament');
     add(/\b(anxious|self-conscious|nervous)\b/, 18, 'anxiety/self-consciousness');
     add(/\b(dutiful|responsible|captain|chief|priest|eldress|protective|single mother|parent|father|mother)\b/, 12, 'duty/protectiveness');
@@ -114,7 +114,7 @@
     add(/\b(worn down|widower|widowed|grief|plague|sacrific)\b/, 6, 'caution from life experience');
     add(/\b(murdered|banished|outlaw|criminal)\b/, -5, 'low conventional conformity');
 
-    return { base: Math.round(clamp(score, 5, 95)), source: 'bio-derived', reasons };
+    return { base: Math.round(clamp(score, 5, 98)), source: 'bio-derived', reasons };
   }
 
   function profileFor(rec) {
@@ -241,6 +241,18 @@
     return chosen;
   }
 
+  // High inhibition should be much harder to overcome than low inhibition is.
+  // Keep this dance-specific so the same general inhibition value can still be
+  // reused by drink offers and other social systems without making them nearly
+  // impossible. Both values remain config-tunable under game.socialActions.
+  function danceThresholdFor(effectiveInhibition) {
+    const effective = clamp(effectiveInhibition, 1, 99);
+    const pivot = cfgNumber('danceHighInhibitionPivot', 30, 1, 90);
+    const multiplier = cfgNumber('danceHighInhibitionMultiplier', 2, 1, 4);
+    if (effective <= pivot) return effective;
+    return clamp(pivot + (effective - pivot) * multiplier, 1, 99);
+  }
+
   function evaluate(rec, walker, stimulusInfo, underlyingTarget) {
     const profile = ensureProfile(rec);
     const stimulus = stimulusInfo?.stimulus;
@@ -250,8 +262,9 @@
     let effective = profile.base;
 
     // Drunkenness is not an arbitrary subtraction: it linearly maps this
-    // individual's own base inhibition toward 1, exactly preserving the
-    // user's requested 1..base relationship.
+    // individual's own base inhibition toward 1, preserving character-by-
+    // character differences while making alcohol the strongest way to loosen
+    // a normally inhibited NPC.
     const drunk = drunkenness100(rec?.id);
     const drunkAdjustedBase = 1 + (profile.base - 1) * (1 - drunk / 100);
     modifiers.push({ key: 'drunkenness', amount: drunkAdjustedBase - profile.base, detail: `${Math.round(drunk)} / 100` });
@@ -262,33 +275,35 @@
     else if (work.planning) { effective += 10; modifiers.push({ key: 'responsibility-plan', amount: 10 }); }
 
     const hour = gameHour();
-    if (hour >= 19 || hour < 5) { effective -= 8; modifiers.push({ key: 'night', amount: -8 }); }
-    else if (hour >= 17) { effective -= 4; modifiers.push({ key: 'evening', amount: -4 }); }
+    if (hour >= 19 || hour < 5) { effective -= 5; modifiers.push({ key: 'night', amount: -5 }); }
+    else if (hour >= 17) { effective -= 2; modifiers.push({ key: 'evening', amount: -2 }); }
     else if (hour >= 9 && hour < 17) { effective += 2; modifiers.push({ key: 'public-daytime', amount: 2 }); }
 
     const personality = rec?.personality || {};
     const musicalInterest = clamp01(personality.musicalInterest ?? 0.5);
     const sociability = clamp01(personality.sociability ?? 0.5);
     const shyness = clamp01(personality.shyness ?? 0.3);
-    const musicTrait = (0.5 - musicalInterest) * 16;
-    const socialTrait = (0.5 - sociability) * 8;
+    const musicTrait = (0.5 - musicalInterest) * 12;
+    const socialTrait = (0.5 - sociability) * 6;
     const shyTrait = (shyness - 0.5) * 10;
     if (Math.abs(musicTrait) > 0.01) { effective += musicTrait; modifiers.push({ key: 'musical-interest', amount: musicTrait }); }
     if (Math.abs(socialTrait) > 0.01) { effective += socialTrait; modifiers.push({ key: 'sociability', amount: socialTrait }); }
     if (Math.abs(shyTrait) > 0.01) { effective += shyTrait; modifiers.push({ key: 'shyness', amount: shyTrait }); }
 
     if (stimulus?.type === 'music') {
-      const pull = -14 * clamp01(stimulus.strength ?? 0.8) * (0.65 + 0.35 * stimulusInfo.proximity);
+      const pull = -8 * clamp01(stimulus.strength ?? 0.8) * (0.65 + 0.35 * stimulusInfo.proximity);
       effective += pull;
       modifiers.push({ key: 'music', amount: pull });
     } else if (stimulus?.type === 'dance') {
-      effective -= 6;
-      modifiers.push({ key: 'someone-else-dancing', amount: -6 });
+      effective -= 3;
+      modifiers.push({ key: 'someone-else-dancing', amount: -3 });
     }
 
     const counts = nearbySocialCounts(walker, stimulus);
     const watcherPenalty = Math.min(20, counts.watchers * 5);
-    const dancerBonus = -Math.min(24, counts.dancers * 8);
+    // Seeing one dancer helps a little; it no longer creates the old chain
+    // reaction where two or three dancers erased most NPCs' inhibition.
+    const dancerBonus = -Math.min(9, counts.dancers * 3);
     if (watcherPenalty) { effective += watcherPenalty; modifiers.push({ key: 'spectators', amount: watcherPenalty, detail: String(counts.watchers) }); }
     if (dancerBonus) { effective += dancerBonus; modifiers.push({ key: 'other-dancers', amount: dancerBonus, detail: String(counts.dancers) }); }
 
@@ -299,22 +314,23 @@
     const closePlayerInvite = stimulus?.type === 'dance' && stimulus.sourceIsPlayer && stimulusInfo.distance <= inviteRadius;
     const hearts = closePlayerInvite ? heartLevel(rec?.id) : 0;
     if (closePlayerInvite) {
-      const relationshipAmount = -3 * hearts; // Exact requested rule; negative hearts therefore increase inhibition.
+      const relationshipAmount = -3 * hearts; // Existing favor rule; negative hearts therefore increase inhibition.
       effective += relationshipAmount;
       modifiers.push({ key: 'player-dance-invitation', amount: relationshipAmount, detail: `${hearts} hearts × -3` });
     }
 
-    // Inn/festival/social spaces make expressive behavior less conspicuous,
-    // but working there still carries the +22 duty penalty above.
+    // Inn/festival/social spaces help, but merely being in the square should
+    // no longer be enough to turn a sober restrained NPC into a dancer.
     if (/inn|tavern|festival|square/.test(`${walker?.area || ''} ${activityText(underlyingTarget)}`)) {
-      effective -= 5;
-      modifiers.push({ key: 'social-venue', amount: -5 });
+      effective -= 3;
+      modifiers.push({ key: 'social-venue', amount: -3 });
     }
 
     effective = clamp(effective, 1, 99);
+    const danceThreshold = danceThresholdFor(effective);
     const willingnessDraw = deterministic01(rec?.id, day, `dance:${stimulus?.id}:${encounter.serial}`) * 100;
     const blocked = work.critical || global.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(rec?.id) || false;
-    const dance = !blocked && willingnessDraw >= effective;
+    const dance = !blocked && willingnessDraw >= danceThreshold;
     const result = {
       npcId: rec?.id,
       name: rec?.name || rec?.id,
@@ -324,8 +340,9 @@
       baseSource: profile.source,
       drunkenness: drunk,
       effectiveInhibition: Math.round(effective * 10) / 10,
+      danceThreshold: Math.round(danceThreshold * 10) / 10,
       willingnessDraw: Math.round(willingnessDraw * 10) / 10,
-      danceProbability: Math.round((100 - effective) * 10) / 10,
+      danceProbability: Math.round((100 - danceThreshold) * 10) / 10,
       dance,
       blocked,
       atWork: work.working,
@@ -339,10 +356,10 @@
     };
     state.evaluations.set(rec?.id, result);
 
-    const decisionKey = `${result.stimulusId}|${result.encounter}|${result.dance}|${result.effectiveInhibition}|${result.willingnessDraw}`;
+    const decisionKey = `${result.stimulusId}|${result.encounter}|${result.dance}|${result.effectiveInhibition}|${result.danceThreshold}|${result.willingnessDraw}`;
     if (state.lastLoggedDecision.get(rec?.id) !== decisionKey) {
       state.lastLoggedDecision.set(rec?.id, decisionKey);
-      global.__farmLog?.(`[inhibition] ${result.name}: base ${result.baseInhibition} → ${result.effectiveInhibition}; willingness ${result.willingnessDraw} → ${result.dance ? 'DANCE' : 'watch/continue'}`, 'social');
+      global.__farmLog?.(`[inhibition] ${result.name}: base ${result.baseInhibition} → effective ${result.effectiveInhibition} → dance threshold ${result.danceThreshold}; willingness ${result.willingnessDraw} → ${result.dance ? 'DANCE' : 'watch/continue'}`, 'social');
     }
     return result;
   }
@@ -773,6 +790,7 @@
     baseOverrides: BASE_OVERRIDES,
     profileFor,
     ensureProfile,
+    danceThresholdFor,
     evaluate,
     getDebug(npcId) {
       if (npcId) return state.evaluations.get(String(npcId)) || null;
