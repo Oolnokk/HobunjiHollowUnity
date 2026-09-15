@@ -65,6 +65,10 @@ const unchanged = probe.compareSamples(
 );
 assert.equal(unchanged.state, 'unchanged', 'identical samples report no remote change');
 
+const debugAfterPureComparisons = window.__hobunjiGoogleDriveIdentityProbeDebug.snapshot();
+assert.equal(debugAfterPureComparisons.stableIdentityPasses, 0, 'pure comparison calls do not increment runtime PASS telemetry');
+assert.equal(debugAfterPureComparisons.identityFailures, 0, 'pure comparison calls do not increment runtime failure telemetry');
+
 assert(source.includes('drive.inspectRemote({ interactive: true })'), 'probe samples Drive through the read-only inspected remote envelope');
 assert(!source.includes('updateRemoteFile') && !source.includes("method: 'PATCH'"), 'identity probe contains no Drive write path');
 assert(source.includes("SESSION_KEY = 'hobunjiDriveIdentityProbe.v1'"), 'non-secret prior sample survives a same-tab reload for manual desktop testing');
