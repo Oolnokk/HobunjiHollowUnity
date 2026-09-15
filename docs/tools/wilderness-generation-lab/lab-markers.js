@@ -4,7 +4,7 @@
   function loadScript(src, marker) {
     return new Promise((resolve, reject) => {
       if (document.querySelector(`script[data-${marker}]`)) { resolve(); return; }
-      const script = document.createElement('script'); // Small bootstrap keeps each Wilderness Lab authoring subsystem independently maintainable.
+      const script = document.createElement('script');
       script.src = src;
       script.async = false;
       script.setAttribute(`data-${marker}`, '1');
@@ -16,28 +16,36 @@
 
   async function boot() {
     try {
-      // Load the shared causeway repair first. The Lab's final preview assertion
-      // must never race a later dynamically inserted generator adapter.
       await loadScript('../../js/wilderness-entry-corridor.js', 'wilderness-entry-corridor');
-      await loadScript('lab-terrain-experiments.js', 'wilderness-lab-terrain-experiments'); // Calculates Great Basin spoon heights, river canyon overrides, and karst placement.
-      await loadScript('lab-basin-rampify.js', 'wilderness-lab-basin-rampify'); // Converts the spoon floor into one continuous walkable rampElevation field instead of tiny terraces.
-      await loadScript('lab-terrain-finalize.js', 'wilderness-lab-terrain-finalize'); // Reconciles transformed cells with old plateau mesa masks.
-      await loadScript('lab-recipe-guard.js', 'wilderness-lab-recipe-guard'); // Keeps exact/live recipes from inheriting stale karst or river experimental toggles.
-      await loadScript('lab-experiment-settings.js', 'wilderness-lab-experiment-settings'); // Copy/download settings includes the dynamically injected terrain controls.
-      await loadScript('lab-exported-object-index.js', 'wilderness-lab-exported-object-index'); // Reconstructs unique generator objects from the Map Editor workspace's generatedObjectId/generatedObjectType tile metadata.
-      await loadScript('lab-object-markers.js', 'wilderness-lab-object-markers'); // Schematic cube marker renderer consumes the reconstructed object array and wraps the adjusted terrain preview.
-      await loadScript('lab-terrain-skin.js', 'wilderness-lab-terrain-skin'); // Final pass keeps the broad Great Basin ramp field grass-skinned rather than path-skinned.
-      await loadScript('lab-environment-refresh.js', 'wilderness-lab-environment-refresh'); // Corrects old generic winter terminology: Coldmuck is localized slush; Western Slope snow is persistent avalanche deposition.
-      await loadScript('../../js/surface-stretch-uv-furniture.js', 'wilderness-lab-surface-stretch-uv'); // Connected-surface UV unwrapper the real snow/slush module below stretch-maps its texture through, same as the real game's plateau mesa cliffs.
-      await loadScript('../../js/environment-surface-micro-plateau.js', 'wilderness-lab-environment-surface-micro-plateau'); // The actual live game module that renders Western Slope snow and Coldmuck slush.
-      await loadScript('lab-real-environment-surface.js', 'wilderness-lab-real-environment-surface'); // Replaces this lab's old standalone winter mesh preview above with the real game module, so the preview can't drift out of sync with what actually ships.
-      await loadScript('lab-scale-reference.js', 'wilderness-lab-scale-reference'); // Loads after environment-refresh so its figure is placed on the final, snow/slush-adjusted terrain height.
-      await loadScript('lab-entry-repair.js', 'wilderness-lab-entry-repair'); // Final preview assertion: run the shared exported-path causeway trim even if another generator wrapper changed call order.
-      await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe'); // Exact post-generation tile inspector plus debug export containing both workspace and merged preview grid.
-      await loadScript('lab-locale-terrain.js', 'wilderness-lab-locale-terrain'); // Locale Editor autosave/import source plus selected/rejected terrain-probe and embedded-carve overlays.
-      await loadScript('lab-banubu-cave.js', 'wilderness-lab-banubu-cave'); // Repo-backed Banubu Cave injection plus exact game cave renderer and actual Grehlr live visual.
-      console.log('[WildernessLab] shared causeway repair + terrain experiments + basin ramp field + finalizer + recipe guard + settings export + exported-object index + cube markers + terrain skin + environment refresh + real environment surface + scale reference + entry repair + pixel probe + locale terrain diagnostics + Banubu Cave live preview loaded');
-      const button = document.getElementById('generateBtn'); // Lab-features may have triggered one early render when this bootstrap loaded; rerun once all child modules are ready.
+      await loadScript('lab-terrain-experiments.js', 'wilderness-lab-terrain-experiments');
+      await loadScript('lab-basin-rampify.js', 'wilderness-lab-basin-rampify');
+      await loadScript('lab-terrain-finalize.js', 'wilderness-lab-terrain-finalize');
+      await loadScript('lab-recipe-guard.js', 'wilderness-lab-recipe-guard');
+      await loadScript('lab-experiment-settings.js', 'wilderness-lab-experiment-settings');
+      await loadScript('lab-exported-object-index.js', 'wilderness-lab-exported-object-index');
+      await loadScript('lab-object-markers.js', 'wilderness-lab-object-markers');
+      await loadScript('lab-terrain-skin.js', 'wilderness-lab-terrain-skin');
+      await loadScript('lab-environment-refresh.js', 'wilderness-lab-environment-refresh');
+
+      // Live protected-band authoring is intentionally narrow: the Lab previews
+      // the waterway bank mask, while the real EnvironmentSurfaceMicroPlateau
+      // below previews Western Slope snow. Grass/slush/cliffs are not retuned.
+      await loadScript('../../config/natural-surface-materials.js?v=20260914outline4', 'wilderness-lab-natural-surface-config');
+      await loadScript('../../js/surface-stretch-uv-furniture.js?v=20260907farmcliff1', 'wilderness-lab-surface-stretch-uv');
+      await loadScript('../../js/surface-stretch-tile-ring.js?v=20260914bank1', 'wilderness-lab-surface-tile-ring');
+      await loadScript('../../js/surface-tile-material-parity.js?v=20260914snowonly1', 'wilderness-lab-surface-tile-parity');
+      await loadScript('lab-surface-outline-live.js?v=20260914bank1', 'wilderness-lab-surface-outline-live');
+
+      await loadScript('../../js/environment-surface-micro-plateau.js', 'wilderness-lab-environment-surface-micro-plateau');
+      await loadScript('lab-real-environment-surface.js', 'wilderness-lab-real-environment-surface');
+      await loadScript('lab-surface-outline-environment-sync.js?v=20260914snowonly1', 'wilderness-lab-surface-outline-environment-sync');
+      await loadScript('lab-scale-reference.js', 'wilderness-lab-scale-reference');
+      await loadScript('lab-entry-repair.js', 'wilderness-lab-entry-repair');
+      await loadScript('lab-pixel-probe.js', 'wilderness-lab-pixel-probe');
+      await loadScript('lab-locale-terrain.js', 'wilderness-lab-locale-terrain');
+      await loadScript('lab-banubu-cave.js', 'wilderness-lab-banubu-cave');
+      console.log('[WildernessLab] terrain authoring + water-bank/snow protected-band tuning + real environment surface loaded');
+      const button = document.getElementById('generateBtn');
       setTimeout(() => { if (button && !button.disabled) button.click(); }, 0);
     } catch (error) {
       console.error('[WildernessLab] module bootstrap failed:', error);

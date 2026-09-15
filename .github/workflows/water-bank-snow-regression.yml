@@ -1,0 +1,57 @@
+name: Water bank and snow regressions
+
+on:
+  push:
+    paths:
+      - 'docs/config/natural-surface-materials.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/js/water-canvas-stretch-overlay.js'
+      - 'docs/js/surface-stretch-tile-ring.js'
+      - 'docs/js/surface-tile-material-parity.js'
+      - 'docs/tools/wilderness-generation-lab/lab-markers.js'
+      - 'docs/tools/wilderness-generation-lab/lab-surface-outline-live.js'
+      - 'docs/tools/wilderness-generation-lab/lab-surface-outline-environment-sync.js'
+      - 'docs/config/maps/terrain-materials.json'
+      - 'scripts/test-water-canvas-stretch-overlay.js'
+      - 'scripts/test-surface-stretch-tile-ring.js'
+      - 'scripts/test-surface-tile-material-parity.js'
+      - 'scripts/test-wilderness-lab-surface-outline-knob.js'
+      - '.github/workflows/water-bank-snow-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/config/natural-surface-materials.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/js/water-canvas-stretch-overlay.js'
+      - 'docs/js/surface-stretch-tile-ring.js'
+      - 'docs/js/surface-tile-material-parity.js'
+      - 'docs/tools/wilderness-generation-lab/lab-markers.js'
+      - 'docs/tools/wilderness-generation-lab/lab-surface-outline-live.js'
+      - 'docs/tools/wilderness-generation-lab/lab-surface-outline-environment-sync.js'
+      - 'docs/config/maps/terrain-materials.json'
+      - 'scripts/test-water-canvas-stretch-overlay.js'
+      - 'scripts/test-surface-stretch-tile-ring.js'
+      - 'scripts/test-surface-tile-material-parity.js'
+      - 'scripts/test-wilderness-lab-surface-outline-knob.js'
+      - '.github/workflows/water-bank-snow-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  surface-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check surface modules
+        run: |
+          node --check docs/js/water-canvas-stretch-overlay.js
+          node --check docs/js/surface-stretch-tile-ring.js
+          node --check docs/js/surface-tile-material-parity.js
+          node --check docs/tools/wilderness-generation-lab/lab-surface-outline-live.js
+          node --check docs/tools/wilderness-generation-lab/lab-surface-outline-environment-sync.js
+      - name: Water bank overlay regression
+        run: node scripts/test-water-canvas-stretch-overlay.js
+      - name: Tile ring regression
+        run: node scripts/test-surface-stretch-tile-ring.js
+      - name: Snow-only scope regression
+        run: node scripts/test-surface-tile-material-parity.js
+      - name: Wilderness Lab live tuning regression
+        run: node scripts/test-wilderness-lab-surface-outline-knob.js
