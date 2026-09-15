@@ -6,16 +6,18 @@
   if (window.HobunjiSaveCoordinator) return;
 
   const DEVICE_ID_KEY = 'hobunjiSaveDeviceId.v1'; // Reuses folder-save provenance identity so the migration does not make existing browsers appear to be new devices.
+  let startupPromise = null; // Coalesces repeated onboarding init calls so folder/Drive startup reconciliation runs once.
   const cachedStatus = {
     initialized: false,
     committing: false,
+    startupMode: 'pending',
     lastCommitAt: null,
     lastContentHash: null,
     lastRevision: null,
     lastReason: null,
     lastError: null,
     storeSupported: false,
-  }; // Synchronous mobile-readable status updated around async IndexedDB work.
+  }; // Synchronous mobile-readable status updated around async IndexedDB/startup work.
 
   function snapshotApi() {
     return window.HobunjiSaveSnapshot || null;
@@ -119,6 +121,35 @@
     }
   }
 
+  async function prepareBeforeOnboarding() {
+    if (startupPromise) return startupPromise;
+    startupPromise = (async () => {
+      try {
+        const folderSupported = Boolean(window.LocalSaveFolder?.isSupported?.()); // Capability detection decides whether desktop folder or mobile Drive owns startup reconciliation.
+        if (folderSupported && typeof window.FolderSavePrimary?.prepareBeforeOnboarding === 'function') {
+          const mode = await window.FolderSavePrimary.prepareBeforeOnboarding(); // Existing desktop permission/load gate remains unchanged and authoritative.
+          cachedStatus.startupMode = `folder:${mode || 'resolved'}`;
+          return cachedStatus.startupMode;
+        }
+
+        if (!folderSupported && typeof window.HobunjiGoogleDriveSaveStartup?.prepareBeforeOnboarding === 'function') {
+          const mode = await window.HobunjiGoogleDriveSaveStartup.prepareBeforeOnboarding(); // Mobile linked-Drive preflight runs only behind its explicit authorization gesture.
+          cachedStatus.startupMode = `drive:${mode || 'resolved'}`;
+          return cachedStatus.startupMode;
+        }
+
+        cachedStatus.startupMode = folderSupported ? 'folder:no-primary-layer' : 'local-only';
+        return cachedStatus.startupMode;
+      } catch (error) {
+        cachedStatus.lastError = String(error?.message || error); // Startup persistence failure never strands onboarding; browser/local durable state remains the fallback.
+        cachedStatus.startupMode = 'startup-error-local-fallback';
+        await appendEvent('STARTUP RECONCILIATION ERROR', { error: cachedStatus.lastError });
+        return cachedStatus.startupMode;
+      }
+    })();
+    return startupPromise;
+  }
+
   async function hydrateStatus() {
     const store = storeApi(); // Store queried once after load so diagnostics can show a prior-session durable commit before the next save occurs.
     cachedStatus.storeSupported = !!store?.isSupported?.();
@@ -145,6 +176,7 @@
   window.HobunjiSaveCoordinator = Object.freeze({
     getWriterId,
     commitCurrent,
+    prepareBeforeOnboarding,
     getStatus,
   });
 
