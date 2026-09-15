@@ -37,12 +37,15 @@
   }
 
   function optionsWithDefaults(options = {}) {
+    const paddingEm = clamp(finiteOr(options.paddingEm, DEFAULTS.paddingEm), 0, 4); // Legacy all-sides padding remains the fallback for both axes.
     return {
       columnSpacingEm: clamp(finiteOr(options.columnSpacingEm, DEFAULTS.columnSpacingEm), -0.95, 4),
       glyphAdvanceEm: clamp(finiteOr(options.glyphAdvanceEm, DEFAULTS.glyphAdvanceEm), 0.1, 4),
       glyphScale: clamp(finiteOr(options.glyphScale, DEFAULTS.glyphScale), 0.25, 2.5),
       fontSizePx: clamp(finiteOr(options.fontSizePx, DEFAULTS.fontSizePx), 16, 512),
-      paddingEm: clamp(finiteOr(options.paddingEm, DEFAULTS.paddingEm), 0, 4),
+      paddingEm,
+      paddingXEm: clamp(finiteOr(options.paddingXEm, paddingEm), 0, 4),
+      paddingYEm: clamp(finiteOr(options.paddingYEm, paddingEm), 0, 4),
       color: String(options.color || DEFAULTS.color),
     };
   }
@@ -54,7 +57,8 @@
     const longestWord = Math.max(1, ...words.map(word => Array.from(word).length));
     const glyphAdvancePx = settings.fontSizePx * settings.glyphAdvanceEm;
     const columnAdvancePx = settings.fontSizePx * Math.max(0.05, 1 + settings.columnSpacingEm);
-    const paddingPx = settings.fontSizePx * settings.paddingEm;
+    const paddingXPx = settings.fontSizePx * settings.paddingXEm;
+    const paddingYPx = settings.fontSizePx * settings.paddingYEm;
     const contentWidth = settings.fontSizePx + (columnCount - 1) * columnAdvancePx;
     const contentHeight = longestWord * glyphAdvancePx;
     return {
@@ -64,9 +68,11 @@
       longestWord,
       glyphAdvancePx,
       columnAdvancePx,
-      paddingPx,
-      widthPx: Math.max(1, Math.ceil(contentWidth + paddingPx * 2 - 1e-9)),
-      heightPx: Math.max(1, Math.ceil(contentHeight + paddingPx * 2 - 1e-9)),
+      paddingPx: paddingYPx,
+      paddingXPx,
+      paddingYPx,
+      widthPx: Math.max(1, Math.ceil(contentWidth + paddingXPx * 2 - 1e-9)),
+      heightPx: Math.max(1, Math.ceil(contentHeight + paddingYPx * 2 - 1e-9)),
     };
   }
 
@@ -119,10 +125,10 @@
     ctx.textBaseline = 'middle';
     for (let columnIndex = 0; columnIndex < layout.words.length; columnIndex++) {
       const word = layout.words[columnIndex];
-      const x = layout.paddingPx + layout.fontSizePx / 2 + columnIndex * layout.columnAdvancePx;
+      const x = layout.paddingXPx + layout.fontSizePx / 2 + columnIndex * layout.columnAdvancePx;
       const glyphs = Array.from(word);
       for (let glyphIndex = 0; glyphIndex < glyphs.length; glyphIndex++) {
-        const y = layout.paddingPx + layout.glyphAdvancePx * (glyphIndex + 0.5);
+        const y = layout.paddingYPx + layout.glyphAdvancePx * (glyphIndex + 0.5);
         // Scale around this glyph cell's center only. Neighbor positions remain governed
         // solely by glyphAdvancePx/columnAdvancePx, so glyph size cannot push text around.
         ctx.save();
@@ -144,7 +150,7 @@
 
   window.TankanScriptLayout = {
     installed: true,
-    version: 3,
+    version: 4,
     fontFamily: FONT_FAMILY,
     fontUrl: FONT_URL,
     defaults: DEFAULTS,
