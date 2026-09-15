@@ -3,27 +3,40 @@
 
   const PUKTUK_KIND = 'puktuk'; // Species key shared by wild Puktuk, livestock, and the existing genotype renderer.
   const PUKTUK_BABY_ITEM_KEY = 'puktukBaby'; // Livestock item created when a Puktuk den baby is taken from its nest.
+  const VOORG_ASS_KIND = 'voorg-ass'; // Species key used to register Northern Cliffs Voorg-Asses with the shared den system.
+  const VOORG_ASS_ZONE_ID = 'map_northern_cliffs'; // Exterior-zone key whose cavern dens should use Voorg-Ass occupants.
+  const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Livestock item created when a Voorg-Ass den baby is taken from its nest.
+  const GREHLR_KIND = 'grehlr'; // Existing Northern Cliffs den species preserved when an explicit den roster is first authored.
 
-  function registerPuktukNestConfig() {
+  function registerDenNestConfig() {
     const game = window.SCRATCHBONES_CONFIG?.game; // Config is loaded before this bridge and snapshotted later by game.js.
     if (!game) return false;
 
     const wildlife = game.wildlife || (game.wildlife = {}); // Supplies game.js's DEN_MOTHER_DEFS snapshot.
     const denMothers = wildlife.denMothers || (wildlife.denMothers = {}); // Existing Den-Mother registry consumed by cavern generation.
-    const existingMother = denMothers[PUKTUK_KIND] || {}; // Preserves future authored Puktuk-specific mother overrides.
+
+    const existingPuktukMother = denMothers[PUKTUK_KIND] || {}; // Preserves future authored Puktuk-specific mother overrides.
     denMothers[PUKTUK_KIND] = {
-      ...existingMother,
-      creatureKey: existingMother.creatureKey || PUKTUK_KIND,
-      nestItemKey: existingMother.nestItemKey || PUKTUK_BABY_ITEM_KEY,
+      ...existingPuktukMother,
+      creatureKey: existingPuktukMother.creatureKey || PUKTUK_KIND,
+      nestItemKey: existingPuktukMother.nestItemKey || PUKTUK_BABY_ITEM_KEY,
+    };
+
+    const existingVoorgMother = denMothers[VOORG_ASS_KIND] || {}; // Preserves future authored Voorg-Ass Den-Mother overrides.
+    denMothers[VOORG_ASS_KIND] = {
+      ...existingVoorgMother,
+      creatureKey: existingVoorgMother.creatureKey || VOORG_ASS_KIND,
+      nestItemKey: existingVoorgMother.nestItemKey || VOORG_ASS_BABY_ITEM_KEY,
     };
 
     const livestock = game.livestock || (game.livestock = {}); // Existing farm/stable livestock config shared with FarmAnimals.
     const itemKinds = livestock.itemKinds || (livestock.itemKinds = {}); // Maps undeployed livestock items back to their species.
     itemKinds[PUKTUK_BABY_ITEM_KEY] = PUKTUK_KIND;
+    itemKinds[VOORG_ASS_BABY_ITEM_KEY] = VOORG_ASS_KIND;
     return true;
   }
 
-  function registerPuktukBabyItem(itemDefs) {
+  function registerDenBabyItems(itemDefs) {
     if (!itemDefs) return false;
     itemDefs[PUKTUK_BABY_ITEM_KEY] = {
       icon: '🐾',
@@ -34,42 +47,145 @@
       desc: 'A Puktuk baby taken from a western-slope den. Add it to a farm or stable to raise it.',
       ...(itemDefs[PUKTUK_BABY_ITEM_KEY] || {}),
     };
+    itemDefs[VOORG_ASS_BABY_ITEM_KEY] = {
+      icon: '🐾',
+      label: 'Voorg-Ass Baby',
+      cat: 'livestock',
+      sellPrice: 0,
+      tags: ['Livestock', 'Baby'],
+      desc: 'A Voorg-Ass baby taken from a Northern Cliffs den. Add it to a farm or stable to raise it.',
+      ...(itemDefs[VOORG_ASS_BABY_ITEM_KEY] || {}),
+    };
+    return true;
+  }
+
+  function registerVoorgAssDenRuntime(injectedDeps) {
+    const northernZone = injectedDeps?.EXTERIOR_ZONES?.[VOORG_ASS_ZONE_ID]; // Shared live zone object consumed by cavern den population selection.
+    const hadExplicitDenSpecies = Array.isArray(northernZone?.denSpecies); // Used so converting legacy ecology to an explicit den roster does not erase existing den species.
+    const legacyPackSpecies = !hadExplicitDenSpecies && Array.isArray(northernZone?.packSpecies)
+      ? [...northernZone.packSpecies]
+      : []; // Existing predator den candidates copied only when this bridge is creating the explicit roster for the first time.
+    const grehlrWasEligible = !hadExplicitDenSpecies && (
+      legacyPackSpecies.includes(GREHLR_KIND)
+      || (Array.isArray(northernZone?.herbivoreSpecies) && northernZone.herbivoreSpecies.includes(GREHLR_KIND))
+    ); // Grehlr historically reached Northern Cliffs dens through the legacy pack/herd resolver and must survive the switch to explicit denSpecies.
+
+    const denSpecies = northernZone
+      ? (hadExplicitDenSpecies ? northernZone.denSpecies : (northernZone.denSpecies = []))
+      : null; // Explicit den occupants override ordinary pack/herd ecology, so seed legacy occupants before adding Voorg-Ass.
+    if (Array.isArray(denSpecies) && !hadExplicitDenSpecies) {
+      for (const speciesKey of legacyPackSpecies) {
+        if (speciesKey && !denSpecies.includes(speciesKey)) denSpecies.push(speciesKey);
+      }
+      if (grehlrWasEligible && !denSpecies.includes(GREHLR_KIND)) denSpecies.push(GREHLR_KIND);
+    }
+    if (Array.isArray(denSpecies) && !denSpecies.includes(VOORG_ASS_KIND)) denSpecies.push(VOORG_ASS_KIND);
+
+    const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS; // CavernGenerator rejects den species that lack a corresponding Den-Mother definition.
+    if (denMotherDefs) {
+      const existingMother = denMotherDefs[VOORG_ASS_KIND] || {}; // Retains authored overrides while guaranteeing the runtime snapshot is complete.
+      denMotherDefs[VOORG_ASS_KIND] = {
+        ...existingMother,
+        creatureKey: existingMother.creatureKey || VOORG_ASS_KIND,
+        nestItemKey: existingMother.nestItemKey || VOORG_ASS_BABY_ITEM_KEY,
+      };
+    }
+
+    const grehlrPreserved = !grehlrWasEligible || denSpecies?.includes(GREHLR_KIND); // Legacy Northern Cliffs Grehlr eligibility is part of successful registration.
+    const ready = Array.isArray(denSpecies)
+      && denSpecies.includes(VOORG_ASS_KIND)
+      && grehlrPreserved
+      && denMotherDefs?.[VOORG_ASS_KIND]?.creatureKey === VOORG_ASS_KIND;
+    window.__farmLog?.(`[voorg-ass] den registration zone=${VOORG_ASS_ZONE_ID} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] grehlrPreserved=${grehlrPreserved ? 1 : 0} denMother=${denMotherDefs?.[VOORG_ASS_KIND]?.creatureKey || 'missing'} reward=${denMotherDefs?.[VOORG_ASS_KIND]?.nestItemKey || 'missing'}`, ready ? 'wildlife' : 'warn');
+    return ready;
+  }
+
+  function patchWildlifeSpawn(api) {
+    if (!api?.init) return false;
+    if (api.__voorgAssDenRegistrationInstalled) return true;
+    const originalInit = api.init; // Preserves CreatureGenetics and every other WildlifeSpawn.init wrapper already in the chain.
+    api.init = function voorgAssDenAwareWildlifeInit(injectedDeps) {
+      registerVoorgAssDenRuntime(injectedDeps);
+      return originalInit.call(this, injectedDeps);
+    };
+    api.__voorgAssDenRegistrationInstalled = true;
+    return true;
+  }
+
+  function watchWildlifeSpawnAssignment() {
+    if (patchWildlifeSpawn(window.WildlifeSpawn)) return true;
+    const existing = Object.getOwnPropertyDescriptor(window, 'WildlifeSpawn'); // Used to compose with den/territorial modules that also trap the later assignment.
+    if (existing?.set) {
+      const chainedSet = existing.set; // Existing loader-order trap remains authoritative for storing the assigned WildlifeSpawn API.
+      Object.defineProperty(window, 'WildlifeSpawn', {
+        configurable: existing.configurable !== false,
+        enumerable: existing.enumerable ?? true,
+        get: existing.get,
+        set(value) {
+          chainedSet.call(window, value);
+          patchWildlifeSpawn(window.WildlifeSpawn);
+        },
+      });
+      return true;
+    }
+
+    let assigned = existing?.value; // Temporary slot used until wildlife-spawn.js assigns its namespace later in parser order.
+    Object.defineProperty(window, 'WildlifeSpawn', {
+      configurable: true,
+      enumerable: existing?.enumerable ?? true,
+      get() { return assigned; },
+      set(value) {
+        assigned = value;
+        patchWildlifeSpawn(assigned);
+      },
+    });
     return true;
   }
 
   function installDenNestInitBridge() {
     const api = window.DenNestSystem; // Loaded earlier than this module; game.js initializes it later with the live ITEM_DEFS object.
     if (!api?.init) return false;
-    if (api.__puktukBabyItemBridgeInstalled) return true;
+    if (api.__denBabyItemBridgeInstalled) return true;
     const originalInit = api.init; // Preserves the existing nest renderer/listener initialization unchanged.
-    api.init = function puktukBabyAwareDenNestInit(injectedDeps) {
-      registerPuktukBabyItem(injectedDeps?.ITEM_DEFS);
+    api.init = function denBabyAwareDenNestInit(injectedDeps) {
+      registerDenBabyItems(injectedDeps?.ITEM_DEFS);
       return originalInit.call(this, injectedDeps);
     };
-    api.__puktukBabyItemBridgeInstalled = true;
+    api.__denBabyItemBridgeInstalled = true;
+    api.__puktukBabyItemBridgeInstalled = true; // Compatibility marker retained for existing diagnostics/tests.
     return true;
   }
 
   // Keep this module deliberately species/config-only. DenLocaleRuntime is loaded
   // as its own sibling entry by combat-config-loader.js; nesting another parser-time
-  // script injection here could disturb unrelated held-item/stance bootstrap ordering
-  // and made a den feature capable of breaking player hands.
-  const configReady = registerPuktukNestConfig();
+  // script injection here could disturb unrelated held-item/stance bootstrap ordering.
+  const configReady = registerDenNestConfig();
   const bridgeReady = installDenNestInitBridge();
+  const wildlifeBridgeReady = watchWildlifeSpawnAssignment();
 
   window.PuktukDenNestRegistration = {
     version: 2,
     PUKTUK_KIND,
     PUKTUK_BABY_ITEM_KEY,
-    registerPuktukNestConfig,
-    registerPuktukBabyItem,
+    VOORG_ASS_KIND,
+    VOORG_ASS_ZONE_ID,
+    VOORG_ASS_BABY_ITEM_KEY,
+    GREHLR_KIND,
+    registerPuktukNestConfig: registerDenNestConfig,
+    registerPuktukBabyItem: registerDenBabyItems,
+    registerDenNestConfig,
+    registerDenBabyItems,
+    registerVoorgAssDenRuntime,
     debugSnapshot: () => ({
       configReady: window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers?.[PUKTUK_KIND]?.nestItemKey === PUKTUK_BABY_ITEM_KEY,
       livestockReady: window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[PUKTUK_BABY_ITEM_KEY] === PUKTUK_KIND,
-      initBridgeReady: !!window.DenNestSystem?.__puktukBabyItemBridgeInstalled,
+      voorgConfigReady: window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers?.[VOORG_ASS_KIND]?.nestItemKey === VOORG_ASS_BABY_ITEM_KEY,
+      voorgLivestockReady: window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[VOORG_ASS_BABY_ITEM_KEY] === VOORG_ASS_KIND,
+      initBridgeReady: !!window.DenNestSystem?.__denBabyItemBridgeInstalled,
+      wildlifeBridgeReady: !!window.WildlifeSpawn?.__voorgAssDenRegistrationInstalled || wildlifeBridgeReady,
       denLocaleReady: !!window.DenLocaleRuntime,
     }),
   };
 
-  window.__farmLog?.(`[puktuk] den clutch registration config=${configReady ? 'ok' : 'missing'} itemBridge=${bridgeReady ? 'ok' : 'missing'} reward=${PUKTUK_BABY_ITEM_KEY}`, configReady && bridgeReady ? 'wildlife' : 'warn');
+  window.__farmLog?.(`[den-clutch] species registration config=${configReady ? 'ok' : 'missing'} itemBridge=${bridgeReady ? 'ok' : 'missing'} wildlifeBridge=${wildlifeBridgeReady ? 'ok' : 'missing'} rewards=${PUKTUK_BABY_ITEM_KEY},${VOORG_ASS_BABY_ITEM_KEY}`, configReady && bridgeReady && wildlifeBridgeReady ? 'wildlife' : 'warn');
 })();
