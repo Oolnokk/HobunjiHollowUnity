@@ -19,6 +19,24 @@ assert(api, 'InventoryCharacterEffects exports its runtime API');
 assert.equal(api.version, 1, 'character effects module version is available to the bootstrap loader');
 assert.match(loaderSource, /inventory-character-effects\.js\?v=20260915a/, 'combat bootstrap loads the character-effects module');
 
+// Layout regressions: InventoryUI injects generic .gear-stat-list flex/scroll rules later,
+// so the effects module must use a more-specific selector for the intended two-column grid.
+assert.match(
+  source,
+  /#mpInventory \.gear-character-effects-card \.gear-effects-list \{[\s\S]*?display:grid;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\);[\s\S]*?overflow:visible;/,
+  'effects lists keep a specific two-column non-scrolling grid even after InventoryUI styles load',
+);
+assert.match(
+  source,
+  /#mpInventory\.inv-mode-gear \.gear-loadout-grid \{[\s\S]*?height:auto;[\s\S]*?max-height:none;[\s\S]*?overflow:visible;/,
+  'upper Gear loadout sizes to its content instead of clipping to the old fixed-height box',
+);
+assert.match(
+  source,
+  /#mpInventory\.inv-mode-gear \.gear-owned-section \{[\s\S]*?flex:1 1 auto;[\s\S]*?overflow-y:auto;/,
+  'only the variable-size owned Gear collection is allowed to consume the remaining scrollable space',
+);
+
 const player = { maxHealth: 100, maxStamina: 80, maxFooting: 50 };
 const snapshot = api.__test.composeSnapshot({
   clothing: {
