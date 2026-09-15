@@ -24,6 +24,9 @@
   });
 
   let fontPromise = null; // Shared by loading/editor/runtime callers so the OTF is only requested once per page.
+  let fontFace = null; // The exact registered Tankan face used by canvas; retaining it also makes diagnostics unambiguous.
+  let fontState = 'idle'; // Exposed for mobile/editor diagnostics so fallback-font bugs are visible instead of silent.
+  let fontError = null; // Last real Tankan font load failure, if any.
 
   const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -68,29 +71,40 @@
   function ensureFontLoaded() {
     if (fontPromise) return fontPromise;
     if (typeof FontFace !== 'function' || typeof document === 'undefined' || !document.fonts) {
-      fontPromise = Promise.resolve(false);
+      fontState = 'unsupported';
+      fontError = new Error('This browser cannot register the Tankan FontFace for canvas rendering.');
+      fontPromise = Promise.reject(fontError);
       return fontPromise;
     }
-    try {
-      if (document.fonts.check(`16px "${FONT_FAMILY}"`)) {
-        fontPromise = Promise.resolve(true);
-        return fontPromise;
-      }
-    } catch (_) {}
-    fontPromise = new FontFace(FONT_FAMILY, `url('${FONT_URL}')`).load()
-      .then(font => {
-        document.fonts.add(font);
+
+    // Do not use document.fonts.check() as a preflight here. A browser may report a
+    // family as renderable through fallback even though our custom FontFace was never
+    // registered. The loading screen explicitly loads this same OTF, so do the same.
+    fontState = 'loading';
+    fontFace = new FontFace(FONT_FAMILY, `url('${FONT_URL}') format('opentype')`);
+    fontPromise = fontFace.load()
+      .then(loadedFace => {
+        document.fonts.add(loadedFace);
+        fontState = 'loaded';
+        fontError = null;
         return true;
       })
       .catch(error => {
-        console.warn('[TankanScriptLayout] Tankan font failed to load.', error);
-        return false;
+        fontState = 'error';
+        fontError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`[TankanScriptLayout] Tankan font failed to load from ${FONT_URL}.`, fontError);
+        throw fontError;
       });
     return fontPromise;
   }
 
   function renderToCanvas(canvas, text, options = {}) {
     if (!canvas?.getContext) return null;
+    // Never silently paint with the browser's fallback face. Callers must await
+    // ensureFontLoaded(), and this guard catches any future direct render call.
+    if (typeof document !== 'undefined' && document.fonts && fontState !== 'loaded') {
+      throw new Error(`Tankan font is ${fontState}; refusing to rasterize with a fallback font.`);
+    }
     const layout = measure(text, options);
     canvas.width = layout.widthPx;
     canvas.height = layout.heightPx;
@@ -122,7 +136,7 @@
 
   window.TankanScriptLayout = {
     installed: true,
-    version: 1,
+    version: 2,
     fontFamily: FONT_FAMILY,
     fontUrl: FONT_URL,
     defaults: DEFAULTS,
@@ -131,5 +145,8 @@
     ensureFontLoaded,
     renderToCanvas,
     createCanvas,
+    get fontStatus() { return fontState; },
+    get fontLoadError() { return fontError; },
+    get registeredFontFace() { return fontFace; },
   };
 })();
