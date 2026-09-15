@@ -46,12 +46,13 @@
     if (heartImagePromise) return heartImagePromise;
     heartImagePromise = new Promise(resolve => {
       const image = new Image();
+      image.crossOrigin = 'anonymous'; // Must be set before src so raw.githack/CDN responses cannot taint the tint canvas or block WebGL texture upload.
       image.onload = () => {
-        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: true, imageWidth: Number(image.naturalWidth || image.width) || 0, imageHeight: Number(image.naturalHeight || image.height) || 0, url: HEART_URL, at: Date.now() };
+        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: true, imageWidth: Number(image.naturalWidth || image.width) || 0, imageHeight: Number(image.naturalHeight || image.height) || 0, crossOrigin: image.crossOrigin || '', url: HEART_URL, at: Date.now() };
         resolve(image);
       };
       image.onerror = () => {
-        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: false, imageWidth: 0, imageHeight: 0, url: HEART_URL, at: Date.now() };
+        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: false, imageWidth: 0, imageHeight: 0, crossOrigin: image.crossOrigin || '', url: HEART_URL, at: Date.now() };
         resolve(null);
       };
       image.src = HEART_URL;
@@ -160,6 +161,7 @@
 
     let nonTransparentPixels = -1;
     let maxAlpha = -1;
+    let canvasReadError = '';
     try {
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       nonTransparentPixels = 0;
@@ -169,7 +171,9 @@
         if (alpha > 0) nonTransparentPixels += 1;
         if (alpha > maxAlpha) maxAlpha = alpha;
       }
-    } catch (_) {}
+    } catch (error) {
+      canvasReadError = `${error?.name || 'Error'}: ${error?.message || error}`;
+    }
 
     const pngSurface = spritePngSurface();
     const texture = pngSurface?.makeCanvasTexture
@@ -185,7 +189,8 @@
       ...(debugState.lastHeart || {}), imageLoaded: !!image,
       imageWidth: Number(image?.naturalWidth || image?.width) || 0,
       imageHeight: Number(image?.naturalHeight || image?.height) || 0,
-      usedFallbackGlyph, nonTransparentPixels, maxAlpha,
+      crossOrigin: image?.crossOrigin || '',
+      usedFallbackGlyph, nonTransparentPixels, maxAlpha, canvasReadError,
       canonicalPngSurface: !!pngSurface,
       canonicalTextureFactory: !!pngSurface?.makeCanvasTexture,
       canonicalMaterialFactory: !!pngSurface?.makeMaterial,
