@@ -10,12 +10,18 @@
   let busy = false; // Prevents double-clicks from starting overlapping runtime/durable/folder saves.
   let quitAttempts = 0; // Mobile-visible count of guarded quit attempts.
   let successfulDurableCommits = 0; // Mobile-visible count of sync-store commits completed before quit reloads.
+  let queuedDriveCommits = 0; // Counts durable quit commits atomically marked for later Google Drive upload.
   let durableCommitFallbacks = 0; // Counts IndexedDB-unavailable quits that deliberately retain the legacy localStorage/folder safety path.
   let successfulFolderFlushes = 0; // Mobile-visible count of folder writes completed before a quit reload.
   let lastError = ''; // Mobile-visible latest guarded-quit error.
 
   function localSave() {
     return window.LocalSaveFolder || null;
+  }
+
+  function pendingTransportTargets() {
+    const driveStatus = window.HobunjiGoogleDriveSave?.getStatus?.(); // Linked Drive identity is enough to queue; authorization/network work happens separately.
+    return driveStatus?.linked ? ['drive'] : [];
   }
 
   function setBusy(button, value, label = 'Saving…') {
@@ -69,10 +75,12 @@
     if (!coordinator?.commitCurrent) {
       return { ok: false, error: 'The durable save coordinator is unavailable.' };
     }
-    const result = await coordinator.commitCurrent({ reason: 'quit-to-save-selection' }); // Captures the freshly-flushed browser save into the canonical local envelope/store.
+    const pendingTargets = pendingTransportTargets(); // Drive link turns this local commit into a retryable pending upload without performing network work here.
+    const result = await coordinator.commitCurrent({ reason: 'quit-to-save-selection', pendingTargets }); // Captures the freshly-flushed browser save and queue marker atomically.
     if (result?.ok) {
       successfulDurableCommits++;
-      return { ok: true };
+      if (pendingTargets.includes('drive')) queuedDriveCommits++;
+      return { ok: true, pendingTargets };
     }
     if (result?.unavailable) {
       // IndexedDB can be unavailable in unusual/private browser contexts. Keep
@@ -125,7 +133,7 @@
       }
 
       setBusy(button, true, 'Securing Save…');
-      const durableSaved = await commitDurableOrStop(); // Step 2: canonical envelope becomes durable locally before any external transport work.
+      const durableSaved = await commitDurableOrStop(); // Step 2: canonical envelope and any linked-Drive pending marker become durable locally before external work.
       if (!durableSaved.ok) {
         lastError = durableSaved.error;
         alert('The current game could not be committed to durable local save storage, so the game was not quit:\n' + lastError);
@@ -178,6 +186,7 @@
       busy,
       quitAttempts,
       successfulDurableCommits,
+      queuedDriveCommits,
       durableCommitFallbacks,
       successfulFolderFlushes,
       lastError: lastError || null,
