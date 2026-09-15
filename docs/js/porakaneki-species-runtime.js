@@ -72,6 +72,8 @@
     cosmeticRestrictionsApplied: 0,
     eyeDisksSuppressed: false,
     banditWardrobeGuardInstalled: false,
+    genderGuardInstalled: false,
+    correctedUnsupportedGenderCount: 0,
     armMaskProfilesInstalled: 0,
   };
 
@@ -256,6 +258,30 @@
     return true;
   }
 
+  function installGenderGuard(api = window.NpcAvatarPreview) {
+    const baseBuildProfile = api?.buildProfileFromNpcExport; // Shared NPC-export profile builder used by the bandit avatar path after its species/gender roll.
+    if (typeof baseBuildProfile !== 'function') return false;
+    if (baseBuildProfile.__hobunjiPorakanekiGenderGuard) {
+      status.genderGuardInstalled = true;
+      return true;
+    }
+    const wrapped = function buildProfileWithPorakanekiGenderGuard(exportData) {
+      const appearance = exportData?.appearance; // Mutated in place so the originating bandit roster, procedural limbs, corpse data, and debug record all agree on the corrected gender.
+      const requestedGender = String(appearance?.gender || '').trim().toLowerCase(); // Used to reject any shared-generator result for which Porakaneki has no authored art.
+      if (normalizeSpecies(appearance?.speciesId) === SPECIES_ID && !GENDERS.includes(requestedGender)) {
+        appearance.gender = GENDERS[0];
+        status.correctedUnsupportedGenderCount += 1;
+        window.__farmLog?.(`[porakaneki] corrected unsupported gender "${requestedGender || 'unset'}" to ${GENDERS[0]} before portrait generation.`, 'wildlife');
+      }
+      return baseBuildProfile.apply(this, arguments);
+    };
+    wrapped.__hobunjiPorakanekiGenderGuard = true;
+    wrapped.__hobunjiPorakanekiGenderGuardOriginal = baseBuildProfile;
+    api.buildProfileFromNpcExport = wrapped;
+    status.genderGuardInstalled = true;
+    return true;
+  }
+
   function installPaletteInheritance() {
     const baseLoad = window.loadPortraitCosmetics; // Shared async species/cosmetics loader; wrapping keeps the palette source live and clamps inherited cosmetics after its merge step.
     if (typeof baseLoad !== 'function') return false;
@@ -293,6 +319,7 @@
     installRigProfiles();
     installWardrobeResolver();
     installBanditWardrobeGuard();
+    installGenderGuard();
     installPaletteInheritance();
     installArmMaskProfiles();
     return debugSnapshot();
@@ -322,15 +349,19 @@
     applyCosmeticRestrictions,
     restrictPorakanekiBanditConfig,
     installBanditWardrobeGuard,
+    installGenderGuard,
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
-      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} banditWardrobeGuard=${d.banditWardrobeGuardInstalled} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 rearHead=${d.behindHeadInstalled ? d.expectedAssets.behindHead : '-'} bodywrap=${d.expectedAssets.bodywrapMale} head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
+      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} banditWardrobeGuard=${d.banditWardrobeGuardInstalled} genderGuard=${d.genderGuardInstalled} genderCorrections=${d.correctedUnsupportedGenderCount} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 rearHead=${d.behindHeadInstalled ? d.expectedAssets.behindHead : '-'} bodywrap=${d.expectedAssets.bodywrapMale} head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
     },
   });
 
   install();
-  if (!status.banditWardrobeGuardInstalled && typeof window.addEventListener === 'function') {
-    window.addEventListener('load', () => installBanditWardrobeGuard(), { once: true });
+  if ((!status.banditWardrobeGuardInstalled || !status.genderGuardInstalled) && typeof window.addEventListener === 'function') {
+    window.addEventListener('load', () => {
+      if (!status.banditWardrobeGuardInstalled) installBanditWardrobeGuard();
+      if (!status.genderGuardInstalled) installGenderGuard();
+    }, { once: true });
   }
 })();
