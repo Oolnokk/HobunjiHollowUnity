@@ -11,7 +11,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8'); // 
 const editor = read('docs/tools/world-popup-editor/index.html'); // Used to verify the Popup Text Editor loads its relationship helper.
 const helper = read('docs/js/world-popup-relationship-editor.js'); // Used to validate controls, fallback avatar boot, and screen-fixed diagnostics.
 const bridge = read('docs/js/favor-popup-points-bridge.js'); // Used as the shared gameplay/editor relationship renderer and anchor owner.
-const generic = read('docs/js/generic-hud-icons.js'); // Used as the pre-v3 visual contract that still emits relationship events.
+const generic = read('docs/js/generic-hud-icons.js'); // Used as the pre-v4 visual contract that still emits relationship events.
 
 assert.doesNotThrow(() => new vm.Script(helper), 'world popup relationship editor helper parses');
 assert.doesNotThrow(() => new vm.Script(bridge), 'relationship position bridge parses');
@@ -55,7 +55,10 @@ assert.match(helper, /ResizeObserver loop completed with undelivered notificatio
 assert.match(helper, /window\.addEventListener\('unhandledrejection'/, 'diagnostics capture async boot failures');
 assert.match(helper, /window\.addEventListener\('error'/, 'diagnostics capture JS/resource failures');
 
-assert.match(bridge, /version: 3/, 'shared relationship position bridge is v3');
+assert.match(bridge, /version: 4/, 'shared relationship position bridge is v4');
+assert.match(bridge, /RELATIONSHIP_ALPHA_TEST = 0\.001/, 'relationship plane uses the same tiny alpha cutout threshold as working PNG-plane materials');
+assert.match(bridge, /alphaTest: RELATIONSHIP_ALPHA_TEST/, 'relationship MeshBasicMaterial applies the alpha cutout at creation');
+assert.match(bridge, /material\.alphaTest = RELATIONSHIP_ALPHA_TEST/, 'relationship hardening preserves the alpha cutout after creation');
 assert.match(bridge, /avatarRootWithPortraitMetadata/, 'relationship anchor resolves the avatar transform that owns portrait metadata');
 assert.match(bridge, /portraitModelHeight/, 'relationship anchor uses authored portrait height');
 assert.match(bridge, /portraitVerticalPlacementRatio/, 'relationship anchor uses authored portrait vertical placement');
@@ -82,4 +85,4 @@ for (const [label, bridgePattern, genericPattern] of [
 }
 
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/hud/generic_icons/icon_heart.png')), 'runtime heart asset exists');
-console.log('Popup Text Editor mobile visibility, fallback race, diagnostics, and relationship head-anchor checks passed.');
+console.log('Popup Text Editor mobile visibility, fallback race, alpha cutout probe, diagnostics, and relationship head-anchor checks passed.');
