@@ -6,7 +6,7 @@
   // the same way a crop is tile data — not a worldObjects entry — because
   // it needs to participate in the shovel dig/fill/raise gate exactly like
   // WEEDS/SHRUB/ROCK already do. dewPileMeshes tracks the purely-visual
-  // billboard per tile in parallel, the same "tile data now, mesh
+  // translucent mound per tile in parallel, the same "tile data now, mesh
   // separately" split game.js's saveFarmLayout/applyFarmLayoutObjects use
   // for crops vs. their procedural meshes. Assigning a housed uumkao'ii to
   // a placed squeezing vat redirects its dew straight into squeezed
@@ -26,8 +26,20 @@
   // read through a getter every call.
   let deps = null, COLS, ROWS, TileType;
   const DEW_SHOVEL_SFX_URL = 'assets/audio/sfx/sfx_shovel_dew.mp3'; // Used instead of the ordinary dirt-dig cue while the live shovel reticle is on Uumkao'ii dew.
+  const DEW_MOUND_OPACITY = 0.8; // Keeps dew visibly translucent while reading as a dense pooled mound.
+  const DEW_WAVY_TEXTURE = 'assets/textures/wavy_surface.png'; // Used for the dew mound surface instead of ordinary terrain/rock textures.
+  const DEW_UV_MAPPING = 'single-whole-pile-stretch'; // Used by diagnostics and geometry metadata to prove the texture is stretched only once over the mound.
+  const DEW_MOUND_HEIGHT = 0.25; // Exactly half the game's authored 0.5-unit raised-earth height.
+  const DEW_MOUND_RADIUS_X = 0.43; // Gives the single mound a broad raised-earth-like footprint without reaching the full tile edge.
+  const DEW_MOUND_RADIUS_Z = 0.40; // Slight X/Z asymmetry keeps the mound from reading as a perfect circular dome.
+  const DEW_MOUND_RADIAL_SEGMENTS = 18; // Perimeter resolution used to keep the shell silhouette smoothly rounded.
+  const DEW_MOUND_RING_SEGMENTS = 7; // Vertical ring count used to round the mound top without excessive geometry.
+  const DEW_MOUND_FOOTPRINT_POWER = 2.8; // Superellipse power: rounder than raised earth, but broader/squarer than a sphere footprint.
+  const DEW_MOUND_TOP_POWER = 0.9; // Slightly broadens the dome crown while preserving a continuously rounded top.
   let dewShovelSfxPreload = null; // Retains one eagerly loaded element so repeated held-action thrusts start immediately.
   let lastDewShovelSfxDebug = null; // Mobile-readable diagnostic exported below.
+  let dewFallbackWavyTexture = null; // Shared only if NaturalSurfaceMaterials is unavailable, avoiding one TextureLoader allocation per pile.
+  const dewMaterialTemplateCache = new Map(); // colorHex -> shared template material; per-pile meshes clone it so disposal remains local.
 
   function init(injectedDeps) {
     deps = injectedDeps;
@@ -99,7 +111,7 @@
   }
 
   // ── Dew piles ──────────────────────────────────────────────────────
-  const dewPileMeshes = new Map(); // "col,row" -> THREE.Group
+  const dewPileMeshes = new Map(); // "col,row" -> THREE.Group containing the single dew mound for that tile.
 
   function canPlaceAt(col, row) {
     const grid = deps.getGrid();
@@ -111,95 +123,265 @@
     return true;
   }
 
-  // Tinted-and-faded cheese.png canvas for a given dew color, cached by
-  // color so multiple piles sharing a color (the common case — every
-  // uumkao'ii on a farm today drops the same UUMKAOII_DEFAULT_DEW_COLOR)
-  // only pay the load/recolor cost once. Recolored via
-  // CreatureGeneticsRender's own shade-fill tint (the same technique
-  // that colors gar-wolf/dabinggi-hound fur patterns), not
-  // SpriteRecolor's HSV replace, per spec — then every non-outline
-  // pixel is faded to 20% opacity (80% transparency) so it reads as a
-  // glassy dew droplet rather than a flat opaque sticker, while the
-  // outline ink itself (recolorPixels' own near-black protection
-  // threshold) stays fully opaque so the shape still reads clearly.
-  const _dewSpriteTintCache = new Map(); // colorHex(number) -> Promise<{canvas, bottomRatio}>
-  function _tintedDewSpriteCanvas(colorHex) {
-    if (_dewSpriteTintCache.has(colorHex)) return _dewSpriteTintCache.get(colorHex);
-    const promise = new Promise((resolve, reject) => {
-      if (!window.CreatureGeneticsRender) { reject(new Error('CreatureGeneticsRender unavailable')); return; }
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
-        const ctx = c.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, c.width, c.height);
-        const px = imgData.data;
-        const rgb = window.CreatureGeneticsRender.hexToRgb('#' + colorHex.toString(16).padStart(6, '0'));
-        window.CreatureGeneticsRender.recolorPixels(px, rgb, null);
-        for (let i = 0; i < px.length; i += 4) {
-          if (px[i + 3] === 0) continue;
-          const lum = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
-          if (lum <= 0.08) continue; // outline ink stays fully opaque
-          px[i + 3] = Math.round(px[i + 3] * 0.2);
-        }
-        ctx.putImageData(imgData, 0, 0);
-        const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
-        const bottomRatio = bounds ? (bounds.bottom + 1) / img.naturalHeight : 1;
-        resolve({ canvas: c, bottomRatio });
-      };
-      img.onerror = () => reject(new Error('Failed to load cheese.png'));
-      img.src = 'assets/objectsprites/cheese.png';
-    });
-    _dewSpriteTintCache.set(colorHex, promise);
-    return promise;
+  function _fallbackWavyTexture() {
+    if (dewFallbackWavyTexture) return dewFallbackWavyTexture;
+    const tex = new THREE.TextureLoader().load(DEW_WAVY_TEXTURE);
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    if ('colorSpace' in tex && THREE.SRGBColorSpace != null) tex.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in tex && THREE.sRGBEncoding != null) tex.encoding = THREE.sRGBEncoding;
+    tex.userData = Object.assign({}, tex.userData, { uumkaoiiDewSharedWavyTexture: true });
+    dewFallbackWavyTexture = tex;
+    return tex;
   }
 
-  // Rendered as a single upright plane (front-facing convention, like a
-  // character/NPC — cheese.png is a single icon-style sprite, not a
-  // side-view creature profile) rather than the animal system's crossed
-  // front/back planes, camera-relative dead-zone rotated the same way
-  // (perpClamp/cameraRelativePerps) since it's static — never moving, so
-  // there's no "oscillate while moving" case to handle, just settle
-  // broadside and freeze like an idle character. Grounded so the
-  // sprite's own lowest opaque pixel (not the raw image rectangle's
-  // bottom edge) sits exactly on the tile surface, the same
-  // opaque-bounds-scan technique creature planes use.
+  function _superellipseAxis(value) {
+    const sign = value < 0 ? -1 : 1; // Preserves the source angular quadrant after applying the rounded-square exponent.
+    return sign * Math.pow(Math.abs(value), 2 / DEW_MOUND_FOOTPRINT_POWER);
+  }
+
+  // Build one closed raised-earth-style mound instead of deriving several
+  // objects from ROCK geometry. The horizontal rings expand from one rounded
+  // crown to one continuous superellipse footprint, while the height follows
+  // a dome curve from 0.25 at the crown to ground level at the perimeter.
+  function _buildDewMoundGeometry(col, row) {
+    const positions = [0, DEW_MOUND_HEIGHT, 0]; // Vertex 0 is the single mound crown.
+    const indices = []; // Triangle list for the dome sides and sealed ground-facing cap.
+    const phase = ((col * 0.754877666 + row * 0.569840296) % 1) * Math.PI * 2; // Deterministic per-tile phase used only for subtle organic edge wobble.
+    const crownShiftX = Math.sin(phase) * 0.012; // Slightly offsets the crown so repeated mounds do not look stamped from one perfect primitive.
+    const crownShiftZ = Math.cos(phase) * 0.012; // Companion Z offset for the same tiny asymmetry.
+
+    for (let ring = 1; ring <= DEW_MOUND_RING_SEGMENTS; ring++) {
+      const t = ring / DEW_MOUND_RING_SEGMENTS; // 0..1 progression from crown to ground perimeter.
+      const theta = t * Math.PI * 0.5; // Hemisphere-style angle used for the mound's rounded rise.
+      const radial = Math.sin(theta); // Expands smoothly from zero at the crown to the full footprint at the base.
+      const y = DEW_MOUND_HEIGHT * Math.pow(Math.max(0, Math.cos(theta)), DEW_MOUND_TOP_POWER); // Rounded top, exactly 0.25 high at the crown.
+      const crownInfluence = 1 - radial; // Fades the tiny crown offset to zero before the mound reaches its base.
+      for (let segment = 0; segment < DEW_MOUND_RADIAL_SEGMENTS; segment++) {
+        const angle = (segment / DEW_MOUND_RADIAL_SEGMENTS) * Math.PI * 2; // Around-mound angle for this ring vertex.
+        const shapeX = _superellipseAxis(Math.cos(angle)); // Rounded-square X footprint coordinate inspired by raised earth.
+        const shapeZ = _superellipseAxis(Math.sin(angle)); // Rounded-square Z footprint coordinate inspired by raised earth.
+        const edgeWobble = 1 + Math.sin(angle * 3 + phase) * 0.025 + Math.cos(angle * 5 - phase * 0.7) * 0.015; // Small coherent irregularity; never separates into individual blobs.
+        positions.push(
+          shapeX * DEW_MOUND_RADIUS_X * radial * edgeWobble + crownShiftX * crownInfluence,
+          y,
+          shapeZ * DEW_MOUND_RADIUS_Z * radial * edgeWobble + crownShiftZ * crownInfluence,
+        );
+      }
+    }
+
+    const firstRing = 1; // First ring begins immediately after the one crown vertex.
+    for (let segment = 0; segment < DEW_MOUND_RADIAL_SEGMENTS; segment++) {
+      const current = firstRing + segment; // Current first-ring vertex around the crown.
+      const next = firstRing + (segment + 1) % DEW_MOUND_RADIAL_SEGMENTS; // Next first-ring vertex, wrapping at the seam.
+      indices.push(0, next, current); // Winding faces the crown triangles outward/upward.
+    }
+
+    for (let ring = 0; ring < DEW_MOUND_RING_SEGMENTS - 1; ring++) {
+      const upperStart = 1 + ring * DEW_MOUND_RADIAL_SEGMENTS; // First vertex of the upper ring in this strip.
+      const lowerStart = upperStart + DEW_MOUND_RADIAL_SEGMENTS; // First vertex of the next/lower ring.
+      for (let segment = 0; segment < DEW_MOUND_RADIAL_SEGMENTS; segment++) {
+        const nextSegment = (segment + 1) % DEW_MOUND_RADIAL_SEGMENTS; // Wraps each ring strip cleanly at 360°.
+        const u0 = upperStart + segment, u1 = upperStart + nextSegment; // Adjacent upper-ring vertices.
+        const l0 = lowerStart + segment, l1 = lowerStart + nextSegment; // Matching lower-ring vertices.
+        indices.push(u0, u1, l0, u1, l1, l0); // Two outward-facing triangles per ring cell.
+      }
+    }
+
+    const baseCenter = positions.length / 3; // Final vertex closes the underside so shell/depth behavior sees one watertight mound.
+    positions.push(0, 0, 0);
+    const baseStart = 1 + (DEW_MOUND_RING_SEGMENTS - 1) * DEW_MOUND_RADIAL_SEGMENTS; // First vertex on the ground-level perimeter ring.
+    for (let segment = 0; segment < DEW_MOUND_RADIAL_SEGMENTS; segment++) {
+      const current = baseStart + segment; // Current base perimeter vertex.
+      const next = baseStart + (segment + 1) % DEW_MOUND_RADIAL_SEGMENTS; // Next base perimeter vertex around the closed cap.
+      indices.push(current, next, baseCenter); // Winding points the sealed underside downward/outward.
+    }
+
+    const geometry = new THREE.BufferGeometry(); // One mesh/one connected silhouette replaces the previous multi-stone proxy cluster.
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    geometry.userData = Object.assign({}, geometry.userData || {}, {
+      uumkaoiiDewMound: true,
+      uumkaoiiDewMoundHeight: DEW_MOUND_HEIGHT,
+      uumkaoiiDewMoundReference: 'half-raised-earth',
+      uumkaoiiDewMoundSegments: `${DEW_MOUND_RADIAL_SEGMENTS}x${DEW_MOUND_RING_SEGMENTS}`,
+    });
+    return geometry;
+  }
+
+  // One planar projection is stretched exactly once over the bounding box of
+  // the complete mound. Its broad X/Z footprint naturally becomes U/V, so the
+  // texture does not restart on separate faces or any old rock components.
+  function _assignSinglePileStretchUv(geometry) {
+    const pos = geometry?.getAttribute?.('position');
+    if (!pos) return false;
+    geometry.computeBoundingBox?.();
+    const box = geometry.boundingBox;
+    if (!box) return false;
+    const axes = [
+      { key: 'x', min: box.min.x, span: Math.max(1e-5, box.max.x - box.min.x) },
+      { key: 'y', min: box.min.y, span: Math.max(1e-5, box.max.y - box.min.y) },
+      { key: 'z', min: box.min.z, span: Math.max(1e-5, box.max.z - box.min.z) },
+    ].sort((a, b) => b.span - a.span);
+    const uAxis = axes[0]; // Used to span the longest whole-mound dimension across texture U.
+    const vAxis = axes[1]; // Used to span the second-longest whole-mound dimension across texture V.
+    const coord = (axis, index) => axis.key === 'x' ? pos.getX(index) : axis.key === 'y' ? pos.getY(index) : pos.getZ(index);
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      uv[i * 2] = (coord(uAxis, i) - uAxis.min) / uAxis.span;
+      uv[i * 2 + 1] = (coord(vAxis, i) - vAxis.min) / vAxis.span;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.attributes.uv.needsUpdate = true;
+    geometry.userData = Object.assign({}, geometry.userData || {}, {
+      uumkaoiiDewUvMapping: DEW_UV_MAPPING,
+      uumkaoiiDewUvAxes: `${uAxis.key}${vAxis.key}`,
+    });
+    return true;
+  }
+
+  // NaturalSurfaceMaterials already owns the exact wavy_surface body-style
+  // tint path. Build that material on a disposable proxy instead of passing the
+  // actual mound through naturalizeMesh, so no terrain UV/runtime policy can
+  // reinterpret this as an ordinary natural surface.
+  function _dewMaterialTemplate(colorHex) {
+    if (dewMaterialTemplateCache.has(colorHex)) return dewMaterialTemplateCache.get(colorHex);
+    const source = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: DEW_MOUND_OPACITY,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.FrontSide,
+    });
+    let template = null;
+    const naturalSurfaces = window.NaturalSurfaceMaterials;
+    if (naturalSurfaces?.naturalizeMesh) {
+      const proxyGeometry = new THREE.BoxGeometry(1, 1, 1); // Used only to obtain the canonical wavy_surface material without mutating dew geometry.
+      const proxy = new THREE.Mesh(proxyGeometry, source);
+      naturalSurfaces.naturalizeMesh(proxy, 'trunks', 'planar-stretch');
+      template = proxy.material === source ? source : proxy.material.clone();
+      if (proxy.material !== source) source.dispose();
+      proxyGeometry.dispose();
+    } else {
+      template = source;
+      template.map = _fallbackWavyTexture();
+    }
+    template.transparent = true;
+    template.opacity = DEW_MOUND_OPACITY;
+    template.depthWrite = true; // The game's later inverted-shell pass needs the visible dew surface in the base depth buffer to leave only the expanded silhouette exposed.
+    template.depthTest = true;
+    template.side = THREE.FrontSide;
+    template.userData = Object.assign({}, template.userData || {}, {
+      uumkaoiiDewMoundMaterial: true,
+      uumkaoiiDewTexture: DEW_WAVY_TEXTURE,
+    });
+    delete template.userData.naturalSurface; // Keeps NaturalSurfaceStretchRuntime from treating dew as terrain and replacing the whole-mound UVs.
+    template.needsUpdate = true;
+    dewMaterialTemplateCache.set(colorHex, template);
+    return template;
+  }
+
+  function _restoreDewShellOutline(mesh) {
+    if (!mesh?.isMesh) return;
+    mesh.geometry?.computeVertexNormals?.(); // Shell extrusion follows the mound's smooth normals.
+    mesh.userData = Object.assign({}, mesh.userData || {}, {
+      uumkaoiiDewMound: true,
+      shellOutlineRetainedForDew: true,
+    });
+    delete mesh.userData.noOutline;
+    delete mesh.userData.facetedSurfaceTextureOutline;
+    delete mesh.userData.shellOutlineDisabledReason;
+    mesh.layers?.enable(1);
+  }
+
   function spawnMesh(col, row, colorKey) {
     const grid = deps.getGrid();
+    const tile = grid[row]?.[col];
+    if (!tile) return;
     const key = col + ',' + row;
     removeMesh(col, row);
-    const group = new THREE.Group();
-    group.position.set(col + 0.5, deps.tileSurfaceY(grid[row][col].type), row + 0.5);
-    group.userData.perpState = {};
-    deps.getScene().add(group);
-    dewPileMeshes.set(key, group);
+
     const colorHex = deps.ITEM_DEFS[deps.dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
-    _tintedDewSpriteCanvas(colorHex).then(({ canvas, bottomRatio }) => {
-      if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const targetH = 0.7; // large enough to read clearly on a tile
-      const targetW = targetH * (canvas.width / canvas.height);
-      const geo = new THREE.PlaneGeometry(targetW, targetH);
-      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide, depthWrite: false });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.y = targetH / 2 + deps.creaturePlaneGroundOffset(targetH, bottomRatio);
-      group.add(mesh);
-    }).catch(() => {});
+    const geometry = _buildDewMoundGeometry(col, row); // One raised-earth-style mound replaces the old rock-derived cluster.
+    _assignSinglePileStretchUv(geometry);
+    const material = _dewMaterialTemplate(colorHex).clone(); // Per-pile clone keeps local opacity/disposal behavior while sharing the cached texture.
+    material.userData = Object.assign({}, material.userData || {}, {
+      uumkaoiiDewMoundMaterial: true,
+      uumkaoiiDewTexture: DEW_WAVY_TEXTURE,
+    });
+    material.transparent = true;
+    material.opacity = DEW_MOUND_OPACITY;
+    material.depthWrite = true;
+    material.needsUpdate = true;
+
+    const mesh = new THREE.Mesh(geometry, material); // Single connected visible object for the whole dew pile.
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    _restoreDewShellOutline(mesh);
+
+    const group = new THREE.Group(); // Preserves the existing per-tile group bookkeeping API used by remove/rebuild/debug.
+    group.add(mesh);
+    group.position.set(col + 0.5, deps.tileSurfaceY(tile.type), row + 0.5);
+    group.userData = Object.assign({}, group.userData, {
+      uumkaoiiDewMound: true,
+      dewColorKey: colorKey,
+      dewStyledMeshCount: 1,
+    });
+    delete group.userData.noOutline;
+    group.layers?.enable(1);
+    deps.getScene().add(group);
+    // Scene/Object3D add is wrapped by several render fixups. Reassert shell
+    // enrollment after those synchronous wrappers finish so the mound remains
+    // in the game's actual inverted-shell pass.
+    group.traverse?.(child => { if (child?.isMesh) _restoreDewShellOutline(child); });
+    dewPileMeshes.set(key, group);
   }
 
-  // Called every frame (farm only — dew piles only ever exist there) to
-  // keep every standing dew sprite broadside to the camera within its
-  // own dead-zone-freeze state, exactly like an idle character.
+  // Retained as a public per-frame hook because game.js already calls it.
+  // Dew is true 3D mound geometry, so no camera-facing rotation is required.
   function updateMeshRotations(dt) {
+    void dt;
+  }
+
+  function dewVisualDebugSnapshot() {
+    let meshes = 0;
+    let shellOutlined = 0;
+    let depthWriting = 0;
+    let singleStretchMapped = 0;
+    let moundMeshes = 0;
+    let terrainSurfaceTagged = 0;
     for (const group of dewPileMeshes.values()) {
-      const lookTarget = deps.nearestAngleAmong(group.rotation.y, deps.cameraRelativePerps());
-      const { effectiveTarget, snapTo } = deps.perpClamp(group.userData.perpState, lookTarget, deps.cameraRelativePerps());
-      if (snapTo !== null) group.rotation.y = effectiveTarget;
-      else group.rotation.y += deps.angleDiff(effectiveTarget, group.rotation.y) * 0.18;
+      group.traverse?.(child => {
+        if (!child?.isMesh) return;
+        meshes++;
+        if ((child.layers?.mask & (1 << 1)) !== 0 && !child.userData?.noOutline) shellOutlined++;
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        if (materials.every(material => material?.depthWrite !== false)) depthWriting++;
+        if (child.geometry?.userData?.uumkaoiiDewUvMapping === DEW_UV_MAPPING) singleStretchMapped++;
+        if (child.geometry?.userData?.uumkaoiiDewMound) moundMeshes++;
+        if (child.userData?.naturalSurface || materials.some(material => material?.userData?.naturalSurface)) terrainSurfaceTagged++;
+      });
     }
+    return {
+      mode: 'translucent-raised-earth-style-mound',
+      piles: dewPileMeshes.size,
+      meshes,
+      shellOutlined,
+      depthWriting,
+      singleStretchMapped,
+      moundMeshes,
+      terrainSurfaceTagged,
+      moundHeight: DEW_MOUND_HEIGHT,
+      raisedEarthReferenceHeight: 0.5,
+      uvMapping: DEW_UV_MAPPING,
+      opacity: DEW_MOUND_OPACITY,
+      texture: DEW_WAVY_TEXTURE,
+      fallbackTextureLoaded: !!dewFallbackWavyTexture,
+    };
   }
 
   function removeMesh(col, row) {
@@ -209,7 +391,11 @@
     deps.getScene().remove(group);
     group.traverse(child => {
       if (child.geometry) child.geometry.dispose();
-      if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
+      const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      for (const material of materials) material.dispose?.();
+      // Material maps come from the shared dew material template cache (or
+      // _fallbackWavyTexture), so only per-pile material clones are disposed;
+      // disposing their map would break every other pile of that color.
     });
     dewPileMeshes.delete(key);
   }
@@ -425,5 +611,6 @@
     retargetAssignments,
     autoSqueezeAtVat,
     dewShovelSfxDebugSnapshot,
+    dewVisualDebugSnapshot,
   };
 })();
