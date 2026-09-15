@@ -93,19 +93,74 @@
     return configuredEase(progress, targetingConfig.alignmentEasing);
   }
 
+  function playerReticleAlignmentSolution(attacker, target, facing) {
+    if (attacker !== deps?.player || !target) return null;
+    const cameraRay = deps?.getPlayerPerspectiveTarget?.()?.cameraRay;
+    const hitbox = combatActorHitbox(target);
+    const origin = cameraRay?.origin;
+    const rawDirection = cameraRay?.direction;
+    const center = hitbox?.center;
+    if (![origin?.x, origin?.z, rawDirection?.x, rawDirection?.z, center?.x, center?.z].every(Number.isFinite)) return null;
+    const horizontalRayLength = Math.hypot(rawDirection.x, rawDirection.z);
+    if (horizontalRayLength <= 1e-7) return null;
+    const rayYaw = Math.atan2(rawDirection.z / horizontalRayLength, rawDirection.x / horizontalRayLength);
+    const targetYaw = Math.atan2(center.z - origin.z, center.x - origin.x);
+    const screenCorrectionRad = signedAngleDelta(targetYaw, rayYaw);
+
+    // A centered reticle anywhere across the target's horizontal portrait extent
+    // is already correct. Do not rotate toward the actor root/box center and pull
+    // the reticle off a target the player is visibly pointing at.
+    const box = hitbox?.box;
+    let targetHalfAngularWidthRad = 0;
+    if ([box?.min?.x, box?.min?.z, box?.max?.x, box?.max?.z].every(Number.isFinite)) {
+      const halfHorizontalExtent = Math.hypot(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5;
+      const horizontalDistance = Math.max(1e-6, Math.hypot(center.x - origin.x, center.z - origin.z));
+      targetHalfAngularWidthRad = Math.atan2(halfHorizontalExtent, horizontalDistance);
+    }
+    const reticleOverTarget = Math.abs(screenCorrectionRad) <= targetHalfAngularWidthRad;
+    const deltaRad = reticleOverTarget ? 0 : screenCorrectionRad;
+    return {
+      desiredFacing: facing + deltaRad,
+      deltaRad,
+      reticleOverTarget,
+      screenCorrectionRad,
+      targetHalfAngularWidthRad,
+      source: 'screen-reticle',
+    };
+  }
+
+  function attackAlignmentSolution(attacker, target, facing) {
+    const reticle = playerReticleAlignmentSolution(attacker, target, facing);
+    if (reticle) return reticle;
+    const desiredFacing = target ? Math.atan2(target.y - attacker.y, target.x - attacker.x) : facing;
+    return {
+      desiredFacing,
+      deltaRad: signedAngleDelta(desiredFacing, facing),
+      reticleOverTarget: false,
+      screenCorrectionRad: null,
+      targetHalfAngularWidthRad: 0,
+      source: 'actor-bearing',
+    };
+  }
+
   function targetInsideAttackCone(attacker, target, facing = attacker?.facing || 0, halfConeRad = attackAlignmentHalfConeRad()) {
     if (!attacker || !target || target.health <= 0) return false;
-    const desiredFacing = Math.atan2(target.y - attacker.y, target.x - attacker.x);
-    return Math.abs(signedAngleDelta(desiredFacing, facing)) <= halfConeRad;
+    return Math.abs(attackAlignmentSolution(attacker, target, facing).deltaRad) <= halfConeRad;
   }
 
   function attackAlignmentStep(attacker, target, dt, options = {}) {
     const facing = Number(options.facing ?? attacker?.facing) || 0; // Current heading used by every transient alignment caller.
-    const desiredFacing = target ? Math.atan2(target.y - attacker.y, target.x - attacker.x) : facing; // Live target bearing used only before windup begins.
-    const deltaRad = signedAngleDelta(desiredFacing, facing); // Smallest signed turn used for cone eligibility and this frame's step.
+    const solution = attackAlignmentSolution(attacker, target, facing);
+    const { desiredFacing, deltaRad } = solution;
     const halfConeRad = Number(options.halfConeRad) || attackAlignmentHalfConeRad(); // Optional override retained for diagnostics and future attacks.
     if (!attacker || !target || target.health <= 0 || Math.abs(deltaRad) > halfConeRad) {
-      return { eligible: false, aligned: false, desiredFacing, nextFacing: facing, deltaRad };
+      return {
+        eligible: false, aligned: false, desiredFacing, nextFacing: facing, deltaRad,
+        reticleOverTarget: solution.reticleOverTarget,
+        screenCorrectionRad: solution.screenCorrectionRad,
+        targetHalfAngularWidthRad: solution.targetHalfAngularWidthRad,
+        alignmentSource: solution.source,
+      };
     }
     const turnMultiplier = Math.max(0, Number(options.turnMultiplier ?? 1)); // Post-attack recovery can slow turning without discarding input.
     const turnRateRadS = Math.max(0, Number(options.turnRateRadS) || THREE.MathUtils.degToRad(targetingConfig.enemyAlignmentTurnRateDegS)); // Authored enemy alignment speed.
@@ -120,6 +175,10 @@
       desiredFacing,
       nextFacing,
       deltaRad,
+      reticleOverTarget: solution.reticleOverTarget,
+      screenCorrectionRad: solution.screenCorrectionRad,
+      targetHalfAngularWidthRad: solution.targetHalfAngularWidthRad,
+      alignmentSource: solution.source,
     };
   }
 

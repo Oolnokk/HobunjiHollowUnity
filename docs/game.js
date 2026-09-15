@@ -4461,12 +4461,25 @@
       // only for the few frames between an attack request and its windup.
       let manualAutoTarget = null;
       let meleeAttackAlignment = null; // Active transient player alignment consumed by updateMeleeAttackAlignment().
+      let meleeAttackFacingCommit = null; // Frozen screen-correct heading carried through the melee windup/attack.
       let gameFrameSerial = 0; // Identifies the current animation frame for shared target and profiler work.
       let autoTargetCacheFrame = -1; // Prevents repeated target searches within the same frame.
       let autoTargetCacheValue = null; // Stores the single target-selection result for autoTargetCacheFrame.
 
       function meleeWeaponOut() {
         return heldMode === 'tool' && activeTool === 'weapon' && !!equipmentSlots.weapon;
+      }
+
+      function commitMeleeAttackFacing(angle) {
+        meleeAttackFacingCommit = Number.isFinite(angle)
+          ? { angle: angleDiff(angle, 0), attackSeen: false }
+          : null;
+      }
+
+      function meleeAttackBodyFacingOverride() {
+        const alignmentFacing = meleeAttackAlignment?.appliedFacing;
+        if (Number.isFinite(alignmentFacing)) return alignmentFacing;
+        return Number.isFinite(meleeAttackFacingCommit?.angle) ? meleeAttackFacingCommit.angle : null;
       }
 
       function currentMeleeAimAngle() {
@@ -4480,15 +4493,21 @@
         if (!meleeWeaponOut()) return null;
         const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used by the shared ±45° cone.
         const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0); // Existing melee assist range remains authoritative.
-        let best = null, bestDist = maxDist;
+        let best = null, bestDist = maxDist, bestAimError = Infinity;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
           const dx = c.x - player.x, dy = c.y - player.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > bestDist) continue;
-          if (!window.Combat?.targetInsideAttackCone?.(player, c, aimAngle)) continue;
+          if (dist > maxDist) continue;
+          const alignment = window.Combat?.attackAlignmentStep?.(player, c, 0, { facing: aimAngle });
+          if (!alignment?.eligible) continue;
+          const aimError = Math.abs(Number(alignment.deltaRad) || 0);
+          const clearlyBetterAim = aimError < bestAimError - 1e-4;
+          const sameAim = Math.abs(aimError - bestAimError) <= 1e-4;
+          if (!clearlyBetterAim && !(sameAim && dist < bestDist)) continue;
           best = c;
           bestDist = dist;
+          bestAimError = aimError;
         }
         return best;
       }
@@ -4612,12 +4631,13 @@
 
       function finishMeleeAttackAlignment(alignment, runAttack) {
         if (meleeAttackAlignment !== alignment) return;
-        meleeAttackAlignment = null; // Lock is off before the attack callback creates its windup.
+        meleeAttackAlignment = null; // Raw release; combat-input defers this until the windup has inherited the aligned heading.
         invalidateAutoTargetCache();
         if (!alignment.cancelled) runAttack();
       }
 
       function requestMeleeAttackAlignment(runAttack) {
+        meleeAttackFacingCommit = null; // Every attack owns a fresh heading.
         const target = meleeAttackTargetCandidate();
         if (!target) {
           runAttack();
@@ -4626,6 +4646,7 @@
         const startFacing = currentMeleeAimAngle(); // Stable beginning of the eased camera/body rotation.
         const initialStep = window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: startFacing }); // Detects an already-aligned target without adding input latency.
         if (initialStep?.aligned) {
+          commitMeleeAttackFacing(initialStep.desiredFacing);
           runAttack();
           return null;
         }
@@ -4633,6 +4654,7 @@
         const alignment = {
           target,
           startFacing,
+          appliedFacing: startFacing,
           elapsedS: 0, // Accumulated by updateMeleeAttackAlignment until durationS is reached.
           durationS: window.Combat?.playerAttackAlignmentDuration?.(initialStep?.deltaRad) ?? 0, // Shared targeting policy owns the distance-scaled glide tuning.
           cancelled: false,
@@ -4655,9 +4677,10 @@
         const target = alignment.target;
         const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Slows visible turn after an attack while continuing to consume input.
         const step = meleeWeaponOut() && target?.areaId === currentArea
-          ? window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: currentMeleeAimAngle() })
+          ? window.Combat?.attackAlignmentStep?.(player, target, 0, { facing: alignment.appliedFacing })
           : null;
         if (!step?.eligible) {
+          commitMeleeAttackFacing(alignment.appliedFacing);
           alignment.runAttack(); // Aim assist never blocks a manual attack when its target leaves the cone.
           return;
         }
@@ -4669,6 +4692,7 @@
         const nextFacing = progress >= 1
           ? step.desiredFacing
           : alignment.startFacing + startToTarget * easedProgress;
+        alignment.appliedFacing = nextFacing;
         mouseLookAngle = nextFacing;
         targetAimAngle = nextFacing;
         controllerLookAngle = nextFacing;
@@ -4682,7 +4706,10 @@
           controllerLookActive = true;
           lastMouseMoveTime = performance.now();
         }
-        if (progress >= 1) alignment.runAttack();
+        if (progress >= 1) {
+          commitMeleeAttackFacing(nextFacing);
+          alignment.runAttack();
+        }
       }
 
       // Shared by hostiles, companions, and wandering creatures — covers every
@@ -15598,9 +15625,20 @@
       let lastMoveAngle = -Math.PI / 2;
       let targetAimAngle = -Math.PI / 2;
 
+      function meleeAttackCurrentlyActive() {
+        return player.lunging || (activeTool === 'weapon' && (toolSwingT > 0 || combatSwingHeld));
+      }
+
+      function updateMeleeAttackFacingCommitLifecycle() {
+        if (!meleeAttackFacingCommit) return;
+        const active = meleeAttackCurrentlyActive();
+        if (active) meleeAttackFacingCommit.attackSeen = true;
+        else if (meleeAttackFacingCommit.attackSeen && !meleeAttackAlignment) meleeAttackFacingCommit = null;
+      }
+
       function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength, perspectiveFacing = shoulderPerspectiveFacingAngle()) {
         if (activeCameraMode !== SHOULDER_SURF_MODE) return 'other-camera';
-        const meleeAttackActive = player.lunging || (activeTool === 'weapon' && (toolSwingT > 0 || combatSwingHeld)); // Covers travel attacks, ordinary swings, and held melee windups without treating farming-tool animation as combat.
+        const meleeAttackActive = meleeAttackCurrentlyActive(); // Covers travel attacks, ordinary swings, and held melee windups without treating farming-tool animation as combat.
         const rangedAttackActive = activeTool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.(); // Deliberately excludes reload so only an actual shot gives the point body/root authority.
         if (meleeAttackActive || rangedAttackActive) return 'attack';
         if (Number(movementStrength) > 0.001) return 'movement';
@@ -15755,6 +15793,7 @@
       }
 
       function updateMovement(dt) {
+        updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
         const viewModeMoveMagnitude = viewModeKeyboard.active
           ? Math.hypot(viewModeKeyboard.x, viewModeKeyboard.y)
@@ -16109,7 +16148,10 @@
           // the camera itself.
           const perspectiveFacing = shoulderPerspectiveFacingAngle(); // Shared point bearing used by direct alignment and the idle neck-limit boundary.
           const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength, perspectiveFacing); // Central state boundary shared with the on-demand mobile/debug report below.
-          if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
+          const meleeFacingOverride = meleeAttackBodyFacingOverride();
+          if (Number.isFinite(meleeFacingOverride) && (meleeAttackAlignment || perspectiveAuthority === 'attack')) {
+            facingAngle = meleeFacingOverride;
+          } else if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
             facingAngle = perspectiveFacing;
           } else if (perspectiveAuthority === 'idle-neck-catchup') {
             const rootFromPointDiff = angleDiff(facingAngle, perspectiveFacing); // Preserves the allowed neck yaw instead of squaring the idle body fully to the point.

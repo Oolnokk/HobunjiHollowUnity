@@ -41,6 +41,8 @@ assert.match(core, /function postAttackTurnMultiplier\(/, 'shared recovery ramp 
 assert.match(input, /runAfterAttackAlignment\(\(\) =>/, 'tap attacks wait for transient alignment');
 assert.match(input, /ability\?\.category === 'offensiveHold'/, 'offensive holds align before their windup');
 assert.match(input, /releaseQueued/, 'release input survives an alignment that spans multiple frames');
+assert.match(input, /const startAttackOnce = \(\) =>/, 'windup startup is idempotent across deferred alignment release');
+assert.match(input, /startAttackOnce\(\);[\s\S]{0,260}requestAnimationFrame\(\(\) => \{[\s\S]{0,360}finishAlignment\(\)/, 'windup starts before transient alignment releases on the next frame');
 
 assert.match(game, /function requestMeleeAttackAlignment\(/, 'game owns a transient melee alignment request');
 assert.match(game, /playerAttackAlignmentDuration\?\.\(initialStep\?\.deltaRad\)/, 'game delegates player glide duration to shared targeting policy');
@@ -48,8 +50,10 @@ assert.match(game, /playerAttackAlignmentProgress\?\.\(progress\)/, 'game delega
 assert.doesNotMatch(game, /PLAYER_ATTACK_ALIGNMENT_(?:MIN|MAX)_S|function easedAttackAlignmentProgress/, 'game has no private alignment tuning');
 assert.match(core, /configuredEase\(progress, targetingConfig\.alignmentEasing\)/, 'player alignment easing is configurable');
 assert.match(core, /configuredEase\(t, targetingConfig\.postAttackTurnEasing\)/, 'post-attack recovery easing is configurable');
-assert.match(game, /if \(initialStep\?\.aligned\)[\s\S]{0,100}runAttack\(\)/, 'an already-aligned attack still begins without artificial latency');
-assert.match(game, /meleeAttackAlignment = null; \/\/ Lock is off before the attack callback creates its windup\./, 'lock clears before windup starts');
+assert.match(game, /if \(initialStep\?\.aligned\)[\s\S]{0,180}commitMeleeAttackFacing\(initialStep\.desiredFacing\)[\s\S]{0,100}runAttack\(\)/, 'an already-aligned attack commits its heading and still begins without artificial latency');
+assert.match(game, /meleeAttackAlignment = null;/, 'game retains one explicit transient-lock release point');
+assert.match(game, /appliedFacing: startFacing/, 'transient alignment owns the heading it actually applies');
+assert.match(game, /attackAlignmentStep\?\.\(player, target, 0, \{ facing: alignment\.appliedFacing \}\)/, 'alignment does not reread competing controller or mouse look authority each frame');
 assert.match(game, /function enemyCanSeeTarget\([\s\S]{0,260}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
 assert.match(game, /state = 'searching'/, 'enemies search after losing sight');
 assert.match(game, /function updateEnemySearch\(/, 'enemy scanning can reacquire the player');
