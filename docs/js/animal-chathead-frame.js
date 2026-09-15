@@ -81,7 +81,7 @@
       }
     } else {
       for (let index = 0; index < values.length && index < weightMap.data.length; index++) {
-        values[index] = Math.max(0, Math.min(256, Math.round(Number(weightMap.data[index]) || 0)));
+        values[index] = Math.max(0, Math.min(256, Math.round(Number(weightMap.data[index]) || 0));
       }
     }
     return { width, height, values };
@@ -288,6 +288,129 @@
   installAuthorThreeCompatibility();
   installNpcPreviewBridge();
 })();
+
+// The Animation Author loads creature-genetics-render.js directly, while the
+// game later extends that renderer from creature-genetics.js. Keep the target
+// picker on the same live registry as gameplay instead of maintaining another
+// hard-coded animal list in the authoring tool.
+(function installAnimationAuthorCreatureRegistrySync(global) {
+  'use strict';
+  if (typeof location === 'undefined' || !/\/tools\/animation-author\//.test(location.pathname || '')) return;
+
+  const REQUIRED_KINDS = Object.freeze(['puktuk', 'voorg-ass']); // Used to verify the two runtime-extended livestock species reached both renderer and picker.
+  const DISPLAY_LABELS = Object.freeze({ puktuk: 'Puktuk', 'voorg-ass': 'Vorg-Ass' }); // Used only when the picker needs an option appended before its ordinary population pass.
+  const STATUS_KEY = 'animationAuthorCreatureRegistrySync'; // Used by the mobile-safe debug object exposed below.
+  const statusRoot = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {}; // Stores picker diagnostics beside the existing Rig Coordinates diagnostics.
+  const status = statusRoot[STATUS_KEY] ||= { state: 'waiting-for-renderer', attempts: 0, loads: 0, pickerRefreshes: 0, rendererMissing: [...REQUIRED_KINDS], pickerMissing: [...REQUIRED_KINDS], lastError: null }; // Exposed so a mobile test can report exactly which layer is stale.
+  let intervalId = null; // Polls until the dynamically loaded repository renderer and its extension module are both ready.
+  let scriptRequested = false; // Prevents duplicate creature-genetics.js script requests during repository startup.
+
+  function missingRendererKinds() {
+    const species = global.CreatureGeneticsRender?.SPECIES || {}; // Read by the same picker population code inside the Animation Author.
+    return REQUIRED_KINDS.filter(kind => !species[kind]);
+  }
+
+  function pickerValues(select) {
+    const options = Array.from(select?.options || []); // Used to compare the rendered select against the live renderer registry.
+    return options.map(option => String(option?.value || ''));
+  }
+
+  function missingPickerKinds() {
+    const select = global.document?.getElementById('maaCreatureSpecies'); // The existing Add creature target species select.
+    const values = pickerValues(select); // Used to report which required livestock kinds are still absent from the UI.
+    return REQUIRED_KINDS.filter(kind => !values.includes(kind));
+  }
+
+  function displayLabel(kind) {
+    const explicit = DISPLAY_LABELS[kind]; // Keeps the two known livestock names in their authored capitalization.
+    if (explicit) return explicit;
+    return String(kind || '').split('-').filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+  }
+
+  function refreshPickerFromRenderer() {
+    const select = global.document?.getElementById('maaCreatureSpecies'); // Updated in place so the author's normal change handler continues driving frame selection.
+    const species = global.CreatureGeneticsRender?.SPECIES; // Canonical renderer registry after creature-genetics.js applies runtime extensions.
+    if (!select || !species) return false;
+    const existing = new Set(pickerValues(select)); // Used to append only registry species that the current picker population missed.
+    const previousValue = String(select.value || ''); // Restored after appending so this background repair never changes the user's current target selection.
+    let changed = false; // Tracks whether this pass actually repaired the visible species list.
+    for (const kind of Object.keys(species)) {
+      if (existing.has(kind)) continue;
+      const option = global.document.createElement?.('option'); // Uses the native select option surface rather than replacing Animation Author UI code.
+      if (!option) continue;
+      option.value = kind;
+      option.textContent = displayLabel(kind);
+      if (typeof select.appendChild === 'function') select.appendChild(option);
+      else select.append?.(option);
+      existing.add(kind);
+      changed = true;
+    }
+    if (previousValue && existing.has(previousValue)) select.value = previousValue;
+    if (changed) status.pickerRefreshes += 1;
+    status.pickerMissing = missingPickerKinds();
+    return status.pickerMissing.length === 0;
+  }
+
+  function requestGameplayCreatureExtensions() {
+    if (scriptRequested || !global.CreatureGeneticsRender?.SPECIES) return false;
+    scriptRequested = true;
+    const script = global.document?.createElement?.('script'); // Loads the same runtime species-extension module gameplay relies on.
+    if (!script) {
+      status.state = 'script-element-unavailable';
+      return false;
+    }
+    const sourceUrl = new URL('../../js/creature-genetics.js?v=20260915-rig-picker-v1', global.location.href).href; // Commit-relative URL keeps RawGitHack test builds on one repository revision.
+    script.src = sourceUrl;
+    script.async = false;
+    script.dataset ||= {};
+    script.dataset.hobunjiAnimationAuthorCreatureRegistry = 'v1';
+    script.onload = () => {
+      status.loads += 1;
+      status.lastError = null;
+      syncNow('creature-genetics-loaded');
+    };
+    script.onerror = () => {
+      status.state = 'creature-genetics-load-failed';
+      status.lastError = sourceUrl;
+    };
+    const parent = global.document.head || global.document.documentElement; // Uses a normal document script parent in both desktop and mobile browsers.
+    if (!parent?.appendChild) {
+      status.state = 'script-parent-unavailable';
+      return false;
+    }
+    parent.appendChild(script);
+    return true;
+  }
+
+  function syncNow(reason = 'poll') {
+    status.attempts += 1;
+    status.lastReason = reason;
+    status.rendererMissing = missingRendererKinds();
+    if (status.rendererMissing.length) {
+      status.state = global.CreatureGeneticsRender?.SPECIES ? 'loading-gameplay-creature-extensions' : 'waiting-for-renderer';
+      requestGameplayCreatureExtensions();
+      return false;
+    }
+    const pickerClean = refreshPickerFromRenderer(); // Adds any species installed after the author's original picker-population pass.
+    status.rendererMissing = [];
+    status.pickerMissing = missingPickerKinds();
+    status.state = pickerClean ? 'clean' : 'waiting-for-picker';
+    if (pickerClean && intervalId != null) {
+      global.clearInterval?.(intervalId);
+      intervalId = null;
+    }
+    return pickerClean;
+  }
+
+  if (typeof global.setInterval === 'function') intervalId = global.setInterval(() => syncNow('poll'), 50);
+  syncNow('install');
+  global.HobunjiAnimationAuthorCreatureRegistrySync = Object.freeze({
+    syncNow: () => syncNow('manual-debug'),
+    missingRendererKinds,
+    missingPickerKinds,
+    getStatus: () => ({ ...status, rendererMissing: [...(status.rendererMissing || [])], pickerMissing: [...(status.pickerMissing || [])] }),
+  });
+})(window);
 
 // Rig Coordinates predates Puktuk and Vorg-ass. Keep the editor's embedded
 // five-creature snapshot intact, then seed only missing new species through
