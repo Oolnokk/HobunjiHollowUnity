@@ -24,6 +24,7 @@
     };
   }
   const slots = { 1: makeSlotState(), 2: makeSlotState() };
+  let lastAlignmentHandoff = { phase: 'idle', startedAtMs: 0, releasedAtMs: 0 };
 
   function now() {
     return performance.now() / 1000;
@@ -92,9 +93,38 @@
   }
 
   function runAfterAttackAlignment(callback) {
-    const requestAlignment = window.Combat.deps?.requestMeleeAttackAlignment; // game.js bridge that owns the short pre-windup target turn.
+    const requestAlignment = window.Combat.deps?.requestMeleeAttackAlignment;
     if (!requestAlignment) { callback(); return null; }
-    return requestAlignment(callback);
+    let attackStarted = false;
+    const startAttackOnce = () => {
+      if (attackStarted) return;
+      attackStarted = true;
+      lastAlignmentHandoff = { phase: 'windup-started', startedAtMs: performance.now(), releasedAtMs: 0 };
+      callback();
+    };
+    const handle = requestAlignment(startAttackOnce);
+    if (!handle?.runAttack) {
+      if (attackStarted) lastAlignmentHandoff = { phase: 'immediate', startedAtMs: performance.now(), releasedAtMs: performance.now() };
+      return handle || null;
+    }
+    const finishAlignment = handle.runAttack.bind(handle);
+    const cancelAlignment = handle.cancel?.bind(handle);
+    let releaseQueued = false;
+    lastAlignmentHandoff = { phase: 'aligning', startedAtMs: 0, releasedAtMs: 0 };
+    handle.runAttack = () => {
+      if (releaseQueued) return;
+      releaseQueued = true;
+      startAttackOnce();
+      requestAnimationFrame(() => {
+        lastAlignmentHandoff = { phase: 'released-after-windup', startedAtMs: lastAlignmentHandoff.startedAtMs, releasedAtMs: performance.now() };
+        finishAlignment();
+      });
+    };
+    handle.cancel = () => {
+      lastAlignmentHandoff = { phase: 'cancelled', startedAtMs: lastAlignmentHandoff.startedAtMs, releasedAtMs: performance.now() };
+      cancelAlignment?.();
+    };
+    return handle;
   }
 
   function fireTap(slotIndex) {
@@ -247,6 +277,7 @@
     abortAllPresses,
     fireTap,
     getState,
+    alignmentHandoffSnapshot: () => ({ ...lastAlignmentHandoff }),
     update,
   };
 

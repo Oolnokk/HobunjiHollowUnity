@@ -60,11 +60,14 @@ assert.match(game, /hobunjiPerspectiveAimLocked/,
 assert.match(bodyComposer, /const renderedYaw = perspectiveAimLocked\s*\? requestedYaw\s*:\s*THREE\.MathUtils\.clamp/,
   'render-time neck limiting preserves exact shared-point aim while retaining limits elsewhere');
 assert.match(game,
-  /function shoulderBodyPerspectiveAuthority[\s\S]{0,900}activeTool === 'weapon'[\s\S]{0,900}isPlayerAttacking[\s\S]{0,900}return 'idle-neck-catchup'[\s\S]{0,300}return 'idle-free'/,
+  /function meleeAttackCurrentlyActive\(\)[\s\S]{0,500}activeTool === 'weapon'/,
+  'one shared melee-activity helper owns the weapon windup/lunge definition used by body authority and committed-facing lifetime');
+assert.match(game,
+  /function shoulderBodyPerspectiveAuthority[\s\S]{0,500}meleeAttackCurrentlyActive\(\)[\s\S]{0,500}isPlayerAttacking[\s\S]{0,900}return 'idle-neck-catchup'[\s\S]{0,300}return 'idle-free'/,
   'one body/root authority boundary distinguishes attacks, movement, idle neck catch-up, and idle free-look');
 assert.match(game,
-  /const perspectiveAuthority = shoulderBodyPerspectiveAuthority\(inputStrength, perspectiveFacing\);[\s\S]{0,500}perspectiveAuthority === 'movement'[\s\S]{0,300}perspectiveAuthority === 'attack'[\s\S]{0,300}facingAngle = perspectiveFacing;/,
-  'movement or attack aims both logical character and physical root at the shared point');
+  /const perspectiveAuthority = shoulderBodyPerspectiveAuthority\(inputStrength, perspectiveFacing\);[\s\S]{0,900}const meleeFacingOverride = meleeAttackBodyFacingOverride\(\);[\s\S]{0,900}facingAngle = meleeFacingOverride;[\s\S]{0,500}else if \(perspectiveAuthority === 'movement' \|\| perspectiveAuthority === 'attack'\)[\s\S]{0,300}facingAngle = perspectiveFacing;/,
+  'committed melee body yaw outranks the shoulder perspective point while ordinary movement and ranged attacks still use the shared point');
 assert.match(game,
   /SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math\.PI \/ 3/,
   'idle body preserves the former 60-degree independent neck allowance');
