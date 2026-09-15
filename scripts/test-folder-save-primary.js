@@ -21,6 +21,7 @@ const driveUi = read('docs/js/google-drive-save-ui.js');
 const driveStartup = read('docs/js/google-drive-save-startup.js');
 const driveCloudBridge = read('docs/js/google-drive-save-legacy-cloud-bridge.js');
 const canonicalV3 = read('docs/js/folder-save-v3-canonical.js');
+const folderReconciliation = read('docs/js/folder-save-v3-reconciliation.js');
 const primary = read('docs/js/folder-save-primary.js');
 const emptyBootstrap = read('docs/js/folder-save-empty-bootstrap.js');
 const debugUi = read('docs/js/folder-save-debug-ui.js');
@@ -45,6 +46,7 @@ new Function(driveUi);
 new Function(driveStartup);
 new Function(driveCloudBridge);
 new Function(canonicalV3);
+new Function(folderReconciliation);
 new Function(primary);
 new Function(emptyBootstrap);
 new Function(debugUi);
@@ -62,6 +64,7 @@ const driveTransportIndex = folderLoader.indexOf('google-drive-save-transport.js
 const checkpointIndex = folderLoader.indexOf('save-durable-checkpoint.js');
 const coreIndex = folderLoader.indexOf('local-save-folder-core.js');
 const canonicalV3Index = folderLoader.indexOf('folder-save-v3-canonical.js');
+const folderReconciliationIndex = folderLoader.indexOf('folder-save-v3-reconciliation.js');
 const primaryIndex = folderLoader.indexOf('folder-save-primary.js');
 const emptyBootstrapIndex = folderLoader.indexOf('folder-save-empty-bootstrap.js');
 const quitGuardIndex = folderLoader.indexOf('folder-save-quit-guard.js');
@@ -81,7 +84,8 @@ assert(driveTransportIndex > driveConfigIndex, 'Google Drive transport loads aft
 assert(checkpointIndex > driveTransportIndex, 'event-driven durable checkpointing loads after Drive transport state is available');
 assert(coreIndex > checkpointIndex, 'transport-neutral durable/Drive foundation loads before the existing filesystem core');
 assert(canonicalV3Index > coreIndex, 'canonical V3 filesystem adapter loads after the V2 filesystem core exists');
-assert(primaryIndex > canonicalV3Index, 'primary folder UX wraps the V3-aware filesystem API');
+assert(folderReconciliationIndex > canonicalV3Index, 'canonical folder preflight wraps the V3 adapter after its file reader/writer exists');
+assert(primaryIndex > folderReconciliationIndex, 'primary folder UX sees the conflict-safe V3 sync surface');
 assert(emptyBootstrapIndex > primaryIndex, 'empty-folder bootstrap wraps the primary folder load behavior');
 assert(quitGuardIndex > emptyBootstrapIndex, 'persistence-owned Quit control loads after folder lifecycle wrappers');
 assert(debugUiIndex > quitGuardIndex, 'mobile diagnostics load after the guarded Quit path');
@@ -134,6 +138,10 @@ assert(canonicalV3.includes("CANONICAL_FILE_NAME = 'hobunji-primary-save.json'")
 assert(canonicalV3.includes('roundTrip.contentHash !== envelope.contentHash'), 'canonical filesystem writes are read back and hash-verified');
 assert(canonicalV3.includes("canonicalError = `Canonical V3 save is invalid and was not bypassed"), 'invalid V3 files are never silently bypassed with V2 recovery data');
 assert(canonicalV3.includes("clearCanonicalCache({ source: 'v2-loaded' })"), 'V2 fallback remains explicit when no canonical file exists');
+assert(folderReconciliation.includes('canonical.readCanonicalEnvelope({ verifyHash: true })'), 'desktop canonical sync performs a mandatory hash-verified external preflight');
+assert(folderReconciliation.includes("kind: 'folder-canonical-divergence'"), 'unsafe folder branches are preserved in the durable conflict store');
+assert(folderReconciliation.includes('if (force)'), 'explicit force is the only path that may choose local over a valid divergent folder branch');
+assert(folderReconciliation.includes('invalidExternal: true'), 'invalid canonical files are distinguished from valid conflicts and remain non-overwritable');
 
 assert(primary.includes('prepareBeforeOnboarding'), 'primary layer still exposes desktop pre-onboarding folder reconciliation');
 assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembered ready folders automatically load before save selection');
@@ -188,6 +196,7 @@ assert(debugUi.includes('HobunjiGoogleDriveSave?.getStatus'), 'mobile diagnostic
 assert(debugUi.includes('__hobunjiGoogleDriveSaveUIDebug'), 'mobile diagnostics include Drive UI/reconciliation state');
 assert(debugUi.includes('__hobunjiGoogleDriveSaveStartupDebug'), 'mobile diagnostics include pre-onboarding Drive reconciliation state');
 assert(debugUi.includes('__hobunjiFolderSaveV3Debug'), 'mobile diagnostics include canonical V3 filesystem status');
-assert(debugUi.includes('normal gameplay save writes now commit the canonical V3 envelope'), 'Settings includes a short summary of the latest persistence change');
+assert(debugUi.includes('__hobunjiFolderSaveV3ReconciliationDebug'), 'mobile diagnostics include canonical folder preflight decisions and blocked-write counts');
+assert(debugUi.includes('desktop canonical-folder writes now share three-way reconciliation'), 'Settings includes a short summary of the latest persistence change');
 
 console.log('\nFolder-save primary regression checks passed.');
