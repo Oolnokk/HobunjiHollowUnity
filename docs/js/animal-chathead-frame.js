@@ -81,7 +81,7 @@
       }
     } else {
       for (let index = 0; index < values.length && index < weightMap.data.length; index++) {
-        values[index] = Math.max(0, Math.min(256, Math.round(Number(weightMap.data[index]) || 0));
+        values[index] = Math.max(0, Math.min(256, Math.round(Number(weightMap.data[index]) || 0)));
       }
     }
     return { width, height, values };
