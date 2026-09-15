@@ -22,7 +22,7 @@ assert.match(helper, /Rapport \+10/, 'positive Rapport preview is available');
 assert.match(helper, /Rapport -10/, 'negative Rapport preview is available');
 assert.match(helper, /Favor \+10/, 'positive Favor preview is available');
 assert.match(helper, /Favor -10/, 'negative Favor preview is available');
-assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position3/, 'Popup Text Editor loads the shared gameplay position bridge');
+assert.match(helper, /favor-popup-points-bridge\.js\?v=20260915position4/, 'Popup Text Editor loads the alpha-cutout relationship bridge');
 assert.match(helper, /showRelationshipChange\(root, kind, amount, \{ amountIsPoints: true \}\)/, 'editor controls route through the shared relationship API against the live avatar root');
 
 assert.match(helper, /id: 'popup_preview_character'/, 'editor has an immediate deterministic preview character');
