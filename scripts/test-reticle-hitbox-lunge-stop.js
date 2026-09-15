@@ -12,6 +12,8 @@ assert.match(source, /rayBoxInterval\(ray, box\)/,
   'transient melee alignment uses an exact center-ray/Box3 test');
 assert.match(source, /resolveSweptLungeEntry\(liveDeps\)/,
   'lunge range entry is checked across movement already completed this frame');
+assert.match(source, /LUNGE_CANCEL_RANGE_MULTIPLIER = 0\.5/,
+  'lunge cancellation range stays explicitly half of the real attack range');
 
 const player = {
   x: 0, y: 0, health: 100, facing: 0,
@@ -153,10 +155,10 @@ baseAlignment = { ...baseAlignment, screenCorrectionRad: 0, deltaRad: 0 };
 step = windowStub.Combat.attackAlignmentStep(player, target, 0, { facing: 0 });
 assert.equal(step.eligible, false, 'pure vertical miss is not ranked as a fake zero-error autotarget');
 
-// Simulate updateMovement covering two tiles in one rendered frame. The target
-// begins at world X 1.4 and the attack range is 1 tile, so the first valid AoE
-// entry is player world X 0.4 = 25.6 logical pixels, long before the attempted
-// endpoint at 128 px.
+// Simulate updateMovement covering two tiles in one rendered frame. The real
+// attack range is 1 tile, but the lunge-cancel cone is only 0.5 tile long. With
+// the target beginning at world X 1.4, first cancel entry is player world X 0.9
+// = 57.6 logical pixels, long before the attempted endpoint at 128 px.
 targetBox = {
   min: { x: 1.4, y: 0, z: -0.2 },
   max: { x: 1.6, y: 1, z: 0.2 },
@@ -167,11 +169,12 @@ player.lunging = false;
 deps.beginCombatLunge(192, 0.4, 0, { rangePx: 64, halfConeRad: 0.2 });
 assert.equal(player.lungeDirX, 1, 'lunge direction is reticle-authored before movement');
 assert(Math.abs(player.lungeDirY) < 1e-9, 'reticle-authored lunge has no sideways component');
+assert.equal(player.lungeHitTest.rangePx, 32, 'lunge cancellation cone is half the real 64px attack reach');
 player.x = 128; // stand-in for the native eased/swept movement completed earlier this frame
 windowStub.Combat.update(0.016);
-assert.equal(player.lunging, false, 'ordinary lunge ends on first attack-volume entry');
-assert(player.x > 25 && player.x < 26.5,
-  `swept stop clamps near the first legal range-entry point (got ${player.x})`);
+assert.equal(player.lunging, false, 'ordinary lunge ends on first half-range cancellation-volume entry');
+assert(player.x > 57 && player.x < 58.5,
+  `swept stop clamps near the first half-range cancel entry point (got ${player.x})`);
 assert(Math.abs(nativeUpdateSawX - player.x) < 1e-9,
   'staged Combat.update observes the clamped stop point before strike callbacks run');
 
@@ -180,6 +183,7 @@ player.x = 0;
 player.y = 0;
 player.lunging = false;
 deps.beginCombatLunge(192, 0.4, 0.6, { rangePx: 64, halfConeRad: 0.2 });
+assert.equal(player.lungeHitTest.rangePx, 32, 'hop lunge uses the same half-length cancellation cone');
 player.x = 128;
 windowStub.Combat.update(0.016);
 assert.equal(player.lunging, true, 'hop lunge keeps its vertical arc alive after range entry');
@@ -192,5 +196,7 @@ assert.equal(debug.exactReticleAlignmentInstalled, true);
 assert.equal(debug.combatUpdateSweepInstalled, true);
 assert(debug.reticleBoxHitCount >= 1);
 assert(debug.lungeEarlyStopCount >= 2);
+assert.equal(debug.lastLunge.attackRangePx, 64, 'debug keeps the true strike range visible');
+assert.equal(debug.lastLunge.cancelRangePx, 32, 'debug exposes the half-length lunge-cancel range separately');
 assert.equal(debug.lungeSweepMode, 'piggyback-existing-combat-update-no-independent-loop');
-console.log('exact reticle hitbox + swept lunge-stop regression passed');
+console.log('exact reticle hitbox + half-range swept lunge-stop regression passed');
