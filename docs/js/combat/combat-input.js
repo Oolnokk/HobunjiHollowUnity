@@ -13,6 +13,12 @@
   if (!window.Combat?.loadout) { console.error('combat-input.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   const HOLD_THRESHOLD_S = 0.16;
+  const AUTO_TARGET_STORAGE_KEY = 'hobunjiMeleeAutoTargetEnabled'; // Used to persist the player-facing auto-target preference across sessions.
+  let autoTargetEnabled = false; // Gates whether attacks enter the existing transient melee alignment/target-lock path.
+  let autoTargetControl = null; // Cached Settings checkbox used to keep the injected UI synchronized with runtime state.
+  try {
+    autoTargetEnabled = localStorage.getItem(AUTO_TARGET_STORAGE_KEY) === 'true';
+  } catch (_) {}
 
   function makeSlotState() {
     return {
@@ -28,6 +34,63 @@
 
   function now() {
     return performance.now() / 1000;
+  }
+
+  function autoTargetSettingsSnapshot() {
+    return {
+      enabled: autoTargetEnabled,
+      defaultEnabled: false,
+      storageKey: AUTO_TARGET_STORAGE_KEY,
+      controlMounted: !!autoTargetControl,
+    };
+  }
+
+  function setAutoTargetEnabled(enabled, options = {}) {
+    const nextEnabled = !!enabled; // Normalized preference used by the attack-alignment gate and Settings checkbox.
+    const persist = options.persist !== false; // Allows regression/debug callers to change runtime state without writing browser storage.
+    autoTargetEnabled = nextEnabled;
+    if (autoTargetControl) autoTargetControl.checked = autoTargetEnabled;
+    if (persist) {
+      try { localStorage.setItem(AUTO_TARGET_STORAGE_KEY, autoTargetEnabled ? 'true' : 'false'); }
+      catch (_) {}
+    }
+    return autoTargetEnabled;
+  }
+
+  function mountAutoTargetSetting() {
+    const existingControl = document.getElementById('settingMeleeAutoTarget'); // Reuses an already-mounted control if Settings rerenders around this module.
+    if (existingControl) {
+      autoTargetControl = existingControl;
+      autoTargetControl.checked = autoTargetEnabled;
+      return true;
+    }
+
+    const settingsPane = document.querySelector('#mpSettings .settings-pane'); // Existing Settings column that receives the Combat section.
+    if (!settingsPane) return false;
+    const cameraZoomRow = document.getElementById('settingZoom')?.closest('.settings-row') || null; // Stable Camera-section row used only as an insertion anchor.
+    const cameraSectionTitle = cameraZoomRow?.previousElementSibling || null; // Existing Camera heading kept after the injected Combat section.
+    const insertBefore = cameraSectionTitle?.parentElement === settingsPane ? cameraSectionTitle : null; // Falls back to appending if Settings markup changes.
+
+    const sectionTitle = document.createElement('div'); // Combat heading visually groups the new player-facing targeting preference.
+    sectionTitle.className = 'settings-section-title';
+    sectionTitle.style.marginTop = '10px';
+    sectionTitle.textContent = 'Combat';
+
+    const row = document.createElement('label'); // Standard Settings row matching the existing toggle presentation and controller navigation hooks.
+    row.className = 'settings-row';
+    row.innerHTML = '<div class="settings-label">' +
+      '<div class="settings-name">Auto-target</div>' +
+      '<div class="settings-desc">Briefly turns you toward one nearby enemy before a melee attack. Off keeps your current facing and reticle aim fully manual.</div>' +
+      '</div>' +
+      '<span class="settings-toggle"><input type="checkbox" id="settingMeleeAutoTarget"><span class="toggle-slider"></span></span>';
+
+    settingsPane.insertBefore(sectionTitle, insertBefore);
+    settingsPane.insertBefore(row, insertBefore);
+    autoTargetControl = row.querySelector('#settingMeleeAutoTarget');
+    if (!autoTargetControl) return false;
+    autoTargetControl.checked = autoTargetEnabled;
+    autoTargetControl.addEventListener('change', () => setAutoTargetEnabled(autoTargetControl.checked));
+    return true;
   }
 
   // Read-only state bridge for HUD presentation. Gameplay still owns every
@@ -93,6 +156,12 @@
   }
 
   function runAfterAttackAlignment(callback) {
+    if (!autoTargetEnabled) {
+      const bypassedAtMs = performance.now(); // Diagnostic timestamp proving the attack skipped target acquisition rather than aligning invisibly.
+      lastAlignmentHandoff = { phase: 'disabled-bypass', startedAtMs: bypassedAtMs, releasedAtMs: bypassedAtMs };
+      callback();
+      return null;
+    }
     const requestAlignment = window.Combat.deps?.requestMeleeAttackAlignment;
     if (!requestAlignment) { callback(); return null; }
     let attackStarted = false;
@@ -277,6 +346,10 @@
     abortAllPresses,
     fireTap,
     getState,
+    isAutoTargetEnabled: () => autoTargetEnabled,
+    setAutoTargetEnabled,
+    autoTargetSettingsSnapshot,
+    mountAutoTargetSetting,
     alignmentHandoffSnapshot: () => ({ ...lastAlignmentHandoff }),
     update,
   };
@@ -288,6 +361,12 @@
     _coreUpdate(dt);
     update(dt);
   };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mountAutoTargetSetting, { once: true });
+  } else {
+    mountAutoTargetSetting();
+  }
 
   // A lost release must not leave a defensive stance or charging heavy alive.
   window.addEventListener('blur', abortAllPresses);
