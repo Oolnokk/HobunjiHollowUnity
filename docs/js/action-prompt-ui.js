@@ -13,7 +13,30 @@
   // inputBindings is a game.js `const`, only ever mutated in place, so a
   // direct reference is safe.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    ensureDialogueChoiceSelectionStyle();
+  }
+
+  // Dialogue rows already receive .ctrl-nav-focus from the shared controller/
+  // keyboard navigator. Make that state obvious inside the choice container
+  // itself instead of relying only on the generic outer glow.
+  function ensureDialogueChoiceSelectionStyle() {
+    if (document.getElementById('dialogueChoiceSelectionStyle')) return;
+    const style = document.createElement('style'); // Used by the NPC dialogue row focus state below.
+    style.id = 'dialogueChoiceSelectionStyle';
+    style.textContent = `
+      #npcDialogue .dlg-opt.ctrl-nav-focus,
+      #npcDialogue .dlg-opt:focus-visible {
+        background: rgba(249, 226, 138, 0.18) !important;
+        outline: 2px solid var(--accent) !important;
+        outline-offset: -2px !important;
+        box-shadow: inset 0 0 0 1px rgba(249, 226, 138, 0.42), 0 0 14px rgba(249, 226, 138, 0.26) !important;
+        color: #fff;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
   function getLastInputDevice() {
     return deps?.getLastInputDevice?.() || null;
