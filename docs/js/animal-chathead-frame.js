@@ -429,10 +429,10 @@
   });
 })(window);
 
-// Rig Coordinates predates Puktuk and Vorg-ass. Keep the editor's embedded
-// five-creature snapshot intact, then seed only missing new species through
-// its own import path. These are deliberately editable starting coordinates,
-// not fake human-approved attachment values.
+// Rig Coordinates predates Puktuk and Vorg-ass. If an older embedded editor
+// snapshot omits them, restore the repository's same-kind canonical profiles
+// through the editor's own import path. Analogue seeding is retained only as
+// a compatibility fallback for older repository revisions without final data.
 (function installAnimationAuthorNewCreatureRigSync(global) {
   'use strict';
   if (typeof location === 'undefined' || !/\/tools\/animation-author\//.test(location.pathname || '')) return;
@@ -447,6 +447,12 @@
 
   function missingKinds(live) {
     return Object.keys(SEED_SOURCES).filter(kind => !live?.creatures?.[kind]);
+  }
+
+  function canonicalProfile(kind) {
+    return global.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures?.[kind]
+      || global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]
+      || null;
   }
 
   function sourceProfile(live, sourceKind) {
@@ -508,12 +514,13 @@
     repaired.creatures ||= {};
     const unresolved = [];
     for (const kind of missing) {
-      const seed = seededProfile(kind, SEED_SOURCES[kind], repaired);
-      if (seed) repaired.creatures[kind] = seed;
+      const canonical = canonicalProfile(kind); // September 15 authoring is authoritative once the repository master contains it.
+      const replacement = canonical ? clone(canonical) : seededProfile(kind, SEED_SOURCES[kind], repaired);
+      if (replacement) repaired.creatures[kind] = replacement;
       else unresolved.push(kind);
     }
     if (unresolved.length) {
-      status.state = 'seed-source-missing';
+      status.state = 'canonical-or-seed-source-missing';
       status.missing = unresolved;
       status.lastReason = `${reason}: ${unresolved.join(', ')}`;
       return false;

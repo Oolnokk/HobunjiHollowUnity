@@ -22,7 +22,7 @@
 
   const PUKTUK_KIND = 'puktuk'; // Used across genetics/render/spawn registration so the species key stays centralized.
   const PUKTUK_FOXTAIL_CHANCE = 0.08; // Used for fresh wild/livestock rolls; matches the existing 8% "rare pattern" tier.
-  const PUKTUK_VISUAL_SCALE = 0.75; // Applied to Puktuk's borrowed size and ground calibration so every size class stays uniformly 25% smaller.
+  const PUKTUK_VISUAL_SCALE = 0.75; // Legacy fallback only: old/stripped configs that lack Puktuk's own authored rig still borrow Gar-wolf at 75% scale.
   const PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'; // Used to replace Drenkirra only in the Western Incline/Slope zone.
   const VOORG_ASS_KIND = 'voorg-ass'; // Used across genetics/render/spawn/livestock registration for the Northern Cliffs species.
   const VOORG_ASS_NORTHERN_ZONE_ID = 'map_northern_cliffs'; // Used to replace only the Northern Cliffs wild Uumkao'ii population.
@@ -288,7 +288,7 @@
   const CREATURE_SIZE_PROFILE_ALIAS = {
     puktuk: 'gar-wolf',
     'voorg-ass': 'uumkaoii',
-  }; // Used only by size/ground calibration; each species keeps its own sprites/genotype renderer.
+  }; // Compatibility fallback only; a species' own authored profile always wins when present.
   // Picks two fur colors that read as visually distinct — same rejection-
   // sample loop as the HTML lab's pickTwoFurColors().
   function pickTwoLivestockFurColors(kind) {
@@ -335,11 +335,12 @@
     const sizeClass = typeof genotypeOrSizeClass === 'string'
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the authored class used by renderer/anchors.
-    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Species may borrow size calibration without becoming a render alias.
+    const ownProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]; // Newly authored species own their calibration directly; aliases are only a legacy fallback.
+    const profileKind = ownProfile ? kind : (CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind);
     const authored = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.sizeScales?.[sizeClass]; // Canonical Animation Author export.
     const x = Number(authored?.x); // Applied to the creature plane's local width.
     const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.
-    const speciesScale = kind === PUKTUK_KIND ? PUKTUK_VISUAL_SCALE : 1; // Used here so Puktuk can borrow Gar-wolf proportions without inheriting Gar-wolf's absolute visual size.
+    const speciesScale = kind === PUKTUK_KIND && profileKind !== kind ? PUKTUK_VISUAL_SCALE : 1; // Retains the old 75% Gar-wolf fallback without double-scaling Puktuk's own authored values.
     return {
       sizeClass,
       x: (Number.isFinite(x) && x > 0 ? x : 1) * speciesScale,
@@ -350,9 +351,10 @@
     const sizeClass = typeof genotypeOrSizeClass === 'string'
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the same authored size row used by creatureSizeScale().
-    const profileKind = CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind; // Size aliases borrow floor calibration while visual aliases keep their own behavior.
+    const ownProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]; // Uses each species' authored floor calibration whenever it exists.
+    const profileKind = ownProfile ? kind : (CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind);
     const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.
-    const speciesScale = kind === PUKTUK_KIND ? PUKTUK_VISUAL_SCALE : 1; // Used with Puktuk's visual scale so shrinking the borrowed rig does not leave the sprite floating above the ground.
+    const speciesScale = kind === PUKTUK_KIND && profileKind !== kind ? PUKTUK_VISUAL_SCALE : 1; // Applies 75% only to the old Gar-wolf fallback, never to Puktuk's authored ground offsets.
     return Number.isFinite(authored) && authored > 0 ? authored * speciesScale : null; // Zero is the Rigging "Auto" sentinel; callers fall back to their existing half-height terrain baseline.
   }
 
@@ -640,6 +642,8 @@
         run2: 'assets/creaturesprites/puktuk_run2.png',
       },
       patterns: ['belly', 'foxtail'],
+      eyes: { open: 'assets/creaturesprites/puktuk_eye.png', blink: 'assets/creaturesprites/puktuk_blink.png' }, // Uses the shared untinted eye/blink overlay path after coat patterns.
+
     };
     return true;
   }
@@ -715,7 +719,7 @@
           nestItemKey: existingMother.nestItemKey ?? null,
         };
       }
-      window.__farmLog?.(`[puktuk] registered predator species: default=medium sizeProfile=gar-wolf belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=predator; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && Array.isArray(packs) && packs.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
+      window.__farmLog?.(`[puktuk] registered predator species: default=medium sizeProfile=puktuk belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=predator; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && Array.isArray(packs) && packs.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
       return originalInit.call(this, injectedDeps);
     };
     wildlifeApi.__puktukBootstrapInstalled = true;
@@ -761,7 +765,7 @@
         }
       }
       const lightWoolReady = window.HobunjiCookingData?.items?.[LIGHT_WOOL_ITEM_KEY]?.name === 'Light Wool'; // Included in mobile-visible diagnostics.
-      window.__farmLog?.(`[voorg-ass] registered species: default=${creatureDb?.[VOORG_ASS_KIND]?.defaultSizeClass || 'unknown'} sizeProfile=uumkaoii belly=always optionalPatterns=none livestock=${LIGHT_WOOL_ITEM_KEY}(Light Wool) woolReady=${lightWoolReady}; ${VOORG_ASS_NORTHERN_ZONE_ID} Uumkao'ii replacements=${replacements} herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, replacements > 0 && lightWoolReady ? 'wildlife' : 'warn');
+      window.__farmLog?.(`[voorg-ass] registered species: default=${creatureDb?.[VOORG_ASS_KIND]?.defaultSizeClass || 'unknown'} sizeProfile=voorg-ass belly=always optionalPatterns=none livestock=${LIGHT_WOOL_ITEM_KEY}(Light Wool) woolReady=${lightWoolReady}; ${VOORG_ASS_NORTHERN_ZONE_ID} Uumkao'ii replacements=${replacements} herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, replacements > 0 && lightWoolReady ? 'wildlife' : 'warn');
       return originalInit.call(this, injectedDeps);
     };
     wildlifeApi.__voorgAssBootstrapInstalled = true;
