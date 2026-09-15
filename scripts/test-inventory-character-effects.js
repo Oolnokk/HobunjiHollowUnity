@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/inventory-character-effects.js', 'utf8');
-const compactToolSource = fs.readFileSync('docs/js/inventory-gear-compact-effects.js', 'utf8');
+const gearLayoutSource = fs.readFileSync('docs/js/inventory-gear-compact-effects.js', 'utf8');
 const xControlSource = fs.readFileSync('docs/js/hud-x-control-polish.js', 'utf8');
 const dodgeSource = fs.readFileSync('docs/js/combat/combat-blink-dodge.js', 'utf8');
 const loaderSource = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
@@ -20,66 +20,69 @@ const api = windowStub.InventoryCharacterEffects;
 assert(api, 'InventoryCharacterEffects exports its runtime API');
 assert.equal(api.version, 1, 'character effects module version is available to the bootstrap loader');
 assert.match(loaderSource, /inventory-character-effects\.js\?v=20260915a/, 'combat bootstrap loads the character-effects module');
-assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=20260915a/, 'combat bootstrap loads the compact Gear Effects presentation');
+assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=20260915a/, 'combat bootstrap loads the Gear layout module');
 assert.match(loaderSource, /hud-x-control-polish\.js\?v=20260915a/, 'combat bootstrap loads shared X-control presentation after generic HUD icons');
+assert.match(gearLayoutSource, /const VERSION = 2;/, 'Gear layout module exposes the three-panel layout revision');
 
-// Character effects remain a true two-column presentation instead of falling back to InventoryUI's generic single-column list.
+// Gear workspace regression: the old four-across loadout is reflowed into a left summary rail,
+// the owned gear collection is the wide middle panel, and the existing right info panel narrows to 12/17 of its old width.
 assert.match(
-  source,
-  /#mpInventory \.gear-character-effects-card \.gear-effects-list \{[\s\S]*?display:grid;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\);/,
-  'effects lists retain their authored two-column grid',
-);
-
-// The compact Gear module owns the final vertical split: upper loadout gets the remainder while Owned Gear always keeps a visible reserved region.
-assert.match(
-  compactToolSource,
-  /#mpInventory\.inv-mode-gear \.gear-loadout-grid \{[\s\S]*?flex:1 1 auto;[\s\S]*?min-height:0;[\s\S]*?overflow:hidden;/,
-  'upper Gear loadout can shrink inside the inventory instead of pushing the lower section away',
+  gearLayoutSource,
+  /slotPair\.append\(toolSlots, clothingSlots\);[\s\S]*?summary\.replaceChildren\(slotPair, toolStats, outfitStats\);/,
+  'tool and clothing slots share one side-by-side container above the stacked effect sections',
 );
 assert.match(
-  compactToolSource,
-  /#mpInventory\.inv-mode-gear \.gear-owned-section \{[\s\S]*?flex:0 0 calc\(5\.25 \* var\(--inv-row\)\);[\s\S]*?min-height:calc\(5\.25 \* var\(--inv-row\)\);[\s\S]*?overflow-y:auto;/,
-  'Owned Gear always retains a visible lower region and is the scrollable variable-content section',
-);
-
-// Tool Effects divides height by content, stacks chips vertically, and measures real rendered overflow before choosing a font size.
-assert.match(
-  compactToolSource,
-  /#mpInventory \.gear-tool-stats > \.gear-stat-list \{[\s\S]*?display:flex !important;[\s\S]*?flex-direction:column !important;[\s\S]*?overflow:hidden !important;/,
-  'Tool Effects list is a non-scrolling vertical stack with enough selector strength to beat generic inventory rules',
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.inv-equip-section \{[\s\S]*?top:calc\(4 \* var\(--inv-row\)\) !important;[\s\S]*?width:calc\(40 \* var\(--inv-col\)\) !important;[\s\S]*?display:grid !important;/,
+  'Gear workspace uses the freed Pack-only rows and becomes a two-column summary-plus-inventory workspace',
 );
 assert.match(
-  compactToolSource,
-  /#mpInventory \.gear-tool-stats \.gear-stat-item \{[\s\S]*?flex:var\(--gear-tool-card-weight,1\) 1 0;[\s\S]*?min-height:0;[\s\S]*?overflow:hidden;/,
-  'Tool Effects cards distribute the available height according to their real content weight',
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.gear-loadout-grid\.gear-summary-panel \{[\s\S]*?flex-direction:column !important;[\s\S]*?overflow-y:auto !important;/,
+  'left summary rail stacks its sections and owns scrolling instead of clipping individual cards',
 );
 assert.match(
-  compactToolSource,
-  /#mpInventory \.gear-tool-stats \.gear-stat-chips \{[\s\S]*?flex-direction:column;[\s\S]*?flex-wrap:nowrap;/,
-  'mastery, quality, and effect chips stack vertically inside each shortened tool card',
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.gear-slot-pair \{[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\);/,
+  'tool slots and clothing slots sit side by side at the top of the left rail',
 );
 assert.match(
-  compactToolSource,
-  /scrollHeight > card\.clientHeight[\s\S]*?scrollWidth > element\.clientWidth/,
-  'font fitting verifies actual rendered vertical and horizontal overflow rather than relying on estimated line counts',
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.gear-summary-panel \.gear-tool-stats \.gear-stat-item \{[\s\S]*?flex:0 0 auto !important;[\s\S]*?overflow:visible !important;/,
+  'Tool Effects cards grow from their real content instead of being height-compressed and clipped',
 );
 assert.match(
-  compactToolSource,
-  /fitMeasuredFont[\s\S]*?PREFERRED_MIN_FONT_PX[\s\S]*?EMERGENCY_MIN_FONT_PX[\s\S]*?Binary search|Binary search[\s\S]*?fitMeasuredFont/,
-  'measured fitting can shrink below the preferred compact size in extreme aspect ratios and then chooses the largest fitting font',
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.gear-summary-panel \.gear-character-effects-card \.gear-effects-list \{[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\) !important;[\s\S]*?overflow:visible !important;/,
+  'Outfit Effects and Final Values retain the requested two-column lists without internal clipping',
 );
 assert.match(
-  compactToolSource,
-  /#mpInventory \.gear-outfit-stats\.gear-character-effects-host \{[\s\S]*?display:flex !important;[\s\S]*?overflow:hidden !important;/,
-  'Outfit Effects and Final Values participate in the same bounded orientation-safe upper layout',
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.gear-owned-section\.gear-middle-inventory \{[\s\S]*?height:100% !important;[\s\S]*?overflow-y:auto !important;/,
+  'owned tools and clothing fill the middle panel and scroll independently',
 );
 assert.match(
-  compactToolSource,
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.inv-info \{[\s\S]*?left:calc\(42 \* var\(--inv-col\)\) !important;[\s\S]*?width:calc\(12 \* var\(--inv-col\)\) !important;/,
+  'Gear item detail is narrowed from 17 columns to 12 columns, approximately 70 percent of its old width',
+);
+assert.match(
+  gearLayoutSource,
+  /function infoContentFits\(info\)[\s\S]*?scrollHeight > detail\.clientHeight[\s\S]*?function fitInfoPanel\(info\)[\s\S]*?for \(let i = 0; i < 9; i\+\+\)/,
+  'narrow Gear item detail uses measured rendered overflow and binary-search fitting rather than internal scrolling',
+);
+assert.match(
+  gearLayoutSource,
+  /#mpInventory\.inv-mode-gear \.inv-info \.ii-desc \{[\s\S]*?overflow:hidden !important;[\s\S]*?#mpInventory\.inv-mode-gear \.inv-info \.ii-actions \{[\s\S]*?overflow:hidden !important;/,
+  'description and action regions are explicitly non-scrolling in Gear mode',
+);
+assert.match(
+  gearLayoutSource,
   /orientationchange[\s\S]*?scheduleFit|resize[\s\S]*?scheduleFit/,
-  'mobile portrait/landscape changes explicitly schedule a fresh measured fit',
+  'portrait/landscape changes re-run the narrowed detail-panel fit',
 );
 
-// Generic semantic X glyphs are PNG-backed; their source pixels are black, so the shared control style must whiten them and center common close/unequip buttons.
+// Generic semantic X glyphs are PNG-backed; their source pixels are black, so the shared control style must whiten them and center common controls.
 assert.match(
   xControlSource,
   /\.generic-hud-icon\.generic-hud-icon-x \{[\s\S]*?filter:brightness\(0\) invert\(1\);/,
