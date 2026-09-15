@@ -177,7 +177,7 @@
   <script src="js/authored-furniture-runtime.js?v=20260802a"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
-  <script src="js/terrain-preview.js?v=20260712d"></script>
+  <script src="js/terrain-preview.js?v=20260914boulder2"></script>
   <script src="js/wilderness-map-generator.js?v=20260816a"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
@@ -608,7 +608,7 @@
        window.ZoneTerrainFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-terrain-features.js?v=20260825chunks1"></script>
+  <script src="js/zone-terrain-features.js?v=20260914boulder2"></script>
   <!-- Wilderness-zone animal-den rock mounds and root totem meshes
        (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -2296,7 +2296,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260909controller1"></script>
+  <script src="js/pixel-probe.js?v=20260914boulder2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2415,7 +2415,7 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
-  <script src="game.js?v=20260912patternlibrary-signretire1"></script>
+  <script src="game.js?v=20260914boulder2"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260910controller1"></script>
   <script>

@@ -841,6 +841,10 @@
         ? `Controller: #${controllerDebug.index} ${controllerDebug.id} mapping=${controllerDebug.mapping} owner=${controllerDebug.owner} LS=${axis(controllerDebug.move)} RS=${axis(controllerDebug.look)}`
         : 'Controller: not detected');
     }
+    const boulderShellDebug = window.ZoneTerrainFeatures?.boulderShellSnapshot?.(); // Copyable proof that streamed chunks reuse one map-wide boulder index instead of rescanning the map.
+    if (boulderShellDebug) {
+      lines.push(`Boulder shells: indexBuilds=${boulderShellDebug.indexBuilds} cacheHits=${boulderShellDebug.indexHits} gridTilesScanned=${boulderShellDebug.gridTilesScanned} chunkBuilds=${boulderShellDebug.shellBuilds}`);
+    }
     const objectSfxDebug = window.AudioSystem?.objectSfxDebugSnapshot?.(); // Makes tool-cue preload/lookup state visible without requiring a mobile console.
     if (objectSfxDebug) {
       const lastCue = objectSfxDebug.last;

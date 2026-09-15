@@ -9503,7 +9503,7 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind, boulderId } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
@@ -9517,7 +9517,10 @@
           // merge doesn't track this through) falls back to treating any
           // SHRUB tile in a tree zone as a real tree — the prior behavior.
           if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
-          if (type === TileType.ROCK) zGrid[r][c].rockKind = rockKind || null;
+          if (type === TileType.ROCK) {
+            zGrid[r][c].rockKind = rockKind || null;
+            zGrid[r][c].boulderId = boulderId || null; // Used by the cached contiguous-shell footprint index.
+          }
         }
         const restoredChunkTiles = applyWildernessChunkTileDeltas(mapId, zGrid);
         if (restoredChunkTiles) {
@@ -11779,6 +11782,11 @@
                 // field (named rockKind to avoid colliding with the generator's
                 // own per-object oreKind material pick) and isMineableRockTile below.
                 rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
+                // Preserve one ID across every tile in a generated boulder's
+                // footprint so the renderer can build/cache it as one object.
+                boulderId: type === 'rock' && t.generatedObjectType === 'undiggableBoulder' && t.generatedObjectId
+                  ? m.id + ':' + t.generatedObjectId
+                  : undefined,
               });
             }
 

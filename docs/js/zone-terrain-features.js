@@ -137,42 +137,64 @@
   // renders those directly with a stone material group now, so solving
   // them again here would just double them up.
 
-  const BOULDER_SUBDIVISIONS = 4; // Shared top/side resolution used to make each connected undiggable footprint one visibly smooth shell.
+  const BOULDER_SUBDIVISIONS = 4; // Shared surface resolution used to make one welded skin for each generated boulder.
+  const boulderComponentCache = new WeakMap(); // One footprint index per live zone grid prevents a full-map scan for every streamed chunk.
+  const boulderShellStats = { indexBuilds: 0, indexHits: 0, gridTilesScanned: 0, shellBuilds: 0 }; // Exposed for mobile-friendly performance verification.
 
   function isUndiggableBoulderTile(zGrid, c, r) {
     const tile = zGrid?.[r]?.[c]; // Tile inspected by component collection and perimeter tests.
-    return tile?.type === deps.TileType.ROCK && tile.rockKind === 'undiggableBoulder';
+    return tile?.type === deps.TileType.ROCK && (tile.rockKind === 'undiggableBoulder' || !!tile.boulderId);
   }
 
   function collectUndiggableBoulderComponents(zGrid, zcols, zrows) {
-    const visited = new Set(); // World tile keys already assigned to a boulder component.
-    const components = []; // Connected footprints consumed by the shell geometry builder.
+    const cached = boulderComponentCache.get(zGrid); // Grid identity remains stable across every chunk in one zone visit.
+    if (cached && cached.zcols === zcols && cached.zrows === zrows) {
+      boulderShellStats.indexHits++;
+      return cached.components;
+    }
+    const groupedCells = new Map(); // Exact generator IDs keep separately-authored boulders distinct even when their tiles touch.
+    const legacyCells = new Set(); // Old cached/generated maps without IDs retain a connected-component fallback.
     for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
-      const startKey = c + ',' + r; // Stable key used to seed a previously unseen boulder footprint.
-      if (visited.has(startKey) || !isUndiggableBoulderTile(zGrid, c, r)) continue;
-      const cells = []; // Four-way-connected tiles belonging to this one contiguous boulder.
-      const queue = [[c, r]]; // Flood-fill worklist used only for the current footprint.
-      visited.add(startKey);
+      boulderShellStats.gridTilesScanned++;
+      if (!isUndiggableBoulderTile(zGrid, c, r)) continue;
+      const tile = zGrid[r][c]; // Source tile carries the preserved generator object ID when available.
+      if (tile.boulderId) {
+        let cells = groupedCells.get(tile.boulderId); // Shared tile list becomes one authored boulder shell.
+        if (!cells) { cells = []; groupedCells.set(tile.boulderId, cells); }
+        cells.push([c, r]);
+      } else {
+        legacyCells.add(c + ',' + r);
+      }
+    }
+    const components = [...groupedCells.values()]; // Exact-ID footprints need no spatial rediscovery.
+    while (legacyCells.size) {
+      const startKey = legacyCells.values().next().value; // Stable seed for one legacy connected component.
+      const [startC, startR] = startKey.split(',').map(Number); // Seed coordinates consumed by the fallback flood fill.
+      const cells = []; // Four-way-connected legacy tiles belonging to one boulder.
+      const queue = [[startC, startR]]; // Flood-fill worklist used only for this legacy footprint.
+      legacyCells.delete(startKey);
       for (let qi = 0; qi < queue.length; qi++) {
         const [cc, rr] = queue[qi]; // Current footprint tile whose four neighbors are inspected.
         cells.push([cc, rr]);
         for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nc = cc + dc, nr = rr + dr; // Neighbor coordinates used to continue this connected component.
           const key = nc + ',' + nr; // Neighbor key prevents duplicate flood-fill work.
-          if (nc < 0 || nr < 0 || nc >= zcols || nr >= zrows || visited.has(key) || !isUndiggableBoulderTile(zGrid, nc, nr)) continue;
-          visited.add(key);
+          if (!legacyCells.delete(key)) continue;
           queue.push([nc, nr]);
         }
       }
       components.push(cells);
     }
+    boulderComponentCache.set(zGrid, { zcols, zrows, components });
+    boulderShellStats.indexBuilds++;
     return components;
   }
 
   function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null) {
     const range = normalizedBounds(zcols, zrows, bounds); // Current streaming chunk whose portion of each global shell is emitted.
-    const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows); // Full-zone footprints keep peaks and seams stable across chunk borders.
+    const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows); // Cached full-zone footprints keep peaks and seams stable across chunk borders.
     const pos = [], uv = [], idx = []; // World-space shell buffers returned to the Three.js wrapper.
+    const vertexBySample = new Map(); // Reuses top vertices shared by neighboring source tiles instead of duplicating each patch edge.
     let topTileCount = 0; // Diagnostic count of footprint tiles emitted in this chunk.
     let perimeterEdgeCount = 0; // Diagnostic count proving shared interior walls were omitted.
     let representedComponentCount = 0; // Diagnostic count of connected shells touching this chunk.
@@ -187,7 +209,8 @@
       return h / 4294967296 - 0.5;
     };
 
-    for (const cells of components) {
+    for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
+      const cells = components[componentIndex]; // Exact generated-object footprint rendered by this iteration.
       const cellSet = new Set(cells.map(([c, r]) => c + ',' + r)); // Membership lookup used by boundary and base-height calculations.
       const renderCells = cells.filter(([c, r]) => c >= range.colStart && c < range.colEnd && r >= range.rowStart && r < range.rowEnd); // Chunk-local tiles emitted from this global shape.
       if (!renderCells.length) continue;
@@ -264,41 +287,34 @@
         const edgeBlend = smooth01(edgeDistance * 2); // Half a tile of inward travel reaches full shell height.
         const radial = Math.max(0, 1 - Math.hypot(x - peakX, z - peakZ) / farthest); // Monotonic rise toward the one selected peak.
         const crown = 0.18 + 0.82 * Math.pow(radial, 0.72); // Broad lower shoulders blend all source boulders into one mass.
-        const roughness = hashNoise(x, z) * 0.055 * edgeBlend * (0.35 + 0.65 * radial); // Small facets preserve the authored rock texture without creating secondary peaks.
+        const roughness = hashNoise(x, z) * 0.04 * edgeBlend * radial * (1 - radial); // Roughness vanishes at the summit so no secondary point can overtake the one peak.
         return baseYAt(x, z, fallbackTile) + peakHeight * edgeBlend * crown + roughness;
+      };
+      const vertexAt = (x, z, tile) => {
+        const key = componentIndex + ':' + Math.round(x * BOULDER_SUBDIVISIONS) + ',' + Math.round(z * BOULDER_SUBDIVISIONS); // Component-scoped sample key welds adjacent top patches.
+        const existing = vertexBySample.get(key); // Previously emitted shared vertex, including index zero.
+        if (existing !== undefined) return existing;
+        const vertex = pos.length / 3; // New exterior vertex index referenced by the top quads.
+        pos.push(x, topYAt(x, z, tile), z);
+        uv.push(x, z);
+        vertexBySample.set(key, vertex);
+        return vertex;
       };
 
       for (const [c, r] of renderCells) {
         const tile = zGrid[r][c]; // Source tile supplies the base elevation for this shell patch.
-        const baseVertex = pos.length / 3; // Index offset for the current tile's subdivided top patch.
-        for (let j = 0; j <= BOULDER_SUBDIVISIONS; j++) for (let i = 0; i <= BOULDER_SUBDIVISIONS; i++) {
-          const x = c + i / BOULDER_SUBDIVISIONS, z = r + j / BOULDER_SUBDIVISIONS; // World-space sample shared exactly across neighboring patches.
-          pos.push(x, topYAt(x, z, tile), z);
-          uv.push(x, z);
-        }
-        const rowStride = BOULDER_SUBDIVISIONS + 1; // Vertex-row width used to triangulate this top patch.
         for (let j = 0; j < BOULDER_SUBDIVISIONS; j++) for (let i = 0; i < BOULDER_SUBDIVISIONS; i++) {
-          const a = baseVertex + j * rowStride + i, b = a + 1, d = a + rowStride, e = d + 1; // Four corners of one exterior top quad.
+          const x0 = c + i / BOULDER_SUBDIVISIONS, x1 = c + (i + 1) / BOULDER_SUBDIVISIONS; // Horizontal limits of one exterior quad.
+          const z0 = r + j / BOULDER_SUBDIVISIONS, z1 = r + (j + 1) / BOULDER_SUBDIVISIONS; // Vertical limits of one exterior quad.
+          const a = vertexAt(x0, z0, tile), b = vertexAt(x1, z0, tile), d = vertexAt(x0, z1, tile), e = vertexAt(x1, z1, tile); // Welded quad corners.
           idx.push(a, d, e, a, e, b);
         }
         topTileCount++;
 
-        for (const edge of boundaryEdges.filter(candidate => candidate.owner === c + ',' + r)) {
-          const sideBase = pos.length / 3; // Index offset for one perimeter wall strip.
-          for (let i = 0; i <= BOULDER_SUBDIVISIONS; i++) {
-            const t = i / BOULDER_SUBDIVISIONS; // Along-edge interpolation used by the wall's top and ground rows.
-            const x = edge.x0 + (edge.x1 - edge.x0) * t, z = edge.z0 + (edge.z1 - edge.z0) * t; // Matching perimeter sample on both rows.
-            pos.push(x, topYAt(x, z, tile), z, x, baseYAt(x, z, tile), z);
-            uv.push(t, 1, t, 0);
-          }
-          for (let i = 0; i < BOULDER_SUBDIVISIONS; i++) {
-            const a = sideBase + i * 2, b = a + 1, c0 = a + 2, d = a + 3; // Four corners of one exterior side quad.
-            idx.push(a, b, d, a, d, c0);
-          }
-          perimeterEdgeCount++;
-        }
+        for (const edge of boundaryEdges) if (edge.owner === c + ',' + r) perimeterEdgeCount++; // Count only true outer edges; the tapered top already meets the ground there.
       }
     }
+    boulderShellStats.shellBuilds++;
     return { pos, uv, idx, componentCount: representedComponentCount, topTileCount, perimeterEdgeCount, peakCount: representedComponentCount };
   }
 
@@ -321,16 +337,21 @@
       topTileCount: shell.topTileCount,
       perimeterEdgeCount: shell.perimeterEdgeCount,
       interiorWalls: 0,
+      indexBuilds: boulderShellStats.indexBuilds,
+      indexHits: boulderShellStats.indexHits,
     };
     zScene.add(mesh);
     deps.markTerrainEdgeId(mesh, deps.terrainCategoryFor(deps.TileType.ROCK));
-    console.log('%c[zone:' + mapId + '] contiguous undiggable boulder shell built: ' + shell.componentCount + ' formation(s), ' + shell.topTileCount + ' tile(s), ' + shell.perimeterEdgeCount + ' perimeter edge(s)', 'color:#22c55e;font-weight:bold');
     return [mesh];
   }
 
   function rangeKey(bounds) {
     const col = Math.floor(bounds?.colStart ?? 0), row = Math.floor(bounds?.rowStart ?? 0); // Chunk coordinates used only to give each shell mesh a stable debug name.
     return col + '_' + row;
+  }
+
+  function boulderShellSnapshot() {
+    return { ...boulderShellStats }; // Debug panel/console callers can prove that full-grid indexing happens once per live zone grid.
   }
 
   function buildRockFormationMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
@@ -547,6 +568,7 @@
     buildUndiggableBoulderMeshes,
     buildUndiggableBoulderShellData,
     collectUndiggableBoulderComponents,
+    boulderShellSnapshot,
     buildRockFormationMeshes,
     buildWaterfallCurtainMeshes,
     buildZoneRiverWaterMeshes,
