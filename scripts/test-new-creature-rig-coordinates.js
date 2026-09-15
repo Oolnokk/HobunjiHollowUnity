@@ -16,6 +16,10 @@ assert.match(authorSource, /Object\.keys\(window\.CreatureGeneticsRender\?\.SPEC
   'Animation Author creature selectors must continue deriving their species list from the live creature renderer');
 assert.match(authorSource, /animationAuthor\.attachmentRigProfiles\.creatures\[kind\] = profile/,
   'Rig Coordinates must keep creating per-creature profiles for repository creature actors');
+assert.match(bridgeSource, /\.\.\/\.\.\/js\/creature-genetics\.js/,
+  'Animation Author must load the same gameplay genetics extension that registers post-renderer creature species');
+assert.match(bridgeSource, /getElementById\('maaCreatureSpecies'\)/,
+  'registry sync must repair the actual Add creature target species picker');
 
 class FakeFile {
   constructor(parts, name, options = {}) {
@@ -31,13 +35,17 @@ const importInput = {
   dispatchCount: 0,
   dispatchEvent() { this.dispatchCount += 1; return true; },
 };
-const listeners = new Map();
-const document = {
-  body: { dataset: { animationAuthorMode: 'rig' } },
-  getElementById(id) { return id === 'maaImportInput' ? importInput : null; },
-  addEventListener(type, listener) { listeners.set(type, listener); },
+const creatureSelect = { // Simulates the broken Add creature target dropdown before runtime-only livestock extensions load.
+  value: 'gar-wolf',
+  options: [
+    { value: 'gar-wolf', textContent: 'Gar Wolf' },
+    { value: 'uumkaoii', textContent: "Uumkao'ii" },
+  ],
+  appendChild(option) { this.options.push(option); return option; },
 };
-const location = { pathname: '/Oolnokk/HobunjiHollowUnity/0123456789012345678901234567890123456789/docs/tools/animation-author/index.html' };
+const listeners = new Map();
+let requestedRegistryScript = null; // Captures the gameplay genetics module requested by the Animation Author bridge.
+const location = { pathname: '/Oolnokk/HobunjiHollowUnity/0123456789012345678901234567890123456789/docs/tools/animation-author/index.html', href: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/0123456789012345678901234567890123456789/docs/tools/animation-author/index.html' };
 
 const sourceProfiles = {
   'gar-wolf': {
@@ -69,9 +77,15 @@ const liveProfiles = { characters: {}, creatures: JSON.parse(JSON.stringify(sour
 
 const window = {
   location,
-  document,
+  document: null,
   File: FakeFile,
   Event: class Event { constructor(type, options = {}) { this.type = type; this.bubbles = options.bubbles; } },
+  CreatureGeneticsRender: {
+    SPECIES: {
+      'gar-wolf': { base: { idle: 'gar-wolf-idle.png' } },
+      uumkaoii: { base: { idle: 'uumkaoii-idle.png' } },
+    },
+  },
   HOBUNJI_ATTACHMENT_RIG_PROFILES: { creatures: sourceProfiles },
   HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS: {},
   HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD: {
@@ -82,7 +96,33 @@ const window = {
   },
   setTimeout(callback) { callback(); return 1; },
   clearTimeout() {},
+  setInterval() { return 41; },
+  clearInterval() {},
 };
+const document = {
+  body: { dataset: { animationAuthorMode: 'rig' } },
+  getElementById(id) {
+    if (id === 'maaImportInput') return importInput;
+    if (id === 'maaCreatureSpecies') return creatureSelect;
+    return null;
+  },
+  addEventListener(type, listener) { listeners.set(type, listener); },
+  createElement(tag) {
+    if (tag === 'option') return { value: '', textContent: '' };
+    if (tag === 'script') return { dataset: {}, src: '', async: true, onload: null, onerror: null };
+    return {};
+  },
+  head: {
+    appendChild(script) {
+      requestedRegistryScript = script.src;
+      window.CreatureGeneticsRender.SPECIES.puktuk = { base: { idle: 'puktuk-idle.png' } };
+      window.CreatureGeneticsRender.SPECIES['voorg-ass'] = { base: { idle: 'voorg-ass-idle.png' } };
+      script.onload?.();
+      return script;
+    },
+  },
+};
+window.document = document;
 window.window = window;
 
 const context = vm.createContext({
@@ -91,12 +131,26 @@ const context = vm.createContext({
   location,
   File: FakeFile,
   Event: window.Event,
+  URL,
   console,
   setTimeout: window.setTimeout,
   clearTimeout: window.clearTimeout,
+  setInterval: window.setInterval,
+  clearInterval: window.clearInterval,
   Image: undefined,
 });
 vm.runInContext(bridgeSource, context, { filename: 'animal-chathead-frame.js' });
+
+const registrySync = window.HobunjiAnimationAuthorCreatureRegistrySync;
+assert.ok(registrySync, 'creature target registry sync debug API must be exposed');
+assert.match(requestedRegistryScript, /\/docs\/js\/creature-genetics\.js\?v=/, 'Animation Author should request creature-genetics.js from its own commit-relative docs tree');
+assert.deepStrictEqual(Array.from(registrySync.missingRendererKinds()), [], 'runtime-extended Puktuk and Vorg-ass renderer definitions must be present after sync');
+assert.deepStrictEqual(Array.from(registrySync.missingPickerKinds()), [], 'Add creature target picker must contain Puktuk and Vorg-ass after sync');
+assert.deepStrictEqual(creatureSelect.options.map(option => option.value), ['gar-wolf', 'uumkaoii', 'puktuk', 'voorg-ass']);
+assert.strictEqual(creatureSelect.options.find(option => option.value === 'puktuk').textContent, 'Puktuk');
+assert.strictEqual(creatureSelect.options.find(option => option.value === 'voorg-ass').textContent, 'Vorg-Ass');
+assert.strictEqual(creatureSelect.value, 'gar-wolf', 'background picker repair must preserve the current creature selection');
+assert.strictEqual(registrySync.getStatus().state, 'clean', 'registry diagnostics should report a fully synchronized picker');
 
 const sync = window.HobunjiAnimationAuthorNewCreatureRigSync;
 assert.ok(sync, 'new-creature Rig Coordinates sync debug API must be exposed');
@@ -134,4 +188,4 @@ const debug = sync.getStatus();
 assert.strictEqual(debug.state, 'clean', 'mobile-safe debug status should report a clean Rig library after seeding');
 assert.deepStrictEqual(Array.from(debug.missing), []);
 
-console.log('Puktuk/Vorg-ass Rig Coordinates integration guards passed');
+console.log('Puktuk/Vorg-ass Rig Coordinates picker and profile integration guards passed');
