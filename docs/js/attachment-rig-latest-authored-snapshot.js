@@ -11,6 +11,7 @@
     new URL('../config/character-rig-scale-defaults.js?v=20260914maoao3', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20260904a', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
+    new URL('character-joint-motion-parity.js?v=20260915joint1', base).href,
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
     new URL('porakaneki-species-runtime.js?v=20260914b&rearHead=1', base).href,
     new URL('character-rig-scale.js?v=20260904i', base).href,
