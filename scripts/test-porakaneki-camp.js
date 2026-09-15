@@ -30,7 +30,10 @@ assert.deepEqual(cfg.chiefCamp.seasonZoneMap, {
   Longpour: 'map_eastern_mire',
   Coldmuck: 'map_northern_cliffs',
 });
-assert.equal(cfg.behavior.fullSimulationChunkTiles, 10);
+assert.equal(cfg.behavior.fullSimulationChunkTiles, 10, 'legacy chunk size remains only for debug/backward compatibility');
+assert.equal(cfg.behavior.fullSimulationRadiusTiles, 12);
+assert.equal(cfg.behavior.fullSimulationReleaseRadiusTiles, 16);
+assert(cfg.behavior.fullSimulationReleaseRadiusTiles > cfg.behavior.fullSimulationRadiusTiles, 'LOD hysteresis must have a wider release radius than enter radius');
 assert.equal(cfg.behavior.offChunkTickSeconds, 4);
 assert.equal(cfg.reputation.initialFavor, -3);
 assert.equal(cfg.reputation.minimumFavor, -5);
@@ -44,18 +47,22 @@ assert.equal(chiefLocale.meta.namedNpc, 'porakaneki_chief');
 assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 7);
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260912'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260915materialization1'));
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
 assert(runtimeSource.includes('for (const zoneId of (cfg.wildernessZones || []))'), 'runtime must build camps across every configured wilderness zone');
+assert(runtimeSource.includes("entity.state = 'return'"), 'neutral Porakaneki must delegate actual travel/rendering to the shared hostile return/home path');
+assert(!runtimeSource.includes('combatDeps.moveCreatureToward?.(entity'), 'Porakaneki planner must not independently move the same live entity the hostile loop is rendering');
+assert(runtimeSource.indexOf('updateAllHunters(step, coarseStep);') < runtimeSource.indexOf('updateTerritoryWarnings();'), 'nearby hunters must begin materializing before territory dialogue attempts to choose a speaker');
+assert(runtimeSource.includes('allowToastFallback: false'), 'territory warnings must wait for Ambient Dialogue instead of being consumed as a toast');
 
-let currentArea = 'town'; // Mutated through off-zone, same-zone/off-chunk, and same-chunk cases.
+let currentArea = 'town'; // Mutated through off-zone, same-zone/nearby, hysteresis, and far-away cases.
 let hour = 12; // Calendar hour for awake/sleep checks.
 let season = 'Stormtide'; // Mutated to prove large-camp migration without disturbing little camps.
 const day = 7;
 const relation = { favor: 0, memory: [] }; // Named chief relationship record doubles as tribe-wide Favor.
-const hostileObjects = []; // Real combat entities should only appear for same-chunk residents.
+const hostileObjects = []; // Real combat entities should only appear for nearby residents.
 const rewardLog = [];
 const toastLog = [];
 const stations = [];
@@ -74,10 +81,10 @@ function makeLayout() {
     toTownExit: { col: 2, row: 2 },
   };
 }
-const zoneLayouts = new Map(ZONES.map(zoneId => [zoneId, makeLayout()])); // All four generated wilderness layouts are available to the runtime at once.
+const zoneLayouts = new Map(ZONES.map(zoneId => [zoneId, makeLayout()]));
 
 function fakeStamp(view, localeDef, opts) {
-  view.__stampSeq = (view.__stampSeq || 0) + 1; // First call is the silent large-camp reservation, following calls are small camps.
+  view.__stampSeq = (view.__stampSeq || 0) + 1;
   const seq = view.__stampSeq;
   const isChief = localeDef.id === 'locale_porakaneki_camp_chief';
   const width = isChief ? 19 : 13, height = isChief ? 17 : 12;
@@ -101,7 +108,11 @@ function fakeStamp(view, localeDef, opts) {
 }
 
 function avatarGroup() {
-  return { visible: true, position: { set() {} }, parent: { remove() {} } }; // Minimal fields touched by materialize/hide/teardown.
+  const position = {
+    x: 0, y: 0, z: 0,
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; },
+  };
+  return { visible: true, position, parent: { remove() {} } };
 }
 const banditCombat = {
   init(deps) { this.deps = deps; return 'bandit-init'; },
@@ -110,7 +121,7 @@ const banditCombat = {
     return {
       id: `generated_${opts.extra.porakanekiCampId}_${opts.extra.porakanekiHunterIndex}`,
       x, y, health: 20, maxHealth: 20, halfHeight: 0.5,
-      def: { aggroRangePx: 360 }, state: 'idle', areaId: currentArea,
+      def: { aggroRangePx: 360, moveSpeed: 118 }, state: 'idle', areaId: currentArea,
       avatarRef: { group: avatarGroup(), dispose() {} },
       groundShadow: { visible: true, position: { set() {} }, parent: { remove() {} }, geometry: { dispose() {} }, material: { dispose() {} } },
       _banditToolHolder: { visible: true, parent: { remove() {} } },
@@ -197,6 +208,10 @@ function smallCenters(debug) {
   return result;
 }
 
+function hunterDebug(api, zoneId, campId, index) {
+  return api.debugSnapshot().zones[zoneId].camps.find(camp => camp.id === campId).hunters[index];
+}
+
 (async () => {
   await flush();
   const api = contextWindow.PorakanekiCamps;
@@ -211,9 +226,11 @@ function smallCenters(debug) {
   assert.equal(api.initializeReputation(), true);
   assert.equal(relation.favor, -3);
 
-  contextWindow.BanditCamps.updateCampBanners(0.21); // Builds all four camp networks even though the player is in town.
+  contextWindow.BanditCamps.updateCampBanners(0.21);
   let debug = api.debugSnapshot();
   assert.equal(debug.version, 3);
+  assert.equal(debug.fullSimulationRadiusTiles, 12);
+  assert.equal(debug.fullSimulationReleaseRadiusTiles, 16);
   assert.equal(Object.keys(debug.zones).length, 4);
   assert(debug.totalSmallCamps >= 8 && debug.totalSmallCamps <= 16, '2-4 small camps on each of four wilderness maps means 8-16 little camps total');
   for (const zoneId of ZONES) {
@@ -230,7 +247,7 @@ function smallCenters(debug) {
 
   const originalSmallCenters = JSON.stringify(smallCenters(debug));
   season = 'Deadgrass';
-  contextWindow.BanditCamps.updateCampBanners(0.21); // Large camp migrates; little camps must not move/re-roll.
+  contextWindow.BanditCamps.updateCampBanners(0.21);
   debug = api.debugSnapshot();
   assert.equal(debug.chiefZoneId, 'map_western_slope');
   assert.equal(ZONES.filter(zoneId => debug.zones[zoneId].chiefActive).length, 1);
@@ -251,54 +268,67 @@ function smallCenters(debug) {
   contextWindow.BanditCamps.updateCampBanners(0.21);
   await flush();
   debug = api.debugSnapshot();
-  assert(hostileObjects.length >= 1, 'same-chunk procedural residents materialize through the real humanoid combat pipeline');
-  const materialized = debug.zones.map_western_slope.camps.flatMap(camp => camp.hunters).find(hunter => hunter.materialized && hunter.fullSimulation);
-  assert(materialized, 'at least one same-chunk resident runs full simulation');
+  assert(hostileObjects.length >= 1, 'nearby procedural residents materialize through the real humanoid combat pipeline');
+  const materializedCamp = debug.zones.map_western_slope.camps.find(camp => camp.hunters.some(hunter => hunter.materialized && hunter.fullSimulation));
+  const materializedIndex = materializedCamp.hunters.findIndex(hunter => hunter.materialized && hunter.fullSimulation);
+  let materialized = materializedCamp.hunters[materializedIndex];
+  assert(materialized, 'at least one nearby resident runs full simulation');
+  assert.equal(materialized.entityState, 'return', 'neutral resident delegates locomotion to the shared hostile return/home state');
+  assert.equal(materialized.plannerControlled, true);
+  assert.equal(materialized.registered, true);
+  assert.equal(materialized.renderDelta, 0, 'freshly placed avatar root matches the live simulation position');
 
-  combatDeps.player.x = 90 * combatDeps.TILE;
-  combatDeps.player.y = 90 * combatDeps.TILE;
-  contextWindow.BanditCamps.updateCampBanners(4.1);
-  debug = api.debugSnapshot();
-  assert(debug.coarseTicks >= 1);
-  const collapsedCamp = debug.zones.map_western_slope.camps.find(camp => camp.hunters.some(hunter => hunter.materialized && !hunter.fullSimulation));
-  const collapsedIndex = collapsedCamp.hunters.findIndex(hunter => hunter.materialized && !hunter.fullSimulation);
-  const collapsed = collapsedCamp.hunters[collapsedIndex];
-  assert(collapsed && collapsed.visible === false, 'previously materialized residents collapse back to hidden abstract agents outside the player chunk');
+  // Distance LOD has no invisible 10x10 chunk edge. A resident entered at 12
+  // tiles stays live through the wider 16-tile release radius, so walking a
+  // few tiles across an old chunk boundary cannot make it disappear like a
+  // ghost. Pick a direction that stays inside the 96x96 test map.
+  const direction = materialized.x < 48 ? 1 : -1;
+  combatDeps.player.x = (materialized.x + direction * 13) * combatDeps.TILE;
+  combatDeps.player.y = materialized.y * combatDeps.TILE;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  materialized = hunterDebug(api, currentArea, materializedCamp.id, materializedIndex);
+  assert.equal(materialized.fullSimulation, true, 'already-live resident remains detailed between enter and release radii');
+  assert.equal(materialized.visible, true, 'hysteresis does not blink the portrait off at an arbitrary chunk boundary');
 
-  // A hunter collapsed back to an abstract agent must not stay a live,
-  // GPU-resource-holding entity forever just because the player never
-  // returns to its chunk -- see DORMANT_ENTITY_RELEASE_S. Ticking without
-  // advancing the fake clock keeps it merely hidden (matches the assertion
-  // above); only once it's been continuously dormant past that grace period
-  // does the next tick actually tear its entity down.
+  combatDeps.player.x = (materialized.x + direction * 16.5) * combatDeps.TILE;
+  combatDeps.player.y = materialized.y * combatDeps.TILE;
+  contextWindow.BanditCamps.updateCampBanners(0.21);
+  let collapsed = hunterDebug(api, currentArea, materializedCamp.id, materializedIndex);
+  assert.equal(collapsed.fullSimulation, false, 'resident exits detailed simulation only beyond the configured release radius');
+  assert.equal(collapsed.visible, false, 'beyond the release radius the entity collapses to the abstract representation');
+
   const hostileCountWhileHidden = hostileObjects.length;
   contextWindow.BanditCamps.updateCampBanners(0.21);
-  assert.equal(hostileObjects.length, hostileCountWhileHidden, 'a briefly-dormant resident is not immediately torn down (avoids chunk-edge thrash)');
+  assert.equal(hostileObjects.length, hostileCountWhileHidden, 'a briefly-dormant resident is not immediately torn down (avoids edge thrash)');
   fakeNowMs += 3001;
   contextWindow.BanditCamps.updateCampBanners(0.21);
-  debug = api.debugSnapshot();
-  const stillTracked = debug.zones.map_western_slope.camps.find(camp => camp.id === collapsedCamp.id).hunters[collapsedIndex];
-  assert.equal(stillTracked.materialized, false, 'sustained dormancy actually releases the entity back to plain abstract data');
+  collapsed = hunterDebug(api, currentArea, materializedCamp.id, materializedIndex);
+  assert.equal(collapsed.materialized, false, 'sustained dormancy actually releases the entity back to plain abstract data');
   assert(hostileObjects.length < hostileCountWhileHidden, 'the released entity is spliced out of hostileObjects, not left as permanent dead weight');
 
-  // Warnings/greetings must read as an actual Porakaneki speaking -- the
-  // same overhead chathead+text bubble every other NPC's greeting uses
-  // (ambient-dialogue.js) -- not a generic toast with no speaker.
+  // Warnings/greetings must read as an actual Porakaneki speaking -- the same
+  // overhead chathead+text bubble every other NPC's greeting uses -- not a HUD
+  // toast. Warnings additionally opt out of fallback so an async materialization
+  // race leaves them pending until a live speaker exists.
   const toastCountBefore = toastLog.length;
   const showCalls = [];
   contextWindow.AmbientDialogue = { show: (...args) => { showCalls.push(args); return { fakeEvent: true }; } };
   contextWindow.NpcAvatarPreview = { buildProfileFromNpcExport: npc => ({ fighter: { id: 'porakaneki_male' }, __npc: npc }) };
-  const fakeHunterEntity = { id: 'hunter_speak_test', avatarRef: { group: { fakeGroup: true } }, rosterRecord: { appearance: { speciesId: 'porakaneki', gender: 'male' }, equippedCosmetics: [], appliedDyes: {} } };
-  const fakeHunter = { entity: fakeHunterEntity };
+  const fakeHunterEntity = {
+    id: 'hunter_speak_test', areaId: 'test_area', health: 20,
+    avatarRef: { group: { fakeGroup: true, visible: true } },
+    rosterRecord: { appearance: { speciesId: 'porakaneki', gender: 'male' }, equippedCosmetics: [], appliedDyes: {} },
+  };
+  const fakeHunter = { entity: fakeHunterEntity, camp: { zoneId: 'test_area' } };
   const fakeWalker = { root: { fakeRoot: true }, rec: { id: 'porakaneki_chief' }, profile: { fighter: { id: 'chief_walker_profile' } } };
 
-  let ok = api.__test.speakOverheadFromHunter(fakeHunter, 'Go way. No want trouble', { tone: 'warning', important: false });
+  let ok = api.__test.speakOverheadFromHunter(fakeHunter, 'Go way. No want trouble', { tone: 'warning', important: false, allowToastFallback: false });
   assert.equal(ok, true, 'speakOverheadFromHunter reports success when AmbientDialogue accepts the bubble');
   assert.equal(showCalls.length, 1);
   assert.equal(showCalls[0][0], fakeHunterEntity.avatarRef.group, 'bubble anchors to the speaking hunter\'s own avatar, not a generic point');
   assert.equal(showCalls[0][1], 'Go way. No want trouble');
-  assert.equal(showCalls[0][2].mode, 'chathead', 'a resolved portrait profile means the little chathead icon renders, not plain overhead text');
-  assert.equal(showCalls[0][2].profile.fighter.id, 'porakaneki_male', 'chathead portrait resolves through the same rosterRecord->profile pipeline bandit/animal chatheads already use');
+  assert.equal(showCalls[0][2].mode, 'chathead');
+  assert.equal(showCalls[0][2].profile.fighter.id, 'porakaneki_male');
   assert.equal(showCalls[0][2].profile.__npc, fakeHunterEntity.rosterRecord);
   assert.equal(showCalls[0][2].tone, 'warning');
   assert.equal(toastLog.length, toastCountBefore, 'no fallback toast fires once AmbientDialogue actually shows the bubble');
@@ -306,17 +336,20 @@ function smallCenters(debug) {
   ok = api.__test.speakOverheadFromWalker(fakeWalker, 'Good to see you, friend.', { tone: 'greeting' });
   assert.equal(ok, true);
   assert.equal(showCalls.length, 2);
-  assert.equal(showCalls[1][0], fakeWalker.root, 'the named chief speaks from his own walker root, exactly like any other NPC greeting');
-  assert.equal(showCalls[1][2].profile, fakeWalker.profile, 'the chief already has a normal NPC portrait profile -- no rosterRecord bridge needed');
+  assert.equal(showCalls[1][0], fakeWalker.root);
+  assert.equal(showCalls[1][2].profile, fakeWalker.profile);
   assert.equal(showCalls[1][2].mode, 'chathead');
 
-  // Falls back to the plain toast (not silence) when AmbientDialogue isn't available.
   delete contextWindow.AmbientDialogue;
-  ok = api.__test.speakOverheadFromHunter(fakeHunter, 'This our spot, not yours. Leave.', { important: false });
+  const warningToastCount = toastLog.length;
+  ok = api.__test.speakOverheadFromHunter(fakeHunter, 'This our spot, not yours. Leave.', { important: false, allowToastFallback: false });
   assert.equal(ok, false);
-  assert.equal(showCalls.length, 2, 'no further AmbientDialogue calls once it is unavailable');
-  assert.equal(toastLog.length, toastCountBefore + 1);
-  assert.deepEqual(toastLog[toastLog.length - 1], { text: 'This our spot, not yours. Leave.', positive: false });
+  assert.equal(toastLog.length, warningToastCount, 'territory warning stays pending instead of degrading to a toast when no live Ambient Dialogue speaker exists');
+
+  ok = api.__test.speakOverheadFromHunter(fakeHunter, 'Ordinary fallback test.', { important: false });
+  assert.equal(ok, false);
+  assert.equal(toastLog.length, warningToastCount + 1, 'non-territory callers retain the old safe toast fallback');
+  assert.deepEqual(toastLog[toastLog.length - 1], { text: 'Ordinary fallback test.', positive: false });
 
   console.log('Porakaneki distributed seasonal camp regression checks passed.');
 })().catch(error => {

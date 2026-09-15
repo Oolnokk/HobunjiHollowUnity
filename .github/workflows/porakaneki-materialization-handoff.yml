@@ -1,0 +1,25 @@
+name: Porakaneki materialization handoff
+
+on:
+  pull_request:
+    paths:
+      - 'docs/config/porakaneki-camp.json'
+      - 'docs/js/porakaneki-camps-runtime.js'
+      - 'docs/js/wilderness-ai-snapshot.js'
+      - 'docs/js/house-pieces.js'
+      - 'scripts/test-porakaneki-camp.js'
+      - 'scripts/test-porakaneki-materialization-handoff.js'
+      - '.github/workflows/porakaneki-materialization-handoff.yml'
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Existing Porakaneki camp regression
+        run: node scripts/test-porakaneki-camp.js
+      - name: Materialization handoff regression
+        run: node scripts/test-porakaneki-materialization-handoff.js
