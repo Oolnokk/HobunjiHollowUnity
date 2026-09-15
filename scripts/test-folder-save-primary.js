@@ -17,6 +17,7 @@ const coordinator = read('docs/js/save-coordinator.js');
 const driveConfig = read('docs/js/google-drive-save-config.js');
 const driveTransport = read('docs/js/google-drive-save-transport.js');
 const driveUi = read('docs/js/google-drive-save-ui.js');
+const driveStartup = read('docs/js/google-drive-save-startup.js');
 const canonicalV3 = read('docs/js/folder-save-v3-canonical.js');
 const primary = read('docs/js/folder-save-primary.js');
 const emptyBootstrap = read('docs/js/folder-save-empty-bootstrap.js');
@@ -37,6 +38,7 @@ new Function(coordinator);
 new Function(driveConfig);
 new Function(driveTransport);
 new Function(driveUi);
+new Function(driveStartup);
 new Function(canonicalV3);
 new Function(primary);
 new Function(emptyBootstrap);
@@ -57,6 +59,7 @@ const primaryIndex = folderLoader.indexOf('folder-save-primary.js');
 const emptyBootstrapIndex = folderLoader.indexOf('folder-save-empty-bootstrap.js');
 const debugUiIndex = folderLoader.indexOf('folder-save-debug-ui.js');
 const driveUiIndex = folderLoader.indexOf('google-drive-save-ui.js');
+const driveStartupIndex = folderLoader.indexOf('google-drive-save-startup.js');
 const legacyFlowIndex = folderLoader.indexOf('local-save-flow.js');
 assert(envelopeIndex >= 0, 'canonical save envelope loads from the persistence entrypoint');
 assert(reconciliationIndex > envelopeIndex, 'three-way reconciliation loads after canonical envelope support');
@@ -70,14 +73,16 @@ assert(primaryIndex > canonicalV3Index, 'primary folder UX wraps the V3-aware fi
 assert(emptyBootstrapIndex > primaryIndex, 'empty-folder bootstrap wraps the primary folder load behavior');
 assert(debugUiIndex > emptyBootstrapIndex, 'mobile diagnostics load after folder lifecycle wrappers');
 assert(driveUiIndex > debugUiIndex, 'Drive Settings UI loads after shared persistence diagnostics');
-assert(legacyFlowIndex > driveUiIndex, 'new persistence layers load before the legacy reload-heavy UX flow');
+assert(driveStartupIndex > driveUiIndex, 'mobile Drive startup reconciliation loads after Drive UI/transport state exists');
+assert(legacyFlowIndex > driveStartupIndex, 'new persistence layers load before the legacy reload-heavy UX flow');
 assert(folderLoader.includes('folder-save-primary.css'), 'primary folder/Drive hierarchy stylesheet is loaded by the compatibility entrypoint');
 
 const onboardingCoreIndex = onboardingLoader.indexOf('onboarding-core.js');
 const bridgeIndex = onboardingLoader.indexOf('folder-save-onboarding-bridge.js');
 const reloadHandoffIndex = onboardingLoader.indexOf('onboarding-character-creation-reload-handoff.js');
-assert(bridgeIndex > onboardingCoreIndex, 'folder/onboarding bridge loads after onboarding core exists');
-assert(reloadHandoffIndex > bridgeIndex, 'folder/onboarding bridge is installed before later onboarding wrappers');
+assert(bridgeIndex > onboardingCoreIndex, 'persistence/onboarding bridge loads after onboarding core exists');
+assert(reloadHandoffIndex > bridgeIndex, 'persistence/onboarding bridge is installed before later onboarding wrappers');
+assert(onboardingLoader.includes('20260915driveb'), 'persistence bridge cache key advances with mobile Drive startup coordination');
 assert(onboardingLoader.includes('20260915drivea'), 'creator handoff cache key advances with linked-Drive queue support');
 
 assert(envelope.includes("FORMAT = 'hobunji-primary-save'"), 'canonical envelope uses a stable portable save format identifier');
@@ -87,6 +92,8 @@ assert(syncStore.includes('commitEnvelope'), 'durable sync store exposes the ato
 assert(syncStore.includes('OAuth tokens must not be persisted'), 'durable sync store rejects OAuth-token persistence');
 assert(coordinator.includes('snapshot.capture({ strict: true })'), 'save coordinator captures the existing portable browser-save boundary strictly');
 assert(coordinator.includes('store.commitEnvelope'), 'save coordinator commits the canonical envelope to durable local storage');
+assert(coordinator.includes('HobunjiGoogleDriveSaveStartup?.prepareBeforeOnboarding'), 'coordinator delegates no-folder startup to the linked Drive preflight gate');
+assert(coordinator.includes('FolderSavePrimary.prepareBeforeOnboarding'), 'coordinator preserves existing desktop folder startup ownership when supported');
 assert(driveConfig.includes("scope: 'https://www.googleapis.com/auth/drive.file'"), 'Drive configuration is permanently limited to the narrow drive.file scope');
 assert(driveTransport.includes("let accessToken = ''"), 'Drive OAuth access token is memory-only transport state');
 assert(driveTransport.includes("method: 'PATCH'"), 'Drive updates reuse the linked file id with PATCH instead of creating duplicates');
@@ -95,15 +102,20 @@ assert(driveTransport.includes('setConflict'), 'Drive transport preserves diverg
 assert(driveUi.includes("ROW_ID = 'googleDriveSaveRow'"), 'Settings exposes a dedicated Google Drive save row');
 assert(driveUi.includes('!folderSupported && Boolean(status?.configured)'), 'Drive becomes visually primary when browser folder access is unavailable');
 assert(driveUi.includes('gameIsRunning()'), 'Drive UI blocks hot-loading a remote save into a running world');
+assert(driveStartup.includes("GATE_ID = 'googleDriveSaveStartupGate'"), 'remembered mobile Drive links get a dedicated pre-onboarding authorization gate');
+assert(driveStartup.includes("'Use Local Save Offline'"), 'Drive startup authorization can always be bypassed in favor of the durable local save');
+assert(driveStartup.includes("decision.state === 'external-only-change'"), 'safe remote-only startup changes are pulled before onboarding initializes');
+assert(driveStartup.includes("decision.state === 'local-only-change'"), 'safe local-only startup changes can sync after Drive preflight');
+assert(driveStartup.includes('showResolutionGate(decision, localEnvelope)'), 'first-link ambiguity and divergent conflicts require an explicit direction');
 assert(canonicalV3.includes("CANONICAL_FILE_NAME = 'hobunji-primary-save.json'"), 'filesystem adapter uses one stable canonical filename');
 assert(canonicalV3.includes('roundTrip.contentHash !== envelope.contentHash'), 'canonical filesystem writes are read back and hash-verified');
 assert(canonicalV3.includes("canonicalError = `Canonical V3 save is invalid and was not bypassed"), 'invalid V3 files are never silently bypassed with V2 recovery data');
 assert(canonicalV3.includes("clearCanonicalCache({ source: 'v2-loaded' })"), 'V2 fallback remains explicit when no canonical file exists');
 
-assert(primary.includes('prepareBeforeOnboarding'), 'primary layer exposes pre-onboarding folder reconciliation');
+assert(primary.includes('prepareBeforeOnboarding'), 'primary layer still exposes desktop pre-onboarding folder reconciliation');
 assert(primary.includes("lastUiAction = 'startup-auto-load-folder'"), 'remembered ready folders automatically load before save selection');
-assert(bridge.includes('prepareBeforeOnboarding'), 'onboarding init waits for primary folder reconciliation');
-assert(bridge.includes('refreshFromStorage'), 'folder restore can rebuild save selection in place');
+assert(bridge.includes('HobunjiSaveCoordinator?.prepareBeforeOnboarding'), 'onboarding init waits on the transport-neutral coordinator rather than the folder layer directly');
+assert(bridge.includes('refreshFromStorage'), 'folder/Drive restore can rebuild save selection in place');
 assert(!bridge.includes('location.reload'), 'in-place onboarding restore bridge never reloads the site');
 
 assert(emptyBootstrap.includes('empty-folder-connected-awaiting-first-save'), 'a new empty folder is a valid first-run save destination');
@@ -135,6 +147,7 @@ assert(css.includes('.folder-save-browser-fallback'), 'browser-only save source 
 assert(css.includes('#localSaveFolderRow.folder-save-settings-primary'), 'settings promotes the primary folder row on supported desktop browsers');
 assert(css.includes('.google-drive-save-row.google-drive-save-primary'), 'settings can promote Drive on browsers without folder support');
 assert(css.includes('.folder-save-settings-secondary'), 'unavailable desktop-folder controls can be visually demoted on mobile');
+assert(css.includes('#googleDriveSaveStartupGate'), 'mobile Drive startup gate has full-screen save-selection styling');
 assert(css.includes('#hobunjiEmptySaveFolder.folder-save-primary-action'), 'fresh-browser restore promotes the folder action');
 assert(primary.includes("folderLabel.textContent = 'Primary Save Folder'"), 'save selection labels folder storage as primary');
 assert(primary.includes("browserLabel.textContent = 'Browser Fallback'"), 'save selection labels browser storage as fallback');
@@ -147,7 +160,8 @@ assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without 
 assert(debugUi.includes('HobunjiSaveCoordinator?.getStatus'), 'mobile diagnostics include the durable local save coordinator');
 assert(debugUi.includes('HobunjiGoogleDriveSave?.getStatus'), 'mobile diagnostics include Google Drive transport state');
 assert(debugUi.includes('__hobunjiGoogleDriveSaveUIDebug'), 'mobile diagnostics include Drive UI/reconciliation state');
+assert(debugUi.includes('__hobunjiGoogleDriveSaveStartupDebug'), 'mobile diagnostics include pre-onboarding Drive reconciliation state');
 assert(debugUi.includes('__hobunjiFolderSaveV3Debug'), 'mobile diagnostics include canonical V3 filesystem status');
-assert(debugUi.includes('Google Drive now uses the canonical V3 save envelope'), 'Settings includes a short summary of the latest persistence change');
+assert(debugUi.includes('reconciles a remembered mobile Drive link before save selection'), 'Settings includes a short summary of the latest persistence change');
 
 console.log('\nFolder-save primary regression checks passed.');
