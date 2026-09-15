@@ -12,6 +12,10 @@
   // before extraction, but never reassign outer state themselves) — the
   // wide dependency list below is entirely getters/consts, no setters.
   let deps = null;
+  const buildingFootprintCache = new WeakMap(); // Reused by collision queries so authored footprint arrays are rotated/indexed only when a building definition changes.
+  const EMPTY_FOOTPRINT_CELLS = Object.freeze([]); // Stable fallback reference keeps absent optional extension lists from invalidating the collision cache.
+  let buildingFootprintCacheBuilds = 0; // Reported through debugSnapshot for the mobile Pixel Probe/performance diagnostics.
+  let buildingFootprintCacheHits = 0; // Reported through debugSnapshot to verify repeated movement queries stay allocation-free.
   function init(injectedDeps) { deps = injectedDeps; }
 
   function getCurrentArea() {
@@ -96,35 +100,68 @@
 
     if (!piece?.footprint) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
 
-    const structuralCells = piece.footprint.cells || [];
-    const fencePostCells = piece.footprint.extensions?.railings || [];
-    const collisionCells = structuralCells.concat(fencePostCells);
-    if (!collisionCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
+    const structuralCells = piece.footprint.cells || EMPTY_FOOTPRINT_CELLS;
+    const fencePostCells = piece.footprint.extensions?.railings || EMPTY_FOOTPRINT_CELLS;
+    if (!structuralCells.length && !fencePostCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
 
-    const allBuildingCells = []
-      .concat(piece.footprint.cells || [])
-      .concat(piece.footprint.extensions?.entryTunnels || [])
-      .concat(piece.footprint.extensions?.chimneys || [])
-      .concat(piece.footprint.extensions?.porches || [])
-      .concat(piece.footprint.extensions?.porchStairs || [])
-      .concat(piece.footprint.extensions?.railings || []);
+    const extensions = piece.footprint.extensions || {};
+    const entryTunnelCells = extensions.entryTunnels || EMPTY_FOOTPRINT_CELLS; // Included in authored bounds but intentionally excluded from collision.
+    const chimneyCells = extensions.chimneys || EMPTY_FOOTPRINT_CELLS; // Included in authored bounds so rotation retains the authoring origin.
+    const porchCells = extensions.porches || EMPTY_FOOTPRINT_CELLS; // Included in authored bounds so structural cells rotate around the full piece.
+    const porchStairCells = extensions.porchStairs || EMPTY_FOOTPRINT_CELLS; // Included in authored bounds while remaining walkable.
+    const rotation = bldg.rotationDeg || bldg.rotation || 0;
+    const previous = buildingFootprintCache.get(bldg);
+    const cacheValid = previous
+      && previous.piece === piece
+      && previous.originX === originX
+      && previous.originZ === originZ
+      && previous.rotation === rotation
+      && previous.structuralCells === structuralCells && previous.structuralLength === structuralCells.length
+      && previous.entryTunnelCells === entryTunnelCells && previous.entryTunnelLength === entryTunnelCells.length
+      && previous.chimneyCells === chimneyCells && previous.chimneyLength === chimneyCells.length
+      && previous.porchCells === porchCells && previous.porchLength === porchCells.length
+      && previous.porchStairCells === porchStairCells && previous.porchStairLength === porchStairCells.length
+      && previous.fencePostCells === fencePostCells && previous.fencePostLength === fencePostCells.length;
+    if (cacheValid) {
+      buildingFootprintCacheHits++;
+      return previous.blocked.has(col * 65536 + row);
+    }
+
+    const collisionCells = structuralCells.concat(fencePostCells);
+    const allBuildingCells = structuralCells.concat(entryTunnelCells, chimneyCells, porchCells, porchStairCells, fencePostCells);
+    if (!allBuildingCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
     const minX = Math.min(...allBuildingCells.map(cell => cell.x));
     const minY = Math.min(...allBuildingCells.map(cell => cell.y));
     const maxX = Math.max(...allBuildingCells.map(cell => cell.x));
     const maxY = Math.max(...allBuildingCells.map(cell => cell.y));
     const width = maxX - minX + 1;
     const depth = maxY - minY + 1;
-
-    return collisionCells.some(cell => {
-      const rotated = rotateBuildingCollisionCell(
-        cell.x - minX,
-        cell.y - minY,
-        width,
-        depth,
-        bldg.rotationDeg || bldg.rotation || 0,
-      );
-      return col === originX + rotated.x && row === originZ + rotated.y;
+    const blocked = new Set(); // Queried by every subsequent collision check for this unchanged building footprint.
+    for (const cell of collisionCells) {
+      const rotated = rotateBuildingCollisionCell(cell.x - minX, cell.y - minY, width, depth, rotation);
+      blocked.add((originX + rotated.x) * 65536 + originZ + rotated.y);
+    }
+    buildingFootprintCache.set(bldg, {
+      piece,
+      originX,
+      originZ,
+      rotation,
+      structuralCells,
+      structuralLength: structuralCells.length,
+      entryTunnelCells,
+      entryTunnelLength: entryTunnelCells.length,
+      chimneyCells,
+      chimneyLength: chimneyCells.length,
+      porchCells,
+      porchLength: porchCells.length,
+      porchStairCells,
+      porchStairLength: porchStairCells.length,
+      fencePostCells,
+      fencePostLength: fencePostCells.length,
+      blocked,
     });
+    buildingFootprintCacheBuilds++;
+    return blocked.has(col * 65536 + row);
   }
   // `area` defaults to 'town'; any zone mapId with its own merged buildings
   // (see _spawnZoneBuildings / _zoneBuildingGroups) is also accepted, so the
@@ -191,5 +228,11 @@
     rotateBuildingCollisionCell,
     isTownBuildingCollisionTile,
     isAnimalDenCollisionTile,
+    debugSnapshot() {
+      return {
+        buildingFootprintCacheBuilds,
+        buildingFootprintCacheHits,
+      };
+    },
   };
 })();

@@ -79,6 +79,7 @@
     const record = { file, url: new URL(file, ICON_BASE).href, state:'loading', image:null };
     imageState.set(file, record);
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     record.image = image;
     image.onload = () => { record.state = 'loaded'; rasterCache.clear(); queueRefresh(); };
     image.onerror = () => { record.state = 'failed'; log(`Failed to load ${record.url}`, 'error'); };

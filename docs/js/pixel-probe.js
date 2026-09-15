@@ -834,6 +834,18 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const cacheAudit = window.HobunjiCacheAudit?.snapshot?.(); // Gives mobile reports the same resource-pressure evidence previously available only through the desktop console.
+    if (cacheAudit?.gpu) {
+      lines.push(`Render resources: geometries=${cacheAudit.gpu.geometries} textures=${cacheAudit.gpu.textures} drawCalls=${cacheAudit.gpu.calls} triangles=${cacheAudit.gpu.triangles}`);
+      const interiorCache = cacheAudit.caches?.find(entry => entry.name === 'game.buildingScenes (loaded interiors)'); // Used to compare before/inside/after-store reports directly.
+      if (interiorCache) lines.push(`Loaded interior scenes: ${interiorCache.size}`);
+    }
+    const controllerUiDebug = window.ControllerUI?.debugState?.(); // Confirms that ordinary gameplay reads the cached closed-panel state instead of forcing layout.
+    if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
+    const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
+    if (gridDebug) lines.push(`Building footprint cache: builds=${gridDebug.buildingFootprintCacheBuilds} hits=${gridDebug.buildingFootprintCacheHits}`);
+    const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
+    if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} held=${heldRenderDebug.heldMeshes} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores}`);
     const controllerDebug = window.HOBUNJI_CONTROLLER_STATUS; // Published by game.js so controller ownership and raw browser mapping are copyable on mobile.
     if (controllerDebug) {
       const axis = stick => `${Number(stick?.x || 0).toFixed(2)},${Number(stick?.y || 0).toFixed(2)}`;

@@ -12,52 +12,41 @@
   const DEG_TO_RAD = Math.PI / 180;
   let lastYawDeg = null;
   let lastReason = 'waiting';
+  let lastComposer = null; // Used to restore the channel after a player-rig/composer rebuild even when the authored yaw value is unchanged.
+  let lastPlayerMesh = null; // Used with lastComposer to recognize clearAllChannels during player replacement.
+  const idleState = { active: false, yawDeg: 0, reason: 'waiting' }; // Refilled every frame by WeaponToolStances without allocating the full debug snapshot and four cloned poses.
 
   function finite(value, fallback = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
   }
 
-  function resolveIdleYaw(snapshot) {
-    if (!snapshot || snapshot.activeSlot !== 'weapon') return { active: false, yawDeg: 0, reason: 'not-weapon-slot' };
-    if (snapshot.combatNeutralInjected) return { active: false, yawDeg: 0, reason: 'attack-owns-body-yaw' };
-
-    const idleClass = snapshot.weaponIdleClass;
-    const pose = idleClass === 'light'
-      ? snapshot.poses?.lightWeapon
-      : idleClass === 'heavy'
-        ? snapshot.poses?.heavyWeapon
-        : null;
-    if (!pose) return { active: false, yawDeg: 0, reason: 'no-idle-pose' };
-
-    return {
-      active: true,
-      yawDeg: finite(pose.bodyYaw),
-      reason: `${idleClass}-weapon-idle`,
-    };
-  }
-
   function sync() {
     const composer = global.PlayerBodyTransformComposer;
     const stances = global.WeaponToolStances;
-    if (!composer?.setChannel || !composer?.clearChannel || !stances?.debugSnapshot) {
+    if (!composer?.setChannel || !composer?.clearChannel || !stances?.idleBodyYawSnapshot) {
       lastReason = 'waiting-for-runtime';
       global.requestAnimationFrame(sync);
       return;
     }
 
-    const resolved = resolveIdleYaw(stances.debugSnapshot());
-    if (resolved.active && Math.abs(resolved.yawDeg) > 1e-6) {
-      composer.setChannel(CHANNEL, {
+    const resolved = stances.idleBodyYawSnapshot(idleState);
+    const playerMesh = composer.getPlayerMesh?.() || null;
+    const composerChanged = composer !== lastComposer || playerMesh !== lastPlayerMesh;
+    const resolvedYawDeg = finite(resolved.yawDeg);
+    if (resolved.active && Math.abs(resolvedYawDeg) > 1e-6) {
+      if (composerChanged || lastYawDeg !== resolvedYawDeg) composer.setChannel(CHANNEL, {
         priority: 5,
         mode: 'additive',
-        rotation: { pitch: 0, yaw: resolved.yawDeg * DEG_TO_RAD, roll: 0 },
+        rotation: { pitch: 0, yaw: resolvedYawDeg * DEG_TO_RAD, roll: 0 },
       });
-      lastYawDeg = resolved.yawDeg;
+      lastYawDeg = resolvedYawDeg;
     } else {
-      composer.clearChannel(CHANNEL);
+      if (lastYawDeg != null || composerChanged) composer.clearChannel(CHANNEL);
       lastYawDeg = null;
     }
+    lastComposer = composer;
+    lastPlayerMesh = playerMesh;
     lastReason = resolved.reason;
     global.requestAnimationFrame(sync);
   }

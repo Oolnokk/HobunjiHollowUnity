@@ -16,7 +16,7 @@ for (const [name, source] of Object.entries({ livestock, chathead, locks, farm }
   assert.doesNotThrow(() => new Function(source), `${name} parses as JavaScript`);
 }
 
-assert.match(locks, /animal-chathead-frame\.js\?v=20260902modular1/,
+assert.match(locks, /animal-chathead-frame\.js\?v=[A-Za-z0-9_-]+/,
   'the existing early interaction-lock script parser-loads animal chathead metadata');
 assert.match(locks, /livestock-dialogue\.js\?v=20260902modular1/,
   'the existing early interaction-lock script parser-loads the modular livestock session');

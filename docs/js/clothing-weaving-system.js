@@ -891,7 +891,7 @@
   function loadImageUrl(url) {
     if (!url) return Promise.resolve(null);
     if (typeof window.loadImg === 'function' && !String(url).startsWith('data:')) return window.loadImg(normalizeAssetPath(url));
-    return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = url; });
+    return new Promise((resolve, reject) => { const image = new Image(); image.crossOrigin = 'anonymous'; image.onload = () => resolve(image); image.onerror = reject; image.src = url; });
   }
 
   function patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix = '') {

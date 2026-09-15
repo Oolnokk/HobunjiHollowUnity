@@ -109,6 +109,7 @@
   // ── panel stack ─────────────────────────────────────────────────────
   let stack = [];
   const lastFocusedByPanel = new WeakMap();
+  const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
 
   // Every [data-ctrl-panel] root (menuPanel, npcDialogue, dyePanel,
@@ -128,22 +129,25 @@
   }
 
   function visiblePanels() {
-    const panels = Array.from(document.querySelectorAll(PANEL_SELECTOR));
-    panels.forEach(watchPanelAttributes);
-    return panels.filter(panelVisible);
+    const visible = [];
+    for (const panel of knownPanels) {
+      if (!panel?.isConnected) {
+        knownPanels.delete(panel);
+        continue;
+      }
+      if (panelVisible(panel)) visible.push(panel);
+    }
+    return visible;
   }
 
   function activePanel() {
     return stack.length ? stack[stack.length - 1] : null;
   }
 
-  // Reconciling is cheap (a handful of tagged panels at most) and every
-  // caller — game.js's per-frame gate, our own keydown handler, external
-  // test hooks — wants an up-to-the-instant answer rather than whatever the
-  // last background poll tick happened to see, so just check fresh every
-  // time instead of trusting a cached stack between ticks.
+  // This is a gameplay hot path: game.js asks every frame and controller
+  // polling may ask again. Panel mutations keep `stack` current, so this read
+  // must not query the DOM or force computed style/layout.
   function isActive() {
-    reconcileStack();
     return stack.length > 0;
   }
 
@@ -419,25 +423,10 @@
 
   let prevButtons = new Set();
   let menuOpenEdge = false;
-  let lastReconcileAt = 0;
   let lastGamepadPollAt = 0; // Used to keep analog right-stick menu scrolling independent of display refresh rate.
-  const RECONCILE_POLL_MS = 120;
 
   function pollGamepad(frame) {
     const now = frame.now;
-    // Panels in this game mostly close via a CSS opacity transition (e.g.
-    // #menuPanel's `transition: opacity 0.2s`), not an instant display:none
-    // — the MutationObserver below fires the instant the class/attribute
-    // changes, which is mid-transition, so isVisible() can still read a
-    // not-quite-zero opacity right then and miss the close entirely with
-    // nothing left to ever re-check it. A cheap periodic re-check (this
-    // already-always-running frame loop) closes that gap without giving up
-    // the MutationObserver's instant response for ordinary display:none
-    // toggles, which have no such lag.
-    if (!now || now - lastReconcileAt >= RECONCILE_POLL_MS) {
-      lastReconcileAt = now || performance.now();
-      reconcileStack();
-    }
     if (!frame.focused) return;
     const pad = frame.pad; // Resolved once per frame by the shared polling authority.
     if (!pad) { prevButtons.clear(); menuOpenEdge = false; return; }
@@ -542,8 +531,56 @@
   // mutation anywhere in the entire game UI — item icons, tooltips, HUD
   // updates, hover states — which showed up as ~5% of total frame time
   // spent just in querySelectorAll during ordinary inventory browsing.
-  const structuralObserver = new MutationObserver(() => reconcileStack());
-  const attrObserver = new MutationObserver(() => reconcileStack());
+  let reconcileQueued = false;
+  let visibilityEarlyTimer = 0; // Catches the first rendered frame of an opening opacity transition without restoring continuous polling.
+  let visibilitySettleTimer = 0; // Rechecks after opacity transitions without polling layout throughout gameplay.
+  function scheduleReconcile() {
+    if (reconcileQueued) return;
+    reconcileQueued = true;
+    queueMicrotask(() => {
+      reconcileQueued = false;
+      reconcileStack();
+    });
+  }
+  function scheduleVisibilitySettle() {
+    clearTimeout(visibilityEarlyTimer);
+    clearTimeout(visibilitySettleTimer);
+    visibilityEarlyTimer = setTimeout(() => {
+      visibilityEarlyTimer = 0;
+      reconcileStack();
+    }, 32);
+    visibilitySettleTimer = setTimeout(() => {
+      visibilitySettleTimer = 0;
+      reconcileStack();
+    }, 240);
+  }
+  function registerPanel(panel) {
+    if (!panel?.matches?.(PANEL_SELECTOR)) return false;
+    const added = !knownPanels.has(panel);
+    knownPanels.add(panel);
+    watchPanelAttributes(panel);
+    return added;
+  }
+  function registerPanelsIn(node) {
+    if (!node || node.nodeType !== 1) return false;
+    let changed = registerPanel(node);
+    for (const panel of node.querySelectorAll?.(PANEL_SELECTOR) || []) changed = registerPanel(panel) || changed;
+    return changed;
+  }
+  const structuralObserver = new MutationObserver((records) => {
+    let panelTreeChanged = false;
+    for (const record of records) {
+      for (const node of record.addedNodes) panelTreeChanged = registerPanelsIn(node) || panelTreeChanged;
+      for (const node of record.removedNodes) {
+        if (node.nodeType === 1 && (node.matches?.(PANEL_SELECTOR) || node.querySelector?.(PANEL_SELECTOR))) panelTreeChanged = true;
+      }
+    }
+    if (panelTreeChanged) scheduleReconcile();
+  });
+  const attrObserver = new MutationObserver(() => {
+    scheduleReconcile();
+    scheduleVisibilitySettle();
+  });
   const attrWatchedPanels = new WeakSet();
   function watchPanelAttributes(panel) {
     if (attrWatchedPanels.has(panel)) return;
@@ -552,9 +589,13 @@
   }
   function startObserving() {
     structuralObserver.observe(document.body, { childList: true, subtree: true });
+    document.body.addEventListener('transitionend', (event) => {
+      if (event.target?.matches?.(PANEL_SELECTOR)) scheduleReconcile();
+    }, true);
   }
   function boot() {
     if (!document.body) { document.addEventListener('DOMContentLoaded', boot, { once: true }); return; }
+    registerPanelsIn(document.body);
     startObserving();
     reconcileStack();
   }
@@ -582,6 +623,7 @@
       const panel = activePanel();
       return {
         stackDepth: stack.length,
+        knownPanels: knownPanels.size,
         panelId: panel?.id || panel?.className || null,
         targetTag: currentTarget?.tagName || null,
         targetId: currentTarget?.id || null,

@@ -279,6 +279,7 @@
     if (heartImagePromise) return heartImagePromise;
     heartImagePromise = new Promise(resolve => {
       const image = new Image(); // Used to paint icon_heart.png into each WorldPopupText canvas.
+      image.crossOrigin = 'anonymous';
       image.onload = () => resolve(image);
       image.onerror = () => resolve(null);
       image.src = ICONS.heart;

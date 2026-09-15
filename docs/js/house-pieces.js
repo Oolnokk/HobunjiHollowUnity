@@ -9,7 +9,7 @@
   const scripts = [
     ['SurfaceTint', 'surface-tint.js?v=20260813c'],
     ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813b'],
-    ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260813a'],
+    ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260915perf1'],
     ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20260812a'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],

@@ -258,7 +258,7 @@
   const current = document.currentScript; // Resolves every animal/fey module beside repo-picker.js regardless of hosting prefix/commit URL.
   const moduleUrl = (name, version) => current?.src ? new URL(`${name}?v=${version}`, current.src).href : `../../js/${name}?v=${version}`;
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20260905feyhat1');
-  const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260905feyhat1');
+  const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
   const source = moduleUrl('character-studio-animal-appearance.js', '20260905animalnpc1');
   const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20260905feyhat1');
 
