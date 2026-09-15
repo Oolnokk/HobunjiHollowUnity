@@ -171,8 +171,22 @@
   // packClothing entry without re-deriving its slot.
   async function rollBanditRoster(cfg, rank, nameOverride) {
     const speciesId = _banditWeightedPick(cfg?.speciesWeights) || 'mao-ao';
-    const gender = deps.rnd() < 0.5 ? 'male' : 'female';
     const speciesDef = await loadBanditSpeciesDef(speciesId);
+    // Not every species has authored art for both genders -- porakaneki is
+    // currently male-only (see config/species/porakaneki.json, which has no
+    // "female" block, and porakaneki-species-runtime.js's own GENDERS
+    // constant). A blind 50/50 roll here used to send npc-avatar-preview-
+    // utils.js's selectFighter looking for a fighter that doesn't exist, and
+    // its own fallback (fighters[0], NOT filtered by species) silently
+    // handed back whatever species happens to be first in the roster
+    // instead -- a porakaneki roll would render as some unrelated species
+    // (mao-ao in practice) about half the time, with def/stats/speciesId
+    // still correctly "porakaneki" underneath. Only roll among genders this
+    // species' own def actually has a block for.
+    const availableGenders = ['male', 'female'].filter(g => speciesDef?.[g]);
+    const gender = availableGenders.length
+      ? availableGenders[Math.floor(deps.rnd() * availableGenders.length)]
+      : (deps.rnd() < 0.5 ? 'male' : 'female'); // speciesDef failed to load -- preserve the old blind roll rather than force one gender.
     const slots = cfg?.clothingPool?.slots || [];
     const fillP = Number(cfg?.clothingPool?.fillProbabilityByRank?.[rank] ?? 0.5);
     const equippedCosmetics = [];
