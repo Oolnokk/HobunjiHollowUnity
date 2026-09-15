@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (Number(window.WorldPopupRelationshipEditor?.version) >= 5) return;
+  if (Number(window.WorldPopupRelationshipEditor?.version) >= 6) return;
   if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return;
 
   const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the shared runtime relationship bridge from this editor helper.
@@ -30,6 +30,7 @@
   const previewScene = () => editorValue('previewScene'); // Used to report renderer initialization state.
   const npcs = () => editorValue('npcs'); // Used to report NPC database state and retry the current character.
   const renderAvatar = () => editorValue('renderAvatar'); // Used to render either a repository NPC or the immediate fallback preview character.
+  const renderGeneration = () => Number(editorValue('renderGeneration')) || 0; // Used to detect when the repository avatar intentionally supersedes an in-flight fallback render.
   const statusFunction = () => editorValue('status'); // Used to preserve the editor's normal status messaging.
 
   function rememberError(message) {
@@ -109,8 +110,16 @@
           state.fallbackAvatar = 'not-needed';
           return true;
         }
+        const generationBeforeFallback = renderGeneration(); // Used to recognize the editor's intended generation-cancellation when a real NPC starts rendering first.
         await render(FALLBACK_NPC);
-        if (!avatarModel()) throw new Error('Fallback render completed without assigning avatarModel.');
+        if (!avatarModel()) {
+          const repositoryWonRace = renderGeneration() > generationBeforeFallback + 1 || (Array.isArray(npcs()) && npcs().length > 0); // Used to treat a later repository render as success rather than a fallback failure.
+          if (repositoryWonRace) {
+            state.fallbackAvatar = 'superseded';
+            return true;
+          }
+          throw new Error('Fallback render completed without assigning avatarModel.');
+        }
         state.fallbackAvatar = 'ready';
         bindBridge();
         return true;
@@ -181,6 +190,7 @@
     const cfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {}; // Used to expose configured Three.js URLs when module boot fails.
     const panel = document.getElementById('worldPopupEditorDiagnostics'); // Used to verify that diagnostics themselves stay fixed to the viewport.
     const visualViewport = window.visualViewport; // Used to distinguish Android visual-viewport movement from actual CSS panel motion.
+    const preview = document.getElementById('preview'); // Used to prove that the 3D pane itself intersects the visible viewport on mobile.
     let modelBounds = 'n/a';
     try {
       if (model && THREE?.Box3 && THREE?.Vector3) {
@@ -189,8 +199,9 @@
       }
     } catch (error) { modelBounds = `error: ${error.message}`; }
     const rect = panel?.getBoundingClientRect?.();
+    const previewRect = preview?.getBoundingClientRect?.();
     return {
-      helper: 5,
+      helper: 6,
       bridgeLoad: state.bridgeLoad,
       bridgeVersion: Number(window.FavorPopupPointsBridge?.version) || 0,
       popupBridgeVersion: Number(popupRuntime()?.__favorPopupPointsBridgeVersion) || 0,
@@ -207,6 +218,7 @@
       avatar: { holder: !!holder, children: Number(holder?.children?.length) || 0, model: !!model, bounds: modelBounds },
       relationship: { active: Number(bridge?.activeRelationshipPopups) || 0, anchor: bridge?.lastAnchor || null, disposed: bridge?.lastDisposedReason || null },
       viewport: { innerHeight: window.innerHeight, visualTop: Number(visualViewport?.offsetTop) || 0, visualHeight: Number(visualViewport?.height) || window.innerHeight },
+      preview: previewRect ? { top: previewRect.top, bottom: previewRect.bottom, height: previewRect.height, visible: previewRect.bottom > 0 && previewRect.top < (Number(visualViewport?.height) || window.innerHeight) } : null,
       panel: rect ? { position: getComputedStyle(panel).position, top: rect.top, bottom: rect.bottom, height: rect.height, transform: getComputedStyle(panel).transform, transition: getComputedStyle(panel).transitionProperty, animation: getComputedStyle(panel).animationName } : null,
       status: document.getElementById('status')?.textContent?.trim() || '(none)',
       errors: [...state.errors],
@@ -216,6 +228,7 @@
   function snapshotText(data = snapshot()) {
     const anchor = data.relationship.anchor;
     const panel = data.panel;
+    const preview = data.preview;
     const lines = [
       'Popup Text Editor diagnostics',
       `helper=v${data.helper} bridgeLoad=${data.bridgeLoad} sharedBridge=v${data.bridgeVersion} popupBridge=v${data.popupBridgeVersion} fallback=${data.fallbackAvatar}`,
@@ -225,6 +238,7 @@
       `avatar holder=${data.avatar.holder ? 'yes' : 'NO'} children=${data.avatar.children} model=${data.avatar.model ? 'yes' : 'NO'} bounds=${data.avatar.bounds}`,
       `relationship active=${data.relationship.active} anchor=${anchor ? `${anchor.source} world=(${Number(anchor.world?.x).toFixed(3)},${Number(anchor.world?.y).toFixed(3)},${Number(anchor.world?.z).toFixed(3)})` : 'none yet'} disposed=${data.relationship.disposed || 'none'}`,
       `viewport innerH=${data.viewport.innerHeight.toFixed(1)} visualTop=${data.viewport.visualTop.toFixed(1)} visualH=${data.viewport.visualHeight.toFixed(1)}`,
+      `preview=${preview ? `top=${preview.top.toFixed(1)} bottom=${preview.bottom.toFixed(1)} h=${preview.height.toFixed(1)} visible=${preview.visible ? 'YES' : 'NO'}` : 'not mounted'}`,
       `debug panel=${panel ? `${panel.position} top=${panel.top.toFixed(1)} bottom=${panel.bottom.toFixed(1)} h=${panel.height.toFixed(1)} transform=${panel.transform} transition=${panel.transition} animation=${panel.animation}` : 'not mounted'}`,
       `status: ${data.status}`,
       `Three URL: ${data.three.url}`,
@@ -238,8 +252,8 @@
     if (document.getElementById('worldPopupEditorDiagnostics')) return;
     const panel = document.createElement('div'); // Used as a pure screen-space HUD; it is deliberately not parented under #preview or any moving world/scene surface.
     panel.id = 'worldPopupEditorDiagnostics';
-    panel.style.cssText = 'position:fixed!important;z-index:2147483646!important;right:8px!important;top:max(8px,env(safe-area-inset-top))!important;left:auto!important;bottom:auto!important;width:min(520px,calc(100vw - 16px))!important;max-width:calc(100vw - 16px)!important;max-height:min(42vh,360px)!important;overflow:auto!important;background:rgba(3,8,14,.96)!important;border:1px solid rgba(255,255,255,.24)!important;border-radius:9px!important;padding:7px 8px!important;color:#dbeafe!important;font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace!important;box-shadow:0 4px 18px rgba(0,0,0,.45)!important;transform:none!important;transition:none!important;animation:none!important;will-change:auto!important;contain:layout paint style!important;overscroll-behavior:contain!important;touch-action:pan-y!important;pointer-events:auto!important';
-    panel.innerHTML = `<div style="display:flex;align-items:center;gap:6px;position:sticky;top:0;background:rgba(3,8,14,.98);padding-bottom:5px"><b style="font:700 11px system-ui,sans-serif">Preview debug</b><span style="flex:1"></span><button type="button" data-retry style="padding:4px 7px;font-size:10px">Retry avatar</button><button type="button" data-copy style="padding:4px 7px;font-size:10px">Copy</button><button type="button" data-toggle style="padding:4px 7px;font-size:10px">Hide</button></div><pre data-output style="margin:0;white-space:pre-wrap;word-break:break-word"></pre>`;
+    panel.style.cssText = 'position:fixed!important;z-index:2147483646!important;right:8px!important;top:max(8px,env(safe-area-inset-top))!important;left:auto!important;bottom:auto!important;width:min(520px,calc(100vw - 16px))!important;max-width:calc(100vw - 16px)!important;max-height:34px!important;overflow:auto!important;background:rgba(3,8,14,.96)!important;border:1px solid rgba(255,255,255,.24)!important;border-radius:9px!important;padding:7px 8px!important;color:#dbeafe!important;font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace!important;box-shadow:0 4px 18px rgba(0,0,0,.45)!important;transform:none!important;transition:none!important;animation:none!important;will-change:auto!important;contain:layout paint style!important;overscroll-behavior:contain!important;touch-action:pan-y!important;pointer-events:auto!important';
+    panel.innerHTML = `<div style="display:flex;align-items:center;gap:6px;position:sticky;top:0;background:rgba(3,8,14,.98);padding-bottom:5px"><b style="font:700 11px system-ui,sans-serif">Preview debug</b><span style="flex:1"></span><button type="button" data-retry style="padding:4px 7px;font-size:10px">Retry avatar</button><button type="button" data-copy style="padding:4px 7px;font-size:10px">Copy</button><button type="button" data-toggle style="padding:4px 7px;font-size:10px">Show</button></div><pre data-output style="display:none;margin:0;white-space:pre-wrap;word-break:break-word"></pre>`;
     document.body.appendChild(panel);
     panel.querySelector('[data-retry]').addEventListener('click', retryAvatar);
     panel.querySelector('[data-copy]').addEventListener('click', async () => {
@@ -310,7 +324,7 @@
     }, 500);
   }
 
-  window.WorldPopupRelationshipEditor = Object.freeze({ version: 5, install, play, retryAvatar, ensureVisibleAvatar, snapshot });
+  window.WorldPopupRelationshipEditor = Object.freeze({ version: 6, install, play, retryAvatar, ensureVisibleAvatar, snapshot });
   window.__worldPopupRelationshipEditorDebug = () => snapshot();
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
