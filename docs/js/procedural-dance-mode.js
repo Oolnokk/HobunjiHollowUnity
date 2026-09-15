@@ -4,6 +4,7 @@
 
   const SELF_SCRIPT_SRC = document.currentScript?.src || ''; // Keeps every Dance adapter on the same branch/commit as this loader.
   const CORE_SCRIPT_ID = 'proceduralDanceModeCoreScript'; // Prevents duplicate Dance-core execution if the adapter is evaluated twice.
+  const IDLE_ARMS_SCRIPT_ID = 'proceduralEditorIdleArmParityScript'; // Prevents duplicate loading of the gameplay/Attack Editor free-hand default adapter.
   const GENERATED_RIG_SUFFIX = '_procedural_feet'; // Matches the runtime hierarchy name Dance already knows how to consume.
 
   function updateVisibleStatus(message, good = true) {
@@ -359,7 +360,20 @@
 
   function refreshLatestChange() {
     const latest = document.querySelector('#proceduralDancePanel .danceLatest');
-    if (latest) latest.textContent = 'Latest change: added generated arm bones (Raise + reach / T-pose jiggle / Overhead punch) and a hip-roll weight shift, plus authored foot GLB auto-loading.';
+    if (latest) latest.textContent = 'Latest change: generated hands now default to the same shoulder X + posterior Y + authored arm length used by gameplay and the Attack Animation Editor; explicit Dance arm poses still override it.';
+  }
+
+  function loadIdleArmParity() {
+    if (window.HobunjiProceduralEditorIdleArms?.installed || document.getElementById(IDLE_ARMS_SCRIPT_ID)) return;
+    const script = document.createElement('script'); // Loads the isolated default-hand adapter without adding arm-placement logic to the giant procedural editor HTML.
+    script.id = IDLE_ARMS_SCRIPT_ID;
+    script.async = false;
+    script.src = SELF_SCRIPT_SRC ? new URL('procedural-editor-idle-arm-parity.js', SELF_SCRIPT_SRC).href : new URL('../../js/procedural-editor-idle-arm-parity.js', window.location.href).href;
+    script.addEventListener('error', () => {
+      updateVisibleStatus(`Idle arm parity failed to load: ${script.src}`, false);
+      editorLog(`[Idle arms] Failed to load ${script.src}`, 'error');
+    });
+    document.head.appendChild(script);
   }
 
   function loadDanceCore() {
@@ -381,5 +395,6 @@
 
   installCanonicalEditorLegBoneToggle();
   installEditorGeneratedFeetDanceBridge();
+  loadIdleArmParity();
   loadDanceCore();
 })();
