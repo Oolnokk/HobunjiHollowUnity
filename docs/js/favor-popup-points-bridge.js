@@ -1,111 +1,567 @@
 (() => {
   'use strict';
 
-  if (Number(window.FavorPopupPointsBridge?.version) >= 2) return;
+  if (Number(window.FavorPopupPointsBridge?.version) >= 9) return;
 
-  const debugState = { hardenedPopups: 0, lastHardenedPopup: null }; // Used by snapshot() to make relationship-popup render repairs visible in mobile diagnostics.
+  const MODULE_SRC = document.currentScript?.src || '';
+  const HEART_URL = MODULE_SRC ? new URL('../assets/hud/generic_icons/icon_heart.png', MODULE_SRC).href : 'assets/hud/generic_icons/icon_heart.png';
+  const POPUP_FONT_FAMILY = "'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace";
+  const RAPPORT_HEART_COLOR = '#ffd84d';
+  const FAVOR_HEART_COLOR = '#ff8fbd';
+  const RELATIONSHIP_GAIN_COLOR = '#66d96f';
+  const RELATIONSHIP_LOSS_COLOR = '#ff5b5b';
+  const HEART_RENDER_ORDER = 1211;
+  const VALUE_RENDER_ORDER = 1210;
+  const RELATIONSHIP_ALPHA_TEST = 0.001;
+  const HEART_WORLD_RATIO = 0.90;
+  const VALUE_WORLD_RATIO = 0.78;
+  const FLOAT_PLUS_MOTION = Object.freeze({ riseWorld: 0.075, swayHeightRatio: 0.12, fadeStart: 0.72 });
+  const DEFAULT_FLOAT_PLUS = Object.freeze({ worldHeight: 0.13, xOffsetPercent: 50, yOffsetPercent: -10, lifetimeMs: 1150 });
+  const DEFAULT_HEART_STYLE = Object.freeze({ opacity: 0.90, glowPx: 29, spacingPercent: 14 });
 
+  const relationshipPopups = [];
+  const debugState = { hardenedPopups: 0, lastHardenedPopup: null, lastAnchor: null, lastDisposedReason: null, lastLayout: null, lastHeart: null, depsCaptured: false };
+  let deps = null;
+  let heartImagePromise = null;
+  let editorControlRetry = 0;
+  let liveSettings = { floatPlus: { ...DEFAULT_FLOAT_PLUS }, relationshipHeart: { ...DEFAULT_HEART_STYLE } };
+
+  const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  function captureSettings(value) {
+    if (!value || typeof value !== 'object') return liveSettings;
+    const incomingFloat = value.floatPlus || {};
+    const incomingHeart = value.relationshipHeart || {};
+    liveSettings = {
+      ...liveSettings,
+      floatPlus: {
+        worldHeight: clamp(finite(incomingFloat.worldHeight, liveSettings.floatPlus.worldHeight), 0.02, 1),
+        xOffsetPercent: clamp(finite(incomingFloat.xOffsetPercent, liveSettings.floatPlus.xOffsetPercent), -100, 100),
+        yOffsetPercent: clamp(finite(incomingFloat.yOffsetPercent, liveSettings.floatPlus.yOffsetPercent), -100, 100),
+        lifetimeMs: Math.max(100, finite(incomingFloat.lifetimeMs, liveSettings.floatPlus.lifetimeMs)),
+      },
+      relationshipHeart: {
+        opacity: clamp(finite(incomingHeart.opacity, liveSettings.relationshipHeart.opacity), 0, 1),
+        glowPx: clamp(finite(incomingHeart.glowPx, liveSettings.relationshipHeart.glowPx), 0, 40),
+        spacingPercent: clamp(finite(incomingHeart.spacingPercent, liveSettings.relationshipHeart.spacingPercent), -50, 50),
+      },
+    };
+    syncEditorHeartControls();
+    return liveSettings;
+  }
+
+  function currentFloatPlus() { return liveSettings.floatPlus || DEFAULT_FLOAT_PLUS; }
+  function currentHeartStyle() { return liveSettings.relationshipHeart || DEFAULT_HEART_STYLE; }
+  function editorValue(expression) {
+    if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return undefined;
+    try { return (0, eval)(expression); } catch (_) { return undefined; }
+  }
+  function editorSettingsObject() {
+    const value = editorValue('settings');
+    return value && typeof value === 'object' ? value : null;
+  }
   function convertFavorHeartDelta(kind, amount) {
     if (kind !== 'favor') return amount;
     const points = window.NpcFavorBalance?.heartsToFavorPoints?.(amount);
-    return Number.isFinite(Number(points)) ? points : amount;
+    return Number.isFinite(Number(points)) ? Number(points) : amount;
+  }
+  function signedRelationshipAmount(amount) {
+    const value = Math.round((Number(amount) || 0) * 10) / 10;
+    return Object.is(value, -0) ? 0 : value;
+  }
+  function relationshipHeartColor(kind) { return kind === 'favor' ? FAVOR_HEART_COLOR : RAPPORT_HEART_COLOR; }
+  function relationshipNumberColor(amount) { return amount > 0 ? RELATIONSHIP_GAIN_COLOR : RELATIONSHIP_LOSS_COLOR; }
+  function spritePngSurface() { return window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit || null; }
+
+  function loadHeartImage() {
+    if (heartImagePromise) return heartImagePromise;
+    heartImagePromise = new Promise(resolve => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = () => {
+        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: true, imageWidth: Number(image.naturalWidth || image.width) || 0, imageHeight: Number(image.naturalHeight || image.height) || 0, crossOrigin: image.crossOrigin || '', url: HEART_URL, at: Date.now() };
+        resolve(image);
+      };
+      image.onerror = () => {
+        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: false, imageWidth: 0, imageHeight: 0, crossOrigin: image.crossOrigin || '', url: HEART_URL, at: Date.now() };
+        resolve(null);
+      };
+      image.src = HEART_URL;
+    });
+    return heartImagePromise;
   }
 
-  function hardenRelationshipPopupEvent(event, kind) {
-    const plane = event?.plane; // Used to keep relationship canvases out of the inverted-shell outline pass.
-    if (!plane) return event;
+  function rootScene(root) {
+    let node = root;
+    while (node && !node.isScene) node = node.parent;
+    return node || null;
+  }
+  function avatarRootWithPortraitMetadata(root) {
+    let avatarRoot = null;
+    root?.traverse?.(child => { if (!avatarRoot && Number.isFinite(Number(child.userData?.portraitModelHeight))) avatarRoot = child; });
+    return avatarRoot;
+  }
 
-    plane.userData ||= {};
+  function floatPlusAnchorWorld(root) {
+    const THREE = deps?.THREE || window.THREE;
+    if (!THREE || !root) return null;
+    const cfg = currentFloatPlus();
+    const avatarRoot = avatarRootWithPortraitMetadata(root) || root;
+    const hasPortrait = Number.isFinite(Number(avatarRoot.userData?.portraitModelHeight));
+    const height = hasPortrait ? Number(avatarRoot.userData.portraitModelHeight) : 1;
+    const width = hasPortrait ? (Number(avatarRoot.userData.portraitModelWidth) || height) : 1;
+    const placementRatioRaw = hasPortrait ? Number(avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5) : 0.5;
+    const placementRatio = Number.isFinite(placementRatioRaw) ? placementRatioRaw : 0.5;
+    const verticalOffset = (placementRatio - 0.5) * height;
+    const combinedHeight = height * 0.5 + verticalOffset;
+    const local = new THREE.Vector3(width * cfg.xOffsetPercent / 100, verticalOffset + combinedHeight * cfg.yOffsetPercent / 100, 0);
+    avatarRoot.updateWorldMatrix?.(true, false);
+    if (avatarRoot.localToWorld) avatarRoot.localToWorld(local);
+    else {
+      const fallback = window.WorldPopupText?.avatarCentroidWorld?.(root);
+      if (!fallback) return null;
+      local.copy(fallback);
+      local.x += width * cfg.xOffsetPercent / 100;
+      local.y += combinedHeight * cfg.yOffsetPercent / 100;
+    }
+    debugState.lastAnchor = { source: 'float-plus-live-settings', height, width, placementRatio, xOffsetPercent: cfg.xOffsetPercent, yOffsetPercent: cfg.yOffsetPercent, world: { x: local.x, y: local.y, z: local.z }, at: Date.now() };
+    return local;
+  }
+
+  function floatPlusFrame(root, progress, eventHeight) {
+    const THREE = deps?.THREE || window.THREE;
+    const camera = deps?.camera;
+    if (!THREE || !camera) return null;
+    const center = floatPlusAnchorWorld(root);
+    if (!center) return null;
+    const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    center.addScaledVector(cameraRight, Math.sin(progress * Math.PI) * eventHeight * FLOAT_PLUS_MOTION.swayHeightRatio);
+    center.y += FLOAT_PLUS_MOTION.riseWorld * (1 - Math.pow(1 - progress, 2));
+    const opacity = progress < FLOAT_PLUS_MOTION.fadeStart ? 1 : Math.max(0, (1 - progress) / (1 - FLOAT_PLUS_MOTION.fadeStart));
+    return { position: center, quaternion: camera.quaternion, opacity };
+  }
+
+  function canvasTexture(canvas, debugName = '') {
+    const THREE = deps?.THREE || window.THREE;
+    const texture = new THREE.CanvasTexture(canvas);
+    if (debugName) texture.name = debugName;
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in texture && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function finishPlanePart(canvas, texture, material, aspect, renderOrder) {
+    const THREE = deps?.THREE || window.THREE;
+    const geometry = new THREE.PlaneGeometry(aspect, 1);
+    const plane = new THREE.Mesh(geometry, material);
+    plane.renderOrder = renderOrder;
+    plane.frustumCulled = false;
+    plane.userData.isBillboard = true;
     plane.userData.noOutline = true;
     plane.userData.hobunjiWorldTextOverlay = true;
     plane.layers?.disable?.(1);
     plane.castShadow = false;
     plane.receiveShadow = false;
+    return { canvas, texture, geometry, material, plane };
+  }
 
-    const material = event?.material || plane.material; // Used to preserve transparent world-text rendering even if another runtime mutates the material defaults.
-    if (material) {
+  function makeTransparentPart(canvas, aspect, renderOrder) {
+    const THREE = deps?.THREE || window.THREE;
+    const texture = canvasTexture(canvas, 'relationship_value_texture');
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: RELATIONSHIP_ALPHA_TEST, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    return finishPlanePart(canvas, texture, material, aspect, renderOrder);
+  }
+
+  function makeHeartMask(image, color) {
+    const mask = document.createElement('canvas');
+    mask.width = 240;
+    mask.height = 240;
+    const context = mask.getContext('2d');
+    context.clearRect(0, 0, mask.width, mask.height);
+    let usedFallbackGlyph = false;
+    if (image) {
+      const sourceW = Math.max(1, Number(image.naturalWidth || image.width) || 1);
+      const sourceH = Math.max(1, Number(image.naturalHeight || image.height) || 1);
+      const drawW = 184;
+      const drawH = drawW * sourceH / sourceW;
+      const x = (mask.width - drawW) * 0.5;
+      const y = (mask.height - drawH) * 0.5;
+      context.drawImage(image, x, y, drawW, drawH);
+      context.globalCompositeOperation = 'source-in';
+      context.fillStyle = color;
+      context.fillRect(0, 0, mask.width, mask.height);
+      context.globalCompositeOperation = 'source-over';
+    } else {
+      usedFallbackGlyph = true;
+      context.font = '700 170px serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillStyle = color;
+      context.fillText('♥', mask.width / 2, mask.height / 2 + 5);
+    }
+    return { mask, usedFallbackGlyph };
+  }
+
+  function makeHeartPart(image, color) {
+    const THREE = deps?.THREE || window.THREE;
+    const style = currentHeartStyle();
+    const canvas = document.createElement('canvas');
+    canvas.width = 240;
+    canvas.height = 240;
+    const context = canvas.getContext('2d');
+    const { mask, usedFallbackGlyph } = makeHeartMask(image, color);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (style.glowPx > 0) {
+      context.save();
+      context.shadowColor = color;
+      context.shadowBlur = style.glowPx;
+      context.shadowOffsetX = 0;
+      context.shadowOffsetY = 0;
+      context.drawImage(mask, 0, 0);
+      context.restore();
+    }
+    context.drawImage(mask, 0, 0);
+
+    let nonTransparentPixels = -1;
+    let maxAlpha = -1;
+    let canvasReadError = '';
+    try {
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      nonTransparentPixels = 0;
+      maxAlpha = 0;
+      for (let index = 3; index < pixels.length; index += 4) {
+        const alpha = pixels[index];
+        if (alpha > 0) nonTransparentPixels += 1;
+        if (alpha > maxAlpha) maxAlpha = alpha;
+      }
+    } catch (error) {
+      canvasReadError = `${error?.name || 'Error'}: ${error?.message || error}`;
+    }
+
+    const pngSurface = spritePngSurface();
+    const texture = pngSurface?.makeCanvasTexture ? pngSurface.makeCanvasTexture(THREE, canvas, 'relationship_heart_texture') : canvasTexture(canvas, 'relationship_heart_texture_fallback');
+    const alphaTest = typeof pngSurface?.alphaTest === 'function' ? Number(pngSurface.alphaTest()) || RELATIONSHIP_ALPHA_TEST : RELATIONSHIP_ALPHA_TEST;
+    const materialOverrides = { transparent: true, opacity: style.opacity, alphaTest, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide };
+    const material = pngSurface?.makeMaterial ? pngSurface.makeMaterial(THREE, texture, 'relationship_heart_material', materialOverrides) : new THREE.MeshBasicMaterial({ map: texture, ...materialOverrides });
+    debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: !!image, imageWidth: Number(image?.naturalWidth || image?.width) || 0, imageHeight: Number(image?.naturalHeight || image?.height) || 0, crossOrigin: image?.crossOrigin || '', usedFallbackGlyph, nonTransparentPixels, maxAlpha, canvasReadError, canonicalPngSurface: !!pngSurface, canonicalTextureFactory: !!pngSurface?.makeCanvasTexture, canonicalMaterialFactory: !!pngSurface?.makeMaterial, alphaTest, maxOpacity: style.opacity, glowBlurPx: style.glowPx, spacingPercent: style.spacingPercent, url: HEART_URL, at: Date.now() };
+    return finishPlanePart(canvas, texture, material, 1, HEART_RENDER_ORDER);
+  }
+
+  function makeValuePart(label, color) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    const fontPx = 68;
+    context.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
+    canvas.width = Math.max(96, Math.ceil(context.measureText(label).width + 30));
+    canvas.height = 92;
+    context.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
+    context.textAlign = 'left';
+    context.textBaseline = 'middle';
+    context.lineJoin = 'round';
+    context.lineWidth = 9;
+    context.strokeStyle = 'rgba(15,10,8,.92)';
+    context.strokeText(label, 15, canvas.height / 2);
+    context.fillStyle = color;
+    context.fillText(label, 15, canvas.height / 2);
+    return makeTransparentPart(canvas, canvas.width / canvas.height, VALUE_RENDER_ORDER);
+  }
+
+  function layoutLikeChathead(group, heartPart, valuePart, worldHeight) {
+    const style = currentHeartStyle();
+    const heartWorldSize = worldHeight * HEART_WORLD_RATIO;
+    const valueWorldHeight = worldHeight * VALUE_WORLD_RATIO;
+    heartPart.plane.scale.setScalar(heartWorldSize);
+    valuePart.plane.scale.setScalar(valueWorldHeight);
+    const valueWidth = (valuePart.canvas.width / valuePart.canvas.height) * valueWorldHeight;
+    const gap = heartWorldSize * style.spacingPercent / 100;
+    const totalWidth = heartWorldSize + gap + valueWidth;
+    heartPart.plane.position.x = -totalWidth / 2 + heartWorldSize / 2;
+    valuePart.plane.position.x = -totalWidth / 2 + heartWorldSize + gap + valueWidth / 2;
+    if (heartPart.plane.parent !== group) group.add(heartPart.plane);
+    if (valuePart.plane.parent !== group) group.add(valuePart.plane);
+    debugState.lastLayout = { type: 'chathead-style-heart-plus-value', heartWorldSize, valueWorldHeight, valueWidth, spacingPercent: style.spacingPercent, gap, totalWidth, at: Date.now() };
+  }
+
+  function hardenRelationshipPopupEvent(event) {
+    const parts = [event?.heartPart, event?.valuePart].filter(Boolean);
+    for (const part of parts) {
+      const { plane, material, texture } = part;
+      plane.userData ||= {};
+      plane.userData.noOutline = true;
+      plane.userData.hobunjiWorldTextOverlay = true;
+      plane.layers?.disable?.(1);
+      plane.castShadow = false;
+      plane.receiveShadow = false;
       material.transparent = true;
+      material.alphaTest = Number(material.alphaTest) || RELATIONSHIP_ALPHA_TEST;
       material.depthTest = false;
       material.depthWrite = false;
       material.fog = false;
       material.needsUpdate = true;
+      texture.needsUpdate = true;
     }
-
-    const texture = event?.texture || material?.map; // Used to force the just-painted canvas upload before the popup reaches the final overlay pass.
-    if (texture) texture.needsUpdate = true;
-
     debugState.hardenedPopups += 1;
-    debugState.lastHardenedPopup = {
-      kind: String(kind || event?.kind || 'relationship'),
-      value: Number(event?.value) || 0,
-      renderOrder: Number(plane.renderOrder) || 0,
-      layerMask: Number(plane.layers?.mask) || 0,
-      at: Date.now(),
-    };
+    debugState.lastHardenedPopup = { kind: event.kind, value: event.value, layout: 'chathead-style-heart-plus-value', childPlanes: parts.length, heartUsesCanonicalPngSurface: !!debugState.lastHeart?.canonicalMaterialFactory, alphaTest: Number(event?.heartPart?.material?.alphaTest) || RELATIONSHIP_ALPHA_TEST, at: Date.now() };
     return event;
   }
 
-  function hardenRelationshipPopupResult(result, kind) {
-    if (result && typeof result.then === 'function') {
-      return result.then(event => hardenRelationshipPopupEvent(event, kind));
+  function disposePart(part) {
+    part?.plane?.parent?.remove(part.plane);
+    part?.geometry?.dispose?.();
+    part?.material?.dispose?.();
+    part?.texture?.dispose?.();
+  }
+  function disposeRelationshipPopup(event, reason = 'expired') {
+    event?.group?.parent?.remove(event.group);
+    disposePart(event?.heartPart);
+    disposePart(event?.valuePart);
+    debugState.lastDisposedReason = reason;
+  }
+  function clearRelationshipPopups() { while (relationshipPopups.length) disposeRelationshipPopup(relationshipPopups.pop(), 'clear'); }
+
+  async function spawnRelationshipPopup(root, kind, amount, options = {}) {
+    const api = window.WorldPopupText;
+    const THREE = deps?.THREE || window.THREE;
+    const rawAmount = kind === 'favor' && !options.amountIsPoints ? convertFavorHeartDelta(kind, amount) : amount;
+    const value = signedRelationshipAmount(rawAmount);
+    if (!api || !THREE || !root || !value) return null;
+    const scene = rootScene(root);
+    if (!scene) return null;
+    const image = await loadHeartImage();
+    if (!root.parent || rootScene(root) !== scene) return null;
+    const cfg = currentFloatPlus();
+    const style = currentHeartStyle();
+    const heartColor = relationshipHeartColor(kind);
+    const numberColor = relationshipNumberColor(value);
+    const label = `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
+    const heartPart = makeHeartPart(image, heartColor);
+    const valuePart = makeValuePart(label, numberColor);
+    const group = new THREE.Group();
+    group.name = `relationship_popup_${kind}`;
+    layoutLikeChathead(group, heartPart, valuePart, cfg.worldHeight);
+    const frame = floatPlusFrame(root, 0, cfg.worldHeight);
+    if (!frame) {
+      disposePart(heartPart);
+      disposePart(valuePart);
+      return null;
     }
-    return hardenRelationshipPopupEvent(result, kind);
+    group.position.copy(frame.position);
+    group.quaternion.copy(frame.quaternion);
+    const event = { kind, root, group, heartPart, valuePart, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, worldHeight: cfg.worldHeight, spacingPercent: style.spacingPercent, value, heartColor, numberColor };
+    scene.add(group);
+    relationshipPopups.push(event);
+    return hardenRelationshipPopupEvent(event);
   }
 
-  function wrapRelationshipMethod(api, methodName, transformAmount) {
-    if (typeof api?.[methodName] !== 'function') return false;
-    const original = api[methodName].bind(api); // Used to preserve the relationship popup implementation already installed by generic-hud-icons.js.
-    api[methodName] = function hardenedRelationshipPopup(root, ...args) {
-      const nextArgs = typeof transformAmount === 'function' ? transformAmount(args) : args;
-      const kind = methodName.includes('Favor') ? 'favor' : methodName.includes('Rapport') ? 'rapport' : nextArgs[0]; // Used only for debug labeling after the existing renderer returns its event.
-      return hardenRelationshipPopupResult(original(root, ...nextArgs), kind);
+  function updateRelationshipPopups(now) {
+    const camera = deps?.camera;
+    if (!camera) return;
+    const cfg = currentFloatPlus();
+    const style = currentHeartStyle();
+    for (let index = relationshipPopups.length - 1; index >= 0; index--) {
+      const event = relationshipPopups[index];
+      const progress = Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
+      if (!event.root?.parent || progress >= 1) {
+        disposeRelationshipPopup(event, !event.root?.parent ? 'detached-root' : 'expired');
+        relationshipPopups.splice(index, 1);
+        continue;
+      }
+      if (Math.abs(event.worldHeight - cfg.worldHeight) > 0.000001 || Math.abs(event.spacingPercent - style.spacingPercent) > 0.000001) {
+        event.worldHeight = cfg.worldHeight;
+        event.spacingPercent = style.spacingPercent;
+        layoutLikeChathead(event.group, event.heartPart, event.valuePart, event.worldHeight);
+      }
+      const frame = floatPlusFrame(event.root, progress, event.worldHeight);
+      if (!frame) {
+        disposeRelationshipPopup(event, 'missing-anchor');
+        relationshipPopups.splice(index, 1);
+        continue;
+      }
+      event.group.position.copy(frame.position);
+      event.group.quaternion.copy(frame.quaternion);
+      event.heartPart.material.opacity = frame.opacity * style.opacity;
+      event.valuePart.material.opacity = frame.opacity;
+    }
+  }
+
+  function bindDeps(nextDeps) {
+    if (!nextDeps) return false;
+    deps = nextDeps;
+    debugState.depsCaptured = !!(deps?.THREE && deps?.camera);
+    injectEditorHeartControls();
+    return debugState.depsCaptured;
+  }
+
+  function syncEditorHeartControls() {
+    const host = document.getElementById('relationshipHeartStyleControls');
+    if (!host) return;
+    const style = currentHeartStyle();
+    const opacity = host.querySelector('[data-heart-opacity]');
+    const glow = host.querySelector('[data-heart-glow]');
+    const spacing = host.querySelector('[data-heart-spacing]');
+    const opacityOut = host.querySelector('[data-heart-opacity-value]');
+    const glowOut = host.querySelector('[data-heart-glow-value]');
+    const spacingOut = host.querySelector('[data-heart-spacing-value]');
+    if (opacity && document.activeElement !== opacity) opacity.value = String(Math.round(style.opacity * 100));
+    if (glow && document.activeElement !== glow) glow.value = String(Math.round(style.glowPx));
+    if (spacing && document.activeElement !== spacing) spacing.value = String(Math.round(style.spacingPercent));
+    if (opacityOut) opacityOut.textContent = `${Math.round(style.opacity * 100)}%`;
+    if (glowOut) glowOut.textContent = `${Math.round(style.glowPx)}px`;
+    if (spacingOut) spacingOut.textContent = `${Math.round(style.spacingPercent)}%`;
+  }
+
+  function updateEditorSettingsFromHeartControls(host) {
+    const editorSettings = editorSettingsObject();
+    if (!editorSettings) return false;
+    editorSettings.relationshipHeart = {
+      ...(editorSettings.relationshipHeart || {}),
+      opacity: clamp(finite(host.querySelector('[data-heart-opacity]')?.value, 90) / 100, 0, 1),
+      glowPx: clamp(finite(host.querySelector('[data-heart-glow]')?.value, 29), 0, 40),
+      spacingPercent: clamp(finite(host.querySelector('[data-heart-spacing]')?.value, 14), -50, 50),
     };
+    captureSettings(editorSettings);
+    const normalized = window.WorldPopupText?.applySettings?.(editorSettings);
+    if (normalized) captureSettings(normalized);
+    const json = document.getElementById('json');
+    if (json) json.textContent = JSON.stringify(editorSettings, null, 2);
+    return true;
+  }
+
+  function previewHeartStyle() {
+    if (!deps?.playerRoot) return;
+    clearRelationshipPopups();
+    spawnRelationshipPopup(deps.playerRoot, 'rapport', 10, { amountIsPoints: true }).catch(() => {});
+  }
+
+  function injectEditorHeartControls() {
+    if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return false;
+    const section = document.getElementById('relationshipPopupPreviewSection');
+    if (!section) {
+      if (!editorControlRetry) {
+        editorControlRetry = window.setInterval(() => {
+          if (injectEditorHeartControls()) {
+            clearInterval(editorControlRetry);
+            editorControlRetry = 0;
+          }
+        }, 150);
+      }
+      return false;
+    }
+    const help = section.querySelector('.help');
+    if (help) help.textContent = 'Uses the same live Float+ placement and motion as ordinary Float+ text. Heart opacity, glow, and heart↔number spacing are relationship-only styling.';
+    let host = document.getElementById('relationshipHeartStyleControls');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'relationshipHeartStyleControls';
+      host.innerHTML = `
+        <div class="sliderRow">
+          <label for="relationshipHeartOpacity">Heart opacity / transparency</label>
+          <output id="relationshipHeartOpacityValue" data-heart-opacity-value></output>
+          <small>Lower values make the heart more transparent; the signed number is unaffected.</small>
+          <input id="relationshipHeartOpacity" data-heart-opacity type="range" min="0" max="100" step="1">
+        </div>
+        <div class="sliderRow">
+          <label for="relationshipHeartGlow">Heart glow</label>
+          <output id="relationshipHeartGlowValue" data-heart-glow-value></output>
+          <small>Soft same-color glow baked into the heart texture.</small>
+          <input id="relationshipHeartGlow" data-heart-glow type="range" min="0" max="40" step="1">
+        </div>
+        <div class="sliderRow">
+          <label for="relationshipHeartSpacing">Heart ↔ number spacing</label>
+          <output id="relationshipHeartSpacingValue" data-heart-spacing-value></output>
+          <small>Percent of heart world size. Lower values bring them closer; negative values pull the number into the heart/glow margin.</small>
+          <input id="relationshipHeartSpacing" data-heart-spacing type="range" min="-50" max="50" step="1">
+        </div>
+      `;
+      const buttons = section.querySelector('.buttons');
+      section.insertBefore(host, buttons || section.querySelector('#relationshipPopupPreviewDebug'));
+      host.addEventListener('input', () => {
+        if (!updateEditorSettingsFromHeartControls(host)) return;
+        syncEditorHeartControls();
+        previewHeartStyle();
+      });
+    }
+    const editorSettings = editorSettingsObject();
+    if (editorSettings) captureSettings(editorSettings);
+    syncEditorHeartControls();
     return true;
   }
 
   function install() {
     const api = window.WorldPopupText;
-    if (!api || Number(api.__favorPopupPointsBridgeVersion) >= 2) return false;
-
-    const previousVersion = Number(api.__favorPopupPointsBridgeVersion || (api.__favorPopupPointsBridge ? 1 : 0)); // Used to avoid converting Favor twice when v2 hot-loads over the old v1 wrapper.
-    const needsFavorConversion = previousVersion < 1;
-
-    wrapRelationshipMethod(api, 'showRelationshipChange', args => {
-      if (!needsFavorConversion) return args;
-      const [kind, amount, ...rest] = args;
-      return [kind, convertFavorHeartDelta(kind, amount), ...rest];
-    });
-    wrapRelationshipMethod(api, 'showFavorChange', args => {
-      if (!needsFavorConversion) return args;
-      const [amount, ...rest] = args;
-      return [convertFavorHeartDelta('favor', amount), ...rest];
-    });
-    wrapRelationshipMethod(api, 'showRapportChange');
-    wrapRelationshipMethod(api, 'showRapportGain');
-
+    if (!api) return false;
+    if (Number(api.__favorPopupPointsBridgeVersion) >= 9) {
+      injectEditorHeartControls();
+      return true;
+    }
+    const originalInit = typeof api.init === 'function' ? api.init.bind(api) : null;
+    const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null;
+    const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null;
+    const originalApplySettings = typeof api.applySettings === 'function' ? api.applySettings.bind(api) : null;
+    const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null;
+    if (originalInit) {
+      api.init = function favorPopupV9Init(injectedDeps, ...args) {
+        bindDeps(injectedDeps);
+        const result = originalInit(injectedDeps, ...args);
+        Promise.resolve(api.loadSettings?.()).then(captureSettings).catch(() => {});
+        return result;
+      };
+    }
+    if (originalUpdate) {
+      api.update = function favorPopupV9Update(now, ...args) {
+        const result = originalUpdate(now, ...args);
+        updateRelationshipPopups(now);
+        return result;
+      };
+    }
+    if (originalClear) {
+      api.clear = function favorPopupV9Clear(...args) {
+        clearRelationshipPopups();
+        return originalClear(...args);
+      };
+    }
+    if (originalApplySettings) {
+      api.applySettings = function favorPopupV9ApplySettings(settings, ...args) {
+        const result = originalApplySettings(settings, ...args);
+        captureSettings(result || settings);
+        return result;
+      };
+    }
+    const editorSettings = editorSettingsObject();
+    if (editorSettings) captureSettings(editorSettings);
+    api.showRelationshipChange = (root, kind, amount, options) => spawnRelationshipPopup(root, kind === 'favor' ? 'favor' : 'rapport', amount, options);
+    api.showRapportGain = (root, amount, options) => spawnRelationshipPopup(root, 'rapport', amount, options);
+    api.showRapportChange = api.showRapportGain;
+    api.showFavorChange = (root, amount, options) => spawnRelationshipPopup(root, 'favor', amount, options);
+    api.relationshipHeadAnchorWorld = root => floatPlusAnchorWorld(root);
+    api.debugSnapshot = function favorPopupV9DebugSnapshot() {
+      const base = originalDebugSnapshot ? originalDebugSnapshot() : {};
+      return { ...base, relationshipPositionBridge: { version: 9, active: relationshipPopups.length, depsCaptured: debugState.depsCaptured, layout: 'chathead-style-heart-plus-value', motion: 'floatPlus-live-settings', floatPlus: { ...currentFloatPlus() }, heartStyle: { ...currentHeartStyle() }, lastHeart: debugState.lastHeart, lastLayout: debugState.lastLayout, lastAnchor: debugState.lastAnchor, lastDisposedReason: debugState.lastDisposedReason } };
+    };
     api.__favorPopupPointsBridge = true;
-    api.__favorPopupPointsBridgeVersion = 2;
+    api.__favorPopupPointsBridgeVersion = 9;
+    injectEditorHeartControls();
     return true;
   }
 
   if (!install() && typeof MutationObserver === 'function') {
-    const observer = new MutationObserver(() => {
-      if (!install()) return;
-      observer.disconnect();
-    });
+    const observer = new MutationObserver(() => { if (!install()) return; observer.disconnect(); });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   window.FavorPopupPointsBridge = Object.freeze({
-    version: 2,
+    version: 9,
     install,
+    bindDeps,
+    captureSettings,
+    relationshipHeadAnchorWorld: floatPlusAnchorWorld,
+    injectEditorHeartControls,
     snapshot() {
-      return {
-        version: 2,
-        hardenedPopups: debugState.hardenedPopups,
-        lastHardenedPopup: debugState.lastHardenedPopup,
-        popupBridgeVersion: Number(window.WorldPopupText?.__favorPopupPointsBridgeVersion) || 0,
-      };
+      return { version: 9, activeRelationshipPopups: relationshipPopups.length, hardenedPopups: debugState.hardenedPopups, lastHardenedPopup: debugState.lastHardenedPopup, lastHeart: debugState.lastHeart, lastLayout: debugState.lastLayout, lastAnchor: debugState.lastAnchor, lastDisposedReason: debugState.lastDisposedReason, depsCaptured: debugState.depsCaptured, layout: 'chathead-style-heart-plus-value', motion: 'floatPlus-live-settings', floatPlus: { ...currentFloatPlus() }, heartStyle: { ...currentHeartStyle() }, popupBridgeVersion: Number(window.WorldPopupText?.__favorPopupPointsBridgeVersion) || 0 };
     },
   });
 })();
