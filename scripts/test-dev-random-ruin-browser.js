@@ -205,6 +205,15 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok(active.occupancy?.blocked?.length > 0, JSON.stringify(active.occupancy));
     assert.equal(active.occupancyBlockers, 1, JSON.stringify(active));
     assert.equal(active.legacyRuinBlockers, 0, JSON.stringify(active));
+    assert.ok(active.wallRender.sourceDoorMeshes > 0, JSON.stringify(active.wallRender));
+    assert.equal(active.wallRender.doorProxyCount, active.wallRender.sourceDoorMeshes, JSON.stringify(active.wallRender));
+    assert.equal(active.wallRender.visibleDoorProxies, active.wallRender.sourceDoorMeshes, JSON.stringify(active.wallRender));
+    assert.ok(active.wallRender.sourceActivatorMeshes > 0, JSON.stringify(active.wallRender));
+    assert.equal(active.wallRender.activatorProxyCount, active.wallRender.sourceActivatorMeshes, JSON.stringify(active.wallRender));
+    assert.equal(active.wallRender.visibleActivatorProxies, active.wallRender.sourceActivatorMeshes, JSON.stringify(active.wallRender));
+    assert.equal(active.wallRender.allTransformSyncedProxies, active.wallRender.totalProxyCount, JSON.stringify(active.wallRender));
+    assert.equal(active.wallRender.allInteractionRaycastDisabled, active.wallRender.totalProxyCount, JSON.stringify(active.wallRender));
+    assert.equal(active.wallRender.allMainRealmMaterials, active.wallRender.totalProxyCount, JSON.stringify(active.wallRender));
     assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
     assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
     for (const hall of active.hallwayCollision) {

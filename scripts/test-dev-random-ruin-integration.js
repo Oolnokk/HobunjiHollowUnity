@@ -20,6 +20,7 @@ const embeddedTree = JSON.parse(read('docs/tools/debris-ifier/debrisifier-v50-em
 const interior = read('docs/js/dev-random-ruin-interior-map.js');
 const occupancy = read('docs/js/dev-random-ruin-tile-occupancy.js');
 const hooks = read('docs/js/dev-random-ruin-prototype-hooks.js');
+const renderProxy = read('docs/js/dev-random-ruin-wall-render-proxy.js');
 
 const loadOrder = [
   'dynamic-surfaces.js',
@@ -47,6 +48,11 @@ assert(occupancy.includes('dataset.ruinFog = \'disabled\''), 'test ruin Map rend
 assert(occupancy.includes("'#e74c3c'"), 'Map renderer must draw blocked tiles red');
 assert(occupancy.includes("'#35c96f'"), 'Map renderer must draw activator tiles green');
 assert(occupancy.includes("'#3498db'"), 'Map renderer must draw mechanism tiles blue');
+assert(renderProxy.includes("data.previewMotion?.type === 'stoneDoor'"), 'parent-realm render bridge must discover stone-door meshes');
+assert(renderProxy.includes("add(mesh, 'activator', object)"), 'parent-realm render bridge must discover linked activator meshes');
+assert(renderProxy.includes('copySourceWorldTransform(sourceObject, proxy, scene)'), 'door and activator proxies must follow live V50 transforms');
+assert(renderProxy.includes('visibleDoorProxies'), 'mobile diagnostics must expose visible door proxy coverage');
+assert(renderProxy.includes('visibleActivatorProxies'), 'mobile diagnostics must expose visible activator proxy coverage');
 assert(interior.includes('tools/debris-ifier/index.html?devRuntime=1'), 'hidden generator must request embedded V50 runtime mode');
 assert(interior.includes('await enterRuin(); updateBadge();'), 'generate must await the actual ruin transition midpoint before reporting success');
 assert(interior.includes('const entering=ruin;'), 'ruin entry transition must capture the generated instance it is entering');
@@ -57,6 +63,7 @@ assert(hooks.includes("generatedAccessType === 'stoneLadder'"), 'prototype hook 
 assert(hooks.includes("motion === 'elevatorPushBlock'"), 'prototype hook layer must discover elevator push blocks');
 new vm.Script(interior, { filename:'dev-random-ruin-interior-map.js' });
 new vm.Script(occupancy, { filename:'dev-random-ruin-tile-occupancy.js' });
+new vm.Script(renderProxy, { filename:'dev-random-ruin-wall-render-proxy.js' });
 
 assert(api.includes('createRuntimeStoneLadder'), 'V50 bridge must expose the real stone ladder constructor');
 assert(api.includes('auditInteriorSeeds'), 'V50 bridge must expose multi-seed runtime-tag auditing');

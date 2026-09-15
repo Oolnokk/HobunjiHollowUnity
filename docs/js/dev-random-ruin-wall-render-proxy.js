@@ -1,6 +1,6 @@
-// Main-game render proxies for Debris-ifier V50 wall planes.
-// V50's exact PlaneGeometry and transforms remain authoritative for layout/collision;
-// this module only recreates their render resources in the parent game THREE realm.
+// Main-game render proxies for Debris-ifier V50 structural and puzzle geometry.
+// V50's exact meshes and transforms remain authoritative; this module recreates
+// wall, stone-door, and activator render resources in the parent game THREE realm.
 (() => {
   'use strict';
 
@@ -11,9 +11,9 @@
 
   let preparedRoot = null;
   let preparedScene = null; // Used to detect scene swaps even if a stale V50 root survives briefly.
-  let proxyRoot = null; // Used as the game-realm-only parent for all visible wall proxies.
+  let proxyRoot = null; // Used as the game-realm-only parent for all visible ruin proxies.
   const proxies = new Set();
-  const hiddenSourceWalls = new Set(); // Wall-only material clones suppress the foreign draw without hiding V50's shared stone material on floors, ladders, and props.
+  const hiddenSourceMeshes = new Set(); // Private material clones suppress foreign draws without mutating V50's shared materials.
 
   function activeScene() {
     if (GridTileAccessors.getCurrentArea?.() !== MAP_ID) return null;
@@ -31,39 +31,48 @@
   }
 
   function originalSourceMaterials(mesh) {
-    const original = mesh?.userData?.devRuinWallOriginalMaterial;
+    const original = mesh?.userData?.devRuinProxyOriginalMaterial || mesh?.userData?.devRuinWallOriginalMaterial;
     if (!original) return sourceMaterials(mesh);
     return Array.isArray(original) ? original.filter(Boolean) : [original];
   }
 
-  function hideSourceWall(wall) {
-    if (!wall?.material) return false;
-    if (wall.userData?.devRuinWallOriginalMaterial) return true;
-    const original = wall.material;
+  function hideSourceMesh(mesh, kind) {
+    if (!mesh?.material) return false;
+    if (mesh.userData?.devRuinProxyOriginalMaterial) return true;
+    const original = mesh.material;
     const originals = Array.isArray(original) ? original.filter(Boolean) : [original];
     const hidden = originals.map(material => material?.clone?.()).filter(Boolean);
     if (!hidden.length || hidden.length !== originals.length) return false;
     for (const material of hidden) {
       material.visible = false;
-      material.userData = { ...(material.userData || {}), devRuinWallPrivateHiddenClone:true };
+      material.userData = { ...(material.userData || {}), devRuinPrivateHiddenClone:true };
       material.needsUpdate = true;
     }
-    wall.userData.devRuinWallOriginalMaterial = original;
-    wall.userData.devRuinWallHiddenMaterials = hidden;
-    wall.material = Array.isArray(original) ? hidden : hidden[0];
-    hiddenSourceWalls.add(wall);
+    mesh.userData.devRuinProxyOriginalMaterial = original;
+    mesh.userData.devRuinProxyHiddenMaterials = hidden;
+    mesh.userData.devRuinProxyKind = kind;
+    if (kind === 'wall') {
+      mesh.userData.devRuinWallOriginalMaterial = original;
+      mesh.userData.devRuinWallHiddenMaterials = hidden;
+      for (const material of hidden) material.userData.devRuinWallPrivateHiddenClone = true;
+    }
+    mesh.material = Array.isArray(original) ? hidden : hidden[0];
+    hiddenSourceMeshes.add(mesh);
     return true;
   }
 
-  function restoreSourceWall(wall) {
-    if (!wall?.userData?.devRuinWallOriginalMaterial) return;
-    const original = wall.userData.devRuinWallOriginalMaterial;
-    const hidden = wall.userData.devRuinWallHiddenMaterials || [];
-    wall.material = original;
+  function restoreSourceMesh(mesh) {
+    if (!mesh?.userData?.devRuinProxyOriginalMaterial) return;
+    const original = mesh.userData.devRuinProxyOriginalMaterial;
+    const hidden = mesh.userData.devRuinProxyHiddenMaterials || [];
+    mesh.material = original;
     for (const material of hidden) material?.dispose?.();
-    delete wall.userData.devRuinWallOriginalMaterial;
-    delete wall.userData.devRuinWallHiddenMaterials;
-    hiddenSourceWalls.delete(wall);
+    delete mesh.userData.devRuinProxyOriginalMaterial;
+    delete mesh.userData.devRuinProxyHiddenMaterials;
+    delete mesh.userData.devRuinProxyKind;
+    delete mesh.userData.devRuinWallOriginalMaterial;
+    delete mesh.userData.devRuinWallHiddenMaterials;
+    hiddenSourceMeshes.delete(mesh);
   }
 
   function cloneGeometry(source) {
@@ -122,15 +131,20 @@
     const material = new THREE.MeshStandardMaterial({
       color,
       map: cloneTexture(source?.map),
+      emissive: source?.emissive?.getHex?.() ?? 0x000000,
+      emissiveMap: cloneTexture(source?.emissiveMap),
+      emissiveIntensity: Number.isFinite(Number(source?.emissiveIntensity)) ? Number(source.emissiveIntensity) : 1,
       roughness: Number.isFinite(Number(source?.roughness)) ? Number(source.roughness) : .92,
       metalness: Number.isFinite(Number(source?.metalness)) ? Number(source.metalness) : .02,
-      side: THREE.DoubleSide,
-      transparent: false,
-      opacity: 1,
-      depthTest: true,
-      depthWrite: true,
+      side: source?.side ?? THREE.DoubleSide,
+      transparent: source?.transparent === true,
+      opacity: Number.isFinite(Number(source?.opacity)) ? Number(source.opacity) : 1,
+      alphaTest: Number.isFinite(Number(source?.alphaTest)) ? Number(source.alphaTest) : 0,
+      depthTest: source?.depthTest !== false,
+      depthWrite: source?.depthWrite !== false,
+      vertexColors: source?.vertexColors === true,
     });
-    material.name = `${source?.name || 'v50_wall'}_game_realm`;
+    material.name = `${source?.name || 'v50_ruin'}_game_realm`;
     material.needsUpdate = true;
     return material;
   }
@@ -145,25 +159,26 @@
     if (proxyRoot?.parent === scene) return proxyRoot;
     if (proxyRoot?.parent) proxyRoot.parent.remove(proxyRoot);
     proxyRoot = new THREE.Group();
-    proxyRoot.name = 'dev_random_ruin_wall_render_proxies';
+    proxyRoot.name = 'dev_random_ruin_render_proxies';
     proxyRoot.userData.devRandomRuinWallProxyRoot = true;
+    proxyRoot.userData.devRandomRuinRenderProxyRoot = true;
     scene.add(proxyRoot);
     proxyRoot.updateWorldMatrix?.(true, false);
     return proxyRoot;
   }
 
-  function copySourceWorldTransform(wall, proxy, scene) {
-    if (!wall || !proxy || !scene) return false;
-    wall.updateWorldMatrix?.(true, false);
-    if (!wall.updateWorldMatrix) wall.updateMatrixWorld?.(true);
+  function copySourceWorldTransform(sourceObject, proxy, scene) {
+    if (!sourceObject || !proxy || !scene) return false;
+    sourceObject.updateWorldMatrix?.(true, false);
+    if (!sourceObject.updateWorldMatrix) sourceObject.updateMatrixWorld?.(true);
     scene.updateWorldMatrix?.(true, false);
     proxyRoot?.updateWorldMatrix?.(true, false);
-    if (!matrixElementsAreFinite(wall.matrixWorld) || !matrixElementsAreFinite(proxyRoot?.matrixWorld)) return false;
+    if (!matrixElementsAreFinite(sourceObject.matrixWorld) || !matrixElementsAreFinite(proxyRoot?.matrixWorld)) return false;
 
     const sourceWorld = new THREE.Matrix4(); // Used to hold the V50 wall's numeric world transform in the game THREE realm.
     const parentWorldInverse = new THREE.Matrix4(); // Used to convert source world space into the proxy root's local space.
     const localMatrix = new THREE.Matrix4(); // Used as the proxy's fixed local matrix beneath the game-realm proxy root.
-    sourceWorld.fromArray(Array.from(wall.matrixWorld.elements, Number));
+    sourceWorld.fromArray(Array.from(sourceObject.matrixWorld.elements, Number));
     parentWorldInverse.fromArray(Array.from(proxyRoot.matrixWorld.elements, Number)).invert();
     localMatrix.multiplyMatrices(parentWorldInverse, sourceWorld);
     if (!matrixElementsAreFinite(localMatrix)) return false;
@@ -176,17 +191,23 @@
   }
 
   function disposeProxy(proxy) {
-    const sourceWall = proxy?.userData?.sourceRuinWall || null; // Used to remove the source-to-proxy back-reference during cleanup.
-    if (sourceWall?.userData?.devRuinWallRenderProxy === proxy) {
-      delete sourceWall.userData.devRuinWallRenderProxy;
-      delete sourceWall.userData.runtimeWallPlaneRenderRealm;
+    const sourceObject = proxy?.userData?.sourceRuinObject || proxy?.userData?.sourceRuinWall || null; // Used to remove source back-references during cleanup.
+    if (sourceObject?.userData?.devRuinRenderProxy === proxy) delete sourceObject.userData.devRuinRenderProxy;
+    if (sourceObject?.userData) delete sourceObject.userData.runtimeRuinRenderRealm;
+    if (sourceObject?.userData?.devRuinWallRenderProxy === proxy) {
+      delete sourceObject.userData.devRuinWallRenderProxy;
+      delete sourceObject.userData.runtimeWallPlaneRenderRealm;
     }
-    if (proxy?.userData) delete proxy.userData.sourceRuinWall;
-    restoreSourceWall(sourceWall);
+    if (proxy?.userData) {
+      delete proxy.userData.sourceRuinObject;
+      delete proxy.userData.sourceRuinWall;
+    }
+    restoreSourceMesh(sourceObject);
     proxy?.geometry?.dispose?.();
     const materials = Array.isArray(proxy?.material) ? proxy.material : proxy?.material ? [proxy.material] : [];
     for (const material of materials) {
       material?.map?.dispose?.();
+      if (material?.emissiveMap && material.emissiveMap !== material.map) material.emissiveMap.dispose?.();
       material?.dispose?.();
     }
     proxy?.parent?.remove?.(proxy);
@@ -195,23 +216,34 @@
 
   function clearProxies() {
     for (const proxy of [...proxies]) disposeProxy(proxy);
-    for (const wall of [...hiddenSourceWalls]) restoreSourceWall(wall);
+    for (const mesh of [...hiddenSourceMeshes]) restoreSourceMesh(mesh);
     proxyRoot?.parent?.remove?.(proxyRoot);
     proxyRoot = null;
     preparedRoot = null;
     preparedScene = null;
   }
 
-  function buildProxy(wall, scene) {
-    const geometry = cloneGeometry(wall.geometry);
+  function buildProxy(sourceObject, scene, kind, owner) {
+    const geometry = cloneGeometry(sourceObject.geometry);
     if (!geometry) return null;
-    const source = originalSourceMaterials(wall)[0] || null;
-    const material = cloneMaterial(source);
+    const sourceMaterialsList = originalSourceMaterials(sourceObject);
+    const clonedMaterials = sourceMaterialsList.map(cloneMaterial);
+    const material = Array.isArray(sourceObject.material) ? clonedMaterials : clonedMaterials[0];
+    if (!material || (Array.isArray(material) && !material.length)) {
+      geometry.dispose?.();
+      return null;
+    }
     const proxy = new THREE.Mesh(geometry, material);
-    proxy.name = `${wall.name || `ruin_wall_${wall.id}`}_runtime_render`;
-    proxy.userData.devRuinWallRenderProxy = true;
-    proxy.userData.prototypeWallName = wall.name || null;
-    proxy.userData.sourceRuinWall = wall;
+    proxy.name = `${sourceObject.name || `ruin_${kind}_${sourceObject.id}`}_runtime_render`;
+    proxy.userData.devRuinRenderProxy = true;
+    proxy.userData.devRuinRenderKind = kind;
+    proxy.userData.devRuinRenderOwnerId = owner?.userData?.mechanismId || owner?.userData?.linkedMechanismId || null;
+    proxy.userData.sourceRuinObject = sourceObject;
+    if (kind === 'wall') {
+      proxy.userData.devRuinWallRenderProxy = true;
+      proxy.userData.prototypeWallName = sourceObject.name || null;
+      proxy.userData.sourceRuinWall = sourceObject;
+    }
     proxy.userData.devRuinRenderSubmitCount = 0; // Used to prove the game renderer actually submitted this proxy for drawing.
     proxy.userData.devRuinLastRenderAt = 0; // Used by diagnostics to show whether submission happened during the current runtime session.
     proxy.onBeforeRender = () => {
@@ -221,7 +253,7 @@
     proxy.frustumCulled = false;
     proxy.castShadow = true;
     proxy.receiveShadow = true;
-    proxy.renderOrder = Number(wall.renderOrder) || 0;
+    proxy.renderOrder = Number(sourceObject.renderOrder) || 0;
     // These are visual-only meshes. Prevent broad scene raycasts from choosing a
     // render proxy instead of the V50 ladder/mechanism that owns an interaction.
     proxy.raycast = () => {};
@@ -232,19 +264,74 @@
       return null;
     }
     root.add(proxy);
-    if (!copySourceWorldTransform(wall, proxy, scene) || !hideSourceWall(wall)) {
+    if (!copySourceWorldTransform(sourceObject, proxy, scene) || !hideSourceMesh(sourceObject, kind)) {
       disposeProxy(proxy);
       return null;
     }
 
     proxies.add(proxy);
-    wall.userData.devRuinWallRenderProxy = proxy;
-    wall.userData.runtimeWallPlaneRenderRealm = 'game-scene-proxy';
+    sourceObject.userData.devRuinRenderProxy = proxy;
+    sourceObject.userData.runtimeRuinRenderRealm = 'game-scene-proxy';
+    if (kind === 'wall') {
+      sourceObject.userData.devRuinWallRenderProxy = proxy;
+      sourceObject.userData.runtimeWallPlaneRenderRealm = 'game-scene-proxy';
+    }
     return proxy;
   }
 
   function desiredVisible() {
     return window.DevRandomRuinWallPlanes?.isVisible?.() !== false;
+  }
+
+  function collectRenderSources(root) {
+    const candidates = new Map(); // One entry per source mesh prevents nested activator roots from creating duplicate proxies.
+    const rank = { activator:1, door:2, wall:3 }; // Higher ranks preserve structural classification when tagged hierarchies overlap.
+    const add = (mesh, kind, owner) => {
+      if (!mesh?.isMesh || !mesh.geometry) return;
+      const prior = candidates.get(mesh);
+      if (!prior || rank[kind] > rank[prior.kind]) candidates.set(mesh, { mesh, kind, owner });
+    };
+    root?.traverse?.(object => {
+      const data = object.userData || {};
+      if (data.ruinInteriorWall) add(object, 'wall', object);
+      if (data.mechanismId && data.previewMotion?.type === 'stoneDoor') {
+        object.traverse?.(mesh => add(mesh, 'door', object));
+      }
+      if (data.linkedMechanismId && data.activatorType) {
+        object.traverse?.(mesh => add(mesh, 'activator', object));
+      }
+    });
+    return [...candidates.values()];
+  }
+
+  function sourceHierarchyVisible(sourceObject, root) {
+    for (let object = sourceObject; object; object = object.parent) {
+      if (object.visible === false) return false;
+      if (object === root) break;
+    }
+    return true;
+  }
+
+  function syncProxyAppearance(proxy) {
+    const sourceObject = proxy?.userData?.sourceRuinObject;
+    const sources = originalSourceMaterials(sourceObject);
+    const targets = Array.isArray(proxy?.material) ? proxy.material : proxy?.material ? [proxy.material] : [];
+    for (let index = 0; index < targets.length; index++) {
+      const source = sources[Math.min(index, sources.length - 1)];
+      const target = targets[index];
+      if (!source || !target) continue;
+      if (source.color?.getHex && target.color?.setHex) target.color.setHex(source.color.getHex());
+      if (source.emissive?.getHex && target.emissive?.setHex) target.emissive.setHex(source.emissive.getHex());
+      if (Number.isFinite(Number(source.emissiveIntensity))) target.emissiveIntensity = Number(source.emissiveIntensity);
+      if (Number.isFinite(Number(source.opacity))) target.opacity = Number(source.opacity);
+      if (Number.isFinite(Number(source.alphaTest))) target.alphaTest = Number(source.alphaTest);
+      if (source.map && target.map) {
+        target.map.offset?.copy?.(source.map.offset);
+        target.map.repeat?.copy?.(source.map.repeat);
+        target.map.center?.copy?.(source.map.center);
+        if (Number.isFinite(Number(source.map.rotation))) target.map.rotation = Number(source.map.rotation);
+      }
+    }
   }
 
   function prepare(root = null) {
@@ -259,36 +346,38 @@
       preparedRoot = resolvedRoot;
       preparedScene = scene;
       ensureProxyRoot(scene);
-      resolvedRoot.traverse(object => {
-        if (!object.userData?.ruinInteriorWall || !object.isMesh) return;
-        // Keep the structural source object visible for collision, but give only
-        // this wall private hidden material clones. V50 deliberately shares its
-        // stone material with floors, ladders, and props, so mutating the shared
-        // material would erase every carved-stone object from the framebuffer.
-        object.visible = true;
-        buildProxy(object, scene);
-      });
+      for (const source of collectRenderSources(resolvedRoot)) {
+        // Each source gets private hidden clones. V50 deliberately shares stone
+        // materials, so mutating the original would erase floors and ladders too.
+        if (source.kind === 'wall') source.mesh.visible = true;
+        buildProxy(source.mesh, scene, source.kind, source.owner);
+      }
     }
 
-    const visible = desiredVisible();
     for (const proxy of [...proxies]) {
-      const sourceWall = proxy?.userData?.sourceRuinWall || null; // Used to refresh source-derived placement before each render.
-      if (!proxy.parent || !sourceWall || !copySourceWorldTransform(sourceWall, proxy, scene)) {
+      const sourceObject = proxy?.userData?.sourceRuinObject || null; // Used to refresh live door/activator placement before each render.
+      if (!proxy.parent || !sourceObject || !copySourceWorldTransform(sourceObject, proxy, scene)) {
         disposeProxy(proxy);
         continue;
       }
+      const visible = proxy.userData.devRuinRenderKind === 'wall'
+        ? desiredVisible()
+        : sourceHierarchyVisible(sourceObject, resolvedRoot);
+      syncProxyAppearance(proxy);
+      const sourceMaterialsList = originalSourceMaterials(sourceObject);
       const materials = Array.isArray(proxy.material) ? proxy.material : [proxy.material];
-      for (const material of materials) material.visible = visible;
+      for (let index = 0; index < materials.length; index++) {
+        const sourceMaterial = sourceMaterialsList[Math.min(index, sourceMaterialsList.length - 1)];
+        materials[index].visible = visible && sourceMaterial?.visible !== false;
+      }
       proxy.visible = visible;
     }
 
-    // The older optional-wall controller may touch the source object earlier
-    // in the frame. Reassert only the private wall clones; never mutate the
-    // original shared stone material used by other V50 geometry.
-    resolvedRoot.traverse(object => {
-      if (!object.userData?.ruinInteriorWall || !object.isMesh) return;
-      for (const material of object.userData?.devRuinWallHiddenMaterials || []) material.visible = false;
-    });
+    // Reassert only private source clones in case a preview controller changed
+    // material visibility earlier in the frame; original shared materials stay intact.
+    for (const sourceObject of hiddenSourceMeshes) {
+      for (const material of sourceObject.userData?.devRuinProxyHiddenMaterials || []) material.visible = false;
+    }
     return snapshot(resolvedRoot, scene);
   }
 
@@ -310,11 +399,16 @@
   function snapshot(root = activeRoot(), scene = activeScene()) {
     let sourceWalls = 0;
     root?.traverse?.(object => { if (object.userData?.ruinInteriorWall && object.isMesh) sourceWalls++; });
-    const live = [...proxies].filter(proxy => proxy.parent === proxyRoot);
-    const transformed = live.filter(proxy => matrixElementsAreFinite(proxy.matrixWorld)); // Used to distinguish attached proxies from valid placed proxies.
-    const geometryProbeHits = live.filter(geometryProbe).length; // Used as a geometry sanity check, not as proof of framebuffer visibility.
-    const rendererSubmittedProxies = live.filter(proxy => Number(proxy.userData?.devRuinRenderSubmitCount || 0) > 0).length; // Used to distinguish render-ready objects from meshes the renderer has actually visited.
-    const renderSubmitCount = live.reduce((sum, proxy) => sum + Number(proxy.userData?.devRuinRenderSubmitCount || 0), 0); // Used as an aggregate render-submission diagnostic for mobile testing.
+    const sourceCounts = { wall:0, door:0, activator:0 }; // Expected source totals are shown in the mobile Pixel Probe diagnostics.
+    for (const source of collectRenderSources(root)) sourceCounts[source.kind]++;
+    const allLive = [...proxies].filter(proxy => proxy.parent === proxyRoot);
+    const live = allLive.filter(proxy => proxy.userData?.devRuinRenderKind === 'wall');
+    const doors = allLive.filter(proxy => proxy.userData?.devRuinRenderKind === 'door');
+    const activators = allLive.filter(proxy => proxy.userData?.devRuinRenderKind === 'activator');
+    const transformed = live.filter(proxy => matrixElementsAreFinite(proxy.matrixWorld)); // Retains the wall-only metric consumed by existing CI.
+    const geometryProbeHits = live.filter(geometryProbe).length; // Retains the existing wall framebuffer sanity metric.
+    const rendererSubmittedProxies = live.filter(proxy => Number(proxy.userData?.devRuinRenderSubmitCount || 0) > 0).length; // Retains the existing wall submission metric.
+    const renderSubmitCount = live.reduce((sum, proxy) => sum + Number(proxy.userData?.devRuinRenderSubmitCount || 0), 0); // Retains the existing wall aggregate metric.
     const sourceMaterialIsolation = live.filter(proxy => {
       const wall = proxy.userData?.sourceRuinWall;
       const hidden = wall?.userData?.devRuinWallHiddenMaterials || [];
@@ -328,6 +422,16 @@
       enabled: desiredVisible(),
       sourceWalls,
       renderProxyCount: live.length,
+      totalProxyCount: allLive.length,
+      sourceDoorMeshes: sourceCounts.door,
+      doorProxyCount: doors.length,
+      visibleDoorProxies: doors.filter(proxy => proxy.visible !== false).length,
+      submittedDoorProxies: doors.filter(proxy => Number(proxy.userData?.devRuinRenderSubmitCount || 0) > 0).length,
+      sourceActivatorMeshes: sourceCounts.activator,
+      activatorProxyCount: activators.length,
+      visibleActivatorProxies: activators.filter(proxy => proxy.visible !== false).length,
+      submittedActivatorProxies: activators.filter(proxy => Number(proxy.userData?.devRuinRenderSubmitCount || 0) > 0).length,
+      allTransformSyncedProxies: allLive.filter(proxy => matrixElementsAreFinite(proxy.matrixWorld)).length,
       proxyRootAttached: !!proxyRoot && proxyRoot.parent === scene,
       transformSyncedProxies: transformed.length,
       proxyMaterialsVisible: live.filter(proxy => {
@@ -341,6 +445,11 @@
       raycastableProxies: 0,
       interactionRaycastDisabled: live.filter(proxy => proxy.raycast !== THREE.Mesh.prototype.raycast).length,
       mainRealmMaterials: live.filter(proxy => proxy.material instanceof THREE.Material).length,
+      allInteractionRaycastDisabled: allLive.filter(proxy => proxy.raycast !== THREE.Mesh.prototype.raycast).length,
+      allMainRealmMaterials: allLive.filter(proxy => {
+        const materials = Array.isArray(proxy.material) ? proxy.material : [proxy.material];
+        return materials.length > 0 && materials.every(material => material instanceof THREE.Material);
+      }).length,
       blockerCount: DS.debugSnapshot?.().blockers?.filter(record => String(record.id || '').startsWith('devruin-wall-')).length || 0,
     };
   }

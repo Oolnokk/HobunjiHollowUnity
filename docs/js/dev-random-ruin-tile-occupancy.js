@@ -223,9 +223,10 @@
     const status = document.getElementById('wmapWaypointStatusText');
     const clear = document.getElementById('wmapWaypointClearBtn');
     const list = document.getElementById('wmapLandmarkList');
+    const render = window.DevRandomRuinWallRenderProxy?.snapshot?.() || null; // Shown beside occupancy so mobile testing can distinguish collision from invisibility.
     if (status) status.textContent = `Full interior · occupancy revision ${model.revision} · no fog of war`;
     if (clear) clear.hidden = true;
-    if (list) list.innerHTML = `<div class="wmap-gathering-empty">${model.blocked.size} blocked · ${model.causes.size} activator · ${model.effects.size} mechanism tiles</div>`;
+    if (list) list.innerHTML = `<div class="wmap-gathering-empty">${model.blocked.size} blocked · ${model.causes.size} activator · ${model.effects.size} mechanism tiles${render ? `<br>${render.visibleDoorProxies}/${render.sourceDoorMeshes} door meshes visible · ${render.visibleActivatorProxies}/${render.sourceActivatorMeshes} activator meshes visible` : ''}</div>`;
     canvas.setAttribute('aria-label', 'Random Test Ruin occupancy map: red blocked, green activator, blue mechanism; entire interior revealed');
     canvas.dataset.ruinOccupancyRevision = String(model.revision);
     canvas.dataset.ruinFog = 'disabled';

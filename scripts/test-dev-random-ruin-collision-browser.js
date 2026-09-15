@@ -20,6 +20,11 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:5000 });
   assert.equal(await page.evaluate(() => window.DevRandomRuin.generate(0x5eed1234)), true, 'fixed ruin seed should generate');
   await page.waitForFunction(() => window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin', null, { timeout:30000 });
+  await page.waitForFunction(() => {
+    const render = window.DevRandomRuinWallRenderProxy?.snapshot?.();
+    return render?.sourceDoorMeshes > 0 && render.doorProxyCount === render.sourceDoorMeshes
+      && render.sourceActivatorMeshes > 0 && render.activatorProxyCount === render.sourceActivatorMeshes;
+  }, null, { timeout:10000 });
 
   const result = await page.evaluate(() => {
     const first = window.DevRandomRuin.getOccupancySnapshot();
@@ -55,6 +60,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     }
 
     const probe = window.DevRandomRuinCollisionPrecision.snapshot();
+    const render = window.DevRandomRuinWallRenderProxy.snapshot();
     return {
       counts:{ blocked:first.blocked.length, causes:first.causes.length, effects:first.effects.length },
       aggregate:aggregate.length,
@@ -66,6 +72,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
       legend,
       pushChange,
       probe,
+      render,
     };
   });
 
@@ -85,6 +92,15 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     assert.ok(result.pushChange.revisionAfter > result.pushChange.revisionBefore, JSON.stringify(result.pushChange));
   }
   assert.equal(result.probe.aggregateBlockers, 1, JSON.stringify(result.probe));
+  assert.ok(result.render.sourceDoorMeshes > 0, JSON.stringify(result.render));
+  assert.equal(result.render.doorProxyCount, result.render.sourceDoorMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.visibleDoorProxies, result.render.sourceDoorMeshes, JSON.stringify(result.render));
+  assert.ok(result.render.sourceActivatorMeshes > 0, JSON.stringify(result.render));
+  assert.equal(result.render.activatorProxyCount, result.render.sourceActivatorMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.visibleActivatorProxies, result.render.sourceActivatorMeshes, JSON.stringify(result.render));
+  assert.equal(result.render.allTransformSyncedProxies, result.render.totalProxyCount, JSON.stringify(result.render));
+  assert.equal(result.render.allInteractionRaycastDisabled, result.render.totalProxyCount, JSON.stringify(result.render));
+  assert.equal(result.render.allMainRealmMaterials, result.render.totalProxyCount, JSON.stringify(result.render));
 
   const probeText = await page.evaluate(async () => {
     const resultEl = document.getElementById('debugProbeResult');
@@ -95,6 +111,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   });
   assert.match(probeText, /Random Test Ruin tile occupancy diagnostics/, probeText);
   assert.match(probeText, /aggregateGameplayBlockers=1/, probeText);
+  assert.match(probeText, /Puzzle render proxies: doors=/, probeText);
 
   if (errors.length) throw new Error(`Page errors: ${errors.join(' | ')}`);
   console.log(JSON.stringify(result, null, 2));

@@ -67,8 +67,10 @@
     if (!data.occupancy && data.revision == null) {
       lines.push('Shared occupancy snapshot: unavailable');
     } else {
+      const render = window.DevRandomRuinWallRenderProxy?.snapshot?.() || null; // Parent-realm visibility counts make invisible puzzle parts diagnosable on mobile.
       lines.push(`Snapshot revision: ${data.revision} aggregateGameplayBlockers=${data.aggregateBlockers}`);
       lines.push(`Tiles: redBlocked=${data.counts.blocked} greenActivators=${data.counts.causes} blueMechanisms=${data.counts.effects}`);
+      if (render) lines.push(`Puzzle render proxies: doors=${render.visibleDoorProxies}/${render.sourceDoorMeshes} activators=${render.visibleActivatorProxies}/${render.sourceActivatorMeshes} submitted=${render.submittedDoorProxies + render.submittedActivatorProxies}`);
       lines.push(`Player: ${data.player ? `${data.player.x.toFixed(3)},${data.player.z.toFixed(3)}` : 'unavailable'} tile=${data.playerTile || 'unknown'} sources=${data.blockedAtPlayer.join(',') || 'none'}`);
       lines.push(`Nearby red tiles: ${data.nearby.length ? data.nearby.map(entry => `${entry.tile}[${entry.sources.join(',')}]`).join(' | ') : 'none within 2 tiles'}`);
     }
