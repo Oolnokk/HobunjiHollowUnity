@@ -13,7 +13,7 @@
 
   let samples = 0; // Number of successful metadata/hash samples captured in this page session.
   let stableIdentityPasses = 0; // Count of real probe runs where the same file id survived a Drive version change.
-  let identityFailures = 0; // Count of real probe runs where the linked cloud file id unexpectedly changed.
+  let identityFailures = 0; // Count of real probe runs where cloud identity changed or the previously-sampled id disappeared.
   let lastSample = null; // Latest sample displayed to the user and diagnostics.
   let lastComparison = 'not-run'; // Human-readable probe outcome.
   let lastError = ''; // Latest probe error visible in Save Diagnostics.
@@ -39,6 +39,10 @@
     if (!text) return 'none';
     const bare = text.replace(/^sha256:/i, '');
     return bare.length > length ? `${bare.slice(0, length)}…` : bare;
+  }
+
+  function isMissingFileError(error) {
+    return /Google Drive request failed \(404\b/i.test(String(error?.message || error || '')); // Exact Drive REST missing-id response; auth/network failures must not be mislabeled as identity replacement.
   }
 
   function compareSamples(previous, current) {
@@ -112,6 +116,7 @@
     button.disabled = true;
     button.textContent = 'Checking…';
     lastError = '';
+    let previous = readPreviousSample(); // Prior valid sample retained through failures so disappearance of that exact file id can be diagnosed.
 
     try {
       const status = drive.getStatus?.() || {};
@@ -131,7 +136,6 @@
       }; // Public/non-secret Drive identity and canonical hash only; no OAuth material is stored.
       if (!sample.fileId) throw new Error('Drive did not return the linked file id for the identity probe.');
 
-      const previous = readPreviousSample();
       const comparison = compareSamples(previous, sample);
       samples++;
       if (comparison.state === 'stable-id-version-advanced') stableIdentityPasses++;
@@ -154,11 +158,28 @@
       }
     } catch (error) {
       lastError = String(error?.message || error);
-      lastComparison = 'error';
+      const missingPriorId = Boolean(previous?.fileId && isMissingFileError(error));
+      if (missingPriorId) {
+        identityFailures++;
+        lastComparison = 'file-id-unreachable';
+        try {
+          await storeApi()?.appendEvent?.('DRIVE IDENTITY PROBE', {
+            comparison: lastComparison,
+            fileIdStable: false,
+            previousFileId: previous.fileId,
+            previousVersion: previous.version || null,
+            error: 'linked-file-id-unreachable',
+          });
+        } catch {}
+      } else {
+        lastComparison = 'error';
+      }
       const result = document.getElementById(RESULT_ID);
       if (result) {
         result.style.display = '';
-        result.textContent = `Identity probe failed: ${lastError}`;
+        result.textContent = missingPriorId
+          ? `FAIL: the previously sampled Drive file id ${short(previous.fileId, 12)} no longer resolves. Drive for Desktop may have replaced the cloud object instead of updating it in place. (${lastError})`
+          : `Identity probe failed: ${lastError}`;
       }
     } finally {
       button.disabled = false;
@@ -182,6 +203,7 @@
 
   window.HobunjiGoogleDriveIdentityProbe = Object.freeze({
     compareSamples, // Side-effect-free classification helper exposed so CI can lock down the exact acceptance criterion.
+    isMissingFileError, // Pure 404 classifier keeps identity-loss failures distinct from auth/offline errors in CI and diagnostics.
     run: () => {
       const button = document.getElementById(BUTTON_ID);
       if (!button) throw new Error('Drive Identity Probe button is not available yet.');
