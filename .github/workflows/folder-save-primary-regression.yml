@@ -7,13 +7,14 @@ on:
       - 'docs/js/folder-save-*.js'
       - 'docs/js/save-sync-*.js'
       - 'docs/js/save-reconciliation.js'
+      - 'docs/js/save-coordinator.js'
       - 'docs/folder-save-primary.css'
       - 'docs/onboarding.js'
       - 'docs/onboarding-core.js'
       - 'docs/js/save-startup-gate.js'
       - 'docs/js/session-persistence-startup-guard.js'
       - 'scripts/test-folder-save-*.js'
-      - 'scripts/test-save-sync-*.js'
+      - 'scripts/test-save-*.js'
       - '.github/workflows/folder-save-primary-regression.yml'
   push:
     paths:
@@ -21,10 +22,11 @@ on:
       - 'docs/js/folder-save-*.js'
       - 'docs/js/save-sync-*.js'
       - 'docs/js/save-reconciliation.js'
+      - 'docs/js/save-coordinator.js'
       - 'docs/folder-save-primary.css'
       - 'docs/onboarding.js'
       - 'scripts/test-folder-save-*.js'
-      - 'scripts/test-save-sync-*.js'
+      - 'scripts/test-save-*.js'
       - '.github/workflows/folder-save-primary-regression.yml'
 
 permissions:
@@ -43,6 +45,7 @@ jobs:
           node --check docs/js/save-sync-envelope.js
           node --check docs/js/save-reconciliation.js
           node --check docs/js/save-sync-store.js
+          node --check docs/js/save-coordinator.js
           node --check docs/js/folder-save-primary.js
           node --check docs/js/folder-save-onboarding-bridge.js
           node --check docs/js/folder-save-device-provenance.js
@@ -52,5 +55,6 @@ jobs:
         run: |
           node scripts/test-save-sync-foundation.js
           node scripts/test-save-sync-store.js
+          node scripts/test-save-coordinator.js
           node scripts/test-folder-save-primary.js
           node scripts/test-folder-save-runtime-integrity.js
