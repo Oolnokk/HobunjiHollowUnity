@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
-  const CHANGE_SUMMARY = 'Latest: Google Drive now uses the canonical V3 save envelope, keeps OAuth tokens memory-only, and linked saves are queued durably before Quit or Start Farming can navigate away.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Google Drive now uses the canonical V3 save envelope, queues linked saves durably before navigation, and reconciles a remembered mobile Drive link before save selection after an explicit authorization tap.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -25,6 +25,7 @@
       coordinator: safeSnapshot(() => window.HobunjiSaveCoordinator?.getStatus?.()),
       googleDrive: safeSnapshot(() => window.HobunjiGoogleDriveSave?.getStatus?.()),
       googleDriveUi: safeSnapshot(() => window.__hobunjiGoogleDriveSaveUIDebug?.snapshot?.()),
+      googleDriveStartup: safeSnapshot(() => window.__hobunjiGoogleDriveSaveStartupDebug?.snapshot?.()),
       folder: safeSnapshot(() => window.LocalSaveFolder?.getStatus?.()),
       folderV3: safeSnapshot(() => window.__hobunjiFolderSaveV3Debug?.snapshot?.()),
       primaryUx: safeSnapshot(() => window.__hobunjiFolderSavePrimaryDebug?.snapshot?.()),
