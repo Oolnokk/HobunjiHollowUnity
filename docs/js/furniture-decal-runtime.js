@@ -14,8 +14,6 @@
   const TANKAN_SETTINGS_VERSION = 3;
   const TANKAN_NORMALIZED_VERSION = 2;
   const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
-  const TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8;
-  const TANKAN_EXTRA_COLUMN_WIDTH_FACTOR = 0.2;
   const TANKAN_PADDING_X_EM = 0.8;
   const TANKAN_PADDING_Y_EM = 0.28;
   const TANKAN_BASELINE = Object.freeze({
@@ -35,7 +33,7 @@
   const SCRIPT_SRC = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Resolves the shared Tankan helper from nested previews.
   const textureCache = new Map(); // Resolved decal source key -> shared THREE.Texture used by all furniture instances.
   let tankanLayoutPromise = null; // Shared async helper load so text decals can appear when this runtime is loaded directly.
-  let cachedTankanBaselineLayout = null; // Used by natural auto-sizing so runtime matches the author exactly.
+  let cachedTankanBaselineLayout = null; // Anchors runtime container pixel density to the same normalized Hobunji Hollow reference as the editor.
 
   const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -159,22 +157,54 @@
   }
 
   function tankanNaturalWidthFactor(record, layout) {
-    const options = tankanTextureOptions(record);
-    const baselineAdvance = Math.max(0.05, 1 + TANKAN_BASELINE.columnSpacingEm);
-    const currentAdvance = Math.max(0.05, 1 + options.columnSpacingEm);
-    const extraColumns = Math.max(0, (layout?.columnCount || 1) - 1);
-    return Math.max(0.05, TANKAN_SINGLE_COLUMN_WIDTH_FACTOR + extraColumns * TANKAN_EXTRA_COLUMN_WIDTH_FACTOR * (currentAdvance / baselineAdvance));
+    const baseLayout = baselineTankanLayout();
+    const liveLayout = layout || measureTankanLayout(record?.tankanText, tankanTextureOptions(record));
+    return Math.max(0.001, liveLayout.widthPx / baseLayout.widthPx);
   }
 
   function tankanNaturalHeightFactor(record, layout) {
     const baseLayout = baselineTankanLayout();
     const liveLayout = layout || measureTankanLayout(record?.tankanText, tankanTextureOptions(record));
-    return Math.max(0.05, (liveLayout?.heightPx || baseLayout.heightPx) / baseLayout.heightPx);
+    return Math.max(0.001, liveLayout.heightPx / baseLayout.heightPx);
+  }
+
+  function tankanContainerPixels(record) {
+    const baseLayout = baselineTankanLayout();
+    return {
+      widthPx: Math.max(1, Math.round(baseLayout.widthPx * Math.max(0.001, finiteOr(record?.width, 1)))),
+      heightPx: Math.max(1, Math.round(baseLayout.heightPx * Math.max(0.001, finiteOr(record?.height, 1)))),
+    };
+  }
+
+  function tankanContainerState(record) {
+    const options = tankanTextureOptions(record);
+    const layout = measureTankanLayout(record?.tankanText, options);
+    const container = tankanContainerPixels(record);
+    const fitScale = Math.min(1, container.widthPx / layout.widthPx, container.heightPx / layout.heightPx);
+    return {
+      layout,
+      containerWidthPx: container.widthPx,
+      containerHeightPx: container.heightPx,
+      fitScale,
+      renderedWidthPx: layout.widthPx * fitScale,
+      renderedHeightPx: layout.heightPx * fitScale,
+    };
+  }
+
+  function tankanRenderOptions(record) {
+    const options = tankanTextureOptions(record);
+    if (!isNormalizedTankan(record)) return options;
+    const container = tankanContainerPixels(record);
+    return {
+      ...options,
+      containerWidthPx: container.widthPx,
+      containerHeightPx: container.heightPx,
+    };
   }
 
   function tankanTextureKey(record) {
-    const options = tankanTextureOptions(record);
-    return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm ?? ''}\u0000${options.paddingYEm ?? ''}\u0000${options.color}`;
+    const options = tankanRenderOptions(record);
+    return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm ?? ''}\u0000${options.paddingYEm ?? ''}\u0000${options.containerWidthPx ?? ''}\u0000${options.containerHeightPx ?? ''}\u0000${options.color}`;
   }
 
   function tankanTextureFor(record) {
@@ -189,7 +219,7 @@
       if (!layout?.renderToCanvas) throw new Error('TankanScriptLayout unavailable');
       return Promise.resolve(layout.ensureFontLoaded?.()).then(() => layout);
     }).then(layout => {
-      const rendered = layout.renderToCanvas(canvas, record.tankanText, tankanTextureOptions(record));
+      const rendered = layout.renderToCanvas(canvas, record.tankanText, tankanRenderOptions(record));
       texture.userData = { ...(texture.userData || {}), tankanLayout: rendered || null };
       texture.needsUpdate = true;
     }).catch(error => {
@@ -254,16 +284,17 @@
         opacity: clamp(finiteOr(record?.opacity, 1), 0, 1),
       };
     }
-    const layout = measureTankanLayout(record.tankanText, tankanTextureOptions(record));
+    const container = tankanContainerState(record);
     return {
       offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
       offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
-      width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)) * tankanNaturalWidthFactor(record, layout),
-      height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)) * tankanNaturalHeightFactor(record, layout),
+      width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
+      height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
       rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
       normalOffset: Math.max(0.0002, TANKAN_BASELINE.normalOffset + finiteOr(record.normalOffset, 0)),
       opacity: clamp(finiteOr(record.opacity, TANKAN_BASELINE.opacity), 0, 1),
-      tankanLayout: layout,
+      tankanLayout: container.layout,
+      tankanFitScale: container.fitScale,
     };
   }
 
@@ -310,6 +341,7 @@
       surfaceId: surface.id || null,
       authoredPartId: surface.partId || null,
       tankanLayout: transform.tankanLayout || null,
+      tankanFitScale: transform.tankanFitScale ?? null,
     };
     mesh.castShadow = false;
     mesh.receiveShadow = false;
@@ -359,8 +391,11 @@
     ensureTankanLayout,
     isTankanTextDecal,
     tankanTextureOptions,
+    tankanRenderOptions,
     resolvedTransform,
     tankanNaturalWidthFactor,
     tankanNaturalHeightFactor,
+    tankanContainerPixels,
+    tankanContainerState,
   };
 })();
