@@ -27,11 +27,10 @@ function makeHand(name, x, y, z = 0) {
   };
 }
 
-// Reproduces the real procedural editor's pre-fix state: generated hands are
-// initialized at the older symmetric handAttachX/Y idle, while species/gender
-// may only be recoverable from the portrait asset filename.
-const left = makeHand('Preview_LeftHand', 0.2, 0.45);
-const right = makeHand('Preview_RightHand', -0.2, 0.45);
+// Reproduces the real procedural editor convention captured in mobile diagnostics:
+// a negative handAttachX places LeftHand at that negative X and RightHand at +X.
+const left = makeHand('Preview_LeftHand', -0.2, 0.45);
+const right = makeHand('Preview_RightHand', 0.2, 0.45);
 const torso = {
   name: 'torso',
   children: [],
@@ -66,13 +65,14 @@ right.parent = model;
 torso.parent = model;
 
 const scene = { name: 'Scene', onBeforeRender: null };
-const frames = []; // Captures the adapter's continuous hook-integrity loop so the test can force a later callback replacement.
+const frames = [];
 let danceDebug = { enabled: false, armStyle: 'none' };
 const diagnostics = [];
 const profile = {
   species: 'test-species',
   gender: 'male',
   posteriorRule: { heightPercentFromFloor: 30 },
+  handShoulderRule: { runtimeBaseWidth: 0.9 },
   anchors: {
     leftHandShoulder: { position: { x: 0.25, y: 0.6, z: 0 } },
     rightHandShoulder: { position: { x: -0.3, y: 0.6, z: 0 } },
@@ -117,16 +117,24 @@ assert(Math.abs(right.position.z - (0.003 * Math.cos(0.28))) < 1e-9, 'right idle
 
 const firstDebug = windowObject.HobunjiProceduralEditorIdleArms.getDebug();
 assert.strictEqual(firstDebug.identitySource, 'avatar-asset-url', 'portrait asset filenames should recover species/gender when editor model metadata does not publish identity');
-assert.strictEqual(firstDebug.left.atLegacyIdleDefault, true, 'old handAttachX/Y idle should be recognized as a default that parity is allowed to replace');
+assert.strictEqual(firstDebug.left.atLegacyIdleDefault, true, 'real editor left=handAttachX/right=-handAttachX idle should be recognized as acquireable default state');
+assert.strictEqual(firstDebug.right.atLegacyIdleDefault, true, 'real editor right-hand legacy sign should be recognized too');
 assert.strictEqual(firstDebug.left.reason, 'claimed-legacy-idle', 'debug state should say when parity claimed the legacy editor idle');
 assert.strictEqual(firstDebug.posteriorY, 0.3, 'debug state should expose canonical posterior Y');
 assert.strictEqual(firstDebug.armLengthWorldY, -0.1, 'debug state should expose the literal authored arm-length Y contribution');
 assert(diagnostics.some(entry => /Resolved gameplay\/Attack Editor free-hand profile/.test(entry.message)), 'resolved species/gender/profile should be visible in the editor Diagnostics panel');
 assert(diagnostics.some(entry => /Idle-arm parity diagnostic/.test(entry.message) && entry.extra?.left?.atLegacyIdleDefault), 'mobile Diagnostics should include hand positions, targets, legacy-idle acquisition, and ownership state');
 
-// The editor can install later render-stage writers after this adapter. If one
-// replaces scene.onBeforeRender, the polling loop must notice and re-chain it
-// rather than silently stopping after the initial "hook attached" message.
+// Rig-coordinate shoulders are authored against the 0.9 runtime width. A half-width
+// preview like Garanki's 0.45-wide model must therefore halve shoulder X before placement.
+model.userData.portraitModelWidth = 0.45;
+const halfScaleTarget = windowObject.HobunjiProceduralEditorIdleArms.getCanonicalTarget('left', 0);
+assert(Math.abs(halfScaleTarget.x - 0.125) < 1e-9, '0.45-wide preview should scale a 0.25 authored shoulder X by 0.5');
+assert(Math.abs(halfScaleTarget.shoulderScale - 0.5) < 1e-9, 'debug target should expose the shoulder coordinate scale');
+model.userData.portraitModelWidth = 0.9;
+
+// A later render-stage writer can replace scene.onBeforeRender. The polling loop
+// must notice and re-chain it rather than silently stopping after first attach.
 let replacementCalls = 0;
 scene.onBeforeRender = () => { replacementCalls += 1; };
 assert(frames.length >= 1, 'hook-integrity loop should continue after initial attach');
@@ -136,13 +144,13 @@ scene.onBeforeRender();
 assert.strictEqual(replacementCalls, 1, 'reattached idle-arm hook should preserve and chain the later editor callback');
 assert(diagnostics.some(entry => /hook was replaced/.test(entry.message)), 'hook replacement/recovery should be visible in mobile Diagnostics');
 
-left.position.set(0.7, 0.7, 0.7); // Simulates another procedural authoring writer taking left-hand ownership after the default pass.
+left.position.set(0.7, 0.7, 0.7);
 scene.onBeforeRender();
 assert.deepStrictEqual([left.position.x, left.position.y, left.position.z], [0.7, 0.7, 0.7], 'idle fallback must yield when an explicit animation writer moves a hand');
 assert.strictEqual(windowObject.HobunjiProceduralEditorIdleArms.getDebug().left.owns, false, 'debug state should expose per-side ownership loss');
 
 danceDebug = { enabled: true, armStyle: 'raise-reach' };
-right.position.set(-0.8, 0.9, 0.4); // Simulates the explicit Dance arm solver's final target.
+right.position.set(-0.8, 0.9, 0.4);
 scene.onBeforeRender();
 assert.deepStrictEqual([right.position.x, right.position.y, right.position.z], [-0.8, 0.9, 0.4], 'explicit Dance arm styles must remain higher priority than the idle default');
 assert.match(windowObject.HobunjiProceduralEditorIdleArms.getDebug().reason, /^dance:/, 'debug state should identify explicit Dance ownership');
@@ -158,10 +166,14 @@ assert(diagnostics.some(entry => entry.extra?.hook?.attachCount >= 2), 'manual/c
 assert.match(loaderSource, /procedural-editor-idle-arm-parity\.js/, 'procedural editor Dance loader must load the idle-arm parity adapter');
 assert.match(source, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'editor idle arms must reuse the canonical posterior resolver');
 assert.match(source, /armLengthHeightPercentOffset/, 'editor idle arms must consume the authored species/gender arm-length setting');
-assert.match(source, /legacyEditorIdleTarget/, 'editor idle arms must recognize the procedural editor legacy handAttach idle as acquireable default state');
-assert.match(source, /avatar-asset-url/, 'editor idle arms must recover missing identity from loaded portrait asset paths');
+assert.match(source, /npcId/, 'editor idle arms must use the live NPC id when preview metadata omits species/gender');
+assert.match(source, /npc-database/, 'editor idle arms must support NPC-database identity resolution');
+assert.match(source, /repositoryCommit/, 'NPC identity lookup must stay pinned to the preview repository revision');
+assert.match(source, /side === 'left' \? x : -x/, 'legacy editor idle acquisition must match the real left=handAttachX/right=-handAttachX convention');
+assert.match(source, /currentWidth \/ authoredWidth/, 'authored shoulder X must scale from the 0.9 runtime basis to the current preview width');
+assert.match(source, /avatar-asset-url/, 'editor idle arms should retain portrait-asset identity recovery as a no-fetch fallback');
 assert.match(source, /hand\.position\.copy\(target\)/, 'editor idle arms must drive the existing generated hand wrapper instead of creating a duplicate hand rig');
 assert.match(source, /explicit-animation-owner/, 'editor idle arms must retain explicit animation ownership diagnostics');
 assert.match(source, /hook was replaced/, 'editor idle arms must self-heal if another editor writer replaces the final hook');
 
-console.log('procedural editor idle arms: legacy-idle acquisition + canonical parity + mobile diagnostics + hook recovery PASS');
+console.log('procedural editor idle arms: real legacy signs + NPC identity fallback + scaled shoulders + mobile diagnostics PASS');
