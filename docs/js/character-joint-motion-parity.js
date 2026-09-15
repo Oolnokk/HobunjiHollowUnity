@@ -2,39 +2,30 @@
 //
 // Source-of-truth rules:
 //   * every movement hip uses the CURRENT species+gender posterior Y;
-//   * dance shoulders use the authored left/right hand-shoulder anchors;
+//   * gameplay dance shoulder orientation is owned by procedural-hand-forearm-alignment-runtime.js;
+//   * procedural-editor Dance uses the authored hand-shoulder anchor instead of its legacy heuristic;
 //   * shoulder-pet perch is diagnostic/reference only, never substituted for a hand shoulder.
-//
-// This deliberately reads HOBUNJI_ATTACHMENT_RIG_PROFILES live. The latest authored
-// snapshot can land after an avatar/leg handle was constructed, so caching a posterior
-// number at attach time is incorrect.
 (function (global) {
   'use strict';
 
   if (global.HobunjiCharacterJointMotionParity?.installed) return;
 
-  const SELF_SRC = document.currentScript?.src || '';
-  const DEFAULT_MODEL_SIZE = 0.9;
+  const SELF_SRC = document.currentScript?.src || ''; // Keeps the editor's late profile layer on the same commit as this adapter.
+  const DEFAULT_MODEL_SIZE = 0.9; // Attachment-rig character coordinates are authored in the 0.9-wide runtime basis.
   const PREVIEW_PATH_RE = /\/tools\/procedural-animation-editor\/(?:index\.html)?$/;
-  const PRE_SYNC_ORDER = -99995; // Normal hand driver is -100000; capture the undanced wrist immediately after it.
-  const DANCE_SYNC_ORDER = -99985; // Player/NPC dance is -99990; correct its shoulder origin before forearm orientation/visible hands.
   const LEG_EPSILON = 1e-7;
-  const registeredHandRigs = new Set();
-  const handSentinels = new WeakMap();
   const legHandles = new Set();
 
   let latestProfileLoadState = 'idle';
   let latestProfileLoadError = null;
   let latestProfileReadyAt = 0;
   let liveHipCorrections = 0;
-  let danceShoulderCorrections = 0;
   let previewHipCorrections = 0;
+  let previewShoulderCorrections = 0;
   let lastHipDiagnostic = null;
   let lastShoulderDiagnostic = null;
-  let lastPreviewModel = null;
   let lastPreviewShoulderSignature = '';
   let previewScene = null;
-  let previewSceneBeforeRender = null;
   let previewSceneWrapper = null;
 
   function log(message, level = 'info', extra = null) {
@@ -94,6 +85,12 @@
       const direct = identityFromObject(node.userData);
       if (direct) return direct;
     }
+    const idleDebug = global.HobunjiProceduralEditorIdleArms?.getDebug?.();
+    const profileKey = String(idleDebug?.profile || '');
+    const split = profileKey.split('::');
+    if (split.length === 2 && normalizeSpecies(split[0]) && normalizeGender(split[1])) {
+      return { speciesId: normalizeSpecies(split[0]), gender: normalizeGender(split[1]) };
+    }
     return null;
   }
 
@@ -106,28 +103,28 @@
 
   function avatarDimensions(avatarRoot, profile = null) {
     const anatomy = profile?.anatomy || {};
-    const adultScale = Number(anatomy.portraitScale) || 1;
     const userData = avatarRoot?.userData || {};
-    const width = Number(userData.portraitModelWidth) || DEFAULT_MODEL_SIZE * adultScale;
+    const width = Number(userData.portraitModelWidth) || DEFAULT_MODEL_SIZE * (Number(anatomy.portraitScale) || 1);
     const height = Number(userData.portraitModelHeight) || width;
-    const currentScale = Number(userData.portraitScaleMultiplier) || adultScale;
-    const placementRatio = Number.isFinite(Number(userData.portraitVerticalPlacementRatio))
-      ? Number(userData.portraitVerticalPlacementRatio)
-      : Number(anatomy.portraitVerticalPlacementRatio) || 0.5;
-    return { width, height, currentScale, adultScale, placementRatio };
+    return { width: Math.max(0.05, width), height: Math.max(0.05, height) };
   }
 
   function posteriorY(speciesId, gender, modelHeight, handAttachY = null) {
     const profile = profileFor(speciesId, gender);
     const height = Math.max(0.01, Number(modelHeight) || DEFAULT_MODEL_SIZE);
-    const live = Number(profile?.resolvedPosteriorPosition?.y);
-    if (Number.isFinite(live)) return live;
+
+    // The shared resolver is authoritative. It already prefers the floor-percent
+    // posterior and becomes portrait-binding-aware when the hand coordinate bridge
+    // is installed. A transient resolvedPosteriorPosition is only a fallback.
     const shared = Number(global.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
       profile?.posteriorRule,
       height,
       Number(handAttachY),
     ));
     if (Number.isFinite(shared)) return shared;
+
+    const live = Number(profile?.resolvedPosteriorPosition?.y);
+    if (Number.isFinite(live)) return live;
     const floorPercent = Number(profile?.posteriorRule?.heightPercentFromFloor);
     if (Number.isFinite(floorPercent)) return height * floorPercent / 100;
     const legacyOffset = Number(profile?.posteriorRule?.heightPercentOffset);
@@ -140,21 +137,23 @@
     const raw = profile?.anchors?.[anchorName]?.position;
     if (!profile || !raw) return null;
 
-    // Prefer the portrait-binding system used by runtime hands, pets, and Animation Author.
+    // Gameplay/Attack Editor: use the same portrait binding that normal hand
+    // shoulder aim already consumes. This handles child/full-character scale and
+    // portrait vertical placement without inventing a Dance-specific coordinate system.
     const portraitSpace = global.HobunjiCharacterPortraitAnchorSpace;
-    if (portraitSpace?.metricsForAvatarRoot && portraitSpace?.resolveAnchor) {
+    if (avatarRoot && portraitSpace?.metricsForAvatarRoot && portraitSpace?.resolveAnchor) {
       const metrics = portraitSpace.metricsForAvatarRoot(avatarRoot, profile);
       const position = portraitSpace.resolveAnchor(profile, anchorName, metrics);
       if (position) return { position, profile, source: 'portrait-anchor-space', metrics };
     }
 
-    // Lightweight fallback for the Procedural Animation Editor, which does not load
-    // the full gameplay hand stack. Authored character coordinates use the 0.9-wide
-    // adult basis; current preview size is already species/gender/full-scale adjusted.
+    // Procedural Animation Editor fallback. Its generated portrait model has the
+    // already-sized runtime dimensions but does not load the complete gameplay hand
+    // bridge. Character rig coordinates use a fixed 0.9 runtime basis, matching the
+    // existing idle-arm parity adapter rather than portraitScale itself.
     const dims = avatarDimensions(avatarRoot, profile);
     const referenceWidth = Number(profile?.handShoulderRule?.runtimeBaseWidth) || DEFAULT_MODEL_SIZE;
-    const referenceHeight = Number(profile?.shoulderPerchRule?.portraitModelHeight)
-      || DEFAULT_MODEL_SIZE * (Number(profile?.anatomy?.portraitScale) || 1);
+    const referenceHeight = Number(profile?.anchors?.[anchorName]?.portraitBinding?.referenceModelHeight) || DEFAULT_MODEL_SIZE;
     const xScale = referenceWidth > 0 ? dims.width / referenceWidth : 1;
     const yScale = referenceHeight > 0 ? dims.height / referenceHeight : 1;
     return {
@@ -164,14 +163,13 @@
         z: (Number(raw.z) || 0) * xScale,
       },
       profile,
-      source: 'authored-profile-size-fallback',
-      metrics: dims,
+      source: 'authored-runtime-basis-fallback',
+      metrics: { ...dims, referenceWidth, referenceHeight },
     };
   }
 
-  function resolveShoulderForRig(rig, side) {
-    const avatarRoot = rig?.avatarRoot || null;
-    const identity = identityForAvatar(avatarRoot, { speciesId: rig?.speciesId, gender: rig?.gender });
+  function resolveShoulderForAvatar(avatarRoot, side, fallback = {}) {
+    const identity = identityForAvatar(avatarRoot, fallback);
     if (!identity) return null;
     const anchorName = side === 'right' ? 'rightHandShoulder' : 'leftHandShoulder';
     const resolved = resolveAnchorForAvatar(avatarRoot, identity.speciesId, identity.gender, anchorName);
@@ -189,16 +187,17 @@
     const left = resolve('leftHandShoulder');
     const right = resolve('rightHandShoulder');
     if (!perch || !left || !right) return null;
+    const leftDelta = Number(left.y) - Number(perch.y);
+    const rightDelta = Number(right.y) - Number(perch.y);
     return {
       species: 'mao-ao', gender: sex,
       coordinateSpace: avatarRoot ? 'current-portrait-space' : 'authored-character-space',
       shoulderPerchY: Number(perch.y),
       leftHandShoulderY: Number(left.y),
       rightHandShoulderY: Number(right.y),
-      leftDeltaFromPerch: Number(left.y) - Number(perch.y),
-      rightDeltaFromPerch: Number(right.y) - Number(perch.y),
-      likelyAuthoringError: Math.abs(Number(left.y) - Number(perch.y)) > 0.08
-        && Math.abs(Number(right.y) - Number(perch.y)) > 0.08,
+      leftDeltaFromPerch: leftDelta,
+      rightDeltaFromPerch: rightDelta,
+      likelyAuthoringError: Math.abs(leftDelta) > 0.08 && Math.abs(rightDelta) > 0.08,
     };
   }
 
@@ -226,25 +225,28 @@
     if (!handle?.group || handle.__hobunjiLivePosteriorHip) return handle;
     const identity = identityForAvatar(options.avatarRoot, options)
       || { speciesId: normalizeSpecies(options.speciesId), gender: normalizeGender(options.gender) || 'male' };
-    const modelHeight = Math.max(0.01,
-      Number(options.modelHeight)
-      || Number(options.avatarRoot?.userData?.portraitModelHeight)
-      || DEFAULT_MODEL_SIZE);
-    const handAttachY = Number.isFinite(Number(options.handAttachY))
-      ? Number(options.handAttachY)
-      : Number(options.avatarRoot?.userData?.handAttachY);
     const leftHip = handle.group.getObjectByName?.('left_hip') || null;
     const rightHip = handle.group.getObjectByName?.('right_hip') || null;
     let lastY = null;
 
+    const currentHeight = () => Math.max(0.01,
+      Number(options.avatarRoot?.userData?.portraitModelHeight)
+      || Number(options.modelHeight)
+      || DEFAULT_MODEL_SIZE);
+    const currentHandAttachY = () => Number.isFinite(Number(options.avatarRoot?.userData?.handAttachY))
+      ? Number(options.avatarRoot.userData.handAttachY)
+      : Number(options.handAttachY);
+
     const syncPosterior = () => {
-      const nextY = posteriorY(identity.speciesId, identity.gender, modelHeight, handAttachY);
+      const modelHeight = currentHeight();
+      const nextY = posteriorY(identity.speciesId, identity.gender, modelHeight, currentHandAttachY());
       if (!Number.isFinite(nextY)) return null;
       if (leftHip?.position) leftHip.position.y = nextY;
       if (rightHip?.position) rightHip.position.y = nextY;
       if (lastY == null || Math.abs(nextY - lastY) > LEG_EPSILON) {
         liveHipCorrections += 1;
         lastHipDiagnostic = {
+          target: 'gameplay-procedural-leg-hips',
           speciesId: identity.speciesId,
           gender: identity.gender,
           posteriorY: nextY,
@@ -261,9 +263,9 @@
     const originalUpdate = handle.update?.bind(handle);
     if (originalUpdate) {
       handle.update = function posteriorLiveLegUpdate() {
-        syncPosterior(); // Hip must be correct BEFORE the two-bone solve uses it.
+        syncPosterior(); // The two-bone solver must read the current posterior before every movement solve.
         const result = originalUpdate.apply(this, arguments);
-        syncPosterior(); // Keep exposed/debug hip nodes authoritative if an older updater wrote them.
+        syncPosterior(); // Keep exposed hip nodes authoritative if an older updater touched them.
         return result;
       };
     }
@@ -277,7 +279,8 @@
     const originalDebug = handle.getStandingPoseDebug?.bind(handle);
     if (originalDebug) {
       handle.getStandingPoseDebug = function posteriorLiveStandingDebug() {
-        return { ...(originalDebug() || {}), livePosteriorY: syncPosterior(), posteriorSource: 'species+gender-current-profile' };
+        const live = syncPosterior();
+        return { ...(originalDebug() || {}), posteriorY: live, livePosteriorY: live, posteriorSource: 'species+gender-current-profile' };
       };
     }
     try {
@@ -286,9 +289,7 @@
         enumerable: true,
         get: () => syncPosterior(),
       });
-    } catch (_) {
-      // Older handles expose a writable value instead. The update wrapper still keeps hips live.
-    }
+    } catch (_) {}
     Object.defineProperty(handle, '__hobunjiLivePosteriorHip', { value: true, configurable: true });
     handle.syncPosteriorHip = syncPosterior;
     legHandles.add(handle);
@@ -303,100 +304,6 @@
       return installLivePosteriorOnHandle(original(THREE, parent, options), options);
     };
     api.attach.__hobunjiJointPosteriorWrapped = true;
-  }
-
-  function makeInvisibleSentinel(THREE, name, renderOrder, callback) {
-    if (!THREE?.Mesh || !THREE?.BufferGeometry || !THREE?.Float32BufferAttribute || !THREE?.MeshBasicMaterial) return null;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0.0001,0,0, 0,0.0001,0], 3));
-    const material = new THREE.MeshBasicMaterial({ depthTest: false, depthWrite: false });
-    material.colorWrite = false;
-    const sentinel = new THREE.Mesh(geometry, material);
-    sentinel.name = name;
-    sentinel.frustumCulled = false;
-    sentinel.renderOrder = renderOrder;
-    sentinel.onBeforeRender = callback;
-    return sentinel;
-  }
-
-  function handSockets(rig) {
-    return {
-      left: rig?.group?.getObjectByName?.('left_hand_socket') || null,
-      right: rig?.group?.getObjectByName?.('right_hand_socket') || null,
-    };
-  }
-
-  function installDanceShoulderSentinels(rig, THREE = global.THREE) {
-    if (!rig?.group?.isObject3D || handSentinels.has(rig) || !THREE) return;
-    const sockets = handSockets(rig);
-    if (!sockets.left || !sockets.right) return;
-    const base = { left: null, right: null };
-    const avatarRoot = rig.avatarRoot || null;
-
-    const pre = makeInvisibleSentinel(THREE, `${rig.group.name || 'hands'}_joint_pre`, PRE_SYNC_ORDER, () => {
-      base.left = sockets.left.position.clone();
-      base.right = sockets.right.position.clone();
-    });
-    const post = makeInvisibleSentinel(THREE, `${rig.group.name || 'hands'}_joint_post`, DANCE_SYNC_ORDER, () => {
-      if (!base.left || !base.right) return;
-      const moved = sockets.left.position.distanceToSquared(base.left) > 1e-10
-        || sockets.right.position.distanceToSquared(base.right) > 1e-10;
-      if (!moved) return; // No dance writer ran between the two sentinels.
-      const profile = profileFor(rig.speciesId, rig.gender);
-      const dims = avatarDimensions(avatarRoot, profile);
-      const corrected = {};
-      for (const side of ['left', 'right']) {
-        const shoulder = resolveShoulderForRig(rig, side);
-        if (!shoulder?.position) continue;
-        const rest = base[side];
-        // Old dance code implicitly treated a heuristic point above/inboard of the
-        // resting wrist as its shoulder. Translate the already-authored dance pose
-        // by the delta to the actual shoulder, preserving its beat/style motion.
-        const legacyShoulder = {
-          x: rest.x * 0.62,
-          y: rest.y + dims.height * 0.10,
-          z: rest.z,
-        };
-        const dx = Number(shoulder.position.x) - legacyShoulder.x;
-        const dy = Number(shoulder.position.y) - legacyShoulder.y;
-        const dz = Number(shoulder.position.z) - legacyShoulder.z;
-        sockets[side].position.x += dx;
-        sockets[side].position.y += dy;
-        sockets[side].position.z += dz;
-        sockets[side].updateMatrix?.();
-        sockets[side].updateMatrixWorld?.(true);
-        corrected[side] = { authoredShoulder: shoulder.position, legacyShoulder, correction: { x: dx, y: dy, z: dz }, source: shoulder.source };
-      }
-      if (corrected.left || corrected.right) {
-        danceShoulderCorrections += 1;
-        lastShoulderDiagnostic = {
-          target: 'gameplay-dance-hands',
-          speciesId: normalizeSpecies(rig.speciesId),
-          gender: normalizeGender(rig.gender) || 'male',
-          corrected,
-          maoAoSanity: normalizeSpecies(rig.speciesId) === 'mao-ao' ? maoAoShoulderSanity(rig.gender, avatarRoot) : null,
-        };
-      }
-    });
-    if (!pre || !post) return;
-    rig.group.add(pre, post);
-    handSentinels.set(rig, { pre, post });
-  }
-
-  function registerHandRig(rig, THREE = global.THREE) {
-    if (!rig) return rig;
-    registeredHandRigs.add(rig);
-    installDanceShoulderSentinels(rig, THREE);
-    return rig;
-  }
-
-  function patchHandApi(api) {
-    if (!api?.attach || api.attach.__hobunjiJointDanceWrapped) return;
-    const original = api.attach.bind(api);
-    api.attach = function jointDanceHandAttach(THREE, parent, options = {}) {
-      return registerHandRig(original(THREE, parent, options), THREE);
-    };
-    api.attach.__hobunjiJointDanceWrapped = true;
   }
 
   function profileScriptUrl(filename) {
@@ -421,18 +328,18 @@
   function loadLatestProfilesForProceduralEditor() {
     if (!PREVIEW_PATH_RE.test(location.pathname) || latestProfileLoadState !== 'idle') return;
     if (!global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters) {
-      requestAnimationFrame(loadLatestProfilesForProceduralEditor);
+      global.requestAnimationFrame?.(loadLatestProfilesForProceduralEditor);
       return;
     }
     latestProfileLoadState = 'loading';
-    appendScript(profileScriptUrl('attachment-rig-latest-authored-snapshot-core.js?v=20260904joint1'), 'proceduralEditorLatestRigSnapshot')
-      .then(() => appendScript(profileScriptUrl('character-rig-maoao-authored-20260905.js?v=20260905joint1'), 'proceduralEditorLatestMaoShoulders'))
+    appendScript(profileScriptUrl('attachment-rig-latest-authored-snapshot-core.js?v=20260904joint2'), 'proceduralEditorLatestRigSnapshot')
+      .then(() => appendScript(profileScriptUrl('character-rig-maoao-authored-20260905.js?v=20260905joint2'), 'proceduralEditorLatestMaoShoulders'))
       .then(() => {
         latestProfileLoadState = 'ready';
         latestProfileReadyAt = performance.now();
         const male = profileFor('mao-ao', 'male');
         const sanity = maoAoShoulderSanity('male');
-        log('[Joint anchors] Procedural editor now uses the latest authored rig profile layer.', 'info', {
+        log('Procedural editor now uses the latest authored rig profile layer.', 'info', {
           maoAoMalePosteriorPercentFromFloor: Number(male?.posteriorRule?.heightPercentFromFloor),
           maoAoMaleShoulderSanity: sanity,
           profileStatus: global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS || null,
@@ -443,14 +350,12 @@
       .catch(error => {
         latestProfileLoadState = 'error';
         latestProfileLoadError = String(error?.message || error);
-        log('[Joint anchors] Latest authored procedural-editor rig profile failed to load.', 'error', { error: latestProfileLoadError });
+        log('Latest authored procedural-editor rig profile failed to load.', 'error', { error: latestProfileLoadError });
       });
   }
 
   function previewIdentity(model) {
-    return identityForAvatar(model)
-      || identityFromObject(model?.userData?.experimentalFeet)
-      || null;
+    return identityForAvatar(model) || identityFromObject(model?.userData?.experimentalFeet) || null;
   }
 
   function patchPreviewHipLines() {
@@ -480,23 +385,19 @@
           profilePercentFromFloor: Number(profileFor(identity.speciesId, identity.gender)?.posteriorRule?.heightPercentFromFloor),
         };
       }
-      // The Dance generated-feet bridge exposes proxy hip positions through its shim.
-      // Keep those pivots in lock-step if the bridge captured the line before the latest
-      // authored profile finished loading.
       const shim = model.getObjectByName?.(`${model.name || 'Avatar'}_procedural_feet`) || null;
       for (const side of ['left', 'right']) {
         const hip = shim?.getObjectByName?.(`${side}_hip`);
         if (hip?.position && Number.isFinite(desired)) hip.position.y = desired;
       }
     }
-    requestAnimationFrame(patchPreviewHipLines);
+    global.requestAnimationFrame?.(patchPreviewHipLines);
   }
 
-  function previewShoulderModelLocal(model, identity, side) {
-    const anchorName = side === 'right' ? 'rightHandShoulder' : 'leftHandShoulder';
-    const resolved = resolveAnchorForAvatar(model, identity.speciesId, identity.gender, anchorName);
+  function previewShoulderModelLocal(model, side) {
+    const resolved = resolveShoulderForAvatar(model, side);
     if (!resolved?.position) return null;
-    const lift = avatarDimensions(model, resolved.profile).height / 2; // Full Character Scale portrait lift; Dance arm root is portrait-local.
+    const lift = avatarDimensions(model, resolved.profile).height / 2; // Editor portrait stays centered while the runtime floor parent lifts it by half-height.
     return {
       position: {
         x: Number(resolved.position.x) || 0,
@@ -505,6 +406,7 @@
       },
       floorPosition: resolved.position,
       source: resolved.source,
+      identity: { speciesId: resolved.speciesId, gender: resolved.gender },
       lift,
     };
   }
@@ -520,7 +422,7 @@
     for (const side of ['left', 'right']) {
       const line = armRoot.getObjectByName?.(`${side}ArmDebugLine`) || null;
       const attr = line?.geometry?.attributes?.position;
-      const desired = previewShoulderModelLocal(model, identity, side);
+      const desired = previewShoulderModelLocal(model, side);
       if (!attr || attr.count < 3 || !desired?.position) continue;
       const old = { x: attr.getX(0), y: attr.getY(0), z: attr.getZ(0) };
       const delta = {
@@ -542,10 +444,16 @@
         hand.position.z += delta.z;
         hand.updateMatrixWorld?.(true);
       }
-      corrected[side] = { oldShoulderLocal: old, authoredShoulderLocal: desired.position, authoredShoulderFloor: desired.floorPosition, delta, source: desired.source };
+      corrected[side] = {
+        oldShoulderLocal: old,
+        authoredShoulderLocal: desired.position,
+        authoredShoulderFloor: desired.floorPosition,
+        delta,
+        source: desired.source,
+      };
     }
     if (corrected.left || corrected.right) {
-      danceShoulderCorrections += 1;
+      previewShoulderCorrections += 1;
       const signature = `${model.name}|${identity.speciesId}|${identity.gender}|${dance.armStyle}`;
       lastShoulderDiagnostic = {
         target: 'procedural-editor-dance-arms', model: model.name, ...identity, armStyle: dance.armStyle,
@@ -553,7 +461,7 @@
       };
       if (signature !== lastPreviewShoulderSignature) {
         lastPreviewShoulderSignature = signature;
-        log('[Joint anchors] Dance shoulder pivot now uses authored species+gender hand-shoulder anchors.', 'info', lastShoulderDiagnostic);
+        log('Procedural-editor Dance shoulder pivot now uses authored species+gender hand-shoulder anchors.', 'info', lastShoulderDiagnostic);
       }
     }
   }
@@ -561,11 +469,10 @@
   function attachPreviewSceneHook() {
     if (!PREVIEW_PATH_RE.test(location.pathname)) return;
     const scene = global.HobunjiGameplayBackdrop?.getScene?.() || null;
-    if (!scene) { requestAnimationFrame(attachPreviewSceneHook); return; }
+    if (!scene) { global.requestAnimationFrame?.(attachPreviewSceneHook); return; }
     if (scene === previewScene && scene.onBeforeRender === previewSceneWrapper) return;
     previewScene = scene;
-    previewSceneBeforeRender = scene.onBeforeRender;
-    const previous = previewSceneBeforeRender;
+    const previous = scene.onBeforeRender;
     previewSceneWrapper = function jointAnchorPreviewBeforeRender() {
       if (typeof previous === 'function') previous.apply(this, arguments);
       correctPreviewDanceShoulders();
@@ -579,7 +486,7 @@
       const scene = global.HobunjiGameplayBackdrop?.getScene?.() || null;
       if (scene && scene.onBeforeRender !== previewSceneWrapper) attachPreviewSceneHook();
     }
-    requestAnimationFrame(previewHookIntegrityLoop);
+    global.requestAnimationFrame?.(previewHookIntegrityLoop);
   }
 
   const api = {
@@ -587,7 +494,7 @@
     profileFor,
     posteriorY,
     resolveAnchorForAvatar,
-    resolveShoulderForRig,
+    resolveShoulderForAvatar,
     maoAoShoulderSanity,
     syncAllLegHips() { for (const handle of legHandles) handle.syncPosteriorHip?.(); },
     getDebug() {
@@ -597,33 +504,29 @@
         latestProfileLoadError,
         latestProfileReadyAt,
         liveLegHandles: legHandles.size,
-        registeredHandRigs: registeredHandRigs.size,
         liveHipCorrections,
         previewHipCorrections,
-        danceShoulderCorrections,
+        previewShoulderCorrections,
         lastHipDiagnostic,
         lastShoulderDiagnostic,
+        gameplayDanceShoulderOwner: 'ProceduralHandForearmAlignment / HobunjiCharacterPortraitAnchorSpace',
         maoAoMaleShoulderSanity: maoAoShoulderSanity('male'),
         maoAoFemaleShoulderSanity: maoAoShoulderSanity('female'),
       };
     },
-    logNow() { log('[Joint anchors] Current joint parity diagnostic.', 'info', api.getDebug()); return api.getDebug(); },
+    logNow() { log('Current joint parity diagnostic.', 'info', api.getDebug()); return api.getDebug(); },
   };
   global.HobunjiCharacterJointMotionParity = api;
 
   chainGlobal('ProceduralLegAnimation', patchLegApi);
-  chainGlobal('ProceduralHandAttachments', patchHandApi);
   loadLatestProfilesForProceduralEditor();
   if (PREVIEW_PATH_RE.test(location.pathname)) {
-    requestAnimationFrame(patchPreviewHipLines);
-    requestAnimationFrame(previewHookIntegrityLoop);
+    global.requestAnimationFrame?.(patchPreviewHipLines);
+    global.requestAnimationFrame?.(previewHookIntegrityLoop);
   }
 
-  // The male Mao-ao values are intentionally logged because the shoulder-pet
-  // perch is the requested sanity check for whether the authored hand shoulders
-  // themselves are bad. Small deltas mean the bug is interpretation, not authoring.
-  requestAnimationFrame(() => {
+  global.requestAnimationFrame?.(() => {
     const sanity = maoAoShoulderSanity('male');
-    if (sanity) log('[Joint anchors] Mao-ao male shoulder/perch authoring sanity.', sanity.likelyAuthoringError ? 'warn' : 'info', sanity);
+    if (sanity) log('Mao-ao male shoulder/perch authoring sanity.', sanity.likelyAuthoringError ? 'warn' : 'info', sanity);
   });
 })(window);
