@@ -22,6 +22,7 @@
   let lastControllerSnapshotAt = 0; // Used to distinguish controller-owned Nursery focus from ordinary pointer focus.
   let nurseryFocusIndex = null; // Used to restore the same Nursery baby after its selected-state rerender replaces the button node.
   let nurseryScrollTop = 0; // Used to preserve the Nursery's local scroll position across that same replacement.
+  let nurseryFocusArmed = false; // True only while controller focus is actually on a compact Nursery baby row.
   let nurseryRestoreQueued = false; // Prevents multiple focus restorations during one mutation burst.
 
   function ensureStyles() {
@@ -212,8 +213,12 @@
     }
     const pairButton = document.getElementById('farmPairBtn'); // Existing FarmPanel button; moved, never cloned, so its handler/state stay authoritative.
     const addButton = document.getElementById('farmAddLivestockBtn'); // Existing add-livestock control shares the compact primary action bar.
+    const oldParents = new Set([pairButton?.parentElement, addButton?.parentElement].filter(Boolean)); // Used to collapse the now-empty legacy toolbar after moving its controls.
     if (pairButton && pairButton.parentElement !== bar) bar.appendChild(pairButton);
     if (addButton && addButton.parentElement !== bar) bar.appendChild(addButton);
+    for (const parent of oldParents) {
+      if (parent !== bar && parent.classList?.contains('farm-toolbar') && !parent.children.length) parent.hidden = true;
+    }
   }
 
   function ensureActiveBreedingGroup(livestockSection) {
@@ -325,17 +330,29 @@
     return performance.now() - lastControllerSnapshotAt < 500;
   }
 
+  function nurseryRowButton(target) {
+    return target?.closest?.('#livestockNurserySection .' + NURSERY_SCROLL_CLASS + ' > button') || null;
+  }
+
   function captureNurseryFocus(target) {
-    const button = target?.closest?.('#livestockNurserySection .' + NURSERY_SCROLL_CLASS + ' > button');
-    if (!button || !controllerWasRecent()) return;
+    const button = nurseryRowButton(target);
+    if (!button || !controllerWasRecent()) return false;
     const index = Number(button.dataset.farmNurseryIndex); // Used to restore the corresponding replacement button after selected-state rerender.
     if (Number.isFinite(index)) nurseryFocusIndex = index;
     const scroll = button.parentElement;
     if (scroll) nurseryScrollTop = scroll.scrollTop;
+    nurseryFocusArmed = true;
+    return true;
+  }
+
+  function handleFarmFocusIn(target) {
+    if (!controllerWasRecent()) return;
+    if (captureNurseryFocus(target)) return;
+    if (document.getElementById('mpFarm')?.contains(target)) nurseryFocusArmed = false;
   }
 
   function restoreNurseryFocus() {
-    if (nurseryRestoreQueued || nurseryFocusIndex == null || !controllerWasRecent()) return;
+    if (nurseryRestoreQueued || !nurseryFocusArmed || nurseryFocusIndex == null || !controllerWasRecent()) return;
     nurseryRestoreQueued = true;
     requestAnimationFrame(() => {
       nurseryRestoreQueued = false;
@@ -399,6 +416,7 @@
       stableCandidateRows: stableRows,
       nurseryFocusIndex,
       nurseryScrollTop,
+      nurseryFocusArmed,
       nurseryRenderedScrollTop: nurseryScroll?.scrollTop ?? null,
       focusedElement: document.activeElement?.id || document.activeElement?.dataset?.farmNurseryIndex || document.activeElement?.className || null,
     };
@@ -408,7 +426,8 @@
     if (installed || typeof document === 'undefined') return installed;
     installed = true;
     window.addEventListener('hobunji-controller-ui-snapshot', () => { lastControllerSnapshotAt = performance.now(); }, { passive: true });
-    document.addEventListener('focusin', event => captureNurseryFocus(event.target), true);
+    document.addEventListener('focusin', event => handleFarmFocusIn(event.target), true);
+    document.addEventListener('click', event => captureNurseryFocus(event.target), true);
     document.addEventListener('scroll', event => {
       const scroll = event.target?.classList?.contains?.(NURSERY_SCROLL_CLASS) ? event.target : null;
       if (scroll && controllerWasRecent()) nurseryScrollTop = scroll.scrollTop;
@@ -418,6 +437,7 @@
       // Pointer users should keep normal browser focus/scroll behavior; only a
       // controller-owned selection requests continuity restoration.
       lastControllerSnapshotAt = -Infinity;
+      nurseryFocusArmed = false;
     }, true);
 
     const beginObserving = () => {
