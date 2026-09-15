@@ -27,7 +27,7 @@
 (() => {
   'use strict';
   if (window.HeldObjectRenderOrder?.installed) return;
-  const src = 'js/held-object-render-order.js?v=20260910review1';
+  const src = 'js/held-object-render-order.js?v=20260915perf1';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-hobunji-held-render-order="1" src="${src}"><\/script>`);
     return;
@@ -46,7 +46,7 @@
 (() => {
   'use strict';
   if (window.ActionArchIcons?.installed || document.querySelector('script[data-action-arch-icons]')) return;
-  const src = 'js/action-arch-icons.js?v=20260823c';
+  const src = 'js/action-arch-icons.js?v=20260915perf1';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-icons="1" src="${src}"><\/script>`);
     return;
@@ -65,7 +65,7 @@
 (() => {
   'use strict';
   if (window.ActionArchIconFixes?.installed || document.querySelector('script[data-action-arch-icon-fixes]')) return;
-  const src = 'js/action-arch-icons-fixes.js?v=20260823f';
+  const src = 'js/action-arch-icons-fixes.js?v=20260915perf1';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-icon-fixes="1" src="${src}"><\/script>`);
     return;

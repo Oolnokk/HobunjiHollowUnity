@@ -64,6 +64,7 @@
   // Start network fetch/decode at parser time, before game.js begins building
   // farm/wilderness trees.
   const eagerImage = new Image();
+  eagerImage.crossOrigin = 'anonymous';
   eagerImage.decoding = 'async';
   eagerImage.onload = () => { stats.eagerLoaded = true; };
   eagerImage.onerror = () => { stats.eagerErrored = true; };

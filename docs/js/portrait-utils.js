@@ -742,6 +742,9 @@ function configureSpritePngTexture(THREE, texture, debugName) {
   // Keep the exact color-management behavior used by the assembled character
   // sprite texture. Do not give same-style surface PNGs a separate encoding path.
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
   texture.needsUpdate = true;
   return texture;
 }

@@ -570,6 +570,30 @@
     };
   }
 
+  function idleBodyYawSnapshot(target = {}) {
+    const activeSlot = deps?.getActiveTool?.() || null;
+    if (activeSlot !== 'weapon') {
+      target.active = false;
+      target.yawDeg = 0;
+      target.reason = 'not-weapon-slot';
+      return target;
+    }
+    if (combatVisualState) {
+      target.active = false;
+      target.yawDeg = 0;
+      target.reason = 'attack-owns-body-yaw';
+      return target;
+    }
+    const itemKey = deps?.equipmentSlots?.[activeSlot] || null;
+    const def = itemKey ? deps?.TOOL_ITEM_DEFS?.[itemKey] : null;
+    const idleClass = weaponIdleClass(itemKey, def);
+    const pose = idleClass === 'light' ? idleStances.lightWeapon : idleClass === 'heavy' ? idleStances.heavyWeapon : null;
+    target.active = !!pose;
+    target.yawDeg = pose ? Number(pose.bodyYaw) || 0 : 0;
+    target.reason = pose ? `${idleClass}-weapon-idle` : 'no-idle-pose';
+    return target;
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     augmentToolDefinitions();
@@ -591,6 +615,7 @@
     },
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,
+    idleBodyYawSnapshot,
     debugSnapshot,
     lastHolderMatrixWorld: () => lastBakedHolderMatrixWorld ? lastBakedHolderMatrixWorld.clone() : null,
     poses: idleStances,

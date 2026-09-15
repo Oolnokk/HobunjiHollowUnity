@@ -367,6 +367,7 @@
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const image = new Image(); // Used to preload exact action-icon alpha before canvas compositing.
+      image.crossOrigin = 'anonymous';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error(`Failed to load ${url}`));
       image.src = url;

@@ -40,8 +40,7 @@
   const groundMeshes = new WeakSet();
   const heldRegistry = new Set();
   const groundRegistry = new Set();
-  const guardedHeldMeshes = new WeakSet();
-  const guardedGroundMeshes = new WeakSet();
+  const pngDepthRegistry = new Set(); // Used by the colorless replay to repair only cutout depth materials instead of traversing every visible object.
   const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
@@ -175,24 +174,12 @@
     return repaired;
   }
 
-  function installHeldGuard(mesh) {
-    if (!mesh?.isMesh || guardedHeldMeshes.has(mesh)) return;
-    const originalUpdateMatrixWorld = mesh.updateMatrixWorld;
-    if (typeof originalUpdateMatrixWorld !== 'function') return;
-    mesh.updateMatrixWorld = function heldGroundXrayInvariant(force) {
-      enforceHeldMesh(this);
-      return originalUpdateMatrixWorld.call(this, force);
-    };
-    guardedHeldMeshes.add(mesh);
-  }
-
   function markHeldPlane(mesh) {
     if (!mesh?.isMesh) return false;
     const already = heldMeshes.has(mesh) || mesh.userData?.hobunjiHeldObjectPlane === true;
     heldMeshes.add(mesh);
     heldRegistry.add(mesh);
     enforceHeldMesh(mesh);
-    installHeldGuard(mesh);
     if (!already) heldCount++;
     return !already;
   }
@@ -213,24 +200,12 @@
     return repaired;
   }
 
-  function installGroundGuard(mesh) {
-    if (!mesh?.isMesh || guardedGroundMeshes.has(mesh)) return;
-    const originalUpdateMatrixWorld = mesh.updateMatrixWorld;
-    if (typeof originalUpdateMatrixWorld !== 'function') return;
-    mesh.updateMatrixWorld = function heldGroundReplayInvariant(force) {
-      enforceGroundMesh(this);
-      return originalUpdateMatrixWorld.call(this, force);
-    };
-    guardedGroundMeshes.add(mesh);
-  }
-
   function markGroundMesh(mesh, kind = groundKind(mesh)) {
     if (!mesh?.isMesh || !kind) return false;
     const already = groundMeshes.has(mesh) || mesh.userData?.hobunjiHeldGroundReplay === true;
     groundMeshes.add(mesh);
     groundRegistry.add(mesh);
     enforceGroundMesh(mesh);
-    installGroundGuard(mesh);
     if (!already) {
       groundCount++;
       if (kind === 'grass') grassCount++;
@@ -245,8 +220,14 @@
     if (object.isLight) prepareLight(object);
     if (!object.isMesh) return;
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
+    if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object);
     const kind = groundKind(object);
     if (kind) markGroundMesh(object, kind);
+  }
+
+  function materialHasAlphaCutout(material) {
+    if (Array.isArray(material)) return material.some(entry => Number(entry?.alphaTest || 0) > 0);
+    return Number(material?.alphaTest || 0) > 0;
   }
 
   function classifyTree(root) {
@@ -404,6 +385,18 @@
     return states;
   }
 
+  function prepareCutoutDepthMaterials(cutouts) {
+    const states = new Map();
+    for (const object of cutouts) {
+      forEachMaterial(object.material, (material) => {
+        if (Number(material.alphaTest || 0) <= 0 && !hasLayer(object, PNG_OCCLUDER_LAYER)) return;
+        saveMaterialState(states, material);
+        material.depthWrite = true;
+      });
+    }
+    return states;
+  }
+
   function prepareGroundDepthMaterials(ground) {
     const states = new Map();
     for (const object of ground) {
@@ -470,8 +463,16 @@
       // the held planes and classified ground cover. Color is untouched.
       renderer.clearDepth();
       const hidden = hideObjects([...ground, ...held]);
-      const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep'); // Full scene.traverseVisible() every frame this runs -- see prepareNonGroundDepthMaterials.
-      const depthMaterialStates = prepareNonGroundDepthMaterials(scene);
+      const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
+      const colorBuffer = renderer.state?.buffers?.color; // Three's locked color mask keeps every original material shader/alpha cutout while suppressing all color writes globally.
+      const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
+      const depthMaterialStates = canLockColorMask
+        ? prepareCutoutDepthMaterials(collectVisible(pngDepthRegistry, scene))
+        : prepareNonGroundDepthMaterials(scene);
+      if (canLockColorMask) {
+        colorBuffer.setMask(false);
+        colorBuffer.setLocked(true);
+      }
       window.PerfProfiler?.end(prepPerf);
       try {
         camera.layers.mask = originalCameraMask;
@@ -480,6 +481,10 @@
         window.PerfProfiler?.end(depthRebuildPerf);
         nonGroundDepthReplayCount++;
       } finally {
+        if (canLockColorMask) {
+          colorBuffer.setLocked(false);
+          colorBuffer.setMask(true);
+        }
         restoreMaterialStates(depthMaterialStates);
         restoreVisibility(hidden);
       }

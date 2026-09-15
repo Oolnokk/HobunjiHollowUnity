@@ -210,6 +210,7 @@
 
     spriteVisualCache.set(cacheKey, null);
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     image.decoding = 'async';
     image.onload = () => {
       const naturalWidth = Math.max(1, Number(image.naturalWidth) || 1);

@@ -163,6 +163,7 @@
     };
     iconLoadState.set(file, record);
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     record.image = image;
     image.onload = () => {
       record.state = 'loaded';

@@ -9,7 +9,7 @@ const indexSource = fs.readFileSync('docs/index.html', 'utf8'); // Guards runtim
 const actionLocksSource = fs.readFileSync('docs/js/character-action-locks.js', 'utf8'); // Guards the dynamic loader that now injects animal-chathead-frame.js.
 assert.match(indexSource, /js\/character-action-locks\.js\?v=[^"']+/,
   'game must statically load the interaction-lock primitive that bootstraps animal chathead framing');
-assert.match(actionLocksSource, /animal-chathead-frame\.js\?v=20260902modular1/,
+assert.match(actionLocksSource, /animal-chathead-frame\.js\?v=[A-Za-z0-9_-]+/,
   'the interaction-lock bootstrap must dynamically load animal chathead framing early, before FarmAnimals/DialogueContent/game.js');
 assert.match(authorSource, /<script src="\.\.\/\.\.\/js\/animal-chathead-frame\.js\?v=20260901a"><\/script>/,
   'Animation Author must load the shared animal chathead framing helper');

@@ -85,7 +85,7 @@
        window.*.init(...) calls — dozens of already-extracted modules also
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
-  <script src="js/grid-tile-accessors.js?v=20260902mod1"></script>
+  <script src="js/grid-tile-accessors.js?v=20260915perf1"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -125,7 +125,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260830flip2"></script>
+  <script src="js/portrait-utils.js?v=20260915perf1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
   <script src="js/png-plane-avatar.js?v=20260910review1"></script>
@@ -380,7 +380,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.RelationshipsPanel.init(...) during its own setup. -->
-  <script src="js/relationships-panel.js?v=20260807a"></script>
+  <script src="js/relationships-panel.js?v=20260915perf1"></script>
   <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
        (window.DebugHitboxes) — self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
@@ -2328,7 +2328,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260909controller1"></script>
+  <script src="js/pixel-probe.js?v=20260915perf1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2449,7 +2449,7 @@
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
   <script src="game.js?v=20260914targetconfig1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20260910controller1"></script>
+  <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
