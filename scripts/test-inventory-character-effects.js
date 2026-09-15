@@ -20,29 +20,29 @@ const api = windowStub.InventoryCharacterEffects;
 assert(api, 'InventoryCharacterEffects exports its runtime API');
 assert.equal(api.version, 1, 'character effects module version is available to the bootstrap loader');
 assert.match(loaderSource, /inventory-character-effects\.js\?v=20260915a/, 'combat bootstrap loads the character-effects module');
-assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=20260915a/, 'combat bootstrap loads the compact Tool Effects presentation');
+assert.match(loaderSource, /inventory-gear-compact-effects\.js\?v=20260915a/, 'combat bootstrap loads the compact Gear Effects presentation');
 assert.match(loaderSource, /hud-x-control-polish\.js\?v=20260915a/, 'combat bootstrap loads shared X-control presentation after generic HUD icons');
 
-// Layout regressions: InventoryUI injects generic .gear-stat-list flex/scroll rules later,
-// so the effects module must use a more-specific selector for the intended two-column grid.
+// Character effects remain a true two-column presentation instead of falling back to InventoryUI's generic single-column list.
 assert.match(
   source,
-  /#mpInventory \.gear-character-effects-card \.gear-effects-list \{[\s\S]*?display:grid;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\);[\s\S]*?overflow:visible;/,
-  'effects lists keep a specific two-column non-scrolling grid even after InventoryUI styles load',
-);
-assert.match(
-  source,
-  /#mpInventory\.inv-mode-gear \.gear-loadout-grid \{[\s\S]*?height:auto;[\s\S]*?max-height:none;[\s\S]*?overflow:visible;/,
-  'upper Gear loadout sizes to its content instead of clipping to the old fixed-height box',
-);
-assert.match(
-  source,
-  /#mpInventory\.inv-mode-gear \.gear-owned-section \{[\s\S]*?flex:1 1 auto;[\s\S]*?overflow-y:auto;/,
-  'only the variable-size owned Gear collection is allowed to consume the remaining scrollable space',
+  /#mpInventory \.gear-character-effects-card \.gear-effects-list \{[\s\S]*?display:grid;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\);/,
+  'effects lists retain their authored two-column grid',
 );
 
-// Tool Effects must divide the available column height between every rendered tool card,
-// stack chips vertically, and undo the global 11px readability floor only in this compact readout.
+// The compact Gear module owns the final vertical split: upper loadout gets the remainder while Owned Gear always keeps a visible reserved region.
+assert.match(
+  compactToolSource,
+  /#mpInventory\.inv-mode-gear \.gear-loadout-grid \{[\s\S]*?flex:1 1 auto;[\s\S]*?min-height:0;[\s\S]*?overflow:hidden;/,
+  'upper Gear loadout can shrink inside the inventory instead of pushing the lower section away',
+);
+assert.match(
+  compactToolSource,
+  /#mpInventory\.inv-mode-gear \.gear-owned-section \{[\s\S]*?flex:0 0 calc\(5\.25 \* var\(--inv-row\)\);[\s\S]*?min-height:calc\(5\.25 \* var\(--inv-row\)\);[\s\S]*?overflow-y:auto;/,
+  'Owned Gear always retains a visible lower region and is the scrollable variable-content section',
+);
+
+// Tool Effects divides height by content, stacks chips vertically, and measures real rendered overflow before choosing a font size.
 assert.match(
   compactToolSource,
   /#mpInventory \.gear-tool-stats > \.gear-stat-list \{[\s\S]*?display:flex !important;[\s\S]*?flex-direction:column !important;[\s\S]*?overflow:hidden !important;/,
@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   compactToolSource,
-  /#mpInventory \.gear-tool-stats \.gear-stat-item \{[\s\S]*?flex:1 1 0;[\s\S]*?min-height:0;[\s\S]*?overflow:hidden;/,
-  'Tool Effects cards share the available height instead of growing from their content',
+  /#mpInventory \.gear-tool-stats \.gear-stat-item \{[\s\S]*?flex:var\(--gear-tool-card-weight,1\) 1 0;[\s\S]*?min-height:0;[\s\S]*?overflow:hidden;/,
+  'Tool Effects cards distribute the available height according to their real content weight',
 );
 assert.match(
   compactToolSource,
@@ -60,11 +60,26 @@ assert.match(
 );
 assert.match(
   compactToolSource,
-  /MIN_EFFECT_FONT_PX = 5\.5[\s\S]*?--gear-tool-card-font[\s\S]*?data-menu-font-floor/,
-  'Tool Effects can reduce text below the global inventory floor when required to keep every card visible',
+  /scrollHeight > card\.clientHeight[\s\S]*?scrollWidth > element\.clientWidth/,
+  'font fitting verifies actual rendered vertical and horizontal overflow rather than relying on estimated line counts',
+);
+assert.match(
+  compactToolSource,
+  /fitMeasuredFont[\s\S]*?PREFERRED_MIN_FONT_PX[\s\S]*?EMERGENCY_MIN_FONT_PX[\s\S]*?Binary search|Binary search[\s\S]*?fitMeasuredFont/,
+  'measured fitting can shrink below the preferred compact size in extreme aspect ratios and then chooses the largest fitting font',
+);
+assert.match(
+  compactToolSource,
+  /#mpInventory \.gear-outfit-stats\.gear-character-effects-host \{[\s\S]*?display:flex !important;[\s\S]*?overflow:hidden !important;/,
+  'Outfit Effects and Final Values participate in the same bounded orientation-safe upper layout',
+);
+assert.match(
+  compactToolSource,
+  /orientationchange[\s\S]*?scheduleFit|resize[\s\S]*?scheduleFit/,
+  'mobile portrait/landscape changes explicitly schedule a fresh measured fit',
 );
 
-// Generic semantic X glyphs are PNG-backed; their source pixels are black, so the shared control style must whiten them and center the common close/unequip buttons.
+// Generic semantic X glyphs are PNG-backed; their source pixels are black, so the shared control style must whiten them and center common close/unequip buttons.
 assert.match(
   xControlSource,
   /\.generic-hud-icon\.generic-hud-icon-x \{[\s\S]*?filter:brightness\(0\) invert\(1\);/,
