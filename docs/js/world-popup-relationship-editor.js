@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (window.WorldPopupRelationshipEditor?.version >= 1) return;
+  if (window.WorldPopupRelationshipEditor?.version >= 2) return;
   if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return;
 
   const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the runtime heart asset from this module instead of from the editor page URL.
@@ -16,9 +16,47 @@
   const ICON_SIZE = 76; // Used by the reference heart to match runtime size.
   const DEFAULT_LIFETIME_MS = 1150; // Used when the popup runtime does not expose a Float+ lifetime.
   const active = []; // Used by the popup editor's frame hook to animate live relationship billboards above the preview character.
-  const debugState = { installed: false, heartLoaded: false, lastPopup: null, activeCount: 0 }; // Used by the visible/mobile-accessible diagnostic surface.
+  const debugState = { installed: false, heartLoaded: false, lastPopup: null, activeCount: 0, errors: [], retryingAvatar: false, lastSnapshot: null }; // Used by the visible/mobile-accessible diagnostic surface.
   let heartImagePromise = null; // Used to load and reuse the real HUD heart asset once.
   let installTimer = 0; // Used to retry installation until the popup editor finishes its async Three.js boot.
+  let diagnosticsTimer = 0; // Used to keep the visible diagnostics synchronized with the editor's async boot stages.
+
+  function editorValue(name) {
+    try {
+      return (0, eval)(name); // Used to read the Popup Text Editor's top-level lexical bindings without requiring them to be window properties.
+    } catch (_) {
+      return undefined;
+    }
+  }
+
+  function getPopupRuntime() { return editorValue('popupRuntime'); }
+  function getThree() { return editorValue('THREE'); }
+  function getCamera() { return editorValue('camera'); }
+  function getAvatarModel() { return editorValue('avatarModel'); }
+  function getAvatarHolder() { return editorValue('avatarHolder'); }
+  function getPreviewScene() { return editorValue('previewScene'); }
+  function getNpcs() { return editorValue('npcs'); }
+  function getRenderAvatar() { return editorValue('renderAvatar'); }
+  function getStatusFunction() { return editorValue('status'); }
+
+  function rememberError(message) {
+    const text = String(message || 'Unknown error').trim(); // Used as a compact diagnostic entry that is readable on a phone.
+    if (!text) return;
+    if (debugState.errors[debugState.errors.length - 1] === text) return;
+    debugState.errors.push(text);
+    if (debugState.errors.length > 8) debugState.errors.shift();
+    updateDiagnostics();
+  }
+
+  window.addEventListener('error', event => {
+    if (event.target && event.target !== window) {
+      const source = event.target.src || event.target.href || event.target.currentSrc || event.target.tagName; // Used to identify failed script/image/resource requests in the on-screen log.
+      rememberError(`Resource error: ${source || 'unknown resource'}`);
+      return;
+    }
+    rememberError(`JS error: ${event.message || event.error?.message || 'unknown'}${event.filename ? ` @ ${event.filename.split('/').pop()}:${event.lineno || '?'}` : ''}`);
+  }, true);
+  window.addEventListener('unhandledrejection', event => rememberError(`Promise rejection: ${event.reason?.stack || event.reason?.message || event.reason || 'unknown'}`));
 
   function signedRelationshipAmount(amount) {
     const value = Math.round((Number(amount) || 0) * 10) / 10; // Used to mirror runtime rounding while preserving losses.
@@ -37,8 +75,8 @@
     if (heartImagePromise) return heartImagePromise;
     heartImagePromise = new Promise(resolve => {
       const image = new Image(); // Used as the exact icon_heart.png source painted into the relationship popup canvas.
-      image.onload = () => { debugState.heartLoaded = true; updateDebugText(); resolve(image); };
-      image.onerror = () => { debugState.heartLoaded = false; updateDebugText(); resolve(null); };
+      image.onload = () => { debugState.heartLoaded = true; updateDebugText(); updateDiagnostics(); resolve(image); };
+      image.onerror = () => { debugState.heartLoaded = false; rememberError(`Heart asset failed: ${HEART_URL}`); updateDebugText(); resolve(null); };
       image.src = HEART_URL;
     });
     return heartImagePromise;
@@ -65,6 +103,7 @@
   }
 
   function popupHeadOffset(root, center) {
+    const THREE = getThree(); // Used to measure the selected avatar without assuming the editor reached Three.js initialization.
     if (!THREE?.Box3 || !root || !center) return 0.45;
     const bounds = new THREE.Box3().setFromObject(root); // Used to place the relationship popup just above the rendered character rather than at its centroid.
     if (!Number.isFinite(bounds.max?.y)) return 0.45;
@@ -82,12 +121,22 @@
     while (active.length) disposePopup(active.pop());
     debugState.activeCount = 0;
     updateDebugText();
+    updateDiagnostics();
   }
 
   async function spawnRelationshipPopup(root, kind, amount) {
+    const popupRuntime = getPopupRuntime(); // Used as the live Popup Text Editor WorldPopupText API after async boot.
+    const THREE = getThree(); // Used as the exact Three.js instance owned by the editor preview scene.
+    const camera = getCamera(); // Used to face the relationship billboard toward the editor preview camera.
     const value = signedRelationshipAmount(amount); // Used as the exact signed Rapport/Favor delta drawn above the preview avatar.
-    if (!popupRuntime?.avatarCentroidWorld || !THREE || !root || !value) return null;
-    if (!rootScene(root)) return null;
+    if (!popupRuntime?.avatarCentroidWorld || !THREE || !camera || !root || !value) {
+      rememberError('Relationship popup blocked: popup runtime, Three.js, camera, avatar root, or nonzero amount is missing.');
+      return null;
+    }
+    if (!rootScene(root)) {
+      rememberError('Relationship popup blocked: avatar holder is not attached to a Three.js scene.');
+      return null;
+    }
     const image = await loadHeartImage(); // Used before plane creation so the first visible frame already contains the heart art.
     const activeScene = rootScene(root); // Re-resolved after image loading in case the avatar was replaced meanwhile.
     if (!root.parent || !activeScene) return null;
@@ -152,10 +201,13 @@
     debugState.activeCount = active.length;
     debugState.lastPopup = { kind, value, heartColor, numberColor, at: Date.now() };
     updateDebugText();
+    updateDiagnostics();
     return event;
   }
 
   function updateRelationshipPopups(now) {
+    const popupRuntime = getPopupRuntime(); // Used to query the avatar centroid only after the editor runtime exists.
+    const camera = getCamera(); // Used to keep every active relationship plane camera-facing.
     if (!popupRuntime?.avatarCentroidWorld || !camera) return;
     for (let index = active.length - 1; index >= 0; index--) {
       const event = active[index]; // Used as the active relationship popup advanced by the popup editor's normal render loop.
@@ -184,10 +236,17 @@
   }
 
   function play(kind, amount) {
-    if (!avatarModel || !avatarHolder || !popupRuntime) return false;
+    const avatarModel = getAvatarModel(); // Used to ensure a visible avatar model exists before trying to demonstrate an overhead popup.
+    const avatarHolder = getAvatarHolder(); // Used as the relationship popup's world-space anchor root.
+    const popupRuntime = getPopupRuntime(); // Used as the WorldPopupText-shaped relationship API installed below.
+    if (!avatarModel || !avatarHolder || !popupRuntime) {
+      rememberError('Cannot play relationship popup: avatar model, avatar holder, or popup runtime is not ready.');
+      updateDiagnostics();
+      return false;
+    }
     popupRuntime.clear();
     const result = popupRuntime.showRelationshipChange(avatarHolder, kind, amount); // Used to exercise the installed relationship-popup API against the real preview character root.
-    if (result?.catch) result.catch(error => status?.(`Relationship popup failed: ${error.message}`, 'bad'));
+    if (result?.catch) result.catch(error => rememberError(`Relationship popup failed: ${error.stack || error.message}`));
     return true;
   }
 
@@ -216,9 +275,155 @@
     updateDebugText();
   }
 
+  function diagnosticsSnapshot() {
+    const popupRuntime = getPopupRuntime(); // Used to report whether the WorldPopupText init stage completed.
+    const THREE = getThree(); // Used to report whether the configured Three.js module loaded.
+    const camera = getCamera(); // Used to report whether the preview camera exists.
+    const avatarModel = getAvatarModel(); // Used to report whether PNGPlaneAvatar actually produced a model.
+    const avatarHolder = getAvatarHolder(); // Used to report whether the model is attached to its world-space root.
+    const previewScene = getPreviewScene(); // Used to report whether AvatarPreviewScene.create completed.
+    const npcs = getNpcs(); // Used to report whether the NPC database loaded and normalized.
+    const statusText = document.getElementById('status')?.textContent?.trim() || ''; // Used to surface the editor's existing one-line status inside the visible debug panel.
+    const threeConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {}; // Used to expose CDN module configuration when Three.js fails to load.
+    let modelBounds = 'n/a'; // Used to reveal invisible/zero-sized models even when setAvatar technically returned an object.
+    try {
+      if (avatarModel && THREE?.Box3 && THREE?.Vector3) {
+        const size = new THREE.Box3().setFromObject(avatarModel).getSize(new THREE.Vector3());
+        modelBounds = `${size.x.toFixed(3)} × ${size.y.toFixed(3)} × ${size.z.toFixed(3)}`;
+      }
+    } catch (error) {
+      modelBounds = `error: ${error.message}`;
+    }
+    return {
+      helper: debugState.installed ? 'ready' : 'waiting',
+      coreScripts: {
+        scratchbonesConfig: !!window.SCRATCHBONES_CONFIG,
+        npcAvatarPreview: !!window.NpcAvatarPreview,
+        pngPlaneAvatar: !!window.PNGPlaneAvatar,
+        avatarPreviewScene: !!window.AvatarPreviewScene,
+        worldPopupText: !!window.WorldPopupText,
+      },
+      three: {
+        configured: !!threeConfig.threeModuleUrl,
+        loaded: !!THREE,
+        renderer: !!previewScene?.renderer,
+        camera: !!camera,
+        moduleUrl: threeConfig.threeModuleUrl || 'missing',
+      },
+      npc: {
+        count: Array.isArray(npcs) ? npcs.length : 0,
+        selected: document.getElementById('npcSelect')?.selectedOptions?.[0]?.textContent || 'none',
+      },
+      avatar: {
+        holder: !!avatarHolder,
+        holderChildren: Number(avatarHolder?.children?.length) || 0,
+        model: !!avatarModel,
+        modelBounds,
+      },
+      popupRuntime: !!popupRuntime,
+      heartLoaded: debugState.heartLoaded,
+      editorStatus: statusText || '(none)',
+      errors: [...debugState.errors],
+    };
+  }
+
+  function diagnosticsText(snapshot = diagnosticsSnapshot()) {
+    const core = snapshot.coreScripts;
+    const lines = [
+      `Popup Text Editor diagnostics`,
+      `helper=${snapshot.helper} popupRuntime=${snapshot.popupRuntime ? 'yes' : 'NO'} heart=${snapshot.heartLoaded ? 'yes' : 'no'}`,
+      `core config=${core.scratchbonesConfig ? 'yes' : 'NO'} npcPreview=${core.npcAvatarPreview ? 'yes' : 'NO'} pngPlane=${core.pngPlaneAvatar ? 'yes' : 'NO'} sceneApi=${core.avatarPreviewScene ? 'yes' : 'NO'} worldPopup=${core.worldPopupText ? 'yes' : 'NO'}`,
+      `three configured=${snapshot.three.configured ? 'yes' : 'NO'} loaded=${snapshot.three.loaded ? 'yes' : 'NO'} renderer=${snapshot.three.renderer ? 'yes' : 'NO'} camera=${snapshot.three.camera ? 'yes' : 'NO'}`,
+      `npc count=${snapshot.npc.count} selected=${snapshot.npc.selected}`,
+      `avatar holder=${snapshot.avatar.holder ? 'yes' : 'NO'} children=${snapshot.avatar.holderChildren} model=${snapshot.avatar.model ? 'yes' : 'NO'} bounds=${snapshot.avatar.modelBounds}`,
+      `status: ${snapshot.editorStatus}`,
+      `Three URL: ${snapshot.three.moduleUrl}`,
+    ];
+    if (snapshot.errors.length) lines.push('errors:', ...snapshot.errors.map(error => `• ${error}`));
+    else lines.push('errors: none captured');
+    return lines.join('\n');
+  }
+
+  function injectDiagnostics() {
+    if (document.getElementById('worldPopupEditorDiagnostics')) return;
+    const preview = document.getElementById('preview'); // Used as the always-visible anchor so diagnostics remain reachable even when the controls column has scrolled away.
+    if (!preview) return;
+    const panel = document.createElement('div'); // Used as the mobile-visible debug console for avatar and popup boot failures.
+    panel.id = 'worldPopupEditorDiagnostics';
+    panel.style.cssText = 'position:absolute;z-index:8;left:8px;right:8px;bottom:38px;max-height:42%;overflow:auto;background:rgba(3,8,14,.94);border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:7px 8px;color:#dbeafe;font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;box-shadow:0 4px 18px rgba(0,0,0,.45)';
+    panel.innerHTML = `<div style="display:flex;align-items:center;gap:6px;position:sticky;top:0;background:rgba(3,8,14,.97);padding-bottom:5px"><b style="font:700 11px system-ui,sans-serif">Preview debug</b><span style="flex:1"></span><button type="button" data-debug-retry style="padding:4px 7px;font-size:10px">Retry avatar</button><button type="button" data-debug-copy style="padding:4px 7px;font-size:10px">Copy</button><button type="button" data-debug-toggle style="padding:4px 7px;font-size:10px">Hide</button></div><pre data-debug-output style="margin:0;white-space:pre-wrap;word-break:break-word"></pre>`;
+    preview.appendChild(panel);
+    panel.querySelector('[data-debug-retry]').addEventListener('click', () => retryAvatar());
+    panel.querySelector('[data-debug-copy]').addEventListener('click', async () => {
+      const text = diagnosticsText();
+      try {
+        await navigator.clipboard.writeText(text);
+        panel.querySelector('[data-debug-copy]').textContent = 'Copied';
+        setTimeout(() => { const button = panel.querySelector('[data-debug-copy]'); if (button) button.textContent = 'Copy'; }, 900);
+      } catch (error) {
+        rememberError(`Copy failed: ${error.message}`);
+      }
+    });
+    panel.querySelector('[data-debug-toggle]').addEventListener('click', event => {
+      const output = panel.querySelector('[data-debug-output');
+      const hidden = output?.style.display === 'none';
+      if (output) output.style.display = hidden ? '' : 'none';
+      event.currentTarget.textContent = hidden ? 'Hide' : 'Show';
+      panel.style.maxHeight = hidden ? '42%' : '34px';
+    });
+    updateDiagnostics();
+  }
+
+  function updateDiagnostics() {
+    const panel = document.getElementById('worldPopupEditorDiagnostics'); // Used to refresh the right-side console as async boot state changes.
+    const output = panel?.querySelector('[data-debug-output]');
+    const snapshot = diagnosticsSnapshot();
+    debugState.lastSnapshot = snapshot;
+    if (output) output.textContent = diagnosticsText(snapshot);
+  }
+
+  async function retryAvatar() {
+    if (debugState.retryingAvatar) return false;
+    const renderAvatar = getRenderAvatar(); // Used to retry the editor's own character pipeline instead of inventing a second renderer.
+    const npcs = getNpcs(); // Used to select the current repository NPC for the retry.
+    const previewScene = getPreviewScene(); // Used to distinguish "Three.js never booted" from "portrait render failed".
+    const popupRuntime = getPopupRuntime(); // Used to ensure the avatar retry runs only after popup/editor scene initialization.
+    if (!previewScene || !popupRuntime) {
+      rememberError('Retry avatar blocked: the Three.js preview scene or popup runtime never initialized. Check the Three URL/core-script lines above.');
+      return false;
+    }
+    if (typeof renderAvatar !== 'function' || !Array.isArray(npcs) || !npcs.length) {
+      rememberError('Retry avatar blocked: renderAvatar() or the NPC database is unavailable.');
+      return false;
+    }
+    debugState.retryingAvatar = true;
+    updateDiagnostics();
+    try {
+      if (window.NpcAvatarPreview?.ensurePortraitCosmetics) {
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: '../../assets/', configBase: '../../config/' });
+      }
+      const index = Math.max(0, Number(document.getElementById('npcSelect')?.value) || 0); // Used to preserve the avatar currently selected in the editor toolbar.
+      await renderAvatar(npcs[index] || npcs[0]);
+      const avatarModel = getAvatarModel();
+      if (!avatarModel) throw new Error('renderAvatar() completed without assigning avatarModel.');
+      getStatusFunction()?.(`Avatar retry succeeded for ${npcs[index]?.name || npcs[index]?.id || 'selected NPC'}.`);
+      return true;
+    } catch (error) {
+      rememberError(`Avatar retry failed: ${error.stack || error.message}`);
+      getStatusFunction()?.(`Avatar retry failed: ${error.message}`, 'bad');
+      return false;
+    } finally {
+      debugState.retryingAvatar = false;
+      updateDiagnostics();
+    }
+  }
+
   function installRuntimeHooks() {
+    const popupRuntime = getPopupRuntime(); // Used as the live editor WorldPopupText API once initThreePreview has completed.
+    const THREE = getThree(); // Used to prove the Three.js scene is ready before adding relationship billboard behavior.
+    const camera = getCamera(); // Used to prove a preview camera exists before enabling billboard updates.
     if (!popupRuntime || !THREE || !camera) return false;
-    if (popupRuntime.__worldPopupRelationshipEditorVersion >= 1) return true;
+    if (popupRuntime.__worldPopupRelationshipEditorVersion >= 2) return true;
     const originalUpdate = popupRuntime.update.bind(popupRuntime); // Used to preserve every existing popup/editor update before advancing relationship events.
     const originalClear = popupRuntime.clear.bind(popupRuntime); // Used to preserve normal popup cleanup while also clearing relationship preview planes.
     popupRuntime.update = function relationshipEditorUpdate(now, ...args) {
@@ -234,34 +439,42 @@
     popupRuntime.showRapportGain = (root, amount) => spawnRelationshipPopup(root, 'rapport', amount);
     popupRuntime.showRapportChange = popupRuntime.showRapportGain;
     popupRuntime.showFavorChange = (root, amount) => spawnRelationshipPopup(root, 'favor', amount);
-    popupRuntime.__worldPopupRelationshipEditorVersion = 1;
+    popupRuntime.__worldPopupRelationshipEditorVersion = 2;
     debugState.installed = true;
+    updateDiagnostics();
     return true;
   }
 
   function installWhenReady() {
     injectControls();
+    injectDiagnostics();
     if (installRuntimeHooks()) {
       clearInterval(installTimer);
       installTimer = 0;
       loadHeartImage();
       updateDebugText();
+      updateDiagnostics();
+      if (!diagnosticsTimer) diagnosticsTimer = window.setInterval(updateDiagnostics, 500);
       return;
     }
+    updateDiagnostics();
     if (!installTimer) installTimer = window.setInterval(installWhenReady, 100);
+    if (!diagnosticsTimer) diagnosticsTimer = window.setInterval(updateDiagnostics, 500);
   }
 
   window.WorldPopupRelationshipEditor = Object.freeze({
-    version: 1,
+    version: 2,
     install: installWhenReady,
     play,
+    retryAvatar,
     snapshot() {
       return {
-        version: 1,
+        version: 2,
         installed: debugState.installed,
         heartLoaded: debugState.heartLoaded,
         activeCount: active.length,
         lastPopup: debugState.lastPopup,
+        diagnostics: diagnosticsSnapshot(),
       };
     },
   });
