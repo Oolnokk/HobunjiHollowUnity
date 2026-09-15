@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const plain = value => JSON.parse(JSON.stringify(value));
 
 const source = fs.readFileSync('docs/config/attachment-rig-livestock-authored.js', 'utf8');
 const loaderSource = fs.readFileSync('docs/js/character-action-locks.js', 'utf8');
@@ -34,17 +35,17 @@ assert.ok(puktuk && voorgAss, 'both authored livestock profiles must be installe
 assert.equal(profiles['gar-wolf'].sentinel, 'keep-gar-wolf', 'Puktuk authoring must not overwrite Gar-wolf');
 assert.equal(profiles.uumkaoii.sentinel, 'keep-uumkaoii', 'Vorg-ass authoring must not overwrite Uumkao\'ii');
 
-assert.deepEqual(JSON.parse(JSON.stringify(puktuk.anchors.saddle.position)), {
+assert.deepEqual(plain(puktuk.anchors.saddle.position), {
   x: 0, y: 0.16937859550590686, z: -0.012420318741466083,
 });
-assert.deepEqual(JSON.parse(JSON.stringify(puktuk.anchors.shoulderGrip.position)), {
+assert.deepEqual(plain(puktuk.anchors.shoulderGrip.position), {
   x: 0.01, y: -0.29715994741785007, z: -0.0010889163404909086,
 });
-assert.deepEqual(JSON.parse(JSON.stringify(puktuk.sizeScales)), {
+assert.deepEqual(plain(puktuk.sizeScales), {
   large: { x: 1, y: 1 }, medium: { x: 0.6, y: 0.6 }, small: { x: 0.3, y: 0.3 },
 });
-assert.deepEqual(JSON.parse(JSON.stringify(puktuk.groundOffsets)), { large: 0.4, medium: 0.24, small: 0.12 });
-assert.deepEqual(JSON.parse(JSON.stringify(puktuk.chatheadFrame)), {
+assert.deepEqual(plain(puktuk.groundOffsets), { large: 0.4, medium: 0.24, small: 0.12 });
+assert.deepEqual(plain(puktuk.chatheadFrame), {
   x: 0.17142091899942474,
   y: 0.11029044613093768,
   width: 0.27636019798104444,
@@ -53,17 +54,17 @@ assert.deepEqual(JSON.parse(JSON.stringify(puktuk.chatheadFrame)), {
   version: 1,
 });
 
-assert.deepEqual(JSON.parse(JSON.stringify(voorgAss.anchors.saddle.position)), {
+assert.deepEqual(plain(voorgAss.anchors.saddle.position), {
   x: -0.0016655977917167481, y: 0.12286908956931555, z: 0.043832914384796626,
 });
-assert.deepEqual(JSON.parse(JSON.stringify(voorgAss.anchors.shoulderGrip.position)), {
+assert.deepEqual(plain(voorgAss.anchors.shoulderGrip.position), {
   x: 0.01, y: -0.33453636625016553, z: 0.0181046276028018,
 });
-assert.deepEqual(JSON.parse(JSON.stringify(voorgAss.sizeScales)), {
+assert.deepEqual(plain(voorgAss.sizeScales), {
   large: { x: 0.97, y: 0.97 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.27, y: 0.27 },
 });
-assert.deepEqual(JSON.parse(JSON.stringify(voorgAss.groundOffsets)), { large: 0.26, medium: 0.325, small: 0.11 });
-assert.deepEqual(JSON.parse(JSON.stringify(voorgAss.chatheadFrame)), {
+assert.deepEqual(plain(voorgAss.groundOffsets), { large: 0.26, medium: 0.325, small: 0.11 });
+assert.deepEqual(plain(voorgAss.chatheadFrame), {
   x: 0.1235,
   y: 0.14,
   width: 0.3074,
@@ -79,8 +80,8 @@ for (const profile of [puktuk, voorgAss]) {
   assert.equal(profile.saddleRule.source, 'animation-author-export-2026-09-15');
   assert.equal(profile.shoulderGripRule.source, 'animation-author-export-2026-09-15');
 }
-assert.deepEqual(JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatureShoulderGripDefaults.puktuk)), puktuk.anchors.shoulderGrip.position);
-assert.deepEqual(JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatureShoulderGripDefaults['voorg-ass'])), voorgAss.anchors.shoulderGrip.position);
+assert.deepEqual(plain(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatureShoulderGripDefaults.puktuk), plain(puktuk.anchors.shoulderGrip.position));
+assert.deepEqual(plain(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatureShoulderGripDefaults['voorg-ass']), plain(voorgAss.anchors.shoulderGrip.position));
 
 // Simulate the old creature-genetics public API: Puktuk borrowed Gar-wolf * 0.75,
 // while Vorg-ass borrowed Uumkao'ii. The authored bridge must replace those
@@ -106,21 +107,21 @@ window.CreatureGenetics = {
 };
 assert.equal(window.HobunjiAuthoredLivestockRig.patchCreatureGeneticsApi(), true, 'authored runtime patch installs once CreatureGenetics exists');
 
-assert.deepEqual(window.CreatureGenetics.creatureSizeScale('puktuk', 'small'), { sizeClass: 'small', x: 0.3, y: 0.3 });
-assert.deepEqual(window.CreatureGenetics.creatureSizeScale('puktuk', 'medium'), { sizeClass: 'medium', x: 0.6, y: 0.6 });
-assert.deepEqual(window.CreatureGenetics.creatureSizeScale('puktuk', 'large'), { sizeClass: 'large', x: 1, y: 1 });
+assert.deepEqual(plain(window.CreatureGenetics.creatureSizeScale('puktuk', 'small')), { sizeClass: 'small', x: 0.3, y: 0.3 });
+assert.deepEqual(plain(window.CreatureGenetics.creatureSizeScale('puktuk', 'medium')), { sizeClass: 'medium', x: 0.6, y: 0.6 });
+assert.deepEqual(plain(window.CreatureGenetics.creatureSizeScale('puktuk', 'large')), { sizeClass: 'large', x: 1, y: 1 });
 assert.equal(window.CreatureGenetics.creatureGroundOffset('puktuk', 'small'), 0.12);
 assert.equal(window.CreatureGenetics.creatureGroundOffset('puktuk', 'medium'), 0.24);
 assert.equal(window.CreatureGenetics.creatureGroundOffset('puktuk', 'large'), 0.4);
 
-assert.deepEqual(window.CreatureGenetics.creatureSizeScale('voorg-ass', 'small'), { sizeClass: 'small', x: 0.27, y: 0.27 });
-assert.deepEqual(window.CreatureGenetics.creatureSizeScale('voorg-ass', 'medium'), { sizeClass: 'medium', x: 0.75, y: 0.75 });
-assert.deepEqual(window.CreatureGenetics.creatureSizeScale('voorg-ass', 'large'), { sizeClass: 'large', x: 0.97, y: 0.97 });
+assert.deepEqual(plain(window.CreatureGenetics.creatureSizeScale('voorg-ass', 'small')), { sizeClass: 'small', x: 0.27, y: 0.27 });
+assert.deepEqual(plain(window.CreatureGenetics.creatureSizeScale('voorg-ass', 'medium')), { sizeClass: 'medium', x: 0.75, y: 0.75 });
+assert.deepEqual(plain(window.CreatureGenetics.creatureSizeScale('voorg-ass', 'large')), { sizeClass: 'large', x: 0.97, y: 0.97 });
 assert.equal(window.CreatureGenetics.creatureGroundOffset('voorg-ass', 'small'), 0.11);
 assert.equal(window.CreatureGenetics.creatureGroundOffset('voorg-ass', 'medium'), 0.325);
 assert.equal(window.CreatureGenetics.creatureGroundOffset('voorg-ass', 'large'), 0.26);
 
-assert.deepEqual(window.CreatureGenetics.creatureSizeScale('gar-wolf', 'medium'), { sizeClass: 'medium', x: 9, y: 9 }, 'unrelated species retain the original size implementation');
+assert.deepEqual(plain(window.CreatureGenetics.creatureSizeScale('gar-wolf', 'medium')), { sizeClass: 'medium', x: 9, y: 9 }, 'unrelated species retain the original size implementation');
 assert.equal(window.CreatureGenetics.creatureGroundOffset('gar-wolf', 'medium'), 9, 'unrelated species retain the original ground implementation');
 assert.deepEqual(
   { x: window.CreatureGenetics.creatureSizeTrait('puktuk', { sizeClass: 'medium' }).x, y: window.CreatureGenetics.genotypeTraits('voorg-ass', { sizeClass: 'large' }).size.y },
@@ -131,7 +132,7 @@ assert.deepEqual(
 const status = window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.authoredLivestockRig;
 assert.equal(status.runtimeLibraryApplied, true);
 assert.equal(status.creatureGeneticsApiPatched, true);
-assert.deepEqual(status.legacyBorrowingBypassed, ['puktuk->gar-wolf', 'voorg-ass->uumkaoii']);
+assert.deepEqual(plain(status.legacyBorrowingBypassed), ['puktuk->gar-wolf', 'voorg-ass->uumkaoii']);
 
 const rigLoaderIndex = loaderSource.indexOf('attachment-rig-livestock-authored.js');
 const chatheadLoaderIndex = loaderSource.indexOf('animal-chathead-frame.js');
