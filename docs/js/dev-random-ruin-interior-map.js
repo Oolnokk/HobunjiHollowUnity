@@ -8,7 +8,8 @@
   const DS = window.DynamicSurfaces;
   const DevSpawner = window.DevSpawner;
   const GridTileAccessors = window.GridTileAccessors;
-  if (!DS || !DevSpawner || !GridTileAccessors) return;
+  const TileOccupancy = window.DevRandomRuinTileOccupancy;
+  if (!DS || !DevSpawner || !GridTileAccessors || !TileOccupancy) return;
 
   const MAP_ID = 'map_i_dev_random_ruin';
   const SCOPE = 'dev-random-ruin-interior';
@@ -187,12 +188,6 @@
     DS.registerSurface({ id, scope:SCOPE, bounds:() => boundsFor(object), topY:() => boxFor(object)?.max.y ?? 0,
       enabled:() => object.visible !== false, priority });
   }
-  function registerBlocker(id, object, clearanceAware = false) {
-    DS.registerBlocker({ id, scope:SCOPE, bounds:() => boundsFor(object), enabled:() => object.visible !== false,
-      blocksAt:(_x,_z,actorHeight) => { const b = boxFor(object); if (!b) return false;
-        return clearanceAware ? b.min.y < (ruin?.supportY || 0) + actorHeight - 0.04 : b.max.y - b.min.y > 0.12; } });
-  }
-
   function registerFloor(meta) {
     let floorMesh = null;
     ruin.localeRoot.traverse(o => { if (!floorMesh && o.userData?.wallBuilderRecipe === 'wallrecipe2.json') floorMesh = o; });
@@ -216,24 +211,22 @@
 
   function discoverRuntimeObjects() {
     ruin.mechanisms = new Map(); ruin.controls = []; ruin.activators = []; ruin.pushBlocks = [];
-    const furnitureBlockers = [];
+    const walls = []; // V50 wall meshes become boundary tiles instead of broad object AABBs.
+    const furnitureBlockers = []; // Solid authored objects are rasterized child-mesh by child-mesh.
     ruin.localeRoot.traverse(object => {
       const d = object.userData || {}, motion = d.previewMotion?.type;
       if (d.mechanismId && ['bridge','bridgeSequence','stoneDoor','movingDais','collapsingStairs'].includes(motion))
         ruin.mechanisms.set(d.mechanismId,{id:d.mechanismId,root:object,type:motion,progress:0,target:0});
       if (d.linkedMechanismId && d.activatorType) ruin.activators.push(object);
       if (d.pushable && motion === 'pushPuzzleBlock') ruin.pushBlocks.push(object);
-      if (d.ruinInteriorWall) registerBlocker(`devruin-wall-${object.id}`, object);
+      if (d.ruinInteriorWall) walls.push(object);
       if (/ceiling support pillar|doorway flank pillar|sunken centerpiece|wall display artifice/i.test(String(d.interiorRuinRole||''))) furnitureBlockers.push(object);
     });
     for (const m of ruin.mechanisms.values()) {
       if (m.type === 'bridge' || m.type === 'bridgeSequence') registerSurface(`devruin-mech-${m.id}`,m.root,10);
       else if (m.type === 'movingDais') registerSurface(`devruin-mech-${m.id}`,m.root.userData.movingDaisPlatform||m.root,12);
       else if (m.type === 'collapsingStairs') for (const tread of (m.root.userData.stairTreads||[])) registerSurface(`devruin-stair-${m.id}-${tread.id}`,tread,12);
-      else if (m.type === 'stoneDoor') registerBlocker(`devruin-door-${m.id}`,m.root,true);
     }
-    for (const o of furnitureBlockers) registerBlocker(`devruin-solid-${o.id}`,o);
-    for (const block of ruin.pushBlocks) { block.userData.__devRuinBlockerId=`devruin-push-${block.id}`; registerBlocker(block.userData.__devRuinBlockerId,block); }
 
     ruin.localeRoot.traverse(object => {
       if (object.userData?.activatorType !== 'linkedCubePillars' || !object.userData?.interactive3D) return;
@@ -248,6 +241,12 @@
     }
     for (const block of ruin.pushBlocks) ruin.controls.push({kind:'pushBlock',object:block,label:'Push Stone Block',onPress:()=>pushBlock(block)});
     ruin.controls.push({kind:'exit',object:null,label:'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
+    ruin.occupancy = TileOccupancy.create({
+      mapId:MAP_ID, scope:SCOPE, cols:ruin.cols, rows:ruin.rows, floorSet:ruin.floorSet,
+      walls, staticSolids:furnitureBlockers, mechanisms:ruin.mechanisms,
+      activators:ruin.activators, pushBlocks:ruin.pushBlocks,
+      getPlayerPosition:() => ({ x:deps.player.x / deps.TILE, z:deps.player.y / deps.TILE }),
+    });
   }
 
   function pushBlock(block) {
@@ -256,10 +255,10 @@
     if (Math.abs(dx)>=Math.abs(dz)) sx=Math.sign(dx)||1; else sz=Math.sign(dz)||1;
     const nx=p.x+sx*worldStep,nz=p.z+sz*worldStep;
     if (!DS.sampleSupport(nx,nz,{minY:-4,maxY:5,pad:.02})) return deps.showToast?.('The block cannot be pushed there.',false);
-    const hit=DS.blockerAt(nx,nz,{radius:.06,actorHeight:1});
-    if (hit && hit.id!==block.userData.__devRuinBlockerId) return deps.showToast?.('Something blocks the stone block.',false);
+    const hit=DS.blockerAt(nx,nz,{radius:.06,actorHeight:1,ignoreRuinSource:block.userData.__devRuinOccupancySource});
+    if (hit) return deps.showToast?.('Something blocks the stone block.',false);
     // The locale root carries the 2x horizontal scale, so child transforms remain in V50's original local cell units.
-    block.position.x+=sx*localStep; block.position.z+=sz*localStep; block.updateMatrixWorld?.(true); ruin.api.syncPressurePlates(ruin.localeRoot);
+    block.position.x+=sx*localStep; block.position.z+=sz*localStep; block.updateMatrixWorld?.(true); ruin.api.syncPressurePlates(ruin.localeRoot); ruin.occupancy?.refresh(); updateBadge();
   }
 
   function makeMapRecord(seed, generated, roots, meta) {
@@ -333,6 +332,7 @@
   }
 
   function clearRuntime(removeMap=true) {
+    ruin?.occupancy?.destroy?.();
     DS.clearScope(SCOPE);
     if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);} if(removeMap) buildingScenes?.delete(MAP_ID);
     ruin=null;
@@ -348,12 +348,12 @@
     let info=positionInfo(deps.player.x,deps.player.y);if(info.blocker){deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;info=positionInfo(deps.player.x,deps.player.y);} if(info.pit&&!info.support){ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,safe:{...ruin.lastSafePx}};window.ResourceSystem?.spendFooting?.(deps.player,35,'test ruin fall');return;}
     const ny=info.support?.y??0,same=info.support?.id===ruin.supportId;if(!same&&ny-ruin.supportY>MAX_STEP_HEIGHT){deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;return;} ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};if(!info.pit||info.support)ruin.lastSafePx={...ruin.lastAcceptedPx};ruin.supportId=info.support?.id||null;ruin.supportY=ny;if(info.support&&deps.playerMesh?.position)deps.playerMesh.position.y=ny;}
 
-  function updateMechanisms(dt){ruin.api.syncPressurePlates(ruin.localeRoot);ruin.api.tickRuntime(dt);for(const m of ruin.mechanisms.values()){const linked=m.root.userData?.linkedPressurePlateRoot||m.root.userData?.linkedCubePuzzleRoot;if(!linked)m.progress+=clamp(m.target-m.progress,-dt*1.55,dt*1.55);ruin.api.applyProgress(m.root,m.progress);}for(const a of ruin.activators){const m=ruin.mechanisms.get(a.userData?.linkedMechanismId);if(m&&!['pressurePlate','linkedCubePillars'].includes(a.userData?.activatorType))ruin.api.applyProgress(a,m.progress);}}
+  function updateMechanisms(dt){ruin.api.syncPressurePlates(ruin.localeRoot);ruin.api.tickRuntime(dt);for(const m of ruin.mechanisms.values()){const linked=m.root.userData?.linkedPressurePlateRoot||m.root.userData?.linkedCubePuzzleRoot;if(!linked)m.progress+=clamp(m.target-m.progress,-dt*1.55,dt*1.55);ruin.api.applyProgress(m.root,m.progress);}for(const a of ruin.activators){const m=ruin.mechanisms.get(a.userData?.linkedMechanismId);if(m&&!['pressurePlate','linkedCubePillars'].includes(a.userData?.activatorType))ruin.api.applyProgress(a,m.progress);}if(ruin.occupancy?.refresh())updateBadge();}
   DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateMechanisms(dt);reconcilePlayer(now);});
 
-  function updateBadge(){if(!ruin)return;let b=document.getElementById('devRandomRuinBadge');if(!b){b=document.createElement('div');b.id='devRandomRuinBadge';b.style.cssText='position:fixed;left:10px;bottom:10px;z-index:65;padding:6px 9px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(12,14,12,.82);color:#ddd;font:11px monospace;pointer-events:none';document.body.appendChild(b);}b.textContent=`${MAP_ID} · seed ${ruin.seed} · 2x tiles · ${ruin.meta.rooms?.length||0} rooms · ${ruin.mechanisms.size} mechanisms`;b.style.display='';}
+  function updateBadge(){if(!ruin)return;let b=document.getElementById('devRandomRuinBadge');if(!b){b=document.createElement('div');b.id='devRandomRuinBadge';b.style.cssText='position:fixed;left:10px;bottom:10px;z-index:65;padding:6px 9px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(12,14,12,.82);color:#ddd;font:11px monospace;pointer-events:none';document.body.appendChild(b);}const occupancy=ruin.occupancy?.snapshot?.();b.textContent=`${MAP_ID} · seed ${ruin.seed} · ${ruin.meta.rooms?.length||0} rooms · tiles R${occupancy?.blocked.length||0} G${occupancy?.causes.length||0} B${occupancy?.effects.length||0} · rev ${occupancy?.revision||0}`;b.style.display='';}
   function installSettingsButton(){if(!devModeEnabled())return;const arena=document.getElementById('devTeleportArenaBtn');if(!arena||document.getElementById('devRandomTestRuinBtn'))return;const row=document.createElement('div');row.className='settings-row';row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only V50 ruin as a real interior map with 2x horizontal tiles and enter it. Nothing is saved.</div></div><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';arena.closest('.settings-row')?.insertAdjacentElement('afterend',row);row.querySelector('button')?.addEventListener('click',()=>generate(randomSeed()));}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:CONTROL_RANGE})):[],getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:CONTROL_RANGE})):[],getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target})),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

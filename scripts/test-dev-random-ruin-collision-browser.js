@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-// Focused regression for Random Test Ruin collision precision. Requires a local
-// docs/ server plus Playwright/Chromium (same environment as the full ruin smoke).
+// Focused regression for the Random Test Ruin's shared occupancy snapshot.
+// Requires a local docs/ server plus Playwright/Chromium.
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
@@ -15,75 +15,86 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   page.on('pageerror', error => errors.push(String(error)));
   await page.addInitScript(() => localStorage.setItem('hobunjiDevMode', '1'));
   await page.goto(TEST_URL, { waitUntil:'domcontentloaded', timeout:30000 });
-  await page.waitForFunction(() =>
-    !!window.DevRandomRuin &&
-    !!window.DevRandomRuinCollisionPrecision &&
-    !!window.DynamicSurfaces?.addBlockerFilter,
-  null, { timeout:30000 });
+  await page.waitForFunction(() => !!window.DevRandomRuin && !!window.DevRandomRuinTileOccupancy && !!window.DevRandomRuinCollisionPrecision, null, { timeout:30000 });
   await page.evaluate(() => window.HobunjiTitleScreen?.start?.());
   await page.waitForFunction(() => !window.HobunjiTitleScreen?.isActive?.(), null, { timeout:5000 });
   assert.equal(await page.evaluate(() => window.DevRandomRuin.generate(0x5eed1234)), true, 'fixed ruin seed should generate');
   await page.waitForFunction(() => window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin', null, { timeout:30000 });
 
   const result = await page.evaluate(() => {
+    const first = window.DevRandomRuin.getOccupancySnapshot();
+    const dynamic = window.DynamicSurfaces.debugSnapshot();
+    const aggregate = dynamic.blockers.filter(record => record.id === 'devruin-tile-occupancy');
+    const legacy = dynamic.blockers.filter(record => /^devruin-(wall|solid|door|push)-/.test(record.id));
+    const blockedKey = first.blocked[0];
+    const [blockedCol, blockedRow] = blockedKey.split(',').map(Number);
+    const blockedHit = window.DynamicSurfaces.blockerAt(blockedCol + .5, blockedRow + .5, { radius:.05, actorHeight:1.25 });
+    const openKey = first.floor.find(tileKey => !first.blocked.includes(tileKey));
+    const [openCol, openRow] = openKey.split(',').map(Number);
+    const openHit = window.DynamicSurfaces.blockerAt(openCol + .5, openRow + .5, { radius:.05, actorHeight:1.25 });
+
+    window.WildernessMap.renderMapPanel();
+    const canvas = document.getElementById('wildernessMapCanvas');
+    const legend = document.querySelector('#mpMap .wmap-legend')?.textContent || '';
+
+    // Move one authored push block by a full runtime tile and refresh explicitly;
+    // its red source must move without registering a new object blocker.
     const scene = window.GridTileAccessors.getActiveScene();
-    const DS = window.DynamicSurfaces;
-    const precision = window.DevRandomRuinCollisionPrecision;
-    const material = new THREE.MeshBasicMaterial();
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(4, 2), material);
-    wall.position.set(3, 1, 3);
-    wall.rotation.y = Math.PI / 4;
-    wall.updateMatrixWorld(true);
-    scene.add(wall);
-    wall.updateMatrixWorld(true);
+    let push = null;
+    scene?.traverse?.(object => { if (!push && object.userData?.pushable && object.userData?.previewMotion?.type === 'pushPuzzleBlock') push = object; });
+    let pushChange = null;
+    if (push) {
+      const sourceId = push.userData.__devRuinOccupancySource;
+      const beforeTiles = Object.keys(first.sources).filter(tileKey => first.sources[tileKey].includes(sourceId));
+      push.position.x += .5;
+      push.updateMatrixWorld?.(true);
+      window.DevRandomRuinTileOccupancy.refresh();
+      const after = window.DevRandomRuin.getOccupancySnapshot();
+      const afterTiles = Object.keys(after.sources).filter(tileKey => after.sources[tileKey].includes(sourceId));
+      pushChange = { sourceId, beforeTiles, afterTiles, revisionBefore:first.revision, revisionAfter:after.revision };
+    }
 
-    const box = new THREE.Box3().setFromObject(wall);
-    const record = { id:`devruin-wall-${wall.id}`, scope:'dev-random-ruin-interior' };
-    const context = {
-      radius:.1,
-      actorHeight:1.25,
-      bounds:{ minX:box.min.x, maxX:box.max.x, minZ:box.min.z, maxZ:box.max.z },
-      options:{ radius:.1, actorHeight:1.25 },
-    };
-
-    // At a rotated line's AABB corner, the broad phase says "inside" but the
-    // oriented wall footprint must reject it. The center must remain blocking.
-    const cornerX = box.min.x + .03;
-    const cornerZ = box.min.z + .03;
-    const cornerAccepted = precision.refineBlocker(record, cornerX, cornerZ, context);
-    const centerAccepted = precision.refineBlocker(record, wall.position.x, wall.position.z, context);
-
-    scene.remove(wall);
-    wall.geometry.dispose();
-    material.dispose();
-
-    const snap = precision.snapshot();
-    const dynamic = DS.debugSnapshot();
+    const probe = window.DevRandomRuinCollisionPrecision.snapshot();
     return {
-      cornerAccepted,
-      centerAccepted,
-      filterCount:dynamic.blockerFilters,
-      precision:snap.precision,
-      active:snap.active,
+      counts:{ blocked:first.blocked.length, causes:first.causes.length, effects:first.effects.length },
+      aggregate:aggregate.length,
+      legacy:legacy.length,
+      blockedHit:blockedHit?.id || null,
+      openHit:openHit?.id || null,
+      mapRevision:Number(canvas.dataset.ruinOccupancyRevision),
+      mapFog:canvas.dataset.ruinFog,
+      legend,
+      pushChange,
+      probe,
     };
   });
 
-  assert.equal(result.active, true, JSON.stringify(result));
-  assert.ok(result.filterCount >= 1, JSON.stringify(result));
-  assert.equal(result.cornerAccepted, false, `rotated wall AABB corner must be rejected: ${JSON.stringify(result)}`);
-  assert.equal(result.centerAccepted, true, `real wall center must remain blocking: ${JSON.stringify(result)}`);
-  assert.ok(result.precision.rejected >= 1, JSON.stringify(result.precision));
-  assert.ok(result.precision.accepted >= 1, JSON.stringify(result.precision));
+  assert.ok(result.counts.blocked > 0, JSON.stringify(result));
+  assert.equal(result.aggregate, 1, JSON.stringify(result));
+  assert.equal(result.legacy, 0, JSON.stringify(result));
+  assert.equal(result.blockedHit, 'devruin-tile-occupancy', JSON.stringify(result));
+  assert.equal(result.openHit, null, JSON.stringify(result));
+  assert.equal(result.mapRevision, result.pushChange?.revisionBefore ?? result.probe.revision, JSON.stringify(result));
+  assert.equal(result.mapFog, 'disabled', JSON.stringify(result));
+  assert.match(result.legend, /Blocked/);
+  assert.match(result.legend, /Activator/);
+  assert.match(result.legend, /Mechanism/);
+  if (result.pushChange) {
+    assert.ok(result.pushChange.sourceId, JSON.stringify(result.pushChange));
+    assert.notDeepEqual(result.pushChange.afterTiles, result.pushChange.beforeTiles, JSON.stringify(result.pushChange));
+    assert.ok(result.pushChange.revisionAfter > result.pushChange.revisionBefore, JSON.stringify(result.pushChange));
+  }
+  assert.equal(result.probe.aggregateBlockers, 1, JSON.stringify(result.probe));
 
-  const probe = await page.evaluate(async () => {
+  const probeText = await page.evaluate(async () => {
     const resultEl = document.getElementById('debugProbeResult');
     if (!resultEl) return '';
-    resultEl.textContent = 'Pixel Probe report\ncollision precision smoke';
+    resultEl.textContent = 'Pixel Probe report\nshared occupancy smoke';
     await new Promise(resolve => setTimeout(resolve, 50));
     return resultEl.textContent;
   });
-  assert.match(probe, /Random Test Ruin collision diagnostics/, probe);
-  assert.match(probe, /rejectedAabbFalsePositives=/, probe);
+  assert.match(probeText, /Random Test Ruin tile occupancy diagnostics/, probeText);
+  assert.match(probeText, /aggregateGameplayBlockers=1/, probeText);
 
   if (errors.length) throw new Error(`Page errors: ${errors.join(' | ')}`);
   console.log(JSON.stringify(result, null, 2));

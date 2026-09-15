@@ -53,6 +53,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     !!window.DevRandomRuin &&
     !!window.DevRandomRuinPrototypeHooks &&
     !!window.DevRandomRuinHitPuzzles &&
+    !!window.DevRandomRuinTileOccupancy &&
     !!window.DevRandomRuinWallPlanes &&
     !!window.DevRandomRuinMotionRuntime &&
     !!window.DevRandomRuinRuntimeCoverage,
@@ -116,6 +117,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const motion = window.DevRandomRuinMotionRuntime.snapshot();
       const coverage = window.DevRandomRuinRuntimeCoverage.snapshot();
       const wallPlaneControl = window.DevRandomRuinWallPlanes.snapshot();
+      const occupancy = window.DevRandomRuin.getOccupancySnapshot();
+      const dynamic = window.DynamicSurfaces.debugSnapshot();
       const frame = document.getElementById('devRandomRuinGeneratorFrame');
       const generator = frame?.contentWindow?.DebrisifierV50;
       const generatorState = generator?.getState?.();
@@ -160,6 +163,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         motion,
         coverage,
         wallPlaneControl,
+        occupancy,
+        occupancyBlockers:dynamic.blockers.filter(record => record.id === 'devruin-tile-occupancy').length,
+        legacyRuinBlockers:dynamic.blockers.filter(record => /^devruin-(wall|solid|door|push)-/.test(record.id)).length,
         transport,
         furnitureStatus,
         ladders,
@@ -194,9 +200,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.runtimeWallPlanes.doubleSided, active.runtimeWallPlanes.count, JSON.stringify(active.runtimeWallPlanes));
     assert.equal(active.wallPlaneControl.enabled, true, JSON.stringify(active.wallPlaneControl));
     assert.equal(active.wallPlaneControl.count, active.runtimeWallPlanes.count, JSON.stringify(active.wallPlaneControl));
-    assert.equal(active.wallPlaneControl.renderVisible, active.wallPlaneControl.count, JSON.stringify(active.wallPlaneControl));
     assert.equal(active.wallPlaneControl.meshVisible, active.wallPlaneControl.count, JSON.stringify(active.wallPlaneControl));
-    assert.ok(active.wallPlaneControl.blockerCount > 0, JSON.stringify(active.wallPlaneControl));
+    assert.equal(active.wallPlaneControl.blockerCount, 0, JSON.stringify(active.wallPlaneControl));
+    assert.ok(active.occupancy?.blocked?.length > 0, JSON.stringify(active.occupancy));
+    assert.equal(active.occupancyBlockers, 1, JSON.stringify(active));
+    assert.equal(active.legacyRuinBlockers, 0, JSON.stringify(active));
     assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
     assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
     for (const hall of active.hallwayCollision) {
@@ -204,8 +212,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(hall.blocked.length, 0, `hallway ${hall.id} center lane is blocked: ${JSON.stringify(hall)}`);
     }
 
-    // The visual option must hide only the prototype wall materials. Meshes and
-    // registered blockers stay alive so turning walls off cannot change traversal.
+    // Wall planes are structural and their old visual toggle is now a no-op.
+    // Applying it must not recreate any object-wide wall blockers.
     if (seed === FIXED_SEEDS[0]) {
       const toggle = await page.evaluate(() => {
         window.DevRandomRuinWallPlanes.setVisible(false);
@@ -214,12 +222,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const on = window.DevRandomRuinWallPlanes.snapshot();
         return { off, on, checkbox:document.getElementById('settingDevRandomRuinWallPlanes')?.checked ?? null };
       });
-      assert.equal(toggle.off.renderVisible, 0, JSON.stringify(toggle));
       assert.equal(toggle.off.meshVisible, toggle.off.count, JSON.stringify(toggle));
       assert.equal(toggle.off.blockerCount, active.wallPlaneControl.blockerCount, JSON.stringify(toggle));
-      assert.equal(toggle.on.renderVisible, toggle.on.count, JSON.stringify(toggle));
+      assert.equal(toggle.off.enabled, true, JSON.stringify(toggle));
+      assert.equal(toggle.on.meshVisible, toggle.on.count, JSON.stringify(toggle));
       assert.equal(toggle.on.blockerCount, active.wallPlaneControl.blockerCount, JSON.stringify(toggle));
-      assert.equal(toggle.checkbox, true, JSON.stringify(toggle));
+      assert.equal(toggle.checkbox, null, JSON.stringify(toggle));
     }
 
     if (active.negativeLevels > 0) {

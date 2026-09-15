@@ -18,12 +18,14 @@ const debrisBootstrap = read('docs/tools/debris-ifier/debrisifier-01.js');
 const debrisSource = read('docs/tools/debris-ifier/debrisifier-v50-source.js');
 const embeddedTree = JSON.parse(read('docs/tools/debris-ifier/debrisifier-v50-embedded-tree.json'));
 const interior = read('docs/js/dev-random-ruin-interior-map.js');
+const occupancy = read('docs/js/dev-random-ruin-tile-occupancy.js');
 const hooks = read('docs/js/dev-random-ruin-prototype-hooks.js');
 
 const loadOrder = [
   'dynamic-surfaces.js',
   'dev-random-ruin-hit-puzzles-loader.js',
   'dev-random-ruin-prototype-hooks.js',
+  'dev-random-ruin-tile-occupancy.js',
   'dev-random-ruin-interior-map.js',
   'dev-random-ruin-motion-runtime.js',
   'dev-random-ruin-runtime-coverage.js',
@@ -35,6 +37,16 @@ for (let i = 1; i < loadOrder.length; i++) {
 
 assert(interior.includes("const RUIN_TILE_SCALE = 2"), 'generated ruin must retain 2x horizontal cells');
 assert(interior.includes("map_i_dev_random_ruin"), 'generated ruin must remain a real session-only interior map');
+assert(!interior.includes('devruin-wall-${object.id}'), 'wall meshes must not register object-wide blockers');
+assert(!interior.includes('devruin-solid-${o.id}'), 'solid furniture must not register object-wide blockers');
+assert(interior.includes('TileOccupancy.create'), 'ruin must create the shared tile occupancy snapshot');
+assert(interior.includes('getOccupancySnapshot'), 'ruin must expose the exact gameplay snapshot to diagnostics');
+assert(occupancy.includes("const BLOCKER_ID = 'devruin-tile-occupancy'"), 'tile occupancy must own one aggregate gameplay blocker');
+assert(occupancy.includes('if (!model.floorSet.has(tileKey)) result.add(tileKey);'), 'wall rasterization must place wall collision on the non-floor side');
+assert(occupancy.includes('dataset.ruinFog = \'disabled\''), 'test ruin Map renderer must explicitly reveal the entire interior');
+assert(occupancy.includes("'#e74c3c'"), 'Map renderer must draw blocked tiles red');
+assert(occupancy.includes("'#35c96f'"), 'Map renderer must draw activator tiles green');
+assert(occupancy.includes("'#3498db'"), 'Map renderer must draw mechanism tiles blue');
 assert(interior.includes('tools/debris-ifier/index.html?devRuntime=1'), 'hidden generator must request embedded V50 runtime mode');
 assert(interior.includes('await enterRuin(); updateBadge();'), 'generate must await the actual ruin transition midpoint before reporting success');
 assert(interior.includes('const entering=ruin;'), 'ruin entry transition must capture the generated instance it is entering');
@@ -44,6 +56,7 @@ assert(interior.includes('restorePreviewRoots()'), 'reroll lifecycle comment mus
 assert(hooks.includes("generatedAccessType === 'stoneLadder'"), 'prototype hook layer must discover V50 ladders');
 assert(hooks.includes("motion === 'elevatorPushBlock'"), 'prototype hook layer must discover elevator push blocks');
 new vm.Script(interior, { filename:'dev-random-ruin-interior-map.js' });
+new vm.Script(occupancy, { filename:'dev-random-ruin-tile-occupancy.js' });
 
 assert(api.includes('createRuntimeStoneLadder'), 'V50 bridge must expose the real stone ladder constructor');
 assert(api.includes('auditInteriorSeeds'), 'V50 bridge must expose multi-seed runtime-tag auditing');
