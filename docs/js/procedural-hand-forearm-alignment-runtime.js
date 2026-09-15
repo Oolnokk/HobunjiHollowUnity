@@ -15,6 +15,7 @@
   const records = new Set();
   let alignApplications = 0;
   let missingShoulders = 0;
+  let portraitResolvedShoulders = 0;
 
   function cfgNumber(key, fallback, lo = -Infinity, hi = Infinity) {
     const value = Number(global.SCRATCHBONES_CONFIG?.game?.socialActions?.[key]);
@@ -34,10 +35,41 @@
     const rig = record.rig;
     const key = `${rig?.speciesId || record.options.speciesId || ''}::${normalizeGender(rig?.gender || record.options.gender)}`;
     const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder';
-    const p = global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key]?.anchors?.[anchorName]?.position;
-    if ([p?.x, p?.y, p?.z].every(value => Number.isFinite(Number(value)))) {
-      record.shoulderSource[side] = 'attachment-rig-profile';
-      return new THREE.Vector3(Number(p.x), Number(p.y), Number(p.z));
+    const profile = global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key] || null;
+    const raw = profile?.anchors?.[anchorName]?.position;
+    const portraitSpace = global.HobunjiCharacterPortraitAnchorSpace;
+    const avatarRoot = record.avatarRoot;
+
+    // Hand sockets live in the avatar's floor-relative visual parent. Character
+    // shoulders are authored against the unrotated portrait, so resolve the
+    // existing portrait binding before using the point as a forearm origin.
+    // This is the same transform used by normal shoulder aim and attachment
+    // authoring, including species/gender scale, child scale, and portrait Y.
+    if (profile && avatarRoot && portraitSpace?.metricsForAvatarRoot && portraitSpace?.resolveAnchor) {
+      const metrics = portraitSpace.metricsForAvatarRoot(avatarRoot, profile);
+      const resolved = portraitSpace.resolveAnchor(profile, anchorName, metrics);
+      if ([resolved?.x, resolved?.y, resolved?.z].every(value => Number.isFinite(Number(value)))) {
+        record.shoulderSource[side] = 'attachment-rig-profile-portrait-resolved';
+        record.shoulderResolved[side] = {
+          x: Number(resolved.x), y: Number(resolved.y), z: Number(resolved.z),
+          raw: raw ? { x: Number(raw.x), y: Number(raw.y), z: Number(raw.z) } : null,
+          actorScaleFactor: Number(portraitSpace.actorScaleFactor?.(metrics)) || 1,
+          placementRatio: Number(metrics?.placementRatio),
+        };
+        portraitResolvedShoulders++;
+        return new THREE.Vector3(Number(resolved.x), Number(resolved.y), Number(resolved.z));
+      }
+    }
+
+    // Raw profile coordinates are retained only as a compatibility fallback for
+    // runtimes that predate the shared portrait-anchor bridge.
+    if ([raw?.x, raw?.y, raw?.z].every(value => Number.isFinite(Number(value)))) {
+      record.shoulderSource[side] = 'attachment-rig-profile-raw-fallback';
+      record.shoulderResolved[side] = {
+        x: Number(raw.x), y: Number(raw.y), z: Number(raw.z), raw: { x: Number(raw.x), y: Number(raw.y), z: Number(raw.z) },
+        actorScaleFactor: null, placementRatio: null,
+      };
+      return new THREE.Vector3(Number(raw.x), Number(raw.y), Number(raw.z));
     }
 
     // Legacy authored 200x200 shoulder points use the same conversion as the
@@ -46,7 +78,6 @@
     const points = global.HobunjiHandShoulderPoints;
     const point = points?.pointFor?.(rig?.speciesId || record.options.speciesId, rig?.gender || record.options.gender, side);
     if (point && points?.isAuthored?.(point)) {
-      const avatarRoot = record.avatarRoot;
       const parent = rig?.parent || avatarRoot?.parent;
       if (avatarRoot && parent) {
         const modelWidth = Number(avatarRoot.userData?.portraitModelWidth) || Number(record.options.modelHeight) || 0.9;
@@ -63,11 +94,13 @@
         parent.updateWorldMatrix?.(true, false);
         parent.worldToLocal(local);
         record.shoulderSource[side] = 'manual-portrait-200px';
+        record.shoulderResolved[side] = { x: local.x, y: local.y, z: local.z, raw: null, actorScaleFactor: null, placementRatio };
         return local;
       }
     }
 
     record.shoulderSource[side] = 'missing';
+    record.shoulderResolved[side] = null;
     return null;
   }
 
@@ -172,6 +205,7 @@
       free: { left: true, right: true },
       baseline: { left: null, right: null },
       shoulderSource: { left: null, right: null },
+      shoulderResolved: { left: null, right: null },
       alignments: { left: 0, right: 0 },
       sentinel: null,
     };
@@ -227,6 +261,7 @@
             sentinelRenderOrder: record.sentinel?.renderOrder ?? null,
             free: { ...record.free },
             shoulderSource: { ...record.shoulderSource },
+            shoulderResolved: { ...record.shoulderResolved },
             hasBaseline: { left: !!record.baseline.left, right: !!record.baseline.right },
             alignments: { ...record.alignments },
           },
@@ -294,12 +329,14 @@
         activeRigs: records.size,
         alignApplications,
         missingShoulders,
+        portraitResolvedShoulders,
         rigs: [...records].map(record => ({
           name: record.options.name || null,
           speciesId: record.rig?.speciesId || null,
           gender: record.rig?.gender || null,
           free: { ...record.free },
           shoulderSource: { ...record.shoulderSource },
+          shoulderResolved: { ...record.shoulderResolved },
           alignments: { ...record.alignments },
           sentinelRenderOrder: record.sentinel?.renderOrder ?? null,
         })),
