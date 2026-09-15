@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const assert = require('node:assert/strict'); // Used to fail when the Popup Text Editor relationship reference drifts from gameplay styling.
+const assert = require('node:assert/strict'); // Used to fail when the Popup Text Editor relationship reference or diagnostics drift from the intended contract.
 const fs = require('node:fs'); // Used to read the editor and runtime source files directly.
 const path = require('node:path'); // Used to resolve repository-relative fixture paths.
 const vm = require('node:vm'); // Used to syntax-check the standalone editor helper.
@@ -9,7 +9,7 @@ const vm = require('node:vm'); // Used to syntax-check the standalone editor hel
 const root = path.resolve(__dirname, '..'); // Used as the repository root for every source read below.
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8'); // Used to keep test fixture reads concise.
 const editor = read('docs/tools/world-popup-editor/index.html'); // Used to verify the actual Popup Text Editor loads the relationship helper.
-const helper = read('docs/js/world-popup-relationship-editor.js'); // Used to validate the 3D relationship preview implementation.
+const helper = read('docs/js/world-popup-relationship-editor.js'); // Used to validate the 3D relationship preview and visible diagnostics implementation.
 const runtime = read('docs/js/generic-hud-icons.js'); // Used as the current gameplay relationship-popup visual contract.
 
 assert.doesNotThrow(() => new vm.Script(helper), 'world popup relationship editor helper parses');
@@ -20,6 +20,14 @@ assert.match(helper, /Rapport \+10/, 'positive Rapport preview is available');
 assert.match(helper, /Rapport -10/, 'negative Rapport preview is available');
 assert.match(helper, /Favor \+10/, 'positive Favor preview is available');
 assert.match(helper, /Favor -10/, 'negative Favor preview is available');
+assert.match(helper, /worldPopupEditorDiagnostics/, 'Popup Text Editor exposes an always-visible diagnostics panel');
+assert.match(helper, /Preview debug/, 'diagnostics panel is visibly labeled');
+assert.match(helper, /Retry avatar/, 'diagnostics panel provides an avatar retry action');
+assert.match(helper, /Copy/, 'diagnostics panel provides a copy action for mobile debugging');
+assert.match(helper, /three configured=/, 'diagnostics expose Three.js configuration and load state');
+assert.match(helper, /avatar holder=/, 'diagnostics expose avatar-holder and model state');
+assert.match(helper, /window\.addEventListener\('unhandledrejection'/, 'diagnostics capture async boot failures');
+assert.match(helper, /window\.addEventListener\('error'/, 'diagnostics capture JS and resource failures');
 assert.match(helper, /popupRuntime\.showRelationshipChange\(avatarHolder, kind, amount\)/, 'controls render through a WorldPopupText-shaped relationship API against the real preview avatar root');
 assert.match(helper, /new THREE\.Mesh\(geometry, material\)/, 'relationship reference renders as an actual Three.js billboard');
 assert.match(helper, /event\.plane\.quaternion\.copy\(camera\.quaternion\)/, 'relationship billboard faces the live popup-editor camera');
@@ -40,4 +48,4 @@ for (const [label, helperPattern, runtimePattern] of [
 }
 
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/hud/generic_icons/icon_heart.png')), 'runtime heart asset exists');
-console.log('Popup Text Editor relationship preview checks passed.');
+console.log('Popup Text Editor relationship preview and diagnostics checks passed.');
