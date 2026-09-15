@@ -33,6 +33,11 @@ assert(!runtime.includes("renderOptions?.view !== 'behind'"), 'behind-view alias
 assert(!runtime.includes('material.alphaMap'), 'arm-only cut must not be applied to the flattened portrait material');
 assert(!runtime.includes('buildSinglePlaneAvatarModel'), 'arm-only cut must not patch the finished PNG-plane avatar');
 assert(!runtime.includes('hobunjiArmCloudAlphaMap'), 'legacy flattened arm alpha-map state must stay removed');
+assert(runtime.includes('const armClipStateCache = new Map()'), 'processed arm hard-cuts must be cached instead of rebuilt for every portrait redraw');
+assert(runtime.includes('const pending = buildArmClipStateUncached(request)'), 'cache misses must share one in-flight preprocessing promise');
+assert(runtime.includes('armClipStateCache.set(request.cacheKey, pending)'), 'in-flight and completed preprocessing must use the same cache entry');
+assert(runtime.includes('ARM_CLIP_CACHE_LIMIT = 64'), 'processed arm cache must remain explicitly bounded');
+assert(runtime.includes('debugSnapshot: armClipCacheDebugSnapshot'), 'mobile diagnostics must expose arm hard-cut cache hits/misses/builds');
 
 assert(editor.includes("schema: 'hobunji_portrait_arm_mask.v2'"), 'mask editor must export the species/gender profile schema');
 assert(editor.includes('profiles[profileKey()]'), 'editor must store distinct settings per species+gender');
@@ -45,4 +50,4 @@ assert(!editor.includes('weightMap'), 'mask editor must not retain weight-paint 
 assert(!editor.includes('calculated-bicep'), 'mask editor must not retain bicep-rig bindings');
 assert(!editor.includes('deformPreview'), 'mask editor must not retain deformation preview code');
 
-console.log('portrait arm hard-cut/profile regression checks passed');
+console.log('portrait arm hard-cut/profile/cache regression checks passed');
