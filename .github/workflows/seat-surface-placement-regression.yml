@@ -7,6 +7,7 @@ on:
       - 'docs/js/seat-surface-placement-transform.js'
       - 'scripts/test-interior-seat-surface-post-transform.js'
       - 'scripts/test-interior-seat-surface-three-math.js'
+      - 'scripts/test-interior-seat-surface-visual-alias.js'
       - '.github/workflows/seat-surface-placement-regression.yml'
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - 'docs/js/seat-surface-placement-transform.js'
       - 'scripts/test-interior-seat-surface-post-transform.js'
       - 'scripts/test-interior-seat-surface-three-math.js'
+      - 'scripts/test-interior-seat-surface-visual-alias.js'
       - '.github/workflows/seat-surface-placement-regression.yml'
 
 permissions:
@@ -34,10 +36,13 @@ jobs:
           node --check docs/js/seat-surface-placement-transform.js
           node --check scripts/test-interior-seat-surface-post-transform.js
           node --check scripts/test-interior-seat-surface-three-math.js
+          node --check scripts/test-interior-seat-surface-visual-alias.js
       - name: Test transformed interior seat positions and station binding
         run: node scripts/test-interior-seat-surface-post-transform.js
       - name: Test transformed seat plane math against real temple bench data
         run: node scripts/test-interior-seat-surface-three-math.js
+      - name: Test transformed seats keep authored furniture visuals
+        run: node scripts/test-interior-seat-surface-visual-alias.js
       - name: Re-run existing furniture and seating regressions
         run: |
           node scripts/test-outdoor-furniture-and-npc-seating.js
