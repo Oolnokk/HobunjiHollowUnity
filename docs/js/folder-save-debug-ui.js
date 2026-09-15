@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
-  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes now share three-way reconciliation; Drive file-id switches reset old baselines, conflicts show both preserved branches with Keep Both/replace choices, and authorized sessions preflight again after foreground/reconnect.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: Google Drive and desktop canonical-folder writes now share three-way reconciliation; Drive file-id switches reset old baselines, conflicts show both preserved branches with Keep Both/replace choices, and the Settings identity probe can verify Drive-for-Desktop keeps one file id while Drive version advances.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -28,6 +28,7 @@
       googleDriveLinkSafety: safeSnapshot(() => window.__hobunjiGoogleDriveLinkSafetyDebug?.snapshot?.()),
       googleDriveUi: safeSnapshot(() => window.__hobunjiGoogleDriveSaveUIDebug?.snapshot?.()),
       googleDriveConflictUi: safeSnapshot(() => window.__hobunjiGoogleDriveConflictUIDebug?.snapshot?.()),
+      googleDriveIdentityProbe: safeSnapshot(() => window.__hobunjiGoogleDriveIdentityProbeDebug?.snapshot?.()),
       googleDriveLifecycle: safeSnapshot(() => window.__hobunjiGoogleDriveSaveLifecycleDebug?.snapshot?.()),
       googleDriveStartup: safeSnapshot(() => window.__hobunjiGoogleDriveSaveStartupDebug?.snapshot?.()),
       googleDriveRestoreBridge: safeSnapshot(() => window.__hobunjiGoogleDriveLegacyCloudBridgeDebug?.snapshot?.()),
