@@ -17,7 +17,7 @@
       rarityWeights: { common: 6, uncommon: 3, rare: 1 }, // Used to mirror fishing-minigame.js's no-perk rarity roll weights.
     },
     targets: {
-      growthTonicsPerFishingDay: { target: 1.5, min: 1.4, max: 1.6 }, // Used to keep one daylight fishing day near one-and-a-half Growth Tonics.
+      growthTonicsPerFishingDay: { target: 3.75, min: 3.5, max: 4.0 }, // Used to preserve the established beginner fishing-income guardrail after Growth Tonic moved from 500g to 200g.
       incubatorFishingDays: { target: 7, min: 6.25, max: 7.5 }, // Used to keep the Incubator at roughly one week of all-day fishing if nothing else is bought.
     },
   };
