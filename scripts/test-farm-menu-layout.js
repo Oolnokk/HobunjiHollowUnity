@@ -20,9 +20,12 @@ assert.match(layoutSource, /pairButton\.parentElement !== bar\) bar\.appendChild
 assert.match(layoutSource, /addButton\.parentElement !== bar\) bar\.appendChild\(addButton\)/, 'the existing Add Livestock control shares the primary animal action strip');
 assert.match(layoutSource, /WORLD_HEADING_ID = 'farmWorldLivestockHeading'/, 'world livestock receive a flat divider instead of a nested wrapper');
 assert.match(layoutSource, /STABLE_HEADING_ID = 'farmStableBreedingHeading'/, 'personal Stable candidates receive a flat divider instead of a nested wrapper');
-assert.match(layoutSource, /Direct rows only: no nested Farm\/Stable wrappers remain/, 'Farm-vs-Stable organization explicitly keeps roster rows direct');
+assert.match(layoutSource, /Direct real rows only: no nested wrappers or hidden identity sentinel/, 'Farm-vs-Stable organization explicitly keeps visible roster rows direct');
 assert.match(layoutSource, /LEGACY_GROUP_IDS = \['farmWorldLivestockGroup', 'farmStableBreedingGroup'\]/, 'hot reload removes the previous nested-group presentation');
 assert.match(layoutSource, /row\.dataset\.nurseryWorldLivestockId/, 'Farm-vs-Stable separation reuses the Nursery row identity contract');
+assert.match(layoutSource, /WORLD_IDENTITY_SENTINEL_ID = 'farmWorldLivestockIdentitySentinel'/, 'all-baby edge protection has a dedicated hidden row identity sentinel');
+assert.match(layoutSource, /needsSentinel = !hasTaggedWorldRow && rosterRows\.length > 0/, 'identity sentinel appears only when no real tagged world row survives but candidate rows remain');
+assert.match(layoutSource, /sentinel\.dataset\.nurseryWorldLivestockId = '__farm_menu_identity_sentinel__'/, 'sentinel keeps repeated Nursery passes out of positional rebinding');
 assert.match(layoutSource, /const alreadyOrdered = currentManaged\.length === desiredNodes\.length/, 'flat roster checks its current order before moving nodes');
 assert.match(layoutSource, /if \(!alreadyOrdered\) desiredNodes\.forEach/, 'observer passes stop mutating once the flat roster order is correct');
 assert.match(layoutSource, /nurseryFocusIndex = index/, 'controller-owned Nursery focus remembers the selected baby index');
