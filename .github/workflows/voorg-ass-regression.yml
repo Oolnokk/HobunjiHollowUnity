@@ -5,21 +5,27 @@ on:
     paths:
       - 'docs/js/creature-genetics.js'
       - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/character-action-locks.js'
       - 'docs/tools/animation-author/index.html'
+      - 'docs/config/attachment-rig-livestock-authored.js'
       - 'docs/config/loot/loot-pools.json'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
       - 'scripts/test-new-creature-rig-coordinates.js'
+      - 'scripts/test-authored-livestock-rig-runtime.js'
       - '.github/workflows/voorg-ass-regression.yml'
   pull_request:
     paths:
       - 'docs/js/creature-genetics.js'
       - 'docs/js/animal-chathead-frame.js'
+      - 'docs/js/character-action-locks.js'
       - 'docs/tools/animation-author/index.html'
+      - 'docs/config/attachment-rig-livestock-authored.js'
       - 'docs/config/loot/loot-pools.json'
       - 'scripts/test-puktuk-species.js'
       - 'scripts/test-voorg-ass-species.js'
       - 'scripts/test-new-creature-rig-coordinates.js'
+      - 'scripts/test-authored-livestock-rig-runtime.js'
       - '.github/workflows/voorg-ass-regression.yml'
 
 permissions:
@@ -39,6 +45,8 @@ jobs:
         run: node --check docs/js/creature-genetics.js
       - name: Syntax check Rig Coordinates helper
         run: node --check docs/js/animal-chathead-frame.js
+      - name: Syntax check authored livestock rig runtime
+        run: node --check docs/config/attachment-rig-livestock-authored.js
       - name: Validate loot JSON
         run: node -e "JSON.parse(require('node:fs').readFileSync('docs/config/loot/loot-pools.json', 'utf8'))"
       - name: Test Puktuk integration
@@ -47,3 +55,5 @@ jobs:
         run: node scripts/test-voorg-ass-species.js
       - name: Test new livestock Rig Coordinates integration
         run: node scripts/test-new-creature-rig-coordinates.js
+      - name: Test authored livestock rig runtime values
+        run: node scripts/test-authored-livestock-rig-runtime.js
