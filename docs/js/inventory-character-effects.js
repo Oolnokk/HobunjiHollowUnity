@@ -114,68 +114,113 @@
     const style = document.createElement('style'); // Presentation is isolated here so inventory-ui.js remains responsible for the surrounding gear layout.
     style.id = STYLE_ID;
     style.textContent = `
-      /* Gear mode reclaims the old hidden item-grid height so the loadout and owned-gear selector get separate vertical regions. */
+      /* The loadout owns the top of the available Gear region. Only the variable-size owned collection may scroll. */
       #mpInventory.inv-mode-gear .inv-equip-section {
+        display:flex;
+        flex-direction:column;
         height:calc(21 * var(--inv-row));
         max-height:calc(21 * var(--inv-row));
-        overflow-y:auto;
-        overflow-x:hidden;
+        overflow:hidden;
         box-sizing:border-box;
       }
       #mpInventory.inv-mode-gear .gear-loadout-grid {
-        height:calc(12.2 * var(--inv-row));
-        min-height:calc(12.2 * var(--inv-row));
-        max-height:calc(12.2 * var(--inv-row));
+        flex:0 0 auto;
+        height:auto;
+        min-height:0;
+        max-height:none;
         box-sizing:border-box;
-        overflow:hidden;
+        overflow:visible;
         margin-bottom:calc(1.1 * var(--inv-gap));
       }
       #mpInventory.inv-mode-gear .gear-owned-section {
         position:relative;
         z-index:0;
+        flex:1 1 auto;
+        min-height:0;
         margin-top:0;
         padding-top:0;
+        overflow-y:auto;
+        overflow-x:hidden;
+        scrollbar-width:thin;
       }
       #mpInventory .gear-outfit-stats.gear-character-effects-host {
-        padding:0; border:0; background:none; overflow:hidden; gap:var(--inv-gap);
+        display:grid;
+        grid-template-rows:auto auto;
+        align-content:start;
+        padding:0;
+        border:0;
+        background:none;
+        overflow:visible;
+        gap:var(--inv-gap);
       }
       #mpInventory .gear-outfit-stats.gear-character-effects-host > .gear-loadout-heading { display:none; }
       #mpInventory .gear-character-effects-card {
-        flex:1 1 0; min-height:0; padding:calc(.35 * var(--inv-gap));
-        border:1px solid #ffffff17; border-radius:var(--inv-radius); background:#0000001c;
-        display:flex; flex-direction:column; overflow:hidden;
+        min-height:0;
+        padding:calc(.35 * var(--inv-gap));
+        border:1px solid #ffffff17;
+        border-radius:var(--inv-radius);
+        background:#0000001c;
+        display:flex;
+        flex-direction:column;
+        overflow:visible;
       }
       #mpInventory .gear-character-effects-card .gear-loadout-heading {
-        flex:0 0 auto; min-height:calc(1.05 * var(--inv-row));
+        flex:0 0 auto;
+        min-height:calc(1.05 * var(--inv-row));
       }
-      #mpInventory .gear-effects-list {
-        flex:1 1 auto; min-height:0;
-        display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
-        grid-auto-flow:row; align-content:start; gap:1px 4px;
-        overflow:hidden;
+      /* Extra card specificity is deliberate: InventoryUI injects its generic .gear-stat-list flex rules later. */
+      #mpInventory .gear-character-effects-card .gear-effects-list {
+        flex:none;
+        min-height:0;
+        display:grid;
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        grid-auto-flow:row;
+        align-content:start;
+        gap:1px 4px;
+        overflow:visible;
       }
-      #mpInventory .gear-effect-row {
-        min-width:0; display:flex; align-items:baseline; justify-content:space-between; gap:3px;
-        padding:1px 2px; border:1px solid #ffffff0d; border-radius:calc(.55 * var(--inv-radius)); background:#ffffff04;
-        font-size:clamp(11px,calc(.56 * var(--inv-row)),13px); line-height:1.04;
+      #mpInventory .gear-character-effects-card .gear-effect-row {
+        min-width:0;
+        display:flex;
+        align-items:baseline;
+        justify-content:space-between;
+        gap:3px;
+        padding:1px 2px;
+        border:1px solid #ffffff0d;
+        border-radius:calc(.55 * var(--inv-radius));
+        background:#ffffff04;
+        font-size:clamp(11px,calc(.56 * var(--inv-row)),13px);
+        line-height:1.04;
       }
-      #mpInventory .gear-effect-label {
-        min-width:0; color:#c8d8ca; white-space:normal; overflow-wrap:anywhere; line-height:1.02;
+      #mpInventory .gear-character-effects-card .gear-effect-label {
+        min-width:0;
+        color:#c8d8ca;
+        white-space:normal;
+        overflow-wrap:anywhere;
+        line-height:1.02;
       }
-      #mpInventory .gear-effect-value {
-        flex:0 0 auto; color:#f7e9a7; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap;
+      #mpInventory .gear-character-effects-card .gear-effect-value {
+        flex:0 0 auto;
+        color:#f7e9a7;
+        font-weight:800;
+        font-variant-numeric:tabular-nums;
+        white-space:nowrap;
       }
-      #mpInventory .gear-effect-row.literal .gear-effect-value { color:#d8eef7; }
+      #mpInventory .gear-character-effects-card .gear-effect-row.literal .gear-effect-value { color:#d8eef7; }
       @media (max-width:720px) {
-        #mpInventory .gear-effect-row { gap:2px; padding:1px; font-size:clamp(11px,calc(.52 * var(--inv-row)),12px); }
-        #mpInventory .gear-effects-list { gap:1px 2px; }
+        #mpInventory .gear-character-effects-card .gear-effect-row {
+          gap:2px;
+          padding:1px;
+          font-size:clamp(11px,calc(.52 * var(--inv-row)),12px);
+        }
+        #mpInventory .gear-character-effects-card .gear-effects-list { gap:1px 2px; }
       }
     `;
     document.head.appendChild(style);
   }
 
   function makeCard(kind, headingText) {
-    const card = document.createElement('section'); // One half of the old Outfit Effects column: outfit-only above, composed results below.
+    const card = document.createElement('section'); // One stacked outfit/final card; height follows its own compact two-column content.
     card.className = `gear-character-effects-card gear-character-effects-${kind}`;
     card.dataset.effectsKind = kind;
     const heading = document.createElement('div');
