@@ -34,7 +34,7 @@ function normalizeDecal(record = {}) {
   const sourceType = record.sourceType === TANKAN_SOURCE_TYPE || record.tankanText ? TANKAN_SOURCE_TYPE : IMAGE_SOURCE_TYPE;
   return {
     id: record.id || uid('decal'),
-    name: record.name || (sourceType === TANKAN_SOURCE_TYPE ? 'Tankān Text' : 'Furniture Decal'),
+    name: record.name || (sourceType === TANKAN_SOURCE_TYPE ? 'Tankan Text' : 'Furniture Decal'),
     sourceType,
     surfaceId: record.surfaceId || null,
     surfacePartId: record.surfacePartId || null,
@@ -330,7 +330,7 @@ function addTankanTextDecal() {
   const defaults = tankanDefaults();
   const record = normalizeDecal({
     ...baseRecordForSurface(surface),
-    name: 'Tankān Text',
+    name: 'Tankan Text',
     sourceType: TANKAN_SOURCE_TYPE,
     tankanText: 'Hobunji Hollow',
     tankanColumnSpacingEm: defaults.columnSpacingEm,
@@ -345,7 +345,7 @@ function addTankanTextDecal() {
   renderDecalUi();
   updateStats?.();
   queueUndoHistory?.('add Tankan text decal');
-  log?.(`Added Tankān-script text to ${surface.recognizedType || 'surface'} using loading-screen spacing defaults.`);
+  log?.(`Added Tankan-script text to ${surface.recognizedType || 'surface'} using loading-screen spacing defaults.`);
 }
 
 function requestDecalImage() {
@@ -448,7 +448,7 @@ function decalSurfaceLabel(record) {
 function decalSourceLabel(record) {
   if (isTankanTextDecal(record)) {
     const text = String(record.tankanText || '').trim();
-    return `Tankān text · ${text ? `“${text.slice(0, 36)}${text.length > 36 ? '…' : ''}”` : 'empty'}`;
+    return `Tankan text · ${text ? `“${text.slice(0, 36)}${text.length > 36 ? '…' : ''}”` : 'empty'}`;
   }
   return record.imageName || 'image decal';
 }
@@ -471,7 +471,7 @@ function renderTankanDebug(record = selectedDecal()) {
   if (!record || !isTankanTextDecal(record)) { readout.textContent = ''; return; }
   const layout = window.TankanScriptLayout?.measure?.(record.tankanText, tankanTextureOptions(record));
   if (!layout) {
-    readout.textContent = 'Tankān renderer unavailable.';
+    readout.textContent = 'Tankan renderer unavailable.';
     return;
   }
   readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · glyph advance ${layout.glyphAdvanceEm.toFixed(2)}em · column spacing ${layout.columnSpacingEm.toFixed(2)}em · texture ${layout.widthPx}×${layout.heightPx}`;
@@ -518,8 +518,8 @@ function installDecalUi() {
   panel.id = 'furnitureDecalPanel';
   panel.className = 'section';
   panel.innerHTML = `<h2>Surface Decals</h2>
-    <div class="muted">Place image artwork or editable Tankān-script text over a recognized furniture surface. Tankān text uses the loading screen's rotated/flipped font, vertical word columns, .56em glyph advance, and -.55em default column spacing.</div>
-    <div class="g2"><button id="addFurnitureDecal" class="ok">＋ Add Image to Selected Surface</button><button id="addFurnitureTankanText" class="ok">＋ Add Tankān Text</button></div>
+    <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. Tankan text uses the loading screen's rotated/flipped font, vertical word columns, .56em glyph advance, and -.55em default column spacing.</div>
+    <div class="g2"><button id="addFurnitureDecal" class="ok">＋ Add Image to Selected Surface</button><button id="addFurnitureTankanText" class="ok">＋ Add Tankan Text</button></div>
     <button id="retargetFurnitureDecal" style="width:100%;margin-top:6px">Retarget Selected Decal</button>
     <input id="furnitureDecalFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
     <div id="furnitureDecalList" class="list" style="margin-top:7px"></div>
@@ -527,7 +527,7 @@ function installDecalUi() {
       <hr><div id="decalSurfaceReadout" class="readout muted"></div>
       <label>Name</label><input id="decalName" type="text">
       <div id="decalTankanFields" class="hidden">
-        <label>Tankān-script text</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <label>Tankan-script text</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
         <div class="g2"><div><label>Word-column spacing (em)</label><input id="decalTankanColumnSpacing" type="number" min="-0.95" max="4" step="0.05"></div><div><label>Glyph advance (em)</label><input id="decalTankanGlyphAdvance" type="number" min="0.1" max="4" step="0.01"></div></div>
         <label>Text color</label><input id="decalTankanColor" type="color" value="#ffffff">
         <div id="decalTankanReadout" class="readout muted" style="margin-top:6px"></div>
@@ -638,5 +638,5 @@ updateStats = function updateStatsWithDecals(...args) {
 
 installDecalUi();
 rebuildDecals({ prune: false });
-log?.('Furniture decal authoring ready. Select a surface, then add an image or editable Tankān-script text decal.');
+log?.('Furniture decal authoring ready. Select a surface, then add an image or editable Tankan-script text decal.');
 })();
