@@ -52,11 +52,9 @@ For effects conceptually similar to ambient chatheads, prefer a grouped layout o
 
 - square icon/portrait child plane
 - independent text child plane
-- one parent `THREE.Group` for positioning, billboarding, scale, movement, and fade
+- one parent `THREE.Group` for positioning and billboarding
 
-This makes transparency failures local to one child and reuses a composition pattern that is already proven in the game.
-
-The Rapport/Favor popup implementation on `fix/ambient-rapport-popup-preview` follows this model: heart child + signed-value child, with the group moving diagonally outward while growing and fading.
+When the effect is supposed to behave like an existing popup animation, reuse that presentation's **actual placement/motion/fade rules** instead of inventing a second near-duplicate animation. Rapport/Favor popups currently use a chathead-style heart + signed-value group, but their parent follows the same Float+ offset, sway, rise, lifetime, and late-fade behavior as ordinary Float+ popups. Keep those settings synchronized with `docs/config/ui/world-popup-settings.json`.
 
 ## Debugging rule
 
