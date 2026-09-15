@@ -87,7 +87,7 @@ function boot({ initialMeta = metaWithBerry(1), directory = new FakeDirectoryHan
     dataLossRisk: null,
   }; // Minimal current V2 status consumed by the canonical adapter.
   let v2Loads = 0; // Counts recovery-tree loads so invalid V3 files can prove they are never silently bypassed.
-  let v2Writes = 0; // Counts recovery-tree writes performed before canonical writes.
+  let v2Writes = 0; // Counts recovery-tree writes; unsafe canonical preflight must stop these too.
 
   const window = {
     crypto: webcrypto,
@@ -113,9 +113,11 @@ function boot({ initialMeta = metaWithBerry(1), directory = new FakeDirectoryHan
   for (const file of [
     'docs/js/save-snapshot-core.js',
     'docs/js/save-sync-envelope.js',
+    'docs/js/save-reconciliation.js',
     'docs/js/save-sync-store.js',
     'docs/js/save-coordinator.js',
     'docs/js/folder-save-v3-canonical.js',
+    'docs/js/folder-save-v3-reconciliation.js',
   ]) vm.runInContext(read(file), context, { filename: path.basename(file) });
 
   return {
@@ -134,7 +136,7 @@ async function main() {
     const runtime = boot({ initialMeta: metaWithBerry(2) });
     const save = runtime.window.LocalSaveFolder; // Adapter-wrapped production filesystem API.
     const firstStatus = await save.syncNow();
-    assert.equal(runtime.getV2Writes(), 1, 'V2 recovery tree is still written before the canonical file');
+    assert.equal(runtime.getV2Writes(), 1, 'V2 recovery tree is still written for first canonical creation');
     assert.equal(firstStatus.canonicalAvailable, true, 'successful folder save reports a V3 canonical file');
 
     const file = runtime.directory.files.get('hobunji-primary-save.json'); // Stable fake canonical file handle created by the first save.
@@ -212,6 +214,60 @@ async function main() {
     assert.equal(result.action, 'v3-invalid');
     assert.equal(runtime.getV2Loads(), 0, 'invalid canonical file is not bypassed with a stale V2 load');
     assert.equal(JSON.parse(runtime.localStorage.getItem('hobunjiSaveMeta')).characters[0].inventory.berry, 1, 'browser state remains unchanged when canonical validation fails');
+  }
+
+  // 5) If both browser and canonical folder file changed from the last common
+  // baseline, ordinary sync must stop before touching either V2 or V3. An
+  // explicit force retry may choose the local branch after the conflict record
+  // has preserved both valid envelopes.
+  {
+    const runtime = boot({ initialMeta: metaWithBerry(2) });
+    const save = runtime.window.LocalSaveFolder;
+    await save.syncNow(); // Establish common baseline B and first canonical file.
+    const file = runtime.directory.files.get('hobunji-primary-save.json');
+    const baseline = await runtime.window.HobunjiSaveEnvelope.parse(file.textValue);
+    const writesAtBaseline = runtime.getV2Writes();
+    const canonicalWritesAtBaseline = file.writeCount;
+
+    runtime.localStorage.setItem('hobunjiSaveMeta', JSON.stringify(metaWithBerry(3))); // Local branch C.
+    const externalSnapshot = { ...baseline.snapshot, meta: metaWithBerry(4) }; // Independent folder/Drive-for-Desktop branch D.
+    const external = await runtime.window.HobunjiSaveEnvelope.create(externalSnapshot, {
+      parentEnvelope: baseline,
+      writerId: 'other-device',
+      writtenAt: 9000,
+    });
+    file.textValue = runtime.window.HobunjiSaveEnvelope.serialize(external);
+
+    const blocked = await save.syncNow();
+    assert.match(blocked.dataLossRisk || '', /divergent canonical folder progress/i, 'divergent canonical branch blocks ordinary folder overwrite');
+    assert.equal(runtime.getV2Writes(), writesAtBaseline, 'blocked canonical conflict performs zero V2 recovery-tree writes');
+    assert.equal(file.writeCount, canonicalWritesAtBaseline, 'blocked canonical conflict performs zero canonical writes');
+    assert.equal((await runtime.window.HobunjiSaveEnvelope.parse(file.textValue)).contentHash, external.contentHash, 'external canonical branch remains untouched while blocked');
+    const conflict = await runtime.window.HobunjiSaveSyncStore.getConflict('folder');
+    assert.equal(conflict.local.snapshot.meta.characters[0].inventory.berry, 3, 'conflict record preserves local branch');
+    assert.equal(conflict.external.snapshot.meta.characters[0].inventory.berry, 4, 'conflict record preserves external branch');
+
+    const forced = await save.syncNow({ force: true });
+    assert.equal(forced.lastError, null, 'explicit force retry can choose the local branch after valid preflight');
+    assert.equal(runtime.getV2Writes(), writesAtBaseline + 1, 'explicit local overwrite heals the V2 recovery tree once');
+    assert.equal(file.writeCount, canonicalWritesAtBaseline + 1, 'explicit local overwrite updates the same canonical file once');
+    const finalEnvelope = await runtime.window.HobunjiSaveEnvelope.parse(file.textValue);
+    assert.equal(finalEnvelope.snapshot.meta.characters[0].inventory.berry, 3, 'forced resolution writes the chosen local branch to canonical storage');
+    assert.equal(await runtime.window.HobunjiSaveSyncStore.getConflict('folder'), null, 'completed explicit resolution clears the active folder conflict');
+  }
+
+  // 6) Corrupt canonical data is different from a valid branch conflict: even a
+  // generic force retry must not destroy the only external bytes before recovery.
+  {
+    const directory = new FakeDirectoryHandle();
+    const file = await directory.getFileHandle('hobunji-primary-save.json', { create: true });
+    file.textValue = '{ corrupt canonical bytes';
+    const runtime = boot({ initialMeta: metaWithBerry(8), directory });
+    const result = await runtime.window.LocalSaveFolder.syncNow({ force: true });
+    assert.match(result.dataLossRisk || '', /invalid or unreadable/i, 'corrupt canonical file blocks force overwrite');
+    assert.equal(runtime.getV2Writes(), 0, 'corrupt canonical preflight blocks V2 writes too');
+    assert.equal(file.writeCount, 0, 'corrupt canonical preflight does not replace external bytes');
+    assert.equal(file.textValue, '{ corrupt canonical bytes');
   }
 
   console.log('Folder Save V3 canonical regression checks passed.');
