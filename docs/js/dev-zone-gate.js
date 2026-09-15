@@ -5,7 +5,7 @@
 
   if (window.DevZoneGate?.installed) return;
 
-  const BLOCKED_ZONE_IDS = new Set(['map_eastern_mire', 'map_western_slope']); // Used to identify unfinished zone destinations that require Dev Mode.
+  const BLOCKED_ZONE_IDS = new Set(['map_eastern_mire']); // Used to identify unfinished zone destinations that require Dev Mode.
   const TRAVEL_ACTION_IDS = Object.freeze(['interact', 'dodge', 'action1', 'action2', 'action3', 'action4', 'action5']); // Used to match every configured input that can execute a highlighted world transition.
   const TRAVEL_BUTTON_IDS = new Set(['dodgeBtn', 'btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']); // Used to match the current five visible action-arch buttons plus the context/dodge button.
   const TOAST_TEXT = 'That zone is under construction.'; // Used for the blocked-entry toast requested for non-dev play.
@@ -172,9 +172,9 @@
       controllerGateInstalled,
       desktopBindings: Object.fromEntries(TRAVEL_ACTION_IDS.map(actionId => [actionId, actionBinding(actionId, 'desktop')])),
       controllerBindings: Object.fromEntries(TRAVEL_ACTION_IDS.map(actionId => [actionId, actionBinding(actionId, 'controller')])),
-      recentChange: 'Eastern Mire and Western Incline require Dev Mode; blocked entrance interactions show the under-construction toast.',
+      recentChange: 'Eastern Mire still requires Dev Mode; Western Slope is open in normal play.',
     }),
   });
 
-  window.__farmLog?.('[dev-zone-gate] initialized: Eastern Mire and Western Incline are Dev Mode-only.', 'info', 'world');
+  window.__farmLog?.('[dev-zone-gate] initialized: Eastern Mire is Dev Mode-only; Western Slope is open in normal play.', 'info', 'world');
 })();
