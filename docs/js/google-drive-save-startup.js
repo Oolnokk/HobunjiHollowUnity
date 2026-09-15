@@ -15,6 +15,7 @@
   let checks = 0; // Count of explicit authorized Drive preflight checks.
   let pulls = 0; // Count of startup Drive branches safely loaded before onboarding.
   let pushes = 0; // Count of startup local-only branches safely uploaded after preflight.
+  let keptBoth = 0; // Count of conflicts/first-link ambiguities deliberately left unresolved while continuing with the local branch.
 
   function driveApi() { return window.HobunjiGoogleDriveSave || null; }
   function storeApi() { return window.HobunjiSaveSyncStore || null; }
@@ -88,6 +89,19 @@
     gate.querySelector('[data-drive-startup-check]')?.addEventListener('click', () => authorizedCheck(gate), { once: true });
   }
 
+  async function preserveUnresolvedBranches(decision, localEnvelope, remote, baseline) {
+    if (!localEnvelope?.contentHash || !remote?.envelope?.contentHash) return null;
+    return storeApi()?.setConflict?.(TARGET_ID, {
+      kind: 'drive-startup-divergence',
+      detectedAt: Date.now(),
+      baselineContentHash: baseline?.contentHash || null,
+      local: localEnvelope,
+      external: remote.envelope,
+      remoteMetadata: remote.metadata || null,
+      decision: decision?.state || 'needs-resolution',
+    }); // Durable conflict state makes “Keep Both” literal: both complete validated envelopes survive beyond the startup gate.
+  }
+
   function showResolutionGate(decision, localEnvelope) {
     const state = decision?.state || 'needs-resolution';
     const hasLocal = Boolean(localEnvelope?.contentHash);
@@ -100,18 +114,25 @@
           : state === 'local-only-no-baseline'
             ? 'This device has a save, but Google Drive has no trusted common baseline yet.'
             : 'The Drive and local save need an explicit direction before continuing.';
+    const keepBothButton = hasLocal
+      ? '<button type="button" class="folder-save-primary-gate-fallback" data-drive-startup-keep-both>Keep Both · Continue This Device</button>'
+      : '';
     const localButton = hasLocal
-      ? '<button type="button" class="folder-save-primary-gate-fallback" data-drive-startup-use-local>Use This Device</button>'
+      ? '<button type="button" class="folder-save-primary-gate-fallback" data-drive-startup-use-local>Replace Drive with This Device</button>'
       : '';
     const gate = gateShell(
       description,
-      'Choose explicitly. Timestamps do not decide which save wins.',
-      localButton + '<button type="button" class="folder-save-primary-gate-main google-drive-startup-main" data-drive-startup-use-drive>Use Google Drive Save</button>'
+      'Choose explicitly. Timestamps do not decide which save wins, and Keep Both writes neither side.',
+      keepBothButton + localButton + '<button type="button" class="folder-save-primary-gate-main google-drive-startup-main" data-drive-startup-use-drive>Use Google Drive Save</button>'
     );
+    gate.querySelector('[data-drive-startup-keep-both]')?.addEventListener('click', () => {
+      keptBoth++;
+      finish('kept-both-local'); // Continue from the already-durable local branch while leaving Drive and the durable conflict record untouched.
+    }, { once: true });
     gate.querySelector('[data-drive-startup-use-local]')?.addEventListener('click', async event => {
       setGateBusy(gate, event.currentTarget, 'Saving this device to Drive…');
       try {
-        await driveApi().useLocalVersion(); // Explicit resolution authorizes overwriting Drive only after user chooses the local branch.
+        await driveApi().useLocalVersion(); // Explicit destructive resolution authorizes overwriting Drive only after the user chooses the local branch.
         pushes++;
         finish('local-chosen');
       } catch (error) {
@@ -185,6 +206,7 @@
         return;
       }
 
+      await preserveUnresolvedBranches(decision, localEnvelope, remote, baseline); // Ambiguous/divergent branches are durable before the destructive/non-destructive choice UI appears.
       showResolutionGate(decision, localEnvelope); // First-link ambiguity/conflict remains explicit; neither timestamp nor revision chooses a winner.
     } catch (error) {
       showGateError(gate, error);
@@ -222,6 +244,15 @@
 
   window.HobunjiGoogleDriveSaveStartup = Object.freeze({ prepareBeforeOnboarding });
   window.__hobunjiGoogleDriveSaveStartupDebug = {
-    snapshot: () => ({ lastMode, lastDecision, lastError: lastError || null, checks, pulls, pushes, gateVisible: Boolean(document.getElementById(GATE_ID)) }),
+    snapshot: () => ({
+      lastMode,
+      lastDecision,
+      lastError: lastError || null,
+      checks,
+      pulls,
+      pushes,
+      keptBoth,
+      gateVisible: Boolean(document.getElementById(GATE_ID)),
+    }),
   };
 })();
