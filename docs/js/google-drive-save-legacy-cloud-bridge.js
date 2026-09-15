@@ -1,5 +1,5 @@
 // Google Drive Legacy Cloud Bridge — during migration, captures the existing
-// onboarding/fresh-browser "Cloud Save" controls before Netlify handlers fire
+// onboarding/fresh-browser "Cloud Save" controls before obsolete handlers fire
 // and routes them through the canonical Google Drive restore flow instead.
 (() => {
   'use strict';
@@ -7,12 +7,14 @@
   if (window.HobunjiGoogleDriveLegacyCloudBridge) return;
 
   const CLOUD_BUTTON_SELECTOR = '#hobunjiEmptySaveCloud, #slSourceCloud'; // Existing restore controls reused so the large onboarding core does not need a migration-specific fork.
+  const FRESH_FOLDER_BUTTON_ID = 'hobunjiEmptySaveFolder'; // Fresh-browser folder action hidden when File System Access is unavailable so mobile presents Drive as the actual external restore path.
   let restoreAttempts = 0; // Mobile-readable count of restore/link gestures routed to Drive.
   let successfulRestores = 0; // Count of Drive branches safely applied before gameplay.
   let ambiguousLinks = 0; // Count of first-link/conflict cases preserved for explicit resolution.
   let lastDecision = null; // Latest reconciliation decision returned by the Drive transport.
   let lastError = ''; // Latest migration-bridge error visible in Save Diagnostics.
   let relabelCount = 0; // Count of legacy Cloud labels replaced with Google Drive wording.
+  let hiddenUnsupportedFolderControls = 0; // Count of fresh-browser folder buttons hidden on browsers that cannot use File System Access.
   let relabelScheduled = false; // Coalesces onboarding DOM rebuilds into one label pass per animation frame.
 
   function driveApi() { return window.HobunjiGoogleDriveSave || null; }
@@ -91,10 +93,26 @@
     relabelScheduled = false;
     for (const button of document.querySelectorAll(CLOUD_BUTTON_SELECTOR)) {
       if (button.textContent !== '☁ Google Drive') {
-        button.textContent = '☁ Google Drive'; // Existing DOM ids/listeners remain intact; capture routing below prevents old Netlify handlers from receiving the gesture.
+        button.textContent = '☁ Google Drive'; // Existing DOM ids/listeners remain intact; capture routing below prevents obsolete handlers from receiving the gesture.
         button.title = 'Restore or link the canonical Hobunji save through Google Drive';
         relabelCount++;
       }
+
+      const section = button.closest('.sl-section'); // Existing onboarding Cloud section is renamed in place without forking the large onboarding template.
+      const sectionLabel = section?.querySelector('.sl-section-label');
+      const sectionStatus = section?.querySelector('.sl-local-save-status');
+      if (sectionLabel && sectionLabel.textContent !== 'Google Drive') sectionLabel.textContent = 'Google Drive';
+      if (sectionStatus && sectionStatus.textContent !== 'Link or restore your canonical save across devices.') {
+        sectionStatus.textContent = 'Link or restore your canonical save across devices.';
+      }
+    }
+
+    const freshFolderButton = document.getElementById(FRESH_FOLDER_BUTTON_ID); // The fresh first-run gate otherwise exposes a dead/unsupported local-folder action on mobile.
+    const folderSupported = Boolean(window.LocalSaveFolder?.isSupported?.());
+    if (freshFolderButton && !folderSupported && freshFolderButton.style.display !== 'none') {
+      freshFolderButton.style.display = 'none';
+      freshFolderButton.setAttribute('aria-hidden', 'true');
+      hiddenUnsupportedFolderControls++;
     }
   }
 
@@ -108,7 +126,7 @@
     const button = event.target?.closest?.(CLOUD_BUTTON_SELECTOR);
     if (!button) return;
     event.preventDefault();
-    event.stopImmediatePropagation(); // Capture phase guarantees legacy Netlify Cloud Save handlers never receive this user-facing restore gesture.
+    event.stopImmediatePropagation(); // Capture phase guarantees obsolete Cloud Save handlers never receive this user-facing restore gesture.
     button.disabled = true;
     const oldLabel = button.textContent;
     button.textContent = 'Opening Drive…';
@@ -133,6 +151,14 @@
 
   window.HobunjiGoogleDriveLegacyCloudBridge = Object.freeze({ restoreFromDrive });
   window.__hobunjiGoogleDriveLegacyCloudBridgeDebug = {
-    snapshot: () => ({ restoreAttempts, successfulRestores, ambiguousLinks, lastDecision, lastError: lastError || null, relabelCount }),
+    snapshot: () => ({
+      restoreAttempts,
+      successfulRestores,
+      ambiguousLinks,
+      lastDecision,
+      lastError: lastError || null,
+      relabelCount,
+      hiddenUnsupportedFolderControls,
+    }),
   };
 })();
