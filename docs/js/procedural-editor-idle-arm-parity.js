@@ -1,33 +1,34 @@
 // Procedural Animation Editor: gameplay/Attack Editor free-hand idle parity.
-//
-// This adapter does not create another arm rig. It owns only the default
-// position of the editor's already-generated hand wrappers, and yields as soon
-// as an explicit authoring writer moves a hand away from a recognized idle
-// default. The canonical target is the same one used by gameplay: authored
-// shoulder X + floor-relative posterior Y - authored arm length + idle breath.
+// Owns only un-authored generated hands; explicit arm animation always wins.
 (function (global) {
   'use strict';
 
   if (global.HobunjiProceduralEditorIdleArms?.installed) return;
 
-  const OWNERSHIP_EPSILON_FRACTION = 0.012; // Distinguishes our previous write from a later explicit hand writer.
-  const DEFAULT_REACQUIRE_FRACTION = 0.04; // Tolerance for recognizing old editor idle/shoulder defaults.
-  const FALLBACK_IDLE_PHASE_RATE = 0.0017; // Matches procedural-hand-frame-driver.js.
-  const handState = new WeakMap(); // Per-hand ownership and previous write.
-  const inferredProfileCache = new WeakMap(); // Keeps a geometry/asset-inferred profile stable after the first correction moves the hands.
-  let activeScene = null; // Current preview scene whose final pre-render callback we own.
-  let previousSceneBeforeRender = null; // Callback that was present before our current wrapper.
-  let sceneBeforeRenderWrapper = null; // Our current scene wrapper identity.
-  let hookAttachCount = 0; // Exposed in diagnostics so mobile testing can reveal callback replacement/rebinds.
-  let explicitDanceWasActive = false; // Reacquires defaults after an explicit Dance arm style releases them.
-  let lastProfileSignature = ''; // Avoids repeating the same profile-resolution entry every frame.
-  let lastStatusSignature = ''; // Avoids flooding Diagnostics with identical ownership state.
-  let lastUnresolvedSignature = ''; // Avoids flooding unresolved-profile warnings while still logging meaningful changes.
-  let lastModel = null; // Lets avatar switches force a fresh diagnostic even when species/gender are unchanged.
+  const OWNERSHIP_EPSILON_FRACTION = 0.012;
+  const DEFAULT_REACQUIRE_FRACTION = 0.04;
+  const FALLBACK_IDLE_PHASE_RATE = 0.0017;
+  const DEFAULT_RUNTIME_WIDTH = 0.9;
+  const NPC_DATABASE_PATH = 'docs/config/npcs/hobunji-starter-npc-database.json';
+  const REPOSITORY = 'Oolnokk/HobunjiHollowUnity';
+
+  const handState = new WeakMap();
+  const inferredProfileCache = new WeakMap();
+  const npcIdentityById = new Map();
+  const npcLookupByRevision = new Map();
+  let activeScene = null;
+  let previousSceneBeforeRender = null;
+  let sceneBeforeRenderWrapper = null;
+  let hookAttachCount = 0;
+  let explicitDanceWasActive = false;
+  let lastProfileSignature = '';
+  let lastStatusSignature = '';
+  let lastUnresolvedSignature = '';
+  let lastModel = null;
   let debugSnapshot = { installed: true, active: false, reason: 'waiting-for-preview' };
 
   function editorLog(message, level = 'info', extra = null) {
-    const backdropLog = global.HobunjiGameplayBackdrop?.log; // Uses the editor's mobile-visible Diagnostics panel.
+    const backdropLog = global.HobunjiGameplayBackdrop?.log;
     if (backdropLog) { backdropLog(message, level, extra); return; }
     const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
     fn(message, extra ?? '');
@@ -57,7 +58,13 @@
       value.avatar,
       value.npc,
       value.export,
-    ].filter(Boolean);
+      value.source,
+      value.source?.appearance,
+      value.experimentalFeet,
+      value.editorGeneratedFeetDanceBridge,
+      value.avatarEditor?.rawExport,
+      value.avatarEditor?.rawExport?.appearance,
+    ].filter(candidate => candidate && typeof candidate === 'object');
     for (const candidate of candidates) {
       const species = normalizeSpecies(candidate.speciesId || candidate.species || candidate.kind);
       const gender = normalizeGender(candidate.gender || candidate.sex);
@@ -93,30 +100,19 @@
     return nested;
   }
 
-  function stringSourcesForNode(node) {
-    const out = [];
-    if (node?.name) out.push(String(node.name));
-    const userData = node?.userData || {};
-    for (const key of ['url', 'src', 'sourceUrl', 'assetUrl', 'textureUrl', 'portraitUrl', 'spriteUrl']) {
-      if (typeof userData[key] === 'string') out.push(userData[key]);
-    }
-    const materials = Array.isArray(node?.material) ? node.material : node?.material ? [node.material] : [];
-    for (const material of materials) {
-      for (const map of [material?.map, material?.alphaMap, material?.emissiveMap].filter(Boolean)) {
-        const image = map.image || map.source?.data;
-        for (const value of [image?.currentSrc, image?.src, map?.userData?.url, map?.name]) {
-          if (typeof value === 'string' && value) out.push(value);
-        }
-      }
-    }
-    return out;
+  function uniqueCharacterProfiles() {
+    return [...new Set(Object.values(global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {}).filter(Boolean))];
+  }
+
+  function profileForIdentity(identity) {
+    if (!identity?.species || !identity?.gender) return null;
+    return global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${identity.species}::${identity.gender}`] || null;
   }
 
   function assetSpeciesCandidates() {
-    const profiles = uniqueCharacterProfiles();
-    const seen = new Set();
     const out = [];
-    for (const profile of profiles) {
+    const seen = new Set();
+    for (const profile of uniqueCharacterProfiles()) {
       const species = normalizeSpecies(profile?.species);
       if (!species || seen.has(species)) continue;
       seen.add(species);
@@ -139,21 +135,34 @@
     const raw = String(value || '').toLowerCase().replace(/[’']/g, '');
     if (!raw) return null;
     for (const candidate of assetSpeciesCandidates()) {
-      const variants = new Set([
-        candidate.assetSpecies,
-        candidate.assetSpecies.replace(/-/g, '_'),
-        candidate.assetSpecies.replace(/_/g, '-'),
-      ]);
-      for (const variant of variants) {
+      for (const variant of new Set([candidate.assetSpecies, candidate.assetSpecies.replace(/-/g, '_'), candidate.assetSpecies.replace(/_/g, '-')])) {
         const escaped = escapeRegex(variant);
         const after = raw.match(new RegExp(`${escaped}[_-](female|male|f|m)(?=[._/\\-]|$)`, 'i'));
         const before = raw.match(new RegExp(`(?:^|[._/\\-])(female|male|f|m)[_-]${escaped}(?=[._/\\-]|$)`, 'i'));
-        const token = after?.[1] || before?.[1] || null;
-        const gender = normalizeGender(token);
+        const gender = normalizeGender(after?.[1] || before?.[1]);
         if (gender) return { species: candidate.transformSpecies, gender, source: 'avatar-asset-url', evidence: value };
       }
     }
     return null;
+  }
+
+  function stringSourcesForNode(node) {
+    const out = [];
+    if (node?.name) out.push(String(node.name));
+    const data = node?.userData || {};
+    for (const key of ['url', 'src', 'sourceUrl', 'assetUrl', 'textureUrl', 'portraitUrl', 'spriteUrl']) {
+      if (typeof data[key] === 'string') out.push(data[key]);
+    }
+    const materials = Array.isArray(node?.material) ? node.material : node?.material ? [node.material] : [];
+    for (const material of materials) {
+      for (const map of [material?.map, material?.alphaMap, material?.emissiveMap].filter(Boolean)) {
+        const image = map.image || map.source?.data;
+        for (const value of [image?.currentSrc, image?.src, map?.userData?.url, map?.name]) {
+          if (typeof value === 'string' && value) out.push(value);
+        }
+      }
+    }
+    return out;
   }
 
   function identityFromModelAssets(model) {
@@ -161,11 +170,60 @@
     walkModel(model, node => {
       if (found) return;
       for (const value of stringSourcesForNode(node)) {
-        const identity = identityFromAssetString(value);
-        if (identity) { found = identity; break; }
+        found = identityFromAssetString(value);
+        if (found) break;
       }
     });
     return found;
+  }
+
+  function npcRevision(model) {
+    return String(model?.userData?.repositoryCommit || 'main').trim() || 'main';
+  }
+
+  function npcDatabaseUrl(model) {
+    return `https://raw.githubusercontent.com/${REPOSITORY}/${encodeURIComponent(npcRevision(model))}/${NPC_DATABASE_PATH}`;
+  }
+
+  function npcLookupStatus(model) {
+    const revision = npcRevision(model);
+    const state = npcLookupByRevision.get(revision);
+    return state ? { revision, state: state.state, url: state.url, count: state.count || 0, error: state.error || null } : { revision, state: 'idle', url: npcDatabaseUrl(model), count: 0, error: null };
+  }
+
+  function ensureNpcIdentityLookup(model) {
+    const npcId = String(model?.userData?.npcId || '').trim();
+    if (!npcId || npcIdentityById.has(npcId) || typeof global.fetch !== 'function') return;
+    const revision = npcRevision(model);
+    const existing = npcLookupByRevision.get(revision);
+    if (existing?.state === 'loading' || existing?.state === 'ready') return;
+    const url = npcDatabaseUrl(model);
+    npcLookupByRevision.set(revision, { state: 'loading', url, count: 0, error: null });
+    editorLog('[Idle arms] Resolving avatar identity from the same NPC database revision used by the preview.', 'info', { npcId, revision, url });
+    global.fetch(url).then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    }).then(data => {
+      const records = Array.isArray(data) ? data : Array.isArray(data?.npcs) ? data.npcs : [];
+      let count = 0;
+      for (const record of records) {
+        const id = String(record?.id || '').trim();
+        if (!id) continue;
+        const base = identityFromObject(record, 'npc-database') || identityFromObject(record?.avatarEditor?.rawExport, 'npc-database');
+        if (!base) continue;
+        npcIdentityById.set(id, { ...base, source: 'npc-database', evidence: `${id}@${revision}` });
+        count += 1;
+      }
+      npcLookupByRevision.set(revision, { state: 'ready', url, count, error: null });
+      lastUnresolvedSignature = '';
+      const resolved = npcIdentityById.get(npcId) || null;
+      editorLog(resolved ? '[Idle arms] NPC database identity resolved.' : '[Idle arms] NPC database loaded, but the current NPC had no usable species/gender.', resolved ? 'info' : 'warn', { npcId, revision, resolved, indexedIdentities: count });
+      applyIdleArmParity(performance.now(), true);
+    }).catch(error => {
+      npcLookupByRevision.set(revision, { state: 'error', url, count: 0, error: String(error?.message || error) });
+      lastUnresolvedSignature = '';
+      editorLog('[Idle arms] NPC database identity lookup failed.', 'warn', { npcId, revision, url, error: String(error?.message || error) });
+    });
   }
 
   function identityForModel(model) {
@@ -176,7 +234,12 @@
       const gender = normalizeGender(handRig.gender);
       if (gender) return { species: normalizeSpecies(handRig.speciesId), gender, source: 'procedural-hand-rig' };
     }
-    return identityFromModelAssets(model);
+    const npcId = String(model?.userData?.npcId || '').trim();
+    if (npcId && npcIdentityById.has(npcId)) return npcIdentityById.get(npcId);
+    const asset = identityFromModelAssets(model);
+    if (asset) return asset;
+    ensureNpcIdentityLookup(model);
+    return null;
   }
 
   function handFor(model, side) {
@@ -189,16 +252,6 @@
     return found;
   }
 
-  function uniqueCharacterProfiles() {
-    const characters = global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
-    return [...new Set(Object.values(characters).filter(Boolean))];
-  }
-
-  function profileForIdentity(identity) {
-    if (!identity?.species || !identity?.gender) return null;
-    return global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${identity.species}::${identity.gender}`] || null;
-  }
-
   function modelLocalHandPosition(model, hand) {
     if (!model || !hand) return null;
     if (hand.parent === model) return hand.position?.clone?.() || null;
@@ -206,8 +259,7 @@
     if (!Vector3 || !hand.getWorldPosition || !model.worldToLocal) return null;
     model.updateMatrixWorld?.(true);
     hand.updateMatrixWorld?.(true);
-    const world = hand.getWorldPosition(new Vector3());
-    return model.worldToLocal(world);
+    return model.worldToLocal(hand.getWorldPosition(new Vector3()));
   }
 
   function positionDistanceSquared(a, b) {
@@ -219,15 +271,14 @@
   }
 
   function profileFromBrokenShoulderDefault(model, modelHeight) {
-    const leftHand = handFor(model, 'left');
-    const rightHand = handFor(model, 'right');
-    const leftPosition = modelLocalHandPosition(model, leftHand);
-    const rightPosition = modelLocalHandPosition(model, rightHand);
+    const leftPosition = modelLocalHandPosition(model, handFor(model, 'left'));
+    const rightPosition = modelLocalHandPosition(model, handFor(model, 'right'));
     if (!leftPosition || !rightPosition) return null;
     let best = null;
     for (const profile of uniqueCharacterProfiles()) {
-      const left = profile?.anchors?.leftHandShoulder?.position;
-      const right = profile?.anchors?.rightHandShoulder?.position;
+      const scale = previewShoulderScale(model, profile);
+      const left = scaledShoulder(profile, 'left', scale);
+      const right = scaledShoulder(profile, 'right', scale);
       if (!left || !right) continue;
       const score = positionDistanceSquared(leftPosition, left) + positionDistanceSquared(rightPosition, right);
       if (!best || score < best.score) best = { profile, score };
@@ -263,7 +314,19 @@
       const h = Number(node.geometry?.parameters?.height);
       if (Number.isFinite(h) && h > 0) planeHeight = h;
     });
-    return Math.max(0.05, planeHeight || 0.9);
+    return Math.max(0.05, planeHeight || DEFAULT_RUNTIME_WIDTH);
+  }
+
+  function previewShoulderScale(model, profile) {
+    const currentWidth = Number(model?.userData?.portraitModelWidth) || Number(model?.userData?.gameWorldModelBaseWidth) || DEFAULT_RUNTIME_WIDTH;
+    const authoredWidth = Number(profile?.handShoulderRule?.runtimeBaseWidth) || DEFAULT_RUNTIME_WIDTH;
+    return authoredWidth > 0 ? currentWidth / authoredWidth : 1;
+  }
+
+  function scaledShoulder(profile, side, scale) {
+    const raw = profile?.anchors?.[side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder']?.position;
+    if (!raw) return null;
+    return { x: (Number(raw.x) || 0) * scale, y: (Number(raw.y) || 0) * scale, z: (Number(raw.z) || 0) * scale };
   }
 
   function posteriorY(profile, modelHeight, handAttachY) {
@@ -277,25 +340,25 @@
   }
 
   function idleFallbackOffset(side, modelHeight, nowMs) {
-    const idlePhase = nowMs * FALLBACK_IDLE_PHASE_RATE + (side === 'right' ? 0.28 : 0);
-    return {
-      y: modelHeight * 0.0045 * Math.sin(idlePhase),
-      z: modelHeight * 0.003 * Math.cos(idlePhase),
-    };
+    const phase = nowMs * FALLBACK_IDLE_PHASE_RATE + (side === 'right' ? 0.28 : 0);
+    return { y: modelHeight * 0.0045 * Math.sin(phase), z: modelHeight * 0.003 * Math.cos(phase) };
   }
 
-  function canonicalIdleTarget(profile, side, modelHeight, handAttachY, nowMs) {
-    const shoulder = profile?.anchors?.[side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder']?.position;
+  function canonicalIdleTarget(model, profile, side, modelHeight, nowMs) {
+    const shoulderScale = previewShoulderScale(model, profile);
+    const shoulder = scaledShoulder(profile, side, shoulderScale);
     if (!shoulder) return null;
     const armLengthPercent = Number(profile?.anatomy?.armLengthHeightPercentOffset);
     const armLengthY = Number.isFinite(armLengthPercent) ? -modelHeight * armLengthPercent / 100 : 0;
     const fallback = idleFallbackOffset(side, modelHeight, nowMs);
-    const posterior = posteriorY(profile, modelHeight, handAttachY);
+    const posterior = posteriorY(profile, modelHeight, model?.userData?.handAttachY);
     return {
-      x: Number(shoulder.x) || 0,
+      x: shoulder.x,
       y: posterior + armLengthY + fallback.y,
       z: fallback.z,
       shoulder,
+      rawShoulder: profile?.anchors?.[side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder']?.position || null,
+      shoulderScale,
       posteriorY: posterior,
       armLengthPercent: Number.isFinite(armLengthPercent) ? armLengthPercent : 0,
       armLengthY,
@@ -304,10 +367,10 @@
   }
 
   function legacyEditorIdleTarget(model, side) {
-    const handAttachX = Number(model?.userData?.handAttachX);
-    const handAttachY = Number(model?.userData?.handAttachY);
-    if (!Number.isFinite(handAttachX) || !Number.isFinite(handAttachY)) return null;
-    return { x: side === 'left' ? -handAttachX : handAttachX, y: handAttachY, z: 0 };
+    const x = Number(model?.userData?.handAttachX);
+    const y = Number(model?.userData?.handAttachY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: side === 'left' ? -x : x, y, z: 0 };
   }
 
   function toHandParentLocal(model, hand, point) {
@@ -318,46 +381,40 @@
     if (!model.localToWorld || !hand.parent.worldToLocal) return null;
     model.updateMatrixWorld?.(true);
     hand.parent.updateMatrixWorld?.(true);
-    const world = model.localToWorld(local);
-    return hand.parent.worldToLocal(world);
+    return hand.parent.worldToLocal(model.localToWorld(local));
   }
 
   function positionNear(position, target, epsilon) {
-    if (!position || !target) return false;
-    return Math.abs(position.x - target.x) <= epsilon && Math.abs(position.y - target.y) <= epsilon && Math.abs(position.z - target.z) <= epsilon;
+    return !!(position && target && Math.abs(position.x - target.x) <= epsilon && Math.abs(position.y - target.y) <= epsilon && Math.abs(position.z - target.z) <= epsilon);
   }
 
   function vectorJson(value) {
-    if (!value) return null;
-    return { x: Number(value.x) || 0, y: Number(value.y) || 0, z: Number(value.z) || 0 };
+    return value ? { x: Number(value.x) || 0, y: Number(value.y) || 0, z: Number(value.z) || 0 } : null;
   }
 
   function handSummary(model, side) {
     const hand = handFor(model, side);
     if (!hand) return { side, available: false };
-    return {
-      side,
-      available: true,
-      name: hand.name || null,
-      parent: hand.parent?.name || hand.parent?.type || null,
-      localPosition: vectorJson(hand.position),
-      modelLocalPosition: vectorJson(modelLocalHandPosition(model, hand)),
-    };
+    return { side, available: true, name: hand.name || null, parent: hand.parent?.name || hand.parent?.type || null, localPosition: vectorJson(hand.position), modelLocalPosition: vectorJson(modelLocalHandPosition(model, hand)) };
+  }
+
+  function metadataSummary(value) {
+    if (value == null) return null;
+    if (typeof value !== 'object') return { type: typeof value, value: String(value).slice(0, 160) };
+    const identity = identityFromObject(value, 'diagnostic');
+    return { type: Array.isArray(value) ? 'array' : 'object', keys: Object.keys(value).slice(0, 24), identity: identity ? { species: identity.species, gender: identity.gender } : null };
   }
 
   function ownershipFor(hand) {
     let state = handState.get(hand);
-    if (!state) {
-      state = { owns: false, lastWritten: null };
-      handState.set(hand, state);
-    }
+    if (!state) { state = { owns: false, lastWritten: null }; handState.set(hand, state); }
     return state;
   }
 
   function syncSide(model, profile, side, modelHeight, nowMs, forceReacquire) {
     const hand = handFor(model, side);
     if (!hand) return { side, available: false, owns: false, reason: 'hand-not-built-yet' };
-    const targetInfo = canonicalIdleTarget(profile, side, modelHeight, model.userData?.handAttachY, nowMs);
+    const targetInfo = canonicalIdleTarget(model, profile, side, modelHeight, nowMs);
     if (!targetInfo) return { side, available: true, owns: false, reason: 'missing-shoulder' };
     const target = toHandParentLocal(model, hand, targetInfo);
     const shoulder = toHandParentLocal(model, hand, targetInfo.shoulder);
@@ -375,21 +432,10 @@
     else if (ownership.owns && !stillOurWrite) ownership.owns = false;
 
     const base = {
-      side,
-      available: true,
-      owns: ownership.owns,
-      current: vectorJson(hand.position),
-      handName: hand.name || null,
-      handParent: hand.parent?.name || hand.parent?.type || null,
-      shoulder: vectorJson(shoulder),
-      legacyIdle: vectorJson(legacyIdle),
-      target: vectorJson(target),
-      atShoulderDefault,
-      atLegacyIdleDefault,
-      stillOurWrite,
-      posteriorY: targetInfo.posteriorY,
-      armLengthPercent: targetInfo.armLengthPercent,
-      armLengthY: targetInfo.armLengthY,
+      side, available: true, owns: ownership.owns, current: vectorJson(hand.position), handName: hand.name || null,
+      handParent: hand.parent?.name || hand.parent?.type || null, shoulder: vectorJson(shoulder), rawShoulder: vectorJson(targetInfo.rawShoulder),
+      shoulderScale: targetInfo.shoulderScale, legacyIdle: vectorJson(legacyIdle), target: vectorJson(target), atShoulderDefault, atLegacyIdleDefault,
+      stillOurWrite, posteriorY: targetInfo.posteriorY, armLengthPercent: targetInfo.armLengthPercent, armLengthY: targetInfo.armLengthY,
       idleOffset: { ...targetInfo.fallback },
     };
     if (!ownership.owns) return { ...base, reason: 'explicit-animation-owner' };
@@ -404,62 +450,63 @@
   function unresolvedDiagnostic(model, modelHeight, resolved) {
     return {
       model: model?.name || null,
+      npcId: model?.userData?.npcId || null,
+      repositoryCommit: model?.userData?.repositoryCommit || null,
+      npcIdentityLookup: npcLookupStatus(model),
       modelHeight,
+      modelWidth: Number(model?.userData?.portraitModelWidth) || null,
       modelScale: vectorJson(model?.scale),
       identity: resolved?.identity || null,
       modelUserDataKeys: Object.keys(model?.userData || {}).sort(),
+      sourceMetadata: metadataSummary(model?.userData?.source),
+      experimentalFeetMetadata: metadataSummary(model?.userData?.experimentalFeet),
       handAttachX: Number(model?.userData?.handAttachX),
       handAttachY: Number(model?.userData?.handAttachY),
       left: handSummary(model, 'left'),
       right: handSummary(model, 'right'),
       profileCount: uniqueCharacterProfiles().length,
-      hint: 'Expected identity from character-rig-scale/avatar metadata/portrait asset URL, with shoulder-position matching only as a final fallback.',
+      hint: 'Identity priority: character rig/avatar metadata -> NPC database by npcId at repositoryCommit -> portrait asset URL -> shoulder-position fallback.',
     };
   }
 
   function statusDiagnostic(model, profile, resolved, modelHeight, left, right, dance) {
-    const posterior = posteriorY(profile, modelHeight, model.userData?.handAttachY);
     const armLengthPercent = Number(profile.anatomy?.armLengthHeightPercentOffset) || 0;
     return {
       model: model.name || null,
+      npcId: model?.userData?.npcId || null,
       profile: `${profile.species}::${profile.gender}`,
       identitySource: resolved.identity?.source || 'profile',
       identityEvidence: resolved.identity?.evidence || null,
       modelHeight,
+      modelWidth: Number(model?.userData?.portraitModelWidth) || null,
       modelScale: vectorJson(model.scale),
       handAttachX: Number(model.userData?.handAttachX),
       handAttachY: Number(model.userData?.handAttachY),
-      posteriorY: posterior,
+      posteriorY: posteriorY(profile, modelHeight, model.userData?.handAttachY),
+      shoulderScale: previewShoulderScale(model, profile),
+      shoulderRuntimeBaseWidth: Number(profile?.handShoulderRule?.runtimeBaseWidth) || DEFAULT_RUNTIME_WIDTH,
       armLengthHeightPercentOffset: armLengthPercent,
       armLengthWorldY: -modelHeight * armLengthPercent / 100,
-      hook: {
-        attached: !!(activeScene && activeScene.onBeforeRender === sceneBeforeRenderWrapper),
-        attachCount: hookAttachCount,
-        scene: activeScene?.name || activeScene?.type || 'scene',
-      },
-      left,
-      right,
+      npcIdentityLookup: npcLookupStatus(model),
+      hook: { attached: !!(activeScene && activeScene.onBeforeRender === sceneBeforeRenderWrapper), attachCount: hookAttachCount, scene: activeScene?.name || activeScene?.type || 'scene' },
+      left, right,
       dance: dance ? { enabled: !!dance.enabled, armStyle: dance.armStyle || 'none' } : null,
-      rule: 'shoulder-x + posterior-y - arm-length + shared idle fallback',
+      rule: 'scaled authored shoulder X + floor-relative posterior Y - arm length + shared idle fallback',
     };
   }
 
   function maybeLogStatus(snapshot, force = false) {
-    const leftState = `${snapshot.left?.available ? 1 : 0}:${snapshot.left?.owns ? 1 : 0}:${snapshot.left?.reason || ''}`;
-    const rightState = `${snapshot.right?.available ? 1 : 0}:${snapshot.right?.owns ? 1 : 0}:${snapshot.right?.reason || ''}`;
-    const signature = `${snapshot.model}|${snapshot.profile}|${snapshot.identitySource}|${leftState}|${rightState}|hook:${snapshot.hook?.attachCount || 0}`;
+    const l = `${snapshot.left?.available ? 1 : 0}:${snapshot.left?.owns ? 1 : 0}:${snapshot.left?.reason || ''}`;
+    const r = `${snapshot.right?.available ? 1 : 0}:${snapshot.right?.owns ? 1 : 0}:${snapshot.right?.reason || ''}`;
+    const signature = `${snapshot.model}|${snapshot.profile}|${snapshot.identitySource}|${l}|${r}|hook:${snapshot.hook?.attachCount || 0}`;
     if (!force && signature === lastStatusSignature) return;
     lastStatusSignature = signature;
     editorLog('[Idle arms] Idle-arm parity diagnostic', snapshot.active ? 'info' : 'warn', snapshot);
   }
 
   function applyIdleArmParity(nowMs = performance.now(), forceLog = false) {
-    const backdrop = global.HobunjiGameplayBackdrop;
-    const model = backdrop?.getAvatarModel?.() || null;
-    if (!model) {
-      debugSnapshot = { ...debugSnapshot, active: false, reason: 'waiting-for-preview', hookAttachCount };
-      return false;
-    }
+    const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
+    if (!model) { debugSnapshot = { ...debugSnapshot, active: false, reason: 'waiting-for-preview', hookAttachCount }; return false; }
 
     if (model !== lastModel) {
       lastModel = model;
@@ -484,7 +531,7 @@
     if (!profile) {
       const detail = unresolvedDiagnostic(model, modelHeight, resolved);
       debugSnapshot = { installed: true, active: false, reason: 'attachment-profile-unresolved', hookAttachCount, ...detail };
-      const signature = JSON.stringify({ model: detail.model, identity: detail.identity, left: detail.left?.available, right: detail.right?.available, keys: detail.modelUserDataKeys });
+      const signature = JSON.stringify({ model: detail.model, npcId: detail.npcId, lookup: detail.npcIdentityLookup?.state, identity: detail.identity, left: detail.left?.available, right: detail.right?.available });
       if (forceLog || signature !== lastUnresolvedSignature) {
         lastUnresolvedSignature = signature;
         editorLog('[Idle arms] Could not resolve the current avatar attachment profile.', 'warn', debugSnapshot);
@@ -497,10 +544,13 @@
       lastProfileSignature = profileSignature;
       editorLog('[Idle arms] Resolved gameplay/Attack Editor free-hand profile.', 'info', {
         model: model.name || null,
+        npcId: model?.userData?.npcId || null,
         profile: `${profile.species}::${profile.gender}`,
         identitySource: resolved.identity?.source || 'profile',
         identityEvidence: resolved.identity?.evidence || null,
         modelHeight,
+        modelWidth: Number(model?.userData?.portraitModelWidth) || null,
+        shoulderScale: previewShoulderScale(model, profile),
         handAttachX: Number(model.userData?.handAttachX),
         handAttachY: Number(model.userData?.handAttachY),
         posteriorY: posteriorY(profile, modelHeight, model.userData?.handAttachY),
@@ -517,7 +567,7 @@
       active,
       reason: active ? 'canonical-idle' : (left.reason === 'hand-not-built-yet' || right.reason === 'hand-not-built-yet') ? 'waiting-for-hands' : 'explicit-animation-owner',
       ...diagnostic,
-      latestChange: 'Default generated hands now recognize the editor legacy handAttach idle as an acquireable default, then move to canonical gameplay shoulder/posterior/arm-length placement.',
+      latestChange: 'NPC previews now resolve species/gender from npcId + the preview repository revision, and authored shoulder X is scaled from its 0.9 runtime basis to the current preview width before default hand placement.',
     };
     maybeLogStatus(debugSnapshot, forceLog);
     return active;
@@ -526,10 +576,7 @@
   function attachToScene(scene, reason = 'scene-ready') {
     if (!scene) return false;
     if (scene === activeScene && scene.onBeforeRender === sceneBeforeRenderWrapper) return true;
-
-    if (activeScene && activeScene !== scene && activeScene.onBeforeRender === sceneBeforeRenderWrapper) {
-      activeScene.onBeforeRender = previousSceneBeforeRender;
-    }
+    if (activeScene && activeScene !== scene && activeScene.onBeforeRender === sceneBeforeRenderWrapper) activeScene.onBeforeRender = previousSceneBeforeRender;
 
     const replacingLostHook = scene === activeScene && sceneBeforeRenderWrapper && scene.onBeforeRender !== sceneBeforeRenderWrapper;
     const previous = typeof scene.onBeforeRender === 'function' && !scene.onBeforeRender.__hobunjiProceduralEditorIdleArms ? scene.onBeforeRender : null;
@@ -538,43 +585,32 @@
       applyIdleArmParity(performance.now());
     };
     wrapper.__hobunjiProceduralEditorIdleArms = true;
-
     activeScene = scene;
     previousSceneBeforeRender = previous;
     sceneBeforeRenderWrapper = wrapper;
     scene.onBeforeRender = wrapper;
     hookAttachCount += 1;
-
-    editorLog(replacingLostHook
-      ? '[Idle arms] Scene pre-render hook was replaced by another editor writer; idle-arm parity reattached.'
-      : '[Idle arms] Final pre-render parity hook attached to procedural editor scene.',
-      replacingLostHook ? 'warn' : 'info',
-      { reason, hookAttachCount, chainedPreviousCallback: !!previous });
+    editorLog(replacingLostHook ? '[Idle arms] Scene pre-render hook was replaced; idle-arm parity reattached.' : '[Idle arms] Final pre-render parity hook attached to procedural editor scene.', replacingLostHook ? 'warn' : 'info', { reason, hookAttachCount, chainedPreviousCallback: !!previous });
     return true;
   }
 
   function refreshSceneBinding() {
     const scene = global.HobunjiGameplayBackdrop?.getScene?.() || null;
-    if (scene && (scene !== activeScene || scene.onBeforeRender !== sceneBeforeRenderWrapper)) {
-      attachToScene(scene, scene === activeScene ? 'hook-replaced' : 'scene-changed');
-    }
+    if (scene && (scene !== activeScene || scene.onBeforeRender !== sceneBeforeRenderWrapper)) attachToScene(scene, scene === activeScene ? 'hook-replaced' : 'scene-changed');
     requestAnimationFrame(refreshSceneBinding);
   }
 
   global.HobunjiProceduralEditorIdleArms = {
     installed: true,
     syncNow: () => applyIdleArmParity(performance.now()),
-    logNow: () => {
-      applyIdleArmParity(performance.now(), true);
-      return { ...debugSnapshot };
-    },
+    logNow: () => { applyIdleArmParity(performance.now(), true); return { ...debugSnapshot }; },
     getDebug: () => ({ ...debugSnapshot }),
     getCanonicalTarget(side, nowMs = performance.now()) {
       const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
       if (!model) return null;
       const modelHeight = previewModelHeight(model);
       const resolved = resolveProfile(model, modelHeight);
-      const target = resolved.profile ? canonicalIdleTarget(resolved.profile, side, modelHeight, model.userData?.handAttachY, nowMs) : null;
+      const target = resolved.profile ? canonicalIdleTarget(model, resolved.profile, side, modelHeight, nowMs) : null;
       return target ? { ...target, profile: `${resolved.profile.species}::${resolved.profile.gender}`, identitySource: resolved.identity?.source || 'profile' } : null;
     },
   };
