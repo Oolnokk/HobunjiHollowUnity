@@ -148,23 +148,46 @@
     return { cols, rows, tiles, objects, entry };
   }
 
-  function pointIsOpen(zoneState, col, row) {
+  // Below this separation, two materialized humanoid portraits (modelWidth
+  // ~0.9 tiles -- see avatarCfg.worldModelWidth in buildBanditAvatar) read as
+  // visually stacked/coplanar rather than as two distinct residents standing
+  // near each other.
+  const MIN_HUNTER_SEPARATION_TILES = 0.75;
+  function _tooCloseToAvoidPoint(col, row, avoidPoints) {
+    if (!avoidPoints || !avoidPoints.length) return false;
+    for (const p of avoidPoints) if (Math.hypot(col - p.col, row - p.row) < MIN_HUNTER_SEPARATION_TILES) return true;
+    return false;
+  }
+  function pointIsOpen(zoneState, col, row, avoidPoints) {
     const c = Math.floor(col), r = Math.floor(row); // Abstract residents still respect the runtime occupancy view.
     const tile = zoneState?.view?.tiles?.[r]?.[c];
-    return !!tile && !tile.water && !tile.waterfall && !tile.occupiedBy;
+    return !!tile && !tile.water && !tile.waterfall && !tile.occupiedBy && !_tooCloseToAvoidPoint(col, row, avoidPoints);
   }
-  function nearestOpenPoint(zoneState, col, row) {
+  // avoidPoints (optional [{col,row}, ...]) keeps this from resolving to a
+  // point another hunter has already claimed this same pass -- without it,
+  // several hunters waking from the same jittered sleep point (see
+  // sleepPointFor: they commonly share one tent) all independently walk this
+  // same deterministic search and land on the exact same candidate, so the
+  // whole handful materializes stacked on top of each other instead of
+  // standing apart (see placeEntity, the only caller that has other hunters'
+  // positions to pass).
+  function nearestOpenPoint(zoneState, col, row, avoidPoints) {
     const cols = zoneState?.view?.cols || 1, rows = zoneState?.view?.rows || 1;
     const baseCol = clamp(col, 1.25, Math.max(1.25, cols - 1.25));
     const baseRow = clamp(row, 1.25, Math.max(1.25, rows - 1.25));
-    if (pointIsOpen(zoneState, baseCol, baseRow)) return { col: baseCol, row: baseRow };
+    if (pointIsOpen(zoneState, baseCol, baseRow, avoidPoints)) return { col: baseCol, row: baseRow };
     for (let radius = 1; radius <= 4; radius++) {
       for (let attempt = 0; attempt < 16; attempt++) {
         const angle = attempt / 16 * Math.PI * 2;
         const candidate = { col: baseCol + Math.cos(angle) * radius, row: baseRow + Math.sin(angle) * radius };
-        if (pointIsOpen(zoneState, candidate.col, candidate.row)) return candidate;
+        if (pointIsOpen(zoneState, candidate.col, candidate.row, avoidPoints)) return candidate;
       }
     }
+    // Every candidate within range is already claimed (a small camp with
+    // more waking residents than clear standing room) -- fall back to the
+    // unclaimed-only search's own best point rather than degrading all the
+    // way to the exact base point every other stuck hunter is also trying.
+    if (avoidPoints?.length) return nearestOpenPoint(zoneState, col, row);
     return { col: baseCol, row: baseRow };
   }
   function randomPointAround(camp, origin, minRadius, maxRadius, rng = rand) {
@@ -772,7 +795,17 @@
   function placeEntity(hunter) {
     const entity = hunter?.entity, camp = hunter?.camp;
     if (!entity || !camp || currentArea() !== camp.zoneId) return false;
-    const open = nearestOpenPoint(camp.zoneState, hunter.x, hunter.y);
+    // Several hunters commonly share one tent's jittered sleep point (see
+    // sleepPointFor), so without steering clear of camp-mates that already
+    // have a standing entity here, this deterministic search would put every
+    // one of them on the same tile the moment they all wake and materialize
+    // together -- see nearestOpenPoint's avoidPoints comment.
+    const avoidPoints = [];
+    for (const other of camp.hunters) {
+      if (other === hunter || !other.entity || other.entity.areaId !== camp.zoneId || !other.entity.avatarRef?.group?.visible) continue;
+      avoidPoints.push({ col: other.entity.x / combatDeps.TILE, row: other.entity.y / combatDeps.TILE });
+    }
+    const open = nearestOpenPoint(camp.zoneState, hunter.x, hunter.y, avoidPoints);
     hunter.x = open.col; hunter.y = open.row;
     const grid = combatDeps.getActiveGrid?.();
     const cols = num(combatDeps.getActiveCols?.(), camp.zoneState.view?.cols || 1), rows = num(combatDeps.getActiveRows?.(), camp.zoneState.view?.rows || 1);
