@@ -4,8 +4,8 @@
   'use strict';
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
-  const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent folder-save UX change.
-  const CHANGE_SUMMARY = 'Latest: Quit now flushes live gameplay before the folder write, and Resume shows the folder source plus same/different-device last-writer status.'; // Human-readable current-change summary requested for mobile testing.
+  const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent persistence change.
+  const CHANGE_SUMMARY = 'Latest: Quit and Start Farming now commit a hashed durable local save before folder writes; the three-way sync foundation is loaded for Drive work.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -13,9 +13,16 @@
   }
 
   function diagnosticsSnapshot() {
-    const creatorPatch = window.hobunjiOnboardingCharacterCreationReloadHandoff; // Existing creator handoff debug/status object, including folder flush counts.
+    const creatorPatch = window.hobunjiOnboardingCharacterCreationReloadHandoff; // Existing creator handoff debug/status object, including durable/folder flush counts.
     return {
       change: CHANGE_SUMMARY.replace(/^Latest:\s*/i, ''),
+      syncFoundation: {
+        envelopeFormat: window.HobunjiSaveEnvelope?.FORMAT || null,
+        envelopeVersion: window.HobunjiSaveEnvelope?.FORMAT_VERSION || null,
+        reconciliationReady: Boolean(window.HobunjiSaveReconciliation?.decide),
+        durableStoreReady: Boolean(window.HobunjiSaveSyncStore?.commitEnvelope),
+      },
+      coordinator: safeSnapshot(() => window.HobunjiSaveCoordinator?.getStatus?.()),
       folder: safeSnapshot(() => window.LocalSaveFolder?.getStatus?.()),
       primaryUx: safeSnapshot(() => window.__hobunjiFolderSavePrimaryDebug?.snapshot?.()),
       onboarding: safeSnapshot(() => window.__hobunjiFolderSaveOnboardingDebug?.snapshot?.()),
