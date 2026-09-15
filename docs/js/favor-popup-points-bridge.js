@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (Number(window.FavorPopupPointsBridge?.version) >= 8) return;
+  if (Number(window.FavorPopupPointsBridge?.version) >= 9) return;
 
   const MODULE_SRC = document.currentScript?.src || '';
   const HEART_URL = MODULE_SRC ? new URL('../assets/hud/generic_icons/icon_heart.png', MODULE_SRC).href : 'assets/hud/generic_icons/icon_heart.png';
@@ -15,28 +15,16 @@
   const RELATIONSHIP_ALPHA_TEST = 0.001;
   const HEART_WORLD_RATIO = 0.90;
   const VALUE_WORLD_RATIO = 0.78;
-  const CHATHEAD_GAP_RATIO = 0.14;
   const FLOAT_PLUS_MOTION = Object.freeze({ riseWorld: 0.075, swayHeightRatio: 0.12, fadeStart: 0.72 });
-  const DEFAULT_FLOAT_PLUS = Object.freeze({ worldHeight: 0.19, xOffsetPercent: 43, yOffsetPercent: 17, lifetimeMs: 1150 });
-  const DEFAULT_HEART_STYLE = Object.freeze({ opacity: 0.80, glowPx: 20 });
+  const DEFAULT_FLOAT_PLUS = Object.freeze({ worldHeight: 0.13, xOffsetPercent: 50, yOffsetPercent: -10, lifetimeMs: 1150 });
+  const DEFAULT_HEART_STYLE = Object.freeze({ opacity: 0.90, glowPx: 29, spacingPercent: 14 });
 
   const relationshipPopups = [];
-  const debugState = {
-    hardenedPopups: 0,
-    lastHardenedPopup: null,
-    lastAnchor: null,
-    lastDisposedReason: null,
-    lastLayout: null,
-    lastHeart: null,
-    depsCaptured: false,
-  };
+  const debugState = { hardenedPopups: 0, lastHardenedPopup: null, lastAnchor: null, lastDisposedReason: null, lastLayout: null, lastHeart: null, depsCaptured: false };
   let deps = null;
   let heartImagePromise = null;
   let editorControlRetry = 0;
-  let liveSettings = {
-    floatPlus: { ...DEFAULT_FLOAT_PLUS },
-    relationshipHeart: { ...DEFAULT_HEART_STYLE },
-  };
+  let liveSettings = { floatPlus: { ...DEFAULT_FLOAT_PLUS }, relationshipHeart: { ...DEFAULT_HEART_STYLE } };
 
   const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -56,52 +44,35 @@
       relationshipHeart: {
         opacity: clamp(finite(incomingHeart.opacity, liveSettings.relationshipHeart.opacity), 0, 1),
         glowPx: clamp(finite(incomingHeart.glowPx, liveSettings.relationshipHeart.glowPx), 0, 40),
+        spacingPercent: clamp(finite(incomingHeart.spacingPercent, liveSettings.relationshipHeart.spacingPercent), -50, 50),
       },
     };
     syncEditorHeartControls();
     return liveSettings;
   }
 
-  function currentFloatPlus() {
-    return liveSettings.floatPlus || DEFAULT_FLOAT_PLUS;
-  }
-
-  function currentHeartStyle() {
-    return liveSettings.relationshipHeart || DEFAULT_HEART_STYLE;
-  }
-
+  function currentFloatPlus() { return liveSettings.floatPlus || DEFAULT_FLOAT_PLUS; }
+  function currentHeartStyle() { return liveSettings.relationshipHeart || DEFAULT_HEART_STYLE; }
   function editorValue(expression) {
     if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return undefined;
     try { return (0, eval)(expression); } catch (_) { return undefined; }
   }
-
   function editorSettingsObject() {
     const value = editorValue('settings');
     return value && typeof value === 'object' ? value : null;
   }
-
   function convertFavorHeartDelta(kind, amount) {
     if (kind !== 'favor') return amount;
     const points = window.NpcFavorBalance?.heartsToFavorPoints?.(amount);
     return Number.isFinite(Number(points)) ? Number(points) : amount;
   }
-
   function signedRelationshipAmount(amount) {
     const value = Math.round((Number(amount) || 0) * 10) / 10;
     return Object.is(value, -0) ? 0 : value;
   }
-
-  function relationshipHeartColor(kind) {
-    return kind === 'favor' ? FAVOR_HEART_COLOR : RAPPORT_HEART_COLOR;
-  }
-
-  function relationshipNumberColor(amount) {
-    return amount > 0 ? RELATIONSHIP_GAIN_COLOR : RELATIONSHIP_LOSS_COLOR;
-  }
-
-  function spritePngSurface() {
-    return window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit || null;
-  }
+  function relationshipHeartColor(kind) { return kind === 'favor' ? FAVOR_HEART_COLOR : RAPPORT_HEART_COLOR; }
+  function relationshipNumberColor(amount) { return amount > 0 ? RELATIONSHIP_GAIN_COLOR : RELATIONSHIP_LOSS_COLOR; }
+  function spritePngSurface() { return window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit || null; }
 
   function loadHeartImage() {
     if (heartImagePromise) return heartImagePromise;
@@ -109,27 +80,11 @@
       const image = new Image();
       image.crossOrigin = 'anonymous';
       image.onload = () => {
-        debugState.lastHeart = {
-          ...(debugState.lastHeart || {}),
-          imageLoaded: true,
-          imageWidth: Number(image.naturalWidth || image.width) || 0,
-          imageHeight: Number(image.naturalHeight || image.height) || 0,
-          crossOrigin: image.crossOrigin || '',
-          url: HEART_URL,
-          at: Date.now(),
-        };
+        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: true, imageWidth: Number(image.naturalWidth || image.width) || 0, imageHeight: Number(image.naturalHeight || image.height) || 0, crossOrigin: image.crossOrigin || '', url: HEART_URL, at: Date.now() };
         resolve(image);
       };
       image.onerror = () => {
-        debugState.lastHeart = {
-          ...(debugState.lastHeart || {}),
-          imageLoaded: false,
-          imageWidth: 0,
-          imageHeight: 0,
-          crossOrigin: image.crossOrigin || '',
-          url: HEART_URL,
-          at: Date.now(),
-        };
+        debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: false, imageWidth: 0, imageHeight: 0, crossOrigin: image.crossOrigin || '', url: HEART_URL, at: Date.now() };
         resolve(null);
       };
       image.src = HEART_URL;
@@ -142,12 +97,9 @@
     while (node && !node.isScene) node = node.parent;
     return node || null;
   }
-
   function avatarRootWithPortraitMetadata(root) {
     let avatarRoot = null;
-    root?.traverse?.(child => {
-      if (!avatarRoot && Number.isFinite(Number(child.userData?.portraitModelHeight))) avatarRoot = child;
-    });
+    root?.traverse?.(child => { if (!avatarRoot && Number.isFinite(Number(child.userData?.portraitModelHeight))) avatarRoot = child; });
     return avatarRoot;
   }
 
@@ -163,12 +115,7 @@
     const placementRatio = Number.isFinite(placementRatioRaw) ? placementRatioRaw : 0.5;
     const verticalOffset = (placementRatio - 0.5) * height;
     const combinedHeight = height * 0.5 + verticalOffset;
-    const local = new THREE.Vector3(
-      width * cfg.xOffsetPercent / 100,
-      verticalOffset + combinedHeight * cfg.yOffsetPercent / 100,
-      0,
-    );
-
+    const local = new THREE.Vector3(width * cfg.xOffsetPercent / 100, verticalOffset + combinedHeight * cfg.yOffsetPercent / 100, 0);
     avatarRoot.updateWorldMatrix?.(true, false);
     if (avatarRoot.localToWorld) avatarRoot.localToWorld(local);
     else {
@@ -178,17 +125,7 @@
       local.x += width * cfg.xOffsetPercent / 100;
       local.y += combinedHeight * cfg.yOffsetPercent / 100;
     }
-
-    debugState.lastAnchor = {
-      source: 'float-plus-live-settings',
-      height,
-      width,
-      placementRatio,
-      xOffsetPercent: cfg.xOffsetPercent,
-      yOffsetPercent: cfg.yOffsetPercent,
-      world: { x: local.x, y: local.y, z: local.z },
-      at: Date.now(),
-    };
+    debugState.lastAnchor = { source: 'float-plus-live-settings', height, width, placementRatio, xOffsetPercent: cfg.xOffsetPercent, yOffsetPercent: cfg.yOffsetPercent, world: { x: local.x, y: local.y, z: local.z }, at: Date.now() };
     return local;
   }
 
@@ -201,9 +138,7 @@
     const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
     center.addScaledVector(cameraRight, Math.sin(progress * Math.PI) * eventHeight * FLOAT_PLUS_MOTION.swayHeightRatio);
     center.y += FLOAT_PLUS_MOTION.riseWorld * (1 - Math.pow(1 - progress, 2));
-    const opacity = progress < FLOAT_PLUS_MOTION.fadeStart
-      ? 1
-      : Math.max(0, (1 - progress) / (1 - FLOAT_PLUS_MOTION.fadeStart));
+    const opacity = progress < FLOAT_PLUS_MOTION.fadeStart ? 1 : Math.max(0, (1 - progress) / (1 - FLOAT_PLUS_MOTION.fadeStart));
     return { position: center, quaternion: camera.quaternion, opacity };
   }
 
@@ -237,15 +172,7 @@
   function makeTransparentPart(canvas, aspect, renderOrder) {
     const THREE = deps?.THREE || window.THREE;
     const texture = canvasTexture(canvas, 'relationship_value_texture');
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      alphaTest: RELATIONSHIP_ALPHA_TEST,
-      depthTest: false,
-      depthWrite: false,
-      fog: false,
-      side: THREE.DoubleSide,
-    });
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: RELATIONSHIP_ALPHA_TEST, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
     return finishPlanePart(canvas, texture, material, aspect, renderOrder);
   }
 
@@ -287,7 +214,6 @@
     canvas.height = 240;
     const context = canvas.getContext('2d');
     const { mask, usedFallbackGlyph } = makeHeartMask(image, color);
-
     context.clearRect(0, 0, canvas.width, canvas.height);
     if (style.glowPx > 0) {
       context.save();
@@ -317,44 +243,11 @@
     }
 
     const pngSurface = spritePngSurface();
-    const texture = pngSurface?.makeCanvasTexture
-      ? pngSurface.makeCanvasTexture(THREE, canvas, 'relationship_heart_texture')
-      : canvasTexture(canvas, 'relationship_heart_texture_fallback');
-    const alphaTest = typeof pngSurface?.alphaTest === 'function'
-      ? Number(pngSurface.alphaTest()) || RELATIONSHIP_ALPHA_TEST
-      : RELATIONSHIP_ALPHA_TEST;
-    const materialOverrides = {
-      transparent: true,
-      opacity: style.opacity,
-      alphaTest,
-      depthTest: false,
-      depthWrite: false,
-      fog: false,
-      side: THREE.DoubleSide,
-    };
-    const material = pngSurface?.makeMaterial
-      ? pngSurface.makeMaterial(THREE, texture, 'relationship_heart_material', materialOverrides)
-      : new THREE.MeshBasicMaterial({ map: texture, ...materialOverrides });
-
-    debugState.lastHeart = {
-      ...(debugState.lastHeart || {}),
-      imageLoaded: !!image,
-      imageWidth: Number(image?.naturalWidth || image?.width) || 0,
-      imageHeight: Number(image?.naturalHeight || image?.height) || 0,
-      crossOrigin: image?.crossOrigin || '',
-      usedFallbackGlyph,
-      nonTransparentPixels,
-      maxAlpha,
-      canvasReadError,
-      canonicalPngSurface: !!pngSurface,
-      canonicalTextureFactory: !!pngSurface?.makeCanvasTexture,
-      canonicalMaterialFactory: !!pngSurface?.makeMaterial,
-      alphaTest,
-      maxOpacity: style.opacity,
-      glowBlurPx: style.glowPx,
-      url: HEART_URL,
-      at: Date.now(),
-    };
+    const texture = pngSurface?.makeCanvasTexture ? pngSurface.makeCanvasTexture(THREE, canvas, 'relationship_heart_texture') : canvasTexture(canvas, 'relationship_heart_texture_fallback');
+    const alphaTest = typeof pngSurface?.alphaTest === 'function' ? Number(pngSurface.alphaTest()) || RELATIONSHIP_ALPHA_TEST : RELATIONSHIP_ALPHA_TEST;
+    const materialOverrides = { transparent: true, opacity: style.opacity, alphaTest, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide };
+    const material = pngSurface?.makeMaterial ? pngSurface.makeMaterial(THREE, texture, 'relationship_heart_material', materialOverrides) : new THREE.MeshBasicMaterial({ map: texture, ...materialOverrides });
+    debugState.lastHeart = { ...(debugState.lastHeart || {}), imageLoaded: !!image, imageWidth: Number(image?.naturalWidth || image?.width) || 0, imageHeight: Number(image?.naturalHeight || image?.height) || 0, crossOrigin: image?.crossOrigin || '', usedFallbackGlyph, nonTransparentPixels, maxAlpha, canvasReadError, canonicalPngSurface: !!pngSurface, canonicalTextureFactory: !!pngSurface?.makeCanvasTexture, canonicalMaterialFactory: !!pngSurface?.makeMaterial, alphaTest, maxOpacity: style.opacity, glowBlurPx: style.glowPx, spacingPercent: style.spacingPercent, url: HEART_URL, at: Date.now() };
     return finishPlanePart(canvas, texture, material, 1, HEART_RENDER_ORDER);
   }
 
@@ -378,25 +271,19 @@
   }
 
   function layoutLikeChathead(group, heartPart, valuePart, worldHeight) {
+    const style = currentHeartStyle();
     const heartWorldSize = worldHeight * HEART_WORLD_RATIO;
     const valueWorldHeight = worldHeight * VALUE_WORLD_RATIO;
     heartPart.plane.scale.setScalar(heartWorldSize);
     valuePart.plane.scale.setScalar(valueWorldHeight);
     const valueWidth = (valuePart.canvas.width / valuePart.canvas.height) * valueWorldHeight;
-    const gap = heartWorldSize * CHATHEAD_GAP_RATIO;
+    const gap = heartWorldSize * style.spacingPercent / 100;
     const totalWidth = heartWorldSize + gap + valueWidth;
     heartPart.plane.position.x = -totalWidth / 2 + heartWorldSize / 2;
     valuePart.plane.position.x = -totalWidth / 2 + heartWorldSize + gap + valueWidth / 2;
-    group.add(heartPart.plane, valuePart.plane);
-    debugState.lastLayout = {
-      type: 'chathead-style-heart-plus-value',
-      heartWorldSize,
-      valueWorldHeight,
-      valueWidth,
-      gap,
-      totalWidth,
-      at: Date.now(),
-    };
+    if (heartPart.plane.parent !== group) group.add(heartPart.plane);
+    if (valuePart.plane.parent !== group) group.add(valuePart.plane);
+    debugState.lastLayout = { type: 'chathead-style-heart-plus-value', heartWorldSize, valueWorldHeight, valueWidth, spacingPercent: style.spacingPercent, gap, totalWidth, at: Date.now() };
   }
 
   function hardenRelationshipPopupEvent(event) {
@@ -418,15 +305,7 @@
       texture.needsUpdate = true;
     }
     debugState.hardenedPopups += 1;
-    debugState.lastHardenedPopup = {
-      kind: event.kind,
-      value: event.value,
-      layout: 'chathead-style-heart-plus-value',
-      childPlanes: parts.length,
-      heartUsesCanonicalPngSurface: !!debugState.lastHeart?.canonicalMaterialFactory,
-      alphaTest: Number(event?.heartPart?.material?.alphaTest) || RELATIONSHIP_ALPHA_TEST,
-      at: Date.now(),
-    };
+    debugState.lastHardenedPopup = { kind: event.kind, value: event.value, layout: 'chathead-style-heart-plus-value', childPlanes: parts.length, heartUsesCanonicalPngSurface: !!debugState.lastHeart?.canonicalMaterialFactory, alphaTest: Number(event?.heartPart?.material?.alphaTest) || RELATIONSHIP_ALPHA_TEST, at: Date.now() };
     return event;
   }
 
@@ -436,17 +315,13 @@
     part?.material?.dispose?.();
     part?.texture?.dispose?.();
   }
-
   function disposeRelationshipPopup(event, reason = 'expired') {
     event?.group?.parent?.remove(event.group);
     disposePart(event?.heartPart);
     disposePart(event?.valuePart);
     debugState.lastDisposedReason = reason;
   }
-
-  function clearRelationshipPopups() {
-    while (relationshipPopups.length) disposeRelationshipPopup(relationshipPopups.pop(), 'clear');
-  }
+  function clearRelationshipPopups() { while (relationshipPopups.length) disposeRelationshipPopup(relationshipPopups.pop(), 'clear'); }
 
   async function spawnRelationshipPopup(root, kind, amount, options = {}) {
     const api = window.WorldPopupText;
@@ -458,8 +333,8 @@
     if (!scene) return null;
     const image = await loadHeartImage();
     if (!root.parent || rootScene(root) !== scene) return null;
-
     const cfg = currentFloatPlus();
+    const style = currentHeartStyle();
     const heartColor = relationshipHeartColor(kind);
     const numberColor = relationshipNumberColor(value);
     const label = `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
@@ -468,7 +343,6 @@
     const group = new THREE.Group();
     group.name = `relationship_popup_${kind}`;
     layoutLikeChathead(group, heartPart, valuePart, cfg.worldHeight);
-
     const frame = floatPlusFrame(root, 0, cfg.worldHeight);
     if (!frame) {
       disposePart(heartPart);
@@ -477,20 +351,7 @@
     }
     group.position.copy(frame.position);
     group.quaternion.copy(frame.quaternion);
-
-    const event = {
-      kind,
-      root,
-      group,
-      heartPart,
-      valuePart,
-      startedAt: performance.now(),
-      lifetimeMs: cfg.lifetimeMs,
-      worldHeight: cfg.worldHeight,
-      value,
-      heartColor,
-      numberColor,
-    };
+    const event = { kind, root, group, heartPart, valuePart, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, worldHeight: cfg.worldHeight, spacingPercent: style.spacingPercent, value, heartColor, numberColor };
     scene.add(group);
     relationshipPopups.push(event);
     return hardenRelationshipPopupEvent(event);
@@ -509,8 +370,9 @@
         relationshipPopups.splice(index, 1);
         continue;
       }
-      if (Math.abs(event.worldHeight - cfg.worldHeight) > 0.000001) {
+      if (Math.abs(event.worldHeight - cfg.worldHeight) > 0.000001 || Math.abs(event.spacingPercent - style.spacingPercent) > 0.000001) {
         event.worldHeight = cfg.worldHeight;
+        event.spacingPercent = style.spacingPercent;
         layoutLikeChathead(event.group, event.heartPart, event.valuePart, event.worldHeight);
       }
       const frame = floatPlusFrame(event.root, progress, event.worldHeight);
@@ -540,12 +402,16 @@
     const style = currentHeartStyle();
     const opacity = host.querySelector('[data-heart-opacity]');
     const glow = host.querySelector('[data-heart-glow]');
+    const spacing = host.querySelector('[data-heart-spacing]');
     const opacityOut = host.querySelector('[data-heart-opacity-value]');
     const glowOut = host.querySelector('[data-heart-glow-value]');
+    const spacingOut = host.querySelector('[data-heart-spacing-value]');
     if (opacity && document.activeElement !== opacity) opacity.value = String(Math.round(style.opacity * 100));
     if (glow && document.activeElement !== glow) glow.value = String(Math.round(style.glowPx));
+    if (spacing && document.activeElement !== spacing) spacing.value = String(Math.round(style.spacingPercent));
     if (opacityOut) opacityOut.textContent = `${Math.round(style.opacity * 100)}%`;
     if (glowOut) glowOut.textContent = `${Math.round(style.glowPx)}px`;
+    if (spacingOut) spacingOut.textContent = `${Math.round(style.spacingPercent)}%`;
   }
 
   function updateEditorSettingsFromHeartControls(host) {
@@ -553,8 +419,9 @@
     if (!editorSettings) return false;
     editorSettings.relationshipHeart = {
       ...(editorSettings.relationshipHeart || {}),
-      opacity: clamp(finite(host.querySelector('[data-heart-opacity]')?.value, 80) / 100, 0, 1),
-      glowPx: clamp(finite(host.querySelector('[data-heart-glow]')?.value, 20), 0, 40),
+      opacity: clamp(finite(host.querySelector('[data-heart-opacity]')?.value, 90) / 100, 0, 1),
+      glowPx: clamp(finite(host.querySelector('[data-heart-glow]')?.value, 29), 0, 40),
+      spacingPercent: clamp(finite(host.querySelector('[data-heart-spacing]')?.value, 14), -50, 50),
     };
     captureSettings(editorSettings);
     const normalized = window.WorldPopupText?.applySettings?.(editorSettings);
@@ -585,7 +452,7 @@
       return false;
     }
     const help = section.querySelector('.help');
-    if (help) help.textContent = 'Uses the same live Float+ placement and motion as ordinary Float+ text. Heart opacity and glow are relationship-only styling.';
+    if (help) help.textContent = 'Uses the same live Float+ placement and motion as ordinary Float+ text. Heart opacity, glow, and heart↔number spacing are relationship-only styling.';
     let host = document.getElementById('relationshipHeartStyleControls');
     if (!host) {
       host = document.createElement('div');
@@ -602,6 +469,12 @@
           <output id="relationshipHeartGlowValue" data-heart-glow-value></output>
           <small>Soft same-color glow baked into the heart texture.</small>
           <input id="relationshipHeartGlow" data-heart-glow type="range" min="0" max="40" step="1">
+        </div>
+        <div class="sliderRow">
+          <label for="relationshipHeartSpacing">Heart ↔ number spacing</label>
+          <output id="relationshipHeartSpacingValue" data-heart-spacing-value></output>
+          <small>Percent of heart world size. Lower values bring them closer; negative values pull the number into the heart/glow margin.</small>
+          <input id="relationshipHeartSpacing" data-heart-spacing type="range" min="-50" max="50" step="1">
         </div>
       `;
       const buttons = section.querySelector('.buttons');
@@ -621,109 +494,74 @@
   function install() {
     const api = window.WorldPopupText;
     if (!api) return false;
-    if (Number(api.__favorPopupPointsBridgeVersion) >= 8) {
+    if (Number(api.__favorPopupPointsBridgeVersion) >= 9) {
       injectEditorHeartControls();
       return true;
     }
-
     const originalInit = typeof api.init === 'function' ? api.init.bind(api) : null;
     const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null;
     const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null;
     const originalApplySettings = typeof api.applySettings === 'function' ? api.applySettings.bind(api) : null;
     const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null;
-
     if (originalInit) {
-      api.init = function favorPopupV8Init(injectedDeps, ...args) {
+      api.init = function favorPopupV9Init(injectedDeps, ...args) {
         bindDeps(injectedDeps);
-        return originalInit(injectedDeps, ...args);
+        const result = originalInit(injectedDeps, ...args);
+        Promise.resolve(api.loadSettings?.()).then(captureSettings).catch(() => {});
+        return result;
       };
     }
     if (originalUpdate) {
-      api.update = function favorPopupV8Update(now, ...args) {
+      api.update = function favorPopupV9Update(now, ...args) {
         const result = originalUpdate(now, ...args);
         updateRelationshipPopups(now);
         return result;
       };
     }
     if (originalClear) {
-      api.clear = function favorPopupV8Clear(...args) {
+      api.clear = function favorPopupV9Clear(...args) {
         clearRelationshipPopups();
         return originalClear(...args);
       };
     }
     if (originalApplySettings) {
-      api.applySettings = function favorPopupV8ApplySettings(settings, ...args) {
+      api.applySettings = function favorPopupV9ApplySettings(settings, ...args) {
         const result = originalApplySettings(settings, ...args);
         captureSettings(result || settings);
         return result;
       };
     }
-
     const editorSettings = editorSettingsObject();
     if (editorSettings) captureSettings(editorSettings);
-
     api.showRelationshipChange = (root, kind, amount, options) => spawnRelationshipPopup(root, kind === 'favor' ? 'favor' : 'rapport', amount, options);
     api.showRapportGain = (root, amount, options) => spawnRelationshipPopup(root, 'rapport', amount, options);
     api.showRapportChange = api.showRapportGain;
     api.showFavorChange = (root, amount, options) => spawnRelationshipPopup(root, 'favor', amount, options);
     api.relationshipHeadAnchorWorld = root => floatPlusAnchorWorld(root);
-    api.debugSnapshot = function favorPopupV8DebugSnapshot() {
+    api.debugSnapshot = function favorPopupV9DebugSnapshot() {
       const base = originalDebugSnapshot ? originalDebugSnapshot() : {};
-      return {
-        ...base,
-        relationshipPositionBridge: {
-          version: 8,
-          active: relationshipPopups.length,
-          depsCaptured: debugState.depsCaptured,
-          layout: 'chathead-style-heart-plus-value',
-          motion: 'floatPlus-live-settings',
-          floatPlus: { ...currentFloatPlus() },
-          heartStyle: { ...currentHeartStyle() },
-          lastHeart: debugState.lastHeart,
-          lastLayout: debugState.lastLayout,
-          lastAnchor: debugState.lastAnchor,
-          lastDisposedReason: debugState.lastDisposedReason,
-        },
-      };
+      return { ...base, relationshipPositionBridge: { version: 9, active: relationshipPopups.length, depsCaptured: debugState.depsCaptured, layout: 'chathead-style-heart-plus-value', motion: 'floatPlus-live-settings', floatPlus: { ...currentFloatPlus() }, heartStyle: { ...currentHeartStyle() }, lastHeart: debugState.lastHeart, lastLayout: debugState.lastLayout, lastAnchor: debugState.lastAnchor, lastDisposedReason: debugState.lastDisposedReason } };
     };
     api.__favorPopupPointsBridge = true;
-    api.__favorPopupPointsBridgeVersion = 8;
+    api.__favorPopupPointsBridgeVersion = 9;
     injectEditorHeartControls();
     return true;
   }
 
   if (!install() && typeof MutationObserver === 'function') {
-    const observer = new MutationObserver(() => {
-      if (!install()) return;
-      observer.disconnect();
-    });
+    const observer = new MutationObserver(() => { if (!install()) return; observer.disconnect(); });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   window.FavorPopupPointsBridge = Object.freeze({
-    version: 8,
+    version: 9,
     install,
     bindDeps,
     captureSettings,
     relationshipHeadAnchorWorld: floatPlusAnchorWorld,
     injectEditorHeartControls,
     snapshot() {
-      return {
-        version: 8,
-        activeRelationshipPopups: relationshipPopups.length,
-        hardenedPopups: debugState.hardenedPopups,
-        lastHardenedPopup: debugState.lastHardenedPopup,
-        lastHeart: debugState.lastHeart,
-        lastLayout: debugState.lastLayout,
-        lastAnchor: debugState.lastAnchor,
-        lastDisposedReason: debugState.lastDisposedReason,
-        depsCaptured: debugState.depsCaptured,
-        layout: 'chathead-style-heart-plus-value',
-        motion: 'floatPlus-live-settings',
-        floatPlus: { ...currentFloatPlus() },
-        heartStyle: { ...currentHeartStyle() },
-        popupBridgeVersion: Number(window.WorldPopupText?.__favorPopupPointsBridgeVersion) || 0,
-      };
+      return { version: 9, activeRelationshipPopups: relationshipPopups.length, hardenedPopups: debugState.hardenedPopups, lastHardenedPopup: debugState.lastHardenedPopup, lastHeart: debugState.lastHeart, lastLayout: debugState.lastLayout, lastAnchor: debugState.lastAnchor, lastDisposedReason: debugState.lastDisposedReason, depsCaptured: debugState.depsCaptured, layout: 'chathead-style-heart-plus-value', motion: 'floatPlus-live-settings', floatPlus: { ...currentFloatPlus() }, heartStyle: { ...currentHeartStyle() }, popupBridgeVersion: Number(window.WorldPopupText?.__favorPopupPointsBridgeVersion) || 0 };
     },
   });
 })();
