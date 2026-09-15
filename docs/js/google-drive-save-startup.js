@@ -44,17 +44,18 @@
   }
 
   async function localEnvelopeForComparison() {
-    const store = storeApi(); // Existing durable local authority preferred when this browser has already committed one.
-    let local = await store?.getCurrentEnvelope?.();
-    if (local) return local;
-
-    const coordinator = coordinatorApi(); // Legacy/browser-only save is promoted into durable local state before Drive comparison when possible.
-    const committed = await coordinator?.commitCurrent?.({ reason: 'drive-startup-local-capture' });
+    const coordinator = coordinatorApi(); // Browser localStorage may be newer than a prior-session IDB envelope if the page was suspended immediately after a save.
+    const committed = await coordinator?.commitCurrent?.({ reason: 'drive-startup-local-capture' }); // Always recapture browser state first; unchanged content reuses the existing revision.
     if (committed?.ok) return committed.envelope;
-    if (/No browser save is available/i.test(String(committed?.error || ''))) return null; // Fresh device with only Drive data is a valid startup state.
-    if (committed?.unavailable) return null; // IndexedDB-unavailable browser can still explicitly pull Drive into localStorage.
+
+    if (/No browser save is available/i.test(String(committed?.error || ''))) {
+      return await storeApi()?.getCurrentEnvelope?.() || null; // Fresh browser may legitimately have only a previously pulled durable envelope or no local branch at all.
+    }
+    if (committed?.unavailable) {
+      return await storeApi()?.getCurrentEnvelope?.() || null; // IndexedDB-unavailable browser can still explicitly pull Drive into localStorage.
+    }
     if (committed?.error) throw new Error(committed.error);
-    return null;
+    return await storeApi()?.getCurrentEnvelope?.() || null;
   }
 
   function gateShell(statusText, detailText, buttonsHtml) {
