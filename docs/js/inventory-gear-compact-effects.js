@@ -19,6 +19,25 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
+      /* Always reserve a visible lower Gear region. The compact upper loadout gets the remainder instead of being allowed to squeeze Owned Gear to zero height. */
+      #mpInventory.inv-mode-gear .gear-loadout-grid {
+        flex:1 1 auto;
+        min-height:0;
+        height:auto;
+        max-height:none;
+        overflow:hidden;
+        margin-bottom:calc(.45 * var(--inv-gap));
+      }
+      #mpInventory.inv-mode-gear .gear-owned-section {
+        flex:0 0 calc(5.25 * var(--inv-row));
+        min-height:calc(5.25 * var(--inv-row));
+        max-height:calc(5.25 * var(--inv-row));
+        box-sizing:border-box;
+        overflow-y:auto;
+        overflow-x:hidden;
+        scrollbar-width:thin;
+      }
+
       /* Tool Effects shares the current-loadout height with the seven slot buttons beside it. Its cards therefore divide the available height instead of growing from content. */
       #mpInventory .gear-tool-stats {
         min-height:0;
