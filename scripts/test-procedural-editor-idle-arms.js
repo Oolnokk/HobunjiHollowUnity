@@ -16,59 +16,98 @@ class Vector3 {
   clone() { return new Vector3(this.x, this.y, this.z); }
 }
 
-function makeHand(name, x, y, z = 0) {
+function worldOffset(node) {
+  const out = new Vector3();
+  for (let cursor = node; cursor; cursor = cursor.parent) {
+    out.x += Number(cursor.position?.x) || 0;
+    out.y += Number(cursor.position?.y) || 0;
+    out.z += Number(cursor.position?.z) || 0;
+  }
+  return out;
+}
+
+function makeNode(name, position = new Vector3()) {
   return {
+    isObject3D: true,
     name,
-    position: new Vector3(x, y, z),
-    parent: null,
+    type: 'Group',
+    position,
+    scale: new Vector3(1, 1, 1),
+    userData: {},
     children: [],
+    parent: null,
+    add(...objects) {
+      for (const object of objects) {
+        if (object.parent) object.parent.children = object.parent.children.filter(child => child !== object);
+        object.parent = this;
+        this.children.push(object);
+      }
+      return this;
+    },
+    traverse(callback) {
+      const visit = node => {
+        callback(node);
+        for (const child of node.children || []) visit(child);
+      };
+      visit(this);
+    },
+    getObjectByName(wanted) {
+      let found = null;
+      this.traverse(node => { if (!found && node.name === wanted) found = node; });
+      return found;
+    },
     updateMatrix() {},
+    updateWorldMatrix() {},
     updateMatrixWorld() {},
+    localToWorld(point) {
+      const offset = worldOffset(this);
+      point.x += offset.x; point.y += offset.y; point.z += offset.z;
+      return point;
+    },
+    worldToLocal(point) {
+      const offset = worldOffset(this);
+      point.x -= offset.x; point.y -= offset.y; point.z -= offset.z;
+      return point;
+    },
+    getWorldPosition(out) {
+      return out.copy(worldOffset(this));
+    },
   };
 }
 
-// Keep one already-existing pair at the historical procedural-editor sign convention
-// so the compatibility acquisition path remains covered too.
+function makeHand(name, x, y, z = 0) {
+  return makeNode(name, new Vector3(x, y, z));
+}
+
+// Reproduce the actual editor hierarchy that the old regression missed:
+// character floor root -> portrait model lifted by +height/2 -> generated hands root -> hands.
+// Attachment-profile shoulder/posterior coordinates belong to floorRoot, NOT model.
+const floorRoot = makeNode('LocomotionFloorRoot');
+floorRoot.userData.hobunjiCharacterRigScaleState = {
+  factor: { x: 1.1, y: 0.95 },
+  groundRelative: true,
+  coordinateSpace: 'character-floor-parent',
+};
+
+const model = makeNode('Preview', new Vector3(0, 0.5, 0));
+model.userData = {
+  portraitModelHeight: 1,
+  portraitModelWidth: 0.9,
+  handAttachX: -0.2,
+  handAttachY: 0.45,
+  proceduralHandParent: floorRoot,
+  experimentalFeet: { speciesId: 'test-species', gender: 'male' },
+};
+floorRoot.add(model);
+
+const handsRoot = makeNode('Preview_procedural_hands');
+model.add(handsRoot);
+// These start in the old editor's reversed convention. The construction bridge should normalize them.
 const left = makeHand('Preview_LeftHand', -0.2, 0.45);
 const right = makeHand('Preview_RightHand', 0.2, 0.45);
-const torso = {
-  name: 'torso',
-  children: [],
-  userData: {},
-  material: { map: { image: { src: 'https://example.test/portraitsprites/torso_test-species_m.png' } } },
-};
-const model = {
-  name: 'Preview',
-  position: new Vector3(),
-  scale: new Vector3(1, 1, 1),
-  userData: { portraitModelHeight: 1, portraitModelWidth: 0.9, handAttachX: -0.2, handAttachY: 0.45 },
-  children: [left, right, torso],
-  parent: null,
-  add(...objects) {
-    for (const object of objects) { object.parent = this; this.children.push(object); }
-    return this;
-  },
-  getObjectByName(name) {
-    let found = null;
-    this.traverse(node => { if (!found && node.name === name) found = node; });
-    return found;
-  },
-  traverse(callback) {
-    const visit = node => {
-      callback(node);
-      for (const child of node.children || []) visit(child);
-    };
-    visit(this);
-  },
-  updateMatrixWorld() {},
-  localToWorld(point) { return point; },
-  worldToLocal(point) { return point; },
-};
-left.parent = model;
-right.parent = model;
-torso.parent = model;
+handsRoot.add(left, right);
 
-const scene = { name: 'Scene', onBeforeRender: null };
+const scene = { name: 'Scene', type: 'Scene', onBeforeRender: null };
 const frames = [];
 let danceDebug = { enabled: false, armStyle: 'none' };
 const diagnostics = [];
@@ -83,6 +122,7 @@ const profile = {
   },
   anatomy: { armLengthHeightPercentOffset: 10 },
 };
+
 const windowObject = {
   HOBUNJI_ATTACHMENT_RIG_PROFILES: {
     characters: { 'test-species::male': profile },
@@ -111,56 +151,49 @@ assert.strictEqual(frames.length, 1, 'idle-arm parity adapter should schedule it
 frames.shift()();
 assert.strictEqual(typeof scene.onBeforeRender, 'function', 'idle-arm parity adapter should attach a final scene pre-render hook');
 
-// Reproduce the editor's current hand builder after the bridge has seen the avatar.
-// The builder supplies the old reversed sides; the root.add boundary must normalize
-// them immediately, before any render/parity frame runs.
-const generatedHandsRoot = {
-  name: 'Preview_procedural_hands',
-  children: [],
-  parent: null,
-  add(...objects) {
-    for (const object of objects) { object.parent = this; this.children.push(object); }
-    return this;
-  },
-  updateMatrixWorld() {},
-  worldToLocal(point) { return point; },
-};
-model.add(generatedHandsRoot);
-const generatedLeft = makeHand('Generated_LeftHand', -0.2, 0.45);
-const generatedRight = makeHand('Generated_RightHand', 0.2, 0.45);
-generatedHandsRoot.add(generatedLeft);
-generatedHandsRoot.add(generatedRight);
-assert.strictEqual(generatedLeft.position.x, 0.2, 'new LeftHand wrappers should be corrected at construction to gameplay left=-handAttachX');
-assert.strictEqual(generatedRight.position.x, -0.2, 'new RightHand wrappers should be corrected at construction to gameplay right=+handAttachX');
-assert(diagnostics.some(entry => /Corrected newly generated editor hand/.test(entry.message)), 'construction-side correction should be visible in mobile Diagnostics');
+// The construction bridge must normalize the generated wrapper sides to gameplay before idle claiming.
+assert(Math.abs(left.position.x - 0.2) < 1e-9, 'left generated hand should be normalized to gameplay left=-handAttachX');
+assert(Math.abs(right.position.x + 0.2) < 1e-9, 'right generated hand should be normalized to gameplay right=+handAttachX');
 
 scene.onBeforeRender();
-assert(Math.abs(left.position.x - 0.25) < 1e-9, 'left idle hand should use the canonical left shoulder X');
-assert(Math.abs(left.position.y - 0.2) < 1e-9, 'left idle hand should use posterior Y minus authored arm length at zero idle phase');
-assert(Math.abs(left.position.z - 0.003) < 1e-9, 'left idle hand should include the shared idle forward/back breathing offset');
-assert(Math.abs(right.position.x + 0.3) < 1e-9, 'right idle hand should use the canonical right shoulder X');
-assert(Math.abs(right.position.y - (0.2 + 0.0045 * Math.sin(0.28))) < 1e-9, 'right idle hand should include the shared phase-split idle breathing offset');
-assert(Math.abs(right.position.z - (0.003 * Math.cos(0.28))) < 1e-9, 'right idle hand should include the shared phase-split idle depth offset');
+
+// Canonical LEFT floor target at t=0 is (0.25, 0.20, 0.003):
+// posterior 0.30 - arm length 0.10 + idleY 0, with a 0.003 idle Z.
+// Because the portrait model is lifted +0.5, the hand wrapper under that portrait
+// must be at y=-0.30 so its FLOOR/WORLD Y is 0.20. This is the regression that
+// specifically catches the old "locked to shoulders" double-lift bug.
+assert(Math.abs(left.position.x - 0.25) < 1e-9, 'left hand-parent X should match floor-relative canonical shoulder X');
+assert(Math.abs(left.position.y + 0.3) < 1e-9, 'lifted portrait must subtract +height/2 when converting floor target to hand-parent local Y');
+assert(Math.abs(left.position.z - 0.003) < 1e-9, 'left idle hand should retain shared idle depth breathing');
+const leftWorld = left.getWorldPosition(new Vector3());
+assert(Math.abs(leftWorld.y - 0.2) < 1e-9, 'left hand world/floor Y must equal posterior minus arm length, not portrait lift plus that value');
+assert(Math.abs(leftWorld.y - 0.6) > 0.25, 'left hand must be visibly below its 0.6 floor-relative shoulder instead of pinned near it');
+
+const expectedRightFloorY = 0.2 + 0.0045 * Math.sin(0.28);
+const rightWorld = right.getWorldPosition(new Vector3());
+assert(Math.abs(right.position.x + 0.3) < 1e-9, 'right hand-parent X should match canonical right shoulder X');
+assert(Math.abs(rightWorld.y - expectedRightFloorY) < 1e-9, 'right world/floor Y should use the phase-split idle fallback without re-adding portrait lift');
+assert(Math.abs(right.position.z - (0.003 * Math.cos(0.28))) < 1e-9, 'right idle depth should match the shared frame-driver phase');
 
 const firstDebug = windowObject.HobunjiProceduralEditorIdleArms.getDebug();
-assert.strictEqual(firstDebug.identitySource, 'avatar-asset-url', 'portrait asset filenames should recover species/gender when editor model metadata does not publish identity');
-assert.strictEqual(firstDebug.left.atLegacyIdleDefault, true, 'already-existing reversed LeftHand should remain an acquireable compatibility default');
-assert.strictEqual(firstDebug.right.atLegacyIdleDefault, true, 'already-existing reversed RightHand should remain an acquireable compatibility default');
-assert.strictEqual(firstDebug.left.reason, 'claimed-legacy-reversed-idle', 'debug state should identify compatibility acquisition rather than call it the normal editor convention');
-assert.strictEqual(firstDebug.generationBridge.installed, true, 'debug state should expose that the generated-hand construction bridge is installed');
-assert.strictEqual(firstDebug.generationBridge.correctedCount, 2, 'debug state should count both generated wrappers normalized at construction');
-assert.strictEqual(firstDebug.posteriorY, 0.3, 'debug state should expose canonical posterior Y');
-assert.strictEqual(firstDebug.armLengthWorldY, -0.1, 'debug state should expose the literal authored arm-length Y contribution');
-assert(diagnostics.some(entry => /Resolved gameplay\/Attack Editor free-hand profile/.test(entry.message)), 'resolved species/gender/profile should be visible in the editor Diagnostics panel');
-assert(diagnostics.some(entry => /Idle-arm parity diagnostic/.test(entry.message) && entry.extra?.left?.atLegacyIdleDefault), 'mobile Diagnostics should include hand positions, targets, compatibility acquisition, and ownership state');
+assert.strictEqual(firstDebug.floorSpace.coordinateSpace, 'character-floor-parent', 'debug must name the canonical Full Character Scale coordinate space');
+assert.strictEqual(firstDebug.floorSpace.floorParent, 'LocomotionFloorRoot', 'debug must expose the resolved floor-relative visual parent');
+assert(Math.abs(firstDebug.floorSpace.portraitLiftY - 0.5) < 1e-9, 'debug must expose the portrait +height/2 lift that caused the original bug');
+assert(Math.abs(firstDebug.left.targetFloorLocal.y - 0.2) < 1e-9, 'debug must expose canonical floor-local hand Y');
+assert(Math.abs(firstDebug.left.targetHandParentLocal.y + 0.3) < 1e-9, 'debug must separately expose converted hand-parent-local Y');
+assert(Math.abs(firstDebug.left.verticalArmDropFloor - 0.4) < 1e-9, 'debug should show the actual shoulder-to-hand drop in floor space');
+assert.strictEqual(firstDebug.fullCharacterScaleAppliedByParent, true, 'full-character scale should be recognized as a parent transform, not baked into rig coordinates');
+assert.strictEqual(firstDebug.left.reason, 'claimed-gameplay-idle', 'default generated hand should be claimed from gameplay idle');
+assert(diagnostics.some(entry => /Full Character Scale coordinate space/.test(entry.message)), 'resolved profile diagnostic should explicitly call out Full Character Scale coordinate parity');
+assert(diagnostics.some(entry => /Idle-arm parity diagnostic/.test(entry.message) && entry.extra?.left?.targetFloorLocal), 'mobile diagnostics should include floor/local/world target values');
 
-// Rig-coordinate shoulders are authored against the 0.9 runtime width. A half-width
-// preview like Garanki's 0.45-wide model must therefore halve shoulder X before placement.
-model.userData.portraitModelWidth = 0.45;
-const halfScaleTarget = windowObject.HobunjiProceduralEditorIdleArms.getCanonicalTarget('left', 0);
-assert(Math.abs(halfScaleTarget.x - 0.125) < 1e-9, '0.45-wide preview should scale a 0.25 authored shoulder X by 0.5');
-assert(Math.abs(halfScaleTarget.shoulderScale - 0.5) < 1e-9, 'debug target should expose the shoulder coordinate scale');
-model.userData.portraitModelWidth = 0.9;
+// Full Character Scale must not be manually multiplied into authored local rig coordinates.
+// The adapter may only apply the baked avatar-size ratio (1.0 here); the floor parent's
+// x/y scale remains a hierarchy transform.
+const canonical = windowObject.HobunjiProceduralEditorIdleArms.getCanonicalTarget('left', 0);
+assert(Math.abs(canonical.floorTarget.x - 0.25) < 1e-9, 'parent full-character X scale must not rewrite authored shoulder X');
+assert(Math.abs(canonical.floorTarget.y - 0.2) < 1e-9, 'parent full-character Y scale must not rewrite posterior/arm local Y');
+assert(Math.abs(canonical.handParentTarget.y + 0.3) < 1e-9, 'canonical API should report the converted target under the lifted portrait hierarchy');
 
 // A later render-stage writer can replace scene.onBeforeRender. The polling loop
 // must notice and re-chain it rather than silently stopping after first attach.
@@ -173,38 +206,32 @@ scene.onBeforeRender();
 assert.strictEqual(replacementCalls, 1, 'reattached idle-arm hook should preserve and chain the later editor callback');
 assert(diagnostics.some(entry => /hook was replaced/.test(entry.message)), 'hook replacement/recovery should be visible in mobile Diagnostics');
 
+// Explicit writers still win per side.
 left.position.set(0.7, 0.7, 0.7);
 scene.onBeforeRender();
-assert.deepStrictEqual([left.position.x, left.position.y, left.position.z], [0.7, 0.7, 0.7], 'idle fallback must yield when an explicit animation writer moves a hand');
+assert.deepStrictEqual([left.position.x, left.position.y, left.position.z], [0.7, 0.7, 0.7], 'idle fallback must yield when another animation writer moves a hand');
 assert.strictEqual(windowObject.HobunjiProceduralEditorIdleArms.getDebug().left.owns, false, 'debug state should expose per-side ownership loss');
 
 danceDebug = { enabled: true, armStyle: 'raise-reach' };
 right.position.set(-0.8, 0.9, 0.4);
 scene.onBeforeRender();
-assert.deepStrictEqual([right.position.x, right.position.y, right.position.z], [-0.8, 0.9, 0.4], 'explicit Dance arm styles must remain higher priority than the idle default');
+assert.deepStrictEqual([right.position.x, right.position.y, right.position.z], [-0.8, 0.9, 0.4], 'explicit Dance arm styles must remain higher priority than idle');
 assert.match(windowObject.HobunjiProceduralEditorIdleArms.getDebug().reason, /^dance:/, 'debug state should identify explicit Dance ownership');
 
 danceDebug = { enabled: false, armStyle: 'none' };
 scene.onBeforeRender();
-assert(Math.abs(left.position.y - 0.2) < 1e-9, 'ending an explicit Dance arm pose should reacquire canonical idle ownership immediately');
-assert(Math.abs(right.position.x + 0.3) < 1e-9, 'ending an explicit Dance arm pose should restore the canonical right-hand shoulder X immediately');
+assert(Math.abs(left.position.y + 0.3) < 1e-9, 'ending Dance should reacquire the floor-correct canonical left idle');
+assert(Math.abs(right.position.x + 0.3) < 1e-9, 'ending Dance should restore canonical right shoulder X');
 
 windowObject.HobunjiProceduralEditorIdleArms.logNow();
-assert(diagnostics.some(entry => entry.extra?.hook?.attachCount >= 2), 'manual/current diagnostic dump should report hook integrity plus canonical placement values');
+assert(diagnostics.some(entry => entry.extra?.hook?.attachCount >= 2), 'manual/current diagnostic dump should report hook integrity and canonical placement values');
 
 assert.match(loaderSource, /procedural-editor-idle-arm-parity\.js/, 'procedural editor Dance loader must load the idle-arm parity adapter');
+assert.match(source, /character-floor-parent/, 'idle-arm adapter must explicitly use the Full Character Scale floor-relative coordinate contract');
+assert.match(source, /floorTargetInHandParent/, 'floor-relative canonical target must be converted into the actual generated-hand parent');
 assert.match(source, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'editor idle arms must reuse the canonical posterior resolver');
-assert.match(source, /armLengthHeightPercentOffset/, 'editor idle arms must consume the authored species/gender arm-length setting');
-assert.match(source, /npcId/, 'editor idle arms must use the live NPC id when preview metadata omits species/gender');
-assert.match(source, /npc-database/, 'editor idle arms must support NPC-database identity resolution');
-assert.match(source, /repositoryCommit/, 'NPC identity lookup must stay pinned to the preview repository revision');
-assert.match(source, /side === 'left' \? -x : x/, 'normal generated/editor idle convention must exactly match gameplay left=-handAttachX/right=+handAttachX');
-assert.match(source, /side === 'left' \? x : -x/, 'old reversed editor convention should remain only as compatibility acquisition');
-assert.match(source, /hobunjiGameplaySideHandRootAdd/, 'new generated wrappers must be normalized at their construction boundary, not only after a render frame');
-assert.match(source, /currentWidth \/ authoredWidth/, 'authored shoulder X must scale from the 0.9 runtime basis to the current preview width');
-assert.match(source, /avatar-asset-url/, 'editor idle arms should retain portrait-asset identity recovery as a no-fetch fallback');
-assert.match(source, /hand\.position\.copy\(target\)/, 'editor idle arms must drive the existing generated hand wrapper instead of creating a duplicate hand rig');
+assert.match(source, /armLengthHeightPercentOffset/, 'editor idle arms must consume authored species/gender arm-length setting');
+assert.match(source, /hand\.position\.copy\(target\)/, 'editor idle arms must drive existing generated hand wrappers instead of creating duplicate hands');
 assert.match(source, /explicit-animation-owner/, 'editor idle arms must retain explicit animation ownership diagnostics');
-assert.match(source, /hook was replaced/, 'editor idle arms must self-heal if another editor writer replaces the final hook');
 
-console.log('procedural editor idle arms: construction-side parity + legacy compatibility + NPC identity + scaled shoulders + diagnostics PASS');
+console.log('procedural editor idle arms: Full Character Scale floor-space + portrait-lift regression + ownership diagnostics PASS');
