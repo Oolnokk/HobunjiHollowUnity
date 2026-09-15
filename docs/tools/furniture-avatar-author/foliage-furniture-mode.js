@@ -15,7 +15,9 @@
     await loadClassicScript('foliage-furniture-mode-core.js?v=20260907a');
     // Shared rigid-piece animation math is also used by the live game runtime.
     await loadClassicScript('../../js/furniture-piece-animation-runtime.js?v=20260907a');
-    await loadClassicScript('furniture-decals.js?v=20260907a');
+    // Shared Tankan-script layout mirrors the loading screen's vertical word columns and rotated/flipped OTF.
+    await loadClassicScript('../../js/tankan-script-layout.js?v=20260915tankan8');
+    await loadClassicScript('furniture-decals.js?v=20260915tankan8');
     await loadClassicScript('furniture-decal-catalog.js?v=20260907a');
     await loadClassicScript('furniture-piece-animations.js?v=20260907a');
   })().catch(error => console.error('[Furniture Author Extensions]', error));
