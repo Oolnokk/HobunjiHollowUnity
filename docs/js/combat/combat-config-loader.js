@@ -96,6 +96,7 @@
     ['js/inventory-held-override.js?v=20260913hold1', () => !!window.InventoryHeldOverride],
     ['js/clothing-weaving-system.js?v=20260915enemydodge1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
+    ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/combat/technique-scrolls.js?v=20260910manuals1', () => !!window.TechniqueScrolls],
     ['js/held-seed-action-bridge.js?v=20260813a', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
