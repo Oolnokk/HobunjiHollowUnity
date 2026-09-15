@@ -21,46 +21,69 @@ function makeHand(name, x, y, z = 0) {
     name,
     position: new Vector3(x, y, z),
     parent: null,
+    children: [],
     updateMatrix() {},
     updateMatrixWorld() {},
   };
 }
 
-const left = makeHand('Preview_LeftHand', 0.2, 0.5); // Starts at the old broken shoulder-default position.
-const right = makeHand('Preview_RightHand', -0.2, 0.5); // Starts at the old broken shoulder-default position.
-const identityParent = {
-  userData: { hobunjiCharacterRigScaleState: { species: 'test-species', gender: 'male' } },
-  parent: null,
+// Reproduces the real procedural editor's pre-fix state: generated hands are
+// initialized at the older symmetric handAttachX/Y idle, while species/gender
+// may only be recoverable from the portrait asset filename.
+const left = makeHand('Preview_LeftHand', 0.2, 0.45);
+const right = makeHand('Preview_RightHand', -0.2, 0.45);
+const torso = {
+  name: 'torso',
+  children: [],
+  userData: {},
+  material: { map: { image: { src: 'https://example.test/portraitsprites/torso_test-species_m.png' } } },
 };
 const model = {
   name: 'Preview',
   position: new Vector3(),
-  userData: { portraitModelHeight: 1, portraitModelWidth: 0.9, handAttachY: 0.5 },
-  children: [left, right],
-  parent: identityParent,
-  getObjectByName(name) { return this.children.find(child => child.name === name) || null; },
+  scale: new Vector3(1, 1, 1),
+  userData: { portraitModelHeight: 1, portraitModelWidth: 0.9, handAttachX: -0.2, handAttachY: 0.45 },
+  children: [left, right, torso],
+  parent: null,
+  getObjectByName(name) {
+    let found = null;
+    this.traverse(node => { if (!found && node.name === name) found = node; });
+    return found;
+  },
+  traverse(callback) {
+    const visit = node => {
+      callback(node);
+      for (const child of node.children || []) visit(child);
+    };
+    visit(this);
+  },
   updateMatrixWorld() {},
   localToWorld(point) { return point; },
+  worldToLocal(point) { return point; },
 };
 left.parent = model;
 right.parent = model;
+torso.parent = model;
 
-const scene = { onBeforeRender: null };
-const frames = []; // Captures the adapter's scene-binding loop so the test controls when it attaches.
-let danceDebug = { enabled: false, armStyle: 'none' }; // Lets the test verify explicit procedural arm ownership wins over idle fallback.
-const diagnostics = []; // Captures mobile-visible Diagnostics entries emitted by the adapter.
+const scene = { name: 'Scene', onBeforeRender: null };
+const frames = []; // Captures the adapter's continuous hook-integrity loop so the test can force a later callback replacement.
+let danceDebug = { enabled: false, armStyle: 'none' };
+const diagnostics = [];
 const profile = {
   species: 'test-species',
   gender: 'male',
   posteriorRule: { heightPercentFromFloor: 30 },
   anchors: {
-    leftHandShoulder: { position: { x: 0.2, y: 0.5, z: 0 } },
-    rightHandShoulder: { position: { x: -0.2, y: 0.5, z: 0 } },
+    leftHandShoulder: { position: { x: 0.25, y: 0.6, z: 0 } },
+    rightHandShoulder: { position: { x: -0.3, y: 0.6, z: 0 } },
   },
   anatomy: { armLengthHeightPercentOffset: 10 },
 };
 const windowObject = {
-  HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: { 'test-species::male': profile } },
+  HOBUNJI_ATTACHMENT_RIG_PROFILES: {
+    characters: { 'test-species::male': profile },
+    characterTransformAliases: {},
+  },
   HOBUNJI_ATTACHMENT_RIG_MATH: {
     characterPosteriorY(rule, modelHeight) { return modelHeight * rule.heightPercentFromFloor / 100; },
   },
@@ -77,19 +100,41 @@ const sandbox = {
   requestAnimationFrame(callback) { frames.push(callback); },
   console,
 };
+
 vm.runInNewContext(source, sandbox, { filename: 'procedural-editor-idle-arm-parity.js' });
 assert.strictEqual(windowObject.HobunjiProceduralEditorIdleArms?.installed, true, 'idle-arm parity adapter should expose a debug/sync API');
-assert.strictEqual(frames.length, 1, 'idle-arm parity adapter should schedule its scene-binding loop');
+assert.strictEqual(frames.length, 1, 'idle-arm parity adapter should schedule its hook-integrity loop');
 frames.shift()();
 assert.strictEqual(typeof scene.onBeforeRender, 'function', 'idle-arm parity adapter should attach a final scene pre-render hook');
 
 scene.onBeforeRender();
-assert(Math.abs(left.position.x - 0.2) < 1e-9, 'left idle hand should preserve the canonical left shoulder X');
+assert(Math.abs(left.position.x - 0.25) < 1e-9, 'left idle hand should use the canonical left shoulder X');
 assert(Math.abs(left.position.y - 0.2) < 1e-9, 'left idle hand should use posterior Y minus authored arm length at zero idle phase');
 assert(Math.abs(left.position.z - 0.003) < 1e-9, 'left idle hand should include the shared idle forward/back breathing offset');
-assert(Math.abs(right.position.x + 0.2) < 1e-9, 'right idle hand should preserve the canonical right shoulder X');
+assert(Math.abs(right.position.x + 0.3) < 1e-9, 'right idle hand should use the canonical right shoulder X');
 assert(Math.abs(right.position.y - (0.2 + 0.0045 * Math.sin(0.28))) < 1e-9, 'right idle hand should include the shared phase-split idle breathing offset');
 assert(Math.abs(right.position.z - (0.003 * Math.cos(0.28))) < 1e-9, 'right idle hand should include the shared phase-split idle depth offset');
+
+const firstDebug = windowObject.HobunjiProceduralEditorIdleArms.getDebug();
+assert.strictEqual(firstDebug.identitySource, 'avatar-asset-url', 'portrait asset filenames should recover species/gender when editor model metadata does not publish identity');
+assert.strictEqual(firstDebug.left.atLegacyIdleDefault, true, 'old handAttachX/Y idle should be recognized as a default that parity is allowed to replace');
+assert.strictEqual(firstDebug.left.reason, 'claimed-legacy-idle', 'debug state should say when parity claimed the legacy editor idle');
+assert.strictEqual(firstDebug.posteriorY, 0.3, 'debug state should expose canonical posterior Y');
+assert.strictEqual(firstDebug.armLengthWorldY, -0.1, 'debug state should expose the literal authored arm-length Y contribution');
+assert(diagnostics.some(entry => /Resolved gameplay\/Attack Editor free-hand profile/.test(entry.message)), 'resolved species/gender/profile should be visible in the editor Diagnostics panel');
+assert(diagnostics.some(entry => /Idle-arm parity diagnostic/.test(entry.message) && entry.extra?.left?.atLegacyIdleDefault), 'mobile Diagnostics should include hand positions, targets, legacy-idle acquisition, and ownership state');
+
+// The editor can install later render-stage writers after this adapter. If one
+// replaces scene.onBeforeRender, the polling loop must notice and re-chain it
+// rather than silently stopping after the initial "hook attached" message.
+let replacementCalls = 0;
+scene.onBeforeRender = () => { replacementCalls += 1; };
+assert(frames.length >= 1, 'hook-integrity loop should continue after initial attach');
+frames.shift()();
+assert.strictEqual(scene.onBeforeRender.__hobunjiProceduralEditorIdleArms, true, 'idle-arm hook should automatically reattach after another writer replaces it');
+scene.onBeforeRender();
+assert.strictEqual(replacementCalls, 1, 'reattached idle-arm hook should preserve and chain the later editor callback');
+assert(diagnostics.some(entry => /hook was replaced/.test(entry.message)), 'hook replacement/recovery should be visible in mobile Diagnostics');
 
 left.position.set(0.7, 0.7, 0.7); // Simulates another procedural authoring writer taking left-hand ownership after the default pass.
 scene.onBeforeRender();
@@ -105,13 +150,18 @@ assert.match(windowObject.HobunjiProceduralEditorIdleArms.getDebug().reason, /^d
 danceDebug = { enabled: false, armStyle: 'none' };
 scene.onBeforeRender();
 assert(Math.abs(left.position.y - 0.2) < 1e-9, 'ending an explicit Dance arm pose should reacquire canonical idle ownership immediately');
-assert(Math.abs(right.position.x + 0.2) < 1e-9, 'ending an explicit Dance arm pose should restore the canonical right-hand shoulder X immediately');
-assert(diagnostics.some(entry => /gameplay\/Attack Editor free-hand placement/.test(entry.message)), 'adapter should report its resolved idle-arm rule through the editor Diagnostics panel');
+assert(Math.abs(right.position.x + 0.3) < 1e-9, 'ending an explicit Dance arm pose should restore the canonical right-hand shoulder X immediately');
+
+windowObject.HobunjiProceduralEditorIdleArms.logNow();
+assert(diagnostics.some(entry => entry.extra?.hook?.attachCount >= 2), 'manual/current diagnostic dump should report hook integrity plus canonical placement values');
 
 assert.match(loaderSource, /procedural-editor-idle-arm-parity\.js/, 'procedural editor Dance loader must load the idle-arm parity adapter');
 assert.match(source, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'editor idle arms must reuse the canonical posterior resolver');
 assert.match(source, /armLengthHeightPercentOffset/, 'editor idle arms must consume the authored species/gender arm-length setting');
+assert.match(source, /legacyEditorIdleTarget/, 'editor idle arms must recognize the procedural editor legacy handAttach idle as acquireable default state');
+assert.match(source, /avatar-asset-url/, 'editor idle arms must recover missing identity from loaded portrait asset paths');
 assert.match(source, /hand\.position\.copy\(target\)/, 'editor idle arms must drive the existing generated hand wrapper instead of creating a duplicate hand rig');
 assert.match(source, /explicit-animation-owner/, 'editor idle arms must retain explicit animation ownership diagnostics');
+assert.match(source, /hook was replaced/, 'editor idle arms must self-heal if another editor writer replaces the final hook');
 
-console.log('procedural editor idle arms: canonical shoulder/posterior/arm-length fallback + ownership parity PASS');
+console.log('procedural editor idle arms: legacy-idle acquisition + canonical parity + mobile diagnostics + hook recovery PASS');
