@@ -13,8 +13,8 @@ document.write('<script src="js/folder-save-primary.js?v=20260914a"><\/script>')
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20260914a"><\/script>');
-document.write('<script src="js/folder-save-quit-guard.js?v=20260914a"><\/script>');
-document.write('<script src="js/folder-save-debug-ui.js?v=20260914a"><\/script>');
+document.write('<script src="js/folder-save-quit-guard.js?v=20260915savev3a"><\/script>');
+document.write('<script src="js/folder-save-debug-ui.js?v=20260915savev3a"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260904a"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');
 document.write('<script src="js/save-startup-gate.js?v=20260910review1"><\/script>');
