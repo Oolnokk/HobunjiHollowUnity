@@ -1,14 +1,15 @@
 (() => {
   'use strict';
-  if (Number(window.NpcSocialSeating?.version) >= 1) return;
+  if (Number(window.NpcSocialSeating?.version) >= 2) return;
 
-  const activities = window.NpcActivities; // Existing resolver being decorated rather than replaced.
-  const scheduling = window.NpcScheduling; // Existing station registry remains authoritative for valid seats.
+  const activities = window.NpcActivities;
+  const scheduling = window.NpcScheduling;
   if (!activities?.resolveDestination || !scheduling?.findStationsByRole) return;
 
   const RELATION_TYPES = Object.freeze(['partner', 'family', 'friend']);
-  const lastDecisionByNpc = new Map(); // Mobile-friendly debug history for the most recent reseat decision.
-  let relationCacheKey = '';
+  const lastDecisionByNpc = new Map();
+  const decisionCacheByNpc = new Map();
+  let relationCacheSource = null;
   let relationCache = new Map();
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -28,8 +29,7 @@
 
   function relationMap() {
     const relations = socialConfig().relationships || [];
-    const key = JSON.stringify(relations);
-    if (key === relationCacheKey) return relationCache;
+    if (relations === relationCacheSource) return relationCache;
     const next = new Map();
     for (const relation of relations) {
       const type = String(relation?.type || '');
@@ -37,13 +37,13 @@
       if (!RELATION_TYPES.includes(type) || members.length < 2) continue;
       for (let i = 0; i < members.length; i++) {
         for (let j = i + 1; j < members.length; j++) {
-          const key2 = pairKey(members[i], members[j]);
-          if (!next.has(key2)) next.set(key2, new Set());
-          next.get(key2).add(type);
+          const key = pairKey(members[i], members[j]);
+          if (!next.has(key)) next.set(key, new Set());
+          next.get(key).add(type);
         }
       }
     }
-    relationCacheKey = key;
+    relationCacheSource = relations;
     relationCache = next;
     return next;
   }
@@ -108,7 +108,32 @@
     return { weights, daypart, activity };
   }
 
-  function debugNpcSnapshots(area, selfId) {
+  // Runtime path: use the already-exposed live walker array in one O(N) pass.
+  // The old implementation called listNpcIds() and then npcSnapshot(id), whose
+  // npcSnapshot itself did npcWalkers.find(...). Because schedule resolution is
+  // called for every NPC every frame, that became an accidental O(N^3) hot path.
+  // The debug-tools fallback stays solely for headless tests/older boot order.
+  function liveNpcSnapshots(area, selfId) {
+    const walkers = Array.isArray(window._npcWalkers) ? window._npcWalkers : null;
+    if (walkers) {
+      const out = [];
+      for (const walker of walkers) {
+        const npcId = walker?.rec?.id;
+        if (!npcId || npcId === selfId || walker.area !== area) continue;
+        out.push({
+          npcId,
+          snap: {
+            area: walker.area,
+            state: walker.state,
+            x: walker.root?.position?.x,
+            z: walker.root?.position?.z,
+            currentScheduleTarget: walker.currentScheduleTarget ? { ...walker.currentScheduleTarget } : null,
+          },
+        });
+      }
+      return out;
+    }
+
     const debug = window.__farmDebugTools;
     if (!debug?.listNpcIds || !debug?.npcSnapshot) return [];
     const out = [];
@@ -136,9 +161,25 @@
     return { x: numberOr(station?.c, 0) + 0.5, z: numberOr(station?.r, 0) + 0.5 };
   }
 
-  function isOccupied(station, snapshots) {
-    const stationId = station?.stationId || station?.id;
+  function stationIdOf(station) {
+    return station?.stationId || station?.id || null;
+  }
+
+  function playerOccupiedStationId(area) {
+    const furniture = window.__hobunjiFurnitureDebug;
+    const sit = furniture?.sitState;
+    if (!sit || sit.phase === 'out') return null;
+    const playerArea = furniture?.getCurrentArea?.() || area || null;
+    if (!playerArea || (area && playerArea !== area)) return null;
+    const col = Number(sit.col), row = Number(sit.row);
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return null;
+    return `furniture_chair_${playerArea}_${col}_${row}`;
+  }
+
+  function isOccupied(station, snapshots, playerSeatId) {
+    const stationId = stationIdOf(station);
     if (!stationId) return false;
+    if (playerSeatId && stationId === playerSeatId) return true;
     return snapshots.some(entry => entry.snap?.currentScheduleTarget?.stationId === stationId);
   }
 
@@ -171,19 +212,15 @@
     const role = roleRequest?.role || 'sit';
     const area = roleRequest?.area;
     let candidates = scheduling.findStationsByRole(role, area ? { area } : {}) || [];
-    // A fixed exact-chair migration or always-reactive personal preference
-    // deliberately means "any seat here". If a semantic sub-role has no
-    // candidates, never broaden it silently; that would let work/story roles
-    // drift into unrelated chairs.
     if (!candidates.length && role === 'sit') {
       candidates = scheduling.findStationsByRole('sit', area ? { area } : {}) || [];
     }
     return candidates.filter(targetIsSeat);
   }
 
-  function scoreCandidate(station, rec, beat, callerCtx, snapshots) {
+  function scoreCandidate(station, rec, beat, callerCtx, snapshots, scoring) {
     const cfg = seatingConfig();
-    const { weights, daypart, activity } = effectiveRelationshipWeights(rec, beat, callerCtx);
+    const { weights, daypart, activity } = scoring;
     const relationRadius = Math.max(0.1, numberOr(cfg.relationRadiusTiles, 5));
     const falloff = Math.max(0.1, numberOr(cfg.distanceFalloffTiles, relationRadius));
     const point = seatPoint(station);
@@ -262,32 +299,28 @@
     }
 
     const noiseScale = Math.max(0, numberOr(cfg.deterministicTieNoise, 0));
-    const stationId = station?.stationId || station?.id || `${station?.c},${station?.r}`;
+    const stationId = stationIdOf(station) || `${station?.c},${station?.r}`;
     const noise = dailySigned(rec?.id, currentDay(callerCtx), `social-seat:station:${stationId}`) * noiseScale;
     score += noise;
 
     return { station, score, reasons, weights, daypart, activity };
   }
 
-  function reseat(result, beat, callerCtx) {
-    if (result?.status !== activities.STATUS?.READY || !result.target) return result;
-    const cfg = seatingConfig();
-    if (cfg.enabled === false) return result;
+  function reseatWithRequest(result, beat, callerCtx, request) {
     const rec = callerCtx?.rec;
-    if (!rec?.id) return result;
-
-    const request = seatRoleRequest(rec, beat, result);
-    if (!request) return result;
     let candidates = candidateSeats(request);
     if (candidates.length < 2) return result;
 
-    const snapshots = debugNpcSnapshots(request.area || result.target.area, rec.id);
-    const free = candidates.filter(station => !isOccupied(station, snapshots));
+    const area = request.area || result.target.area;
+    const snapshots = liveNpcSnapshots(area, rec.id);
+    const playerSeatId = playerOccupiedStationId(area);
+    const free = candidates.filter(station => !isOccupied(station, snapshots, playerSeatId));
     if (free.length) candidates = free;
     if (!candidates.length) return result;
 
-    const scored = candidates.map(station => scoreCandidate(station, rec, beat, callerCtx, snapshots));
-    scored.sort((a, b) => b.score - a.score || String(a.station.stationId || a.station.id).localeCompare(String(b.station.stationId || b.station.id)));
+    const scoring = effectiveRelationshipWeights(rec, beat, callerCtx);
+    const scored = candidates.map(station => scoreCandidate(station, rec, beat, callerCtx, snapshots, scoring));
+    scored.sort((a, b) => b.score - a.score || String(stationIdOf(a.station)).localeCompare(String(stationIdOf(b.station))));
     const chosen = scored[0];
     if (!chosen?.station) return result;
 
@@ -295,7 +328,7 @@
     const replacement = {
       ...originalTarget,
       ...chosen.station,
-      stationId: chosen.station.stationId || chosen.station.id,
+      stationId: stationIdOf(chosen.station),
       activity: originalTarget.activity,
       routeId: originalTarget.routeId || null,
       socialSeatSource: request.source,
@@ -307,15 +340,16 @@
       npcId: rec.id,
       source: request.source,
       role: request.role,
-      area: request.area || replacement.area,
+      area: area || replacement.area,
       beatId: beat?.id || null,
       activity: beat?.activity || null,
       daypart: chosen.daypart,
       relationshipWeights: { ...chosen.weights },
       originalStationId: originalTarget.stationId || null,
       chosenStationId: replacement.stationId,
+      playerOccupiedStationId: playerSeatId,
       candidates: scored.map(entry => ({
-        stationId: entry.station.stationId || entry.station.id,
+        stationId: stationIdOf(entry.station),
         c: entry.station.c,
         r: entry.station.r,
         score: Math.round(entry.score * 100) / 100,
@@ -326,10 +360,72 @@
     return { ...result, target: replacement };
   }
 
+  function reseat(result, beat, callerCtx) {
+    if (result?.status !== activities.STATUS?.READY || !result.target) return result;
+    const cfg = seatingConfig();
+    if (cfg.enabled === false) return result;
+    const rec = callerCtx?.rec;
+    if (!rec?.id) return result;
+    const request = seatRoleRequest(rec, beat, result);
+    if (!request) return result;
+    return reseatWithRequest(result, beat, callerCtx, request);
+  }
+
+  function runtimeNowMs() {
+    return Number(window.performance?.now?.()) || Date.now();
+  }
+
+  function reevaluateMs() {
+    const seconds = Math.max(0.05, numberOr(seatingConfig().reevaluateSeconds, 1));
+    return seconds * 1000;
+  }
+
+  function cacheKeyFor(result, beat, callerCtx, request) {
+    const target = result?.target || {};
+    const area = request?.area || target.area || '';
+    return [
+      beat?.id || '', beat?.activity || '', request?.source || '', request?.role || '', area,
+      stationIdOf(target) || '', target.c ?? '', target.r ?? '',
+      currentDay(callerCtx), daypartForMinutes(currentNowMinutes(callerCtx)),
+      playerOccupiedStationId(area) || '',
+    ].join('|');
+  }
+
+  function reseatCached(result, beat, callerCtx) {
+    if (result?.status !== activities.STATUS?.READY || !result.target) return result;
+    if (seatingConfig().enabled === false) return result;
+    const rec = callerCtx?.rec;
+    if (!rec?.id) return result;
+    const request = seatRoleRequest(rec, beat, result);
+    if (!request) return result;
+
+    // Headless regression tests and very-early boot do not expose the live
+    // walker array. Keep those calls uncached so mocked occupancy changes are
+    // observed immediately; the real game always exposes window._npcWalkers.
+    if (!Array.isArray(window._npcWalkers)) {
+      return reseatWithRequest(result, beat, callerCtx, request);
+    }
+
+    const key = cacheKeyFor(result, beat, callerCtx, request);
+    const now = runtimeNowMs();
+    const cached = decisionCacheByNpc.get(rec.id);
+    if (cached && cached.key === key && now < cached.expiresAt) {
+      return { ...result, target: { ...cached.target } };
+    }
+
+    const resolved = reseatWithRequest(result, beat, callerCtx, request) || result;
+    decisionCacheByNpc.set(rec.id, {
+      key,
+      expiresAt: now + reevaluateMs(),
+      target: { ...(resolved.target || result.target) },
+    });
+    return resolved;
+  }
+
   const originalResolveDestination = activities.resolveDestination.bind(activities);
   activities.resolveDestination = function resolveDestinationWithSocialSeating(beat, callerCtx) {
     const result = originalResolveDestination(beat, callerCtx);
-    try { return reseat(result, beat, callerCtx) || result; }
+    try { return reseatCached(result, beat, callerCtx) || result; }
     catch (error) {
       window.__farmLog?.(`[social seating] ${callerCtx?.rec?.id || 'npc'} reseat failed: ${error?.message || error}`, 'warn');
       return result;
@@ -341,12 +437,19 @@
     return decision ? JSON.parse(JSON.stringify(decision)) : null;
   }
 
+  function invalidateCache(npcId = null) {
+    if (npcId) decisionCacheByNpc.delete(String(npcId));
+    else decisionCacheByNpc.clear();
+    relationCacheSource = null;
+  }
+
   window.NpcSocialSeating = {
-    version: 1,
+    version: 2,
     relationTags: (a, b) => [...relationTags(a, b)],
     effectiveRelationshipWeights,
     debugSnapshot,
     reseat,
+    invalidateCache,
   };
 
   if (window.__farmDebugTools) {
