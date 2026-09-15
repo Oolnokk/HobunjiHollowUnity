@@ -1,34 +1,47 @@
 (() => {
   'use strict';
 
-  if (Number(window.FavorPopupPointsBridge?.version) >= 4) return;
+  if (Number(window.FavorPopupPointsBridge?.version) >= 5) return;
 
-  const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the shared HUD heart asset from this runtime module in both game and editor paths.
-  const HEART_URL = MODULE_SRC ? new URL('../assets/hud/generic_icons/icon_heart.png', MODULE_SRC).href : 'assets/hud/generic_icons/icon_heart.png'; // Used as the one relationship popup heart image source.
-  const RAPPORT_HEART_COLOR = '#ffd84d'; // Used for temporary Rapport changes.
-  const FAVOR_HEART_COLOR = '#ff8fbd'; // Used for permanent Favor changes.
-  const RELATIONSHIP_GAIN_COLOR = '#66d96f'; // Used by positive relationship deltas.
-  const RELATIONSHIP_LOSS_COLOR = '#ff5b5b'; // Used by negative relationship deltas.
-  const RELATIONSHIP_RENDER_ORDER = 1200; // Used to keep relationship text in the same overlay band as WorldPopupText.
-  const RELATIONSHIP_ALPHA_TEST = 0.001; // Matches the working PNG-plane material path and force-discards fully transparent texels before blending.
-  const POPUP_WIDTH = 360; // Used by the relationship texture canvas.
-  const POPUP_HEIGHT = 112; // Used by the relationship texture canvas.
-  const ICON_SIZE = 76; // Used by the relationship heart inside the canvas.
-  const DEFAULT_WORLD_HEIGHT = 0.36; // Used when Float+ size metadata is unavailable.
-  const DEFAULT_LIFETIME_MS = 1150; // Used when Float+ timing metadata is unavailable.
-  const relationshipPopups = []; // Used as the v4-owned active relationship popup list.
-  const debugState = { hardenedPopups: 0, lastHardenedPopup: null, lastAnchor: null, lastDisposedReason: null, depsCaptured: false }; // Used by mobile/editor diagnostics.
-  let deps = null; // Used as the current WorldPopupText Three.js/camera dependency bag.
-  let heartImagePromise = null; // Used to load and reuse icon_heart.png once.
+  const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the shared HUD heart asset in game and editor paths.
+  const HEART_URL = MODULE_SRC ? new URL('../assets/hud/generic_icons/icon_heart.png', MODULE_SRC).href : 'assets/hud/generic_icons/icon_heart.png';
+  const POPUP_FONT_FAMILY = "'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace";
+  const RAPPORT_HEART_COLOR = '#ffd84d';
+  const FAVOR_HEART_COLOR = '#ff8fbd';
+  const RELATIONSHIP_GAIN_COLOR = '#66d96f';
+  const RELATIONSHIP_LOSS_COLOR = '#ff5b5b';
+  const HEART_RENDER_ORDER = 1211; // Matches AmbientDialogue's chathead plane.
+  const VALUE_RENDER_ORDER = 1210; // Matches AmbientDialogue's text plane.
+  const RELATIONSHIP_ALPHA_TEST = 0.001; // Same tiny cutout threshold used by the working PNG-plane material path.
+  const DEFAULT_WORLD_HEIGHT = 0.36;
+  const DEFAULT_LIFETIME_MS = 1150;
+  const HEART_WORLD_RATIO = 0.90; // Heart is slightly taller than the signed number, matching the old 76px/68px proportions.
+  const VALUE_WORLD_RATIO = 0.78;
+  const CHATHEAD_GAP_RATIO = 0.14; // Same proportional gap used by AmbientDialogue's chathead + text layout.
+  const POP_RIGHT_RATIO = 1.15; // Camera-screen-right travel measured from Float+ world height.
+  const POP_UP_RATIO = 0.95; // Camera-screen-up travel measured from Float+ world height.
+  const START_GROUP_SCALE = 0.58;
+  const END_GROUP_SCALE = 1.32;
+  const relationshipPopups = [];
+  const debugState = {
+    hardenedPopups: 0,
+    lastHardenedPopup: null,
+    lastAnchor: null,
+    lastDisposedReason: null,
+    lastLayout: null,
+    depsCaptured: false,
+  };
+  let deps = null;
+  let heartImagePromise = null;
 
   function convertFavorHeartDelta(kind, amount) {
     if (kind !== 'favor') return amount;
-    const points = window.NpcFavorBalance?.heartsToFavorPoints?.(amount); // Used to preserve the bridge's Favor point display contract.
+    const points = window.NpcFavorBalance?.heartsToFavorPoints?.(amount);
     return Number.isFinite(Number(points)) ? Number(points) : amount;
   }
 
   function signedRelationshipAmount(amount) {
-    const value = Math.round((Number(amount) || 0) * 10) / 10; // Used to retain the sign while keeping popup values compact.
+    const value = Math.round((Number(amount) || 0) * 10) / 10;
     return Object.is(value, -0) ? 0 : value;
   }
 
@@ -43,7 +56,7 @@
   function loadHeartImage() {
     if (heartImagePromise) return heartImagePromise;
     heartImagePromise = new Promise(resolve => {
-      const image = new Image(); // Used to paint the exact repository heart PNG into relationship popup textures.
+      const image = new Image();
       image.onload = () => resolve(image);
       image.onerror = () => resolve(null);
       image.src = HEART_URL;
@@ -51,61 +64,45 @@
     return heartImagePromise;
   }
 
-  function tintHeartCanvas(image, color) {
-    const canvas = document.createElement('canvas'); // Used as an alpha-preserving recolor buffer for the heart icon.
-    canvas.width = ICON_SIZE;
-    canvas.height = ICON_SIZE;
-    const context = canvas.getContext('2d'); // Used to recolor every opaque heart pixel while retaining transparency.
-    context.clearRect(0, 0, ICON_SIZE, ICON_SIZE);
-    context.drawImage(image, 0, 0, ICON_SIZE, ICON_SIZE);
-    context.globalCompositeOperation = 'source-in';
-    context.fillStyle = color;
-    context.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
-    context.globalCompositeOperation = 'source-over';
-    return canvas;
-  }
-
   function rootScene(root) {
-    let node = root; // Used to find the live Three.js scene that currently owns this NPC/avatar root.
+    let node = root;
     while (node && !node.isScene) node = node.parent;
     return node || null;
   }
 
   function avatarRootWithPortraitMetadata(root) {
-    let avatarRoot = null; // Used as the transform that owns portrait height/placement metadata.
+    let avatarRoot = null;
     root?.traverse?.(child => {
       if (!avatarRoot && Number.isFinite(Number(child.userData?.portraitModelHeight))) avatarRoot = child;
     });
     return avatarRoot;
   }
 
-  function relationshipHeadAnchorWorld(root) {
-    const THREE = deps?.THREE || window.THREE; // Used to build the local head point before transforming it into world space.
+  function relationshipOriginWorld(root) {
+    const THREE = deps?.THREE || window.THREE;
     if (!THREE || !root) return null;
-    const avatarRoot = avatarRootWithPortraitMetadata(root); // Used to avoid a one-time Box3 world-Y estimate that can drift as the character root transforms.
+    const avatarRoot = avatarRootWithPortraitMetadata(root);
     if (avatarRoot?.localToWorld) {
-      const height = Number(avatarRoot.userData.portraitModelHeight); // Used as the exact authored PNG-plane world height.
-      const placementRatioRaw = Number(avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5); // Used to reproduce WorldPopupText's portrait vertical placement math.
+      const height = Number(avatarRoot.userData.portraitModelHeight);
+      const placementRatioRaw = Number(avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5);
       const placementRatio = Number.isFinite(placementRatioRaw) ? placementRatioRaw : 0.5;
-      const localTopY = (placementRatio - 0.5) * height + height * 0.5; // Used as the avatar-local top edge: the same center offset plus half-height used by the core popup system.
-      const localGap = Math.max(0.04, height * 0.07); // Used as a scale-aware gap above the visible portrait instead of a cached world-space offset.
-      const point = new THREE.Vector3(0, localTopY + localGap, 0); // Used as the stable above-head point that follows every parent transform.
+      const localCenterY = (placementRatio - 0.5) * height;
+      const localOriginY = localCenterY + height * 0.18; // Starts inside the upper part of the portrait, then visibly pops out of the avatar.
+      const point = new THREE.Vector3(0, localOriginY, 0);
       avatarRoot.updateWorldMatrix?.(true, false);
       avatarRoot.localToWorld(point);
       debugState.lastAnchor = {
-        source: 'portrait-local-top',
+        source: 'portrait-local-upper-body',
         height,
         placementRatio,
-        localTopY,
-        localGap,
+        localOriginY,
         world: { x: point.x, y: point.y, z: point.z },
         at: Date.now(),
       };
       return point;
     }
-    const fallback = window.WorldPopupText?.avatarCentroidWorld?.(root); // Used only for roots that do not expose normal portrait metadata.
+    const fallback = window.WorldPopupText?.avatarCentroidWorld?.(root);
     if (!fallback) return null;
-    fallback.y += 0.45;
     debugState.lastAnchor = {
       source: 'centroid-fallback',
       world: { x: fallback.x, y: fallback.y, z: fallback.z },
@@ -114,43 +111,152 @@
     return fallback;
   }
 
-  function hardenRelationshipPopupEvent(event) {
-    const plane = event?.plane; // Used to keep relationship canvases out of the inverted-shell outline pass.
-    if (!plane) return event;
-    plane.userData ||= {};
+  function canvasTexture(canvas) {
+    const THREE = deps?.THREE || window.THREE;
+    const texture = new THREE.CanvasTexture(canvas);
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in texture && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function makeTransparentPart(canvas, aspect, renderOrder) {
+    const THREE = deps?.THREE || window.THREE;
+    const texture = canvasTexture(canvas);
+    const geometry = new THREE.PlaneGeometry(aspect, 1);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      alphaTest: RELATIONSHIP_ALPHA_TEST,
+      depthTest: false,
+      depthWrite: false,
+      fog: false,
+      side: THREE.DoubleSide,
+    });
+    const plane = new THREE.Mesh(geometry, material);
+    plane.renderOrder = renderOrder;
+    plane.frustumCulled = false;
+    plane.userData.isBillboard = true;
     plane.userData.noOutline = true;
     plane.userData.hobunjiWorldTextOverlay = true;
     plane.layers?.disable?.(1);
     plane.castShadow = false;
     plane.receiveShadow = false;
-    const material = event.material || plane.material; // Used to preserve transparent world-text rendering through other runtime passes.
-    if (material) {
+    return { canvas, texture, geometry, material, plane };
+  }
+
+  function makeHeartPart(image, color) {
+    const canvas = document.createElement('canvas'); // Mirrors AmbientDialogue's square chathead canvas, with the portrait replaced by a heart.
+    canvas.width = 200;
+    canvas.height = 200;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (image) {
+      const sourceW = Math.max(1, Number(image.naturalWidth || image.width) || 1);
+      const sourceH = Math.max(1, Number(image.naturalHeight || image.height) || 1);
+      const drawW = 164;
+      const drawH = drawW * sourceH / sourceW;
+      const x = (canvas.width - drawW) * 0.5;
+      const y = (canvas.height - drawH) * 0.5;
+      context.drawImage(image, x, y, drawW, drawH);
+      context.globalCompositeOperation = 'source-in';
+      context.fillStyle = color;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.globalCompositeOperation = 'source-over';
+    } else {
+      context.font = '700 150px serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillStyle = color;
+      context.fillText('♥', canvas.width / 2, canvas.height / 2 + 4);
+    }
+    return makeTransparentPart(canvas, 1, HEART_RENDER_ORDER);
+  }
+
+  function makeValuePart(label, color) {
+    const canvas = document.createElement('canvas'); // Mirrors AmbientDialogue's independent text plane instead of packing icon + text into one rectangle.
+    const context = canvas.getContext('2d');
+    const fontPx = 68;
+    context.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
+    canvas.width = Math.max(96, Math.ceil(context.measureText(label).width + 30));
+    canvas.height = 92;
+    context.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
+    context.textAlign = 'left';
+    context.textBaseline = 'middle';
+    context.lineJoin = 'round';
+    context.lineWidth = 9;
+    context.strokeStyle = 'rgba(15,10,8,.92)';
+    context.strokeText(label, 15, canvas.height / 2);
+    context.fillStyle = color;
+    context.fillText(label, 15, canvas.height / 2);
+    return makeTransparentPart(canvas, canvas.width / canvas.height, VALUE_RENDER_ORDER);
+  }
+
+  function layoutLikeChathead(group, heartPart, valuePart, worldHeight) {
+    const heartWorldSize = worldHeight * HEART_WORLD_RATIO;
+    const valueWorldHeight = worldHeight * VALUE_WORLD_RATIO;
+    heartPart.plane.scale.setScalar(heartWorldSize);
+    valuePart.plane.scale.setScalar(valueWorldHeight);
+    const valueWidth = (valuePart.canvas.width / valuePart.canvas.height) * valueWorldHeight;
+    const gap = heartWorldSize * CHATHEAD_GAP_RATIO;
+    const totalWidth = heartWorldSize + gap + valueWidth;
+    heartPart.plane.position.x = -totalWidth / 2 + heartWorldSize / 2;
+    valuePart.plane.position.x = -totalWidth / 2 + heartWorldSize + gap + valueWidth / 2;
+    group.add(heartPart.plane, valuePart.plane);
+    debugState.lastLayout = {
+      type: 'chathead-style-heart-plus-value',
+      heartWorldSize,
+      valueWorldHeight,
+      valueWidth,
+      gap,
+      totalWidth,
+      at: Date.now(),
+    };
+  }
+
+  function hardenRelationshipPopupEvent(event) {
+    const parts = [event?.heartPart, event?.valuePart].filter(Boolean);
+    for (const part of parts) {
+      const { plane, material, texture } = part;
+      plane.userData ||= {};
+      plane.userData.noOutline = true;
+      plane.userData.hobunjiWorldTextOverlay = true;
+      plane.layers?.disable?.(1);
+      plane.castShadow = false;
+      plane.receiveShadow = false;
       material.transparent = true;
       material.alphaTest = RELATIONSHIP_ALPHA_TEST;
       material.depthTest = false;
       material.depthWrite = false;
       material.fog = false;
       material.needsUpdate = true;
+      texture.needsUpdate = true;
     }
-    const texture = event.texture || material?.map; // Used to force the just-painted canvas upload before the final overlay pass.
-    if (texture) texture.needsUpdate = true;
     debugState.hardenedPopups += 1;
     debugState.lastHardenedPopup = {
       kind: event.kind,
       value: event.value,
-      renderOrder: Number(plane.renderOrder) || 0,
-      layerMask: Number(plane.layers?.mask) || 0,
-      alphaTest: Number(material?.alphaTest) || 0,
+      layout: 'chathead-style-heart-plus-value',
+      childPlanes: parts.length,
+      alphaTest: RELATIONSHIP_ALPHA_TEST,
       at: Date.now(),
     };
     return event;
   }
 
+  function disposePart(part) {
+    part?.plane?.parent?.remove(part.plane);
+    part?.geometry?.dispose?.();
+    part?.material?.dispose?.();
+    part?.texture?.dispose?.();
+  }
+
   function disposeRelationshipPopup(event, reason = 'expired') {
-    event?.plane?.parent?.remove(event.plane);
-    event?.geometry?.dispose?.();
-    event?.material?.dispose?.();
-    event?.texture?.dispose?.();
+    event?.group?.parent?.remove(event.group);
+    disposePart(event?.heartPart);
+    disposePart(event?.valuePart);
     debugState.lastDisposedReason = reason;
   }
 
@@ -159,101 +265,94 @@
   }
 
   async function spawnRelationshipPopup(root, kind, amount, options = {}) {
-    const api = window.WorldPopupText; // Used as the shared popup owner for settings and avatar fallback anchoring.
-    const THREE = deps?.THREE || window.THREE; // Used to build the relationship billboard in the same Three.js instance as the game/editor scene.
-    const rawAmount = kind === 'favor' && !options.amountIsPoints ? convertFavorHeartDelta(kind, amount) : amount; // Used to preserve game Favor-point conversion while letting the editor preview literal point values.
-    const value = signedRelationshipAmount(rawAmount); // Used as the signed number drawn in the popup.
+    const api = window.WorldPopupText;
+    const THREE = deps?.THREE || window.THREE;
+    const rawAmount = kind === 'favor' && !options.amountIsPoints ? convertFavorHeartDelta(kind, amount) : amount;
+    const value = signedRelationshipAmount(rawAmount);
     if (!api || !THREE || !root || !value) return null;
-    const scene = rootScene(root); // Used to reject detached NPC roots instead of drawing at the origin.
+    const scene = rootScene(root);
     if (!scene) return null;
     const image = await loadHeartImage();
     if (!root.parent || rootScene(root) !== scene) return null;
 
-    const canvas = document.createElement('canvas'); // Used as the combined heart + outlined signed-number texture.
-    canvas.width = POPUP_WIDTH;
-    canvas.height = POPUP_HEIGHT;
-    const context = canvas.getContext('2d'); // Used to paint relationship iconography and number text.
-    const iconY = (POPUP_HEIGHT - ICON_SIZE) * 0.5; // Used to vertically center the heart beside the number.
-    const heartColor = relationshipHeartColor(kind); // Used so Rapport is yellow while Favor is pink.
-    const numberColor = relationshipNumberColor(value); // Used so gains are green while losses are red.
-    if (image) context.drawImage(tintHeartCanvas(image, heartColor), 16, iconY, ICON_SIZE, ICON_SIZE);
-    const label = `${value > 0 ? '+' : '-'}${Math.abs(value)}`; // Used as the compact signed relationship delta.
-    context.font = "900 68px 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace";
-    context.textAlign = 'left';
-    context.textBaseline = 'middle';
-    context.lineJoin = 'round';
-    context.lineWidth = 9;
-    context.strokeStyle = 'rgba(15,10,8,.92)';
-    context.strokeText(label, 108, POPUP_HEIGHT / 2);
-    context.fillStyle = numberColor;
-    context.fillText(label, 108, POPUP_HEIGHT / 2);
+    const heartColor = relationshipHeartColor(kind);
+    const numberColor = relationshipNumberColor(value);
+    const label = `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
+    const worldHeight = Math.max(0.18, Number(api.defaults?.floatPlus?.worldHeight) || DEFAULT_WORLD_HEIGHT);
+    const heartPart = makeHeartPart(image, heartColor);
+    const valuePart = makeValuePart(label, numberColor);
+    const group = new THREE.Group(); // Same composition model as AmbientDialogue: icon plane + text plane inside one billboarded group.
+    group.name = `relationship_popup_${kind}`;
+    layoutLikeChathead(group, heartPart, valuePart, worldHeight);
+    group.scale.setScalar(START_GROUP_SCALE);
 
-    const texture = new THREE.CanvasTexture(canvas); // Used by the actual world-space relationship plane.
-    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.LinearFilter;
-    texture.needsUpdate = true;
-    const aspect = POPUP_WIDTH / POPUP_HEIGHT; // Used to preserve the texture's authored proportions.
-    const geometry = new THREE.PlaneGeometry(aspect, 1); // Used as the camera-facing relationship billboard geometry.
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: RELATIONSHIP_ALPHA_TEST, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide }); // Uses the same cutout threshold as working PNG planes so alpha-zero canvas texels cannot become a black quad.
-    const plane = new THREE.Mesh(geometry, material); // Used as the live world-space relationship visual.
-    const worldHeight = Math.max(0.18, Number(api.defaults?.floatPlus?.worldHeight) || DEFAULT_WORLD_HEIGHT); // Used to reuse the Float+ physical scale.
-    plane.scale.setScalar(worldHeight);
-    plane.renderOrder = RELATIONSHIP_RENDER_ORDER;
-    plane.frustumCulled = false;
-    plane.userData.isBillboard = true;
-    const anchor = relationshipHeadAnchorWorld(root); // Used to position the popup correctly before its first rendered frame.
-    if (!anchor) {
-      geometry.dispose();
-      material.dispose();
-      texture.dispose();
+    const origin = relationshipOriginWorld(root);
+    if (!origin) {
+      disposePart(heartPart);
+      disposePart(valuePart);
       return null;
     }
-    plane.position.copy(anchor);
-    const camera = deps?.camera; // Used to make the first visible frame face the active camera instead of flashing from a default quaternion.
-    if (camera) plane.quaternion.copy(camera.quaternion);
+    group.position.copy(origin);
+    const camera = deps?.camera;
+    if (camera) group.quaternion.copy(camera.quaternion);
+
     const event = {
       kind,
       root,
-      plane,
-      geometry,
-      material,
-      texture,
+      group,
+      heartPart,
+      valuePart,
       startedAt: performance.now(),
-      lifetimeMs: Math.max(250, Number(api.defaults?.floatPlus?.lifetimeMs) || DEFAULT_LIFETIME_MS),
+      lifetimeMs: Math.max(350, Number(api.defaults?.floatPlus?.lifetimeMs) || DEFAULT_LIFETIME_MS),
       worldHeight,
       value,
       heartColor,
       numberColor,
-    }; // Used by updateRelationshipPopups() to animate, fade, and dispose this relationship change.
-    scene.add(plane);
+    };
+    scene.add(group);
     relationshipPopups.push(event);
     return hardenRelationshipPopupEvent(event);
   }
 
+  function easeOutCubic(t) {
+    const inv = 1 - t;
+    return 1 - inv * inv * inv;
+  }
+
   function updateRelationshipPopups(now) {
-    const camera = deps?.camera; // Used to billboard every relationship plane toward the same camera as core WorldPopupText.
-    if (!camera) return;
+    const THREE = deps?.THREE || window.THREE;
+    const camera = deps?.camera;
+    if (!THREE || !camera) return;
+    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     for (let index = relationshipPopups.length - 1; index >= 0; index--) {
-      const event = relationshipPopups[index]; // Used as the active relationship popup advanced this frame.
-      const progress = Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs)); // Used for Float+-style lifetime timing.
-      const anchor = relationshipHeadAnchorWorld(event.root); // Recomputed in avatar-local space every frame so movement/rotation/scaling cannot desynchronize the head position.
-      if (!anchor || !event.root?.parent || progress >= 1) {
-        disposeRelationshipPopup(event, !anchor ? 'missing-anchor' : !event.root?.parent ? 'detached-root' : 'expired');
+      const event = relationshipPopups[index];
+      const progress = Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
+      const origin = relationshipOriginWorld(event.root);
+      if (!origin || !event.root?.parent || progress >= 1) {
+        disposeRelationshipPopup(event, !origin ? 'missing-anchor' : !event.root?.parent ? 'detached-root' : 'expired');
         relationshipPopups.splice(index, 1);
         continue;
       }
-      anchor.y += 0.075 * (1 - Math.pow(1 - progress, 2)); // Used to match core Float+ rise distance instead of the older oversized relationship-only 0.14 rise.
-      event.plane.position.copy(anchor);
-      event.plane.quaternion.copy(camera.quaternion);
-      event.material.opacity = progress < 0.72 ? 1 : (1 - progress) / 0.28;
-      const pop = 1.08 - 0.08 * Math.min(1, progress / 0.24); // Used to retain the quick relationship settle while position follows the stable head anchor.
-      event.plane.scale.setScalar(event.worldHeight * pop);
+
+      const travel = easeOutCubic(progress);
+      const position = origin.clone()
+        .addScaledVector(cameraRight, event.worldHeight * POP_RIGHT_RATIO * travel)
+        .addScaledVector(cameraUp, event.worldHeight * POP_UP_RATIO * travel);
+      event.group.position.copy(position);
+      event.group.quaternion.copy(camera.quaternion);
+
+      const scale = START_GROUP_SCALE + (END_GROUP_SCALE - START_GROUP_SCALE) * travel;
+      event.group.scale.setScalar(scale);
+      const opacity = Math.max(0, Math.pow(1 - progress, 1.12));
+      event.heartPart.material.opacity = opacity;
+      event.valuePart.material.opacity = opacity;
     }
   }
 
   function bindDeps(nextDeps) {
     if (!nextDeps) return false;
-    deps = nextDeps; // Used by editor hot-loads and the wrapped game init path to share the authoritative Three.js/camera objects.
+    deps = nextDeps;
     debugState.depsCaptured = !!(deps?.THREE && deps?.camera);
     return debugState.depsCaptured;
   }
@@ -261,28 +360,28 @@
   function install() {
     const api = window.WorldPopupText;
     if (!api) return false;
-    if (Number(api.__favorPopupPointsBridgeVersion) >= 4) return true;
+    if (Number(api.__favorPopupPointsBridgeVersion) >= 5) return true;
 
-    const originalInit = typeof api.init === 'function' ? api.init.bind(api) : null; // Used to preserve the complete existing WorldPopupText initialization chain while capturing its dependency bag.
-    const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null; // Used to preserve core/generic popup updates before relationship popup updates.
-    const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null; // Used to preserve every preexisting popup cleanup path.
-    const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null; // Used to append v4 anchor diagnostics without replacing existing debug fields.
+    const originalInit = typeof api.init === 'function' ? api.init.bind(api) : null;
+    const originalUpdate = typeof api.update === 'function' ? api.update.bind(api) : null;
+    const originalClear = typeof api.clear === 'function' ? api.clear.bind(api) : null;
+    const originalDebugSnapshot = typeof api.debugSnapshot === 'function' ? api.debugSnapshot.bind(api) : null;
 
     if (originalInit) {
-      api.init = function favorPopupV4Init(injectedDeps, ...args) {
+      api.init = function favorPopupV5Init(injectedDeps, ...args) {
         bindDeps(injectedDeps);
         return originalInit(injectedDeps, ...args);
       };
     }
     if (originalUpdate) {
-      api.update = function favorPopupV4Update(now, ...args) {
+      api.update = function favorPopupV5Update(now, ...args) {
         const result = originalUpdate(now, ...args);
         updateRelationshipPopups(now);
         return result;
       };
     }
     if (originalClear) {
-      api.clear = function favorPopupV4Clear(...args) {
+      api.clear = function favorPopupV5Clear(...args) {
         clearRelationshipPopups();
         return originalClear(...args);
       };
@@ -292,23 +391,30 @@
     api.showRapportGain = (root, amount, options) => spawnRelationshipPopup(root, 'rapport', amount, options);
     api.showRapportChange = api.showRapportGain;
     api.showFavorChange = (root, amount, options) => spawnRelationshipPopup(root, 'favor', amount, options);
-    api.relationshipHeadAnchorWorld = root => relationshipHeadAnchorWorld(root);
-    api.debugSnapshot = function favorPopupV4DebugSnapshot() {
+    api.relationshipHeadAnchorWorld = root => relationshipOriginWorld(root); // Compatibility alias retained for existing diagnostics.
+    api.debugSnapshot = function favorPopupV5DebugSnapshot() {
       const base = originalDebugSnapshot ? originalDebugSnapshot() : {};
       return {
         ...base,
         relationshipPositionBridge: {
-          version: 4,
+          version: 5,
           active: relationshipPopups.length,
           depsCaptured: debugState.depsCaptured,
-          alphaTest: RELATIONSHIP_ALPHA_TEST,
+          layout: 'chathead-style-heart-plus-value',
+          motion: {
+            rightRatio: POP_RIGHT_RATIO,
+            upRatio: POP_UP_RATIO,
+            startScale: START_GROUP_SCALE,
+            endScale: END_GROUP_SCALE,
+          },
+          lastLayout: debugState.lastLayout,
           lastAnchor: debugState.lastAnchor,
           lastDisposedReason: debugState.lastDisposedReason,
         },
       };
     };
     api.__favorPopupPointsBridge = true;
-    api.__favorPopupPointsBridgeVersion = 4;
+    api.__favorPopupPointsBridgeVersion = 5;
     return true;
   }
 
@@ -321,20 +427,21 @@
   }
 
   window.FavorPopupPointsBridge = Object.freeze({
-    version: 4,
+    version: 5,
     install,
     bindDeps,
-    relationshipHeadAnchorWorld,
+    relationshipHeadAnchorWorld: relationshipOriginWorld,
     snapshot() {
       return {
-        version: 4,
+        version: 5,
         activeRelationshipPopups: relationshipPopups.length,
         hardenedPopups: debugState.hardenedPopups,
         lastHardenedPopup: debugState.lastHardenedPopup,
+        lastLayout: debugState.lastLayout,
         lastAnchor: debugState.lastAnchor,
         lastDisposedReason: debugState.lastDisposedReason,
         depsCaptured: debugState.depsCaptured,
-        alphaTest: RELATIONSHIP_ALPHA_TEST,
+        layout: 'chathead-style-heart-plus-value',
         popupBridgeVersion: Number(window.WorldPopupText?.__favorPopupPointsBridgeVersion) || 0,
       };
     },
