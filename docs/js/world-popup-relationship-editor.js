@@ -1,11 +1,11 @@
 (() => {
   'use strict';
 
-  if (Number(window.WorldPopupRelationshipEditor?.version) >= 6) return;
+  if (Number(window.WorldPopupRelationshipEditor?.version) >= 7) return;
   if (!/\/tools\/world-popup-editor\//.test(location.pathname)) return;
 
   const MODULE_SRC = document.currentScript?.src || ''; // Used to resolve the shared runtime relationship bridge from this editor helper.
-  const POSITION_BRIDGE_URL = MODULE_SRC ? new URL('favor-popup-points-bridge.js?v=20260915position4', MODULE_SRC).href : '../../js/favor-popup-points-bridge.js?v=20260915position4'; // Used to run the exact gameplay relationship renderer in the editor.
+  const POSITION_BRIDGE_URL = MODULE_SRC ? new URL('favor-popup-points-bridge.js?v=20260915position6', MODULE_SRC).href : '../../js/favor-popup-points-bridge.js?v=20260915position6'; // Used to run the exact gameplay relationship renderer in the editor.
   const FALLBACK_NPC = Object.freeze({ // Used only so the preview never waits on the large repository NPC database before showing a real PNG-plane character.
     id: 'popup_preview_character',
     name: 'Preview Character',
@@ -53,19 +53,19 @@
   window.addEventListener('unhandledrejection', event => rememberError(`Promise rejection: ${event.reason?.stack || event.reason?.message || event.reason || 'unknown'}`));
 
   function ensurePositionBridge() {
-    if (Number(window.FavorPopupPointsBridge?.version) >= 3) {
+    if (Number(window.FavorPopupPointsBridge?.version) >= 6) {
       state.bridgeLoad = 'ready';
       return Promise.resolve(window.FavorPopupPointsBridge);
     }
     if (bridgePromise) return bridgePromise;
     state.bridgeLoad = 'loading';
     bridgePromise = new Promise(resolve => {
-      const script = document.createElement('script'); // Used to load the same stable-head-anchor renderer that gameplay uses on this branch.
+      const script = document.createElement('script'); // Used to load the same relationship renderer that gameplay uses on this branch.
       script.src = POSITION_BRIDGE_URL;
       script.async = false;
       script.onload = () => {
         const bridge = window.FavorPopupPointsBridge;
-        state.bridgeLoad = Number(bridge?.version) >= 3 ? 'ready' : 'loaded-without-v3';
+        state.bridgeLoad = Number(bridge?.version) >= 6 ? 'ready' : 'loaded-without-v6';
         if (!bridge) rememberError('Relationship position bridge loaded without exposing FavorPopupPointsBridge.');
         refreshDiagnostics();
         resolve(bridge || null);
@@ -84,10 +84,10 @@
     const bridge = window.FavorPopupPointsBridge; // Used as the single shared relationship-popup implementation.
     const THREE = three(); // Used to bind the editor's Three.js instance after asynchronous scene creation.
     const activeCamera = camera(); // Used to bind the editor's real preview camera.
-    if (Number(bridge?.version) < 3 || !THREE || !activeCamera) return false;
+    if (Number(bridge?.version) < 6 || !THREE || !activeCamera) return false;
     bridge.install?.();
     bridge.bindDeps?.({ THREE, camera: activeCamera, playerRoot: avatarHolder(), getActiveScene: () => scene() });
-    return Number(popupRuntime()?.__favorPopupPointsBridgeVersion) >= 3;
+    return Number(popupRuntime()?.__favorPopupPointsBridgeVersion) >= 6;
   }
 
   async function ensureVisibleAvatar(force = false) {
@@ -147,7 +147,7 @@
     section.className = 'section';
     section.innerHTML = `
       <h2>Overhead Rapport / Favor</h2>
-      <div class="help">Uses gameplay's shared renderer and a head point recalculated from avatar-local portrait height/placement every frame. No cached world-Y head offset.</div>
+      <div class="help">Uses gameplay's shared chathead-style heart + signed-value renderer and pops diagonally out of the avatar.</div>
       <div class="buttons" style="grid-template-columns:repeat(2,minmax(0,1fr))">
         <button type="button" data-rel-kind="rapport" data-rel-amount="10">Rapport +10</button>
         <button type="button" data-rel-kind="rapport" data-rel-amount="-10">Rapport -10</button>
@@ -163,7 +163,9 @@
   function updateRelationshipStatus() {
     const node = document.getElementById('relationshipPopupPreviewDebug'); // Used to show whether the editor is truly using the shared renderer.
     if (!node) return;
-    node.textContent = `shared position renderer: ${Number(window.FavorPopupPointsBridge?.version) || state.bridgeLoad} · popup bridge ${Number(popupRuntime()?.__favorPopupPointsBridgeVersion) || 0}`;
+    const heart = window.FavorPopupPointsBridge?.snapshot?.()?.lastHeart;
+    const heartStatus = heart ? ` · heart alpha=${heart.nonTransparentPixels} canonical=${heart.canonicalMaterialFactory ? 'yes' : 'NO'}` : '';
+    node.textContent = `shared renderer: ${Number(window.FavorPopupPointsBridge?.version) || state.bridgeLoad} · popup bridge ${Number(popupRuntime()?.__favorPopupPointsBridgeVersion) || 0}${heartStatus}`;
   }
 
   async function play(kind, amount) {
@@ -189,7 +191,7 @@
     const holder = avatarHolder();
     const editorPreview = previewScene();
     const npcList = npcs();
-    const bridge = window.FavorPopupPointsBridge?.snapshot?.() || null; // Used to expose the renderer's current avatar-local head anchor and world coordinate.
+    const bridge = window.FavorPopupPointsBridge?.snapshot?.() || null; // Used to expose relationship renderer state and PNG-heart diagnostics.
     const cfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {}; // Used to expose configured Three.js URLs when module boot fails.
     const panel = document.getElementById('worldPopupEditorDiagnostics'); // Used to verify that diagnostics themselves stay fixed to the viewport.
     const preview = document.getElementById('preview')?.getBoundingClientRect?.(); // Used to prove whether the actual 3D pane intersects the visible viewport on mobile/desktop-mode browsers.
@@ -203,7 +205,7 @@
     } catch (error) { modelBounds = `error: ${error.message}`; }
     const rect = panel?.getBoundingClientRect?.();
     return {
-      helper: 6,
+      helper: 7,
       bridgeLoad: state.bridgeLoad,
       bridgeVersion: Number(window.FavorPopupPointsBridge?.version) || 0,
       popupBridgeVersion: Number(popupRuntime()?.__favorPopupPointsBridgeVersion) || 0,
@@ -212,13 +214,14 @@
         config: !!window.SCRATCHBONES_CONFIG,
         npcPreview: !!window.NpcAvatarPreview,
         pngPlane: !!window.PNGPlaneAvatar,
+        pngSurface: !!window.HobunjiSpritePngSurface,
         sceneApi: !!window.AvatarPreviewScene,
         worldPopup: !!window.WorldPopupText,
       },
       three: { configured: !!cfg.threeModuleUrl, loaded: !!THREE, renderer: !!editorPreview?.renderer, camera: !!camera(), url: cfg.threeModuleUrl || 'missing' },
       npc: { count: Array.isArray(npcList) ? npcList.length : 0, selected: document.getElementById('npcSelect')?.selectedOptions?.[0]?.textContent || 'none' },
       avatar: { holder: !!holder, children: Number(holder?.children?.length) || 0, model: !!model, bounds: modelBounds },
-      relationship: { active: Number(bridge?.activeRelationshipPopups) || 0, anchor: bridge?.lastAnchor || null, disposed: bridge?.lastDisposedReason || null },
+      relationship: { active: Number(bridge?.activeRelationshipPopups) || 0, anchor: bridge?.lastAnchor || null, heart: bridge?.lastHeart || null, disposed: bridge?.lastDisposedReason || null },
       viewport: { innerHeight: window.innerHeight, visualTop: Number(visualViewport?.offsetTop) || 0, visualHeight: Number(visualViewport?.height) || window.innerHeight },
       preview: preview ? { top: preview.top, bottom: preview.bottom, height: preview.height, visible: preview.bottom > 0 && preview.top < (Number(visualViewport?.height) || window.innerHeight) } : null,
       panel: rect ? { position: getComputedStyle(panel).position, top: rect.top, bottom: rect.bottom, height: rect.height, transform: getComputedStyle(panel).transform, transition: getComputedStyle(panel).transitionProperty, animation: getComputedStyle(panel).animationName } : null,
@@ -229,16 +232,18 @@
 
   function snapshotText(data = snapshot()) {
     const anchor = data.relationship.anchor;
+    const heart = data.relationship.heart;
     const panel = data.panel;
     const preview = data.preview;
     const lines = [
       'Popup Text Editor diagnostics',
       `helper=v${data.helper} bridgeLoad=${data.bridgeLoad} sharedBridge=v${data.bridgeVersion} popupBridge=v${data.popupBridgeVersion} fallback=${data.fallbackAvatar}`,
-      `core config=${data.core.config ? 'yes' : 'NO'} npcPreview=${data.core.npcPreview ? 'yes' : 'NO'} pngPlane=${data.core.pngPlane ? 'yes' : 'NO'} sceneApi=${data.core.sceneApi ? 'yes' : 'NO'} worldPopup=${data.core.worldPopup ? 'yes' : 'NO'}`,
+      `core config=${data.core.config ? 'yes' : 'NO'} npcPreview=${data.core.npcPreview ? 'yes' : 'NO'} pngPlane=${data.core.pngPlane ? 'yes' : 'NO'} pngSurface=${data.core.pngSurface ? 'yes' : 'NO'} sceneApi=${data.core.sceneApi ? 'yes' : 'NO'} worldPopup=${data.core.worldPopup ? 'yes' : 'NO'}`,
       `three configured=${data.three.configured ? 'yes' : 'NO'} loaded=${data.three.loaded ? 'yes' : 'NO'} renderer=${data.three.renderer ? 'yes' : 'NO'} camera=${data.three.camera ? 'yes' : 'NO'}`,
       `npc count=${data.npc.count} selected=${data.npc.selected}`,
       `avatar holder=${data.avatar.holder ? 'yes' : 'NO'} children=${data.avatar.children} model=${data.avatar.model ? 'yes' : 'NO'} bounds=${data.avatar.bounds}`,
       `relationship active=${data.relationship.active} anchor=${anchor ? `${anchor.source} world=(${Number(anchor.world?.x).toFixed(3)},${Number(anchor.world?.y).toFixed(3)},${Number(anchor.world?.z).toFixed(3)})` : 'none yet'} disposed=${data.relationship.disposed || 'none'}`,
+      `heart=${heart ? `loaded=${heart.imageLoaded ? 'yes' : 'NO'} src=${heart.imageWidth}x${heart.imageHeight} alphaPixels=${heart.nonTransparentPixels} maxAlpha=${heart.maxAlpha} canonicalSurface=${heart.canonicalPngSurface ? 'yes' : 'NO'} canonicalTexture=${heart.canonicalTextureFactory ? 'yes' : 'NO'} canonicalMaterial=${heart.canonicalMaterialFactory ? 'yes' : 'NO'} alphaTest=${heart.alphaTest}` : 'none yet'}`,
       `viewport innerH=${data.viewport.innerHeight.toFixed(1)} visualTop=${data.viewport.visualTop.toFixed(1)} visualH=${data.viewport.visualHeight.toFixed(1)}`,
       `preview=${preview ? `top=${preview.top.toFixed(1)} bottom=${preview.bottom.toFixed(1)} h=${preview.height.toFixed(1)} visible=${preview.visible ? 'YES' : 'NO'}` : 'missing'}`,
       `debug panel=${panel ? `${panel.position} top=${panel.top.toFixed(1)} bottom=${panel.bottom.toFixed(1)} h=${panel.height.toFixed(1)} transform=${panel.transform} transition=${panel.transition} animation=${panel.animation}` : 'not mounted'}`,
@@ -326,7 +331,7 @@
     }, 500);
   }
 
-  window.WorldPopupRelationshipEditor = Object.freeze({ version: 6, install, play, retryAvatar, ensureVisibleAvatar, snapshot });
+  window.WorldPopupRelationshipEditor = Object.freeze({ version: 7, install, play, retryAvatar, ensureVisibleAvatar, snapshot });
   window.__worldPopupRelationshipEditorDebug = () => snapshot();
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
