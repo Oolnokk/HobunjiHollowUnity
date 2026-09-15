@@ -600,7 +600,12 @@
     for (const state of [..._activeNestContentStates]) {
       if (!state.seen || !state.scene || (state.mode === 'cavern' && state.scene !== activeScene)) _disposeNestContentState(state);
     }
+  }
 
+  // Only ever read via debugSnapshot() (which calls _syncCurrentNestContents
+  // itself right before this), so this tally is computed on demand there
+  // instead of every frame inside the per-frame sync above.
+  function _tallyNestContentDebugCounts() {
     let renderedNests = 0, renderedContents = 0, eggContents = 0, babyContents = 0, pngEggs = 0, emojiEggs = 0;
     for (const state of _activeNestContentStates) {
       const live = state.records.filter(record => !record.disposed && record.root);
@@ -801,6 +806,7 @@
 
   function debugSnapshot() {
     _syncCurrentNestContents();
+    _tallyNestContentDebugCounts();
     const babyRecords = [];
     for (const state of _activeNestContentStates) {
       for (const record of state.records) {

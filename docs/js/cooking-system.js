@@ -384,10 +384,16 @@
 
   function update() {
     const now = performance.now() / 1000; // Used to prune expired food effects during the ordinary game loop.
-    const before = activeFoodEffects.length;
+    // Effects last minutes, so expiry is rare relative to the 60fps call rate
+    // here — check in place before paying for a filter() allocation every frame.
+    let anyExpired = false;
+    for (let i = 0; i < activeFoodEffects.length; i++) {
+      if (activeFoodEffects[i].expiresAt <= now) { anyExpired = true; break; }
+    }
+    if (!anyExpired) { window.EffectBuffBar?.refresh(false); return; }
     activeFoodEffects = activeFoodEffects.filter(effect => effect.expiresAt > now);
-    if (before !== activeFoodEffects.length) window.SkillSystem?.render?.();
-    window.EffectBuffBar?.refresh(before !== activeFoodEffects.length);
+    window.SkillSystem?.render?.();
+    window.EffectBuffBar?.refresh(true);
   }
 
   function ensureUi() {
