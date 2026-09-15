@@ -18,8 +18,7 @@
     { "id": "fmqflyhx9gput", "itemKey": "bookshelfFurniture", "col": 1, "row": 5, "rotY": 180, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 1, "postSZ": 1 },
     { "id": "fmqflyjsxciu5", "itemKey": "bookshelfFurniture", "col": 3, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 1, "postSZ": 1 },
     { "id": "fmqfm0z7jep8i", "itemKey": "dresserFurniture", "col": 5, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.25, "postSY": 0.9, "postSZ": 1 },
-    { "id": "fmqk10h7g0bzj", "itemKey": "tableSmallFurniture", "col": 4, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 7.503, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqz1bulbrd0", "itemKey": "bulletinBoardFurniture", "col": 9, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 }
+    { "id": "fmqk10h7g0bzj", "itemKey": "tableSmallFurniture", "col": 4, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 7.503, "postSY": 1, "postSZ": 1 }
   ],
   "id": "map_i_general_store",
   "name": "Funji & Sons General Store",
