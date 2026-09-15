@@ -84,8 +84,8 @@ async function main() {
     console.log('OK  live Grehlr resource inventory is persisted before folder mirroring');
   }
 
-  // 2) Prove portable saves carry an anonymous last-writer installation id and
-  // the onboarding text can distinguish this installation from another one.
+  // 2) V3 provenance must come from the canonical envelope, not transport-only
+  // timestamps injected into gameplay metadata. Legacy per-entity stamps remain readable.
   {
     const source = read('docs/js/folder-save-device-provenance.js');
     const meta = {
@@ -93,7 +93,8 @@ async function main() {
       characters: [{ id: 'char-a', nickname: 'Tester' }],
       worlds: [{ id: 'world-a', label: 'Hollow' }],
     };
-    const localStorage = makeStorage({ hobunjiSaveMeta: JSON.stringify(meta) });
+    const originalMetaRaw = JSON.stringify(meta); // Exact gameplay blob compared after folder sync to prove provenance no longer mutates it.
+    const localStorage = makeStorage({ hobunjiSaveMeta: originalMetaRaw, 'hobunjiSaveDeviceId.v1': 'device-this-installation' });
     const folderStatus = {
       state: 'ready',
       folderName: 'Hobunji Save',
@@ -101,6 +102,11 @@ async function main() {
       lastError: null,
       dataLossRisk: null,
     };
+    let currentEnvelope = {
+      writerId: 'device-this-installation',
+      writtenAt: 1000,
+      contentHash: 'sha256:same-device',
+    }; // Durable V3 envelope provenance can change independently of gameplay metadata.
     const localSave = {
       getStatus() { return { ...folderStatus }; },
       async syncNow() { return { ...folderStatus }; },
@@ -114,25 +120,36 @@ async function main() {
       requestAnimationFrame(fn) { fn(); },
       window: {
         LocalSaveFolder: localSave,
-        crypto: { randomUUID: () => 'device-this-installation' },
+        HobunjiSaveSyncStore: {
+          async getCurrentEnvelope() { return { ...currentEnvelope }; },
+        },
+        crypto: { randomUUID: () => 'device-unused-random-id' },
       },
     });
     vm.runInContext(source, context, { filename: 'folder-save-device-provenance.js' });
 
     await localSave.syncNow();
-    const stamped = JSON.parse(localStorage.getItem('hobunjiSaveMeta'));
-    assert.equal(stamped.worlds[0].folderSaveProvenance.lastWriterDeviceId, 'device-this-installation', 'world save should remember anonymous last writer');
-    assert.equal(stamped.characters[0].folderSaveProvenance.lastWriterDeviceId, 'device-this-installation', 'character save should remember anonymous last writer');
-    assert.ok(Number(stamped.worlds[0].folderSaveProvenance.writtenAt) > 0, 'save provenance should remember overwrite time');
+    assert.equal(localStorage.getItem('hobunjiSaveMeta'), originalMetaRaw, 'folder sync must not inject transport provenance into gameplay save metadata');
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /From “Hobunji Save”/);
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on this device/);
+    assert.equal(context.window.FolderSaveDeviceProvenance.latestProvenance().source, 'canonical-envelope', 'canonical envelope is the primary V3 provenance source');
 
-    stamped.worlds[0].folderSaveProvenance.lastWriterDeviceId = 'device-other-installation';
-    stamped.worlds[0].folderSaveProvenance.writtenAt += 1000;
-    localStorage.setItem('hobunjiSaveMeta', JSON.stringify(stamped));
+    currentEnvelope = {
+      writerId: 'device-other-installation',
+      writtenAt: 2000,
+      contentHash: 'sha256:other-device',
+    };
+    await context.window.FolderSaveDeviceProvenance.refreshEnvelopeProvenance();
     assert.match(context.window.FolderSaveDeviceProvenance.sourceLine(), /Last saved on a different device/);
     assert.ok(!context.window.FolderSaveDeviceProvenance.sourceLine().includes('device-other-installation'), 'UI must not expose the anonymous device id itself');
-    console.log('OK  Resume provenance shows folder source and same/different-device status without naming devices');
+
+    currentEnvelope = null;
+    const legacy = JSON.parse(originalMetaRaw);
+    legacy.worlds[0].folderSaveProvenance = { version: 1, lastWriterDeviceId: 'device-this-installation', writtenAt: 500 };
+    localStorage.setItem('hobunjiSaveMeta', JSON.stringify(legacy));
+    await context.window.FolderSaveDeviceProvenance.refreshEnvelopeProvenance();
+    assert.equal(context.window.FolderSaveDeviceProvenance.latestProvenance().source, 'legacy-entity', 'pre-V3 per-entity provenance remains a read-only compatibility fallback');
+    console.log('OK  V3 provenance stays outside gameplay content while legacy provenance remains readable');
   }
 
   // 3) Guard ordering: Quit must capture live runtime state, make that snapshot
