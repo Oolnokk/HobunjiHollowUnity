@@ -18,6 +18,7 @@
   const DEFAULTS = Object.freeze({
     columnSpacingEm: -0.55,
     glyphAdvanceEm: 0.56,
+    glyphScale: 1,
     fontSizePx: 128,
     paddingEm: 0.28,
     color: '#ffffff',
@@ -39,6 +40,7 @@
     return {
       columnSpacingEm: clamp(finiteOr(options.columnSpacingEm, DEFAULTS.columnSpacingEm), -0.95, 4),
       glyphAdvanceEm: clamp(finiteOr(options.glyphAdvanceEm, DEFAULTS.glyphAdvanceEm), 0.1, 4),
+      glyphScale: clamp(finiteOr(options.glyphScale, DEFAULTS.glyphScale), 0.25, 2.5),
       fontSizePx: clamp(finiteOr(options.fontSizePx, DEFAULTS.fontSizePx), 16, 512),
       paddingEm: clamp(finiteOr(options.paddingEm, DEFAULTS.paddingEm), 0, 4),
       color: String(options.color || DEFAULTS.color),
@@ -121,7 +123,13 @@
       const glyphs = Array.from(word);
       for (let glyphIndex = 0; glyphIndex < glyphs.length; glyphIndex++) {
         const y = layout.paddingPx + layout.glyphAdvancePx * (glyphIndex + 0.5);
-        ctx.fillText(glyphs[glyphIndex], x, y);
+        // Scale around this glyph cell's center only. Neighbor positions remain governed
+        // solely by glyphAdvancePx/columnAdvancePx, so glyph size cannot push text around.
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(layout.glyphScale, layout.glyphScale);
+        ctx.fillText(glyphs[glyphIndex], 0, 0);
+        ctx.restore();
       }
     }
     return layout;
@@ -136,7 +144,7 @@
 
   window.TankanScriptLayout = {
     installed: true,
-    version: 2,
+    version: 3,
     fontFamily: FONT_FAMILY,
     fontUrl: FONT_URL,
     defaults: DEFAULTS,
