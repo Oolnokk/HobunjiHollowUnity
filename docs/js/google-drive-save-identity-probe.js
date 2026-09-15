@@ -180,11 +180,14 @@
   else document.addEventListener('DOMContentLoaded', begin, { once: true });
   driveApi()?.onChange?.(renderAvailability);
 
-  window.HobunjiGoogleDriveIdentityProbe = Object.freeze({ run: () => {
-    const button = document.getElementById(BUTTON_ID);
-    if (!button) throw new Error('Drive Identity Probe button is not available yet.');
-    return runProbe(button);
-  } });
+  window.HobunjiGoogleDriveIdentityProbe = Object.freeze({
+    compareSamples, // Pure comparison helper exposed so CI can lock down the same-id/version-advance acceptance criterion.
+    run: () => {
+      const button = document.getElementById(BUTTON_ID);
+      if (!button) throw new Error('Drive Identity Probe button is not available yet.');
+      return runProbe(button);
+    },
+  });
   window.__hobunjiGoogleDriveIdentityProbeDebug = {
     snapshot: () => ({ samples, stableIdentityPasses, identityFailures, lastSample, lastComparison, lastError: lastError || null, previousSample: readPreviousSample() }),
   };
