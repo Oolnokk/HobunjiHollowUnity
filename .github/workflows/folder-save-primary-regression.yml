@@ -53,6 +53,7 @@ jobs:
           node --check docs/js/google-drive-save-config.js
           node --check docs/js/google-drive-save-transport.js
           node --check docs/js/google-drive-save-ui.js
+          node --check docs/js/google-drive-save-startup.js
           node --check docs/js/folder-save-v3-canonical.js
           node --check docs/js/folder-save-primary.js
           node --check docs/js/folder-save-onboarding-bridge.js
