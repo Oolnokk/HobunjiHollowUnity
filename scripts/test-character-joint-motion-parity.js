@@ -121,7 +121,7 @@ assert.strictEqual(sanity.likelyAuthoringError, false, 'close Mao-ao male should
 
 // The current authored files must retain those intended values; this catches a future
 // regression that accidentally tests only our VM fixture instead of repository data.
-assert.match(latestSnapshot, /'mao-ao::male'[\s\S]*heightPercentFromFloor:\s*47\.59386702606408/,
+assert(latestSnapshot.includes('"mao-ao::male":{"posteriorRule":{"heightPercentOffset":-12.906132973935925,"heightPercentFromFloor":47.59386702606408'),
   'latest authored snapshot must provide Mao-ao male posterior Y');
 assert.match(maoShoulders, /'mao-ao::male'[\s\S]*leftHandShoulder:[\s\S]*y:\s*0\.6292184955362587[\s\S]*rightHandShoulder:[\s\S]*y:\s*0\.6455541403639915/,
   'latest Mao-ao shoulder authoring must remain close to the shoulder-pet perch');
