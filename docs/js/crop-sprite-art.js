@@ -34,7 +34,11 @@
   const textureRecords = new Map(); // Used to load each authored crop PNG once and share it across every planted tile.
   const pendingMeshes = new Map(); // Used to retain placeholder meshes while their shared crop texture is loading.
   const activeBillboards = new Set(); // Used to re-face converted crop cluster anchors toward the current camera every render.
-  let renderScanTick = 0; // Used to discover newly planted placeholder crops periodically instead of traversing the full scene every frame.
+  const CROP_DISCOVERY_SCAN_INTERVAL_MS = 250; // Used to discover newly planted placeholders promptly without tying full-scene traversal frequency to frame rate or extra render passes.
+  const sceneScanDeadlines = new WeakMap(); // Used to throttle each rendered scene independently when UI/depth replay passes render more than one scene.
+  let discoveryScanCount = 0; // Used by the mobile-readable crop diagnostics to confirm crop-free scenes are no longer traversed every render.
+  let lastDiscoveryObjectCount = 0; // Used to expose the most recent scan's scene size when investigating an unexpectedly expensive wilderness area.
+  let lastDiscoveryScanAt = 0; // Used to expose when the last throttled placeholder scan actually ran.
   let lastItemSync = { ok: false, patchedDefs: 0, patchedEntries: 0 }; // Used by lightweight debug/tests to verify canonical item art wiring.
 
   function applyItemArt(injectedDeps) {
@@ -228,7 +232,9 @@
   }
 
   function discoverPlaceholderCrops(scene) {
+    let inspected = 0; // Counts visited scene nodes for the debug snapshot without requiring a second traversal.
     scene?.traverse?.(object => {
+      inspected++;
       if (!isUnitCropCube(object)) return;
       const color = object.material.color.getHex(); // Used to map game.js's exact current growth/ripe palette back to a crop key.
       const cropKey = WORLD_COLOR_TO_CROP.get(color);
@@ -236,12 +242,19 @@
       object.userData.hobunjiCropRootKey = cropKey; // Used by crop-billboard-presentation to remove water-surface lift from every generic farm crop, even ones that stay cubes.
       if (CROP_ART[cropKey]?.worldMode === 'billboard') queueBillboard(object, cropKey);
     });
+    discoveryScanCount++;
+    lastDiscoveryObjectCount = inspected;
+    lastDiscoveryScanAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   }
 
   function updateBillboards(scene, camera) {
-    renderScanTick = (renderScanTick + 1) % 12;
-    if (renderScanTick === 0 || activeBillboards.size === 0) discoverPlaceholderCrops(scene);
-    for (const anchor of [...activeBillboards]) {
+    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); // Used to make discovery cadence independent of FPS and renderer pass count.
+    const nextScanAt = scene && sceneScanDeadlines.get(scene);
+    if (scene && (!Number.isFinite(nextScanAt) || now >= nextScanAt)) {
+      sceneScanDeadlines.set(scene, now + CROP_DISCOVERY_SCAN_INTERVAL_MS);
+      discoverPlaceholderCrops(scene);
+    }
+    for (const anchor of activeBillboards) {
       if (!anchor?.parent) {
         activeBillboards.delete(anchor);
         continue;
@@ -287,6 +300,11 @@
       loadedTextures: [...textureRecords.values()].filter(record => record.loaded).length,
       clusterCount: CLUSTER_OFFSETS.length,
       clusterPlantScale: CLUSTER_PLANT_SCALE,
+      discoveryScanIntervalMs: CROP_DISCOVERY_SCAN_INTERVAL_MS,
+      discoveryScanCount,
+      lastDiscoveryObjectCount,
+      lastDiscoveryScanAt: Math.round(lastDiscoveryScanAt),
+      lastChange: 'Crop placeholder discovery is time-throttled per scene, including when no crop billboards exist.',
     }),
   };
 })();

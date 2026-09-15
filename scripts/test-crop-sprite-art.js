@@ -39,19 +39,41 @@ assert.match(cropArtSource, /hobunjiCropRootKey = cropKey/,
 assert.match(cropArtSource, /buildNeedlegrainMesh = function taggedNeedlegrainMesh/,
   'procedural needlegrain receives only a root tag so flood anchoring can include it without replacing its geometry');
 
-const cropModuleIndex = loaderSource.indexOf('crop-sprite-art.js?v=20260814a'); // Used to confirm crop item metadata is installed before generic inventory metadata synchronization.
+const cropModuleIndex = loaderSource.indexOf('crop-sprite-art.js?v=20260915cropscan1'); // Used to confirm crop item metadata is installed before generic inventory metadata synchronization.
 const inventoryMetadataIndex = loaderSource.indexOf('inventory-action-metadata-bridge.js'); // Used as the ordering boundary for selectable item metadata synchronization.
 assert.ok(cropModuleIndex >= 0 && inventoryMetadataIndex > cropModuleIndex,
   'crop sprite art loads before inventory action metadata synchronization');
 
-const sandboxWindow = {}; // Used as a browser-global stand-in for testing late CookingSystem assignment and init wrapping.
-vm.runInNewContext(cropArtSource, { window: sandboxWindow });
+let fakeNowMs = 1000; // Used to advance the crop discovery clock without waiting in the regression test.
+function FakeWebGlRenderer() {} // Used to exercise the module's real render-hook throttle without loading Three.js.
+FakeWebGlRenderer.prototype.render = function render() { return 'rendered'; };
+const sandboxWindow = {
+  THREE: { WebGLRenderer: FakeWebGlRenderer },
+}; // Used as a browser-global stand-in for testing render throttling plus late CookingSystem assignment/init wrapping.
+vm.runInNewContext(cropArtSource, { window: sandboxWindow, performance: { now: () => fakeNowMs } });
 const artApi = sandboxWindow.HobunjiCropSpriteArt; // Used to inspect the public crop-art mapping and invoke item metadata synchronization.
 assert.ok(artApi, 'crop sprite art exposes its runtime API');
 assert.deepEqual({ ...artApi.getArt('needlegrain') }, { spriteIcon: 'pile_needlegrain.png', worldMode: 'procedural' });
 assert.deepEqual({ ...artApi.getArt('heftroot') }, { spriteIcon: 'heftroot.png', worldMode: 'procedural' });
 assert.deepEqual({ ...artApi.getArt('garlink') }, { spriteIcon: 'garlink_bunch.png', worldMode: 'billboard' });
 assert.deepEqual({ ...artApi.getArt('ongyums') }, { spriteIcon: 'ongyum.png', worldMode: 'billboard' });
+
+let firstSceneTraversals = 0; // Counts full-scene crop discovery passes in a crop-free wilderness-style scene.
+const firstScene = { traverse() { firstSceneTraversals++; } };
+const camera = { quaternion: {} };
+const renderer = new sandboxWindow.THREE.WebGLRenderer();
+assert.equal(renderer.render(firstScene, camera), 'rendered', 'crop hook preserves the underlying renderer return value');
+renderer.render(firstScene, camera);
+assert.equal(firstSceneTraversals, 1, 'a crop-free scene is scanned once, not again on every render merely because activeBillboards is empty');
+fakeNowMs += 249;
+renderer.render(firstScene, camera);
+assert.equal(firstSceneTraversals, 1, 'crop discovery remains throttled until the configured deadline');
+fakeNowMs += 1;
+renderer.render(firstScene, camera);
+assert.equal(firstSceneTraversals, 2, 'crop discovery resumes after the 250 ms deadline so newly planted crops still appear promptly');
+let secondSceneTraversals = 0; // Confirms each independently rendered scene owns its own deadline.
+renderer.render({ traverse() { secondSceneTraversals++; } }, camera);
+assert.equal(secondSceneTraversals, 1, 'a second scene receives its own immediate discovery scan');
 
 const fakeDefs = {
   needlegrain: { icon: '🌾' },
@@ -77,4 +99,7 @@ assert.equal(artApi.getDebug().patchedDefs, 4, 'all four canonical crop definiti
 assert.equal(artApi.getDebug().patchedEntries, 4, 'all four selectable crop entries were patched');
 assert.equal(artApi.getDebug().clusterCount, 3, 'world crop cluster diagnostics report three members');
 assert.equal(artApi.getDebug().clusterPlantScale, 0.25, 'world crop cluster diagnostics report the requested reduced scale');
+assert.equal(artApi.getDebug().discoveryScanIntervalMs, 250, 'crop diagnostics report the time-based discovery interval');
+assert.equal(artApi.getDebug().discoveryScanCount, 3, 'crop diagnostics expose the actual number of throttled scene traversals');
+assert.match(artApi.getDebug().lastChange, /time-throttled per scene/, 'crop diagnostics summarize the latest performance correction');
 console.log('authored crop sprite art tests passed');

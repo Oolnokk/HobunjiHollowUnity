@@ -2,18 +2,18 @@
   'use strict';
 
   // One button dumps a world-wide text snapshot of Porakaneki camp residents
-  // plus the den wildlife that is actually instantiated in the live runtime.
-  // Porakaneki camps retain abstract off-radius agents world-wide; den packs do
-  // not — WildlifeSpawn deliberately materializes them only for the currently
-  // active wilderness zone. Keeping those scopes explicit prevents an empty
-  // wildlife section from being misread as "every den in the world is empty."
+  // plus the den- and nest-spawned wildlife instantiated in the live runtime.
+  // Porakaneki camps retain abstract off-radius agents world-wide; wildlife
+  // packs do not — WildlifeSpawn materializes them only for the active zone.
+  // Keeping those scopes explicit prevents an empty section from being
+  // misread as "every den and nest in the world is empty."
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
   const SNAPSHOT_GUIDE = `HOBUNJI WILDERNESS AI SNAPSHOT -- interpretation guide for AI review
-One frozen instant of all Porakaneki camp residents world-wide plus currently instantiated den wildlife. Porakaneki camps keep abstract off-radius agents, so their section spans all generated wilderness zones. WILDLIFE is different: it reads live hostileObjects entries carrying a denKey, and den packs are normally instantiated only for the active wilderness zone. Therefore an empty WILDLIFE section does NOT mean every den world-wide is empty.
+One frozen instant of all Porakaneki camp residents world-wide plus currently instantiated den- and nest-spawned wildlife. Porakaneki camps keep abstract off-radius agents, so their section spans all generated wilderness zones. WILDLIFE is different: it reads live hostileObjects entries carrying a denKey or nestTreeKey, and those packs are normally instantiated only for the active wilderness zone. Therefore an empty WILDLIFE section does NOT mean every den or nest world-wide is empty.
 PORAKANEKI lines: "camp=<zoneId>/<campId> kind=<small|chief> ... sleeping=<n>/<residents>" is one camp; each indented "res#<index>" line is one generated resident. act=<activity> is sleep|hunt|wander|socialize|camp|investigate. pos=(col,row) is the planner position. dist is tile distance to the player when in the active zone. lod<=N is the current materialization threshold: normally the enter radius, or the wider release radius while already live. full=1 means that distance gate currently requests full simulation. mat=1 means a real humanoid entity exists; vis=1 means its mesh is visible; reg=1 means that exact entity is still registered in hostileObjects. state is the shared hostile-loop state. planner=1 means neutral Porakaneki target planning owns its destination while the shared hostile loop owns locomotion/rendering. sim=(x,y) is the live entity position, render=(x,y) is the avatar root position, and rd is their tile-space render delta; a large/stuck rd identifies a simulation/render handoff failure directly.
-WILDLIFE header: activeArea=<area> is the player's current area, instantiatedDenCreatures=<n> is the number of live runtime creatures found with a denKey, and scope=active-runtime is a reminder that off-zone dens are not represented here. Creature lines report species/state/mode/tile/home; mode is whichever per-species schedule-AI field is currently set (_cfDrenkirra.mode for cloud-forest drenkirra, _grehlrForage.mode for grehlr, otherwise falls back to state).`;
+WILDLIFE header: activeArea=<area> is the player's current area, instantiatedWildlife=<n> counts live runtime creatures carrying a denKey or nestTreeKey, denCreatures/nestCreatures split those sources, and scope=active-runtime is a reminder that off-zone populations are not represented here. Creature lines report source/species/state/mode/tile/home; mode is whichever per-species schedule-AI field is currently set (_cfDrenkirra.mode for cloud-forest drenkirra, _grehlrForage.mode for grehlr, otherwise falls back to state).`;
 
   function activeArea() {
     return window.GridTileAccessors?.getCurrentArea?.() || '-';
@@ -49,16 +49,22 @@ WILDLIFE header: activeArea=<area> is the player's current area, instantiatedDen
   }
 
   function wildlifeSection() {
-    const denCreatures = [];
+    const wildlife = [];
+    let denCreatureCount = 0; // Used to keep ordinary underground-den population visible separately from Drenkirra nest families.
+    let nestCreatureCount = 0; // Used to expose Drenkirra that the former denKey-only snapshot silently omitted.
     for (const c of deps.hostileObjects) {
-      if (c.denKey) denCreatures.push(c);
+      if (!c.denKey && !c.nestTreeKey) continue;
+      wildlife.push(c);
+      if (c.denKey) denCreatureCount++;
+      if (c.nestTreeKey) nestCreatureCount++;
     }
-    const lines = [`WILDLIFE activeArea=${activeArea()} instantiatedDenCreatures=${denCreatures.length} scope=active-runtime`];
-    for (const c of denCreatures) {
+    const lines = [`WILDLIFE activeArea=${activeArea()} instantiatedWildlife=${wildlife.length} denCreatures=${denCreatureCount} nestCreatures=${nestCreatureCount} scope=active-runtime`];
+    for (const c of wildlife) {
       const mode = c._cfDrenkirra?.mode || c._grehlrForage?.mode || c.state;
-      lines.push(`id=${c.id} species=${c.creatureKey} area=${c.areaId} state=${c.state} mode=${mode} tile=(${Math.round(c.x / deps.TILE)},${Math.round(c.y / deps.TILE)}) home=(${Math.round(c.homeX / deps.TILE)},${Math.round(c.homeY / deps.TILE)})`);
+      const source = c.nestTreeKey ? `nest:${c.nestTreeKey}` : `den:${c.denKey}`; // Used to make unexpectedly dense families traceable to their exact nest or den on mobile.
+      lines.push(`id=${c.id} source=${source} species=${c.creatureKey} area=${c.areaId} state=${c.state} mode=${mode} tile=(${Math.round(c.x / deps.TILE)},${Math.round(c.y / deps.TILE)}) home=(${Math.round(c.homeX / deps.TILE)},${Math.round(c.homeY / deps.TILE)})`);
     }
-    if (!denCreatures.length) lines.push('(no den-spawned creatures currently instantiated; off-zone dens are not represented in hostileObjects)');
+    if (!wildlife.length) lines.push('(no den- or nest-spawned creatures currently instantiated; off-zone populations are not represented in hostileObjects)');
     return lines.join('\n');
   }
 

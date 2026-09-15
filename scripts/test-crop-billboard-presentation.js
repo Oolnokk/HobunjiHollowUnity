@@ -35,7 +35,7 @@ assert.doesNotMatch(presentation, /root\.scale\.set|mesh\.scale\.set/,
 assert.match(presentation, /try \{[\s\S]*?previousRender\.call[\s\S]*?finally \{[\s\S]*?restoreTransforms/,
   'temporary soil anchoring is restored after rendering so crop simulation remains owned by game.js');
 
-const artIndex = loader.indexOf('crop-sprite-art.js?v=20260814a');
+const artIndex = loader.indexOf('crop-sprite-art.js?v=20260915cropscan1');
 const heftrootIndex = loader.indexOf('heftroot-billboard-bridge.js');
 const presentationIndex = loader.indexOf('crop-billboard-presentation.js?v=20260814a');
 assert.ok(artIndex >= 0 && heftrootIndex > artIndex && presentationIndex > heftrootIndex,
