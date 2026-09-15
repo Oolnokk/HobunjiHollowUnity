@@ -17,6 +17,8 @@ const TANKAN_SETTINGS_VERSION = 2;
 const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
 const TANKAN_SINGLE_COLUMN_WIDTH_FACTOR = 0.8;
 const TANKAN_EXTRA_COLUMN_WIDTH_FACTOR = 0.2;
+const TANKAN_PADDING_X_EM = 0.8;
+const TANKAN_PADDING_Y_EM = 0.28;
 // Visual reference taken from the supplied authored Hobunji Hollow text decal.
 const TANKAN_BASELINE = Object.freeze({
   columnSpacingEm: -0.35,
@@ -64,8 +66,6 @@ function normalizedTankanRecord(record) {
     };
   }
 
-  // Legacy records stored renderer-space values directly. Convert them so the
-  // supplied authored appearance becomes the clean 0/1 normalized baseline.
   const legacyColumnSpacing = finiteOr(record?.tankanColumnSpacingEm, TANKAN_BASELINE.columnSpacingEm);
   const legacyGlyphAdvance = finiteOr(record?.tankanGlyphAdvanceEm, TANKAN_BASELINE.glyphAdvanceEm);
   const legacyOffsetU = finiteOr(record?.offsetU, TANKAN_BASELINE.offsetU);
@@ -77,7 +77,6 @@ function normalizedTankanRecord(record) {
     tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
     tankanColumnSpacing: legacyColumnSpacing - TANKAN_BASELINE.columnSpacingEm,
     tankanGlyphAdvance: legacyGlyphAdvance / TANKAN_BASELINE.glyphAdvanceEm,
-    // A normalized 1.0 intentionally renders 20% larger than the pre-setting glyph size.
     tankanGlyphSize: 1,
     tankanColor: String(record?.tankanColor || TANKAN_BASELINE.color),
     offsetU: legacyOffsetU - TANKAN_BASELINE.offsetU,
@@ -160,6 +159,8 @@ function tankanTextureOptions(record) {
     columnSpacingEm: dclamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
     glyphAdvanceEm: dclamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
     glyphScale: dclamp(TANKAN_BASELINE.glyphScale * finiteOr(record.tankanGlyphSize, 1), 0.25, 2.5),
+    paddingXEm: TANKAN_PADDING_X_EM,
+    paddingYEm: TANKAN_PADDING_Y_EM,
     color: record.tankanColor || TANKAN_BASELINE.color,
   };
 }
@@ -170,12 +171,15 @@ function measureTankanLayout(text, options = {}) {
   const glyphAdvanceEm = dclamp(finiteOr(options.glyphAdvanceEm, TANKAN_BASELINE.glyphAdvanceEm), 0.1, 4);
   const fontSizePx = Math.max(16, finiteOr(options.fontSizePx, 128));
   const paddingEm = Math.max(0, finiteOr(options.paddingEm, 0.28));
+  const paddingXEm = Math.max(0, finiteOr(options.paddingXEm, paddingEm));
+  const paddingYEm = Math.max(0, finiteOr(options.paddingYEm, paddingEm));
   const words = String(text || '').trim().split(/\s+/).filter(Boolean);
   const columnCount = Math.max(1, words.length);
   const longestWord = Math.max(1, ...words.map(word => Array.from(word).length));
   const glyphAdvancePx = fontSizePx * glyphAdvanceEm;
   const columnAdvancePx = fontSizePx * Math.max(0.05, 1 + columnSpacingEm);
-  const paddingPx = fontSizePx * paddingEm;
+  const paddingXPx = fontSizePx * paddingXEm;
+  const paddingYPx = fontSizePx * paddingYEm;
   const contentWidth = fontSizePx + (columnCount - 1) * columnAdvancePx;
   const contentHeight = longestWord * glyphAdvancePx;
   return {
@@ -186,9 +190,10 @@ function measureTankanLayout(text, options = {}) {
     glyphAdvancePx,
     columnSpacingEm,
     columnAdvancePx,
-    paddingPx,
-    widthPx: Math.max(1, Math.ceil(contentWidth + paddingPx * 2 - 1e-9)),
-    heightPx: Math.max(1, Math.ceil(contentHeight + paddingPx * 2 - 1e-9)),
+    paddingXPx,
+    paddingYPx,
+    widthPx: Math.max(1, Math.ceil(contentWidth + paddingXPx * 2 - 1e-9)),
+    heightPx: Math.max(1, Math.ceil(contentHeight + paddingYPx * 2 - 1e-9)),
   };
 }
 
@@ -198,6 +203,8 @@ function baselineTankanLayout() {
     columnSpacingEm: TANKAN_BASELINE.columnSpacingEm,
     glyphAdvanceEm: TANKAN_BASELINE.glyphAdvanceEm,
     glyphScale: TANKAN_BASELINE.glyphScale,
+    paddingXEm: TANKAN_PADDING_X_EM,
+    paddingYEm: TANKAN_PADDING_Y_EM,
     color: TANKAN_BASELINE.color,
   });
   return cachedTankanBaselineLayout;
@@ -259,7 +266,7 @@ function buildDecalTexturePair(image) {
 function decalTextureKey(record) {
   if (isTankanTextDecal(record)) {
     const options = tankanTextureOptions(record);
-    return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.color}`;
+    return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScale}\u0000${options.paddingXEm}\u0000${options.paddingYEm}\u0000${options.color}`;
   }
   return `image:${record.imageSource || ''}`;
 }
@@ -342,7 +349,7 @@ function buildDecalMesh(record) {
   const frame = group ? localSurfaceFrame(group) : null;
   if (!group || !partMesh || !frame) return null;
 
-  const transform = resolvedDecalTransform(record); // Converts normalized Tankan controls to the authored visual baseline.
+  const transform = resolvedDecalTransform(record);
   const width = Math.max(0.001, frame.dimensions.width * transform.width);
   const height = Math.max(0.001, frame.dimensions.height * transform.height);
   const geometry = new THREE.PlaneGeometry(width, height);
@@ -358,7 +365,7 @@ function buildDecalMesh(record) {
     polygonOffsetUnits: -2,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  const textureKey = decalTextureKey(record); // Rejects stale async texture work when text is edited rapidly.
+  const textureKey = decalTextureKey(record);
   mesh.name = record.name || 'Furniture Decal';
   mesh.userData = { type: 'furnitureDecal', id: record.id, surfaceId: group.id, decalTextureKey: textureKey };
   mesh.raycast = () => {};
@@ -662,7 +669,7 @@ function installDecalUi() {
   panel.id = 'furnitureDecalPanel';
   panel.className = 'section';
   panel.innerHTML = `<h2>Surface Decals</h2>
-    <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. Tankan text uses the rotated/flipped Tankan font, keeps glyph thickness stable as word columns are added, and widens/tallens the decal block automatically instead of squeezing text thinner.</div>
+    <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. Tankan text keeps glyph thickness stable as word columns are added and widens/tallens the decal block automatically instead of squeezing text thinner.</div>
     <div class="g2"><button id="addFurnitureDecal" class="ok">＋ Add Image to Selected Surface</button><button id="addFurnitureTankanText" class="ok">＋ Add Tankan Text</button></div>
     <button id="retargetFurnitureDecal" style="width:100%;margin-top:6px">Retarget Selected Decal</button>
     <input id="furnitureDecalFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
@@ -783,5 +790,5 @@ updateStats = function updateStatsWithDecals(...args) {
 
 installDecalUi();
 rebuildDecals({ prune: false });
-log?.('Furniture decal authoring ready. Select a surface, then add an image or editable Tankan-script text decal. Latest change: Tankan text now auto-sizes by layout so added word columns no longer squeeze the glyphs thinner.');
+log?.('Furniture decal authoring ready. Latest change: Tankan text auto-sizes from its layout, preserving glyph thickness across word-column counts.');
 })();
