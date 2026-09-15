@@ -4,14 +4,16 @@
   if (Number(window.InventoryGearCompactEffects?.version) >= 1) return;
 
   const VERSION = 1;
-  const STYLE_ID = 'inventoryGearCompactEffectsStyles'; // Keeps the compact Tool Effects presentation idempotent across repeated inventory rebuilds.
-  const MIN_EFFECT_FONT_PX = 5.5; // Hard floor for the slot-aligned readout when many chips must share one short card.
-  const MAX_EFFECT_FONT_PX = 10.5; // Keeps a sparse Tool Effects list visually subordinate to the main inventory labels.
+  const STYLE_ID = 'inventoryGearCompactEffectsStyles'; // Keeps the compact Gear-effects presentation idempotent across repeated inventory rebuilds.
+  const TOOL_MAX_FONT_PX = 10.5; // Upper bound used when a Tool Effects card has plenty of room.
+  const CHARACTER_MAX_FONT_PX = 11; // Upper bound used by Outfit Effects / Final Values.
+  const PREFERRED_MIN_FONT_PX = 5.5; // Preferred compact floor before the measured fitter enters emergency shrinking.
+  const EMERGENCY_MIN_FONT_PX = 1.5; // Last-resort floor used only when an extreme aspect ratio would otherwise clip real content.
 
-  let observedPanel = null; // Tracks the currently rendered Tool Effects panel; EquipmentPanel can replace it during rebuilds.
-  let panelResizeObserver = null; // Re-fits cards when menu size/aspect changes without polling every frame.
-  let inventoryMutationObserver = null; // Watches gear rebuilds and InventoryUI's temporary readability-floor annotations.
-  let fitQueued = false; // Coalesces rebuild/resize bursts into one layout measurement.
+  let observedLoadout = null; // Tracks the current loadout root; EquipmentPanel can rebuild it at runtime.
+  let loadoutResizeObserver = null; // Re-fits cards whenever orientation/menu geometry changes.
+  let inventoryMutationObserver = null; // Watches Gear rebuilds and InventoryUI's temporary readability-floor annotations.
+  let fitQueued = false; // Coalesces rebuild/resize bursts into one measured layout pass.
   let lastDebug = null; // Mobile-friendly snapshot of the most recent fit pass.
 
   function installStyles() {
@@ -19,7 +21,7 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      /* Always reserve a visible lower Gear region. The compact upper loadout gets the remainder instead of being allowed to squeeze Owned Gear to zero height. */
+      /* Always reserve a visible lower Gear region. The compact upper loadout gets the remainder instead of squeezing Owned Gear to zero height. */
       #mpInventory.inv-mode-gear .gear-loadout-grid {
         flex:1 1 auto;
         min-height:0;
@@ -38,7 +40,7 @@
         scrollbar-width:thin;
       }
 
-      /* Tool Effects shares the current-loadout height with the seven slot buttons beside it. Its cards therefore divide the available height instead of growing from content. */
+      /* Tool Effects divides its real rendered height between cards according to how much content each card owns. */
       #mpInventory .gear-tool-stats {
         min-height:0;
         padding:calc(.28 * var(--inv-gap));
@@ -57,7 +59,7 @@
         overflow:hidden !important;
       }
       #mpInventory .gear-tool-stats .gear-stat-item {
-        flex:1 1 0;
+        flex:var(--gear-tool-card-weight,1) 1 0;
         min-height:0;
         padding:1px 2px;
         display:flex;
@@ -76,12 +78,10 @@
       #mpInventory .gear-tool-stats .gear-stat-slot,
       #mpInventory .gear-tool-stats .gear-stat-name,
       #mpInventory .gear-tool-stats .gear-stat-chip {
-        font-size:var(--gear-tool-card-font, 9px) !important;
+        font-size:var(--gear-tool-card-font,9px) !important;
         line-height:.9 !important;
       }
-      #mpInventory .gear-tool-stats .gear-stat-slot {
-        letter-spacing:.025em;
-      }
+      #mpInventory .gear-tool-stats .gear-stat-slot { letter-spacing:.025em; }
       #mpInventory .gear-tool-stats .gear-stat-name {
         min-width:0;
         overflow:hidden;
@@ -112,59 +112,157 @@
         font-size:9px;
         line-height:1.05;
       }
+
+      /* Outfit Effects / Final Values also have to survive portrait width. Give the denser card more height and fit its rows from measured pixels, not an assumed line count. */
+      #mpInventory .gear-outfit-stats.gear-character-effects-host {
+        display:flex !important;
+        flex-direction:column !important;
+        min-height:0 !important;
+        overflow:hidden !important;
+      }
+      #mpInventory .gear-outfit-stats .gear-character-effects-card {
+        flex:var(--gear-character-card-weight,1) 1 0 !important;
+        min-height:0 !important;
+        overflow:hidden !important;
+        padding:1px 2px !important;
+      }
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-loadout-heading {
+        flex:0 0 auto;
+        min-height:0 !important;
+        font-size:var(--gear-character-card-font,9px) !important;
+        line-height:1 !important;
+      }
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-effects-list {
+        flex:1 1 auto !important;
+        min-height:0 !important;
+        gap:1px 2px !important;
+        overflow:hidden !important;
+      }
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-effect-row,
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-effect-label,
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-effect-value {
+        font-size:var(--gear-character-card-font,9px) !important;
+        line-height:.95 !important;
+      }
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-effect-row {
+        min-height:0;
+        padding:0 1px !important;
+        gap:2px !important;
+        overflow:hidden;
+      }
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-effect-label,
+      #mpInventory .gear-outfit-stats .gear-character-effects-card .gear-effect-value {
+        white-space:nowrap !important;
+        overflow:hidden;
+        text-overflow:clip;
+      }
     `;
     document.head?.appendChild(style);
   }
 
-  function releaseInventoryFontFloor(panel) {
-    if (!panel) return 0;
+  function releaseInventoryFontFloor(root) {
+    if (!root) return 0;
     let released = 0;
-    panel.querySelectorAll('[data-menu-font-floor="1"]').forEach((element) => {
-      element.style.removeProperty('font-size'); // InventoryUI normally enforces 11px globally; this compact readout is intentionally allowed to shrink to fit its fixed loadout column.
+    root.querySelectorAll('[data-menu-font-floor="1"]').forEach((element) => {
+      element.style.removeProperty('font-size'); // The compact upper Gear readout deliberately resizes below the menu-wide 11px floor when orientation leaves less room.
       delete element.dataset.menuFontFloor;
       released += 1;
     });
     return released;
   }
 
-  function cardLineCount(card) {
-    const chips = card?.querySelectorAll?.('.gear-stat-chip')?.length || 0; // Each chip is deliberately stacked on its own compact line.
-    return Math.max(1, 1 + chips); // One heading line plus one line for each mastery/quality/effect chip.
+  function toolCardUnits(card) {
+    const chips = card?.querySelectorAll?.('.gear-stat-chip')?.length || 0; // Each chip is deliberately one stacked line.
+    return Math.max(1, 1 + chips); // One heading line plus one unit per mastery/quality/effect chip.
   }
 
-  function fitToolEffects() {
+  function characterCardUnits(card) {
+    const rows = card?.querySelectorAll?.('.gear-effect-row')?.length || 0;
+    return Math.max(1, 1 + Math.ceil(rows / 2)); // One heading line plus the actual two-column grid row count.
+  }
+
+  function visibleTextFits(card, selectors) {
+    if (!card || card.clientHeight <= 0 || card.clientWidth <= 0) return true;
+    if (card.scrollHeight > card.clientHeight + 0.75) return false;
+    for (const element of card.querySelectorAll(selectors)) {
+      if (element.clientWidth > 0 && element.scrollWidth > element.clientWidth + 0.75) return false;
+      if (element.clientHeight > 0 && element.scrollHeight > element.clientHeight + 0.75) return false;
+    }
+    return true;
+  }
+
+  function fitMeasuredFont(card, variableName, maxFontPx, selectors) {
+    const setFont = (fontPx) => card.style.setProperty(variableName, `${fontPx.toFixed(2)}px`);
+    setFont(maxFontPx);
+    if (visibleTextFits(card, selectors)) return maxFontPx;
+
+    let lowestFit = PREFERRED_MIN_FONT_PX;
+    setFont(lowestFit);
+    while (!visibleTextFits(card, selectors) && lowestFit > EMERGENCY_MIN_FONT_PX + 0.01) {
+      lowestFit = Math.max(EMERGENCY_MIN_FONT_PX, lowestFit * 0.78); // Measured emergency shrink handles narrow portrait widths without clipping text.
+      setFont(lowestFit);
+    }
+    if (!visibleTextFits(card, selectors)) return lowestFit;
+
+    let low = lowestFit;
+    let high = maxFontPx;
+    for (let i = 0; i < 8; i++) { // Binary search finds the largest font that truly fits the rendered card in this orientation.
+      const mid = (low + high) * 0.5;
+      setFont(mid);
+      if (visibleTextFits(card, selectors)) low = mid;
+      else high = mid;
+    }
+    setFont(low);
+    return low;
+  }
+
+  function fitToolPanel(panel) {
+    const list = panel?.querySelector?.(':scope > .gear-stat-list');
+    const cards = [...(list?.querySelectorAll?.(':scope > .gear-stat-item') || [])];
+    if (!list || !cards.length) return { cardCount:cards.length, listHeight:list?.getBoundingClientRect?.().height || 0, cards:[] };
+
+    cards.forEach((card) => card.style.setProperty('--gear-tool-card-weight', String(toolCardUnits(card))));
+    const cardDebug = cards.map((card) => ({
+      units:toolCardUnits(card),
+      fontPx:Number(fitMeasuredFont(card, '--gear-tool-card-font', TOOL_MAX_FONT_PX, '.gear-stat-slot,.gear-stat-name,.gear-stat-chip').toFixed(2)),
+      height:Number(card.getBoundingClientRect().height.toFixed(2)),
+    }));
+    return { cardCount:cards.length, listHeight:Number(list.getBoundingClientRect().height.toFixed(2)), cards:cardDebug };
+  }
+
+  function fitCharacterPanel(panel) {
+    const cards = [...(panel?.querySelectorAll?.(':scope > .gear-character-effects-card') || [])];
+    if (!cards.length) return { cardCount:0, cards:[] };
+
+    cards.forEach((card) => card.style.setProperty('--gear-character-card-weight', String(characterCardUnits(card))));
+    const cardDebug = cards.map((card) => ({
+      kind:card.dataset.effectsKind || '',
+      units:characterCardUnits(card),
+      fontPx:Number(fitMeasuredFont(card, '--gear-character-card-font', CHARACTER_MAX_FONT_PX, '.gear-loadout-heading,.gear-effect-label,.gear-effect-value').toFixed(2)),
+      height:Number(card.getBoundingClientRect().height.toFixed(2)),
+    }));
+    return { cardCount:cards.length, height:Number(panel.getBoundingClientRect().height.toFixed(2)), cards:cardDebug };
+  }
+
+  function fitGearEffects() {
     fitQueued = false;
     if (typeof document === 'undefined') return null;
-    const panel = document.querySelector('#mpInventory .gear-tool-stats');
-    if (!panel) return null;
-    hookPanel(panel);
+    const loadout = document.querySelector('#mpInventory .gear-loadout-grid');
+    if (!loadout) return null;
+    hookLoadout(loadout);
 
-    const releasedFloors = releaseInventoryFontFloor(panel);
-    const list = panel.querySelector(':scope > .gear-stat-list');
-    const cards = [...(list?.querySelectorAll?.(':scope > .gear-stat-item') || [])];
-    if (!list || !cards.length) {
-      lastDebug = { cardCount: cards.length, releasedFloors, listHeight: list?.getBoundingClientRect?.().height || 0, cards: [] };
-      return lastDebug;
-    }
-
-    const listHeight = Math.max(0, list.getBoundingClientRect().height); // Real rendered height keeps this responsive to desktop/mobile menu geometry.
-    const sharedCardHeight = Math.max(1, (listHeight - Math.max(0, cards.length - 1)) / cards.length); // One-pixel list gaps are already reserved above.
-    const cardDebug = [];
-
-    for (const card of cards) {
-      const lines = cardLineCount(card);
-      const usableHeight = Math.max(1, sharedCardHeight - 2); // Leaves the card's one-pixel top/bottom padding outside the text budget.
-      const fontPx = Math.max(MIN_EFFECT_FONT_PX, Math.min(MAX_EFFECT_FONT_PX, usableHeight / Math.max(1, lines * 0.96)));
-      card.style.setProperty('--gear-tool-card-font', `${fontPx.toFixed(2)}px`); // Per-card sizing lets a simple tool stay larger while a chip-heavy tool compresses farther.
-      cardDebug.push({ lines, fontPx:Number(fontPx.toFixed(2)), sharedCardHeight:Number(sharedCardHeight.toFixed(2)) });
-    }
+    const releasedFloors = releaseInventoryFontFloor(loadout);
+    const tool = fitToolPanel(loadout.querySelector('.gear-tool-stats'));
+    const character = fitCharacterPanel(loadout.querySelector('.gear-outfit-stats'));
+    const owned = document.querySelector('#mpInventory .gear-owned-section');
 
     lastDebug = {
-      cardCount: cards.length,
       releasedFloors,
-      listHeight:Number(listHeight.toFixed(2)),
-      sharedCardHeight:Number(sharedCardHeight.toFixed(2)),
-      cards:cardDebug,
+      loadoutHeight:Number(loadout.getBoundingClientRect().height.toFixed(2)),
+      ownedHeight:Number((owned?.getBoundingClientRect?.().height || 0).toFixed(2)),
+      viewport:[window.innerWidth || 0, window.innerHeight || 0],
+      tool,
+      character,
     };
     return lastDebug;
   }
@@ -172,15 +270,19 @@
   function scheduleFit() {
     if (fitQueued || typeof requestAnimationFrame !== 'function') return;
     fitQueued = true;
-    requestAnimationFrame(fitToolEffects);
+    requestAnimationFrame(fitGearEffects);
   }
 
-  function hookPanel(panel) {
-    if (!panel || panel === observedPanel) return;
-    panelResizeObserver?.disconnect?.();
-    observedPanel = panel;
-    panelResizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleFit) : null;
-    panelResizeObserver?.observe?.(panel);
+  function hookLoadout(loadout) {
+    if (!loadout || loadout === observedLoadout) return;
+    loadoutResizeObserver?.disconnect?.();
+    observedLoadout = loadout;
+    loadoutResizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleFit) : null;
+    loadoutResizeObserver?.observe?.(loadout);
+    const toolPanel = loadout.querySelector('.gear-tool-stats');
+    const characterPanel = loadout.querySelector('.gear-outfit-stats');
+    if (toolPanel) loadoutResizeObserver?.observe?.(toolPanel);
+    if (characterPanel) loadoutResizeObserver?.observe?.(characterPanel);
   }
 
   function start() {
@@ -192,7 +294,7 @@
       const relevant = records.some((record) => {
         if (record.type === 'childList') return true;
         const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
-        return !!target?.closest?.('.gear-tool-stats');
+        return !!target?.closest?.('.gear-loadout-grid');
       });
       if (relevant) scheduleFit();
     });
@@ -202,19 +304,20 @@
       attributes:true,
       attributeFilter:['data-menu-font-floor'],
     });
-    window.addEventListener?.('resize', scheduleFit, { passive:true });
+    window.addEventListener?.('resize', scheduleFit, { passive:true }); // Orientation changes surface here on mobile browsers.
+    window.addEventListener?.('orientationchange', scheduleFit, { passive:true });
     scheduleFit();
   }
 
   function debugSnapshot() {
     return {
       version:VERSION,
-      panelReady:!!observedPanel?.isConnected,
+      loadoutReady:!!observedLoadout?.isConnected,
       lastFit:lastDebug ? JSON.parse(JSON.stringify(lastDebug)) : null,
     };
   }
 
-  window.InventoryGearCompactEffects = Object.freeze({ version:VERSION, refresh:fitToolEffects, debugSnapshot });
+  window.InventoryGearCompactEffects = Object.freeze({ version:VERSION, refresh:fitGearEffects, debugSnapshot });
   window.__inventoryGearCompactEffectsDebug = debugSnapshot;
 
   if (typeof document !== 'undefined') {
