@@ -16,6 +16,10 @@
   const inferredProfileCache = new WeakMap();
   const npcIdentityById = new Map();
   const npcLookupByRevision = new Map();
+  const generationBridgeByModel = new WeakMap();
+  const patchedHandRoots = new WeakSet();
+  let generationCorrectionCount = 0;
+  let lastGenerationCorrection = null;
   let activeScene = null;
   let previousSceneBeforeRender = null;
   let sceneBeforeRenderWrapper = null;
@@ -366,11 +370,117 @@
     };
   }
 
-  function legacyEditorIdleTarget(model, side) {
+  function gameplayEditorIdleTarget(model, side) {
     const x = Number(model?.userData?.handAttachX);
     const y = Number(model?.userData?.handAttachY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    // Matches docs/js/procedural-hand-attachments.js exactly: left=-handAttachX, right=+handAttachX.
+    return { x: side === 'left' ? -x : x, y, z: 0 };
+  }
+
+  function legacyReversedEditorIdleTarget(model, side) {
+    const x = Number(model?.userData?.handAttachX);
+    const y = Number(model?.userData?.handAttachY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    // Compatibility only for older procedural-editor builds that created the wrappers on the opposite sides.
     return { x: side === 'left' ? x : -x, y, z: 0 };
+  }
+
+  function positionNear(position, target, epsilon) {
+    return !!(position && target && Math.abs(position.x - target.x) <= epsilon && Math.abs(position.y - target.y) <= epsilon && Math.abs(position.z - target.z) <= epsilon);
+  }
+
+  function vectorJson(value) {
+    return value ? { x: Number(value.x) || 0, y: Number(value.y) || 0, z: Number(value.z) || 0 } : null;
+  }
+
+  function normalizeGeneratedHandWrapper(model, hand, side) {
+    const gameplayIdle = gameplayEditorIdleTarget(model, side);
+    const legacyIdle = legacyReversedEditorIdleTarget(model, side);
+    if (!gameplayIdle || !legacyIdle || !hand?.position) return false;
+    const modelHeight = previewModelHeight(model);
+    const epsilon = Math.max(0.00025, modelHeight * DEFAULT_REACQUIRE_FRACTION);
+    if (!positionNear(hand.position, legacyIdle, epsilon) || positionNear(hand.position, gameplayIdle, epsilon)) return false;
+    const before = vectorJson(hand.position);
+    hand.position.set?.(gameplayIdle.x, gameplayIdle.y, gameplayIdle.z);
+    if (!hand.position.set) {
+      hand.position.x = gameplayIdle.x;
+      hand.position.y = gameplayIdle.y;
+      hand.position.z = gameplayIdle.z;
+    }
+    hand.updateMatrix?.();
+    hand.updateMatrixWorld?.(true);
+    generationCorrectionCount += 1;
+    lastGenerationCorrection = {
+      model: model?.name || null,
+      hand: hand?.name || null,
+      side,
+      before,
+      after: vectorJson(hand.position),
+      convention: 'gameplay:left=-handAttachX,right=+handAttachX',
+    };
+    editorLog('[Idle arms] Corrected newly generated editor hand to gameplay side convention.', 'info', lastGenerationCorrection);
+    return true;
+  }
+
+  function patchGeneratedHandsRoot(model, root) {
+    if (!root || patchedHandRoots.has(root)) return;
+    patchedHandRoots.add(root);
+    const originalAdd = typeof root.add === 'function' ? root.add : null;
+    if (originalAdd) {
+      root.add = function hobunjiGameplaySideHandRootAdd() {
+        const objects = Array.from(arguments);
+        const result = originalAdd.apply(this, objects);
+        for (const object of objects) {
+          const name = String(object?.name || '');
+          if (/_LeftHand$/i.test(name)) normalizeGeneratedHandWrapper(model, object, 'left');
+          else if (/_RightHand$/i.test(name)) normalizeGeneratedHandWrapper(model, object, 'right');
+        }
+        return result;
+      };
+      root.add.__hobunjiGameplayHandSideBridge = true;
+    }
+    for (const child of root.children || []) {
+      const name = String(child?.name || '');
+      if (/_LeftHand$/i.test(name)) normalizeGeneratedHandWrapper(model, child, 'left');
+      else if (/_RightHand$/i.test(name)) normalizeGeneratedHandWrapper(model, child, 'right');
+    }
+  }
+
+  function installGenerationSideBridge(model) {
+    if (!model || generationBridgeByModel.has(model)) return generationBridgeByModel.get(model) || null;
+    const originalAdd = typeof model.add === 'function' ? model.add : null;
+    const state = { installed: !!originalAdd, model: model.name || null, correctedCountAtInstall: generationCorrectionCount };
+    generationBridgeByModel.set(model, state);
+    if (!originalAdd) return state;
+    model.add = function hobunjiGameplaySideModelAdd() {
+      const objects = Array.from(arguments);
+      const result = originalAdd.apply(this, objects);
+      for (const object of objects) {
+        if (/_procedural_hands$/i.test(String(object?.name || ''))) patchGeneratedHandsRoot(model, object);
+      }
+      return result;
+    };
+    model.add.__hobunjiGameplayHandSideBridge = true;
+    for (const child of model.children || []) {
+      if (/_procedural_hands$/i.test(String(child?.name || ''))) patchGeneratedHandsRoot(model, child);
+    }
+    editorLog('[Idle arms] Generated-hand construction bridge installed; new Left/Right wrappers now use gameplay handAttachX sides.', 'info', {
+      model: model.name || null,
+      convention: 'left=-handAttachX, right=+handAttachX',
+    });
+    return state;
+  }
+
+  function generationBridgeStatus(model) {
+    const state = generationBridgeByModel.get(model) || null;
+    return {
+      installed: !!state?.installed,
+      correctedCount: generationCorrectionCount,
+      lastCorrection: lastGenerationCorrection,
+      gameplayConvention: 'left=-handAttachX,right=+handAttachX',
+      legacyCompatibility: 'left=+handAttachX,right=-handAttachX',
+    };
   }
 
   function toHandParentLocal(model, hand, point) {
@@ -382,14 +492,6 @@
     model.updateMatrixWorld?.(true);
     hand.parent.updateMatrixWorld?.(true);
     return hand.parent.worldToLocal(model.localToWorld(local));
-  }
-
-  function positionNear(position, target, epsilon) {
-    return !!(position && target && Math.abs(position.x - target.x) <= epsilon && Math.abs(position.y - target.y) <= epsilon && Math.abs(position.z - target.z) <= epsilon);
-  }
-
-  function vectorJson(value) {
-    return value ? { x: Number(value.x) || 0, y: Number(value.y) || 0, z: Number(value.z) || 0 } : null;
   }
 
   function handSummary(model, side) {
@@ -418,7 +520,9 @@
     if (!targetInfo) return { side, available: true, owns: false, reason: 'missing-shoulder' };
     const target = toHandParentLocal(model, hand, targetInfo);
     const shoulder = toHandParentLocal(model, hand, targetInfo.shoulder);
-    const legacyInfo = legacyEditorIdleTarget(model, side);
+    const gameplayInfo = gameplayEditorIdleTarget(model, side);
+    const legacyInfo = legacyReversedEditorIdleTarget(model, side);
+    const gameplayIdle = gameplayInfo ? toHandParentLocal(model, hand, gameplayInfo) : null;
     const legacyIdle = legacyInfo ? toHandParentLocal(model, hand, legacyInfo) : null;
     if (!target || !shoulder) return { side, available: true, owns: false, reason: 'missing-three-bridge' };
 
@@ -427,15 +531,17 @@
     const defaultEpsilon = Math.max(epsilon, modelHeight * DEFAULT_REACQUIRE_FRACTION);
     const stillOurWrite = !!(ownership.lastWritten && positionNear(hand.position, ownership.lastWritten, epsilon));
     const atShoulderDefault = positionNear(hand.position, shoulder, defaultEpsilon);
+    const atGameplayIdleDefault = !!(gameplayIdle && positionNear(hand.position, gameplayIdle, defaultEpsilon));
     const atLegacyIdleDefault = !!(legacyIdle && positionNear(hand.position, legacyIdle, defaultEpsilon));
-    if (forceReacquire || atShoulderDefault || atLegacyIdleDefault) ownership.owns = true;
+    if (forceReacquire || atShoulderDefault || atGameplayIdleDefault || atLegacyIdleDefault) ownership.owns = true;
     else if (ownership.owns && !stillOurWrite) ownership.owns = false;
 
     const base = {
       side, available: true, owns: ownership.owns, current: vectorJson(hand.position), handName: hand.name || null,
       handParent: hand.parent?.name || hand.parent?.type || null, shoulder: vectorJson(shoulder), rawShoulder: vectorJson(targetInfo.rawShoulder),
-      shoulderScale: targetInfo.shoulderScale, legacyIdle: vectorJson(legacyIdle), target: vectorJson(target), atShoulderDefault, atLegacyIdleDefault,
-      stillOurWrite, posteriorY: targetInfo.posteriorY, armLengthPercent: targetInfo.armLengthPercent, armLengthY: targetInfo.armLengthY,
+      shoulderScale: targetInfo.shoulderScale, gameplayIdle: vectorJson(gameplayIdle), legacyReversedIdle: vectorJson(legacyIdle), target: vectorJson(target),
+      atShoulderDefault, atGameplayIdleDefault, atLegacyIdleDefault, stillOurWrite,
+      posteriorY: targetInfo.posteriorY, armLengthPercent: targetInfo.armLengthPercent, armLengthY: targetInfo.armLengthY,
       idleOffset: { ...targetInfo.fallback },
     };
     if (!ownership.owns) return { ...base, reason: 'explicit-animation-owner' };
@@ -444,7 +550,8 @@
     hand.updateMatrix?.();
     hand.updateMatrixWorld?.(true);
     ownership.lastWritten = target.clone();
-    return { ...base, owns: true, reason: atLegacyIdleDefault ? 'claimed-legacy-idle' : atShoulderDefault ? 'claimed-shoulder-default' : forceReacquire ? 'reacquired-after-dance' : 'canonical-idle', position: vectorJson(target) };
+    const reason = atGameplayIdleDefault ? 'claimed-gameplay-idle' : atLegacyIdleDefault ? 'claimed-legacy-reversed-idle' : atShoulderDefault ? 'claimed-shoulder-default' : forceReacquire ? 'reacquired-after-dance' : 'canonical-idle';
+    return { ...base, owns: true, reason, position: vectorJson(target) };
   }
 
   function unresolvedDiagnostic(model, modelHeight, resolved) {
@@ -453,6 +560,7 @@
       npcId: model?.userData?.npcId || null,
       repositoryCommit: model?.userData?.repositoryCommit || null,
       npcIdentityLookup: npcLookupStatus(model),
+      generationBridge: generationBridgeStatus(model),
       modelHeight,
       modelWidth: Number(model?.userData?.portraitModelWidth) || null,
       modelScale: vectorJson(model?.scale),
@@ -488,17 +596,18 @@
       armLengthHeightPercentOffset: armLengthPercent,
       armLengthWorldY: -modelHeight * armLengthPercent / 100,
       npcIdentityLookup: npcLookupStatus(model),
+      generationBridge: generationBridgeStatus(model),
       hook: { attached: !!(activeScene && activeScene.onBeforeRender === sceneBeforeRenderWrapper), attachCount: hookAttachCount, scene: activeScene?.name || activeScene?.type || 'scene' },
       left, right,
       dance: dance ? { enabled: !!dance.enabled, armStyle: dance.armStyle || 'none' } : null,
-      rule: 'scaled authored shoulder X + floor-relative posterior Y - arm length + shared idle fallback',
+      rule: 'gameplay hand side convention -> scaled authored shoulder X + floor-relative posterior Y - arm length + shared idle fallback',
     };
   }
 
   function maybeLogStatus(snapshot, force = false) {
     const l = `${snapshot.left?.available ? 1 : 0}:${snapshot.left?.owns ? 1 : 0}:${snapshot.left?.reason || ''}`;
     const r = `${snapshot.right?.available ? 1 : 0}:${snapshot.right?.owns ? 1 : 0}:${snapshot.right?.reason || ''}`;
-    const signature = `${snapshot.model}|${snapshot.profile}|${snapshot.identitySource}|${l}|${r}|hook:${snapshot.hook?.attachCount || 0}`;
+    const signature = `${snapshot.model}|${snapshot.profile}|${snapshot.identitySource}|${l}|${r}|generation:${snapshot.generationBridge?.correctedCount || 0}|hook:${snapshot.hook?.attachCount || 0}`;
     if (!force && signature === lastStatusSignature) return;
     lastStatusSignature = signature;
     editorLog('[Idle arms] Idle-arm parity diagnostic', snapshot.active ? 'info' : 'warn', snapshot);
@@ -508,6 +617,7 @@
     const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
     if (!model) { debugSnapshot = { ...debugSnapshot, active: false, reason: 'waiting-for-preview', hookAttachCount }; return false; }
 
+    installGenerationSideBridge(model);
     if (model !== lastModel) {
       lastModel = model;
       lastProfileSignature = '';
@@ -520,7 +630,7 @@
     const forceReacquire = explicitDanceWasActive && !explicitDance;
     explicitDanceWasActive = explicitDance;
     if (explicitDance) {
-      debugSnapshot = { installed: true, active: false, reason: `dance:${dance.armStyle}`, model: model.name || null, dance, hookAttachCount };
+      debugSnapshot = { installed: true, active: false, reason: `dance:${dance.armStyle}`, model: model.name || null, dance, generationBridge: generationBridgeStatus(model), hookAttachCount };
       if (forceLog) editorLog('[Idle arms] Explicit Dance arm style owns the hands.', 'info', debugSnapshot);
       return false;
     }
@@ -531,7 +641,7 @@
     if (!profile) {
       const detail = unresolvedDiagnostic(model, modelHeight, resolved);
       debugSnapshot = { installed: true, active: false, reason: 'attachment-profile-unresolved', hookAttachCount, ...detail };
-      const signature = JSON.stringify({ model: detail.model, npcId: detail.npcId, lookup: detail.npcIdentityLookup?.state, identity: detail.identity, left: detail.left?.available, right: detail.right?.available });
+      const signature = JSON.stringify({ model: detail.model, npcId: detail.npcId, lookup: detail.npcIdentityLookup?.state, identity: detail.identity, left: detail.left?.available, right: detail.right?.available, corrected: detail.generationBridge?.correctedCount });
       if (forceLog || signature !== lastUnresolvedSignature) {
         lastUnresolvedSignature = signature;
         editorLog('[Idle arms] Could not resolve the current avatar attachment profile.', 'warn', debugSnapshot);
@@ -555,6 +665,7 @@
         handAttachY: Number(model.userData?.handAttachY),
         posteriorY: posteriorY(profile, modelHeight, model.userData?.handAttachY),
         armLengthHeightPercentOffset: Number(profile.anatomy?.armLengthHeightPercentOffset) || 0,
+        generationBridge: generationBridgeStatus(model),
       });
     }
 
@@ -567,7 +678,7 @@
       active,
       reason: active ? 'canonical-idle' : (left.reason === 'hand-not-built-yet' || right.reason === 'hand-not-built-yet') ? 'waiting-for-hands' : 'explicit-animation-owner',
       ...diagnostic,
-      latestChange: 'NPC previews now resolve species/gender from npcId + the preview repository revision, authored shoulder X is scaled from its 0.9 runtime basis to the current preview width, and the editor legacy handAttach sign convention is recognized before claiming a default hand.',
+      latestChange: 'Generated Left/Right hand wrappers are normalized at construction to gameplay left=-handAttachX/right=+handAttachX; reversed editor placement remains compatibility-only. Canonical idle then uses scaled authored shoulder X, posterior Y, authored arm length, and shared idle motion.',
     };
     maybeLogStatus(debugSnapshot, forceLog);
     return active;
@@ -595,6 +706,8 @@
   }
 
   function refreshSceneBinding() {
+    const model = global.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
+    if (model) installGenerationSideBridge(model);
     const scene = global.HobunjiGameplayBackdrop?.getScene?.() || null;
     if (scene && (scene !== activeScene || scene.onBeforeRender !== sceneBeforeRenderWrapper)) attachToScene(scene, scene === activeScene ? 'hook-replaced' : 'scene-changed');
     requestAnimationFrame(refreshSceneBinding);
