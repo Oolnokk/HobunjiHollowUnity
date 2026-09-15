@@ -35,6 +35,8 @@
   },
   "behavior": {
     "fullSimulationChunkTiles": 10,
+    "fullSimulationRadiusTiles": 12,
+    "fullSimulationReleaseRadiusTiles": 16,
     "offChunkTickSeconds": 4,
     "decisionMinSeconds": 4,
     "decisionMaxSeconds": 11,
