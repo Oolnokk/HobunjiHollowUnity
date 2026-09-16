@@ -37,6 +37,11 @@ assert(!runtime.includes('hostileObjects.splice('),
 assert(!runtime.includes('hostileObjects?.includes?.(entity)'),
   'Porakaneki diagnostics must not use Array.includes on the hostile Set');
 
+const neutralizeIndex = runtime.indexOf('makeNeutral(entity, hunter);'); // Publication ordering guard: no shared hostile frame may see the builder's default bandit state.
+const registerIndex = runtime.indexOf('combatDeps.hostileObjects.add(entity);'); // Shared hostile Set publication point checked against neutralization above.
+assert(neutralizeIndex >= 0 && registerIndex > neutralizeIndex,
+  'materialized Porakaneki must be neutralized before publication to the shared hostile Set');
+
 assert(gameSource.includes("} else if (c.state === 'return') {"),
   'game.js must retain the shared return-state branch used by neutral Porakaneki');
 assert(gameSource.includes('moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);'),
