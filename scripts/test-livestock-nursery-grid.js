@@ -129,13 +129,15 @@ assert.doesNotMatch(pagingSource, /measurePageGeometry/, 'paging does not perfor
 assert.doesNotMatch(pagingSource, /getBoundingClientRect/, 'paging does not force layout reads to decide page capacity');
 assert.match(pagingSource, /stack\.classList\.remove\(LEGACY_SCROLL_CLASS\)/, 'enhanced grid opts out of FarmMenuLayout compact-scroll bookkeeping when a Farm render is paginated');
 assert.doesNotMatch(pagingSource, /attributeFilter:\s*\['class'\]/, 'paging does not maintain a second class MutationObserver');
-assert.match(pagingSource, /document\.createElement\('button'\)/, 'page turning uses its own focusable light-DOM button rather than hijacking the Nursery help/debug note');
-assert.match(pagingSource, /pager\.hidden\s*=\s*pageCount\s*<=\s*1/, 'page arrow disappears entirely when the current Nursery fits on one page');
+assert.match(pagingSource, /shadow\.querySelector\('slot\[name="debug"\]'\)/, 'page turning reuses the existing light-DOM debug host through a shadow slot instead of adding Nursery children');
+assert.doesNotMatch(pagingSource, /document\.createElement\('button'\)/, 'paging never creates a new light-DOM button that could wake the legacy Nursery body observer');
+assert.match(pagingSource, /font-size:0\s*!important/, 'paging fully hides the old help/debug host text while it is acting as the page arrow');
+assert.match(pagingSource, /pager\.classList\.remove\('nursery-page-turn'\)/, 'page arrow mode disappears when the Nursery fits on one page');
 assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.decorate\?\./, 'page turns do not rerun the entire Nursery genetics/portrait decorator');
 assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.debugSnapshot/, 'paging does not scan the full genetics debug snapshot just to find the selected card');
 assert.doesNotMatch(pagingSource, /first\.click\?\./, 'page focus does not click the first card and render its detail rail a second time');
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'[\s\S]*nurserygrid2/, 'farm feature bridge loads the lazy-portrait Nursery grid revision');
-assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'[\s\S]*nurserypage4/, 'farm feature bridge loads the simplified fixed-page revision');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'[\s\S]*nurserypage6/, 'farm feature bridge loads the observer-safe fixed-page revision');
 assert.match(bridgeSource, /installLivestockNurseryGrid\(\)/, 'farm feature bridge installs the Nursery grid after FarmPanel becomes available');
 assert.match(bridgeSource, /installLivestockNurseryInventoryPaging\(\)/, 'farm feature bridge installs paging after the grid feature');
 
