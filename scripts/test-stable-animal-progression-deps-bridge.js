@@ -33,6 +33,7 @@ context.StableAnimalXpEvents = { install() { xpInstallCount++; } };
 context.StableTrainingCompendiumPatch = {};
 context.BARN_INCUBATOR_CONFIG = {};
 context.BarnIncubator = { install() {} };
+context.FarmMenuLayout = { install() {} }; // Keeps this bridge-only regression focused on dependency mirroring rather than dynamic feature loading.
 context.LivestockNursery = { install() {} };
 context.FarmAnimals = {
   init(injectedDeps) { farmInitDeps = injectedDeps; },

@@ -23,6 +23,10 @@
     return window.StableAnimalTrainingRefinements || null;
   }
 
+  function growth() {
+    return window.AnimalGrowth || null;
+  }
+
   function stableMaxLevel() {
     const value = Number(progression()?.maxLevel ?? refinements()?.maxLevel);
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 10;
@@ -164,6 +168,7 @@
       id: entry.id,
       name: entry.name,
       kind: entry.kind,
+      lifeStage: entry.lifeStage,
       role,
       level: entry.level,
       maxLevel: stableMaxLevel(),
@@ -173,6 +178,35 @@
       perkIds: perkDefsForEntry(entry).map(def => def.id),
       combatModifiers: role === 'companion' ? refinements()?.companionCombatModifiers?.(entry) || null : null,
     };
+  }
+
+  function stableAgeSection(title, note) {
+    const section = document.createElement('div'); // Used as the native Stable age-group container.
+    section.className = 'stable-age-section';
+    const heading = makeText('div', title); // Used as the visible baby/adult group heading.
+    heading.className = 'settings-section-title';
+    section.appendChild(heading);
+    if (note) {
+      const noteEl = makeText('div', note); // Used to explain the rules that differ between baby and adult animals.
+      noteEl.className = 'farm-note';
+      section.appendChild(noteEl);
+    }
+    const rows = document.createElement('div'); // Used as the destination for rows belonging to this age group.
+    rows.className = 'farm-list';
+    section.appendChild(rows);
+    return { section, rows };
+  }
+
+  function stableIsBaby(entry) {
+    const api = growth(); // Used to keep the native Stable renderer on AnimalGrowth's canonical life-stage rule.
+    return typeof api?.isBaby === 'function' ? api.isBaby(entry) : entry?.lifeStage === 'baby';
+  }
+
+  function growStableEntry(entry, equip) {
+    const api = growth(); // Used to delegate tonic consumption/persistence instead of duplicating growth state here.
+    const result = api?.growStableBaby?.(entry.id, { equip }) || { ok: false, message: 'Animal growth failed to load.' }; // Used for the user-facing result and toast.
+    stableDeps?.showToast?.(result.message, result.ok !== false);
+    return result;
   }
 
   function buildStablePerkTree(entry) {
@@ -220,34 +254,52 @@
   function renderStablePanelNative() {
     const list = document.getElementById('stableList');
     if (!list || !stableDeps) return;
+    growth()?.normalizeStableLifeStages?.();
     const stable = stableDeps.getStable?.() || [];
     if (expandedStableId && !stable.some(entry => entry?.id === expandedStableId)) expandedStableId = null;
-    list.innerHTML = stable.length ? '' : '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
+    list.innerHTML = '';
+    if (!stable.length) {
+      list.innerHTML = '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
+      refinements()?.syncCompanionCombatPerks?.();
+      return;
+    }
+
+    const tonicLabel = growth()?.CONFIG?.item?.label || 'Growth Tonic'; // Used in baby-section guidance and growth controls.
+    const tonicIcon = growth()?.CONFIG?.item?.icon || '🧪'; // Used to keep the native grow button consistent with AnimalGrowth.
+    const babies = stableAgeSection('🐣 Baby Animals', `Baby Stable animals cannot be mounts, companions, or shoulder pets until you use a ${tonicLabel}.`); // Receives every baby row.
+    const adults = stableAgeSection('🐾 Adult Animals', 'Adult Stable animals can fill their normal role.'); // Receives every adult row.
 
     stable.forEach(entry => {
       normalizeStableEntry(entry);
       const role = stableRole(entry);
       const meta = roleMeta(entry);
-      const isActive = entry.id === activeStableIdForRole(role);
+      const baby = stableIsBaby(entry); // Used throughout the row to gate role assignment and growth controls.
+      const isActive = !baby && entry.id === activeStableIdForRole(role);
       const isExpanded = expandedStableId === entry.id;
       const points = availablePoints(entry);
       const max = stableMaxLevel();
       const row = document.createElement('div');
       row.className = 'farm-row livestock-trait-row stable-training-row';
       row.dataset.stableTrainingId = entry.id;
+      row.dataset.stableLifeStage = baby ? 'baby' : 'adult';
       row.style.cursor = 'pointer';
       row.style.flexWrap = 'wrap';
       row.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
       row.innerHTML =
-        `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? `Active ${meta.label.toLowerCase()}` : `Set as ${meta.label.toLowerCase()}`}">${meta.icon}</button>` +
+        `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${baby ? `${tonicLabel} required — grow and set as ${meta.label.toLowerCase()}` : isActive ? `Active ${meta.label.toLowerCase()}` : `Set as ${meta.label.toLowerCase()}`}">${meta.icon}</button>` +
         `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
         `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics?.defaultLivestockName?.(entry.kind) || entry.kind)}" maxlength="30">` +
-        `<span class="farm-row-value">${esc(meta.label)} · Lv. ${entry.level}/${max}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}</span>` +
+        `<span class="farm-row-value">${baby ? 'Baby · ' : ''}${esc(meta.label)} · Lv. ${entry.level}/${max}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}</span>` +
         `<span class="stable-training-chevron" style="font-size:15px;opacity:.7;margin-left:auto;">${isExpanded ? '▾' : '▸'}</span>` +
         livestockTraitsHtml(entry.genotype, entry.kind);
 
       row.querySelector('.farm-companion-btn')?.addEventListener('click', event => {
         event.stopPropagation();
+        if (baby) {
+          const equipAfterGrowth = growth()?.CONFIG?.stable?.growAndEquipOnRoleClick !== false; // Used to preserve the existing baby role-click growth behavior.
+          growStableEntry(entry, equipAfterGrowth);
+          return;
+        }
         setActiveStableIdForRole(role, isActive ? null : entry.id);
         stableDeps.saveStable?.();
         renderStablePanelNative();
@@ -264,10 +316,25 @@
         expandedStableId = isExpanded ? null : entry.id;
         renderStablePanelNative();
       });
+      if (baby) {
+        const growButton = document.createElement('button'); // Used as the explicit one-way Stable maturation control.
+        growButton.className = 'settings-small-btn stable-grow-btn';
+        growButton.textContent = `${tonicIcon} Grow Up`;
+        growButton.title = `${tonicLabel}: ${growth()?.growthTonicCount?.() ?? 0} owned`;
+        growButton.addEventListener('click', event => {
+          event.stopPropagation();
+          growStableEntry(entry, false);
+        });
+        row.appendChild(growButton);
+      }
       if (isExpanded) row.appendChild(buildStablePerkTree(entry));
-      list.appendChild(row);
+      (baby ? babies.rows : adults.rows).appendChild(row);
     });
 
+    if (!babies.rows.children.length) babies.rows.innerHTML = '<div class="farm-note">No baby animals in your Stable.</div>';
+    if (!adults.rows.children.length) adults.rows.innerHTML = '<div class="farm-note">No adult animals in your Stable.</div>';
+    list.appendChild(babies.section);
+    list.appendChild(adults.section);
     refinements()?.syncCompanionCombatPerks?.();
   }
 
@@ -288,10 +355,21 @@
       progression()?.install?.();
       refinements()?.install?.();
       refinements()?.ensureStableCaps?.();
+      growth()?.normalizeStableLifeStages?.();
       return result;
     };
     panel.renderStablePanel = renderStablePanelNative;
-    panel.stableTrainingDebug = () => ({ expandedStableId, maxLevel: stableMaxLevel(), animals: (stableDeps?.getStable?.() || []).map(stableDebugEntry) });
+    panel.stableTrainingDebug = () => {
+      const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
+      return {
+        mostRecentChange: 'Native Stable rendering now preserves Baby and Adult sections and delegates maturation to AnimalGrowth.',
+        expandedStableId,
+        maxLevel: stableMaxLevel(),
+        babyCount: stable.filter(stableIsBaby).length,
+        adultCount: stable.filter(entry => !stableIsBaby(entry)).length,
+        animals: stable.map(stableDebugEntry),
+      };
+    };
     panel.__nativeStableTrainingRenderer = true;
     window.__stablePanelTrainingDebug = panel.stableTrainingDebug;
   }

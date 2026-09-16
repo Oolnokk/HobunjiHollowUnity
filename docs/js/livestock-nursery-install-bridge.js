@@ -14,6 +14,7 @@
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
+    { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
   ];
   const STABLE_ROLE_DEP_METHODS = Object.freeze([
     'getActiveCompanionId',
@@ -38,6 +39,7 @@
         window.StableAnimalTrainingRefinements?.install?.();
         window.StableAnimalXpEvents?.install?.();
         window.BarnIncubator?.install?.();
+        window.FarmMenuLayout?.install?.();
         return;
       }
       const entry = featureScripts[index];
@@ -65,6 +67,7 @@
   const installStableAnimalTrainingRefinements = () => window.StableAnimalTrainingRefinements?.install?.();
   const installStableAnimalXpEvents = () => window.StableAnimalXpEvents?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
+  const installFarmMenuLayout = () => window.FarmMenuLayout?.install?.();
 
   // FarmPanel's native Stable renderer intentionally blocks the old progression
   // render wrapper, but that also blocks the old FarmPanel.init dependency
@@ -177,6 +180,7 @@
     installStableProgressionDepsBridge();
     installStableAnimalXpEvents();
     installBarnIncubator();
+    installFarmMenuLayout();
   };
 
   if (window.FarmPanel) {
