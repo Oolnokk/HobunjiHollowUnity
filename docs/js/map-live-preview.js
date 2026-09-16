@@ -115,9 +115,9 @@
   }
 
   function loadPlacementCompanions() {
-    loadCompanion('WallOrnamentPlacement', 'wall-ornament-placement.js?v=20260916wall2', 'wall-ornament-placement');
-    loadCompanion('DaylightWindowRuntime', 'daylight-window-runtime.js?v=20260916window2', 'daylight-window-runtime');
-    loadCompanion('__daylightWindowOverlaySchedulerLoaded', 'daylight-window-overlay-scheduler.js?v=20260916window2', 'daylight-window-overlay-scheduler');
+    loadCompanion('WallOrnamentPlacement', 'wall-ornament-placement.js?v=20260916wall1', 'wall-ornament-placement');
+    loadCompanion('DaylightWindowRuntime', 'daylight-window-runtime.js?v=20260916window1', 'daylight-window-runtime');
+    loadCompanion('__daylightWindowOverlaySchedulerLoaded', 'daylight-window-overlay-scheduler.js?v=20260916window1', 'daylight-window-overlay-scheduler');
   }
 
   function isMapEditorPage() {
