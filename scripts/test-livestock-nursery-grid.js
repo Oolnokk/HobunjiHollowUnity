@@ -37,9 +37,17 @@ const CreatureGenetics = {
   },
 };
 
+const documentStub = {
+  head: { appendChild() {} },
+  getElementById() { return null; },
+  addEventListener() {},
+  createElement() { return { id: '', textContent: '', style: {}, appendChild() {} }; },
+}; // Used by the no-browser regression harness so queued decoration can safely no-op after exercising economy/debug code.
+
 const context = {
   console,
   queueMicrotask,
+  document: documentStub,
   window: {
     CreatureGenetics,
     CreatureGeneticsRender: null,
