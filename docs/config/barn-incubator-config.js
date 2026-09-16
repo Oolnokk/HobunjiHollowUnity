@@ -24,7 +24,7 @@
     },
     visuals: {
       babyScale: 0.3125,
-      sleepScaleY: 0.5,
+      sleepScaleY: Number(window.AnimalSleepPresentation?.SLEEP_SCALE_Y) || 0.75, // Compatibility mirror for nest/incubator placement math; shared sleep presentation owns the target.
       syncMs: 750,
     },
     persistence: {
