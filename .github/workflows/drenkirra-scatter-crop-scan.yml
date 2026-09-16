@@ -8,6 +8,7 @@ on:
       - 'docs/js/wilderness-ai-snapshot.js'
       - 'docs/js/crop-sprite-art.js'
       - 'docs/js/crop-ready-presentation.js'
+      - 'docs/js/crop-billboard-presentation.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/index.html'
       - 'scripts/test-drenkirra-nest-scatter-performance.js'
@@ -31,6 +32,7 @@ jobs:
           node --check docs/js/wildlife-debug-panel.js
           node --check docs/js/wilderness-ai-snapshot.js
           node --check docs/js/crop-sprite-art.js
+          node --check docs/js/crop-billboard-presentation.js
           node --check docs/js/crop-ready-presentation.js
       - name: Test scattered Drenkirra selection and complete wildlife snapshots
         run: node scripts/test-drenkirra-nest-scatter-performance.js
