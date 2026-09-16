@@ -81,10 +81,10 @@
     const level = Math.max(0, Math.min(1, total / window.FarmAnimals.TROUGH_CAPACITY));
     const hasPlant = trough.slots?.includes('plantFodder');
     const hasMeat = trough.slots?.includes('meatFodder');
-    const color = hasPlant && hasMeat ? '#8a6a3a' // mixed -> brown
-      : hasMeat ? '#e685b5' // meat-only -> pink
-      : hasPlant ? '#6fae52' // plant-only -> green
-      : '#8a6a3a'; // empty (invisible at level 0, color is moot)
+    const color = hasPlant && hasMeat ? '#8a6a3a'
+      : hasMeat ? '#e685b5'
+      : hasPlant ? '#6fae52'
+      : '#8a6a3a';
     const virtualTimeline = {
       substanceColor: color,
       liquidTracks: [{ partId: 'part_trough_fill', useSubstanceColor: true, colorFromSubstance: true, keyframes: [{ time: 0, value: { level } }] }],
@@ -131,15 +131,15 @@
     const troughPos = troughPositions[troughIndex];
     if (!troughPos) return null;
     const inward = troughPos.wall === 'west' ? 1 : -1;
-    const visibleHalfWidth = Math.max(0.2, modelWidth * (Number(sizeScale?.x) || 1) * 0.5); // Used to keep larger/genetically wider livestock from overlapping their trough.
-    let troughHalfWidth = 0.45; // Used only as a safe fallback if live Three.js bounds are unavailable.
+    const visibleHalfWidth = Math.max(0.2, modelWidth * (Number(sizeScale?.x) || 1) * 0.5);
+    let troughHalfWidth = 0.45;
     if (typeof THREE !== 'undefined' && THREE.Box3 && troughEntry?.group) {
-      const bounds = new THREE.Box3().setFromObject(troughEntry.group); // Used to measure the actual authored trough footprint instead of assuming one model size.
-      const boundsSize = new THREE.Vector3(); // Used immediately below to read the trough's inward X half-extent.
+      const bounds = new THREE.Box3().setFromObject(troughEntry.group);
+      const boundsSize = new THREE.Vector3();
       bounds.getSize(boundsSize);
       if (Number.isFinite(boundsSize.x) && boundsSize.x > 0) troughHalfWidth = boundsSize.x * 0.5;
     }
-    const inwardClearance = troughHalfWidth + visibleHalfWidth + LIVESTOCK_SLEEP_TROUGH_GAP; // Used to guarantee an air gap between trough geometry and the sleeper silhouette.
+    const inwardClearance = troughHalfWidth + visibleHalfWidth + LIVESTOCK_SLEEP_TROUGH_GAP;
     const x = troughPos.col + 0.5 + inward * inwardClearance;
     const z = troughPos.row + 0.5;
     const rotationY = troughPos.wall === 'west' ? Math.PI / 2 : -Math.PI / 2;
@@ -168,8 +168,8 @@
       headRig: window.CreatureGeneticsRender?.headRigForKind?.(rec.kind) || undefined,
     });
     const group = avatarRef.group;
-    const floorY = Number(troughEntry.group.position.y) || 0; // Used as the flat synthesized barn floor under this registered trough.
-    const sleepGroundLift = groundLift * LIVESTOCK_SLEEP_SCALE_Y; // Used to mirror the wild-creature placement formula: squashing height must lower the avatar center by the same factor or it visibly floats.
+    const floorY = Number(troughEntry.group.position.y) || 0;
+    const sleepGroundLift = groundLift * LIVESTOCK_SLEEP_SCALE_Y;
     group.position.set(spot.x, floorY + sleepGroundLift, spot.z);
     group.rotation.y = spot.rotationY;
     group.userData.barnSleepingLivestockId = rec.id;
@@ -190,18 +190,12 @@
       avatarRef,
       sleepGroundLift,
       troughClearance: spot.inwardClearance,
-    }; // Used by sync/disposal and the mobile-friendly sleeper diagnostics.
+    };
     _sleepingLivestock.set(rec.id, sleeper);
     window.__farmLog?.(`[barn-sleep] ${rec.name || rec.id}: sleeping beside trough ${troughIndex + 1} in ${barn.id}; y=${group.position.y.toFixed(3)} clearance=${spot.inwardClearance.toFixed(3)}`, 'livestock');
     return sleeper;
   }
 
-  // Mirrors the wild Drenkirra night pose instead of introducing a second
-  // livestock animation system: while a barn interior is actually loaded,
-  // each housed animal with an assigned, real trough gets a temporary idle
-  // avatar beside that trough with the same 50%-Y sleep flattening. The
-  // exterior animal remains owned by FarmAnimals; this is only the interior
-  // representation, so location/save/AI state cannot diverge.
   function syncSleepingLivestock() {
     if (!deps || !window.FarmAnimals) return;
     const night = !!window.Music?.isNightTime?.();
@@ -236,8 +230,6 @@
     }
   }
 
-  // Called once, when a trough's furniture mesh is first built into a
-  // loaded barn interior scene.
   function registerMesh(barnId, troughIndex, group, authoredData) {
     _meshRegistry.set(barnId + ',' + troughIndex, { group, authoredData });
     const farmBuildings = deps.getFarmBuildings();
@@ -247,9 +239,6 @@
     syncSleepingLivestock();
   }
 
-  // Safe to call from anywhere (farm-animals.js's deposit/withdraw/
-  // tickHearts) even if nobody's ever entered that barn — it's just a
-  // no-op then.
   function refreshVisual(barnId, troughIndex) {
     const entry = _meshRegistry.get(barnId + ',' + troughIndex);
     if (!entry) return;
@@ -261,9 +250,6 @@
     syncSleepingLivestock();
   }
 
-  // Mobile-friendly diagnostic data for the existing in-game debug/log
-  // tooling: callers can inspect exactly which livestock sleeper is bound
-  // to which barn/trough without needing DevTools or console access.
   function debugSleepingLivestock() {
     return [..._sleepingLivestock.values()].map(sleeper => ({
       livestockId: sleeper.livestockId,
@@ -278,13 +264,6 @@
     }));
   }
 
-  // ── Trough panel — "akin to farm storage" (see renderFarmStoragePane in
-  // farm-panel.js), but a trough's 7 slots never stack: each slot holds
-  // exactly one Plant/Meat Fodder unit, so it's built as its own small
-  // overlay instead of reusing the Farm tab's single shared-pool count-map
-  // UI. Built once, lazily, and reused/repositioned rather than a whole
-  // top-level menu tab, since any of many troughs across many barns can
-  // open it.
   let _panelEl = null, _panelCtx = null;
 
   function open(barnId, troughIndex) {
@@ -397,7 +376,7 @@
   'use strict';
   if (window.LivestockNursery) return;
   const nurserySrc = 'js/livestock-nursery.js?v=20260916perf1';
-  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20260912stable4';
+  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20260916stable5';
 
   if (document.readyState === 'loading') {
     document.write(`<script src="${nurserySrc}"><\/script>`);
@@ -405,8 +384,6 @@
     return;
   }
 
-  // Dynamic-loader fallback for tools/tests that inject farm-troughs.js after
-  // parsing has already finished; normal gameplay uses the synchronous path.
   const load = src => new Promise(resolve => {
     const script = document.createElement('script');
     script.src = src;

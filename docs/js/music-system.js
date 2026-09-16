@@ -442,6 +442,7 @@
 
   function resolveAreaAudioIndex(area) {
     if (area === 'farm' || area === 'town') return 'general';
+    if (area === 'map_western_slope') return 'northern_cliffs'; // Western Slope intentionally shares the Highland/Northern Cliffs cue pool.
     if (_mapAudioIndexes.has(area)) return _mapAudioIndexes.get(area);
     if (deps._isZoneArea(area)) return deps.EXTERIOR_ZONES[area].audioIndex || '';
     const wsMap = deps.getWorkspaceMaps()?.find(m => (m.id === area) || (area === 'town' && m.id === 'map_hobunji_town'));

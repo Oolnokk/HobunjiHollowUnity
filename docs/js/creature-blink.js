@@ -8,6 +8,17 @@
 // key and would blink in perfect unison.
 //
 // Public API: window.CreatureBlink = { isShut(entity, nowMs) -> boolean }
+
+// This script is parser-loaded immediately after creature-head-cache.js and before
+// any creature consumers. Insert the latest authored head-rig layer here so it
+// wins over the legacy Grehlr pivot shim in creature-head-cache.js without moving
+// the large rigger output into unrelated renderer/genetics code. Same-origin and
+// parser-time loading keeps the override synchronous before game.js can build an
+// animal avatar.
+if (typeof document !== 'undefined' && document.readyState === 'loading') {
+  document.write('<script src="js/animal-head-rig-authored.js?v=20260916rig1"><\/script>');
+}
+
 (() => {
   'use strict';
 

@@ -2,6 +2,10 @@
 
 This file records project-specific implementation rules that are easy to miss when working from an isolated bug report. Treat these as repository invariants unless a task explicitly calls for changing them.
 
+## Runtime frame ownership
+
+Before adding, removing, or migrating permanent `requestAnimationFrame` work, read [`docs/architecture/runtime-frame-scheduler.md`](docs/architecture/runtime-frame-scheduler.md). It defines which work belongs to `gameLoop`, `RuntimeFrameScheduler`, Three.js render hooks, timers/events, or an isolated animation context. Feature modules register their own scheduler callbacks; do not add feature-specific behavior to the scheduler itself.
+
 ## Canonical PNG-plane rendering path
 
 For authored PNGs that become Three.js planes or other sprite-like 3D surfaces, **reuse the shared PNG-plane pipeline instead of recreating texture/material settings locally**.

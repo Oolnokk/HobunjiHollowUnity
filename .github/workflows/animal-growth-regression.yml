@@ -27,6 +27,11 @@ on:
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery.js'
+      - 'docs/js/livestock-nursery-observer-scope.js'
+      - 'docs/js/livestock-nursery-outdoor-growth.js'
+      - 'docs/js/livestock-nursery-grid.js'
+      - 'docs/js/livestock-nursery-inventory-paging.js'
+      - 'docs/js/livestock-nursery-grid-ui-fix.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'docs/js/outdoor-livestock-welfare.js'
       - 'docs/js/outdoor-livestock-presence.js'
@@ -43,6 +48,9 @@ on:
       - 'scripts/test-economy-progression.js'
       - 'scripts/test-livestock-menu-regressions.js'
       - 'scripts/test-livestock-nursery.js'
+      - 'scripts/test-livestock-nursery-grid.js'
+      - 'scripts/test-livestock-nursery-observer-scope.js'
+      - 'scripts/test-livestock-nursery-outdoor-growth.js'
       - 'scripts/test-outdoor-livestock-welfare.js'
       - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
@@ -73,6 +81,11 @@ on:
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery.js'
+      - 'docs/js/livestock-nursery-observer-scope.js'
+      - 'docs/js/livestock-nursery-outdoor-growth.js'
+      - 'docs/js/livestock-nursery-grid.js'
+      - 'docs/js/livestock-nursery-inventory-paging.js'
+      - 'docs/js/livestock-nursery-grid-ui-fix.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'docs/js/outdoor-livestock-welfare.js'
       - 'docs/js/outdoor-livestock-presence.js'
@@ -89,6 +102,9 @@ on:
       - 'scripts/test-economy-progression.js'
       - 'scripts/test-livestock-menu-regressions.js'
       - 'scripts/test-livestock-nursery.js'
+      - 'scripts/test-livestock-nursery-grid.js'
+      - 'scripts/test-livestock-nursery-observer-scope.js'
+      - 'scripts/test-livestock-nursery-outdoor-growth.js'
       - 'scripts/test-outdoor-livestock-welfare.js'
       - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
@@ -128,6 +144,11 @@ jobs:
           node --check docs/js/format-utils.js
           node --check docs/js/general-store.js
           node --check docs/js/livestock-nursery.js
+          node --check docs/js/livestock-nursery-observer-scope.js
+          node --check docs/js/livestock-nursery-outdoor-growth.js
+          node --check docs/js/livestock-nursery-grid.js
+          node --check docs/js/livestock-nursery-inventory-paging.js
+          node --check docs/js/livestock-nursery-grid-ui-fix.js
           node --check docs/js/livestock-nursery-install-bridge.js
           node --check docs/js/outdoor-livestock-welfare.js
           node --check docs/js/outdoor-livestock-presence.js
@@ -157,6 +178,12 @@ jobs:
         run: node scripts/test-livestock-menu-regressions.js
       - name: Test livestock Nursery integration
         run: node scripts/test-livestock-nursery.js
+      - name: Test Nursery portrait grid and livestock sale economy
+        run: node scripts/test-livestock-nursery-grid.js
+      - name: Test Nursery observer scope
+        run: node scripts/test-livestock-nursery-observer-scope.js
+      - name: Test Nursery full-barn outdoor growth
+        run: node scripts/test-livestock-nursery-outdoor-growth.js
       - name: Test outdoor livestock welfare
         run: node scripts/test-outdoor-livestock-welfare.js
       - name: Test outdoor livestock world presence

@@ -5,7 +5,7 @@ const fs = require('node:fs'); // Used to read the runtime and bootstrap sources
 
 const source = fs.readFileSync('docs/js/generic-hud-icons.js', 'utf8'); // Used to pin icon substitution and relationship-popup behavior.
 const social = fs.readFileSync('docs/js/npc-social-relationship-bridge-v2.js', 'utf8'); // Used to pin gifts to permanent Favor rather than temporary Rapport.
-const menuTabs = fs.readFileSync('docs/js/menu-tab-icon-only.js', 'utf8'); // Used to pin icon-only main menu tabs, shared gananji presentation, and the Relationships glow.
+const menuTabs = fs.readFileSync('docs/js/menu-tab-icon-only.js', 'utf8'); // Used to pin icon-only main menu tabs, shared ganang presentation, and the Relationships glow.
 const index = fs.readFileSync('docs/index.html', 'utf8'); // Used to pin the persistent HUD amount/suffix nodes consumed by the shared currency presenter.
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8'); // Used to pin parser-blocking load order before game initialization.
 
@@ -42,9 +42,9 @@ assert.match(social, /Existing gift code remains authoritative for its authored 
 
 assert.match(menuTabs, /TAB_SELECTOR = '\.mp-tabs \.mp-tab\[data-mpanel\]'/, 'all main menu tabs must be targeted as one presentation group');
 assert.match(menuTabs, /tab\.replaceChildren\(makeGlyphNode\(glyph\)\)/, 'non-relationship menu tabs must retain only their existing leading icon');
-assert.match(menuTabs, /CURRENCY_ICON_FILE = 'icon_bronzecurrency\.png'/, 'gananji currency presentation must use icon_bronzecurrency.png while the Tankanscript glyph metrics are being corrected');
-assert.match(menuTabs, /CURRENCY_VERDIGRIS_COLOR = '#6fae9b'/, 'menu and gameplay HUD gananji amounts and symbols must share the bronze-verdigris color');
-assert.match(menuTabs, /CURRENCY_VERDIGRIS_GLOW = '#70ebc6'/, 'gananji glow must use a brighter saturated color at the same verdigris hue');
+assert.match(menuTabs, /CURRENCY_ICON_FILE = 'icon_bronzecurrency\.png'/, 'ganang currency presentation must use icon_bronzecurrency.png while the Tankanscript glyph metrics are being corrected');
+assert.match(menuTabs, /CURRENCY_VERDIGRIS_COLOR = '#6fae9b'/, 'menu and gameplay HUD ganang amounts and symbols must share the bronze-verdigris color');
+assert.match(menuTabs, /CURRENCY_VERDIGRIS_GLOW = '#70ebc6'/, 'ganang glow must use a brighter saturated color at the same verdigris hue');
 assert.match(menuTabs, /CURRENCY_ICON_SCALE = 0\.7667/, 'currency artwork must be 15 percent larger than the previous two-thirds scale');
 assert.match(menuTabs, /align-items: flex-end;[\s\S]*justify-content: flex-start;/, 'currency symbols must anchor to the bottom-left of their 1em character spaces');
 assert.match(menuTabs, /width: \$\{CURRENCY_ICON_SCALE\}em;[\s\S]*height: \$\{CURRENCY_ICON_SCALE\}em;/, 'menu and gameplay HUD must share the same currency artwork scale');
@@ -70,4 +70,4 @@ const menuTabIndex = loader.indexOf('menu-tab-icon-only.js'); // Used to verify 
 const seatingIndex = loader.indexOf('npc-social-seating-bridge.js'); // Used as the expected social module after these HUD presentation adapters.
 assert(socialIndex >= 0 && iconIndex > socialIndex && menuTabIndex > iconIndex && seatingIndex > menuTabIndex, 'menu tab presentation must load after generic HUD icons and before social seating');
 
-console.log('generic HUD icons + relationship popups + shared gananji presentation regression checks passed');
+console.log('generic HUD icons + relationship popups + shared ganang presentation regression checks passed');

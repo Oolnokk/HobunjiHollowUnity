@@ -14,6 +14,7 @@
 
   let deps = null, blockedTileTypes;
   let _sharedFarmStructureAssetPromise = null; // Used to make the real brick/shingle upgrade one shared readiness boundary for barns and the player house.
+  let _farmPanelDemolishInstalled = false; // Prevents stacking the Farm-panel demolition decorator if FarmBuildings.init() runs again.
 
   function _pieceDef(tier) { return BARN_PIECES[tier] || BARN_PIECES.small; }
 
@@ -50,6 +51,62 @@
     return _sharedFarmStructureAssetPromise;
   }
 
+  function _isProtectedNursery(entry) {
+    return !!entry && (entry.nursery === true || entry.tier === 'nursery');
+  }
+
+  function _decorateFarmPanelDemolishActions() {
+    if (typeof document === 'undefined' || !deps?.hasFarmPermission?.('alterFarm')) return;
+    const list = document.getElementById('farmBuildingsList'); // Buildings-list anchor where each regular barn receives its destructive menu action.
+    if (!list) return;
+    const barns = deps.getFarmBuildings().filter(entry => entry?.kind === 'barn' && !_isProtectedNursery(entry)); // Regular barns eligible for the Farm-menu demolition control.
+    const rows = Array.from(list.children).filter(row => row.classList?.contains('farm-row')); // Existing core-rendered building rows matched in authored order.
+    const claimedRows = new Set(); // Prevents same-tier barns from attaching multiple Demolish buttons to the first matching row.
+
+    for (const barn of barns) {
+      const tier = deps.getBarnTiers()[barn.tier]; // Supplies the exact label used by farm-panel-core.js for this barn row.
+      if (!tier) continue;
+      const expectedName = `🏚 ${tier.label}${barn.stage === 'foundation' ? ' (foundation)' : ''}`; // Mirrors the core building-row label for stable matching.
+      const expectedSize = `${barn.w}×${barn.h}`; // Mirrors the core footprint note so equal labels still map to the correct row shape.
+      const row = rows.find(candidate => !claimedRows.has(candidate)
+        && candidate.querySelector('.farm-row-name')?.textContent === expectedName
+        && candidate.querySelector('.farm-note')?.textContent === expectedSize); // Row that represents this specific barn in the current render pass.
+      if (!row) continue;
+      claimedRows.add(row);
+      if (row.querySelector('.farm-barn-demolish-btn')) continue;
+
+      const button = document.createElement('button'); // Farm-menu-only destructive action replacing the former world interaction-arch action.
+      button.className = 'settings-small-btn farm-barn-demolish-btn';
+      button.textContent = 'Demolish';
+      button.title = 'Demolish this barn; housed livestock return to stasis.';
+      button.dataset.barnId = barn.id;
+      button.addEventListener('click', () => {
+        const result = window.FarmBuildings.demolish(barn.id); // Reuses the wrapped authoritative API so Nursery/incubator/elevation safeguards still run.
+        deps.showToast(result.message, result.ok);
+        if (result.ok) window.FarmPanel?.render?.();
+      });
+      row.appendChild(button);
+    }
+
+    const note = document.getElementById('farmBuildingsNote'); // Keeps the Buildings-section guidance aligned with the new menu-only destructive action.
+    if (note?.textContent === 'Move a barn, or place an owned barn plan, by clicking the map above. Open House Layout to edit your house.') {
+      note.textContent = 'Move or demolish a barn here, or place an owned barn plan by clicking the map above. Open House Layout to edit your house.';
+    }
+  }
+
+  function _installFarmPanelDemolishActions() {
+    if (_farmPanelDemolishInstalled) return;
+    const panel = window.FarmPanel; // Existing Farm-panel API wrapped after all script-time decorators have published it.
+    if (!panel || typeof panel.render !== 'function') return;
+    const originalRender = panel.render.bind(panel); // Preserves the full existing Farm-panel render/decorator chain underneath this barn-specific pass.
+    panel.render = function farmPanelRenderWithBarnDemolish(...args) {
+      const result = originalRender(...args); // Existing render result is returned unchanged after demolition controls are decorated in.
+      _decorateFarmPanelDemolishActions();
+      return result;
+    };
+    _farmPanelDemolishInstalled = true;
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     blockedTileTypes = new Set([
@@ -57,6 +114,7 @@
       deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.WATERFALL, deps.TileType.RAMP,
     ]);
     _ensureSharedFarmStructureAssets();
+    _installFarmPanelDemolishActions();
   }
 
   function rectsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
@@ -374,10 +432,10 @@
       get col() { return entry.col; }, get row() { return entry.row; },
       get label() { return '🏚 ' + label(entry); },
       getButtons() {
+        // Destructive barn management lives in the Farm menu rather than the world interaction arch.
         if (entry.stage === 'foundation') {
           return [
             { icon: '🔨', label: 'Build ' + label(entry), action: 'obj_barn_build_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('alterFarm') },
-            { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
           ];
         }
         const tier = deps.getBarnTiers()[entry.tier];
@@ -385,7 +443,6 @@
         return [
           { icon: '🚪', label: 'Enter Barn', action: 'obj_barn_enter_' + entry.id, style: 'primary', allowed: true },
           { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('livestock') },
-          { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
         ];
       },
       onAction(action) {
@@ -397,10 +454,6 @@
           _buildStructureMesh(entry);
           deps.saveFarmLayout();
           return { ok: true, message: `🔨 ${label(entry)} construction complete!` };
-        }
-        if (action === 'obj_barn_demolish_' + entry.id) {
-          if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-          return demolish(entry.id);
         }
         if (action === 'obj_barn_manage_' + entry.id) {
           if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
@@ -524,6 +577,17 @@
     return null;
   }
 
+  function debugFarmMenuDemolish() {
+    const buttons = typeof document === 'undefined' ? [] : Array.from(document.querySelectorAll('.farm-barn-demolish-btn')); // Visible controls included in mobile-friendly diagnostics.
+    const eligibleBarns = deps ? deps.getFarmBuildings().filter(entry => entry?.kind === 'barn' && !_isProtectedNursery(entry)) : []; // Current regular barns expected to receive menu controls.
+    return {
+      mostRecentChange: 'Barn demolition now lives in the Farm menu Buildings list instead of the barn interaction arch.',
+      decoratorInstalled: _farmPanelDemolishInstalled,
+      eligibleBarnIds: eligibleBarns.map(entry => entry.id),
+      visibleButtonBarnIds: buttons.map(button => button.dataset.barnId),
+    };
+  }
+
   window.FarmBuildings = {
     init,
     canPlaceAt,
@@ -535,6 +599,7 @@
     move,
     clearAll,
     findOpenTileNear,
+    debugFarmMenuDemolish,
     pieceDefForTier: tier => ({ ..._pieceDef(tier) }),
     BARN_PIECES,
   };

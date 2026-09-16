@@ -70,7 +70,7 @@
     if (purchased >= maxPerRestock) { deps.showToast("Jubmir's sold out of that for today.", false); return; }
     if (entry.abilityId && window.TechniqueScrolls?.isUnlocked?.(entry.abilityId)) { deps.showToast(`${entry.name}: you already know that technique.`, false); return; }
     const gold = deps.inventory.gold || 0;
-    if (gold < entry.price) { deps.showToast('Not enough gananji.', false); return; }
+    if (gold < entry.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - entry.price;
     deps.inventory[entry.key] = Math.min(entry.givesGenotype ? 9 : 99, (deps.inventory[entry.key] || 0) + 1);
     if (entry.givesGenotype) window.FarmAnimals.queueItemGenotype(entry.key, stock.eggGenotype);

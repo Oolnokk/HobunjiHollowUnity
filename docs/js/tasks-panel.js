@@ -16,6 +16,7 @@
   let bountyDeps = null;
   let bountyGangConfigPromise = null;
   let bountyOfferRefreshPromise = null;
+  let lastRenderDebug = null; // Used by getDebug() and the mobile-visible Quest Log diagnostic row.
 
   function _bountySlotForTier(tier) {
     const n = Math.max(0, Math.floor(Number(tier) || 0));
@@ -243,113 +244,213 @@
     camps.__dangerSubtitleInstalled = true;
   }
 
-  async function renderTasksPanel() {
-    window.ProceduralTasks.maybeRefreshRequestPostings();
-    await window.BountyBoard.maybeRefreshPosting();
+  function _errorText(error) {
+    return String(error?.message || error || 'Unknown error');
+  }
 
-    // Word around town — named quest-givers currently sitting on a request
-    // the player hasn't been asked about yet (or has been asked but hasn't
-    // answered). No "take" button here: discovery and accept/decline both
-    // happen by actually talking to them — this list is just a nudge for
-    // where to go. See ProceduralTasks.pendingRequestCompassTargets for the
-    // matching purple '!' compass marker.
-    const postingEl = document.getElementById('tasksBoardPosting');
-    if (postingEl) {
-      postingEl.innerHTML = '';
-      const pending = window.ProceduralTasks.pendingRequestCompassTargets();
-      if (pending.length) {
-        pending.forEach(entry => {
-          const row = document.createElement('div');
-          row.className = 'delivery-row';
-          row.innerHTML = `<span class="dr-icon">❗</span><span class="dr-name">${deps.esc(entry.label)} — go say hello.</span><span class="dr-eta">—</span>`;
-          postingEl.appendChild(row);
-        });
-      } else {
-        postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">No word of any requests right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
-      }
+  function _recordRenderError(scope, error) {
+    const message = _errorText(error); // Used in the debug snapshot and inline mobile diagnostic.
+    if (!lastRenderDebug) lastRenderDebug = { at: Date.now(), savedCount: 0, activeCount: 0, statusCounts: {}, kindCounts: {}, errors: [] };
+    lastRenderDebug.errors.push({ scope, message });
+    deps?.debugLog?.(`[tasks] ${scope}: ${message}`, 'warn');
+  }
+
+  function _questProgressSnapshot() {
+    const progress = deps?.getQuestProgress?.(); // Used as the one live source for both Quest Log rows and diagnostics.
+    return progress && typeof progress === 'object' ? progress : {};
+  }
+
+  function _questStateSummary(progress) {
+    const statusCounts = {}; // Used by the mobile diagnostic when saved quests exist but none qualify as active.
+    const kindCounts = {}; // Used by getDebug() to distinguish requests, favors, and bounties in the saved state.
+    const entries = Object.entries(progress || {}); // Used to calculate saved/active counts without rescanning different state snapshots.
+    for (const [, state] of entries) {
+      const status = state?.status || 'missing-status'; // Used to expose malformed/stale quest records instead of silently hiding them.
+      const kind = state?.progress?.kind || 'missing-kind'; // Used to expose task records that the log cannot classify.
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+      kindCounts[kind] = (kindCounts[kind] || 0) + 1;
+    }
+    return { entries, statusCounts, kindCounts };
+  }
+
+  function _appendQuestDiagnostic(list) {
+    if (!lastRenderDebug) return;
+    const shouldShow = lastRenderDebug.errors.length || (lastRenderDebug.savedCount > 0 && lastRenderDebug.activeCount === 0); // Used to keep normal healthy logs uncluttered.
+    if (!shouldShow) return;
+    const row = document.createElement('div'); // Used as a mobile-visible fallback when console access is unavailable.
+    row.className = 'delivery-row';
+    if (lastRenderDebug.errors.length) {
+      const latest = lastRenderDebug.errors[lastRenderDebug.errors.length - 1]; // Used to keep the diagnostic concise while getDebug() retains every error from this render.
+      row.innerHTML = `<span class="dr-icon">⚠️</span><span class="dr-name">Quest UI diagnostic: ${deps.esc(latest.scope)} — ${deps.esc(latest.message)}</span><span class="dr-eta">${lastRenderDebug.activeCount}/${lastRenderDebug.savedCount}</span>`;
+    } else {
+      const statuses = Object.entries(lastRenderDebug.statusCounts).map(([status, count]) => `${status}:${count}`).join(', '); // Used to explain why saved records are not appearing as accepted quests.
+      row.innerHTML = `<span class="dr-icon">🔎</span><span class="dr-name">Quest state: ${lastRenderDebug.savedCount} saved, none active (${deps.esc(statuses || 'no statuses')}).</span><span class="dr-eta">0/${lastRenderDebug.savedCount}</span>`;
+    }
+    list.appendChild(row);
+  }
+
+  function _renderQuestLog() {
+    const list = document.getElementById('tasksList'); // Used as the accepted-quest container; this renders independently of board/bounty refreshes.
+    if (!list) return;
+    list.innerHTML = '';
+
+    const progress = _questProgressSnapshot(); // Used to ensure this pass reads one consistent live quest-state object.
+    const summary = _questStateSummary(progress); // Used by both filtering and mobile diagnostics.
+    const active = summary.entries
+      .filter(([, state]) => state?.status === 'available' && ['request', 'favor', 'bounty'].includes(state?.progress?.kind))
+      .map(([id, state]) => ({ id, ...state.progress }))
+      .sort((a, b) => (a.kind === 'request' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'request' ? 0 : b.kind === 'favor' ? 1 : 2)); // Used as the exact set of accepted quests shown to the player.
+
+    lastRenderDebug.savedCount = summary.entries.length;
+    lastRenderDebug.activeCount = active.length;
+    lastRenderDebug.statusCounts = summary.statusCounts;
+    lastRenderDebug.kindCounts = summary.kindCounts;
+
+    if (!active.length) {
+      const empty = document.createElement('div'); // Used so a diagnostic row can coexist with the normal empty-state text.
+      empty.className = 'delivery-row';
+      empty.innerHTML = '<span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span>';
+      list.appendChild(empty);
+      _appendQuestDiagnostic(list);
+      return;
     }
 
-    // Two standing wanted posters: one easy-range and one hard-range. Taking a
-    // poster removes only that task; the next render refills that slot.
-    const bountyEl = document.getElementById('tasksBountyPosting');
-    if (bountyEl) {
-      bountyEl.innerHTML = '';
-      const postings = window.BountyBoard.getCurrentPostings?.()
-        || [window.BountyBoard.getCurrentPosting?.()].filter(Boolean);
-      if (postings.length) {
-        postings.forEach(posting => {
-          const zoneLabel = deps.WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
-          const pronouns = bountyPronouns(posting);
-          const row = document.createElement('div');
-          row.className = 'shop-row';
+    active.forEach(task => {
+      try {
+        const row = document.createElement('div'); // Used for this one accepted quest so malformed siblings cannot suppress it.
+        row.className = 'shop-row';
+        if (task.kind === 'bounty') {
+          const zoneLabel = deps.WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
+          const marked = !!window.BountyBoard?.markers?.has?.(task.id); // Used to avoid an unrelated missing marker cache breaking the whole Quest Log.
+          const pronouns = bountyPronouns(task);
           row.innerHTML = `
             <div class="sh-icon">🎯</div>
             <div class="sh-info">
-              <div class="sh-name">Wanted: ${deps.esc(posting.captainName)}</div>
-              <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(posting.tier)}</div>
-              <div class="sh-desc">Last seen in the ${deps.esc(zoneLabel)}. Destroy ${pronouns.possessive} camp for ${posting.rewardGold}g.</div>
+              <div class="sh-name">Bounty: ${deps.esc(task.captainName)}</div>
+              <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(task.tier)}</div>
+              <div class="sh-desc">${deps.esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : `Still tracking ${pronouns.object} down...`} Reward: ${task.rewardGold}g on ${pronouns.possessive} camp's destruction.</div>
             </div>
-            <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
           `;
-          row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
-            window.BountyBoard.take(posting.id);
-            renderTasksPanel();
-          });
-          bountyEl.appendChild(row);
-        });
-      } else {
-        bountyEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">🎯</span><span class="dr-name">No bounties posted right now.</span><span class="dr-eta">—</span></div>';
+        } else {
+          const itemList = (task.items || []).map(it => `${deps.esc(deps.ITEM_DEFS[it.itemKey]?.label || it.itemKey)} ×${it.qty} (have ${deps.inventory[it.itemKey] || 0})`).join(', ') || 'No delivery items recorded'; // Used to keep one malformed legacy task from aborting every quest row.
+          const npcName = task.npcName || 'Unknown quest giver'; // Used by legacy/incomplete task rows that lack the newer npcName field.
+          const source = task.kind === 'request' ? `${deps.esc(npcName)}'s request` : `${deps.esc(npcName)}'s favor`;
+          const bonusNote = task.deadlineDay != null
+            ? ((deps.calendar?.day || 0) <= task.deadlineDay
+              ? ` Deliver by day ${task.deadlineDay} for ${task.rewardGold * (task.bonusMultiplier || 1)}g instead of ${task.rewardGold}g.`
+              : ' The bonus window has passed — still worth the base price.')
+            : '';
+          row.innerHTML = `
+            <div class="sh-icon">${task.kind === 'request' ? '❗' : '💌'}</div>
+            <div class="sh-info">
+              <div class="sh-name">${source} — ${itemList}</div>
+              <div class="sh-desc">Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${deps.esc(npcName)}.${bonusNote}</div>
+            </div>
+          `;
+        }
+        list.appendChild(row);
+      } catch (error) {
+        _recordRenderError(`quest-row:${task.id}`, error);
       }
-    }
+    });
+    _appendQuestDiagnostic(list);
+  }
 
-    // The player's actual quest log — everything accepted, request,
-    // favor, or bounty, with no completion deadline (a request's own
-    // bonus-pay deadline is called out separately below).
-    const list = document.getElementById('tasksList');
-    if (!list) return;
-    list.innerHTML = '';
-    const active = Object.entries(deps.getQuestProgress())
-      .filter(([, st]) => st.status === 'available' && ['request', 'favor', 'bounty'].includes(st.progress?.kind))
-      .map(([id, st]) => ({ id, ...st.progress }))
-      .sort((a, b) => (a.kind === 'request' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'request' ? 0 : b.kind === 'favor' ? 1 : 2));
-    if (!active.length) {
-      list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span></div>';
-      return;
+  function _renderRequestPostings() {
+    const postingEl = document.getElementById('tasksBoardPosting'); // Used for rumors about named NPCs with unaccepted requests.
+    if (!postingEl) return;
+    postingEl.innerHTML = '';
+    let pending = []; // Used to render a safe empty state even if the compass-target query fails.
+    try {
+      pending = window.ProceduralTasks?.pendingRequestCompassTargets?.() || [];
+    } catch (error) {
+      _recordRenderError('request-postings', error);
     }
-    active.forEach(task => {
-      const row = document.createElement('div');
-      row.className = 'shop-row';
-      if (task.kind === 'bounty') {
-        const zoneLabel = deps.WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
-        const marked = window.BountyBoard.markers.has(task.id);
-        const pronouns = bountyPronouns(task);
+    if (pending.length) {
+      pending.forEach(entry => {
+        const row = document.createElement('div');
+        row.className = 'delivery-row';
+        row.innerHTML = `<span class="dr-icon">❗</span><span class="dr-name">${deps.esc(entry.label)} — go say hello.</span><span class="dr-eta">—</span>`;
+        postingEl.appendChild(row);
+      });
+    } else {
+      postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">No word of any requests right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
+    }
+  }
+
+  function _renderBountyPostings() {
+    const bountyEl = document.getElementById('tasksBountyPosting'); // Used for the two standing wanted-poster offer slots.
+    if (!bountyEl) return;
+    bountyEl.innerHTML = '';
+    let postings = []; // Used so a posting API failure cannot affect the accepted Quest Log.
+    try {
+      postings = window.BountyBoard?.getCurrentPostings?.()
+        || [window.BountyBoard?.getCurrentPosting?.()].filter(Boolean);
+    } catch (error) {
+      _recordRenderError('bounty-postings', error);
+    }
+    if (postings.length) {
+      postings.forEach(posting => {
+        const zoneLabel = deps.WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
+        const pronouns = bountyPronouns(posting);
+        const row = document.createElement('div');
+        row.className = 'shop-row';
         row.innerHTML = `
           <div class="sh-icon">🎯</div>
           <div class="sh-info">
-            <div class="sh-name">Bounty: ${deps.esc(task.captainName)}</div>
-            <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(task.tier)}</div>
-            <div class="sh-desc">${deps.esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : `Still tracking ${pronouns.object} down...`} Reward: ${task.rewardGold}g on ${pronouns.possessive} camp's destruction.</div>
+            <div class="sh-name">Wanted: ${deps.esc(posting.captainName)}</div>
+            <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(posting.tier)}</div>
+            <div class="sh-desc">Last seen in the ${deps.esc(zoneLabel)}. Destroy ${pronouns.possessive} camp for ${posting.rewardGold}g.</div>
           </div>
+          <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
         `;
-      } else {
-        const itemList = task.items.map(it => `${deps.esc(deps.ITEM_DEFS[it.itemKey]?.label || it.itemKey)} ×${it.qty} (have ${deps.inventory[it.itemKey] || 0})`).join(', ');
-        const source = task.kind === 'request' ? `${deps.esc(task.npcName)}'s request` : `${deps.esc(task.npcName)}'s favor`;
-        const bonusNote = task.deadlineDay != null
-          ? (deps.calendar.day <= task.deadlineDay
-            ? ` Deliver by day ${task.deadlineDay} for ${task.rewardGold * (task.bonusMultiplier || 1)}g instead of ${task.rewardGold}g.`
-            : ' The bonus window has passed — still worth the base price.')
-          : '';
-        row.innerHTML = `
-          <div class="sh-icon">${task.kind === 'request' ? '❗' : '💌'}</div>
-          <div class="sh-info">
-            <div class="sh-name">${source} — ${itemList}</div>
-            <div class="sh-desc">Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${deps.esc(task.npcName)}.${bonusNote}</div>
-          </div>
-        `;
-      }
-      list.appendChild(row);
-    });
+        row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
+          window.BountyBoard?.take?.(posting.id);
+          void renderTasksPanel();
+        });
+        bountyEl.appendChild(row);
+      });
+    } else {
+      bountyEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">🎯</span><span class="dr-name">No bounties posted right now.</span><span class="dr-eta">—</span></div>';
+    }
   }
 
-  window.TasksPanel = { init, render: renderTasksPanel };
+  async function renderTasksPanel() {
+    lastRenderDebug = { at: Date.now(), savedCount: 0, activeCount: 0, statusCounts: {}, kindCounts: {}, errors: [] }; // Used as this render's complete mobile/debug snapshot.
+
+    // Accepted quests are the primary content of this panel. Render them first
+    // so a board rumor, bounty config fetch, or posting failure can never make
+    // already-accepted NPC work disappear from the player's Quest Log.
+    _renderQuestLog();
+
+    try {
+      window.ProceduralTasks?.maybeRefreshRequestPostings?.();
+    } catch (error) {
+      _recordRenderError('request-refresh', error);
+    }
+    try {
+      await window.BountyBoard?.maybeRefreshPosting?.();
+    } catch (error) {
+      _recordRenderError('bounty-refresh', error);
+    }
+
+    _renderRequestPostings();
+    _renderBountyPostings();
+
+    // Re-render once after optional refresh work so newly-mutated quest state
+    // is reflected while retaining any refresh diagnostics in the log itself.
+    _renderQuestLog();
+  }
+
+  function getDebug() {
+    if (!lastRenderDebug) return null;
+    return {
+      ...lastRenderDebug,
+      statusCounts: { ...lastRenderDebug.statusCounts },
+      kindCounts: { ...lastRenderDebug.kindCounts },
+      errors: lastRenderDebug.errors.map(error => ({ ...error })),
+    };
+  }
+
+  window.TasksPanel = { init, render: renderTasksPanel, getDebug };
 })();
