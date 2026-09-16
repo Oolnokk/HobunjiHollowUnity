@@ -127,7 +127,7 @@
     const parentInverse = plane.parent.matrixWorld.clone().invert(); // Converts the exact desired world matrix back under the attached player/head hierarchy, including parent non-uniform scale.
     const desiredLocalMatrix = parentInverse.multiply(desiredWorldMatrix);
     const parentWorldQuaternion = plane.parent.getWorldQuaternion(new THREE.Quaternion());
-    const desiredLocalQuaternion = parentWorldQuaternion.invert().multiply(desired.quaternion.clone()); // Mirrors the rendered orientation into component state for diagnostics while matrixAutoUpdate stays disabled.
+    const desiredLocalQuaternion = parentWorldQuaternion.invert().multiply(desired.quaternion.clone()); // Mirrors the rendered orientation into component state while the exact matrix remains authoritative.
 
     plane.quaternion.copy(desiredLocalQuaternion);
     plane.matrixAutoUpdate = false;
@@ -135,6 +135,10 @@
     plane.matrixWorldNeedsUpdate = true;
     plane.updateMatrixWorld(true);
     state.active = true;
+
+    const diagnosticGroupYaw = Number(group.rotation?.y) || 0; // Used only to keep Pixel Probe's older groupYaw+planeYaw summary consistent with the exact matrix below.
+    const diagnosticLocalYaw = Math.atan2(Math.sin(desired.yaw - diagnosticGroupYaw), Math.cos(desired.yaw - diagnosticGroupYaw));
+    plane.rotation.y = diagnosticLocalYaw; // Component-space mirror only; matrixAutoUpdate=false keeps the exact full-matrix render transform unchanged.
 
     const elements = plane.matrixWorld.elements;
     const actualYaw = Math.atan2(elements[8], elements[10]);
@@ -149,6 +153,7 @@
       target: desired.yaw,
       actual: actualYaw,
       error: yawError,
+      diagnosticLocalYaw,
     };
     lastGripPivotError = gripError;
     plane.userData.hobunjiShoulderPetStableBillboard = {
@@ -157,6 +162,7 @@
       actualWorldYaw: actualYaw,
       yawError,
       gripPivotError: gripError,
+      diagnosticLocalYaw,
     }; // Surfaces exact post-compensation values to mobile/runtime inspection without console access.
     return true;
   }
