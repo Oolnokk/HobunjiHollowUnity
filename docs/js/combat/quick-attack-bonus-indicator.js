@@ -348,7 +348,7 @@
 
   let lastFrameError = null; // Exposed in the mobile debug snapshot if an unexpected renderer error occurs.
   function frame(nowMs) {
-    requestAnimationFrame(frame); // Schedule first so one bad frame can never strand a visible world-space sprite.
+    requestAnimationFrame(frame); // Retains its pre-gameLoop animation ordering until the shared scheduler has an explicit phase contract.
     try {
       syncReadyTarget(nowMs);
       lastFrameError = null;

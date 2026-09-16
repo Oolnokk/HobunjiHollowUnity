@@ -129,6 +129,10 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260830flip2"></script>
   <script src="js/png-plane-avatar.js?v=20260910review1"></script>
+  <!-- Single owner for permanent browser-frame visual/runtime callbacks.
+       Feature modules register locally; gameplay simulation remains in gameLoop
+       and final-matrix work remains in Three.js render hooks. -->
+  <script src="js/runtime-frame-scheduler.js?v=20260916foundation2"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
@@ -223,7 +227,7 @@
   <script src="js/combat/combat-input.js?v=20260914transienttarget1"></script>
   <script src="js/combat/combat-combo.js?v=20260915enemydodge1"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260915enemydodge1"></script>
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20260914followfix1"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20260916frameorder1"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260915enemydodge1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260915enemydodge1"></script>
@@ -233,8 +237,8 @@
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
   <script src="js/combat/ranged-weapons.js?v=20260909perspectivepoint1"></script>
-  <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260916perf1"></script>
+  <script src="js/combat/ranged-hud-reticle.js?v=20260916scheduler1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260916scheduler1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -2330,7 +2334,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260916tentdeath1"></script>
+  <script src="js/pixel-probe.js?v=20260916scheduler1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls

@@ -57,7 +57,7 @@ assert.match(game, /const target = acquireMeleeAttackTargetLock\(\);/, 'each act
 assert.match(game, /releaseMeleeAttackTargetLock\(alignment\.target, alignment\.cancelled \? 'cancelled' : 'aligned'\)/, 'normal alignment completion releases the selected entity');
 assert.match(game, /try \{[\s\S]{0,80}runAttack\(\);[\s\S]{0,80}finally \{[\s\S]{0,80}releaseMeleeAttackTargetLock\(target, 'already-aligned'\)/, 'an immediate alignment always closes its target-lock lifecycle');
 assert.match(game, /targetLocked: !!meleeAttackTargetLock[\s\S]{0,180}activationSerial:/, 'mobile diagnostics expose target lock state and activation identity');
-assert.match(html, /game\.js\?v=20260915targetlock1/, 'game cache key delivers the activation-lock runtime to browsers');
+assert.match(html, /game\.js\?v=20260916survivaltent1/, 'game cache key delivers the current activation-lock and survival runtime to browsers');
 assert.match(game, /playerAttackAlignmentDuration\?\.\(initialStep\?\.deltaRad\)/, 'game delegates player glide duration to shared targeting policy');
 assert.match(game, /playerAttackAlignmentProgress\?\.\(progress\)/, 'game delegates player easing to shared targeting policy');
 assert.doesNotMatch(game, /PLAYER_ATTACK_ALIGNMENT_(?:MIN|MAX)_S|function easedAttackAlignmentProgress/, 'game has no private alignment tuning');
@@ -150,7 +150,8 @@ assert.match(bandit, /data: \{ isBandit: true, attacker: c/, 'bandit staged acti
 
 assert.match(indicator, /Object\.entries\(rawAfflictions \|\| \{\}\)/, 'opportunity effects accept progression maps without crashing');
 assert.match(indicator, /state\.root\.updateWorldMatrix\?\.\(true, true\)/, 'overlay samples the live target transform');
-assert.match(indicator, /requestAnimationFrame\(frame\); \/\/ Schedule first/, 'one renderer exception cannot strand a visible overlay');
+assert.match(indicator, /requestAnimationFrame\(frame\); \/\/ Retains its pre-gameLoop/, 'opportunity overlay retains its established ordering until scheduler phases exist');
+assert.match(indicator, /try \{[\s\S]{0,180}syncReadyTarget\(nowMs\)[\s\S]{0,260}catch \(error\)/, 'one renderer exception cannot strand or leave a visible overlay');
 assert.match(indicator, /else detachReticle\(\)/, 'overlay hides immediately when the bonus condition ends');
 assert.match(html, /quick-attack-bonus-indicator\.js/, 'opportunity indicator is loaded by the game page');
 
