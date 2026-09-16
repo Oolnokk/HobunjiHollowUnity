@@ -5,6 +5,7 @@
   // synchronous during ordinary index.html parsing so the wrappers exist before
   // FarmPanel/game.js call the underlying modules' init() methods.
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
+    { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20260916sleep1' },
     { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
     { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
@@ -14,7 +15,7 @@
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
     { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260913xp1' },
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
-    { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
+    { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260916sleep1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
@@ -37,6 +38,7 @@
     }
     const loadAt = index => {
       if (index >= featureScripts.length) {
+        window.AnimalSleepPresentation?.install?.();
         window.OutdoorLivestockWelfare?.install?.();
         window.OutdoorLivestockPresence?.install?.();
         window.AnimalGrowth?.install?.();
@@ -61,13 +63,14 @@
   ensureFeaturesLoaded();
 
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
-  // FarmPanel, while OutdoorLivestockWelfare/OutdoorLivestockPresence/
-  // LivestockNursery/AnimalGrowth/StableAnimalProgression/
+  // FarmPanel, while AnimalSleepPresentation/OutdoorLivestockWelfare/
+  // OutdoorLivestockPresence/LivestockNursery/AnimalGrowth/StableAnimalProgression/
   // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator/
   // FarmMenuLayout/FarmGlancePalette all need the public farm APIs before
   // game.js initializes them. Capture FarmPanel's one global assignment and
   // install synchronously at that exact point; afterward FarmPanel is a normal
   // writable global again, so there is no permanent proxy.
+  const installAnimalSleepPresentation = () => window.AnimalSleepPresentation?.install?.();
   const installOutdoorLivestockWelfare = () => window.OutdoorLivestockWelfare?.install?.();
   const installNursery = () => window.LivestockNursery?.install?.();
   const installOutdoorLivestockPresence = () => window.OutdoorLivestockPresence?.install?.();
@@ -183,6 +186,7 @@
 
   const installBridges = () => {
     installVegetationFoliageContractGuard();
+    installAnimalSleepPresentation();
     installOutdoorLivestockWelfare();
     installNursery();
     // Presence must wrap Nursery's final unassign/respawn seams, otherwise
