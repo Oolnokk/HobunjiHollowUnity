@@ -9,14 +9,14 @@
   //
   // How a new panel opts in (this is the whole contract — nothing else to
   // wire up):
-  //   data-ctrl-panel   on the panel/modal's root element. Any element
-  //                     carrying this attribute is watched for visibility
-  //                     (display/opacity/visibility, whatever mechanism the
-  //                     panel already uses to show/hide itself — this file
-  //                     never needs to know which). The instant it becomes
-  //                     visible it's pushed onto a panel stack and gets
-  //                     controller focus; the instant it's hidden again it's
-  //                     popped and focus returns to whatever's under it.
+  //   data-ctrl-panel   on the panel/modal's root element, OR standard modal
+  //                     semantics role="dialog" aria-modal="true". Semantic
+  //                     dialogs are discovered automatically unless nested
+  //                     inside an explicit data-ctrl-panel owner.
+  //                     Visible panels are watched for display/opacity/
+  //                     visibility changes; the instant one becomes visible
+  //                     it gets controller focus, and focus returns to the
+  //                     underlying panel when it closes.
   //   data-ctrl-cancel  optional, on the panel's own close/back/leave
   //                     button. Gamepad B (and keyboard) clicks it.
   //   data-ctrl-tabs    optional, on a row of sibling tab/category buttons
@@ -43,7 +43,9 @@
   // window.ControllerUI.isActive() and stands down for the frame so the two
   // don't fight over the same button presses.
 
-  const PANEL_SELECTOR = '[data-ctrl-panel]';
+  const EXPLICIT_PANEL_SELECTOR = '[data-ctrl-panel]';
+  const SEMANTIC_PANEL_SELECTOR = '[role="dialog"][aria-modal="true"]';
+  const PANEL_SELECTOR = `${EXPLICIT_PANEL_SELECTOR}, ${SEMANTIC_PANEL_SELECTOR}`;
   const TABS_SELECTOR = '[data-ctrl-tabs]';
   const NAV_SELECTOR = [
     'button', 'a[href]', 'input', 'select', 'textarea',
@@ -55,6 +57,10 @@
   const NAV_PRESS = Number(window.SCRATCHBONES_CONFIG?.game?.input?.axisPressThreshold) || 0.55;
   const REPEAT_INITIAL_MS = 380;
   const REPEAT_RATE_MS = 140;
+  const CONE_HALF_ANGLE = 34 * Math.PI / 180; // Narrow first-pass intent cone cast from the focused control's center along the physical stick vector.
+  const WIDE_CONE_HALF_ANGLE = 58 * Math.PI / 180; // One forgiving retry before falling back to the forward half-plane, preventing dead ends in irregular layouts.
+  const CONE_EDGE_FORGIVENESS = 12; // Pixels added around candidate bounds so wide/short controls can be hit by the cone even when their center sits just outside it.
+  const STICK_DIRECTION_RESET_COS = Math.cos(25 * Math.PI / 180); // A deliberate ~25° direction change while held counts as a fresh navigation gesture instead of waiting for repeat.
   const UI_ACTIONS = Object.freeze({
     open: 'uiOpenMenu', confirm: 'uiConfirm', cancel: 'uiCancel', tabPrev: 'uiTabPrev', tabNext: 'uiTabNext',
     up: 'uiUp', down: 'uiDown', left: 'uiLeft', right: 'uiRight',
@@ -112,14 +118,12 @@
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
 
-  // Every [data-ctrl-panel] root (menuPanel, npcDialogue, dyePanel,
-  // houseLayoutModal, the cooking layer) is appended directly to <body>, so
+  // Registered panel roots are ordinarily appended directly to <body>, so
   // unlike isVisible() above — which has to walk ancestors for a nav target
   // that can sit many levels deep inside a hidden .mp-pane — checking the
   // panel's own computed style is already the full answer, no ancestor walk
-  // needed. This runs on every single frame (see isActive()'s comment
-  // below), so skipping that walk avoids forcing a synchronous style/layout
-  // recompute for the whole document on every one of these per-panel checks.
+  // needed. Reconciliation is mutation-driven; isActive() itself stays a
+  // constant-time hot-path read.
   function panelVisible(el) {
     if (!el || !el.isConnected) return false;
     const cs = getComputedStyle(el);
@@ -249,43 +253,85 @@
   }
 
   // ── spatial navigation ──────────────────────────────────────────────
-  function isInDirection(curRect, candRect, dir) {
-    const eps = 1;
-    switch (dir) {
-      case 'right': return candRect.left >= curRect.left + eps;
-      case 'left': return candRect.right <= curRect.right - eps;
-      case 'down': return candRect.top >= curRect.top + eps;
-      case 'up': return candRect.bottom <= curRect.bottom - eps;
-      default: return false;
-    }
+  // Navigation is vector-based rather than reducing an analog throw to four
+  // independent cardinal presses. Imagine a narrow invisible cone projected
+  // from the current control's center along the stick direction: candidates
+  // whose rectangles intersect that cone compete first, then a wider cone,
+  // then the forward half-plane as a no-dead-end fallback.
+  function rectCenter(rect) {
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
 
-  function directionScore(curRect, candRect, dir) {
-    const curCX = curRect.left + curRect.width / 2, curCY = curRect.top + curRect.height / 2;
-    const candCX = candRect.left + candRect.width / 2, candCY = candRect.top + candRect.height / 2;
-    let primary, perpendicular;
-    if (dir === 'left' || dir === 'right') { primary = Math.abs(candCX - curCX); perpendicular = Math.abs(candCY - curCY); }
-    else { primary = Math.abs(candCY - curCY); perpendicular = Math.abs(candCX - curCX); }
-    return primary + perpendicular * 2.2;
+  function normalizedDirection(x, y) {
+    const magnitude = Math.hypot(Number(x) || 0, Number(y) || 0);
+    if (magnitude <= 1e-6) return null;
+    return { x: (Number(x) || 0) / magnitude, y: (Number(y) || 0) / magnitude, magnitude };
   }
 
-  function move(dir) {
-    const panel = activePanel();
-    if (!panel) return;
-    refreshFocusIfStale();
-    const targets = targetsInPanel(panel);
-    if (!targets.length) return;
-    if (!currentTarget) { setFocus(pickDefaultTarget(panel)); return; }
-    const curRect = currentTarget.getBoundingClientRect();
+  function coneMetrics(curRect, candRect, dir, halfAngle) {
+    const cur = rectCenter(curRect), cand = rectCenter(candRect);
+    const dx = cand.x - cur.x, dy = cand.y - cur.y;
+    const forward = dx * dir.x + dy * dir.y;
+    if (forward <= 1) return null;
+    const lateral = Math.abs(dx * -dir.y + dy * dir.x);
+    const halfProjection = Math.abs(dir.y) * candRect.width * 0.5 + Math.abs(dir.x) * candRect.height * 0.5; // Candidate extent perpendicular to the ray, so the cone hits the visible rectangle rather than requiring its center inside.
+    const edgeGap = Math.max(0, lateral - halfProjection);
+    const coneLimit = forward * Math.tan(halfAngle) + CONE_EDGE_FORGIVENESS;
+    if (edgeGap > coneLimit) return null;
+    const anglePenalty = edgeGap / Math.max(1, forward); // Strongly prefers something centered on the intended ray when two controls are similarly near.
+    return { forward, lateral, edgeGap, score: forward + edgeGap * 2.8 + anglePenalty * 160 };
+  }
+
+  function halfPlaneScore(curRect, candRect, dir) {
+    const cur = rectCenter(curRect), cand = rectCenter(candRect);
+    const dx = cand.x - cur.x, dy = cand.y - cur.y;
+    const forward = dx * dir.x + dy * dir.y;
+    if (forward <= 1) return null;
+    const lateral = Math.abs(dx * -dir.y + dy * dir.x);
+    return forward + lateral * 2.2;
+  }
+
+  function bestVectorCandidate(targets, curRect, dir, halfAngle = null) {
     let best = null, bestScore = Infinity;
     for (const cand of targets) {
       if (cand === currentTarget) continue;
       const candRect = cand.getBoundingClientRect();
-      if (!isInDirection(curRect, candRect, dir)) continue;
-      const score = directionScore(curRect, candRect, dir);
+      const metrics = halfAngle == null
+        ? { score: halfPlaneScore(curRect, candRect, dir) }
+        : coneMetrics(curRect, candRect, dir, halfAngle);
+      const score = metrics?.score;
+      if (!Number.isFinite(score)) continue;
       if (score < bestScore) { bestScore = score; best = cand; }
     }
-    if (best) setFocus(best);
+    return best;
+  }
+
+  function moveVector(x, y) {
+    const panel = activePanel();
+    if (!panel) return false;
+    refreshFocusIfStale();
+    const targets = targetsInPanel(panel);
+    if (!targets.length) return false;
+    if (!currentTarget) { setFocus(pickDefaultTarget(panel)); return true; }
+    const dir = normalizedDirection(x, y);
+    if (!dir) return false;
+    const curRect = currentTarget.getBoundingClientRect();
+    const best = bestVectorCandidate(targets, curRect, dir, CONE_HALF_ANGLE)
+      || bestVectorCandidate(targets, curRect, dir, WIDE_CONE_HALF_ANGLE)
+      || bestVectorCandidate(targets, curRect, dir, null);
+    if (!best) return false;
+    setFocus(best);
+    return true;
+  }
+
+  function move(dir) {
+    switch (dir) {
+      case 'left': return moveVector(-1, 0);
+      case 'right': return moveVector(1, 0);
+      case 'up': return moveVector(0, -1);
+      case 'down': return moveVector(0, 1);
+      default: return false;
+    }
   }
 
   function dispatchControlChange(control) {
@@ -323,6 +369,12 @@
     const delta = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
     if (delta && adjustFocusedControl(delta)) return;
     move(dir);
+  }
+
+  function moveVectorOrAdjust(x, y) {
+    const horizontalIntent = Math.abs(x) >= Math.abs(y) * 1.15; // Prevents a diagonal meant for another row from accidentally changing a slider/select value.
+    if (horizontalIntent && Math.abs(x) > 0.01 && adjustFocusedControl(x < 0 ? -1 : 1)) return true;
+    return moveVector(x, y);
   }
 
   // ── activate / cancel / tabs ────────────────────────────────────────
@@ -408,8 +460,9 @@
     if (hintEl) hintEl.classList.remove('ctrl-nav-hint-bar-visible');
   }
 
-  // ── gamepad polling (always running — cheap when idle) ─────────────
+  // ── gamepad polling (shared authority; cheap when idle) ─────────────
   const dirState = { up: mkDirState(), down: mkDirState(), left: mkDirState(), right: mkDirState() };
+  const stickState = { down: false, next: 0, x: 0, y: 0 }; // One analog gesture state prevents diagonals from causing two cardinal moves in the same frame.
   function mkDirState() { return { down: false, next: 0 }; }
   function pollDirection(name, isDown, now, fire) {
     const st = dirState[name];
@@ -421,6 +474,34 @@
     }
   }
 
+  function resetStickState() {
+    stickState.down = false;
+    stickState.next = 0;
+    stickState.x = 0;
+    stickState.y = 0;
+  }
+
+  function pollStickVector(rawX, rawY, now) {
+    const magnitude = Math.hypot(rawX, rawY);
+    if (magnitude < NAV_PRESS) { resetStickState(); return; }
+    const x = rawX / Math.max(magnitude, 1e-6), y = rawY / Math.max(magnitude, 1e-6);
+    const directionChanged = stickState.down && (x * stickState.x + y * stickState.y) < STICK_DIRECTION_RESET_COS;
+    if (!stickState.down || directionChanged) {
+      stickState.down = true;
+      stickState.x = x;
+      stickState.y = y;
+      stickState.next = now + REPEAT_INITIAL_MS;
+      moveVectorOrAdjust(x, y);
+      return;
+    }
+    stickState.x = x;
+    stickState.y = y;
+    if (now >= stickState.next) {
+      stickState.next = now + REPEAT_RATE_MS;
+      moveVectorOrAdjust(x, y);
+    }
+  }
+
   let prevButtons = new Set();
   let menuOpenEdge = false;
   let lastGamepadPollAt = 0; // Used to keep analog right-stick menu scrolling independent of display refresh rate.
@@ -429,16 +510,18 @@
     const now = frame.now;
     if (!frame.focused) return;
     const pad = frame.pad; // Resolved once per frame by the shared polling authority.
-    if (!pad) { prevButtons.clear(); menuOpenEdge = false; return; }
+    if (!pad) { prevButtons.clear(); menuOpenEdge = false; resetStickState(); return; }
     padEverSeen = true;
 
     if (window.InputSettingsPanel?.isControllerListening?.()) {
       prevButtons.clear();
       menuOpenEdge = false;
+      resetStickState();
       return;
     }
 
     if (!isActive()) {
+      resetStickState();
       // Nothing to navigate — the only job left is offering a way to open
       // the pause menu at all from a controller with no keyboard nearby.
       const openDown = controllerActionDown(frame, UI_ACTIONS.open); // Used to let the configured Menu Open/Close action own this edge instead of a fixed View/Share button.
@@ -452,11 +535,19 @@
     menuOpenEdge = false;
 
     const navStick = window.ControllerInput?.normalizeStick?.(pad.axes[0], pad.axes[1], DEADZONE, 1) || { x: pad.axes[0] || 0, y: pad.axes[1] || 0 };
-    const rawAx = Number(pad.axes[0]) || 0, rawAy = Number(pad.axes[1]) || 0; // Used for predictable digital navigation thresholds while navStick remains the diagnostic/analog value.
-    pollDirection('left', rawAx <= -NAV_PRESS || controllerActionDown(frame, UI_ACTIONS.left), now, () => moveOrAdjust('left'));
-    pollDirection('right', rawAx >= NAV_PRESS || controllerActionDown(frame, UI_ACTIONS.right), now, () => moveOrAdjust('right'));
-    pollDirection('up', rawAy <= -NAV_PRESS || controllerActionDown(frame, UI_ACTIONS.up), now, () => move('up'));
-    pollDirection('down', rawAy >= NAV_PRESS || controllerActionDown(frame, UI_ACTIONS.down), now, () => move('down'));
+    const rawAx = Number(pad.axes[0]) || 0, rawAy = Number(pad.axes[1]) || 0; // Used to preserve the physical analog direction before cone scoring.
+    const digitalLeft = controllerActionDown(frame, UI_ACTIONS.left);
+    const digitalRight = controllerActionDown(frame, UI_ACTIONS.right);
+    const digitalUp = controllerActionDown(frame, UI_ACTIONS.up);
+    const digitalDown = controllerActionDown(frame, UI_ACTIONS.down);
+    const digitalDirectionActive = digitalLeft || digitalRight || digitalUp || digitalDown;
+    pollDirection('left', digitalLeft, now, () => moveOrAdjust('left'));
+    pollDirection('right', digitalRight, now, () => moveOrAdjust('right'));
+    pollDirection('up', digitalUp, now, () => move('up'));
+    pollDirection('down', digitalDown, now, () => move('down'));
+    if (digitalDirectionActive) resetStickState();
+    else pollStickVector(rawAx, rawAy, now); // One true-vector decision per analog gesture/repeat; diagonals never double-step.
+
     const scrollStick = window.ControllerInput?.normalizeStick?.(pad.axes[2], pad.axes[3], DEADZONE, 1.3) || { y: 0 };
     window.dispatchEvent(new CustomEvent('hobunji-controller-ui-snapshot', { detail: { pad, move: navStick, look: scrollStick } })); // Keeps the in-game debug line live while paused gameplay polling is suspended.
     const scrollDt = lastGamepadPollAt ? Math.min(0.05, Math.max(0, (now - lastGamepadPollAt) / 1000)) : 1 / 60; // Caps resume spikes after a backgrounded tab.
@@ -523,7 +614,7 @@
   // no attributes) purely to notice a panel node itself being
   // added/removed — e.g. cooking-system.js building its layer fresh. Actual
   // visibility toggles (class/style/aria-hidden/hidden) are watched only on
-  // the handful of [data-ctrl-panel] roots themselves via attrObserver,
+  // the handful of registered panel roots themselves via attrObserver,
   // since panelVisible() above already only ever looks at a panel's own
   // computed style, never an ancestor's. A single document-wide attribute
   // observer used to re-run reconcileStack (a full querySelectorAll +
@@ -554,8 +645,13 @@
       reconcileStack();
     }, 240);
   }
-  function registerPanel(panel) {
+  function isControllerPanel(panel) {
     if (!panel?.matches?.(PANEL_SELECTOR)) return false;
+    if (panel.matches(SEMANTIC_PANEL_SELECTOR) && !panel.matches(EXPLICIT_PANEL_SELECTOR) && panel.parentElement?.closest?.(EXPLICIT_PANEL_SELECTOR)) return false; // An explicit outer owner wins so a semantic dialog nested inside it cannot create a duplicate stack layer.
+    return true;
+  }
+  function registerPanel(panel) {
+    if (!isControllerPanel(panel)) return false;
     const added = !knownPanels.has(panel);
     knownPanels.add(panel);
     watchPanelAttributes(panel);
@@ -605,6 +701,7 @@
     isActive,
     activePanel,
     focusedElement: () => currentTarget,
+    navigateVector: (x, y) => moveVectorOrAdjust(Number(x) || 0, Number(y) || 0), // Mobile/headless diagnostic seam for reproducing exact diagonal intent without a physical pad.
     // Test/debug seams — let headless verification drive navigation without
     // faking the full Gamepad API.
     press(action) {
@@ -628,6 +725,8 @@
         targetTag: currentTarget?.tagName || null,
         targetId: currentTarget?.id || null,
         targetText: (currentTarget?.textContent || '').trim().slice(0, 40),
+        navigationMode: 'vector-cone',
+        coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
       };
     },
   };
