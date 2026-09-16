@@ -75,6 +75,8 @@ const windowStub = {
 vm.runInNewContext(source, { window: windowStub, console, Date, Proxy, WeakMap, Map, Math, Number, Object, Array, String });
 const balance = windowStub.NpcFavorBalance;
 assert(balance, 'NpcFavorBalance installs');
+assert.equal(balance.version, 2, 'v2 installs the dependency-order-safe Favor balance');
+assert.equal(balance.debugSnapshot().installedVia, 'direct', 'normal dependency-ready load records a direct install');
 assert.equal(balance.favorPointsPerHeart, 40, 'forty Favor points equal one heart');
 assert.equal(balance.favorPointsToHearts(10), 0.25, 'ten Favor points equal one quarter heart');
 assert.equal(balance.maxRapportOvernightHearts(100, 0.10), 0.25, '100/100 Rapport settles to one quarter heart');
@@ -94,6 +96,9 @@ assert.equal(rawState('hreesh').favor, 0.25, 'five-star loved gift adds one quar
 assert.equal(inventory.egg, 2, 'gift consumes exactly one egg');
 assert.deepEqual(consumedQuality.at(-1), { key: 'egg', stars: 5, amount: 1 }, 'gift consumes the matching five-star quality unit');
 assert.equal(rewards.at(-1)?.text, '+10 Favor', 'player-facing Favor reward stays in Favor points');
+const heartHtml = DialogueContent.renderRelationshipHearts({ id: 'hreesh', relationship: true });
+assert.match(heartHtml, /width:25%/, 'relationship heart renderer shows the loved gift as quarter-heart progress');
+assert.equal(balance.relationshipDebug('hreesh').favorPoints, 10, 'relationship debug reports the same stored progress back in Favor points');
 
 // Multiple matching loved traits cannot make one physical gift worth more than one loved gift.
 NpcGifting.offerGift({ rec: { id: 'multitrait' }, giftScore: 30 });
@@ -133,5 +138,33 @@ assert(saved.npcRelationships.old_positive.memory.some(entry => entry.event === 
 const migratedPositive = saved.npcRelationships.old_positive.favor;
 DialogueContent.loadNpcRelationships(saved);
 assert.equal(rawState('old_positive').favor, migratedPositive, 'migration marker prevents repeated rescaling');
+
+// Regression for the real browser load order: combat-config-loader currently injects
+// FavorHeartBalance before dialogue-content.js publishes window.DialogueContent.
+const lateStates = new Map();
+const lateRawState = id => {
+  if (!lateStates.has(id)) lateStates.set(id, { favor: 0, rapport: 0, memory: [] });
+  return lateStates.get(id);
+};
+const lateDialogue = {
+  init() {},
+  loadNpcRelationships() {},
+  getNpcDlgState(id) { return lateRawState(id); },
+  adjustNpcFavor(id, amount) { lateRawState(id).favor += Number(amount) || 0; },
+  recordNpcMemory(id, event) { lateRawState(id).memory.push({ event }); },
+  renderRelationshipHearts() { return 'legacy'; },
+};
+const lateWindow = {
+  NpcGifting: { init() {}, offerGift() { return false; } },
+  SCRATCHBONES_CONFIG: { game: { socialRelationships: { rapportToFavorRate: 0.10 } } },
+};
+vm.runInNewContext(source, { window: lateWindow, console, Date, Proxy, WeakMap, Map, Math, Number, Object, Array, String });
+assert.equal(lateWindow.NpcFavorBalance, undefined, 'balance waits instead of silently giving up when DialogueContent is not loaded yet');
+lateWindow.DialogueContent = lateDialogue;
+assert.equal(lateWindow.NpcFavorBalance?.version, 2, 'publishing DialogueContent synchronously installs the deferred balance hooks');
+assert.equal(lateWindow.NpcFavorBalance.debugSnapshot().installedVia, 'dialogue-assignment', 'debug state records the deferred dependency path');
+lateDialogue.adjustNpcFavor('late_hreesh', 10, 'gift_loved');
+assert.equal(lateRawState('late_hreesh').favor, 0.25, 'late-installed balance still converts +10 Favor into one quarter heart');
+assert.match(lateDialogue.renderRelationshipHearts({ id: 'late_hreesh', relationship: true }), /width:25%/, 'late-installed renderer still shows quarter-heart progress');
 
 console.log('Favor point / relationship heart balance regression checks passed.');
