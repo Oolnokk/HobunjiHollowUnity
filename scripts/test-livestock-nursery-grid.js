@@ -6,6 +6,8 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/livestock-nursery-grid.js', 'utf8');
 const pagingSource = fs.readFileSync('docs/js/livestock-nursery-inventory-paging.js', 'utf8');
+const outdoorGrowthSource = fs.readFileSync('docs/js/livestock-nursery-outdoor-growth.js', 'utf8');
+const uiFixSource = fs.readFileSync('docs/js/livestock-nursery-grid-ui-fix.js', 'utf8');
 const bridgeSource = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8');
 
 let livestock = [
@@ -131,14 +133,27 @@ assert.match(pagingSource, /stack\.classList\.remove\(LEGACY_SCROLL_CLASS\)/, 'e
 assert.doesNotMatch(pagingSource, /attributeFilter:\s*\['class'\]/, 'paging does not maintain a second class MutationObserver');
 assert.match(pagingSource, /shadow\.querySelector\('slot\[name="debug"\]'\)/, 'page turning reuses the existing light-DOM debug host through a shadow slot instead of adding Nursery children');
 assert.doesNotMatch(pagingSource, /document\.createElement\('button'\)/, 'paging never creates a new light-DOM button that could wake the legacy Nursery body observer');
-assert.match(pagingSource, /font-size:0\s*!important/, 'paging fully hides the old help/debug host text while it is acting as the page arrow');
+assert.match(pagingSource, /font-size:0\s*!important/, 'paging hides the redundant legacy header contents while that host acts as debug/page-turn control');
 assert.match(pagingSource, /pager\.classList\.remove\('nursery-page-turn'\)/, 'page arrow mode disappears when the Nursery fits on one page');
 assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.decorate\?\./, 'page turns do not rerun the entire Nursery genetics/portrait decorator');
 assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.debugSnapshot/, 'paging does not scan the full genetics debug snapshot just to find the selected card');
 assert.doesNotMatch(pagingSource, /first\.click\?\./, 'page focus does not click the first card and render its detail rail a second time');
-assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'[\s\S]*nurserygrid2/, 'farm feature bridge loads the lazy-portrait Nursery grid revision');
+
+assert.match(outdoorGrowthSource, /isBarnCapacityFailure/, 'full-barn maturation fallback is limited to the Nursery no-stall failure paths');
+assert.match(outdoorGrowthSource, /entry\.lifeStage\s*=\s*'adult'/, 'full-barn maturation persists the baby as an adult');
+assert.match(outdoorGrowthSource, /entry\.barnId\s*=\s*null/, 'full-barn maturation uses the existing outdoor-adult housing state');
+assert.match(uiFixSource, /grow\.disabled\s*=\s*!canManage\s*\|\|\s*tonicCount\s*<\s*1/, 'Grow Up remains controller-focusable when barns are full and only blocks for permission/tonic');
+assert.match(uiFixSource, /helpHost\.slot\s*=\s*'help'/, 'legacy Nursery info note gets its own grid-column help slot');
+assert.match(uiFixSource, /headerHost\.slot\s*=\s*'debug'/, 'redundant legacy header becomes the debug/page-turn host instead of hijacking the help note');
+assert.match(uiFixSource, /white-space:normal\s*!important/, 'Nursery info note is explicitly allowed to wrap inside the left grid column');
+assert.match(uiFixSource, /document\.addEventListener\('focusin',[\s\S]*true\)/, 'controller focus refreshes Grow Up state after the private grid detail updater runs');
+
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryOutdoorGrowth'[\s\S]*outdoor1/, 'farm feature bridge loads full-barn outdoor maturation support');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'[\s\S]*nurserygrid3/, 'farm feature bridge cache-busts the Nursery grid revision used by this compatibility pass');
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'[\s\S]*nurserypage6/, 'farm feature bridge loads the observer-safe fixed-page revision');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGridUiFix'[\s\S]*uifix1/, 'farm feature bridge loads the help/controller compatibility layer after paging');
 assert.match(bridgeSource, /installLivestockNurseryGrid\(\)/, 'farm feature bridge installs the Nursery grid after FarmPanel becomes available');
 assert.match(bridgeSource, /installLivestockNurseryInventoryPaging\(\)/, 'farm feature bridge installs paging after the grid feature');
+assert.match(bridgeSource, /installLivestockNurseryGridUiFix\(\)/, 'farm feature bridge installs the grow/help UI compatibility last');
 
 console.log('livestock nursery grid regression checks passed');
