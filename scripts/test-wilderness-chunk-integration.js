@@ -128,7 +128,7 @@ for (const signature of [
   const bounds = { colStart: 0, rowStart: 0, colEnd: 2, rowEnd: 1 };
 
   const firstChunkResult = api.buildWaterfallCurtainMeshes(streamedGroup, grid, 2, 1, 'test_waterfall_zone', bounds);
-  assert.deepStrictEqual(firstChunkResult, [], 'streamed chunk must not own the persistent waterfall mesh');
+  assert.strictEqual(firstChunkResult.length, 0, 'streamed chunk must not own the persistent waterfall mesh');
   assert.strictEqual(zoneScene.children.length, 1, 'one persistent waterfall mesh should be attached to the zone scene');
   const waterfallMesh = zoneScene.children[0];
   assert.strictEqual(waterfallMesh.parent, zoneScene, 'waterfall mesh should survive streamed group unloads');
@@ -138,7 +138,7 @@ for (const signature of [
   assert.strictEqual(waterfallMesh.frustumCulled, true, 'persistence must not disable normal offscreen frustum culling');
 
   const repeatedChunkResult = api.buildWaterfallCurtainMeshes(streamedGroup, grid, 2, 1, 'test_waterfall_zone', bounds);
-  assert.deepStrictEqual(repeatedChunkResult, [], 'later chunk builds should reuse the persistent waterfall sheet');
+  assert.strictEqual(repeatedChunkResult.length, 0, 'later chunk builds should reuse the persistent waterfall sheet');
   assert.strictEqual(zoneScene.children.length, 1, 'later chunk builds must not add duplicate persistent waterfall meshes');
   assert.strictEqual(window.__waterfallRenderStats.test_waterfall_zone.curtains, 1);
   assert.strictEqual(window.__waterfallRenderStats.test_waterfall_zone.duplicateEdgesSkipped, 1);
