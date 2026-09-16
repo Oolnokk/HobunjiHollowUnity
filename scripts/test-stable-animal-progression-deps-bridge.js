@@ -24,6 +24,7 @@ const context = {
 };
 context.window = context;
 
+context.AnimalSleepPresentation = { install() {} }; // Keeps the bridge regression self-contained now that shared animal sleep presentation is parser-time.
 context.OutdoorLivestockWelfare = { install() {} }; // Keeps the bridge regression self-contained now that outdoor welfare is a parser-time farm feature.
 context.OutdoorLivestockPresence = { install() {} }; // Keeps outdoor world-presence repair from triggering this test's intentional dynamic-loader trap.
 context.ANIMAL_GROWTH_CONFIG = {};
