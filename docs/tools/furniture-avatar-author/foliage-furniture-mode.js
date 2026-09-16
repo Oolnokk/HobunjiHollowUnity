@@ -17,6 +17,7 @@
     await loadClassicScript('../../js/tankan-script-layout.js?v=20260915tankan8');
     await loadClassicScript('furniture-decals.js?v=20260916tankan9');
     await loadClassicScript('furniture-wall-ornaments.js?v=20260916wall1');
+    await loadClassicScript('furniture-daylight-windows.js?v=20260916window1');
     await loadClassicScript('furniture-decal-catalog.js?v=20260907a');
     await loadClassicScript('furniture-piece-animations.js?v=20260907a');
   })().catch(error => console.error('[Furniture Author Extensions]', error));
