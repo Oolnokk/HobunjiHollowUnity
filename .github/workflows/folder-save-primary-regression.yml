@@ -5,20 +5,24 @@ on:
     paths:
       - 'docs/js/local-save-folder*.js'
       - 'docs/js/folder-save-*.js'
+      - 'docs/js/save-checkpoint-manager.js'
       - 'docs/folder-save-primary.css'
       - 'docs/onboarding.js'
       - 'docs/onboarding-core.js'
       - 'docs/js/save-startup-gate.js'
       - 'docs/js/session-persistence-startup-guard.js'
       - 'scripts/test-folder-save-*.js'
+      - 'scripts/test-save-checkpoint-manager.js'
       - '.github/workflows/folder-save-primary-regression.yml'
   push:
     paths:
       - 'docs/js/local-save-folder*.js'
       - 'docs/js/folder-save-*.js'
+      - 'docs/js/save-checkpoint-manager.js'
       - 'docs/folder-save-primary.css'
       - 'docs/onboarding.js'
       - 'scripts/test-folder-save-*.js'
+      - 'scripts/test-save-checkpoint-manager.js'
       - '.github/workflows/folder-save-primary-regression.yml'
 
 permissions:
@@ -34,12 +38,15 @@ jobs:
           node-version: '20'
       - name: Syntax check folder save modules
         run: |
+          node --check docs/js/local-save-folder-core.js
           node --check docs/js/folder-save-primary.js
           node --check docs/js/folder-save-onboarding-bridge.js
           node --check docs/js/folder-save-device-provenance.js
           node --check docs/js/folder-save-runtime-flush.js
           node --check docs/js/folder-save-quit-guard.js
+          node --check docs/js/save-checkpoint-manager.js
       - name: Run folder save regression
         run: |
           node scripts/test-folder-save-primary.js
           node scripts/test-folder-save-runtime-integrity.js
+          node scripts/test-save-checkpoint-manager.js
