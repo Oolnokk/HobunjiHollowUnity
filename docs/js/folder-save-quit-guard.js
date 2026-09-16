@@ -7,10 +7,18 @@
   if (window.FolderSaveQuitGuard) return;
 
   const QUIT_BUTTON_ID = 'menuQuitBtn'; // Existing menu Quit button intercepted before local-save-flow's bubble listener.
+  const RESET_BUTTON_ID = 'menuResetBtn'; // Legacy one-click farm reset control kept inert and hidden so it cannot be triggered accidentally.
+  const MENU_CONTROL_LABELS = Object.freeze([ // Visible labels applied to the icon-only menu controls, including buttons installed later by checkpoint code.
+    { id: 'menuPauseBtn', text: '⏯ Pause / Resume', minWidth: '112px' },
+    { id: 'menuManualSaveBtn', text: '💾 Manual Save', minWidth: '104px' },
+    { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '90px' },
+    { id: 'mpClose', text: '✕ Close', minWidth: '72px' },
+  ]);
   let busy = false; // Prevents double-clicks from starting overlapping runtime/folder saves.
   let quitAttempts = 0; // Mobile-visible count of guarded quit attempts.
   let successfulFolderFlushes = 0; // Mobile-visible count of folder writes completed before a quit reload.
   let lastError = ''; // Mobile-visible latest guarded-quit error.
+  let menuControlsObserver = null; // Watches the menu because Manual Save and Recovery are injected after initial markup.
 
   function localSave() {
     return window.LocalSaveFolder || null;
@@ -21,6 +29,47 @@
     if (!button.dataset.folderQuitLabel) button.dataset.folderQuitLabel = button.textContent || '🚪 Quit';
     button.disabled = value;
     button.textContent = value ? label : button.dataset.folderQuitLabel;
+  }
+
+  function disableFarmResetControl() {
+    const resetButton = document.getElementById(RESET_BUTTON_ID); // Existing reset node stays in the DOM for legacy code that expects the element to exist.
+    if (!resetButton) return false;
+    resetButton.disabled = true;
+    resetButton.hidden = true;
+    resetButton.tabIndex = -1;
+    resetButton.style.display = 'none';
+    resetButton.setAttribute('aria-hidden', 'true');
+    resetButton.setAttribute('data-farm-reset-disabled', 'true');
+    return true;
+  }
+
+  function labelMenuControls() {
+    const controls = document.querySelector('#menuPanel .mp-ctrls'); // Control-row parent is also adjusted so the now-readable buttons can wrap instead of overlapping tabs.
+    if (!controls) return false;
+    controls.style.flexWrap = 'wrap';
+    controls.style.justifyContent = 'flex-end';
+
+    for (const spec of MENU_CONTROL_LABELS) { // Each spec keeps one menu action readable without changing its existing click handler or id.
+      const button = document.getElementById(spec.id); // Existing button may be static markup or dynamically installed by the checkpoint manager.
+      if (!button) continue;
+      if (button.textContent !== spec.text) button.textContent = spec.text;
+      button.style.width = 'auto';
+      button.style.minWidth = spec.minWidth;
+      button.style.padding = '0 9px';
+      button.style.whiteSpace = 'nowrap';
+    }
+
+    disableFarmResetControl();
+    return true;
+  }
+
+  function installMenuSafetyUi() {
+    labelMenuControls();
+    if (menuControlsObserver || typeof MutationObserver !== 'function') return;
+    const menuPanel = document.getElementById('menuPanel'); // Narrow observation root catches late Manual Save/Recovery insertion and pause-icon rewrites.
+    if (!menuPanel) return;
+    menuControlsObserver = new MutationObserver(() => { labelMenuControls(); });
+    menuControlsObserver.observe(menuPanel, { childList: true, subtree: true });
   }
 
   async function ensurePrimaryFolderReady(button) {
@@ -128,12 +177,25 @@
   }
 
   document.addEventListener('click', event => {
+    const resetButton = event.target?.closest?.(`#${RESET_BUTTON_ID}`); // Capture-phase guard blocks any legacy click path even if another script unhides the reset node.
+    if (!resetButton) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+
+  document.addEventListener('click', event => {
     const button = event.target?.closest?.(`#${QUIT_BUTTON_ID}`);
     if (!button) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     guardedQuit(button);
   }, true);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', installMenuSafetyUi, { once: true });
+  } else {
+    installMenuSafetyUi();
+  }
 
   // A browser refresh/close that bypasses the menu cannot await folder I/O,
   // but the live localStorage snapshot itself is synchronous. Capture phase on
@@ -143,8 +205,15 @@
     window.HobunjiRuntimeSave?.flushNow?.({ reason: 'beforeunload' });
   }, { capture: true });
 
-  window.FolderSaveQuitGuard = { guardedQuit };
+  window.FolderSaveQuitGuard = { guardedQuit, labelMenuControls, disableFarmResetControl };
   window.__hobunjiFolderSaveQuitDebug = {
-    snapshot: () => ({ busy, quitAttempts, successfulFolderFlushes, lastError: lastError || null }),
+    snapshot: () => ({
+      busy,
+      quitAttempts,
+      successfulFolderFlushes,
+      lastError: lastError || null,
+      farmResetDisabled: document.getElementById(RESET_BUTTON_ID)?.disabled === true,
+      labeledMenuButtons: MENU_CONTROL_LABELS.filter(spec => document.getElementById(spec.id)?.textContent === spec.text).length,
+    }),
   };
 })();
