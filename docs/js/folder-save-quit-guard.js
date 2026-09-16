@@ -58,6 +58,10 @@
     return true;
   }
 
+  function menuControlLabel(spec, button) {
+    return spec.id === 'menuManualSaveBtn' && button?.disabled ? 'Saving…' : spec.text;
+  }
+
   function labelMenuControls() {
     if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
     const controls = document.querySelector('#menuPanel .mp-ctrls'); // Existing control-row parent receives readable labels without replacing handlers.
@@ -66,7 +70,8 @@
     for (const spec of MENU_CONTROL_LABELS) { // Each spec keeps one menu action readable without changing its existing click handler or id.
       const button = document.getElementById(spec.id); // Existing button may be static markup or dynamically installed by the checkpoint manager.
       if (!button) continue;
-      if (button.textContent !== spec.text) button.textContent = spec.text;
+      const label = menuControlLabel(spec, button); // Manual Save mirrors Save & Quit by replacing its actual label while its async write keeps it disabled.
+      if (button.textContent !== label) button.textContent = label;
       button.style.width = 'auto';
       button.style.minWidth = spec.minWidth;
       button.style.padding = '0 7px';
@@ -85,7 +90,7 @@
     const menuPanel = document.getElementById('menuPanel'); // Narrow observation root catches late save controls plus the panel's open/close class changes.
     if (!menuPanel) return false;
     menuControlsObserver = new MutationObserver(() => { labelMenuControls(); });
-    menuControlsObserver.observe(menuPanel, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    menuControlsObserver.observe(menuPanel, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled'] });
     return true;
   }
 
@@ -231,7 +236,10 @@
       lastError: lastError || null,
       farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
       labeledMenuButtons: typeof document?.getElementById === 'function'
-        ? MENU_CONTROL_LABELS.filter(spec => document.getElementById(spec.id)?.textContent === spec.text).length
+        ? MENU_CONTROL_LABELS.filter(spec => {
+            const button = document.getElementById(spec.id);
+            return button?.textContent === menuControlLabel(spec, button);
+          }).length
         : 0,
       menuOverlayControlsHidden: typeof document?.getElementById === 'function'
         ? MENU_OVERLAY_CONTROL_IDS.filter(id => document.getElementById(id)?.style?.visibility === 'hidden').length
