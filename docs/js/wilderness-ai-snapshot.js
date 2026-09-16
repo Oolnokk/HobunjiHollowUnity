@@ -110,6 +110,10 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     return !!a && !!b && a.x === b.x && a.z === b.z;
   }
 
+  function chunkText(chunk) {
+    return chunk && Number.isFinite(chunk.x) && Number.isFinite(chunk.z) ? `(${chunk.x},${chunk.z})` : '-';
+  }
+
   function chooseTargetChunk(playerChunk) {
     const cols = Number(window.GridTileAccessors?.getActiveCols?.()) || 0;
     const rows = Number(window.GridTileAccessors?.getActiveRows?.()) || 0;
@@ -198,7 +202,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       registered: !!deps.hostileObjects?.has?.(entity),
       plannerControlled: entity._porakanekiPlannerControlled === true,
       avatar: !!group,
-      visible: group?.visible !== false,
+      visible: !!group && group.visible !== false,
       parent: group?.parent?.name || group?.parent?.type || null,
       sim: Number.isFinite(simX) && Number.isFinite(simY) ? { x: Number(simX.toFixed(3)), y: Number(simY.toFixed(3)) } : null,
       render: Number.isFinite(renderX) && Number.isFinite(renderY) ? { x: Number(renderX.toFixed(3)), y: Number(renderY.toFixed(3)) } : null,
@@ -271,7 +275,13 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       appendHandoffEvent(test, 'MAKE_ENTITY_RESOLVED', entityHandoffSnapshot(entity));
       if (!entity) throw new Error('BanditCombat.makeEntity returned null');
       if (test !== handoffTest) {
-        entity.avatarRef?.dispose?.();
+        disposeHandoffEntity(entity);
+        return;
+      }
+      if (activeArea() !== WILDERNESS_LAB_ZONE_ID || !sameChunk(currentLabChunk(), test.targetChunk)) {
+        appendHandoffEvent(test, 'MAKE_ENTITY_CONTEXT_LOST', { area: activeArea(), playerChunk: currentLabChunk() });
+        disposeHandoffEntity(entity);
+        test.phase = 'armed';
         return;
       }
       test.entity = entity;
@@ -336,14 +346,19 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
         targetChunkGroupPresent: !!targetChunkGroup(test),
       });
     }
-    if (!test.targetEntered && sameChunk(playerChunk, test.targetChunk)) {
-      test.targetEntered = true;
+    const insideTargetChunk = sameChunk(playerChunk, test.targetChunk);
+    if (insideTargetChunk && !test.insideTargetChunk) {
+      test.insideTargetChunk = true;
+      test.waitingForChunkLogged = false;
       appendHandoffEvent(test, 'TARGET_CHUNK_ENTERED', {
         playerChunk,
         targetChunkGroupPresent: !!targetChunkGroup(test),
       });
+    } else if (!insideTargetChunk && test.insideTargetChunk) {
+      test.insideTargetChunk = false;
+      appendHandoffEvent(test, 'TARGET_CHUNK_LEFT', { playerChunk, targetChunk: test.targetChunk });
     }
-    if (test.targetEntered && !test.entity && !test.materializing) {
+    if (insideTargetChunk && !test.entity && !test.materializing) {
       if (targetChunkGroup(test)) materializeHandoffTest(test);
       else if (!test.waitingForChunkLogged) {
         test.waitingForChunkLogged = true;
@@ -417,7 +432,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       materializedAt: null,
       nextSampleIndex: 0,
       samplesComplete: false,
-      targetEntered: false,
+      insideTargetChunk: false,
       waitingForChunkLogged: false,
       leftLabLogged: false,
       lastPlayerChunk: { ...playerChunk },
@@ -488,7 +503,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     const resetButton = document.getElementById('devPorakanekiChunkHandoffResetBtn');
     if (status) {
       if (!handoffTest) status.textContent = 'No handoff test armed.';
-      else status.textContent = `${handoffTest.phase.toUpperCase()} · player ${pointText(currentLabChunk())} → target (${handoffTest.targetChunk.x},${handoffTest.targetChunk.z}) · last ${handoffTest.lastEvent}`;
+      else status.textContent = `${handoffTest.phase.toUpperCase()} · player ${chunkText(currentLabChunk())} → target (${handoffTest.targetChunk.x},${handoffTest.targetChunk.z}) · last ${handoffTest.lastEvent}`;
     }
     if (trace) trace.textContent = handoffTest ? handoffTest.events.join('\n') : 'Press “Spawn Off-Chunk Porakaneki” while inside a 2x2-or-larger Wilderness Chunk Lab.';
     if (copyButton) copyButton.disabled = !handoffTest;
