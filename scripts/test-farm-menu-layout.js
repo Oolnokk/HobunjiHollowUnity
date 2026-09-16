@@ -16,6 +16,12 @@ assert.match(layoutSource, /@media \(max-width: 900px\)/, 'Farm workspace collap
 assert.match(layoutSource, /#mpFarm \{ overflow-y: auto; overflow-x: hidden; \}/, 'narrow layouts return to one ordinary pane-level scroll');
 assert.match(layoutSource, /ANIMALS_COLUMN_ID = 'farmMenuAnimalsColumn'/, 'animals and breeding have a dedicated primary column');
 assert.match(layoutSource, /OPERATIONS_COLUMN_ID = 'farmMenuOperationsColumn'/, 'layout/buildings/processors share a separate facilities column');
+assert.match(layoutSource, /\.farm-menu-column-label \{[\s\S]*font-size:\s*16px;/, 'both Farm column headings are large enough to establish the panel hierarchy');
+assert.match(layoutSource, /\.farm-menu-column-label::after \{[\s\S]*height:\s*1px;/, 'column headings carry a horizontal separator rule');
+assert.match(layoutSource, /\.farm-section > \.settings-section-title \{[\s\S]*font-size:\s*14px;/, 'top-level sections in both Farm columns use larger headings');
+assert.match(layoutSource, /\.farm-section > \.settings-section-title::after \{[\s\S]*height:\s*1px;/, 'top-level section headings extend into a separator rule');
+assert.match(layoutSource, /\.farm-animal-divider \{[\s\S]*font-size:\s*13px;/, 'Farm livestock, Stable candidates, and active breeding subheadings are visually stronger');
+assert.match(layoutSource, /\.farm-animal-divider::after \{[\s\S]*height:\s*1px;/, 'animal subsection headings also carry separator rules');
 assert.match(layoutSource, /pairButton\.parentElement !== bar\) bar\.appendChild\(pairButton\)/, 'the existing Set Breeding Pair button is promoted instead of cloned');
 assert.match(layoutSource, /addButton\.parentElement !== bar\) bar\.appendChild\(addButton\)/, 'the existing Add Livestock control shares the primary animal action strip');
 assert.match(layoutSource, /WORLD_HEADING_ID = 'farmWorldLivestockHeading'/, 'world livestock receive a flat divider instead of a nested wrapper');
@@ -28,6 +34,10 @@ assert.match(layoutSource, /needsSentinel = !hasTaggedWorldRow && rosterRows\.le
 assert.match(layoutSource, /sentinel\.dataset\.nurseryWorldLivestockId = '__farm_menu_identity_sentinel__'/, 'sentinel keeps repeated Nursery passes out of positional rebinding');
 assert.match(layoutSource, /const alreadyOrdered = currentManaged\.length === desiredNodes\.length/, 'flat roster checks its current order before moving nodes');
 assert.match(layoutSource, /if \(!alreadyOrdered\) desiredNodes\.forEach/, 'observer passes stop mutating once the flat roster order is correct');
+assert.match(layoutSource, /max-height:\s*76px !important;/, 'Nursery baby viewport is much shorter than the old oversized presentation');
+assert.match(layoutSource, /overflow-y:\s*scroll !important;/, 'Nursery baby viewport explicitly owns vertical scrolling');
+assert.match(layoutSource, /touch-action:\s*pan-y;/, 'Nursery baby viewport accepts direct touch scrolling');
+assert.match(layoutSource, /flex:\s*0 0 auto !important;/, 'Nursery baby rows cannot shrink to avoid overflow and suppress scrolling');
 assert.match(layoutSource, /nurseryFocusIndex = index/, 'controller-owned Nursery focus remembers the selected baby index');
 assert.match(layoutSource, /nurseryScrollTop = scroll\.scrollTop/, 'Nursery local scroll position is remembered while navigating');
 assert.match(layoutSource, /button\.focus\(\{ preventScroll: true \}\)/, 'replacement Nursery row receives focus without browser scroll snapping');
