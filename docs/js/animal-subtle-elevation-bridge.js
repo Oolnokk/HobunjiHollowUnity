@@ -15,7 +15,7 @@
   const WATER_WORLD_Y_PER_DEPTH = 0.5 / 3.0; // Used by waterSurfaceYAtRaw; mirrors game.js SLAB_H / MAX_WATER.
   const PRONE_WATER_HEALTH_FRACTION_PER_SECOND = 0.035; // Used by applyProneWaterHazard to drain Health while a prone actor is in a river/stream.
   const PRONE_WATER_WINDED_FRACTION_PER_SECOND = 0.08; // Used by applyProneWaterHazard to build Winded Stamina while a prone actor is in a river/stream.
-  const NON_RIG_NAME = /(ground[_ -]?shadow|shadow|resource[_ -]?ring|reticle|popup|debug|hitbox|target[_ -]?ring|torch|held|tool|weapon|item|attachment|shoulder[_ -]?pet)/i; // Used by rigCentroidWorldY to keep helpers/held equipment out of the body centroid.
+  const NON_RIG_NAME = /(ground[_ -]?shadow|shadow|resource[_ -]?ring|reticle|popup|debug|hitbox|target[_ -]?ring|torch|tool[_ -]?holder|weapon[_ -]?holder|held[_ -]?item[_ -]?(?:holder|plane)|tool[_ -]?plane|weapon[_ -]?plane)/i; // Used by rigCentroidWorldY to keep helpers/actual equipment visuals out without excluding body-pose wrappers.
   const liftedRoots = []; // Reused each render so temporary animal/water Y offsets can be restored without per-frame pair allocations.
   const liftedBaseYs = []; // Parallel to liftedRoots; stores each root's movement-owned Y for restoration after rendering.
   const seenActors = new Set(); // Reused each render to dedupe actors exposed through overlapping runtime dependency sets.
@@ -258,7 +258,7 @@
 
   function shouldExcludeRigBranch(object, root) {
     const name = String(object?.name || '');
-    if (NON_RIG_NAME.test(name)) return true;
+    if (NON_RIG_NAME.test(name) || object?.userData?.toolPlane) return true;
     // game.js's heldItemHolder is an unnamed visible Group directly under
     // playerMesh; PlayerBodyTransformComposer uses this same structural cue
     // to identify held visuals. Keep named body/procedural roots, but exclude
