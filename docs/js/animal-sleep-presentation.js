@@ -14,12 +14,13 @@
   let run2Redirects = 0; // Mobile-visible count of static sleeper composites redirected to run2.
   let closedEyeComposites = 0; // Mobile-visible count of unique permanent-closed-eye sleep composites requested.
   let headDownApplications = 0; // Mobile-visible count of visible sleepers whose head pose was forced downward.
+  let bodyFacingLocks = 0; // Mobile-visible count of outdoor sleeper body-facing corrections applied before draw.
   let liveSleepFrames = 0; // Mobile-visible count of live outdoor/wilderness sleeper render adjustments.
   let lastContext = null; // Mobile-visible label for the most recently corrected sleeper.
 
   const staticSleepers = new Map(); // group -> { avatarRef, kind }; retains the head controller for barn/nest/incubator sleepers.
   const pendingStaticComposes = new Map(); // kind -> [{group, createdAt}], pairing a new static sleeper with its first genotype compose.
-  const liveFrameStates = new WeakMap(); // Live entity -> original plane maps so waking restores ordinary animation/blinking.
+  const liveFrameStates = new WeakMap(); // Live entity -> original plane maps and sleep-only body-facing state so waking restores ordinary behavior.
   const frameCache = new Map(); // kind|frame|genotype -> permanently closed-eye texture pair for sleeping presentation.
   const temporaryTransforms = []; // Render-only scale/position changes restored immediately after WebGL draw.
 
@@ -261,6 +262,7 @@
       sleeping: false,
       originals: animalPlaneMaterials(group).map(entry => ({ material: entry.material, map: entry.material.map })),
       entry: null,
+      sleepBodyYaw: null,
     };
     liveFrameStates.set(entity, state);
     return state;
@@ -291,8 +293,10 @@
       }
       state.sleeping = false;
       state.entry = null;
+      state.sleepBodyYaw = null;
       return;
     }
+    if (!state.sleeping) state.sleepBodyYaw = null; // A fresh sleep period captures a fresh last-travel heading below.
     state.sleeping = true;
     const entry = sleepTextureEntry(kind, genotype, def);
     if (!entry) return;
@@ -319,6 +323,25 @@
     avatarRef.group?.updateMatrixWorld?.(true);
     if (applied) headDownApplications++;
     return applied;
+  }
+
+  function lockFarmSleepBody(animal, group) {
+    if (!animal || !group?.rotation) return false;
+    const state = liveFrameStates.get(animal) || captureOriginalMaps(animal, group);
+    if (!state.sleeping) return false;
+    if (!Number.isFinite(state.sleepBodyYaw)) {
+      const travelYaw = Number(animal.targetRot); // Last authored movement heading stays independent of player-look body facing.
+      const logicalYaw = Number(animal.groupRot); // Fallback for older farm entities without targetRot.
+      const renderedYaw = Number(group.rotation.y); // Final fallback keeps the existing body pose stable.
+      state.sleepBodyYaw = Number.isFinite(travelYaw)
+        ? travelYaw
+        : (Number.isFinite(logicalYaw) ? logicalYaw : (Number.isFinite(renderedYaw) ? renderedYaw : 0));
+    }
+    animal.groupRot = state.sleepBodyYaw; // Prevents the next awake-style update from accumulating player-facing drift while sleep continues.
+    group.rotation.y = state.sleepBodyYaw;
+    group.updateMatrixWorld?.(true);
+    bodyFacingLocks++;
+    return true;
   }
 
   function ensureStaticPresentation(group, record) {
@@ -405,6 +428,7 @@
       if (!sleeping) continue;
 
       forceHeadDown(avatarRef, animal); // Runs immediately before draw, so daytime/player look-at updates cannot remain visible at night.
+      lockFarmSleepBody(animal, group); // Holds the last travel heading so a sleeping body cannot continue turning toward a nearby player.
       const stress = Math.max(0, Math.min(1, Number(animal._outdoorVisualStress) || 0));
       const awakeScale = 1 - (1 - awakeMin) * stress;
       const desiredSleepScale = 1 - (1 - SLEEP_SCALE_Y) * blend;
@@ -472,17 +496,19 @@
 
   function debugSnapshot() {
     return {
-      mostRecentChange: 'Sleeping animals now keep the closed-eye blink overlay, ignore visible head tracking, and hold their heads at the authored downward limit.',
+      mostRecentChange: 'Sleeping outdoor livestock now keep their last travel heading instead of body-facing the player; closed eyes and head-down sleep pose remain enforced.',
       sleepScaleY: SLEEP_SCALE_Y,
       preferredFrame: 'run2-if-present-else-idle',
       sleepingEyes: 'blink-overlay-closed-only',
       sleepingHead: 'authored-max-down',
+      sleepingBody: 'last-travel-heading-locked',
       staticSleepers: [...staticSleepers.keys()].filter(group => !!group?.parent).length,
       cachedSleepFrames: frameCache.size,
       pendingStaticComposes: [...pendingStaticComposes.values()].reduce((sum, queue) => sum + queue.length, 0),
       run2Redirects,
       closedEyeComposites,
       headDownApplications,
+      bodyFacingLocks,
       liveSleepFrames,
       lastContext,
       farmDepsReady: !!farmDeps,
