@@ -17,7 +17,7 @@ Use one obvious cadence owner for each kind of work:
 Keep the implementation in the feature module. The scheduler coordinates callbacks; it must never acquire feature-specific gameplay knowledge.
 
 ```js
-const SCHEDULER_ID = 'example-runtime'; // Used for scheduler ownership, disposal, tests, and Pixel Probe diagnostics.
+const SCHEDULER_ID = 'example-runtime'; // Used for scheduler ownership, disposal, tests, and on-demand diagnostics.
 
 function updateFrame({ timestamp, deltaMs, frameId }) {
   // Feature-owned visual work.
@@ -42,7 +42,7 @@ Subscribers run in stable registration order. One subscriber must not rely on an
 
 A subscriber registered while a frame is already dispatching first runs on the following browser frame. This keeps one frame's participant set stable and prevents recursive registration from extending the active dispatch indefinitely.
 
-The scheduler isolates subscriber errors and schedules the next browser frame before dispatch. A broken feature therefore cannot stop unrelated visual runtimes. Errors and subscriber state are available through `RuntimeFrameScheduler.getDebug()` and Pixel Probe.
+The scheduler isolates subscriber errors and schedules the next browser frame before dispatch. A broken feature therefore cannot stop unrelated visual runtimes. Errors and subscriber state are available through `RuntimeFrameScheduler.getDebug()`.
 
 Render-order sentinels such as procedural hands at `-100000` and social dancing at `-99990` stay in their Three.js render hooks. They are not scheduler candidates.
 
