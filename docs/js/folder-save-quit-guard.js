@@ -12,7 +12,7 @@
     { id: 'menuPauseBtn', text: '⏯ Pause', minWidth: '70px' },
     { id: 'menuManualSaveBtn', text: '💾 Manual Save', minWidth: '96px' },
     { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '82px' },
-    { id: 'mpClose', text: '✕ Close', minWidth: '66px' },
+    { id: 'mpClose', text: 'Close', minWidth: '66px' },
   ]);
   const MENU_OVERLAY_CONTROL_IDS = Object.freeze(['menuBtn', 'farmEditBtn', 'mapEditBtn']); // Fixed HUD tabs hidden while the menu is open so they cannot cover menu actions.
   let busy = false; // Prevents double-clicks from starting overlapping runtime/folder saves.
