@@ -39,6 +39,12 @@ jobs:
           node --check docs/js/map-live-preview.js
       - name: Daylight window regression checks
         run: node scripts/test-daylight-windows.js
+      - name: Parent wall branch map-live baseline
+        continue-on-error: true
+        run: |
+          git fetch --depth=1 origin feature/wall-ornament-attachments
+          git worktree add /tmp/wall-parent FETCH_HEAD
+          (cd /tmp/wall-parent && node scripts/test-map-live-preview.js)
       - name: Existing map live-preview regression
         run: node scripts/test-map-live-preview.js
       - name: Existing furniture placement regression
