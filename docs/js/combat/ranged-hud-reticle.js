@@ -8,6 +8,7 @@
   const RETICLE_OPACITY = 0.5;
   const RETICLE_WIDTH_PX = 75 * RETICLE_SCALE;
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
+  const SCHEDULER_ID = 'ranged-hud-reticle'; // Used for shared frame ownership, disposal, tests, and Pixel Probe diagnostics.
   // brightness(0) first flattens the source art to solid black regardless of
   // its original colors, then each recipe recolors that black silhouette —
   // the white recipe is the reticle's original look, the red recipe is a
@@ -16,7 +17,6 @@
   const FILTER_RED = 'brightness(0) saturate(100%) invert(21%) sepia(89%) saturate(6510%) hue-rotate(357deg) brightness(94%) contrast(119%)';
 
   let reticleEl = null;
-  let frameRequest = 0;
   let lastVisible = false;
   let lastWouldHit = false;
 
@@ -86,18 +86,20 @@
 
   function tick() {
     refresh();
-    frameRequest = requestAnimationFrame(tick);
   }
 
   function init() {
     ensureReticle();
     refresh();
-    if (!frameRequest) frameRequest = requestAnimationFrame(tick);
+    window.RuntimeFrameScheduler.register(SCHEDULER_ID, tick, {
+      phase: 'visual',
+      owner: 'RangedHudReticle',
+      description: 'Updates ranged reticle visibility and hit coloring.',
+    });
   }
 
   function dispose() {
-    if (frameRequest) cancelAnimationFrame(frameRequest);
-    frameRequest = 0;
+    window.RuntimeFrameScheduler.unregister(SCHEDULER_ID);
     reticleEl?.remove?.();
     reticleEl = null;
     lastVisible = false;
