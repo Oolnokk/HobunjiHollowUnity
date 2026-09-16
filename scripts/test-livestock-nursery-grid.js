@@ -117,6 +117,9 @@ grid.install();
 assert.equal(CreatureGenetics.sellValueFor({ rare: false }, 'grehlr').amount, 500, 'economy wrapper is idempotent');
 
 assert.match(source, /firstChild\.nodeValue\s*=\s*'Nursery Grow'/, 'enhanced Grow Up control changes only its backing text node so the legacy private-button tonic gate cannot double-consume');
+assert.match(source, /IntersectionObserver/, 'Nursery card portraits are visibility-driven instead of all composed up front');
+assert.match(source, /scheduleCardPortrait\(section, card, entry\)/, 'every card routes portrait work through the lazy visibility scheduler');
+assert.doesNotMatch(source, /cards\.forEach[\s\S]{0,900}portraitUrlFor\(entry\)\.then/, 'card decoration does not directly compose every baby portrait during initial render');
 assert.match(pagingSource, /grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/, 'Nursery uses Inventory-style fixed seven-column geometry');
 assert.match(pagingSource, /max-height:none\s*!important/, 'Nursery removes the old short nested max-height');
 assert.match(pagingSource, /overflow:visible\s*!important/, 'Nursery grid itself no longer owns a nested scrollbar');
@@ -124,13 +127,14 @@ assert.match(pagingSource, /function measurePageGeometry\(stack, cards\)/, 'page
 assert.match(pagingSource, /column\.clientHeight[\s\S]*cellPx/, 'page capacity uses the real Animals-column height and inventory-style square cell size');
 assert.match(pagingSource, /ResizeObserver/, 'page capacity is recalculated when the Animals column changes size or orientation');
 assert.match(pagingSource, /stack\.classList\.remove\(LEGACY_SCROLL_CLASS\)/, 'enhanced grid explicitly opts out of FarmMenuLayout compact-scroll bookkeeping');
+assert.match(pagingSource, /attributeFilter:\s*\['class'\]/, 'a narrow class-only guard prevents the legacy compact-scroll marker from returning after later Farm mutations');
 assert.match(pagingSource, /gridPane\.appendChild\(pagerSlot\)/, 'page control is moved under the grid in shadow layout without mutating observed light-DOM children');
 assert.match(pagingSource, /pager\.removeAttribute\('data-nursery-action'\)/, 'page control stops masquerading as the debug action while it is paging');
 assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.decorate\?\./, 'page turns do not rerun the entire Nursery genetics/portrait decorator');
 assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.debugSnapshot/, 'paging does not scan the full genetics debug snapshot just to find the selected card');
 assert.doesNotMatch(pagingSource, /first\.click\?\./, 'page focus does not click the first card and render its detail rail a second time');
-assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'/, 'farm feature bridge parser-loads the Nursery grid module');
-assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'[\s\S]*nurserypage2/, 'farm feature bridge loads the optimized paging revision');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'[\s\S]*nurserygrid2/, 'farm feature bridge loads the lazy-portrait Nursery grid revision');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'[\s\S]*nurserypage3/, 'farm feature bridge loads the guarded paging revision');
 assert.match(bridgeSource, /installLivestockNurseryGrid\(\)/, 'farm feature bridge installs the Nursery grid after FarmPanel becomes available');
 assert.match(bridgeSource, /installLivestockNurseryInventoryPaging\(\)/, 'farm feature bridge installs paging after the grid feature');
 
