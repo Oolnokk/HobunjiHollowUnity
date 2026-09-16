@@ -1,15 +1,15 @@
 // Presentation-only ripe-crop cue: stationary plants + one shared sparkle cloud.
 //
 // The crop updater still writes its legacy ripe-only Y bob and root spin. This
-// module now reads the authoritative tile.cropReady flag, removes that motion at
-// draw time on the very first ripe frame, and leaves the existing sparkle cue as
-// the only visual readiness signal. Gameplay crop state, growth, harvesting,
-// persistence, sizing, clustering, and flood/soil anchoring remain owned by their
-// existing systems.
+// module reads the authoritative tile.cropReady flag, removes that motion at draw
+// time, and leaves the existing sparkle cue as the only visual readiness signal.
+// Gameplay crop state, growth, harvesting, persistence, sizing, clustering, and
+// flood/soil anchoring remain owned by their existing systems.
 //
 // Performance note: the renderer can execute several passes per displayed frame.
-// Crop discovery/sparkle-buffer work is therefore coalesced to once per JS turn;
-// later render passes only apply/restore the small cached ready-root set.
+// Full scene discovery stays throttled, but the already-discovered crop roots are
+// checked against tile.cropReady every JS turn so ripeness changes do not wait for
+// the next scene scan before bob/spin are suppressed.
 (() => {
   'use strict';
 
@@ -21,14 +21,14 @@
   const MIN_CROP_SCALE = 0.145; // Used by plausibleCropRoot to reject unrelated half-tile scene objects.
   const MAX_CROP_SCALE = 0.975; // Used with MIN_CROP_SCALE to match the crop renderer's growth-scale range.
   const SPARKLES_PER_CROP = 4; // Used by updateSparkles to keep the existing four-point ripe cue.
-  const DISCOVERY_INTERVAL_MS = 100; // Used to scan the farm scene for ready roots at 10 Hz instead of every render pass.
+  const DISCOVERY_INTERVAL_MS = 100; // Used to rescan scene membership at 10 Hz while readiness itself is checked every render turn.
   const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']); // Used to mirror the two crop types that use the foliage renderer's smaller legacy bob/spin profile.
   const FOLIAGE_READY_BOB = 0.025; // Used to exactly cancel vegetation-crop-rendering's ripe foliage Y amplitude.
   const GENERIC_READY_BOB = 0.03; // Used to exactly cancel vegetation-crop-rendering's ripe generic/PNG crop Y amplitude.
   const FOLIAGE_READY_ROTATION_MS = 2200; // Used to recover the foliage updater's source timestamp from its authored ripe rotation.
   const GENERIC_READY_ROTATION_MS = 1200; // Used to recover the generic updater's source timestamp from its authored ripe rotation.
-  const sceneState = new WeakMap(); // Used to retain one sparkle buffer + cached ripe-root list per rendered farm scene.
-  let lastReadyCount = 0; // Used by mobile-readable diagnostics to report the last discovered ripe-crop count.
+  const sceneState = new WeakMap(); // Used to retain one sparkle buffer + cached crop-root list per rendered farm scene.
+  let lastReadyCount = 0; // Used by mobile-readable diagnostics to report the current authoritative ripe-crop count.
   let lastNeutralizedCount = 0; // Used by diagnostics to confirm how many ripe roots had bob/spin removed on the last farm render.
   let farmDeps = null; // Captured from FarmPanel.init so readiness comes from the authoritative farm grid instead of inferred animation.
 
@@ -119,9 +119,9 @@
   }
 
   function sourceReadyTimestamp(root, col, rotationMs, fallbackNowMs) {
-    const rotationY = Number(root?.rotation?.y); // Used to invert the legacy `now / rotationMs + col` assignment and recover the bob's exact source phase.
+    const rotationY = Number(root?.rotation?.y); // Used to invert the legacy `now / rotationMs + col` assignment and recover the bob's source phase when available.
     if (!Number.isFinite(rotationY)) return fallbackNowMs;
-    const recovered = (rotationY - col) * rotationMs; // Used by staticReadyY so the bob cancellation matches the updater even when render occurs a few ms later.
+    const recovered = (rotationY - col) * rotationMs; // Used by staticReadyY so cancellation remains exact even when render occurs a few ms after crop update.
     return Number.isFinite(recovered) && recovered >= 0 ? recovered : fallbackNowMs;
   }
 
@@ -130,7 +130,7 @@
     if (!Number.isFinite(rawY)) return rawY;
     const profile = legacyMotionProfile(entry.tile); // Used to mirror the exact foliage or generic ripe-motion constants.
     const sourceNow = sourceReadyTimestamp(entry.root, entry.col, profile.rotationMs, fallbackNowMs); // Used to reconstruct the updater's original sine phase.
-    const bobY = Math.sin(sourceNow / 500 + entry.col + entry.row) * profile.bob; // Used to remove only the ripe-only vertical bob, leaving all terrain/flood offsets for the inner soil-grounding wrapper.
+    const bobY = Math.sin(sourceNow / 500 + entry.col + entry.row) * profile.bob; // Used to remove only the ripe-only vertical bob, leaving terrain/flood offsets for the inner soil-grounding wrapper.
     return rawY - bobY;
   }
 
@@ -157,6 +157,7 @@
       geometry,
       material,
       points,
+      cropRoots: [],
       readyRoots: [],
       capacityPoints: 0,
       positionArray: null,
@@ -165,7 +166,7 @@
       scanResetQueued: false,
       lastDiscoveryAt: -Infinity,
       presentationNowMs: 0,
-    }; // Holds the cached ready roots and one reusable GPU position buffer for this scene.
+    }; // Holds cached crop roots, authoritative-ready roots, and one reusable GPU sparkle buffer.
     sceneState.set(scene, record);
     return record;
   }
@@ -201,7 +202,7 @@
       const phaseSeed = Number(root.position.x) * 1.71 + Number(root.position.z) * 2.37; // Used to desynchronize sparkle orbits between neighboring crops.
       for (let index = 0; index < SPARKLES_PER_CROP; index++) {
         const phase = nowMs * 0.0016 + phaseSeed + index * (Math.PI * 2 / SPARKLES_PER_CROP); // Used to animate the sparkle itself while the plant remains still.
-        const radius = 0.18 + scale * 0.22 + Math.sin(phase * 1.7) * 0.035; // Used to make the four points gently orbit instead of moving the crop.
+        const radius = 0.18 + scale * 0.22 + Math.sin(phase * 1.7) * 0.035; // Used to make the points gently orbit instead of moving the crop.
         positions[cursor++] = Number(root.position.x) + Math.cos(phase) * radius;
         positions[cursor++] = baseY + 0.18 + scale * (0.35 + index * 0.08) + Math.sin(phase * 2.2) * 0.07;
         positions[cursor++] = Number(root.position.z) + Math.sin(phase) * radius;
@@ -223,25 +224,40 @@
     });
   }
 
-  function discoverReadyRoots(scene, record, nowMs) {
-    const readyRoots = []; // Used to cache only roots whose actual farm tile says cropReady right now.
+  function discoverCropRoots(scene, record, nowMs) {
+    const cropRoots = []; // Used to cache plausible planted crop roots without tying membership discovery to readiness state.
     scene?.children?.forEach?.(root => {
       if (!plausibleCropRoot(root, scene)) return;
-      const located = tileForRoot(root); // Used to bind the rendered crop root back to its authoritative farm tile.
-      if (!located?.tile?.crop || !located.tile.cropReady) return;
-      const scale = uniformCropScale(root); // Used by the sparkle radius/height calculations below.
-      readyRoots.push({ root, tile: located.tile, col: located.col, row: located.row, scale });
+      const located = tileForRoot(root); // Used to ensure the half-tile render root still corresponds to a live planted crop tile.
+      if (!located?.tile?.crop) return;
+      const scale = uniformCropScale(root); // Used by later sparkle radius/height calculations for this cached root.
+      cropRoots.push({ root, col: located.col, row: located.row, scale });
     });
-    record.readyRoots = readyRoots;
+    record.cropRoots = cropRoots;
     record.lastDiscoveryAt = nowMs;
+  }
+
+  function refreshReadyRoots(record) {
+    const readyRoots = []; // Used to derive current readiness cheaply from cached crop roots every render turn.
+    for (const cached of record.cropRoots) {
+      const root = cached.root; // Used to discard harvested/rebuilt roots before the next 10 Hz membership scan.
+      if (!root || root.parent !== farmDeps?.scene) continue;
+      const located = tileForRoot(root); // Used to read the current tile object even if the farm grid was replaced on load/reset.
+      if (!located?.tile?.crop || !located.tile.cropReady) continue;
+      const scale = uniformCropScale(root); // Used to track growth changes between slower scene-membership scans.
+      if (scale === null) continue;
+      readyRoots.push({ root, tile: located.tile, col: located.col, row: located.row, scale });
+    }
+    record.readyRoots = readyRoots;
     lastReadyCount = readyRoots.length;
   }
 
   function refreshSceneTurn(scene, record) {
     const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Used by sparkle animation and exact legacy-bob cancellation for this render turn.
     if (nowMs - record.lastDiscoveryAt >= DISCOVERY_INTERVAL_MS) {
-      discoverReadyRoots(scene, record, nowMs);
+      discoverCropRoots(scene, record, nowMs);
     }
+    refreshReadyRoots(record);
     record.presentationNowMs = nowMs;
     updateSparkles(record, record.readyRoots, nowMs);
     record.scanValidThisTurn = true;
@@ -251,7 +267,7 @@
   function prepare(scene) {
     lastNeutralizedCount = 0;
     if (!scene || !farmDeps?.scene || scene !== farmDeps.scene) return [];
-    const record = ensureSceneState(scene); // Used to access the cached authoritative ready-root set for this farm scene.
+    const record = ensureSceneState(scene); // Used to access the cached crop-root and authoritative-ready sets for this farm scene.
     if (!record.scanValidThisTurn) refreshSceneTurn(scene, record);
 
     const restore = []; // Used to restore simulation-owned legacy transforms immediately after this synchronous render pass.
@@ -303,7 +319,7 @@
       coalescedPerTurn: true,
       discoveryHz: 1000 / DISCOVERY_INTERVAL_MS,
       farmReady: Boolean(farmDeps?.scene && farmDeps?.getGrid),
-      lastChange: 'Ripe crops stay stationary; the existing sparkle is now the only readiness animation.',
+      lastChange: 'Ripe crops stay stationary; the existing sparkle is the only readiness animation.',
     }),
   };
 })();
