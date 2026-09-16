@@ -30,7 +30,6 @@ class WebGLRenderer {
   render() {
     renderSnapshots.push({
       barnHead: barnAvatar.headAngle,
-      barnMap: barnGroup.children[0].material.map,
       outdoorHead: outdoorAvatar.headAngle,
       outdoorYaw: outdoorAvatar.headYaw,
       outdoorMap: outdoorGroup.children[0].material.map,
@@ -145,7 +144,10 @@ windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(windowStub.THREE, 'drenkir
   name: 'barn_sleep_drenkirra_barn-1', creatureId: 'drenkirra',
 });
 
-Promise.resolve(windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'barn' }, false)).then(() => {
+const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets nested composeFrame promises finish before inspecting the next rendered frame.
+
+(async () => {
+  await windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'barn' }, false);
   const firstStatic = composeCalls.at(-1);
   assert.equal(firstStatic.frame, 'run2', 'static sleeper still freezes on run2');
   assert.equal(firstStatic.blinkShut, true, 'static sleeper forces the closed-eye/blink overlay even when caller asks for awake eyes');
@@ -153,29 +155,31 @@ Promise.resolve(windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idl
 
   const renderer = new windowStub.THREE.WebGLRenderer();
   renderer.render();
-  return Promise.resolve().then(() => {
-    renderer.render();
-    const visible = renderSnapshots.at(-1);
-    assert.equal(visible.barnHead, 28, 'barn sleeper holds its head at the authored downward limit');
-    assert.equal(visible.outdoorHead, 32, 'outdoor sleeper overrides player head tracking with the authored downward limit');
-    assert.equal(visible.outdoorYaw, 0, 'sleeping head yaw is neutral instead of tracking the player sideways');
-    assert.equal(visible.outdoorLookDebug, null, 'sleeping animal no longer advertises a player look-at ray');
-    assert.equal(visible.outdoorMap.canvas.frame, 'run2', 'outdoor sleeper still freezes on run2');
-    assert.equal(visible.outdoorMap.canvas.blinkShut, true, 'outdoor sleeper renders only the permanent closed-eye sleep composite');
-    assert(composeCalls.filter(call => call.genotype?.sig === 'outdoor').every(call => call.blinkShut === true), 'no awake-eye composite is requested for the sleeping outdoor animal');
+  await nextTurn();
+  renderer.render();
 
-    const debug = windowStub.AnimalSleepPresentation.getDebug();
-    assert.equal(debug.sleepingEyes, 'blink-overlay-closed-only', 'diagnostics report permanent closed-eye sleep presentation');
-    assert.equal(debug.sleepingHead, 'authored-max-down', 'diagnostics report the downward sleeping head pose');
-    assert(debug.headDownApplications >= 2, 'diagnostics count applied sleeping head overrides');
+  const visible = renderSnapshots.at(-1);
+  assert.equal(visible.barnHead, 28, 'barn sleeper holds its head at the authored downward limit');
+  assert.equal(visible.outdoorHead, 32, 'outdoor sleeper overrides player head tracking with the authored downward limit');
+  assert.equal(visible.outdoorYaw, 0, 'sleeping head yaw is neutral instead of tracking the player sideways');
+  assert.equal(visible.outdoorLookDebug, null, 'sleeping animal no longer advertises a player look-at ray');
+  assert.equal(visible.outdoorMap?.canvas?.frame, 'run2', 'outdoor sleeper still freezes on run2');
+  assert.equal(visible.outdoorMap?.canvas?.blinkShut, true, 'outdoor sleeper renders only the permanent closed-eye sleep composite');
+  const outdoorComposes = composeCalls.filter(call => call.genotype?.sig === 'outdoor');
+  assert(outdoorComposes.length > 0, 'outdoor sleeper requested a sleep composite');
+  assert(outdoorComposes.every(call => call.blinkShut === true), 'no awake-eye composite is requested for the sleeping outdoor animal');
 
-    outdoorAnimal._outdoorSleepBlend = 0;
-    outdoorAvatar.headAngle = -9; // Simulates normal awake head tracking resuming before the next render.
-    renderer.render();
-    assert.equal(renderSnapshots.at(-1).outdoorHead, -9, 'waking releases the central head override back to ordinary tracking');
-    console.log('animal sleep closed-eye/head-down regression tests passed');
-  });
-}).catch(error => {
+  const debug = windowStub.AnimalSleepPresentation.getDebug();
+  assert.equal(debug.sleepingEyes, 'blink-overlay-closed-only', 'diagnostics report permanent closed-eye sleep presentation');
+  assert.equal(debug.sleepingHead, 'authored-max-down', 'diagnostics report the downward sleeping head pose');
+  assert(debug.headDownApplications >= 2, 'diagnostics count applied sleeping head overrides');
+
+  outdoorAnimal._outdoorSleepBlend = 0;
+  outdoorAvatar.headAngle = -9; // Simulates normal awake head tracking resuming before the next render.
+  renderer.render();
+  assert.equal(renderSnapshots.at(-1).outdoorHead, -9, 'waking releases the central head override back to ordinary tracking');
+  console.log('animal sleep closed-eye/head-down regression tests passed');
+})().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
