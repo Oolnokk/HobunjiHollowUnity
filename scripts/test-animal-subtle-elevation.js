@@ -213,9 +213,10 @@ assert.equal(debug.lastWaterSurfaceY, 0, 'water diagnostics report the computed 
 // Prone-water regression: ResourceSystem.tick stays authoritative for normal
 // maintenance, then the shared bridge adds environmental Health damage and
 // Winded Stamina to a prone actor in a river/stream.
+let lastDamageOpts = null;
 const ResourceSystem = {
   tick() { return { ok: true }; },
-  applyDamage(entity, amount) { entity.health -= amount; return amount; },
+  applyDamage(entity, amount, opts) { lastDamageOpts = opts; entity.health -= amount; return amount; },
   addAffliction(entity, id, amount) { entity.afflictions[id] = (entity.afflictions[id] || 0) + amount; return amount; },
   enforceCaps() {},
 };
@@ -224,6 +225,8 @@ normalCompanion.prone = true;
 context.window.ResourceSystem.tick(normalCompanion, 1, {});
 assert.equal(normalCompanion.health, 96.5, 'one prone second in water deals 3.5% max Health damage');
 assert.equal(normalCompanion.afflictions.windedStamina, 8, 'one prone second in water adds 8% max Stamina as Winded Stamina');
+assert.equal(lastDamageOpts?.environmental, true, 'prone-water Health loss is tagged as environmental damage');
+assert.equal(lastDamageOpts?.ignoreArmorWeight, true, 'outfit armor does not reduce prone-water environmental damage');
 debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
 assert.equal(debug.proneWaterHazard.ticks, 1, 'hazard diagnostics count the prone-water tick');
 assert.equal(debug.proneWaterHazard.lastActor, 'companion', 'hazard diagnostics identify the affected actor');
