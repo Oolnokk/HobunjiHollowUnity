@@ -20,6 +20,7 @@ const farmAnimal = { id: 'farm', animalKey: 'uumkaoii', avatarRef: { group: root
 const npcWalker = { rec: { id: 'test_npc' }, area: 'town', root: root(1.5) };
 
 let observed = null;
+let observedPlayerRoot = null;
 const renderer = {
   render() {
     observed = {
@@ -35,6 +36,7 @@ const renderer = {
       farm: farmAnimal.avatarRef.group.position.y,
       farmShadow: farmAnimal.groundShadow.position.y,
       npc: npcWalker.root.position.y,
+      player: observedPlayerRoot?.position?.y ?? null,
     };
   },
 };
@@ -104,7 +106,7 @@ assert.equal(normalCompanion.avatarRef.group.position.y, 1, 'companion Y restore
 assert.equal(normalCompanion.groundShadow.position.y, 0.01, 'companion shadow Y restores after render');
 assert.equal(mount.avatarRef.group.position.y, 2, 'mount Y restores after render');
 assert.equal(wild.avatarRef.group.position.y, 4, 'wild animal Y restores after render');
-assert.equal(corpse.avatarRef.group.position.y, 6, 'corpse Y restores after render');
+assert.equal(corpse.avatarRef.group.position.y, 6, 'animal corpse Y restores after render');
 assert.equal(amphibiousFishCorpse.avatarRef.group.position.y, 6.5, 'amphibious fish corpse Y restores after render');
 assert.equal(farmAnimal.avatarRef.group.position.y, 7, 'farm livestock Y restores after render');
 assert.equal(npcWalker.root.position.y, 1.5, 'NPC movement-owned Y is unchanged after render');
@@ -154,6 +156,7 @@ const heldMesh = {
 };
 heldRoot.children.push(heldMesh);
 playerRoot.children.push(bodyMesh, heldRoot);
+observedPlayerRoot = playerRoot;
 context.window.THREE = { Box3: FakeBox3, Vector3: FakeVector3 };
 context.window.PlayerBodyTransformComposer = { getPlayerMesh: () => playerRoot };
 assert.equal(context.window.HobunjiAnimalSubtleElevation.rigCentroidWorldY(playerRoot), 1,
@@ -196,6 +199,7 @@ normalCompanion.maxHealth = 100;
 normalCompanion.stamina = 100;
 normalCompanion.maxStamina = 100;
 normalCompanion.afflictions = { windedStamina: 0 };
+combatDeps.player = { x: 4.5, y: 7.5 };
 combatDeps.TILE = 1;
 combatDeps.worldSurfaceY = () => -0.5;
 context.window.GridTileAccessors = {
@@ -204,10 +208,12 @@ context.window.GridTileAccessors = {
 renderer.render();
 assert.equal(observed.companion, 0, 'natural swimmer is render-sunk until its centroid touches the river surface');
 assert.equal(observed.npc, 0, 'NPC registry path applies the same centroid rule without a scene traversal');
+assert.equal(observed.player, -1.35, 'player sink anticipates the +0.35 town/support composer lift that lands later in the renderer chain');
 assert.equal(normalCompanion.avatarRef.group.position.y, 1, 'water sink restores the movement-owned companion Y after render');
 assert.equal(npcWalker.root.position.y, 1.5, 'water sink restores the movement-owned NPC Y after render');
+assert.equal(playerRoot.position.y, 0, 'water sink restores the movement-owned player Y after render');
 debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
-assert.equal(debug.waterActors >= 2, true, 'water diagnostics report corrected swimmer actors');
+assert.equal(debug.waterActors >= 3, true, 'water diagnostics report corrected swimmer actors including the player');
 assert.equal(debug.lastWaterSurfaceY, 0, 'water diagnostics report the computed river surface');
 
 // Prone-water regression: ResourceSystem.tick stays authoritative for normal
