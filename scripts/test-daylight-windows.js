@@ -37,6 +37,9 @@ assert.match(runtime, /pixels\.data\[i\] \+ pixels\.data\[i \+ 1\] \+ pixels\.da
 assert.match(runtime, /area === 'interior' \|\| !!lightingDeps\?\._isBuildingArea/, 'daylight apertures must apply to ordinary interiors/buildings');
 assert.doesNotMatch(runtime, /isMineArea|isDenArea/, 'daylight-window runtime should not opt mines/dens into window lighting');
 assert.match(runtime, /window\.__daylightWindowDebug = debugSnapshot/, 'mobile/runtime diagnostics must be available without browser console inspection');
+assert.match(runtime, /simpleWindowFurniture/, 'player/runtime furniture registry must receive Simple Window');
+assert.match(runtime, /crossbarWindowFurniture/, 'player/runtime furniture registry must receive Crossbar Window');
+assert.match(runtime, /wideWindowFurniture/, 'player/runtime furniture registry must receive Wide Window');
 
 const author = read('docs/tools/furniture-avatar-author/furniture-daylight-windows.js'); // Guards editor controls and export metadata.
 assert.match(author, /Use Selected Surface as Window/, 'Furniture Author must expose a selected-surface daylight action');
@@ -47,11 +50,28 @@ assert.match(author, /attachmentSurfaceId === surface\.id/, 'editor must reject 
 
 const authorLoader = read('docs/tools/furniture-avatar-author/foliage-furniture-mode.js'); // Extension loader must actually make the UI feature reachable.
 assert.match(authorLoader, /furniture-daylight-windows\.js\?v=20260916window1/, 'Furniture Author must load the daylight-window extension');
-const mapTransport = read('docs/js/map-live-preview.js'); // Shared game/Map Editor transport loads both wall placement and window runtime.
-assert.match(mapTransport, /daylight-window-runtime\.js\?v=20260916window1/, 'game and Map Editor must load the daylight-window runtime');
-assert.match(runtime, /wallOrnamentMapPreset/, 'Map Editor wall-placement preset list must receive window choices');
-assert.match(runtime, /simpleWindowFurniture/, 'player furniture registry must receive Simple Window');
-assert.match(runtime, /crossbarWindowFurniture/, 'player furniture registry must receive Crossbar Window');
-assert.match(runtime, /wideWindowFurniture/, 'player furniture registry must receive Wide Window');
 
-console.log('daylight window authoring/runtime regression checks passed');
+const mapTransport = read('docs/js/map-live-preview.js'); // Routing must respect the repo's two-layer map/interior authoring workflow.
+assert.match(mapTransport, /daylight-window-runtime\.js\?v=20260916window1/, 'game and Interior Editor must load the daylight-window runtime');
+assert.match(mapTransport, /building-interior-wall-ornament-editor\.js\?v=20260916wall1/, '3D Interior Editor must load wall/window authoring controls');
+assert.match(mapTransport, /return 'map-editor'/, 'transport must identify the outer Map Editor separately');
+assert.match(mapTransport, /kind !== 'map-editor'/, 'outer Map Editor must not load wall-placement companions');
+assert.doesNotMatch(mapTransport, /gizmo3dBar|wallOrnamentMapControls/, 'wall/window UI must not be docked into the outer Map Editor');
+
+const interiorWallEditor = read('docs/js/building-interior-wall-ornament-editor.js');
+assert.match(interiorWallEditor, /\/tools\/building-interior-author/, 'wall authoring sidecar must be scoped to the 3D Interior Editor');
+assert.match(interiorWallEditor, /layoutEditSelect/, 'wall records must follow the Interior Editor base/alternate-layout selection');
+assert.match(interiorWallEditor, /activeFurniture\(interior, layoutId\)/, 'placement must write into the currently edited room/layout furniture array');
+assert.match(interiorWallEditor, /WebGLRenderer\.prototype\.render/, 'sidecar must capture the Interior Editor real 3D scene without restructuring its inline closure');
+assert.match(interiorWallEditor, /threeCanvas/, 'scene capture must be limited to the Interior Editor preview renderer');
+assert.match(interiorWallEditor, /WallOrnamentPlacement\.loadAttachment/, 'Interior Editor must reuse authored attachment-surface metadata');
+assert.match(interiorWallEditor, /WallOrnamentPlacement\.deriveTransform/, 'Interior Editor must reuse the shared wall transform solver');
+assert.match(interiorWallEditor, /wallAttachment/, 'logical wall-space placement must persist in exported interior JSON');
+assert.match(interiorWallEditor, /wallOrnamentKey/, 'wall records must retain their canonical visual key');
+assert.match(interiorWallEditor, /_biaBridge\.loadData/, 'wall edits must flow back through the Interior Editor authoritative load/undo/rebuild path');
+assert.match(interiorWallEditor, /simpleWindowFurniture/, 'Interior Editor preset list must include Simple Window');
+assert.match(interiorWallEditor, /crossbarWindowFurniture/, 'Interior Editor preset list must include Crossbar Window');
+assert.match(interiorWallEditor, /wideWindowFurniture/, 'Interior Editor preset list must include Wide Window');
+assert.match(interiorWallEditor, /Math\.abs\(normal\.y\) > 0\.72/, 'wall picking must reject floor/ceiling faces');
+
+console.log('daylight window authoring/runtime/3D-interior regression checks passed');
