@@ -15,11 +15,19 @@
   const CHARACTERS_DIR = 'characters';
   const WORLDS_DIR = 'worlds';
   const FARM_LAYOUTS_DIR = 'farm-layouts';
+  const RECOVERY_DIR = 'recovery'; // Folder-first recovery history lives beside, but never replaces, the canonical save directories.
+  const RECOVERY_FILES = Object.freeze({ // Stable recovery slot filenames used by the checkpoint manager and recovery UI.
+    manual: 'manual.json',
+    auto: 'autosave-latest.json',
+    autoPrevious: 'autosave-previous.json',
+    preRestore: 'pre-restore.json',
+  });
   const MANIFEST_FILE_NAME = 'manifest.json';
   const LEGACY_SAVE_FILE_NAME = 'hobunji-save.json';
   const SAVE_META_KEY = 'hobunjiSaveMeta';
   const FARM_LAYOUT_KEY_PREFIX = 'hobunji_farm_layout_v3:';
   const PORTABLE_SAVE_VERSION = 2;
+  const RECOVERY_SAVE_VERSION = 1; // Manifest/debug marker for the independent recovery directory format.
   const AUTO_SYNC_MS = 30000;
   const CHANGE_POLL_MS = 1000;
 
@@ -44,6 +52,12 @@
 
   function farmLayoutFilename(worldId) {
     return safeFilenamePart(worldId) + '.json';
+  }
+
+  function recoveryFilename(slot) {
+    const filename = RECOVERY_FILES[slot]; // Whitelisted filename prevents arbitrary folder writes through the public recovery API.
+    if (!filename) throw new Error(`Unknown recovery slot: ${String(slot)}`);
+    return filename;
   }
 
   function isSupported() {
@@ -119,6 +133,7 @@
       needsFarmLayoutUpgrade: _state === 'ready' && !_folderSupportsFarmLayouts,
       autoSyncArmed: _autoSyncArmed,
       dataLossRisk: _lastDataLossRisk,
+      recoverySaveVersion: RECOVERY_SAVE_VERSION,
     };
   }
 
@@ -225,6 +240,40 @@
     await writable.close();
   }
 
+  async function readJsonFile(dirHandle, filename) {
+    try {
+      const file = await (await dirHandle.getFileHandle(filename)).getFile();
+      return JSON.parse(await file.text());
+    } catch (error) {
+      if (error?.name === 'NotFoundError') return null;
+      throw error;
+    }
+  }
+
+  async function writeRecoveryCheckpoint(slot, record) {
+    if (_state !== 'ready' || !_handle) throw new Error('No local save folder connected.');
+    const dirHandle = await _handle.getDirectoryHandle(RECOVERY_DIR, { create: true }); // Recovery writes are isolated from canonical characters/worlds/layouts.
+    await writeJsonFile(dirHandle, recoveryFilename(slot), record);
+    return record;
+  }
+
+  async function readRecoveryCheckpoint(slot) {
+    if (_state !== 'ready' || !_handle) return null;
+    let dirHandle;
+    try { dirHandle = await _handle.getDirectoryHandle(RECOVERY_DIR); }
+    catch (error) {
+      if (error?.name === 'NotFoundError') return null;
+      throw error;
+    }
+    return readJsonFile(dirHandle, recoveryFilename(slot));
+  }
+
+  async function readRecoveryCheckpoints() {
+    const result = {}; // Returned slot map is used to mirror folder-authoritative recovery history back into browser fallback storage.
+    for (const slot of Object.keys(RECOVERY_FILES)) result[slot] = await readRecoveryCheckpoint(slot);
+    return result;
+  }
+
   async function writeEntities(dirName, entities, nameField) {
     const dirHandle = await _handle.getDirectoryHandle(dirName, { create: true });
     const keep = new Set();
@@ -302,6 +351,24 @@
       parts.push(world.id, localStorage.getItem(farmLayoutKey(world.id)) || '');
     }
     return parts.join('\u001f');
+  }
+
+  function snapshotFromBrowser() {
+    const meta = readBrowserMeta(); // Canonical browser metadata captured once so guards and writes operate on the same object.
+    if (!meta) throw new Error('No browser save is available to write.');
+    const farmLayouts = readBrowserFarmLayouts(meta, true); // Matching layout capture keeps the folder write atomic at the snapshot boundary.
+    return { snapshotVersion: 1, meta, farmLayouts };
+  }
+
+  function normalizeSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') throw new Error('Save snapshot is missing.');
+    if (!snapshot.meta || !Array.isArray(snapshot.meta.characters) || !Array.isArray(snapshot.meta.worlds)) {
+      throw new Error('Save snapshot metadata is invalid.');
+    }
+    if (!snapshot.farmLayouts || typeof snapshot.farmLayouts !== 'object' || Array.isArray(snapshot.farmLayouts)) {
+      throw new Error('Save snapshot farm layouts are invalid.');
+    }
+    return snapshot;
   }
 
   async function readFolderFarmLayouts() {
@@ -384,6 +451,20 @@
     };
   }
 
+  async function readPrimarySnapshot() {
+    if (_state !== 'ready' || !_handle) return null;
+    const folder = await readFolderSnapshot(); // Current canonical folder state shown in recovery UI and preserved before restores.
+    if (!folder.exists) return null;
+    return {
+      savedAt: folder.savedAt || 0,
+      snapshot: {
+        snapshotVersion: 1,
+        meta: folder.meta,
+        farmLayouts: folder.farmLayouts,
+      },
+    };
+  }
+
   async function inspectConnectedFolder() {
     if (_state !== 'ready' || !_handle) return null;
     const folder = await readFolderSnapshot();
@@ -408,13 +489,26 @@
     return false;
   }
 
-  async function _syncNowImpl({ automatic = false, force = false } = {}) {
+  function checkpointIntegrityRisk(snapshot, options) {
+    if (options.force) return null;
+    const guard = window.HobunjiSaveCheckpoints?.evaluateSnapshotForFolderWrite; // Shared checkpoint heuristic blocks canonical writes before any folder file changes.
+    if (typeof guard !== 'function') return null;
+    try {
+      const result = guard(snapshot, { automatic: !!options.automatic, recoveryKind: options.recoveryKind || 'auto' });
+      return result?.ok === false ? (result.warning || 'recovery checkpoint integrity guard rejected this save') : null;
+    } catch (error) {
+      return `recovery checkpoint integrity check failed: ${String(error?.message || error)}`;
+    }
+  }
+
+  async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto' } = {}) {
     if (_state !== 'ready' || !_handle) return getStatus();
     if (automatic && !_autoSyncArmed) return getStatus();
 
     try {
-      const meta = readBrowserMeta();
-      if (!meta) throw new Error('No browser save is available to write.');
+      const saveSnapshot = normalizeSnapshot(snapshot || snapshotFromBrowser()); // Explicit manual/restore writes can pin the exact snapshot being committed.
+      const meta = saveSnapshot.meta;
+      const farmLayouts = saveSnapshot.farmLayouts;
 
       if (!force) {
         const risk = describeDataLossRisk(_lastKnownFolderMeta, meta);
@@ -425,10 +519,16 @@
           notify();
           return getStatus();
         }
+        const checkpointRisk = checkpointIntegrityRisk(saveSnapshot, { automatic, force, recoveryKind }); // Farm-specific inventory/storage/livestock reset detection runs before canonical writes.
+        if (checkpointRisk) {
+          _lastDataLossRisk = checkpointRisk;
+          _lastError = `Skipped saving to the folder: ${checkpointRisk}. Use recovery or force an intentional overwrite.`;
+          _lastAction = automatic ? 'autosync-blocked-checkpoint-integrity' : 'save-blocked-checkpoint-integrity';
+          notify();
+          return getStatus();
+        }
       }
       _lastDataLossRisk = null;
-
-      const farmLayouts = readBrowserFarmLayouts(meta, true);
 
       await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
       await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
@@ -439,6 +539,7 @@
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
         version: meta.version ?? 1,
         portableSaveVersion: PORTABLE_SAVE_VERSION,
+        recoverySaveVersion: RECOVERY_SAVE_VERSION,
         farmLayoutsIncluded: true,
         savedAt,
         characterCount: (meta.characters || []).length,
@@ -452,6 +553,17 @@
       _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
       _lastError = '';
       _lastObservedFingerprint = browserFingerprint(true);
+
+      const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical folder write succeeds.
+      if (typeof checkpointWriter === 'function') {
+        try {
+          await checkpointWriter(saveSnapshot, { automatic, savedAt, recoveryKind });
+        } catch (checkpointError) {
+          _lastError = `Primary folder save succeeded, but recovery history could not be updated: ${String(checkpointError?.message || checkpointError)}`;
+          _lastAction = automatic ? 'autosaved-primary-recovery-error' : 'saved-primary-recovery-error';
+        }
+      }
+
       if (!automatic) startAutoSync();
     } catch (error) {
       _lastError = String(error?.message || error);
@@ -465,6 +577,11 @@
     if (_syncPromise) return _syncPromise;
     _syncPromise = _syncNowImpl(options).finally(() => { _syncPromise = null; });
     return _syncPromise;
+  }
+
+  async function syncSnapshot(snapshot, options = {}) {
+    if (_syncPromise) await _syncPromise; // Manual/restore snapshots must not be discarded behind an already-running autosync.
+    return syncNow({ ...options, snapshot });
   }
 
   function reloadAfterFolderRestore() {
@@ -673,8 +790,13 @@
     reconnect,
     forget,
     syncNow,
+    syncSnapshot,
     loadFromFolder,
     reconcileConnectedFolder,
+    readPrimarySnapshot,
+    readRecoveryCheckpoint,
+    readRecoveryCheckpoints,
+    writeRecoveryCheckpoint,
   };
 
   // Mobile-accessible debug surface: inspect current persistence state without DevTools.
@@ -683,7 +805,8 @@
     inspect: async () => {
       try {
         const folder = await inspectConnectedFolder();
-        return { status: getStatus(), folder };
+        const recovery = await readRecoveryCheckpoints(); // Folder recovery slots are included so mobile diagnosis can confirm they exist without DevTools.
+        return { status: getStatus(), folder, recovery };
       } catch (error) {
         return { status: getStatus(), error: String(error?.message || error) };
       }
