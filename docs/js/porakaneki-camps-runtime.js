@@ -840,9 +840,10 @@
       if (!entity || generation !== buildGeneration) { entity?.avatarRef?.dispose?.(); return null; }
       hunter.entity = entity;
       hunter.lastHealth = entity.health;
+      placeEntity(hunter);
+      makeNeutral(entity, hunter);
       combatDeps.hostileObjects.add(entity);
       state.materializations += 1;
-      placeEntity(hunter);
       return entity;
     } finally { hunter.building = false; }
   }
