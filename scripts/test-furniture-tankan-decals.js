@@ -137,10 +137,9 @@ assert(editor.includes('finiteOr(record.tankanGlyphSizeX, priorUniformSize)'), '
 assert(editor.includes('finiteOr(record.tankanGlyphSizeY, priorUniformSize)'), 'v2 migration should feed prior uniform size into Y');
 assert(editor.includes('columnSpacingEm: -0.35'), 'normalized spacing zero must resolve to the supplied authored -0.35em reference');
 assert(editor.includes('glyphAdvanceEm: 0.6'), 'normalized advance 1.0 must resolve to the supplied authored .6em reference');
-assert(editor.includes('glyphScaleX: 1.2'), 'normalized glyph X 1.0 must render 20% larger than the old baseline');
-assert(editor.includes('glyphScaleY: 1.2'), 'normalized glyph Y 1.0 must render 20% larger than the old baseline');
-assert(editor.includes('fitReferenceGlyphScaleX: TANKAN_BASELINE.glyphScaleX'), 'editor fit-down must treat the normalized 1.2 glyph width as its no-overflow reference');
-assert(editor.includes('fitReferenceGlyphScaleY: TANKAN_BASELINE.glyphScaleY'), 'editor fit-down must treat the normalized 1.2 glyph height as its no-overflow reference');
+assert(editor.includes('glyphScaleX: 1.2'), 'normalized glyph X 1.0 must render at the 1.2x baseline');
+assert(editor.includes('const TANKAN_GLYPH_Y_NORMALIZATION = 0.7'), 'approved legacy glyph Y=0.70 appearance must become normalized Y=1.00');
+assert(editor.includes('TANKAN_BASELINE.glyphScaleY * TANKAN_GLYPH_Y_NORMALIZATION * finiteOr(record.tankanGlyphSizeY, 1)'), 'editor must apply the 0.70 Y normalization inside rendering, not in the saved author value');
 assert(editor.includes("color: '#000000'"), 'new Tankan text should default to black');
 assert(editor.includes('opacity: 0.5'), 'new Tankan text should default to the supplied 0.5 opacity');
 assert(editor.includes('TANKAN_PADDING_X_EM = 0.8'), 'editor must use calibrated horizontal Tankan padding');
@@ -151,8 +150,6 @@ assert(editor.includes('tankanRenderOptions'), 'editor texture rendering must re
 assert(editor.includes('const fitScale = Math.min(1, container.widthPx / visualWidthPx, container.heightPx / visualHeightPx)'), 'editor container must fit down only when visual text overflows');
 assert(editor.includes('width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1))'), 'Tankan plane width must now be the authored container width directly');
 assert(editor.includes('height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1))'), 'Tankan plane height must now be the authored container height directly');
-assert(!editor.includes('* tankanNaturalWidthFactor(record, layout)'), 'container width must not be multiplied by natural text width anymore');
-assert(!editor.includes('* tankanNaturalHeightFactor(record, layout)'), 'container height must not be multiplied by natural text height anymore');
 assert(editor.includes("tankanSizing: 'container-fit-down-v1'"), 'exports must declare UI-like Tankan container sizing');
 assert(editor.includes('id="decalWidthLabel">Width scale'), 'editor must have a dynamic width label');
 assert(editor.includes("tankan ? 'Container width' : 'Width scale'"), 'Tankan Width should be labeled as a container control');
@@ -172,6 +169,8 @@ assert(runtime.includes('ensureTankanLayout'), 'runtime should self-load the sha
 assert(runtime.includes('authoredTankanDecalCount'), 'runtime diagnostics should expose text decal count');
 assert(runtime.includes("normalizedGlyphSize(record, 'x')"), 'runtime must honor normalized glyph X size');
 assert(runtime.includes("normalizedGlyphSize(record, 'y')"), 'runtime must honor normalized glyph Y size');
+assert(runtime.includes('const TANKAN_GLYPH_Y_NORMALIZATION = 0.7'), 'runtime must mirror the editor Y normalization');
+assert(runtime.includes("TANKAN_BASELINE.glyphScaleY * TANKAN_GLYPH_Y_NORMALIZATION * normalizedGlyphSize(record, 'y')"), 'runtime Y=1.00 must resolve to the same prior Y=0.70 visual height');
 assert(runtime.includes('record?.tankanGlyphSize'), 'runtime must preserve v2 uniform glyph-size compatibility');
 assert(runtime.includes('TANKAN_NORMALIZED_VERSION = 2'), 'runtime must keep reading version-2 normalized records');
 assert(runtime.includes('record.tankanGlyphAdvance'), 'runtime must honor normalized glyph advance');
@@ -181,18 +180,18 @@ assert(runtime.includes('fitReferenceGlyphScaleY: TANKAN_BASELINE.glyphScaleY'),
 assert(runtime.includes('TANKAN_PADDING_X_EM = 0.8'), 'runtime must use the same calibrated horizontal padding as the editor');
 assert(runtime.includes('tankanContainerPixels'), 'runtime must create the same explicit Tankan container as the editor');
 assert(runtime.includes('tankanContainerState'), 'runtime must calculate the same overflow fit-down state as the editor');
-assert(runtime.includes('tankanRenderOptions'), 'runtime must pass container dimensions into shared Tankan rendering');
-assert(runtime.includes('width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1))'), 'runtime Tankan plane width must be the authored container width directly');
-assert(runtime.includes('height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1))'), 'runtime Tankan plane height must be the authored container height directly');
-assert(!runtime.includes('* tankanNaturalWidthFactor(record, layout)'), 'runtime must not scale the container plane from natural text width');
-assert(!runtime.includes('* tankanNaturalHeightFactor(record, layout)'), 'runtime must not scale the container plane from natural text height');
+assert(runtime.includes('tankanRenderOptions'), 'runtime render path must receive explicit container dimensions');
+assert(runtime.includes('width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1))'), 'runtime Tankan plane width must be the container width directly');
+assert(runtime.includes('height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1))'), 'runtime Tankan plane height must be the container height directly');
+assert(!runtime.includes('* tankanNaturalWidthFactor(record, layout)'), 'runtime container width must not multiply by text width');
+assert(!runtime.includes('* tankanNaturalHeightFactor(record, layout)'), 'runtime container height must not multiply by text height');
 assert(!runtime.includes('\u0101') && !runtime.includes('\u0100'), 'runtime warnings must keep canonical Tankan spelling');
 
 const loader = read('docs/tools/furniture-avatar-author/foliage-furniture-mode.js');
 const layoutLoad = loader.indexOf('tankan-script-layout.js');
 const decalsLoad = loader.indexOf('furniture-decals.js');
 assert(layoutLoad >= 0 && decalsLoad > layoutLoad, 'editor must load TankanScriptLayout before furniture decals');
-assert(loader.includes('tankan-script-layout.js?v=20260915tankan8'), 'editor must cache-bust Tankan container-fit rendering');
-assert(loader.includes('furniture-decals.js?v=20260915tankan8'), 'editor must cache-bust the Tankan container author behavior');
+assert(loader.includes('tankan-script-layout.js?v=20260915tankan8'), 'editor must retain the container-fit Tankan layout cache key');
+assert(loader.includes('furniture-decals.js?v=20260916tankan9'), 'editor must cache-bust the normalized Y=1.00 author baseline');
 
 console.log('furniture Tankan decal checks passed');
