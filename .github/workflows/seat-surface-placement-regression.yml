@@ -1,0 +1,54 @@
+name: Seat surface placement regression
+
+on:
+  push:
+    paths:
+      - 'docs/index.html'
+      - 'docs/game.js'
+      - 'docs/js/seat-surface-placement-transform.js'
+      - 'scripts/test-interior-seat-surface-post-transform.js'
+      - 'scripts/test-interior-seat-surface-three-math.js'
+      - 'scripts/test-interior-seat-surface-visual-alias.js'
+      - '.github/workflows/seat-surface-placement-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/index.html'
+      - 'docs/game.js'
+      - 'docs/js/seat-surface-placement-transform.js'
+      - 'scripts/test-interior-seat-surface-post-transform.js'
+      - 'scripts/test-interior-seat-surface-three-math.js'
+      - 'scripts/test-interior-seat-surface-visual-alias.js'
+      - '.github/workflows/seat-surface-placement-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check seat surface placement integration
+        run: |
+          node --check docs/game.js
+          node --check docs/js/seat-surface-placement-transform.js
+          node --check scripts/test-interior-seat-surface-post-transform.js
+          node --check scripts/test-interior-seat-surface-three-math.js
+          node --check scripts/test-interior-seat-surface-visual-alias.js
+      - name: Test transformed interior seat positions and station binding
+        run: node scripts/test-interior-seat-surface-post-transform.js
+      - name: Test transformed seat plane math against real temple bench data
+        run: node scripts/test-interior-seat-surface-three-math.js
+      - name: Test transformed seats keep visual and interaction keys separate
+        run: node scripts/test-interior-seat-surface-visual-alias.js
+      - name: Re-run existing furniture and seating regressions
+        run: |
+          node scripts/test-outdoor-furniture-and-npc-seating.js
+          node scripts/test-npc-social-seating.js
+          node scripts/test-furniture-vessel-runtime.js
+          node scripts/test-interior-fire-floor.js

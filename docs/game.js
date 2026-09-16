@@ -12520,7 +12520,8 @@
               // useActiveAction's town+_buildingInteractables lookups) — the
               // Highland House interior instead goes through
               // getInteriorInteractableAt, so this only matters here.
-              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(furnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
+              const seatFurnitureKey = f.seatSurfaceFurnitureKey || furnitureKey; // Runtime-only transformed seat metadata must not replace the real furniture key used to render the chair/bench.
+              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(seatFurnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
