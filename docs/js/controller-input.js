@@ -11,6 +11,21 @@
 // browser-frame cadence now belongs to RuntimeFrameScheduler when that shared
 // authority is present. Older standalone/editor/test contexts retain a guarded
 // legacy RAF fallback so the helper remains independently executable.
+
+// Main historically loaded ControllerInput before RuntimeFrameScheduler. Keep
+// the scheduler in its own feature-agnostic file, but parser-insert it here so
+// shipped builds cannot silently fall back to a second permanent RAF when the
+// explicit index.html tag is missing. Standalone/editor/test contexts without
+// a parser-owned currentScript keep the compatibility behavior below.
+(() => {
+  if (typeof window === 'undefined' || window.RuntimeFrameScheduler?.register) return;
+  if (typeof document === 'undefined' || document.readyState !== 'loading') return;
+  const currentScript = document.currentScript; // Used to resolve the scheduler beside this module without assuming a docs/ base URL.
+  if (!currentScript?.src || typeof document.write !== 'function') return;
+  const schedulerUrl = new URL('./runtime-frame-scheduler.js?v=20260916main1', currentScript.src).href; // Written into the active parser stream before later runtime consumers load.
+  document.write(`<script src="${schedulerUrl}"><\/script>`);
+})();
+
 (() => {
   'use strict';
 
@@ -324,13 +339,11 @@
     DEFAULT_BUTTON_THRESHOLD,
   };
 
-  // RuntimeFrameScheduler itself is parser-loaded before ControllerInput in the
-  // scheduler build. Waiting until DOMContentLoaded keeps the scheduler's
-  // established post-gameLoop browser-frame ordering intact instead of letting
-  // this earlier script become the first subscriber and move every existing
-  // scheduler visual callback ahead of gameLoop. Standalone tools/tests that do
-  // not have that lifecycle simply install immediately and use the guarded RAF
-  // fallback when no scheduler exists.
+  // The shipped page parser-inserts RuntimeFrameScheduler immediately after
+  // this script when index.html does not explicitly list it. Waiting until
+  // DOMContentLoaded keeps the established post-gameLoop callback ordering.
+  // Standalone tools/tests without a parser-owned script keep the guarded RAF
+  // fallback and remain independently executable.
   if (typeof document !== 'undefined' && document.readyState === 'loading' && typeof document.addEventListener === 'function') {
     document.addEventListener('DOMContentLoaded', installCadenceOwner, { once: true });
   } else {
