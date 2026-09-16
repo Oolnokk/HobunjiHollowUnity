@@ -13,7 +13,9 @@
 
   const PATCH_SENTINEL = '__hobunjiProbedOwnerTransformPatch';
   const CANVAS_SENTINEL = '__hobunjiProbedOwnerTransformCapture';
+  const REPORT_FILTER_SENTINEL = '__hobunjiShoulderPetProbeNoiseFilter';
   const REPORT_MARKER = '=== Local transform dump:';
+  const SHOULDER_PET_SECTION_PREFIX = '=== Shoulder-pet';
   const NEXT_SECTION_MARKERS = [
     '\n=== Blend check',
     '\n=== Temporal flicker check',
@@ -150,12 +152,27 @@
     return lines.join('\n');
   }
 
+  function stripShoulderPetSections(report) {
+    const lines = String(report || '').split('\n'); // Rebuilt below so shoulder-pet-only debug blocks never reach copied Pixel Probe reports.
+    const filtered = [];
+    let skipping = false;
+    for (const line of lines) {
+      if (line.startsWith(SHOULDER_PET_SECTION_PREFIX)) {
+        skipping = true;
+        continue;
+      }
+      if (skipping && line.startsWith('=== ')) skipping = false;
+      if (!skipping) filtered.push(line);
+    }
+    return filtered.join('\n').replace(/\n{3,}/g, '\n\n');
+  }
+
   function replaceTransformSection(report, owner) {
     const replacement = buildOwnerTransformSection(owner);
-    if (!replacement) return report;
+    if (!replacement) return stripShoulderPetSections(report);
     const text = String(report || '');
     const start = text.indexOf(REPORT_MARKER);
-    if (start < 0) return `${text}${text.endsWith('\n') || !text ? '' : '\n\n'}${replacement}`;
+    if (start < 0) return stripShoulderPetSections(`${text}${text.endsWith('\n') || !text ? '' : '\n\n'}${replacement}`);
     let end = text.length; // Shortened below to the first known top-level Pixel Probe section after the transform dump.
     for (const marker of NEXT_SECTION_MARKERS) {
       const index = text.indexOf(marker, start + REPORT_MARKER.length);
@@ -163,7 +180,22 @@
     }
     const before = text.slice(0, start);
     const after = text.slice(end);
-    return `${before}${replacement}${after.startsWith('\n') || !after ? '' : '\n'}${after}`;
+    return stripShoulderPetSections(`${before}${replacement}${after.startsWith('\n') || !after ? '' : '\n'}${after}`);
+  }
+
+  function installReportNoiseFilter() {
+    const resultEl = document.getElementById('debugProbeResult');
+    if (!resultEl || resultEl[REPORT_FILTER_SENTINEL] || typeof MutationObserver !== 'function') return false;
+    resultEl[REPORT_FILTER_SENTINEL] = true;
+    const applyFilter = () => {
+      const current = resultEl.textContent || '';
+      const filtered = stripShoulderPetSections(current);
+      if (filtered !== current) resultEl.textContent = filtered;
+    };
+    const observer = new MutationObserver(applyFilter); // Covers every probe result, including world/crop clicks that have no character owner.
+    observer.observe(resultEl, { childList: true, characterData: true, subtree: true });
+    applyFilter();
+    return true;
   }
 
   function installCapture(api, deps) {
@@ -209,6 +241,7 @@
     const originalInit = api.init; // May already include config.js's town-height wrapper; preserve the complete existing chain.
     api.init = function characterRigPixelProbeInit(injectedDeps) {
       const result = originalInit.call(this, injectedDeps);
+      installReportNoiseFilter();
       installCapture(api, injectedDeps);
       return result;
     };
@@ -244,6 +277,7 @@
     ownerInfo,
     selectOwnedHit,
     headDiagnosticLines,
+    stripShoulderPetSections,
     replaceTransformSection,
   }); // Small public diagnostic surface used by the regression test and mobile console checks.
 

@@ -163,16 +163,17 @@
   function consumeHeldMysteryDye() {
     const held = heldMysteryDye(); // Used to revalidate the live selection/stack at the exact moment Item Action 1 fires.
     if (!held) return false;
-    const result = useMysteryDye(held.key); // Used as the one mutation path for both held actions and any future inventory-panel Use button.
+    const result = useMysteryDye(held.key); // Used as the one mutation path for both held actions and the Inventory direct-use bridge.
     itemDeps?.showToast?.(result.message, result.ok);
     if (result.ok) refreshAfterDyeUse();
     return result.ok;
   }
 
   function patchHeldActions(api) {
-    if (!api?.getHeldItemAction || !api?.beginHeldItemAction || api.__dyeItemsPatched) return;
+    if (!api?.getHeldItemAction || !api?.beginHeldItemAction || !api?.consumeHeldItemImmediate || api.__dyeItemsPatched) return;
     const getAction = api.getHeldItemAction.bind(api); // Used to preserve food, drink, alchemy, and technique-scroll actions when no dye is held.
-    const begin = api.beginHeldItemAction.bind(api); // Used as the fallback mutation path for every non-dye consumable.
+    const begin = api.beginHeldItemAction.bind(api); // Used as the legacy/programmatic press-start fallback for every non-dye consumable.
+    const consumeImmediate = api.consumeHeldItemImmediate.bind(api); // Used by the current action-arch dispatcher for immediate Use actions.
     api.getHeldItemAction = () => {
       const held = heldMysteryDye(); // Used to expose mystery dye through the same configurable Item Action 1 path as other consumables.
       return held
@@ -180,6 +181,7 @@
         : getAction();
     };
     api.beginHeldItemAction = () => heldMysteryDye() ? consumeHeldMysteryDye() : begin();
+    api.consumeHeldItemImmediate = () => heldMysteryDye() ? consumeHeldMysteryDye() : consumeImmediate();
     api.__dyeItemsPatched = true;
   }
 

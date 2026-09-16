@@ -40,7 +40,9 @@ on:
       - 'docs/js/shoulder-camera-character-framing.js'
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
+      - 'docs/js/character-rig-pixel-probe-runtime.js'
       - 'scripts/test-character-rig-scale.js'
+      - 'scripts/test-character-rig-pixel-probe-runtime.js'
       - 'scripts/test-drunk-prone-composition-bridge.js'
       - 'scripts/test-full-character-scale-authoring-20260905.js'
       - 'scripts/test-harlyao-calendar-markers.js'
@@ -68,6 +70,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Character rig Pixel Probe regression
+        run: node scripts/test-character-rig-pixel-probe-runtime.js
       - name: Harlyao species regression
         run: node scripts/test-harlyao-species.js
       - name: Porakaneki species regression

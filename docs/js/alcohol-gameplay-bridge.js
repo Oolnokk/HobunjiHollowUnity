@@ -522,8 +522,16 @@
     lastPlayerY = Number(player.y) || 0;
   }
 
+  function recipeScrollIdForHeld(key, def) {
+    const authoredId = def?.alchemyRecipeScrollId; // Used when the selectable inventory entry already carries canonical recipe metadata.
+    if (authoredId && window.AlchemySystem?.RECIPE_DEFS?.[authoredId]) return authoredId;
+    const match = /^alchemy_recipe_(.+)$/.exec(String(key || '')); // Used as a stable fallback when a generated recipe item reached the item wheel before metadata enrichment.
+    const keyedId = match?.[1] || null; // Used to verify the physical recipe key against the authored reaction registry before classifying it as readable.
+    return keyedId && window.AlchemySystem?.RECIPE_DEFS?.[keyedId] ? keyedId : null;
+  }
+
   function isPotionOrDrink(key, def) {
-    if (!key || !def) return false;
+    if (!key || !def || recipeScrollIdForHeld(key, def)) return false;
     const alchemyPayload = window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.getPotionEffectsFromKey?.(key); // Used to respect explicit alchemy use modes.
     const alchemyRecipe = alchemyPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[alchemyPayload.recipeId]; // Central recipe definition.
     if (alchemyRecipe) return alchemyRecipe.useMode === 'drink';
@@ -554,12 +562,14 @@
 
     const active = itemDeps?.getActiveInventoryItem?.();
     const key = active?.key;
-    const def = active;
+    const canonicalDef = key ? itemDeps?.ITEM_DEFS?.[key] : null; // Used when the caller exposes canonical metadata in addition to the lightweight selectable entry.
+    const def = canonicalDef ? { ...active, ...canonicalDef, key } : active; // Used so canonical semantic fields win without losing item-wheel-only presentation/context fields.
     const inventory = itemDeps?.inventory;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
     if (def.isCookedFood) return null; // CookingSystem owns generated meals and their stacked effects.
     if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return { key, def, inventory, kind: 'rawReagent' };
-    if (def.alchemyRecipeScrollId) return { key, def, inventory, kind: 'recipe' };
+    const recipeScrollId = recipeScrollIdForHeld(key, def); // Used to keep physical recipes out of drink/food fallbacks even if their wheel metadata is stale.
+    if (recipeScrollId) return { key, def, inventory, kind: 'recipe', recipeScrollId };
     if (isPotionOrDrink(key, def)) return { key, def, inventory, kind: 'drink' };
     if (isFood(def)) return { key, def, inventory, kind: 'food' };
     return null;
@@ -588,6 +598,25 @@
       // windup (see held-item-action-input.js); raw reagents and recipe
       // scrolls stay immediate item actions.
       holdToCommit: held.kind === 'drink' || held.kind === 'food',
+    };
+  }
+
+  function heldItemActionDebug() {
+    const active = itemDeps?.getActiveInventoryItem?.() || null; // Used to expose the lightweight item-wheel record that originally caused recipe misclassification.
+    const key = active?.key || null; // Used to correlate the visible held stack with canonical/generated-item metadata.
+    const canonical = key ? itemDeps?.ITEM_DEFS?.[key] || null : null; // Used to show whether canonical metadata was available to this bridge at dispatch time.
+    const held = getHeldConsumable(); // Used to expose the semantic classification that will actually drive the action.
+    const action = getHeldItemAction(); // Used to expose the exact action-arch label and hold/immediate contract without desktop DevTools.
+    return {
+      heldMode: itemDeps?.getHeldMode?.() ?? null,
+      key,
+      activeRecipeScrollId: active?.alchemyRecipeScrollId || null,
+      canonicalRecipeScrollId: canonical?.alchemyRecipeScrollId || null,
+      keyedRecipeScrollId: recipeScrollIdForHeld(key, active),
+      resolvedKind: held?.kind || null,
+      resolvedAction: action?.action || null,
+      resolvedLabel: action?.label || null,
+      holdToCommit: !!action?.holdToCommit,
     };
   }
 
@@ -842,6 +871,7 @@
         hasDevDeps: !!devDeps,
         hasMountDeps: !!mountDeps,
         hasItemDeps: !!itemDeps,
+        heldItemAction: heldItemActionDebug(),
         playerAttached: !!composer?.playerAttached,
         bodyChannels: composer?.channels || [],
         bottleSwigs: serializeBottleSwigs(),

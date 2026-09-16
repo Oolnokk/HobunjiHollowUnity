@@ -123,4 +123,29 @@ assert(corrected.includes('Separate head-scale check: expectedLocal=(0.9067,0.90
 assert(!corrected.includes('player_root'), 'wrong player transform subtree must be removed, not merely followed by another dump');
 assert(corrected.includes('=== Blend check'), 'later Pixel Probe sections must survive transform-section replacement');
 
+const noisyReport = [
+  'Pixel Probe report',
+  'Crop sprite: heftroot',
+  '',
+  '=== Shoulder-pet diagnostics ===',
+  'Live active shoulder pet this frame: drenkirra',
+  '>>> MISMATCH — intentional pet orientation that should not distract crop debugging.',
+  '',
+  '=== Crop billboard diagnostics ===',
+  'rootY=0.10 surfaceY=0.00',
+  '',
+  '=== Shoulder-pet motion transform trace ===',
+  'f00 pet orientation detail',
+  '',
+  '=== NPC scheduling diagnostics ===',
+  'npc data',
+].join('\n');
+const filteredReport = api.stripShoulderPetSections(noisyReport);
+assert(!filteredReport.includes('=== Shoulder-pet diagnostics ==='), 'shoulder-pet diagnostic section must be removed from copied probe reports');
+assert(!filteredReport.includes('=== Shoulder-pet motion transform trace ==='), 'shoulder-pet transform trace must be removed from copied probe reports');
+assert(!filteredReport.includes('intentional pet orientation'), 'shoulder-pet mismatch prose must not survive the filter');
+assert(filteredReport.includes('=== Crop billboard diagnostics ==='), 'crop diagnostics must survive shoulder-pet filtering');
+assert(filteredReport.includes('=== NPC scheduling diagnostics ==='), 'later unrelated probe sections must survive shoulder-pet filtering');
+assert.match(source, /installReportNoiseFilter\(\);[\s\S]{0,120}installCapture\(api, injectedDeps\)/, 'the filter installs for every probe, not only character-owned clicks');
+
 console.log('character rig Pixel Probe runtime tests passed');
