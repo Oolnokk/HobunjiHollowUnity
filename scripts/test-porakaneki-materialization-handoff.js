@@ -1,9 +1,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const cfg = JSON.parse(fs.readFileSync('docs/config/porakaneki-camp.json', 'utf8'));
-const runtime = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8');
-const snapshot = fs.readFileSync('docs/js/wilderness-ai-snapshot.js', 'utf8');
+const cfg = JSON.parse(fs.readFileSync('docs/config/porakaneki-camp.json', 'utf8')); // LOD invariants remain owned by the camp config.
+const runtime = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8'); // Camp runtime must still delegate locomotion to the shared hostile path.
+const snapshot = fs.readFileSync('docs/js/wilderness-ai-snapshot.js', 'utf8'); // Mobile diagnostics must retain handoff visibility.
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards the shared return locomotion plus render-sync path the live entity relies on.
 
 assert(cfg.behavior.fullSimulationRadiusTiles > 0);
 assert(cfg.behavior.fullSimulationReleaseRadiusTiles > cfg.behavior.fullSimulationRadiusTiles,
@@ -21,4 +22,34 @@ assert(runtime.includes('allowToastFallback: false'),
 assert(snapshot.includes('renderDelta') && snapshot.includes('registered') && snapshot.includes('plannerControlled'),
   'mobile snapshot must expose render/simulation handoff diagnostics');
 
-console.log('Porakaneki materialization handoff source regression checks passed.');
+// hostileObjects is a Set in production (the dev arena, bandit camps, and wildlife spawners all use add/delete/has).
+// These source guards make the old array-only Porakaneki registration path fail loudly in CI instead of being masked by a test double.
+assert(runtime.includes('combatDeps.hostileObjects.add(entity)'),
+  'materialized Porakaneki must register with the production hostile Set');
+assert(runtime.includes('combatDeps.hostileObjects.delete(entity)'),
+  'retired Porakaneki must leave the production hostile Set');
+assert(runtime.includes('combatDeps?.hostileObjects?.has?.(entity)'),
+  'mobile diagnostics must query registration with Set.has');
+assert(!runtime.includes('hostileObjects.push(entity)'),
+  'Porakaneki runtime must not use Array.push on the hostile Set');
+assert(!runtime.includes('hostileObjects.splice('),
+  'Porakaneki runtime must not use Array.splice on the hostile Set');
+assert(!runtime.includes('hostileObjects?.includes?.(entity)'),
+  'Porakaneki diagnostics must not use Array.includes on the hostile Set');
+
+const materializeStart = runtime.indexOf('async function materializeHunter'); // Narrows ordering checks to the actual abstract-to-live handoff rather than later planner updates.
+const materializeEnd = runtime.indexOf('\n  function makeNeutral', materializeStart); // End boundary for the materialization function under test.
+const materializeSource = runtime.slice(materializeStart, materializeEnd); // Actual publication transaction inspected below.
+const neutralizeIndex = materializeSource.indexOf('makeNeutral(entity, hunter);'); // Publication ordering guard: no shared hostile frame may see the builder's default bandit state.
+const registerIndex = materializeSource.indexOf('combatDeps.hostileObjects.add(entity);'); // Shared hostile Set publication point checked against neutralization above.
+assert(neutralizeIndex >= 0 && registerIndex > neutralizeIndex,
+  'materialized Porakaneki must be neutralized before publication to the shared hostile Set');
+
+assert(gameSource.includes("} else if (c.state === 'return') {"),
+  'game.js must retain the shared return-state branch used by neutral Porakaneki');
+assert(gameSource.includes('moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);'),
+  'shared hostile return state must own Porakaneki simulation movement');
+assert(gameSource.includes('updateCreatureMesh(c, entityDt, aimAngle);'),
+  'shared hostile loop must continue synchronizing simulation movement into the PNG avatar');
+
+console.log('Porakaneki materialization handoff regression checks passed.');
