@@ -191,4 +191,39 @@ lateWindow.ProceduralTasks = { friendshipTierProgress() { return { tier: 5, favo
   assert.equal(progress.next, 80, 'late-loaded tier progress uses eighty Favor for Tier 1');
 }
 
+// Regression for the actual browser conflict: another module may already own a configurable lazy accessor for DialogueContent.
+const chainedStates = new Map();
+const chainedRawState = id => {
+  if (!chainedStates.has(id)) chainedStates.set(id, { favor: 0, rapport: 0, memory: [] });
+  return chainedStates.get(id);
+};
+const chainedDialogue = {
+  init() {},
+  loadNpcRelationships() {},
+  getNpcDlgState(id) { return chainedRawState(id); },
+  adjustNpcFavor(id, amount) { chainedRawState(id).favor += Number(amount) || 0; },
+  recordNpcMemory(id, event) { chainedRawState(id).memory.push({ event }); },
+  renderRelationshipHearts() { return 'legacy'; },
+};
+const chainedWindow = {
+  NpcGifting: { init() {}, offerGift() { return false; } },
+  SCRATCHBONES_CONFIG: { game: { socialRelationships: { rapportToFavorRate: 0.10 } } },
+};
+let chainedDialogueValue = null; // Existing module-owned lazy global backing value; Favor balance must chain through it rather than refusing to install.
+Object.defineProperty(chainedWindow, 'DialogueContent', {
+  configurable: true,
+  enumerable: true,
+  get() { return chainedDialogueValue; },
+  set(value) {
+    chainedDialogueValue = value;
+    Object.defineProperty(chainedWindow, 'DialogueContent', { configurable: true, enumerable: true, writable: true, value });
+  },
+});
+vm.runInNewContext(source, { window: chainedWindow, console, Date, Map, Math, Number, Object, Array, String });
+assert.equal(chainedWindow.NpcFavorBalance, undefined, 'pre-existing DialogueContent accessor still leaves Favor balance waiting for the real API');
+chainedWindow.DialogueContent = chainedDialogue;
+assert.equal(chainedWindow.NpcFavorBalance?.version, 3, 'Favor balance chains through a pre-existing DialogueContent accessor and installs');
+chainedRawState('chained_hreesh').favor = 12.2;
+assert.match(chainedDialogue.renderRelationshipHearts({ id: 'chained_hreesh', relationship: true }), /width:30\.5%/, 'chained browser hook uses 12.2 Favor as 30.5% of one heart instead of twelve hearts');
+
 console.log('Favor point / relationship heart balance regression checks passed.');
