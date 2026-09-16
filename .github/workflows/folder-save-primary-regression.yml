@@ -38,6 +38,7 @@ jobs:
           node-version: '20'
       - name: Syntax check folder save modules
         run: |
+          node --check docs/js/folder-save-transaction-journal.js
           node --check docs/js/local-save-folder-core.js
           node --check docs/js/folder-save-primary.js
           node --check docs/js/folder-save-onboarding-bridge.js
@@ -51,3 +52,4 @@ jobs:
           node scripts/test-folder-save-primary.js
           node scripts/test-folder-save-runtime-integrity.js
           node scripts/test-save-checkpoint-manager.js
+          node scripts/test-folder-save-transaction-journal.js
