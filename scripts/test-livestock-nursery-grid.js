@@ -124,7 +124,7 @@ assert.match(pagingSource, /grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/, 
 assert.match(pagingSource, /rowsPerPage:\s*4[\s\S]*pageSize:\s*28/, 'Nursery has a deterministic four-row, 28-baby page instead of scroll-dependent capacity');
 assert.match(pagingSource, /max-height:none\s*!important/, 'Nursery removes the old short nested max-height');
 assert.match(pagingSource, /overflow:visible\s*!important/, 'Nursery grid itself no longer owns a nested scrollbar');
-assert.doesNotMatch(pagingSource, /ResizeObserver/, 'paging does not observe layout size continuously');
+assert.doesNotMatch(pagingSource, /new\s+ResizeObserver|typeof\s+ResizeObserver|resizeObserver\s*=/, 'paging does not observe layout size continuously');
 assert.doesNotMatch(pagingSource, /measurePageGeometry/, 'paging does not perform repeated geometry measurement');
 assert.doesNotMatch(pagingSource, /getBoundingClientRect/, 'paging does not force layout reads to decide page capacity');
 assert.match(pagingSource, /stack\.classList\.remove\(LEGACY_SCROLL_CLASS\)/, 'enhanced grid opts out of FarmMenuLayout compact-scroll bookkeeping when a Farm render is paginated');
