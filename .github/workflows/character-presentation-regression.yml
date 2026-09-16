@@ -18,6 +18,7 @@ on:
       - 'docs/assets/fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki_blink.png'
       - 'docs/assets/portraitsprites/torso_porakaneki_m.png'
       - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/shoulder-pet-transform-stability.js'
       - 'docs/js/combat/porakaneki-dagger-ranged.js'
       - 'docs/js/drunk-prone-composition-bridge.js'
       - 'docs/js/ghostify.js'
@@ -58,6 +59,7 @@ on:
       - 'scripts/test-porakaneki-species.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-shoulder-camera-reset-button.js'
+      - 'scripts/test-shoulder-pet-transform-stability.js'
       - '.github/workflows/character-presentation-regression.yml'
 
 jobs:
@@ -68,6 +70,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Syntax check shoulder-pet transform stability runtime
+        run: node --check docs/js/shoulder-pet-transform-stability.js
+      - name: Shoulder-pet transform stability regression
+        run: node scripts/test-shoulder-pet-transform-stability.js
       - name: Harlyao species regression
         run: node scripts/test-harlyao-species.js
       - name: Porakaneki species regression
