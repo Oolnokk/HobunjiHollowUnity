@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/livestock-nursery-grid.js', 'utf8');
+const pagingSource = fs.readFileSync('docs/js/livestock-nursery-inventory-paging.js', 'utf8');
 const bridgeSource = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8');
 
 let livestock = [
@@ -116,7 +117,15 @@ grid.install();
 assert.equal(CreatureGenetics.sellValueFor({ rare: false }, 'grehlr').amount, 500, 'economy wrapper is idempotent');
 
 assert.match(source, /firstChild\.nodeValue\s*=\s*'Nursery Grow'/, 'enhanced Grow Up control changes only its backing text node so the legacy private-button tonic gate cannot double-consume');
+assert.match(pagingSource, /grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/, 'Nursery uses Inventory-style fixed seven-column geometry');
+assert.match(pagingSource, /max-height:none\s*!important/, 'Nursery removes the old short nested max-height');
+assert.match(pagingSource, /overflow:visible\s*!important/, 'Nursery grid itself no longer owns a nested scrollbar');
+assert.match(pagingSource, /rowsPerPage:\s*4[\s\S]*pageSize:\s*28/, 'overflow is split into four seven-slot rows per page');
+assert.match(pagingSource, /gridPane\.appendChild\(pagerSlot\)/, 'page control is moved under the grid in shadow layout without mutating observed light-DOM children');
+assert.match(pagingSource, /nursery-page-turn/, 'existing light-DOM debug host doubles as the controller-focusable page-turn control only when multiple pages exist');
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'/, 'farm feature bridge parser-loads the Nursery grid module');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'/, 'farm feature bridge parser-loads the Inventory-style Nursery paging layer');
 assert.match(bridgeSource, /installLivestockNurseryGrid\(\)/, 'farm feature bridge installs the Nursery grid after FarmPanel becomes available');
+assert.match(bridgeSource, /installLivestockNurseryInventoryPaging\(\)/, 'farm feature bridge installs paging after the grid feature');
 
 console.log('livestock nursery grid regression checks passed');
