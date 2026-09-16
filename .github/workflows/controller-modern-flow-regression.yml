@@ -3,7 +3,9 @@ name: Controller modern-flow regression
 on:
   pull_request:
     paths:
+      - 'docs/index.html'
       - 'docs/onboarding-core.js'
+      - 'docs/js/runtime-frame-scheduler.js'
       - 'docs/js/controller-input.js'
       - 'docs/js/controller-ui-nav.js'
       - 'docs/js/controller-modern-flow-bridge.js'
@@ -13,13 +15,20 @@ on:
       - 'docs/js/npc-wardrobe.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/shipping-box-config.js'
+      - 'docs/js/shipping-panel.js'
+      - 'docs/js/farm-crates.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-controller-modern-flow-bridge.js'
+      - 'scripts/test-controller-shipping-box.js'
+      - 'scripts/test-controller-input-authority.js'
       - '.github/workflows/controller-modern-flow-regression.yml'
   push:
     branches: [main]
     paths:
+      - 'docs/index.html'
       - 'docs/onboarding-core.js'
+      - 'docs/js/runtime-frame-scheduler.js'
       - 'docs/js/controller-input.js'
       - 'docs/js/controller-ui-nav.js'
       - 'docs/js/controller-modern-flow-bridge.js'
@@ -29,8 +38,13 @@ on:
       - 'docs/js/npc-wardrobe.js'
       - 'docs/js/npc-furniture-wardrobe-bridge-v4.js'
       - 'docs/js/clothing-weaving-system.js'
+      - 'docs/js/shipping-box-config.js'
+      - 'docs/js/shipping-panel.js'
+      - 'docs/js/farm-crates.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-controller-modern-flow-bridge.js'
+      - 'scripts/test-controller-shipping-box.js'
+      - 'scripts/test-controller-input-authority.js'
       - '.github/workflows/controller-modern-flow-regression.yml'
 
 jobs:
@@ -42,5 +56,6 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/test-controller-modern-flow-bridge.js
+      - run: node scripts/test-controller-shipping-box.js
       - run: node scripts/test-controller-input-authority.js
       - run: node scripts/test-controller-experience.js
