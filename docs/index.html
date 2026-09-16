@@ -108,7 +108,7 @@
   <script src="js/item-processing.js?v=20260902mod1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20260905cacheaudit2"></script>
+  <script src="debug.js?v=20260916perf1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
   <script src="config/scratchbones-config.js?v=20260914transienttarget1"></script>
@@ -135,7 +135,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260821a"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20260821alchemy1"></script>
+  <script src="js/held-action-animations.js?v=20260916perf1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20260910controller1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -218,7 +218,7 @@
   <script src="js/combat/impact-ragdoll-playback.js?v=20260828b"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260910review1"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20260825melee2"></script>
-  <script src="js/combat/combat-loadout.js?v=20260907alternatingneutral1"></script>
+  <script src="js/combat/combat-loadout.js?v=20260916perf1"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260914transienttarget1"></script>
   <script src="js/combat/combat-combo.js?v=20260915enemydodge1"></script>
@@ -233,8 +233,8 @@
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
   <script src="js/combat/ranged-weapons.js?v=20260909perspectivepoint1"></script>
-  <script src="js/combat/ranged-hud-reticle.js?v=20260825reticle1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260826alphacrop1"></script>
+  <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260916perf1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -320,7 +320,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20260824a"></script>
+  <script src="js/farm-troughs.js?v=20260916perf1"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -2330,7 +2330,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260915perf1"></script>
+  <script src="js/pixel-probe.js?v=20260916perf1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
