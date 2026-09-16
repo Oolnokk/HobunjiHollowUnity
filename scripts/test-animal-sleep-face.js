@@ -32,6 +32,8 @@ class WebGLRenderer {
       barnHead: barnAvatar.headAngle,
       outdoorHead: outdoorAvatar.headAngle,
       outdoorYaw: outdoorAvatar.headYaw,
+      outdoorBodyYaw: outdoorGroup.rotation.y,
+      outdoorGroupRot: outdoorAnimal.groupRot,
       outdoorMap: outdoorGroup.children[0].material.map,
       outdoorLookDebug: outdoorAnimal._lookAtDebug,
     });
@@ -48,6 +50,7 @@ function makeGroup(name, scaleY = 1) {
     parent: { getWorldScale(target) { return target.set(1, 1, 1); } },
     scale: new Vec3(1, scaleY, 1),
     position: new Vec3(0, scaleY, 0),
+    rotation: new Vec3(0, 0, 0),
     children: [front, back],
     traverse(fn) { fn(this); for (const child of this.children) fn(child); },
     updateMatrixWorld() {},
@@ -101,11 +104,14 @@ const outdoorAnimal = {
   animalKey: 'drenkirra',
   genotype: { sig: 'outdoor' },
   avatarRef: outdoorAvatar,
+  groupRot: 2.4, // Simulates the awake look-at loop having turned the whole body toward the player just before draw.
+  targetRot: 0.35, // Last movement heading; sleeping should hold this instead of the player-facing body angle.
   _outdoorSleepBlend: 1,
   _outdoorVisualStress: 0,
   _outdoorAppliedScaleY: 0.5,
   _lookAtDebug: { target: 'player' },
 };
+outdoorGroup.rotation.y = outdoorAnimal.groupRot;
 farmAnimals.add(outdoorAnimal);
 
 const windowStub = {
@@ -162,6 +168,8 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets ne
   assert.equal(visible.barnHead, 28, 'barn sleeper holds its head at the authored downward limit');
   assert.equal(visible.outdoorHead, 32, 'outdoor sleeper overrides player head tracking with the authored downward limit');
   assert.equal(visible.outdoorYaw, 0, 'sleeping head yaw is neutral instead of tracking the player sideways');
+  assert.equal(visible.outdoorBodyYaw, 0.35, 'outdoor sleeper holds the last movement heading instead of body-facing the player');
+  assert.equal(visible.outdoorGroupRot, 0.35, 'logical farm-animal body rotation is locked with the rendered sleeping body');
   assert.equal(visible.outdoorLookDebug, null, 'sleeping animal no longer advertises a player look-at ray');
   assert.equal(visible.outdoorMap?.canvas?.frame, 'run2', 'outdoor sleeper still freezes on run2');
   assert.equal(visible.outdoorMap?.canvas?.blinkShut, true, 'outdoor sleeper renders only the permanent closed-eye sleep composite');
@@ -169,16 +177,31 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets ne
   assert(outdoorComposes.length > 0, 'outdoor sleeper requested a sleep composite');
   assert(outdoorComposes.every(call => call.blinkShut === true), 'no awake-eye composite is requested for the sleeping outdoor animal');
 
+  // Simulate the normal farm update trying to turn the body toward a newly moved player between renders.
+  outdoorAnimal.groupRot = 2.75;
+  outdoorGroup.rotation.y = 2.75;
+  renderer.render();
+  const retracked = renderSnapshots.at(-1);
+  assert.equal(retracked.outdoorBodyYaw, 0.35, 'continued sleep rejects later player-facing body rotation attempts');
+  assert.equal(retracked.outdoorGroupRot, 0.35, 'sleep body lock prevents player-facing drift from accumulating in groupRot');
+
   const debug = windowStub.AnimalSleepPresentation.getDebug();
   assert.equal(debug.sleepingEyes, 'blink-overlay-closed-only', 'diagnostics report permanent closed-eye sleep presentation');
   assert.equal(debug.sleepingHead, 'authored-max-down', 'diagnostics report the downward sleeping head pose');
+  assert.equal(debug.sleepingBody, 'last-travel-heading-locked', 'diagnostics report the sleeping body-facing lock');
   assert(debug.headDownApplications >= 2, 'diagnostics count applied sleeping head overrides');
+  assert(debug.bodyFacingLocks >= 2, 'diagnostics count sleeping body-facing corrections');
 
   outdoorAnimal._outdoorSleepBlend = 0;
   outdoorAvatar.headAngle = -9; // Simulates normal awake head tracking resuming before the next render.
+  outdoorAnimal.groupRot = -0.8;
+  outdoorGroup.rotation.y = -0.8;
   renderer.render();
-  assert.equal(renderSnapshots.at(-1).outdoorHead, -9, 'waking releases the central head override back to ordinary tracking');
-  console.log('animal sleep closed-eye/head-down regression tests passed');
+  const awake = renderSnapshots.at(-1);
+  assert.equal(awake.outdoorHead, -9, 'waking releases the central head override back to ordinary tracking');
+  assert.equal(awake.outdoorBodyYaw, -0.8, 'waking releases the body-facing lock back to ordinary farm-animal rotation');
+  assert.equal(awake.outdoorGroupRot, -0.8, 'waking leaves the logical body rotation untouched');
+  console.log('animal sleep closed-eye/head-down/body-facing regression tests passed');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
