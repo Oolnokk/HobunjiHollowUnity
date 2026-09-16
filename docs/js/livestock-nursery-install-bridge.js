@@ -5,6 +5,7 @@
   // synchronous during ordinary index.html parsing so the wrappers exist before
   // FarmPanel/game.js call the underlying modules' init() methods.
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
+    { globalKey: 'LivestockNurseryObserverScope', src: 'js/livestock-nursery-observer-scope.js?v=20260916scope1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
