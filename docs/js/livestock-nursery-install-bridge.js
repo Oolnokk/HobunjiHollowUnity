@@ -16,6 +16,7 @@
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
     { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20260916nurserygrid1' },
+    { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage1' },
   ];
   const STABLE_ROLE_DEP_METHODS = Object.freeze([
     'getActiveCompanionId',
@@ -42,6 +43,7 @@
         window.BarnIncubator?.install?.();
         window.FarmMenuLayout?.install?.();
         window.LivestockNurseryGrid?.install?.();
+        window.LivestockNurseryInventoryPaging?.install?.();
         return;
       }
       const entry = featureScripts[index];
@@ -59,10 +61,10 @@
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
   // FarmPanel, while LivestockNursery/AnimalGrowth/StableAnimalProgression/
   // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator/
-  // LivestockNurseryGrid all need the public farm APIs before game.js initializes
-  // them. Capture FarmPanel's one global assignment and install synchronously at
-  // that exact point; afterward FarmPanel is a normal writable global again, so
-  // there is no permanent proxy.
+  // LivestockNurseryGrid/LivestockNurseryInventoryPaging all need the public
+  // farm APIs before game.js initializes them. Capture FarmPanel's one global
+  // assignment and install synchronously at that exact point; afterward
+  // FarmPanel is a normal writable global again, so there is no permanent proxy.
   const installNursery = () => window.LivestockNursery?.install?.();
   const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
   const installStableAnimalProgression = () => window.StableAnimalProgression?.install?.();
@@ -71,6 +73,7 @@
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
   const installFarmMenuLayout = () => window.FarmMenuLayout?.install?.();
   const installLivestockNurseryGrid = () => window.LivestockNurseryGrid?.install?.();
+  const installLivestockNurseryInventoryPaging = () => window.LivestockNurseryInventoryPaging?.install?.();
 
   // FarmPanel's native Stable renderer intentionally blocks the old progression
   // render wrapper, but that also blocks the old FarmPanel.init dependency
@@ -185,6 +188,7 @@
     installBarnIncubator();
     installFarmMenuLayout();
     installLivestockNurseryGrid();
+    installLivestockNurseryInventoryPaging();
   };
 
   if (window.FarmPanel) {
