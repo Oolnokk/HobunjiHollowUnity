@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
+const welfareSource = fs.readFileSync('docs/js/outdoor-livestock-welfare.js', 'utf8');
 const nurserySource = fs.readFileSync('docs/js/livestock-nursery.js', 'utf8');
 assert(nurserySource.includes("const BABY_SCALE = 0.3125;"), 'baby scale is 31.25% of adult scale after the 25% size increase');
 assert(nurserySource.includes("const BABY_SPEED_MULTIPLIER = 1.125;"), 'Nursery movement is 25% slower than the previous 1.5x multiplier');
@@ -85,6 +86,7 @@ const context = {
     FarmBuildings,
     FarmTroughs,
     FarmPanel,
+    Music: { isNightTime() { return false; } },
     CreatureGenetics: { creatureSizeScale() { return { x: 1, y: 1 }; } },
     SCRATCHBONES_CONFIG: { game: { livestock: { animalWidths: { grehlr: 1.7 } } } },
   },
@@ -114,7 +116,8 @@ const context = {
 };
 context.window.window = context.window;
 vm.createContext(context);
-vm.runInContext(nurserySource, context);
+vm.runInContext(welfareSource, context, { filename: 'outdoor-livestock-welfare.js' });
+vm.runInContext(nurserySource, context, { filename: 'livestock-nursery.js' });
 
 const animalDeps = {
   loadWorldLivestock: () => livestock,
@@ -190,12 +193,24 @@ assert.equal(added.entry.barnId, null, 'unhoused adults live outdoors rather tha
 const happinessBefore = added.entry.heartLevel;
 context.window.FarmAnimals.tickHearts();
 assert(added.entry.heartLevel < happinessBefore, 'unhoused adults lose happiness on the nightly heart tick');
+assert.equal(added.entry.outdoorNeglectNights, 1, 'first outdoor night records one visible neglect step');
+assert.equal(added.entry.outdoorProductionLocked, true, 'first outdoor night locks further production');
 assert.equal(added.entry.barnId, null, 'nightly outdoor tick never persists its temporary housing sentinel');
 
 const resourceTicksBefore = added.entry.resourceTicks || 0;
 context.window.FarmAnimals.tickResources();
-assert((added.entry.resourceTicks || 0) > resourceTicksBefore, 'unhoused adults stay active instead of pausing resource progression');
-assert.equal(added.entry.barnId, null, 'resource tick never persists its temporary housing sentinel');
+assert.equal(added.entry.resourceTicks || 0, resourceTicksBefore, 'unhoused adults do not advance resource production after sleeping outside');
+assert.equal(added.entry.barnId, null, 'resource tick never persists its temporary production blocker');
+
+const rehoused = context.window.FarmAnimals.assignToBarn('newbaby', 'barn1');
+assert.equal(rehoused.ok, true, 'outdoor adult can be returned to a real barn');
+context.window.FarmAnimals.tickResources();
+assert.equal(added.entry.resourceTicks || 0, resourceTicksBefore, 'rehousing does not unlock production before a barn night');
+context.window.FarmAnimals.tickHearts();
+assert.equal(added.entry.outdoorProductionLocked, false, 'one barn night clears the outdoor production lock');
+assert.equal(added.entry.outdoorNeglectNights, 0, 'one barn night clears accumulated outdoor visual steps');
+context.window.FarmAnimals.tickResources();
+assert.equal(added.entry.resourceTicks || 0, resourceTicksBefore + 1, 'resource production resumes after the recovery barn night');
 
 const protectedResult = context.window.FarmBuildings.demolish(nursery.id);
 assert.equal(protectedResult.ok, false, 'the free Nursery cannot be demolished');

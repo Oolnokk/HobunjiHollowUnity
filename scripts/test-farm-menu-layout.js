@@ -2,8 +2,10 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm');
 
 const layoutSource = fs.readFileSync('docs/js/farm-menu-layout.js', 'utf8'); // Pins the Farm-tab presentation contract without duplicating runtime implementation.
+const paletteSource = fs.readFileSync('docs/js/farm-glance-palette.js', 'utf8'); // Pins and exercises the Farm glance marker palette/shape contract added for map readability.
 const bridgeSource = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8'); // Verifies parser-time loading stays wired through the existing farm bootstrap.
 
 assert.match(layoutSource, /grid-template-columns:\s*minmax\(0,\s*1\.15fr\)\s+minmax\(300px,\s*\.85fr\)/, 'desktop Farm workspace uses the formerly empty right side');
@@ -46,7 +48,83 @@ assert.match(layoutSource, /buttonDown \|\| analog > 0\.15/, 'idle connected con
 assert.match(layoutSource, /lastControllerInputAt = -Infinity/, 'pointer input explicitly takes ownership away from controller restoration');
 assert.match(layoutSource, /window\.__farmMenuLayoutDebug/, 'Farm menu layout exposes an in-page diagnostic hook');
 
+assert.match(paletteSource, /sell_crate:\s*'#ff8a3d'/, 'Shipping Box gets its own orange map marker instead of sharing yellow');
+assert.match(paletteSource, /supply_box:\s*'#6ea8ff'/, 'Supply / Order Box gets a separate blue map marker');
+assert.match(paletteSource, /livestock:\s*'#ff8fd8'/, 'live livestock get a high-contrast pink map marker');
+assert.match(paletteSource, /kind === 'supply_box'[\s\S]*ctx\.arc/, 'Supply / Order Box also carries a center-dot shape cue');
+assert.match(paletteSource, /drawLivestockMarker[\s\S]*ctx\.fill\(\);[\s\S]*ctx\.stroke\(\);/, 'livestock markers are outlined circles rather than another flat service-box tile');
+assert.match(paletteSource, /Shipping box/, 'legend names the Shipping Box separately');
+assert.match(paletteSource, /Supply \/ order box/, 'legend names the Supply / Order Box separately');
+assert.match(paletteSource, /panelDeps\.worldObjects/, 'palette overlay reads the real FarmPanel world-object collection');
+assert.match(paletteSource, /panelDeps\.animalObjects/, 'palette overlay reads the real live-animal collection used by the core farm map');
+assert.match(paletteSource, /window\.__farmGlancePaletteDebug/, 'farm glance palette exposes an in-page diagnostic hook');
+
+let baseRenderCalls = 0; // Used to prove the palette wrapper preserves the underlying FarmPanel render exactly once.
+let currentArc = null; // Stores the current mocked canvas path until fill()/stroke() records it.
+const drawOps = []; // Captures service-box and livestock draw operations for color/shape assertions.
+const mockContext2d = {
+  fillStyle: '',
+  strokeStyle: '',
+  lineWidth: 1,
+  fillRect(x, y, w, h) { drawOps.push({ type: 'fillRect', color: this.fillStyle, x, y, w, h }); },
+  strokeRect(x, y, w, h) { drawOps.push({ type: 'strokeRect', color: this.strokeStyle, x, y, w, h }); },
+  beginPath() { currentArc = null; },
+  arc(x, y, r) { currentArc = { x, y, r }; },
+  fill() { if (currentArc) drawOps.push({ type: 'fillArc', color: this.fillStyle, ...currentArc }); },
+  stroke() { if (currentArc) drawOps.push({ type: 'strokeArc', color: this.strokeStyle, ...currentArc }); },
+};
+const mockCanvas = { // Uses a 10×10 farm on a 100×100 canvas, so each tile is exactly 10px for precise assertions.
+  width: 100,
+  height: 100,
+  getContext(kind) { return kind === '2d' ? mockContext2d : null; },
+};
+const paletteFarmPanel = { // Minimal public FarmPanel seam expected by FarmGlancePalette.install().
+  init(injectedDeps) { this.deps = injectedDeps; },
+  render() { baseRenderCalls++; return 'base-render-result'; },
+};
+const paletteDocument = { // Legend is intentionally absent here; source assertions above pin legend rewriting while this mock exercises canvas behavior.
+  getElementById(id) { return id === 'farmGlanceCanvas' ? mockCanvas : null; },
+};
+const paletteContext = { // VM context mirrors the browser globals actually used by the palette module.
+  window: { FarmPanel: paletteFarmPanel },
+  document: paletteDocument,
+  console,
+  Math,
+  Number,
+  Object,
+  Array,
+  Set,
+  Map,
+  String,
+};
+paletteContext.window.window = paletteContext.window;
+vm.createContext(paletteContext);
+vm.runInContext(paletteSource, paletteContext, { filename: 'farm-glance-palette.js' });
+const paletteDeps = { // Two service boxes and one live animal exercise all three newly distinct markers.
+  COLS: 10,
+  ROWS: 10,
+  worldObjects: new Map([
+    ['1,1', { type: 'sell_crate' }],
+    ['2,2', { type: 'supply_box' }],
+  ]),
+  animalObjects: new Set([{ col: 3, row: 4 }]),
+};
+paletteContext.window.FarmPanel.init(paletteDeps);
+const paletteRenderResult = paletteContext.window.FarmPanel.render(); // Wrapped render should call the base renderer before painting overlays.
+assert.equal(paletteRenderResult, 'base-render-result', 'palette wrapper preserves FarmPanel.render return values');
+assert.equal(baseRenderCalls, 1, 'palette wrapper invokes the underlying FarmPanel render exactly once');
+assert(drawOps.some(op => op.type === 'fillRect' && op.color === '#ff8a3d' && op.x === 10 && op.y === 10 && op.w === 10 && op.h === 10), 'Shipping Box overlay fully replaces its old yellow tile with orange');
+assert(drawOps.some(op => op.type === 'fillRect' && op.color === '#6ea8ff' && op.x === 20 && op.y === 20 && op.w === 10 && op.h === 10), 'Supply / Order Box overlay fully replaces its old yellow tile with blue');
+assert(drawOps.some(op => op.type === 'fillArc' && op.color === '#ff8fd8' && op.x === 35 && op.y === 45), 'live livestock render as pink circles at their real farm coordinates');
+assert(drawOps.some(op => op.type === 'strokeArc' && op.color === '#2b1022' && op.x === 35 && op.y === 45), 'live livestock circles receive a dark outline for nighttime readability');
+const paletteDebug = paletteContext.window.FarmGlancePalette.debugSnapshot(); // In-page diagnostic should report the same live marker set the canvas used.
+assert.equal(paletteDebug.liveLivestockMarkers, 1, 'farm glance diagnostics expose the number of live livestock map markers');
+assert.equal(paletteDebug.serviceCounts.shipping, 1, 'farm glance diagnostics distinguish Shipping Box markers');
+assert.equal(paletteDebug.serviceCounts.supply, 1, 'farm glance diagnostics distinguish Supply / Order Box markers');
+
 assert.match(bridgeSource, /globalKey: 'FarmMenuLayout', src: 'js\/farm-menu-layout\.js\?v=20260915farmui2'/, 'farm feature bootstrap loads the current Farm menu presentation module');
 assert.match(bridgeSource, /window\.FarmMenuLayout\?\.install\?\.\(\)/, 'late bootstrap path installs FarmMenuLayout as well');
+assert.match(bridgeSource, /globalKey: 'FarmGlancePalette', src: 'js\/farm-glance-palette\.js\?v=20260916palette1'/, 'farm feature bootstrap loads the distinct map-marker palette');
+assert.match(bridgeSource, /window\.FarmGlancePalette\?\.install\?\.\(\)/, 'late bootstrap path installs the farm map palette as well');
 
-console.log('Farm menu layout + Nursery controller continuity regression tests passed.');
+console.log('Farm menu layout + Nursery controller continuity + farm glance palette regression tests passed.');

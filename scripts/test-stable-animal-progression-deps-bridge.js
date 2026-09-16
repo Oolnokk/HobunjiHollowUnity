@@ -24,6 +24,9 @@ const context = {
 };
 context.window = context;
 
+context.AnimalSleepPresentation = { install() {} }; // Keeps the bridge regression self-contained now that shared animal sleep presentation is parser-time.
+context.OutdoorLivestockWelfare = { install() {} }; // Keeps the bridge regression self-contained now that outdoor welfare is a parser-time farm feature.
+context.OutdoorLivestockPresence = { install() {} }; // Keeps outdoor world-presence repair from triggering this test's intentional dynamic-loader trap.
 context.LivestockNurseryObserverScope = {}; // Loaded before the legacy Nursery so its body-wide observer is scoped to Farm lists.
 context.LivestockNurseryOutdoorGrowth = { install() {} }; // Keeps full-barn outdoor maturation from becoming an unrelated dynamic-load dependency in this bridge regression.
 context.ANIMAL_GROWTH_CONFIG = {};
@@ -36,6 +39,7 @@ context.StableTrainingCompendiumPatch = {};
 context.BARN_INCUBATOR_CONFIG = {};
 context.BarnIncubator = { install() {} };
 context.FarmMenuLayout = { install() {} }; // Keeps this bridge-only regression focused on dependency mirroring rather than dynamic feature loading.
+context.FarmGlancePalette = { install() {} }; // Keeps the newly loaded map-palette feature from triggering this test's intentional dynamic-loader trap.
 context.LivestockNurseryGrid = { install() {} }; // Keeps the Nursery presentation/economy feature from becoming an unrelated dynamic-load dependency in this bridge regression.
 context.LivestockNurseryInventoryPaging = { install() {} }; // Same for the inventory-style paging/layout layer loaded immediately after the grid feature.
 context.LivestockNurseryGridUiFix = { install() {} }; // Same for the help-row/controller grow compatibility loaded after paging.

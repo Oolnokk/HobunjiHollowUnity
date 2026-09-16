@@ -13,6 +13,18 @@
 
   const originalCreate = elevationApi.create;
   const BASE_Y_KEY = 'farmBuildingSubtleElevationBaseY';
+  let activeController = null; // Current combined house+barn controller; sampled by farm actors during render-time grounding.
+
+  function sampleHeightAt(worldX, worldZ) {
+    const x = Number(worldX); // Normalized coordinate passed to the active controller's continuous heightfield sampler.
+    const z = Number(worldZ); // Normalized coordinate paired with x for farm subtle-elevation lookup.
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
+    return Number(activeController?.sampleWorldY?.(x, z)) || 0;
+  }
+
+  function debugFarmSubtleElevation() {
+    return activeController?.debugSnapshot?.() || { status: 'not-initialized', worldY: 0 };
+  }
 
   elevationApi.create = function (injectedDeps) {
     const deps = injectedDeps || {};
@@ -29,6 +41,7 @@
         .concat(getFarmBuildings() || []),
     };
     const controller = originalCreate.call(this, combinedDeps);
+    activeController = controller;
     const scene = deps.scene || null;
 
     function barnLift(entry) {
@@ -117,16 +130,19 @@
     }
 
     const originalDispose = controller.dispose?.bind(controller);
-    if (originalDispose) {
-      controller.dispose = function () {
-        restoreBarnMeshes();
-        return originalDispose();
-      };
-    }
+    controller.dispose = function () {
+      restoreBarnMeshes();
+      if (activeController === controller) activeController = null;
+      return originalDispose?.();
+    };
 
     controller.refreshFarmBuildingMeshElevation = refreshBarnMeshes;
     return controller;
   };
 
+  window.HobunjiFarmSubtleElevation = Object.freeze({
+    sampleHeightAt,
+    getDebug: debugFarmSubtleElevation,
+  });
   window.FarmBuildingElevationParity = { installed: true };
 })();

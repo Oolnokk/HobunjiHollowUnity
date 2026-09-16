@@ -1,0 +1,31 @@
+name: Animal sleep face regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/animal-sleep-presentation.js'
+      - 'scripts/test-animal-sleep-face.js'
+      - '.github/workflows/animal-sleep-face-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/animal-sleep-presentation.js'
+      - 'scripts/test-animal-sleep-face.js'
+      - '.github/workflows/animal-sleep-face-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check sleep presentation
+        run: node --check docs/js/animal-sleep-presentation.js
+      - name: Test sleeping eyes and head pose
+        run: node scripts/test-animal-sleep-face.js

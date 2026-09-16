@@ -18,6 +18,7 @@ on:
       - 'docs/js/farm-panel.js'
       - 'docs/js/farm-panel-core.js'
       - 'docs/js/farm-menu-layout.js'
+      - 'docs/js/farm-glance-palette.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/farm-troughs.js'
@@ -32,6 +33,8 @@ on:
       - 'docs/js/livestock-nursery-inventory-paging.js'
       - 'docs/js/livestock-nursery-grid-ui-fix.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
+      - 'docs/js/outdoor-livestock-welfare.js'
+      - 'docs/js/outdoor-livestock-presence.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-ambient-sequencing.js'
@@ -44,9 +47,12 @@ on:
       - 'scripts/test-carpenter-barn-additions.js'
       - 'scripts/test-economy-progression.js'
       - 'scripts/test-livestock-menu-regressions.js'
+      - 'scripts/test-livestock-nursery.js'
       - 'scripts/test-livestock-nursery-grid.js'
       - 'scripts/test-livestock-nursery-observer-scope.js'
       - 'scripts/test-livestock-nursery-outdoor-growth.js'
+      - 'scripts/test-outdoor-livestock-welfare.js'
+      - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
       - '.github/workflows/animal-growth-regression.yml'
   pull_request:
@@ -66,6 +72,7 @@ on:
       - 'docs/js/farm-panel.js'
       - 'docs/js/farm-panel-core.js'
       - 'docs/js/farm-menu-layout.js'
+      - 'docs/js/farm-glance-palette.js'
       - 'docs/js/barn-incubator.js'
       - 'docs/js/carpenter-shop.js'
       - 'docs/js/farm-troughs.js'
@@ -80,6 +87,8 @@ on:
       - 'docs/js/livestock-nursery-inventory-paging.js'
       - 'docs/js/livestock-nursery-grid-ui-fix.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
+      - 'docs/js/outdoor-livestock-welfare.js'
+      - 'docs/js/outdoor-livestock-presence.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
       - 'scripts/test-stable-animal-ambient-sequencing.js'
@@ -92,9 +101,12 @@ on:
       - 'scripts/test-carpenter-barn-additions.js'
       - 'scripts/test-economy-progression.js'
       - 'scripts/test-livestock-menu-regressions.js'
+      - 'scripts/test-livestock-nursery.js'
       - 'scripts/test-livestock-nursery-grid.js'
       - 'scripts/test-livestock-nursery-observer-scope.js'
       - 'scripts/test-livestock-nursery-outdoor-growth.js'
+      - 'scripts/test-outdoor-livestock-welfare.js'
+      - 'scripts/test-outdoor-livestock-presence.js'
       - 'scripts/test-farm-menu-layout.js'
       - '.github/workflows/animal-growth-regression.yml'
 
@@ -125,6 +137,7 @@ jobs:
           node --check docs/js/farm-panel.js
           node --check docs/js/farm-panel-core.js
           node --check docs/js/farm-menu-layout.js
+          node --check docs/js/farm-glance-palette.js
           node --check docs/js/barn-incubator.js
           node --check docs/js/carpenter-shop.js
           node --check docs/js/farm-troughs.js
@@ -137,6 +150,8 @@ jobs:
           node --check docs/js/livestock-nursery-inventory-paging.js
           node --check docs/js/livestock-nursery-grid-ui-fix.js
           node --check docs/js/livestock-nursery-install-bridge.js
+          node --check docs/js/outdoor-livestock-welfare.js
+          node --check docs/js/outdoor-livestock-presence.js
       - name: Test Growth Tonic and Kunji shop
         run: node scripts/test-animal-growth-kunji-shop.js
       - name: Test stable animal progression
@@ -161,11 +176,17 @@ jobs:
         run: node scripts/test-economy-progression.js
       - name: Test livestock menu row identity
         run: node scripts/test-livestock-menu-regressions.js
+      - name: Test livestock Nursery integration
+        run: node scripts/test-livestock-nursery.js
       - name: Test Nursery portrait grid and livestock sale economy
         run: node scripts/test-livestock-nursery-grid.js
       - name: Test Nursery observer scope
         run: node scripts/test-livestock-nursery-observer-scope.js
       - name: Test Nursery full-barn outdoor growth
         run: node scripts/test-livestock-nursery-outdoor-growth.js
+      - name: Test outdoor livestock welfare
+        run: node scripts/test-outdoor-livestock-welfare.js
+      - name: Test outdoor livestock world presence
+        run: node scripts/test-outdoor-livestock-presence.js
       - name: Test Farm menu layout and Nursery controller continuity
         run: node scripts/test-farm-menu-layout.js

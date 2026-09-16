@@ -1,0 +1,45 @@
+name: Animal sleep presentation regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/animal-sleep-presentation.js'
+      - 'docs/js/farm-troughs.js'
+      - 'docs/js/outdoor-livestock-welfare.js'
+      - 'docs/js/wildlife-cloud-forest-behavior.js'
+      - 'docs/js/den-nest-system.js'
+      - 'docs/js/barn-incubator.js'
+      - 'docs/config/barn-incubator-config.js'
+      - 'docs/js/livestock-nursery-install-bridge.js'
+      - 'scripts/test-animal-sleep-presentation.js'
+      - '.github/workflows/animal-sleep-presentation-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/animal-sleep-presentation.js'
+      - 'docs/js/farm-troughs.js'
+      - 'docs/js/outdoor-livestock-welfare.js'
+      - 'docs/js/wildlife-cloud-forest-behavior.js'
+      - 'docs/js/den-nest-system.js'
+      - 'docs/js/barn-incubator.js'
+      - 'docs/config/barn-incubator-config.js'
+      - 'docs/js/livestock-nursery-install-bridge.js'
+      - 'scripts/test-animal-sleep-presentation.js'
+      - '.github/workflows/animal-sleep-presentation-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sleep-presentation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check shared sleep presentation
+        run: node --check docs/js/animal-sleep-presentation.js
+      - name: Test shared animal sleep presentation
+        run: node scripts/test-animal-sleep-presentation.js
