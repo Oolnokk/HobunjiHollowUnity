@@ -357,7 +357,12 @@
   }
 
   function findActionContainer(section) {
-    return [...section.children].find(child => [...child.children].some(node => node.tagName === 'BUTTON' && /Grow Up/i.test(node.textContent || ''))) || null;
+    return [...section.children].find(child => [...child.children].some(node => node.tagName === 'BUTTON'
+      && (node.dataset?.nurseryAction === 'grow' || /Grow Up/i.test(node.textContent || '')))) || null;
+  }
+
+  function findBabyCard(stack, id) {
+    return [...(stack?.querySelectorAll?.(':scope > button') || [])].find(card => card.dataset.nurseryBabyId === String(id)) || null;
   }
 
   function findDebugHost(section, stack, actions) {
@@ -447,6 +452,14 @@
     }
     if (grow) {
       grow.dataset.nurseryLabel = '🧪 Grow Up';
+      // AnimalGrowth's legacy document-capture gate keys specifically on
+      // textContent === "Grow Up" because the old Nursery button called a
+      // private function. This grid calls the wrapped public API instead, so
+      // change only the existing text node (characterData, not childList) to
+      // keep the old body MutationObserver asleep and prevent a second tonic
+      // from being consumed by that legacy gate. The visible label comes from
+      // data-nursery-label above.
+      if (grow.firstChild?.nodeType === 3 && grow.firstChild.nodeValue !== 'Nursery Grow') grow.firstChild.nodeValue = 'Nursery Grow';
       grow.disabled = !canManage || capacityFull || tonicCount < 1;
       grow.title = !canManage ? 'Livestock permission required.'
         : capacityFull ? 'Build or upgrade a real barn first.'
@@ -573,7 +586,7 @@
     animalDeps?.saveWorldLivestock?.(list);
     mostRecentChange = `Renamed Nursery baby ${entry.id} to ${trimmed}.`;
     renderDetails(section, entry);
-    const card = findGridStack(section)?.querySelector?.(`[data-nursery-baby-id="${CSS.escape(String(entry.id))}"]`);
+    const card = findBabyCard(findGridStack(section), entry.id);
     if (card) card.setAttribute('aria-label', `${trimmed}, ${speciesLabel(entry.kind)}`);
     return { ok: true, message: `Renamed to ${trimmed}.` };
   }
@@ -683,7 +696,7 @@
     }
     section.dataset.nurseryGridEnhanced = '1';
     if (shadow && records.length) {
-      const selectedCard = stack.querySelector(`[data-nursery-baby-id="${CSS.escape(String(selectedBabyId))}"]`);
+      const selectedCard = findBabyCard(stack, selectedBabyId);
       selectedCard?.setAttribute('data-ctrl-default', '');
     }
     return true;
@@ -786,7 +799,7 @@
         };
       }),
       portraitCacheSize: portraitCache.size,
-      sectionEnhanced: document.getElementById('livestockNurserySection')?.dataset?.nurseryGridEnhanced === '1',
+      sectionEnhanced: typeof document !== 'undefined' && document.getElementById('livestockNurserySection')?.dataset?.nurseryGridEnhanced === '1',
       nursery: window.LivestockNursery?.debugSnapshot?.() || null,
     };
   }
