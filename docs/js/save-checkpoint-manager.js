@@ -21,13 +21,13 @@
   let hydratedAt = 0; // Used to keep rolling recovery saves out of the load/hydration danger window.
   let autoTimer = null; // Single low-frequency checkpoint timer; never a per-frame poll.
   let lastAutosaveFingerprint = ''; // Used to avoid rewriting an identical checkpoint every interval.
-  let autosavesWritten = 0; // Used by mobile-visible checkpoint diagnostics.
-  let autosavesSkipped = 0; // Used by mobile-visible checkpoint diagnostics.
-  let manualSavesWritten = 0; // Used by mobile-visible checkpoint diagnostics.
-  let restoresApplied = 0; // Used by mobile-visible checkpoint diagnostics.
-  let lastAction = 'initialized'; // Used by checkpoint diagnostics to explain the latest operation.
-  let lastError = ''; // Used by checkpoint diagnostics to expose the latest failure.
-  let lastIntegrityWarning = ''; // Used to explain why an unsafe rolling checkpoint was rejected.
+  let autosavesWritten = 0;
+  let autosavesSkipped = 0;
+  let manualSavesWritten = 0;
+  let restoresApplied = 0;
+  let lastAction = 'initialized';
+  let lastError = '';
+  let lastIntegrityWarning = '';
 
   function snapshotApi() {
     return window.HobunjiSaveSnapshot || null;
@@ -97,9 +97,13 @@
     if (!previousRecord?.snapshot) return '';
     const before = previousRecord.stats || checkpointStats(previousRecord.snapshot);
     const after = checkpointStats(nextSnapshot);
+    const nextActive = activeIds(); // Used to avoid comparing one farmer/world's inventory totals with another save slot.
+    const previousActive = previousRecord.active || {}; // Active ids stored with the older checkpoint for same-save integrity checks.
+    const sameActiveSave = previousActive.characterId === nextActive.characterId && previousActive.worldId === nextActive.worldId; // Gates farm-specific reset heuristics to one save slot.
     if (before.characterCount > after.characterCount) return 'character count unexpectedly dropped';
     if (before.worldCount > after.worldCount) return 'world count unexpectedly dropped';
     if (before.bytes >= 1000 && after.bytes < before.bytes * 0.6) return 'save payload shrank by more than 40%';
+    if (!sameActiveSave) return '';
     if (before.memberInventoryKeys >= 3 && after.memberInventoryKeys === 0) return 'active farmer inventory suddenly became empty';
     if (before.memberInventoryUnits >= 10 && after.memberInventoryUnits === 0) return 'active farmer inventory count suddenly became zero';
     if (before.worldStorageKeys >= 3 && after.worldStorageKeys === 0) return 'farm storage suddenly became empty';
