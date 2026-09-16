@@ -18,6 +18,8 @@ assert.match(source, /FOLIAGE_READY_BOB = 0\.025/,
   'foliage crops cancel the exact legacy ripe bob amplitude');
 assert.match(source, /GENERIC_READY_BOB = 0\.03/,
   'generic and converted PNG crops cancel the exact legacy ripe bob amplitude');
+assert.match(source, /refreshReadyRoots\(record\)/,
+  'cached crop roots re-check tile.cropReady every render turn instead of waiting for another scene scan');
 assert.doesNotMatch(source, /MAX_READY_ROTATION_STEP|lastMotionAt|normalizedRotationStep/,
   'readiness is no longer inferred from legacy movement');
 
@@ -95,7 +97,7 @@ const scene = {
     if (!this.children.includes(object)) this.children.push(object);
     object.parent = this;
   },
-}; // Farm scene stand-in used by the module's scene-scoped ready-root discovery.
+}; // Farm scene stand-in used by the module's scene-scoped crop-root discovery.
 
 const grid = Array.from({ length: 8 }, () => Array.from({ length: 6 }, () => ({ crop: null, cropReady: false }))); // Authoritative farm-grid stand-in read through FarmPanel deps.
 const ongyumsTile = grid[7][4]; // Used as a ready generic/PNG crop tile at world position 4.5, 7.5.
@@ -149,13 +151,13 @@ const renderer = new THREE.WebGLRenderer(); // Exercises the installed render wr
 
 (async () => {
   assert.equal(renderer.render(scene, {}), true, 'ripe presentation preserves the underlying renderer return value');
-  const first = draws.at(-1); // Used to inspect the very first authoritative-ready draw without waiting for motion detection.
+  const first = draws.at(-1); // Used to inspect the very first authoritative-ready draw.
   assert.ok(Math.abs(first.ongyumsY - ongyumsBaseY) < 1e-9,
-    'ready PNG/generic crop is stationary on its first ripe draw instead of floating with the legacy bob');
+    'ready PNG/generic crop is stationary instead of floating with the legacy bob');
   assert.equal(first.ongyumsRot, 0,
     'ready PNG/generic crop no longer spins when ripe');
   assert.ok(Math.abs(first.heftrootY - heftrootBaseY) < 1e-9,
-    'ready foliage crop is stationary on its first ripe draw instead of floating with the legacy bob');
+    'ready foliage crop is stationary instead of floating with the legacy bob');
   assert.equal(first.heftrootRot, 0,
     'ready foliage crop no longer spins when ripe');
   assert.equal(first.actorY, 0.4, 'unrelated half-tile actor Y is untouched');
@@ -169,14 +171,24 @@ const renderer = new THREE.WebGLRenderer(); // Exercises the installed render wr
 
   ongyumsTile.cropReady = false;
   heftrootTile.cropReady = false;
-  now += 100; // Clears the 10 Hz discovery interval for the authoritative-ready state change.
-  await new Promise(resolve => setImmediate(resolve)); // Flushes the module's per-turn scan reset before the next render.
+  now += 1; // Deliberately stays well inside the 100 ms scene-discovery interval.
+  await new Promise(resolve => setImmediate(resolve)); // Flushes the module's per-turn reset without permitting a membership rescan.
   renderer.render(scene, {});
-  const second = draws.at(-1); // Used to confirm no animation/sparkle is inferred once the actual ready flags are false.
-  assert.equal(second.sparkleVisible, false, 'sparkles disappear when the authoritative cropReady flags clear');
+  const second = draws.at(-1); // Used to prove tile.cropReady changes are reflected without waiting for the next 10 Hz scene scan.
+  assert.equal(second.sparkleVisible, false, 'sparkles disappear immediately when authoritative cropReady flags clear');
   assert.equal(second.sparkleCoords, 0, 'non-ready crops leave no active sparkle points');
   assert.equal(context.window.HobunjiCropReadyPresentation.getDebug().readyCrops, 0,
-    'diagnostics follow tile.cropReady rather than stale movement history');
+    'diagnostics follow tile.cropReady immediately rather than stale cached readiness');
+
+  ongyumsTile.cropReady = true;
+  heftrootTile.cropReady = true;
+  now += 1; // Still inside the original membership-scan window so only the cheap cached-root readiness pass can react.
+  await new Promise(resolve => setImmediate(resolve));
+  renderer.render(scene, {});
+  const third = draws.at(-1); // Used to verify the same cached roots become stationary/sparkling immediately when ripeness returns.
+  assert.equal(third.sparkleVisible, true, 'sparkles return immediately when authoritative cropReady flags become true');
+  assert.equal(third.ongyumsRot, 0, 'cached PNG crop is immediately stationary when it becomes ripe');
+  assert.equal(third.heftrootRot, 0, 'cached foliage crop is immediately stationary when it becomes ripe');
   assert.equal(context.window.HobunjiCropReadyPresentation.getDebug().readinessSource, 'tile.cropReady',
     'diagnostics expose the direct readiness source');
   assert.equal(context.window.HobunjiCropReadyPresentation.getDebug().ripePlantMotion, 'none',
