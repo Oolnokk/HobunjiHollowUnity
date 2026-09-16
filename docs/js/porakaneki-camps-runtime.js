@@ -210,8 +210,7 @@
   function teardownEntity(hunter) {
     const entity = hunter?.entity;
     if (!entity) return;
-    const index = combatDeps?.hostileObjects?.indexOf?.(entity);
-    if (index >= 0) combatDeps.hostileObjects.splice(index, 1);
+    combatDeps.hostileObjects.delete(entity);
     entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
     entity.groundShadow?.parent?.remove?.(entity.groundShadow);
     entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
@@ -841,7 +840,7 @@
       if (!entity || generation !== buildGeneration) { entity?.avatarRef?.dispose?.(); return null; }
       hunter.entity = entity;
       hunter.lastHealth = entity.health;
-      combatDeps.hostileObjects.push(entity);
+      combatDeps.hostileObjects.add(entity);
       state.materializations += 1;
       placeEntity(hunter);
       return entity;
@@ -1092,7 +1091,7 @@
           fullSimulation: sharesPlayerChunk(hunter),
           materialized: !!entity,
           visible: !!group?.visible,
-          registered: !!entity && !!combatDeps?.hostileObjects?.includes?.(entity),
+          registered: !!entity && !!combatDeps?.hostileObjects?.has?.(entity),
           entityState: entity?.state || null,
           plannerControlled: !!entity?._porakanekiPlannerControlled,
           simPosition: simX == null ? null : { x: Number(simX.toFixed(2)), y: Number(simY.toFixed(2)) },
