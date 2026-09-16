@@ -44,6 +44,7 @@ jobs:
           node --check docs/js/folder-save-device-provenance.js
           node --check docs/js/folder-save-runtime-flush.js
           node --check docs/js/folder-save-quit-guard.js
+          node --check docs/js/folder-save-debug-ui.js
           node --check docs/js/save-checkpoint-manager.js
       - name: Run folder save regression
         run: |
