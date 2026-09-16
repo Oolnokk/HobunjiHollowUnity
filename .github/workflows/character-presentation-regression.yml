@@ -72,6 +72,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Animal elevation/swimmer centroid regression
+        run: node scripts/test-animal-subtle-elevation.js
       - name: Character rig Pixel Probe regression
         run: node scripts/test-character-rig-pixel-probe-runtime.js
       - name: Harlyao species regression
@@ -104,8 +106,6 @@ jobs:
         run: node scripts/test-character-rig-scale.js
       - name: Procedural leg/prone/run regression
         run: node scripts/test-drunk-prone-composition-bridge.js
-      - name: Animal elevation/swimmer centroid regression
-        run: node scripts/test-animal-subtle-elevation.js
       - name: NPC perspective-facing deadzone regression
         run: node scripts/test-npc-facing-deadzone.js
       - name: Shoulder camera character framing regression
