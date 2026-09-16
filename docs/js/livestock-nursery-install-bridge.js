@@ -19,6 +19,7 @@
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
     { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20260916nurserygrid3' },
     { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage6' },
+    { globalKey: 'LivestockNurseryGridUiFix', src: 'js/livestock-nursery-grid-ui-fix.js?v=20260916uifix1' },
   ];
   const STABLE_ROLE_DEP_METHODS = Object.freeze([
     'getActiveCompanionId',
@@ -47,6 +48,7 @@
         window.FarmMenuLayout?.install?.();
         window.LivestockNurseryGrid?.install?.();
         window.LivestockNurseryInventoryPaging?.install?.();
+        window.LivestockNurseryGridUiFix?.install?.();
         return;
       }
       const entry = featureScripts[index];
@@ -78,6 +80,7 @@
   const installFarmMenuLayout = () => window.FarmMenuLayout?.install?.();
   const installLivestockNurseryGrid = () => window.LivestockNurseryGrid?.install?.();
   const installLivestockNurseryInventoryPaging = () => window.LivestockNurseryInventoryPaging?.install?.();
+  const installLivestockNurseryGridUiFix = () => window.LivestockNurseryGridUiFix?.install?.();
 
   // FarmPanel's native Stable renderer intentionally blocks the old progression
   // render wrapper, but that also blocks the old FarmPanel.init dependency
@@ -194,6 +197,7 @@
     installFarmMenuLayout();
     installLivestockNurseryGrid();
     installLivestockNurseryInventoryPaging();
+    installLivestockNurseryGridUiFix();
   };
 
   if (window.FarmPanel) {
