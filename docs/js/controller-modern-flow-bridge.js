@@ -1,28 +1,35 @@
 // Controller compatibility for newer full-screen flows that predate data-ctrl-panel.
 //
 // The universal controller navigator already knows how to drive buttons, ranges,
-// tabs and text/select controls. This bridge only decorates the three newer
-// modal/onboarding surfaces so they can use that existing navigator, plus the
-// two contextual controller actions that cannot be represented by ordinary DOM
-// focus: fast-forwarding the staged midnight review and opening seated Wait.
+// tabs and text/select controls. This bridge decorates the handful of legacy
+// modal/onboarding surfaces that do not yet expose semantic dialog/controller
+// metadata, plus contextual controller actions that cannot be represented by
+// ordinary DOM focus. All gamepad work stays inside ControllerInput's one shared
+// frame loop; idle frames return before doing DOM or binding work.
 (() => {
   'use strict';
 
-  if (window.ControllerModernFlowBridge?.version >= 1) return;
+  if (window.ControllerModernFlowBridge?.version >= 2) return;
 
-  const VERSION = 1;
-  const FLOW_ROOT_SELECTOR = '#ob-overlay, #hobunjiDayProgressReview, .time-passage-backdrop'; // Used to opt legacy/new full-screen flows into ControllerUI without changing their owning modules.
+  const VERSION = 2;
+  const FLOW_ROOT_SELECTOR = '#ob-overlay, #hobunjiDayProgressReview, .time-passage-backdrop, #troughPanelOverlay, #npcWardrobeOverlay'; // Used to opt legacy/new full-screen flows into ControllerUI without changing their owning modules.
   const ONBOARDING_BACK_SELECTOR = '#slBackToCharacter, #slBackToSource, #ob-back-btn'; // Used to make B follow the save/onboarding flow's existing Back buttons after every rerender.
   const DAY_REVIEW_ROOT_ID = 'hobunjiDayProgressReview'; // Used by the confirm bridge to distinguish staged reveal from the final Continue press.
   const TIME_PASSAGE_ROOT_SELECTOR = '.time-passage-backdrop'; // Used to decorate the shared Sleep/Wait selector for normal controller navigation.
   const SEATED_WAIT_ACTION_ID = 'action2'; // Used to honor the player's remapped Action 2 binding when Wait occupies the seated action arch.
   const UI_CONFIRM_ACTION_ID = 'uiConfirm'; // Used to honor the player's remapped menu-confirm binding on the staged midnight review.
+  const ACTION_BUTTONS = Object.freeze([
+    ['btnAction1', 'action1'], ['btnAction2', 'action2'], ['btnAction3', 'action3'],
+    ['btnItemAction1', 'action4'], ['btnItemAction2', 'action5'],
+  ]); // Maps the five rendered action-arch slots back to their configurable controller actions.
+  const POINTER_ONLY_ACTIONS = new Set(['npc_open_wardrobe', 'clothing_loom_open']); // Existing contextual modules that intentionally own pointerup instead of game.js's semantic action switch.
   const CONTEXT_PRIORITY = Math.max(1, Number(window.ControllerInput?.PRIORITY?.menuNav || 10) - 1); // Runs just before generic menu navigation so same-frame contextual ownership is established first.
 
   let observer = null; // Retained for diagnostics and to prove the DOM compatibility bridge is active.
   let unsubscribe = null; // Retained for diagnostics and future cleanup of this module's shared-frame subscription.
   let decoratedRoots = 0; // Counts roots first opted into ControllerUI so mobile diagnostics can confirm discovery.
   let lastAction = 'ready'; // Records the most recent contextual controller route for mobile-visible debugging.
+  let syntheticPointerId = 9600; // Stable synthetic pointer identity for one-shot contextual action-bar taps.
 
   function log(message, level = 'input') {
     try { window.__farmLog?.(`[controller-flows] ${message}`, level); }
@@ -48,6 +55,14 @@
     button.setAttribute('data-ctrl-cancel', '');
   }
 
+  function markLegacyDialog(root) {
+    if (!root) return;
+    if (!root.hasAttribute('role')) root.setAttribute('role', 'dialog');
+    if (!root.hasAttribute('aria-modal')) root.setAttribute('aria-modal', 'true');
+    if (root.id === 'troughPanelOverlay') markCancelButton(root.querySelector('#troughPanelClose'));
+    if (root.id === 'npcWardrobeOverlay') markCancelButton(root.querySelector('#npcWardrobeClose'));
+  }
+
   function decorateOnboarding(root) {
     for (const button of root.querySelectorAll(ONBOARDING_BACK_SELECTOR)) markCancelButton(button);
   }
@@ -67,6 +82,7 @@
     }
     if (root.id === 'ob-overlay') decorateOnboarding(root);
     if (root.matches(TIME_PASSAGE_ROOT_SELECTOR)) decorateTimePassage(root);
+    if (root.id === 'troughPanelOverlay' || root.id === 'npcWardrobeOverlay') markLegacyDialog(root);
     return !wasPanel;
   }
 
@@ -79,6 +95,10 @@
     if (onboardingRoot) decorateOnboarding(onboardingRoot);
     const passageRoot = node.matches?.(TIME_PASSAGE_ROOT_SELECTOR) ? node : node.closest?.(TIME_PASSAGE_ROOT_SELECTOR); // Used when the shared time-passage controls are constructed beneath an already-known root.
     if (passageRoot) decorateTimePassage(passageRoot);
+    const troughRoot = node.matches?.('#troughPanelOverlay') ? node : node.closest?.('#troughPanelOverlay'); // Used when the trough panel renders Store/Take rows after its root is created.
+    if (troughRoot) markLegacyDialog(troughRoot);
+    const wardrobeRoot = node.matches?.('#npcWardrobeOverlay') ? node : node.closest?.('#npcWardrobeOverlay'); // Used to keep the dynamically-created wardrobe close action controller-cancellable.
+    if (wardrobeRoot) markLegacyDialog(wardrobeRoot);
   }
 
   function installDomDecoration() {
@@ -142,10 +162,43 @@
     return true;
   }
 
+  function pointerEvent(type, button) {
+    const rect = button?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 }; // Keeps synthetic taps centered so contextual pointer handlers never interpret them as drag gestures.
+    const init = {
+      bubbles: true, cancelable: true, pointerId: ++syntheticPointerId, pointerType: 'mouse', isPrimary: true,
+      button: 0, buttons: type === 'pointerdown' ? 1 : 0,
+      clientX: Number(rect.left) + Number(rect.width) * 0.5,
+      clientY: Number(rect.top) + Number(rect.height) * 0.5,
+    };
+    if (typeof PointerEvent === 'function') return new PointerEvent(type, init);
+    const fallback = new Event(type, { bubbles: true, cancelable: true });
+    for (const [key, value] of Object.entries(init)) {
+      try { Object.defineProperty(fallback, key, { configurable: true, value }); } catch (_) { /* best-effort compatibility field */ }
+    }
+    return fallback;
+  }
+
+  function tryRoutePointerOnlyAction(frame) {
+    if (window.ControllerInput?.owner !== 'gameplay' || window.ControllerUI?.isActive?.()) return false;
+    for (const [buttonId, actionId] of ACTION_BUTTONS) {
+      const button = document.getElementById(buttonId);
+      if (!button || button.classList?.contains?.('abt-hidden') || button.classList?.contains?.('blocked')) continue;
+      const renderedAction = String(button.dataset?.action || '');
+      if (!POINTER_ONLY_ACTIONS.has(renderedAction) || !controllerActionPressed(frame, actionId)) continue;
+      button.dispatchEvent(pointerEvent('pointerdown', button));
+      button.dispatchEvent(pointerEvent('pointerup', button));
+      lastAction = `${renderedAction} opened through rendered Action ${actionId.slice(-1)}`;
+      log(lastAction);
+      return true;
+    }
+    return false;
+  }
+
   function onControllerFrame(frame) {
-    if (!frame?.focused || !frame.pad) return;
+    if (!frame?.focused || !frame.pad || !frame.pressed?.size) return; // All compatibility routes are edge-triggered; idle gameplay now performs no DOM lookup or binding resolution here.
     if (tryFastForwardDayReview(frame)) return;
-    tryOpenSeatedWait(frame);
+    if (tryOpenSeatedWait(frame)) return;
+    tryRoutePointerOnlyAction(frame);
   }
 
   installDomDecoration();
@@ -153,6 +206,7 @@
 
   window.ControllerModernFlowBridge = {
     version: VERSION,
+    registerPointerOnlyAction(actionId) { if (actionId) POINTER_ONLY_ACTIONS.add(String(actionId)); }, // Lets future pointer-owned contextual action buttons join controller routing without another polling loop.
     refresh: () => { if (typeof document !== 'undefined') decorateWithin(document.documentElement); },
     getDebug: () => ({
       installed: true,
@@ -165,6 +219,9 @@
       onboardingRecognized: typeof document !== 'undefined' && Boolean(document.getElementById('ob-overlay')?.hasAttribute('data-ctrl-panel')),
       dayReviewRecognized: typeof document !== 'undefined' && Boolean(document.getElementById(DAY_REVIEW_ROOT_ID)?.hasAttribute('data-ctrl-panel')),
       timePassageRecognized: typeof document !== 'undefined' && Boolean(document.querySelector(TIME_PASSAGE_ROOT_SELECTOR)?.hasAttribute('data-ctrl-panel')),
+      troughRecognized: typeof document !== 'undefined' && Boolean(document.getElementById('troughPanelOverlay')?.hasAttribute('data-ctrl-panel')),
+      wardrobeRecognized: typeof document !== 'undefined' && Boolean(document.getElementById('npcWardrobeOverlay')?.hasAttribute('data-ctrl-panel')),
+      pointerOnlyActions: [...POINTER_ONLY_ACTIONS],
       seatedWaitReady: Boolean(seatedWaitButton()),
       lastAction,
     }),
