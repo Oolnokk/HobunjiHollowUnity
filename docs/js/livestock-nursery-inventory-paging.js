@@ -20,6 +20,8 @@
   let observer = null; // Watches only direct Farm livestock-section replacement; there is no document-wide paging observer.
   let resizeObserver = null; // Recomputes page capacity only when the real Animals column changes size.
   let observedColumn = null; // Prevents duplicate ResizeObserver registrations across Farm-panel rebuilds.
+  let legacyClassObserver = null; // Watches only the grid's class attribute so the retired FarmMenuLayout scroll marker cannot reactivate later.
+  let observedStack = null; // Tracks which current grid owns the narrow legacy-class guard.
   let applyQueued = false; // Coalesces mutation/resize bursts into one layout pass.
   let installed = false; // Keeps observer installation idempotent.
   let effectiveRowsPerPage = CONFIG.fallbackRowsPerPage; // Latest measured row capacity, exposed to diagnostics.
@@ -214,14 +216,26 @@
     resizeObserver.observe(column);
   }
 
+  function guardLegacyScrollClass(stack) {
+    if (!stack || typeof MutationObserver === 'undefined') return;
+    stack.classList.remove(LEGACY_SCROLL_CLASS);
+    if (stack === observedStack && legacyClassObserver) return;
+    legacyClassObserver?.disconnect?.();
+    observedStack = stack;
+    legacyClassObserver = new MutationObserver(() => {
+      if (stack.classList.contains(LEGACY_SCROLL_CLASS)) stack.classList.remove(LEGACY_SCROLL_CLASS);
+    });
+    legacyClassObserver.observe(stack, { attributes: true, attributeFilter: ['class'] });
+  }
+
   function applyPage({ focusFirst = false } = {}) {
     const { section, stack, cards } = sectionAndCards();
     if (!section || !stack) return false;
 
-    // The old FarmMenuLayout compact-list helper still knows this DOM node by
-    // position. Remove its marker so controller focus/scroll bookkeeping no
-    // longer treats the paged square grid as a nested scroll region.
-    stack.classList.remove(LEGACY_SCROLL_CLASS);
+    // FarmMenuLayout's older compact-list path can rediscover this node after
+    // unrelated Farm child mutations. Keep its marker off permanently so the
+    // paged square grid never re-enters nested-scroll focus bookkeeping.
+    guardLegacyScrollClass(stack);
     if (stack.scrollTop) stack.scrollTop = 0;
     observeAnimalsColumn();
 
