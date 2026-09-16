@@ -10,6 +10,7 @@ Use one obvious cadence owner for each kind of work:
 | Genuinely low-frequency work | Timers or events |
 | One-shot layout or focus deferral | A documented one-shot `requestAnimationFrame` |
 | Isolated editor/preview animation | Its isolated animation context |
+| Animation whose established ordering relative to `gameLoop` is not yet representable | Its documented existing RAF until scheduler phases are proven |
 
 ## Adding a browser-frame subscriber
 
@@ -39,9 +40,13 @@ The frame-context object is reused to avoid a permanent allocation. Read its val
 
 Subscribers run in stable registration order. One subscriber must not rely on another subscriber's incidental order; a real dependency belongs in a shared owner API.
 
+A subscriber registered while a frame is already dispatching first runs on the following browser frame. This keeps one frame's participant set stable and prevents recursive registration from extending the active dispatch indefinitely.
+
 The scheduler isolates subscriber errors and schedules the next browser frame before dispatch. A broken feature therefore cannot stop unrelated visual runtimes. Errors and subscriber state are available through `RuntimeFrameScheduler.getDebug()` and Pixel Probe.
 
 Render-order sentinels such as procedural hands at `-100000` and social dancing at `-99990` stay in their Three.js render hooks. They are not scheduler candidates.
+
+`QuickAttackBonusIndicator` is also a deliberate temporary exception. Its historical RAF runs before `gameLoop`, while the melee and ranged HUD reticles historically run after it. It keeps that isolated RAF until an explicit scheduler phase contract can preserve both sides of that ordering.
 
 ## Diagnostics
 

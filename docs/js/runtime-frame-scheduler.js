@@ -44,7 +44,7 @@
     previousTimestamp = timestamp;
     dispatching = true;
     for (const record of subscribers.values()) {
-      if (!record.enabled) continue;
+      if (!record.enabled || browserFrameId < record.firstFrameId) continue;
       const startedAt = profilingEnabled ? performance.now() : 0; // Sampled only during an explicit profiling session.
       record.callCount++;
       record.lastFrameId = browserFrameId;
@@ -81,6 +81,7 @@
         phase: options.phase || 'visual',
         owner: options.owner || id,
         description: options.description || '',
+        firstFrameId: browserFrameId + 1, // Prevents registration during dispatch from extending the active frame's participant set.
         callCount: 0,
         errorCount: 0,
         lastFrameId: 0,

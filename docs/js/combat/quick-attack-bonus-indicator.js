@@ -18,7 +18,6 @@
   const RETICLE_SCALE_RATIO = 1.38; // Used to make the opportunity sight clearly larger than the previous body-sized cue.
   const OPPORTUNITY_TEXTURE_URL = 'assets/hud/opportunity_reticle.png'; // Used automatically once the authored HUD sprite is added at this path.
   const DEBUG_QUERY_KEY = 'debugQuickBonus'; // Used by the mobile-friendly URL debug readout (?debugQuickBonus=1).
-  const SCHEDULER_ID = 'quick-attack-bonus-indicator'; // Used for shared frame ownership, tests, and Pixel Probe diagnostics.
   const GLOW_LAYER_CONFIG = [
     { scale: 1.08, opacity: 0.17, followRate: 34 },
     { scale: 1.15, opacity: 0.14, followRate: 27 },
@@ -349,6 +348,7 @@
 
   let lastFrameError = null; // Exposed in the mobile debug snapshot if an unexpected renderer error occurs.
   function frame(nowMs) {
+    requestAnimationFrame(frame); // Retains its pre-gameLoop animation ordering until the shared scheduler has an explicit phase contract.
     try {
       syncReadyTarget(nowMs);
       lastFrameError = null;
@@ -418,9 +418,5 @@
     }),
   };
 
-  window.RuntimeFrameScheduler.register(SCHEDULER_ID, ({ timestamp }) => frame(timestamp), {
-    phase: 'visual',
-    owner: 'QuickAttackBonusIndicator',
-    description: 'Animates the conditional Quick Attack opportunity reticle.',
-  });
+  requestAnimationFrame(frame);
 })();
