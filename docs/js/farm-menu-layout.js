@@ -72,12 +72,22 @@
       }
       .farm-menu-column-label {
         flex: 0 0 auto;
-        padding: 0 2px 7px;
-        color: var(--muted, #999);
-        font-size: 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 2px 10px;
+        color: var(--accent, #d9ad65);
+        font-size: 16px;
+        line-height: 1.1;
         font-weight: 800;
-        letter-spacing: .08em;
+        letter-spacing: .055em;
         text-transform: uppercase;
+      }
+      .farm-menu-column-label::after {
+        content: '';
+        flex: 1 1 auto;
+        height: 1px;
+        background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #d9ad65) 65%, transparent), transparent);
       }
       #${WORKSPACE_ID} > .farm-menu-column > .farm-section {
         flex: 0 0 auto;
@@ -92,6 +102,23 @@
       #${WORKSPACE_ID} > .farm-menu-column > .farm-menu-column-label + .farm-section {
         border-top: 0;
         padding-top: 2px;
+      }
+      #${WORKSPACE_ID} > .farm-menu-column > .farm-section > .settings-section-title {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 0 0 7px;
+        color: var(--text, #eee);
+        font-size: 14px;
+        line-height: 1.1;
+        font-weight: 800;
+        letter-spacing: .025em;
+      }
+      #${WORKSPACE_ID} > .farm-menu-column > .farm-section > .settings-section-title::after {
+        content: '';
+        flex: 1 1 auto;
+        height: 1px;
+        background: linear-gradient(90deg, color-mix(in srgb, var(--border-bright, #777) 92%, transparent), transparent);
       }
       #${ANIMALS_COLUMN_ID} > .farm-section[data-farm-menu-kind="livestock"] {
         padding-bottom: 18px;
@@ -131,18 +158,25 @@
       }
       .farm-animal-divider {
         display: flex;
-        align-items: baseline;
-        justify-content: space-between;
+        align-items: center;
         gap: 8px;
-        margin: 9px 0 4px;
+        margin: 10px 0 5px;
         padding-top: 8px;
         border-top: 1px solid color-mix(in srgb, var(--border, #4b443a) 72%, transparent);
-        font-size: 11px;
+        font-size: 13px;
+        line-height: 1.1;
         font-weight: 800;
       }
+      .farm-animal-divider::after {
+        content: '';
+        flex: 1 1 auto;
+        height: 1px;
+        background: linear-gradient(90deg, color-mix(in srgb, var(--border-bright, #777) 88%, transparent), transparent);
+      }
       .farm-animal-divider small {
+        flex: 0 0 auto;
         color: var(--muted, #999);
-        font-size: 9px;
+        font-size: 10px;
         font-weight: 500;
       }
       #${STABLE_HEADING_ID} {
@@ -158,16 +192,75 @@
       }
       #farmLivestockList > #livestockNurserySection {
         order: -10;
-        margin: 3px 0 4px !important;
-        padding: 8px 0 !important;
+        margin: 2px 0 3px !important;
+        padding: 4px 0 5px !important;
         border: 0 !important;
         border-top: 1px solid color-mix(in srgb, var(--border, #4b443a) 72%, transparent) !important;
         border-radius: 0 !important;
         background: transparent !important;
       }
-      #livestockNurserySection .${NURSERY_SCROLL_CLASS} {
-        scrollbar-gutter: stable;
+      #livestockNurserySection > div:first-child {
+        min-height: 0;
+        gap: 6px !important;
+        margin-bottom: 2px !important;
+      }
+      #livestockNurserySection > div:first-child > strong {
+        font-size: 12px !important;
+        line-height: 1.05;
+      }
+      #livestockNurserySection > div:first-child > span {
+        font-size: 9px !important;
+        line-height: 1.05;
+      }
+      #livestockNurserySection > div:nth-child(2) {
+        margin-bottom: 3px !important;
+        font-size: 8px !important;
+        line-height: 1.05 !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #livestockNurserySection .${NURSERY_SCROLL_CLASS},
+      #livestockNurserySection > div:nth-child(3) {
+        max-height: 76px !important;
+        min-height: 0 !important;
+        overflow-y: scroll !important;
+        overflow-x: hidden !important;
         overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+        scrollbar-width: thin;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
+        gap: 2px !important;
+        padding-right: 3px !important;
+      }
+      #livestockNurserySection .${NURSERY_SCROLL_CLASS} > button,
+      #livestockNurserySection > div:nth-child(3) > button {
+        flex: 0 0 auto !important;
+        min-height: 0 !important;
+        padding: 2px 4px !important;
+        border-radius: 4px !important;
+      }
+      #livestockNurserySection .${NURSERY_SCROLL_CLASS} > button > div:first-child,
+      #livestockNurserySection > div:nth-child(3) > button > div:first-child {
+        gap: 4px !important;
+        font-size: 10px !important;
+        line-height: 1.05 !important;
+      }
+      #livestockNurserySection .${NURSERY_SCROLL_CLASS} > button > div:last-child,
+      #livestockNurserySection > div:nth-child(3) > button > div:last-child {
+        margin-top: 1px !important;
+        font-size: 8px !important;
+        line-height: 1.05 !important;
+      }
+      #livestockNurserySection > div:last-child:not(.${NURSERY_SCROLL_CLASS}) {
+        gap: 4px !important;
+        margin-top: 3px !important;
+        padding-top: 3px !important;
+      }
+      #livestockNurserySection > div:last-child:not(.${NURSERY_SCROLL_CLASS}) > .settings-small-btn {
+        padding: 2px 6px !important;
+        font-size: 9px !important;
       }
       #farmLivestockList > .farm-note[data-farm-menu-empty="world"] {
         margin: 5px 0;
