@@ -5,17 +5,21 @@ on:
     paths:
       - 'docs/js/inventory-held-override.js'
       - 'docs/js/combat/technique-scrolls.js'
+      - 'docs/js/alcohol-gameplay-bridge.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-inventory-held-override.js'
       - 'scripts/test-combat-manuals-jubmir-visits.js'
+      - 'scripts/test-alcohol-swigs-and-npc-offers.js'
       - '.github/workflows/inventory-hold-regression.yml'
   pull_request:
     paths:
       - 'docs/js/inventory-held-override.js'
       - 'docs/js/combat/technique-scrolls.js'
+      - 'docs/js/alcohol-gameplay-bridge.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-inventory-held-override.js'
       - 'scripts/test-combat-manuals-jubmir-visits.js'
+      - 'scripts/test-alcohol-swigs-and-npc-offers.js'
       - '.github/workflows/inventory-hold-regression.yml'
 
 jobs:
@@ -28,14 +32,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Syntax check Inventory Hold modules
+      - name: Syntax check held-item modules
         run: |
           node --check docs/js/inventory-held-override.js
           node --check docs/js/combat/technique-scrolls.js
+          node --check docs/js/alcohol-gameplay-bridge.js
           node --check docs/js/combat/combat-config-loader.js
           node --check scripts/test-inventory-held-override.js
           node --check scripts/test-combat-manuals-jubmir-visits.js
+          node --check scripts/test-alcohol-swigs-and-npc-offers.js
       - name: Test general off-arch Inventory Hold behavior
         run: node scripts/test-inventory-held-override.js
-      - name: Test combat manuals through Inventory Hold
+      - name: Test combat literature through held actions
         run: node scripts/test-combat-manuals-jubmir-visits.js
+      - name: Test held alchemy recipe routing
+        run: node scripts/test-alcohol-swigs-and-npc-offers.js
