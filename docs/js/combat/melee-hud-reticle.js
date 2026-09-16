@@ -41,6 +41,10 @@
   let frameRequest = 0;
   let lastSnapshot = { visible: false, target: null, slots: [] };
 
+  function setIfChanged(object, key, value) {
+    if (object[key] !== value) object[key] = value;
+  }
+
   function meleeWeaponDrawn() {
     // Gameplay state is authoritative. The previous DOM fallback could stay
     // false forever because getActiveTool was accidentally wired into an
@@ -252,44 +256,58 @@
     const deps = window.Combat?.deps;
     const visible = !!root && meleeWeaponDrawn();
     if (!root || !deps?.player || !visible) {
-      if (root) root.style.display = 'none';
-      lastSnapshot = { visible: false, target: null, slots: [] };
+      if (root) setIfChanged(root.style, 'display', 'none');
+      if (lastSnapshot.visible) lastSnapshot = { visible: false, target: null, slots: [] };
       return false;
     }
 
     const slotProfiles = profiles();
     const direction = deps.getPlayerMeleeAimDirection?.() || { x: 1, y: 0, z: 0 };
     const state = targetState(deps, direction, slotProfiles);
-    root.style.display = 'block';
+    setIfChanged(root.style, 'display', 'block');
     pieces.forEach((piece, index) => {
       const profile = slotProfiles[index] || {};
       const unlocked = !!profile.attackId;
       const ready = unlocked && !!state.ready[index];
       const neutralOpacity = unlocked ? RETICLE_OPACITY : RETICLE_OPACITY * 0.72;
-      piece.neutral.title = profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '';
-      piece.color.title = piece.neutral.title;
-      piece.neutral.style.opacity = ready ? '0' : String(neutralOpacity);
-      piece.color.style.opacity = ready ? '1' : '0';
-      piece.quadrant.style.transform = `scale(${ready ? READY_SCALE : 1})`;
+      setIfChanged(piece.neutral, 'title', profile.slotLabel ? profile.slotLabel + ': ' + profile.label : '');
+      setIfChanged(piece.color, 'title', piece.neutral.title);
+      setIfChanged(piece.neutral.style, 'opacity', ready ? '0' : String(neutralOpacity));
+      setIfChanged(piece.color.style, 'opacity', ready ? '1' : '0');
+      setIfChanged(piece.quadrant.style, 'transform', `scale(${ready ? READY_SCALE : 1})`);
     });
     lastSnapshot = {
       visible: true,
       target: state.target,
       targetSource: state.targetSource,
       distanceWorld: state.distanceWorld,
-      slots: slotProfiles.map((profile, index) => ({
+      slotProfiles,
+      ready: state.ready,
+    };
+    return true;
+  }
+
+  function snapshot() {
+    // Keep frame-time inputs, but construct the diagnostic slot tree only when
+    // requested. Profiles/readiness are freshly produced by the unchanged tests.
+    const result = lastSnapshot.visible ? {
+      visible: true,
+      target: lastSnapshot.target,
+      targetSource: lastSnapshot.targetSource,
+      distanceWorld: lastSnapshot.distanceWorld,
+      slots: lastSnapshot.slotProfiles.map((profile, index) => ({
         slot: profile.slotId,
         attack: profile.label,
         attackId: profile.attackId,
         lungeDistancePx: profile.lungePx,
         reachDistancePx: profile.reachPx,
-        ready: !!state.ready[index],
+        ready: !!lastSnapshot.ready[index],
         color: SLOT_COLORS[index],
-        colorBlend: state.ready[index] ? 1 : 0,
-        scale: state.ready[index] ? READY_SCALE : 1,
+        colorBlend: lastSnapshot.ready[index] ? 1 : 0,
+        scale: lastSnapshot.ready[index] ? READY_SCALE : 1,
       })),
-    };
-    return true;
+    } : { visible: false, target: null, slots: [] }; // Public diagnostic result; never exposes the retained frame inputs.
+    return { ...result, asset: RETICLE_URL, sizePx: [RETICLE_WIDTH_PX, RETICLE_HEIGHT_PX], opacity: RETICLE_OPACITY };
   }
 
   function tick() {
@@ -315,7 +333,7 @@
   window.MeleeHudReticle = {
     refresh,
     dispose,
-    snapshot: () => ({ ...lastSnapshot, asset: RETICLE_URL, sizePx: [RETICLE_WIDTH_PX, RETICLE_HEIGHT_PX], opacity: RETICLE_OPACITY }),
+    snapshot,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

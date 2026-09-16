@@ -536,6 +536,26 @@
     holderHookInstalled = true;
   }
 
+  const runtimeState = {}; // Reused by hot hand consumers; refreshed from the owner on every read, never from a diagnostic cache.
+
+  function getRuntimeState() {
+    const activeSlot = deps?.getActiveTool?.() || null; // Resolves the current equipment slot for the borrowed runtime view.
+    const itemKey = activeSlot ? deps?.equipmentSlots?.[activeSlot] : null; // Resolves the current tool without allocating activeState().
+    const def = itemKey ? deps?.TOOL_ITEM_DEFS?.[itemKey] : null; // Supplies the authored shape and animation style below.
+    const visual = combatVisualState; // Reads the same live animation state as debugSnapshot, without advancing its clock.
+    runtimeState.activeSlot = activeSlot;
+    runtimeState.itemKey = itemKey;
+    runtimeState.shape = shapeFor(itemKey, def);
+    runtimeState.sourceAnimStyle = def?.animStyle || null;
+    runtimeState.combatNeutralInjected = !!visual;
+    runtimeState.combatAnim = visual?.anim || null;
+    runtimeState.combatProgress = visual?.progress ?? null;
+    runtimeState.sweepPlaneNeutralCompensationDeg = visual?.anim === 'sweep'
+      ? Math.round(90 * neutralWeightForVisual(visual))
+      : (activeSlot === 'weapon' && def?.animStyle === 'sweep' ? 90 : 0);
+    return runtimeState;
+  }
+
   function debugSnapshot() {
     const state = activeState();
     const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
@@ -616,6 +636,8 @@
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,
     idleBodyYawSnapshot,
+    // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
+    getRuntimeState,
     debugSnapshot,
     lastHolderMatrixWorld: () => lastBakedHolderMatrixWorld ? lastBakedHolderMatrixWorld.clone() : null,
     poses: idleStances,

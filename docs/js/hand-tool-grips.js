@@ -347,7 +347,7 @@
   }
 
   function runtimeAnimationGripState() {
-    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) {
       capturedMelee = null;
@@ -510,7 +510,7 @@
     const deps = global.ProceduralHandAttachments?.gameDeps || null;
     const holder = deps?.toolHolder || null;
     if (!holder) return;
-    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     const activeSlot = snapshot?.activeSlot || deps?.getActiveTool?.() || null;
     const visual = (activeSlot && (deps?.toolMeshMap?.get?.(activeSlot) || deps?.toolMeshMap?.[activeSlot])) || visibleToolVisualUnder(holder);
     const itemKey = snapshot?.itemKey || snapshot?.shape || deps?.equipmentSlots?.[activeSlot] || '';

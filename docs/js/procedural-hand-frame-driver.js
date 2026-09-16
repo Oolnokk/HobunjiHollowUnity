@@ -126,7 +126,7 @@
     if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
     }
-    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
 
@@ -221,7 +221,7 @@
       neutralEuler.z = 0;
       source = 'editor-sweep-plane';
     } else {
-      const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+      const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
       const isSweep = snapshot?.activeSlot === 'weapon'
         && (snapshot?.combatAnim === 'sweep' || (!snapshot?.combatAnim && snapshot?.sourceAnimStyle === 'sweep'));
       if (!isSweep) return { quaternion: identity, source, angleDeg: 0 };
@@ -395,14 +395,14 @@
     state.owners.right = `fallback-${state.mode}`;
   }
 
-  function syncRigToTool(record, toolHolder) {
+  function syncRigToTool(record, toolHolder, diagnostic = false) {
     if (!record?.rig || !toolHolder?.parent || syncing) return null;
     if (!toolHolder.visible) {
       applyFallbackBoth(record);
       record.secondaryActive = false;
       record.lastToolKey = null;
       record.lastVisualGripBasis = null;
-      return { direct: true, toolVisible: false, secondaryActive: false };
+      return diagnostic ? { direct: true, toolVisible: false, secondaryActive: false } : null;
     }
 
     syncing = true;
@@ -426,6 +426,9 @@
       record.lastToolKey = toolKey || null;
       record.lastVisualGripBasis = primary.visualBasis || null;
 
+      // Frame/render callers discard the return value; only explicit syncNow
+      // probes need the rich snapshot and deep copies of authored grips.
+      if (!diagnostic) return null;
       return {
         direct: true,
         clamped: false,
@@ -519,7 +522,7 @@
       for (const record of managed) {
         updateFallbackMotion(record);
         const holder = currentToolHolder(record);
-        if (holder) results.push(syncRigToTool(record, holder));
+        if (holder) results.push(syncRigToTool(record, holder, true));
         else {
           applyFallbackBoth(record);
           results.push({ direct: true, toolVisible: false, secondaryActive: false });

@@ -27,6 +27,7 @@
 
   let fpsEnabled = readStorage(FPS_PREF_KEY, '0') === '1';
   let profilerEnabled = readStorage(PROFILER_PREF_KEY, '0') === '1';
+  let traceLivestockCallers = false; // Session-only expensive stack tracing, controlled by the mobile diagnostics checkbox.
   let backdropBlurDisabled = readStorage(BACKDROP_BLUR_DIAGNOSTIC_KEY, '0') === '1';
   let forceHiddenPanelsEnabled = readStorage(FORCE_HIDDEN_PANELS_KEY, '0') === '1';
   let gpuSyncDiagnosticEnabled = readStorage(GPU_SYNC_DIAGNOSTIC_KEY, '0') === '1';
@@ -986,6 +987,11 @@
     perf.input.addEventListener('change', () => setProfilerEnabled(perf.input.checked));
     box.appendChild(perf.row);
 
+    const livestockTrace = makeCheckboxRow('settingTraceLivestockCallers', 'Trace livestock callers (expensive)', traceLivestockCallers,
+      'Captures a stack for livestock reads while Performance Profiler is enabled. Off on every reload; leave off for normal performance measurements.'); // Mobile-accessible opt-in for the nursery caller investigation.
+    livestockTrace.input.addEventListener('change', () => { traceLivestockCallers = livestockTrace.input.checked; });
+    box.appendChild(livestockTrace.row);
+
     const backdropBlur = makeCheckboxRow('settingDisableBackdropBlur', 'Disable backdrop blur (diagnostic)', backdropBlurDisabled,
       'Menus use backdrop-filter: blur() to frost the game world behind them, including #menuPanel at blur(24px). Closed panels stay in the page at opacity:0 rather than display:none (so they can fade in/out), and opacity does not let the browser skip the blur\'s compositing cost -- it can keep re-blurring the animating scene behind an invisible panel every frame. This removes every blur on the page so you can check its real FPS impact directly. Visual-only: menus still work, they just render sharp instead of frosted.');
     backdropBlur.input.addEventListener('change', () => setBackdropBlurDisabled(backdropBlur.input.checked));
@@ -1162,6 +1168,7 @@
   }
 
   root.PerfProfiler = Object.freeze({
+    get traceLivestockCallers() { return profilerEnabled && traceLivestockCallers; },
     isEnabled: () => profilerEnabled,
     setEnabled: setProfilerEnabled,
     setFpsEnabled,

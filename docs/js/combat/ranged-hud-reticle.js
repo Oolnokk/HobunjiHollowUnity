@@ -75,7 +75,8 @@
     if (!image) return false;
 
     const visible = rangedWeaponDrawn();
-    image.style.display = visible ? 'block' : 'none';
+    const display = visible ? 'block' : 'none'; // Compare the live node so replacement roots retain the original refresh behavior.
+    if (image.style.display !== display) image.style.display = display;
     const wouldHit = visible && !!window.RangedWeapons?.wouldHitHostile?.();
     if (wouldHit !== lastWouldHit) image.style.filter = wouldHit ? FILTER_RED : FILTER_WHITE;
     lastWouldHit = wouldHit;
@@ -117,7 +118,7 @@
       opacity: RETICLE_OPACITY,
       sizePx: [RETICLE_WIDTH_PX, RETICLE_HEIGHT_PX],
       centeredOn: '#canvasWrap',
-      latestChange: 'Centered screen-space reticle at 50% scale and 50% opacity; visible only while a ranged weapon is drawn.',
+      latestChange: 'Performance-only: unchanged display writes skipped; hit testing, artwork and frame cadence preserved.',
     }),
   };
 

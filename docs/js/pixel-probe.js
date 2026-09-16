@@ -822,6 +822,8 @@
 
     const lines = [];
     lines.push('Pixel Probe report');
+    lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
+    lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     // GPU/context capabilities — a mobile WebGL context commonly only
     // grants a 16-bit depth buffer where desktop gets 24, which is a
     // classic source of z-fighting between close, overlapping geometry
