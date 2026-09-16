@@ -2,21 +2,14 @@
 //
 // Two deliberately presentation-only responsibilities live here:
 // 1) Dance hands are applied AFTER ProceduralHandFrameDriver's -100000
-//    pre-render sync, so the visible hand pose is authoritative. This
-//    reapplies on every renderer.render() call within a frame — including
-//    the shell/material-ID outline passes — the same way the proven-working
-//    player social-dance sentinel (social-action-dance-runtime.js) does.
-//    An earlier version skipped reapplying during outline passes and relied
-//    on procedural-hand-outline-parity.js to replay the visible draw's
-//    matrix onto the shell instead; that adapter only ever hooks a hand
-//    mesh once, at rig-attach time, and NPC hands are always still showing
-//    their fallback placeholder mesh at that moment (the real GLB swaps in
-//    a moment later, asynchronously) — so the hook silently never reaches
-//    the mesh actually being drawn, and the shell pass fell back to
-//    whatever pose ProceduralHandFrameDriver's own always-reapplying
-//    sentinel had just reset the socket to, i.e. the idle pose. Reapplying
-//    here unconditionally sidesteps that gap entirely instead of depending
-//    on it.
+//    pre-render sync, so the dance pose becomes the final hand pose just like
+//    the proven-working player social dance path. The pose intentionally stays
+//    on the sockets after the visible draw: outline/depth/material-ID renders
+//    may filter invisible sentinels out by layer, so restoring between render()
+//    calls can expose the ordinary idle hierarchy to those secondary passes.
+//    Repeated sentinel draws are idempotent: each side remembers the latest
+//    ordinary-driver baseline and always reapplies the dance from that baseline
+//    instead of accumulating dance deltas.
 // 2) World-avatar front textures are re-baked with the authored `smile`
 //    mouth while an NPC is actually dancing, then restored to the ordinary
 //    resting expression when the dance ends. This never mutates dialogue
@@ -31,19 +24,17 @@
 
   const state = {
     plannerDeps: null,
-    sentinels: new Map(), // npcId -> { walker, sentinel, left, right }
+    sentinels: new Map(), // npcId -> { walker, sentinel, left, right, session, handPoseState }
     smile: new Map(), // npcId -> async expression refresh state
-    frameRestores: [],
-    renderHookInstalled: false,
     handApplications: 0,
-    handRestores: 0,
+    handBaseRefreshes: 0, // Counts fresh ordinary-hand baselines captured after the normal hand driver updates a socket.
+    handBaseReuses: 0, // Counts secondary/repeated draws that reuse the last ordinary baseline instead of stacking dance deltas.
     smileApplications: 0,
     smileRestores: 0,
     smileErrors: 0,
   };
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
-  const clamp01 = value => clamp(value, 0, 1);
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   function socialConfig() {
@@ -117,11 +108,39 @@
     return { left, right };
   }
 
+  function socketMatchesAppliedPose(socket, poseState) {
+    if (!socket || !poseState?.appliedPos || !poseState?.appliedQuat) return false;
+    const positionError = socket.position.distanceToSquared(poseState.appliedPos); // Distinguishes an untouched dance pose from a fresh ordinary-driver socket write.
+    const quaternionDot = Math.abs(socket.quaternion.dot(poseState.appliedQuat)); // Quaternion sign is irrelevant, so compare absolute dot product.
+    return positionError <= 1e-12 && (1 - quaternionDot) <= 1e-10;
+  }
+
+  function baselineForSide(entry, side, socket) {
+    const previous = entry.handPoseState?.[side] || null; // Last ordinary baseline and final dance pose for this side.
+    if (previous && socketMatchesAppliedPose(socket, previous)) {
+      state.handBaseReuses++;
+      return previous;
+    }
+
+    const next = {
+      basePos: socket.position.clone(), // Ordinary hand-driver position used as the source for every dance reapplication until that driver changes it.
+      baseQuat: socket.quaternion.clone(), // Ordinary hand-driver rotation paired with basePos.
+      appliedPos: null,
+      appliedQuat: null,
+    };
+    entry.handPoseState[side] = next;
+    state.handBaseRefreshes++;
+    return next;
+  }
+
+  function rememberAppliedPose(socket, poseState) {
+    if (!poseState.appliedPos) poseState.appliedPos = socket.position.clone();
+    else poseState.appliedPos.copy(socket.position);
+    if (!poseState.appliedQuat) poseState.appliedQuat = socket.quaternion.clone();
+    else poseState.appliedQuat.copy(socket.quaternion);
+  }
+
   function lateHandPose(entry, target) {
-    // Reapplied on every renderer.render() call this frame — visible pass
-    // and outline/shell/material-ID passes alike — so the shell always
-    // matches the hand actually being drawn. See the file header for why
-    // this can't lean on procedural-hand-outline-parity.js instead.
     if (!arrivedForSocialPose(entry.walker, target)) return;
 
     const presentation = target.socialDance;
@@ -129,6 +148,11 @@
     if (!left || !right) return;
 
     const session = `${presentation.stimulusId || 'dance'}:${presentation.style || 'loose-sway'}:${presentation.armStyle || 'overhead-punch'}`;
+    if (entry.session !== session) {
+      entry.session = session;
+      entry.handPoseState = { left: null, right: null };
+    }
+
     const beat = Number(global.SocialRhythmClock?.dancerBeatAt?.(
       entry.walker.rec?.id,
       nowMs(),
@@ -136,22 +160,18 @@
     ));
     if (!Number.isFinite(beat)) return;
 
-    // This baseline is captured AFTER the ordinary hand driver's -100000
-    // sentinel has finished. That is the key difference from the earlier
-    // renderer-prepass implementation that Tooth exposed.
-    const bases = {
-      left: { socket: left, pos: left.position.clone(), quat: left.quaternion.clone() },
-      right: { socket: right, pos: right.position.clone(), quat: right.quaternion.clone() },
-    };
     const dimensions = walkerDimensions(entry.walker);
     const phase = beat * Math.PI * 2;
     const fourBeatSway = Math.sin(phase * 0.25);
     const beatT = ((beat % 1) + 1) % 1;
 
     for (const side of ['left', 'right']) {
-      const base = bases[side];
-      const socket = base.socket;
-      const sign = Math.sign(base.pos.x) || (side === 'left' ? -1 : 1);
+      const socket = side === 'left' ? left : right;
+      const poseState = baselineForSide(entry, side, socket);
+      socket.position.copy(poseState.basePos);
+      socket.quaternion.copy(poseState.baseQuat);
+
+      const sign = Math.sign(poseState.basePos.x) || (side === 'left' ? -1 : 1);
       if (presentation.armStyle === 'tpose-jiggle') {
         socket.position.x += sign * dimensions.width * 0.32;
         socket.position.y += dimensions.height * (
@@ -169,17 +189,13 @@
       }
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
+      rememberAppliedPose(socket, poseState);
     }
 
-    state.frameRestores.push(() => {
-      for (const base of Object.values(bases)) {
-        base.socket.position.copy(base.pos);
-        base.socket.quaternion.copy(base.quat);
-        base.socket.updateMatrix?.();
-        base.socket.updateMatrixWorld?.(true);
-      }
-      state.handRestores++;
-    });
+    // Deliberately do NOT restore the sockets after renderer.render(). The player
+    // dance path leaves its final hand pose in place too. Secondary outline/depth
+    // passes may omit invisible sentinels, so persisting this pose is what keeps
+    // every later draw in the frame on the same hierarchy transform.
     state.handApplications++;
   }
 
@@ -208,10 +224,22 @@
     // ProceduralHandFrameDriver owns -100000. This deliberately follows it,
     // matching the working player-social dance ownership ordering.
     sentinel.renderOrder = cfgNumber('npcDanceHandSyncRenderOrder', -99990, -99999, -1000);
-    const entry = { walker, sentinel, left: null, right: null };
+    const entry = {
+      walker,
+      sentinel,
+      left: null,
+      right: null,
+      session: null, // Current dance session key; a change invalidates remembered ordinary baselines.
+      handPoseState: { left: null, right: null }, // Per-side ordinary baseline + last applied dance pose used to make repeated render passes idempotent.
+    };
     sentinel.onBeforeRender = () => {
       const target = walker.currentScheduleTarget;
-      if (!target?.socialDance) return;
+      if (!target?.socialDance) {
+        entry.session = null;
+        entry.handPoseState.left = null;
+        entry.handPoseState.right = null;
+        return;
+      }
       lateHandPose(entry, target);
     };
     walker.root.add(sentinel);
@@ -243,32 +271,6 @@
       disposeSentinel(entry);
       state.sentinels.delete(id);
     }
-  }
-
-  function installRenderRestoreHook() {
-    if (state.renderHookInstalled || !THREE.WebGLRenderer?.prototype) return;
-    const proto = THREE.WebGLRenderer.prototype;
-    const original = proto.render;
-    if (typeof original !== 'function') return;
-    if (original.__npcDancePresentationRestoreHook) {
-      state.renderHookInstalled = true;
-      return;
-    }
-    function npcDancePresentationRender(...args) {
-      const restoreStart = state.frameRestores.length;
-      try {
-        return original.apply(this, args);
-      } finally {
-        for (let i = state.frameRestores.length - 1; i >= restoreStart; i--) {
-          try { state.frameRestores[i]?.(); } catch (_) {}
-        }
-        state.frameRestores.length = restoreStart;
-      }
-    }
-    npcDancePresentationRender.__npcDancePresentationRestoreHook = true;
-    npcDancePresentationRender.__npcDancePresentationOriginal = original;
-    proto.render = npcDancePresentationRender;
-    state.renderHookInstalled = true;
   }
 
   function profileForWalker(walker) {
@@ -419,7 +421,6 @@
   }
 
   chainGlobal('NpcActivityPlanner', patchPlanner);
-  installRenderRestoreHook();
   global.setInterval?.(tick, cfgNumber('npcDancePresentationPollMs', 180, 60, 1000));
   global.setTimeout?.(tick, 0);
 
@@ -434,6 +435,8 @@
           npcId: id,
           hasHandSentinel: !!entry?.sentinel?.parent,
           handSentinelRenderOrder: entry?.sentinel?.renderOrder ?? null,
+          handPoseOwnership: 'persist-until-ordinary-hand-sync',
+          handSession: entry?.session || null,
           dancing: !!entry?.walker?.currentScheduleTarget?.socialDance,
           smileDesired: smile?.desired ?? false,
           smileApplied: smile?.applied ?? false,
@@ -443,10 +446,11 @@
       }
       return {
         depsCaptured: !!state.plannerDeps,
-        renderHookInstalled: state.renderHookInstalled,
+        handPoseOwnership: 'persist-until-ordinary-hand-sync',
         handSentinels: state.sentinels.size,
         handApplications: state.handApplications,
-        handRestores: state.handRestores,
+        handBaseRefreshes: state.handBaseRefreshes,
+        handBaseReuses: state.handBaseReuses,
         smileApplications: state.smileApplications,
         smileRestores: state.smileRestores,
         smileErrors: state.smileErrors,
