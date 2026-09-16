@@ -1,0 +1,19 @@
+name: Swimmer centroid regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/animal-subtle-elevation-bridge.js'
+      - 'scripts/test-animal-subtle-elevation.js'
+      - '.github/workflows/swimmer-centroid-regression.yml'
+
+jobs:
+  swimmer-centroid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Animal elevation/swimmer centroid regression
+        run: node scripts/test-animal-subtle-elevation.js
