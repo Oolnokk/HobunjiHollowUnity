@@ -111,6 +111,23 @@
     return false;
   }
 
+  function ensureProgressionBoundary() {
+    const title = document.getElementById('progressionResetSettingsTitle'); // Runtime-injected Progression heading that historically lands after Held Mode Shifts, before later Lyre input rows.
+    const lastInputRow = document.getElementById('lyreFreeplayKeySettings')?.closest?.('.settings-row'); // Last authored row in the Input section; Progression must begin after this row so Lyre controls remain Input controls.
+    if (!title || !lastInputRow) return false;
+
+    const skillRow = document.getElementById('resetSkillProgressBtn')?.closest?.('.settings-row'); // First destructive Progression action moved together with its heading.
+    const moteRow = document.getElementById('resetMotesOfProwessBtn')?.closest?.('.settings-row'); // Second destructive Progression action moved together with its heading.
+    const status = document.getElementById('progressionResetStatus'); // Mobile-safe result/error readout that belongs to the Progression section.
+    const progressionNodes = [title, skillRow, moteRow, status].filter(Boolean); // Complete injected Progression block moved as one unit without recreating listeners.
+    if (!progressionNodes.length || lastInputRow.nextElementSibling === title) return false;
+
+    const fragment = document.createDocumentFragment(); // Preserves existing nodes/listeners while repairing the section boundary before the general section sorter runs.
+    for (const node of progressionNodes) fragment.appendChild(node);
+    lastInputRow.after(fragment);
+    return true;
+  }
+
   function collectSettingsSections(pane) {
     const children = [...pane.children]; // Snapshot used so grouping is stable even when the organizer later moves whole sections.
     const sections = [];
@@ -134,7 +151,7 @@
 
   function sectionRank(section) {
     if (SETTINGS_SECTION_RANKS.has(section.label)) return SETTINGS_SECTION_RANKS.get(section.label);
-    return 950 + (section.originalIndex / 1000); // Future/unknown sections stay after normal player settings but before the explicit developer-only block.
+    return 950 + (section.originalIndex / 1000); // Future/unknown sections stay after normal player settings but before the explicit Progression/advanced/developer blocks.
   }
 
   function organizeSettingsPane() {
@@ -142,6 +159,7 @@
     if (!pane) return false;
 
     ensureWorldSection();
+    ensureProgressionBoundary();
     const sections = collectSettingsSections(pane);
     if (sections.length < 2) return false;
 
@@ -198,6 +216,7 @@
       intendedOrder: [...SETTINGS_SECTION_ORDER],
       worldSectionPresent: Boolean(document.getElementById('worldSettingsTitle')),
       banditCampsUnderWorld: document.getElementById('worldSettingsTitle')?.nextElementSibling?.contains?.(document.getElementById('settingBanditCamps')) || false,
+      progressionAfterInput: document.getElementById('lyreFreeplayKeySettings')?.closest?.('.settings-row')?.nextElementSibling === document.getElementById('progressionResetSettingsTitle'),
       lastOrderChangedAt,
       observing: Boolean(observer),
     }),
