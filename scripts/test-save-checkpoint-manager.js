@@ -141,6 +141,15 @@ assert.equal(autoResult.ok, true);
 assert.ok(store.has('hobunjiSaveCheckpoint.autoPrevious.v1'), 'a distinct earlier autosave is retained when the latest autosave advances');
 assert.notEqual(store.get('hobunjiSaveCheckpoint.manual.v1'), store.get('hobunjiSaveCheckpoint.auto.v1'), 'manual and autosave checkpoints remain physically separate');
 
+currentSnapshot.meta.characters.push({ id: 'char_b', stable: [] }); // Second save slot proves farm-specific integrity checks do not compare unrelated farmers.
+currentSnapshot.meta.worlds.push({ id: 'world_b', members: { char_b: { nonGearInventory: {} } }, storage: {}, livestock: [] }); // Empty but legitimate second farm used by the save-slot-switch regression.
+currentSnapshot.farmLayouts.world_b = { tiles: [] }; // Matching farm layout keeps the second world a complete snapshot.
+window.__hobunjiPlayerProfile = { characterId: 'char_b', worldId: 'world_b' }; // Simulates choosing a different farmer/world after the earlier checkpoint.
+now += 30_000;
+autoResult = api.saveAuto({ reason: 'test-save-slot-switch' });
+assert.equal(autoResult.ok, true, 'switching to a different empty farmer/world is not mistaken for the prior farm being reset');
+assert.notEqual(autoResult.reason, 'integrity');
+
 const restoreResult = api.restoreManual(); // Recovery should apply the explicit manual checkpoint rather than whatever the live autosave currently contains.
 assert.equal(restoreResult.ok, true);
 assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 8);
