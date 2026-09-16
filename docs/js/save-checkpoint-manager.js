@@ -11,7 +11,7 @@
   const AUTO_KEY = 'hobunjiSaveCheckpoint.auto.v1';
   const AUTO_PREVIOUS_KEY = 'hobunjiSaveCheckpoint.autoPrevious.v1';
   const PRE_RESTORE_KEY = 'hobunjiSaveCheckpoint.preRestore.v1';
-  const SLOT_KEYS = Object.freeze({ // Local fallback keys mirrored from/to the folder recovery directory.
+  const SLOT_KEYS = Object.freeze({
     manual: MANUAL_KEY,
     auto: AUTO_KEY,
     autoPrevious: AUTO_PREVIOUS_KEY,
@@ -25,19 +25,21 @@
   const MANUAL_BUTTON_ID = 'menuManualSaveBtn';
   const RECOVERY_BUTTON_ID = 'menuRecoveryBtn';
 
-  let hydratedAt = 0; // Used to keep browser-fallback recovery autosaves out of the load/hydration danger window.
-  let autoTimer = null; // Low-frequency browser-fallback checkpoint timer; folder-first autosync advances folder recovery itself.
-  let lastAutosaveFingerprint = ''; // Used to avoid rewriting an identical fallback checkpoint every interval.
-  let recoveryMirrorPromise = null; // Serializes folder->browser recovery mirror reconciliation after folder activation.
+  let hydratedAt = 0; // Keeps browser-fallback autosaves out of the load/hydration danger window.
+  let autoTimer = null; // Folder autosync owns normal folder recovery; this timer is for browser fallback only.
+  let lastAutosaveFingerprint = ''; // Avoids rewriting an identical browser-fallback checkpoint.
+  let recoveryMirrorPromise = null; // Serializes folder->browser recovery reconciliation.
   let autosavesWritten = 0; // Mobile-visible count of recovery autosaves created.
-  let autosavesSkipped = 0; // Mobile-visible count of intentionally skipped recovery autosaves.
+  let autosavesSkipped = 0; // Mobile-visible count of intentionally skipped autosaves.
   let manualSavesWritten = 0; // Mobile-visible count of explicit manual checkpoints.
   let restoresApplied = 0; // Mobile-visible count of completed recoveries.
-  let folderRecoveryReads = 0; // Mobile-visible count of folder recovery mirror reads.
-  let folderRecoveryWrites = 0; // Mobile-visible count of recovery files written in the primary folder.
+  let folderRecoveryReads = 0; // Mobile-visible count of folder recovery slot reads.
+  let folderRecoveryWrites = 0; // Mobile-visible count of folder recovery slot writes.
+  let folderBaselineSeeds = 0; // Counts primary-folder baselines created when upgrading folders with no history.
+  let restoreRollbacks = 0; // Counts failed restores that successfully rolled the folder back.
   let lastAction = 'initialized'; // Latest checkpoint operation shown in diagnostics.
-  let lastError = ''; // Latest checkpoint failure shown in diagnostics.
-  let lastIntegrityWarning = ''; // Latest rejected suspicious-state reason shown in diagnostics.
+  let lastError = ''; // Latest checkpoint/recovery failure shown in diagnostics.
+  let lastIntegrityWarning = ''; // Latest suspicious-state reason shown in diagnostics.
 
   function snapshotApi() {
     return window.HobunjiSaveSnapshot || null;
@@ -51,20 +53,23 @@
     return window.LocalSaveFolder || null;
   }
 
-  function readRecord(key) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return null;
-      return validateRecord(JSON.parse(raw));
-    } catch {
-      return null;
-    }
-  }
-
   function validateRecord(record) {
     if (!record || record.checkpointVersion !== CHECKPOINT_VERSION || !record.snapshot) return null;
     snapshotApi()?.validate?.(record.snapshot);
     return record;
+  }
+
+  function safeValidateRecord(record) {
+    try { return validateRecord(record); } catch { return null; }
+  }
+
+  function readRecord(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? safeValidateRecord(JSON.parse(raw)) : null;
+    } catch {
+      return null;
+    }
   }
 
   function writeRecord(key, record) {
@@ -72,15 +77,20 @@
   }
 
   function readSlot(slot) {
-    const key = SLOT_KEYS[slot]; // Slot lookup keeps folder and browser recovery names aligned through one map.
+    const key = SLOT_KEYS[slot]; // Shared slot names keep browser fallback aligned with folder recovery filenames.
     return key ? readRecord(key) : null;
   }
 
   function writeSlot(slot, record) {
-    const key = SLOT_KEYS[slot]; // Slot lookup keeps local fallback persistence behind a small shared helper.
+    const key = SLOT_KEYS[slot];
     if (!key) throw new Error(`Unknown checkpoint slot: ${String(slot)}`);
     writeRecord(key, record);
     return record;
+  }
+
+  function removeSlot(slot) {
+    const key = SLOT_KEYS[slot]; // Used when a stale browser checkpoint belongs to a different primary folder.
+    if (key) localStorage.removeItem(key);
   }
 
   function activeIds() {
@@ -126,9 +136,9 @@
     if (!previousRecord?.snapshot) return '';
     const before = previousRecord.stats || checkpointStats(previousRecord.snapshot);
     const after = checkpointStats(nextSnapshot);
-    const nextActive = activeIds(); // Current farmer/world used to prevent unrelated save slots from being compared as one farm.
-    const previousActive = previousRecord.active || {}; // Older checkpoint farmer/world used by same-save farm reset checks.
-    const sameActiveSave = previousActive.characterId === nextActive.characterId && previousActive.worldId === nextActive.worldId; // Farm-specific emptiness heuristics only apply within one active save.
+    const nextActive = activeIds(); // Current farmer/world prevents unrelated save slots from sharing farm-specific reset heuristics.
+    const previousActive = previousRecord.active || {};
+    const sameActiveSave = previousActive.characterId === nextActive.characterId && previousActive.worldId === nextActive.worldId;
     if (before.characterCount > after.characterCount) return 'character count unexpectedly dropped';
     if (before.worldCount > after.worldCount) return 'world count unexpectedly dropped';
     if (before.bytes >= 1000 && after.bytes < before.bytes * 0.6) return 'save payload shrank by more than 40%';
@@ -142,12 +152,39 @@
     return '';
   }
 
+  function snapshotIdentity(snapshot) {
+    const meta = snapshot?.meta || {};
+    return {
+      characters: (meta.characters || []).map(entry => String(entry?.id || '')).filter(Boolean).sort(),
+      worlds: (meta.worlds || []).map(entry => String(entry?.id || '')).filter(Boolean).sort(),
+    };
+  }
+
+  function sameIdentity(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  function recordBelongsToPrimary(record, primarySnapshot) {
+    const valid = safeValidateRecord(record);
+    if (!valid?.snapshot || !primarySnapshot) return false;
+    const active = valid.active || {};
+    const primaryIdentity = snapshotIdentity(primarySnapshot);
+    const recordIdentity = snapshotIdentity(valid.snapshot);
+    if (active.characterId && active.worldId) {
+      return primaryIdentity.characters.includes(String(active.characterId))
+        && primaryIdentity.worlds.includes(String(active.worldId))
+        && recordIdentity.characters.includes(String(active.characterId))
+        && recordIdentity.worlds.includes(String(active.worldId));
+    }
+    return sameIdentity(primaryIdentity, recordIdentity); // Old records without active ids only migrate on an exact save-set match.
+  }
+
   function isHydrated() {
     return window.__hobunjiGameStarted === true && runtimeSaveApi()?.isReady?.() === true;
   }
 
   function folderIsPrimary() {
-    const status = folderApi()?.getStatus?.(); // Only an explicitly loaded/armed folder is allowed to become authoritative over browser recovery mirrors.
+    const status = folderApi()?.getStatus?.();
     return status?.state === 'ready' && status?.autoSyncArmed === true;
   }
 
@@ -179,9 +216,9 @@
     return readSlot('auto') || readSlot('manual');
   }
 
-  function evaluateSnapshotForFolderWrite(snapshot, { recoveryKind = 'auto' } = {}) {
-    if (recoveryKind === 'restore') return { ok: true }; // Explicit recovery is intentionally replacing canonical state with a chosen checkpoint.
-    const risk = integrityRisk(baselineRecord(), snapshot); // Same heuristic protects both recovery advancement and the canonical folder write.
+  function evaluateSnapshotForFolderWrite(snapshot, { recoveryKind = 'auto', force = false } = {}) {
+    if (force || recoveryKind === 'restore') return { ok: true };
+    const risk = integrityRisk(baselineRecord(), snapshot);
     if (!risk) return { ok: true };
     lastIntegrityWarning = risk;
     lastAction = 'folder-write-blocked-integrity';
@@ -189,9 +226,13 @@
     return { ok: false, warning: risk };
   }
 
+  function canonicalSucceededWithRecoveryWarning(status) {
+    return Boolean(status?.lastError && String(status?.lastAction || '').includes('primary-recovery-error'));
+  }
+
   async function writeFolderSlot(slot, record) {
     if (!folderIsPrimary()) return false;
-    const localSave = folderApi(); // Folder core owns the File System Access handle; checkpoint code only asks it to write a whitelisted recovery slot.
+    const localSave = folderApi();
     if (typeof localSave?.writeRecoveryCheckpoint !== 'function') return false;
     await localSave.writeRecoveryCheckpoint(slot, record);
     folderRecoveryWrites++;
@@ -199,15 +240,15 @@
   }
 
   async function promoteAutosave(snapshot, { reason = 'folder-sync', savedAt = Date.now(), writeFolder = false } = {}) {
-    const current = readSlot('auto'); // Latest good checkpoint becomes the candidate for the older rolling slot before replacement.
-    const previous = readSlot('autoPrevious'); // Existing older slot controls the five-minute spacing between historical points.
-    let promotedPrevious = null; // Set only when the current latest is old enough to become the retained earlier checkpoint.
+    const current = readSlot('auto');
+    const previous = readSlot('autoPrevious');
+    let promotedPrevious = null;
     if (current && (!previous || current.savedAt - previous.savedAt >= AUTO_PREVIOUS_MIN_AGE_MS)) {
       promotedPrevious = current;
       writeSlot('autoPrevious', current);
     }
 
-    const record = createRecord('autosave', snapshot, reason, savedAt); // New latest record mirrors the exact snapshot accepted by the canonical folder write.
+    const record = createRecord('autosave', snapshot, reason, savedAt);
     writeSlot('auto', record);
     lastAutosaveFingerprint = snapshotApi()?.fingerprint?.(snapshot) || '';
     autosavesWritten++;
@@ -223,19 +264,16 @@
   }
 
   async function onFolderSnapshotWritten(snapshot, { automatic = false, savedAt = Date.now(), recoveryKind = 'auto' } = {}) {
-    if (!folderIsPrimary()) return;
-    if (recoveryKind === 'restore') return; // Recovery history must survive a restore instead of being overwritten by the restored snapshot.
-
+    if (!folderIsPrimary() || recoveryKind === 'restore') return;
     if (recoveryKind === 'manual') {
-      const record = createRecord('manual', snapshot, 'manual-folder-save', savedAt); // Folder manual record is pinned to the exact canonical snapshot that just succeeded.
-      writeSlot('manual', record);
-      await writeFolderSlot('manual', record);
+      const record = createRecord('manual', snapshot, 'manual-folder-save', savedAt);
+      writeSlot('manual', record); // Canonical write has already succeeded, so the browser mirror can now advance safely.
       manualSavesWritten++;
+      await writeFolderSlot('manual', record);
       lastAction = 'manual-saved-folder';
       lastError = '';
       return record;
     }
-
     return promoteAutosave(snapshot, {
       reason: automatic ? 'folder-autosync' : 'folder-save',
       savedAt,
@@ -243,30 +281,72 @@
     });
   }
 
+  async function ensureFolderBaseline() {
+    if (!folderIsPrimary() || baselineRecord()) return false;
+    const ids = activeIds();
+    if (!ids.characterId || !ids.worldId) return false; // Wait until player-ready so farm-specific stats bind to the correct save slot.
+    const localSave = folderApi();
+    if (typeof localSave?.readPrimarySnapshot !== 'function') return false;
+    const primary = await localSave.readPrimarySnapshot();
+    if (!primary?.snapshot) return false;
+    const record = createRecord('autosave', primary.snapshot, 'folder-baseline', primary.savedAt || Date.now());
+    writeSlot('auto', record);
+    await writeFolderSlot('auto', record);
+    lastAutosaveFingerprint = snapshotApi()?.fingerprint?.(primary.snapshot) || '';
+    autosavesWritten++;
+    folderBaselineSeeds++;
+    lastAction = 'folder-baseline-seeded';
+    lastError = '';
+    return true;
+  }
+
   async function syncRecoveryMirrorsFromFolder() {
     if (!folderIsPrimary()) return false;
-    if (recoveryMirrorPromise) return recoveryMirrorPromise;
-    const localSave = folderApi(); // Folder core read/write methods keep browser fallback mirrors subordinate to the primary folder once armed.
-    if (typeof localSave?.readRecoveryCheckpoints !== 'function') return false;
+    if (recoveryMirrorPromise) {
+      const result = await recoveryMirrorPromise;
+      await ensureFolderBaseline(); // Handles player-ready racing an earlier pre-player mirror pass.
+      return result;
+    }
 
+    const localSave = folderApi();
+    if (typeof localSave?.readRecoveryCheckpoint !== 'function' || typeof localSave?.readPrimarySnapshot !== 'function') return false;
     recoveryMirrorPromise = (async () => {
+      const warnings = [];
       try {
-        const folderRecords = await localSave.readRecoveryCheckpoints(); // Folder records win when present; missing slots are seeded once from existing browser checkpoints for migration.
+        const primary = await localSave.readPrimarySnapshot(); // Primary snapshot is the provenance anchor for browser->folder migration.
+        const primarySnapshot = primary?.snapshot || null;
         folderRecoveryReads++;
         for (const slot of Object.keys(SLOT_KEYS)) {
-          const folderRecord = validateRecord(folderRecords?.[slot]); // Valid folder history becomes the authoritative local mirror for this slot.
-          const localRecord = readSlot(slot); // Existing browser history is retained only when upgrading an older folder that lacks this slot.
+          let folderRaw = null;
+          let folderReadFailed = false;
+          try {
+            folderRaw = await localSave.readRecoveryCheckpoint(slot); // Read slots separately so one corrupt file cannot hide all other recovery history.
+          } catch (error) {
+            folderReadFailed = true;
+            warnings.push(`${slot}: ${String(error?.message || error)}`);
+          }
+          const folderRecord = safeValidateRecord(folderRaw);
+          const localRecord = readSlot(slot);
           if (folderRecord) {
-            writeSlot(slot, folderRecord);
-          } else if (localRecord && typeof localSave.writeRecoveryCheckpoint === 'function') {
-            await localSave.writeRecoveryCheckpoint(slot, localRecord);
+            writeSlot(slot, folderRecord); // Folder history is authoritative once the folder is armed.
+            continue;
+          }
+          if (folderRaw && !folderRecord) {
+            warnings.push(`${slot}: invalid recovery record preserved in folder`);
+          }
+          const localMatchesPrimary = localRecord && primarySnapshot && recordBelongsToPrimary(localRecord, primarySnapshot);
+          if (!folderReadFailed && !folderRaw && localMatchesPrimary && typeof localSave.writeRecoveryCheckpoint === 'function') {
+            await localSave.writeRecoveryCheckpoint(slot, localRecord); // Safe migration only when browser history demonstrably belongs to this folder.
             folderRecoveryWrites++;
+          } else if (!localMatchesPrimary && !folderRecord) {
+            removeSlot(slot); // Prevent Folder A's browser recovery from appearing inside Folder B.
           }
         }
-        const latest = readSlot('auto'); // Refreshed fingerprint prevents an immediate duplicate fallback checkpoint after folder reconciliation.
+        await ensureFolderBaseline(); // Gives an old folder a good guard baseline before its first post-upgrade autosave.
+        const latest = readSlot('auto');
         lastAutosaveFingerprint = latest?.snapshot ? (snapshotApi()?.fingerprint?.(latest.snapshot) || '') : '';
-        lastAction = 'folder-recovery-mirrored';
-        lastError = '';
+        lastAction = warnings.length ? 'folder-recovery-mirrored-with-warnings' : 'folder-recovery-mirrored';
+        lastError = warnings.length ? warnings.join('; ') : '';
         return true;
       } catch (error) {
         lastError = String(error?.message || error);
@@ -279,28 +359,45 @@
     return recoveryMirrorPromise;
   }
 
-  async function saveManual({ reason = 'menu-manual-save' } = {}) {
+  async function saveManual({ reason = 'menu-manual-save', force = false } = {}) {
     try {
       if (!isHydrated()) throw new Error('Manual save is unavailable until the farmer and farm finish loading.');
       flushLiveState('manual-checkpoint');
-      const snapshot = snapshotApi()?.capture?.({ strict: true }); // One exact post-flush snapshot is used for browser checkpoint and canonical folder commit.
+      const snapshot = snapshotApi()?.capture?.({ strict: true });
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
-      const record = createRecord('manual', snapshot, reason); // Browser fallback is written first so the explicit checkpoint survives even if folder I/O fails.
+
+      const risk = force ? '' : integrityRisk(baselineRecord(), snapshot);
+      if (risk) {
+        lastIntegrityWarning = risk;
+        lastAction = 'manual-save-blocked-integrity';
+        return { ok: false, skipped: true, reason: 'integrity', warning: risk, needsConfirmation: true };
+      }
+
+      if (folderIsPrimary()) {
+        const status = await folderApi().syncSnapshot(snapshot, { automatic: false, recoveryKind: 'manual', force });
+        if (status?.lastError && !canonicalSucceededWithRecoveryWarning(status)) {
+          lastError = status.lastError;
+          lastAction = 'manual-folder-save-error';
+          const guardBlocked = String(status.lastAction || '').includes('save-blocked-');
+          return {
+            ok: false,
+            error: status.lastError,
+            warning: status.dataLossRisk || status.lastError,
+            needsConfirmation: guardBlocked && !force,
+          };
+        }
+        const record = readSlot('manual') || createRecord('manual', snapshot, reason);
+        lastError = status?.lastError || '';
+        lastAction = status?.lastError ? 'manual-primary-saved-recovery-warning' : 'manual-saved-folder';
+        return { ok: true, record, folder: true, warning: status?.lastError || null };
+      }
+
+      const record = createRecord('manual', snapshot, reason);
       writeSlot('manual', record);
       manualSavesWritten++;
       lastAction = 'manual-saved-browser';
       lastError = '';
-
-      if (folderIsPrimary()) {
-        const status = await folderApi().syncSnapshot(snapshot, { automatic: false, recoveryKind: 'manual' }); // Core commits this exact snapshot and then mirrors it to recovery/manual.json.
-        if (status?.lastError) {
-          lastError = status.lastError;
-          lastAction = 'manual-folder-save-error';
-          return { ok: false, record, error: `Browser manual checkpoint was saved, but the primary folder was not updated: ${status.lastError}` };
-        }
-        return { ok: true, record: readSlot('manual'), folder: true };
-      }
-
+      lastIntegrityWarning = '';
       return { ok: true, record, folder: false };
     } catch (error) {
       lastError = String(error?.message || error);
@@ -321,11 +418,6 @@
       lastAction = 'autosave-skipped-grace';
       return { ok: false, skipped: true, reason: 'load-grace' };
     }
-
-    // When the folder is primary, its own change-driven autosync is the normal
-    // owner of rolling checkpoints. The timer stays browser-only to avoid a
-    // duplicate 30-second folder write; visibility-hidden still performs an
-    // explicit flushed sync before the page may disappear.
     if (folderIsPrimary() && reason === 'timer') {
       autosavesSkipped++;
       lastAction = 'autosave-skipped-folder-owned';
@@ -335,7 +427,7 @@
     try {
       flushLiveState(`auto-checkpoint:${reason}`);
       const api = snapshotApi();
-      const snapshot = api?.capture?.({ strict: true }); // Post-flush snapshot is guarded before either recovery or canonical folder persistence advances.
+      const snapshot = api?.capture?.({ strict: true });
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
       const fingerprint = api.fingerprint(snapshot);
       if (!folderIsPrimary() && fingerprint === lastAutosaveFingerprint) {
@@ -354,13 +446,14 @@
       }
 
       if (folderIsPrimary()) {
-        const status = await folderApi().syncSnapshot(snapshot, { automatic: true, recoveryKind: 'auto' }); // Successful canonical write triggers onFolderSnapshotWritten with this exact snapshot.
-        if (status?.lastError) {
+        const status = await folderApi().syncSnapshot(snapshot, { automatic: true, recoveryKind: 'auto' });
+        if (status?.lastError && !canonicalSucceededWithRecoveryWarning(status)) {
           lastError = status.lastError;
           lastAction = 'autosave-folder-error';
           return { ok: false, error: lastError };
         }
-        return { ok: true, record: readSlot('auto'), folder: true };
+        lastError = status?.lastError || '';
+        return { ok: true, record: readSlot('auto'), folder: true, warning: status?.lastError || null };
       }
 
       const record = await promoteAutosave(snapshot, { reason, savedAt: Date.now(), writeFolder: false });
@@ -373,10 +466,10 @@
   }
 
   async function preservePreRestore() {
-    let snapshot = null; // Prefer canonical folder state when folder-first is active; otherwise preserve the browser working copy.
-    let savedAt = Date.now(); // Timestamp shown for the pre-restore safety point.
+    let snapshot = null;
+    let savedAt = Date.now();
     if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
-      const primary = await folderApi().readPrimarySnapshot(); // Canonical folder copy is the authoritative thing recovery is about to replace.
+      const primary = await folderApi().readPrimarySnapshot();
       if (primary?.snapshot) {
         snapshot = primary.snapshot;
         savedAt = primary.savedAt || savedAt;
@@ -384,26 +477,45 @@
     }
     if (!snapshot) snapshot = snapshotApi()?.capture?.({ strict: true });
     if (!snapshot) throw new Error('Could not capture the current save before recovery.');
-
-    const record = createRecord('pre-restore', snapshot, 'before-recovery', savedAt); // Independent rollback point makes a mistaken recovery choice reversible.
+    const record = createRecord('pre-restore', snapshot, 'before-recovery', savedAt);
     writeSlot('preRestore', record);
     if (folderIsPrimary()) await writeFolderSlot('preRestore', record);
     return record;
   }
 
+  async function rollbackRestore(preRestore, restoreError) {
+    snapshotApi().apply(preRestore.snapshot); // Browser fallback returns to the pre-restore point regardless of folder rollback outcome.
+    let rollbackError = '';
+    try {
+      const rollbackStatus = await folderApi().syncSnapshot(preRestore.snapshot, { force: true, automatic: false, recoveryKind: 'restore' });
+      if (rollbackStatus?.lastError) rollbackError = rollbackStatus.lastError;
+    } catch (error) {
+      rollbackError = String(error?.message || error);
+    }
+    if (rollbackError) {
+      throw new Error(`${restoreError} The automatic folder rollback also failed: ${rollbackError}. “Before Last Restore” remains preserved for recovery.`);
+    }
+    restoreRollbacks++;
+    throw new Error(`${restoreError} The original primary-folder save was restored from “Before Last Restore.”`);
+  }
+
   async function applyRecord(record) {
-    let preRestore = null; // Captured before any live/canonical state is replaced so a failed restore can be rolled back safely.
+    let preRestore = null;
     try {
       if (!record?.snapshot) throw new Error('That recovery checkpoint is unavailable.');
       preRestore = await preservePreRestore();
       snapshotApi().apply(record.snapshot);
 
       if (folderIsPrimary()) {
-        const status = await folderApi().syncSnapshot(record.snapshot, { force: true, automatic: false, recoveryKind: 'restore' }); // Force is safe here because the chosen checkpoint is an explicit recovery action.
-        if (status?.lastError) {
-          snapshotApi().apply(preRestore.snapshot); // Keep browser and folder aligned when the canonical folder replacement fails.
-          throw new Error(`The recovery checkpoint was not written to the primary folder: ${status.lastError}`);
+        let status = null;
+        let restoreWriteError = '';
+        try {
+          status = await folderApi().syncSnapshot(record.snapshot, { force: true, automatic: false, recoveryKind: 'restore' });
+          if (status?.lastError) restoreWriteError = status.lastError;
+        } catch (error) {
+          restoreWriteError = String(error?.message || error);
         }
+        if (restoreWriteError) await rollbackRestore(preRestore, `The recovery checkpoint could not be fully written to the primary folder: ${restoreWriteError}`);
       }
 
       restoresApplied++;
@@ -427,7 +539,7 @@
     if (!record) return 'No checkpoint yet.';
     const s = record.summary || {};
     const stats = record.stats || {};
-    const farmCounts = `bag ${stats.memberInventoryUnits || 0} · storage ${stats.worldStorageUnits || 0} · livestock ${stats.livestockCount || 0} · stable ${stats.stableCount || 0}`; // Compact counts help identify the healthy recovery point on mobile.
+    const farmCounts = `bag ${stats.memberInventoryUnits || 0} · storage ${stats.worldStorageUnits || 0} · livestock ${stats.livestockCount || 0} · stable ${stats.stableCount || 0}`;
     return `${fmtTime(record)} · ${s.characterCount || 0} farmer(s) · ${s.worldCount || 0} world(s) · ${farmCounts}`;
   }
 
@@ -437,7 +549,7 @@
 
   async function recoveryChoices() {
     if (folderIsPrimary()) await syncRecoveryMirrorsFromFolder();
-    let currentFolder = null; // Informational current canonical state displayed above recovery history when a primary folder is active.
+    let currentFolder = null;
     if (folderIsPrimary() && typeof folderApi()?.readPrimarySnapshot === 'function') {
       try {
         const primary = await folderApi().readPrimarySnapshot();
@@ -457,13 +569,13 @@
 
   async function openRecoveryModal() {
     closeRecoveryModal();
-    const overlay = document.createElement('div'); // Fullscreen recovery surface remains usable on mobile without DevTools.
+    const overlay = document.createElement('div');
     overlay.id = MODAL_ID;
     Object.assign(overlay.style, {
       position: 'fixed', inset: '0', zIndex: '2147483647', display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '18px', boxSizing: 'border-box', background: 'rgba(5,8,10,.86)', fontFamily: 'inherit',
     });
-    const panel = document.createElement('div'); // Scrollable panel holds current folder state plus each independent recovery point.
+    const panel = document.createElement('div');
     Object.assign(panel.style, {
       width: 'min(650px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: '18px', borderRadius: '12px',
       background: '#151b20', color: '#eef3f6', border: '1px solid rgba(255,255,255,.18)', boxShadow: '0 18px 60px rgba(0,0,0,.55)',
@@ -473,12 +585,18 @@
     overlay.addEventListener('click', event => { if (event.target === overlay) closeRecoveryModal(); });
     document.body.appendChild(overlay);
 
-    const choices = await recoveryChoices();
+    let choices;
+    try {
+      choices = await recoveryChoices();
+    } catch (error) {
+      panel.querySelector('[data-recovery-loading]').textContent = `Could not read recovery history: ${String(error?.message || error)}`;
+      return;
+    }
     panel.querySelector('[data-recovery-loading]')?.remove();
     for (const choice of choices) {
       const record = choice.record;
       if (choice.current && !record && !folderIsPrimary()) continue;
-      const row = document.createElement('div'); // One card per independent recovery source keeps the choice explicit.
+      const row = document.createElement('div');
       Object.assign(row.style, { border: '1px solid rgba(255,255,255,.13)', borderRadius: '9px', padding: '11px', marginBottom: '9px' });
       const title = document.createElement('div');
       title.textContent = choice.title;
@@ -523,7 +641,7 @@
     if (!controls) return false;
 
     if (!document.getElementById(MANUAL_BUTTON_ID)) {
-      const saveButton = document.createElement('button'); // Explicit manual checkpoint control beside the existing menu controls.
+      const saveButton = document.createElement('button');
       saveButton.type = 'button';
       saveButton.id = MANUAL_BUTTON_ID;
       saveButton.className = 'mp-ctrl-btn';
@@ -532,18 +650,24 @@
       saveButton.textContent = '💾';
       saveButton.addEventListener('click', async () => {
         saveButton.disabled = true;
-        const result = await saveManual();
+        let result = await saveManual();
+        if (!result.ok && result.needsConfirmation) {
+          const warning = result.warning || result.error || 'This save looks destructive.';
+          if (confirm(`This manual save was blocked because ${warning}. Save it anyway and replace the previous manual checkpoint?`)) {
+            result = await saveManual({ reason: 'menu-manual-save-confirmed', force: true });
+          }
+        }
         saveButton.disabled = false;
         alert(result.ok
-          ? `Manual save created${result.folder ? ' in the primary folder' : ' in browser fallback storage'}.\n${recordDetail(result.record)}`
-          : `Manual save failed:\n${result.error}`);
+          ? `Manual save created${result.folder ? ' in the primary folder' : ' in browser fallback storage'}.${result.warning ? `\nWarning: ${result.warning}` : ''}\n${recordDetail(result.record)}`
+          : `Manual save failed:\n${result.error || result.warning || 'Unknown save error.'}`);
       });
       const closeButton = controls.querySelector('#mpClose');
       controls.insertBefore(saveButton, closeButton || null);
     }
 
     if (!document.getElementById(RECOVERY_BUTTON_ID)) {
-      const restoreButton = document.createElement('button'); // Recovery control opens folder-authoritative history when a primary folder is armed.
+      const restoreButton = document.createElement('button');
       restoreButton.type = 'button';
       restoreButton.id = RECOVERY_BUTTON_ID;
       restoreButton.className = 'mp-ctrl-btn';
@@ -567,7 +691,7 @@
     markHydrated();
     startAutosaves();
     installMenuButtons();
-    if (folderIsPrimary()) syncRecoveryMirrorsFromFolder();
+    if (folderIsPrimary()) syncRecoveryMirrorsFromFolder().catch(() => {});
   }
 
   document.addEventListener('hobunjiPlayerReady', onPlayerReady);
@@ -580,10 +704,10 @@
   }, { once: true });
 
   folderApi()?.onChange?.(status => {
-    if (status?.state === 'ready' && status?.autoSyncArmed) syncRecoveryMirrorsFromFolder();
+    if (status?.state === 'ready' && status?.autoSyncArmed) syncRecoveryMirrorsFromFolder().catch(() => {});
   });
 
-  const existingAuto = readSlot('auto'); // Existing browser fallback initializes dedupe until folder history is reconciled.
+  const existingAuto = readSlot('auto');
   if (existingAuto?.snapshot) {
     try { lastAutosaveFingerprint = snapshotApi()?.fingerprint?.(existingAuto.snapshot) || ''; } catch {}
   }
@@ -624,6 +748,8 @@
       restoresApplied,
       folderRecoveryReads,
       folderRecoveryWrites,
+      folderBaselineSeeds,
+      restoreRollbacks,
       hasManual: !!readSlot('manual'),
       hasAuto: !!readSlot('auto'),
       hasAutoPrevious: !!readSlot('autoPrevious'),
