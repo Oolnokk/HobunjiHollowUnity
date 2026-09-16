@@ -41,7 +41,7 @@ const windowStub = {
   },
   CookingSystem: { init: noop },
   EquipmentPanel: { init: noop },
-  HobunjiDrunkGameplayBridge: { getHeldItemAction: () => null, beginHeldItemAction: () => false },
+  HobunjiDrunkGameplayBridge: { getHeldItemAction: () => null, beginHeldItemAction: () => false, consumeHeldItemImmediate: () => false },
   dispatchEvent: noop,
 };
 const techniqueContext = vm.createContext({
@@ -87,11 +87,19 @@ const heldAction = windowStub.HobunjiDrunkGameplayBridge.getHeldItemAction(); //
 assert.equal(heldAction?.action, 'consume_held_item', 'Inventory Hold exposes the combat manual Item Action while the item arch is inactive');
 assert.match(heldAction?.label || '', /Read Counter Shield Combat Manual/, 'Inventory Hold resolves the exact off-arch manual');
 assert.equal(windowStub.TechniqueScrolls.getDebug().resolvedHeldBagKey, heldManual.key, 'mobile debug reports the manually held off-arch stack');
-assert.equal(windowStub.HobunjiDrunkGameplayBridge.beginHeldItemAction(), true, 'Item Action reads a manual selected through Inventory Hold');
+assert.equal(windowStub.HobunjiDrunkGameplayBridge.consumeHeldItemImmediate(), true, 'the action arch immediate dispatcher reads a manual selected through Inventory Hold');
 assert.equal(inventory[heldManual.key], 0, 'reading a held off-arch manual consumes one manual');
 assert.equal(windowStub.TechniqueScrolls.isUnlocked('counterShield'), true, 'the held off-arch manual unlocks its exact ability');
 assert.equal(manualHeldItem, null, 'consuming the last manually held copy clears the Hold selector');
 heldMode = 'item';
+
+const scroll = windowStub.TechniqueScrolls.SCROLLS[1]; // Used to prove ordinary wheel-selected technique scrolls share the same immediate action route as combat manuals.
+inventory[scroll.key] = 1;
+activeItem = { ...itemDefs[scroll.key], key: scroll.key };
+const scrollAction = windowStub.HobunjiDrunkGameplayBridge.getHeldItemAction();
+assert.match(scrollAction?.label || '', /^Read Tier 1 Technique Scroll$/, 'a held technique scroll exposes Read on the action arch');
+assert.equal(windowStub.HobunjiDrunkGameplayBridge.consumeHeldItemImmediate(), true, 'the action arch immediate dispatcher reads a technique scroll');
+assert.equal(inventory[scroll.key], 0, 'reading through the immediate dispatcher consumes the technique scroll');
 
 const lootConfig = JSON.parse(fs.readFileSync('docs/config/loot/loot-pools.json', 'utf8'));
 const manualLoot = lootConfig.pools.treasureChest.entries.find(entry => entry.id === 'combatManual');
@@ -151,6 +159,6 @@ assert.equal(schedulingWindow.NpcScheduling.getVisitorPresence(jubmir).active, f
 const wildTreasure = fs.readFileSync('docs/js/wild-treasure.js', 'utf8');
 const fishingEvents = fs.readFileSync('docs/js/fishing-events.js', 'utf8');
 assert.match(wildTreasure, /combatManualKey[\s\S]*?rollManualKey/, 'buried chests roll and carry combat manuals');
-assert.match(fishingEvents, /combatManualKey[\s\S]*?rollManualKey/, 'Gullet Fish treasure rolls and carries combat manuals');
+assert.match(fishingEvents, /combatManualKey[\s\S]*?rollManualKey/, 'Gullet Fish treasure rolls and carry combat manuals');
 
-console.log('combat manual and Jubmir visit tests passed');
+console.log('combat manual, technique-scroll action, and Jubmir visit tests passed');
