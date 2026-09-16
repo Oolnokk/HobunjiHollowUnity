@@ -41,6 +41,7 @@ on:
       - 'docs/js/shoulder-camera-reset-button.js'
       - 'docs/js/attachment-rig-latest-authored-snapshot.js'
       - 'docs/js/character-rig-pixel-probe-runtime.js'
+      - 'docs/js/animal-subtle-elevation-bridge.js'
       - 'scripts/test-character-rig-scale.js'
       - 'scripts/test-character-rig-pixel-probe-runtime.js'
       - 'scripts/test-drunk-prone-composition-bridge.js'
@@ -60,6 +61,7 @@ on:
       - 'scripts/test-porakaneki-species.js'
       - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-shoulder-camera-reset-button.js'
+      - 'scripts/test-animal-subtle-elevation.js'
       - '.github/workflows/character-presentation-regression.yml'
 
 jobs:
@@ -102,6 +104,8 @@ jobs:
         run: node scripts/test-character-rig-scale.js
       - name: Procedural leg/prone/run regression
         run: node scripts/test-drunk-prone-composition-bridge.js
+      - name: Animal elevation/swimmer centroid regression
+        run: node scripts/test-animal-subtle-elevation.js
       - name: NPC perspective-facing deadzone regression
         run: node scripts/test-npc-facing-deadzone.js
       - name: Shoulder camera character framing regression
