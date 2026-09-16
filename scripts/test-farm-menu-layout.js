@@ -36,7 +36,7 @@ assert.match(layoutSource, /buttonDown \|\| analog > 0\.15/, 'idle connected con
 assert.match(layoutSource, /lastControllerInputAt = -Infinity/, 'pointer input explicitly takes ownership away from controller restoration');
 assert.match(layoutSource, /window\.__farmMenuLayoutDebug/, 'Farm menu layout exposes an in-page diagnostic hook');
 
-assert.match(bridgeSource, /globalKey: 'FarmMenuLayout', src: 'js\/farm-menu-layout\.js\?v=20260915farmui1'/, 'farm feature bootstrap loads the Farm menu presentation module');
+assert.match(bridgeSource, /globalKey: 'FarmMenuLayout', src: 'js\/farm-menu-layout\.js\?v=20260915farmui2'/, 'farm feature bootstrap loads the current Farm menu presentation module');
 assert.match(bridgeSource, /window\.FarmMenuLayout\?\.install\?\.\(\)/, 'late bootstrap path installs FarmMenuLayout as well');
 
 console.log('Farm menu layout + Nursery controller continuity regression tests passed.');
