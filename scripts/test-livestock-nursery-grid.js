@@ -120,11 +120,17 @@ assert.match(source, /firstChild\.nodeValue\s*=\s*'Nursery Grow'/, 'enhanced Gro
 assert.match(pagingSource, /grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/, 'Nursery uses Inventory-style fixed seven-column geometry');
 assert.match(pagingSource, /max-height:none\s*!important/, 'Nursery removes the old short nested max-height');
 assert.match(pagingSource, /overflow:visible\s*!important/, 'Nursery grid itself no longer owns a nested scrollbar');
-assert.match(pagingSource, /rowsPerPage:\s*4[\s\S]*pageSize:\s*28/, 'overflow is split into four seven-slot rows per page');
+assert.match(pagingSource, /function measurePageGeometry\(stack, cards\)/, 'page capacity is measured from the rendered grid instead of hard-coded to four rows');
+assert.match(pagingSource, /column\.clientHeight[\s\S]*cellPx/, 'page capacity uses the real Animals-column height and inventory-style square cell size');
+assert.match(pagingSource, /ResizeObserver/, 'page capacity is recalculated when the Animals column changes size or orientation');
+assert.match(pagingSource, /stack\.classList\.remove\(LEGACY_SCROLL_CLASS\)/, 'enhanced grid explicitly opts out of FarmMenuLayout compact-scroll bookkeeping');
 assert.match(pagingSource, /gridPane\.appendChild\(pagerSlot\)/, 'page control is moved under the grid in shadow layout without mutating observed light-DOM children');
-assert.match(pagingSource, /nursery-page-turn/, 'existing light-DOM debug host doubles as the controller-focusable page-turn control only when multiple pages exist');
+assert.match(pagingSource, /pager\.removeAttribute\('data-nursery-action'\)/, 'page control stops masquerading as the debug action while it is paging');
+assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.decorate\?\./, 'page turns do not rerun the entire Nursery genetics/portrait decorator');
+assert.doesNotMatch(pagingSource, /LivestockNurseryGrid\?\.debugSnapshot/, 'paging does not scan the full genetics debug snapshot just to find the selected card');
+assert.doesNotMatch(pagingSource, /first\.click\?\./, 'page focus does not click the first card and render its detail rail a second time');
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'/, 'farm feature bridge parser-loads the Nursery grid module');
-assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'/, 'farm feature bridge parser-loads the Inventory-style Nursery paging layer');
+assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryInventoryPaging'[\s\S]*nurserypage2/, 'farm feature bridge loads the optimized paging revision');
 assert.match(bridgeSource, /installLivestockNurseryGrid\(\)/, 'farm feature bridge installs the Nursery grid after FarmPanel becomes available');
 assert.match(bridgeSource, /installLivestockNurseryInventoryPaging\(\)/, 'farm feature bridge installs paging after the grid feature');
 
