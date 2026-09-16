@@ -1,0 +1,41 @@
+name: Daylight window regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/daylight-window-runtime.js'
+      - 'docs/js/daylight-window-overlay-scheduler.js'
+      - 'docs/js/map-live-preview.js'
+      - 'docs/tools/furniture-avatar-author/foliage-furniture-mode.js'
+      - 'docs/tools/furniture-avatar-author/furniture-daylight-windows.js'
+      - 'docs/config/furniture-authored/*Window.json'
+      - 'scripts/test-daylight-windows.js'
+      - '.github/workflows/daylight-window-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/daylight-window-runtime.js'
+      - 'docs/js/daylight-window-overlay-scheduler.js'
+      - 'docs/js/map-live-preview.js'
+      - 'docs/tools/furniture-avatar-author/foliage-furniture-mode.js'
+      - 'docs/tools/furniture-avatar-author/furniture-daylight-windows.js'
+      - 'docs/config/furniture-authored/*Window.json'
+      - 'scripts/test-daylight-windows.js'
+      - '.github/workflows/daylight-window-regression.yml'
+
+jobs:
+  daylight-window-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check runtime modules
+        run: |
+          node --check docs/js/daylight-window-runtime.js
+          node --check docs/js/daylight-window-overlay-scheduler.js
+          node --check docs/tools/furniture-avatar-author/furniture-daylight-windows.js
+          node --check docs/js/map-live-preview.js
+      - name: Daylight window regression checks
+        run: node scripts/test-daylight-windows.js
