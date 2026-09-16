@@ -49,6 +49,7 @@
     lastWaterActor: null,
     lastWaterSurfaceY: null,
     lastRigCentroidY: null,
+    lastAnticipatedVisualLiftY: 0,
     reason: 'not-rendered',
   };
 
@@ -316,7 +317,7 @@
     return finite(root.position.y, NaN);
   }
 
-  function applyWaterCentroidSink(root, rawX, rawY, label) {
+  function applyWaterCentroidSink(root, rawX, rawY, label, anticipatedVisualLiftY = 0) {
     if (!root?.position || root.visible === false || waterSeenRoots.has(root)) return false;
     const waterSurfaceY = waterSurfaceYAtRaw(rawX, rawY);
     if (!Number.isFinite(waterSurfaceY)) return false;
@@ -324,16 +325,21 @@
     if (!Number.isFinite(centroidY)) return false;
     waterSeenRoots.add(root);
 
-    // A swimmer must be at least half-submerged: if its total visible BODY
-    // rig centroid sits above the surface, sink only the rendered root until
-    // the surface reaches that centroid. Deeper rigs are left untouched.
-    const sink = waterSurfaceY - centroidY;
+    // The player receives town/support elevation later in the nested renderer
+    // chain through PlayerBodyTransformComposer. Account for that not-yet-applied
+    // Y translation here so the FINAL rendered centroid, not the pre-composer
+    // root, is what reaches the water surface. Other actors pass zero because
+    // their render-time elevation has already been applied directly above.
+    const visualLiftY = finite(anticipatedVisualLiftY, 0);
+    const renderedCentroidY = centroidY + visualLiftY;
+    const sink = waterSurfaceY - renderedCentroidY;
     if (!(sink < -EPSILON) || !offsetRoot(root, sink)) return false;
     lastDebug.waterActors++;
     lastDebug.maxWaterSink = Math.max(lastDebug.maxWaterSink, Math.abs(sink));
     lastDebug.lastWaterActor = label || root.name || 'character';
     lastDebug.lastWaterSurfaceY = waterSurfaceY;
-    lastDebug.lastRigCentroidY = centroidY;
+    lastDebug.lastRigCentroidY = renderedCentroidY;
+    lastDebug.lastAnticipatedVisualLiftY = visualLiftY;
     return true;
   }
 
@@ -359,6 +365,15 @@
     for (const actor of setLike) applyActorWaterSink(actor, area);
   }
 
+  function playerComposerElevationLift(root) {
+    const sit = runtimeDeps?.getSitInteraction?.();
+    if (sit && sit.phase !== 'out') return 0;
+    const x = finite(root?.position?.x, NaN);
+    const z = finite(root?.position?.z, NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
+    return totalLiftAt(x, z, activeArea());
+  }
+
   function applyPlayerWaterSink() {
     const player = combatDeps?.player;
     const raw = actorRawPosition(player);
@@ -368,7 +383,7 @@
       || window.Combat?.deps?.playerMesh
       || null;
     if (!root) return false;
-    return applyWaterCentroidSink(root, raw.x, raw.y, 'player');
+    return applyWaterCentroidSink(root, raw.x, raw.y, 'player', playerComposerElevationLift(root));
   }
 
   function liveNpcWalkers() {
@@ -412,6 +427,7 @@
       lastWaterActor: null,
       lastWaterSurfaceY: null,
       lastRigCentroidY: null,
+      lastAnticipatedVisualLiftY: 0,
       reason: area ? 'zero-lift' : 'no-active-area',
     };
     if (!area) return;
