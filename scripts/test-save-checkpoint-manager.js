@@ -22,7 +22,7 @@ const vm = require('node:vm');
   assert.match(folderCoreSource, /writeRecoveryCheckpoint/, 'folder core exposes whitelisted recovery-file persistence');
   assert.match(folderCoreSource, /readPrimarySnapshot/, 'folder core exposes canonical state for baseline/recovery');
   assert.match(folderCoreSource, /syncSnapshot/, 'folder core can commit one exact captured snapshot');
-  assert.match(source, /recordBelongsToPrimary/, 'checkpoint migration verifies browser history belongs to the active folder');
+  assert.match(source, /automatic folder save is paused/, 'folder autosync is blocked while gameplay state is hydrating');
   assert.match(source, /folder-baseline/, 'old folders seed recovery from canonical state before future writes');
   assert.match(source, /rollbackRestore/, 'failed restores attempt a canonical folder rollback');
 
@@ -98,8 +98,10 @@ const vm = require('node:vm');
       const guard = window.HobunjiSaveCheckpoints?.evaluateSnapshotForFolderWrite?.(snapshot, options);
       if (!options.force && guard?.ok === false) {
         folderStatus.lastError = `Skipped saving to the folder: ${guard.warning}`;
-        folderStatus.lastAction = options.automatic ? 'autosync-blocked-checkpoint-integrity' : 'save-blocked-checkpoint-integrity';
-        folderStatus.dataLossRisk = guard.warning;
+        folderStatus.lastAction = guard.deferred
+          ? 'autosync-deferred-hydration'
+          : (options.automatic ? 'autosync-blocked-checkpoint-integrity' : 'save-blocked-checkpoint-integrity');
+        folderStatus.dataLossRisk = guard.deferred ? null : guard.warning;
         return { ...folderStatus };
       }
 
@@ -223,30 +225,37 @@ const vm = require('node:vm');
   autoResult = await api.saveAuto({ reason: 'test-save-slot-switch' });
   assert.equal(autoResult.ok, true, 'different empty farmer/world is not mistaken for prior farm reset');
 
-  // Folder A contains only char_a/world_a. The browser latest autosave currently belongs
-  // to char_b/world_b and must NOT be copied into Folder A just because Folder A has no recovery/ yet.
+  // Folder-first autosync can arm before gameplay hydration. It must not serialize transient
+  // loader/default state even though the folder's own 1-second change poll is already active.
   folderStatus.autoSyncArmed = true;
+  window.__hobunjiGameStarted = false;
+  const preHydrationCandidate = structuredClone(folderPrimarySnapshot);
+  preHydrationCandidate.meta.worlds[0].members.char_a.nonGearInventory.turnip = 6;
+  const beforeHydrationSync = structuredClone(folderPrimarySnapshot);
+  const hydrationStatus = await LocalSaveFolder.syncSnapshot(preHydrationCandidate, { automatic: true, recoveryKind: 'auto' });
+  assert.match(hydrationStatus.lastError, /still hydrating/i, 'automatic folder save is deferred during gameplay hydration');
+  assert.deepEqual(folderPrimarySnapshot, beforeHydrationSync, 'hydration-deferred autosave cannot touch canonical folder data');
+  window.__hobunjiGameStarted = true;
+
+  // Once a folder is armed, its recovery directory is authoritative. Browser history from a
+  // previous fallback session/folder is cleared rather than silently imported into this folder.
   for (const listener of folderListeners) listener({ ...folderStatus });
   await api.syncRecoveryMirrorsFromFolder();
-  assert.ok(folderRecovery.has('manual'), 'matching browser manual checkpoint can migrate into an older folder');
-  assert.equal(folderRecovery.has('auto'), false, 'unrelated browser autosave is not migrated into another folder');
-  assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false, 'unrelated browser autosave is removed from the active folder mirror');
+  assert.equal(folderRecovery.has('manual'), false, 'browser manual history is not auto-imported into a primary folder');
+  assert.equal(folderRecovery.has('auto'), false, 'browser autosave history is not auto-imported into a primary folder');
+  assert.equal(store.has('hobunjiSaveCheckpoint.manual.v1'), false, 'folder authority clears stale browser manual mirror when folder slot is absent');
+  assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false, 'folder authority clears stale browser autosave mirror when folder slot is absent');
 
-  // Simulate upgrading an old primary folder with no recovery history at all. The current
-  // canonical folder snapshot must become the initial autosave baseline before any new write.
-  folderRecovery.clear();
-  for (const key of [
-    'hobunjiSaveCheckpoint.manual.v1',
-    'hobunjiSaveCheckpoint.auto.v1',
-    'hobunjiSaveCheckpoint.autoPrevious.v1',
-    'hobunjiSaveCheckpoint.preRestore.v1',
-  ]) localStorage.removeItem(key);
+  // The selected char_b/world_b does not exist in Folder A, so baseline creation waits until
+  // the actual selected farmer/world from that folder is ready.
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().folderBaselineSeeds, 0);
   window.__hobunjiPlayerProfile = { characterId: 'char_a', worldId: 'world_a' };
   currentSnapshot = structuredClone(folderPrimarySnapshot);
   await api.syncRecoveryMirrorsFromFolder();
-  assert.ok(folderRecovery.has('auto'), 'old folder receives an autosave baseline from its canonical state');
+  assert.ok(folderRecovery.has('auto'), 'old folder receives an autosave baseline from its own canonical state');
   assert.equal(folderRecovery.get('auto').reason, 'folder-baseline');
   assert.deepEqual(folderRecovery.get('auto').snapshot, folderPrimarySnapshot, 'baseline exactly matches canonical primary folder');
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().folderBaselineSeeds, 1);
 
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
   currentSnapshot.meta.worlds[0].storage = {};
