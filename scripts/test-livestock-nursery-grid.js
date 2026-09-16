@@ -115,6 +115,7 @@ assert.equal(swarmRerolls, 1, 'baby sale refreshes the Nursery interior swarm');
 grid.install();
 assert.equal(CreatureGenetics.sellValueFor({ rare: false }, 'grehlr').amount, 500, 'economy wrapper is idempotent');
 
+assert.match(source, /firstChild\.nodeValue\s*=\s*'Nursery Grow'/, 'enhanced Grow Up control changes only its backing text node so the legacy private-button tonic gate cannot double-consume');
 assert.match(bridgeSource, /globalKey:\s*'LivestockNurseryGrid'/, 'farm feature bridge parser-loads the Nursery grid module');
 assert.match(bridgeSource, /installLivestockNurseryGrid\(\)/, 'farm feature bridge installs the Nursery grid after FarmPanel becomes available');
 
