@@ -23,7 +23,7 @@ PORAKANEKI lines: "camp=<zoneId>/<campId> kind=<small|chief> ... sleeping=<n>/<r
 WILDLIFE header: activeArea=<area> is the player's current area, instantiatedWildlife=<n> counts live runtime creatures carrying a denKey or nestTreeKey, denCreatures/nestCreatures split those sources, and scope=active-runtime is a reminder that off-zone populations are not represented here. Creature lines report source/species/state/mode/tile/home; mode is whichever per-species schedule-AI field is currently set (_cfDrenkirra.mode for cloud-forest drenkirra, _grehlrForage.mode for grehlr, otherwise falls back to state).`;
 
   const HANDOFF_GUIDE = `HOBUNJI PORAKANEKI CHUNK HANDOFF TRACE -- interpretation guide
-This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only abstract Porakaneki position/chunk data in a chunk the player is not standing in. No humanoid entity exists yet. PLAYER_CHUNK_CHANGED records the real WildernessChunks center as the player walks. TARGET_CHUNK_ENTERED is the handoff trigger. Materialization then uses BanditCombat.makeEntity with speciesWeights forced to Porakaneki, records the raw builder result, neutralizes the entity, and only then publishes it into hostileObjects. POST_PUBLISH_SAMPLE lines compare simulation position to the avatar root at 0/250/1000/2000 ms. renderDelta is measured in tile space; a large or growing value means the live entity and its rendered avatar diverged during the handoff.`;
+This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only abstract Porakaneki position/chunk data in a chunk the player is not standing in. No humanoid entity exists yet. PLAYER_CHUNK_CHANGED records the real WildernessChunks center as the player walks. TARGET_CHUNK_ENTERED is the handoff trigger. Materialization then uses BanditCombat.makeEntity with speciesWeights forced to Porakaneki, records the raw builder result, neutralizes the entity, and only then publishes it into hostileObjects. POST_PUBLISH_SAMPLE lines compare simulation position to the avatar root at 0/250/1000/2000 ms. renderDelta is measured in tile space; a large or growing value means the live entity and its rendered avatar diverged during the handoff. reputation reports the live Porakaneki faction Favor, attackOnSight state, player-attributed production Porakaneki kill count, and the reputation runtime's lastReason so intended hostility can be distinguished from a handoff bug.`;
 
   function activeArea() {
     return window.GridTileAccessors?.getCurrentArea?.() || '-';
@@ -31,6 +31,16 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
 
   function pointText(point) {
     return point && Number.isFinite(point.x) && Number.isFinite(point.y) ? `(${point.x},${point.y})` : '-';
+  }
+
+  function porakanekiReputationSnapshot() {
+    const debug = window.PorakanekiCamps?.debugSnapshot?.(); // Reuses the production faction runtime as the single authority for Favor and attack-on-sight state.
+    return {
+      favor: debug?.favor ?? null,
+      attackOnSight: debug?.attackOnSight ?? null,
+      kills: debug?.kills ?? null,
+      lastReason: debug?.lastReason ?? null,
+    };
   }
 
   function porakanekiSection() {
@@ -238,6 +248,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       targetTile: test.targetTile,
       targetChunkGroupPresent: !!targetChunkGroup(test),
       playerChunk: currentLabChunk(),
+      reputation: porakanekiReputationSnapshot(),
     });
     try {
       const cfg = await window.BanditCombat?.loadGangConfig?.();
@@ -272,7 +283,10 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
           homeY: y,
         },
       });
-      appendHandoffEvent(test, 'MAKE_ENTITY_RESOLVED', entityHandoffSnapshot(entity));
+      appendHandoffEvent(test, 'MAKE_ENTITY_RESOLVED', {
+        ...entityHandoffSnapshot(entity),
+        reputation: porakanekiReputationSnapshot(),
+      });
       if (!entity) throw new Error('BanditCombat.makeEntity returned null');
       if (test !== handoffTest) {
         disposeHandoffEntity(entity);
@@ -286,16 +300,22 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       }
       test.entity = entity;
       neutralizeHandoffEntity(entity);
-      appendHandoffEvent(test, 'NEUTRALIZED_BEFORE_PUBLICATION', entityHandoffSnapshot(entity));
+      appendHandoffEvent(test, 'NEUTRALIZED_BEFORE_PUBLICATION', {
+        ...entityHandoffSnapshot(entity),
+        reputation: porakanekiReputationSnapshot(),
+      });
       deps.hostileObjects.add(entity);
       test.materializedAt = performance.now();
       test.phase = 'live';
       test.nextSampleIndex = 0;
-      appendHandoffEvent(test, 'PUBLISHED_TO_HOSTILE_LOOP', entityHandoffSnapshot(entity));
+      appendHandoffEvent(test, 'PUBLISHED_TO_HOSTILE_LOOP', {
+        ...entityHandoffSnapshot(entity),
+        reputation: porakanekiReputationSnapshot(),
+      });
       recordDueHandoffSamples(test, true);
     } catch (error) {
       test.phase = 'failed';
-      appendHandoffEvent(test, 'MATERIALIZE_FAILED', { message: error?.message || String(error), stack: error?.stack || null });
+      appendHandoffEvent(test, 'MATERIALIZE_FAILED', { message: error?.message || String(error), stack: error?.stack || null, reputation: porakanekiReputationSnapshot() });
       deps.showToast?.('Porakaneki handoff test failed — copy the handoff trace.', false);
     } finally {
       test.materializing = false;
@@ -314,6 +334,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
         sampleMs: dueAt,
         playerChunk: currentLabChunk(),
         targetChunkGroupPresent: !!targetChunkGroup(test),
+        reputation: porakanekiReputationSnapshot(),
         ...entityHandoffSnapshot(test.entity),
       });
       test.nextSampleIndex += 1;
@@ -321,7 +342,10 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     }
     if (test.nextSampleIndex >= HANDOFF_SAMPLE_OFFSETS_MS.length && !test.samplesComplete) {
       test.samplesComplete = true;
-      appendHandoffEvent(test, 'POST_PUBLISH_SAMPLING_COMPLETE', entityHandoffSnapshot(test.entity));
+      appendHandoffEvent(test, 'POST_PUBLISH_SAMPLING_COMPLETE', {
+        ...entityHandoffSnapshot(test.entity),
+        reputation: porakanekiReputationSnapshot(),
+      });
     }
   }
 
@@ -353,6 +377,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       appendHandoffEvent(test, 'TARGET_CHUNK_ENTERED', {
         playerChunk,
         targetChunkGroupPresent: !!targetChunkGroup(test),
+        reputation: porakanekiReputationSnapshot(),
       });
     } else if (!insideTargetChunk && test.insideTargetChunk) {
       test.insideTargetChunk = false;
@@ -447,6 +472,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       abstractOnly: true,
       entityExists: false,
       targetChunkGroupPresent: !!targetChunkGroup(handoffTest),
+      reputation: porakanekiReputationSnapshot(),
     });
     appendHandoffEvent(handoffTest, 'ABSTRACT_POSITION_READY', {
       position: targetTile,
@@ -473,6 +499,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       targetChunk: test.targetChunk,
       targetTile: test.targetTile,
       targetChunkGroupPresent: !!targetChunkGroup(test),
+      reputation: porakanekiReputationSnapshot(),
       entity: currentEntity,
     };
     return [
@@ -503,7 +530,12 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     const resetButton = document.getElementById('devPorakanekiChunkHandoffResetBtn');
     if (status) {
       if (!handoffTest) status.textContent = 'No handoff test armed.';
-      else status.textContent = `${handoffTest.phase.toUpperCase()} · player ${chunkText(currentLabChunk())} → target (${handoffTest.targetChunk.x},${handoffTest.targetChunk.z}) · last ${handoffTest.lastEvent}`;
+      else {
+        const reputation = porakanekiReputationSnapshot();
+        const favorText = reputation.favor == null ? '?' : reputation.favor;
+        const aosText = reputation.attackOnSight == null ? '?' : (reputation.attackOnSight ? 'YES' : 'no');
+        status.textContent = `${handoffTest.phase.toUpperCase()} · Favor ${favorText} · AOS ${aosText} · player ${chunkText(currentLabChunk())} → target (${handoffTest.targetChunk.x},${handoffTest.targetChunk.z}) · last ${handoffTest.lastEvent}`;
+      }
     }
     if (trace) trace.textContent = handoffTest ? handoffTest.events.join('\n') : 'Press “Spawn Off-Chunk Porakaneki” while inside a 2x2-or-larger Wilderness Chunk Lab.';
     if (copyButton) copyButton.disabled = !handoffTest;
