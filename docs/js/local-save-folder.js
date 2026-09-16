@@ -1,6 +1,6 @@
 // Compatibility loader: persistence core + default save/load UX flow.
 // Kept at the historical path so existing pages do not need to change script order.
-document.write('<style>#localSaveStartupGate{font-family:"KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace!important}</style>');
+document.write('<style>#localSaveStartupGate{font-family:"KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace!important}#menuManualSaveBtn:disabled{font-size:0!important;cursor:wait;opacity:.8}#menuManualSaveBtn:disabled::after{content:"Saving…";font-size:11px;line-height:1;white-space:nowrap}</style>');
 document.write('<link rel="stylesheet" href="folder-save-primary.css?v=20260914a">');
 document.write('<script src="js/session-persistence-startup-guard.js?v=20260913a"><\/script>');
 document.write('<script src="js/save-snapshot-core.js?v=20260904a"><\/script>');
