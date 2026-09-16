@@ -75,7 +75,7 @@ jobs:
         run: node scripts/test-entry-tunnel-door-furniture.js
       - name: Test entry tunnel wall unmarking
         run: node scripts/test-entry-tunnel-wall-unmark.js
-      - name: Test lore economy and gananji copy
+      - name: Test lore economy and ganang copy
         run: node scripts/test-lore-economy.js
       - name: Test town mine descent
         run: node scripts/test-town-mine-descent.js

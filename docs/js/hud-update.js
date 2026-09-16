@@ -47,18 +47,18 @@
   function formatCurrencyText(value) {
     const original = String(value ?? ''); // Used as the exact rendered copy supplied by legacy systems before currency-lore normalization.
     let text = original;
-    text = text.replace(/\bNot enough gold\b/gi, match => match[0] === 'N' ? 'Not enough gananji' : 'not enough gananji');
-    text = text.replace(/\b(\d[\d,]*(?:\.\d+)?)\s+gold\b/gi, '$1 gananji');
-    text = text.replace(/\bGold\s+(reward|wallet|currency|payment|payout|bounty|wages?)\b/g, 'Gananji $1');
-    text = text.replace(/\bgold\s+(reward|wallet|currency|payment|payout|bounty|wages?|fee|cost)\b/g, 'gananji $1');
-    text = text.replace(/\b(reward|fee|cost|price|payment|payout|bounty|wages?)\s+in\s+gold\b/gi, (match, noun) => `${noun} in gananji`);
+    text = text.replace(/\bNot enough gold\b/gi, match => match[0] === 'N' ? 'Not enough ganang' : 'not enough ganang');
+    text = text.replace(/\b(\d[\d,]*(?:\.\d+)?)\s+gold\b/gi, '$1 ganang');
+    text = text.replace(/\bGold\s+(reward|wallet|currency|payment|payout|bounty|wages?)\b/g, 'Ganang $1');
+    text = text.replace(/\bgold\s+(reward|wallet|currency|payment|payout|bounty|wages?|fee|cost)\b/g, 'ganang $1');
+    text = text.replace(/\b(reward|fee|cost|price|payment|payout|bounty|wages?)\s+in\s+gold\b/gi, (match, noun) => `${noun} in ganang`);
     return text;
   }
 
   function rewriteCurrencyTextNode(node) {
     if (!node || node.nodeType !== 3 || typeof node.nodeValue !== 'string') return false;
     const before = node.nodeValue; // Used to preserve physical-metal wording whenever no currency-specific pattern matches.
-    const after = formatCurrencyText(before); // Used to translate only unambiguous legacy money phrases into gananji.
+    const after = formatCurrencyText(before); // Used to translate only unambiguous legacy money phrases into ganang.
     if (after === before) return false;
     node.nodeValue = after;
     loreEconomyDebug.textRewriteCount++;
@@ -108,7 +108,7 @@
 
   function applyLoreEconomy() {
     if (!deps?.ITEM_DEFS) return false;
-    const mulchSell = itemSellValue(deps.ITEM_DEFS.mulch, 1); // Used as the canonical baseline so Gold Ore always stays exactly one gananji above Mulch.
+    const mulchSell = itemSellValue(deps.ITEM_DEFS.mulch, 1); // Used as the canonical baseline so Gold Ore always stays exactly one ganang above Mulch.
     const goldOreSell = Math.max(1, Math.round(mulchSell) + 1); // Used for physical Gold Ore, intentionally almost worthless despite its familiar name.
     const goldBarSell = Math.max(goldOreSell + 1, goldOreSell * 5 + 1); // Used for refined Gold Bars without restoring gold to prestige-metal pricing.
 
@@ -147,7 +147,7 @@
     loreEconomyDebug.goldBarSellPrice = goldBarSell;
     window.HobunjiCurrencyLore = Object.freeze({ // Used as the canonical player-facing interpretation of the legacy inventory.gold save key.
       storageKey: 'gold',
-      name: 'gananji',
+      name: 'ganang',
       meaning: 'bronze',
       suffix: 'g',
       formatText: formatCurrencyText,
@@ -158,7 +158,7 @@
   }
 
   function grantDugGoldOre(watch) {
-    const itemKey = 'ore_gold'; // Used as the physical ore stack; deliberately distinct from legacy inventory.gold, which stores gananji currency.
+    const itemKey = 'ore_gold'; // Used as the physical ore stack; deliberately distinct from legacy inventory.gold, which stores ganang currency.
     const before = Math.max(0, Number(deps?.inventory?.[itemKey]) || 0); // Used to respect the ordinary 99-item stack cap.
     if (before >= 99) {
       deps?.showToast?.('Gold Ore stack is full.', false);
@@ -373,7 +373,7 @@
   }
 
   // Status-pill fields only actually change a few times a (real) second at
-  // most (season/weather/day/gananji on world-state events, time once a
+  // most (season/weather/day/ganang on world-state events, time once a
   // simulated minute, tool/tile/water on reticle or equip changes) —
   // updateHud runs every frame, so each field caches its last-written
   // string/color and skips the DOM write (and, for spTile/spWater, the

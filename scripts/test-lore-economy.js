@@ -59,20 +59,20 @@ const deps = { // Mirrors only the HudUpdate dependencies touched during initial
 };
 context.window.HudUpdate.init(deps);
 
-assert.equal(itemDefs.ore_gold.sellPrice, 6, 'Gold Ore must sell for exactly one gananji more than Mulch');
+assert.equal(itemDefs.ore_gold.sellPrice, 6, 'Gold Ore must sell for exactly one ganang more than Mulch');
 assert.equal(itemDefs.bar_gold.sellPrice, 31, 'Gold Bar must remain cheap after refining common Gold Ore');
 assert.equal(itemDefs.bar_lowTinBronze.sellPrice, 400, 'Low-Tin Bronze must receive the bronze value floor');
 assert.equal(itemDefs.bar_tinBronze.sellPrice, 500, 'Tin Bronze must receive the bronze value floor');
 assert.equal(itemDefs.bar_highTinBronze.sellPrice, 650, 'High-Tin Bronze must receive the bronze value floor');
-assert.equal(context.window.HobunjiCurrencyLore.name, 'gananji', 'legacy inventory.gold must be presented as gananji currency');
-assert.equal(context.window.HobunjiCurrencyLore.meaning, 'bronze', 'gananji must explicitly mean bronze');
+assert.equal(context.window.HobunjiCurrencyLore.name, 'ganang', 'legacy inventory.gold must be presented as ganang currency');
+assert.equal(context.window.HobunjiCurrencyLore.meaning, 'bronze', 'ganang must explicitly mean bronze');
 assert.equal(context.window.HobunjiCurrencyLore.suffix, 'g', 'the Tankan-script g glyph remains the currency suffix');
 
 const formatCurrencyText = context.window.HobunjiCurrencyLore.formatText; // Uses the same conservative renderer installed in the browser for legacy UI copy.
-assert.equal(formatCurrencyText('Not enough gold.'), 'Not enough gananji.', 'legacy insufficient-funds copy must call the currency gananji');
-assert.equal(formatCurrencyText("Not enough gold for the smith's labor."), "Not enough gananji for the smith's labor.", 'smith labor copy must call the currency gananji');
-assert.equal(formatCurrencyText('Reward: 25 gold'), 'Reward: 25 gananji', 'spelled-out numeric currency rewards must become gananji');
-assert.equal(formatCurrencyText('Gold reward'), 'Gananji reward', 'currency reward labels must become gananji');
+assert.equal(formatCurrencyText('Not enough gold.'), 'Not enough ganang.', 'legacy insufficient-funds copy must call the currency ganang');
+assert.equal(formatCurrencyText("Not enough gold for the smith's labor."), "Not enough ganang for the smith's labor.", 'smith labor copy must call the currency ganang');
+assert.equal(formatCurrencyText('Reward: 25 gold'), 'Reward: 25 ganang', 'spelled-out numeric currency rewards must become ganang');
+assert.equal(formatCurrencyText('Gold reward'), 'Ganang reward', 'currency reward labels must become ganang');
 assert.equal(formatCurrencyText('Gold Ore'), 'Gold Ore', 'physical Gold Ore names must remain gold');
 assert.equal(formatCurrencyText('Gold Bar'), 'Gold Bar', 'physical Gold Bar names must remain gold');
 assert.equal(formatCurrencyText('gold-colored trim'), 'gold-colored trim', 'ordinary color language must not be rewritten as currency');
@@ -87,7 +87,7 @@ for (const file of [ // These are the known legacy callers from the repo-wide co
   const fileText = fs.readFileSync(file, 'utf8');
   const matches = fileText.match(/Not enough gold[^'"`\n]*/gi) || [];
   for (const legacyCopy of matches) {
-    assert(!/Not enough gold/i.test(formatCurrencyText(legacyCopy)), `${file} legacy currency copy must normalize to gananji at render time`);
+    assert(!/Not enough gold/i.test(formatCurrencyText(legacyCopy)), `${file} legacy currency copy must normalize to ganang at render time`);
   }
 }
 
@@ -107,7 +107,7 @@ context.window.AudioSystem.playObjectSfxKey('dig');
 tile.type = 'trench';
 while (timers.length) timers.shift()();
 assert.equal(inventory.ore_gold, 2, 'filling then digging a genuinely new hole must award Gold Ore again');
-assert.equal(inventory.gold, 1000, 'dig rewards must never mutate the legacy gananji wallet field');
+assert.equal(inventory.gold, 1000, 'dig rewards must never mutate the legacy ganang wallet field');
 
 const mineConfig = JSON.parse(fs.readFileSync('docs/config/town-mine.json', 'utf8')); // Used to keep physical gold out of both mine ore bands and ladder prestige requirements.
 assert(!mineConfig.oreTierOreKeys.flat().includes('gold'), 'Gold must not spawn as a high-tier town-mine ore');
