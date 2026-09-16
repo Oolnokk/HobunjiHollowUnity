@@ -159,6 +159,31 @@ context.window.PlayerBodyTransformComposer = { getPlayerMesh: () => playerRoot }
 assert.equal(context.window.HobunjiAnimalSubtleElevation.rigCentroidWorldY(playerRoot), 1,
   'held-item geometry is excluded from the player body-rig centroid');
 
+// NPC-held equipment wraps the actual portrait body in a *_held_stance_body_yaw
+// group. That pose wrapper must remain part of the body rig while the actual
+// toolPlane sibling stays excluded.
+const npcHeldRoot = {
+  name: 'npc_walker_test', type: 'Group', visible: true, position: { x: 0, y: 0, z: 0 }, children: [],
+  updateMatrixWorld() {},
+};
+const stanceWrapper = { name: 'test_npc_held_stance_body_yaw', type: 'Group', visible: true, parent: npcHeldRoot, children: [] };
+const npcBodyMesh = {
+  name: 'npc_portrait', isMesh: true, visible: true, parent: stanceWrapper, children: [],
+  geometry: { boundingBox: { min: { y: 0 }, max: { y: 2 } } }, matrixWorld: { dy: 0 },
+};
+const npcFeetMesh = {
+  name: 'test_npc_procedural_feet', isMesh: true, visible: true, parent: npcHeldRoot, children: [],
+  geometry: { boundingBox: { min: { y: 0 }, max: { y: 0.2 } } }, matrixWorld: { dy: 0 },
+};
+const npcToolMesh = {
+  name: 'axe_sprite', isMesh: true, visible: true, parent: npcHeldRoot, children: [], userData: { toolPlane: {} },
+  geometry: { boundingBox: { min: { y: 8 }, max: { y: 10 } } }, matrixWorld: { dy: 0 },
+};
+stanceWrapper.children.push(npcBodyMesh);
+npcHeldRoot.children.push(stanceWrapper, npcFeetMesh, npcToolMesh);
+assert.equal(context.window.HobunjiAnimalSubtleElevation.rigCentroidWorldY(npcHeldRoot), 1,
+  'held-stance wrapper keeps the NPC body in the centroid while toolPlane geometry is excluded');
+
 // Water regression: the temporary correction must sink a swimmer until the
 // water surface reaches the rig centroid, then restore movement-owned Y.
 // canSwim deliberately stays true here: that flag exempts movement penalties,
