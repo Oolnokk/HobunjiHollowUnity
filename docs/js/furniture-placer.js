@@ -65,6 +65,7 @@
     if (!_open) {
       deps.armFurniturePlacement(null);
       deps.armFurnitureMove(null);
+      window.WallOrnamentPlacement?.finishPlayerAdjustment?.(); // Closing furniture customization also releases any wall-space gizmo/input lock.
     }
     if (_open) render();
   }
@@ -81,7 +82,7 @@
       hint.textContent = moveArmedId
         ? 'Tap a clear tile to move the selected furniture there.'
         : (owned.length || placed.length)
-          ? 'Place owned furniture, or move/remove furniture already in this area.'
+          ? 'Place owned furniture, or move/remove furniture already in this area. Wall ornaments can be mounted and adjusted after ordinary placement.'
           : "You don't own or have any furniture placed here yet.";
     }
     list.innerHTML = '';
@@ -112,31 +113,50 @@
         ? deps.getProcessingFurnitureDefs()[obj.key]
         : deps.getDecorativeFurnitureDefs()[obj.key];
       if (!def) return;
-      const isMoveArmed = moveArmedId === obj.id;
+      const wallApi = window.WallOrnamentPlacement; // Optional shared wall-placement bridge; absent builds retain the old floor-furniture controls unchanged.
+      const wallCapable = obj.placementKind !== 'processing' && !!wallApi?.isWallOrnamentKey?.(obj.key, def); // Only decorative pieces with authored attachment metadata receive wall controls.
+      const wallMounted = wallCapable && !!wallApi?.isPlayerMounted?.(obj.id); // Mounted pieces are managed in wall-space instead of tile move/45° rotation controls.
+      const isMoveArmed = !wallMounted && moveArmedId === obj.id;
       const row = document.createElement('div');
       row.className = 'farm-row' + (isMoveArmed ? ' selected' : '');
-      row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${obj.col}, ${obj.row}</span>`;
-      const moveBtn = document.createElement('button');
-      moveBtn.className = 'settings-small-btn';
-      moveBtn.textContent = isMoveArmed ? 'Cancel' : 'Move';
-      moveBtn.addEventListener('click', () => deps.armFurnitureMove(isMoveArmed ? null : obj.id));
-      const rotateBtn = document.createElement('button');
-      rotateBtn.className = 'settings-small-btn';
-      rotateBtn.textContent = 'Rotate 45°';
-      rotateBtn.addEventListener('click', () => {
-        const result = deps.rotateFurniture(obj.id, 45);
-        deps.showToast(result.message, result.ok);
-        render();
-      });
+      const locationLabel = wallMounted ? 'Wall mounted' : `${obj.col}, ${obj.row}`; // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
+      row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${locationLabel}</span>`;
+      if (!wallMounted) {
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'settings-small-btn';
+        moveBtn.textContent = isMoveArmed ? 'Cancel' : 'Move';
+        moveBtn.addEventListener('click', () => deps.armFurnitureMove(isMoveArmed ? null : obj.id));
+        const rotateBtn = document.createElement('button');
+        rotateBtn.className = 'settings-small-btn';
+        rotateBtn.textContent = 'Rotate 45°';
+        rotateBtn.addEventListener('click', () => {
+          const result = deps.rotateFurniture(obj.id, 45);
+          deps.showToast(result.message, result.ok);
+          render();
+        });
+        row.append(moveBtn, rotateBtn);
+      }
+      if (wallCapable) {
+        const wallBtn = document.createElement('button'); // Opens either first-time wall targeting or the existing local-axis wall gizmo.
+        wallBtn.className = 'settings-small-btn';
+        wallBtn.textContent = wallMounted ? 'Adjust Wall' : 'Wall Mount';
+        wallBtn.addEventListener('click', async () => {
+          deps.armFurnitureMove(null);
+          await wallApi.adjustPlayerObject(obj.id);
+          render();
+        });
+        row.appendChild(wallBtn);
+      }
       const removeBtn = document.createElement('button');
       removeBtn.className = 'settings-small-btn';
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
+        if (wallMounted) wallApi.unmountPlayerObject(obj.id); // Clear sidecar wall metadata before the ordinary furniture record/id is removed.
         const result = deps.removeFurniture(obj.id);
         deps.showToast(result.message, result.ok);
         render();
       });
-      row.append(moveBtn, rotateBtn, removeBtn);
+      row.appendChild(removeBtn);
       list.appendChild(row);
     });
   }
