@@ -460,7 +460,11 @@
 
     const healthDamage = Math.max(0, finite(entity.maxHealth, 0) * PRONE_WATER_HEALTH_FRACTION_PER_SECOND * seconds);
     const winded = Math.max(0, finite(entity.maxStamina, 0) * PRONE_WATER_WINDED_FRACTION_PER_SECOND * seconds);
-    if (healthDamage > 0) resourceSystem.applyDamage?.(entity, healthDamage, { reason: 'prone in water', environmental: true });
+    if (healthDamage > 0) resourceSystem.applyDamage?.(entity, healthDamage, {
+      reason: 'prone in water',
+      environmental: true,
+      ignoreArmorWeight: true,
+    });
     if (winded > 0) resourceSystem.addAffliction?.(entity, 'windedStamina', winded);
     resourceSystem.enforceCaps?.(entity);
 
