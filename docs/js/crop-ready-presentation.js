@@ -1,36 +1,40 @@
 // Presentation-only ripe-crop cue: stationary plants + one shared sparkle cloud.
 //
-// game.js marks a ready crop by bobbing its crop root on Y and continuously
-// rotating that root. This module recognizes that ripe-only motion immediately
-// before render, neutralizes just the visual bob/spin, and draws one shared
-// THREE.Points sparkle cue over every detected ready crop. Gameplay crop state,
-// growth, harvesting, persistence, sizing, clustering, and flood anchoring stay
-// owned by their existing systems.
+// The crop updater still writes its legacy ripe-only Y bob and root spin. This
+// module now reads the authoritative tile.cropReady flag, removes that motion at
+// draw time on the very first ripe frame, and leaves the existing sparkle cue as
+// the only visual readiness signal. Gameplay crop state, growth, harvesting,
+// persistence, sizing, clustering, and flood/soil anchoring remain owned by their
+// existing systems.
 //
 // Performance note: the renderer can execute several passes per displayed frame.
 // Crop discovery/sparkle-buffer work is therefore coalesced to once per JS turn;
-// later render passes only apply/restore the already-known ready transforms.
+// later render passes only apply/restore the small cached ready-root set.
 (() => {
   'use strict';
 
   if (window.HobunjiCropReadyPresentation) return;
 
-  const THREE = window.THREE;
+  const THREE = window.THREE; // Used by the shared sparkle Points object and renderer hook below.
   if (!THREE?.WebGLRenderer?.prototype) return;
 
-  const MIN_CROP_SCALE = 0.145;
-  const MAX_CROP_SCALE = 0.975;
-  const MAX_READY_ROTATION_STEP = 0.18;
-  const SPARKLES_PER_CROP = 4;
-  const DISCOVERY_INTERVAL_MS = 100; // 10 Hz scene scan; cached ready roots render smoothly between scans.
-  const candidateState = new WeakMap();
-  const sceneState = new WeakMap();
-  let lastReadyCount = 0;
-  let farmDeps = null; // Captured from FarmPanel.init purely to identify the farm's own scene (see crop-billboard-presentation.js) — ready crops only ever exist there, so every other area's scene (town, wilderness, interiors) can skip the discovery scan entirely instead of walking its whole child list at 10 Hz for nothing.
+  const MIN_CROP_SCALE = 0.145; // Used by plausibleCropRoot to reject unrelated half-tile scene objects.
+  const MAX_CROP_SCALE = 0.975; // Used with MIN_CROP_SCALE to match the crop renderer's growth-scale range.
+  const SPARKLES_PER_CROP = 4; // Used by updateSparkles to keep the existing four-point ripe cue.
+  const DISCOVERY_INTERVAL_MS = 100; // Used to scan the farm scene for ready roots at 10 Hz instead of every render pass.
+  const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']); // Used to mirror the two crop types that use the foliage renderer's smaller legacy bob/spin profile.
+  const FOLIAGE_READY_BOB = 0.025; // Used to exactly cancel vegetation-crop-rendering's ripe foliage Y amplitude.
+  const GENERIC_READY_BOB = 0.03; // Used to exactly cancel vegetation-crop-rendering's ripe generic/PNG crop Y amplitude.
+  const FOLIAGE_READY_ROTATION_MS = 2200; // Used to recover the foliage updater's source timestamp from its authored ripe rotation.
+  const GENERIC_READY_ROTATION_MS = 1200; // Used to recover the generic updater's source timestamp from its authored ripe rotation.
+  const sceneState = new WeakMap(); // Used to retain one sparkle buffer + cached ripe-root list per rendered farm scene.
+  let lastReadyCount = 0; // Used by mobile-readable diagnostics to report the last discovered ripe-crop count.
+  let lastNeutralizedCount = 0; // Used by diagnostics to confirm how many ripe roots had bob/spin removed on the last farm render.
+  let farmDeps = null; // Captured from FarmPanel.init so readiness comes from the authoritative farm grid instead of inferred animation.
 
   function patchFarmPanel(api) {
     if (!api?.init || api.__hobunjiCropReadyPresentationPatched) return;
-    const originalInit = api.init.bind(api);
+    const originalInit = api.init.bind(api); // Used to preserve normal FarmPanel initialization while retaining its live farm dependencies.
     api.init = function cropReadyPresentationFarmPanelInit(injectedDeps = {}, ...rest) {
       const result = originalInit(injectedDeps, ...rest);
       farmDeps = injectedDeps;
@@ -41,11 +45,11 @@
 
   function installFarmPanelHook() {
     if (window.FarmPanel) { patchFarmPanel(window.FarmPanel); return; }
-    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel');
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'FarmPanel'); // Used to chain with any earlier lazy FarmPanel global hook.
     if (descriptor && !descriptor.configurable) return;
-    const previousGet = descriptor?.get;
-    const previousSet = descriptor?.set;
-    let value = descriptor?.value;
+    const previousGet = descriptor?.get; // Used to preserve a previously installed FarmPanel getter.
+    const previousSet = descriptor?.set; // Used to preserve a previously installed FarmPanel setter.
+    let value = descriptor?.value; // Used as local storage only when no earlier accessor owns the FarmPanel global.
     Object.defineProperty(window, 'FarmPanel', {
       configurable: true,
       get() { return previousGet ? previousGet.call(window) : value; },
@@ -63,16 +67,16 @@
   }
 
   function uniformCropScale(root) {
-    const sx = Number(root?.scale?.x);
-    const sy = Number(root?.scale?.y);
-    const sz = Number(root?.scale?.z);
+    const sx = Number(root?.scale?.x); // Used with sy/sz to identify the crop renderer's uniform growth transform.
+    const sy = Number(root?.scale?.y); // Used with sx/sz to reject non-crop scene objects.
+    const sz = Number(root?.scale?.z); // Used with sx/sy to reject non-uniform transforms.
     if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz)) return null;
     if (Math.abs(sx - sy) > 0.0005 || Math.abs(sx - sz) > 0.0005) return null;
     return sx >= MIN_CROP_SCALE && sx <= MAX_CROP_SCALE ? sx : null;
   }
 
   function isGenericCropCube(root) {
-    const p = root?.geometry?.parameters;
+    const p = root?.geometry?.parameters; // Used to recognize the unconverted generic BoxGeometry crop path.
     return root?.isMesh
       && root.geometry?.type === 'BoxGeometry'
       && root.material?.isMeshLambertMaterial
@@ -82,7 +86,7 @@
   }
 
   function hasAuthoredCropSprite(root) {
-    let found = Boolean(root?.userData?.hobunjiCropSpriteKey);
+    let found = Boolean(root?.userData?.hobunjiCropSpriteKey); // Used to recognize converted PNG crop roots or foliage wrappers containing authored crop planes.
     if (found || !root?.traverse) return found;
     root.traverse(child => {
       if (!found && child?.userData?.hobunjiCropSpriteKey) found = true;
@@ -98,44 +102,43 @@
     return Boolean(root.userData?.hobunjiCropRootKey);
   }
 
-  function observeReadyCrop(root, nowMs) {
-    const rawRotation = Number(root.rotation?.y) || 0;
-    const rawY = Number(root.position?.y) || 0;
-    let state = candidateState.get(root);
-    if (!state) {
-      state = {
-        lastRawRotation: rawRotation,
-        lastObservedAt: nowMs,
-        minY: rawY,
-        maxY: rawY,
-        stableY: rawY,
-        lastMotionAt: -Infinity,
-        ready: false,
-      };
-      candidateState.set(root, state);
-      return state;
-    }
+  function tileForRoot(root) {
+    const grid = farmDeps?.getGrid?.(); // Used as the authoritative cropReady source rather than animation-motion inference.
+    if (!grid || !root?.position) return null;
+    const col = Math.floor(Number(root.position.x)); // Used because crop roots are positioned at col + 0.5.
+    const row = Math.floor(Number(root.position.z)); // Used because crop roots are positioned at row + 0.5.
+    if (col < 0 || row < 0 || row >= grid.length || col >= (grid[row]?.length || 0)) return null;
+    return { tile: grid[row][col], col, row };
+  }
 
-    const elapsedMs = Math.max(1, nowMs - state.lastObservedAt);
-    const rotationStep = Math.abs(rawRotation - state.lastRawRotation);
-    // Normalize to a ~60 Hz frame step so the original ready-motion threshold
-    // remains meaningful even though discovery now runs at only 10 Hz.
-    const normalizedRotationStep = rotationStep * Math.min(1, 16.667 / elapsedMs);
-    state.lastRawRotation = rawRotation;
-    state.lastObservedAt = nowMs;
-    state.minY = Math.min(state.minY, rawY);
-    state.maxY = Math.max(state.maxY, rawY);
-    state.stableY = (state.minY + state.maxY) * 0.5;
-    if (normalizedRotationStep > 0.00001 && normalizedRotationStep < MAX_READY_ROTATION_STEP) state.lastMotionAt = nowMs;
-    state.ready = nowMs - state.lastMotionAt < 250;
-    return state;
+  function legacyMotionProfile(tile) {
+    const foliage = FOLIAGE_CROPS.has(tile?.crop); // Used to select the exact legacy updater branch whose bob/spin must be cancelled.
+    return foliage
+      ? { bob: FOLIAGE_READY_BOB, rotationMs: FOLIAGE_READY_ROTATION_MS }
+      : { bob: GENERIC_READY_BOB, rotationMs: GENERIC_READY_ROTATION_MS };
+  }
+
+  function sourceReadyTimestamp(root, col, rotationMs, fallbackNowMs) {
+    const rotationY = Number(root?.rotation?.y); // Used to invert the legacy `now / rotationMs + col` assignment and recover the bob's exact source phase.
+    if (!Number.isFinite(rotationY)) return fallbackNowMs;
+    const recovered = (rotationY - col) * rotationMs; // Used by staticReadyY so the bob cancellation matches the updater even when render occurs a few ms later.
+    return Number.isFinite(recovered) && recovered >= 0 ? recovered : fallbackNowMs;
+  }
+
+  function staticReadyY(entry, fallbackNowMs) {
+    const rawY = Number(entry?.root?.position?.y); // Used as the legacy bobbed Y that will be returned to its stationary baseline.
+    if (!Number.isFinite(rawY)) return rawY;
+    const profile = legacyMotionProfile(entry.tile); // Used to mirror the exact foliage or generic ripe-motion constants.
+    const sourceNow = sourceReadyTimestamp(entry.root, entry.col, profile.rotationMs, fallbackNowMs); // Used to reconstruct the updater's original sine phase.
+    const bobY = Math.sin(sourceNow / 500 + entry.col + entry.row) * profile.bob; // Used to remove only the ripe-only vertical bob, leaving all terrain/flood offsets for the inner soil-grounding wrapper.
+    return rawY - bobY;
   }
 
   function ensureSceneState(scene) {
-    let record = sceneState.get(scene);
+    let record = sceneState.get(scene); // Used to reuse one shared sparkle cloud for this farm scene.
     if (record) return record;
 
-    const geometry = new THREE.BufferGeometry();
+    const geometry = new THREE.BufferGeometry(); // Used as the dynamically resized shared ripe-sparkle position buffer.
     const material = new THREE.PointsMaterial({
       color: 0xfff2b0,
       size: 0.075,
@@ -143,8 +146,8 @@
       opacity: 0.92,
       depthWrite: false,
       sizeAttenuation: true,
-    });
-    const points = new THREE.Points(geometry, material);
+    }); // Used to preserve the pre-existing warm sparkle appearance.
+    const points = new THREE.Points(geometry, material); // Used as one draw call for every ripe crop's sparkle cue.
     points.frustumCulled = false;
     points.renderOrder = 4;
     points.userData.hobunjiReadyCropSparkles = true;
@@ -161,17 +164,18 @@
       scanValidThisTurn: false,
       scanResetQueued: false,
       lastDiscoveryAt: -Infinity,
-    };
+      presentationNowMs: 0,
+    }; // Holds the cached ready roots and one reusable GPU position buffer for this scene.
     sceneState.set(scene, record);
     return record;
   }
 
   function ensurePointCapacity(record, requiredPoints) {
     if (requiredPoints <= record.capacityPoints && record.positionAttribute) return;
-    let nextCapacity = Math.max(16, record.capacityPoints || 0);
+    let nextCapacity = Math.max(16, record.capacityPoints || 0); // Used to grow the shared sparkle buffer geometrically instead of reallocating per ripe crop.
     while (nextCapacity < requiredPoints) nextCapacity *= 2;
-    const positions = new Float32Array(nextCapacity * 3);
-    const attribute = new THREE.BufferAttribute(positions, 3);
+    const positions = new Float32Array(nextCapacity * 3); // Used as xyz storage for every active sparkle point.
+    const attribute = new THREE.BufferAttribute(positions, 3); // Used as the geometry's dynamic position attribute.
     attribute.setUsage?.(THREE.DynamicDrawUsage);
     record.positionArray = positions;
     record.positionAttribute = attribute;
@@ -180,7 +184,7 @@
   }
 
   function updateSparkles(record, readyRoots, nowMs) {
-    const pointCount = readyRoots.length * SPARKLES_PER_CROP;
+    const pointCount = readyRoots.length * SPARKLES_PER_CROP; // Used to trim the shared buffer to only currently ripe crops.
     if (!pointCount) {
       record.geometry.setDrawRange(0, 0);
       record.points.visible = false;
@@ -188,15 +192,18 @@
     }
 
     ensurePointCapacity(record, pointCount);
-    const positions = record.positionArray;
-    let cursor = 0;
-    for (const { root, state, scale } of readyRoots) {
-      const phaseSeed = Number(root.position.x) * 1.71 + Number(root.position.z) * 2.37;
+    const positions = record.positionArray; // Used as the writable shared sparkle xyz buffer.
+    let cursor = 0; // Used to append each ripe crop's four sparkle positions without allocations.
+    for (const entry of readyRoots) {
+      const root = entry.root; // Used as the ripe crop's world X/Z source.
+      const scale = entry.scale; // Used to keep the sparkle cloud proportional to crop growth size.
+      const baseY = staticReadyY(entry, nowMs); // Used so the sparkle cue stays stationary even though the legacy updater still writes a bobbed root before render.
+      const phaseSeed = Number(root.position.x) * 1.71 + Number(root.position.z) * 2.37; // Used to desynchronize sparkle orbits between neighboring crops.
       for (let index = 0; index < SPARKLES_PER_CROP; index++) {
-        const phase = nowMs * 0.0016 + phaseSeed + index * (Math.PI * 2 / SPARKLES_PER_CROP);
-        const radius = 0.18 + scale * 0.22 + Math.sin(phase * 1.7) * 0.035;
+        const phase = nowMs * 0.0016 + phaseSeed + index * (Math.PI * 2 / SPARKLES_PER_CROP); // Used to animate the sparkle itself while the plant remains still.
+        const radius = 0.18 + scale * 0.22 + Math.sin(phase * 1.7) * 0.035; // Used to make the four points gently orbit instead of moving the crop.
         positions[cursor++] = Number(root.position.x) + Math.cos(phase) * radius;
-        positions[cursor++] = state.stableY + 0.18 + scale * (0.35 + index * 0.08) + Math.sin(phase * 2.2) * 0.07;
+        positions[cursor++] = baseY + 0.18 + scale * (0.35 + index * 0.08) + Math.sin(phase * 2.2) * 0.07;
         positions[cursor++] = Number(root.position.z) + Math.sin(phase) * radius;
       }
     }
@@ -217,13 +224,13 @@
   }
 
   function discoverReadyRoots(scene, record, nowMs) {
-    const readyRoots = [];
+    const readyRoots = []; // Used to cache only roots whose actual farm tile says cropReady right now.
     scene?.children?.forEach?.(root => {
       if (!plausibleCropRoot(root, scene)) return;
-      const scale = uniformCropScale(root);
-      const state = observeReadyCrop(root, nowMs);
-      if (!state.ready) return;
-      readyRoots.push({ root, state, scale });
+      const located = tileForRoot(root); // Used to bind the rendered crop root back to its authoritative farm tile.
+      if (!located?.tile?.crop || !located.tile.cropReady) return;
+      const scale = uniformCropScale(root); // Used by the sparkle radius/height calculations below.
+      readyRoots.push({ root, tile: located.tile, col: located.col, row: located.row, scale });
     });
     record.readyRoots = readyRoots;
     record.lastDiscoveryAt = nowMs;
@@ -231,29 +238,30 @@
   }
 
   function refreshSceneTurn(scene, record) {
-    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Used by sparkle animation and exact legacy-bob cancellation for this render turn.
     if (nowMs - record.lastDiscoveryAt >= DISCOVERY_INTERVAL_MS) {
       discoverReadyRoots(scene, record, nowMs);
     }
-    // Sparkle animation only touches the small cached ready set; the full scene
-    // discovery walk above stays at 10 Hz.
+    record.presentationNowMs = nowMs;
     updateSparkles(record, record.readyRoots, nowMs);
     record.scanValidThisTurn = true;
     queueTurnReset(record);
   }
 
   function prepare(scene) {
+    lastNeutralizedCount = 0;
     if (!scene || !farmDeps?.scene || scene !== farmDeps.scene) return [];
-    const record = ensureSceneState(scene);
+    const record = ensureSceneState(scene); // Used to access the cached authoritative ready-root set for this farm scene.
     if (!record.scanValidThisTurn) refreshSceneTurn(scene, record);
 
-    const restore = [];
+    const restore = []; // Used to restore simulation-owned legacy transforms immediately after this synchronous render pass.
     for (const entry of record.readyRoots) {
-      const root = entry.root;
-      if (!root || root.parent !== scene) continue;
+      const root = entry.root; // Used as the one game-owned crop transform that must stay stationary while drawn.
+      if (!root || root.parent !== scene || !entry.tile?.cropReady) continue;
       restore.push({ root, y: root.position.y, rotationY: root.rotation.y });
-      root.position.y = entry.state.stableY;
+      root.position.y = staticReadyY(entry, record.presentationNowMs);
       root.rotation.y = 0;
+      lastNeutralizedCount++;
     }
     return restore;
   }
@@ -267,22 +275,18 @@
   }
 
   function installRenderHook() {
-    const prototype = THREE.WebGLRenderer.prototype;
+    const prototype = THREE.WebGLRenderer.prototype; // Used as the shared synchronous draw boundary after the renderer is made prototype-hookable.
     if (prototype.__hobunjiCropReadyPresentationHooked || typeof prototype.render !== 'function') return;
-    const previousRender = prototype.render;
+    const previousRender = prototype.render; // Used to preserve crop PNG/soil grounding and all earlier renderer wrappers.
     prototype.render = function cropReadyPresentationRender(scene, camera, ...rest) {
-      const states = prepare(scene);
+      const states = prepare(scene); // Used to remove only ripe bob/spin before every actual draw pass.
       try {
         return previousRender.call(this, scene, camera, ...rest);
       } finally {
         restoreTransforms(states);
       }
     };
-    // held-object-render-order.js's internal depth-replay passes look for the
-    // TRUE, undecorated render() by walking a chain of __hobunji*Original
-    // markers (see its unwrapRendererRender) — without this marker those
-    // replay passes stop unwrapping here instead of reaching the real render.
-    prototype.render.__hobunjiCropReadyPresentationOriginal = previousRender;
+    prototype.render.__hobunjiCropReadyPresentationOriginal = previousRender; // Used by held-object depth replay to unwrap back to the true renderer when needed.
     prototype.__hobunjiCropReadyPresentationHooked = true;
   }
 
@@ -292,10 +296,14 @@
   window.HobunjiCropReadyPresentation = {
     getDebug: () => ({
       readyCrops: lastReadyCount,
+      neutralizedReadyCrops: lastNeutralizedCount,
       sparklesPerCrop: SPARKLES_PER_CROP,
+      readinessSource: 'tile.cropReady',
+      ripePlantMotion: 'none',
       coalescedPerTurn: true,
       discoveryHz: 1000 / DISCOVERY_INTERVAL_MS,
-      farmReady: Boolean(farmDeps?.scene),
+      farmReady: Boolean(farmDeps?.scene && farmDeps?.getGrid),
+      lastChange: 'Ripe crops stay stationary; the existing sparkle is now the only readiness animation.',
     }),
   };
 })();
