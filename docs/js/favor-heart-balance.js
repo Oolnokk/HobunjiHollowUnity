@@ -124,9 +124,29 @@
 
   function armAssignment(name, flagName, onAssign) {
     if (window[flagName]) return true;
-    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Used to preserve an already-configured global instead of trampling another lazy loader.
+    const descriptor = Object.getOwnPropertyDescriptor(window, name); // Used to preserve or chain any earlier lazy-global hook instead of trampling it.
     if (descriptor && !descriptor.configurable) return false;
-    if (descriptor?.get || descriptor?.set) return false;
+
+    if (descriptor?.get || descriptor?.set) {
+      const previousGet = descriptor.get ? descriptor.get.bind(window) : null; // Used to read through an earlier DialogueContent/ProceduralTasks lazy hook.
+      const previousSet = descriptor.set ? descriptor.set.bind(window) : null; // Used to let the earlier hook patch/publish the assigned API before Favor balance sees it.
+      let fallbackValue = previousGet?.(); // Used only when an earlier accessor has no setter/getter pair capable of retaining the assigned value.
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: descriptor.enumerable !== false,
+        get() { return previousGet ? previousGet() : fallbackValue; },
+        set(value) {
+          if (previousSet) previousSet(value);
+          else fallbackValue = value;
+          const currentDescriptor = Object.getOwnPropertyDescriptor(window, name); // Used because an earlier setter may replace this chained accessor with its final data property.
+          const resolved = previousGet ? previousGet() : (currentDescriptor && 'value' in currentDescriptor ? currentDescriptor.value : fallbackValue); // Used to pass the already-patched published API to Favor balance.
+          delete window[flagName];
+          onAssign(resolved ?? value);
+        },
+      });
+      window[flagName] = true;
+      return true;
+    }
 
     let currentValue = descriptor?.value; // Used to retain a value that existed before the lazy assignment hook was armed.
     Object.defineProperty(window, name, {
