@@ -13,6 +13,7 @@
   const RETICLE_HEIGHT_PX = 71 * RETICLE_SCALE;
   const FILTER_WHITE = 'brightness(0) invert(1)';
   const READY_SCALE = 1.16;
+  const SCHEDULER_ID = 'melee-hud-reticle'; // Used for shared frame ownership, disposal, tests, and Pixel Probe diagnostics.
   const SCALE_TRANSITION = 'transform 140ms ease-out'; // Used by each cropped quadrant wrapper when its attack enters or leaves range.
   const COLOR_TRANSITION = 'opacity 140ms ease-out'; // Used by the neutral/color layers for the readiness color lerp.
   // The neutral layer matches the ranged reticle. A second, transparent layer
@@ -38,7 +39,6 @@
   let host = null;
   let container = null;
   let pieces = [];
-  let frameRequest = 0;
   let lastSnapshot = { visible: false, target: null, slots: [] };
 
   function setIfChanged(object, key, value) {
@@ -312,18 +312,20 @@
 
   function tick() {
     refresh();
-    frameRequest = requestAnimationFrame(tick);
   }
 
   function init() {
     ensureReticle();
     refresh();
-    if (!frameRequest) frameRequest = requestAnimationFrame(tick);
+    window.RuntimeFrameScheduler.register(SCHEDULER_ID, tick, {
+      phase: 'visual',
+      owner: 'MeleeHudReticle',
+      description: 'Updates melee readiness quadrants and their current target.',
+    });
   }
 
   function dispose() {
-    if (frameRequest) cancelAnimationFrame(frameRequest);
-    frameRequest = 0;
+    window.RuntimeFrameScheduler.unregister(SCHEDULER_ID);
     container?.remove?.();
     container = null;
     pieces = [];

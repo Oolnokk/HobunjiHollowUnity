@@ -823,6 +823,15 @@
     const lines = [];
     lines.push('Pixel Probe report');
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
+    const frameSchedulerDebug = window.RuntimeFrameScheduler?.getDebug?.(); // Makes shared RAF ownership and subscriber failures inspectable on mobile.
+    if (frameSchedulerDebug) {
+      lines.push(`Runtime frames: frame=${frameSchedulerDebug.frameId} enabled=${frameSchedulerDebug.enabled}/${frameSchedulerDebug.registered} profiling=${frameSchedulerDebug.profilingEnabled ? 'on' : 'off'}`);
+      for (const entry of frameSchedulerDebug.entries) {
+        const timing = entry.averageDurationMs == null ? '' : ` avg=${entry.averageDurationMs.toFixed(3)}ms`;
+        lines.push(`  ${entry.id}: ${entry.enabled ? 'on' : 'off'} calls=${entry.callCount} errors=${entry.errorCount}${timing}`);
+        if (entry.lastError) lines.push(`    last error: ${entry.lastError.split('\n')[0]}`);
+      }
+    }
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
     if (playerVitalsDebug) lines.push(`Player vitals: hp=${playerVitalsDebug.health}/${playerVitalsDebug.maxHealth} deathHandled=${playerVitalsDebug.deathHandled ? 1 : 0}`);

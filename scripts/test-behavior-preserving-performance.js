@@ -6,6 +6,7 @@ const vm = require('node:vm'); // Replays browser callbacks in a deterministic f
 const cp = require('node:child_process'); // Reads an optional comparison revision without altering the worktree.
 const read = path => fs.readFileSync(path, 'utf8'); // Loads working-tree sources for all checks.
 const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes cross-context objects for assertions.
+const schedulerSource = read('docs/js/runtime-frame-scheduler.js'); // Supplies the new shared RAF owner to migrated browser runtimes.
 
 function replayReticle(source, kind) {
   let writes = 0; // Counts DOM assignments after construction, not elapsed runtime.
@@ -51,11 +52,12 @@ function replayReticle(source, kind) {
       meleeHit: () => { hitCalls++; return { hit: hits }; },
     },
   }; // Browser globals shared by the actual reticle code.
-  const context = { window, console, THREE: { Vector3, MathUtils: { degToRad: d => d * Math.PI / 180 } },
+  const context = { window, console, performance: { now: () => 0 }, THREE: { Vector3, MathUtils: { degToRad: d => d * Math.PI / 180 } },
     document: { readyState: 'complete', getElementById: id => nodes.get(id), createElement: node },
     requestAnimationFrame(callback) { frames.set(++frameId, callback); return frameId; },
     cancelAnimationFrame(id) { frames.delete(id); },
   }; // Deterministic browser environment for unmodified module execution.
+  vm.runInNewContext(schedulerSource, context);
   vm.runInNewContext(source, context);
   const api = window[kind === 'ranged' ? 'RangedHudReticle' : 'MeleeHudReticle']; // Public runtime API under test.
   function capture() {
@@ -65,7 +67,7 @@ function replayReticle(source, kind) {
     outputs.push({ snapshot, appearance: appearance(nodes.get(kind + 'HudReticle')), hitCalls });
   }
   function tick() {
-    assert.equal(frames.size, 1, 'exactly the original one private RAF remains scheduled');
+    assert.equal(frames.size, 1, 'exactly one shared browser RAF remains scheduled');
     const [id, callback] = frames.entries().next().value; // Executes one real browser callback at a time.
     frames.delete(id); callback(); capture();
   }
@@ -83,7 +85,7 @@ function replayReticle(source, kind) {
   // Include root replacement in parity checks; do not bundle unrelated visual fixes.
   nodes.get(kind + 'HudReticle').remove(); tick();
   api.dispose();
-  assert.equal(frames.size, 0, 'dispose cancels the scheduled callback');
+  assert.equal(frames.size, 0, 'dispose unregisters the final subscriber and cancels the shared callback');
   return { outputs, steadyWrites };
 }
 
