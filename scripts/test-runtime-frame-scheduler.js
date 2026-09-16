@@ -82,13 +82,21 @@ scheduler.unregister('late');
 assert.equal(frames.size, 0, 'removing the final subscriber cancels the shared RAF');
 assert(cancelled.length > 0, 'final unregistration reached cancelAnimationFrame');
 
-const index = read('docs/index.html'); // Guards the load-order contract smaller-context models depend on.
+const index = read('docs/index.html'); // Guards the shipped bootstrap/load-order contract smaller-context models depend on.
+const authority = read('docs/js/controller-input.js'); // Main's current parser bootstrap when index lacks an explicit scheduler tag.
 const melee = read('docs/js/combat/melee-hud-reticle.js'); // Guards conservative ownership-only migration.
 const ranged = read('docs/js/combat/ranged-hud-reticle.js'); // Guards conservative ownership-only migration.
 const quick = read('docs/js/combat/quick-attack-bonus-indicator.js'); // Guards animated fallback cadence ownership.
 const guide = read('docs/architecture/runtime-frame-scheduler.md'); // Ensures the extension contract ships beside the runtime.
-assert(index.indexOf('runtime-frame-scheduler.js') < index.indexOf('held-action-animations.js'), 'scheduler loads before held and social runtimes');
-assert(index.includes('runtime-frame-scheduler.js?v=20260916foundation2'), 'browser cache key delivers the next-frame registration fix');
+const authorityAt = index.indexOf('js/controller-input.js?v='); // Used to validate either explicit or parser-bootstrap scheduler startup.
+const schedulerAt = index.indexOf('js/runtime-frame-scheduler.js?v='); // Optional explicit load path; current main uses ControllerInput's parser bootstrap.
+assert(authorityAt >= 0, 'ControllerInput must remain in the shipped page');
+if (schedulerAt >= 0) {
+  assert(schedulerAt < authorityAt, 'an explicit scheduler tag must load before ControllerInput');
+} else {
+  assert(authority.includes('runtime-frame-scheduler.js?v=20260916main1'), 'ControllerInput must parser-bootstrap the scheduler when index omits the explicit tag');
+  assert(authority.includes('document.write'), 'the current bootstrap must remain parser-synchronous so later HUD modules cannot race it');
+}
 for (const [name, source, id] of [
   ['melee', melee, 'melee-hud-reticle'],
   ['ranged', ranged, 'ranged-hud-reticle'],
@@ -97,7 +105,7 @@ for (const [name, source, id] of [
   assert(source.includes('RuntimeFrameScheduler.register'), `${name} registers with the shared browser-frame owner`);
   assert(!source.includes('requestAnimationFrame('), `${name} no longer owns a private RAF`);
 }
-assert(quick.includes('requestAnimationFrame(frame); // Retains its pre-gameLoop'), 'Quick Attack keeps its isolated pre-gameLoop RAF ordering');
+assert(quick.includes('requestAnimationFrame(frame);'), 'Quick Attack keeps its isolated pre-gameLoop RAF ordering');
 assert(!quick.includes('RuntimeFrameScheduler.register'), 'Quick Attack is not silently moved across gameLoop before scheduler phases exist');
 assert(index.indexOf('quick-attack-bonus-indicator.js') < index.indexOf('<script src="game.js?'), 'Quick Attack loads and schedules before gameLoop');
 assert(melee.includes("document.addEventListener('DOMContentLoaded', init"), 'melee scheduler registration remains after gameLoop setup');
@@ -105,4 +113,4 @@ assert(ranged.includes("document.addEventListener('DOMContentLoaded', init"), 'r
 assert(quick.includes('drawProceduralReticle(sight, nowMs)'), 'Quick Attack keeps its animated procedural fallback');
 assert(guide.includes('No search through `game.js`'), 'architecture guide explicitly supports local subsystem comprehension');
 assert(read('AGENTS.md').includes('docs/architecture/runtime-frame-scheduler.md'), 'root coding instructions route small-context models to the cadence contract');
-console.log('runtime frame scheduler, conservative HUD migration, and isolated Quick Attack contracts passed');
+console.log('runtime frame scheduler, current-main bootstrap, conservative HUD migration, and isolated Quick Attack contracts passed');
