@@ -162,10 +162,10 @@
     return true;
   }
 
-  function pointerEvent(type, button) {
+  function pointerEvent(type, button, pointerId) {
     const rect = button?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 }; // Keeps synthetic taps centered so contextual pointer handlers never interpret them as drag gestures.
     const init = {
-      bubbles: true, cancelable: true, pointerId: ++syntheticPointerId, pointerType: 'mouse', isPrimary: true,
+      bubbles: true, cancelable: true, pointerId, pointerType: 'mouse', isPrimary: true,
       button: 0, buttons: type === 'pointerdown' ? 1 : 0,
       clientX: Number(rect.left) + Number(rect.width) * 0.5,
       clientY: Number(rect.top) + Number(rect.height) * 0.5,
@@ -185,8 +185,9 @@
       if (!button || button.classList?.contains?.('abt-hidden') || button.classList?.contains?.('blocked')) continue;
       const renderedAction = String(button.dataset?.action || '');
       if (!POINTER_ONLY_ACTIONS.has(renderedAction) || !controllerActionPressed(frame, actionId)) continue;
-      button.dispatchEvent(pointerEvent('pointerdown', button));
-      button.dispatchEvent(pointerEvent('pointerup', button));
+      const pointerId = ++syntheticPointerId; // One id spans down/up so pointer-owned contextual modules see a normal single tap gesture.
+      button.dispatchEvent(pointerEvent('pointerdown', button, pointerId));
+      button.dispatchEvent(pointerEvent('pointerup', button, pointerId));
       lastAction = `${renderedAction} opened through rendered Action ${actionId.slice(-1)}`;
       log(lastAction);
       return true;
