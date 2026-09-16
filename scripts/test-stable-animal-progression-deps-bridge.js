@@ -24,6 +24,7 @@ const context = {
 };
 context.window = context;
 
+context.LivestockNurseryObserverScope = {}; // Loaded before the legacy Nursery so its body-wide observer is scoped to Farm lists.
 context.ANIMAL_GROWTH_CONFIG = {};
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
