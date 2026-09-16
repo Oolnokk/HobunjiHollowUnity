@@ -45,6 +45,8 @@
   let originalFarmPanelRender = null; // Used to decorate only after the authoritative Farm panel has rendered.
   let originalSellValueFor = null; // Used as the genetics-only value underneath the new adult maturation premium.
   let livestockObserver = null; // Watches only #farmLivestockList direct children so Nursery replacement is detected without a document-wide observer.
+  let portraitObserver = null; // Lazily composes only card portraits that can actually become visible instead of rendering every future page up front.
+  let portraitObserverSection = null; // Used to disconnect card observations when FarmPanel replaces the entire Nursery section.
   let selectedBabyId = null; // Used by mouse/controller focus so the right-side detail rail follows the active grid square without rebuilding the Farm panel.
   let decorateQueued = false; // Coalesces render/observer requests into one Nursery enhancement microtask.
   let installed = false; // Makes repeated parser/runtime bridge installs idempotent.
@@ -182,6 +184,42 @@
     return promise;
   }
 
+  function applyCardPortrait(section, card, entry) {
+    if (!section || !card || !entry) return;
+    portraitUrlFor(entry).then(url => {
+      if (!url || !card.isConnected || card.dataset.nurseryBabyId !== String(entry.id)) return;
+      card.style.backgroundImage = `url("${url}")`;
+      card.dataset.portraitReady = '1';
+      if (entry.id === selectedBabyId) setDetailPortrait(section.shadowRoot, entry, url);
+    });
+  }
+
+  function ensureCardPortraitObserver(section) {
+    if (portraitObserverSection !== section) {
+      portraitObserver?.disconnect?.();
+      portraitObserver = null;
+      portraitObserverSection = section;
+    }
+    if (portraitObserver || typeof IntersectionObserver === 'undefined') return portraitObserver;
+    portraitObserver = new IntersectionObserver(entries => {
+      for (const observed of entries) {
+        if (!observed.isIntersecting) continue;
+        const card = observed.target;
+        portraitObserver?.unobserve?.(card);
+        const entry = card.__nurseryPortraitEntry;
+        if (entry) applyCardPortrait(portraitObserverSection, card, entry);
+      }
+    }, { root: null, rootMargin: '96px' });
+    return portraitObserver;
+  }
+
+  function scheduleCardPortrait(section, card, entry) {
+    card.__nurseryPortraitEntry = entry; // Retained only while the current Nursery section owns this card; observer disconnects when the section is replaced.
+    const observer = ensureCardPortraitObserver(section);
+    if (observer) observer.observe(card);
+    else applyCardPortrait(section, card, entry); // Safe fallback for browsers without IntersectionObserver.
+  }
+
   function ensureDocumentStyles() {
     if (typeof document === 'undefined' || document.getElementById('livestockNurseryGridStyles')) return;
     const style = document.createElement('style'); // Inserted in <head>, outside LivestockNursery's body MutationObserver.
@@ -189,22 +227,25 @@
     style.textContent = `
       #livestockNurserySection .nursery-grid-stack {
         display:grid !important;
-        grid-template-columns:repeat(auto-fill,minmax(62px,1fr)) !important;
+        grid-template-columns:repeat(7,minmax(0,1fr)) !important;
         align-content:start !important;
         gap:6px !important;
-        max-height:min(52vh,420px) !important;
-        min-height:148px !important;
-        overflow-y:auto !important;
-        overflow-x:hidden !important;
-        overscroll-behavior:contain !important;
-        padding:2px 4px 4px 2px !important;
-        scrollbar-gutter:stable;
+        width:100% !important;
+        height:auto !important;
+        max-height:none !important;
+        min-height:0 !important;
+        overflow:visible !important;
+        overscroll-behavior:auto !important;
+        padding:6px !important;
+        scrollbar-gutter:auto !important;
+        box-sizing:border-box !important;
       }
       #livestockNurserySection .nursery-grid-card {
         position:relative !important;
         width:100% !important;
         aspect-ratio:1 / 1 !important;
-        min-height:58px !important;
+        min-width:0 !important;
+        min-height:0 !important;
         padding:0 !important;
         overflow:hidden !important;
         border:1px solid var(--border,#4b443a) !important;
@@ -328,7 +369,7 @@
       <div class="layout">
         <div class="grid-pane">
           <div class="header"><div class="title" id="title"></div><div class="capacity" id="capacity"></div></div>
-          <div class="hint">Focus a portrait to inspect it. The grid scrolls vertically; controller directions follow the square layout.</div>
+          <div class="hint">Focus a portrait to inspect it. The grid uses Inventory-style square slots and pages only when needed.</div>
           <slot name="grid"></slot>
         </div>
         <aside class="detail-pane">
@@ -383,12 +424,7 @@
       card.dataset.fallbackIcon = SPECIES_FALLBACK_ICONS[entry.kind] || '🐾';
       card.setAttribute('aria-label', `${entry.name || speciesLabel(entry.kind)}, ${speciesLabel(entry.kind)}${traits.specials.length ? `, ${traits.specials.join(', ')}` : ''}`);
       card.setAttribute('aria-selected', String(entry.id === selectedBabyId));
-      portraitUrlFor(entry).then(url => {
-        if (!url || !card.isConnected || card.dataset.nurseryBabyId !== String(entry.id)) return;
-        card.style.backgroundImage = `url("${url}")`;
-        card.dataset.portraitReady = '1';
-        if (entry.id === selectedBabyId) setDetailPortrait(section.shadowRoot, entry, url);
-      });
+      scheduleCardPortrait(section, card, entry);
     });
     const empty = stack.querySelector(':scope > div');
     if (empty && !records.length) empty.classList.add('nursery-grid-empty');
@@ -799,6 +835,7 @@
         };
       }),
       portraitCacheSize: portraitCache.size,
+      lazyPortraitObserverActive: !!portraitObserver,
       sectionEnhanced: typeof document !== 'undefined' && document.getElementById('livestockNurserySection')?.dataset?.nurseryGridEnhanced === '1',
       nursery: window.LivestockNursery?.debugSnapshot?.() || null,
     };
