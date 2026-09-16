@@ -25,6 +25,7 @@ const context = {
 context.window = context;
 
 context.LivestockNurseryObserverScope = {}; // Loaded before the legacy Nursery so its body-wide observer is scoped to Farm lists.
+context.LivestockNurseryOutdoorGrowth = { install() {} }; // Keeps full-barn outdoor maturation from becoming an unrelated dynamic-load dependency in this bridge regression.
 context.ANIMAL_GROWTH_CONFIG = {};
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
@@ -37,6 +38,7 @@ context.BarnIncubator = { install() {} };
 context.FarmMenuLayout = { install() {} }; // Keeps this bridge-only regression focused on dependency mirroring rather than dynamic feature loading.
 context.LivestockNurseryGrid = { install() {} }; // Keeps the Nursery presentation/economy feature from becoming an unrelated dynamic-load dependency in this bridge regression.
 context.LivestockNurseryInventoryPaging = { install() {} }; // Same for the inventory-style paging/layout layer loaded immediately after the grid feature.
+context.LivestockNurseryGridUiFix = { install() {} }; // Same for the help-row/controller grow compatibility loaded after paging.
 context.LivestockNursery = { install() {} };
 context.FarmAnimals = {
   init(injectedDeps) { farmInitDeps = injectedDeps; },
