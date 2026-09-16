@@ -9,16 +9,17 @@
   const QUIT_BUTTON_ID = 'menuQuitBtn'; // Existing menu Quit button intercepted before local-save-flow's bubble listener.
   const RESET_BUTTON_ID = 'menuResetBtn'; // Legacy one-click farm reset control kept inert and hidden so it cannot be triggered accidentally.
   const MENU_CONTROL_LABELS = Object.freeze([ // Visible labels applied to the icon-only menu controls, including buttons installed later by checkpoint code.
-    { id: 'menuPauseBtn', text: '⏯ Pause / Resume', minWidth: '112px' },
-    { id: 'menuManualSaveBtn', text: '💾 Manual Save', minWidth: '104px' },
-    { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '90px' },
-    { id: 'mpClose', text: '✕ Close', minWidth: '72px' },
+    { id: 'menuPauseBtn', text: '⏯ Pause', minWidth: '70px' },
+    { id: 'menuManualSaveBtn', text: '💾 Manual Save', minWidth: '96px' },
+    { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '82px' },
+    { id: 'mpClose', text: '✕ Close', minWidth: '66px' },
   ]);
+  const MENU_OVERLAY_CONTROL_IDS = Object.freeze(['menuBtn', 'farmEditBtn', 'mapEditBtn']); // Fixed HUD tabs hidden while the menu is open so they cannot cover menu actions.
   let busy = false; // Prevents double-clicks from starting overlapping runtime/folder saves.
   let quitAttempts = 0; // Mobile-visible count of guarded quit attempts.
   let successfulFolderFlushes = 0; // Mobile-visible count of folder writes completed before a quit reload.
   let lastError = ''; // Mobile-visible latest guarded-quit error.
-  let menuControlsObserver = null; // Watches the menu because Manual Save and Recovery are injected after initial markup.
+  let menuControlsObserver = null; // Watches menu children and open/close state because controls are dynamic.
 
   function localSave() {
     return window.LocalSaveFolder || null;
@@ -44,12 +45,23 @@
     return true;
   }
 
+  function syncMenuOverlayControls() {
+    if (typeof document?.getElementById !== 'function') return false;
+    const menuPanel = document.getElementById('menuPanel'); // Its existing .open class is the authoritative visible-menu state.
+    const menuOpen = Boolean(menuPanel?.classList?.contains('open')); // Used below to hide fixed HUD tabs only while they would overlap the menu.
+    for (const id of MENU_OVERLAY_CONTROL_IDS) { // Each fixed tab keeps its normal display rule and only receives a temporary visibility override.
+      const button = document.getElementById(id); // Menu, Farm Edit, and Map Edit share the top-right HUD region above the menu z-index.
+      if (!button) continue;
+      button.style.visibility = menuOpen ? 'hidden' : '';
+      button.style.pointerEvents = menuOpen ? 'none' : '';
+    }
+    return true;
+  }
+
   function labelMenuControls() {
     if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
-    const controls = document.querySelector('#menuPanel .mp-ctrls'); // Control-row parent is also adjusted so the now-readable buttons can wrap instead of overlapping tabs.
+    const controls = document.querySelector('#menuPanel .mp-ctrls'); // Existing control-row parent receives readable labels without replacing handlers.
     if (!controls) return false;
-    controls.style.flexWrap = 'wrap';
-    controls.style.justifyContent = 'flex-end';
 
     for (const spec of MENU_CONTROL_LABELS) { // Each spec keeps one menu action readable without changing its existing click handler or id.
       const button = document.getElementById(spec.id); // Existing button may be static markup or dynamically installed by the checkpoint manager.
@@ -57,11 +69,12 @@
       if (button.textContent !== spec.text) button.textContent = spec.text;
       button.style.width = 'auto';
       button.style.minWidth = spec.minWidth;
-      button.style.padding = '0 9px';
+      button.style.padding = '0 7px';
       button.style.whiteSpace = 'nowrap';
     }
 
     disableFarmResetControl();
+    syncMenuOverlayControls();
     return true;
   }
 
@@ -69,10 +82,10 @@
     if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
     labelMenuControls();
     if (menuControlsObserver || typeof MutationObserver !== 'function') return true;
-    const menuPanel = document.getElementById('menuPanel'); // Narrow observation root catches late Manual Save/Recovery insertion and pause-icon rewrites.
+    const menuPanel = document.getElementById('menuPanel'); // Narrow observation root catches late save controls plus the panel's open/close class changes.
     if (!menuPanel) return false;
     menuControlsObserver = new MutationObserver(() => { labelMenuControls(); });
-    menuControlsObserver.observe(menuPanel, { childList: true, subtree: true });
+    menuControlsObserver.observe(menuPanel, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     return true;
   }
 
@@ -209,7 +222,7 @@
     window.HobunjiRuntimeSave?.flushNow?.({ reason: 'beforeunload' });
   }, { capture: true });
 
-  window.FolderSaveQuitGuard = { guardedQuit, labelMenuControls, disableFarmResetControl };
+  window.FolderSaveQuitGuard = { guardedQuit, labelMenuControls, disableFarmResetControl, syncMenuOverlayControls };
   window.__hobunjiFolderSaveQuitDebug = {
     snapshot: () => ({
       busy,
@@ -219,6 +232,9 @@
       farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
       labeledMenuButtons: typeof document?.getElementById === 'function'
         ? MENU_CONTROL_LABELS.filter(spec => document.getElementById(spec.id)?.textContent === spec.text).length
+        : 0,
+      menuOverlayControlsHidden: typeof document?.getElementById === 'function'
+        ? MENU_OVERLAY_CONTROL_IDS.filter(id => document.getElementById(id)?.style?.visibility === 'hidden').length
         : 0,
     }),
   };
