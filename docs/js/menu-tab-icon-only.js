@@ -7,15 +7,15 @@
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
   const LOADOUT_PANEL_ID = 'loadout'; // Used to render the melee-over-ranged composite tab icon.
   const STYLE_ID = 'hobunjiMenuTabIconOnlyStyles'; // Used to keep the presentation rules idempotent.
-  const GENERIC_ICON_BASE = new URL('assets/hud/generic_icons/', document.baseURI).href; // Used by generic menu-tab artwork and the gananji currency icon.
+  const GENERIC_ICON_BASE = new URL('assets/hud/generic_icons/', document.baseURI).href; // Used by generic menu-tab artwork and the ganang currency icon.
   const ACTION_ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Used by gameplay action artwork reused by menu tabs.
   const WALLET_SUFFIX_SELECTOR = '#mpInventory .inv-wallet-suffix'; // Used as the inventory wallet's currency-symbol character space.
-  const HUD_GOLD_SELECTOR = '#spGold'; // Used as the persistent gameplay HUD's gananji readout host.
+  const HUD_GOLD_SELECTOR = '#spGold'; // Used as the persistent gameplay HUD's ganang readout host.
   const HUD_GOLD_AMOUNT_SELECTOR = '#spGoldAmount'; // Used to preserve the live amount node that hud-update.js already updates.
   const HUD_SUFFIX_SELECTOR = '#spGold .sb-gold-suffix'; // Used as the gameplay HUD's currency-symbol character space.
-  const CURRENCY_ICON_FILE = 'icon_bronzecurrency.png'; // Used as the shared gananji currency symbol artwork.
-  const CURRENCY_ICON_CLASS = 'gananji-currency-icon'; // Used to share one presentation rule between menu and gameplay HUD currency symbols.
-  const CURRENCY_VERDIGRIS_COLOR = '#6fae9b'; // Used as the shared bronze-verdigris tint for gananji amounts and symbols.
+  const CURRENCY_ICON_FILE = 'icon_bronzecurrency.png'; // Used as the shared ganang currency symbol artwork.
+  const CURRENCY_ICON_CLASS = 'ganang-currency-icon'; // Used to share one presentation rule between menu and gameplay HUD currency symbols.
+  const CURRENCY_VERDIGRIS_COLOR = '#6fae9b'; // Used as the shared bronze-verdigris tint for ganang amounts and symbols.
   const CURRENCY_VERDIGRIS_GLOW = '#70ebc6'; // Used as the brighter saturated glow while preserving the base verdigris hue.
   const CURRENCY_ICON_SCALE = 0.7667; // Used to render the symbol 15% larger than the previous two-thirds scale.
   const LOADOUT_ICON_SIZE = 128; // Used as the raster resolution for the outlined loadout composite.
@@ -218,11 +218,11 @@
 
   function applyCurrencyIcon(host, marker) {
     if (!host) return false;
-    if (host.dataset.gananjiCurrencyIcon === marker && host.querySelector(`.${CURRENCY_ICON_CLASS}`)) return false;
+    if (host.dataset.ganangCurrencyIcon === marker && host.querySelector(`.${CURRENCY_ICON_CLASS}`)) return false;
     host.replaceChildren(makeCurrencyImage());
-    host.dataset.gananjiCurrencyIcon = marker;
-    host.setAttribute('aria-label', 'Gananji');
-    host.title = 'Gananji';
+    host.dataset.ganangCurrencyIcon = marker;
+    host.setAttribute('aria-label', 'Ganang');
+    host.title = 'Ganang';
     return true;
   }
 

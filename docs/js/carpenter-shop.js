@@ -29,7 +29,7 @@
     const tierDef = deps.getBarnTiers()[tier];
     if (!tierDef) return;
     const gold = deps.inventory.gold || 0;
-    if (gold < tierDef.price) { deps.showToast('Not enough gananji.', false); return; }
+    if (gold < tierDef.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - tierDef.price;
     deps.inventory[tierDef.planItem] = Math.min(9, (deps.inventory[tierDef.planItem] || 0) + 1);
     deps.showToast(`Bought a ${tierDef.label} plan!`, true);
@@ -46,7 +46,7 @@
     const def = _barnAdditions()[additionKey];
     if (!def?.planItem) return;
     const gold = deps.inventory.gold || 0;
-    if (gold < def.price) { deps.showToast('Not enough gananji.', false); return; }
+    if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
     deps.inventory[def.planItem] = Math.min(9, (deps.inventory[def.planItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
@@ -62,7 +62,7 @@
     const def = deps.getHousePieceDeeds()[pieceKey];
     if (!def) return;
     const gold = deps.inventory.gold || 0;
-    if (gold < def.price) { deps.showToast('Not enough gananji.', false); return; }
+    if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - def.price;
     deps.inventory[def.deedItem] = Math.min(9, (deps.inventory[def.deedItem] || 0) + 1);
     deps.showToast(`Bought a ${def.label}!`, true);
@@ -80,7 +80,7 @@
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
     if (!bp) return;
     const gold = deps.inventory.gold || 0;
-    if (gold < bp.price) { deps.showToast('Not enough gananji.', false); return; }
+    if (gold < bp.price) { deps.showToast('Not enough ganang.', false); return; }
     deps.inventory.gold = gold - bp.price;
     deps.inventory[bp.key] = Math.min(9, (deps.inventory[bp.key] || 0) + 1);
     deps.showToast(`Bought a ${bp.name} blueprint!`, true);

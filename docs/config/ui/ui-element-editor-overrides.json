@@ -45,10 +45,10 @@
       "color": "#6fae9b",
       "opacity": "1; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 2px rgba(112, 235, 198, .18)"
     },
-    "#mpInventory .inv-wallet-suffix .gananji-currency-icon": {
+    "#mpInventory .inv-wallet-suffix .ganang-currency-icon": {
       "opacity": "1; filter: brightness(0) saturate(100%) invert(81%) sepia(24%) saturate(1092%) hue-rotate(111deg) brightness(117%) contrast(25%) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(0 0 2px rgba(112, 235, 198, .16))"
     },
-    "#spGold .sb-gold-suffix .gananji-currency-icon": {
+    "#spGold .sb-gold-suffix .ganang-currency-icon": {
       "opacity": "1; filter: brightness(0) saturate(100%) invert(81%) sepia(24%) saturate(1092%) hue-rotate(111deg) brightness(117%) contrast(25%) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(0 0 2px rgba(112, 235, 198, .16))"
     },
     "#mpInventory .inv-wallet-icon": {
