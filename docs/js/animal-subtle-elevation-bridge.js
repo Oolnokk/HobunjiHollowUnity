@@ -15,14 +15,14 @@
   const WATER_WORLD_Y_PER_DEPTH = 0.5 / 3.0; // Used by waterSurfaceYAtRaw; mirrors game.js SLAB_H / MAX_WATER.
   const PRONE_WATER_HEALTH_FRACTION_PER_SECOND = 0.035; // Used by applyProneWaterHazard to drain Health while a prone actor is in a river/stream.
   const PRONE_WATER_WINDED_FRACTION_PER_SECOND = 0.08; // Used by applyProneWaterHazard to build Winded Stamina while a prone actor is in a river/stream.
-  const NON_RIG_NAME = /(ground[_ -]?shadow|shadow|resource[_ -]?ring|reticle|popup|debug|hitbox|target[_ -]?ring|torch)/i; // Used by rigCentroidWorldY to keep helpers out of the body centroid.
+  const NON_RIG_NAME = /(ground[_ -]?shadow|shadow|resource[_ -]?ring|reticle|popup|debug|hitbox|target[_ -]?ring|torch|held|tool|weapon|item|attachment|shoulder[_ -]?pet)/i; // Used by rigCentroidWorldY to keep helpers/held equipment out of the body centroid.
   const liftedRoots = []; // Reused each render so temporary animal/water Y offsets can be restored without per-frame pair allocations.
   const liftedBaseYs = []; // Parallel to liftedRoots; stores each root's movement-owned Y for restoration after rendering.
   const seenActors = new Set(); // Reused each render to dedupe actors exposed through overlapping runtime dependency sets.
   const seenRoots = new Set(); // Reused each render to avoid recording an avatar/shadow root twice through aliases.
-  const waterSeenRoots = new Set(); // Reused each render so actor registries + scene discovery cannot sink the same character twice.
+  const waterSeenRoots = new Set(); // Reused each render so actor registries cannot sink the same character twice.
 
-  let runtimeDeps = null; // Captured from PixelProbe.init; supplies renderer/current-area and creature registries when available.
+  let runtimeDeps = null; // Captured from PixelProbe.init; supplies renderer/current-area, NPC walkers, and creature registries when available.
   let combatDeps = null; // Captured from Combat.init; supplies player, wild creatures, companions, mounts, and creature corpses.
   let farmDeps = null; // Captured from FarmAnimals.init; supplies live livestock that do not live in Combat registries.
   let renderDepth = 0; // Prevents accidental nested renderer wrappers from stacking the same temporary lift twice.
@@ -137,6 +137,7 @@
       || actor?.creatureKey
       || actor?.animalKey
       || actor?.def?.label
+      || actor?.rec?.id
       || 'actor';
   }
 
@@ -240,8 +241,36 @@
     return groundY + Math.max(0, finite(tile.water, 0)) * WATER_WORLD_Y_PER_DEPTH;
   }
 
-  function shouldExcludeRigBranch(object) {
-    return NON_RIG_NAME.test(String(object?.name || ''));
+  function isAvatarBodyBranch(object) {
+    const name = String(object?.name || '').toLowerCase();
+    const role = String(object?.userData?.modelRole || '').toLowerCase();
+    const pipeline = String(object?.userData?.pngPipelineMode || '').toLowerCase();
+    return role === 'temporary-npc-demo-model'
+      || role === 'player'
+      || role === 'player-avatar'
+      || (pipeline === 'single' && role.includes('demo-model'))
+      || name.includes('player_avatar')
+      || name.includes('player_portrait')
+      || name.includes('temporary_npc_portrait_model')
+      || name.includes('procedural_feet')
+      || name.includes('procedural_hands');
+  }
+
+  function shouldExcludeRigBranch(object, root) {
+    const name = String(object?.name || '');
+    if (NON_RIG_NAME.test(name)) return true;
+    // game.js's heldItemHolder is an unnamed visible Group directly under
+    // playerMesh; PlayerBodyTransformComposer uses this same structural cue
+    // to identify held visuals. Keep named body/procedural roots, but exclude
+    // that unnamed attachment so drawing an item cannot change swim depth.
+    const playerRoot = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    return root === playerRoot
+      && object !== root
+      && object?.parent === root
+      && object?.type === 'Group'
+      && object.visible !== false
+      && !name.trim()
+      && !isAvatarBodyBranch(object);
   }
 
   function rigCentroidWorldY(root) {
@@ -255,7 +284,7 @@
 
       const visit = (object, excluded) => {
         if (!object || object.visible === false) return;
-        const blocked = excluded || shouldExcludeRigBranch(object);
+        const blocked = excluded || shouldExcludeRigBranch(object, root);
         if (!blocked && object.isMesh && object.geometry) {
           const geometry = object.geometry; // Bounding box is reused so each rig mesh contributes once without recursively rescanning its children.
           if (!geometry.boundingBox && typeof geometry.computeBoundingBox === 'function') geometry.computeBoundingBox();
@@ -295,9 +324,9 @@
     if (!Number.isFinite(centroidY)) return false;
     waterSeenRoots.add(root);
 
-    // A swimmer must be at least half-submerged: if its total visible rig
-    // centroid sits above the surface, sink only the rendered root until the
-    // surface reaches that centroid. Deeper rigs are left untouched.
+    // A swimmer must be at least half-submerged: if its total visible BODY
+    // rig centroid sits above the surface, sink only the rendered root until
+    // the surface reaches that centroid. Deeper rigs are left untouched.
     const sink = waterSurfaceY - centroidY;
     if (!(sink < -EPSILON) || !offsetRoot(root, sink)) return false;
     lastDebug.waterActors++;
@@ -315,10 +344,13 @@
   }
 
   function applyActorWaterSink(actor, area) {
-    if (!actor || (actor.areaId && area && actor.areaId !== area) || actor.def?.canSwim || isShoulderPet(actor)) return false;
+    if (!actor || (actor.areaId && area && actor.areaId !== area) || isShoulderPet(actor)) return false;
     const root = actor.avatarRef?.group;
     const raw = actorRawPosition(actor);
     if (!root || !raw) return false;
+    // `def.canSwim` means the actor avoids the ordinary movement/combat swim
+    // penalty; it does NOT mean the body should float above the water. Natural
+    // swimmers still use the exact same visual centroid rule here.
     return applyWaterCentroidSink(root, raw.x, raw.y, actorLabel(actor));
   }
 
@@ -327,29 +359,37 @@
     for (const actor of setLike) applyActorWaterSink(actor, area);
   }
 
-  function applyPlayerWaterSink(area) {
+  function applyPlayerWaterSink() {
     const player = combatDeps?.player;
     const raw = actorRawPosition(player);
     if (!raw) return false;
     const root = window.PlayerBodyTransformComposer?.getPlayerMesh?.()
-      || window.PlayerSocialPoses?.getPlayerMesh?.()
+      || window.ProceduralHandAttachments?.gameDeps?.playerMesh
+      || window.Combat?.deps?.playerMesh
       || null;
     if (!root) return false;
     return applyWaterCentroidSink(root, raw.x, raw.y, 'player');
   }
 
-  function applyNpcWalkerWaterSinks(renderScene) {
-    const tile = tileSize();
-    if (!(tile > 0) || !renderScene?.traverse) return;
-    renderScene.traverse(object => {
-      if (!object?.name?.startsWith?.('npc_walker_') || waterSeenRoots.has(object)) return;
-      const rawX = finite(object.position?.x, NaN) * tile;
-      const rawY = finite(object.position?.z, NaN) * tile;
-      if (Number.isFinite(rawX) && Number.isFinite(rawY)) applyWaterCentroidSink(object, rawX, rawY, object.name);
-    });
+  function liveNpcWalkers() {
+    if (Array.isArray(runtimeDeps?.npcWalkers)) return runtimeDeps.npcWalkers;
+    if (Array.isArray(window._npcWalkers)) return window._npcWalkers;
+    const debugWalkers = window.__hobunjiFurnitureDebug?.getNpcWalkers?.();
+    return Array.isArray(debugWalkers) ? debugWalkers : [];
   }
 
-  function applyRenderLift(renderScene) {
+  function applyNpcWalkerWaterSinks(area) {
+    const tile = tileSize();
+    if (!(tile > 0)) return;
+    for (const walker of liveNpcWalkers()) {
+      if (!walker?.root?.position || walker.root.visible === false || (walker.area && area && walker.area !== area)) continue;
+      const rawX = finite(walker.root.position.x, NaN) * tile;
+      const rawY = finite(walker.root.position.z, NaN) * tile;
+      if (Number.isFinite(rawX) && Number.isFinite(rawY)) applyWaterCentroidSink(walker.root, rawX, rawY, `npc:${actorLabel(walker)}`);
+    }
+  }
+
+  function applyRenderLift() {
     const area = activeArea();
     liftedRoots.length = 0;
     liftedBaseYs.length = 0;
@@ -389,10 +429,10 @@
     // Water depth is a render-only correction, just like subtle elevation:
     // movement/pathing keep their existing Y authority while every visible
     // swimming rig is guaranteed to meet the same centroid rule.
-    applyPlayerWaterSink(area);
+    applyPlayerWaterSink();
     eachActorWaterSink(hostileObjects, area);
     eachActorWaterSink(companionObjects, area);
-    applyNpcWalkerWaterSinks(renderScene);
+    applyNpcWalkerWaterSinks(area);
 
     if (lastDebug.appliedActors || lastDebug.waterActors) lastDebug.reason = 'temporary-render-lift';
   }
@@ -446,7 +486,7 @@
     const baseRender = renderer.render;
     renderer.render = function animalSubtleElevationRender(...args) {
       const outermost = renderDepth++ === 0;
-      if (outermost) applyRenderLift(args[0]);
+      if (outermost) applyRenderLift();
       try {
         return baseRender.apply(this, args);
       } finally {
