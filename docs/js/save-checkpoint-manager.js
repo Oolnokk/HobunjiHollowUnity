@@ -89,7 +89,7 @@
   }
 
   function removeSlot(slot) {
-    const key = SLOT_KEYS[slot]; // Used when a stale browser checkpoint belongs to a different primary folder.
+    const key = SLOT_KEYS[slot]; // Folder authority clears stale browser history for recovery slots the folder does not contain.
     if (key) localStorage.removeItem(key);
   }
 
@@ -152,33 +152,6 @@
     return '';
   }
 
-  function snapshotIdentity(snapshot) {
-    const meta = snapshot?.meta || {};
-    return {
-      characters: (meta.characters || []).map(entry => String(entry?.id || '')).filter(Boolean).sort(),
-      worlds: (meta.worlds || []).map(entry => String(entry?.id || '')).filter(Boolean).sort(),
-    };
-  }
-
-  function sameIdentity(a, b) {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
-
-  function recordBelongsToPrimary(record, primarySnapshot) {
-    const valid = safeValidateRecord(record);
-    if (!valid?.snapshot || !primarySnapshot) return false;
-    const active = valid.active || {};
-    const primaryIdentity = snapshotIdentity(primarySnapshot);
-    const recordIdentity = snapshotIdentity(valid.snapshot);
-    if (active.characterId && active.worldId) {
-      return primaryIdentity.characters.includes(String(active.characterId))
-        && primaryIdentity.worlds.includes(String(active.worldId))
-        && recordIdentity.characters.includes(String(active.characterId))
-        && recordIdentity.worlds.includes(String(active.worldId));
-    }
-    return sameIdentity(primaryIdentity, recordIdentity); // Old records without active ids only migrate on an exact save-set match.
-  }
-
   function isHydrated() {
     return window.__hobunjiGameStarted === true && runtimeSaveApi()?.isReady?.() === true;
   }
@@ -216,8 +189,12 @@
     return readSlot('auto') || readSlot('manual');
   }
 
-  function evaluateSnapshotForFolderWrite(snapshot, { recoveryKind = 'auto', force = false } = {}) {
+  function evaluateSnapshotForFolderWrite(snapshot, { recoveryKind = 'auto', force = false, automatic = false } = {}) {
     if (force || recoveryKind === 'restore') return { ok: true };
+    if (automatic && !isHydrated()) {
+      lastAction = 'folder-write-deferred-hydration';
+      return { ok: false, deferred: true, warning: 'gameplay state is still hydrating; automatic folder save is paused' };
+    }
     const risk = integrityRisk(baselineRecord(), snapshot);
     if (!risk) return { ok: true };
     lastIntegrityWarning = risk;
@@ -289,6 +266,10 @@
     if (typeof localSave?.readPrimarySnapshot !== 'function') return false;
     const primary = await localSave.readPrimarySnapshot();
     if (!primary?.snapshot) return false;
+    const characters = primary.snapshot.meta?.characters || []; // Confirms the selected farmer actually belongs to this canonical folder before binding a baseline.
+    const worlds = primary.snapshot.meta?.worlds || []; // Confirms the selected world actually belongs to this canonical folder before binding a baseline.
+    if (!characters.some(entry => String(entry?.id || '') === ids.characterId)) return false;
+    if (!worlds.some(entry => String(entry?.id || '') === ids.worldId)) return false;
     const record = createRecord('autosave', primary.snapshot, 'folder-baseline', primary.savedAt || Date.now());
     writeSlot('auto', record);
     await writeFolderSlot('auto', record);
@@ -313,36 +294,25 @@
     recoveryMirrorPromise = (async () => {
       const warnings = [];
       try {
-        const primary = await localSave.readPrimarySnapshot(); // Primary snapshot is the provenance anchor for browser->folder migration.
-        const primarySnapshot = primary?.snapshot || null;
         folderRecoveryReads++;
         for (const slot of Object.keys(SLOT_KEYS)) {
           let folderRaw = null;
-          let folderReadFailed = false;
           try {
-            folderRaw = await localSave.readRecoveryCheckpoint(slot); // Read slots separately so one corrupt file cannot hide all other recovery history.
+            folderRaw = await localSave.readRecoveryCheckpoint(slot); // Slots are independent so one corrupt recovery file cannot hide the others.
           } catch (error) {
-            folderReadFailed = true;
             warnings.push(`${slot}: ${String(error?.message || error)}`);
-          }
-          const folderRecord = safeValidateRecord(folderRaw);
-          const localRecord = readSlot(slot);
-          if (folderRecord) {
-            writeSlot(slot, folderRecord); // Folder history is authoritative once the folder is armed.
+            removeSlot(slot); // Never present an unproven browser checkpoint as folder-authoritative history.
             continue;
           }
-          if (folderRaw && !folderRecord) {
-            warnings.push(`${slot}: invalid recovery record preserved in folder`);
-          }
-          const localMatchesPrimary = localRecord && primarySnapshot && recordBelongsToPrimary(localRecord, primarySnapshot);
-          if (!folderReadFailed && !folderRaw && localMatchesPrimary && typeof localSave.writeRecoveryCheckpoint === 'function') {
-            await localSave.writeRecoveryCheckpoint(slot, localRecord); // Safe migration only when browser history demonstrably belongs to this folder.
-            folderRecoveryWrites++;
-          } else if (!localMatchesPrimary && !folderRecord) {
-            removeSlot(slot); // Prevent Folder A's browser recovery from appearing inside Folder B.
+          const folderRecord = safeValidateRecord(folderRaw);
+          if (folderRecord) {
+            writeSlot(slot, folderRecord); // Valid folder history is the only history mirrored into browser storage once armed.
+          } else {
+            if (folderRaw) warnings.push(`${slot}: invalid recovery record preserved in folder`);
+            removeSlot(slot); // Missing/invalid folder slots do not import browser history from another folder or fallback session.
           }
         }
-        await ensureFolderBaseline(); // Gives an old folder a good guard baseline before its first post-upgrade autosave.
+        await ensureFolderBaseline(); // Old folders get a guard baseline from their own canonical save, never from browser history.
         const latest = readSlot('auto');
         lastAutosaveFingerprint = latest?.snapshot ? (snapshotApi()?.fingerprint?.(latest.snapshot) || '') : '';
         lastAction = warnings.length ? 'folder-recovery-mirrored-with-warnings' : 'folder-recovery-mirrored';
@@ -507,10 +477,9 @@
       snapshotApi().apply(record.snapshot);
 
       if (folderIsPrimary()) {
-        let status = null;
         let restoreWriteError = '';
         try {
-          status = await folderApi().syncSnapshot(record.snapshot, { force: true, automatic: false, recoveryKind: 'restore' });
+          const status = await folderApi().syncSnapshot(record.snapshot, { force: true, automatic: false, recoveryKind: 'restore' });
           if (status?.lastError) restoreWriteError = status.lastError;
         } catch (error) {
           restoreWriteError = String(error?.message || error);
