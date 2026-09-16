@@ -47,10 +47,22 @@ let dyeUses = 0; // Used to prove mystery dyes delegate to DyeSystem's one mutat
 const player = { health: 50, maxHealth: 100, stamina: 60, maxStamina: 100 }; // Used to verify generic food direct-use mirrors held-food restoration.
 
 const noop = () => {};
+const elementMap = new Map(); // Used to switch the test from headless API checks into a tiny Inventory-detail DOM for button rendering.
 const documentStub = {
   readyState: 'complete',
   addEventListener() {},
-  getElementById() { return null; },
+  getElementById(id) { return elementMap.get(id) || null; },
+  createElement() {
+    const element = {
+      id: '', className: '', dataset: {}, style: {}, disabled: false, textContent: '', title: '', onclick: null, parentElement: null,
+      remove() {
+        if (this.parentElement?.children) this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+        if (this.id) elementMap.delete(this.id);
+        this.parentElement = null;
+      },
+    }; // Used as the minimal button surface renderDirectUseButton mutates.
+    return element;
+  },
 };
 const windowStub = {
   Combat: { deps: { player } },
@@ -158,6 +170,30 @@ assert.equal(api.getInventoryUseAction('venomFlask'), null, 'throwing flasks rem
 assert.equal(api.getInventoryUseAction('breedingGigantism'), null, 'livestock potions remain Hold/target only');
 assert.equal(api.getInventoryUseAction('redberrySeeds'), null, 'seeds remain Hold/world-target only');
 
+// Inventory detail rendering: direct-use items receive one semantic button; target-dependent items do not.
+inventory.alchemy_recipe_healingPotion = 1;
+const actionsEl = {
+  children: [],
+  prepend(child) {
+    child.parentElement = this;
+    this.children.unshift(child);
+    if (child.id) elementMap.set(child.id, child);
+  },
+}; // Used as #iiActions without recreating the rest of the game's Inventory DOM.
+elementMap.set('iiActions', actionsEl);
+elementMap.set('iiDetail', { style: { display: '' } });
+elementMap.set('iiName', { textContent: 'Recipe: Healing Potion' });
+api.refreshInventoryUseButton();
+let directButton = elementMap.get('inventoryDirectUseBtn');
+assert(directButton, 'a directly usable selected item gains an Inventory action button');
+assert.equal(directButton.dataset.itemKey, 'alchemy_recipe_healingPotion');
+assert.match(directButton.textContent, /Read/, 'the Inventory button uses the resolved semantic verb');
+elementMap.get('iiName').textContent = 'Venom Flask';
+api.refreshInventoryUseButton();
+directButton = elementMap.get('inventoryDirectUseBtn');
+assert.equal(directButton, undefined, 'a target-dependent flask removes the direct-use button instead of pretending it can fire from Inventory');
+assert.equal(api.getDebug().lastDirectUseUi?.reason, 'not-direct-usable', 'mobile diagnostics explain the missing target-dependent action');
+
 assert.equal(api.useInventoryItem('alchemy_recipe_healingPotion'), true);
 assert.equal(recipeReads, 1, 'recipe direct-use calls readRecipeItem exactly once');
 assert.equal(drinks, 0, 'recipe direct-use never enters potion drinking');
@@ -187,7 +223,6 @@ assert(worldSaves > 0, 'successful direct uses persist through the existing worl
 assert(gridRefreshes > 0, 'successful direct uses refresh the existing Inventory grid');
 assert(toasts.some(entry => /Learned Healing Potion/.test(entry.message)), 'direct recipe reading produces visible feedback');
 assert.equal(api.getDebug().lastDirectUse?.key, 'redberrySeeds', 'mobile diagnostics expose the most recent blocked direct-use attempt');
-assert.match(source, /inventoryDirectUseBtn/, 'Inventory detail UI owns one shared direct-use button');
 assert.match(source, /ambiguous-label/, 'ambiguous same-label items fail closed instead of using the wrong stack');
 
 console.log('Inventory direct item-use regression checks passed.');
