@@ -9,10 +9,17 @@
   // those), and waterway meshes (buildWaterfallCurtainMeshes/
   // buildZoneRiverWaterMeshes). Extracted out of game.js following the same
   // window.<Namespace> + init(deps) pattern as its sibling systems. All four
-  // are deterministic pure scene-graph generators driven entirely by the zone
-  // grid passed in — no player/combat state — another clean candidate for
-  // eventually running standalone (e.g. server-side world generation).
+  // are deterministic scene-graph generators driven entirely by the zone grid
+  // passed in. Waterfall curtains are the one intentionally map-level render
+  // object: keeping their very cheap merged sheet outside streamed chunk groups
+  // prevents distant waterfall openings from turning into empty holes.
   let deps = null;
+  let sharedWaterfallMaterial = null; // Reused by every persistent waterfall sheet so all zones share one shader/texture instance.
+  const persistentWaterfallRecords = new WeakMap(); // Tracks one map-level waterfall record per zone scene without keeping discarded scenes alive.
+  const waterfallRenderStats = Object.create(null); // Exposes persistent waterfall cost/state to in-game/mobile diagnostics.
+  const WATERFALL_TEXTURE_URL = 'assets/textures/wibbly_surface.png'; // Uses the exact PNG asset used by the merged river renderer.
+  const WATERFALL_SCROLL_UV_PER_SECOND = 0.55; // Drives the texture downward in surface-local vertical UV space like a conveyor belt.
+
   function init(injectedDeps) { deps = injectedDeps; }
 
   function normalizedBounds(zcols, zrows, bounds) {
@@ -97,15 +104,15 @@
 
     const pos = [], uv = [], idx = [];
     let vi = 0;
-    for (const [c, r] of cells) {
-      const ground = deps.NORMAL_TOP + (zGrid[r][c].elevTier || 0) * deps.PLATEAU_UNIT;
-      const y00 = cornerY(c, r, ground);
-      const y10 = cornerY(c + 1, r, ground);
-      const y01 = cornerY(c, r + 1, ground);
-      const y11 = cornerY(c + 1, r + 1, ground);
-      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+    for (const [c, r] of rampCells) {
+      const fallback = deps.NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * deps.PLATEAU_UNIT;
+      const y00 = cornerY(c, r)     ?? fallback;
+      const y10 = cornerY(c+1, r)   ?? fallback;
+      const y01 = cornerY(c, r+1)   ?? fallback;
+      const y11 = cornerY(c+1, r+1) ?? fallback;
+      pos.push(c,y00,r,  c+1,y10,r,  c,y01,r+1,  c+1,y11,r+1);
       uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
-      idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
+      idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
     }
 
     const geo = new THREE.BufferGeometry();
@@ -234,17 +241,107 @@
     return [mesh];
   }
 
-  // Waterfall curtain: a vertical sheet at every elevation drop touching a
-  // WATERFALL tile — same tier-step detection buildRampCurtainMeshes uses to
-  // find a ramp's sides. Returns the spawned mesh(es) for _zoneWaterMeshes.
-  function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
-    const range = normalizedBounds(zcols, zrows, bounds);
-    const cells = [];
-    for (let r = range.rowStart; r < range.rowEnd; r++)
-      for (let c = range.colStart; c < range.colEnd; c++)
-        if (zGrid[r]?.[c]?.type === deps.TileType.WATERFALL) cells.push([c, r]);
-    if (!cells.length) return [];
+  function getWaterfallHostScene(zScene, bounds) {
+    const chunkParent = bounds && zScene?.parent?.add ? zScene.parent : null; // Resolves the persistent zone scene when the caller is currently building a streamed chunk group.
+    return chunkParent || zScene;
+  }
 
+  function getWaterfallMaterial() {
+    if (sharedWaterfallMaterial) return sharedWaterfallMaterial;
+    const fallbackPixel = new Uint8Array([172, 190, 184, 255]); // Supplies a valid sampler while the shared river PNG is still loading.
+    const fallbackTexture = new THREE.DataTexture(fallbackPixel, 1, 1, THREE.RGBAFormat); // Prevents a black/unbound waterfall sheet during asynchronous texture loading.
+    fallbackTexture.needsUpdate = true;
+    const uniforms = { // Shared by every persistent waterfall mesh so animation/material state never scales with chunk count.
+      uTime: { value: 0 },
+      uWaterTexture: { value: fallbackTexture },
+      uDeepColor: { value: new THREE.Color(0x14658e) },
+      uShallowColor: { value: new THREE.Color(0x75d5df) },
+      uOpacity: { value: 0.82 },
+      uScrollSpeed: { value: WATERFALL_SCROLL_UV_PER_SECOND },
+    };
+    sharedWaterfallMaterial = new THREE.ShaderMaterial({
+      name: 'persistent_textured_waterfall_material',
+      uniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform sampler2D uWaterTexture;
+        uniform vec3 uDeepColor;
+        uniform vec3 uShallowColor;
+        uniform float uOpacity;
+        uniform float uScrollSpeed;
+        varying vec2 vUv;
+        void main() {
+          vec2 textureUv = fract(vec2(vUv.x, vUv.y + uTime * uScrollSpeed));
+          vec3 textureColor = texture2D(uWaterTexture, textureUv).rgb;
+          float pattern = dot(textureColor, vec3(0.299, 0.587, 0.114));
+          vec3 baseColor = mix(uShallowColor, uDeepColor, 0.72);
+          vec3 surfaceColor = mix(baseColor * 0.72, baseColor * 1.22, pattern);
+          gl_FragColor = vec4(surfaceColor, uOpacity);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const textureLoader = new THREE.TextureLoader(); // Loads the same wibbly_surface.png asset used by merged river/stream water.
+    textureLoader.load(WATERFALL_TEXTURE_URL, texture => {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      uniforms.uWaterTexture.value = texture;
+      sharedWaterfallMaterial.needsUpdate = true;
+      fallbackTexture.dispose();
+    }, undefined, error => {
+      console.warn(`[waterfall-render] texture load failed (${WATERFALL_TEXTURE_URL})`, error);
+    });
+    return sharedWaterfallMaterial;
+  }
+
+  function disposePersistentWaterfallRecord(record) {
+    if (!record) return;
+    record.mesh?.parent?.remove?.(record.mesh);
+    record.mesh?.geometry?.dispose?.();
+  }
+
+  // Waterfall curtain: one lightweight map-level sheet containing every
+  // elevation drop touching a WATERFALL tile. Unlike ordinary wilderness
+  // terrain, it deliberately lives on the zone scene rather than a streamed
+  // chunk group, so a distant waterfall remains in the cliff opening after
+  // the terrain chunk that would formerly own its curtain has unloaded.
+  function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
+    const hostScene = getWaterfallHostScene(zScene, bounds); // Owns the always-resident waterfall mesh for this zone rather than any one chunk.
+    if (!hostScene?.add) return [];
+    let hostRecords = persistentWaterfallRecords.get(hostScene); // Memoizes map-level waterfall construction across every streamed chunk build in this scene.
+    if (!hostRecords) {
+      hostRecords = new Map();
+      persistentWaterfallRecords.set(hostScene, hostRecords);
+    }
+    const previous = hostRecords.get(mapId); // Detects repeated chunk calls and stale records after a zone grid is rebuilt.
+    if (previous?.grid === zGrid && previous.cols === zcols && previous.rows === zrows && (!previous.mesh || previous.mesh.parent === hostScene)) {
+      return bounds ? [] : (previous.mesh ? [previous.mesh] : []);
+    }
+    if (previous) disposePersistentWaterfallRecord(previous);
+
+    const cells = []; // Collects every authored waterfall tile once so all distant curtains fit into one draw call.
+    for (let r = 0; r < zrows; r++)
+      for (let c = 0; c < zcols; c++)
+        if (zGrid[r]?.[c]?.type === deps.TileType.WATERFALL) cells.push([c, r]);
+
+    const emptyRecord = { grid: zGrid, cols: zcols, rows: zrows, mesh: null }; // Prevents every chunk from rescanning a map that contains no waterfalls.
+    if (!cells.length) {
+      hostRecords.set(mapId, emptyRecord);
+      waterfallRenderStats[mapId] = { persistent: true, cells: 0, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      return [];
+    }
+
+    const textureTileSize = Math.max(0.001, Number(window.MergedWaterRenderer?.DEFAULT_TEXTURE_TILE_SIZE) || 4); // Matches the world-space repeat scale used by rivers.
     const pos = [], uv = [], idx = [];
     let vi = 0;
     for (const [c, r] of cells) {
@@ -262,12 +359,20 @@
         else if (dc === -1) { x0 = c;   z0 = r+1; x1 = c;   z1 = r;   }
         else if (dr === 1)  { x0 = c;   z0 = r+1; x1 = c+1; z1 = r+1; }
         else /* dr === -1 */{ x0 = c+1; z0 = r;   x1 = c;   z1 = r;   }
+        const u0 = (x0 + z0) / textureTileSize; // Keeps the PNG continuous in world space along either X- or Z-facing waterfall edges.
+        const u1 = (x1 + z1) / textureTileSize; // Continues the same world-space texture coordinate at the second edge vertex.
+        const vTop = top / textureTileSize; // Uses world Y so every tier of the waterfall participates in one continuous vertical conveyor.
+        const vBottom = bottom / textureTileSize; // Anchors the bottom UV to world Y rather than restarting the texture per tile/drop.
         pos.push(x0, top, z0,  x1, top, z1,  x0, bottom, z0,  x1, bottom, z1);
-        uv.push(0,1, 1,1, 0,0, 1,0); // v=1 at top so uFlow=(0,1) scrolls downward
+        uv.push(u0, vTop, u1, vTop, u0, vBottom, u1, vBottom);
         idx.push(vi, vi+2, vi+3, vi, vi+3, vi+1); vi += 4;
       }
     }
-    if (!pos.length) return [];
+    if (!pos.length) {
+      hostRecords.set(mapId, emptyRecord);
+      waterfallRenderStats[mapId] = { persistent: true, cells: cells.length, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      return [];
+    }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -275,30 +380,39 @@
     geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
     deps.displaceZoneGeometry(geo, mapId);
     geo.computeVertexNormals();
+    geo.computeBoundingSphere();
 
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime:  { value: 0 },
-        uPhase: { value: 0 },
-        uDepth: { value: 0.85 },
-        uFlow:  { value: new THREE.Vector2(0, 1) }, // local UV-space "down" — always set, never still-mode
-        uColor: { value: new THREE.Color(0x1f6f9c) },
-      },
-      vertexShader:   deps.waterVertShader,
-      fragmentShader: deps.waterFragShader,
-      transparent:    true,
-      depthWrite:     false,
-      side:           THREE.DoubleSide,
-    });
+    const mat = getWaterfallMaterial(); // Reuses one texture-backed shader for every zone instead of allocating one waterfall material per streamed chunk.
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = `${mapId}_persistent_waterfall_curtains`;
     mesh.receiveShadow = false;
-    mesh.userData.wildernessChunkOwnsGeometry = true;
-    mesh.userData.wildernessChunkOwnsMaterial = true;
-    zScene.add(mesh);
+    mesh.frustumCulled = false; // One tiny draw call stays eligible at any camera distance, preventing cliff openings from going empty at long range.
+    mesh.userData.wildernessPersistentZoneFeature = 'waterfall';
+    mesh.userData.wildernessPersistentZoneFeatureMapId = mapId;
+    mesh.userData.waterfallCellCount = cells.length;
+    mesh.userData.waterfallTriangleCount = idx.length / 3;
+    mesh.userData.waterfallTexture = WATERFALL_TEXTURE_URL;
+    mesh.userData.noOutline = true;
+    mesh.onBeforeRender = () => {
+      mat.uniforms.uTime.value = performance.now() * 0.001;
+    };
+    hostScene.add(mesh);
     deps.markTerrainEdgeId(mesh, 'water');
 
-    console.log(`%c[zone:${mapId}] waterfall wall built: ${cells.length} cell(s)`, 'color:#22c55e;font-weight:bold');
-    return [mesh];
+    const record = { grid: zGrid, cols: zcols, rows: zrows, mesh }; // Lets later chunk builds reuse this one persistent map-level mesh.
+    hostRecords.set(mapId, record);
+    waterfallRenderStats[mapId] = {
+      persistent: true,
+      cells: cells.length,
+      vertices: pos.length / 3,
+      triangles: idx.length / 3,
+      drawCalls: 1,
+      texture: WATERFALL_TEXTURE_URL,
+      textureTileSize,
+      scrollUvPerSecond: WATERFALL_SCROLL_UV_PER_SECOND,
+    };
+    console.log(`%c[zone:${mapId}] persistent textured waterfall sheet built: ${cells.length} cell(s), ${idx.length / 3} triangle(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
+    return bounds ? [] : [mesh];
   }
 
   // River/stream/waterfall water surface — one world-UV merged textured mesh
@@ -369,4 +483,5 @@
     buildWaterfallCurtainMeshes,
     buildZoneRiverWaterMeshes,
   };
+  window.__waterfallRenderStats = waterfallRenderStats;
 })();
