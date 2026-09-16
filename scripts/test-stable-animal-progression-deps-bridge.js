@@ -24,6 +24,8 @@ const context = {
 };
 context.window = context;
 
+context.OutdoorLivestockWelfare = { install() {} }; // Keeps the bridge regression self-contained now that outdoor welfare is a parser-time farm feature.
+context.OutdoorLivestockPresence = { install() {} }; // Keeps outdoor world-presence repair from triggering this test's intentional dynamic-loader trap.
 context.ANIMAL_GROWTH_CONFIG = {};
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
@@ -34,6 +36,7 @@ context.StableTrainingCompendiumPatch = {};
 context.BARN_INCUBATOR_CONFIG = {};
 context.BarnIncubator = { install() {} };
 context.FarmMenuLayout = { install() {} }; // Keeps this bridge-only regression focused on dependency mirroring rather than dynamic feature loading.
+context.FarmGlancePalette = { install() {} }; // Keeps the newly loaded map-palette feature from triggering this test's intentional dynamic-loader trap.
 context.LivestockNursery = { install() {} };
 context.FarmAnimals = {
   init(injectedDeps) { farmInitDeps = injectedDeps; },

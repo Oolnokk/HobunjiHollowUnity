@@ -66,7 +66,14 @@
   }
 
   function terrainLiftAt(worldX, worldZ, area = activeArea()) {
-    return area === 'town' ? finite(terrain.sampleHeightAt(worldX, worldZ), 0) : 0;
+    if (area === 'town') return finite(terrain.sampleHeightAt(worldX, worldZ), 0);
+    if (area === 'farm') {
+      // Farmhouse/barn inclines are authored by PlayerHouseElevation rather
+      // than the town map. Read its live continuous sampler at render time so
+      // flattened/sleeping livestock remain grounded on the same visible slope.
+      return finite(window.HobunjiFarmSubtleElevation?.sampleHeightAt?.(worldX, worldZ), 0);
+    }
+    return 0;
   }
 
   function supportLiftAt(worldX, worldZ, area = activeArea()) {

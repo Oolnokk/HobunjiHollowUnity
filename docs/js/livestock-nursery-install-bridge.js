@@ -5,6 +5,8 @@
   // synchronous during ordinary index.html parsing so the wrappers exist before
   // FarmPanel/game.js call the underlying modules' init() methods.
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
+    { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
+    { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
@@ -15,6 +17,7 @@
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
+    { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
   ];
   const STABLE_ROLE_DEP_METHODS = Object.freeze([
     'getActiveCompanionId',
@@ -34,12 +37,15 @@
     }
     const loadAt = index => {
       if (index >= featureScripts.length) {
+        window.OutdoorLivestockWelfare?.install?.();
+        window.OutdoorLivestockPresence?.install?.();
         window.AnimalGrowth?.install?.();
         window.StableAnimalProgression?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
         window.StableAnimalXpEvents?.install?.();
         window.BarnIncubator?.install?.();
         window.FarmMenuLayout?.install?.();
+        window.FarmGlancePalette?.install?.();
         return;
       }
       const entry = featureScripts[index];
@@ -55,19 +61,23 @@
   ensureFeaturesLoaded();
 
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
-  // FarmPanel, while LivestockNursery/AnimalGrowth/StableAnimalProgression/
-  // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator all need
-  // the public farm APIs before game.js initializes them. Capture FarmPanel's
-  // one global assignment and install synchronously at that exact point;
-  // afterward FarmPanel is a normal writable global again, so there is no
-  // permanent proxy.
+  // FarmPanel, while OutdoorLivestockWelfare/OutdoorLivestockPresence/
+  // LivestockNursery/AnimalGrowth/StableAnimalProgression/
+  // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator/
+  // FarmMenuLayout/FarmGlancePalette all need the public farm APIs before
+  // game.js initializes them. Capture FarmPanel's one global assignment and
+  // install synchronously at that exact point; afterward FarmPanel is a normal
+  // writable global again, so there is no permanent proxy.
+  const installOutdoorLivestockWelfare = () => window.OutdoorLivestockWelfare?.install?.();
   const installNursery = () => window.LivestockNursery?.install?.();
+  const installOutdoorLivestockPresence = () => window.OutdoorLivestockPresence?.install?.();
   const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
   const installStableAnimalProgression = () => window.StableAnimalProgression?.install?.();
   const installStableAnimalTrainingRefinements = () => window.StableAnimalTrainingRefinements?.install?.();
   const installStableAnimalXpEvents = () => window.StableAnimalXpEvents?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
   const installFarmMenuLayout = () => window.FarmMenuLayout?.install?.();
+  const installFarmGlancePalette = () => window.FarmGlancePalette?.install?.();
 
   // FarmPanel's native Stable renderer intentionally blocks the old progression
   // render wrapper, but that also blocks the old FarmPanel.init dependency
@@ -173,7 +183,11 @@
 
   const installBridges = () => {
     installVegetationFoliageContractGuard();
+    installOutdoorLivestockWelfare();
     installNursery();
+    // Presence must wrap Nursery's final unassign/respawn seams, otherwise
+    // Nursery's older remove-then-respawn adapter would overwrite this fix.
+    installOutdoorLivestockPresence();
     installAnimalGrowth();
     installStableAnimalProgression();
     installStableAnimalTrainingRefinements();
@@ -181,6 +195,7 @@
     installStableAnimalXpEvents();
     installBarnIncubator();
     installFarmMenuLayout();
+    installFarmGlancePalette();
   };
 
   if (window.FarmPanel) {

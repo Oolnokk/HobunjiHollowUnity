@@ -1,11 +1,13 @@
-# Focused PR check for swimmer placement and prone-water resource behavior.
+# Focused PR check for animal surface placement and prone-water resource behavior.
 name: Swimmer centroid regression
 
 on:
   pull_request:
     paths:
       - 'docs/js/animal-subtle-elevation-bridge.js'
+      - 'docs/js/farm-building-elevation-parity.js'
       - 'scripts/test-animal-subtle-elevation.js'
+      - 'scripts/test-farm-animal-subtle-elevation.js'
       - '.github/workflows/swimmer-centroid-regression.yml'
 
 jobs:
@@ -18,3 +20,5 @@ jobs:
           node-version: '22'
       - name: Animal elevation/swimmer centroid regression
         run: node scripts/test-animal-subtle-elevation.js
+      - name: Farm animal subtle-elevation regression
+        run: node scripts/test-farm-animal-subtle-elevation.js
