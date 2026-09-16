@@ -15,27 +15,30 @@ const vm = require('node:vm');
   const loaderSource = fs.readFileSync(loaderPath, 'utf8');
 
   const runtimeFlushAt = loaderSource.indexOf('folder-save-runtime-flush.js'); // Confirms the checkpoint layer can flush live farm state before capture.
-  const checkpointLoadAt = loaderSource.indexOf('save-checkpoint-manager.js'); // Confirms the recovery layer is part of the normal folder-first bootstrap.
+  const checkpointLoadAt = loaderSource.indexOf('save-checkpoint-manager.js'); // Confirms recovery is in the normal folder-first bootstrap.
   assert.ok(runtimeFlushAt >= 0, 'local save bootstrap loads the runtime flush adapter');
   assert.ok(checkpointLoadAt > runtimeFlushAt, 'checkpoint manager loads after the runtime flush adapter');
-  assert.match(folderCoreSource, /evaluateSnapshotForFolderWrite/, 'folder core consults the checkpoint integrity guard before canonical writes');
+  assert.match(folderCoreSource, /evaluateSnapshotForFolderWrite/, 'folder core consults the checkpoint guard before canonical writes');
   assert.match(folderCoreSource, /writeRecoveryCheckpoint/, 'folder core exposes whitelisted recovery-file persistence');
-  assert.match(folderCoreSource, /readPrimarySnapshot/, 'folder core exposes the canonical folder snapshot for recovery display/pre-restore');
-  assert.match(folderCoreSource, /syncSnapshot/, 'folder core can commit one exact captured snapshot for manual save and restore');
+  assert.match(folderCoreSource, /readPrimarySnapshot/, 'folder core exposes canonical state for baseline/recovery');
+  assert.match(folderCoreSource, /syncSnapshot/, 'folder core can commit one exact captured snapshot');
+  assert.match(source, /recordBelongsToPrimary/, 'checkpoint migration verifies browser history belongs to the active folder');
+  assert.match(source, /folder-baseline/, 'old folders seed recovery from canonical state before future writes');
+  assert.match(source, /rollbackRestore/, 'failed restores attempt a canonical folder rollback');
 
-  const store = new Map(); // In-memory localStorage proves browser fallback slots remain independent from folder files.
+  const store = new Map(); // In-memory localStorage proves browser fallback remains independent from folder files.
   const localStorage = {
     getItem(key) { return store.has(key) ? store.get(key) : null; },
     setItem(key, value) { store.set(key, String(value)); },
     removeItem(key) { store.delete(key); },
   };
 
-  let now = 1_000_000; // Synthetic clock advanced through the 45-second hydration grace window.
+  let now = 1_000_000; // Synthetic clock advanced through the hydration grace window and checkpoint rotation.
   class TestDate extends Date {
     static now() { return now; }
   }
 
-  let currentSnapshot = {
+  const originalSnapshot = {
     snapshotVersion: 1,
     meta: {
       version: 1,
@@ -49,14 +52,16 @@ const vm = require('node:vm');
     },
     farmLayouts: { world_a: { tiles: [1, 2, 3] } },
   };
-  let folderPrimarySnapshot = structuredClone(currentSnapshot); // Canonical folder state returned before a recovery overwrites it.
-  const folderRecovery = new Map(); // In-memory recovery directory keyed by manual/auto/autoPrevious/preRestore.
-  let flushes = 0; // Counts live-state flushes before explicit browser-fallback checkpoint capture.
-  let appliedSnapshot = null; // Records which checkpoint restore replaced the canonical browser autosave.
-  let reloads = 0; // Ensures restore schedules the normal reload after applying a checkpoint.
-  let folderSyncs = 0; // Counts exact snapshot commits into the mocked primary folder.
-  const folderListeners = []; // Captures LocalSaveFolder status listeners so mirror sync can be driven explicitly.
-  const documentListeners = new Map(); // Captures lifecycle listeners without needing a browser DOM.
+  let currentSnapshot = structuredClone(originalSnapshot); // Runtime/browser state returned by the snapshot API.
+  let folderPrimarySnapshot = structuredClone(originalSnapshot); // Canonical folder state.
+  const folderRecovery = new Map(); // Simulated recovery/ directory keyed by public slot name.
+  let flushes = 0; // Counts runtime flushes before explicit checkpoint capture.
+  let appliedSnapshot = null; // Last snapshot applied to browser state by recovery.
+  let reloads = 0; // Successful recovery reload count.
+  let folderSyncs = 0; // Successful/partially-successful canonical write attempts.
+  let failNextFolderSyncAfterWrite = false; // Simulates I/O failure after canonical files already changed.
+  const folderListeners = []; // Captures LocalSaveFolder status listeners.
+  const documentListeners = new Map(); // Captures lifecycle listeners without a browser DOM.
 
   const document = {
     visibilityState: 'visible',
@@ -65,10 +70,20 @@ const vm = require('node:vm');
     getElementById() { return null; },
   };
 
-  const folderStatus = { state: 'ready', autoSyncArmed: false, lastError: null }; // Starts as browser fallback; tests arm folder-first mode later.
+  const folderStatus = {
+    state: 'ready',
+    autoSyncArmed: false,
+    lastError: null,
+    lastAction: 'ready',
+    dataLossRisk: null,
+  };
+
   const LocalSaveFolder = {
     getStatus: () => ({ ...folderStatus }),
     onChange(listener) { folderListeners.push(listener); return () => {}; },
+    async readRecoveryCheckpoint(slot) {
+      return folderRecovery.has(slot) ? structuredClone(folderRecovery.get(slot)) : null;
+    },
     async readRecoveryCheckpoints() {
       return Object.fromEntries(['manual', 'auto', 'autoPrevious', 'preRestore'].map(slot => [slot, folderRecovery.get(slot) || null]));
     },
@@ -83,11 +98,24 @@ const vm = require('node:vm');
       const guard = window.HobunjiSaveCheckpoints?.evaluateSnapshotForFolderWrite?.(snapshot, options);
       if (!options.force && guard?.ok === false) {
         folderStatus.lastError = `Skipped saving to the folder: ${guard.warning}`;
-        return { ...folderStatus, dataLossRisk: guard.warning };
+        folderStatus.lastAction = options.automatic ? 'autosync-blocked-checkpoint-integrity' : 'save-blocked-checkpoint-integrity';
+        folderStatus.dataLossRisk = guard.warning;
+        return { ...folderStatus };
       }
-      folderStatus.lastError = null;
-      folderPrimarySnapshot = structuredClone(snapshot);
+
+      folderPrimarySnapshot = structuredClone(snapshot); // Happens before the simulated I/O failure to model a partial canonical write.
       folderSyncs++;
+      if (failNextFolderSyncAfterWrite) {
+        failNextFolderSyncAfterWrite = false;
+        folderStatus.lastError = 'simulated partial folder write failure';
+        folderStatus.lastAction = 'save-error';
+        folderStatus.dataLossRisk = null;
+        return { ...folderStatus };
+      }
+
+      folderStatus.lastError = null;
+      folderStatus.dataLossRisk = null;
+      folderStatus.lastAction = options.automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
       await window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten?.(structuredClone(snapshot), {
         automatic: !!options.automatic,
         savedAt: now,
@@ -117,7 +145,10 @@ const vm = require('node:vm');
           farmLayoutCount: Object.keys(snapshot.farmLayouts).length,
         };
       },
-      apply(snapshot) { appliedSnapshot = structuredClone(snapshot); currentSnapshot = structuredClone(snapshot); },
+      apply(snapshot) {
+        appliedSnapshot = structuredClone(snapshot);
+        currentSnapshot = structuredClone(snapshot);
+      },
     },
   };
 
@@ -146,100 +177,148 @@ const vm = require('node:vm');
   });
 
   vm.runInContext(source, context, { filename: 'save-checkpoint-manager.js' });
-  const api = window.HobunjiSaveCheckpoints; // Public checkpoint API used by folder core, menu UI, and mobile diagnostics.
+  const api = window.HobunjiSaveCheckpoints; // Public API used by folder core, menu UI, and diagnostics.
   assert.ok(api, 'checkpoint manager exposes its public API');
 
-  let manualResult = await api.saveManual(); // Browser-fallback manual save must not require or overwrite a folder.
+  let manualResult = await api.saveManual(); // Browser fallback manual save is independent from rolling autosave.
   assert.equal(manualResult.ok, true);
   assert.equal(manualResult.folder, false);
-  assert.equal(flushes, 1, 'manual save flushes live farm/member data before snapshotting');
+  assert.equal(flushes, 1, 'manual save flushes runtime farm/member data before snapshotting');
   assert.ok(store.has('hobunjiSaveCheckpoint.manual.v1'));
-  assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false, 'manual save does not overwrite the rolling autosave');
+  assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false, 'manual save does not overwrite rolling autosave');
 
-  let autoResult = await api.saveAuto({ reason: 'test-grace' }); // First fallback autosave starts the hydration grace timer and must not write.
+  let autoResult = await api.saveAuto({ reason: 'test-grace' });
   assert.equal(autoResult.skipped, true);
   assert.equal(autoResult.reason, 'load-grace');
   assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false);
 
   now += 46_000;
-  autoResult = await api.saveAuto({ reason: 'test-first-auto' }); // First safe fallback autosave becomes the latest good recovery point.
+  autoResult = await api.saveAuto({ reason: 'test-first-auto' });
   assert.equal(autoResult.ok, true);
-  assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), true);
-  const firstAutoRaw = store.get('hobunjiSaveCheckpoint.auto.v1'); // Preserved for comparison after an intentionally bad live state.
+  const firstAutoRaw = store.get('hobunjiSaveCheckpoint.auto.v1');
+  assert.ok(firstAutoRaw, 'first post-grace browser autosave is written');
 
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
   currentSnapshot.meta.worlds[0].storage = {};
   currentSnapshot.meta.worlds[0].livestock = [];
   currentSnapshot.meta.characters[0].stable = [];
   now += 30_000;
-  autoResult = await api.saveAuto({ reason: 'test-empty-reset' }); // Reproduces the farm/inventory-reset signature the recovery autosave must reject.
+  autoResult = await api.saveAuto({ reason: 'test-empty-reset' });
   assert.equal(autoResult.skipped, true);
   assert.equal(autoResult.reason, 'integrity');
-  assert.equal(store.get('hobunjiSaveCheckpoint.auto.v1'), firstAutoRaw, 'suspicious empty farm state cannot replace the last good fallback autosave');
-  assert.equal(api.evaluateSnapshotForFolderWrite(currentSnapshot).ok, false, 'the same suspicious state is rejected before a canonical folder write');
+  assert.equal(store.get('hobunjiSaveCheckpoint.auto.v1'), firstAutoRaw, 'bad browser autosave cannot replace last good checkpoint');
 
-  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = { turnip: 7, ore: 5, milk: 2 };
-  currentSnapshot.meta.worlds[0].storage = { hay: 19, seed: 12, wool: 4 };
-  currentSnapshot.meta.worlds[0].livestock = [{ id: 'livestock_1' }, { id: 'livestock_2' }];
-  currentSnapshot.meta.characters[0].stable = [{ id: 'stable_1' }, { id: 'stable_2' }];
+  currentSnapshot = structuredClone(originalSnapshot);
+  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 7;
   now += 30_000;
   autoResult = await api.saveAuto({ reason: 'test-second-auto' });
   assert.equal(autoResult.ok, true);
-  assert.ok(store.has('hobunjiSaveCheckpoint.autoPrevious.v1'), 'a distinct earlier fallback autosave is retained when the latest autosave advances');
+  assert.ok(store.has('hobunjiSaveCheckpoint.autoPrevious.v1'), 'earlier browser autosave is retained separately');
 
-  currentSnapshot.meta.characters.push({ id: 'char_b', stable: [] }); // Second save slot proves farm-specific integrity checks do not compare unrelated farmers.
+  currentSnapshot.meta.characters.push({ id: 'char_b', stable: [] });
   currentSnapshot.meta.worlds.push({ id: 'world_b', members: { char_b: { nonGearInventory: {} } }, storage: {}, livestock: [] });
   currentSnapshot.farmLayouts.world_b = { tiles: [] };
   window.__hobunjiPlayerProfile = { characterId: 'char_b', worldId: 'world_b' };
   now += 30_000;
   autoResult = await api.saveAuto({ reason: 'test-save-slot-switch' });
-  assert.equal(autoResult.ok, true, 'switching to a different empty farmer/world is not mistaken for the prior farm being reset');
+  assert.equal(autoResult.ok, true, 'different empty farmer/world is not mistaken for prior farm reset');
 
-  // Arm folder-first mode. Existing browser checkpoints seed an older folder's
-  // missing recovery directory, after which folder copies become authoritative.
+  // Folder A contains only char_a/world_a. The browser latest autosave currently belongs
+  // to char_b/world_b and must NOT be copied into Folder A just because Folder A has no recovery/ yet.
   folderStatus.autoSyncArmed = true;
   for (const listener of folderListeners) listener({ ...folderStatus });
   await api.syncRecoveryMirrorsFromFolder();
-  assert.ok(folderRecovery.has('manual'), 'existing browser manual checkpoint migrates into recovery/manual.json when an older folder is adopted');
-  assert.ok(folderRecovery.has('auto'), 'existing browser latest autosave migrates into recovery/autosave-latest.json');
+  assert.ok(folderRecovery.has('manual'), 'matching browser manual checkpoint can migrate into an older folder');
+  assert.equal(folderRecovery.has('auto'), false, 'unrelated browser autosave is not migrated into another folder');
+  assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false, 'unrelated browser autosave is removed from the active folder mirror');
 
-  // Return to the original farm for same-save folder integrity coverage.
+  // Simulate upgrading an old primary folder with no recovery history at all. The current
+  // canonical folder snapshot must become the initial autosave baseline before any new write.
+  folderRecovery.clear();
+  for (const key of [
+    'hobunjiSaveCheckpoint.manual.v1',
+    'hobunjiSaveCheckpoint.auto.v1',
+    'hobunjiSaveCheckpoint.autoPrevious.v1',
+    'hobunjiSaveCheckpoint.preRestore.v1',
+  ]) localStorage.removeItem(key);
   window.__hobunjiPlayerProfile = { characterId: 'char_a', worldId: 'world_a' };
   currentSnapshot = structuredClone(folderPrimarySnapshot);
-  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = { turnip: 6, ore: 5, milk: 2 };
-  now += 30_000;
-  await window.HobunjiSaveCheckpoints.onFolderSnapshotWritten(currentSnapshot, { automatic: true, savedAt: now, recoveryKind: 'auto' });
-  assert.deepEqual(folderRecovery.get('auto').snapshot, currentSnapshot, 'successful canonical folder autosync advances recovery/autosave-latest.json with the same snapshot');
+  await api.syncRecoveryMirrorsFromFolder();
+  assert.ok(folderRecovery.has('auto'), 'old folder receives an autosave baseline from its canonical state');
+  assert.equal(folderRecovery.get('auto').reason, 'folder-baseline');
+  assert.deepEqual(folderRecovery.get('auto').snapshot, folderPrimarySnapshot, 'baseline exactly matches canonical primary folder');
 
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
   currentSnapshot.meta.worlds[0].storage = {};
   currentSnapshot.meta.worlds[0].livestock = [];
   currentSnapshot.meta.characters[0].stable = [];
-  const folderBeforeBadSync = structuredClone(folderPrimarySnapshot);
-  const folderBadStatus = await LocalSaveFolder.syncSnapshot(currentSnapshot, { automatic: true, recoveryKind: 'auto' });
-  assert.ok(folderBadStatus.lastError, 'suspicious empty farm is blocked before the mocked canonical folder write');
-  assert.deepEqual(folderPrimarySnapshot, folderBeforeBadSync, 'blocked autosave leaves canonical folder data untouched');
+  const beforeFirstBadFolderWrite = structuredClone(folderPrimarySnapshot);
+  const firstBadFolderStatus = await LocalSaveFolder.syncSnapshot(currentSnapshot, { automatic: true, recoveryKind: 'auto' });
+  assert.ok(firstBadFolderStatus.lastError, 'first bad post-upgrade folder autosave is blocked by seeded baseline');
+  assert.deepEqual(folderPrimarySnapshot, beforeFirstBadFolderWrite, 'first bad post-upgrade autosave leaves canonical folder untouched');
 
-  currentSnapshot = structuredClone(folderBeforeBadSync);
+  // A safe canonical autosave advances latest recovery and rotates the seeded baseline.
+  currentSnapshot = structuredClone(beforeFirstBadFolderWrite);
+  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 7;
+  now += 30_000;
+  const safeFolderStatus = await LocalSaveFolder.syncSnapshot(currentSnapshot, { automatic: true, recoveryKind: 'auto' });
+  assert.equal(safeFolderStatus.lastError, null);
+  assert.deepEqual(folderRecovery.get('auto').snapshot, currentSnapshot, 'successful canonical autosave advances latest folder recovery');
+  assert.ok(folderRecovery.has('autoPrevious'), 'seeded baseline rotates into earlier autosave');
+
+  // Create one known-good manual checkpoint in folder-first mode.
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 5;
   now += 30_000;
   manualResult = await api.saveManual();
-  assert.equal(manualResult.ok, true, 'manual save commits into folder-first workflow when the folder is armed');
+  assert.equal(manualResult.ok, true, 'manual save commits through folder-first path');
   assert.equal(manualResult.folder, true);
-  assert.ok(folderSyncs >= 1, 'manual save writes the exact flushed snapshot into the canonical folder');
-  assert.deepEqual(folderRecovery.get('manual').snapshot, folderPrimarySnapshot, 'recovery/manual.json matches the canonical manual snapshot');
+  assert.deepEqual(folderRecovery.get('manual').snapshot, folderPrimarySnapshot, 'folder manual checkpoint equals canonical manual snapshot');
+  const goodManualFolderRaw = JSON.stringify(folderRecovery.get('manual'));
+  const goodManualBrowserRaw = store.get('hobunjiSaveCheckpoint.manual.v1');
 
+  // A suspicious manual attempt must not destroy the previous good manual checkpoint before
+  // the folder guard approves it. UI can explicitly force this only after confirmation.
+  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory = {};
+  currentSnapshot.meta.worlds[0].storage = {};
+  currentSnapshot.meta.worlds[0].livestock = [];
+  currentSnapshot.meta.characters[0].stable = [];
+  manualResult = await api.saveManual();
+  assert.equal(manualResult.ok, false);
+  assert.equal(manualResult.needsConfirmation, true, 'suspicious manual save requires explicit confirmation');
+  assert.equal(JSON.stringify(folderRecovery.get('manual')), goodManualFolderRaw, 'rejected manual save preserves folder manual checkpoint');
+  assert.equal(store.get('hobunjiSaveCheckpoint.manual.v1'), goodManualBrowserRaw, 'rejected manual save preserves browser manual mirror');
+
+  // Successful restore preserves the current canonical state first, then installs manual.
   const manualCheckpoint = structuredClone(folderRecovery.get('manual'));
+  currentSnapshot = structuredClone(folderPrimarySnapshot);
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 1;
   folderPrimarySnapshot = structuredClone(currentSnapshot);
   now += 60_000;
-  const restoreResult = await api.restoreManual(); // Recovery preserves current canonical state as pre-restore before replacing it.
+  let restoreResult = await api.restoreManual();
   assert.equal(restoreResult.ok, true);
-  assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, manualCheckpoint.snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip);
-  assert.ok(folderRecovery.has('preRestore'), 'restore creates recovery/pre-restore.json before canonical replacement');
-  assert.equal(folderRecovery.get('preRestore').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1, 'pre-restore checkpoint contains the canonical folder state that was about to be replaced');
-  assert.deepEqual(folderPrimarySnapshot, manualCheckpoint.snapshot, 'chosen recovery checkpoint becomes the new canonical folder state');
-  assert.equal(reloads, 1, 'successful recovery reloads into the recovered save');
+  assert.equal(appliedSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 5);
+  assert.ok(folderRecovery.has('preRestore'), 'restore creates pre-restore recovery before canonical replacement');
+  assert.equal(folderRecovery.get('preRestore').snapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip, 1);
+  assert.deepEqual(folderPrimarySnapshot, manualCheckpoint.snapshot, 'chosen recovery becomes canonical folder state');
+  assert.equal(reloads, 1, 'successful recovery reloads once');
+
+  // Simulate the next restore failing after the canonical folder has already changed. The
+  // manager must force-write preRestore back to the folder, not merely fix browser storage.
+  currentSnapshot = structuredClone(folderPrimarySnapshot);
+  currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 3;
+  folderPrimarySnapshot = structuredClone(currentSnapshot);
+  const beforeFailedRestore = structuredClone(folderPrimarySnapshot);
+  now += 60_000;
+  failNextFolderSyncAfterWrite = true;
+  restoreResult = await api.restoreManual();
+  assert.equal(restoreResult.ok, false, 'restore reports the simulated partial folder failure');
+  assert.match(restoreResult.error, /original primary-folder save was restored/i, 'restore reports successful canonical rollback');
+  assert.deepEqual(folderPrimarySnapshot, beforeFailedRestore, 'failed restore rolls canonical folder back to pre-restore state');
+  assert.deepEqual(currentSnapshot, beforeFailedRestore, 'failed restore also rolls browser working state back');
+  assert.equal(reloads, 1, 'failed restore does not reload as if recovery succeeded');
+  assert.ok(api.getStatus().preRestore, 'pre-restore checkpoint remains available after rollback');
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().restoreRollbacks, 1, 'diagnostics record automatic folder rollback');
+  assert.ok(folderSyncs >= 4, 'fixture exercised canonical autosave, manual save, restore, and rollback writes');
 
   console.log('save checkpoint manager folder-first regression: ok');
 })().catch(error => {
