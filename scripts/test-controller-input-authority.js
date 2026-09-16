@@ -3,8 +3,8 @@
 // Controller input used to be five independent requestAnimationFrame loops,
 // each calling navigator.getGamepads() and applying its own deadzone, with
 // ownership arbitrated by monkey-patching ControllerUI.isActive. This test
-// keeps consumers collapsed behind ControllerInput and, when the global runtime
-// scheduler exists, keeps browser-frame cadence collapsed there too.
+// keeps consumers collapsed behind ControllerInput and ensures shipped builds
+// always bootstrap the shared RuntimeFrameScheduler before later consumers.
 'use strict';
 
 const assert = require('assert');
@@ -62,6 +62,7 @@ const schedulerContext = {
   cancelAnimationFrame() {},
   CustomEvent: class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
   console,
+  URL,
   Set,
   Map,
   Math,
@@ -76,6 +77,39 @@ assert.equal(directRafCalls, 0, 'scheduler-backed ControllerInput starts no priv
 schedulerRecord.callback({ timestamp: 250, deltaMs: 16.7, frameId: 1 });
 assert.equal(schedulerContext.window.ControllerInput.getDebug().frameId, 1, 'one scheduler callback produces one shared controller frame');
 assert.equal(schedulerContext.window.ControllerInput.getDebug().cadenceOwner, 'RuntimeFrameScheduler', 'mobile diagnostics report scheduler ownership');
+
+// Prove the shipped parser path cannot silently select the fallback just because
+// index.html omitted an explicit scheduler script tag. ControllerInput inserts
+// the feature-agnostic scheduler beside itself before later scripts are parsed.
+let bootstrapMarkup = '';
+let domReadyHandler = null;
+const bootstrapContext = {
+  window: { dispatchEvent() {} },
+  navigator: { getGamepads: () => [] },
+  document: {
+    readyState: 'loading',
+    currentScript: { src: 'https://example.test/docs/js/controller-input.js?v=test' },
+    write(markup) { bootstrapMarkup += markup; },
+    addEventListener(type, handler) { if (type === 'DOMContentLoaded') domReadyHandler = handler; },
+    hasFocus: () => true,
+  },
+  performance: { now: () => 100 },
+  requestAnimationFrame() { throw new Error('shipped bootstrap must not start the fallback before DOMContentLoaded'); },
+  cancelAnimationFrame() {},
+  CustomEvent: class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+  console,
+  URL,
+  Set,
+  Map,
+  Math,
+  Number,
+  String,
+  Object,
+};
+vm.runInNewContext(authority, bootstrapContext, { filename: 'controller-input.js' });
+assert.match(bootstrapMarkup, /runtime-frame-scheduler\.js\?v=20260916main1/, 'shipped ControllerInput parser-inserts the scheduler when index omits it');
+assert.equal(typeof domReadyHandler, 'function', 'controller cadence installation still waits for DOMContentLoaded after parser bootstrap');
+assert.ok(fs.existsSync('docs/js/runtime-frame-scheduler.js'), 'the parser-bootstrap target must exist in the shipped tree');
 
 // ── exactly one gamepad polling authority across all consumers ─────
 // Modules allowed to touch navigator.getGamepads directly, and why.
@@ -158,7 +192,7 @@ assert.match(
   'gameplay dispatch stands down via the explicit registry predicate',
 );
 
-// ── loader ordering ─────────────────────────────────────────────────
+// ── loader/bootstrap ordering ───────────────────────────────────────
 const index = read('docs/index.html');
 const authorityAt = index.indexOf('js/controller-input.js?v=');
 assert.ok(authorityAt > 0, 'controller-input.js must be loaded from index.html');
@@ -166,11 +200,11 @@ for (const later of ['js/controller-ui-nav.js?v=', 'js/music-minigame.js?v=']) {
   const at = index.indexOf(later);
   assert.ok(at > authorityAt, `${later} must load after the polling authority`);
 }
-// PR #601 can still be reviewed against an older base while the scheduler
-// stack lands. Once runtime-frame-scheduler.js is present in the merged base,
-// it must parser-load before ControllerInput so the compatibility RAF is never
-// selected in the shipped game.
 const schedulerAt = index.indexOf('js/runtime-frame-scheduler.js?v=');
-if (schedulerAt >= 0) assert.ok(schedulerAt < authorityAt, 'RuntimeFrameScheduler must load before ControllerInput');
+if (schedulerAt >= 0) {
+  assert.ok(schedulerAt < authorityAt, 'an explicit RuntimeFrameScheduler tag must load before ControllerInput');
+} else {
+  assert.match(authority, /document\.write\(`?<script src=/, 'when index omits the scheduler, ControllerInput must parser-bootstrap it');
+}
 
-console.log('controller input authority: OK');
+console.log('controller input authority and shipped scheduler bootstrap: OK');

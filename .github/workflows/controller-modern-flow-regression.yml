@@ -9,6 +9,8 @@ on:
       - 'docs/js/controller-input.js'
       - 'docs/js/controller-ui-nav.js'
       - 'docs/js/controller-modern-flow-bridge.js'
+      - 'docs/js/combat/melee-hud-reticle.js'
+      - 'docs/js/combat/ranged-hud-reticle.js'
       - 'docs/js/calendar-system.js'
       - 'docs/js/day-progress-review.js'
       - 'docs/js/farm-troughs.js'
@@ -19,6 +21,7 @@ on:
       - 'docs/js/shipping-panel.js'
       - 'docs/js/farm-crates.js'
       - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-runtime-frame-scheduler.js'
       - 'scripts/test-controller-modern-flow-bridge.js'
       - 'scripts/test-controller-shipping-box.js'
       - 'scripts/test-controller-input-authority.js'
@@ -32,6 +35,8 @@ on:
       - 'docs/js/controller-input.js'
       - 'docs/js/controller-ui-nav.js'
       - 'docs/js/controller-modern-flow-bridge.js'
+      - 'docs/js/combat/melee-hud-reticle.js'
+      - 'docs/js/combat/ranged-hud-reticle.js'
       - 'docs/js/calendar-system.js'
       - 'docs/js/day-progress-review.js'
       - 'docs/js/farm-troughs.js'
@@ -42,6 +47,7 @@ on:
       - 'docs/js/shipping-panel.js'
       - 'docs/js/farm-crates.js'
       - 'docs/js/combat/combat-config-loader.js'
+      - 'scripts/test-runtime-frame-scheduler.js'
       - 'scripts/test-controller-modern-flow-bridge.js'
       - 'scripts/test-controller-shipping-box.js'
       - 'scripts/test-controller-input-authority.js'
@@ -55,6 +61,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: node scripts/test-runtime-frame-scheduler.js
       - run: node scripts/test-controller-modern-flow-bridge.js
       - run: node scripts/test-controller-shipping-box.js
       - run: node scripts/test-controller-input-authority.js
