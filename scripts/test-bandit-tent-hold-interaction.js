@@ -56,7 +56,8 @@ assert(
   'a nearer hostile keeps combat priority over tent interaction',
 );
 assert(
-  banditCamps.includes("if (!ray || !window.RangedWeapons?.focusCandidates) return null;"),
+  banditCamps.includes("result: !ray ? 'missing-ray' : 'missing-focus-api'")
+    && banditCamps.includes('return null;'),
   'tent interaction does not fall back to proximity without a view ray',
 );
 

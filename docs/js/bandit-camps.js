@@ -224,9 +224,10 @@
     return { x: (obj.x + (obj.w || 1) / 2) * deps.TILE, y: (obj.y + (obj.h || 1) / 2) * deps.TILE };
   }
 
-  // Use the game's existing solid ROCK tile path as a cheap runtime collision
-  // mask for a standing tent. The underlying tile type is restored verbatim
-  // when the tent is removed, so no mesh/radius collision runs each frame.
+  // Stamp a non-rendering tile marker as the cheap runtime collision mask for
+  // a standing tent. game.js's tileSpeedAt reads this marker directly; using
+  // TileType.ROCK here also made the terrain renderer grow one rock mound on
+  // every footprint tile.
   function _applyBanditTentGridCollision(zoneId, obj) {
     const zi = deps.zoneScenes.get(zoneId);
     if (!zi?.grid || !obj) return [];
@@ -236,10 +237,7 @@
         const tile = zi.grid?.[r]?.[c];
         if (!tile || (tile._banditTentCollisionId && tile._banditTentCollisionId !== obj.id)) continue;
         if (tile._banditTentCollisionId === obj.id) continue;
-        snapshots.push({ c, r, type: tile.type, floraKind: tile.floraKind, generatedObjectType: tile.generatedObjectType });
-        tile.type = deps.TileType.ROCK;
-        tile.floraKind = null;
-        tile.generatedObjectType = null;
+        snapshots.push({ c, r });
         tile._banditTentCollisionId = obj.id;
       }
     }
@@ -252,9 +250,6 @@
     for (const snap of entry.collisionTiles) {
       const tile = zi.grid?.[snap.r]?.[snap.c];
       if (!tile || tile._banditTentCollisionId !== entry.propId) continue;
-      tile.type = snap.type;
-      tile.floraKind = snap.floraKind;
-      tile.generatedObjectType = snap.generatedObjectType;
       delete tile._banditTentCollisionId;
     }
   }
@@ -998,6 +993,7 @@
   let _tentActionHudEl = null;
   let _tentActionLabelEl = null;
   let _tentActionFillEl = null;
+  let _lastTentFocus = { result: 'not-checked', nearby: 0, hasRay: false, hasFocusApi: false }; // Mobile-readable focus plumbing/status for Pixel Probe.
 
   function ensureTentActionHud() {
     _tentActionHudEl ||= document.getElementById('tentActionHud');
@@ -1054,18 +1050,31 @@
       const center = banditTentCenterPx(obj);
       return Math.hypot(deps.player.x - center.x, deps.player.y - center.y) <= banditTentNearPx();
     });
-    if (!nearby.length) return null;
+    if (!nearby.length) {
+      _lastTentFocus = { result: 'none-nearby', nearby: 0, hasRay: false, hasFocusApi: !!window.RangedWeapons?.focusCandidates };
+      return null;
+    }
     const ray = deps.getPlayerInteractionRay?.() || deps.getPlayerAimRay?.();
-    if (!ray || !window.RangedWeapons?.focusCandidates) return null;
+    if (!ray || !window.RangedWeapons?.focusCandidates) {
+      _lastTentFocus = { result: !ray ? 'missing-ray' : 'missing-focus-api', nearby: nearby.length, hasRay: !!ray, hasFocusApi: !!window.RangedWeapons?.focusCandidates };
+      return null;
+    }
     const candidates = nearby.map(obj => ({
       type: 'bandit-tent', id: obj.id, data: obj,
       box: banditTentInteractionBox(zoneId, obj),
     }));
     const focus = window.RangedWeapons.focusCandidates(candidates, 24);
-    if (!focus?.candidate?.data) return null;
+    if (!focus?.candidate?.data) {
+      _lastTentFocus = { result: 'ray-missed', nearby: nearby.length, hasRay: true, hasFocusApi: true };
+      return null;
+    }
     const hostile = window.RangedWeapons.focusedHostile?.(24);
-    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) return null;
+    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) {
+      _lastTentFocus = { result: 'nearer-hostile', nearby: nearby.length, hasRay: true, hasFocusApi: true };
+      return null;
+    }
     window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    _lastTentFocus = { result: 'focused', nearby: nearby.length, hasRay: true, hasFocusApi: true, tentId: focus.candidate.data.id };
     return focus.candidate.data;
   }
 
@@ -1282,6 +1291,7 @@
         interrupted: _banditTentHoldInterrupted,
         hudReady: !!(_tentActionHudEl && _tentActionLabelEl && _tentActionFillEl),
         hudVisible: !!_tentActionHudEl?.classList.contains('visible'),
+        focus: { ..._lastTentFocus },
       };
     },
     get campInstances() { return _banditCampInstances; },

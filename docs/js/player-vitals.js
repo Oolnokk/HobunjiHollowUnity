@@ -8,6 +8,7 @@
   // direct reference like the other stable object dependencies below.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
+  let deathHandled = false; // Prevents repeated respawn requests if a caller leaves the player at zero for more than one tick.
 
   // Looked up lazily (on first refreshVitalsHud() call, not at module-load
   // time) since this script tag loads in <head> before <body> exists —
@@ -49,6 +50,18 @@
       staminaRegenPerSec: deps.PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier(),
       healthRegenPerSec: deps.PLAYER_HEALTH_REGEN,
     });
+    // Direct hits check death in game.js's damagePlayer(), but bleeding,
+    // poison, and stamina-affliction damage resolve here inside tick(). Route
+    // those lethal ticks through the exact same respawn authority before AI
+    // sees a zero-health player and treats them as a permanently dead target.
+    if (deps.player.health <= 0) {
+      if (!deathHandled) {
+        deathHandled = true;
+        deps.handlePlayerDeath?.('resource-tick');
+      }
+    } else {
+      deathHandled = false;
+    }
     if (tickResult?.puked) deps.showToast('You feel queasy...', false);
     if (deps.player.dodgeCooldownT > 0) deps.player.dodgeCooldownT = Math.max(0, deps.player.dodgeCooldownT - dt);
     refreshVitalsHud();
@@ -58,5 +71,10 @@
     init,
     updatePlayerVitals,
     refreshVitalsHud,
+    getDebug: () => ({
+      health: Number(deps?.player?.health) || 0,
+      maxHealth: Number(deps?.player?.maxHealth) || 0,
+      deathHandled,
+    }),
   };
 })();
