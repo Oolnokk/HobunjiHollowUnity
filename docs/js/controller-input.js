@@ -7,14 +7,14 @@
 // its own pad snapshot and each applying its own deadzone constant, with
 // ownership arbitrated by monkey-patching ControllerUI.isActive.
 //
-// This module now owns one loop. It snapshots the pads once per frame,
-// resolves the active pad once, computes every binding code's analog value
-// once, derives press/release edges once, and hands the result to subscribers
-// in a deterministic priority order. Ownership is an explicit registry here
-// rather than a patched predicate somewhere else.
+// This module still owns the one controller snapshot/edge pass, but permanent
+// browser-frame cadence now belongs to RuntimeFrameScheduler when that shared
+// authority is present. Older standalone/editor/test contexts retain a guarded
+// legacy RAF fallback so the helper remains independently executable.
 (() => {
   'use strict';
 
+  const SCHEDULER_ID = 'controller-input'; // Stable shared-frame identity used by RuntimeFrameScheduler diagnostics and replacement-safe registration.
   const STANDARD_BUTTON_CODES = Object.freeze([
     'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
     'LeftTrigger', 'RightTrigger',
@@ -146,8 +146,8 @@
     return owner !== 'gameplay';
   }
 
-  // ── the one polling loop ───────────────────────────────────────────
-  const padScratch = []; // Reused every frame; the loop allocates nothing while idle.
+  // ── shared controller snapshot ─────────────────────────────────────
+  const padScratch = []; // Reused every frame; the polling pass allocates nothing while idle.
   const values = new Map(); // code -> analog value for the active pad this frame.
   let downSet = new Set();
   let prevDownSet = new Set();
@@ -188,6 +188,9 @@
   let activePadIndex = null;
   let lastNow = 0;
   const errorCounts = new Map(); // Subscriber name -> thrown-error count, surfaced in getDebug().
+  let cadenceOwner = 'manual'; // Used by diagnostics/tests to prove whether the global scheduler or compatibility fallback owns browser cadence.
+  let schedulerUnsubscribe = null; // Retained only so a development reload/dispose path can replace the named scheduler registration cleanly.
+  let fallbackRafHandle = 0; // Non-zero only in older standalone contexts where RuntimeFrameScheduler is unavailable.
 
   function collectPads() {
     padScratch.length = 0;
@@ -200,12 +203,11 @@
   }
 
   function pollFrame(now) {
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pollFrame);
     frame.id++;
     frame.now = now || performance.now();
     frame.dt = lastNow ? Math.min(0.05, Math.max(0, (frame.now - lastNow) / 1000)) : 1 / 60; // Caps resume spikes after a backgrounded tab.
     lastNow = frame.now;
-    frame.focused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+    frame.focused = typeof document?.hasFocus === 'function' ? document.hasFocus() : true;
 
     const pads = collectPads();
     const pad = pads.length ? pickActiveGamepad(pads, activePadIndex) : null;
@@ -250,7 +252,7 @@
         entry.fn(frame);
       } catch (error) {
         // One misbehaving consumer must not take down every other controller
-        // consumer, which is exactly what sharing a loop would otherwise risk.
+        // consumer, which is exactly what sharing a cadence owner would otherwise risk.
         errorCounts.set(entry.name, (errorCounts.get(entry.name) || 0) + 1);
         if (errorCounts.get(entry.name) === 1) {
           window.__farmLog?.(`[controller-input] subscriber "${entry.name}" threw: ${error?.message || error}`, 'input');
@@ -260,10 +262,40 @@
     }
   }
 
+  function scheduledFrame(frameContext) {
+    pollFrame(Number(frameContext?.timestamp) || performance.now());
+  }
+
+  function fallbackFrame(now) {
+    fallbackRafHandle = 0;
+    pollFrame(now);
+    if (typeof requestAnimationFrame === 'function') fallbackRafHandle = requestAnimationFrame(fallbackFrame);
+  }
+
+  function installCadenceOwner() {
+    if (window.RuntimeFrameScheduler?.register) {
+      cadenceOwner = 'RuntimeFrameScheduler';
+      schedulerUnsubscribe?.();
+      schedulerUnsubscribe = window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
+        phase: 'input',
+        owner: 'ControllerInput',
+        description: 'Polls the active Gamepad once and dispatches the shared controller snapshot/edges.',
+      });
+      return cadenceOwner;
+    }
+    if (!fallbackRafHandle && typeof requestAnimationFrame === 'function') {
+      cadenceOwner = 'controller-input-fallback-raf';
+      fallbackRafHandle = requestAnimationFrame(fallbackFrame);
+    }
+    return cadenceOwner;
+  }
+
   function getDebug() {
     return {
       frameId: frame.id,
       owner,
+      cadenceOwner,
+      schedulerId: cadenceOwner === 'RuntimeFrameScheduler' ? SCHEDULER_ID : null,
       padIndex: frame.padIndex,
       padId: frame.pad?.id || null,
       padCount: padScratch.length,
@@ -292,8 +324,16 @@
     DEFAULT_BUTTON_THRESHOLD,
   };
 
-  // Guarded so the module can be evaluated outside a browser (regression tests
-  // and the editor tool pages both do this) without needing a rAF shim just to
-  // read its API surface. pumpFrame() lets such a context drive a frame by hand.
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pollFrame);
+  // RuntimeFrameScheduler itself is parser-loaded before ControllerInput in the
+  // scheduler build. Waiting until DOMContentLoaded keeps the scheduler's
+  // established post-gameLoop browser-frame ordering intact instead of letting
+  // this earlier script become the first subscriber and move every existing
+  // scheduler visual callback ahead of gameLoop. Standalone tools/tests that do
+  // not have that lifecycle simply install immediately and use the guarded RAF
+  // fallback when no scheduler exists.
+  if (typeof document !== 'undefined' && document.readyState === 'loading' && typeof document.addEventListener === 'function') {
+    document.addEventListener('DOMContentLoaded', installCadenceOwner, { once: true });
+  } else {
+    installCadenceOwner();
+  }
 })();
