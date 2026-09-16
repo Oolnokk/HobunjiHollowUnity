@@ -3,11 +3,13 @@
 // Controller input used to be five independent requestAnimationFrame loops,
 // each calling navigator.getGamepads() and applying its own deadzone, with
 // ownership arbitrated by monkey-patching ControllerUI.isActive. This test
-// keeps it collapsed to one loop that consumers subscribe to.
+// keeps consumers collapsed behind ControllerInput and, when the global runtime
+// scheduler exists, keeps browser-frame cadence collapsed there too.
 'use strict';
 
 const assert = require('assert');
 const fs = require('fs');
+const vm = require('vm');
 
 const read = path => fs.readFileSync(path, 'utf8');
 
@@ -23,11 +25,14 @@ const game = read('docs/game.js');
 for (const api of ['subscribe', 'setOwner', 'gameplaySuspended', 'PRIORITY', 'thresholdFor']) {
   assert.ok(authority.includes(api), `ControllerInput must expose ${api}`);
 }
-assert.match(authority, /requestAnimationFrame\(pollFrame\)/, 'the authority owns the one polling loop');
+assert.match(authority, /RuntimeFrameScheduler\?\.register/, 'the authority prefers the global RuntimeFrameScheduler when available');
+assert.match(authority, /SCHEDULER_ID\s*=\s*'controller-input'/, 'controller polling has a stable scheduler identity');
+assert.doesNotMatch(authority, /requestAnimationFrame\(pollFrame\)/, 'pollFrame must never self-schedule a permanent controller RAF');
+assert.match(authority, /requestAnimationFrame\(fallbackFrame\)/, 'older standalone contexts retain one explicit compatibility RAF fallback');
 assert.match(
   authority,
   /pressedSet\.add|releasedSet\.add/,
-  'the authority derives press/release edges once per frame for every consumer',
+  'the authority derives press/release edges once per controller frame for every consumer',
 );
 assert.match(
   authority,
@@ -35,7 +40,44 @@ assert.match(
   'setOwner still emits the existing owner-change event game.js listens for',
 );
 
-// ── exactly one polling loop across all controller consumers ────────
+// Prove executable scheduler preference, not just source spelling: when the
+// global scheduler exists ControllerInput registers exactly once and schedules
+// no private browser RAF of its own.
+let schedulerRecord = null;
+let directRafCalls = 0;
+const schedulerContext = {
+  window: {
+    RuntimeFrameScheduler: {
+      register(id, callback, options) {
+        schedulerRecord = { id, callback, options };
+        return () => { schedulerRecord = null; };
+      },
+    },
+    dispatchEvent() {},
+  },
+  navigator: { getGamepads: () => [] },
+  document: { readyState: 'complete', hasFocus: () => true },
+  performance: { now: () => 100 },
+  requestAnimationFrame() { directRafCalls += 1; return directRafCalls; },
+  cancelAnimationFrame() {},
+  CustomEvent: class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+  console,
+  Set,
+  Map,
+  Math,
+  Number,
+  String,
+  Object,
+};
+vm.runInNewContext(authority, schedulerContext, { filename: 'controller-input.js' });
+assert.equal(schedulerRecord?.id, 'controller-input', 'ControllerInput registers under its stable scheduler id');
+assert.equal(schedulerRecord?.options?.phase, 'input', 'controller polling advertises input cadence in scheduler diagnostics');
+assert.equal(directRafCalls, 0, 'scheduler-backed ControllerInput starts no private requestAnimationFrame loop');
+schedulerRecord.callback({ timestamp: 250, deltaMs: 16.7, frameId: 1 });
+assert.equal(schedulerContext.window.ControllerInput.getDebug().frameId, 1, 'one scheduler callback produces one shared controller frame');
+assert.equal(schedulerContext.window.ControllerInput.getDebug().cadenceOwner, 'RuntimeFrameScheduler', 'mobile diagnostics report scheduler ownership');
+
+// ── exactly one gamepad polling authority across all consumers ─────
 // Modules allowed to touch navigator.getGamepads directly, and why.
 const ALLOWED_DIRECT_GAMEPAD_ACCESS = {
   'docs/js/controller-input.js': 'the authority itself',
@@ -79,12 +121,12 @@ const subscribesAs = (source, name) =>
   new RegExp(`ControllerInput\\?\\.subscribe\\?\\.\\(\\s*'${name}'`).test(source);
 
 for (const [name, source, priority] of consumers) {
-  assert.ok(subscribesAs(source, name), `${name} must join the shared frame loop by name`);
+  assert.ok(subscribesAs(source, name), `${name} must join the shared controller frame by name`);
   assert.ok(source.includes(priority), `${name} must declare its shared-loop priority`);
 }
 assert.ok(
   subscribesAs(archetypes, 'ranged-thrown-charge'),
-  'the thrown-charge release watcher must share the frame loop too',
+  'the thrown-charge release watcher must share the controller frame too',
 );
 assert.ok(
   !/requestAnimationFrame\(poll/.test(archetypes),
@@ -116,7 +158,7 @@ assert.match(
   'gameplay dispatch stands down via the explicit registry predicate',
 );
 
-// ── the authority loads before anything that subscribes ─────────────
+// ── loader ordering ─────────────────────────────────────────────────
 const index = read('docs/index.html');
 const authorityAt = index.indexOf('js/controller-input.js?v=');
 assert.ok(authorityAt > 0, 'controller-input.js must be loaded from index.html');
@@ -124,5 +166,11 @@ for (const later of ['js/controller-ui-nav.js?v=', 'js/music-minigame.js?v=']) {
   const at = index.indexOf(later);
   assert.ok(at > authorityAt, `${later} must load after the polling authority`);
 }
+// PR #601 can still be reviewed against an older base while the scheduler
+// stack lands. Once runtime-frame-scheduler.js is present in the merged base,
+// it must parser-load before ControllerInput so the compatibility RAF is never
+// selected in the shipped game.
+const schedulerAt = index.indexOf('js/runtime-frame-scheduler.js?v=');
+if (schedulerAt >= 0) assert.ok(schedulerAt < authorityAt, 'RuntimeFrameScheduler must load before ControllerInput');
 
 console.log('controller input authority: OK');
