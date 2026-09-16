@@ -6,20 +6,26 @@ on:
       - 'docs/js/inventory-held-override.js'
       - 'docs/js/combat/technique-scrolls.js'
       - 'docs/js/alcohol-gameplay-bridge.js'
+      - 'docs/js/dye-system.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-inventory-held-override.js'
+      - 'scripts/test-inventory-direct-item-use.js'
       - 'scripts/test-combat-manuals-jubmir-visits.js'
       - 'scripts/test-alcohol-swigs-and-npc-offers.js'
+      - 'scripts/test-dye-item-consumption.js'
       - '.github/workflows/inventory-hold-regression.yml'
   pull_request:
     paths:
       - 'docs/js/inventory-held-override.js'
       - 'docs/js/combat/technique-scrolls.js'
       - 'docs/js/alcohol-gameplay-bridge.js'
+      - 'docs/js/dye-system.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'scripts/test-inventory-held-override.js'
+      - 'scripts/test-inventory-direct-item-use.js'
       - 'scripts/test-combat-manuals-jubmir-visits.js'
       - 'scripts/test-alcohol-swigs-and-npc-offers.js'
+      - 'scripts/test-dye-item-consumption.js'
       - '.github/workflows/inventory-hold-regression.yml'
 
 jobs:
@@ -37,13 +43,20 @@ jobs:
           node --check docs/js/inventory-held-override.js
           node --check docs/js/combat/technique-scrolls.js
           node --check docs/js/alcohol-gameplay-bridge.js
+          node --check docs/js/dye-system.js
           node --check docs/js/combat/combat-config-loader.js
           node --check scripts/test-inventory-held-override.js
+          node --check scripts/test-inventory-direct-item-use.js
           node --check scripts/test-combat-manuals-jubmir-visits.js
           node --check scripts/test-alcohol-swigs-and-npc-offers.js
+          node --check scripts/test-dye-item-consumption.js
       - name: Test general off-arch Inventory Hold behavior
         run: node scripts/test-inventory-held-override.js
+      - name: Test direct Inventory item use
+        run: node scripts/test-inventory-direct-item-use.js
       - name: Test combat literature through held actions
         run: node scripts/test-combat-manuals-jubmir-visits.js
       - name: Test held alchemy recipe routing
         run: node scripts/test-alcohol-swigs-and-npc-offers.js
+      - name: Test mystery dye held routing
+        run: node scripts/test-dye-item-consumption.js
