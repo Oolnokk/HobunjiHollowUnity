@@ -110,7 +110,7 @@
       const y10 = cornerY(c + 1, r, ground);
       const y01 = cornerY(c, r + 1, ground);
       const y11 = cornerY(c + 1, r + 1, ground);
-      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1,y11,r+1);
       uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
       idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
     }
@@ -337,12 +337,14 @@
     const emptyRecord = { grid: zGrid, cols: zcols, rows: zrows, mesh: null }; // Prevents every chunk from rescanning a map that contains no waterfalls.
     if (!cells.length) {
       hostRecords.set(mapId, emptyRecord);
-      waterfallRenderStats[mapId] = { persistent: true, cells: 0, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      waterfallRenderStats[mapId] = { persistent: true, cells: 0, curtains: 0, duplicateEdgesSkipped: 0, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
       return [];
     }
 
     const textureTileSize = Math.max(0.001, Number(window.MergedWaterRenderer?.DEFAULT_TEXTURE_TILE_SIZE) || 4); // Matches the world-space repeat scale used by rivers.
     const pos = [], uv = [], idx = [];
+    const emittedEdges = new Set(); // Deduplicates a shared cliff edge when waterfall tiles on both sides visit the same vertical curtain.
+    let duplicateEdgesSkipped = 0; // Counted below for diagnostics so mobile/source audits can verify the duplicate-overdraw guard is active.
     let vi = 0;
     for (const [c, r] of cells) {
       const t = zGrid[r][c];
@@ -359,6 +361,13 @@
         else if (dc === -1) { x0 = c;   z0 = r+1; x1 = c;   z1 = r;   }
         else if (dr === 1)  { x0 = c;   z0 = r+1; x1 = c+1; z1 = r+1; }
         else /* dr === -1 */{ x0 = c+1; z0 = r;   x1 = c;   z1 = r;   }
+        const firstBeforeSecond = x0 < x1 || (x0 === x1 && z0 <= z1); // Canonicalizes the two edge endpoints so opposite visits produce the same key.
+        const edgeKey = firstBeforeSecond ? `${x0},${z0}:${x1},${z1}` : `${x1},${z1}:${x0},${z0}`; // Used only by emittedEdges for duplicate curtain rejection.
+        if (emittedEdges.has(edgeKey)) {
+          duplicateEdgesSkipped++;
+          continue;
+        }
+        emittedEdges.add(edgeKey);
         const u0 = (x0 + z0) / textureTileSize; // Keeps the PNG continuous in world space along either X- or Z-facing waterfall edges.
         const u1 = (x1 + z1) / textureTileSize; // Continues the same world-space texture coordinate at the second edge vertex.
         const vTop = top / textureTileSize; // Uses world Y so every tier of the waterfall participates in one continuous vertical conveyor.
@@ -370,7 +379,7 @@
     }
     if (!pos.length) {
       hostRecords.set(mapId, emptyRecord);
-      waterfallRenderStats[mapId] = { persistent: true, cells: cells.length, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      waterfallRenderStats[mapId] = { persistent: true, cells: cells.length, curtains: 0, duplicateEdgesSkipped, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
       return [];
     }
 
@@ -386,10 +395,12 @@
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `${mapId}_persistent_waterfall_curtains`;
     mesh.receiveShadow = false;
-    mesh.frustumCulled = false; // One tiny draw call stays eligible at any camera distance, preventing cliff openings from going empty at long range.
+    mesh.frustumCulled = true; // Persistence solves chunk streaming; normal view-frustum culling still skips the sheet when it is wholly offscreen.
     mesh.userData.wildernessPersistentZoneFeature = 'waterfall';
     mesh.userData.wildernessPersistentZoneFeatureMapId = mapId;
     mesh.userData.waterfallCellCount = cells.length;
+    mesh.userData.waterfallCurtainCount = idx.length / 6;
+    mesh.userData.waterfallDuplicateEdgesSkipped = duplicateEdgesSkipped;
     mesh.userData.waterfallTriangleCount = idx.length / 3;
     mesh.userData.waterfallTexture = WATERFALL_TEXTURE_URL;
     mesh.userData.noOutline = true;
@@ -404,6 +415,8 @@
     waterfallRenderStats[mapId] = {
       persistent: true,
       cells: cells.length,
+      curtains: idx.length / 6,
+      duplicateEdgesSkipped,
       vertices: pos.length / 3,
       triangles: idx.length / 3,
       drawCalls: 1,
@@ -411,7 +424,7 @@
       textureTileSize,
       scrollUvPerSecond: WATERFALL_SCROLL_UV_PER_SECOND,
     };
-    console.log(`%c[zone:${mapId}] persistent textured waterfall sheet built: ${cells.length} cell(s), ${idx.length / 3} triangle(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
+    console.log(`%c[zone:${mapId}] persistent textured waterfall sheet built: ${cells.length} cell(s), ${idx.length / 6} curtain(s), ${duplicateEdgesSkipped} duplicate edge(s) skipped, ${idx.length / 3} triangle(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
     return bounds ? [] : [mesh];
   }
 
