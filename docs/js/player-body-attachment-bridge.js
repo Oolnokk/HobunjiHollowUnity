@@ -39,6 +39,17 @@
     api.__playerBodyAttachmentInitHooked = true;
   }
 
+  function ensureShoulderPetIdleFrame(companion, combatDeps) {
+    const frameUrl = companion?.def?.sprites?.idle; // Uses the creature's own authored idle pose while it is perched on the player.
+    if (!frameUrl || typeof combatDeps?.setCreatureFrame !== 'function' || !companion.avatarRef) return false;
+    companion.__hobunjiShoulderIdleFrame = frameUrl; // Mobile/debug-readable proof of the shouldered presentation frame.
+    if (companion.currentFrameUrl === frameUrl) return true;
+    const genotypeKind = combatDeps.genotypeKindFor?.(companion) || companion.creatureKey || companion.kind || null; // Preserves patterned/recolored livestock through the shared frame compositor.
+    combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, genotypeKind, 'idle', companion.genotype);
+    companion.currentFrameUrl = frameUrl;
+    return true;
+  }
+
   if (window.DevSpawner) patchDevSpawner(window.DevSpawner);
   else chainFutureSetter('DevSpawner', patchDevSpawner);
 
@@ -52,7 +63,10 @@
     for (const companion of combatDeps.companionObjects || []) {
       if (!companion || companion.health <= 0 || companion.stableRole !== 'shoulderPet') continue;
       if ((companion.master || player) !== player) continue;
-      if (companion.avatarRef?.group) roots.push(companion.avatarRef.group);
+      if (companion.avatarRef?.group) {
+        ensureShoulderPetIdleFrame(companion, combatDeps);
+        roots.push(companion.avatarRef.group);
+      }
     }
     return roots;
   });
@@ -60,16 +74,18 @@
   window.PlayerBodyAttachmentBridge = {
     getDebug() {
       const handDebug = window.ProceduralHandAttachments?.getActiveDebug?.().find(entry => entry?.speciesId) || null;
+      const activeShoulderPets = window.Combat?.deps?.companionObjects
+        ? Array.from(window.Combat.deps.companionObjects).filter(companion =>
+            companion?.health > 0
+            && companion.stableRole === 'shoulderPet'
+            && (companion.master || window.Combat.deps.player) === window.Combat.deps.player)
+        : []; // Shared by the count and idle-frame diagnostics below.
       return {
         hasGameDeps: !!gameDeps,
         hasToolHolder: !!gameDeps?.toolHolder,
         proceduralHands: handDebug,
-        activeShoulderPets: (window.Combat?.deps?.companionObjects
-          ? Array.from(window.Combat.deps.companionObjects).filter(companion =>
-              companion?.health > 0
-              && companion.stableRole === 'shoulderPet'
-              && (companion.master || window.Combat.deps.player) === window.Combat.deps.player)
-          : []).length,
+        activeShoulderPets: activeShoulderPets.length,
+        shoulderPetsOnIdle: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
       };
     },
   };
