@@ -34,6 +34,7 @@ context.StableTrainingCompendiumPatch = {};
 context.BARN_INCUBATOR_CONFIG = {};
 context.BarnIncubator = { install() {} };
 context.FarmMenuLayout = { install() {} }; // Keeps this bridge-only regression focused on dependency mirroring rather than dynamic feature loading.
+context.LivestockNurseryGrid = { install() {} }; // Keeps the new Nursery presentation/economy feature from becoming an unrelated dynamic-load dependency in this bridge regression.
 context.LivestockNursery = { install() {} };
 context.FarmAnimals = {
   init(injectedDeps) { farmInitDeps = injectedDeps; },
