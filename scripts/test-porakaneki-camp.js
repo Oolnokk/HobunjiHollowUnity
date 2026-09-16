@@ -56,13 +56,16 @@ assert(runtimeSource.includes("entity.state = 'return'"), 'neutral Porakaneki mu
 assert(!runtimeSource.includes('combatDeps.moveCreatureToward?.(entity'), 'Porakaneki planner must not independently move the same live entity the hostile loop is rendering');
 assert(runtimeSource.indexOf('updateAllHunters(step, coarseStep);') < runtimeSource.indexOf('updateTerritoryWarnings();'), 'nearby hunters must begin materializing before territory dialogue attempts to choose a speaker');
 assert(runtimeSource.includes('allowToastFallback: false'), 'territory warnings must wait for Ambient Dialogue instead of being consumed as a toast');
+assert(runtimeSource.includes('combatDeps.hostileObjects.add(entity)'), 'Porakaneki residents must join the same Set-backed hostile registry as arena/bandit/wildlife entities');
+assert(runtimeSource.includes('combatDeps.hostileObjects.delete(entity)'), 'retired Porakaneki residents must leave the Set-backed hostile registry');
+assert(runtimeSource.includes('combatDeps?.hostileObjects?.has?.(entity)'), 'Porakaneki diagnostics must report Set registration accurately');
 
 let currentArea = 'town'; // Mutated through off-zone, same-zone/nearby, hysteresis, and far-away cases.
 let hour = 12; // Calendar hour for awake/sleep checks.
 let season = 'Stormtide'; // Mutated to prove large-camp migration without disturbing little camps.
 const day = 7;
 const relation = { favor: 0, memory: [] }; // Named chief relationship record doubles as tribe-wide Favor.
-const hostileObjects = []; // Real combat entities should only appear for nearby residents.
+const hostileObjects = new Set(); // Mirrors the production hostile registry used by arena, bandit-camp, and wildlife spawning.
 const rewardLog = [];
 const toastLog = [];
 const stations = [];
@@ -243,7 +246,7 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(debug.zones.map_southern_cloud_forest.camps.find(camp => camp.kind === 'chief').residents, 6);
   assert.equal(chief.rec.scheduleHooks.defaultMapId, 'map_southern_cloud_forest');
   assert.equal(chief.rec.agenda.find(beat => beat.id === 'porakaneki_day').activity, 'break');
-  assert.equal(hostileObjects.length, 0, 'all off-zone generated residents remain abstract');
+  assert.equal(hostileObjects.size, 0, 'all off-zone generated residents remain abstract');
 
   const originalSmallCenters = JSON.stringify(smallCenters(debug));
   season = 'Deadgrass';
@@ -268,14 +271,14 @@ function hunterDebug(api, zoneId, campId, index) {
   contextWindow.BanditCamps.updateCampBanners(0.21);
   await flush();
   debug = api.debugSnapshot();
-  assert(hostileObjects.length >= 1, 'nearby procedural residents materialize through the real humanoid combat pipeline');
+  assert(hostileObjects.size >= 1, 'nearby procedural residents materialize through the real Set-backed humanoid combat pipeline');
   const materializedCamp = debug.zones.map_western_slope.camps.find(camp => camp.hunters.some(hunter => hunter.materialized && hunter.fullSimulation));
   const materializedIndex = materializedCamp.hunters.findIndex(hunter => hunter.materialized && hunter.fullSimulation);
   let materialized = materializedCamp.hunters[materializedIndex];
   assert(materialized, 'at least one nearby resident runs full simulation');
   assert.equal(materialized.entityState, 'return', 'neutral resident delegates locomotion to the shared hostile return/home state');
   assert.equal(materialized.plannerControlled, true);
-  assert.equal(materialized.registered, true);
+  assert.equal(materialized.registered, true, 'materialized resident is present in the shared hostile Set');
   assert.equal(materialized.renderDelta, 0, 'freshly placed avatar root matches the live simulation position');
 
   // Distance LOD has no invisible 10x10 chunk edge. A resident entered at 12
@@ -297,14 +300,14 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(collapsed.fullSimulation, false, 'resident exits detailed simulation only beyond the configured release radius');
   assert.equal(collapsed.visible, false, 'beyond the release radius the entity collapses to the abstract representation');
 
-  const hostileCountWhileHidden = hostileObjects.length;
+  const hostileCountWhileHidden = hostileObjects.size;
   contextWindow.BanditCamps.updateCampBanners(0.21);
-  assert.equal(hostileObjects.length, hostileCountWhileHidden, 'a briefly-dormant resident is not immediately torn down (avoids edge thrash)');
+  assert.equal(hostileObjects.size, hostileCountWhileHidden, 'a briefly-dormant resident is not immediately torn down (avoids edge thrash)');
   fakeNowMs += 3001;
   contextWindow.BanditCamps.updateCampBanners(0.21);
   collapsed = hunterDebug(api, currentArea, materializedCamp.id, materializedIndex);
   assert.equal(collapsed.materialized, false, 'sustained dormancy actually releases the entity back to plain abstract data');
-  assert(hostileObjects.length < hostileCountWhileHidden, 'the released entity is spliced out of hostileObjects, not left as permanent dead weight');
+  assert(hostileObjects.size < hostileCountWhileHidden, 'the released entity is deleted from hostileObjects, not left as permanent dead weight');
 
   // Warnings/greetings must read as an actual Porakaneki speaking -- the same
   // overhead chathead+text bubble every other NPC's greeting uses -- not a HUD
