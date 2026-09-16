@@ -22,6 +22,9 @@
     autoPrevious: 'autosave-previous.json',
     preRestore: 'pre-restore.json',
   });
+  const TRANSACTION_DIR = 'transaction-journal'; // Single write-ahead journal protecting the multi-file canonical save boundary.
+  const TRANSACTION_PENDING_FILE = 'pending.json'; // Exists only while a canonical folder transaction is unresolved.
+  const TRANSACTION_LOCK_NAME = 'hobunji-folder-transaction'; // Core-level Web Lock serializes every canonical read/repair/write across tabs.
   const MANIFEST_FILE_NAME = 'manifest.json';
   const LEGACY_SAVE_FILE_NAME = 'hobunji-save.json';
   const SAVE_META_KEY = 'hobunjiSaveMeta';
@@ -58,6 +61,10 @@
     const filename = RECOVERY_FILES[slot]; // Whitelisted filename prevents arbitrary folder writes through the public recovery API.
     if (!filename) throw new Error(`Unknown recovery slot: ${String(slot)}`);
     return filename;
+  }
+
+  function transactionJournalApi() {
+    return window.HobunjiFolderTransactionJournal || null;
   }
 
   function isSupported() {
@@ -115,9 +122,14 @@
   let _autoTimer = null;
   let _changePollTimer = null;
   let _lastObservedFingerprint = null; // Used by the change poll to skip filesystem writes when nothing changed.
-  let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
+  let _syncPromise = null; // Used to serialize filesystem writes within this tab before the cross-tab transaction lock is requested.
   let _lastKnownFolderMeta = null; // Last meta.json content known to actually be on disk; the data-loss guard's baseline.
   let _lastDataLossRisk = null; // Set when a push was skipped because it looked like it would destroy folder data.
+  let _transactionPending = false; // Debug-visible marker showing whether pending.json currently needs resolution.
+  let _lastTransactionAction = 'none'; // Latest transaction commit/finalize/rollback action shown in diagnostics.
+  let _lastTransactionId = null; // Latest transaction id shown in diagnostics without exposing save contents.
+  let _transactionRecoveries = 0; // Count of interrupted transactions resolved after their initial write path stopped.
+  let _transactionRollbacks = 0; // Count of interrupted writes restored to their pre-write canonical snapshot.
   const _listeners = new Set();
 
   function getStatus() {
@@ -134,6 +146,12 @@
       autoSyncArmed: _autoSyncArmed,
       dataLossRisk: _lastDataLossRisk,
       recoverySaveVersion: RECOVERY_SAVE_VERSION,
+      transactionJournalVersion: transactionJournalApi()?.VERSION || null,
+      transactionPending: _transactionPending,
+      lastTransactionAction: _lastTransactionAction,
+      lastTransactionId: _lastTransactionId,
+      transactionRecoveries: _transactionRecoveries,
+      transactionRollbacks: _transactionRollbacks,
     };
   }
 
@@ -202,6 +220,12 @@
   function onChange(listener) {
     _listeners.add(listener);
     return () => _listeners.delete(listener);
+  }
+
+  function withTransactionLock(operation) {
+    const lockApi = window.navigator?.locks; // Web Lock covers core autosync/syncSnapshot paths that bypass the higher-level UI wrapper.
+    if (!lockApi?.request) return Promise.resolve().then(operation);
+    return lockApi.request(TRANSACTION_LOCK_NAME, { mode: 'exclusive' }, operation);
   }
 
   async function ensurePermission(handle, requestIfNeeded) {
@@ -418,7 +442,19 @@
     return written;
   }
 
-  async function readFolderSnapshot() {
+  function snapshotEnvelopeFromFolder(folder) {
+    if (!folder?.exists) return null;
+    return {
+      savedAt: Number(folder.savedAt) || 0,
+      snapshot: {
+        snapshotVersion: 1,
+        meta: folder.meta,
+        farmLayouts: folder.farmLayouts,
+      },
+    };
+  }
+
+  async function readFolderSnapshotRaw() {
     const characters = await readEntities(CHARACTERS_DIR);
     const worlds = await readEntities(WORLDS_DIR);
     const farm = await readFolderFarmLayouts();
@@ -451,18 +487,138 @@
     };
   }
 
+  function manifestFarmLayoutCount(snapshot) {
+    const worldIds = new Set((snapshot?.meta?.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
+    return Object.keys(snapshot?.farmLayouts || {}).filter(worldId => worldIds.has(worldId)).length;
+  }
+
+  async function writeManifestUnlocked(snapshot, savedAt, farmLayoutCount = manifestFarmLayoutCount(snapshot)) {
+    const meta = snapshot.meta;
+    await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
+      version: meta.version ?? 1,
+      portableSaveVersion: PORTABLE_SAVE_VERSION,
+      recoverySaveVersion: RECOVERY_SAVE_VERSION,
+      transactionJournalVersion: transactionJournalApi()?.VERSION || 1,
+      farmLayoutsIncluded: true,
+      savedAt,
+      characterCount: (meta.characters || []).length,
+      worldCount: (meta.worlds || []).length,
+      farmLayoutCount,
+    });
+    try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
+    return farmLayoutCount;
+  }
+
+  async function writeCanonicalSnapshotUnlocked(snapshot, savedAt) {
+    const saveSnapshot = normalizeSnapshot(snapshot);
+    const meta = saveSnapshot.meta;
+    await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
+    await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
+    const farmLayoutCount = await writeFarmLayouts(meta, saveSnapshot.farmLayouts);
+    await writeManifestUnlocked(saveSnapshot, savedAt, farmLayoutCount);
+    _farmLayoutCount = farmLayoutCount;
+    _folderSupportsFarmLayouts = true;
+    return { savedAt, farmLayoutCount };
+  }
+
+  async function transactionDirectory(create = false) {
+    try {
+      return await _handle.getDirectoryHandle(TRANSACTION_DIR, create ? { create: true } : undefined);
+    } catch (error) {
+      if (!create && error?.name === 'NotFoundError') return null;
+      throw error;
+    }
+  }
+
+  async function readPendingTransactionUnlocked() {
+    const dirHandle = await transactionDirectory(false);
+    if (!dirHandle) {
+      _transactionPending = false;
+      return null;
+    }
+    const record = await readJsonFile(dirHandle, TRANSACTION_PENDING_FILE);
+    if (!record) {
+      _transactionPending = false;
+      return null;
+    }
+    const api = transactionJournalApi();
+    if (!api?.validateRecord) throw new Error('Folder transaction journal helpers are unavailable.');
+    const valid = api.validateRecord(record);
+    _transactionPending = true;
+    _lastTransactionId = valid.transactionId;
+    return valid;
+  }
+
+  async function writePendingTransactionUnlocked(record) {
+    const api = transactionJournalApi();
+    if (!api?.validateRecord) throw new Error('Folder transaction journal helpers are unavailable.');
+    const valid = api.validateRecord(record);
+    const dirHandle = await transactionDirectory(true);
+    await writeJsonFile(dirHandle, TRANSACTION_PENDING_FILE, valid);
+    _transactionPending = true;
+    _lastTransactionId = valid.transactionId;
+    _lastTransactionAction = 'pending-written';
+    return valid;
+  }
+
+  async function clearPendingTransactionUnlocked() {
+    const dirHandle = await transactionDirectory(false);
+    if (dirHandle) {
+      try { await dirHandle.removeEntry(TRANSACTION_PENDING_FILE); }
+      catch (error) { if (error?.name !== 'NotFoundError') throw error; }
+    }
+    _transactionPending = false;
+  }
+
+  function newTransactionId(savedAt) {
+    const randomId = window.crypto?.randomUUID?.(); // UUID is diagnostic/provenance only; transaction correctness never depends on randomness.
+    return randomId ? `${savedAt}-${randomId}` : `${savedAt}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  async function repairPendingTransactionUnlocked({ reason = 'read' } = {}) {
+    const pending = await readPendingTransactionUnlocked();
+    if (!pending) return { ok: true, action: 'none', committedTarget: false };
+
+    const api = transactionJournalApi();
+    if (!api?.decideRecovery) throw new Error('Folder transaction journal helpers are unavailable.');
+    const currentFolder = await readFolderSnapshotRaw();
+    const currentEnvelope = snapshotEnvelopeFromFolder(currentFolder);
+    const decision = api.decideRecovery(pending, currentEnvelope?.snapshot || null);
+
+    if (decision.action === 'finalize-target') {
+      _farmLayoutCount = await writeManifestUnlocked(decision.envelope.snapshot, decision.envelope.savedAt);
+      _folderSupportsFarmLayouts = true;
+    } else {
+      await writeCanonicalSnapshotUnlocked(decision.envelope.snapshot, decision.envelope.savedAt);
+    }
+
+    await clearPendingTransactionUnlocked();
+    _transactionRecoveries++;
+    if (decision.action === 'rollback-before') _transactionRollbacks++;
+    _lastTransactionId = pending.transactionId;
+    _lastTransactionAction = `${decision.action}:${reason}`;
+    _lastKnownFolderMeta = decision.envelope.snapshot.meta;
+    _lastSyncedAt = decision.envelope.savedAt;
+    return {
+      ok: true,
+      action: decision.action,
+      committedTarget: decision.action !== 'rollback-before',
+      transactionId: pending.transactionId,
+    };
+  }
+
+  async function readFolderSnapshot() {
+    return withTransactionLock(async () => {
+      await repairPendingTransactionUnlocked({ reason: 'before-read' });
+      return readFolderSnapshotRaw();
+    });
+  }
+
   async function readPrimarySnapshot() {
     if (_state !== 'ready' || !_handle) return null;
-    const folder = await readFolderSnapshot(); // Current canonical folder state shown in recovery UI and preserved before restores.
+    const folder = await readFolderSnapshot(); // Canonical read first repairs/finalizes any interrupted multi-file write.
     if (!folder.exists) return null;
-    return {
-      savedAt: folder.savedAt || 0,
-      snapshot: {
-        snapshotVersion: 1,
-        meta: folder.meta,
-        farmLayouts: folder.farmLayouts,
-      },
-    };
+    return snapshotEnvelopeFromFolder(folder);
   }
 
   async function inspectConnectedFolder() {
@@ -501,14 +657,30 @@
     }
   }
 
+  async function beginCanonicalTransactionUnlocked(saveSnapshot, { automatic = false, recoveryKind = 'auto' } = {}) {
+    await repairPendingTransactionUnlocked({ reason: 'before-new-save' });
+    const folderBefore = await readFolderSnapshotRaw(); // Captured before pending.json is written so rollback is a complete pre-write canonical snapshot.
+    const savedAt = Date.now();
+    const api = transactionJournalApi();
+    if (!api?.createRecord) throw new Error('Folder transaction journal helpers are unavailable.');
+    const record = api.createRecord({
+      transactionId: newTransactionId(savedAt),
+      startedAt: savedAt,
+      source: `${automatic ? 'automatic' : 'explicit'}:${recoveryKind}`,
+      before: snapshotEnvelopeFromFolder(folderBefore),
+      target: { savedAt, snapshot: saveSnapshot },
+    });
+    return writePendingTransactionUnlocked(record);
+  }
+
   async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto' } = {}) {
     if (_state !== 'ready' || !_handle) return getStatus();
     if (automatic && !_autoSyncArmed) return getStatus();
 
     try {
+      await repairPendingTransactionUnlocked({ reason: 'before-save' });
       const saveSnapshot = normalizeSnapshot(snapshot || snapshotFromBrowser()); // Explicit manual/restore writes can pin the exact snapshot being committed.
       const meta = saveSnapshot.meta;
-      const farmLayouts = saveSnapshot.farmLayouts;
 
       if (!force) {
         const risk = describeDataLossRisk(_lastKnownFolderMeta, meta);
@@ -530,31 +702,43 @@
       }
       _lastDataLossRisk = null;
 
-      await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
-      await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
-      _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts);
-      _folderSupportsFarmLayouts = true;
+      const transaction = await beginCanonicalTransactionUnlocked(saveSnapshot, { automatic, recoveryKind });
+      let canonicalCommitted = false; // Becomes true after normal commit or after recovery can safely finish the intended target.
+      try {
+        await writeCanonicalSnapshotUnlocked(saveSnapshot, transaction.target.savedAt);
+        await clearPendingTransactionUnlocked();
+        _lastTransactionId = transaction.transactionId;
+        _lastTransactionAction = 'committed';
+        canonicalCommitted = true;
+      } catch (writeError) {
+        try {
+          const repair = await repairPendingTransactionUnlocked({ reason: 'write-error' });
+          if (repair.committedTarget) {
+            canonicalCommitted = true;
+          } else {
+            _lastError = `Folder save failed, but transaction ${repair.transactionId || transaction.transactionId} rolled the canonical folder back safely: ${String(writeError?.message || writeError)}`;
+            _lastAction = 'save-transaction-rolled-back';
+            notify();
+            return getStatus();
+          }
+        } catch (repairError) {
+          _transactionPending = true;
+          _lastError = `Folder save was interrupted and automatic rollback could not finish. The write-ahead journal was kept for the next startup. Save error: ${String(writeError?.message || writeError)}; repair error: ${String(repairError?.message || repairError)}`;
+          _lastAction = 'save-transaction-pending-error';
+          notify();
+          return getStatus();
+        }
+      }
 
-      const savedAt = Date.now();
-      await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
-        version: meta.version ?? 1,
-        portableSaveVersion: PORTABLE_SAVE_VERSION,
-        recoverySaveVersion: RECOVERY_SAVE_VERSION,
-        farmLayoutsIncluded: true,
-        savedAt,
-        characterCount: (meta.characters || []).length,
-        worldCount: (meta.worlds || []).length,
-        farmLayoutCount: _farmLayoutCount,
-      });
-      try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
-
+      if (!canonicalCommitted) throw new Error('Canonical folder transaction did not reach a committed state.');
+      const savedAt = transaction.target.savedAt;
       _lastKnownFolderMeta = meta;
       _lastSyncedAt = savedAt;
       _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
       _lastError = '';
       _lastObservedFingerprint = browserFingerprint(true);
 
-      const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical folder write succeeds.
+      const checkpointWriter = window.HobunjiSaveCheckpoints?.onFolderSnapshotWritten; // Recovery history advances only after the canonical transaction has fully resolved.
       if (typeof checkpointWriter === 'function') {
         try {
           await checkpointWriter(saveSnapshot, { automatic, savedAt, recoveryKind });
@@ -575,7 +759,7 @@
 
   async function syncNow(options = {}) {
     if (_syncPromise) return _syncPromise;
-    _syncPromise = _syncNowImpl(options).finally(() => { _syncPromise = null; });
+    _syncPromise = withTransactionLock(() => _syncNowImpl(options)).finally(() => { _syncPromise = null; });
     return _syncPromise;
   }
 
@@ -594,7 +778,7 @@
     }
 
     try {
-      const folder = await readFolderSnapshot();
+      const folder = await readFolderSnapshot(); // Reading canonical state resolves any interrupted transaction before it can be imported into browser storage.
       if (!folder.exists) {
         _lastAction = 'initialized-empty-folder';
         const status = await syncNow({ automatic: false });
@@ -679,7 +863,7 @@
       _handle = saved;
       _state = (await ensurePermission(_handle, false)) ? 'ready' : 'needs-permission';
       if (_state === 'ready') {
-        await inspectConnectedFolder();
+        await inspectConnectedFolder(); // Startup inspection repairs/finalizes pending.json before reporting the folder as usable.
         _lastAction = 'remembered-folder-ready-awaiting-choice';
         stopAutoSync();
       } else {
@@ -760,6 +944,9 @@
     _lastObservedFingerprint = null;
     _lastKnownFolderMeta = null;
     _lastDataLossRisk = null;
+    _transactionPending = false;
+    _lastTransactionAction = 'none';
+    _lastTransactionId = null;
     try { await idbDelete(HANDLE_KEY); } catch {}
     notify();
     return getStatus();
@@ -775,6 +962,25 @@
       ok: true,
       message: result.changed ? result.message + ' Reload the page to apply it.' : result.message,
     };
+  }
+
+  async function inspectTransactionJournal() {
+    if (_state !== 'ready' || !_handle) return { version: transactionJournalApi()?.VERSION || null, pending: null };
+    return withTransactionLock(async () => {
+      const pending = await readPendingTransactionUnlocked();
+      return {
+        version: transactionJournalApi()?.VERSION || null,
+        pending: pending ? {
+          transactionId: pending.transactionId,
+          startedAt: pending.startedAt,
+          source: pending.source,
+          hasBeforeSnapshot: !!pending.before?.snapshot,
+        } : null,
+        lastAction: _lastTransactionAction,
+        recoveries: _transactionRecoveries,
+        rollbacks: _transactionRollbacks,
+      };
+    });
   }
 
   window.addEventListener('beforeunload', () => {
@@ -797,6 +1003,7 @@
     readRecoveryCheckpoint,
     readRecoveryCheckpoints,
     writeRecoveryCheckpoint,
+    inspectTransactionJournal,
   };
 
   // Mobile-accessible debug surface: inspect current persistence state without DevTools.
@@ -806,7 +1013,8 @@
       try {
         const folder = await inspectConnectedFolder();
         const recovery = await readRecoveryCheckpoints(); // Folder recovery slots are included so mobile diagnosis can confirm they exist without DevTools.
-        return { status: getStatus(), folder, recovery };
+        const transaction = await inspectTransactionJournal(); // Journal state confirms whether an interrupted canonical write is still pending.
+        return { status: getStatus(), folder, recovery, transaction };
       } catch (error) {
         return { status: getStatus(), error: String(error?.message || error) };
       }
