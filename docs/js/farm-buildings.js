@@ -374,10 +374,10 @@
       get col() { return entry.col; }, get row() { return entry.row; },
       get label() { return '🏚 ' + label(entry); },
       getButtons() {
+        // Destructive barn management lives in the Farm menu rather than the world interaction arch.
         if (entry.stage === 'foundation') {
           return [
             { icon: '🔨', label: 'Build ' + label(entry), action: 'obj_barn_build_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('alterFarm') },
-            { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
           ];
         }
         const tier = deps.getBarnTiers()[entry.tier];
@@ -385,7 +385,6 @@
         return [
           { icon: '🚪', label: 'Enter Barn', action: 'obj_barn_enter_' + entry.id, style: 'primary', allowed: true },
           { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('livestock') },
-          { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
         ];
       },
       onAction(action) {
@@ -397,10 +396,6 @@
           _buildStructureMesh(entry);
           deps.saveFarmLayout();
           return { ok: true, message: `🔨 ${label(entry)} construction complete!` };
-        }
-        if (action === 'obj_barn_demolish_' + entry.id) {
-          if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-          return demolish(entry.id);
         }
         if (action === 'obj_barn_manage_' + entry.id) {
           if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
