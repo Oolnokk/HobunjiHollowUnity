@@ -17,6 +17,7 @@ const TANKAN_SETTINGS_VERSION = 3;
 const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
 const TANKAN_PADDING_X_EM = 0.8;
 const TANKAN_PADDING_Y_EM = 0.28;
+const TANKAN_GLYPH_Y_NORMALIZATION = 0.7; // The visually approved old Y=0.70 appearance is now normalized to the author-facing Y=1.00.
 // Visual reference taken from the supplied authored Hobunji Hollow text decal.
 const TANKAN_BASELINE = Object.freeze({
   columnSpacingEm: -0.35,
@@ -161,7 +162,7 @@ function tankanTextureOptions(record) {
     columnSpacingEm: dclamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
     glyphAdvanceEm: dclamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
     glyphScaleX: dclamp(TANKAN_BASELINE.glyphScaleX * finiteOr(record.tankanGlyphSizeX, 1), 0.25, 2.5),
-    glyphScaleY: dclamp(TANKAN_BASELINE.glyphScaleY * finiteOr(record.tankanGlyphSizeY, 1), 0.25, 2.5),
+    glyphScaleY: dclamp(TANKAN_BASELINE.glyphScaleY * TANKAN_GLYPH_Y_NORMALIZATION * finiteOr(record.tankanGlyphSizeY, 1), 0.25, 2.5),
     fitReferenceGlyphScaleX: TANKAN_BASELINE.glyphScaleX,
     fitReferenceGlyphScaleY: TANKAN_BASELINE.glyphScaleY,
     paddingXEm: TANKAN_PADDING_X_EM,
@@ -841,5 +842,5 @@ updateStats = function updateStatsWithDecals(...args) {
 
 installDecalUi();
 rebuildDecals({ prune: false });
-log?.('Furniture decal authoring ready. Latest change: Tankan Width/Height are UI-like container dimensions; text stays natural-size until content or glyph growth would overflow, then uniformly fits down.');
+log?.('Furniture decal authoring ready. Latest change: normalized Glyph Y 1.00 now matches the approved prior 0.70 appearance; container fitting remains unchanged.');
 })();
