@@ -32,6 +32,7 @@
   }
 
   function disableFarmResetControl() {
+    if (typeof document?.getElementById !== 'function') return false;
     const resetButton = document.getElementById(RESET_BUTTON_ID); // Existing reset node stays in the DOM for legacy code that expects the element to exist.
     if (!resetButton) return false;
     resetButton.disabled = true;
@@ -44,6 +45,7 @@
   }
 
   function labelMenuControls() {
+    if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
     const controls = document.querySelector('#menuPanel .mp-ctrls'); // Control-row parent is also adjusted so the now-readable buttons can wrap instead of overlapping tabs.
     if (!controls) return false;
     controls.style.flexWrap = 'wrap';
@@ -64,12 +66,14 @@
   }
 
   function installMenuSafetyUi() {
+    if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
     labelMenuControls();
-    if (menuControlsObserver || typeof MutationObserver !== 'function') return;
+    if (menuControlsObserver || typeof MutationObserver !== 'function') return true;
     const menuPanel = document.getElementById('menuPanel'); // Narrow observation root catches late Manual Save/Recovery insertion and pause-icon rewrites.
-    if (!menuPanel) return;
+    if (!menuPanel) return false;
     menuControlsObserver = new MutationObserver(() => { labelMenuControls(); });
     menuControlsObserver.observe(menuPanel, { childList: true, subtree: true });
+    return true;
   }
 
   async function ensurePrimaryFolderReady(button) {
@@ -212,8 +216,10 @@
       quitAttempts,
       successfulFolderFlushes,
       lastError: lastError || null,
-      farmResetDisabled: document.getElementById(RESET_BUTTON_ID)?.disabled === true,
-      labeledMenuButtons: MENU_CONTROL_LABELS.filter(spec => document.getElementById(spec.id)?.textContent === spec.text).length,
+      farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
+      labeledMenuButtons: typeof document?.getElementById === 'function'
+        ? MENU_CONTROL_LABELS.filter(spec => document.getElementById(spec.id)?.textContent === spec.text).length
+        : 0,
     }),
   };
 })();
