@@ -86,10 +86,10 @@
       if (!entity) return null;
       installSceneAwareDispose(entity);
 
-      const activeAreaAfterBuild = deps?.getCurrentArea?.() || null; // Detects navigation that completed while asynchronous portrait construction was in flight.
-      if (zoneId && activeAreaAfterBuild && activeAreaAfterBuild !== zoneId) {
+      const activeAreaAfterBuild = deps?.getCurrentArea?.() || null; // Detects navigation or a transient unresolved area that completes while portrait construction is in flight.
+      if (zoneId && activeAreaAfterBuild !== zoneId) {
         entity.avatarRef?.dispose?.();
-        window.__farmLog?.(`[porakaneki] discarded stale materialization for ${zoneId}; active area is ${activeAreaAfterBuild}.`, 'wildlife');
+        window.__farmLog?.(`[porakaneki] discarded stale materialization for ${zoneId}; active area is ${activeAreaAfterBuild || '-'}.`, 'wildlife');
         return null;
       }
 
