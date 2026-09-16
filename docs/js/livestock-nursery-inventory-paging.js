@@ -13,7 +13,6 @@
   });
   const STYLE_ID = 'livestockNurseryInventoryPagingStyles'; // Keeps the inventory-style overrides idempotent.
   const LEGACY_SCROLL_CLASS = 'farm-nursery-scroll'; // Removed whenever paging applies so the old compact-list controller path stays dormant.
-  const PAGER_CLASS = 'nursery-page-turn'; // Dedicated light-DOM button; ControllerUI discovers it as an ordinary button.
 
   let currentPage = 0; // Retains the visible Nursery page while inspecting babies on that page.
   let activeSection = null; // Distinguishes a page turn from a full Farm-panel rebuild.
@@ -63,31 +62,32 @@
         box-sizing:border-box !important;
       }
       body #livestockNurserySection .nursery-grid-card[hidden] { display:none !important; }
-      body #livestockNurserySection .${PAGER_CLASS} {
+      body #livestockNurserySection .nursery-grid-debug-trigger.nursery-page-turn {
+        display:flex !important;
+        align-items:center !important;
+        justify-content:flex-end !important;
+        align-self:stretch !important;
         width:100% !important;
         min-height:30px !important;
         margin:6px 0 0 !important;
         padding:4px 9px !important;
-        display:flex !important;
-        align-items:center !important;
-        justify-content:flex-end !important;
         border:1px solid #ffffff24 !important;
         border-radius:7px !important;
         background:linear-gradient(#ffffff11,#ffffff08) !important;
         color:inherit !important;
-        font-size:12px !important;
-        font-weight:800 !important;
+        font-size:0 !important;
         cursor:pointer !important;
         box-sizing:border-box !important;
       }
-      body #livestockNurserySection .${PAGER_CLASS}[hidden] { display:none !important; }
-      body #livestockNurserySection .${PAGER_CLASS}:hover {
+      body #livestockNurserySection .nursery-grid-debug-trigger.nursery-page-turn::after {
+        content:attr(data-nursery-label) !important;
+        font-size:12px !important;
+        font-weight:800 !important;
+        letter-spacing:.02em !important;
+      }
+      body #livestockNurserySection .nursery-grid-debug-trigger.nursery-page-turn:hover {
         border-color:#ffffff4d !important;
         background:linear-gradient(#ffffff1c,#ffffff0e) !important;
-      }
-      body #livestockNurserySection .${PAGER_CLASS}:focus-visible {
-        outline:2px solid #fff !important;
-        outline-offset:1px !important;
       }
     `;
     document.head.appendChild(style);
@@ -110,55 +110,50 @@
     return Math.max(1, Math.ceil(cardCount / CONFIG.pageSize));
   }
 
-  function ensurePagerSlot(section) {
+  function movePagerBelowGrid(section) {
     const shadow = section?.shadowRoot;
     if (!shadow) return null;
     const gridPane = shadow.querySelector('.grid-pane');
-    if (!gridPane) return null;
-    let slot = shadow.querySelector('slot[name="pager"]');
-    if (!slot) {
-      slot = document.createElement('slot'); // Shadow-only node; the real focusable button remains in light DOM for ControllerUI.
-      slot.name = 'pager';
-      gridPane.appendChild(slot);
-    }
-    return slot;
+    const pagerSlot = shadow.querySelector('slot[name="debug"]');
+    if (gridPane && pagerSlot && pagerSlot.parentElement !== gridPane) gridPane.appendChild(pagerSlot); // Shadow-only move; the legacy body observer cannot see it.
+    return section.querySelector('.nursery-grid-debug-trigger');
   }
 
-  function ensurePager(section) {
-    if (!section) return null;
-    ensurePagerSlot(section);
-    let pager = section.querySelector(`:scope > .${PAGER_CLASS}`);
-    if (pager) return pager;
-    pager = document.createElement('button'); // Dedicated page control instead of repurposing the Nursery help/debug note.
-    pager.type = 'button';
-    pager.className = `settings-small-btn ${PAGER_CLASS}`;
-    pager.slot = 'pager';
-    pager.dataset.ctrlItem = '1';
+  function bindPager(pager) {
+    if (!pager || pager.dataset.nurseryPagerBound === '1') return;
+    pager.dataset.nurseryPagerBound = '1';
     pager.addEventListener('click', event => {
+      if (pager.dataset.nurseryPaging !== '1') return;
       event.preventDefault();
       event.stopPropagation();
       turnPage(1);
     });
     pager.addEventListener('keydown', event => {
+      if (pager.dataset.nurseryPaging !== '1') return;
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
       event.stopPropagation();
       turnPage(event.key === 'ArrowLeft' ? -1 : 1);
     });
-    section.appendChild(pager);
-    return pager;
   }
 
   function setPagerState(pager, pageCount) {
     if (!pager) return;
-    pager.hidden = pageCount <= 1;
-    if (pager.hidden) {
-      pager.textContent = '';
-      pager.removeAttribute('aria-label');
+    bindPager(pager);
+    if (pageCount <= 1) {
+      pager.classList.remove('nursery-page-turn');
+      pager.dataset.nurseryPaging = '0';
+      pager.dataset.nurseryAction = 'debug';
+      pager.dataset.nurseryLabel = '🛠 Copy Nursery Debug';
+      pager.title = 'Copy Nursery diagnostics.';
+      pager.setAttribute('aria-label', 'Copy Nursery debug information');
       return;
     }
+    pager.classList.add('nursery-page-turn');
+    pager.dataset.nurseryPaging = '1';
+    pager.removeAttribute('data-nursery-action'); // Prevents the grid's debug capture handler from swallowing page-turn input.
     const lastPage = currentPage >= pageCount - 1;
-    pager.textContent = `${currentPage + 1}/${pageCount} ${lastPage ? '↩' : '▶'}`;
+    pager.dataset.nurseryLabel = `${currentPage + 1}/${pageCount} ${lastPage ? '↩' : '▶'}`;
     pager.title = lastPage ? 'Return to the first Nursery page.' : 'Turn to the next Nursery page.';
     pager.setAttribute('aria-label', `Nursery page ${currentPage + 1} of ${pageCount}. ${lastPage ? 'Return to first page' : 'Next page'}.`);
   }
@@ -193,13 +188,9 @@
     });
     selectedVisibleCard?.setAttribute('data-ctrl-default', '');
 
-    const pager = ensurePager(section);
+    const pager = movePagerBelowGrid(section);
     setPagerState(pager, pageCount);
     mostRecentChange = `Nursery page ${currentPage + 1}/${pageCount}: ${Math.max(0, Math.min(cards.length, end) - start)} visible of ${cards.length} babies; fixed ${CONFIG.columns}×${CONFIG.rowsPerPage} Inventory-style page.`;
-
-    // Grid may expose a cheap current-page portrait painter. Calling it after
-    // hidden flags are final guarantees later pages do not render portraits yet.
-    window.LivestockNurseryGrid?.paintVisiblePortraits?.();
 
     if (focusFirst) {
       const first = cards.slice(start, end).find(card => !card.hidden && !card.disabled);
