@@ -134,7 +134,9 @@ DialogueContent.loadNpcRelationships(saved);
 assert.equal(rawState('screenshot_hreesh').favor, 12.2, 'existing 12.2 Favor stays 12.2 Favor');
 assert.equal(rawState('screenshot_pahu').favor, 12, 'existing 12 Favor stays 12 Favor');
 assert.equal(rawState('negative').favor, -3, 'negative Favor also stays in point-space');
-assert.match(DialogueContent.renderRelationshipHearts({ id: 'screenshot_hreesh', relationship: true }), /width:30\.5%/, '12.2 Favor shows 30.5% progress through one positive heart instead of maxing the meter');
+const screenshotHearts = DialogueContent.renderRelationshipHearts({ id: 'screenshot_hreesh', relationship: true });
+assert.match(screenshotHearts, /width:30\.5%/, '12.2 Favor shows 30.5% progress through one positive heart instead of maxing the meter');
+assert.equal((screenshotHearts.match(/❤️/gu) || []).length, 1, '12.2 Favor produces only the clipped first positive-heart fill, not twelve full red hearts');
 
 // RelationshipsPanel consumes ProceduralTasks.friendshipTierProgress; patch that public API into point-space too.
 windowStub.ProceduralTasks = {
@@ -224,6 +226,8 @@ assert.equal(chainedWindow.NpcFavorBalance, undefined, 'pre-existing DialogueCon
 chainedWindow.DialogueContent = chainedDialogue;
 assert.equal(chainedWindow.NpcFavorBalance?.version, 3, 'Favor balance chains through a pre-existing DialogueContent accessor and installs');
 chainedRawState('chained_hreesh').favor = 12.2;
-assert.match(chainedDialogue.renderRelationshipHearts({ id: 'chained_hreesh', relationship: true }), /width:30\.5%/, 'chained browser hook uses 12.2 Favor as 30.5% of one heart instead of twelve hearts');
+const chainedHearts = chainedDialogue.renderRelationshipHearts({ id: 'chained_hreesh', relationship: true });
+assert.match(chainedHearts, /width:30\.5%/, 'chained browser hook uses 12.2 Favor as 30.5% of one heart instead of twelve hearts');
+assert.equal((chainedHearts.match(/❤️/gu) || []).length, 1, 'chained renderer exposes only one clipped red heart token for 12.2 Favor');
 
 console.log('Favor point / relationship heart balance regression checks passed.');
