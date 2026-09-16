@@ -104,15 +104,15 @@
 
     const pos = [], uv = [], idx = [];
     let vi = 0;
-    for (const [c, r] of rampCells) {
-      const fallback = deps.NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * deps.PLATEAU_UNIT;
-      const y00 = cornerY(c, r)     ?? fallback;
-      const y10 = cornerY(c+1, r)   ?? fallback;
-      const y01 = cornerY(c, r+1)   ?? fallback;
-      const y11 = cornerY(c+1, r+1) ?? fallback;
-      pos.push(c,y00,r,  c+1,y10,r,  c,y01,r+1,  c+1,y11,r+1);
+    for (const [c, r] of cells) {
+      const ground = deps.NORMAL_TOP + (zGrid[r][c].elevTier || 0) * deps.PLATEAU_UNIT;
+      const y00 = cornerY(c, r, ground);
+      const y10 = cornerY(c + 1, r, ground);
+      const y01 = cornerY(c, r + 1, ground);
+      const y11 = cornerY(c + 1, r + 1, ground);
+      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
       uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
-      idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
+      idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
     }
 
     const geo = new THREE.BufferGeometry();
