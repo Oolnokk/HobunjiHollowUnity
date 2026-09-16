@@ -84,6 +84,7 @@ assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first
 assert(bridge.includes('__hobunjiFolderSaveOnboardingDebug'), 'onboarding reconciliation exposes diagnostics data');
 assert(debugUi.includes("button.textContent = 'Save Diagnostics'"), 'Settings exposes a mobile-visible Save Diagnostics button');
 assert(debugUi.includes('SAVE DIAGNOSTICS'), 'mobile diagnostics render without requiring DevTools');
-assert(debugUi.includes('Latest: Quit now flushes live gameplay'), 'Settings includes a short summary of the most recent save change');
+assert(debugUi.includes('folder recovery is authoritative'), 'Settings includes the current audited save-protection summary');
+assert(debugUi.includes('__hobunjiSaveCheckpointDebug'), 'Settings diagnostics include checkpoint/recovery state');
 
 console.log('\nFolder-save primary regression checks passed.');
