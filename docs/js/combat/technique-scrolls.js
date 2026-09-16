@@ -294,9 +294,10 @@
   }
 
   function patchHeldActions(api) {
-    if (!api?.getHeldItemAction || !api?.beginHeldItemAction || api.__techniqueScrollsPatched) return;
-    const getAction = api.getHeldItemAction.bind(api); // Used for every ordinary food/drink item after scroll detection gets first refusal.
-    const begin = api.beginHeldItemAction.bind(api); // Used for every ordinary food/drink consumption after scroll detection gets first refusal.
+    if (!api?.getHeldItemAction || !api?.beginHeldItemAction || !api?.consumeHeldItemImmediate || api.__techniqueScrollsPatched) return;
+    const getAction = api.getHeldItemAction.bind(api); // Used for every ordinary held item after combat-literature detection gets first refusal.
+    const begin = api.beginHeldItemAction.bind(api); // Used by legacy/programmatic callers that still enter through the press-start route.
+    const consumeImmediate = api.consumeHeldItemImmediate.bind(api); // Used by the current action-arch dispatcher for non-hold Read actions.
     api.getHeldItemAction = () => {
       const manual = heldManual(); // Used to expose exact manual reading through the configurable Item Action 1 path.
       if (manual) return { icon: manual.def.icon || '📕', label: isUnlocked(manual.abilityId) ? `${ability(manual.abilityId)?.label || manual.abilityId} already learned` : `Read ${manual.label}`, action: 'consume_held_item', style: 'primary', allowed: !isUnlocked(manual.abilityId) };
@@ -304,6 +305,7 @@
       return held ? { icon: held.def.icon || '📜', label: `Read ${held.def.label}`, action: 'consume_held_item', style: 'primary', allowed: true } : getAction();
     };
     api.beginHeldItemAction = () => heldManual() ? consumeManual() : heldScroll() ? consumeScroll() : begin();
+    api.consumeHeldItemImmediate = () => heldManual() ? consumeManual() : heldScroll() ? consumeScroll() : consumeImmediate();
     api.__techniqueScrollsPatched = true;
   }
 
