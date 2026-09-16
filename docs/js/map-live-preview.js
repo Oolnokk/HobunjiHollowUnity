@@ -5,7 +5,7 @@
   const SNAPSHOT_KEY = 'hobunji_map_live_preview_v1'; // Reconnection-only preview envelope; never a canonical map/save source.
   const NAVIGATION_KEY = 'hobunji_map_editor_pending_navigation_v1'; // One-shot cold-start navigation request from the game.
   const SECTION_KEYS = ['metadata', 'terrain', 'elevation', 'navigation', 'transitions', 'stations', 'decor', 'furniture', 'buildings', 'layouts', 'structural'];
-  const THIS_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Used after protocol setup to load the shared wall-ornament companion from the same /docs/js/ directory.
+  const THIS_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : ''; // Used after protocol setup to load shared placement/lighting companions from the same /docs/js/ directory.
 
   function clone(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -103,15 +103,20 @@
     } catch (_) { return null; }
   }
 
-  function loadWallOrnamentCompanion() {
-    if (!THIS_SCRIPT_URL || typeof document === 'undefined' || window.WallOrnamentPlacement) return; // Node/VM protocol tests have no document and intentionally skip runtime UI integration.
-    if (document.querySelector?.('script[data-wall-ornament-placement]')) return; // Both game and Map Editor can host this transport; never inject the companion twice in one page.
-    const script = document.createElement('script'); // Shared classic script can patch globals regardless whether they are assigned before or after it loads.
-    script.src = new URL('wall-ornament-placement.js?v=20260916wall1', THIS_SCRIPT_URL).href;
+  function loadCompanion(globalName, fileName, datasetKey) {
+    if (!THIS_SCRIPT_URL || typeof document === 'undefined' || window[globalName]) return; // Node/VM protocol tests have no document and intentionally skip runtime UI/lighting integration.
+    if (document.querySelector?.(`script[data-${datasetKey}]`)) return; // Game and Map Editor both host this transport; never inject the same companion twice.
+    const script = document.createElement('script'); // Shared classic scripts can patch globals regardless whether they are assigned before or after they load.
+    script.src = new URL(fileName, THIS_SCRIPT_URL).href;
     script.async = false;
-    script.dataset.wallOrnamentPlacement = '1';
-    script.onerror = () => console.error('[MapLivePreview] Could not load wall ornament placement bridge.');
+    script.setAttribute(`data-${datasetKey}`, '1');
+    script.onerror = () => console.error(`[MapLivePreview] Could not load ${fileName}.`);
     (document.head || document.documentElement)?.appendChild(script);
+  }
+
+  function loadPlacementCompanions() {
+    loadCompanion('WallOrnamentPlacement', 'wall-ornament-placement.js?v=20260916wall1', 'wall-ornament-placement');
+    loadCompanion('DaylightWindowRuntime', 'daylight-window-runtime.js?v=20260916window1', 'daylight-window-runtime');
   }
 
   window.MapLivePreview = {
@@ -127,5 +132,5 @@
     consumePendingNavigation,
   };
 
-  loadWallOrnamentCompanion();
+  loadPlacementCompanions();
 })();
