@@ -1,0 +1,27 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "wideWindow",
+  "id": "wideWindow",
+  "name": "Wide Window",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "authoringSourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Wall-mounted broad three-pane window using the generic daylight-window surface role.",
+  "footprint": { "w": 2, "d": 1 },
+  "tileBase": { "visible": true, "tileSize": 1, "footprintW": 2, "footprintD": 1, "y": 0, "gridOpacity": 0.55 },
+  "surfaceRecognition": { "splitAngleDeg": 58, "colorCode": false, "selectSurfaces": false, "multiSelect": false },
+  "parts": [
+    { "id": "wide_window_pane", "kind": "box", "name": "Wide Daylight Pane", "transform": { "x": 0, "y": 1.10, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 1.34, "sy": 0.76, "sz": 0.025 }, "color": "#dce9f4", "materialTexture": "wavy_surface.png", "textureTransparent": true, "materialFillEnabled": true, "materialFillColor": "#dce9f4" },
+    { "id": "wide_window_frame_l", "kind": "box", "name": "Left Frame", "transform": { "x": -0.72, "y": 1.10, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.10, "sy": 0.96, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "wide_window_frame_r", "kind": "box", "name": "Right Frame", "transform": { "x": 0.72, "y": 1.10, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.10, "sy": 0.96, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "wide_window_frame_t", "kind": "box", "name": "Top Frame", "transform": { "x": 0, "y": 1.53, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 1.34, "sy": 0.10, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "wide_window_frame_b", "kind": "box", "name": "Bottom Frame", "transform": { "x": 0, "y": 0.67, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 1.34, "sy": 0.10, "sz": 0.08 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "wide_window_mullion_l", "kind": "box", "name": "Left Mullion", "transform": { "x": -0.45, "y": 1.10, "z": 0.045, "rx": 0, "ry": 0, "rz": 0, "sx": 0.05, "sy": 0.76, "sz": 0.055 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" },
+    { "id": "wide_window_mullion_r", "kind": "box", "name": "Right Mullion", "transform": { "x": 0.45, "y": 1.10, "z": 0.045, "rx": 0, "ry": 0, "rz": 0, "sx": 0.05, "sy": 0.76, "sz": 0.055 }, "color": "#6a4c31", "materialTexture": "carved_smooth.png" }
+  ],
+  "recognizedSurfaces": [
+    { "id": "wide_window_pane:surface:4", "partId": "wide_window_pane", "recognizedType": "vertical side", "faceIndices": [4, 5], "area": 1.0184, "localCentroid": [0, 0, -0.0125], "localNormal": [0, 0, -1], "basisU": [-1, 0, 0], "basisV": [0, 1, 0], "bounds": { "minU": -0.67, "maxU": 0.67, "minV": -0.38, "maxV": 0.38 }, "label": "Wall Attachment", "role": "wallAttachment" },
+    { "id": "wide_window_pane:surface:8", "partId": "wide_window_pane", "recognizedType": "vertical side", "faceIndices": [8, 9], "area": 1.0184, "localCentroid": [0, 0, 0.0125], "localNormal": [0, 0, 1], "basisU": [1, 0, 0], "basisV": [0, 1, 0], "bounds": { "minU": -0.67, "maxU": 0.67, "minV": -0.38, "maxV": 0.38 }, "label": "Daylight Pane", "role": "daylightWindow", "materialTexture": "wavy_surface.png", "textureTransparent": true, "materialFillEnabled": true, "materialFillColor": "#dce9f4", "materialMapping": "stretch", "daylightRadiusTiles": 3.6, "daylightStrength": 1 }
+  ],
+  "wallOrnament": { "version": 1, "attachmentSurfaceId": "wide_window_pane:surface:4", "surfacePartId": "wide_window_pane", "surfaceType": "vertical side", "surfaceFaces": [4, 5], "anchor": [0, 1.10, -0.0125], "normal": [0, 0, -1], "basisU": [-1, 0, 0], "basisV": [0, 1, 0], "previewWallAngleDeg": 0, "defaultNormalOffset": 0.01, "placementSpace": "wall-surface-uvn", "alignment": "attachment-normal-opposes-wall-normal" },
+  "daylightWindowAuthoring": { "version": 1, "role": "daylightWindow", "lightingModel": "interior-overlay-aperture", "surfaceTint": "live-outdoor-rgb-over-neutralized-texture" }
+}
