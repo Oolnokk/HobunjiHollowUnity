@@ -34,6 +34,8 @@
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260912a'],
+    // Pins asynchronous Porakaneki avatar builds to their requested wilderness scene, tears down stale orphan builds, and returns them neutral before hostileObjects can observe them.
+    ['PorakanekiMaterializationGuard', 'porakaneki-materialization-guard.js?v=20260915handoff1'],
     // Porakaneki camp network: distance/hysteresis LOD, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
     ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20260915materialization1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
