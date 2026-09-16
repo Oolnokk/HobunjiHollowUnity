@@ -159,6 +159,6 @@ assert.equal(schedulingWindow.NpcScheduling.getVisitorPresence(jubmir).active, f
 const wildTreasure = fs.readFileSync('docs/js/wild-treasure.js', 'utf8');
 const fishingEvents = fs.readFileSync('docs/js/fishing-events.js', 'utf8');
 assert.match(wildTreasure, /combatManualKey[\s\S]*?rollManualKey/, 'buried chests roll and carry combat manuals');
-assert.match(fishingEvents, /combatManualKey[\s\S]*?rollManualKey/, 'Gullet Fish treasure rolls and carry combat manuals');
+assert.match(fishingEvents, /combatManualKey[\s\S]*?rollManualKey/, 'Gullet Fish treasure rolls and carries combat manuals');
 
 console.log('combat manual, technique-scroll action, and Jubmir visit tests passed');
