@@ -7,10 +7,21 @@
   if (window.FolderSaveQuitGuard) return;
 
   const QUIT_BUTTON_ID = 'menuQuitBtn'; // Existing menu Quit button intercepted before local-save-flow's bubble listener.
+  const RESET_BUTTON_ID = 'menuResetBtn'; // Legacy one-click farm reset control kept inert and hidden so it cannot be triggered accidentally.
+  const MANUAL_SAVE_BUTTON_ID = 'menuManualSaveBtn'; // Existing checkpoint button receives a temporary busy label without observing disabled mutations.
+  const MENU_CONTROL_LABELS = Object.freeze([ // Visible labels applied to the icon-only menu controls, including buttons installed later by checkpoint code.
+    { id: 'menuPauseBtn', text: '⏯ Pause', minWidth: '70px' },
+    { id: MANUAL_SAVE_BUTTON_ID, text: '💾 Manual Save', minWidth: '96px' },
+    { id: 'menuRecoveryBtn', text: '🛟 Recovery', minWidth: '82px' },
+    { id: 'mpClose', text: 'Close', minWidth: '66px' },
+  ]);
+  const MENU_OVERLAY_CONTROL_IDS = Object.freeze(['menuBtn', 'farmEditBtn', 'mapEditBtn']); // Fixed HUD tabs hidden while the menu is open so they cannot cover menu actions.
   let busy = false; // Prevents double-clicks from starting overlapping runtime/folder saves.
   let quitAttempts = 0; // Mobile-visible count of guarded quit attempts.
   let successfulFolderFlushes = 0; // Mobile-visible count of folder writes completed before a quit reload.
   let lastError = ''; // Mobile-visible latest guarded-quit error.
+  let menuControlsObserver = null; // Watches menu children and open/close state because controls are dynamic.
+  let manualSaveBusyTimer = null; // Polls the existing Manual Save disabled state without feeding disabled mutations back into the menu observer.
 
   function localSave() {
     return window.LocalSaveFolder || null;
@@ -21,6 +32,93 @@
     if (!button.dataset.folderQuitLabel) button.dataset.folderQuitLabel = button.textContent || '🚪 Quit';
     button.disabled = value;
     button.textContent = value ? label : button.dataset.folderQuitLabel;
+  }
+
+  function disableFarmResetControl() {
+    if (typeof document?.getElementById !== 'function') return false;
+    const resetButton = document.getElementById(RESET_BUTTON_ID); // Existing reset node stays in the DOM for legacy code that expects the element to exist.
+    if (!resetButton) return false;
+    if (!resetButton.disabled) resetButton.disabled = true;
+    if (!resetButton.hidden) resetButton.hidden = true;
+    if (resetButton.tabIndex !== -1) resetButton.tabIndex = -1;
+    if (resetButton.style.display !== 'none') resetButton.style.display = 'none';
+    if (resetButton.getAttribute('aria-hidden') !== 'true') resetButton.setAttribute('aria-hidden', 'true');
+    if (resetButton.getAttribute('data-farm-reset-disabled') !== 'true') resetButton.setAttribute('data-farm-reset-disabled', 'true');
+    return true;
+  }
+
+  function syncMenuOverlayControls() {
+    if (typeof document?.getElementById !== 'function') return false;
+    const menuPanel = document.getElementById('menuPanel'); // Its existing .open class is the authoritative visible-menu state.
+    const menuOpen = Boolean(menuPanel?.classList?.contains('open')); // Used below to hide fixed HUD tabs only while they would overlap the menu.
+    for (const id of MENU_OVERLAY_CONTROL_IDS) { // Each fixed tab keeps its normal display rule and only receives a temporary visibility override.
+      const button = document.getElementById(id); // Menu, Farm Edit, and Map Edit share the top-right HUD region above the menu z-index.
+      if (!button) continue;
+      button.style.visibility = menuOpen ? 'hidden' : '';
+      button.style.pointerEvents = menuOpen ? 'none' : '';
+    }
+    return true;
+  }
+
+  function menuControlLabel(spec, button) {
+    return spec.id === MANUAL_SAVE_BUTTON_ID && button?.dataset?.manualSaveBusy === '1' ? 'Saving…' : spec.text;
+  }
+
+  function labelMenuControls() {
+    if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
+    const controls = document.querySelector('#menuPanel .mp-ctrls'); // Existing control-row parent receives readable labels without replacing handlers.
+    if (!controls) return false;
+
+    for (const spec of MENU_CONTROL_LABELS) { // Each spec keeps one menu action readable without changing its existing click handler or id.
+      const button = document.getElementById(spec.id); // Existing button may be static markup or dynamically installed by the checkpoint manager.
+      if (!button) continue;
+      const label = menuControlLabel(spec, button); // Manual Save preserves its explicit busy label until the original save handler re-enables the button.
+      if (button.textContent !== label) button.textContent = label;
+      button.style.width = 'auto';
+      button.style.minWidth = spec.minWidth;
+      button.style.padding = '0 7px';
+      button.style.whiteSpace = 'nowrap';
+    }
+
+    disableFarmResetControl();
+    syncMenuOverlayControls();
+    return true;
+  }
+
+  function finishManualSaveBusyLabel(button) {
+    if (manualSaveBusyTimer) {
+      clearTimeout(manualSaveBusyTimer);
+      manualSaveBusyTimer = null;
+    }
+    if (button?.dataset) delete button.dataset.manualSaveBusy;
+    labelMenuControls();
+  }
+
+  function startManualSaveBusyLabel(button) {
+    if (!button || button.disabled || button.dataset?.manualSaveBusy === '1') return false;
+    button.dataset.manualSaveBusy = '1';
+    button.textContent = 'Saving…';
+    if (manualSaveBusyTimer) clearTimeout(manualSaveBusyTimer);
+    const waitForCompletion = () => {
+      if (!button.isConnected || !button.disabled) {
+        finishManualSaveBusyLabel(button);
+        return;
+      }
+      manualSaveBusyTimer = setTimeout(waitForCompletion, 100);
+    };
+    manualSaveBusyTimer = setTimeout(waitForCompletion, 0); // Runs after the checkpoint click handler has synchronously disabled the button.
+    return true;
+  }
+
+  function installMenuSafetyUi() {
+    if (typeof document?.querySelector !== 'function' || typeof document?.getElementById !== 'function') return false;
+    labelMenuControls();
+    if (menuControlsObserver || typeof MutationObserver !== 'function') return true;
+    const menuPanel = document.getElementById('menuPanel'); // Narrow observation root catches late save controls plus the panel's open/close class changes.
+    if (!menuPanel) return false;
+    menuControlsObserver = new MutationObserver(() => { labelMenuControls(); });
+    menuControlsObserver.observe(menuPanel, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    return true;
   }
 
   async function ensurePrimaryFolderReady(button) {
@@ -128,12 +226,31 @@
   }
 
   document.addEventListener('click', event => {
+    const resetButton = event.target?.closest?.(`#${RESET_BUTTON_ID}`); // Capture-phase guard blocks any legacy click path even if another script unhides the reset node.
+    if (!resetButton) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+
+  document.addEventListener('click', event => {
+    const button = event.target?.closest?.(`#${MANUAL_SAVE_BUTTON_ID}`);
+    if (!button) return;
+    startManualSaveBusyLabel(button); // Does not stop propagation; the checkpoint manager still owns the actual save operation.
+  }, true);
+
+  document.addEventListener('click', event => {
     const button = event.target?.closest?.(`#${QUIT_BUTTON_ID}`);
     if (!button) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     guardedQuit(button);
   }, true);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', installMenuSafetyUi, { once: true });
+  } else {
+    installMenuSafetyUi();
+  }
 
   // A browser refresh/close that bypasses the menu cannot await folder I/O,
   // but the live localStorage snapshot itself is synchronous. Capture phase on
@@ -143,8 +260,23 @@
     window.HobunjiRuntimeSave?.flushNow?.({ reason: 'beforeunload' });
   }, { capture: true });
 
-  window.FolderSaveQuitGuard = { guardedQuit };
+  window.FolderSaveQuitGuard = { guardedQuit, labelMenuControls, disableFarmResetControl, syncMenuOverlayControls, startManualSaveBusyLabel };
   window.__hobunjiFolderSaveQuitDebug = {
-    snapshot: () => ({ busy, quitAttempts, successfulFolderFlushes, lastError: lastError || null }),
+    snapshot: () => ({
+      busy,
+      quitAttempts,
+      successfulFolderFlushes,
+      lastError: lastError || null,
+      farmResetDisabled: typeof document?.getElementById === 'function' && document.getElementById(RESET_BUTTON_ID)?.disabled === true,
+      labeledMenuButtons: typeof document?.getElementById === 'function'
+        ? MENU_CONTROL_LABELS.filter(spec => {
+            const button = document.getElementById(spec.id);
+            return button?.textContent === menuControlLabel(spec, button);
+          }).length
+        : 0,
+      menuOverlayControlsHidden: typeof document?.getElementById === 'function'
+        ? MENU_OVERLAY_CONTROL_IDS.filter(id => document.getElementById(id)?.style?.visibility === 'hidden').length
+        : 0,
+    }),
   };
 })();

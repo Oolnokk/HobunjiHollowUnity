@@ -20,6 +20,7 @@ const onboardingLoader = read('docs/onboarding.js');
 const css = read('docs/folder-save-primary.css');
 const core = read('docs/js/local-save-folder-core.js');
 const startupGuard = read('docs/js/session-persistence-startup-guard.js');
+const quitGuard = read('docs/js/folder-save-quit-guard.js');
 
 // Syntax parse without executing browser globals.
 new Function(primary);
@@ -27,6 +28,7 @@ new Function(emptyBootstrap);
 new Function(debugUi);
 new Function(bridge);
 new Function(creatorHandoff);
+new Function(quitGuard);
 console.log('OK  folder-save lifecycle modules parse as JavaScript');
 
 const coreIndex = folderLoader.indexOf('local-save-folder-core.js');
@@ -78,6 +80,13 @@ assert(css.includes('#localSaveFolderRow.folder-save-settings-primary'), 'settin
 assert(css.includes('#hobunjiEmptySaveFolder.folder-save-primary-action'), 'fresh-browser restore promotes the folder action');
 assert(primary.includes("folderLabel.textContent = 'Primary Save Folder'"), 'save selection labels folder storage as primary');
 assert(primary.includes("browserLabel.textContent = 'Browser Fallback'"), 'save selection labels browser storage as fallback');
+
+assert(quitGuard.includes("attributeFilter: ['class']"), 'menu observer watches menu visibility only, not disabled-state churn');
+assert(!quitGuard.includes("attributeFilter: ['class', 'disabled']"), 'menu observer cannot re-enter itself through Farm Reset disabled mutations');
+assert(quitGuard.includes('if (!resetButton.disabled) resetButton.disabled = true'), 'Farm Reset disabling is idempotent');
+assert(quitGuard.includes("button.dataset.manualSaveBusy = '1'"), 'Manual Save busy feedback uses explicit local UI state');
+assert(quitGuard.includes("button.textContent = 'Saving…'"), 'Manual Save replaces its actual label while saving');
+assert(quitGuard.includes('startManualSaveBusyLabel(button)'), 'Manual Save busy feedback is driven from its click path instead of a global disabled observer');
 
 assert(primary.includes('__hobunjiFolderSavePrimaryDebug'), 'primary save behavior exposes diagnostics data');
 assert(emptyBootstrap.includes('__hobunjiFolderSaveEmptyBootstrapDebug'), 'first-run empty-folder state exposes diagnostics data');
