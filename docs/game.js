@@ -18028,6 +18028,10 @@
         const row  = Math.floor(wy / TILE);
         const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         const type = tile.type;
+        // Runtime tent collision is metadata, not terrain. Keeping it out of
+        // tile.type prevents the zone ground renderer from generating a rock
+        // mound on every occupied footprint tile.
+        if (tile._banditTentCollisionId) return null;
         if (isSolid(type)) return null;
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
@@ -26908,6 +26912,7 @@
 
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
+        handlePlayerDeath: () => respawnPlayer(),
       });
 
       window.ItemProcessing?.init({
@@ -27515,6 +27520,8 @@
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
         getCurrentArea: () => currentArea,
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
         getActiveAction: () => activeAction,
         getActionHeldDown: () => actionHeldDown,
         getPackClothing: () => packClothing,
