@@ -16,6 +16,8 @@ assert.match(source, /desiredWorldPosition[\s\S]{0,420}plane\.parent\.matrixWorl
   'billboard correction solves an exact world matrix through the full parent transform rather than yaw-only Euler subtraction');
 assert.match(source, /plane\.matrixAutoUpdate = false;[\s\S]{0,120}plane\.matrix\.copy\(desiredLocalMatrix\)/,
   'the final shoulder-pet card uses the exact compensated local matrix');
+assert.match(source, /diagnosticLocalYaw[\s\S]{0,220}plane\.rotation\.y = diagnosticLocalYaw/,
+  'the legacy Pixel Probe groupYaw+planeYaw summary mirrors the exact render yaw without taking matrix ownership back');
 assert.match(source, /gripPivotError/,
   'runtime diagnostics expose post-compensation shoulderGrip drift');
 assert.match(loader, /shoulder-pet-transform-stability\.js\?v=20260916a/,
