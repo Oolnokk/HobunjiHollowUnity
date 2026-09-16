@@ -1,5 +1,12 @@
 // Adds separate Reset to Defaults controls beneath the keyboard and controller
-// binding lists without coupling the Settings renderer to reset semantics.
+// binding lists and owns the final player-facing Settings section order.
+//
+// This file keeps the historical input-default-reset-ui.js path because the
+// controller helper loader already owns it, but SettingsMenuOrder below is the
+// single presentation-order authority for #mpSettings. Feature modules remain
+// responsible for creating and wiring their own controls; this module only
+// groups/reorders the finished sections so script load order cannot scramble
+// the menu.
 (() => {
   'use strict';
 
@@ -10,8 +17,29 @@
     { device: 'controller', containerId: 'controllerInputBindings', rowId: 'controllerInputResetDefaultsRow', label: 'Reset Controller to Defaults' },
   ]); // Used by the observer and explicit refresh hook so both input sections get independent reset controls.
 
-  let observer = null; // Watches Settings re-renders because InputSettingsPanel replaces each binding list's innerHTML after every edit.
-  let refreshQueued = false; // Coalesces bursts of DOM mutations into one reset-button reinsertion pass.
+  const SETTINGS_SECTION_ORDER = Object.freeze([
+    'Primary Save Folder',
+    'Cloud Save',
+    'Combat',
+    'World',
+    'Camera',
+    'Input',
+    'Visual Effects',
+    'Billboard Sprites',
+    'Weeds',
+    'Performance',
+    'Progression',
+    'Cloud Forest (perf testing)',
+    'Nearby Projectile Cover (perf testing)',
+    'Dev Tools',
+  ]); // Used to keep the Settings menu grouped by player intent instead of whichever runtime helper happened to insert first.
+
+  const SETTINGS_SECTION_RANKS = new Map(SETTINGS_SECTION_ORDER.map((label, index) => [label, index * 100])); // Used by organizeSettingsPane() to sort known headings while leaving future/unknown sections in a predictable slot.
+  SETTINGS_SECTION_RANKS.set('Local Save Folder', SETTINGS_SECTION_RANKS.get('Primary Save Folder')); // The folder-save module renames this heading after boot; both labels must sort identically before/after that rename.
+
+  let observer = null; // Watches Settings re-renders because InputSettingsPanel and several runtime helpers add/replace Settings content after boot.
+  let refreshQueued = false; // Coalesces bursts of DOM mutations into one reset-button + Settings-order refresh per animation frame.
+  let lastOrderChangedAt = 0; // Used by the in-game debug surface to show whether the organizer recently had to repair section order.
 
   function resetDevice(device, status) {
     const reset = window.InputBindings?.resetDeviceToDefaults; // Uses the binding layer's device-isolated reset so UI code never reconstructs defaults itself.
@@ -53,33 +81,136 @@
     return true;
   }
 
-  function ensureControls() {
-    refreshQueued = false;
-    for (const target of TARGETS) appendResetControl(target);
+  function settingsTitleLabel(title) {
+    if (!title) return '';
+    const directLabel = [...title.children].find(child => child.tagName === 'SPAN'); // Cloud Forest's title also contains a reset button; use its label span so button text cannot become part of the sort key.
+    const raw = directLabel?.textContent || title.textContent || '';
+    return raw.trim().replace(/\s+/g, ' ');
   }
 
-  function queueEnsureControls() {
+  function ensureWorldSection() {
+    const banditToggle = document.getElementById('settingBanditCamps'); // Existing player-facing world-generation toggle that currently sits inside the projectile-cover performance block.
+    const banditRow = banditToggle?.closest?.('.settings-row'); // Used to move only the Bandit Camps setting without touching its behavior or input id.
+    if (!banditRow) return false;
+
+    let title = document.getElementById('worldSettingsTitle'); // Stable heading id lets later refreshes verify the row remains in its own semantic section.
+    if (!title) {
+      title = document.createElement('div');
+      title.id = 'worldSettingsTitle';
+      title.className = 'settings-section-title';
+      title.style.marginTop = '10px';
+      title.textContent = 'World';
+      banditRow.before(title);
+      return true;
+    }
+
+    if (title.nextElementSibling !== banditRow) {
+      banditRow.before(title);
+      return true;
+    }
+    return false;
+  }
+
+  function collectSettingsSections(pane) {
+    const children = [...pane.children]; // Snapshot used so grouping is stable even when the organizer later moves whole sections.
+    const sections = [];
+    let active = null;
+
+    for (const child of children) {
+      if (child.classList?.contains('settings-section-title')) {
+        active = {
+          title: child,
+          label: settingsTitleLabel(child),
+          nodes: [child],
+          originalIndex: sections.length,
+        }; // Stores the title plus every following sibling up to the next title as one indivisible Settings section.
+        sections.push(active);
+      } else if (active) {
+        active.nodes.push(child);
+      }
+    }
+    return sections;
+  }
+
+  function sectionRank(section) {
+    if (SETTINGS_SECTION_RANKS.has(section.label)) return SETTINGS_SECTION_RANKS.get(section.label);
+    return 950 + (section.originalIndex / 1000); // Future/unknown sections stay after normal player settings but before the explicit developer-only block.
+  }
+
+  function organizeSettingsPane() {
+    const pane = document.querySelector('#mpSettings > .settings-pane'); // Only the real Settings pane is reordered; similarly styled Farm/Stable sections are intentionally ignored.
+    if (!pane) return false;
+
+    ensureWorldSection();
+    const sections = collectSettingsSections(pane);
+    if (sections.length < 2) return false;
+
+    const ordered = [...sections].sort((a, b) => {
+      const rankDelta = sectionRank(a) - sectionRank(b);
+      return rankDelta || (a.originalIndex - b.originalIndex);
+    }); // Stable sort preserves author order among any future sections this version does not know yet.
+
+    const alreadyOrdered = ordered.every((section, index) => section === sections[index]);
+    if (alreadyOrdered) return false;
+
+    const fragment = document.createDocumentFragment(); // Moves each existing node rather than cloning/rebuilding it, preserving listeners, ids, values, and module-owned state.
+    for (const section of ordered) {
+      for (const node of section.nodes) fragment.appendChild(node);
+    }
+    pane.appendChild(fragment);
+    lastOrderChangedAt = Date.now();
+    return true;
+  }
+
+  function refreshSettingsUi() {
+    refreshQueued = false;
+    for (const target of TARGETS) appendResetControl(target);
+    organizeSettingsPane();
+  }
+
+  function queueRefresh() {
     if (refreshQueued) return;
     refreshQueued = true;
-    requestAnimationFrame(ensureControls);
+    requestAnimationFrame(refreshSettingsUi);
+  }
+
+  function currentSettingsOrder() {
+    const pane = document.querySelector('#mpSettings > .settings-pane'); // Used by the mobile-safe debug surface to report the actual rendered heading sequence.
+    if (!pane) return [];
+    return [...pane.children]
+      .filter(child => child.classList?.contains('settings-section-title'))
+      .map(settingsTitleLabel);
   }
 
   function boot() {
-    ensureControls();
+    refreshSettingsUi();
     if (observer || !document.body || typeof MutationObserver !== 'function') return;
-    observer = new MutationObserver(queueEnsureControls); // Re-adds only the missing reset row after InputSettingsPanel clears/rebuilds either binding list.
+    observer = new MutationObserver(queueRefresh); // Re-adds missing reset rows and re-applies deterministic section order after late runtime injections.
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  window.addEventListener('hobunji-input-bindings-reset', queueEnsureControls);
+  window.addEventListener('hobunji-input-bindings-reset', queueRefresh);
+
+  window.SettingsMenuOrder = Object.freeze({
+    refresh: organizeSettingsPane,
+    getDebug: () => ({
+      currentOrder: currentSettingsOrder(),
+      intendedOrder: [...SETTINGS_SECTION_ORDER],
+      worldSectionPresent: Boolean(document.getElementById('worldSettingsTitle')),
+      banditCampsUnderWorld: document.getElementById('worldSettingsTitle')?.nextElementSibling?.contains?.(document.getElementById('settingBanditCamps')) || false,
+      lastOrderChangedAt,
+      observing: Boolean(observer),
+    }),
+  });
 
   window.InputDefaultsResetUI = Object.freeze({
     installed: true,
-    refresh: ensureControls,
+    refresh: refreshSettingsUi,
     resetDevice,
     getDebug: () => ({
       desktopButtonPresent: Boolean(document.getElementById('desktopInputResetDefaultsRow')),
       controllerButtonPresent: Boolean(document.getElementById('controllerInputResetDefaultsRow')),
+      settingsOrder: currentSettingsOrder(),
       observing: Boolean(observer),
     }),
   });
