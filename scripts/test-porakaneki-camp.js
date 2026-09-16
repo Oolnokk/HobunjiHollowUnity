@@ -47,7 +47,7 @@ assert.equal(chiefLocale.meta.namedNpc, 'porakaneki_chief');
 assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 7);
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260915materialization1'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260915hostileset1'));
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
