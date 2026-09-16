@@ -27,8 +27,10 @@ on:
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery.js'
       - 'docs/js/livestock-nursery-observer-scope.js'
+      - 'docs/js/livestock-nursery-outdoor-growth.js'
       - 'docs/js/livestock-nursery-grid.js'
       - 'docs/js/livestock-nursery-inventory-paging.js'
+      - 'docs/js/livestock-nursery-grid-ui-fix.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
@@ -44,6 +46,7 @@ on:
       - 'scripts/test-livestock-menu-regressions.js'
       - 'scripts/test-livestock-nursery-grid.js'
       - 'scripts/test-livestock-nursery-observer-scope.js'
+      - 'scripts/test-livestock-nursery-outdoor-growth.js'
       - 'scripts/test-farm-menu-layout.js'
       - '.github/workflows/animal-growth-regression.yml'
   pull_request:
@@ -72,8 +75,10 @@ on:
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery.js'
       - 'docs/js/livestock-nursery-observer-scope.js'
+      - 'docs/js/livestock-nursery-outdoor-growth.js'
       - 'docs/js/livestock-nursery-grid.js'
       - 'docs/js/livestock-nursery-inventory-paging.js'
+      - 'docs/js/livestock-nursery-grid-ui-fix.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
@@ -89,6 +94,7 @@ on:
       - 'scripts/test-livestock-menu-regressions.js'
       - 'scripts/test-livestock-nursery-grid.js'
       - 'scripts/test-livestock-nursery-observer-scope.js'
+      - 'scripts/test-livestock-nursery-outdoor-growth.js'
       - 'scripts/test-farm-menu-layout.js'
       - '.github/workflows/animal-growth-regression.yml'
 
@@ -126,8 +132,10 @@ jobs:
           node --check docs/js/general-store.js
           node --check docs/js/livestock-nursery.js
           node --check docs/js/livestock-nursery-observer-scope.js
+          node --check docs/js/livestock-nursery-outdoor-growth.js
           node --check docs/js/livestock-nursery-grid.js
           node --check docs/js/livestock-nursery-inventory-paging.js
+          node --check docs/js/livestock-nursery-grid-ui-fix.js
           node --check docs/js/livestock-nursery-install-bridge.js
       - name: Test Growth Tonic and Kunji shop
         run: node scripts/test-animal-growth-kunji-shop.js
@@ -157,5 +165,7 @@ jobs:
         run: node scripts/test-livestock-nursery-grid.js
       - name: Test Nursery observer scope
         run: node scripts/test-livestock-nursery-observer-scope.js
+      - name: Test Nursery full-barn outdoor growth
+        run: node scripts/test-livestock-nursery-outdoor-growth.js
       - name: Test Farm menu layout and Nursery controller continuity
         run: node scripts/test-farm-menu-layout.js
