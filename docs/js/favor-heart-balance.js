@@ -306,7 +306,7 @@
 
   function armDialogueContentInstall() {
     if (window[DIALOGUE_INSTALL_FLAG]) return true;
-    const armed = armAssignment('DialogueContent', DIALOGUE_INSTALL_FLAG, () => { // Used to install exactly when the parser later publishes DialogueContent.
+    const armed = armAssignment('DialogueContent', DIALOGUE_INSTALL_FLAG, () => { // Used to install exactly when the parser later publishes DialogueContent, even if another module already owns a lazy accessor for that global.
       installReason = 'dialogue-assignment';
       if (!install()) window.__farmLog?.('[favor-balance] DialogueContent appeared but the Favor-point hooks could not install.', 'error', 'social');
     });
