@@ -27,6 +27,7 @@ on:
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery.js'
       - 'docs/js/livestock-nursery-grid.js'
+      - 'docs/js/livestock-nursery-inventory-paging.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
@@ -69,6 +70,7 @@ on:
       - 'docs/js/general-store.js'
       - 'docs/js/livestock-nursery.js'
       - 'docs/js/livestock-nursery-grid.js'
+      - 'docs/js/livestock-nursery-inventory-paging.js'
       - 'docs/js/livestock-nursery-install-bridge.js'
       - 'scripts/test-animal-growth-kunji-shop.js'
       - 'scripts/test-stable-animal-progression.js'
@@ -120,6 +122,7 @@ jobs:
           node --check docs/js/general-store.js
           node --check docs/js/livestock-nursery.js
           node --check docs/js/livestock-nursery-grid.js
+          node --check docs/js/livestock-nursery-inventory-paging.js
           node --check docs/js/livestock-nursery-install-bridge.js
       - name: Test Growth Tonic and Kunji shop
         run: node scripts/test-animal-growth-kunji-shop.js
