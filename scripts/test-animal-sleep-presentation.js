@@ -38,7 +38,12 @@ class CanvasTexture {
 }
 class TextureLoader {
   load(url, onLoad) {
-    onLoad({ url, repeat: { set() {} }, offset: { set() {} }, clone() { return { url, repeat: { set() {} }, offset: { set() {} } }; } });
+    onLoad({
+      url,
+      repeat: { set() {} },
+      offset: { set() {} },
+      clone() { return { url, repeat: { set() {} }, offset: { set() {} } }; },
+    });
   }
 }
 
@@ -147,34 +152,35 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
 
-assert.equal(windowStub.AnimalSleepPresentation.SLEEP_SCALE_Y, 0.75, '75% is the one authoritative sleep Y scale');
-assert.deepEqual(
-  JSON.parse(JSON.stringify(windowStub.AnimalSleepPresentation.frameDescriptor('drenkirra', windowStub.CREATURE_DB.drenkirra, true))),
-  { frame: 'run2', url: 'drenkirra_run2.png', usesRun2: true },
-  'sleep chooses run2 when the species has a second run frame',
-);
-assert.deepEqual(
-  JSON.parse(JSON.stringify(windowStub.AnimalSleepPresentation.frameDescriptor('uumkaoii', windowStub.CREATURE_DB.uumkaoii, true))),
-  { frame: 'idle', url: 'uum.png', usesRun2: false },
-  'species without run2 fall back to idle',
-);
+(async () => {
+  assert.equal(windowStub.AnimalSleepPresentation.SLEEP_SCALE_Y, 0.75, '75% is the one authoritative sleep Y scale');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(windowStub.AnimalSleepPresentation.frameDescriptor('drenkirra', windowStub.CREATURE_DB.drenkirra, true))),
+    { frame: 'run2', url: 'drenkirra_run2.png', usesRun2: true },
+    'sleep chooses run2 when the species has a second run frame',
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(windowStub.AnimalSleepPresentation.frameDescriptor('uumkaoii', windowStub.CREATURE_DB.uumkaoii, true))),
+    { frame: 'idle', url: 'uum.png', usesRun2: false },
+    'species without run2 fall back to idle',
+  );
 
-windowStub.FarmAnimals.init({
-  animalObjects: farmAnimals,
-  CREATURE_DB: windowStub.CREATURE_DB,
-});
-windowStub.Combat.init({ hostileObjects, companionObjects });
+  windowStub.FarmAnimals.init({
+    animalObjects: farmAnimals,
+    CREATURE_DB: windowStub.CREATURE_DB,
+  });
+  windowStub.Combat.init({ hostileObjects, companionObjects });
 
-// Static sleepers are discovered by the existing shared PNG avatar builder.
-windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(windowStub.THREE, 'drenkirra_idle.png', {
-  name: 'barn_sleep_drenkirra_barn-1', creatureId: 'drenkirra',
-});
-windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(windowStub.THREE, 'drenkirra_idle.png', {
-  name: 'nest_sleep_baby-1', creatureId: 'drenkirra',
-});
+  // Static sleepers are discovered by the existing shared PNG avatar builder.
+  windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(windowStub.THREE, 'drenkirra_idle.png', {
+    name: 'barn_sleep_drenkirra_barn-1', creatureId: 'drenkirra',
+  });
+  windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(windowStub.THREE, 'drenkirra_idle.png', {
+    name: 'nest_sleep_baby-1', creatureId: 'drenkirra',
+  });
 
-// The immediately-following static sleeping compose is redirected to run2.
-return Promise.resolve(windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'nest' }, false)).then(() => {
+  // The immediately-following static sleeping compose is redirected to run2.
+  await windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'nest' }, false);
   assert.equal(composeCalls.at(-1).frame, 'run2', 'static sleeping genotype compose freezes on run2');
 
   const outdoorAnimal = {
@@ -201,26 +207,28 @@ return Promise.resolve(windowStub.CreatureGeneticsRender.composeFrame('drenkirra
 
   const renderer = new windowStub.THREE.WebGLRenderer();
   renderer.render();
-  return Promise.resolve().then(() => {
-    renderer.render();
+  await Promise.resolve();
+  renderer.render();
 
-    const visible = renderedSnapshots.at(-1);
-    assert(Math.abs(visible.barnY - 0.75) < 1e-9, 'barn sleeper renders at the shared 75% Y scale');
-    assert(Math.abs(visible.nestY - 0.75) < 1e-9, 'nest baby renders at the shared 75% Y scale');
-    assert(Math.abs(visible.outdoorY - 0.60) < 1e-9, 'outdoor sleeper applies 75% sleep before full 80% neglect (0.75 × 0.80)');
-    assert(Math.abs(visible.wildY - 0.75) < 1e-9, 'wilderness sleeper renders at the shared 75% Y scale');
+  const visible = renderedSnapshots.at(-1);
+  assert(Math.abs(visible.barnY - 0.75) < 1e-9, 'barn sleeper renders at the shared 75% Y scale');
+  assert(Math.abs(visible.nestY - 0.75) < 1e-9, 'nest baby renders at the shared 75% Y scale');
+  assert(Math.abs(visible.outdoorY - 0.60) < 1e-9, 'outdoor sleeper applies 75% sleep before full 80% neglect (0.75 × 0.80)');
+  assert(Math.abs(visible.wildY - 0.75) < 1e-9, 'wilderness sleeper renders at the shared 75% Y scale');
 
-    assert.equal(barnGroup.scale.y, 0.5, 'shared render wrapper restores barn simulation/authored scale after drawing');
-    assert.equal(nestGroup.scale.y, 0.75, 'shared render wrapper leaves already-central nest scale unchanged');
-    assert.equal(outdoorGroup.scale.y, 0.4, 'shared render wrapper restores outdoor welfare simulation scale after drawing');
-    assert.equal(wildGroup.scale.y, 0.5, 'shared render wrapper restores wilderness authored scale after drawing');
+  assert.equal(barnGroup.scale.y, 0.5, 'shared render wrapper restores barn simulation/authored scale after drawing');
+  assert.equal(nestGroup.scale.y, 0.75, 'shared render wrapper leaves already-central nest scale unchanged');
+  assert.equal(outdoorGroup.scale.y, 0.4, 'shared render wrapper restores outdoor welfare simulation scale after drawing');
+  assert.equal(wildGroup.scale.y, 0.5, 'shared render wrapper restores wilderness authored scale after drawing');
 
-    assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'outdoor'), 'outdoor sleeping art requests run2');
-    assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'wild'), 'wilderness sleeping art requests run2');
+  assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'outdoor'), 'outdoor sleeping art requests run2');
+  assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'wild'), 'wilderness sleeping art requests run2');
 
-    const debug = windowStub.AnimalSleepPresentation.getDebug();
-    assert.equal(debug.sleepScaleY, 0.75, 'mobile diagnostics expose the central 75% sleep scale');
-    assert.equal(debug.preferredFrame, 'run2-if-present-else-idle', 'mobile diagnostics expose run2 sleep-frame preference');
-    console.log('animal sleep presentation regression tests passed');
-  });
+  const debug = windowStub.AnimalSleepPresentation.getDebug();
+  assert.equal(debug.sleepScaleY, 0.75, 'mobile diagnostics expose the central 75% sleep scale');
+  assert.equal(debug.preferredFrame, 'run2-if-present-else-idle', 'mobile diagnostics expose run2 sleep-frame preference');
+  console.log('animal sleep presentation regression tests passed');
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
 });
