@@ -37,8 +37,11 @@ assert(!runtime.includes('hostileObjects.splice('),
 assert(!runtime.includes('hostileObjects?.includes?.(entity)'),
   'Porakaneki diagnostics must not use Array.includes on the hostile Set');
 
-const neutralizeIndex = runtime.indexOf('makeNeutral(entity, hunter);'); // Publication ordering guard: no shared hostile frame may see the builder's default bandit state.
-const registerIndex = runtime.indexOf('combatDeps.hostileObjects.add(entity);'); // Shared hostile Set publication point checked against neutralization above.
+const materializeStart = runtime.indexOf('async function materializeHunter'); // Narrows ordering checks to the actual abstract-to-live handoff rather than later planner updates.
+const materializeEnd = runtime.indexOf('\n  function makeNeutral', materializeStart); // End boundary for the materialization function under test.
+const materializeSource = runtime.slice(materializeStart, materializeEnd); // Actual publication transaction inspected below.
+const neutralizeIndex = materializeSource.indexOf('makeNeutral(entity, hunter);'); // Publication ordering guard: no shared hostile frame may see the builder's default bandit state.
+const registerIndex = materializeSource.indexOf('combatDeps.hostileObjects.add(entity);'); // Shared hostile Set publication point checked against neutralization above.
 assert(neutralizeIndex >= 0 && registerIndex > neutralizeIndex,
   'materialized Porakaneki must be neutralized before publication to the shared hostile Set');
 
