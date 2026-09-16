@@ -1,0 +1,37 @@
+name: Drenkirra scatter and crop scan regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/wildlife-spawn.js'
+      - 'docs/js/wildlife-debug-panel.js'
+      - 'docs/js/wilderness-ai-snapshot.js'
+      - 'docs/js/crop-sprite-art.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/index.html'
+      - 'scripts/test-drenkirra-nest-scatter-performance.js'
+      - 'scripts/test-crop-billboard-presentation.js'
+      - 'scripts/test-crop-sprite-art.js'
+      - '.github/workflows/drenkirra-scatter-crop-scan.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check corrected wildlife and crop runtimes
+        run: |
+          node --check docs/js/wildlife-spawn.js
+          node --check docs/js/wildlife-debug-panel.js
+          node --check docs/js/wilderness-ai-snapshot.js
+          node --check docs/js/crop-sprite-art.js
+      - name: Test scattered Drenkirra selection and complete wildlife snapshots
+        run: node scripts/test-drenkirra-nest-scatter-performance.js
+      - name: Test crop billboard bootstrap version
+        run: node scripts/test-crop-billboard-presentation.js
+      - name: Test time-throttled crop sprite discovery
+        run: node scripts/test-crop-sprite-art.js

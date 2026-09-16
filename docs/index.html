@@ -400,7 +400,7 @@
        (already global by then), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.WildernessAiSnapshot.init(...) during its own setup. -->
-  <script src="js/wilderness-ai-snapshot.js?v=20260913a"></script>
+  <script src="js/wilderness-ai-snapshot.js?v=20260915wildlifesnapshot1"></script>
   <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
@@ -459,7 +459,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20260905cacheaudit1"></script>
+  <script src="js/wildlife-spawn.js?v=20260915drenkirrascatter1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -553,7 +553,7 @@
   <script src="js/tasks-panel.js?v=20260807a"></script>
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20260807a"></script>
-  <script src="js/wildlife-debug-panel.js?v=20260807a"></script>
+  <script src="js/wildlife-debug-panel.js?v=20260915wildlifedebug1"></script>
   <script src="js/wildlife-behavior-map.js?v=20260829a"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;

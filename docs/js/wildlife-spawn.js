@@ -514,25 +514,64 @@
   // about as common as gar-wolf dens, not just nominally capped at the
   // same number.
   const NEST_TREE_MAX_PER_ZONE = 5;
+  const NEST_TREE_MIN_SEPARATION_TILES = 72; // Used to keep different Drenkirra families in distinct forest regions instead of filling the arrival chunk with every nest.
   const NEST_PACK_SIZE_MIN = 2;
   const NEST_PACK_SIZE_MAX = 4;
   // Cache stable tile keys, not branch object identities: chunk streaming
   // destroys and recreates branch objects as chunks unload/reload.
-  const _nestTreeSelectionCache = new Map(); // zoneId -> [{ key, branch }]
+  const _nestTreeSelectionCache = new Map(); // zoneId -> [{ key, col, row, branch }], incrementally filled as distant chunks stream in.
 
   function branchTileKey(branch) { return `${branch.col},${branch.row}`; }
   function nestTreeKeyFor(zoneId, branch) { return `${zoneId}:nesttree:${branchTileKey(branch)}`; }
+
+  function nestTreeTargetCount(zoneId) {
+    const denCount = deps.zoneLayouts.get(zoneId)?.dens?.length || 0; // Used to keep the final nest population comparable to this generated zone's real den population.
+    return Math.max(1, Math.min(NEST_TREE_MAX_PER_ZONE, denCount || NEST_TREE_MAX_PER_ZONE));
+  }
+
+  function nestBranchDistanceTiles(a, b) {
+    return Math.hypot(Number(a?.col) - Number(b?.col), Number(a?.row) - Number(b?.row));
+  }
+
+  function nestBranchScore(zoneId, branch) {
+    const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${branch.col}_${branch.row}`); // Used to make the winning tree within each newly explored region stable for this generated map.
+    return rng ? rng() : deps.rnd();
+  }
+
+  function extendScatteredNestSelection(zoneId, branches, selected, targetCount) {
+    if (selected.length >= targetCount) return selected;
+    const selectedKeys = new Set(selected.map(entry => entry.key)); // Used to reject already-selected trees when their streamed branch objects are rebuilt.
+    const candidates = branches
+      .filter(branch => !selectedKeys.has(branchTileKey(branch)))
+      .map(branch => ({ branch, key: branchTileKey(branch), score: nestBranchScore(zoneId, branch) }))
+      .sort((a, b) => a.score - b.score || a.key.localeCompare(b.key));
+
+    for (const candidate of candidates) {
+      if (selected.length >= targetCount) break;
+      if (selected.some(entry => nestBranchDistanceTiles(entry, candidate.branch) < NEST_TREE_MIN_SEPARATION_TILES)) continue;
+      const entry = {
+        key: candidate.key,
+        col: candidate.branch.col,
+        row: candidate.branch.row,
+        branch: candidate.branch,
+      }; // Retains tile coordinates after this chunk unloads so later selections still respect the same world-space spacing.
+      selected.push(entry);
+      selectedKeys.add(entry.key);
+      window.__farmLog?.(`[wildlife] scattered Drenkirra nest selected at (${entry.col},${entry.row}) (${selected.length}/${targetCount}; min separation ${NEST_TREE_MIN_SEPARATION_TILES} tiles).`, 'wildlife');
+    }
+    return selected;
+  }
 
   function isNestTreeAlive(key) {
     for (const c of deps.hostileObjects) if (c.nestTreeKey === key && c.health > 0) return true;
     return false;
   }
 
-  // Deterministic per-tree score (not the general mutable RNG stream) so
-  // the same handful of trees hosts a nest across a session/save rather
-  // than reshuffling whenever this check happens to run — sorted and
-  // capped to NEST_TREE_MAX_PER_ZONE regardless of how many climbable
-  // branches this zone actually has registered.
+  // Deterministic per-tree scores keep each streamed region's choice stable.
+  // Selection is extended instead of finalized on the first call because the
+  // wilderness streamer initially builds only the player's 16x16 arrival
+  // chunk. A fixed separation prevents that first local branch registry (or
+  // any later resident 3x3/5x5 chunk neighborhood) from claiming every nest.
   function rebindStreamedNestBranch(zoneId, entry, liveBranch) {
     const prior = entry.branch;
     if (!prior || prior === liveBranch) return;
@@ -554,26 +593,10 @@
     const branches = (window.ClimbSystem?.debugBranchesFor?.(zoneId) || []).filter(branch => !branch.felled);
     let selected = _nestTreeSelectionCache.get(zoneId);
     if (!selected) {
-      // Nest trees should be about as common as gar-wolf dens in this same
-      // zone — a flat NEST_TREE_MAX_PER_ZONE cap regardless of how many
-      // dens the terrain generator actually managed to place (placeAnimalDens'
-      // border/elevation constraints routinely place fewer than its own
-      // nominal target) made nests noticeably outnumber dens in practice
-      // even though both nominally capped at "5". Falls back to the flat
-      // cap only if this zone somehow has no den data at all (e.g. an
-      // authored fallback layout — see game.js's other _zoneLayouts.set
-      // call site, which always sets dens: []).
-      const denCount = deps.zoneLayouts.get(zoneId)?.dens?.length || 0;
-      const maxNestTrees = Math.max(1, Math.min(NEST_TREE_MAX_PER_ZONE, denCount || NEST_TREE_MAX_PER_ZONE));
-      const scored = branches.map(branch => {
-        const rng = window.WildernessMapGenerator?.makeRng?.(`${zoneId}_nesttree_${branch.col}_${branch.row}`);
-        return { branch, key: branchTileKey(branch), score: rng ? rng() : deps.rnd() };
-      });
-      scored.sort((a, b) => a.score - b.score);
-      selected = scored.slice(0, maxNestTrees)
-        .map(({ key, branch }) => ({ key, branch }));
+      selected = [];
       _nestTreeSelectionCache.set(zoneId, selected);
     }
+    extendScatteredNestSelection(zoneId, branches, selected, nestTreeTargetCount(zoneId));
 
     const liveByKey = new Map(branches.map(branch => [branchTileKey(branch), branch]));
     const liveSelected = [];
@@ -740,11 +763,20 @@
   function denNestCensus(zoneId) {
     const denCount = deps.zoneLayouts.get(zoneId)?.dens?.length || 0;
     const selectedNestBranches = eligibleNestBranches(zoneId);
+    const selectedNestTrees = _nestTreeSelectionCache.get(zoneId) || []; // Used to distinguish the generation-wide selection from only the branches resident in streamed chunks right now.
     let nestTreesAlive = 0;
     for (const branch of selectedNestBranches) {
       if (isNestTreeAlive(nestTreeKeyFor(zoneId, branch))) nestTreesAlive++;
     }
-    return { denCount, nestTreeCap: selectedNestBranches.length, nestTreesAlive };
+    return {
+      denCount,
+      nestTreeCap: nestTreeTargetCount(zoneId),
+      nestTreesSelected: selectedNestTrees.length,
+      nestTreesResident: selectedNestBranches.length,
+      nestTreesAlive,
+      minimumSeparationTiles: NEST_TREE_MIN_SEPARATION_TILES,
+      selectedNestTiles: selectedNestTrees.map(entry => ({ col: entry.col, row: entry.row })),
+    };
   }
 
   window.WildlifeSpawn = {
@@ -763,6 +795,10 @@
     updateHostileSpawning,
     onZoneEntered,
     denNestCensus,
+    __test: Object.freeze({
+      extendScatteredNestSelection,
+      minimumNestSeparationTiles: NEST_TREE_MIN_SEPARATION_TILES,
+    }),
     // Also clears pendingNestTreeRespawn — a wiped nest tree waits for the
     // next day exactly like a wiped den (see ensureCurrentZoneNestTrees),
     // so it rides the same day-advance call sites as den respawn instead of

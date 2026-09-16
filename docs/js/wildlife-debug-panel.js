@@ -50,8 +50,9 @@
     return `<div style="padding:8px 10px;margin-bottom:8px;background:rgba(106,167,255,.08);border:1px solid rgba(106,167,255,.25);border-radius:6px;font-size:12px">
       <div style="font-weight:600;color:#e5e7eb;margin-bottom:2px">Den / Nest Census — ${deps.esc(zoneId)}</div>
       <div>Gar-wolf dens generated: <b>${census.denCount}</b></div>
-      <div>Drenkirra nest-tree cap (clamped to den count): <b>${census.nestTreeCap}</b></div>
-      <div>Nest trees currently populated: <b>${census.nestTreesAlive}</b></div>
+      <div>Drenkirra nest selections: <b>${census.nestTreesSelected}/${census.nestTreeCap}</b> (minimum ${census.minimumSeparationTiles} tiles apart)</div>
+      <div>Resident/populated nest trees: <b>${census.nestTreesResident}/${census.nestTreesAlive}</b></div>
+      <div style="opacity:.72">Selected tiles: ${census.selectedNestTiles?.length ? census.selectedNestTiles.map(tile => `(${tile.col},${tile.row})`).join(', ') : 'none yet — distant regions add nests as they stream in'}</div>
     </div>`;
   }
 
