@@ -130,7 +130,7 @@
     });
     pager.addEventListener('keydown', event => {
       if (pager.dataset.nurseryPaging !== '1') return;
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      if (!['Enter', ' ', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
       event.preventDefault();
       event.stopPropagation();
       turnPage(event.key === 'ArrowLeft' ? -1 : 1);
