@@ -111,16 +111,21 @@
     return false;
   }
 
+  function progressionSplitsInput(title, lastInputRow) {
+    if (!title || !lastInputRow || typeof title.compareDocumentPosition !== 'function') return false;
+    return Boolean(title.compareDocumentPosition(lastInputRow) & Node.DOCUMENT_POSITION_FOLLOWING); // True only when the Progression heading appears before the final Lyre row, meaning it is actually cutting the Input section in half.
+  }
+
   function ensureProgressionBoundary() {
     const title = document.getElementById('progressionResetSettingsTitle'); // Runtime-injected Progression heading that historically lands after Held Mode Shifts, before later Lyre input rows.
-    const lastInputRow = document.getElementById('lyreFreeplayKeySettings')?.closest?.('.settings-row'); // Last authored row in the Input section; Progression must begin after this row so Lyre controls remain Input controls.
-    if (!title || !lastInputRow) return false;
+    const lastInputRow = document.getElementById('lyreFreeplayKeySettings')?.closest?.('.settings-row'); // Last authored row in the Input section; Progression must not appear before this row.
+    if (!progressionSplitsInput(title, lastInputRow)) return false;
 
     const skillRow = document.getElementById('resetSkillProgressBtn')?.closest?.('.settings-row'); // First destructive Progression action moved together with its heading.
     const moteRow = document.getElementById('resetMotesOfProwessBtn')?.closest?.('.settings-row'); // Second destructive Progression action moved together with its heading.
     const status = document.getElementById('progressionResetStatus'); // Mobile-safe result/error readout that belongs to the Progression section.
     const progressionNodes = [title, skillRow, moteRow, status].filter(Boolean); // Complete injected Progression block moved as one unit without recreating listeners.
-    if (!progressionNodes.length || lastInputRow.nextElementSibling === title) return false;
+    if (!progressionNodes.length) return false;
 
     const fragment = document.createDocumentFragment(); // Preserves existing nodes/listeners while repairing the section boundary before the general section sorter runs.
     for (const node of progressionNodes) fragment.appendChild(node);
@@ -200,6 +205,12 @@
       .map(settingsTitleLabel);
   }
 
+  function inputBoundaryIsIntact() {
+    const title = document.getElementById('progressionResetSettingsTitle'); // Compared with the final Input row to expose the exact historical split-input failure in diagnostics.
+    const lastInputRow = document.getElementById('lyreFreeplayKeySettings')?.closest?.('.settings-row'); // Same boundary anchor used by ensureProgressionBoundary().
+    return !progressionSplitsInput(title, lastInputRow);
+  }
+
   function boot() {
     refreshSettingsUi();
     if (observer || !document.body || typeof MutationObserver !== 'function') return;
@@ -216,7 +227,7 @@
       intendedOrder: [...SETTINGS_SECTION_ORDER],
       worldSectionPresent: Boolean(document.getElementById('worldSettingsTitle')),
       banditCampsUnderWorld: document.getElementById('worldSettingsTitle')?.nextElementSibling?.contains?.(document.getElementById('settingBanditCamps')) || false,
-      progressionAfterInput: document.getElementById('lyreFreeplayKeySettings')?.closest?.('.settings-row')?.nextElementSibling === document.getElementById('progressionResetSettingsTitle'),
+      inputBoundaryIntact: inputBoundaryIsIntact(),
       lastOrderChangedAt,
       observing: Boolean(observer),
     }),
@@ -230,6 +241,7 @@
       desktopButtonPresent: Boolean(document.getElementById('desktopInputResetDefaultsRow')),
       controllerButtonPresent: Boolean(document.getElementById('controllerInputResetDefaultsRow')),
       settingsOrder: currentSettingsOrder(),
+      inputBoundaryIntact: inputBoundaryIsIntact(),
       observing: Boolean(observer),
     }),
   });
