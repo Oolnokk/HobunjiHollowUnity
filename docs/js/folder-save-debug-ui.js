@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent folder-save UX change.
-  const CHANGE_SUMMARY = 'Latest: Quit now flushes live gameplay before the folder write; manual/latest/earlier recovery history now lives in the primary folder and suspicious empty-farm saves are blocked before canonical writes.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: folder recovery is authoritative, autosync pauses during player hydration, suspicious farm resets are blocked before canonical writes, and failed restores roll the folder back from a pre-restore copy.'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
