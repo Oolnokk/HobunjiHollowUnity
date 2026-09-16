@@ -115,9 +115,51 @@
   }
 
   function loadPlacementCompanions() {
-    loadCompanion('WallOrnamentPlacement', 'wall-ornament-placement.js?v=20260916wall1', 'wall-ornament-placement');
-    loadCompanion('DaylightWindowRuntime', 'daylight-window-runtime.js?v=20260916window1', 'daylight-window-runtime');
-    loadCompanion('__daylightWindowOverlaySchedulerLoaded', 'daylight-window-overlay-scheduler.js?v=20260916window1', 'daylight-window-overlay-scheduler');
+    loadCompanion('WallOrnamentPlacement', 'wall-ornament-placement.js?v=20260916wall2', 'wall-ornament-placement');
+    loadCompanion('DaylightWindowRuntime', 'daylight-window-runtime.js?v=20260916window2', 'daylight-window-runtime');
+    loadCompanion('__daylightWindowOverlaySchedulerLoaded', 'daylight-window-overlay-scheduler.js?v=20260916window2', 'daylight-window-overlay-scheduler');
+  }
+
+  function isMapEditorPage() {
+    return typeof location !== 'undefined' && /\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname); // The editor creates its Three renderer lazily only after the user opens 3D mode.
+  }
+
+  function dockWallOrnamentPanel() {
+    if (typeof document === 'undefined') return false;
+    const bar = document.getElementById('gizmo3dBar'); // The bar is already hidden automatically whenever the editor leaves 3D mode.
+    const panel = document.getElementById('wallOrnamentMapControls');
+    if (!bar || !panel) return false;
+    if (panel.parentElement !== bar) bar.appendChild(panel); // Keeps the panel inside the 3D-only gizmo host instead of after the full-height canvas where it was offscreen.
+    panel.style.position = 'absolute';
+    panel.style.right = '0';
+    panel.style.top = 'calc(100% + 6px)';
+    panel.style.width = 'min(430px, calc(100vw - 20px))';
+    panel.style.maxWidth = '430px';
+    panel.style.zIndex = '21';
+    panel.style.margin = '0';
+    panel.style.pointerEvents = 'auto';
+    return true;
+  }
+
+  function scheduleWallPanelDock() {
+    if (typeof window === 'undefined') return;
+    let attempts = 0; // Finite retry spans async companion loading plus the wall module's own lazy Map Editor installer.
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      if (dockWallOrnamentPanel() || attempts >= 150) window.clearInterval(timer);
+    }, 100);
+  }
+
+  function installMapEditorCompanionTrigger() {
+    const button = document.getElementById('toggle3dBtn');
+    const canvas3d = document.getElementById('canvas3d');
+    if (!button) return;
+    const ensureFor3d = () => {
+      loadPlacementCompanions(); // Start the wall/daylight modules only after 3D exists, so their finite lazy-install windows cannot expire while the user is still editing in 2D.
+      scheduleWallPanelDock();
+    };
+    button.addEventListener('click', () => window.setTimeout(ensureFor3d, 0)); // Base editor's click handler runs first and creates three3d.renderer synchronously.
+    if (canvas3d?.classList.contains('active')) ensureFor3d(); // Supports editor restores or programmatic 3D activation before DOMContentLoaded.
   }
 
   window.MapLivePreview = {
@@ -133,5 +175,10 @@
     consumePendingNavigation,
   };
 
-  loadPlacementCompanions();
+  if (isMapEditorPage() && typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installMapEditorCompanionTrigger, { once: true });
+    else installMapEditorCompanionTrigger();
+  } else {
+    loadPlacementCompanions(); // The running game needs placement + daylight integration during normal boot, not lazily behind a Map Editor control.
+  }
 })();
