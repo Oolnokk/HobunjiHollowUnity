@@ -7,10 +7,12 @@ on:
       - 'docs/js/wildlife-debug-panel.js'
       - 'docs/js/wilderness-ai-snapshot.js'
       - 'docs/js/crop-sprite-art.js'
+      - 'docs/js/crop-ready-presentation.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/index.html'
       - 'scripts/test-drenkirra-nest-scatter-performance.js'
       - 'scripts/test-crop-billboard-presentation.js'
+      - 'scripts/test-crop-ready-presentation.js'
       - 'scripts/test-crop-sprite-art.js'
       - '.github/workflows/drenkirra-scatter-crop-scan.yml'
   workflow_dispatch:
@@ -29,9 +31,12 @@ jobs:
           node --check docs/js/wildlife-debug-panel.js
           node --check docs/js/wilderness-ai-snapshot.js
           node --check docs/js/crop-sprite-art.js
+          node --check docs/js/crop-ready-presentation.js
       - name: Test scattered Drenkirra selection and complete wildlife snapshots
         run: node scripts/test-drenkirra-nest-scatter-performance.js
       - name: Test crop billboard bootstrap version
         run: node scripts/test-crop-billboard-presentation.js
+      - name: Test sparkle-only ripe crop presentation
+        run: node scripts/test-crop-ready-presentation.js
       - name: Test time-throttled crop sprite discovery
         run: node scripts/test-crop-sprite-art.js
