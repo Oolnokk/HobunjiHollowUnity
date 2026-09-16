@@ -90,10 +90,10 @@ assert.equal(observed.companionShadow, 0.36, 'companion shadow receives same tem
 assert.equal(observed.mount, 2.35, 'mount receives shared animal lift');
 assert.equal(observed.wild, 4.35, 'wild animal receives shared animal lift');
 assert.equal(observed.corpse, 6.35, 'animal corpse receives shared animal lift');
-assert.equal(observed.corpseShadow, 0.37, 'animal corpse shadow receives shared animal lift');
+assert.equal(observed.corpseShadow, 0.37, 'animal corpse shadow receives same temporary lift');
 assert.equal(observed.amphibiousFishCorpse, 6.85, 'amphibious fish corpse keeps animal elevation despite its combat sentinel flag');
 assert.equal(observed.farm, 7.35, 'farm livestock receives shared animal lift');
-assert.equal(observed.farmShadow, 0.38, 'farm livestock shadow receives shared animal lift');
+assert.equal(observed.farmShadow, 0.38, 'farm livestock shadow receives same temporary lift');
 assert.equal(observed.shoulder, 3, 'shoulder pet is not double-lifted because it inherits player composition');
 assert.equal(observed.bandit, 5, 'humanoid bandit is not routed through animal elevation');
 
@@ -105,7 +105,7 @@ assert.equal(corpse.avatarRef.group.position.y, 6, 'corpse Y restores after rend
 assert.equal(amphibiousFishCorpse.avatarRef.group.position.y, 6.5, 'amphibious fish corpse Y restores after render');
 assert.equal(farmAnimal.avatarRef.group.position.y, 7, 'farm livestock Y restores after render');
 
-const debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
+let debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
 assert.equal(debug.appliedActors, 6, 'debug reports lifted animal actors');
 assert.equal(debug.appliedRoots, 9, 'debug reports avatar + separate shadow roots');
 assert.equal(debug.skippedShoulderPets, 1, 'debug reports shoulder-pet inheritance skip');
@@ -114,4 +114,48 @@ assert.equal(debug.reason, 'temporary-render-lift');
 assert.equal(context.window.HobunjiAnimalSubtleElevation.totalLiftAt(4.5, 7.5, 'town'), 0.35, 'public sampler matches player terrain + support composition');
 assert.equal(context.window.HobunjiAnimalSubtleElevation.totalLiftAt(4.5, 7.5, 'farm'), 0.1, 'non-town areas do not incorrectly reuse town terrain map');
 
-console.log('animal subtle elevation regression checks passed');
+// Water regression: the temporary correction must sink a swimmer until the
+// water surface reaches the rig centroid, then restore movement-owned Y.
+normalCompanion.x = 4.5;
+normalCompanion.y = 7.5;
+normalCompanion.health = 100;
+normalCompanion.maxHealth = 100;
+normalCompanion.stamina = 100;
+normalCompanion.maxStamina = 100;
+normalCompanion.afflictions = { windedStamina: 0 };
+combatDeps.TILE = 1;
+combatDeps.worldSurfaceY = () => -0.5;
+context.window.GridTileAccessors = {
+  getActiveTileAt() { return { type: 'river', water: 3 }; },
+};
+renderer.render();
+assert.equal(observed.companion, 0, 'swimming companion is render-sunk until its centroid touches the river surface');
+assert.equal(normalCompanion.avatarRef.group.position.y, 1, 'water sink restores the movement-owned companion Y after render');
+debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
+assert.equal(debug.waterActors >= 1, true, 'water diagnostics report at least one corrected swimmer');
+assert.equal(debug.lastWaterSurfaceY, 0, 'water diagnostics report the computed river surface');
+
+// Prone-water regression: ResourceSystem.tick stays authoritative for normal
+// maintenance, then the shared bridge adds environmental Health damage and
+// Winded Stamina to a prone actor in a river/stream.
+const ResourceSystem = {
+  tick() { return { ok: true }; },
+  applyDamage(entity, amount) { entity.health -= amount; return amount; },
+  addAffliction(entity, id, amount) { entity.afflictions[id] = (entity.afflictions[id] || 0) + amount; return amount; },
+  enforceCaps() {},
+};
+context.window.ResourceSystem = ResourceSystem;
+normalCompanion.prone = true;
+context.window.ResourceSystem.tick(normalCompanion, 1, {});
+assert.equal(normalCompanion.health, 96.5, 'one prone second in water deals 3.5% max Health damage');
+assert.equal(normalCompanion.afflictions.windedStamina, 8, 'one prone second in water adds 8% max Stamina as Winded Stamina');
+debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
+assert.equal(debug.proneWaterHazard.ticks, 1, 'hazard diagnostics count the prone-water tick');
+assert.equal(debug.proneWaterHazard.lastActor, 'companion', 'hazard diagnostics identify the affected actor');
+
+normalCompanion.prone = false;
+context.window.ResourceSystem.tick(normalCompanion, 1, {});
+assert.equal(normalCompanion.health, 96.5, 'non-prone swimmers take no water hazard damage');
+assert.equal(normalCompanion.afflictions.windedStamina, 8, 'non-prone swimmers gain no extra Winded Stamina');
+
+console.log('animal subtle elevation + swimmer centroid/prone-water regression checks passed');
