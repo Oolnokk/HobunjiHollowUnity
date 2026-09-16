@@ -5,6 +5,8 @@
   // synchronous during ordinary index.html parsing so the wrappers exist before
   // FarmPanel/game.js call the underlying modules' init() methods.
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
+    { globalKey: 'LivestockNurseryObserverScope', src: 'js/livestock-nursery-observer-scope.js?v=20260916scope1' },
+    { globalKey: 'LivestockNurseryOutdoorGrowth', src: 'js/livestock-nursery-outdoor-growth.js?v=20260916outdoor1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
@@ -15,6 +17,9 @@
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20260903incubator1' },
     { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20260903incubator1' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
+    { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20260916nurserygrid3' },
+    { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage6' },
+    { globalKey: 'LivestockNurseryGridUiFix', src: 'js/livestock-nursery-grid-ui-fix.js?v=20260916uifix1' },
   ];
   const STABLE_ROLE_DEP_METHODS = Object.freeze([
     'getActiveCompanionId',
@@ -34,12 +39,16 @@
     }
     const loadAt = index => {
       if (index >= featureScripts.length) {
+        window.LivestockNurseryOutdoorGrowth?.install?.();
         window.AnimalGrowth?.install?.();
         window.StableAnimalProgression?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
         window.StableAnimalXpEvents?.install?.();
         window.BarnIncubator?.install?.();
         window.FarmMenuLayout?.install?.();
+        window.LivestockNurseryGrid?.install?.();
+        window.LivestockNurseryInventoryPaging?.install?.();
+        window.LivestockNurseryGridUiFix?.install?.();
         return;
       }
       const entry = featureScripts[index];
@@ -56,18 +65,22 @@
 
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
   // FarmPanel, while LivestockNursery/AnimalGrowth/StableAnimalProgression/
-  // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator all need
-  // the public farm APIs before game.js initializes them. Capture FarmPanel's
-  // one global assignment and install synchronously at that exact point;
-  // afterward FarmPanel is a normal writable global again, so there is no
-  // permanent proxy.
+  // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator/
+  // LivestockNurseryGrid/LivestockNurseryInventoryPaging all need the public
+  // farm APIs before game.js initializes them. Capture FarmPanel's one global
+  // assignment and install synchronously at that exact point; afterward
+  // FarmPanel is a normal writable global again, so there is no permanent proxy.
   const installNursery = () => window.LivestockNursery?.install?.();
+  const installNurseryOutdoorGrowth = () => window.LivestockNurseryOutdoorGrowth?.install?.();
   const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
   const installStableAnimalProgression = () => window.StableAnimalProgression?.install?.();
   const installStableAnimalTrainingRefinements = () => window.StableAnimalTrainingRefinements?.install?.();
   const installStableAnimalXpEvents = () => window.StableAnimalXpEvents?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
   const installFarmMenuLayout = () => window.FarmMenuLayout?.install?.();
+  const installLivestockNurseryGrid = () => window.LivestockNurseryGrid?.install?.();
+  const installLivestockNurseryInventoryPaging = () => window.LivestockNurseryInventoryPaging?.install?.();
+  const installLivestockNurseryGridUiFix = () => window.LivestockNurseryGridUiFix?.install?.();
 
   // FarmPanel's native Stable renderer intentionally blocks the old progression
   // render wrapper, but that also blocks the old FarmPanel.init dependency
@@ -111,7 +124,7 @@
 
     const farmPanel = window.FarmPanel; // Wrapped separately because its deps contain the active stable-role getters missing above.
     if (farmPanel && typeof farmPanel.init === 'function' && !farmPanel.init.__stableProgressionDepsBridge) {
-      const originalPanelInit = farmPanel.init; // Preserved so the native Stable renderer and core panel still initialize normally.
+      const originalPanelInit = farmPanel.init; // Preserved so the native Stable panel and core panel still initialize normally.
       const wrappedPanelInit = function stableProgressionDepsPanelInit(injectedDeps, ...rest) {
         stableProgressionPanelDeps = injectedDeps || null;
         syncStableProgressionRoleDeps();
@@ -174,6 +187,7 @@
   const installBridges = () => {
     installVegetationFoliageContractGuard();
     installNursery();
+    installNurseryOutdoorGrowth();
     installAnimalGrowth();
     installStableAnimalProgression();
     installStableAnimalTrainingRefinements();
@@ -181,6 +195,9 @@
     installStableAnimalXpEvents();
     installBarnIncubator();
     installFarmMenuLayout();
+    installLivestockNurseryGrid();
+    installLivestockNurseryInventoryPaging();
+    installLivestockNurseryGridUiFix();
   };
 
   if (window.FarmPanel) {
