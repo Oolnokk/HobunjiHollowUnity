@@ -55,11 +55,12 @@ vm.runInNewContext(bridgeSource, context);
 
 const inventory = { wine: 2 };
 const wine = { key: 'wine', label: 'Redberry Wine', icon: '🍷', tags: ['Wine'], swigsPerBottle: 4 };
+let activeItem = wine; // Used to switch the simulated held stack from wine to a stale generated recipe entry without rebuilding the bridge.
 windowStub.FarmCrates.init({
   inventory,
   calendar: { day: 1, time01: 0 },
   getHeldMode: () => 'item',
-  getActiveInventoryItem: () => wine,
+  getActiveInventoryItem: () => activeItem,
   clampInventoryStack: key => { if (inventory[key] <= 0) delete inventory[key]; },
   beginHeldDrinkAnimation: () => false,
   continueHeldDrinkAnimation() {},
@@ -90,6 +91,35 @@ assert.equal(npcState.sobriety, 0, 'four full-strength wine swigs deplete NPC so
 assert.equal(bridge.isNpcBlackedOut('kzubug'), true, 'zero sobriety enters a timed no-teleport blackout');
 assert(npcState.blackoutUntilMinute >= 100, 'blackout duration is derived from the sobriety deficit');
 
+const recipeKey = 'alchemy_recipe_healingPotion'; // Used to reproduce a generated physical recipe whose lightweight wheel entry has not received recipe metadata yet.
+let recipeReads = 0; // Used to prove immediate Item Action dispatch reaches the alchemy reader exactly once.
+let recipeDrinks = 0; // Used to prove a recipe whose label contains “Potion” never enters the drink animation/consumption path.
+inventory[recipeKey] = 1;
+activeItem = { key: recipeKey, label: 'Recipe: Healing Potion', icon: '📜', cat: 'processed', tags: ['Alchemy'] };
+windowStub.AlchemySystem = {
+  REAGENT_DEFS: {},
+  RECIPE_DEFS: { healingPotion: { id: 'healingPotion', useMode: 'drink' } },
+  POTION_ITEMS: {},
+  getPotionEffectsFromKey() { return null; },
+  readRecipeItem(key) {
+    recipeReads++;
+    inventory[key] = Math.max(0, Number(inventory[key]) - 1);
+    return { ok: true, message: 'Learned Healing Potion.' };
+  },
+  drinkPotion() { recipeDrinks++; return { ok: false, message: 'No potion to drink.' }; },
+};
+const recipeAction = bridge.getHeldItemAction(); // Used to exercise the same semantic action descriptor shown by touch, keyboard, and controller action slots.
+assert.equal(recipeAction?.action, 'consume_held_item', 'a generated recipe still uses the normal held-item action slot');
+assert.match(recipeAction?.label || '', /^Read Recipe: Healing Potion$/, 'a stale generated recipe entry resolves to Read instead of Drink/Eat');
+assert.equal(recipeAction?.holdToCommit, false, 'reading stays immediate and must not start the drink hold animation');
+assert.equal(bridge.consumeHeldItemImmediate(), true, 'the immediate action dispatcher reads the physical recipe');
+assert.equal(recipeReads, 1, 'the alchemy recipe reader runs exactly once');
+assert.equal(recipeDrinks, 0, 'the potion-drinking path is never called for a physical recipe');
+assert.equal(inventory[recipeKey], 0, 'reading consumes the physical recipe item');
+const recipeDebug = bridge.getDebug().heldItemAction; // Used as the mobile-friendly route diagnostic after the recipe stack was consumed.
+assert.equal(recipeDebug.key, recipeKey, 'held-item diagnostics retain the selected recipe key');
+assert.equal(recipeDebug.keyedRecipeScrollId, 'healingPotion', 'held-item diagnostics expose key-derived recipe recognition');
+
 assert.match(combat, /consumeBottleSwig[\s\S]*?RS\.addDrunkenness/,
   'every alcohol swig still applies the existing full drunkenness effect');
 assert.match(alcoholUi, /alcohol-swig-badge[\s\S]*?status\.remaining.*status\.total/,
@@ -118,4 +148,4 @@ assert.match(ambient, /resolveAlcoholOffer[\s\S]*?acceptMode/,
 assert.match(editor, /Offered alcohol[\s\S]*?Accept dialogue[\s\S]*?Refuse dialogue/,
   'the Ambient Dialogue editor exposes NPC alcohol responses');
 
-console.log('Alcohol swig, contextual offer, and NPC sobriety checks passed.');
+console.log('Alcohol swig, held-recipe routing, contextual offer, and NPC sobriety checks passed.');
