@@ -16,6 +16,7 @@
   const TANKAN_BASELINE_TEXT = 'Hobunji Hollow';
   const TANKAN_PADDING_X_EM = 0.8;
   const TANKAN_PADDING_Y_EM = 0.28;
+  const TANKAN_GLYPH_Y_NORMALIZATION = 0.7; // Runtime mirror: authored Y=1.00 uses the visually approved prior Y=0.70 appearance.
   const TANKAN_BASELINE = Object.freeze({
     columnSpacingEm: -0.35,
     glyphAdvanceEm: 0.6,
@@ -110,7 +111,7 @@
       columnSpacingEm: clamp(TANKAN_BASELINE.columnSpacingEm + finiteOr(record.tankanColumnSpacing, 0), -0.95, 4),
       glyphAdvanceEm: clamp(TANKAN_BASELINE.glyphAdvanceEm * finiteOr(record.tankanGlyphAdvance, 1), 0.1, 4),
       glyphScaleX: clamp(TANKAN_BASELINE.glyphScaleX * normalizedGlyphSize(record, 'x'), 0.25, 2.5),
-      glyphScaleY: clamp(TANKAN_BASELINE.glyphScaleY * normalizedGlyphSize(record, 'y'), 0.25, 2.5),
+      glyphScaleY: clamp(TANKAN_BASELINE.glyphScaleY * TANKAN_GLYPH_Y_NORMALIZATION * normalizedGlyphSize(record, 'y'), 0.25, 2.5),
       fitReferenceGlyphScaleX: TANKAN_BASELINE.glyphScaleX,
       fitReferenceGlyphScaleY: TANKAN_BASELINE.glyphScaleY,
       paddingXEm: TANKAN_PADDING_X_EM,
@@ -402,7 +403,6 @@
     resolvedTransform,
     tankanNaturalWidthFactor,
     tankanNaturalHeightFactor,
-    tankanContainerPixels,
     tankanContainerState,
   };
 })();
