@@ -3,10 +3,15 @@
   if (window.InventoryHeldOverride) return;
 
   let equipmentDeps = null; // Used to read/write game.js's existing manualHeldItem slot and inventory counts.
+  let itemDeps = null; // Used by direct Inventory actions to resolve canonical item metadata and refresh/save bag state.
   let actionRaw = null; // Used to control the real heldMode/activeItemIndex without the arch-facing wrappers recursing.
   let hudRawCycle = null; // Used to let the inventory scroll relinquish a manual Hold before normal cycling.
   let originalWheelEligible = null; // Used to preserve the canonical item-arch eligibility rules underneath the one-item override.
   let clearQueued = false; // Used to coalesce stale/empty held-item cleanup discovered during wheel filtering.
+  let directUseObserver = null; // Used to keep the Inventory detail's direct-use button synchronized with existing renderers.
+  let directUseQueued = false; // Used to coalesce Inventory detail mutations into one direct-use render pass.
+  let lastDirectUse = null; // Used by mobile-safe diagnostics to report the most recent Inventory action attempt.
+  let lastDirectUseUi = null; // Used by diagnostics to explain why a direct-use button did or did not resolve.
 
   const state = {
     manualKey: null, // Used to remember which off-arch bag item currently owns the held-item override.
@@ -140,6 +145,199 @@
     return finishClear({ clearManual: true, restorePriorMode: false, reason });
   }
 
+  function captureItemDeps(injected = {}) {
+    if (!injected?.inventory) return;
+    itemDeps = { ...itemDeps, ...injected }; // Merged because CookingSystem/FarmCrates expose complementary item helpers.
+    scheduleDirectUseUi();
+  }
+
+  function canonicalDef(key) {
+    return itemDeps?.ITEM_DEFS?.[key] || null;
+  }
+
+  function recipeScrollId(key, def) {
+    const authored = def?.alchemyRecipeScrollId;
+    if (authored && window.AlchemySystem?.RECIPE_DEFS?.[authored]) return authored;
+    const match = /^alchemy_recipe_(.+)$/.exec(String(key || '')); // Generated physical recipe keys remain self-describing even before metadata sync.
+    const keyed = match?.[1] || null;
+    return keyed && window.AlchemySystem?.RECIPE_DEFS?.[keyed] ? keyed : null;
+  }
+
+  function techniqueScrollTier(key, def) {
+    const authored = Number(def?.techniqueScrollTier) || 0;
+    if (authored > 0) return authored;
+    const scroll = Object.entries(window.TechniqueScrolls?.SCROLLS || {}).find(([, value]) => value?.key === key);
+    return scroll ? Number(scroll[0]) || 0 : 0;
+  }
+
+  function inventoryUseAction(key) {
+    const inventory = itemDeps?.inventory || equipmentDeps?.inventory;
+    if (!key || !(Number(inventory?.[key]) > 0)) return null;
+    const def = canonicalDef(key);
+    if (!def) return null;
+
+    if (def.combatManualAbilityId) {
+      const learned = !!window.TechniqueScrolls?.isUnlocked?.(def.combatManualAbilityId); // Used to disable a manual whose exact technique is already known.
+      return { key, kind: 'combatManual', verb: learned ? 'Already learned' : 'Read', icon: def.icon || '📕', itemLabel: def.label || key, allowed: !learned };
+    }
+    if (techniqueScrollTier(key, def) > 0) return { key, kind: 'techniqueScroll', verb: 'Read', icon: def.icon || '📜', itemLabel: def.label || key, allowed: true };
+    if (def.mysteryDyePoolId) return { key, kind: 'mysteryDye', verb: 'Use', icon: def.icon || '🎨', itemLabel: def.label || key, allowed: true };
+    if (def.isCookedFood) return { key, kind: 'cookedFood', verb: 'Eat', icon: def.icon || '🍲', itemLabel: def.label || key, allowed: true };
+    if (window.AlchemySystem?.REAGENT_DEFS?.[key]) return { key, kind: 'rawReagent', verb: 'Eat', icon: def.icon || '🌿', itemLabel: def.label || key, allowed: true };
+    if (recipeScrollId(key, def)) return { key, kind: 'recipe', verb: 'Read', icon: def.icon || '📜', itemLabel: def.label || key, allowed: true };
+
+    const potionPayload = window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.parseBrewedItemKey?.(key); // Used to reject target-dependent flask/livestock recipes before generic drink detection.
+    const potionRecipe = potionPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[potionPayload.recipeId];
+    const explicitUseMode = potionRecipe?.useMode || def.useMode || null; // Used so throw/livestock items never gain a misleading direct Inventory button.
+    if (explicitUseMode === 'throw' || explicitUseMode === 'livestock') return null;
+
+    const bridge = window.HobunjiDrunkGameplayBridge;
+    if (explicitUseMode === 'drink' || potionPayload?.legacyEffects || bridge?.isPotionOrDrink?.(key, def)) {
+      return { key, kind: 'drink', verb: 'Drink', icon: def.icon || '🥤', itemLabel: def.label || key, allowed: true };
+    }
+    if (bridge?.isFood?.(def)) return { key, kind: 'food', verb: 'Eat', icon: def.icon || '🍽️', itemLabel: def.label || key, allowed: true };
+    return null;
+  }
+
+  function withTemporaryManualBagItem(key, callback) {
+    const previous = rawManualHeldItem(); // Used to let TechniqueScrolls reuse its canonical held-item mutation path without changing the player's actual Hold state.
+    equipmentDeps?.setManualHeldItem?.({ kind: 'bagItem', key });
+    try {
+      return callback();
+    } finally {
+      const previousKey = previous?.kind === 'bagItem' ? previous.key : null; // Used to avoid restoring an empty stack consumed by the direct action.
+      const safePrevious = previousKey && !(Number(equipmentDeps?.inventory?.[previousKey]) > 0) ? null : previous;
+      equipmentDeps?.setManualHeldItem?.(safePrevious || null);
+    }
+  }
+
+  function consumeOrdinaryFood(key, def) {
+    const inventory = itemDeps?.inventory || equipmentDeps?.inventory;
+    if (!def || !(Number(inventory?.[key]) > 0)) return { ok: false, message: 'Nothing edible is selected.' };
+    inventory[key] = Math.max(0, Number(inventory[key]) - 1);
+    itemDeps?.clampInventoryStack?.(key);
+    const player = window.Combat?.deps?.player; // Used to mirror alcohol-gameplay-bridge's ordinary held-food restoration path.
+    const healthRestore = Number(def.healthRestore ?? def.restoreHealth ?? def.health) || 0;
+    const staminaRestore = Number(def.staminaRestore ?? def.restoreStamina ?? def.stamina) || 0;
+    if (player && healthRestore > 0) player.health = Math.min(Number(player.maxHealth) || 100, (Number(player.health) || 0) + healthRestore);
+    if (player && staminaRestore > 0) player.stamina = Math.min(Number(player.maxStamina) || 100, (Number(player.stamina) || 0) + staminaRestore);
+    return { ok: true, message: `${def.icon || '🍽️'} Ate ${def.label || key}.` };
+  }
+
+  function refreshAfterInventoryUse(key) {
+    const refreshDeps = itemDeps || equipmentDeps; // Used to share the same bag/HUD/save side effects as held-item actions.
+    refreshDeps?.refreshItemScroll?.();
+    refreshDeps?.buildInventoryGrid?.();
+    refreshDeps?.refreshActionBar?.();
+    refreshDeps?.saveMemberWorldData?.();
+    if (!(Number((refreshDeps?.inventory || equipmentDeps?.inventory)?.[key]) > 0)) equipmentDeps?.clearInventoryDetail?.();
+    scheduleDirectUseUi();
+  }
+
+  function useInventoryItem(key) {
+    const action = inventoryUseAction(key);
+    if (!action || action.allowed === false) {
+      lastDirectUse = { key: key || null, kind: action?.kind || null, ok: false, reason: action ? 'not-allowed' : 'not-direct-usable', at: Date.now() };
+      return false;
+    }
+
+    let result = null; // Used to normalize the various existing item-owner return shapes into one Inventory action result.
+    let ownerHandlesFeedback = false; // TechniqueScrolls already owns its read toast/refresh path, so do not duplicate it here.
+    if (action.kind === 'combatManual') {
+      ownerHandlesFeedback = true;
+      result = { ok: !!withTemporaryManualBagItem(key, () => window.TechniqueScrolls?.consumeManual?.()), message: '' };
+    } else if (action.kind === 'techniqueScroll') {
+      ownerHandlesFeedback = true;
+      result = { ok: !!withTemporaryManualBagItem(key, () => window.TechniqueScrolls?.consumeScroll?.()), message: '' };
+    } else if (action.kind === 'mysteryDye') {
+      result = window.DyeSystem?.useMysteryDye?.(key) || { ok: false, message: 'That dye cannot be used.' };
+    } else if (action.kind === 'cookedFood') {
+      result = window.CookingSystem?.eat?.(key) || { ok: false, message: 'That meal cannot be eaten.' };
+    } else if (action.kind === 'rawReagent') {
+      result = window.AlchemySystem?.consumeRawReagent?.(key) || { ok: false, message: 'That reagent cannot be eaten.' };
+    } else if (action.kind === 'recipe') {
+      result = window.AlchemySystem?.readRecipeItem?.(key) || { ok: false, message: 'That recipe cannot be read.' };
+    } else if (action.kind === 'drink') {
+      result = window.AlchemySystem?.drinkPotion?.(key) || { ok: false, message: 'That drink cannot be consumed.' };
+    } else if (action.kind === 'food') {
+      result = consumeOrdinaryFood(key, canonicalDef(key));
+    }
+
+    const ok = !!result?.ok;
+    if (!ownerHandlesFeedback) itemDeps?.showToast?.(result?.message || (ok ? `${action.verb} ${action.itemLabel}.` : `Could not ${action.verb.toLowerCase()} that item.`), ok);
+    if (ok && !ownerHandlesFeedback) refreshAfterInventoryUse(key);
+    else scheduleDirectUseUi();
+    lastDirectUse = { key, kind: action.kind, verb: action.verb, ok, message: result?.message || null, at: Date.now() };
+    return ok;
+  }
+
+  function normalizeDetailLabel(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function resolveInventoryDetailAction() {
+    if (typeof document?.getElementById !== 'function') return null;
+    const nameEl = document.getElementById('iiName');
+    const actionsEl = document.getElementById('iiActions');
+    const detailEl = document.getElementById('iiDetail');
+    if (!nameEl || !actionsEl || !detailEl || detailEl.style?.display === 'none') return null;
+    const detailName = normalizeDetailLabel(nameEl.textContent);
+    if (!detailName) return null;
+    const inventory = itemDeps?.inventory || equipmentDeps?.inventory || {};
+    const candidates = Object.keys(inventory).filter(key => Number(inventory[key]) > 0).map(key => {
+      const action = inventoryUseAction(key);
+      const def = canonicalDef(key);
+      return action && def ? { key, action, names: [def.label, itemDeps?.inventoryItems?.find?.(item => item?.key === key)?.label].filter(Boolean).map(normalizeDetailLabel) } : null;
+    }).filter(Boolean).filter(candidate => candidate.names.includes(detailName));
+    if (candidates.length !== 1) {
+      lastDirectUseUi = { detailName, resolvedKey: null, reason: candidates.length ? 'ambiguous-label' : 'not-direct-usable', candidates: candidates.map(candidate => candidate.key), at: Date.now() };
+      return null;
+    }
+    lastDirectUseUi = { detailName, resolvedKey: candidates[0].key, kind: candidates[0].action.kind, reason: 'resolved', at: Date.now() };
+    return { ...candidates[0], actionsEl };
+  }
+
+  function renderDirectUseButton() {
+    if (typeof document?.getElementById !== 'function') return;
+    const actionsEl = document.getElementById('iiActions');
+    const existing = document.getElementById('inventoryDirectUseBtn');
+    const resolved = resolveInventoryDetailAction();
+    if (!resolved) {
+      existing?.remove?.();
+      return;
+    }
+    const { key, action } = resolved;
+    const button = existing || document.createElement('button'); // Used as the one shared direct-action control beside Sell/Hold/Transfer actions.
+    button.id = 'inventoryDirectUseBtn';
+    button.className = 'ii-btn inventory-direct-use';
+    button.dataset.itemKey = key;
+    button.disabled = action.allowed === false;
+    button.textContent = `${action.icon || '✦'} ${action.verb}`;
+    button.title = `${action.verb} ${action.itemLabel} directly from Inventory`;
+    button.onclick = () => useInventoryItem(key);
+    if (!existing) actionsEl?.prepend?.(button);
+  }
+
+  function scheduleDirectUseUi() {
+    if (directUseQueued) return;
+    directUseQueued = true;
+    queueMicrotask(() => {
+      directUseQueued = false;
+      renderDirectUseButton();
+    });
+  }
+
+  function installDirectUseUi() {
+    if (directUseObserver || typeof document?.getElementById !== 'function') return;
+    const root = document.getElementById('mpInventory');
+    if (!root) return;
+    if (typeof MutationObserver === 'function') {
+      directUseObserver = new MutationObserver(scheduleDirectUseUi); // Existing inventory renderers stay authoritative; this only decorates their final action row.
+      directUseObserver.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style'] });
+    } else directUseObserver = { observe() {} };
+    scheduleDirectUseUi();
+  }
+
   function patchItemProcessing(api) {
     if (!api?.isWheelEligible || api.__inventoryHeldOverridePatched) return;
     const base = api.isWheelEligible.bind(api); // Used so authored food/seed/processor eligibility remains unchanged.
@@ -161,10 +359,25 @@
     if (!api?.init || api.__inventoryHeldOverridePatched) return;
     const init = api.init.bind(api);
     api.init = (deps, ...rest) => {
-      equipmentDeps = deps; // Used by the Hold-button click bridge and temporary wheel-eligibility override.
-      return init(deps, ...rest);
+      equipmentDeps = deps; // Used by the Hold-button click bridge, direct Inventory actions, and temporary wheel-eligibility override.
+      captureItemDeps(deps);
+      const result = init(deps, ...rest);
+      installDirectUseUi();
+      scheduleDirectUseUi();
+      return result;
     };
     api.__inventoryHeldOverridePatched = true;
+  }
+
+  function patchItemInit(api, marker) {
+    if (!api?.init || api[marker]) return;
+    const init = api.init.bind(api); // Used to capture ITEM_DEFS/inventory helpers without taking ownership of the source system.
+    api.init = (deps, ...rest) => {
+      const result = init(deps, ...rest);
+      captureItemDeps(deps);
+      return result;
+    };
+    api[marker] = true;
   }
 
   function patchActionArc(api) {
@@ -262,18 +475,30 @@
   futureGlobal('EquipmentPanel', patchEquipmentPanel);
   futureGlobal('ActionArcUI', patchActionArc);
   futureGlobal('HudUpdate', patchHud);
+  futureGlobal('CookingSystem', api => patchItemInit(api, '__inventoryDirectUseItemHooked'));
+  futureGlobal('FarmCrates', api => patchItemInit(api, '__inventoryDirectUseItemHooked'));
 
   document.addEventListener('click', event => {
     const button = event.target?.closest?.('#iiActions button');
-    if (!button || !button.closest?.('#mpInventory') || !/\bHold(?:ing)?\b/i.test(button.textContent || '')) return;
-    capturePreHoldSnapshot();
-    setTimeout(() => syncFromManualHold({ restorePriorModeOnClear: true }), 0); // Runs after the button's own onclick mutates manualHeldItem.
+    if (button && button.closest?.('#mpInventory') && /\bHold(?:ing)?\b/i.test(button.textContent || '')) {
+      capturePreHoldSnapshot();
+      setTimeout(() => syncFromManualHold({ restorePriorModeOnClear: true }), 0); // Runs after the button's own onclick mutates manualHeldItem.
+    }
+    if (event.target?.closest?.('#mpInventory')) scheduleDirectUseUi();
   }, true);
+
+  if (typeof document?.addEventListener === 'function') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installDirectUseUi, { once: true });
+    else installDirectUseUi();
+  }
 
   window.InventoryHeldOverride = {
     sync: syncFromManualHold,
     clear: () => finishClear({ clearManual: true, restorePriorMode: false, reason: 'api-clear' }),
     releaseForNormalSelection,
+    getInventoryUseAction: inventoryUseAction,
+    useInventoryItem,
+    refreshInventoryUseButton: scheduleDirectUseUi,
     getDebug() {
       const held = rawManualHeldItem();
       const stacks = rawStacks();
@@ -288,12 +513,15 @@
         activeResolvedKey: stacks[index]?.key || null,
         resolvedStackKeys: stacks.map(item => item?.key).filter(Boolean),
         originalWheelEligibleReady: typeof originalWheelEligible === 'function',
+        directUseReady: !!itemDeps?.ITEM_DEFS,
+        lastDirectUse: lastDirectUse && { ...lastDirectUse },
+        lastDirectUseUi: lastDirectUseUi && { ...lastDirectUseUi },
         lastEvent: state.lastEvent && { ...state.lastEvent },
       };
     },
     formatDebug() {
       const d = this.getDebug();
-      return `Inventory Hold: manual=${d.liveManualBagKey || 'none'} override=${d.overrideKey || 'none'} mode=${d.heldMode || 'none'} active=${d.activeResolvedKey || 'none'} previous=${d.previousWheelKey || 'none'} event=${d.lastEvent?.type || 'none'}`;
+      return `Inventory Hold: manual=${d.liveManualBagKey || 'none'} override=${d.overrideKey || 'none'} mode=${d.heldMode || 'none'} active=${d.activeResolvedKey || 'none'} previous=${d.previousWheelKey || 'none'} direct=${d.lastDirectUse ? `${d.lastDirectUse.kind}:${d.lastDirectUse.ok ? 'ok' : 'blocked'}` : 'none'} event=${d.lastEvent?.type || 'none'}`;
     },
   };
 })();

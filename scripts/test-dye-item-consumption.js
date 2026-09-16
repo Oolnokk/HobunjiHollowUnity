@@ -18,6 +18,7 @@ let activeItem = { key: 'mysteryDyeRed' }; // Used as the currently selected hel
 const consumableBridge = {
   getHeldItemAction() { return null; },
   beginHeldItemAction() { return false; },
+  consumeHeldItemImmediate() { return false; },
 }; // Used as the ordinary held-consumable API that DyeSystem composes with.
 
 const cookingSystem = {
@@ -72,14 +73,14 @@ const action = consumableBridge.getHeldItemAction(); // Used to verify dye packe
 assert.equal(action?.action, 'consume_held_item');
 assert.match(action?.label || '', /Use/i);
 
-assert.equal(consumableBridge.beginHeldItemAction(), true, 'using a dye packet should be handled by DyeSystem');
+assert.equal(consumableBridge.consumeHeldItemImmediate(), true, 'the current action-arch immediate dispatcher should use a mystery dye packet');
 assert.deepEqual(gearInventory.dyeCollection, ['scarlet'], 'using a dye packet should globally unlock its rolled shade');
 assert.equal(inventory.mysteryDyeRed, 1, 'a successful unlock should consume exactly one dye packet');
 assert.equal(gearSaveCount, 1, 'unlocking a dye should save gear ownership');
 assert.equal(worldSaveCount, 1, 'consuming the packet should save inventory state');
 assert.match(toastMessage, /Scarlet/, 'successful use should provide visible feedback naming the unlocked shade');
 
-assert.equal(consumableBridge.beginHeldItemAction(), false, 'a fully exhausted dye family should refuse consumption');
+assert.equal(consumableBridge.consumeHeldItemImmediate(), false, 'a fully exhausted dye family should refuse consumption through the immediate dispatcher');
 assert.equal(inventory.mysteryDyeRed, 1, 'refused use must not consume the packet');
 assert.equal(worldSaveCount, 1, 'refused use must not write a false inventory mutation');
 
@@ -89,5 +90,6 @@ assert.equal(debug.heldPoolId, 'red');
 
 activeItem = null;
 assert.equal(consumableBridge.getHeldItemAction(), null, 'ordinary held-item behavior should remain untouched when no dye is selected');
+assert.equal(consumableBridge.consumeHeldItemImmediate(), false, 'ordinary immediate consumption still falls through when no dye is selected');
 
 console.log('Dye item consumption regression checks passed.');
