@@ -12,18 +12,27 @@ assert.match(gameSource,
 assert.match(gameSource,
   /const worldQuaternion = selectedRotationQuaternion\.clone\(\);/,
   'shoulder pets begin with whichever rotation frame is selected');
-for (const source of ['pixel', 'body', 'head', 'world']) {
+for (const source of ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world']) {
   assert.match(gameSource, new RegExp(`case '${source}'`), `rotation source option ${source} is implemented`);
 }
 assert.match(gameSource,
-  /let s_shoulderPetRotationSource = 'head';/,
-  'fresh gameplay state defaults shoulder-pet rotation to head/neck');
+  /const SHOULDER_PET_BODY_NECK_BLEND = 0\.5;/,
+  'body/neck midpoint uses an equal 50/50 quaternion blend');
 assert.match(gameSource,
-  /String\(e\.target\.value \|\| 'head'\)[\s\S]{0,240}\? requestedSource : 'head';/,
-  'empty or invalid shoulder-pet rotation settings fall back to head/neck');
+  /bodyRotationQuaternion\.clone\(\)\.slerp\(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND\)\.normalize\(\)/,
+  'midpoint rotation uses quaternion SLERP rather than Euler averaging');
+assert.match(gameSource,
+  /resolvedRotationSource = 'player-body-neck-midpoint';/,
+  'midpoint mode reports its resolved rotation source');
+assert.match(gameSource,
+  /let s_shoulderPetRotationSource = 'bodyNeckMidpoint';/,
+  'fresh gameplay state defaults shoulder-pet rotation to the body/neck midpoint');
+assert.match(gameSource,
+  /String\(e\.target\.value \|\| 'bodyNeckMidpoint'\)[\s\S]{0,300}\? requestedSource : 'bodyNeckMidpoint';/,
+  'empty or invalid shoulder-pet rotation settings fall back to the body/neck midpoint');
 assert.match(indexSource,
-  /<option value="head" selected>Head \/ Neck \(default\)<\/option>/,
-  'the Settings dropdown presents head/neck as the default');
+  /<option value="bodyNeckMidpoint" selected>Body \/ Neck Midpoint \(default\)<\/option>/,
+  'the Settings dropdown presents the body/neck midpoint as the default');
 assert.match(gameSource,
   /if \(s_invertShoulderPetRotationSource\) selectedRotationQuaternion\.invert\(\);/,
   'the inversion toggle inverses whichever rotation frame is selected');

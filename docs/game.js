@@ -6073,6 +6073,7 @@
       // authored ROTATION is interpreted relative to the live face/neck bone.
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
+      const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
       function _shoulderPetSurfaceTransform(perch, grip) {
         const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
           const degrees = rotationDeg || {};
@@ -6094,6 +6095,20 @@
             selectedRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
             resolvedRotationSource = 'player-body';
             break;
+          case 'bodyNeckMidpoint': {
+            const bodyRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Body endpoint for the equal world-space midpoint below.
+            const neckRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : null; // Neck endpoint; rigid avatars safely fall back to the body frame.
+            if (!neckRotationSource) {
+              selectedRotationQuaternion = bodyRotationQuaternion;
+              resolvedRotationSource = 'player-body-fallback-no-neck';
+              break;
+            }
+            neckRotationSource.updateWorldMatrix?.(true, false);
+            const neckRotationQuaternion = neckRotationSource.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Live neck world orientation used as the second midpoint endpoint.
+            selectedRotationQuaternion = bodyRotationQuaternion.clone().slerp(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND).normalize();
+            resolvedRotationSource = 'player-body-neck-midpoint';
+            break;
+          }
           case 'head': {
             const headRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Head/neck selection falls back safely for rigid avatars.
             headRotationSource.updateWorldMatrix?.(true, false);
@@ -21913,7 +21928,7 @@
       let s_disableHatXray = false;
       let s_disableShoulderFrontXray = false; // Settings toggle: restores front-plane depth writes while a shoulder pet is attached.
       let s_disableShoulderBackXray = false; // Settings toggle: restores back-plane depth writes while a shoulder pet is attached.
-      let s_shoulderPetRotationSource = 'head'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
+      let s_shoulderPetRotationSource = 'bodyNeckMidpoint'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
       let s_invertShoulderPetRotationSource = false; // Settings toggle: inverses the selected rotation frame before authored perch/grip composition.
       let s_cancelShoulderPetRotationalOffset = false; // Settings toggle: omits authored perch/grip rotation corrections while retaining the selected frame.
       let s_frontSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a front-face-only player overlay after the pet.
@@ -21997,8 +22012,8 @@
         updatePetLayering(_petLayeringActive, _petLayeringPet);
       });
       document.getElementById('settingShoulderPetRotationSource')?.addEventListener('change', e => {
-        const requestedSource = String(e.target.value || 'head'); // Used here to reject stale or manually-edited DOM values.
-        s_shoulderPetRotationSource = ['pixel', 'body', 'head', 'world'].includes(requestedSource) ? requestedSource : 'head';
+        const requestedSource = String(e.target.value || 'bodyNeckMidpoint'); // Used here to reject stale or manually-edited DOM values.
+        s_shoulderPetRotationSource = ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world'].includes(requestedSource) ? requestedSource : 'bodyNeckMidpoint';
       });
       document.getElementById('settingInvertShoulderPetRotationSource')?.addEventListener('change', e => {
         s_invertShoulderPetRotationSource = e.target.checked;
