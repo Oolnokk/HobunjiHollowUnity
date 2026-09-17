@@ -42,7 +42,9 @@ const FarmAnimals = {
     for (const entry of livestock) if (entry.barnId) entry.heartLevel = (entry.heartLevel || 0) - 0.2;
   },
   tickResources() {
-    for (const entry of livestock) if (entry.barnId) entry.resourceTicks = (entry.resourceTicks || 0) + 1;
+    const list = this.deps.loadWorldLivestock(); // Mirrors core FarmAnimals: production mutates the snapshot returned for this tick.
+    for (const entry of list) if (entry.barnId) entry.resourceTicks = (entry.resourceTicks || 0) + 1;
+    this.deps.saveWorldLivestock(list);
   },
   tickBreedingProgress() {
     livestock.push({ id: 'born', kind: 'grehlr', name: 'Born', barnId: null, troughIndex: null, heartLevel: 2, genotype: { sizeClass: 'small' } });
@@ -230,5 +232,26 @@ assert.equal(snapshot.babyScale, 0.3125, 'debug snapshot reports the increased 3
 assert.equal(snapshot.speedMultiplier, 1.125, 'debug snapshot reports the reduced 1.125x Nursery movement multiplier');
 assert.equal(context.window.LivestockNursery.constants.NURSERY_VISIBLE_LIMIT, 12, 'public constants retain the 12-baby visual cap');
 assert(saveCount > 0, 'Nursery transitions persist through the existing livestock save seam');
+
+// Real saves parse a fresh livestock snapshot on each uncached read. Keep one
+// adult outdoors while a housed adult advances production to prove the
+// Nursery sentinel transaction does not discard the housed mutation.
+const savedLoadWorldLivestock = animalDeps.loadWorldLivestock; // Restored after the fresh-snapshot persistence regression.
+const savedSaveWorldLivestock = animalDeps.saveWorldLivestock; // Restored after the fresh-snapshot persistence regression.
+let persistedTransactionLivestock = [ // Backing save blob used to simulate JSON parse/stringify semantics.
+  { id: 'tx-outdoor', kind: 'grehlr', name: 'Outdoor Adult', lifeStage: 'adult', barnId: null, troughIndex: null, heartLevel: 2, resourceTicks: 0, genotype: { sizeClass: 'medium' } },
+  { id: 'tx-housed', kind: 'grehlr', name: 'Housed Adult', lifeStage: 'adult', barnId: 'barn-tx', troughIndex: 0, heartLevel: 2, resourceTicks: 0, genotype: { sizeClass: 'medium' } },
+];
+buildings.push({ id: 'barn-tx', kind: 'barn', tier: 'small', stage: 'built', col: 20, row: 20, w: 4, h: 3, _worldObj: {} });
+animalDeps.loadWorldLivestock = () => JSON.parse(JSON.stringify(persistedTransactionLivestock));
+animalDeps.saveWorldLivestock = list => { persistedTransactionLivestock = JSON.parse(JSON.stringify(list)); };
+context.window.FarmAnimals.tickResources();
+const persistedOutdoor = persistedTransactionLivestock.find(entry => entry.id === 'tx-outdoor');
+const persistedHoused = persistedTransactionLivestock.find(entry => entry.id === 'tx-housed');
+assert.equal(persistedOutdoor.resourceTicks || 0, 0, 'outdoor adult remains production-blocked in a fresh-snapshot save');
+assert.equal(persistedOutdoor.barnId, null, 'temporary outdoor sentinel never reaches the persisted fresh snapshot');
+assert.equal(persistedHoused.resourceTicks, 1, 'housed production persists even when another adult lives outdoors and every load returns a fresh snapshot');
+animalDeps.loadWorldLivestock = savedLoadWorldLivestock;
+animalDeps.saveWorldLivestock = savedSaveWorldLivestock;
 
 console.log('livestock Nursery regression tests passed');
