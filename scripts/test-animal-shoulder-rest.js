@@ -138,6 +138,8 @@ assert(bridgeSource.includes('setShoulderRestEnabled?.(isShoulderPet)'), 'spline
 assert(bridgeSource.includes("renderer.composeFrame(kind, 'idle'") && bridgeSource.includes("renderer.composeFrame(kind, 'run1'"),
   'runtime frame hybrid keeps genotype-composited idle/run1 sources');
 assert(bridgeSource.includes('Number.isFinite(authoredSplit)'), '0% and 100% seam positions remain valid');
+assert(bridgeSource.includes('Number(window.AnimalShoulderRest.version) < 4') && bridgeSource.includes('20260917falloff4'),
+  'game bootstrap requires the v4 shoulder runtime so curve falloff cannot be hidden by an older cached v3 module');
 assert(correctionSource.includes('HobunjiGrehlrHeadRigCorrection'), 'Grehlr correction remains a late debug-visible layer');
 
 console.log('animal-shoulder-rest: all tests passed');
