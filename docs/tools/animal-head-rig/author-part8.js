@@ -118,8 +118,13 @@ applyRecord=function applyRecordWithShoulderSpeciesDefaults(record,index=-1){
   const id=String(record?.id||$('animalId')?.value||'').toLowerCase();
   if(id==='grehlr'&&window.HobunjiGrehlrHeadRigCorrection?.authored){
     applyRigToPaint(window.HobunjiGrehlrHeadRigCorrection.authored); // The uploaded Grehlr rig is authoritative over older bestiary snapshots.
-  }else if(shoulderCurlSpecies.has(id)&&!record?.headRig?.shoulderRest){
-    applyShoulderRestConfig(cloneGrehlrShoulderDefaults()); // Gar/Dabinggi/Voorg/Uum temporarily inherit only Grehlr's shoulder settings.
+  }else if(shoulderCurlSpecies.has(id)){
+    if(!record?.headRig){
+      const committed=window.CreatureGeneticsRender?.headRigForKind?.(id)||window.HobunjiShoulderSplineProfiles?.supportRigFor?.(id)||null;
+      if(committed)applyRigToPaint(committed); // Preserve Gar/Dabinggi head paint and give Voorg/Uum their body-only spline support rig.
+    }else if(!record.headRig.shoulderRest){
+      applyShoulderRestConfig(cloneGrehlrShoulderDefaults()); // Existing record head paint stays intact; only shoulder settings are inherited.
+    }
   }
   updateSplineSpeciesAvailability();
   return result;
