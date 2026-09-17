@@ -12,7 +12,7 @@
   // builder before any authored rest-rig creature is constructed.
   if (!window.AnimalShoulderRest) {
     if (document.readyState === 'loading') {
-      document.write('<script src="js/animal-shoulder-rest.js?v=20260917rest1"></' + 'script>');
+      document.write('<script data-animal-shoulder-rest="1" src="js/animal-shoulder-rest.js?v=20260917rest1"></' + 'script>');
     } else if (!document.querySelector('script[data-animal-shoulder-rest]')) {
       const restScript = document.createElement('script'); // Late-loader fallback for standalone/debug contexts that inject this bridge after parsing.
       restScript.src = 'js/animal-shoulder-rest.js?v=20260917rest1';
