@@ -84,7 +84,7 @@
     const bend = finite(angleDeg, 0); // Positive is the existing animal-rig "down" convention; negative is "up".
     const side = finite(sourceTopV, pivotTopV) - finite(pivotTopV, 0.5); // Positive is below the pivot in top-left sprite coordinates.
     if (Math.abs(bend) <= RESPONSE_EPSILON || Math.abs(side) <= RESPONSE_EPSILON) return 'neutral';
-    return bend * side > 0 ? 'compress' : 'stretch'; // Down bends compress below; up bends compress above for the current side-view rigs.
+    return bend * side > 0 ? 'stretch' : 'compress'; // A down bend stretches below/compresses above; an up bend reverses those sides.
   }
 
   function materialWeightForBend(baseInfluence, compressibilityWeight, stretchabilityWeight, kind) {
