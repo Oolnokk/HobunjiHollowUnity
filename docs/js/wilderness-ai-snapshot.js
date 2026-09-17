@@ -13,17 +13,18 @@
   const WILDERNESS_LAB_ZONE_ID = 'map_wilderness_lab'; // Restricts the handoff harness to the small disposable chunk-streaming test zone.
   const HANDOFF_POLL_MS = 100; // Used only while a handoff test is armed so chunk-entry detection stays cheap and off the per-frame path.
   const HANDOFF_SAMPLE_OFFSETS_MS = Object.freeze([0, 250, 1000, 2000]); // Used to catch immediate and delayed simulation/render divergence after publication.
+  const portraitTextureAlphaStatsCache = new WeakMap(); // Reuses static portrait-canvas alpha scans across the repeated handoff samples instead of rereading pixels every time.
   let handoffTest = null; // Stores the single isolated abstract->live Porakaneki experiment currently armed in the Wilderness Chunk Lab.
   let handoffPollTimer = null; // Owns the temporary interval that watches player chunk transitions during an armed handoff experiment.
   let handoffSequence = 0; // Gives each experiment a readable stable id inside copyable diagnostics.
 
   const SNAPSHOT_GUIDE = `HOBUNJI WILDERNESS AI SNAPSHOT -- interpretation guide for AI review
-One frozen instant of all Porakaneki camp residents world-wide plus currently instantiated den- and nest-spawned wildlife. Porakaneki camps keep abstract off-radius agents, so their section spans all generated wilderness zones. WILDLIFE is different: it reads live hostileObjects entries carrying a denKey or nestTreeKey, and those packs are normally instantiated only for the active wilderness zone. Therefore an empty WILDLIFE section does NOT mean every den or nest world-wide is empty.
+One frozen instant of all Porakaneki camp residents world-wide plus currently instantiated den- and nest-spawned wildlife. Porakaneki camps keep abstract off-radius agents, so their section spans all generated wilderness zones. WILDLIFE is different: it reads live hostileObjects entries carrying a denKey or nestTreeKey, and those packs are normally instantiated only for the active zone. Therefore an empty WILDLIFE section does NOT mean every den or nest world-wide is empty.
 PORAKANEKI lines: "camp=<zoneId>/<campId> kind=<small|chief> ... sleeping=<n>/<residents>" is one camp; each indented "res#<index>" line is one generated resident. act=<activity> is sleep|hunt|wander|socialize|camp|investigate. pos=(col,row) is the planner position. dist is tile distance to the player when in the active zone. lod<=N is the current materialization threshold: normally the enter radius, or the wider release radius while already live. full=1 means that distance gate currently requests full simulation. mat=1 means a real humanoid entity exists; vis=1 means its mesh is visible; reg=1 means that exact entity is still registered in hostileObjects. state is the shared hostile-loop state. planner=1 means neutral Porakaneki target planning owns its destination while the shared hostile loop owns locomotion/rendering. sim=(x,y) is the live entity position, render=(x,y) is the avatar root position, and rd is their tile-space render delta; a large/stuck rd identifies a simulation/render handoff failure directly.
 WILDLIFE header: activeArea=<area> is the player's current area, instantiatedWildlife=<n> counts live runtime creatures carrying a denKey or nestTreeKey, denCreatures/nestCreatures split those sources, and scope=active-runtime is a reminder that off-zone populations are not represented here. Creature lines report source/species/state/mode/tile/home; mode is whichever per-species schedule-AI field is currently set (_cfDrenkirra.mode for cloud-forest drenkirra, _grehlrForage.mode for grehlr, otherwise falls back to state).`;
 
   const HANDOFF_GUIDE = `HOBUNJI PORAKANEKI CHUNK HANDOFF TRACE -- interpretation guide
-This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only abstract Porakaneki position/chunk data in a chunk the player is not standing in. No humanoid entity exists yet. PLAYER_CHUNK_CHANGED records the real WildernessChunks center as the player walks. TARGET_CHUNK_ENTERED is the handoff trigger. Materialization then uses BanditCombat.makeEntity with speciesWeights forced to Porakaneki, records the raw builder result, neutralizes the entity, and only then publishes it into hostileObjects. POST_PUBLISH_SAMPLE lines compare simulation position to the avatar root at 0/250/1000/2000 ms. renderDelta is measured in tile space; a large or growing value means the live entity and its rendered avatar diverged during the handoff. reputation reports the live Porakaneki faction Favor, attackOnSight state, player-attributed production Porakaneki kill count, and the reputation runtime's lastReason so intended hostility can be distinguished from a handoff bug.`;
+This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only abstract Porakaneki position/chunk data in a chunk the player is not standing in. No humanoid entity exists yet. PLAYER_CHUNK_CHANGED records the real WildernessChunks center as the player walks. TARGET_CHUNK_ENTERED is the handoff trigger. Materialization then uses BanditCombat.makeEntity with speciesWeights forced to Porakaneki, records the raw builder result, neutralizes the entity, and only then publishes it into hostileObjects. POST_PUBLISH_SAMPLE lines compare simulation position to the avatar root at 0/250/1000/2000 ms. renderDelta is measured in tile space; a large or growing value means the live entity and its rendered avatar diverged during the handoff. reputation reports the live Porakaneki faction Favor, attackOnSight state, player-attributed production Porakaneki kill count, and the reputation runtime's lastReason so intended hostility can be distinguished from a handoff bug. avatarInternals drills into the same front/back portrait pivots and assembled textures that a working Testing Arena Porakaneki uses, including child meshes, transforms, material/texture state, and sampled canvas alpha coverage.`;
 
   function activeArea() {
     return window.GridTileAccessors?.getCurrentArea?.() || '-';
@@ -40,6 +41,196 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       attackOnSight: debug?.attackOnSight ?? null,
       kills: debug?.kills ?? null,
       lastReason: debug?.lastReason ?? null,
+    };
+  }
+
+  function roundDiagnosticNumber(value, digits = 4) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Number(number.toFixed(digits)) : null;
+  }
+
+  function vectorDiagnostic(vector, digits = 4) {
+    if (!vector) return null;
+    const out = { x: roundDiagnosticNumber(vector.x, digits), y: roundDiagnosticNumber(vector.y, digits) };
+    if (Number.isFinite(Number(vector.z))) out.z = roundDiagnosticNumber(vector.z, digits);
+    return out;
+  }
+
+  function objectTransformDiagnostic(object) {
+    if (!object) return null;
+    const rotation = object.rotation ? {
+      xDeg: roundDiagnosticNumber(Number(object.rotation.x) * 180 / Math.PI, 2),
+      yDeg: roundDiagnosticNumber(Number(object.rotation.y) * 180 / Math.PI, 2),
+      zDeg: roundDiagnosticNumber(Number(object.rotation.z) * 180 / Math.PI, 2),
+      order: object.rotation.order || null,
+    } : null;
+    let worldPosition = null;
+    let worldScale = null;
+    try {
+      object.updateWorldMatrix?.(true, false);
+      if (typeof THREE !== 'undefined' && object.getWorldPosition) {
+        const position = new THREE.Vector3();
+        const scale = new THREE.Vector3();
+        object.getWorldPosition(position);
+        object.getWorldScale?.(scale);
+        worldPosition = vectorDiagnostic(position);
+        worldScale = vectorDiagnostic(scale);
+      }
+    } catch (_) { /* Diagnostics must never disrupt the handoff test. */ }
+    return {
+      localPosition: vectorDiagnostic(object.position),
+      localRotation: rotation,
+      localScale: vectorDiagnostic(object.scale),
+      worldPosition,
+      worldScale,
+    };
+  }
+
+  function textureAlphaDiagnostic(texture) {
+    if (!texture) return null;
+    if (portraitTextureAlphaStatsCache.has(texture)) return portraitTextureAlphaStatsCache.get(texture);
+    const image = texture.image || texture.source?.data || null;
+    const width = Number(image?.width ?? image?.naturalWidth ?? image?.videoWidth);
+    const height = Number(image?.height ?? image?.naturalHeight ?? image?.videoHeight);
+    const base = {
+      name: texture.name || null,
+      imageType: image?.constructor?.name || null,
+      width: Number.isFinite(width) ? width : null,
+      height: Number.isFinite(height) ? height : null,
+      repeat: vectorDiagnostic(texture.repeat, 3),
+      flipY: texture.flipY ?? null,
+      readback: false,
+    };
+    let result = base;
+    try {
+      const context = image?.getContext?.('2d', { willReadFrequently: true }) || image?.getContext?.('2d');
+      if (context && width > 0 && height > 0) {
+        const rgba = context.getImageData(0, 0, width, height).data;
+        const step = Math.max(1, Math.floor(Math.max(width, height) / 64));
+        let samples = 0, nonzero = 0, opaque = 0, maxAlpha = 0;
+        let minX = width, minY = height, maxX = -1, maxY = -1;
+        for (let y = 0; y < height; y += step) {
+          for (let x = 0; x < width; x += step) {
+            const alpha = rgba[(y * width + x) * 4 + 3];
+            samples += 1;
+            maxAlpha = Math.max(maxAlpha, alpha);
+            if (alpha > 0) {
+              nonzero += 1;
+              if (alpha === 255) opaque += 1;
+              minX = Math.min(minX, x); minY = Math.min(minY, y);
+              maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+            }
+          }
+        }
+        result = {
+          ...base,
+          readback: true,
+          sampleStep: step,
+          samples,
+          nonzeroAlphaSamples: nonzero,
+          opaqueAlphaSamples: opaque,
+          nonzeroAlphaFraction: samples ? roundDiagnosticNumber(nonzero / samples, 4) : null,
+          maxAlpha,
+          approximateOpaqueBounds: nonzero ? { minX, minY, maxX, maxY } : null,
+        };
+      }
+    } catch (error) {
+      result = { ...base, readbackError: error?.message || String(error) };
+    }
+    portraitTextureAlphaStatsCache.set(texture, result);
+    return result;
+  }
+
+  function materialDiagnostic(material) {
+    const materials = (Array.isArray(material) ? material : [material]).filter(Boolean);
+    return materials.map(entry => ({
+      name: entry.name || null,
+      type: entry.type || entry.constructor?.name || null,
+      transparent: entry.transparent ?? null,
+      opacity: roundDiagnosticNumber(entry.opacity, 4),
+      alphaTest: roundDiagnosticNumber(entry.alphaTest, 4),
+      depthWrite: entry.depthWrite ?? null,
+      depthTest: entry.depthTest ?? null,
+      side: entry.side ?? null,
+      map: textureAlphaDiagnostic(entry.map),
+    }));
+  }
+
+  function objectDiagnostic(object) {
+    if (!object) return null;
+    return {
+      name: object.name || null,
+      type: object.type || object.constructor?.name || null,
+      visible: object.visible !== false,
+      parent: object.parent?.name || object.parent?.type || null,
+      renderOrder: Number.isFinite(Number(object.renderOrder)) ? Number(object.renderOrder) : null,
+      frustumCulled: object.frustumCulled ?? null,
+      transform: objectTransformDiagnostic(object),
+    };
+  }
+
+  function firstMeshUnder(root) {
+    if (!root) return null;
+    if (root.isMesh) return root;
+    let found = null;
+    root.traverse?.(object => { if (!found && object?.isMesh) found = object; });
+    return found;
+  }
+
+  function portraitPlaneDiagnostic(group, pivotName) {
+    const pivot = group?.getObjectByName?.(pivotName) || null;
+    const mesh = firstMeshUnder(pivot);
+    return {
+      pivot: objectDiagnostic(pivot),
+      childCount: pivot?.children?.length ?? null,
+      mesh: mesh ? {
+        ...objectDiagnostic(mesh),
+        geometry: {
+          type: mesh.geometry?.type || mesh.geometry?.constructor?.name || null,
+          positionCount: mesh.geometry?.attributes?.position?.count ?? null,
+          uvCount: mesh.geometry?.attributes?.uv?.count ?? null,
+        },
+        materials: materialDiagnostic(mesh.material),
+      } : null,
+    };
+  }
+
+  function avatarInternalsSnapshot(entity) {
+    const avatarRef = entity?.avatarRef;
+    const group = avatarRef?.group || null;
+    let descendantCount = 0;
+    const descendants = [];
+    group?.traverse?.(object => {
+      descendantCount += 1;
+      if (object === group || descendants.length >= 32) return;
+      descendants.push({
+        name: object.name || null,
+        type: object.type || object.constructor?.name || null,
+        visible: object.visible !== false,
+        parent: object.parent?.name || object.parent?.type || null,
+      });
+    });
+    const roster = entity?.rosterRecord || null;
+    return {
+      roster: roster ? {
+        name: roster.name || null,
+        appearance: roster.appearance || null,
+        equippedCosmetics: Array.isArray(roster.equippedCosmetics) ? [...roster.equippedCosmetics] : [],
+        appliedDyes: roster.appliedDyes ? { ...roster.appliedDyes } : {},
+      } : null,
+      model: {
+        width: roundDiagnosticNumber(avatarRef?.modelWidth, 4),
+        height: roundDiagnosticNumber(avatarRef?.modelHeight, 4),
+        handAttachX: roundDiagnosticNumber(avatarRef?.handAttachX, 4),
+        handAttachY: roundDiagnosticNumber(avatarRef?.handAttachY, 4),
+      },
+      root: objectDiagnostic(group),
+      front: portraitPlaneDiagnostic(group, 'bandit_front_plane'),
+      back: portraitPlaneDiagnostic(group, 'bandit_back_plane'),
+      legsPivot: objectDiagnostic(group?.getObjectByName?.('bandit_legs_pivot') || null),
+      descendantCount,
+      descendantsTruncated: descendantCount - 1 > descendants.length,
+      descendants,
     };
   }
 
@@ -219,6 +410,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
       renderDelta,
       aggroRangePx: Number(entity.def?.aggroRangePx),
       moveSpeed: Number(entity.def?.moveSpeed),
+      avatarInternals: avatarInternalsSnapshot(entity),
     };
   }
 
