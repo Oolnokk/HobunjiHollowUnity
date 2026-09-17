@@ -114,6 +114,9 @@
     const authoredAspect = finite(restLike?.separatorAspect, 0);
     const aspect = authoredAspect > 0 ? authoredAspect : (map?.width && map?.height ? map.width / map.height : undefined);
     const owned = shoulderDefaultInfluence(u, topV, restLike, aspect);
+    // The frame separator is authoritative. Explicit shoulder paint can be
+    // preserved behind the separator for later editing, but it cannot deform
+    // pixels while those pixels belong to the foreground/left half.
     if (owned <= 0) return 0;
     if (!map) return owned;
     const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
@@ -123,10 +126,9 @@
     const tx = fx - x0, ty = fy - y0;
     const at = (x, y) => {
       const raw = map.values[y * map.width + x];
-      const cornerU = map.width <= 1 ? 0 : x / (map.width - 1);
-      const cornerV = map.height <= 1 ? 0 : y / (map.height - 1);
-      const cornerOwned = shoulderDefaultInfluence(cornerU, cornerV, restLike, aspect);
-      if (cornerOwned <= 0) return owned;
+      // UNSET means "inherit shoulder Influence here", which is the hard
+      // sample-point default on the owned/right side. This prevents a phantom
+      // seam fade from neighboring unset cells. Authored values remain exact.
       return raw === UNSET_WEIGHT ? owned : clamp(raw, 0, 255) / 255;
     };
     const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
@@ -136,6 +138,7 @@
 
   function sampleShoulderMaterial(map, influenceMap, u, topV, restLike, fallbackInfluence) {
     const fallback = clamp(finite(fallbackInfluence, shoulderDefaultInfluence(u, topV, restLike)), 0, 1);
+    if (fallback <= 0) return 0;
     if (!map) return fallback;
     const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
     const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
@@ -144,12 +147,10 @@
     const tx = fx - x0, ty = fy - y0;
     const at = (x, y) => {
       const raw = map.values[y * map.width + x];
-      const cornerU = map.width <= 1 ? 0 : x / (map.width - 1);
-      const cornerV = map.height <= 1 ? 0 : y / (map.height - 1);
-      const cornerOwned = shoulderDefaultInfluence(cornerU, cornerV, restLike);
-      if (cornerOwned <= 0) return fallback;
-      const base = sampleShoulderInfluence(influenceMap, cornerU, cornerV, restLike);
-      return raw === UNSET_WEIGHT ? base : Math.min(base, clamp(raw, 0, 255) / 255);
+      // Material UNSET inherits the already-sampled shoulder Influence at this
+      // pixel. Explicit material paint remains explicit, then is capped by
+      // Influence so Compressibility/Stretchability can only reduce it.
+      return raw === UNSET_WEIGHT ? fallback : Math.min(fallback, clamp(raw, 0, 255) / 255);
     };
     const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
     const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
