@@ -48,6 +48,12 @@ Render-order sentinels such as procedural hands at `-100000` and social dancing 
 
 `QuickAttackBonusIndicator` is also a deliberate temporary exception. Its historical RAF runs before `gameLoop`, while the melee and ranged HUD reticles historically run after it. It keeps that isolated RAF until an explicit scheduler phase contract can preserve both sides of that ordering.
 
+## Ownership audit
+
+Every direct `requestAnimationFrame(` call site reachable from `docs/index.html` (the shipped runtime dependency graph — game.js plus every `docs/js/*.js` module it loads, statically or dynamically, transitively) must have an explicit ownership entry in `scripts/runtime-frame-ownership-exceptions.json`. `scripts/test-runtime-frame-ownership.js` crawls that graph the same way a browser would, finds every direct call site, and fails if one has no manifest entry, if a manifest entry is stale (its file no longer exists, is no longer reachable, or no longer contains the call it describes), or if a classification isn't one of the documented values (`scheduler`, `game-loop`, `render-hook`, `timer-event`, `one-shot`, `bounded-animation`, `isolated-context`, `temporary-order-exception`).
+
+This does not ban `requestAnimationFrame` — it bans an *unclassified* one. A future change touching one file should never require reconstructing this whole document's history to know whether its RAF is intentional; the manifest entry says so directly. Editors and previews under `docs/tools/` load their own `panel-ui.js`/scene setup and are never reachable from `docs/index.html`, so they are outside the audit entirely and need no manifest entries.
+
 ## Diagnostics
 
 `getDebug()` allocates its report only when requested. Per-subscriber duration measurement is disabled by default because detailed timing itself costs frame time. It can be enabled temporarily with `setProfilingEnabled(true)`.

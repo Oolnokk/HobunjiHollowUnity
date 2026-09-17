@@ -1,0 +1,38 @@
+name: Runtime frame ownership audit
+
+on:
+  pull_request:
+    paths:
+      - 'docs/index.html'
+      - 'docs/game.js'
+      - 'docs/js/**'
+      - 'scripts/test-runtime-frame-ownership.js'
+      - 'scripts/runtime-frame-ownership-exceptions.json'
+      - '.github/workflows/runtime-frame-ownership-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/index.html'
+      - 'docs/game.js'
+      - 'docs/js/**'
+      - 'scripts/test-runtime-frame-ownership.js'
+      - 'scripts/runtime-frame-ownership-exceptions.json'
+      - '.github/workflows/runtime-frame-ownership-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check scripts/test-runtime-frame-ownership.js
+          node -e "JSON.parse(require('fs').readFileSync('scripts/runtime-frame-ownership-exceptions.json', 'utf8'))"
+      - name: Runtime frame ownership audit
+        run: node scripts/test-runtime-frame-ownership.js
