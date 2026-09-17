@@ -146,7 +146,7 @@
       return { changed: false, compressed: 0, stretched: 0, yawStretched: 0, neutral: 0 };
     }
     const weights = meshState.skinWeight.array;
-    const yawActive = Math.abs(finite(yawDeg, 0)) > RESPONSE_EPSILON;
+    const yawActive = Math.abs(finite(yawDeg, 0)) > RESPONSE_EPSILON; // Both positive and negative yaw use the same Stretchability map.
     let compressed = 0, stretched = 0, yawStretched = 0, neutral = 0;
     for (let i = 0; i < meshState.baseHeadWeights.length; i++) {
       const base = meshState.baseHeadWeights[i];
