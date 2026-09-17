@@ -702,15 +702,6 @@
     "line": 358
   },
   {
-    "file": "docs/js/social-action-body-plane-runtime.js",
-    "owner": "SocialActionBodyPlaneRuntime",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Permanent self-recursive loop (also started once at line 199) that discovers body planes and pushes dance-driven rotation/translation directly into the PlayerBodyTransformComposer channel every frame; the composer write happens in the RAF callback itself, not inside an onBeforeRender hook, so it is a genuine standalone subscription.",
-    "migrationStage": "candidate",
-    "line": 180
-  },
-  {
     "file": "docs/js/social-action-camera-runtime.js",
     "owner": "SocialActionCameraRuntime",
     "classification": "scheduler",
