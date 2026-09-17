@@ -33,7 +33,7 @@
 
   function waterSurfaceY(tile) {
     const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT; // Used by river surfaces and waterfall connector curtains so their shared edge lands at the exact same height.
-    const deep = tile?.type !== deps.TileType.STREAM;
+    const deep = tile?.type !== deps.TileType.STREAM; // Used below to mirror the merged water renderer's river/waterfall versus stream surface offset.
     return deps.NORMAL_TOP + tierY - (deep ? 0.10 : 0.05);
   }
 
@@ -116,7 +116,7 @@
       const y10 = cornerY(c + 1, r, ground);
       const y01 = cornerY(c, r + 1, ground);
       const y11 = cornerY(c + 1, r + 1, ground);
-      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1,y11,r + 1);
+      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
       uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
       idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
     }
