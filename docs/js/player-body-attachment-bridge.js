@@ -29,8 +29,8 @@
   if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 3) {
     if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917rough3','grehlr-head-rig-correction')) lateLoad('js/grehlr-head-rig-correction.js?v=20260917rough3','grehlr-head-rig-correction');
   }
-  if (!window.AnimalShoulderRest || Number(window.AnimalShoulderRest.version) < 3) {
-    if (!parserLoad('js/animal-shoulder-rest.js?v=20260917curl3','animal-shoulder-rest')) lateLoad('js/animal-shoulder-rest.js?v=20260917curl3','animal-shoulder-rest');
+  if (!window.AnimalShoulderRest || Number(window.AnimalShoulderRest.version) < 4) {
+    if (!parserLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest')) lateLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest');
   }
 
   const composer = window.PlayerBodyTransformComposer;
