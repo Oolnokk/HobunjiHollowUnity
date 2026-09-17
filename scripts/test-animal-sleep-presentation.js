@@ -10,6 +10,8 @@ const wildernessSource = fs.readFileSync('docs/js/wildlife-cloud-forest-behavior
 const nestSource = fs.readFileSync('docs/js/den-nest-system.js', 'utf8');
 const incubatorSource = fs.readFileSync('docs/js/barn-incubator.js', 'utf8');
 const welfareSource = fs.readFileSync('docs/js/outdoor-livestock-welfare.js', 'utf8');
+const farmPanelSource = fs.readFileSync('docs/js/farm-panel-core.js', 'utf8');
+const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8');
 
 assert.match(troughSource, /barn_sleep_\$\{rec\.kind\}_\$\{rec\.id\}/, 'barn sleepers use the shared static-sleeper naming contract');
 assert.match(nestSource, /nest_sleep_\$\{record\.id\}/, 'wild nest babies use the shared static-sleeper naming contract');
@@ -19,6 +21,8 @@ assert.match(welfareSource, /_outdoorSleepBlend/, 'outdoor livestock publish the
 assert.match(source, /phase: 'pre-render'/, 'sleep presentation prepares through the shared pre-render scheduler checkpoint');
 assert.match(source, /phase: 'post-game'/, 'sleep presentation restores temporary transforms after the frame driver completes');
 assert.doesNotMatch(source, /WebGLRenderer\?\.prototype|__animalSleepPresentationRenderPatched/, 'sleep presentation never patches the global Three.js renderer');
+assert.match(farmPanelSource, /beginExternalRenderScope\?\.\('farm-house-layout'\)/, 'Farm house-layout live-scene renderer explicitly opts into sleep presentation');
+assert.match(pixelProbeSource, /beginExternalRenderScope\?\.\('pixel-probe'\)/, 'Pixel Probe live-scene rerenders explicitly opt into sleep presentation');
 
 class Vec3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -305,6 +309,17 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'outdoor'), 'outdoor sleeping art requests run2');
   assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'wild'), 'wilderness sleeping art requests run2');
 
+  const beforeExternalBounds = boxSetFromObjectCalls;
+  assert.equal(windowStub.AnimalSleepPresentation.beginExternalRenderScope('test-secondary'), true, 'secondary live-scene renderer can explicitly prepare sleep presentation');
+  const afterExternalPrepareBounds = boxSetFromObjectCalls;
+  assert.equal(afterExternalPrepareBounds - beforeExternalBounds, 4, 'secondary scope prepares only the static barn and still-sleeping wilderness animal in this fixture');
+  renderer.render();
+  renderer.render();
+  assert.equal(boxSetFromObjectCalls, afterExternalPrepareBounds, 'multiple renders inside one explicit secondary scope do not repeat bounds scans');
+  assert.equal(windowStub.AnimalSleepPresentation.endExternalRenderScope(), true, 'secondary live-scene renderer explicitly restores its temporary transforms');
+  assert.equal(barnGroup.scale.y, 0.5, 'secondary render scope restores barn authored scale afterward');
+  assert.equal(wildGroup.scale.y, 0.5, 'secondary render scope restores wilderness authored scale afterward');
+
   const debug = windowStub.AnimalSleepPresentation.getDebug();
   assert.equal(debug.sleepScaleY, 0.75, 'mobile diagnostics expose the central 75% sleep scale');
   assert.equal(debug.preferredFrame, 'run2-if-present-else-idle', 'mobile diagnostics expose run2 sleep-frame preference');
@@ -315,8 +330,11 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   assert.equal(debug.lastPreparedFrameId, 3, 'diagnostics retain the last prepared scheduler frame id');
   assert.equal(debug.lastRestoredFrameId, 3, 'diagnostics retain the last restored scheduler frame id');
   assert.equal(debug.lastPreparedBoundsScans, 4, 'waking farm animal drops its scans while the static barn and wilderness sleepers still need generic grounding');
-  assert.equal(debug.boundsScans, 16, 'diagnostics accumulate grounding scans across two fully sleeping frames plus the farm-wake frame');
-  assert.equal(debug.activeTemporaryTransforms, 0, 'no sleep-only transform survives the post-game restoration');
+  assert.equal(debug.boundsScans, 20, 'diagnostics include scheduler-owned and deliberate secondary-render grounding scans');
+  assert.equal(debug.externalRenderScopes, 1, 'diagnostics count deliberate secondary live-scene render scopes separately from scheduler frames');
+  assert.equal(debug.externalRenderDepth, 0, 'secondary render scope nesting is fully unwound after restoration');
+  assert.equal(debug.lastExternalContext, 'test-secondary', 'diagnostics identify the most recent secondary render consumer');
+  assert.equal(debug.activeTemporaryTransforms, 0, 'no sleep-only transform survives scheduler or secondary-scope restoration');
   console.log('animal sleep presentation regression tests passed');
 })().catch(error => {
   console.error(error);
