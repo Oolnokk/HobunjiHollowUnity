@@ -4,16 +4,16 @@
   const progression = window.StableAnimalProgression; // Existing progression API supplies active animals and rapport-perk contribution math.
   if (!progression || window.StableAnimalTownFamiliarity?.installed) return;
 
-  const MAX_HEARTS = 10; // Whole-town familiarity must reach ten Favor hearts before townspeople use the animal's name.
-  const FALLBACK_FAVOR_POINTS_PER_HEART = 40; // Used only before NpcFavorBalance is available; mirrors the canonical current Favor scale.
+  const MAX_PET_RAPPORT_HEARTS = 10; // Townspeople may use the animal's player-given name once Pet Rapport reaches ten hearts.
+  const FALLBACK_POINTS_PER_HEART = 40; // Used only before NpcFavorBalance is available; Pet Rapport intentionally shares that heart scale.
   const DIRECT_GREETING_RANK = 3; // Mirrors the existing direct animal greeting/recognition training threshold.
   const PET_GREETING_PREFIX = 'pet_greeting:'; // Existing rapport reason prefix identifies Rapport created directly by an animal greeting.
   const ROLES = Object.freeze(['companion', 'mount', 'shoulderPet']); // Shared active-role order used by attribution and dialogue targeting.
   const TRACE_LIMIT = 24; // Small rolling attribution history supports mobile copy/paste diagnostics.
-  const POINT_PRECISION = 10000; // Favor XP keeps fractional perk attribution without floating-point tails.
+  const POINT_PRECISION = 10000; // Pet Rapport keeps fractional perk attribution without floating-point tails.
 
   let farmDeps = null; // Captured FarmAnimals dependencies provide the canonical stable array and saveStable().
-  const awardTrace = []; // Recent familiarity gains are exposed through getDebug()/copyDebug().
+  const awardTrace = []; // Recent Pet Rapport gains are exposed through getDebug()/copyDebug().
 
   function number(value, fallback = 0) {
     const parsed = Number(value); // Parsed numeric value is reused by all clamping/attribution helpers.
@@ -24,29 +24,29 @@
     return Math.round(number(value, 0) * POINT_PRECISION) / POINT_PRECISION;
   }
 
-  function favorPointsPerHeart() {
-    const current = number(window.NpcFavorBalance?.favorPointsPerHeart, FALLBACK_FAVOR_POINTS_PER_HEART); // Live relationship scale keeps pet familiarity aligned if Favor balancing changes later.
-    return current > 0 ? current : FALLBACK_FAVOR_POINTS_PER_HEART;
+  function pointsPerHeart() {
+    const current = number(window.NpcFavorBalance?.favorPointsPerHeart, FALLBACK_POINTS_PER_HEART); // Live relationship scale keeps Pet Rapport hearts aligned if balancing changes later.
+    return current > 0 ? current : FALLBACK_POINTS_PER_HEART;
   }
 
-  function heartsToFavorPoints(hearts) {
-    const converter = window.NpcFavorBalance?.heartsToFavorPoints; // Canonical Favor helper is preferred once the relationship balance module has loaded.
+  function heartsToPetRapport(hearts) {
+    const converter = window.NpcFavorBalance?.heartsToFavorPoints; // Canonical relationship helper is preferred so Pet Rapport uses the exact same heart spacing.
     const converted = typeof converter === 'function' ? number(converter(hearts), NaN) : NaN;
-    return Number.isFinite(converted) ? converted : number(hearts, 0) * favorPointsPerHeart();
+    return Number.isFinite(converted) ? converted : number(hearts, 0) * pointsPerHeart();
   }
 
-  function favorPointsToHearts(points) {
-    const converter = window.NpcFavorBalance?.favorPointsToHearts; // Canonical Favor helper is preferred so diagnostics use the exact NPC relationship scale.
+  function petRapportToHearts(points) {
+    const converter = window.NpcFavorBalance?.favorPointsToHearts; // Canonical relationship helper is preferred so the Stable UI matches Relationships exactly.
     const converted = typeof converter === 'function' ? number(converter(points), NaN) : NaN;
-    return Number.isFinite(converted) ? converted : number(points, 0) / favorPointsPerHeart();
+    return Number.isFinite(converted) ? converted : number(points, 0) / pointsPerHeart();
   }
 
-  function maxTownFavorPoints() {
-    return Math.max(0, heartsToFavorPoints(MAX_HEARTS));
+  function maxPetRapportPoints() {
+    return Math.max(0, heartsToPetRapport(MAX_PET_RAPPORT_HEARTS));
   }
 
-  function clampFavorPoints(value) {
-    return Math.max(0, Math.min(maxTownFavorPoints(), number(value, 0)));
+  function clampPetRapport(value) {
+    return Math.max(0, Math.min(maxPetRapportPoints(), number(value, 0)));
   }
 
   function stableEntries() {
@@ -56,17 +56,21 @@
 
   function normalizeEntry(entry) {
     if (!entry) return entry;
-    const favorPoints = roundPoint(clampFavorPoints(entry.townFavor)); // `townFavor` intentionally uses the same raw Favor-XP unit as NPC relationship state.
-    if (entry.townFavor !== favorPoints) entry.townFavor = favorPoints;
+    const canonical = number(entry.petRapport, NaN); // New saves store the relationship only as Pet Rapport.
+    const legacyTownFavor = number(entry.townFavor, NaN); // Earlier builds of this branch briefly used townFavor; migrate it without discarding test progress.
+    const source = Number.isFinite(canonical) ? canonical : (Number.isFinite(legacyTownFavor) ? legacyTownFavor : 0);
+    entry.petRapport = roundPoint(clampPetRapport(source));
+    if (Object.prototype.hasOwnProperty.call(entry, 'townFavor')) delete entry.townFavor;
     return entry;
   }
 
   function normalizeStable(save = false) {
-    let changed = false; // Indicates whether townFavor had to be initialized or repaired.
+    let changed = false; // Indicates whether Pet Rapport had to be initialized, migrated, or repaired.
     for (const entry of stableEntries()) {
-      const before = entry?.townFavor; // Previous value is compared to avoid needless stable saves.
+      const before = JSON.stringify({ petRapport: entry?.petRapport, townFavor: entry?.townFavor }); // Small before/after snapshot catches legacy-field deletion too.
       normalizeEntry(entry);
-      if (before !== entry?.townFavor) changed = true;
+      const after = JSON.stringify({ petRapport: entry?.petRapport, townFavor: entry?.townFavor });
+      if (before !== after) changed = true;
     }
     if (changed && save) farmDeps?.saveStable?.();
     return changed;
@@ -86,41 +90,41 @@
     return stableEntries().find(entry => String(entry?.id || '') === stableId) || activeEntryById(stableId);
   }
 
-  function getTownFavor(entryOrId) {
-    const entry = typeof entryOrId === 'string' ? findEntry(entryOrId) : entryOrId; // Public helper returns raw Favor XP, matching NPC `favor` storage semantics.
-    return entry ? normalizeEntry(entry).townFavor : 0;
+  function getPetRapport(entryOrId) {
+    const entry = typeof entryOrId === 'string' ? findEntry(entryOrId) : entryOrId; // Public helper returns raw Pet Rapport points.
+    return entry ? normalizeEntry(entry).petRapport : 0;
   }
 
-  function getTownHearts(entryOrId) {
-    return favorPointsToHearts(getTownFavor(entryOrId));
+  function getPetHearts(entryOrId) {
+    return petRapportToHearts(getPetRapport(entryOrId));
   }
 
   function isKnownByTown(entryOrId) {
-    return getTownHearts(entryOrId) >= MAX_HEARTS;
+    return getPetHearts(entryOrId) >= MAX_PET_RAPPORT_HEARTS;
   }
 
-  function awardTownFavor(entryOrId, amount, reason = 'presence', details = {}) {
-    const entry = typeof entryOrId === 'string' ? findEntry(entryOrId) : entryOrId; // Familiarity Favor XP is stored directly on the canonical stable entry.
-    const requested = Math.max(0, number(amount, 0)); // One attributable Rapport grants one Favor XP; negative/invalid Rapport never lowers town familiarity.
+  function awardPetRapport(entryOrId, amount, reason = 'presence', details = {}) {
+    const entry = typeof entryOrId === 'string' ? findEntry(entryOrId) : entryOrId; // Pet Rapport is stored directly on the canonical stable entry.
+    const requested = Math.max(0, number(amount, 0)); // One attributable NPC Rapport grants one Pet Rapport; negative/invalid Rapport never lowers it.
     if (!entry || requested <= 0) return 0;
-    const before = getTownFavor(entry); // Previous Favor XP determines the actual clamped gain.
-    const after = roundPoint(clampFavorPoints(before + requested)); // Favor XP caps at the point equivalent of ten hearts.
+    const before = getPetRapport(entry); // Previous Pet Rapport determines the actual clamped gain.
+    const after = roundPoint(clampPetRapport(before + requested)); // Pet Rapport caps at the point equivalent of ten hearts.
     const gained = roundPoint(after - before); // Actual gain is used by diagnostics and future treat/perk hooks.
     if (gained <= 0) return 0;
-    entry.townFavor = after;
+    entry.petRapport = after;
     farmDeps?.saveStable?.();
     const trace = {
       at: Date.now(),
       animalId: entry.id,
-      deltaFavor: gained,
-      townFavor: entry.townFavor,
-      townHearts: roundPoint(getTownHearts(entry)),
+      deltaRapport: gained,
+      petRapport: entry.petRapport,
+      petHearts: roundPoint(getPetHearts(entry)),
       reason,
       ...details,
     }; // Compact non-saved event record supports mobile debugging.
     awardTrace.push(trace);
     if (awardTrace.length > TRACE_LIMIT) awardTrace.splice(0, awardTrace.length - TRACE_LIMIT);
-    window.__farmLog?.(`[pet-town-favor] ${entry.id} +${gained} Favor from ${reason}; now ${entry.townFavor}/${maxTownFavorPoints()} Favor (${trace.townHearts}/${MAX_HEARTS} hearts).`, 'farm');
+    window.__farmLog?.(`[pet-rapport] ${entry.id} +${gained} Pet Rapport from ${reason}; now ${entry.petRapport}/${maxPetRapportPoints()} (${trace.petHearts}/${MAX_PET_RAPPORT_HEARTS} hearts).`, 'farm');
     return gained;
   }
 
@@ -132,19 +136,19 @@
   }
 
   function awardAttributedRapport(rawAmount, actualRapport, source) {
-    const base = number(rawAmount, NaN); // Unmultiplied Rapport request is the counterfactual baseline for attribution.
+    const base = number(rawAmount, NaN); // Unmultiplied NPC Rapport request is the counterfactual baseline for attribution.
     const actual = number(actualRapport, 0); // Existing NpcRapport.adjust return value is Rapport actually obtained after clamping.
     if (!Number.isFinite(base) || base <= 0 || actual <= 0) return [];
     const snapshot = multiplierSnapshot(); // Same current active-pet math used by StableAnimalProgression's Rapport wrapper.
     const intended = base * snapshot.multiplier; // Intended post-perk Rapport lets clipped gains scale proportionally.
-    const capScale = intended > 0 ? Math.max(0, Math.min(1, actual / intended)) : 0; // Only Rapport the NPC actually obtained may become Favor XP.
+    const capScale = intended > 0 ? Math.max(0, Math.min(1, actual / intended)) : 0; // Only NPC Rapport actually obtained may become Pet Rapport.
     const sourceText = String(source || ''); // Existing reason string may identify a direct animal greeting.
     const sourceId = sourceText.startsWith(PET_GREETING_PREFIX) ? sourceText.slice(PET_GREETING_PREFIX.length) : ''; // Direct greeting base Rapport belongs to that animal.
-    const claims = new Map(); // Stable id -> pre-cap Rapport attributable to that animal's presence.
+    const claims = new Map(); // Stable id -> pre-cap NPC Rapport attributable to that animal's presence.
 
     for (const detail of snapshot.contributors) {
       const animalId = String(detail?.id || ''); // Contributor stable id identifies whose rapport perk created the bonus.
-      const add = Math.max(0, number(detail?.add, 0)); // Additive multiplier share converts to `base * add` attributable Rapport/Favor XP.
+      const add = Math.max(0, number(detail?.add, 0)); // Additive multiplier share converts to `base * add` attributable NPC Rapport.
       if (animalId && add > 0) claims.set(animalId, (claims.get(animalId) || 0) + base * add);
     }
     if (sourceId) claims.set(sourceId, (claims.get(sourceId) || 0) + base);
@@ -152,7 +156,7 @@
     const awards = []; // Returned attribution list is test/debug data only; NpcRapport callers still receive their original return value.
     for (const [animalId, claim] of claims) {
       const attributed = claim * capScale; // Contributor's share is reduced proportionally when NPC Rapport was capped.
-      const gained = awardTownFavor(
+      const gained = awardPetRapport(
         animalId,
         attributed,
         sourceId === animalId ? 'pet-greeting-rapport' : 'rapport-perk-bonus',
@@ -161,8 +165,8 @@
           rawAmount: base,
           actualRapport: actual,
           capScale: roundPoint(capScale),
-        }
-      ); // One actual attributable Rapport becomes one whole-town Favor XP.
+        },
+      ); // One actual attributable NPC Rapport becomes one Pet Rapport.
       if (gained > 0) awards.push({ animalId, gained });
     }
     return awards;
@@ -179,7 +183,7 @@
       configurable: true,
       enumerable: true,
       value(npcId, amount, source) {
-        const result = originalAdjust(npcId, amount, source); // Original Rapport delta/return contract is preserved exactly.
+        const result = originalAdjust(npcId, amount, source); // Original NPC Rapport delta/return contract is preserved exactly.
         awardAttributedRapport(amount, result, source);
         return result;
       },
@@ -211,7 +215,7 @@
     const root = options?.faceTarget?.root; // Existing animal reactions expose their addressee through faceTarget.root.
     if (!root) return null;
     for (const role of ROLES) {
-      const entry = progression.activeEntryForRole?.(role); // Stable entry supplies saved name/species/familiarity.
+      const entry = progression.activeEntryForRole?.(role); // Stable entry supplies saved name/species/Pet Rapport.
       const actor = liveActor(role); // Live actor root must exactly match the current reaction target.
       if (entry && actor?.avatarRef?.group === root) return { role, entry, actor };
     }
@@ -227,10 +231,10 @@
   }
 
   function genericizeAnimalName(text, entry) {
-    const name = String(entry?.name || '').trim(); // Player-given name is suppressed until the pet has ten whole-town Favor hearts.
+    const name = String(entry?.name || '').trim(); // Player-given name is suppressed until the pet has ten Pet Rapport hearts.
     if (!name || isKnownByTown(entry)) return String(text || '');
     const species = speciesLabel(entry); // Species label remains usable in pre-recognition authored/fallback lines.
-    const matcher = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(name)})(?=$|[^A-Za-z0-9_])`, 'g'); // Token boundaries avoid replacing short names inside unrelated words.
+    const matcher = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(name)})(?=$|[^A-Za-z0-9_])`, 'gi'); // Case-insensitive token boundaries prevent name leaks without replacing short names inside unrelated words.
     return String(text || '').replace(matcher, (match, prefix) => `${prefix}${species}`);
   }
 
@@ -267,10 +271,10 @@
   function patchFarmAnimals(api) {
     if (!api || api.__stableAnimalTownFamiliarityFarmWrapped) return api;
     if (typeof api.init === 'function') {
-      const originalInit = api.init.bind(api); // Existing farm initialization loads the stable before familiarity normalization runs.
+      const originalInit = api.init.bind(api); // Existing farm initialization loads the stable before Pet Rapport normalization runs.
       api.init = function stableAnimalTownFamiliarityFarmInit(deps, ...rest) {
         farmDeps = deps || null;
-        const result = originalInit(deps, ...rest); // Canonical stable data must exist before old entries can default to zero Favor XP.
+        const result = originalInit(deps, ...rest); // Canonical stable data must exist before old entries can initialize/migrate Pet Rapport.
         normalizeStable(true);
         return result;
       };
@@ -279,7 +283,7 @@
       const originalAdd = api.addToStable.bind(api); // Existing acquisition path creates the canonical new stable entry first.
       api.addToStable = function stableAnimalTownFamiliarityAdd(...args) {
         const result = originalAdd(...args);
-        normalizeStable(true); // Newly obtained animals get an explicit saved townFavor=0 Favor XP.
+        normalizeStable(true); // Newly obtained animals get explicit saved petRapport=0.
         return result;
       };
     }
@@ -296,7 +300,7 @@
     }
     const descriptor = Object.getOwnPropertyDescriptor(window, name); // Existing future-global accessor chains from other modules are preserved.
     const oldGet = descriptor?.get; // Prior getter remains authoritative for resolving the assigned API.
-    const oldSet = descriptor?.set; // Prior setter receives the assignment before familiarity patches it.
+    const oldSet = descriptor?.set; // Prior setter receives the assignment before Pet Rapport patches it.
     if (oldSet) {
       Object.defineProperty(window, name, {
         configurable: true,
@@ -304,8 +308,9 @@
         get: oldGet,
         set(value) {
           oldSet.call(window, value);
-          const resolved = oldGet ? oldGet.call(window) : window[name]; // Fully resolved dependency includes earlier wrapper layers.
-          const replacement = patcher(resolved) || resolved; // Familiarity becomes the final wrapper layer.
+          const currentDescriptor = Object.getOwnPropertyDescriptor(window, name); // Prior setter may replace the accessor with a final data property.
+          const resolved = oldGet ? oldGet.call(window) : (currentDescriptor && 'value' in currentDescriptor ? currentDescriptor.value : value);
+          const replacement = patcher(resolved) || resolved; // Pet Rapport becomes the final wrapper layer.
           if (replacement && replacement !== resolved) {
             Object.defineProperty(window, name, { configurable: true, enumerable: true, writable: true, value: replacement });
           }
@@ -328,19 +333,19 @@
   function getDebug() {
     return {
       installed: true,
-      storageUnit: 'favor-points',
-      favorPointsPerHeart: favorPointsPerHeart(),
-      maxTownHearts: MAX_HEARTS,
-      maxTownFavor: maxTownFavorPoints(),
-      nameKnownAtHearts: MAX_HEARTS,
-      nameKnownAtFavor: maxTownFavorPoints(),
+      storageUnit: 'pet-rapport-points',
+      pointsPerHeart: pointsPerHeart(),
+      maxPetRapportHearts: MAX_PET_RAPPORT_HEARTS,
+      maxPetRapport: maxPetRapportPoints(),
+      nameKnownAtHearts: MAX_PET_RAPPORT_HEARTS,
+      nameKnownAtPetRapport: maxPetRapportPoints(),
       depsReady: !!farmDeps,
       animals: stableEntries().map(entry => ({
         id: entry?.id || null,
         name: entry?.name || null,
         kind: entry?.kind || null,
-        townFavor: getTownFavor(entry),
-        townHearts: roundPoint(getTownHearts(entry)),
+        petRapport: getPetRapport(entry),
+        petHearts: roundPoint(getPetHearts(entry)),
         knownByTown: isKnownByTown(entry),
       })),
       activeMultiplier: multiplierSnapshot(),
@@ -352,10 +357,10 @@
     const text = JSON.stringify(getDebug(), null, 2); // Clipboard snapshot supports the user's mobile diagnostics workflow without a console.
     try {
       await navigator.clipboard?.writeText?.(text);
-      farmDeps?.showToast?.('Pet familiarity debug copied.', true);
+      farmDeps?.showToast?.('Pet Rapport debug copied.', true);
       return true;
     } catch (_) {
-      window.prompt?.('Copy pet familiarity debug:', text);
+      window.prompt?.('Copy Pet Rapport debug:', text);
       return false;
     }
   }
@@ -375,14 +380,17 @@
     installed: true,
     install,
     normalizeEntry,
-    getTownFavor,
-    getTownHearts,
+    getPetRapport,
+    getPetHearts,
+    maxPetRapportPoints,
+    maxPetRapportHearts: MAX_PET_RAPPORT_HEARTS,
+    pointsPerHeart,
     isKnownByTown,
-    awardTownFavor,
+    awardPetRapport,
     awardAttributedRapport,
     genericizeAnimalName,
     getDebug,
     copyDebug,
-  }; // Public helpers intentionally support later town treats/perks without touching internals.
+  }; // Public helpers intentionally support later NPC treats/perks without touching internals.
   window.StableAnimalTownFamiliarity = api;
 })();
