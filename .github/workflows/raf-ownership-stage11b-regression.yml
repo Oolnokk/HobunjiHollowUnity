@@ -1,0 +1,32 @@
+name: RAF ownership Stage 11b regression (environment surface micro-plateau)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/environment-surface-micro-plateau.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-environment-surface-micro-plateau-scheduler.js'
+      - '.github/workflows/raf-ownership-stage11b-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/environment-surface-micro-plateau.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-environment-surface-micro-plateau-scheduler.js'
+      - '.github/workflows/raf-ownership-stage11b-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/environment-surface-micro-plateau.js
+      - name: Environment surface micro-plateau scheduler migration
+        run: node scripts/test-environment-surface-micro-plateau-scheduler.js

@@ -254,11 +254,11 @@
   {
     "file": "docs/js/environment-surface-micro-plateau.js",
     "owner": "EnvironmentSurfaceMicroPlateau",
-    "classification": "scheduler",
-    "function": "tick",
-    "reason": "Self-perpetuating RAF loop started once at module load (line 572) that runs for the life of the page, throttled to ~16ms, continuously rebuilding/maintaining the snow/slush micro-plateau surface mesh - a genuine permanent visual runtime.",
-    "migrationStage": "candidate",
-    "line": 511
+    "classification": "isolated-context",
+    "function": "fallbackTick",
+    "reason": "Migrated to RuntimeFrameScheduler: tick() (throttled to ~16ms, rebuilding/maintaining the snow/slush micro-plateau surface mesh) registers as 'environment-surface-micro-plateau-tick' with no ordering dependency on the default phase. This module is also loaded directly by the standalone Wilderness Generation Lab and docs/snow-runtime-test.html tool pages, neither of which load RuntimeFrameScheduler, so the original self-recursive RAF loop remains as a fallback for those isolated contexts only.",
+    "migrationStage": "migrated",
+    "line": 585
   },
   {
     "file": "docs/js/farm-menu-layout.js",
