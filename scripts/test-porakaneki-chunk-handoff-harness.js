@@ -21,6 +21,18 @@ assert(source.includes("entity.state = 'return'"),
   'fresh test Porakaneki must enter the shared hostile loop in neutral return state');
 assert(source.includes('entity._porakanekiPlannerControlled = true'),
   'fresh test Porakaneki must be marked as planner-controlled neutral AI');
+assert(source.includes('window.PorakanekiCamps?.debugSnapshot?.()'),
+  'handoff trace must read live production Porakaneki Favor/AOS state');
+assert(source.includes('attackOnSight'),
+  'handoff trace must expose whether production reputation intends attack-on-sight hostility');
+assert(source.includes("portraitPlaneDiagnostic(group, 'bandit_front_plane')"),
+  'handoff trace must inspect the composed front portrait pivot used by working bandits');
+assert(source.includes("portraitPlaneDiagnostic(group, 'bandit_back_plane')"),
+  'handoff trace must inspect the composed back portrait pivot used by working bandits');
+assert(source.includes('context.getImageData(0, 0, width, height)'),
+  'handoff trace must inspect assembled portrait canvas alpha coverage when readable');
+assert(source.includes('avatarInternals: avatarInternalsSnapshot(entity)'),
+  'entity snapshots must include child-level avatar diagnostics rather than only the avatar root');
 
 const materializeStart = source.indexOf('async function materializeHandoffTest'); // Narrows ordering checks to the isolated LOD-to-live transaction.
 const materializeEnd = source.indexOf('\n  function recordDueHandoffSamples', materializeStart); // End boundary for the materialization transaction under test.
