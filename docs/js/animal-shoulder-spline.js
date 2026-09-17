@@ -441,7 +441,7 @@
     const rigState = avatarRef.headRig, frontMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.frontHeadBone) : null, backMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.backHeadBone) : null;
     const front = rest.useSpline ? buildMeshState(frontMesh, normalizedRig, rest, false) : null, back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null;
     const frontOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, frontMesh, 'split_left_front') : null, backOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, backMesh, 'split_left_back') : null;
-    const debug = { version: 9, authored: true, enabled: false, useSpline: rest.useSpline, useRun1: rest.useRun1, splitFrame: rest.splitFrame, splitRightUsesIdle: rest.splitRightUsesIdle, frameShiftX: rest.frameShiftX, separatorRotationDeg: rest.separatorRotationDeg, separatorAspect: rest.separatorAspect, followFrameShiftX: rest.followFrameShiftX, beforePoints: rest.beforePoints, afterPoints: rest.afterPoints, shoulderMaps: { influence: !!rest._shoulderMaps?.influence, compressibility: !!rest._shoulderMaps?.compressibility, stretchability: !!rest._shoulderMaps?.stretchability }, migratedFromLegacy: rest.migratedFromLegacy, fullRectangularStrip: true, layeredSplitFrame: !!(frontOverlay && backOverlay), frontVertices: front?.position?.count || 0, backVertices: back?.position?.count || 0 };
+    const debug = { version: 10, authored: true, enabled: false, useSpline: rest.useSpline, useRun1: rest.useRun1, splitFrame: rest.splitFrame, splitRightUsesIdle: rest.splitRightUsesIdle, frameShiftX: rest.frameShiftX, separatorRotationDeg: rest.separatorRotationDeg, separatorAspect: rest.separatorAspect, followFrameShiftX: rest.followFrameShiftX, beforePoints: rest.beforePoints, afterPoints: rest.afterPoints, shoulderMaps: { influence: !!rest._shoulderMaps?.influence, compressibility: !!rest._shoulderMaps?.compressibility, stretchability: !!rest._shoulderMaps?.stretchability }, migratedFromLegacy: rest.migratedFromLegacy, fullRectangularStrip: true, layeredSplitFrame: !!(frontOverlay && backOverlay), frontVertices: front?.position?.count || 0, backVertices: back?.position?.count || 0 };
 
     avatarRef.setShoulderRestEnabled = enabled => {
       const next = !!enabled && rest.useSpline && !!front && !!back;
@@ -463,7 +463,7 @@
 
   function install() {
     const api = window.PNGPlaneAvatar;
-    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderSplineInstalledV9) return false;
+    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderSplineInstalledV10) return false;
     const priorBuild = api.buildAnimalPlaneAvatarModel.bind(api);
     api.buildAnimalPlaneAvatarModel = function shoulderSplineAwareAnimalBuild(THREE, spriteUrl, options = {}) {
       const profiles = window.HobunjiShoulderSplineProfiles, resolvedRig = profiles?.resolveForOptions?.(options, spriteUrl) || options?.headRig || null;
@@ -471,11 +471,11 @@
       const avatarRef = priorBuild(THREE, spriteUrl, buildOptions), rawRig = buildOptions?.headRig || profiles?.resolveForOptions?.(buildOptions, spriteUrl) || null;
       return rawRig?.shoulderRest?.enabled ? decorateAvatar(THREE, avatarRef, rawRig) : avatarRef;
     };
-    api.__animalShoulderSplineInstalledV9 = true; return true;
+    api.__animalShoulderSplineInstalledV10 = true; return true;
   }
 
   window.AnimalShoulderSpline = {
-    version: 9,
+    version: 10,
     POINT_COUNT,
     UNSET_WEIGHT,
     normalizeRest,
