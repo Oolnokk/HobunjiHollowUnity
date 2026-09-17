@@ -81,10 +81,14 @@ assert.match(interiorWallEditor, /canonicalWallPanelCount/, 'mobile-friendly dia
 assert.match(interiorWallEditor, /lastWallPick/, 'mobile-friendly diagnostics must report the last canonical wall hit');
 
 const sceneBuilder = read('docs/js/interior-scene-builder.js');
-assert.match(sceneBuilder, /new THREE\.PlaneGeometry\(width, height\)/, 'canvas interiors must render a real plane mesh for each canonical wall panel');
-assert.match(sceneBuilder, /height \/ 2/, 'canvas wall planes must be vertically centered over the floor-referenced panel origin');
-assert.match(sceneBuilder, /interiorWallPanelId/, 'canvas wall meshes must retain their canonical panel identity for debugging and picking');
-assert.match(sceneBuilder, /interiorWallPlane/, 'canvas wall meshes must expose the exact canonical wall-plane metadata they render');
-assert.doesNotMatch(sceneBuilder, /const pos = \[\], idx = \[\]; let vi = 0;[\s\S]*function buildCanvasWallsWithColor/, 'canvas walls must not fall back to the old merged zero-thickness buffer path');
+const canvasBuilderStart = sceneBuilder.indexOf('function buildCanvasWallsWithColor');
+const canvasBuilderEnd = sceneBuilder.indexOf('// Flat box panels', canvasBuilderStart);
+const canvasBuilder = sceneBuilder.slice(canvasBuilderStart, canvasBuilderEnd);
+assert(canvasBuilderStart >= 0 && canvasBuilderEnd > canvasBuilderStart, 'canvas wall builder source must remain discoverable for regression checks');
+assert.match(canvasBuilder, /new THREE\.PlaneGeometry\(width, height\)/, 'canvas interiors must render a real plane mesh for each canonical wall panel');
+assert.match(canvasBuilder, /height \/ 2/, 'canvas wall planes must be vertically centered over the floor-referenced panel origin');
+assert.match(canvasBuilder, /interiorWallPanelId/, 'canvas wall meshes must retain their canonical panel identity for debugging and picking');
+assert.match(canvasBuilder, /interiorWallPlane/, 'canvas wall meshes must expose the exact canonical wall-plane metadata they render');
+assert.doesNotMatch(canvasBuilder, /BufferGeometry|setIndex\(idx\)|const pos = \[\], idx = \[\]/, 'canvas walls must not use the old merged zero-thickness buffer path');
 
 console.log('daylight window authoring/runtime/3D-interior regression checks passed');
