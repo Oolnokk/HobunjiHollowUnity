@@ -87,6 +87,8 @@ assert(authorRefreshSource.includes('drawLayer(layers.right,rightVertices)') && 
   'live preview draws run1-right first and idle-left second for explicit foreground layering');
 assert(authorSource.includes('previewAngle is deliberately not serialized'),
   'live neck preview angle remains the one preview-only shoulder/head setting');
+assert(shellSource.includes('animal-shoulder-rest-v5.js'),
+  'authoring preview loads the same v5 weight-falloff math used by gameplay');
 assert(shellSource.includes('height:calc(100dvh - 24px)') && shellSource.includes('.preview-settings{min-height:0;overflow:auto'),
   'right workbench remains viewport-bounded while its settings scroll');
 assert(authorEventsSource.includes('Preview rig write did not round-trip from browser storage.'),
