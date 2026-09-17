@@ -5,6 +5,10 @@
 // lies inside A..B participates regardless of sprite alpha, so transparent PNG
 // space and opaque pixels follow one continuous rectangular strip. Head
 // Influence still fights that strip directly: restWeight = 1 - headInfluence.
+//
+// Version 4 is retained as a compatibility layer for older shoulderRest data.
+// animal-shoulder-rest-v5.js installs immediately afterward in gameplay/rigger
+// contexts and owns the corrected `weightFalloff` semantics plus split layering.
 (() => {
   'use strict';
 
@@ -75,7 +79,7 @@
         -MAX_ROTATION_DEG,
         MAX_ROTATION_DEG,
       ),
-      curveFalloff: clamp(finite(raw.curveFalloff, 0), 0, 1), // 0 = even curvature; 1 = postpone most curl toward guide B/tail.
+      curveFalloff: clamp(finite(raw.curveFalloff, 0), 0, 1), // Legacy v4-only field; v5 migrates this value to weightFalloff.
     };
   }
 
@@ -98,7 +102,7 @@
       };
     }
 
-    const exponent = 1 + falloff * 4; // Higher values keep pelvis/back-leg slices straighter and concentrate curl nearer B/tail.
+    const exponent = 1 + falloff * 4; // Legacy v4 distribution only; v5 no longer uses this as final shoulder semantics.
     const steps = 16; // Static shoulder pose only; midpoint integration is smooth enough while remaining cheap for live authoring.
     const dt = clampedT / steps;
     let sumAlong = 0;
@@ -118,10 +122,6 @@
   }
 
   // Returns the deformed point for the full rectangular A..B strip.
-  // `fullRotationDeg` rotates the strip as one piece around guide A.
-  // `interVertexRotationDeg` is the total additional rotation accumulated
-  // from A to B. `curveFalloff` redistributes that accumulation toward B
-  // without changing the final authored rotation. No opacity/alpha mask is used.
   function deformNormalizedPoint(point, restLike) {
     const rest = restLike?.guide ? restLike : normalizeRest({ shoulderRest: restLike });
     if (!rest?.guide) return { x: finite(point?.x, 0), y: finite(point?.y, 0) };
