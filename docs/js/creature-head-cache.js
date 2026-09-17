@@ -5,8 +5,8 @@
 // entity, sometimes more than once in the same frame (e.g. two different
 // predators both aiming at the same fleeing prey). This module computes a
 // given entity's head world position once per rendered frame and hands
-// every asker the same cached result — a plain rAF-driven frame counter
-// invalidates the cache, so no caller has to know when "this frame" ends.
+// every asker the same cached result. RuntimeFrameScheduler's shared frame
+// serial invalidates the cache, so this module owns no permanent RAF loop.
 //
 // Every getHeadWorld() result has the shape { x, z, worldY }: x/z are in
 // the game's raw pixel/world units (the same convention game.js's own
@@ -68,9 +68,10 @@
   }
 
   function _loadAnimalHeadMaterialResponseModule() {
-    if (window.AnimalHeadMaterialResponse || document.querySelector('script[data-animal-head-material-response]')) return;
+    if (window.AnimalHeadMaterialResponse || typeof document === 'undefined') return;
+    if (document.querySelector('script[data-animal-head-material-response]')) return;
     const script = document.createElement('script'); // Loads the decoupled material-response math/runtime without adding it to game.js.
-    const source = document.currentScript?.src || location.href; // Resolves next to this module both on GitHub Pages and commit-pinned GitHack builds.
+    const source = document.currentScript?.src || (typeof location !== 'undefined' ? location.href : ''); // Resolves next to this module both on GitHub Pages and commit-pinned GitHack builds.
     script.src = new URL('animal-head-material-response.js', source).href;
     script.async = false;
     script.dataset.animalHeadMaterialResponse = '1';
@@ -87,12 +88,13 @@
   // pre-existing _playerFaceTarget already used.
   const PLAYER_FACE_HEIGHT_RATIO = 0.76;
 
-  // A rAF-driven counter, independent of any particular game loop, so this
-  // module works for every caller (game.js, farm-animals.js, combat-*.js)
-  // without any of them having to explicitly "tick" it.
-  let frameToken = 0;
-  function _tick() { frameToken++; requestAnimationFrame(_tick); }
-  requestAnimationFrame(_tick);
+  // Frame identity comes from the shared RuntimeFrameScheduler. This keeps
+  // the cache caller-agnostic without creating another permanent browser RAF.
+  // In standalone/test contexts where the scheduler is absent, frame 0 is a
+  // stable graceful fallback.
+  function _currentFrameToken() {
+    return window.RuntimeFrameScheduler?.frameId?.() ?? 0;
+  }
 
   const _cache = new WeakMap(); // entity -> { frame, pos }
 
@@ -140,6 +142,7 @@
 
   function getHeadWorld(entity, kind, ctx) {
     if (!entity) return null;
+    const frameToken = _currentFrameToken();
     const cached = _cache.get(entity);
     if (cached && cached.frame === frameToken) return cached.pos;
     let pos;
