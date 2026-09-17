@@ -2450,6 +2450,9 @@
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
   <script src="js/dev-testing-switchbox.js?v=20260912a"></script>
+  <!-- Generic poll-until-ready/timeout helper; game.js's
+       waitForBuildingSceneReady calls into it directly. -->
+  <script src="js/scene-ready-poller.js?v=20260917a"></script>
   <script src="game.js?v=20260916survivaltent1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>

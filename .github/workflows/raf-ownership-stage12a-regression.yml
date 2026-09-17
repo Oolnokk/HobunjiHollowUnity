@@ -1,0 +1,34 @@
+name: RAF ownership Stage 12a regression (scene ready poller)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/js/scene-ready-poller.js'
+      - 'scripts/test-scene-ready-poller.js'
+      - '.github/workflows/raf-ownership-stage12a-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/game.js'
+      - 'docs/js/scene-ready-poller.js'
+      - 'scripts/test-scene-ready-poller.js'
+      - '.github/workflows/raf-ownership-stage12a-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check docs/js/scene-ready-poller.js
+          node --check docs/game.js
+      - name: Scene ready poller extraction/conversion
+        run: node scripts/test-scene-ready-poller.js

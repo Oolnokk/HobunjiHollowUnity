@@ -12997,15 +12997,10 @@
       // scene — enterBuilding kicks loadBuildingScene off without awaiting it
       // (see its own "resolves asynchronously" comment above), so
       // performLiveLayoutSwap awaits this instead of racing the iris reopen
-      // against a still-empty room.
+      // against a still-empty room. The actual poll-with-timeout loop now
+      // lives in js/scene-ready-poller.js.
       function waitForBuildingSceneReady(mapId, timeoutMs = 4000) {
-        return new Promise(resolve => {
-          const start = performance.now();
-          (function poll() {
-            if (_buildingScenes.get(mapId) || performance.now() - start > timeoutMs) { resolve(); return; }
-            requestAnimationFrame(poll);
-          })();
-        });
+        return window.SceneReadyPoller.pollUntilReady(() => !!_buildingScenes.get(mapId), timeoutMs);
       }
 
       // The player is standing inside mapId right now and its resolved
