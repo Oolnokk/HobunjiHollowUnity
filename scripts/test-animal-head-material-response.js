@@ -57,6 +57,7 @@ assert(author.includes("shoulderGuide={a:{x:.14,y:.46},b:{x:.86,y:.46}}"), 'shou
 assert(author.includes('fullRotationDeg:shoulderFullRotationValue()') && author.includes('interVertexRotationDeg:shoulderInterRotationValue()'), 'shoulder curl values should serialize into the rig');
 assert(author.includes('rig.shoulderRest.curveFalloff=shoulderCurveFalloffValue()'), 'curve falloff should serialize into the shoulder rig');
 assert(author.includes('Curve falloff toward B'), 'curve falloff authoring control should be inserted under the curl controls');
+assert(author.includes('Stretchability also limits yaw head turns in either direction.'), 'rigger help should document yaw using the Stretchability paint');
 assert(author.includes('previewAngle is deliberately not serialized'), 'preview neck angle should remain a preview-only value');
 assert(author.includes("state.compressibility.values[index]=UNSET") && author.includes("state.stretchability.values[index]=UNSET"), 'Influence edits should reset both material channels to inherit the new Influence');
 assert(author.includes('lerp(current,0,amount)'), 'material brush should only reduce the selected material channel');
