@@ -585,24 +585,6 @@
     "line": 126
   },
   {
-    "file": "docs/js/performance-debug.js",
-    "owner": "PerformanceDebug",
-    "classification": "scheduler",
-    "function": "frameLoop",
-    "reason": "Self-perpetuating RAF loop for the opt-in FPS counter/profiler overlay; it bails out and stops re-arming (`perfState.raf = 0; if (!fpsEnabled && !profilerEnabled) return;`) once the feature is disabled, but while enabled it is a genuine ongoing per-frame HUD subscription needing frame-accurate counting, a scheduler-style migration candidate.",
-    "migrationStage": "candidate",
-    "line": 401
-  },
-  {
-    "file": "docs/js/performance-debug.js",
-    "owner": "PerformanceDebug",
-    "classification": "scheduler",
-    "function": "lagWatchLoop",
-    "reason": "Permanent self-perpetuating RAF loop, unconditionally started once from install() (via startLagWatch()) with no enable/disable gate; it counts frames every tick to compute a rolling FPS sample every LAG_SNAPSHOT_SAMPLE_MS and auto-captures a cache-audit snapshot on sustained lag -- a genuine always-on per-frame runtime subscription.",
-    "migrationStage": "candidate",
-    "line": 1238
-  },
-  {
     "file": "docs/js/pixel-probe.js",
     "owner": "PixelProbe",
     "classification": "one-shot",
