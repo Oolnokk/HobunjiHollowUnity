@@ -137,6 +137,7 @@ assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Po
 assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline9'));
 assert(shellSource.includes('author-part7.js'));
 assert(shellSource.includes('author-part8.js'), 'rigger loads additive broad-pose authoring after precise/separator authoring');
+assert(shellSource.includes('author-part9.js'), 'rigger loads the direct two-point endpoint layer after broad pose authoring');
 assert(shellSource.includes('author-part9.js'), 'rigger loads the direct two-point endpoint tool after the broad-pose layer');
 assert(!shellSource.includes('id="shoulderFullRotation"'));
 assert(!shellSource.includes('id="shoulderInterRotation"'));
@@ -180,6 +181,18 @@ assert.match(broadAuthorSource, /minX=Math\.min\(minX,p\.x\*s\.width\)/,
   'workbench framing expands to include off-image BEFORE/AFTER nodes');
 assert.match(broadAuthorSource, /shoulderBroadPointerToSource/,
   'off-image precise nodes use an unclamped shoulder-edit pointer');
+
+for (const id of ['editShoulderTwoPoint','resetShoulderTwoPoint','snapShoulderStartToShift','snapShoulderEndToRightEdge']) {
+  assert(twoPointAuthorSource.includes(`id="\${id}"`), `two-point endpoint tool exposes ${id}`);
+}
+assert.match(twoPointAuthorSource, /shoulderTwoPointStart=\{x:shoulderFrameShiftValue\(\),y:\.5\}/,
+  'Start snap places AFTER vertex 1 at frame-shift X and vertical center');
+assert.match(twoPointAuthorSource, /shoulderTwoPointEnd=\{x:1,y:\.5\}/,
+  'End snap places AFTER vertex 7 at the center of the right source PNG edge');
+assert.match(twoPointAuthorSource, /startDelta=.*shoulderTwoPointStart\.x-startBase\.x.*endDelta=.*shoulderTwoPointEnd\.x-endBase\.x/s,
+  'two-point layer computes direct endpoint deltas from the current visible AFTER endpoints');
+assert.match(twoPointAuthorSource, /startDelta\.x\+\(endDelta\.x-startDelta\.x\)\*t/,
+  'interior AFTER vertices receive linearly interpolated endpoint displacement');
 
 assert.match(twoPointAuthorSource, /Edit 2-point endpoints/,
   'two-point coarse tool is exposed as a distinct interaction mode');
