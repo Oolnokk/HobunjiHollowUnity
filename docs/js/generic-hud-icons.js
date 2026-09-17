@@ -528,7 +528,7 @@
       return false;
     }
     api.showRelationshipChange(walker.root, kind, value);
-    const payload = { kind, value, npcId: id, at: Date.now() };
+    const payload = { npcId: id, kind, value, at: Date.now() };
     debugState.lastRelationshipPopup = payload;
     if (kind === 'favor') debugState.lastFavorPopup = payload;
     else debugState.lastRapportPopup = payload;
