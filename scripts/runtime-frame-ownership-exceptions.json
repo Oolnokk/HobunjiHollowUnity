@@ -702,15 +702,6 @@
     "line": 358
   },
   {
-    "file": "docs/js/social-action-camera-runtime.js",
-    "owner": "SocialActionCameraRuntime",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Permanent self-recursive loop (also started once at line 263) that maintains a pre-render sentinel and checks dance-finish state every frame; the actual camera sample happens inside the sentinel's onBeforeRender (a separate render-order-dependent hook), but this RAF loop's own job is ongoing bookkeeping/subscription work, so it is the scheduler-candidate part, not a render-hook itself.",
-    "migrationStage": "candidate",
-    "line": 237
-  },
-  {
     "file": "docs/js/social-action-dance-runtime.js",
     "owner": "SocialActionDanceRuntime",
     "classification": "scheduler",
