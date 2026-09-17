@@ -68,6 +68,16 @@
 
     avatarRef.updateHeadYaw = function shoulderPetDeadzoneHeadYaw(degrees, deltaSeconds) {
       const requestedYawDeg = Number.isFinite(Number(degrees)) ? Number(degrees) : 0;
+      if (companion?.stableRole !== 'shoulderPet') {
+        visualState = null;
+        companion._shoulderHeadDeadzoneDebug = {
+          active: false,
+          requestedYawDeg,
+          reason: 'not-shoulder-pet',
+        }; // A former shoulder pet keeps its shared head rig behavior once reassigned to another stable role.
+        return originalUpdateHeadYaw(requestedYawDeg, deltaSeconds);
+      }
+
       const rotationApi = window.PerpRotation;
       const bodyRot = Number(companion.pngRot);
       const bodyState = companion.perpState;
@@ -80,6 +90,7 @@
         || !Number.isFinite(bodyRot)
         || !Array.isArray(cameraPerps)
         || !cameraPerps.length) {
+        visualState = null;
         companion._shoulderHeadDeadzoneDebug = {
           active: false,
           requestedYawDeg,
