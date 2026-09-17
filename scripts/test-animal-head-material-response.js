@@ -23,10 +23,10 @@ assert.strictEqual(api.sampleMaterialMap(material, influence, 0, 0, 0), 0, 'unse
 assert(api.sampleMaterialMap(material, influence, 1, 0, 128 / 255) <= 128 / 255, 'material override may never exceed Influence');
 assert.strictEqual(api.sampleMaterialMap(material, influence, 0, 1, 1), 1, '255 override is capped by the local full Influence weight');
 
-assert.strictEqual(api.responseKindForVertex(20, 0.7, 0.5), 'compress');
-assert.strictEqual(api.responseKindForVertex(20, 0.3, 0.5), 'stretch');
-assert.strictEqual(api.responseKindForVertex(-20, 0.3, 0.5), 'compress');
-assert.strictEqual(api.responseKindForVertex(-20, 0.7, 0.5), 'stretch');
+assert.strictEqual(api.responseKindForVertex(20, 0.7, 0.5), 'stretch', 'downward bend stretches the sprite side below the pivot');
+assert.strictEqual(api.responseKindForVertex(20, 0.3, 0.5), 'compress', 'downward bend compresses the sprite side above the pivot');
+assert.strictEqual(api.responseKindForVertex(-20, 0.3, 0.5), 'stretch', 'upward bend stretches the sprite side above the pivot');
+assert.strictEqual(api.responseKindForVertex(-20, 0.7, 0.5), 'compress', 'upward bend compresses the sprite side below the pivot');
 assert.strictEqual(api.responseKindForVertex(0, 0.7, 0.5), 'neutral');
 
 assert.strictEqual(api.materialWeightForBend(0.5, 0.2, 0.4, 'compress'), 0.2);
@@ -84,7 +84,7 @@ const authorContext = {
 authorContext.window = authorContext;
 authorContext.window.devicePixelRatio = 1;
 authorContext.window.addEventListener = () => {};
-authorContext.window.AnimalHeadMaterialResponse = { responseKindForVertex: (angle, v, pivot) => Math.abs(angle) < 1e-5 ? 'neutral' : angle * (v - pivot) > 0 ? 'compress' : 'stretch' };
+authorContext.window.AnimalHeadMaterialResponse = { responseKindForVertex: (angle, v, pivot) => Math.abs(angle) < 1e-5 ? 'neutral' : angle * (v - pivot) > 0 ? 'stretch' : 'compress' };
 vm.createContext(authorContext);
 for (let n = 1; n <= 5; n++) vm.runInContext(fs.readFileSync(path.join(riggerDir, `author-part${n}.js`), 'utf8'), authorContext, { filename: `author-part${n}.js` });
 vm.runInContext(`
