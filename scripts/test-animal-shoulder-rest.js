@@ -114,6 +114,8 @@ assert.match(authorSource, /shoulderPaintSource\?\.value==='right'/,
   'right-half paint source explicitly loads run1 when the right side uses it');
 assert.match(authorSource, /buildSourceSampler=function buildSelectedShoulderSourceSampler/,
   'bucket color sampling follows the selected paint source too');
+assert.match(authorSource, /shoulderPaintSource\.value='right'/,
+  'BEFORE mode switches to Right source when split mode is active');
 assert.match(authorSource, /for\(const p of shoulderBeforePoints\)p\.x\+=delta;for\(const p of shoulderAfterPoints\)p\.x\+=delta/,
   'frame shift moves BEFORE and AFTER together when follow is enabled');
 assert.match(authorSource, /JSON\.stringify\(stored\)!==JSON\.stringify\(rig\)/,
@@ -138,6 +140,10 @@ for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) 
   assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline7'));
   assert(bootstrapSource.includes('AnimalShoulderRestV5 = { version: 7'));
 }
+assert.match(bridgeSource, /AnimalShoulderSpline\.version\) < 7/,
+  'game attachment bridge explicitly requires the v7 bind/pose runtime');
+assert.match(bridgeSource, /HobunjiShoulderSplineProfiles\.version\) < 2/,
+  'game attachment bridge explicitly requires v2 BEFORE/AFTER species defaults');
 assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
 assert.match(bridgeSource, /splitRightUsesIdle/, 'game split compositor honors idle-on-right authoring');
 
