@@ -1,114 +1,134 @@
 'use strict';
 
-const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const runtimeV4Path = path.join(root, 'docs/js/animal-shoulder-rest.js');
-const runtimeV5Path = path.join(root, 'docs/js/animal-shoulder-rest-v5.js');
+const splinePath = path.join(root, 'docs/js/animal-shoulder-spline.js');
+const profilesPath = path.join(root, 'docs/js/animal-shoulder-spline-profiles.js');
+const parityPath = path.join(root, 'docs/js/animal-shoulder-spline-layering.js');
+const legacyBootstrapPath = path.join(root, 'docs/js/animal-shoulder-rest.js');
+const legacyV5BootstrapPath = path.join(root, 'docs/js/animal-shoulder-rest-v5.js');
 const authorPath = path.join(root, 'docs/tools/animal-head-rig/author-part6.js');
-const authorRefreshPath = path.join(root, 'docs/tools/animal-head-rig/author-part7.js');
-const authorEventsPath = path.join(root, 'docs/tools/animal-head-rig/author-part5.js');
 const shellPath = path.join(root, 'docs/tools/animal-head-rig/index.html');
 const bridgePath = path.join(root, 'docs/js/player-body-attachment-bridge.js');
-const geneticsRenderPath = path.join(root, 'docs/js/creature-genetics-render.js');
-const correctionPath = path.join(root, 'docs/js/grehlr-head-rig-correction.js');
-const runtimeV4Source = fs.readFileSync(runtimeV4Path, 'utf8');
-const runtimeV5Source = fs.readFileSync(runtimeV5Path, 'utf8');
+
+const splineSource = fs.readFileSync(splinePath, 'utf8');
+const profilesSource = fs.readFileSync(profilesPath, 'utf8');
+const paritySource = fs.readFileSync(parityPath, 'utf8');
+const legacyBootstrapSource = fs.readFileSync(legacyBootstrapPath, 'utf8');
+const legacyV5BootstrapSource = fs.readFileSync(legacyV5BootstrapPath, 'utf8');
 const authorSource = fs.readFileSync(authorPath, 'utf8');
-const authorRefreshSource = fs.readFileSync(authorRefreshPath, 'utf8');
-const authorEventsSource = fs.readFileSync(authorEventsPath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
 const bridgeSource = fs.readFileSync(bridgePath, 'utf8');
-const geneticsRenderSource = fs.readFileSync(geneticsRenderPath, 'utf8');
-const correctionSource = fs.readFileSync(correctionPath, 'utf8');
 
 global.window = global;
-global.AnimalHeadRigRuntime = {
-  UNSET_WEIGHT: 256,
-  normalizeRig(raw) { return raw?.__normalized || null; },
+delete global.AnimalShoulderSpline;
+delete global.AnimalShoulderRest;
+require(splinePath);
+const api = global.AnimalShoulderSpline;
+assert(api, 'seven-point shoulder spline runtime should install');
+assert.equal(api.version, 6);
+assert.equal(api.POINT_COUNT, 7);
+assert.equal(global.AnimalShoulderRest, api, 'legacy diagnostic alias should point at v6 runtime');
+
+const guide = { a: { x: 0.2, y: 0.4 }, b: { x: 0.8, y: 0.4 } };
+const linear = api.linearPointsForGuide(guide);
+assert.equal(linear.length, 7);
+const straight = { enabled: true, useSpline: true, restGuide: guide, splinePoints: linear };
+const straightPoint = { x: 0.5, y: 0.58 };
+const straightResult = api.deformNormalizedPoint(straightPoint, straight);
+assert(Math.abs(straightResult.x - straightPoint.x) < 1e-9, 'straight seven-point spline should preserve X');
+assert(Math.abs(straightResult.y - straightPoint.y) < 1e-9, 'straight seven-point spline should be identity even off the centerline');
+
+const curvedPoints = linear.map(point => ({ ...point }));
+curvedPoints[3].y = 0.68;
+const curved = { ...straight, splinePoints: curvedPoints };
+const centerSource = { x: 0.5, y: 0.4 };
+const centerTarget = api.deformNormalizedPoint(centerSource, curved);
+assert(centerTarget.y > 0.55, 'dragging the middle control point should visibly pull the center of the strip');
+const fullBody = api.deformWeightedPoint(centerSource, 0, curved);
+const fullHead = api.deformWeightedPoint(centerSource, 1, curved);
+const halfHead = api.deformWeightedPoint(centerSource, 0.5, curved);
+assert(Math.abs(fullBody.y - centerTarget.y) < 1e-9, 'Body receives full spline deformation');
+assert.deepEqual(fullHead, centerSource, '100% Head Influence completely fights shoulder spline deformation');
+assert(Math.abs(halfHead.y - (centerSource.y + centerTarget.y) / 2) < 1e-9, '50% Head Influence halves spline deformation');
+
+const legacy = {
+  enabled: true,
+  useSpline: true,
+  splitFrame: true,
+  splitRightUsesIdle: true,
+  frameShiftX: 0.52,
+  followFrameShiftX: true,
+  guideFrameShiftX: 0.52,
+  guide: { a: { x: 0.542, y: 0.57 }, b: { x: 1, y: 0.57 } },
+  fullRotationDeg: 78,
+  interVertexRotationDeg: 1,
+  weightFalloff: 0.44,
 };
-require(runtimeV4Path);
-require(runtimeV5Path);
-const api = global.AnimalShoulderRest;
-assert(api, 'AnimalShoulderRest should install on window/global');
-assert.strictEqual(api.version, 5, 'v5 should upgrade the public shoulder-rest API');
-assert(runtimeV4Source.includes('Version 4 is retained as a compatibility layer'),
-  'v4 explicitly documents that v5 owns final weight/layer semantics');
+const migrated = api.normalizeRest({ shoulderRest: legacy });
+assert.equal(migrated.migratedFromLegacy, true);
+assert.equal(migrated.splinePoints.length, 7, 'older A/B + rotation/falloff exports convert to exactly seven points');
+assert.equal(migrated.splitRightUsesIdle, true);
+assert.equal(migrated.frameShiftX, 0.52);
+assert(!Object.hasOwn(migrated, 'fullRotationDeg'));
+assert(!Object.hasOwn(migrated, 'interVertexRotationDeg'));
+assert(!Object.hasOwn(migrated, 'weightFalloff'));
+assert(!Object.hasOwn(migrated, 'curveFalloff'));
+const bendMigrated = api.normalizeRest({ shoulderRest: { enabled: true, bend: -0.05, guide } });
+assert.equal(bendMigrated.splinePoints.length, 7, 'old midpoint-bend exports also migrate');
 
-const guide = { a: { x: 0.2, y: 0.5 }, b: { x: 0.8, y: 0.5 } };
-const curl = { enabled: true, useSpline: true, guide, fullRotationDeg: 0, interVertexRotationDeg: 90, weightFalloff: 0 };
-const midpoint = { x: 0.5, y: 0.5 };
-const noFalloffCurve = api.deformNormalizedPoint(midpoint, curl);
-const sameCurveWithFalloffAuthored = api.deformNormalizedPoint(midpoint, { ...curl, weightFalloff: 1 });
-assert(Math.abs(noFalloffCurve.x - sameCurveWithFalloffAuthored.x) < 1e-10 && Math.abs(noFalloffCurve.y - sameCurveWithFalloffAuthored.y) < 1e-10,
-  'weight falloff must not redistribute or alter the spline curve itself');
+assert.match(profilesSource, /\['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound'\]/,
+  'only the approved five species receive temporary shoulder-spline support');
+assert.match(profilesSource, /splitRightUsesIdle:\s*true/,
+  'shared temporary shoulder profile uses idle on both sides of the seam');
+assert.match(profilesSource, /bodyOnlyRig\(\)/,
+  'Voorg-Ass/Uumkao’ii can carry a body spline before receiving head paint');
 
-const uniformWeighted = api.deformWeightedPoint(midpoint, 0, curl);
-const fallenWeighted = api.deformWeightedPoint(midpoint, 0, { ...curl, weightFalloff: 1 });
-const uniformMove = Math.hypot(uniformWeighted.x - midpoint.x, uniformWeighted.y - midpoint.y);
-const fallenMove = Math.hypot(fallenWeighted.x - midpoint.x, fallenWeighted.y - midpoint.y);
-assert(fallenMove > 0 && fallenMove < uniformMove,
-  '100% weight falloff reduces deformation in the earlier/middle body while leaving the curve unchanged');
-assert.strictEqual(api.splineWeightForT(0, 1), 0, '100% falloff gives guide A zero spline weight');
-assert.strictEqual(api.splineWeightForT(1, 1), 1, 'guide B always retains full spline weight');
-assert.strictEqual(api.splineWeightForT(0.35, 0), 1, '0% falloff keeps uniform spline weight');
+assert(shellSource.includes('id="shoulderRestUseSpline"'));
+assert(shellSource.includes('id="shoulderSplitRightIdle"'));
+assert(shellSource.includes('id="shoulderFollowFrameShiftX"'));
+assert(shellSource.includes('id="resetShoulderSpline"'));
+assert(!shellSource.includes('id="shoulderFullRotation"'), 'retired whole-rotation slider should be gone');
+assert(!shellSource.includes('id="shoulderInterRotation"'), 'retired inter-vertex rotation slider should be gone');
+assert(!shellSource.toLowerCase().includes('weight falloff'), 'retired weight-falloff UI should be gone');
+assert(shellSource.includes('author-part6.js') && !shellSource.includes('author-part7.js') && !shellSource.includes('author-part8.js'),
+  'shoulder authoring should be consolidated into one module');
+assert(shellSource.includes('animal-shoulder-spline-layering.js'), 'rigger loads the same split-layer parity adapter as gameplay');
 
-const endUniform = api.deformWeightedPoint(guide.b, 0, curl);
-const endFalloff = api.deformWeightedPoint(guide.b, 0, { ...curl, weightFalloff: 1 });
-assert(Math.abs(endUniform.x - endFalloff.x) < 1e-10 && Math.abs(endUniform.y - endFalloff.y) < 1e-10,
-  'falloff changes weight toward A but never weakens the tail/B endpoint');
+assert.match(authorSource, /SHOULDER_POINT_COUNT=7/);
+assert.match(authorSource, /shoulderSplinePoints\[shoulderPointDrag\]=next/,
+  'all seven spline handles are direct draggable authoring state');
+assert.match(authorSource, /if\(shoulderPointDrag===0\)shoulderRestGuide\.a=/,
+  'first spline handle owns source-guide A');
+assert.match(authorSource, /shoulderPointDrag===SHOULDER_POINT_COUNT-1\)shoulderRestGuide\.b=/,
+  'last spline handle owns source-guide B');
+assert.match(authorSource, /for\(const p of shoulderSplinePoints\)p\.x\+=delta/,
+  'frame-shift follow moves all seven points together along X');
+assert.match(authorSource, /shoulderSplineApi\?\.normalizeRest/,
+  'import path delegates old-export conversion to the v6 runtime');
+assert.match(authorSource, /JSON\.stringify\(stored\)!==JSON\.stringify\(rig\)/,
+  'Save rig for game preview retains synchronous storage round-trip verification');
+assert.match(authorSource, /fitCanvasInsideHost/,
+  'canvas containment remains in the consolidated module so short viewports do not crop previews');
 
-const headFight = api.deformWeightedPoint(midpoint, 0.75, { ...curl, weightFalloff: 1 });
-const headFightMove = Math.hypot(headFight.x - midpoint.x, headFight.y - midpoint.y);
-assert(headFightMove < fallenMove,
-  'Head Influence continues to fight the shoulder spline on top of the A-to-B weight falloff');
+assert.match(paritySource, /INTRA_PET_RENDER_EPSILON = 0\.01/,
+  'split foreground gets only a tiny within-pet ordering offset');
+assert.match(paritySource, /overlay\.renderOrder = Number\(source\.renderOrder \|\| 0\) \+ INTRA_PET_RENDER_EPSILON/);
+assert.match(paritySource, /'depthWrite','depthTest','colorWrite'/,
+  'split overlay copies the source half x-ray/depth material state');
+assert.match(paritySource, /overlay\.layers\.mask = source\.layers\.mask/,
+  'split overlay follows the same Three.js layers mask as its paired half');
+assert(!paritySource.includes('+ 20'), 'split overlay must not escape the normal shoulder-pet render stack');
 
-const migrated = api.normalizeRest({ shoulderRest: {
-  enabled: true, useSpline: true, useRun1: false, splitFrame: true, frameShiftX: 0.51,
-  guide, fullRotationDeg: -20, interVertexRotationDeg: 55, curveFalloff: 0.62,
-} });
-assert.strictEqual(migrated.weightFalloff, 0.62, 'short-lived curveFalloff data migrates into the corrected weightFalloff meaning');
-const authored = api.normalizeRest({ shoulderRest: {
-  enabled: true, useSpline: true, guide, fullRotationDeg: 0, interVertexRotationDeg: 0,
-  weightFalloff: 0.4, curveFalloff: 0.9,
-} });
-assert.strictEqual(authored.weightFalloff, 0.4, 'explicit weightFalloff wins over migrated curveFalloff');
+for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) {
+  assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline6'));
+  assert(bootstrapSource.includes('animal-shoulder-spline-layering.js?v=20260917parity1'));
+  assert(bootstrapSource.includes('AnimalShoulderRestV5 = { version: 6'));
+}
+assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
+assert.match(bridgeSource, /splitRightUsesIdle/, 'game split compositor honors idle-on-right authoring');
 
-assert(runtimeV5Source.includes('weightFalloff') && runtimeV5Source.includes('splineWeightForT'),
-  'v5 runtime owns saved deformation-weight falloff');
-assert(runtimeV5Source.includes('cloneOverlayMesh') && runtimeV5Source.includes('depthWrite = false'),
-  'v5 creates an explicit foreground mesh for idle-left split pixels');
-assert(runtimeV5Source.includes('hobunjiShoulderSplitOverlay'),
-  'split foreground meshes are identifiable for diagnostics and mesh lookup exclusion');
-assert(authorRefreshSource.includes('Spline weight falloff A→B') && authorRefreshSource.includes('rig.shoulderRest.weightFalloff=shoulderWeightFalloffValue()'),
-  'rigger exposes and serializes corrected spline weight falloff');
-assert(authorRefreshSource.includes('delete rig.shoulderRest.curveFalloff'),
-  'new saves remove the misleading curveFalloff field after migration');
-assert(authorRefreshSource.includes('drawLayer(layers.right,rightVertices)') && authorRefreshSource.includes('drawLayer(layers.left,leftVertices)'),
-  'live preview draws run1-right first and idle-left second for explicit foreground layering');
-assert(authorSource.includes('previewAngle is deliberately not serialized'),
-  'live neck preview angle remains the one preview-only shoulder/head setting');
-assert(shellSource.includes('animal-shoulder-rest-v5.js'),
-  'authoring preview loads the same v5 weight-falloff math used by gameplay');
-assert(shellSource.includes('height:calc(100dvh - 24px)') && shellSource.includes('.preview-settings{min-height:0;overflow:auto'),
-  'right workbench remains viewport-bounded while its settings scroll');
-assert(authorEventsSource.includes('Preview rig write did not round-trip from browser storage.'),
-  'Save rig for game preview still verifies localStorage round-trip');
-assert(geneticsRenderSource.includes('return preview[kind] || preview[baseKind] || ANIMAL_HEAD_RIGS[baseKind] || null'),
-  'game avatar resolution still prefers browser-saved preview rigs');
-assert(bridgeSource.includes("renderer.composeFrame(kind, 'idle'") && bridgeSource.includes("renderer.composeFrame(kind, 'run1'"),
-  'runtime split layers preserve genotype-composited idle/run1 art');
-assert(bridgeSource.includes('leftCanvas') && bridgeSource.includes('rightCanvas') && bridgeSource.includes('setShoulderSplitOverlayCanvas'),
-  'runtime uses separate idle-left foreground and run1-right background layers');
-assert(bridgeSource.includes('combinedSplitFallbackCanvas') && bridgeSource.includes('ctx.drawImage(layers.rightCanvas') && bridgeSource.includes('ctx.drawImage(layers.leftCanvas'),
-  'unusual avatars without overlay support still keep both halves with left drawn over right');
-assert(bridgeSource.includes('Number(window.AnimalShoulderRestV5.version) < 5') && bridgeSource.includes('animal-shoulder-rest-v5.js'),
-  'game bootstrap requires the v5 shoulder decorator');
-assert(bridgeSource.includes("companion.stableRole === 'shoulderPet'"),
-  'shoulder presentation remains gated by the actual shoulder-pet role');
-assert(correctionSource.includes('HobunjiGrehlrHeadRigCorrection'),
-  'Grehlr correction remains a late debug-visible authored layer');
-
-console.log('animal-shoulder-rest v5: all tests passed');
+console.log('animal-shoulder-spline: all tests passed');
