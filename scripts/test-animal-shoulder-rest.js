@@ -28,10 +28,10 @@ const api = global.AnimalShoulderRest;
 assert(api, 'AnimalShoulderRest should install its public API');
 assert.strictEqual(api.version, 1);
 
-const flatLeft = api.restPoint(-1, 0.25, 2, 1, 0.5, 0.2);
-const flatRight = api.restPoint(1, 0.25, 2, 1, 0.5, 0.2);
-assert(Math.abs(flatLeft.x + 1) < 1e-8 && Math.abs(flatLeft.y - 0.25) < 1e-8, 'left endpoint stays on its original cross-section');
-assert(Math.abs(flatRight.x - 1) < 1e-8 && Math.abs(flatRight.y - 0.25) < 1e-8, 'right endpoint stays on its original cross-section');
+const centerlineLeft = api.restPoint(-1, 0, 2, 1, 0.5, 0.2);
+const centerlineRight = api.restPoint(1, 0, 2, 1, 0.5, 0.2);
+assert(Math.abs(centerlineLeft.x + 1) < 1e-8 && Math.abs(centerlineLeft.y) < 1e-8, 'left centerline endpoint remains fixed');
+assert(Math.abs(centerlineRight.x - 1) < 1e-8 && Math.abs(centerlineRight.y) < 1e-8, 'right centerline endpoint remains fixed');
 const mid = api.restPoint(0, 0, 2, 1, 0.5, 0.2);
 assert(Math.abs(mid.y - 0.2) < 1e-8, 'bend value is the visible midpoint displacement as a fraction of sprite height');
 
