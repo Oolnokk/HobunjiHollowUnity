@@ -50,3 +50,59 @@ assert(author.includes('requestAnimationFrame(draw)'), 'live preview redraw shou
 
 console.log('animal-head-material-response: all tests passed');
 console.log('animal-head-rigger-workflow: all tests passed');
+
+const vm = require('vm');
+const elements = new Map();
+function fake2dContext() { return new Proxy({}, { get: (target, key) => target[key] || (() => {}), set: (target, key, value) => (target[key] = value, true) }); }
+function fakeElement(id) {
+  if (elements.has(id)) return elements.get(id);
+  const el = {
+    id, value: '', checked: false, disabled: false, textContent: '', className: '', dataset: {}, style: {}, files: [], parentElement: null,
+    classList: { toggle() {}, add() {}, remove() {} }, addEventListener() {}, click() {}, appendChild() {}, remove() {}, select() {},
+    getBoundingClientRect() { return { width: 400, height: 280, left: 0, top: 0 }; }, setPointerCapture() {}, releasePointerCapture() {},
+  };
+  if (id === 'paintCanvas' || id === 'previewCanvas') {
+    el.width = 400; el.height = 280; el.getContext = () => fake2dContext(); el.parentElement = { getBoundingClientRect: () => ({ width: 400, height: 280 }) };
+  }
+  const defaults = { brushStrength: '100', brushRadius: '40', bucketTolerance: '32', expandRadius: '60', previewAngle: '0', minDeg: '-30', restDeg: '0', maxDeg: '30', turnSpeedDeg: '120', meshResolution: '48', spriteAspect: '1', modelWidth: '1', tint: '#ffffff', extraVars: '{}', facing: 'left' };
+  if (id in defaults) el.value = defaults[id];
+  if (id === 'showWeights') el.checked = true;
+  elements.set(id, el);
+  return el;
+}
+const fakeDocument = {
+  getElementById: fakeElement,
+  createElement(tag) { const el = fakeElement(`_${tag}_${elements.size}`); if (tag === 'canvas') { el.width = 1; el.height = 1; el.getContext = () => fake2dContext(); } return el; },
+  body: { appendChild() {} }, execCommand() { return true; },
+};
+const authorContext = {
+  console, window: null, document: fakeDocument,
+  localStorage: { getItem() { return null; }, setItem() {} }, navigator: { clipboard: { writeText: async () => {} } },
+  location: { href: 'https://example.test/tools/animal-head-rig/' }, URL, Blob, Uint16Array, Math, JSON, Number, Array, Set, Object, String,
+  ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout() {}, clearTimeout() {},
+};
+authorContext.window = authorContext;
+authorContext.window.devicePixelRatio = 1;
+authorContext.window.addEventListener = () => {};
+authorContext.window.AnimalHeadMaterialResponse = { responseKindForVertex: (angle, v, pivot) => Math.abs(angle) < 1e-5 ? 'neutral' : angle * (v - pivot) > 0 ? 'compress' : 'stretch' };
+vm.createContext(authorContext);
+for (let n = 1; n <= 5; n++) vm.runInContext(fs.readFileSync(path.join(riggerDir, `author-part${n}.js`), 'utf8'), authorContext, { filename: `author-part${n}.js` });
+vm.runInContext(`
+  state.weights={width:1,height:1,values:new Uint16Array([0])};
+  state.compressibility=blankMap(1,1); state.stretchability=blankMap(1,1);
+  document.getElementById('brushStrength').value='50'; state.paintLayer='influence'; state.target='head';
+  applyPaintAtIndex(0,false);
+`, authorContext);
+assert.strictEqual(vm.runInContext('state.weights.values[0]', authorContext), 128, '50% Influence brush should move 0 halfway toward Head');
+assert.strictEqual(vm.runInContext('state.compressibility.values[0]', authorContext), 256, 'Influence edit should reset compression to inherit');
+assert.strictEqual(vm.runInContext('state.stretchability.values[0]', authorContext), 256, 'Influence edit should reset stretch to inherit');
+vm.runInContext(`state.paintLayer='compressibility'; applyPaintAtIndex(0,false);`, authorContext);
+assert.strictEqual(vm.runInContext('state.compressibility.values[0]', authorContext), 64, '50% compression reduction should halve inherited 128 weight');
+assert.strictEqual(vm.runInContext('state.stretchability.values[0]', authorContext), 256, 'compression reduction must not touch stretch');
+vm.runInContext(`applyPaintAtIndex(0,true);`, authorContext);
+assert.strictEqual(vm.runInContext('state.compressibility.values[0]', authorContext), 96, '50% Toward Influence should move 64 halfway back to 128');
+vm.runInContext(`document.getElementById('brushStrength').value='100'; applyPaintAtIndex(0,true);`, authorContext);
+assert.strictEqual(vm.runInContext('state.compressibility.values[0]', authorContext), 256, '100% Toward Influence should restore inheritance');
+vm.runInContext(`document.getElementById('previewAngle').value='37'; setPaintLayer('stretchability'); undoEdit();`, authorContext);
+assert.strictEqual(fakeElement('previewAngle').value, '37', 'authoring operations must not reset preview angle');
+console.log('animal-head-rigger-vm: all tests passed');
