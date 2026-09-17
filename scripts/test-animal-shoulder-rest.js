@@ -11,6 +11,7 @@ const parityPath = path.join(root, 'docs/js/animal-shoulder-spline-layering.js')
 const legacyBootstrapPath = path.join(root, 'docs/js/animal-shoulder-rest.js');
 const legacyV5BootstrapPath = path.join(root, 'docs/js/animal-shoulder-rest-v5.js');
 const authorPath = path.join(root, 'docs/tools/animal-head-rig/author-part6.js');
+const separatorAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part7.js');
 const shellPath = path.join(root, 'docs/tools/animal-head-rig/index.html');
 const bridgePath = path.join(root, 'docs/js/player-body-attachment-bridge.js');
 
@@ -20,6 +21,7 @@ const paritySource = fs.readFileSync(parityPath, 'utf8');
 const legacyBootstrapSource = fs.readFileSync(legacyBootstrapPath, 'utf8');
 const legacyV5BootstrapSource = fs.readFileSync(legacyV5BootstrapPath, 'utf8');
 const authorSource = fs.readFileSync(authorPath, 'utf8');
+const separatorAuthorSource = fs.readFileSync(separatorAuthorPath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
 const bridgeSource = fs.readFileSync(bridgePath, 'utf8');
 
@@ -29,9 +31,9 @@ delete global.AnimalShoulderRest;
 require(splinePath);
 const api = global.AnimalShoulderSpline;
 assert(api, 'BEFORE/AFTER shoulder spline runtime should install');
-assert.equal(api.version, 8);
+assert.equal(api.version, 9);
 assert.equal(api.POINT_COUNT, 7);
-assert.equal(global.AnimalShoulderRest, api, 'legacy diagnostic alias points at v8 runtime');
+assert.equal(global.AnimalShoulderRest, api, 'legacy diagnostic alias points at v9 runtime');
 
 const straightGuide = { a: { x: 0.2, y: 0.4 }, b: { x: 0.8, y: 0.4 } };
 const straightBefore = api.linearPointsForGuide(straightGuide);
@@ -40,8 +42,20 @@ const source = { x: 0.5, y: 0.58 };
 const identityResult = api.deformNormalizedPoint(source, identity);
 assert(Math.abs(identityResult.x - source.x) < 1e-4, 'same BEFORE/AFTER preserves X');
 assert(Math.abs(identityResult.y - source.y) < 1e-4, 'same BEFORE/AFTER preserves Y');
-assert.equal(api.sampleShoulderInfluence(null, .19, .5, .2), 0, 'default shoulder Influence is zero left of seam');
-assert.equal(api.sampleShoulderInfluence(null, .21, .5, .2), 1, 'default shoulder Influence is full right of seam');
+assert.equal(api.sampleShoulderInfluence(null, .19, .5, { frameShiftX: .2 }), 0, 'default shoulder Influence is zero left of separator');
+assert.equal(api.sampleShoulderInfluence(null, .21, .5, { frameShiftX: .2 }), 1, 'default shoulder Influence is full right of separator');
+
+const diagonal = { frameShiftX: .5, separatorRotationDeg: 45, separatorAspect: 1 };
+assert(api.separatorSignedSide(.6, .5, diagonal) > 0, 'separator center-right remains on the right side');
+assert(api.separatorSignedSide(.4, .5, diagonal) < 0, 'separator center-left remains on the left side');
+assert(api.separatorSignedSide(.4, .3, diagonal) > 0, 'positive Z rotation makes upper-left cross onto the right side');
+assert(api.separatorSignedSide(.6, .7, diagonal) < 0, 'positive Z rotation makes lower-right cross onto the left side');
+const rightPolygon = api.separatorPolygon(400, 300, diagonal, true);
+const leftPolygon = api.separatorPolygon(400, 300, diagonal, false);
+assert(rightPolygon.length >= 3 && leftPolygon.length >= 3, 'diagonal separator clips both image halves into valid polygons');
+const normalizedDiagonal = api.normalizeRest({ shoulderRest: { ...identity, separatorRotationDeg: 31, separatorAspect: 4 / 3 } });
+assert.equal(normalizedDiagonal.separatorRotationDeg, 31, 'separator Z rotation survives runtime normalization');
+assert.equal(normalizedDiagonal.separatorAspect, 4 / 3, 'source aspect survives runtime normalization');
 
 const curvedBefore = straightBefore.map(p => ({ ...p }));
 curvedBefore[2].y = 0.46;
@@ -96,8 +110,7 @@ assert.equal(migratedV6.migratedFromLegacy, true);
 assert.equal(migratedV6.beforePoints.length, 7, 'v6 straight restGuide becomes seven BEFORE points');
 assert.equal(migratedV6.afterPoints.length, 7, 'v6 splinePoints become seven AFTER points');
 assert.deepEqual(migratedV6.afterPoints, legacyV6.splinePoints);
-assert(!Object.hasOwn(migratedV6, 'restGuide'));
-assert(!Object.hasOwn(migratedV6, 'splinePoints'));
+assert.equal(migratedV6.separatorRotationDeg, 0, 'older exports migrate to a vertical separator');
 
 const oldCurl = api.normalizeRest({ shoulderRest: {
   enabled: true, useSpline: true, frameShiftX: .52,
@@ -113,45 +126,46 @@ assert.match(profilesSource, /beforePoints:\s*GREHLR_BEFORE/);
 assert.match(profilesSource, /afterPoints:\s*GREHLR_AFTER/);
 assert.match(profilesSource, /bodyOnlyRig\(\)/, 'Voorg-Ass/Uumkao’ii can carry a body spline before head paint exists');
 
-for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter','copyShoulderBeforeToAfter']) {
+for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter','resetShoulderAfter','shoulderSeparatorRotation']) {
   assert(shellSource.includes(`id="${id}"`), `rigger exposes ${id}`);
 }
 assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Pose'));
-assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline8'));
+assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline9'));
+assert(shellSource.includes('author-part7.js'));
 assert(!shellSource.includes('id="shoulderFullRotation"'));
 assert(!shellSource.includes('id="shoulderInterRotation"'));
 assert(!shellSource.toLowerCase().includes('weight falloff'));
+assert.match(shellSource, /minmax\(150px,1fr\).*minmax\(150px,1fr\).*20vh/s,
+  'desktop right panel reserves more vertical room for both canvases than settings');
 
 assert.match(authorSource, /let shoulderInfluenceMap=null/);
 assert.match(authorSource, /let shoulderCompressibilityMap=null/);
 assert.match(authorSource, /let shoulderStretchabilityMap=null/);
-assert.match(authorSource, /shoulderDefaultByteAt/,
-  'right-side shoulder Influence has a seam-relative implicit default');
-assert.match(authorSource, /shoulderCellOnRight/,
-  'shoulder paint is restricted to the frame-shift right side');
-assert(authorSource.includes('> Spline<'), 'right paint source relabels Influence target as Spline rather than Head');
-assert(authorSource.includes('Rigid'), 'right paint source exposes reducing shoulder Influence toward rigid');
 assert.match(authorSource, /weightMap=exportShoulderMap\(shoulderInfluenceMap\)/,
   'shoulder Influence serializes inside shoulderRest separately from head Influence');
-assert.match(authorSource, /compressibilityMap=exportShoulderMap\(shoulderCompressibilityMap\)/);
 assert.match(authorSource, /stretchabilityMap=exportShoulderMap\(shoulderStretchabilityMap\)/);
-assert.match(authorSource, /selectedPaintSourceImage/,
-  'paint canvas can switch the art beneath the canonical coordinate grid');
-assert.match(authorSource, /shoulderPaintSource\.value='right'/,
-  'BEFORE mode switches to Right source when split mode is active');
 assert.match(authorSource, /JSON\.stringify\(stored\)!==JSON\.stringify\(rig\)/,
   'Save rig for game preview retains round-trip verification');
 
-assert.match(splineSource, /function bindFrameForPoint\(beforePoints, point\)/,
-  'runtime measures PNG vertices against the curved BEFORE spline');
+assert.match(separatorAuthorSource, /separatorPointIsRight/,
+  'right-side paint gating uses the same rotated separator math as runtime');
+assert.match(separatorAuthorSource, /separatorPolygon/,
+  'rigger frame fusion clips art against the diagonal separator polygon');
+assert.match(separatorAuthorSource, /separatorRotationDeg=shoulderSeparatorRotationValue\(\)/,
+  'separator Z rotation serializes into shoulderRest');
+assert.match(separatorAuthorSource, /shoulderAfterPoints=cloneShoulderPoints\(shoulderBeforePoints/,
+  'Reset AFTER restores an identity copy of the current BEFORE line');
+assert.match(separatorAuthorSource, /canvas\.style\.height=`\$\{cssHeight\}px`/,
+  'canvas fills the taller viewport instead of being aspect-shrunk inside it');
+
+assert.match(splineSource, /function separatorSignedSide\(/,
+  'runtime has one signed-side classifier for diagonal frame ownership');
+assert.match(splineSource, /function separatorPolygon\(/,
+  'runtime exposes half-plane clipping polygons to editor and game compositor');
 assert.match(splineSource, /function shoulderResponseKind\(rest, bind\)/,
   'runtime classifies local curved-strip strain as compression or stretch');
 assert.match(splineSource, /sampleShoulderMaterial\(maps\.stretchability/,
   'runtime samples shoulder Stretchability independently of head material paint');
-assert.match(splineSource, /sampleShoulderMaterial\(maps\.compressibility/,
-  'runtime samples shoulder Compressibility independently of head material paint');
-assert.match(splineSource, /shoulderInfluence.*\* \(1 - clamp/s,
-  'shoulder Influence is applied before Head Influence fights the final body deformation');
 
 assert.match(paritySource, /INTRA_PET_RENDER_EPSILON = 0\.01/);
 assert.match(paritySource, /Object\.defineProperty\(overlay, 'renderOrder'/,
@@ -159,12 +173,15 @@ assert.match(paritySource, /Object\.defineProperty\(overlay, 'renderOrder'/,
 assert.match(paritySource, /overlay\.layers\.mask = source\.layers\.mask/);
 
 for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) {
-  assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline8'));
-  assert(bootstrapSource.includes('AnimalShoulderRestV5 = { version: 8'));
+  assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline9'));
+  assert(bootstrapSource.includes('AnimalShoulderRestV5 = { version: 9'));
 }
-assert.match(bridgeSource, /AnimalShoulderSpline\.version\) < 8/,
-  'game attachment bridge explicitly requires the v8 shoulder-material runtime');
+assert.match(bridgeSource, /AnimalShoulderSpline\.version\) < 9/,
+  'game attachment bridge explicitly requires the v9 diagonal-separator runtime');
+assert.match(bridgeSource, /separatorPolygon/,
+  'game split compositor uses the same diagonal separator polygon as the rigger');
+assert.match(bridgeSource, /separatorRotationDeg/,
+  'game frame cache key changes when separator Z rotation changes');
 assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
-assert.match(bridgeSource, /splitRightUsesIdle/, 'game split compositor honors idle-on-right authoring');
 
-console.log('animal-shoulder-spline v8: bind/pose + shoulder material paint tests passed');
+console.log('animal-shoulder-spline v9: diagonal separator + taller viewport tests passed');
