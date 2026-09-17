@@ -227,7 +227,11 @@
 
   // Flat cloth-colored wall panels for a canvas tent interior, tinted to
   // match the exterior tent piece's canvas material (HousePieceGen's
-  // matCanvas, 0xcbb489). Exact port of game.js's buildCanvasWalls.
+  // matCanvas, 0xcbb489). Each canonical panel gets a real PlaneGeometry
+  // centered on the same zero-depth wall plane used by wall-ornament
+  // placement. Keeping panels separate avoids the old merged-buffer path
+  // disappearing entirely in some editor/runtime rebuilds and makes every
+  // visible canvas wall independently raycastable/debuggable.
   function buildCanvasWalls(THREE, wallPanels) {
     return buildCanvasWallsWithColor(THREE, wallPanels, 0xcbb489);
   }
@@ -236,21 +240,25 @@
     const group = new THREE.Group();
     if (!wallPanels.length) return group;
     const mat = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
-    const pos = [], idx = []; let vi = 0;
     for (const panel of wallPanels) {
-      const [bl, br, tr, tl] = panelCornersFor(THREE, panel);
-      pos.push(bl.x, bl.y, bl.z, br.x, br.y, br.z, tr.x, tr.y, tr.z, tl.x, tl.y, tl.z);
-      idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
-      vi += 4;
+      const width = Math.max(0.001, Number(panel?.width) || 0.001);
+      const height = Math.max(0.001, Number(panel?.height) || 0.001);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+      const rd = panel.rotationDeg || [0, 0, 0];
+      mesh.position.set(Number(panel.position?.[0]) || 0, (Number(panel.position?.[1]) || 0) + height / 2, Number(panel.position?.[2]) || 0);
+      mesh.rotation.set(THREE.MathUtils.degToRad(rd[0] || 0), THREE.MathUtils.degToRad(rd[1] || 0), THREE.MathUtils.degToRad(rd[2] || 0));
+      mesh.name = `InteriorCanvasWall_${panel.id || group.children.length}`;
+      mesh.receiveShadow = true;
+      mesh.userData.cameraObstacle = true;
+      mesh.userData.interiorWallPanelId = panel.id || null;
+      mesh.userData.interiorWallPlane = {
+        position: Array.isArray(panel.position) ? panel.position.slice(0, 3) : [0, 0, 0],
+        rotationDeg: Array.isArray(panel.rotationDeg) ? panel.rotationDeg.slice(0, 3) : [0, 0, 0],
+        width,
+        height,
+      };
+      group.add(mesh);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = true;
-    mesh.userData.cameraObstacle = true;
-    group.add(mesh);
     return group;
   }
 
