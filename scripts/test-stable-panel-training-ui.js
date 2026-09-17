@@ -106,9 +106,9 @@ function allText(root) {
 }
 
 const stable = [
-  { id: 'hound1', kind: 'dabinggi-hound', name: 'Moro', role: 'companion', lifeStage: 'baby', level: 0, stableXp: 0, animalPerks: {} },
-  { id: 'hound2', kind: 'dabinggi-hound', name: 'Tavi', role: 'companion', lifeStage: 'adult', level: 1, stableXp: 5, animalPerks: {} },
-  { id: 'mount1', kind: 'gar-wolf', name: 'Grubble', role: 'mount', lifeStage: 'adult', level: 2, stableXp: 9, animalPerks: {} },
+  { id: 'hound1', kind: 'dabinggi-hound', name: 'Moro', role: 'companion', lifeStage: 'baby', level: 0, stableXp: 0, petRapport: 0, animalPerks: {} },
+  { id: 'hound2', kind: 'dabinggi-hound', name: 'Tavi', role: 'companion', lifeStage: 'adult', level: 1, stableXp: 5, petRapport: 12.2, animalPerks: {} },
+  { id: 'mount1', kind: 'gar-wolf', name: 'Grubble', role: 'mount', lifeStage: 'adult', level: 2, stableXp: 9, petRapport: 400, animalPerks: {} },
 ];
 let activeCompanionId = null;
 let activeMountId = null;
@@ -160,6 +160,20 @@ const progression = {
   },
 };
 
+const petRapport = {
+  maxPetRapportHearts: 10,
+  install() {},
+  normalizeEntry(entry) {
+    entry.petRapport = Math.max(0, Math.min(400, Number(entry.petRapport) || 0));
+    return entry;
+  },
+  getPetRapport: entry => Number(entry?.petRapport) || 0,
+  getPetHearts: entry => (Number(entry?.petRapport) || 0) / 40,
+  maxPetRapportPoints: () => 400,
+  pointsPerHeart: () => 40,
+  isKnownByTown: entry => (Number(entry?.petRapport) || 0) >= 400,
+};
+
 const refinements = {
   maxLevel: 10,
   install() {},
@@ -198,6 +212,7 @@ const context = {
   document,
   console,
   StableAnimalProgression: progression,
+  StableAnimalTownFamiliarity: petRapport,
   StableAnimalTrainingRefinements: refinements,
   AnimalGrowth: animalGrowth,
   CreatureGenetics: {
@@ -293,12 +308,27 @@ assert.match(allText(companionRow), /General Companion Training/, 'expanded comp
 assert.match(allText(companionRow), /Dabinggi Hound Combat/, 'expanded companion shows its species combat branch');
 assert.match(allText(companionRow), /Toxic Pounce/, 'species combat perk is rendered inside the actual card');
 
+const companionTree = descendantsByClass(companionRow, 'stable-entry-perk-tree')[0];
+const rapportSections = descendantsByClass(companionTree, 'stable-pet-rapport');
+assert.equal(rapportSections.length, 1, 'expanded Stable entry shows exactly one Pet Rapport section');
+assert.match(allText(rapportSections[0]), /Pet Rapport/, 'relationship block uses Pet Rapport terminology');
+assert.match(allText(rapportSections[0]), /12\.2\/400/, 'Pet Rapport block exposes point progress without calling it Favor');
+const rapportHeartRows = descendantsByClass(rapportSections[0], 'stable-pet-rapport-hearts');
+assert.equal(rapportHeartRows.length, 1, 'Pet Rapport section has one heart row');
+assert.match(rapportHeartRows[0].innerHTML, /width:30\.5%/, '12.2 Pet Rapport uses the same gradual 30.5% heart fill as relationship Favor');
+assert.match(rapportHeartRows[0].innerHTML, /💛/, 'Pet Rapport uses yellow filled hearts');
+const rapportIndex = companionTree.children.indexOf(rapportSections[0]);
+const trainingIndex = companionTree.children.findIndex(child => child.textContent === 'General Companion Training');
+assert(rapportIndex >= 0 && trainingIndex > rapportIndex, 'Pet Rapport appears above the perk sections');
+
 mountRow.listeners.click({ target: { closest: () => null } });
 companionRow = stableRowById(stableList, 'hound2');
 mountRow = stableRowById(stableList, 'mount1');
 assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 0, 'opening another animal collapses the first tree');
 assert.equal(descendantsByClass(mountRow, 'stable-entry-perk-tree').length, 1, 'second adult animal tree opens');
 assert.match(allText(mountRow), /Mount Training/, 'mount card renders its riding tree');
+const mountHearts = descendantsByClass(mountRow, 'stable-pet-rapport-hearts')[0];
+assert.equal((mountHearts.innerHTML.match(/💛/gu) || []).length, 10, 'max Pet Rapport renders ten full yellow hearts');
 
 mountRow.listeners.click({ target: { closest: () => null } });
 mountRow = stableRowById(stableList, 'mount1');
@@ -306,6 +336,7 @@ assert.equal(descendantsByClass(mountRow, 'stable-entry-perk-tree').length, 0, '
 assert.equal(context.FarmPanel.stableTrainingDebug().expandedStableId, null, 'debug state agrees that every tree is collapsed');
 assert.equal(context.FarmPanel.stableTrainingDebug().babyCount, 1, 'Stable diagnostics report the saved baby count');
 assert.equal(context.FarmPanel.stableTrainingDebug().adultCount, 2, 'Stable diagnostics report the saved adult count');
+assert.equal(context.FarmPanel.stableTrainingDebug().animals.find(entry => entry.id === 'hound2').petRapport, 12.2, 'Stable diagnostics include Pet Rapport points');
 assert.equal(saveCount, 0, 'expanding/collapsing UI does not mutate the save');
 
 babyRow = stableRowById(stableList, 'hound1');
@@ -320,6 +351,7 @@ assert.doesNotMatch(source, /leveling coming soon/i, 'farm-panel.js itself conta
 assert.match(source, /function renderStablePanelNative\(/, 'Stable UI is rendered directly by farm-panel.js, not by a post-render decorator');
 assert.match(source, /stableAgeSection\('🐣 Baby Animals'/, 'native Stable renderer owns the baby grouping instead of relying on a retired decorator');
 assert.match(source, /api\?\.growStableBaby\?\.\(entry\.id/, 'native Stable growth delegates to the shared AnimalGrowth lifecycle');
+assert.match(source, /stable-pet-rapport-partial-heart/, 'Stable Pet Rapport reuses gradual clipped-heart presentation');
 assert.match(source, /armNativeInstallOnFarmPanelPublication/, 'browser parser timing is handled at the FarmPanel publication boundary');
 
-console.log('Native Stable panel training + age-section regression tests passed.');
+console.log('Native Stable panel training + age-section + Pet Rapport regression tests passed.');
