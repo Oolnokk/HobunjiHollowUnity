@@ -41,6 +41,44 @@
   }
   _syncGrehlrHeadRigProfile();
 
+  // Keep the asymmetric material-response implementation out of this cache,
+  // but bridge avatar construction here because this file deliberately loads
+  // immediately after creature-genetics-render.js (which injects the raw
+  // species headRig) and before gameplay starts building creatures.
+  function _installAnimalHeadMaterialResponseBridge() {
+    const api = window.PNGPlaneAvatar; // Existing animal-plane builder already wrapped by the base head rig and species-rig bridge.
+    if (!api?.buildAnimalPlaneAvatarModel || api.__animalHeadMaterialResponseBridgeInstalled) return false;
+    const priorBuild = api.buildAnimalPlaneAvatarModel.bind(api); // Preserves every earlier renderer/head-rig wrapper in the current load order.
+    api.buildAnimalPlaneAvatarModel = function materialResponsiveAnimalBuild(THREE, spriteUrl, options = {}) {
+      const avatarRef = priorBuild(THREE, spriteUrl, options);
+      const rawRig = options?.headRig || window.HobunjiAnimalHeadRigSpecies?.resolveForOptions?.(options) || null; // Raw rig retains response maps that the legacy normalizer intentionally ignores.
+      if (!rawRig?.compressibilityMap && !rawRig?.stretchabilityMap) return avatarRef;
+      if (window.AnimalHeadMaterialResponse?.decorateAvatar) {
+        window.AnimalHeadMaterialResponse.decorateAvatar(avatarRef, rawRig);
+      } else {
+        const pending = window.__hobunjiPendingAnimalHeadMaterialResponses || (window.__hobunjiPendingAnimalHeadMaterialResponses = []); // Used until the decoupled response module finishes loading.
+        pending.push({ avatarRef, rawRig });
+      }
+      return avatarRef;
+    };
+    api.__animalHeadMaterialResponseBridgeInstalled = true;
+    return true;
+  }
+
+  function _loadAnimalHeadMaterialResponseModule() {
+    if (window.AnimalHeadMaterialResponse || document.querySelector('script[data-animal-head-material-response]')) return;
+    const script = document.createElement('script'); // Loads the decoupled material-response math/runtime without adding it to game.js.
+    const source = document.currentScript?.src || location.href; // Resolves next to this module both on GitHub Pages and commit-pinned GitHack builds.
+    script.src = new URL('animal-head-material-response.js', source).href;
+    script.async = false;
+    script.dataset.animalHeadMaterialResponse = '1';
+    script.addEventListener('error', () => window.__farmLog?.('[head-rig] Could not load animal-head-material-response.js', 'warn'));
+    document.head.appendChild(script);
+  }
+
+  _installAnimalHeadMaterialResponseBridge();
+  _loadAnimalHeadMaterialResponseModule();
+
   // Matches game.js's own PLAYER_FACE_HEIGHT_RATIO (0.76) — kept here too
   // since this module has no access to that closure-local constant, and a
   // player/companion-portrait head estimate needs the same ratio game.js's
