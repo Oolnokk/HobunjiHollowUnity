@@ -12,6 +12,9 @@ applyRecord=function applyRecordThenRefreshShoulderFrame(record,index=-1){
   return result;
 };
 
+const materialHintNode=$('materialHint'); // Existing material-paint help; extended here because yaw response is implemented after the base author module.
+if(materialHintNode&&!materialHintNode.textContent.includes('yaw head turns'))materialHintNode.textContent+=' Stretchability also limits yaw head turns in either direction.';
+
 // Add one compact saved curve-distribution control without making the already
 // dense right-panel HTML harder to maintain. Higher falloff delays the curl
 // toward guide B, letting pelvis/back-leg slices stay straighter than the tail.
