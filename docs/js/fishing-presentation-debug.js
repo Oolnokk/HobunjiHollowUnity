@@ -126,10 +126,11 @@
     line.style.color = wet ? '#7fe89a' : '#ffb58f';
   }
 
-  function frame() {
+  const SCHEDULER_ID = 'fishing-presentation'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
+
+  function scheduledFrame() {
     syncGulletVisual();
     updateWaterDebug();
-    requestAnimationFrame(frame);
   }
 
   window.FishingPresentationDebug = {
@@ -137,5 +138,9 @@
     gulletBreadthMultiplier: GULLET_BREADTH_MULTIPLIER,
   };
 
-  requestAnimationFrame(frame);
+  window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
+    phase: 'visual',
+    owner: 'FishingPresentationDebug',
+    description: 'Synchronizes the Gullet\'s presentation with the regular fish visual and refreshes the fishing debug panel.',
+  });
 })();

@@ -317,15 +317,6 @@
     "line": 863
   },
   {
-    "file": "docs/js/fishing-presentation-debug.js",
-    "owner": "FishingPresentationDebug",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Despite the 'debug' filename this is real gameplay presentation code that keeps the Gullet fish's visual texture/heading synced with the live fish rig; it runs unconditionally forever from module load (line 140), so it is a permanent visual runtime rather than a debug-only tool.",
-    "migrationStage": "candidate",
-    "line": 132
-  },
-  {
     "file": "docs/js/folder-save-debug-ui.js",
     "owner": "FolderSaveDebugUI",
     "classification": "one-shot",
