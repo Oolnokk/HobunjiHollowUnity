@@ -1,0 +1,40 @@
+name: RAF ownership Stage 6 regression (hand tool grips)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/hand-tool-grips.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-hand-tool-grips-scheduler.js'
+      - 'scripts/test-hand-foot-size-balance.js'
+      - 'scripts/test-procedural-hands.js'
+      - '.github/workflows/raf-ownership-stage6b-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/hand-tool-grips.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-hand-tool-grips-scheduler.js'
+      - 'scripts/test-hand-foot-size-balance.js'
+      - 'scripts/test-procedural-hands.js'
+      - '.github/workflows/raf-ownership-stage6b-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/hand-tool-grips.js
+      - name: Install/visual scheduler split
+        run: node scripts/test-hand-tool-grips-scheduler.js
+      - name: Hand/foot size + secondary-grip reset regression
+        run: node scripts/test-hand-foot-size-balance.js
+      - name: Procedural hands regression
+        run: node scripts/test-procedural-hands.js

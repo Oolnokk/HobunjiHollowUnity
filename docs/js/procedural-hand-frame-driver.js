@@ -504,7 +504,14 @@
     }
   }
 
-  function frame() {
+  // Discovery/attachment (does a newly-built avatar's rig need attaching yet?)
+  // has no ordering dependency on gameplay simulation or rendering, so it is
+  // split out from the render-sensitive pose/sync work below instead of
+  // sharing one per-frame callback (see
+  // docs/architecture/runtime-frame-scheduler.md's Stage 7 notes). The final
+  // exact tool/hand matrix stays entirely in ensureSyncSentinel's
+  // onBeforeRender hook below, untouched by either piece of this split.
+  function attachmentSweep() {
     for (const record of [...pending]) {
       if (!record.avatarRoot?.userData) {
         pending.delete(record);
@@ -512,8 +519,13 @@
       }
       if (record.avatarRoot.userData.proceduralHandRig || attachPending(record)) pending.delete(record);
     }
+  }
+
+  // Needs this frame's fresh simulation state (elapsed time, current parent
+  // world position for the fallback gait) but must run before Three.js
+  // traverses the scene, so this is pre-render phase work.
+  function poseAndSyncUpdate() {
     updateManagedRigs();
-    global.requestAnimationFrame(frame);
   }
 
   global.ProceduralHandFrameDriver = {
@@ -559,5 +571,26 @@
   };
 
   toolGrips.subscribe?.(() => global.ProceduralHandFrameDriver?.syncNow?.());
-  global.requestAnimationFrame(frame);
+
+  if (global.RuntimeFrameScheduler?.register) {
+    global.RuntimeFrameScheduler.register('procedural-hand-attachment', attachmentSweep, {
+      owner: 'ProceduralHandFrameDriver',
+      description: 'Attaches a pending procedural hand rig once its avatar has been added to the scene.',
+    });
+    global.RuntimeFrameScheduler.register('procedural-hand-pose-sync', poseAndSyncUpdate, {
+      phase: 'pre-render',
+      owner: 'ProceduralHandFrameDriver',
+      description: 'Ensures each managed rig\'s render sentinel exists and refreshes its fallback gait pose from this frame\'s state.',
+    });
+  } else {
+    // The standalone Attack Animation Editor and Animation Author tool pages
+    // (docs/tools/*) also load this module but never load
+    // RuntimeFrameScheduler — they own their own isolated animation context,
+    // so this keeps the original combined per-frame loop for them unchanged.
+    (function frame() {
+      attachmentSweep();
+      poseAndSyncUpdate();
+      global.requestAnimationFrame(frame);
+    })();
+  }
 })(window);

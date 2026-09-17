@@ -1,0 +1,44 @@
+name: RAF ownership Stage 2 regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/navigation-compass.js'
+      - 'docs/js/mobile-combat-zoom.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-navigation-compass.js'
+      - 'scripts/test-wilderness-map-load-recovery.js'
+      - 'scripts/test-mobile-combat-zoom.js'
+      - '.github/workflows/raf-ownership-stage2-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/navigation-compass.js'
+      - 'docs/js/mobile-combat-zoom.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-navigation-compass.js'
+      - 'scripts/test-wilderness-map-load-recovery.js'
+      - 'scripts/test-mobile-combat-zoom.js'
+      - '.github/workflows/raf-ownership-stage2-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check docs/js/navigation-compass.js
+          node --check docs/js/mobile-combat-zoom.js
+      - name: Navigation compass scheduler migration
+        run: node scripts/test-navigation-compass.js
+      - name: Wilderness map load recovery
+        run: node scripts/test-wilderness-map-load-recovery.js
+      - name: Mobile combat zoom scheduler migration
+        run: node scripts/test-mobile-combat-zoom.js

@@ -347,8 +347,14 @@
   }
 
   let lastFrameError = null; // Exposed in the mobile debug snapshot if an unexpected renderer error occurs.
-  function frame(nowMs) {
-    requestAnimationFrame(frame); // Schedule first so one bad frame can never strand a visible world-space sprite.
+  const SCHEDULER_ID = 'quick-attack-bonus-indicator'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
+
+  function scheduledFrame({ timestamp: nowMs }) {
+    // The scheduler already isolates a throwing subscriber from the rest of
+    // the frame, but this module additionally needs its own specific
+    // recovery (detach the visible sprite rather than leaving it frozen
+    // mid-update) and its own error snapshot for the mobile debug readout,
+    // so this catch stays even though the scheduler has an outer one too.
     try {
       syncReadyTarget(nowMs);
       lastFrameError = null;
@@ -418,5 +424,9 @@
     }),
   };
 
-  requestAnimationFrame(frame);
+  window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
+    phase: 'pre-game', // Historically ran before gameLoop via independent RAF registration order; pre-game preserves that same ordering explicitly.
+    owner: 'QuickAttackBonusIndicator',
+    description: 'Shows/hides the Quick Attack bonus-ready reticle over the current auto-target.',
+  });
 })();

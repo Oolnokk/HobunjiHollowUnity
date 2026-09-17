@@ -22440,6 +22440,12 @@
         // directly how much per-frame time -- if any -- is being spent outside
         // gameLoop's own call graph entirely (other requestAnimationFrame loops,
         // MutationObserver callbacks, GC, etc.) rather than in anything below.
+        //
+        // gameLoop no longer schedules its own requestAnimationFrame: it is
+        // registered as RuntimeFrameScheduler's one frame driver (see the
+        // bottom of this IIFE and docs/architecture/runtime-frame-scheduler.md),
+        // which calls it exactly once per browser frame and keeps calling it
+        // even if a given frame throws.
         const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
@@ -22454,7 +22460,6 @@
           // player is still picking a save/character/world. The first real
           // frame renders the moment spawnPlayerAvatar flips gameStarted true.
           window.PerfProfiler?.end(gameLoopTotalPerf);
-          requestAnimationFrame(gameLoop);
           return;
         }
 
@@ -22788,6 +22793,12 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
+        // Simulation/state mutation for this frame is finished; anything that
+        // needs fresh gameplay state but must run before Three.js traverses
+        // the scene belongs at this checkpoint, not a separate RAF (see
+        // docs/architecture/runtime-frame-scheduler.md).
+        window.RuntimeFrameScheduler.checkpoint('pre-render');
+
         // ── Render active scene ──────────────────────────────────
         // "Render CPU" in the overlay only shows the average cost of a single
         // renderer.render() call; s_outlines below can chain up to 6 of them
@@ -22942,7 +22953,6 @@
         window.HudUpdate.updateHud();
         window.PerfProfiler?.end(overlayPerf);
         window.PerfProfiler?.end(gameLoopTotalPerf);
-        requestAnimationFrame(gameLoop);
       }
 
       // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
@@ -28639,5 +28649,10 @@
         });
       }
 
-      requestAnimationFrame(gameLoop);
+      // gameLoop is the scheduler's one gameplay frame driver (see
+      // docs/architecture/runtime-frame-scheduler.md) rather than scheduling
+      // its own requestAnimationFrame; gameLoop's own (now) parameter still
+      // expects a raw timestamp, so this adapts the {timestamp} frameContext
+      // the scheduler passes every subscriber/driver.
+      window.RuntimeFrameScheduler.setFrameDriver(frameContext => gameLoop(frameContext.timestamp));
     })();

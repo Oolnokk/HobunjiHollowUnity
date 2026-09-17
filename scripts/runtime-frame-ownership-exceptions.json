@@ -1,0 +1,767 @@
+[
+  {
+    "file": "docs/config/config.js",
+    "owner": "TownVisualHeightCompatibility",
+    "classification": "one-shot",
+    "function": "patchPixelProbe (renderer.render wrapper)",
+    "reason": "Re-arms a per-frame `townHeightCorrectedThisFrame` guard by scheduling a single, non-recursive RAF that resets it back to false; it does not reschedule itself, it is simply re-armed the next time renderer.render runs.",
+    "migrationStage": "not-planned",
+    "line": 510
+  },
+  {
+    "file": "docs/game.js",
+    "owner": "SceneTransitionLoader",
+    "classification": "one-shot",
+    "function": "loadBuildingScene",
+    "reason": "A chained double requestAnimationFrame forces the Den/cavern loading label to actually paint before a long synchronous carve starts; it resolves once and never reschedules.",
+    "migrationStage": "not-planned",
+    "line": 12243
+  },
+  {
+    "file": "docs/game.js",
+    "owner": "SceneTransitionLoader",
+    "classification": "timer-event",
+    "function": "waitForBuildingSceneReady",
+    "reason": "poll() re-requests a frame purely to re-check whether _buildingScenes has resolved (with a timeout), which is a condition-wait rather than per-frame work.",
+    "migrationStage": "candidate",
+    "line": 13006
+  },
+  {
+    "file": "docs/game.js",
+    "owner": "CutscenePreview",
+    "classification": "bounded-animation",
+    "function": "runMove",
+    "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
+    "migrationStage": "not-planned",
+    "line": 28393
+  },
+  {
+    "file": "docs/game.js",
+    "owner": "CutscenePreview",
+    "classification": "one-shot",
+    "function": "runFade",
+    "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
+    "migrationStage": "not-planned",
+    "line": 28544
+  },
+  {
+    "file": "docs/game.js",
+    "owner": "CutscenePreview",
+    "classification": "bounded-animation",
+    "function": "runZoom",
+    "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
+    "migrationStage": "not-planned",
+    "line": 28563
+  },
+  {
+    "file": "docs/game.js",
+    "owner": "CutscenePreview",
+    "classification": "bounded-animation",
+    "function": "cutsceneRotationTick",
+    "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
+    "migrationStage": "not-planned",
+    "line": 28635
+  },
+  {
+    "file": "docs/js/action-arc-ui.js",
+    "owner": "ActionArcUI",
+    "classification": "one-shot",
+    "function": "_buildItemSlots (new arc-slot fade-in)",
+    "reason": "A single non-recursive RAF defers setting the newly-inserted slot element's opacity to 1 so its CSS opacity transition animates in on the next paint; it never reschedules itself.",
+    "migrationStage": "not-planned",
+    "line": 312
+  },
+  {
+    "file": "docs/js/action-arch-icons-fixes.js",
+    "owner": "ActionArchIconFixes",
+    "classification": "one-shot",
+    "function": "queueRefresh",
+    "reason": "A `queued` guard makes this a single RAF that batches one or more pending icon-fix refresh triggers into the next paint; it does not recur.",
+    "migrationStage": "not-planned",
+    "line": 328
+  },
+  {
+    "file": "docs/js/action-arch-icons.js",
+    "owner": "ActionArchIcons",
+    "classification": "one-shot",
+    "function": "queueRefresh",
+    "reason": "Same batching-to-next-paint idiom as action-arch-icons-fixes.js: a `refreshQueued` guard prevents this RAF from ever recursing.",
+    "migrationStage": "not-planned",
+    "line": 512
+  },
+  {
+    "file": "docs/js/alcohol-gameplay-bridge.js",
+    "owner": "HobunjiDrunkGameplayBridge",
+    "classification": "scheduler",
+    "function": "postFrameLoop",
+    "reason": "Self-perpetuating RAF loop (also kicked off at line 834) that continuously integrates drunk-movement momentum and NPC sobriety recovery using measured per-frame dt - a genuine ongoing simulation subscription living outside game.js's own gameLoop.",
+    "migrationStage": "candidate",
+    "line": 829
+  },
+  {
+    "file": "docs/js/amphibious-fish-corpse-cleanup.js",
+    "owner": "AmphibiousFishCorpseCleanup",
+    "classification": "timer-event",
+    "function": "presentationLoop",
+    "reason": "Unthrottled forever RAF loop (started at line 262) whose only work is polling the fishing-prewarm state and the hostile-creature list for a newly spawned amphibious fish that still needs its land presentation applied once; this only needs to catch an infrequent state change, not per-frame precision.",
+    "migrationStage": "candidate",
+    "line": 207
+  },
+  {
+    "file": "docs/js/arch-button-labels.js",
+    "owner": "ArchButtonLabels",
+    "classification": "one-shot",
+    "function": "queueRefresh",
+    "reason": "A `refreshQueued` guard makes this a single RAF that defers a batch of button-label DOM updates to the next paint; it does not recur.",
+    "migrationStage": "not-planned",
+    "line": 288
+  },
+  {
+    "file": "docs/js/arch-button-labels.js",
+    "owner": "ArchButtonLabels",
+    "classification": "timer-event",
+    "function": "watchInputDevice",
+    "reason": "Forever RAF loop (started at line 303) that only checks whether the last-used input device (mouse vs gamepad) changed; that rare change does not need per-frame execution and would be equally well served by input events or a timer.",
+    "migrationStage": "candidate",
+    "line": 297
+  },
+  {
+    "file": "docs/js/attack-editor-hand-inverse-configurator.js",
+    "owner": "AttackEditorHandInverseConfigurator",
+    "classification": "one-shot",
+    "function": "mutateTransform / per-field input listeners (syncPreview defer)",
+    "reason": "syncPreview() is called immediately then deferred once more via a single non-recursive RAF (also at line 158, bound to phase/key inputs) to re-read the value after layout settles. Both call sites live only inside the standalone Attack Animation Editor tool page (docs/tools/attack-animation-editor/), which never loads game.js or RuntimeFrameScheduler.",
+    "migrationStage": "not-planned",
+    "line": 128
+  },
+  {
+    "file": "docs/js/attack-editor-hand-shoulder-controls.js",
+    "owner": "HobunjiAttackEditorHandShoulderControls",
+    "classification": "isolated-context",
+    "function": "statusFrame",
+    "reason": "Permanent self-perpetuating RAF loop (kicked off at line 236) that keeps a live status readout in sync while scrubbing poses, but it belongs entirely to the standalone Attack Animation Editor tool page - its own isolated preview/editor context, distinct from and never co-loaded with the main gameplay page or RuntimeFrameScheduler.",
+    "migrationStage": "not-planned",
+    "line": 231
+  },
+  {
+    "file": "docs/js/attack-editor-idle-hand-parity.js",
+    "owner": "HobunjiAttackEditorIdleHandParity",
+    "classification": "one-shot",
+    "function": "scheduleWorkflowLayout",
+    "reason": "A `layoutQueued` guard makes this a single non-recursive RAF that defers a sidebar workflow-layout reorder to the next paint after a MutationObserver fires.",
+    "migrationStage": "not-planned",
+    "line": 491
+  },
+  {
+    "file": "docs/js/attack-editor-idle-hand-parity.js",
+    "owner": "HobunjiAttackEditorIdleHandParity",
+    "classification": "isolated-context",
+    "function": "boot",
+    "reason": "Self-terminating retry loop confined to the standalone Attack Animation Editor tool page: boot() re-invokes itself via RAF only until its own control-patching and listener setup succeed, and is not part of the main gameplay page or any scheduler surface.",
+    "migrationStage": "not-planned",
+    "line": 510
+  },
+  {
+    "file": "docs/js/calendar-system.js",
+    "owner": "CalendarSystem",
+    "classification": "one-shot",
+    "function": "openTimePassage",
+    "reason": "Single RAF defers focusing the hour slider to the next paint after the wait/sleep modal opens; not a loop.",
+    "migrationStage": "not-planned",
+    "line": 494
+  },
+  {
+    "file": "docs/js/calendar-system.js",
+    "owner": "CalendarSystem",
+    "classification": "timer-event",
+    "function": "advanceOnePassageHour",
+    "reason": "`await new Promise(resolve => requestAnimationFrame(resolve))` inside a time-bounded while-loop just polls each frame for game.js's private day-rollover to finish - it waits for something to become available rather than doing genuine per-frame work.",
+    "migrationStage": "candidate",
+    "line": 591
+  },
+  {
+    "file": "docs/js/calendar-system.js",
+    "owner": "CalendarSystem",
+    "classification": "bounded-animation",
+    "function": "animateIrisRadius",
+    "reason": "Classic eased-tween RAF loop (self-continuing at line 670) that runs only until progress t reaches 1, then resolves and stops - a bounded, self-terminating UI animation for the sleep/wait iris transition.",
+    "migrationStage": "not-planned",
+    "line": 673
+  },
+  {
+    "file": "docs/js/combat/combat-core.js",
+    "owner": "Combat",
+    "classification": "timer-event",
+    "function": "track (inside startExteriorTracker)",
+    "reason": "Forever RAF loop (kicked off at line 1135, wired from the DevSpawner hook) whose only job is caching the player's last exterior-area tile position for a rare fallback lookup (inferredExteriorForArea); this cached value does not need per-frame freshness.",
+    "migrationStage": "candidate",
+    "line": 1133
+  },
+  {
+    "file": "docs/js/combat/combat-input.js",
+    "owner": "CombatInput",
+    "classification": "one-shot",
+    "function": "handle.runAttack (inside runAfterAttackAlignment)",
+    "reason": "Single non-recursive RAF defers releasing the queued attack by exactly one frame after windup so the alignment-handoff state transitions cleanly; it does not reschedule itself.",
+    "migrationStage": "not-planned",
+    "line": 187
+  },
+  {
+    "file": "docs/js/combat/technique-scrolls.js",
+    "owner": "TechniqueScrolls",
+    "classification": "one-shot",
+    "function": "queueDecorate",
+    "reason": "A `decoratePending` guard makes this a single non-recursive RAF that defers re-decorating the loadout pane to the next paint.",
+    "migrationStage": "not-planned",
+    "line": 384
+  },
+  {
+    "file": "docs/js/compendium-ui.js",
+    "owner": "CompendiumUI",
+    "classification": "one-shot",
+    "function": "activate",
+    "reason": "Single RAF defers focusing the search input to the next paint after the Compendium tab is activated; not a loop.",
+    "migrationStage": "not-planned",
+    "line": 615
+  },
+  {
+    "file": "docs/js/controller-input.js",
+    "owner": "ControllerInput",
+    "classification": "scheduler",
+    "function": "fallbackFrame",
+    "reason": "Permanent per-frame gamepad-polling loop (kicked off at line 303) used only when window.RuntimeFrameScheduler is unavailable - the primary path already registers this same work with RuntimeFrameScheduler, confirming the raw RAF fallback is itself a direct scheduler-style per-frame subscription.",
+    "migrationStage": "candidate",
+    "line": 287
+  },
+  {
+    "file": "docs/js/day-progress-review.js",
+    "owner": "DayProgressReview",
+    "classification": "timer-event",
+    "function": "advanceOnePassageHour",
+    "reason": "Identical pattern to calendar-system.js's rollover wait: polls each frame inside a time-bounded while-loop only to detect that game.js's private day rollover has finished.",
+    "migrationStage": "candidate",
+    "line": 488
+  },
+  {
+    "file": "docs/js/dev-testing-switchbox.js",
+    "owner": "DevTestingSwitchbox",
+    "classification": "one-shot",
+    "function": "scheduleSaveSelectRefresh",
+    "reason": "Guarded single RAF debounces a MutationObserver-driven DOM refresh to the next paint and does not reschedule itself.",
+    "migrationStage": "not-planned",
+    "line": 465
+  },
+  {
+    "file": "docs/js/environment-surface-micro-plateau.js",
+    "owner": "EnvironmentSurfaceMicroPlateau",
+    "classification": "scheduler",
+    "function": "tick",
+    "reason": "Self-perpetuating RAF loop started once at module load (line 572) that runs for the life of the page, throttled to ~16ms, continuously rebuilding/maintaining the snow/slush micro-plateau surface mesh - a genuine permanent visual runtime.",
+    "migrationStage": "candidate",
+    "line": 511
+  },
+  {
+    "file": "docs/js/farm-menu-layout.js",
+    "owner": "FarmMenuLayout",
+    "classification": "one-shot",
+    "function": "restoreNurseryFocus",
+    "reason": "Defers nursery-list focus/scroll restoration to the next paint after a rerender, with a nested one-shot RAF (line 535) to reapply scroll on browsers that ignore preventScroll; neither RAF reschedules itself.",
+    "migrationStage": "not-planned",
+    "line": 521
+  },
+  {
+    "file": "docs/js/farm-panel-core.js",
+    "owner": "FarmPanel",
+    "classification": "isolated-context",
+    "function": "_houseLayoutTick",
+    "reason": "Drives an independent top-down orthographic Three.js preview renderer for the House Layout edit modal; started in openHouseLayoutModal and explicitly cancelAnimationFrame'd in closeHouseLayoutModal, entirely separate from the main gameplay render loop.",
+    "migrationStage": "not-planned",
+    "line": 466
+  },
+  {
+    "file": "docs/js/fish-catalog.js",
+    "owner": "FishCatalog",
+    "classification": "bounded-animation",
+    "function": "presentationLoop",
+    "reason": "Started (line 382) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
+    "migrationStage": "not-planned",
+    "line": 376
+  },
+  {
+    "file": "docs/js/fishing-events.js",
+    "owner": "FishingFeatureDebug",
+    "classification": "scheduler",
+    "function": "featureLoop",
+    "reason": "Unconditional self-perpetuating RAF loop started once at module load (line 883) and never cancelled; drives Frenzy-event timers and Gullet fish AI/animation for the entire session regardless of any UI state - permanent runtime work.",
+    "migrationStage": "candidate",
+    "line": 863
+  },
+  {
+    "file": "docs/js/folder-save-debug-ui.js",
+    "owner": "FolderSaveDebugUI",
+    "classification": "one-shot",
+    "function": "scheduleInstall",
+    "reason": "Single guarded RAF (re)installs a diagnostics UI element after a MutationObserver signals a DOM change; does not reschedule itself.",
+    "migrationStage": "not-planned",
+    "line": 76
+  },
+  {
+    "file": "docs/js/folder-save-device-provenance.js",
+    "owner": "FolderSaveDeviceProvenance",
+    "classification": "one-shot",
+    "function": "scheduleResumeSourceRefresh",
+    "reason": "Same MutationObserver-debounced next-paint refresh pattern used across the folder-save UI modules; fires once per scheduling with no self-recursion.",
+    "migrationStage": "not-planned",
+    "line": 164
+  },
+  {
+    "file": "docs/js/folder-save-primary.js",
+    "owner": "FolderSavePrimary",
+    "classification": "one-shot",
+    "function": "scheduleUiRefresh",
+    "reason": "Debounces a settings/onboarding DOM refresh to the next paint via a single guarded RAF; not a loop.",
+    "migrationStage": "not-planned",
+    "line": 540
+  },
+  {
+    "file": "docs/js/hand-shoulder-pose-runtime.js",
+    "owner": "HobunjiHandShoulderPoseRuntime",
+    "classification": "timer-event",
+    "function": "captureLoop",
+    "reason": "Started unconditionally at module load (line 112), this loop exists purely to poll every frame for global.Combat.deps to become available so it can install a wrapper once; after installation it continues forever as a cheap no-op check, which does not need per-frame cadence and would be better served by a poll interval or an init event.",
+    "migrationStage": "candidate",
+    "line": 110
+  },
+  {
+    "file": "docs/js/hand-tool-grips.js",
+    "owner": "HobunjiHandToolGrips",
+    "classification": "isolated-context",
+    "function": "frame (fallback branch inside the trailing if/else)",
+    "reason": "Migrated to RuntimeFrameScheduler: installMaintenance() (idempotent per-frame retries of installCombatCapture/installRigBlendWrapper plus the editor-only UI refresh) registers as 'hand-tool-grips-install', and applyPrimaryGripVisuals() (the real per-frame primary-grip transform correction on the held tool/weapon visual) registers as 'hand-tool-grips-visuals' on the pre-render phase, alongside procedural-hand-frame-driver.js's poseAndSyncUpdate. This module is also loaded by the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler and own their own isolated animation context, so the original combined per-frame RAF loop remains as a fallback for that context only.",
+    "migrationStage": "migrated",
+    "line": 769
+  },
+  {
+    "file": "docs/js/harlyao-night-march-runtime.js",
+    "owner": "HarlyaoNightMarch",
+    "classification": "one-shot",
+    "function": "yieldFrame",
+    "reason": "A reusable 'wait for next paint' helper awaited between entity-build batches while materializing the bandit army; each invocation is a single RAF deferral, not a self-perpetuating loop.",
+    "migrationStage": "not-planned",
+    "line": 315
+  },
+  {
+    "file": "docs/js/input-default-reset-ui.js",
+    "owner": "InputDefaultsResetUI",
+    "classification": "one-shot",
+    "function": "queueRefresh",
+    "reason": "Guarded single RAF reflows the Settings reset-control UI after a change; does not call itself again.",
+    "migrationStage": "not-planned",
+    "line": 197
+  },
+  {
+    "file": "docs/js/input-settings-panel.js",
+    "owner": "InputSettingsPanel",
+    "classification": "timer-event",
+    "function": "poll",
+    "reason": "Repeated per-frame gamepad polling inside the rebind 'Listen for input' flow exists only to detect the next controller press; the work doesn't need per-frame precision and is effectively an availability-wait, even though it self-terminates once input is captured or the capture is cancelled.",
+    "migrationStage": "candidate",
+    "line": 219
+  },
+  {
+    "file": "docs/js/inventory-character-effects.js",
+    "owner": "InventoryCharacterEffects",
+    "classification": "one-shot",
+    "function": "scheduleRefresh",
+    "reason": "Guarded single RAF recomputes/re-renders the character-effects panel once after a dependency change; not a recurring loop.",
+    "migrationStage": "not-planned",
+    "line": 332
+  },
+  {
+    "file": "docs/js/inventory-gear-compact-effects.js",
+    "owner": "InventoryGearCompactEffects",
+    "classification": "one-shot",
+    "function": "scheduleFit",
+    "reason": "Guarded single RAF re-fits the compact gear panel layout after a resize/DOM mutation; fires once per schedule.",
+    "migrationStage": "not-planned",
+    "line": 429
+  },
+  {
+    "file": "docs/js/inventory-ui.js",
+    "owner": "InventoryUI",
+    "classification": "one-shot",
+    "function": "scheduleMenuReadability",
+    "reason": "Guarded single RAF re-enforces menu text readability (font floor/color) after a click/input/mutation; does not reschedule itself.",
+    "migrationStage": "not-planned",
+    "line": 213
+  },
+  {
+    "file": "docs/js/inventory-ui.js",
+    "owner": "InventoryUI",
+    "classification": "one-shot",
+    "function": "scheduleDecorate",
+    "reason": "Separate guarded single RAF that redecorates inventory mode tabs/pack slots after a change; independent debounce flow from scheduleMenuReadability, also not a loop.",
+    "migrationStage": "not-planned",
+    "line": 298
+  },
+  {
+    "file": "docs/js/item-arch-category-colors.js",
+    "owner": "ItemArchCategoryColors",
+    "classification": "one-shot",
+    "function": "queueRefresh",
+    "reason": "Guarded single RAF recolors item slots after inventory deps/order change; not a loop.",
+    "migrationStage": "not-planned",
+    "line": 453
+  },
+  {
+    "file": "docs/js/item-arch-original-presentation.js",
+    "owner": "ItemArchOriginalPresentation",
+    "classification": "bounded-animation",
+    "function": "startFrameLoop (frame)",
+    "reason": "Self-perpetuating RAF loop that keeps the item arc's fixed heading/inset positioned while the radial item-arc menu is open, and stops itself (frameRunning = false) as soon as updateOpenPresentation() reports the arc closed - a bounded, UI-open-scoped effect rather than a persistent world runtime.",
+    "migrationStage": "not-planned",
+    "line": 229
+  },
+  {
+    "file": "docs/js/item-arch-original-presentation.js",
+    "owner": "ItemArchOriginalPresentation",
+    "classification": "one-shot",
+    "function": "queueRefresh",
+    "reason": "Guarded single RAF recomputes the arc's open presentation once after a DOM mutation and, if the arc is open, hands off to startFrameLoop; the RAF itself does not reschedule.",
+    "migrationStage": "not-planned",
+    "line": 237
+  },
+  {
+    "file": "docs/js/item-arch-sticky-category-heading.js",
+    "owner": "ItemArchStickyCategoryHeading",
+    "classification": "one-shot",
+    "function": "requestExactSharedGeometry",
+    "reason": "Guarded by geometryRefreshPending so it fires only once per request, deferring a single geometry-refresh check to the next paint rather than running a self-perpetuating loop.",
+    "migrationStage": "not-planned",
+    "line": 263
+  },
+  {
+    "file": "docs/js/item-arch-sticky-category-heading.js",
+    "owner": "ItemArchStickyCategoryHeading",
+    "classification": "one-shot",
+    "function": "refresh (retry path)",
+    "reason": "Guarded by retryQueued, this schedules exactly one deferred retry of queueRefresh() when slots are momentarily empty, not a recursive loop.",
+    "migrationStage": "not-planned",
+    "line": 329
+  },
+  {
+    "file": "docs/js/item-arch-sticky-category-heading.js",
+    "owner": "ItemArchStickyCategoryHeading",
+    "classification": "one-shot",
+    "function": "queueRefresh",
+    "reason": "Guarded by refreshQueued, this debounces MutationObserver bursts into a single next-frame call to refresh(); refresh() itself never re-arms this RAF.",
+    "migrationStage": "not-planned",
+    "line": 340
+  },
+  {
+    "file": "docs/js/kurraya-instrument.js",
+    "owner": "KurrayaInstrument",
+    "classification": "one-shot",
+    "function": "queueMinimalPerformanceUiRefresh",
+    "reason": "Guarded by _minimalPerformanceUiRefreshPending, it coalesces MutationObserver bursts into a single deferred call to applyMinimalPerformanceUi() on the next frame; it does not reschedule itself.",
+    "migrationStage": "not-planned",
+    "line": 132
+  },
+  {
+    "file": "docs/js/livestock-dialogue.js",
+    "owner": "LivestockDialogue",
+    "classification": "bounded-animation",
+    "function": "tick",
+    "reason": "Self-perpetuating RAF loop that drives player-staging and animal head-facing updates only while a livestock dialogue session is open; open() starts it and close() calls cancelAnimationFrame(s.raf), so it runs only for the bounded life of one conversation.",
+    "migrationStage": "not-planned",
+    "line": 209
+  },
+  {
+    "file": "docs/js/livestock-nursery.js",
+    "owner": "LivestockNursery",
+    "classification": "scheduler",
+    "function": "frame (startSwarmLoop)",
+    "reason": "Self-perpetuating RAF loop that drives the baby-livestock swarm simulation every frame while the player is inside the nursery map; it is context-scoped (starts on entering the nursery, self-stops via stopSwarmLoop after a grace period once the player leaves) but is a genuine ongoing per-frame visual/simulation subscription while active, the same shape as the already-migrated melee HUD reticle.",
+    "migrationStage": "candidate",
+    "line": 664
+  },
+  {
+    "file": "docs/js/loading-screen-runtime.js",
+    "owner": "LoadingScreenRuntime",
+    "classification": "bounded-animation",
+    "function": "motionTick",
+    "reason": "Self-perpetuating RAF loop driving the loading-screen's corner-pan/script-scroll motion; it stops re-arming as soon as state.visible goes false, and showImmediate()/show() explicitly cancelAnimationFrame it before restarting, so it only runs for the bounded duration the loading overlay is shown.",
+    "migrationStage": "not-planned",
+    "line": 531
+  },
+  {
+    "file": "docs/js/loading-screen-runtime.js",
+    "owner": "LoadingScreenRuntime",
+    "classification": "one-shot",
+    "function": "show (double-RAF paint wait)",
+    "reason": "A nested requestAnimationFrame(() => requestAnimationFrame(resolve)) used only to defer a Promise resolution to two paints later so the browser has a chance to render the shown overlay; not a recurring loop.",
+    "migrationStage": "not-planned",
+    "line": 592
+  },
+  {
+    "file": "docs/js/music-minigame.js",
+    "owner": "MusicMinigame",
+    "classification": "one-shot",
+    "function": "positionCompactSongPicker (install callsite)",
+    "reason": "Single non-recursive requestAnimationFrame call used to (re)position the compact song picker after it is built, paired with a setTimeout(120) fallback; it never reschedules itself.",
+    "migrationStage": "not-planned",
+    "line": 549
+  },
+  {
+    "file": "docs/js/music-system.js",
+    "owner": "MusicSystem",
+    "classification": "bounded-animation",
+    "function": "step (fadeVolume)",
+    "reason": "Self-perpetuating RAF loop that ramps an HTMLMediaElement's volume from start to target over `dur` ms; it stops re-arming once t>=1 (fade complete) or once a newer fade token invalidates it, so it runs only for the bounded duration of one fade.",
+    "migrationStage": "not-planned",
+    "line": 227
+  },
+  {
+    "file": "docs/js/netlify-cloud-save.js",
+    "owner": "NetlifyCloudSave",
+    "classification": "one-shot",
+    "function": "MutationObserver callback (body observer)",
+    "reason": "Guarded by _bodyObserverScheduled, this coalesces a storm of body-mutation events into a single deferred call to ensureLauncher/ensureSettingsRow/renderSettingsRow on the next frame; it is not a self-perpetuating loop, only triggered again by future mutations.",
+    "migrationStage": "not-planned",
+    "line": 772
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-camera-composition.js",
+    "owner": "OnboardingCharacterCreationCameraComposition",
+    "classification": "bounded-animation",
+    "function": "frame",
+    "reason": "Self-perpetuating RAF loop (started at line 170) that keeps the character-creator's WebGLRenderer.render hook installed and syncs the face-view CSS transform-origin every frame; it checks `if (!active) return` and stops rescheduling ~500ms after hobunjiPlayerReady fires, so it runs only for the bounded duration of character creation, not forever.",
+    "migrationStage": "not-planned",
+    "line": 154
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-life-preview.js",
+    "owner": "OnboardingCharacterCreationLifePreview",
+    "classification": "one-shot",
+    "function": "captureOnboardingAvatar",
+    "reason": "Single deferred call to installStarterWeapon(model) fired once when a new preview avatar model is captured; not recursive and not re-armed.",
+    "migrationStage": "not-planned",
+    "line": 190
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-life-preview.js",
+    "owner": "OnboardingCharacterCreationLifePreview",
+    "classification": "bounded-animation",
+    "function": "lifeFrame",
+    "reason": "Self-perpetuating RAF loop (started at line 405) that repaints the living portrait (throttled to LIFE_FRAME_MS) and re-places the starter-weapon hand grip every frame; it checks `if (!active) return` and teardown() (triggered ~500ms after hobunjiPlayerReady) sets active=false, so it only runs for the bounded duration of character creation.",
+    "migrationStage": "not-planned",
+    "line": 353
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-mashtzarr-female.js",
+    "owner": "OnboardingCharacterCreationMashtzarrFemale",
+    "classification": "timer-event",
+    "function": "ensureRuntimeGuard",
+    "reason": "Polls every frame only to check whether the portrait randomizer/fighter-roster dependencies have finished loading yet, re-arming itself via RAF until both are ready and then stopping for good; this is a wait-for-availability pattern better served by setTimeout/polling interval than a per-frame RAF.",
+    "migrationStage": "candidate",
+    "line": 132
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-redesign.js",
+    "owner": "OnboardingCharacterCreationRedesign",
+    "classification": "isolated-context",
+    "function": "frame (makePreviewScene)",
+    "reason": "Drives an entirely separate THREE.WebGLRenderer/Scene/Camera created just for the character-creator's own preview canvas (not the main gameplay renderer); it stops itself via sceneState.running (set false by disposePreviewScene) once the canvas is disconnected, a legitimate independent preview render loop.",
+    "migrationStage": "not-planned",
+    "line": 517
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-weapon-polish.js",
+    "owner": "OnboardingCharacterCreationWeaponPolish",
+    "classification": "scheduler",
+    "function": "frame",
+    "reason": "Self-perpetuating RAF loop (started at line 89) that re-applies held-tool visual corrections every frame; unlike its sibling onboarding patches it has no `active`/teardown gate tied to hobunjiPlayerReady, so it keeps re-arming itself for the rest of the page's life (effectively idle once weaponFix()'s toolPlane disappears) -- a genuine, if arguably unintended, permanent per-frame subscription.",
+    "migrationStage": "candidate",
+    "line": 82
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-weapon-view-fix.js",
+    "owner": "OnboardingCharacterCreationWeaponViewFix",
+    "classification": "one-shot",
+    "function": "syncModelAndWeapon",
+    "reason": "Single deferred call to installRandomWeapon fired once when the tracked model/weaponRoot changes; guarded so it is not re-armed on every frame.",
+    "migrationStage": "not-planned",
+    "line": 449
+  },
+  {
+    "file": "docs/js/onboarding-character-creation-weapon-view-fix.js",
+    "owner": "OnboardingCharacterCreationWeaponViewFix",
+    "classification": "bounded-animation",
+    "function": "frame",
+    "reason": "Self-perpetuating RAF loop (started at line 471) that keeps model/weapon state in sync every frame during character creation; checks `if (!active) return` and stops ~500ms after hobunjiPlayerReady fires, so it only runs for the bounded duration of character creation.",
+    "migrationStage": "not-planned",
+    "line": 460
+  },
+  {
+    "file": "docs/js/onboarding-viewport-fit.js",
+    "owner": "OnboardingViewportFit",
+    "classification": "one-shot",
+    "function": "queueFitCheck",
+    "reason": "Guarded by checkQueued (cleared at the top of measureFit), this defers a single viewport-fit measurement to the next frame in response to resize/mutation bursts; not a recursive loop.",
+    "migrationStage": "not-planned",
+    "line": 126
+  },
+  {
+    "file": "docs/js/performance-debug.js",
+    "owner": "PerformanceDebug",
+    "classification": "scheduler",
+    "function": "frameLoop",
+    "reason": "Self-perpetuating RAF loop for the opt-in FPS counter/profiler overlay; it bails out and stops re-arming (`perfState.raf = 0; if (!fpsEnabled && !profilerEnabled) return;`) once the feature is disabled, but while enabled it is a genuine ongoing per-frame HUD subscription needing frame-accurate counting, a scheduler-style migration candidate.",
+    "migrationStage": "candidate",
+    "line": 401
+  },
+  {
+    "file": "docs/js/performance-debug.js",
+    "owner": "PerformanceDebug",
+    "classification": "scheduler",
+    "function": "lagWatchLoop",
+    "reason": "Permanent self-perpetuating RAF loop, unconditionally started once from install() (via startLagWatch()) with no enable/disable gate; it counts frames every tick to compute a rolling FPS sample every LAG_SNAPSHOT_SAMPLE_MS and auto-captures a cache-audit snapshot on sustained lag -- a genuine always-on per-frame runtime subscription.",
+    "migrationStage": "candidate",
+    "line": 1238
+  },
+  {
+    "file": "docs/js/pixel-probe.js",
+    "owner": "PixelProbe",
+    "classification": "one-shot",
+    "function": "nextTick (inside flicker diagnostic loop)",
+    "reason": "A single requestAnimationFrame races a 200ms setTimeout purely to await the next paint inside a bounded 45-sample flicker diagnostic; it never reschedules itself and the outer sampling loop is a plain for-loop, not a RAF recursion.",
+    "migrationStage": "not-planned",
+    "line": 1124
+  },
+  {
+    "file": "docs/js/procedural-hand-frame-driver.js",
+    "owner": "ProceduralHandFrameDriver",
+    "classification": "isolated-context",
+    "function": "frame (fallback branch inside the trailing if/else)",
+    "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all — attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
+    "migrationStage": "not-planned",
+    "line": 593
+  },
+  {
+    "file": "docs/js/procedural-hand-grip-runtime.js",
+    "owner": "ProceduralHandGripRuntime",
+    "classification": "timer-event",
+    "function": "frame",
+    "reason": "Reschedules itself every frame to retry install() until Combat.deps.__weaponToolStanceVisualHooks becomes true. Investigated for a Stage 1 chainGlobal-on-WeaponToolStances.init migration, but that flag is only guaranteed true after weapon-tool-stances.js's own render-driven updateMatrixWorld retry (not synchronously after WeaponToolStances.init() returns) — a headless-game-test run confirmed a hook on init() alone leaves this permanently uninstalled. Kept on RAF polling until a real readiness signal exists; do not re-attempt the naive one-shot hook.",
+    "migrationStage": "candidate",
+    "line": 98
+  },
+  {
+    "file": "docs/js/quick-potion-arc-ui.js",
+    "owner": "QuickPotionArcUI",
+    "classification": "one-shot",
+    "function": "scheduleAtomicCommit",
+    "reason": "Single RAF batches every staged retained/new/outgoing potion-slot DOM mutation into one commit frame so the item-window boundary reads as one movement; it does not reschedule itself.",
+    "migrationStage": "not-planned",
+    "line": 211
+  },
+  {
+    "file": "docs/js/quick-potion-arc-ui.js",
+    "owner": "QuickPotionArcUI",
+    "classification": "bounded-animation",
+    "function": "startFrameEnforcer (frame)",
+    "reason": "RAF loop (recurses at line 433, and re-defers itself at line 422 while an atomic commit is pending) that lays out/animates the shared potion-selection arc every frame only while it has active slots, and stops itself (frameRunning = false) the moment the arc closes.",
+    "migrationStage": "not-planned",
+    "line": 435
+  },
+  {
+    "file": "docs/js/relationships-panel.js",
+    "owner": "RelationshipsPanel",
+    "classification": "one-shot",
+    "function": "scheduleKeepsakeRerender",
+    "reason": "Single RAF (falls back to setTimeout(...,0) if unavailable) defers one keepsake re-render to the next paint, guarded by a queued flag that the callback itself clears; it does not reschedule.",
+    "migrationStage": "not-planned",
+    "line": 187
+  },
+  {
+    "file": "docs/js/save-startup-gate.js",
+    "owner": "SaveStartupGate",
+    "classification": "one-shot",
+    "function": "scheduleRefresh",
+    "reason": "Single RAF defers one refresh() call (invoked from a MutationObserver callback) to the next paint, guarded by a 'scheduled' flag that refresh() itself resets; no self-rescheduling.",
+    "migrationStage": "not-planned",
+    "line": 397
+  },
+  {
+    "file": "docs/js/shipping-panel.js",
+    "owner": "ShippingPanel",
+    "classification": "one-shot",
+    "function": "openStandalone",
+    "reason": "Single RAF defers focusing the freshly-opened standalone shipping dialog to the next paint after the DOM has been built/updated; not a loop.",
+    "migrationStage": "not-planned",
+    "line": 358
+  },
+  {
+    "file": "docs/js/stable-animal-progression.js",
+    "owner": "StableAnimalProgression",
+    "classification": "scheduler",
+    "function": "alertFrame",
+    "reason": "Permanent self-recursive loop, started once via ensureAlertFrame() when the module installs, that services stable-XP ticks and animates pulsing shoulder-pet threat-alert auras (position/scale/opacity driven by Math.sin(now)) every frame — needs per-frame smoothness, so it is a genuine ongoing visual subscription.",
+    "migrationStage": "candidate",
+    "line": 442
+  },
+  {
+    "file": "docs/js/title-screen-runtime.js",
+    "owner": "HobunjiTitleScreen",
+    "classification": "timer-event",
+    "function": "pollGamepad",
+    "reason": "Reschedules itself every frame (also started once at line 264) purely to poll for a gamepad button press that starts the game, and stops entirely once the title screen becomes inactive (active=false / cancelAnimationFrame in beginStart) — a bounded wait-for-input poll that does not need per-frame cadence.",
+    "migrationStage": "candidate",
+    "line": 236
+  },
+  {
+    "file": "docs/js/ui-element-editor.js",
+    "owner": "UIElementEditor",
+    "classification": "one-shot",
+    "function": "MutationObserver callback in updateObserverState",
+    "reason": "Single RAF defers one applyTextOverrides() call to the next paint per batch of observed DOM mutations, guarded by mutationScheduled which the callback itself clears; no self-rescheduling.",
+    "migrationStage": "not-planned",
+    "line": 199
+  },
+  {
+    "file": "docs/js/ui-element-editor.js",
+    "owner": "UIElementEditor",
+    "classification": "bounded-animation",
+    "function": "tick",
+    "reason": "RAF loop only runs while the dev UI-element-editor panel is shown — started in updateListeners() when shown becomes true (line 879) and explicitly cancelAnimationFrame'd when it becomes false — to keep the selection highlight box's position synced to the selected element; a dev-tool-gated bounded loop, not a permanent gameplay subscription.",
+    "migrationStage": "not-planned",
+    "line": 557
+  },
+  {
+    "file": "docs/js/weapon-discovery-rewards.js",
+    "owner": "WeaponDiscoveryRewards",
+    "classification": "timer-event",
+    "function": "scan",
+    "reason": "Reschedules itself every frame (also started once at line 218) only to re-run an idempotent, flag-guarded 'safety scan' (the code's own comment) that re-decorates any treasure-chest objects missed by the direct init/ensureZone/syncZoneInteractivity hook points; cheap and non-urgent, so it does not need per-frame cadence.",
+    "migrationStage": "candidate",
+    "line": 192
+  },
+  {
+    "file": "docs/js/weapon-idle-body-yaw-runtime.js",
+    "owner": "WeaponIdleBodyYawRuntime",
+    "classification": "scheduler",
+    "function": "sync",
+    "reason": "Permanent self-recursive loop (also started once at line 65) that reads the authored idle-stance body yaw and pushes/clears it on the PlayerBodyTransformComposer channel every frame; it briefly reschedules the same way at line 29 while waiting for WeaponToolStances/composer to become available before settling into steady per-frame sync, so the loop as a whole is a genuine ongoing visual subscription.",
+    "migrationStage": "candidate",
+    "line": 51
+  },
+  {
+    "file": "docs/js/weapon-trust-visits.js",
+    "owner": "WeaponTrustVisits",
+    "classification": "timer-event",
+    "function": "update",
+    "reason": "Reschedules itself every frame (also started once at line 770) but only does substantive work on an area change or once a 1000ms throttle (now - lastSyncAt > 1000) elapses; the per-frame cadence itself is unneeded and would be better served by an area-change event plus a periodic timer.",
+    "migrationStage": "candidate",
+    "line": 578
+  }
+]

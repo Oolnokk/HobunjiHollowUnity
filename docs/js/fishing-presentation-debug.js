@@ -126,10 +126,29 @@
     line.style.color = wet ? '#7fe89a' : '#ffb58f';
   }
 
-  function frame() {
-    syncGulletVisual();
-    updateWaterDebug();
-    requestAnimationFrame(frame);
+  const GULLET_SCHEDULER_ID = 'fishing-presentation-gullet'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
+  const WATER_DEBUG_SCHEDULER_ID = 'fishing-presentation-water-debug';
+
+  // Same URL-param/localStorage check as fishing-events.js's private
+  // debugEnabled() (not shared, since the two files only need to agree on
+  // the flag's meaning, not on an actual runtime dependency).
+  function fishingDebugEnabled() {
+    const query = new URLSearchParams(window.location?.search || '');
+    let stored = false;
+    try { stored = window.localStorage?.getItem('hobunjiFishingDebug') === '1'; } catch (_) {}
+    return query.get('fishingDebug') === '1' || stored;
+  }
+
+  // Both subscribers already self-gate on a DOM lookup every frame they run
+  // (the Gullet silhouette / the debug panel's water-check line only exist
+  // in specific contexts), but for the overwhelming majority of play time -
+  // not fishing at all, and never having passed ?fishingDebug=1 - that
+  // lookup itself is pure waste. Poll the two context flags at a much lower
+  // cadence than every browser frame and gate each subscriber's enabled
+  // state on the one that actually matters to it.
+  function pollContext() {
+    window.RuntimeFrameScheduler.setEnabled(GULLET_SCHEDULER_ID, !!window.Fishing?.state);
+    window.RuntimeFrameScheduler.setEnabled(WATER_DEBUG_SCHEDULER_ID, fishingDebugEnabled());
   }
 
   window.FishingPresentationDebug = {
@@ -137,5 +156,19 @@
     gulletBreadthMultiplier: GULLET_BREADTH_MULTIPLIER,
   };
 
-  requestAnimationFrame(frame);
+  window.RuntimeFrameScheduler.register(GULLET_SCHEDULER_ID, syncGulletVisual, {
+    phase: 'post-game',
+    owner: 'FishingPresentationDebug',
+    enabled: false, // pollContext() below enables this only while a Gullet encounter can exist (i.e. main fishing is active).
+    description: 'Synchronizes the Gullet\'s presentation with the regular fish visual while it is present.',
+  });
+  window.RuntimeFrameScheduler.register(WATER_DEBUG_SCHEDULER_ID, updateWaterDebug, {
+    phase: 'post-game',
+    owner: 'FishingPresentationDebug',
+    enabled: false, // pollContext() below enables this only while the mobile fishing debug panel is turned on.
+    description: 'Refreshes the fishing debug panel\'s water-check line.',
+  });
+
+  pollContext();
+  window.setInterval(pollContext, 400);
 })();

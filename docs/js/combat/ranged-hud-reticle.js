@@ -92,7 +92,7 @@
     ensureReticle();
     refresh();
     window.RuntimeFrameScheduler.register(SCHEDULER_ID, tick, {
-      phase: 'visual',
+      phase: 'post-game',
       owner: 'RangedHudReticle',
       description: 'Updates ranged reticle visibility and hit coloring.',
     });

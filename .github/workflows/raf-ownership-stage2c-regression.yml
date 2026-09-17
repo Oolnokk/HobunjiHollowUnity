@@ -1,0 +1,32 @@
+name: RAF ownership Stage 2 regression (part 3)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/fishing-presentation-debug.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-fishing-presentation-debug.js'
+      - '.github/workflows/raf-ownership-stage2c-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/fishing-presentation-debug.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-fishing-presentation-debug.js'
+      - '.github/workflows/raf-ownership-stage2c-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/fishing-presentation-debug.js
+      - name: Fishing presentation debug scheduler migration
+        run: node scripts/test-fishing-presentation-debug.js

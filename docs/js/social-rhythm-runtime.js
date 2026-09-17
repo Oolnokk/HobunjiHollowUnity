@@ -634,16 +634,15 @@
     };
   }
 
-  function frame(timeMs) {
-    if (timeMs - state.lastPollAtMs >= configuredNumber('globalRhythmPollMs', 180, 50, 1000)) {
-      state.lastPollAtMs = timeMs;
+  function maintainRhythmClock({ timestamp }) {
+    if (timestamp - state.lastPollAtMs >= configuredNumber('globalRhythmPollMs', 180, 50, 1000)) {
+      state.lastPollAtMs = timestamp;
       patchExistingFrames();
       sampleKurrayaRhythm();
     }
-    updateCharacterViewHead(timeMs);
-    updateDanceFootsteps(timeMs);
-    updatePlayerKurrayaMetronome(timeMs);
-    global.requestAnimationFrame(frame);
+    updateCharacterViewHead(timestamp);
+    updateDanceFootsteps(timestamp);
+    updatePlayerKurrayaMetronome(timestamp);
   }
 
   resetToSessionDefault();
@@ -671,5 +670,8 @@
     dancerBeatAt,
   });
 
-  global.requestAnimationFrame(frame);
+  global.RuntimeFrameScheduler.register('social-rhythm-clock', maintainRhythmClock, {
+    owner: 'SocialRhythmClock',
+    description: 'Polls the Kurraya rhythm source, updates Character View head-return easing, and drives dance/metronome footstep timing. None of this has a render-order dependency.',
+  });
 })(window);

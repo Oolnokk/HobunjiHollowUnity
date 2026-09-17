@@ -150,7 +150,7 @@ assert.match(bandit, /data: \{ isBandit: true, attacker: c/, 'bandit staged acti
 
 assert.match(indicator, /Object\.entries\(rawAfflictions \|\| \{\}\)/, 'opportunity effects accept progression maps without crashing');
 assert.match(indicator, /state\.root\.updateWorldMatrix\?\.\(true, true\)/, 'overlay samples the live target transform');
-assert.match(indicator, /requestAnimationFrame\(frame\); \/\/ Schedule first/, 'one renderer exception cannot strand a visible overlay');
+assert.match(indicator, /try \{\s*\n\s*syncReadyTarget\(nowMs\);/, 'one renderer exception cannot strand a visible overlay (the scheduler itself now guarantees the next frame is scheduled regardless of subscriber outcome)');
 assert.match(indicator, /else detachReticle\(\)/, 'overlay hides immediately when the bonus condition ends');
 assert.match(html, /quick-attack-bonus-indicator\.js/, 'opportunity indicator is loaded by the game page');
 

@@ -231,10 +231,9 @@
     state.sentinelParent = player;
   }
 
-  function frame() {
+  function maintainSentinel() {
     ensureSentinel();
     finishDanceIfNeeded();
-    global.requestAnimationFrame(frame);
   }
 
   chainGlobal('ActionArcUI', patchActionArcUi);
@@ -260,5 +259,8 @@
     },
   });
 
-  global.requestAnimationFrame(frame);
+  global.RuntimeFrameScheduler.register('social-action-camera-sentinel', maintainSentinel, {
+    owner: 'SocialActionCameraRuntime',
+    description: 'Keeps the dance free-cam sentinel attached to the player and resets its baseline state once dancing ends. The actual per-render camera sample stays in the sentinel\'s own onBeforeRender hook.',
+  });
 })(window);
