@@ -148,6 +148,7 @@ const normalizedRigBeforeShoulder=normalizedRig;
 normalizedRig=function normalizedRigWithBindPoseShoulder(){let rig=normalizedRigBeforeShoulder();if(!rig&&shoulderPresentationEnabled()&&state.image&&splineAllowedForCurrentSpecies())rig=shoulderProfileApi?.bodyOnlyRig?.()||{enabled:true,coordinateSpace:'sprite-normalized-top-left',pivot:{x:.5,y:.5},weightMap:{width:2,height:2,encoding:'rle-u9',unsetValue:256,data:[4,0]},minDeg:-30,maxDeg:30,restDeg:0,turnSpeedDeg:120,meshResolution:48};if(!rig)return rig;if(shoulderPresentationEnabled())rig.shoulderRest=currentShoulderRest();else delete rig.shoulderRest;return rig};
 
 function moveSplineWithFrameShift(){const next=shoulderFrameShiftValue(),delta=next-lastShoulderFrameShift;if(shoulderFollowFrameShiftX.checked&&Math.abs(delta)>1e-9){for(const p of shoulderBeforePoints)p.x+=delta;for(const p of shoulderAfterPoints)p.x+=delta}lastShoulderFrameShift=next;updateShoulderUi();clearShoulderSplitLayerCache();buildSourceSampler();draw()}
+shoulderFrameShift?.addEventListener('pointerdown',()=>checkpointHistory());
 shoulderFrameShift?.addEventListener('input',moveSplineWithFrameShift);
 for(const control of [shoulderRestUseSpline,shoulderRestUseRun1,shoulderRestSplitFrame,shoulderSplitRightIdle,shoulderFollowFrameShiftX])control?.addEventListener('pointerdown',()=>checkpointHistory());
 shoulderRestUseSpline?.addEventListener('change',refreshShoulderPresentation);
