@@ -1,0 +1,40 @@
+name: NPC reaction profile regression
+
+on:
+  push:
+    paths:
+      - 'docs/config/dialogue/npc-reaction-profiles.json'
+      - 'docs/js/npc-silliness-reaction-runtime.js'
+      - 'docs/js/ambient-dialogue-reaction-editor.js'
+      - 'docs/tools/ambient-dialogue-editor/index.html'
+      - 'scripts/test-npc-reaction-profiles.js'
+      - '.github/workflows/npc-reaction-profiles.yml'
+  pull_request:
+    paths:
+      - 'docs/config/dialogue/npc-reaction-profiles.json'
+      - 'docs/js/npc-silliness-reaction-runtime.js'
+      - 'docs/js/ambient-dialogue-reaction-editor.js'
+      - 'docs/tools/ambient-dialogue-editor/index.html'
+      - 'scripts/test-npc-reaction-profiles.js'
+      - '.github/workflows/npc-reaction-profiles.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check reaction modules
+        run: |
+          node --check docs/js/npc-silliness-reaction-runtime.js
+          node --check docs/js/ambient-dialogue-reaction-editor.js
+          node --check scripts/test-npc-reaction-profiles.js
+      - name: Test reaction personality routing and editor wiring
+        run: node scripts/test-npc-reaction-profiles.js

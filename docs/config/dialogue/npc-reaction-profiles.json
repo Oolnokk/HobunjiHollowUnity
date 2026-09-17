@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "description": "Shared personality-driven NPC ambient reactions. The Ambient Dialogue Editor owns this file. Blank profile pools inherit from the default profile.",
+  "settings": {
+    "reactionRadiusTiles": 4,
+    "cooldownMs": 9000,
+    "durationMs": 4400,
+    "directPetGreetingRank": 3
+  },
+  "defaultProfile": "neighborly",
+  "profiles": {
+    "neighborly": {
+      "label": "Neighborly",
+      "animal": {
+        "recognized": [
+          "{animalName}! Good to see you.",
+          "Hello, {animalName}!"
+        ],
+        "trained": {
+          "mount": ["That's a fine {species}.", "Looking good, {animalName}."],
+          "companion": ["Good {species}.", "Hello, {animalName}."],
+          "shoulderPet": ["Well, hello up there.", "Hello, little {animalName}."]
+        },
+        "familiar": {
+          "mount": ["They're settling in nicely."],
+          "companion": ["{animalName} listens well."],
+          "shoulderPet": ["{animalName} looks comfortable up there."]
+        },
+        "wary": {
+          "mount": ["Easy with that {species}.", "Give that {species} a little room."],
+          "companion": ["Keep {animalName} close, please.", "Is that {species} friendly?"],
+          "shoulderPet": ["Oh! I almost missed {animalName}.", "You've got company up there."]
+        },
+        "recognition": {
+          "mount": ["I've gotten used to seeing {animalName} with you."],
+          "companion": ["I know {animalName} now."],
+          "shoulderPet": ["I'd notice if {animalName} wasn't up there."]
+        }
+      },
+      "silliness": {
+        "positive": ["Ha! All right, that was funny."],
+        "negative": ["All right. That's enough."]
+      },
+      "dance": {
+        "positive": ["There you go!", "Ha! Keep going."],
+        "negative": ["Not with me, thanks."]
+      },
+      "music": {
+        "positive": ["That's nice.", "Hey, that's good."],
+        "negative": ["Could you play a little farther away?"]
+      }
+    },
+    "playful": {
+      "label": "Playful",
+      "animal": {
+        "recognized": ["{animalName}! There you are!", "Hey, {animalName}!"],
+        "trained": {
+          "mount": ["Ha! What a beast.", "Looking good, {animalName}!"],
+          "companion": ["Hey, {animalName}! Good {species}."],
+          "shoulderPet": ["Ha! Still riding up there?", "Hey, little {animalName}!"]
+        },
+        "familiar": {
+          "mount": ["They're getting the hang of this."],
+          "companion": ["{animalName}'s got you trained too, huh?"],
+          "shoulderPet": ["Best seat in town, {animalName}?"]
+        },
+        "wary": {
+          "mount": ["Whoa—big one.", "Easy, big fella."],
+          "companion": ["We're friends, right, {animalName}?"],
+          "shoulderPet": ["Oh! Tiny passenger.", "How long has {animalName} been up there?"]
+        },
+        "recognition": {
+          "mount": ["I like {animalName}. Keep bringing them around."],
+          "companion": ["{animalName}! Yeah, I know you now."],
+          "shoulderPet": ["I'd miss {animalName} if that shoulder were empty."]
+        }
+      },
+      "silliness": {
+        "positive": ["Ha! Do that again.", "Oh, that's stupid. I love it."],
+        "negative": ["Okay, now you're overdoing it."]
+      },
+      "dance": {
+        "positive": ["Yes! That's it!", "Ha! Look at you!"],
+        "negative": ["Nope. Dance somewhere else."]
+      },
+      "music": {
+        "positive": ["Hey! That's catchy.", "Play another one!"],
+        "negative": ["Oof. Maybe a different song?"]
+      }
+    },
+    "reserved": {
+      "label": "Reserved",
+      "animal": {
+        "recognized": ["Hello, {animalName}.", "There you are, {animalName}."],
+        "trained": {
+          "mount": ["That's a well-trained {species}."],
+          "companion": ["{animalName} behaves well."],
+          "shoulderPet": ["Hello again, {animalName}."]
+        },
+        "familiar": {
+          "mount": ["They're calmer than before."],
+          "companion": ["{animalName} listens to you."],
+          "shoulderPet": ["They seem comfortable there."]
+        },
+        "wary": {
+          "mount": ["Keep that {species} steady."],
+          "companion": ["Keep {animalName} close."],
+          "shoulderPet": ["I didn't notice {animalName} at first."]
+        },
+        "recognition": {
+          "mount": ["I've gotten used to {animalName}."],
+          "companion": ["I recognize {animalName} now."],
+          "shoulderPet": ["I'd notice if {animalName} were missing."]
+        }
+      },
+      "silliness": {
+        "positive": ["...All right. That was funny."],
+        "negative": ["Please stop."]
+      },
+      "dance": {
+        "positive": ["You're enjoying yourself."],
+        "negative": ["I'd rather not." ]
+      },
+      "music": {
+        "positive": ["That's pleasant."],
+        "negative": ["Not right now, please."]
+      }
+    },
+    "proper": {
+      "label": "Proper",
+      "animal": {
+        "recognized": ["Good to see you, {animalName}."],
+        "trained": {
+          "mount": ["A well-handled {species}."],
+          "companion": ["{animalName} is well behaved."],
+          "shoulderPet": ["Your little companion seems settled."]
+        },
+        "familiar": {
+          "mount": ["You've trained them well."],
+          "companion": ["They mind you well."],
+          "shoulderPet": ["They seem quite content there."]
+        },
+        "wary": {
+          "mount": ["Mind that {species} around people."],
+          "companion": ["Please keep {animalName} under control."],
+          "shoulderPet": ["Ah. You have a passenger."]
+        },
+        "recognition": {
+          "mount": ["{animalName} has become a familiar sight."],
+          "companion": ["I've come to recognize {animalName}."],
+          "shoulderPet": ["That shoulder would look strange without {animalName}."]
+        }
+      },
+      "silliness": {
+        "positive": ["Well. I suppose a little foolishness is harmless."],
+        "negative": ["That will do."]
+      },
+      "dance": {
+        "positive": ["You certainly have spirit."],
+        "negative": ["I think I'll sit this one out."]
+      },
+      "music": {
+        "positive": ["Very nice."],
+        "negative": ["Perhaps another time."]
+      }
+    },
+    "stern": {
+      "label": "Stern",
+      "animal": {
+        "recognized": ["{animalName}. Good."],
+        "trained": {
+          "mount": ["Good control."],
+          "companion": ["They mind you. Good."],
+          "shoulderPet": ["Still up there, I see."]
+        },
+        "familiar": {
+          "mount": ["Better behaved now."],
+          "companion": ["Keep it that way."],
+          "shoulderPet": ["At least they're quiet."]
+        },
+        "wary": {
+          "mount": ["Control that {species}."],
+          "companion": ["Keep {animalName} back."],
+          "shoulderPet": ["What's that doing on your shoulder?"]
+        },
+        "recognition": {
+          "mount": ["{animalName} doesn't bother me anymore."],
+          "companion": ["I know {animalName}. They're fine."],
+          "shoulderPet": ["I've gotten used to {animalName} up there."]
+        }
+      },
+      "silliness": {
+        "positive": ["Hnh. Funny."],
+        "negative": ["Enough."]
+      },
+      "dance": {
+        "positive": ["Not bad."],
+        "negative": ["No."]
+      },
+      "music": {
+        "positive": ["Decent."],
+        "negative": ["Turn it down."]
+      }
+    }
+  },
+  "assignments": {
+    "kzubug": "proper",
+    "sloomi": "reserved",
+    "gorobi_ginju": "playful",
+    "gikali_ginju": "reserved",
+    "aliri_ginju": "proper",
+    "gantami_ginju": "playful",
+    "leaf": "stern",
+    "pahu": "playful",
+    "furunji_funji": "neighborly",
+    "foroji_funji": "playful",
+    "namui_u_hakaru": "reserved",
+    "takua_ao_hakaru": "proper",
+    "father_hunundi_hodu": "proper",
+    "kaboku_kunji": "neighborly",
+    "kinami_kunji": "proper",
+    "dzibim_khibu": "playful",
+    "dzahiri_khibu": "neighborly",
+    "nashka_khibu": "playful",
+    "teacup_unumanuk": "proper",
+    "spearhead_unumanuk": "stern",
+    "oddclaw_unumanuk": "playful",
+    "binding_hatayap": "reserved",
+    "tooth_hatayap": "playful",
+    "garanki_gabu": "playful",
+    "hreesh": "stern",
+    "jubmir": "reserved",
+    "khazud": "stern",
+    "bird_bone": "reserved",
+    "nohuknuk": "neighborly",
+    "mother_rahayobi": "neighborly",
+    "squall": "stern"
+  }
+}
