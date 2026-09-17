@@ -230,22 +230,101 @@
     return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  function dialogueName(entry) {
+    const species = speciesLabel(entry); // Generic species is the safe default for authored {animalName}/{petName}-style dialogue placeholders.
+    if (!entry || !isKnownByTown(entry)) return species;
+    const name = String(entry.name || '').trim(); // Player-given name only becomes dialogue-safe at max Pet Rapport / ten hearts.
+    return name || species;
+  }
+
   function genericizeAnimalName(text, entry) {
     const name = String(entry?.name || '').trim(); // Player-given name is suppressed until the pet has ten Pet Rapport hearts.
     if (!name || isKnownByTown(entry)) return String(text || '');
-    const species = speciesLabel(entry); // Species label remains usable in pre-recognition authored/fallback lines.
+    const safeName = dialogueName(entry); // Same canonical placeholder value used by any future direct Pet Rapport-aware token resolver.
     const matcher = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(name)})(?=$|[^A-Za-z0-9_])`, 'gi'); // Case-insensitive token boundaries prevent name leaks without replacing short names inside unrelated words.
-    return String(text || '').replace(matcher, (match, prefix) => `${prefix}${species}`);
+    return String(text || '').replace(matcher, (match, prefix) => `${prefix}${safeName}`);
+  }
+
+  function genericizeActiveAnimalNames(text, preferredEntry = null) {
+    let output = String(text || ''); // Final ambient safety pass prevents personality/named-NPC paths from leaking a saved pet name when target metadata is incomplete.
+    const seen = new Set(); // Stable ids prevent the target entry from being processed twice when it is also one of the active role entries.
+    const apply = entry => {
+      if (!entry) return;
+      const key = String(entry.id || '');
+      if (key && seen.has(key)) return;
+      if (key) seen.add(key);
+      output = genericizeAnimalName(output, entry);
+    };
+    apply(preferredEntry);
+    for (const role of ROLES) apply(progression.activeEntryForRole?.(role));
+    return output;
   }
 
   function patchAmbientDialogue(api) {
     if (!api || api.__stableAnimalTownFamiliarityDialogueWrapped || typeof api.show !== 'function') return api;
     const originalShow = api.show.bind(api); // Existing greeting/personality wrappers continue to choose copy and timing.
     api.show = function stableAnimalTownFamiliarityShow(target, text, options = {}) {
-      const animal = options?.directedAtPlayer === true ? animalForTarget(options) : null; // Only explicit animal-directed encounters are name-gated.
-      return originalShow(target, animal ? genericizeAnimalName(text, animal.entry) : text, options);
+      const directed = options?.directedAtPlayer === true; // Animal/personality ambient reactions are directed; ordinary world chatter is left untouched.
+      const animal = directed ? animalForTarget(options) : null; // Exact face target remains preferred when the caller supplied one.
+      const safeText = directed ? genericizeActiveAnimalNames(text, animal?.entry || null) : text; // Missing/mismatched faceTarget now falls back to every active pet instead of leaking its name.
+      return originalShow(target, safeText, options);
     };
     api.__stableAnimalTownFamiliarityDialogueWrapped = true;
+    return api;
+  }
+
+  const PET_RAPPORT_HEART_FILL_CHAR = '♥'; // Solid text glyph is clipped/colored so partial progress is a real fill, not an emoji laid over another emoji.
+  const PET_RAPPORT_HEART_EMPTY_CHAR = '♡'; // Hollow text glyph supplies the unearned outline beneath/after the yellow fill.
+  const PET_RAPPORT_HEART_FILL = '#ffd64a'; // Yellow distinguishes Pet Rapport from NPC Favor while preserving the same gradual-fill convention.
+  const PET_RAPPORT_HEART_EMPTY = 'rgba(255,255,255,.72)'; // Light outline keeps unearned hearts visible on the dark Stable panel.
+
+  function petRapportHeartGlyph(char, color) {
+    return `<span class="stable-pet-rapport-heart" aria-hidden="true" style="display:inline-block;color:${color}">${char}</span>`;
+  }
+
+  function petRapportHeartsHtml(entry) {
+    const progress = Math.max(0, Math.min(MAX_PET_RAPPORT_HEARTS, getPetHearts(entry))); // Canonical point-to-heart conversion drives the exact visual fill.
+    const completed = Math.floor(progress);
+    const fraction = progress - completed;
+    const hearts = [];
+    for (let index = 0; index < MAX_PET_RAPPORT_HEARTS; index++) {
+      if (index < completed) {
+        hearts.push(petRapportHeartGlyph(PET_RAPPORT_HEART_FILL_CHAR, PET_RAPPORT_HEART_FILL));
+      } else if (index === completed && fraction > 0.0001) {
+        const width = Math.round(fraction * 1000) / 10; // Matches Relationships Favor's tenth-of-a-percent clipped-heart precision.
+        hearts.push(`<span class="stable-pet-rapport-partial-heart" style="position:relative;display:inline-block;width:1em;vertical-align:-.08em">${petRapportHeartGlyph(PET_RAPPORT_HEART_EMPTY_CHAR, PET_RAPPORT_HEART_EMPTY)}<span aria-hidden="true" style="position:absolute;left:0;top:0;width:${width}%;overflow:hidden;white-space:nowrap">${petRapportHeartGlyph(PET_RAPPORT_HEART_FILL_CHAR, PET_RAPPORT_HEART_FILL)}</span></span>`);
+      } else {
+        hearts.push(petRapportHeartGlyph(PET_RAPPORT_HEART_EMPTY_CHAR, PET_RAPPORT_HEART_EMPTY));
+      }
+    }
+    return hearts.join('');
+  }
+
+  function refreshStableHeartRows() {
+    if (typeof document?.querySelectorAll !== 'function') return 0;
+    let updated = 0;
+    for (const heartRow of document.querySelectorAll('.stable-pet-rapport-hearts')) {
+      const stableId = heartRow?.closest?.('.stable-training-row')?.dataset?.stableTrainingId;
+      const entry = stableId ? findEntry(stableId) : null;
+      if (!entry) continue;
+      heartRow.innerHTML = petRapportHeartsHtml(entry);
+      heartRow.setAttribute?.('aria-label', `Pet Rapport ${roundPoint(getPetHearts(entry))} of ${MAX_PET_RAPPORT_HEARTS} hearts`);
+      updated++;
+    }
+    return updated;
+  }
+
+  function patchFarmPanel(api) {
+    if (!api || typeof api.renderStablePanel !== 'function' || api.renderStablePanel.__stableAnimalPetRapportHeartWrapped) return api;
+    const originalRender = api.renderStablePanel.bind(api); // Native Stable renderer still owns layout/interaction; this only corrects the heart glyph/fill markup after each render.
+    const wrappedRender = function stableAnimalPetRapportRender(...args) {
+      const result = originalRender(...args);
+      refreshStableHeartRows();
+      return result;
+    };
+    Object.defineProperty(wrappedRender, '__stableAnimalPetRapportHeartWrapped', { value: true }); // Function-level guard survives only while this exact renderer remains installed, so FarmPanel can replace an earlier parser-time renderer safely.
+    api.renderStablePanel = wrappedRender;
+    refreshStableHeartRows();
     return api;
   }
 
@@ -367,12 +446,16 @@
 
   let installed = false; // Install guard prevents duplicate wrapper layers when the farm bridge calls install more than once.
   function install() {
-    if (installed) return api;
+    if (installed) {
+      patchFarmPanel(window.FarmPanel); // FarmPanel's native renderer publishes after the parser-time feature bridge; repeated install from FarmPanel.init patches that final renderer.
+      return api;
+    }
     installed = true;
     hookGlobal('FarmAnimals', patchFarmAnimals);
     hookGlobal('NpcRapport', patchNpcRapport);
     hookGlobal('AmbientDialogue', patchAmbientDialogue);
     hookGlobal('DialogueContent', patchDialogueContent);
+    hookGlobal('FarmPanel', patchFarmPanel);
     return api;
   }
 
@@ -388,7 +471,11 @@
     isKnownByTown,
     awardPetRapport,
     awardAttributedRapport,
+    dialogueName,
     genericizeAnimalName,
+    genericizeActiveAnimalNames,
+    petRapportHeartsHtml,
+    refreshStableHeartRows,
     getDebug,
     copyDebug,
   }; // Public helpers intentionally support later NPC treats/perks without touching internals.
