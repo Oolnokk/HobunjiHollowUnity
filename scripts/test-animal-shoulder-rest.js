@@ -92,6 +92,10 @@ assert.equal(api.sampleShoulderInfluence(null, .6, .65, aspectRest), 1,
   'source-aspect separator classifies the test point on the right');
 assert.equal(api.sampleShoulderInfluence(allUnsetLarge, .6, .65, aspectRest), 1,
   'adding an unset paint map must not replace source aspect with weight-map aspect');
+const aspectDiagonal = api.linearPointsForGuide({ a: { x: .2, y: .2 }, b: { x: .8, y: .8 } });
+const aspectBind = api.bindFrameForPoint(aspectDiagonal, { x: .5, y: .5 }, 2);
+assert(Math.abs(aspectBind.tangent.x - .8944271909999159) < 1e-6 && Math.abs(aspectBind.tangent.y - .4472135954999579) < 1e-6,
+  'spline tangent uses image-plane aspect instead of normalized-square geometry');
 
 const after = curvedBefore.map(p => ({ ...p }));
 after[3].y += 0.20;
@@ -190,6 +194,8 @@ for (const id of ['shoulderBroadFullRotation','shoulderBroadInterRotation','shou
 }
 assert.match(broadAuthorSource, /Same constant-curvature construction used by the retired fullRotationDeg/,
   'broad pose deliberately reuses the retired rotation/inter-vertex curve model');
+assert.match(broadAuthorSource, /aspect=Math\.max\(\.000001,s\.width\/Math\.max\(1,s\.height\)\)/,
+  'broad rotation/bend math uses the PNG image-plane aspect');
 assert.match(broadAuthorSource, /return\{x:base\.x\+delta\.x,y:base\.y\+delta\.y\}/,
   'broad deformation is additive over each precise AFTER point');
 assert.match(broadAuthorSource, /shoulderAfterPoints=effectiveShoulderAfterPoints\(\);resetShoulderBroadControls\(false\)/,
@@ -222,6 +228,10 @@ assert.match(twoPointAuthorSource, /drawHandle\(points\[0\],'S'\);[\s\S]*drawHan
   'two-point mode draws only explicit Start and End handles');
 assert.match(twoPointAuthorSource, /version:2/,
   'diagnostic API identifies the simplified direct-endpoint implementation');
+assert.match(twoPointAuthorSource, /shoulderEditBefore\?\.addEventListener\('click'/,
+  'switching to BEFORE exits the two-point AFTER editor instead of leaving contradictory modes active');
+assert.match(twoPointAuthorSource, /if\(!shoulderRestUseSpline\.checked\)shoulderRestUseSpline\.checked=true/,
+  'entering a valid two-point edit enables the shoulder spline so handles cannot appear active-but-dead');
 
 assert.match(splineSource, /function separatorSignedSide\(/,
   'runtime has one signed-side classifier for diagonal frame ownership');
