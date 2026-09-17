@@ -116,12 +116,16 @@ assert.match(authorSource, /fitCanvasInsideHost/,
 
 assert.match(paritySource, /INTRA_PET_RENDER_EPSILON = 0\.01/,
   'split foreground gets only a tiny within-pet ordering offset');
-assert.match(paritySource, /overlay\.renderOrder = Number\(source\.renderOrder \|\| 0\) \+ INTRA_PET_RENDER_EPSILON/);
-assert.match(paritySource, /'depthWrite','depthTest','colorWrite'/,
+assert.match(paritySource, /Object\.defineProperty\(overlay, 'renderOrder'/,
+  'split foreground renderOrder is a live follower so Three.js sorting sees pet-layer parity before onBeforeRender');
+assert.match(paritySource, /sourceOrder.*INTRA_PET_RENDER_EPSILON/s,
+  'live renderOrder getter stays immediately above its paired half only');
+assert.match(paritySource, /'depthWrite','depthTest','depthFunc','colorWrite'/,
   'split overlay copies the source half x-ray/depth material state');
 assert.match(paritySource, /overlay\.layers\.mask = source\.layers\.mask/,
   'split overlay follows the same Three.js layers mask as its paired half');
-assert(!paritySource.includes('+ 20'), 'split overlay must not escape the normal shoulder-pet render stack');
+assert(!paritySource.includes('renderOrder = (source.renderOrder || 0) + 20'),
+  'split overlay must not escape the normal shoulder-pet render stack');
 
 for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) {
   assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline6'));
