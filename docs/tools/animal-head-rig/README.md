@@ -18,15 +18,15 @@ For the current animal pitch convention, a downward head bend stretches the spri
 
 ## Shoulder spline: BEFORE → AFTER
 
-The shoulder body rig now has two explicit seven-point curves instead of one hidden straight bind axis plus one pose curve.
+The shoulder body rig has two explicit seven-point curves.
 
 - **1 · BEFORE / Bind**: fit seven points to the animal exactly as it exists in the undeformed source PNG.
 - **2 · AFTER / Pose**: move the corresponding seven points into the desired shoulder pose.
 - Only the active curve's seven handles are draggable; both curves remain visible for comparison.
-- **Copy BEFORE → AFTER** gives an identity pose before you begin shaping the shoulder pose.
+- **Copy BEFORE → AFTER** gives an identity pose before shaping the shoulder pose.
 - Runtime vertices are measured against the curved BEFORE spline's local tangent/normal and reconstructed at the same spline parameter against AFTER.
 - The complete rectangular strip participates, including transparent PNG space.
-- Effective body deformation still remains exactly `1 - Head Influence`.
+- Effective body deformation remains exactly `1 - Head Influence`.
 - The retired Full Rotation, Inter-vertex Rotation, curve-falloff, and weight-falloff controls are gone.
 
 The spline is currently enabled only for **Grehlr, Voorg-Ass, Uumkao’ii, Gar-wolf, and Dabinggi-hound**. Those species temporarily start from Grehlr's current shoulder pose until individually authored.
@@ -39,7 +39,7 @@ The head/material paint maps remain one canonical shared grid, but the upper aut
 - **Right source**: whichever image the split right half actually uses (idle or run1).
 - **Composite split**: right/background pixels first, then left/foreground pixels over them.
 
-Bucket color sampling follows the selected paint source too, so right-half/run1 pixels can be painted directly without creating a second set of weight maps.
+Bucket color sampling follows the selected paint source too, so right-half/run1 pixels can be painted directly without creating a second set of weight maps. Selecting **BEFORE / Bind** while split mode is active switches the paint view to Right source automatically because that is the art being bound for the deforming half.
 
 ### Older exports
 
@@ -51,7 +51,7 @@ The frame seam is independent of the spline. It can split idle/run1 art or use i
 
 The right/deformed half renders first and the left/foreground half renders over it when the shoulder pose curls pixels back across the seam. Both halves remain one shoulder pet for x-ray/depth purposes: the foreground overlay follows the paired base half's render order, Three.js layer mask, visibility, depth test/write/function, blending, opacity, alpha-test, polygon-offset, and related material state. Its only ordering difference is a tiny `+0.01` within-pet offset so left-half pixels beat right-half pixels without jumping above the player's normal x-ray/layer stack.
 
-**Move both spline lines with Frame shift X** is checked by default. Moving the seam translates all fourteen BEFORE/AFTER control points by the same X delta, preserving the authored seam-relative placement.
+**Move both spline lines with Frame shift X** is checked by default. Moving the seam translates all fourteen BEFORE/AFTER control points by the same X delta, preserving authored seam-relative placement.
 
 ## Game preview
 
