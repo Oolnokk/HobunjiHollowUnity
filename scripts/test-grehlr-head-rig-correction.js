@@ -20,26 +20,36 @@ vm.runInContext(source, context, { filename: 'grehlr-head-rig-correction.js' });
 
 const api = context.window.HobunjiGrehlrHeadRigCorrection;
 assert(api, 'Grehlr correction module should expose a debug-visible API');
-assert.equal(api.version, 3);
-assert.equal(context.window.CreatureGeneticsRender.ANIMAL_HEAD_RIGS.grehlr, sharedRig, 'correction mutates the shared rig object in place');
+assert.equal(api.version, 6);
+assert.equal(context.window.CreatureGeneticsRender.ANIMAL_HEAD_RIGS.grehlr, sharedRig,
+  'correction mutates the shared rig object in place');
 assert.equal(sharedRig.legacy, undefined, 'obsolete shared-rig keys are cleared before applying the authored correction');
 assert.equal(sharedRig.pivot.x, 0.3615050095996143);
 assert.equal(sharedRig.pivot.y, 0.4662322932868983);
 
 const rest = sharedRig.shoulderRest;
-assert(rest?.enabled, 'Grehlr should carry the authored shoulder presentation');
-assert.equal(rest.useSpline, true, 'Grehlr uses the hanging-body spline');
+assert(rest?.enabled, 'Grehlr carries the authored shoulder presentation');
+assert.equal(rest.useSpline, true, 'Grehlr uses the seven-point body spline');
 assert.equal(rest.useRun1, false, 'Grehlr does not use full run1');
-assert.equal(rest.splitFrame, true, 'Grehlr uses the idle/run1 hybrid');
-assert.equal(rest.frameShiftX, 0.51, 'Grehlr hybrid seam stays at the authored 51%');
-assert.equal(rest.guide.a.x, 0.5186980056541073);
-assert.equal(rest.guide.a.y, 0.5593845204658472);
-assert.equal(rest.guide.b.x, 0.9999996666666666);
-assert.equal(rest.guide.b.y, 0.572691993389205);
-assert(Number.isFinite(rest.fullRotationDeg) && Number.isFinite(rest.interVertexRotationDeg),
-  'Grehlr shoulder spline stores the new two-angle curl controls');
-assert.equal(Object.prototype.hasOwnProperty.call(rest, 'bend'), false,
-  'discarded midpoint-peak bend is no longer serialized');
+assert.equal(rest.splitFrame, true, 'Grehlr uses split overlap layers');
+assert.equal(rest.splitRightUsesIdle, true, 'Grehlr currently uses idle art on both split halves');
+assert.equal(rest.frameShiftX, 0.52, 'Grehlr seam stays at the authored 52%');
+assert.equal(rest.followFrameShiftX, true, 'Grehlr spline follows seam X by default');
+assert.deepEqual(JSON.parse(JSON.stringify(rest.restGuide)), {
+  a: { x: 0.5423902927484727, y: 0.5694472546137244 },
+  b: { x: 0.9999996666666666, y: 0.572691993389205 },
+});
+assert.equal(rest.splinePoints?.length, 7, 'Grehlr shoulder pose is stored as exactly seven directly editable points');
+assert.deepEqual(JSON.parse(JSON.stringify(rest.splinePoints[0])), rest.restGuide.a,
+  'point 1 begins at source-guide A');
+assert.deepEqual(JSON.parse(JSON.stringify(rest.splinePoints[6])), {
+  x: 0.6304422111109205,
+  y: 1.0185111823033606,
+}, 'point 7 preserves the migrated hanging-tail pose');
+for (const obsolete of ['guide','bend','fullRotationDeg','interVertexRotationDeg','weightFalloff','curveFalloff','guideFrameShiftX']) {
+  assert.equal(Object.prototype.hasOwnProperty.call(rest, obsolete), false,
+    `new Grehlr export should not serialize retired shoulder field ${obsolete}`);
+}
 
 function decodedCellCount(map) {
   assert.equal(map?.width, 128);
@@ -58,8 +68,8 @@ function decodedCellCount(map) {
 }
 
 const expectedCells = 128 * 96;
-assert.equal(decodedCellCount(sharedRig.weightMap), expectedCells, 'Influence map should decode to the full authored grid');
-assert.equal(decodedCellCount(sharedRig.compressibilityMap), expectedCells, 'Compressibility correction should decode to the full authored grid');
-assert.equal(decodedCellCount(sharedRig.stretchabilityMap), expectedCells, 'Stretchability correction should decode to the full authored grid');
+assert.equal(decodedCellCount(sharedRig.weightMap), expectedCells, 'Influence map decodes to the full authored grid');
+assert.equal(decodedCellCount(sharedRig.compressibilityMap), expectedCells, 'Compressibility map decodes to the full authored grid');
+assert.equal(decodedCellCount(sharedRig.stretchabilityMap), expectedCells, 'Stretchability map decodes to the full authored grid');
 
-console.log('grehlr-head-rig-correction: all tests passed');
+console.log('grehlr-head-rig-correction: seven-point rig integrity passed');
