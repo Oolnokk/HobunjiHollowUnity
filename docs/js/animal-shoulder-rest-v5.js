@@ -15,11 +15,11 @@
     document.head.appendChild(script);
   }
 
-  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 9) {
+  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
     loadScript('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles');
-    loadScript('js/animal-shoulder-spline.js?v=20260917spline9', 'animal-shoulder-spline');
+    loadScript('js/animal-shoulder-spline.js?v=20260917spline10', 'animal-shoulder-spline');
     loadScript('js/animal-shoulder-spline-layering.js?v=20260917parity2', 'animal-shoulder-spline-layering');
   }
   if (window.AnimalShoulderSpline) window.AnimalShoulderRest = window.AnimalShoulderSpline;
-  window.AnimalShoulderRestV5 = { version: 9, compatibility: true };
+  window.AnimalShoulderRestV5 = { version: 10, compatibility: true };
 })();
