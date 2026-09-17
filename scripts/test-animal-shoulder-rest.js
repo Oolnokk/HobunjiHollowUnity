@@ -92,6 +92,9 @@ assert.equal(api.sampleShoulderInfluence(null, .6, .65, aspectRest), 1,
   'source-aspect separator classifies the test point on the right');
 assert.equal(api.sampleShoulderInfluence(allUnsetLarge, .6, .65, aspectRest), 1,
   'adding an unset paint map must not replace source aspect with weight-map aspect');
+const coarseUnset = api.decodeWeightMap({ width: 2, height: 2, encoding: 'rle-u9', unsetValue: 256, data: [4, 256] });
+assert.equal(api.sampleShoulderInfluence(coarseUnset, .51, .5, { frameShiftX: .5, separatorRotationDeg: 0, separatorAspect: 1 }), 1,
+  'an all-unset coarse shoulder map does not invent a bilinear fade just right of the separator');
 const explicitFullLarge = api.decodeWeightMap({ width: 101, height: 101, encoding: 'rle-u9', unsetValue: 256, data: [10201, 255] });
 assert.equal(api.sampleShoulderInfluence(explicitFullLarge, .4, .65, aspectRest), 0,
   'explicit old paint cannot leak shoulder deformation onto the separator-owned left side');
@@ -250,6 +253,8 @@ assert.match(splineSource, /const authoredAspect = finite\(restLike\?\.separator
   'unset shoulder paint defaults prefer the authored source-sprite aspect');
 assert.match(splineSource, /const owned = shoulderDefaultInfluence\(u, topV, restLike, aspect\);[\s\S]*if \(owned <= 0\) return 0;/,
   'separator ownership hard-clamps shoulder Influence to zero on the left even when stale explicit paint exists');
+assert.match(splineSource, /if \(cornerOwned <= 0\) return owned;/,
+  'unset influence corners on the opposite side cannot create a phantom separator fade');
 assert.match(splineSource, /sampleShoulderMaterial\(maps\.stretchability/,
   'runtime samples shoulder Stretchability independently of head material paint');
 
