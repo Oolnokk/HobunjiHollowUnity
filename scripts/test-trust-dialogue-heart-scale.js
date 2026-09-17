@@ -87,8 +87,13 @@ assert.equal(conditions.entryEligible(excludeFiveHeartEntry, { relationship: 199
 assert.equal(conditions.entryEligible(excludeFiveHeartEntry, { relationship: 200 }), false, '200 Favor must enter a 5-heart exclusion band');
 assert.equal(conditions.entryEligible(fiveHeartEntry, { relationship: 5, relationshipUnit: 'hearts' }), true, 'explicit heart-valued callers must not be converted twice');
 
-const indexHtml = fs.readFileSync(path.join(repoRoot, 'docs/index.html'), 'utf8'); // Used to ensure production bootstrap requests the fixed condition-registry version instead of a stale cached copy.
+const indexHtml = fs.readFileSync(path.join(repoRoot, 'docs/index.html'), 'utf8'); // Used to ensure production bootstrap requests the fixed relationship modules instead of stale cached copies.
+const conditionRegistrySource = fs.readFileSync(path.join(repoRoot, 'docs/js/condition-registry.js'), 'utf8'); // Used to pin the trust-runtime child cache key owned by the shared condition bootstrap.
+const combatLoaderSource = fs.readFileSync(path.join(repoRoot, 'docs/js/combat/combat-config-loader.js'), 'utf8'); // Used to pin the Favor-balance child cache key that supplies canonical heart conversion.
 assert.match(indexHtml, /js\/condition-registry\.js\?v=20260917trust1/, 'production index must cache-bust the fixed condition registry');
+assert.match(indexHtml, /js\/combat\/combat-config-loader\.js\?v=20260917trust1/, 'production index must cache-bust the loader that installs Favor balance');
+assert.match(conditionRegistrySource, /js\/weapon-trust-visits\.js\?v=20260917trust1/, 'condition registry must request the fixed trust runtime cache key');
+assert.match(combatLoaderSource, /js\/favor-heart-balance\.js\?v=20260917points3/, 'combat loader must request the point-backed Favor balance cache key');
 
 const state = { favor: 199, memory: [] }; // Used as the live raw relationship state for trust-visit eligibility.
 const recordedMemory = []; // Used to prove failed grants do not persist trust completion.
