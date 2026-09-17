@@ -46,7 +46,7 @@ assert.equal(windowStub.SCRATCHBONES_CONFIG.game.livestock.itemKinds.voorgAssBab
 const denMotherItemKeys = Object.fromEntries(Object.values(windowStub.SCRATCHBONES_CONFIG.game.wildlife.denMothers).map(def => [def.creatureKey, def.nestItemKey]));
 assert.equal(denMotherItemKeys.puktuk, 'puktukBaby', 'game.js DEN_MOTHER_ITEM_KEYS snapshot must contain the Puktuk clutch reward');
 assert.equal(denMotherItemKeys['voorg-ass'], 'voorgAssBaby', 'game.js DEN_MOTHER_ITEM_KEYS snapshot must contain the Voorg-Ass clutch reward');
-assert.equal(windowStub.PuktukDenNestRegistration.version, 3);
+assert.equal(windowStub.PuktukDenNestRegistration.version, 2);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().configReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().livestockReady, true);
 assert.equal(windowStub.PuktukDenNestRegistration.debugSnapshot().voorgConfigReady, true);
