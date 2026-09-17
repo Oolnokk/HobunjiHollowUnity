@@ -4,6 +4,7 @@ const assert = require('node:assert/strict'); // Used for lightweight source-lev
 const fs = require('node:fs'); // Used to read the runtime and bootstrap sources exactly as shipped.
 
 const source = fs.readFileSync('docs/js/generic-hud-icons.js', 'utf8'); // Used to pin icon substitution and relationship-popup behavior.
+const farmPanel = fs.readFileSync('docs/js/farm-panel.js', 'utf8'); // Used to pin Pet Rapport's fractional-heart tokens to the shared HUD-heart replacement path.
 const social = fs.readFileSync('docs/js/npc-social-relationship-bridge-v2.js', 'utf8'); // Used to pin gifts to permanent Favor rather than temporary Rapport.
 const menuTabs = fs.readFileSync('docs/js/menu-tab-icon-only.js', 'utf8'); // Used to pin icon-only main menu tabs, shared ganang presentation, and the Relationships glow.
 const index = fs.readFileSync('docs/index.html', 'utf8'); // Used to pin the persistent HUD amount/suffix nodes consumed by the shared currency presenter.
@@ -12,12 +13,14 @@ const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8')
 assert.doesNotThrow(() => new Function(source), 'generic relationship popup/icon runtime must parse');
 assert.doesNotThrow(() => new Function(menuTabs), 'icon-only menu tab presentation must parse');
 assert.match(source, /icon_heart\.png/, 'heart glyphs must use icon_heart.png');
+assert.match(source, /mask: url\('\$\{ICONS\.heart\}'\)/, 'DOM heart rendering must mask the checked-in HUD heart asset rather than draw a Unicode heart');
 assert.match(source, /icon_exclamation\.png/, 'exclamation emoji must use the checked-in icon_exclamation.png filename');
 assert.match(source, /icon_question\.png/, 'question emoji must use icon_question.png');
 assert.match(source, /icon_x\.png/, 'X controls must use icon_x.png');
 assert.match(source, /❤️\|❤\|♥️\?\|💜\|💛\|🖤\|🩶\|🤍/, 'all relationship and Pet Rapport heart variants must be intercepted');
 assert.match(source, /'💛': '#ffd84d'/, 'yellow Pet Rapport hearts must tint the checked-in HUD heart asset with the Rapport color');
 assert.match(source, /'🩶': '#9e9a96'/, 'gray Pet Rapport/relationship placeholder hearts must also use the checked-in HUD heart asset');
+assert.match(farmPanel, /stable-pet-rapport-partial-heart[\s\S]*🤍[\s\S]*💛/, 'Pet Rapport fractional progress must use the shared empty + yellow heart tokens that become two clipped copies of icon_heart.png');
 assert.match(source, /❗\|❓\|❌\|✖️\?\|✕/, 'exclamation, question, and X emoji/symbol variants must be intercepted');
 assert.match(source, /RELATIONSHIPS_TAB_SELECTOR = '\[data-mpanel="relationships"\]'/, 'Relationships tab must be targeted directly');
 assert.match(source, /tab\.textContent = '';[\s\S]*relationships-tab-heart/, 'Relationships tab must contain only the heart icon');
