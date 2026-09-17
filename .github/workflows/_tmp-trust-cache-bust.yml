@@ -1,0 +1,44 @@
+name: Apply Trust Dialogue Cache Bust
+
+on:
+  push:
+    branches:
+      - fix/trust-dialogue-favor-heart-scale
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/trust-dialogue-favor-heart-scale
+      - name: Patch production cache key and final newlines
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index_path = Path('docs/index.html')
+          index_text = index_path.read_text()
+          old_cache_key = 'js/condition-registry.js?v=20260727a'
+          new_cache_key = 'js/condition-registry.js?v=20260917trust1'
+          old_count = index_text.count(old_cache_key)
+          if old_count != 1:
+              raise SystemExit(f'expected exactly one stale condition-registry cache key, found {old_count}')
+          index_path.write_text(index_text.replace(old_cache_key, new_cache_key))
+
+          for runtime_path in (Path('docs/js/condition-registry.js'), Path('docs/js/weapon-trust-visits.js')):
+              runtime_text = runtime_path.read_text()
+              runtime_path.write_text(runtime_text.rstrip('\n') + '\n')
+          PY
+          rm .github/workflows/_tmp-trust-cache-bust.yml
+      - name: Commit cache bust
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html docs/js/condition-registry.js docs/js/weapon-trust-visits.js .github/workflows/_tmp-trust-cache-bust.yml
+          git commit -m "Bust trust dialogue runtime cache"
+          git push origin HEAD:fix/trust-dialogue-favor-heart-scale
