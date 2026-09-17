@@ -8,8 +8,9 @@
   'use strict';
 
   // This bridge is parser-loaded before game.js creates companion avatars.
-  // Apply the latest authored Grehlr correction first, then install the generic
-  // shoulder-rest decorator so every later avatar build sees the final rig.
+  // Apply the latest authored Grehlr correction first, then the v4 compatibility
+  // shoulder decorator, then the v5 weight/layer decorator that owns the final
+  // shoulder-pet behavior.
   function parserLoad(src, marker) {
     if (document.readyState === 'loading') {
       document.write(`<script data-${marker}="1" src="${src}"></` + 'script>');
@@ -31,6 +32,9 @@
   }
   if (!window.AnimalShoulderRest || Number(window.AnimalShoulderRest.version) < 4) {
     if (!parserLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest')) lateLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest');
+  }
+  if (!window.AnimalShoulderRestV5 || Number(window.AnimalShoulderRestV5.version) < 5) {
+    if (!parserLoad('js/animal-shoulder-rest-v5.js?v=20260917weightlayer5','animal-shoulder-rest-v5')) lateLoad('js/animal-shoulder-rest-v5.js?v=20260917weightlayer5','animal-shoulder-rest-v5');
   }
 
   const composer = window.PlayerBodyTransformComposer;
@@ -94,7 +98,7 @@
     });
   }
 
-  async function splitFrameCanvas(companion, combatDeps, rest) {
+  async function splitFrameLayers(companion, combatDeps, rest) {
     const kind = genotypeKindFor(companion, combatDeps);
     const renderer = window.CreatureGeneticsRender;
     let idleSource = null, runSource = null;
@@ -103,7 +107,7 @@
         [idleSource, runSource] = await Promise.all([
           renderer.composeFrame(kind, 'idle', companion.genotype, false),
           renderer.composeFrame(kind, 'run1', companion.genotype, false),
-        ]); // Uses already-genotyped art so coat colors/patterns survive the idle↔run1 fusion.
+        ]); // Uses already-genotyped art so coat colors/patterns survive the idle↔run1 split.
       } catch (_) {
         idleSource = null; runSource = null;
       }
@@ -116,55 +120,61 @@
 
     const width = Number(idleSource.width || idleSource.naturalWidth) || Number(runSource.width || runSource.naturalWidth) || 1;
     const height = Number(idleSource.height || idleSource.naturalHeight) || Number(runSource.height || runSource.naturalHeight) || 1;
-    const canvas = document.createElement('canvas'); // One cached PNG result is passed through the existing creature frame swapper.
-    canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d');
+    const leftCanvas = document.createElement('canvas'); // Idle-left foreground texture: transparent everywhere to the right of the seam.
+    const rightCanvas = document.createElement('canvas'); // Run1-right background texture: transparent everywhere to the left of the seam.
+    leftCanvas.width = rightCanvas.width = width;
+    leftCanvas.height = rightCanvas.height = height;
+    const leftCtx = leftCanvas.getContext('2d');
+    const rightCtx = rightCanvas.getContext('2d');
     const authoredSplit = Number(rest?.frameShiftX); // Zero is a valid left-edge seam, so do not use truthiness for the fallback.
     const split = Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5;
     const cut = Math.round(width * split);
-    ctx.clearRect(0, 0, width, height);
-    if (cut > 0) ctx.drawImage(idleSource, 0, 0, cut, height, 0, 0, cut, height);
-    if (cut < width) ctx.drawImage(runSource, cut, 0, width - cut, height, cut, 0, width - cut, height);
-    return canvas;
+    leftCtx.clearRect(0, 0, width, height);
+    rightCtx.clearRect(0, 0, width, height);
+    if (cut > 0) leftCtx.drawImage(idleSource, 0, 0, cut, height, 0, 0, cut, height);
+    if (cut < width) rightCtx.drawImage(runSource, cut, 0, width - cut, height, cut, 0, width - cut, height);
+    return { leftCanvas, rightCanvas, cut, width, height };
   }
 
   function splitFrameKey(companion, combatDeps, rest) {
     const idle = shoulderIdleFrame(companion, combatDeps).url || '';
     const run1 = shoulderRun1Frame(companion, combatDeps).url || '';
-    const authoredSplit = Number(rest?.frameShiftX); // Preserves exact 0 and 1 seam positions in the composite cache key.
+    const authoredSplit = Number(rest?.frameShiftX); // Preserves exact 0 and 1 seam positions in the layer cache key.
     const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
     return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${run1}|${split}`; // Companion-local cache also implicitly keys the stable genotype instance.
   }
 
+  function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas) {
+    if (!rightUrl || !leftCanvas || !companion?.avatarRef) return false;
+    companion.avatarRef.setShoulderSplitOverlayCanvas?.(leftCanvas, true); // Idle-left always renders as the explicit foreground layer.
+    companion.__hobunjiShoulderFrame = rightUrl;
+    companion.__hobunjiShoulderSplitFrame = rightUrl;
+    companion.__hobunjiShoulderIdleFrame = null;
+    companion.__hobunjiShoulderRestFrame = null;
+    if (companion.currentFrameUrl !== rightUrl && typeof combatDeps?.setCreatureFrame === 'function') {
+      combatDeps.setCreatureFrame(companion.avatarRef, rightUrl, null, 'idle', null); // Right-only canvas is already genotyped; do not recolor it a second time.
+      companion.currentFrameUrl = rightUrl;
+    }
+    return true;
+  }
+
   function ensureSplitShoulderFrame(companion, combatDeps, rest) {
     const key = splitFrameKey(companion, combatDeps, rest);
-    if (companion.__hobunjiShoulderSplitKey === key && companion.__hobunjiShoulderSplitUrl) {
-      const url = companion.__hobunjiShoulderSplitUrl;
-      companion.__hobunjiShoulderFrame = url;
-      companion.__hobunjiShoulderSplitFrame = url;
-      companion.__hobunjiShoulderIdleFrame = null;
-      companion.__hobunjiShoulderRestFrame = null;
-      if (companion.currentFrameUrl !== url && typeof combatDeps?.setCreatureFrame === 'function') {
-        combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null); // Composite is already genotyped; do not recolor it a second time.
-        companion.currentFrameUrl = url;
-      }
-      return true;
+    if (companion.__hobunjiShoulderSplitKey === key && companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) {
+      return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas);
     }
     if (companion.__hobunjiShoulderSplitPromise && companion.__hobunjiShoulderSplitKey === key) return true;
+    companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false); // Avoid showing a stale left layer while a new species/seam is composing.
     companion.__hobunjiShoulderSplitKey = key;
-    companion.__hobunjiShoulderSplitPromise = splitFrameCanvas(companion, combatDeps, rest).then(canvas => {
-      if (!canvas || companion.__hobunjiShoulderSplitKey !== key) return null;
-      const url = canvas.toDataURL('image/png'); // Same-origin/generated canvas; cached on the companion until its authored split changes.
-      companion.__hobunjiShoulderSplitUrl = url;
+    companion.__hobunjiShoulderSplitPromise = splitFrameLayers(companion, combatDeps, rest).then(layers => {
+      if (!layers || companion.__hobunjiShoulderSplitKey !== key) return null;
+      const rightUrl = layers.rightCanvas.toDataURL('image/png'); // Base mesh receives only the right/run1 pixels; left/idle lives on the foreground overlay.
+      companion.__hobunjiShoulderSplitUrl = rightUrl;
+      companion.__hobunjiShoulderSplitLeftCanvas = layers.leftCanvas;
       companion.__hobunjiShoulderSplitPromise = null;
       const stillShouldered = companion?.health > 0 && companion.stableRole === 'shoulderPet' && (companion.master || combatDeps?.player) === combatDeps?.player;
-      if (stillShouldered && companion.avatarRef?.shoulderRest?.splitFrame && typeof combatDeps?.setCreatureFrame === 'function') {
-        combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null);
-        companion.currentFrameUrl = url;
-        companion.__hobunjiShoulderFrame = url;
-        companion.__hobunjiShoulderSplitFrame = url;
-      }
-      return url;
+      if (stillShouldered && companion.avatarRef?.shoulderRest?.splitFrame) applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas);
+      return rightUrl;
     }).catch(() => { companion.__hobunjiShoulderSplitPromise = null; return null; });
     return true;
   }
@@ -174,8 +184,10 @@
     const authoredRest = !!rest?.authored;
     if (authoredRest && rest.splitFrame) {
       ensureSplitShoulderFrame(companion, combatDeps, rest);
-      if (companion.__hobunjiShoulderSplitUrl) return true;
-      // Use idle while the one-time split canvas is being composed.
+      if (companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) return true;
+      // Use ordinary idle while the one-time split layers are being composed.
+    } else {
+      companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     }
 
     let selected = authoredRest && rest.useRun1 ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps);
@@ -196,6 +208,19 @@
     return true;
   }
 
+  function restoreAfterShoulderPet(companion, combatDeps) {
+    companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
+    const idle = shoulderIdleFrame(companion, combatDeps);
+    if (idle.url && typeof combatDeps?.setCreatureFrame === 'function' && companion.avatarRef && companion.currentFrameUrl !== idle.url) {
+      combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype); // Removes a right-only split texture immediately on shoulder exit.
+      companion.currentFrameUrl = idle.url;
+    }
+    companion.__hobunjiShoulderFrame = null;
+    companion.__hobunjiShoulderIdleFrame = null;
+    companion.__hobunjiShoulderRestFrame = null;
+    companion.__hobunjiShoulderSplitFrame = null;
+  }
+
   if (window.DevSpawner) patchDevSpawner(window.DevSpawner);
   else chainFutureSetter('DevSpawner', patchDevSpawner);
 
@@ -210,9 +235,14 @@
       if (!companion?.avatarRef) continue;
       const isShoulderPet = companion.health > 0
         && companion.stableRole === 'shoulderPet'
-        && (companion.master || player) === player; // One role predicate drives both spline activation and attachment-root inclusion.
-      companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet); // Method itself checks the independent useSpline flag; frame presentation is handled separately below.
-      if (!isShoulderPet) continue;
+        && (companion.master || player) === player; // One role predicate drives spline activation, split layering, and attachment-root inclusion.
+      companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet);
+      if (!isShoulderPet) {
+        if (companion.__hobunjiWasShoulderPet) restoreAfterShoulderPet(companion, combatDeps);
+        companion.__hobunjiWasShoulderPet = false;
+        continue;
+      }
+      companion.__hobunjiWasShoulderPet = true;
       if (companion.avatarRef.group) {
         ensureShoulderPetPresentationFrame(companion, combatDeps);
         roots.push(companion.avatarRef.group);
@@ -238,6 +268,7 @@
         shoulderPetsOnIdle: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
         shoulderPetsOnRestRun1: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderRestFrame && companion.currentFrameUrl === companion.__hobunjiShoulderRestFrame).length,
         shoulderPetsOnSplitFrame: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderSplitFrame && companion.currentFrameUrl === companion.__hobunjiShoulderSplitFrame).length,
+        shoulderSplitForegroundVisible: activeShoulderPets.filter(companion => !!companion?.avatarRef?.shoulderRest?.splitOverlayVisible).length,
         shoulderSplineActive: activeShoulderPets.filter(companion => companion?.avatarRef?.shoulderRest?.enabled).length,
       };
     },
