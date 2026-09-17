@@ -69,11 +69,26 @@ const conditions = loadConditionRegistry(); // Used for the shared dialogue/ambi
 const fiveHeartEntry = {
   conditions: { relationship: { min: 5, max: null } },
   excludeConditions: {},
-}; // Used to represent an authored Dialogue Editor condition expressed in hearts.
+}; // Used to represent an authored Dialogue Editor minimum condition expressed in hearts.
+const fiveHeartMaxEntry = {
+  conditions: { relationship: { min: null, max: 5 } },
+  excludeConditions: {},
+}; // Used to verify point-backed relationships honor authored maximum-heart boundaries too.
+const excludeFiveHeartEntry = {
+  conditions: {},
+  excludeConditions: { relationship: { min: 5, max: null } },
+}; // Used to verify relationship no-fly bands receive the same point-to-heart conversion as required bands.
 
-assert.equal(conditions.entryEligible(fiveHeartEntry, { relationship: 199 }), false, '199 Favor must remain below a 5-heart condition');
-assert.equal(conditions.entryEligible(fiveHeartEntry, { relationship: 200 }), true, '200 Favor must satisfy a 5-heart condition');
+assert.equal(conditions.entryEligible(fiveHeartEntry, { relationship: 199 }), false, '199 Favor must remain below a 5-heart minimum');
+assert.equal(conditions.entryEligible(fiveHeartEntry, { relationship: 200 }), true, '200 Favor must satisfy a 5-heart minimum');
+assert.equal(conditions.entryEligible(fiveHeartMaxEntry, { relationship: 200 }), true, '200 Favor must remain inside a 5-heart maximum');
+assert.equal(conditions.entryEligible(fiveHeartMaxEntry, { relationship: 201 }), false, '201 Favor must exceed a 5-heart maximum');
+assert.equal(conditions.entryEligible(excludeFiveHeartEntry, { relationship: 199 }), true, '199 Favor must remain outside a 5-heart exclusion band');
+assert.equal(conditions.entryEligible(excludeFiveHeartEntry, { relationship: 200 }), false, '200 Favor must enter a 5-heart exclusion band');
 assert.equal(conditions.entryEligible(fiveHeartEntry, { relationship: 5, relationshipUnit: 'hearts' }), true, 'explicit heart-valued callers must not be converted twice');
+
+const indexHtml = fs.readFileSync(path.join(repoRoot, 'docs/index.html'), 'utf8'); // Used to ensure production bootstrap requests the fixed condition-registry version instead of a stale cached copy.
+assert.match(indexHtml, /js\/condition-registry\.js\?v=20260917trust1/, 'production index must cache-bust the fixed condition registry');
 
 const state = { favor: 199, memory: [] }; // Used as the live raw relationship state for trust-visit eligibility.
 const recordedMemory = []; // Used to prove failed grants do not persist trust completion.
