@@ -8,9 +8,8 @@
   'use strict';
 
   // This bridge is parser-loaded before game.js creates companion avatars.
-  // Apply the latest authored Grehlr correction first, then the v4 compatibility
-  // shoulder decorator, then the v5 weight/layer decorator that owns the final
-  // shoulder-pet behavior.
+  // Apply the latest authored/species shoulder profiles first, then the v4
+  // compatibility decorator, then the v5 weight/layer decorator.
   function parserLoad(src, marker) {
     if (document.readyState === 'loading') {
       document.write(`<script data-${marker}="1" src="${src}"></` + 'script>');
@@ -27,8 +26,8 @@
     document.head.appendChild(script);
   }
 
-  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 3) {
-    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917rough3','grehlr-head-rig-correction')) lateLoad('js/grehlr-head-rig-correction.js?v=20260917rough3','grehlr-head-rig-correction');
+  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 4) {
+    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917rough4','grehlr-head-rig-correction')) lateLoad('js/grehlr-head-rig-correction.js?v=20260917rough4','grehlr-head-rig-correction');
   }
   if (!window.AnimalShoulderRest || Number(window.AnimalShoulderRest.version) < 4) {
     if (!parserLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest')) lateLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest');
@@ -101,27 +100,36 @@
   async function splitFrameLayers(companion, combatDeps, rest) {
     const kind = genotypeKindFor(companion, combatDeps);
     const renderer = window.CreatureGeneticsRender;
-    let idleSource = null, runSource = null;
+    const rightUsesIdle = !!rest?.splitRightUsesIdle; // The seam can be a pure deformation/overlap boundary even when both sides use idle art.
+    let idleSource = null, rightSource = null;
+
     if (kind && typeof renderer?.composeFrame === 'function') {
       try {
-        [idleSource, runSource] = await Promise.all([
-          renderer.composeFrame(kind, 'idle', companion.genotype, false),
-          renderer.composeFrame(kind, 'run1', companion.genotype, false),
-        ]); // Uses already-genotyped art so coat colors/patterns survive the idle↔run1 split.
+        idleSource = await renderer.composeFrame(kind, 'idle', companion.genotype, false);
+        rightSource = rightUsesIdle
+          ? idleSource
+          : await renderer.composeFrame(kind, 'run1', companion.genotype, false);
       } catch (_) {
-        idleSource = null; runSource = null;
+        idleSource = null; rightSource = null;
       }
     }
-    if (!idleSource || !runSource) {
-      const idle = shoulderIdleFrame(companion, combatDeps), run1 = shoulderRun1Frame(companion, combatDeps);
-      if (!idle.url || !run1.url) return null;
-      [idleSource, runSource] = await Promise.all([loadFrameImage(idle.url), loadFrameImage(run1.url)]);
+
+    if (!idleSource || !rightSource) {
+      const idle = shoulderIdleFrame(companion, combatDeps);
+      if (!idle.url) return null;
+      idleSource = await loadFrameImage(idle.url);
+      if (rightUsesIdle) rightSource = idleSource;
+      else {
+        const run1 = shoulderRun1Frame(companion, combatDeps);
+        if (!run1.url) return null;
+        rightSource = await loadFrameImage(run1.url);
+      }
     }
 
-    const width = Number(idleSource.width || idleSource.naturalWidth) || Number(runSource.width || runSource.naturalWidth) || 1;
-    const height = Number(idleSource.height || idleSource.naturalHeight) || Number(runSource.height || runSource.naturalHeight) || 1;
+    const width = Number(idleSource.width || idleSource.naturalWidth) || Number(rightSource.width || rightSource.naturalWidth) || 1;
+    const height = Number(idleSource.height || idleSource.naturalHeight) || Number(rightSource.height || rightSource.naturalHeight) || 1;
     const leftCanvas = document.createElement('canvas'); // Idle-left foreground texture: transparent everywhere to the right of the seam.
-    const rightCanvas = document.createElement('canvas'); // Run1-right background texture: transparent everywhere to the left of the seam.
+    const rightCanvas = document.createElement('canvas'); // Deformed/background side: run1-right or idle-right according to the saved checkbox.
     leftCanvas.width = rightCanvas.width = width;
     leftCanvas.height = rightCanvas.height = height;
     const leftCtx = leftCanvas.getContext('2d');
@@ -132,8 +140,8 @@
     leftCtx.clearRect(0, 0, width, height);
     rightCtx.clearRect(0, 0, width, height);
     if (cut > 0) leftCtx.drawImage(idleSource, 0, 0, cut, height, 0, 0, cut, height);
-    if (cut < width) rightCtx.drawImage(runSource, cut, 0, width - cut, height, cut, 0, width - cut, height);
-    return { leftCanvas, rightCanvas, cut, width, height };
+    if (cut < width) rightCtx.drawImage(rightSource, cut, 0, width - cut, height, cut, 0, width - cut, height);
+    return { leftCanvas, rightCanvas, cut, width, height, rightUsesIdle };
   }
 
   function combinedSplitFallbackCanvas(layers) {
@@ -149,10 +157,11 @@
 
   function splitFrameKey(companion, combatDeps, rest) {
     const idle = shoulderIdleFrame(companion, combatDeps).url || '';
-    const run1 = shoulderRun1Frame(companion, combatDeps).url || '';
+    const rightUsesIdle = !!rest?.splitRightUsesIdle;
+    const right = rightUsesIdle ? idle : (shoulderRun1Frame(companion, combatDeps).url || '');
     const authoredSplit = Number(rest?.frameShiftX); // Preserves exact 0 and 1 seam positions in the layer cache key.
     const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
-    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${run1}|${split}`; // Companion-local cache also implicitly keys the stable genotype instance.
+    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle?'idle-right':'run1-right'}|${split}`; // Companion-local cache also implicitly keys the stable genotype instance.
   }
 
   function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
@@ -181,7 +190,7 @@
     companion.__hobunjiShoulderSplitKey = key;
     companion.__hobunjiShoulderSplitPromise = splitFrameLayers(companion, combatDeps, rest).then(layers => {
       if (!layers || companion.__hobunjiShoulderSplitKey !== key) return null;
-      const rightUrl = layers.rightCanvas.toDataURL('image/png'); // Base mesh receives only right/run1 pixels when explicit layering is available.
+      const rightUrl = layers.rightCanvas.toDataURL('image/png'); // Base mesh receives only right/background pixels when explicit layering is available.
       const fallbackCanvas = combinedSplitFallbackCanvas(layers);
       const fallbackUrl = fallbackCanvas?.toDataURL?.('image/png') || rightUrl;
       companion.__hobunjiShoulderSplitUrl = rightUrl;
@@ -285,6 +294,7 @@
         shoulderPetsOnRestRun1: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderRestFrame && companion.currentFrameUrl === companion.__hobunjiShoulderRestFrame).length,
         shoulderPetsOnSplitFrame: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderSplitFrame && companion.currentFrameUrl === companion.__hobunjiShoulderSplitFrame).length,
         shoulderSplitForegroundVisible: activeShoulderPets.filter(companion => !!companion?.avatarRef?.shoulderRest?.splitOverlayVisible).length,
+        shoulderSplitIdleRight: activeShoulderPets.filter(companion => !!companion?.avatarRef?.shoulderRest?.splitRightUsesIdle).length,
         shoulderSplineActive: activeShoulderPets.filter(companion => companion?.avatarRef?.shoulderRest?.enabled).length,
       };
     },
