@@ -1,5 +1,5 @@
 // Compatibility bootstrap for the retired A/B shoulder-curl runtime.
-// New authoring/runtime lives in animal-shoulder-spline.js (v8).
+// New authoring/runtime lives in animal-shoulder-spline.js (v9).
 (() => {
   'use strict';
 
@@ -15,11 +15,11 @@
     document.head.appendChild(script);
   }
 
-  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 8) {
+  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 9) {
     loadScript('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles');
-    loadScript('js/animal-shoulder-spline.js?v=20260917spline8', 'animal-shoulder-spline');
+    loadScript('js/animal-shoulder-spline.js?v=20260917spline9', 'animal-shoulder-spline');
     loadScript('js/animal-shoulder-spline-layering.js?v=20260917parity2', 'animal-shoulder-spline-layering');
   }
   if (window.AnimalShoulderSpline) window.AnimalShoulderRest = window.AnimalShoulderSpline;
-  window.AnimalShoulderRestV5 = { version: 8, compatibility: true };
+  window.AnimalShoulderRestV5 = { version: 9, compatibility: true };
 })();
