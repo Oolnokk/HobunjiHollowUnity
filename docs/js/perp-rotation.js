@@ -33,7 +33,7 @@
   const PERP_CENTER_HYSTERESIS_RAD = THREE.MathUtils.degToRad(3);
 
   const subjectByPerpState = new WeakMap(); // Caches persistent clamp state -> live subject so screen-view lookup is O(1) after the first frame.
-  let farmAnimalObjects = null; // Captured from FarmAnimals.init; used to resolve farm livestock that do not live in animalObjects during a transition.
+  let farmAnimalObjects = null; // Captured from FarmAnimals.init; used to resolve farm livestock that do not live in Combat's creature registries.
   let farmWorldObjects = null; // Fallback farm/world object registry; used when an animal is temporarily absent from animalObjects during a transition.
   let cameraSample = null; // Reused across clamps in the same frame-sized window so camera debug access does not allocate per subject.
   let cameraSampleAtMs = -Infinity; // Timestamp used by liveCameraPosition to keep the shared camera sample very short-lived.
