@@ -46,19 +46,38 @@ const riggerDir = path.resolve(__dirname, '../docs/tools/animal-head-rig');
 const shell = fs.readFileSync(path.join(riggerDir, 'index.html'), 'utf8');
 const coreAuthor = [1, 2, 3, 4, 5].map(n => fs.readFileSync(path.join(riggerDir, `author-part${n}.js`), 'utf8')).join('\n');
 const shoulderAuthor = fs.readFileSync(path.join(riggerDir, 'author-part6.js'), 'utf8');
+const separatorAuthor = fs.readFileSync(path.join(riggerDir, 'author-part7.js'), 'utf8');
+const broadAuthor = fs.readFileSync(path.join(riggerDir, 'author-part8.js'), 'utf8');
+const twoPointAuthor = fs.readFileSync(path.join(riggerDir, 'author-part9.js'), 'utf8');
 assert(shell.includes('id="paintCanvas"') && shell.includes('id="previewCanvas"'), 'persistent paint + preview canvases should exist');
 assert(!shell.includes('previewDeform'), 'preview checkbox remains removed');
 assert(shell.includes('id="brushStrength"'), 'brush strength remains visible');
-for (let n = 1; n <= 6; n++) assert(shell.includes(`src="./author-part${n}.js"`), `shell loads author-part${n}.js`);
-assert(!shell.includes('author-part7.js') && !shell.includes('author-part8.js'), 'retired shoulder wrapper modules are no longer loaded');
+for (let n = 1; n <= 9; n++) assert(shell.includes(`src="./author-part${n}.js"`), `shell loads author-part${n}.js`);
 assert(shell.includes('position:sticky') && shell.includes('.preview-settings{min-height:0;overflow:auto'), 'right workbench remains sticky and settings scroll internally');
-assert(shell.includes('Enable 7-point body spline') && shell.includes('resetShoulderSpline'), 'simplified seven-point shoulder workflow is visible');
-assert(!shell.includes('shoulderFullRotation') && !shell.includes('shoulderInterRotation'), 'rotation sliders are removed');
-assert(!shell.toLowerCase().includes('weight falloff'), 'weight falloff control is removed');
+assert(shell.includes('Enable body spline') && shell.includes('BEFORE / Bind') && shell.includes('AFTER / Pose'),
+  'current explicit BEFORE/AFTER shoulder workflow is visible');
+assert(shell.includes('id="resetShoulderAfter"') && shell.includes('id="resetShoulderSpline"'),
+  'AFTER-only identity reset and whole-rig reset are both exposed');
+assert(shell.includes('id="shoulderSeparatorRotation"'), 'diagonal separator rotation control is present');
 assert(shoulderAuthor.includes('SHOULDER_POINT_COUNT=7'));
-assert(shoulderAuthor.includes('splinePoints:cloneShoulderPoints()'), 'seven authored points serialize into shoulderRest');
-assert(shoulderAuthor.includes('shoulderSplineApi?.normalizeRest'), 'legacy shoulder imports use one-way v6 conversion');
+assert(shoulderAuthor.includes('beforePoints:cloneShoulderPoints(shoulderBeforePoints') &&
+  shoulderAuthor.includes('afterPoints:cloneShoulderPoints(shoulderAfterPoints'),
+  'seven BEFORE and seven AFTER points serialize into shoulderRest');
+assert(shoulderAuthor.includes('shoulderSplineApi?.normalizeRest'), 'legacy shoulder imports use the shared runtime normalizer');
 assert(!shoulderAuthor.includes('previewAngle:'), 'preview neck angle is not serialized');
+assert(shoulderAuthor.includes("shoulderFrameShift?.addEventListener('pointerdown',()=>checkpointHistory())"),
+  'Frame shift begins an undo checkpoint before translating both spline lines');
+assert(separatorAuthor.includes('separatorPointIsRight') &&
+  separatorAuthor.includes('separatorRotationDeg=shoulderSeparatorRotationValue()'),
+  'editor paint ownership and saved separator rotation use the shared diagonal-separator model');
+assert(broadAuthor.includes('function effectiveShoulderAfterPoints()') &&
+  broadAuthor.includes('rest.afterPoints=effectiveShoulderAfterPoints()'),
+  'broad AFTER controls are additive editor macros whose effective curve is what preview/export receives');
+assert(twoPointAuthor.includes('function setVisibleShoulderAfterEndpoint') &&
+  twoPointAuthor.includes('version:2'),
+  'two-point mode directly edits the real beginning/end AFTER vertices');
+assert(!twoPointAuthor.includes('startDelta') && !twoPointAuthor.includes('endDelta'),
+  'two-point mode does not hide an interpolated deformation layer across vertices 2-6');
 assert(coreAuthor.includes('state.compressibility.values[index]=UNSET') && coreAuthor.includes('state.stretchability.values[index]=UNSET'), 'Influence edits reset both material channels to inherit');
 assert(coreAuthor.includes('lerp(current,0,amount)'), 'material brush only reduces channel');
 assert(coreAuthor.includes('lerp(current,base,amount)'), 'material restore moves back toward Influence');
