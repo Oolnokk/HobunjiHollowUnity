@@ -35,9 +35,9 @@ delete global.AnimalShoulderRest;
 require(splinePath);
 const api = global.AnimalShoulderSpline;
 assert(api, 'BEFORE/AFTER shoulder spline runtime should install');
-assert.equal(api.version, 9);
+assert.equal(api.version, 10);
 assert.equal(api.POINT_COUNT, 7);
-assert.equal(global.AnimalShoulderRest, api, 'legacy diagnostic alias points at v9 runtime');
+assert.equal(global.AnimalShoulderRest, api, 'legacy diagnostic alias points at v10 runtime');
 
 const straightGuide = { a: { x: 0.2, y: 0.4 }, b: { x: 0.8, y: 0.4 } };
 const straightBefore = api.linearPointsForGuide(straightGuide);
@@ -69,7 +69,29 @@ const curvedIdentity = { enabled: true, useSpline: true, frameShiftX: .2, before
 const curvedSource = { x: 0.5, y: 0.60 };
 const curvedIdentityResult = api.deformNormalizedPoint(curvedSource, curvedIdentity);
 assert(Math.abs(curvedIdentityResult.x - curvedSource.x) < 3e-3, 'curved BEFORE mapped to itself preserves source X');
+
 assert(Math.abs(curvedIdentityResult.y - curvedSource.y) < 3e-3, 'curved BEFORE mapped to itself preserves source Y');
+
+// The complete rectangular right-side strip must bind, including pixels whose
+// nearest location lies beyond the spline's endpoint tangent planes.
+const translatedAfter = straightBefore.map(point => ({ x: point.x, y: point.y + .2 }));
+const pastEndSource = { x: .95, y: .4 };
+const pastEndBind = api.bindFrameForPoint(straightBefore, pastEndSource);
+assert(pastEndBind && pastEndBind.t > .999 && pastEndBind.alongOffset > 0,
+  'pixels beyond the last bind vertex remain attached through endpoint-tangent extension');
+const pastEndTarget = api.deformNormalizedPoint(pastEndSource, {
+  enabled: true, useSpline: true, frameShiftX: .2,
+  beforePoints: straightBefore, afterPoints: translatedAfter,
+});
+assert(Math.abs(pastEndTarget.x - .95) < 1e-4 && Math.abs(pastEndTarget.y - .6) < 1e-4,
+  'endpoint-extension pixels follow AFTER instead of becoming an undeformed dead wedge');
+
+const aspectRest = { frameShiftX: .5, separatorRotationDeg: 45, separatorAspect: 2 };
+const allUnsetLarge = api.decodeWeightMap({ width: 101, height: 101, encoding: 'rle-u9', unsetValue: 256, data: [10201, 256] });
+assert.equal(api.sampleShoulderInfluence(null, .6, .65, aspectRest), 1,
+  'source-aspect separator classifies the test point on the right');
+assert.equal(api.sampleShoulderInfluence(allUnsetLarge, .6, .65, aspectRest), 1,
+  'adding an unset paint map must not replace source aspect with weight-map aspect');
 
 const after = curvedBefore.map(p => ({ ...p }));
 after[3].y += 0.20;
@@ -134,10 +156,9 @@ for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter'
   assert(shellSource.includes(`id="${id}"`), `rigger exposes ${id}`);
 }
 assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Pose'));
-assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline9'));
+assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline10'));
 assert(shellSource.includes('author-part7.js'));
 assert(shellSource.includes('author-part8.js'), 'rigger loads additive broad-pose authoring after precise/separator authoring');
-assert(shellSource.includes('author-part9.js'), 'rigger loads the direct two-point endpoint layer after broad pose authoring');
 assert(shellSource.includes('author-part9.js'), 'rigger loads the direct two-point endpoint tool after the broad-pose layer');
 assert(!shellSource.includes('id="shoulderFullRotation"'));
 assert(!shellSource.includes('id="shoulderInterRotation"'));
@@ -182,34 +203,25 @@ assert.match(broadAuthorSource, /minX=Math\.min\(minX,p\.x\*s\.width\)/,
 assert.match(broadAuthorSource, /shoulderBroadPointerToSource/,
   'off-image precise nodes use an unclamped shoulder-edit pointer');
 
-for (const id of ['editShoulderTwoPoint','resetShoulderTwoPoint','snapShoulderStartToShift','snapShoulderEndToRightEdge']) {
-  assert(twoPointAuthorSource.includes(`id="\${id}"`), `two-point endpoint tool exposes ${id}`);
+for (const id of ['editShoulderTwoPoint','snapShoulderStartToShift','snapShoulderEndToRightEdge']) {
+  assert(twoPointAuthorSource.includes(`id="${id}"`), `two-point endpoint tool exposes ${id}`);
 }
-assert.match(twoPointAuthorSource, /shoulderTwoPointStart=\{x:shoulderFrameShiftValue\(\),y:\.5\}/,
-  'Start snap places AFTER vertex 1 at frame-shift X and vertical center');
-assert.match(twoPointAuthorSource, /shoulderTwoPointEnd=\{x:1,y:\.5\}/,
-  'End snap places AFTER vertex 7 at the center of the right source PNG edge');
-assert.match(twoPointAuthorSource, /startDelta=.*shoulderTwoPointStart\.x-startBase\.x.*endDelta=.*shoulderTwoPointEnd\.x-endBase\.x/s,
-  'two-point layer computes direct endpoint deltas from the current visible AFTER endpoints');
-assert.match(twoPointAuthorSource, /startDelta\.x\+\(endDelta\.x-startDelta\.x\)\*t/,
-  'interior AFTER vertices receive linearly interpolated endpoint displacement');
-
-assert.match(twoPointAuthorSource, /Edit 2-point endpoints/,
-  'two-point coarse tool is exposed as a distinct interaction mode');
-assert.match(twoPointAuthorSource, /shoulderTwoPointStart\.x-startBase\.x/,
-  'Start is an absolute target for the visible first AFTER vertex');
-assert.match(twoPointAuthorSource, /shoulderTwoPointEnd\.x-endBase\.x/,
-  'End is an absolute target for the visible last AFTER vertex');
-assert.match(twoPointAuthorSource, /startDelta\.x\+\(endDelta\.x-startDelta\.x\)\*t/,
-  'endpoint displacement is interpolated across the five interior vertices');
+assert(!twoPointAuthorSource.includes('resetShoulderTwoPoint'),
+  'two-point mode has no redundant editor-only pose layer to reset');
+assert.match(twoPointAuthorSource, /shoulderAfterPoints\[index\]=\{x:numberOr\(target\?\.x,0\)-delta\.x,y:numberOr\(target\?\.y,0\)-delta\.y\}/,
+  'two-point mode writes directly into the real AFTER endpoint while compensating any active broad macro');
+assert.match(twoPointAuthorSource, /setVisibleShoulderAfterEndpoint\(0,\{x:shoulderFrameShiftValue\(\),y:\.5\}\)/,
+  'Start snap places visible AFTER vertex 1 at frame-shift X and vertical center');
+assert.match(twoPointAuthorSource, /setVisibleShoulderAfterEndpoint\(SHOULDER_POINT_COUNT-1,\{x:1,y:\.5\}\)/,
+  'End snap places visible AFTER vertex 7 at the center of the right source PNG edge');
+assert(!twoPointAuthorSource.includes('startDelta') && !twoPointAuthorSource.includes('endDelta'),
+  'two-point mode must not interpolate a hidden displacement across vertices 2-6');
 assert.match(twoPointAuthorSource, /if\(shoulderTwoPointEditMode\)return-1/,
-  'ordinary seven-node hit testing is disabled while the two-point tool owns the canvas');
-assert.match(twoPointAuthorSource, /handle\(points\[0\],'S'\);handle\(points\[SHOULDER_POINT_COUNT-1\],'E'\)/,
+  'ordinary seven-node hit testing is disabled while the two-point view owns the canvas');
+assert.match(twoPointAuthorSource, /drawHandle\(points\[0\],'S'\);[\s\S]*drawHandle\(points\[SHOULDER_POINT_COUNT-1\],'E'\)/,
   'two-point mode draws only explicit Start and End handles');
-assert.match(twoPointAuthorSource, /bakeShoulderBroadPose\?\.addEventListener\('click'/,
-  'existing Bake into AFTER consumes and then clears the two-point layer');
-assert.match(twoPointAuthorSource, /effectiveAfterPoints:\(\)=>effectiveShoulderAfterPoints\(\)/,
-  'diagnostic API exposes the final two-point-adjusted explicit AFTER curve');
+assert.match(twoPointAuthorSource, /version:2/,
+  'diagnostic API identifies the simplified direct-endpoint implementation');
 
 assert.match(splineSource, /function separatorSignedSide\(/,
   'runtime has one signed-side classifier for diagonal frame ownership');
@@ -217,6 +229,12 @@ assert.match(splineSource, /function separatorPolygon\(/,
   'runtime exposes half-plane clipping polygons to editor and game compositor');
 assert.match(splineSource, /function shoulderResponseKind\(rest, bind\)/,
   'runtime classifies local curved-strip strain as compression or stretch');
+assert.match(splineSource, /alongOffset: startAlong/,
+  'runtime retains longitudinal offset for pixels before the first bind point');
+assert.match(splineSource, /alongOffset: endAlong/,
+  'runtime retains longitudinal offset for pixels beyond the last bind point');
+assert.match(splineSource, /const authoredAspect = finite\(restLike\?\.separatorAspect, 0\)/,
+  'unset shoulder paint defaults prefer the authored source-sprite aspect');
 assert.match(splineSource, /sampleShoulderMaterial\(maps\.stretchability/,
   'runtime samples shoulder Stretchability independently of head material paint');
 
@@ -226,15 +244,15 @@ assert.match(paritySource, /Object\.defineProperty\(overlay, 'renderOrder'/,
 assert.match(paritySource, /overlay\.layers\.mask = source\.layers\.mask/);
 
 for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) {
-  assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline9'));
-  assert(bootstrapSource.includes('AnimalShoulderRestV5 = { version: 9'));
+  assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline10'));
+  assert(bootstrapSource.includes('AnimalShoulderRestV5 = { version: 10'));
 }
-assert.match(bridgeSource, /AnimalShoulderSpline\.version\) < 9/,
-  'game attachment bridge explicitly requires the v9 diagonal-separator runtime');
+assert.match(bridgeSource, /AnimalShoulderSpline\.version\) < 10/,
+  'game attachment bridge explicitly requires the v10 shoulder runtime');
 assert.match(bridgeSource, /separatorPolygon/,
   'game split compositor uses the same diagonal separator polygon as the rigger');
 assert.match(bridgeSource, /separatorRotationDeg/,
   'game frame cache key changes when separator Z rotation changes');
 assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
 
-console.log('animal-shoulder-spline v9: diagonal separator + broad/two-point/precise authoring tests passed');
+console.log('animal-shoulder-spline v10: audited shoulder authoring/runtime tests passed');
