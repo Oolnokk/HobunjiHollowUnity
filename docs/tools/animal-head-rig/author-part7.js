@@ -56,7 +56,7 @@ restoreHistoryState=function restoreHistoryStateWithCurveFalloff(snapshot){
 const normalizedRigBeforeFalloff=normalizedRig;
 normalizedRig=function normalizedRigWithCurveFalloff(){
   const rig=normalizedRigBeforeFalloff();
-  if(rig?.shoulderRest)rig.shoulderRest.curveFalloff=shoulderCurveFalloffValue();
+  if(rig?.shoulderRest)rig.shoulderRest.curveFalloff=shoulderCurveFalloffValue(); // Persists into Copy Rig, downloads, and Save Rig for Game Preview.
   return rig;
 };
 
