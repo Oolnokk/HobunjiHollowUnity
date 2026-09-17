@@ -264,18 +264,30 @@
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
     return { x: dx / length, y: dy / length };
   }
+  function imageAspect(value) { return Math.max(1e-6, finite(value, 1)); }
+  function splinePointMetric(points, t, aspect) {
+    const p = splinePoint(points, t), a = imageAspect(aspect);
+    return { x: p.x * a, y: p.y };
+  }
+  function splineTangentMetric(points, t, aspect) {
+    const epsilon = 1 / 4096;
+    const a = splinePointMetric(points, Math.max(0, t - epsilon), aspect), b = splinePointMetric(points, Math.min(1, t + epsilon), aspect);
+    const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
+    return { x: dx / length, y: dy / length };
+  }
   function dot(ax, ay, bx, by) { return ax * bx + ay * by; }
   function distanceSquared(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
 
-  function bindFrameForPoint(beforePoints, point) {
-    const p = { x: finite(point?.x, 0), y: finite(point?.y, 0) };
-    const start = splinePoint(beforePoints, 0), end = splinePoint(beforePoints, 1);
-    const startTangent = splineTangent(beforePoints, 0), endTangent = splineTangent(beforePoints, 1);
+  function bindFrameForPoint(beforePoints, point, aspectOverride = 1) {
+    const aspect = imageAspect(aspectOverride);
+    const p = { x: finite(point?.x, 0) * aspect, y: finite(point?.y, 0) };
+    const start = splinePointMetric(beforePoints, 0, aspect), end = splinePointMetric(beforePoints, 1, aspect);
+    const startTangent = splineTangentMetric(beforePoints, 0, aspect), endTangent = splineTangentMetric(beforePoints, 1, aspect);
     const startNormal = { x: -startTangent.y, y: startTangent.x }, endNormal = { x: -endTangent.y, y: endTangent.x };
     const startAlong = dot(p.x - start.x, p.y - start.y, startTangent.x, startTangent.y);
     if (startAlong < 0) {
       return {
-        t: 0, center: start, tangent: startTangent, normal: startNormal,
+        t: 0, center: start, tangent: startTangent, normal: startNormal, aspect,
         alongOffset: startAlong,
         signedOffset: dot(p.x - start.x, p.y - start.y, startNormal.x, startNormal.y),
       };
@@ -283,7 +295,7 @@
     const endAlong = dot(p.x - end.x, p.y - end.y, endTangent.x, endTangent.y);
     if (endAlong > 0) {
       return {
-        t: 1, center: end, tangent: endTangent, normal: endNormal,
+        t: 1, center: end, tangent: endTangent, normal: endNormal, aspect,
         alongOffset: endAlong,
         signedOffset: dot(p.x - end.x, p.y - end.y, endNormal.x, endNormal.y),
       };
@@ -291,39 +303,48 @@
     const samples = 96;
     let bestT = 0, bestD = Infinity;
     for (let i = 0; i <= samples; i++) {
-      const t = i / samples, center = splinePoint(beforePoints, t), d = distanceSquared(center, p);
+      const t = i / samples, center = splinePointMetric(beforePoints, t, aspect), d = distanceSquared(center, p);
       if (d < bestD) { bestD = d; bestT = t; }
     }
     let lo = Math.max(0, bestT - 1 / samples), hi = Math.min(1, bestT + 1 / samples);
     for (let i = 0; i < 9; i++) {
       const t1 = lo + (hi - lo) / 3, t2 = hi - (hi - lo) / 3;
-      const d1 = distanceSquared(splinePoint(beforePoints, t1), p), d2 = distanceSquared(splinePoint(beforePoints, t2), p);
+      const d1 = distanceSquared(splinePointMetric(beforePoints, t1, aspect), p), d2 = distanceSquared(splinePointMetric(beforePoints, t2, aspect), p);
       if (d1 <= d2) hi = t2; else lo = t1;
     }
-    const t = (lo + hi) / 2, center = splinePoint(beforePoints, t), tangent = splineTangent(beforePoints, t), normal = { x: -tangent.y, y: tangent.x };
-    return { t, center, tangent, normal, alongOffset: 0, signedOffset: dot(p.x - center.x, p.y - center.y, normal.x, normal.y) };
+    const t = (lo + hi) / 2, center = splinePointMetric(beforePoints, t, aspect), tangent = splineTangentMetric(beforePoints, t, aspect), normal = { x: -tangent.y, y: tangent.x };
+    return { t, center, tangent, normal, aspect, alongOffset: 0, signedOffset: dot(p.x - center.x, p.y - center.y, normal.x, normal.y) };
   }
 
-  function pointAtBind(points, bind) {
-    const center = splinePoint(points, bind.t), tangent = splineTangent(points, bind.t), normal = { x: -tangent.y, y: tangent.x };
+  function metricPointAtBind(points, bind, aspectOverride = 1) {
+    const aspect = imageAspect(aspectOverride);
+    const center = splinePointMetric(points, bind.t, aspect), tangent = splineTangentMetric(points, bind.t, aspect), normal = { x: -tangent.y, y: tangent.x };
     const along = finite(bind.alongOffset, 0), signedOffset = finite(bind.signedOffset, 0);
     return {
       x: center.x + tangent.x * along + normal.x * signedOffset,
       y: center.y + tangent.y * along + normal.y * signedOffset,
     };
   }
-
-  function pointAtOffset(points, t, signedOffset) {
-    const center = splinePoint(points, t), tangent = splineTangent(points, t), normal = { x: -tangent.y, y: tangent.x };
+  function pointAtBind(points, bind, aspectOverride = 1) {
+    const aspect = imageAspect(aspectOverride), p = metricPointAtBind(points, bind, aspect);
+    return { x: p.x / aspect, y: p.y };
+  }
+  function metricPointAtOffset(points, t, signedOffset, aspectOverride = 1) {
+    const aspect = imageAspect(aspectOverride), center = splinePointMetric(points, t, aspect), tangent = splineTangentMetric(points, t, aspect), normal = { x: -tangent.y, y: tangent.x };
     return { x: center.x + normal.x * signedOffset, y: center.y + normal.y * signedOffset };
+  }
+  function pointAtOffset(points, t, signedOffset, aspectOverride = 1) {
+    const aspect = imageAspect(aspectOverride), p = metricPointAtOffset(points, t, signedOffset, aspect);
+    return { x: p.x / aspect, y: p.y };
   }
 
   function shoulderResponseKind(rest, bind) {
     if (!rest || !bind) return 'neutral';
+    const aspect = imageAspect(rest.separatorAspect);
     const epsilon = 1 / 1024, t0 = Math.max(0, bind.t - epsilon), t1 = Math.min(1, bind.t + epsilon);
     if (t1 - t0 < 1e-7) return 'neutral';
-    const before0 = pointAtOffset(rest.beforePoints, t0, bind.signedOffset), before1 = pointAtOffset(rest.beforePoints, t1, bind.signedOffset);
-    const after0 = pointAtOffset(rest.afterPoints, t0, bind.signedOffset), after1 = pointAtOffset(rest.afterPoints, t1, bind.signedOffset);
+    const before0 = metricPointAtOffset(rest.beforePoints, t0, bind.signedOffset, aspect), before1 = metricPointAtOffset(rest.beforePoints, t1, bind.signedOffset, aspect);
+    const after0 = metricPointAtOffset(rest.afterPoints, t0, bind.signedOffset, aspect), after1 = metricPointAtOffset(rest.afterPoints, t1, bind.signedOffset, aspect);
     const beforeSpan = Math.hypot(before1.x - before0.x, before1.y - before0.y), afterSpan = Math.hypot(after1.x - after0.x, after1.y - after0.y);
     if (beforeSpan < 1e-8) return 'neutral';
     const ratio = afterSpan / beforeSpan;
@@ -335,9 +356,10 @@
   function deformationDetails(point, restLike) {
     const rest = restLike?._shoulderMaps ? restLike : normalizeRest(restLike), source = { x: finite(point?.x, 0), y: finite(point?.y, 0) };
     if (!rest || rest.beforePoints?.length !== POINT_COUNT || rest.afterPoints?.length !== POINT_COUNT) return { source, target: source, bind: null, kind: 'neutral', rest };
-    const bind = bindFrameForPoint(rest.beforePoints, source);
+    const aspect = imageAspect(rest.separatorAspect);
+    const bind = bindFrameForPoint(rest.beforePoints, source, aspect);
     if (!bind) return { source, target: source, bind: null, kind: 'neutral', rest };
-    const target = pointAtBind(rest.afterPoints, bind);
+    const target = pointAtBind(rest.afterPoints, bind, aspect);
     return { source, target, bind, kind: shoulderResponseKind(rest, bind), rest };
   }
   function deformNormalizedPoint(point, restLike) { return deformationDetails(point, restLike).target; }
