@@ -4,41 +4,104 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
 }
 
-const presentation = source('docs/js/crop-billboard-presentation.js'); // Used to pin shared farm-crop soil anchoring and clustered billboard grounding.
-const loader = source('docs/js/combat/combat-config-loader.js'); // Used to ensure the presentation wrapper installs after crop sprite/heftroot bridges.
-const game = source('docs/game.js'); // Used to pin the exact water lift this presentation cancels.
-const cropRendering = source('docs/js/vegetation-crop-rendering.js'); // Crop draw positioning now lives here rather than inline in game.js.
+const presentation = source('docs/js/crop-billboard-presentation.js'); // Exercises the real dependency bridge and draw-time crop grounding.
+const loader = source('docs/js/combat/combat-config-loader.js'); // Guards crop presentation load order.
 
-assert.match(game, /const WATER_UNIT = SLAB_H \/ MAX_WATER/,
-  'game.js still computes crop water lift from the shared water-depth conversion');
-assert.match(cropRendering, /const surfY\s*= deps\.tileSurfaceY\(tile\.type\) \+ tile\.water \* deps\.WATER_UNIT/,
-  'crop rendering still supplies water-raised crop positions that the presentation layer must counter at draw time');
-assert.match(presentation, /const WATER_UNIT = 0\.5 \/ 3\.0/,
-  'presentation mirrors the current 0.5/3 water-depth-to-world-Y conversion');
-assert.match(presentation, /waterLift = waterDepth \* WATER_UNIT/,
-  'live tile water depth is converted into the exact crop Y correction');
+assert.match(presentation, /patchCropRendering\(window\.VegetationCropRendering\)/,
+  'crop presentation captures the renderer-owned farm dependencies directly');
+assert.match(presentation, /get\(\) \{ return cropRenderDeps\?\.scene \|\| null; \}/,
+  'FarmPanel receives a live scene getter instead of being assumed to own render state');
 assert.match(presentation, /root\.position\.y -= waterLift \+ centerLift/,
-  'crop roots are lowered back to soil rather than riding on the water surface');
-assert.match(presentation, /hobunjiCropRootKey \|\| object\?\.userData\?\.hobunjiCropSpriteKey/,
-  'the shared soil correction discovers procedural, clustered, and generic crop-root tags');
-assert.match(presentation, /cropKey === 'garlink' \|\| cropKey === 'ongyums'/,
-  'only converted garlink/ongyums clusters also remove the old generic cube center lift');
-assert.match(presentation, /root\.userData\?\.hobunjiCropClusterCount === 3/,
-  'cube-center correction waits until garlink/ongyums have actually converted into three-member billboard clusters');
+  'converted billboard roots remove both water and former cube-center lift');
 assert.doesNotMatch(presentation, /root\.scale\.set|mesh\.scale\.set/,
-  'the presentation layer no longer shrinks the whole crop root; individual cluster members own their requested size');
-assert.match(presentation, /try \{[\s\S]*?previousRender\.call[\s\S]*?finally \{[\s\S]*?restoreTransforms/,
-  'temporary soil anchoring is restored after rendering so crop simulation remains owned by game.js');
+  'soil anchoring never changes crop growth scale');
 
 const artIndex = loader.indexOf('crop-sprite-art.js?v=20260915cropscan1');
 const heftrootIndex = loader.indexOf('heftroot-billboard-bridge.js');
 const presentationIndex = loader.indexOf('crop-billboard-presentation.js?v=20260814a');
-assert.ok(artIndex >= 0 && heftrootIndex > artIndex && presentationIndex > heftrootIndex,
-  'shared crop presentation loads after both authored crop conversion bridges');
+const readyIndex = loader.indexOf('crop-ready-presentation.js?v=20260818a');
+assert.ok(artIndex >= 0 && heftrootIndex > artIndex && presentationIndex > heftrootIndex && readyIndex > presentationIndex,
+  'crop sprite conversion, soil anchoring, then ripe sparkle presentation keep their required order');
 
-console.log('crop soil-anchor presentation tests passed');
+function makeNode(props = {}) {
+  const node = {
+    position: { x: 0, y: 0, z: 0, ...(props.position || {}) },
+    scale: { x: 1, y: 1, z: 1, ...(props.scale || {}) },
+    userData: props.userData || {},
+    children: [],
+    parent: null,
+    traverse(callback) {
+      callback(this);
+      for (const child of this.children) child.traverse(callback);
+    },
+  };
+  node.add = child => {
+    child.parent = node;
+    node.children.push(child);
+  };
+  return node;
+}
+
+const scene = makeNode();
+const cropRoot = makeNode({
+  position: { x: 0.5, y: 0.62, z: 0.5 },
+  scale: { x: 1, y: 1, z: 1 },
+  userData: {
+    hobunjiCropRootKey: 'ongyums',
+    hobunjiCropSpriteKey: 'ongyums',
+    hobunjiCropClusterCount: 3,
+  },
+}); // Mirrors a converted full-grown generic crop: soil 0 + water 0.10 + cube center 0.52.
+scene.add(cropRoot);
+
+let observedY = null;
+function FakeWebGLRenderer() {}
+FakeWebGLRenderer.prototype.render = function render() {
+  observedY = cropRoot.position.y;
+  return 'rendered';
+};
+
+let vegetationInitDeps = null;
+let panelInitDeps = null;
+const window = {
+  THREE: { WebGLRenderer: FakeWebGLRenderer },
+  VegetationCropRendering: {
+    init(injectedDeps) { vegetationInitDeps = injectedDeps; return injectedDeps; },
+  },
+  FarmPanel: {
+    init(injectedDeps) { panelInitDeps = injectedDeps; return injectedDeps; },
+  },
+};
+vm.runInNewContext(presentation, { window, Object, Number, Math, Map });
+
+const grid = [[{ crop: 'ongyums', water: 0.6 }]];
+const panelDeps = { getGrid: () => grid }; // Intentionally has NO scene: this reproduces the real FarmPanel contract that exposed the bug.
+window.FarmPanel.init(panelDeps);
+assert.strictEqual(panelInitDeps, panelDeps, 'FarmPanel still receives its original dependency object');
+assert.equal(panelDeps.scene, null, 'linked scene is safely null before the crop renderer initializes');
+
+const renderDeps = { getGrid: () => grid, scene };
+window.VegetationCropRendering.init(renderDeps);
+assert.strictEqual(vegetationInitDeps, renderDeps, 'VegetationCropRendering still receives its original dependencies');
+assert.strictEqual(panelDeps.scene, scene, 'FarmPanel-linked crop presentation sees the live renderer-owned farm scene after renderer init');
+
+const renderer = new window.THREE.WebGLRenderer();
+assert.equal(renderer.render(scene, {}), 'rendered', 'crop grounding preserves the renderer return value');
+assert.ok(Math.abs(observedY) < 1e-12,
+  'Ongyums draw at the soil surface after removing 0.10 water lift and 0.52 legacy cube-center lift');
+assert.equal(cropRoot.position.y, 0.62,
+  'draw-time grounding restores the crop renderer-owned position immediately afterward');
+
+const debug = window.HobunjiCropBillboardPresentation.getDebug();
+assert.equal(debug.dependencySource, 'vegetation-crop-rendering', 'diagnostics identify the authoritative dependency source');
+assert.equal(debug.cropRendererReady, true, 'diagnostics confirm the farm renderer scene/grid are available');
+assert.equal(debug.farmReady, true, 'crop presentation reports ready with FarmPanel itself owning no scene');
+assert.equal(debug.lastAnchoredRoots, 1, 'diagnostics report the converted crop root corrected on the draw');
+
+console.log('crop soil-anchor render-dependency tests passed');
