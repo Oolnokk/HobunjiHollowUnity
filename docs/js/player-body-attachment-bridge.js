@@ -136,6 +136,17 @@
     return { leftCanvas, rightCanvas, cut, width, height };
   }
 
+  function combinedSplitFallbackCanvas(layers) {
+    if (!layers) return null;
+    const canvas = document.createElement('canvas'); // Safety fallback for an avatar type that cannot host the v5 overlay mesh.
+    canvas.width = layers.width; canvas.height = layers.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(layers.rightCanvas, 0, 0); // Background first.
+    ctx.drawImage(layers.leftCanvas, 0, 0); // Idle-left wins visually even in fallback mode.
+    return canvas;
+  }
+
   function splitFrameKey(companion, combatDeps, rest) {
     const idle = shoulderIdleFrame(companion, combatDeps).url || '';
     const run1 = shoulderRun1Frame(companion, combatDeps).url || '';
@@ -144,16 +155,18 @@
     return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${run1}|${split}`; // Companion-local cache also implicitly keys the stable genotype instance.
   }
 
-  function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas) {
+  function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
     if (!rightUrl || !leftCanvas || !companion?.avatarRef) return false;
-    companion.avatarRef.setShoulderSplitOverlayCanvas?.(leftCanvas, true); // Idle-left always renders as the explicit foreground layer.
-    companion.__hobunjiShoulderFrame = rightUrl;
-    companion.__hobunjiShoulderSplitFrame = rightUrl;
+    const layered = typeof companion.avatarRef.setShoulderSplitOverlayCanvas === 'function';
+    const frameUrl = layered ? rightUrl : (fallbackUrl || rightUrl); // Never lose the left half if an unusual avatar lacks the overlay capability.
+    if (layered) companion.avatarRef.setShoulderSplitOverlayCanvas(leftCanvas, true); // Idle-left always renders as the explicit foreground layer.
+    companion.__hobunjiShoulderFrame = frameUrl;
+    companion.__hobunjiShoulderSplitFrame = frameUrl;
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
-    if (companion.currentFrameUrl !== rightUrl && typeof combatDeps?.setCreatureFrame === 'function') {
-      combatDeps.setCreatureFrame(companion.avatarRef, rightUrl, null, 'idle', null); // Right-only canvas is already genotyped; do not recolor it a second time.
-      companion.currentFrameUrl = rightUrl;
+    if (companion.currentFrameUrl !== frameUrl && typeof combatDeps?.setCreatureFrame === 'function') {
+      combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, null, 'idle', null); // Generated canvas is already genotyped; do not recolor it a second time.
+      companion.currentFrameUrl = frameUrl;
     }
     return true;
   }
@@ -161,19 +174,22 @@
   function ensureSplitShoulderFrame(companion, combatDeps, rest) {
     const key = splitFrameKey(companion, combatDeps, rest);
     if (companion.__hobunjiShoulderSplitKey === key && companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) {
-      return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas);
+      return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas, companion.__hobunjiShoulderSplitFallbackUrl);
     }
     if (companion.__hobunjiShoulderSplitPromise && companion.__hobunjiShoulderSplitKey === key) return true;
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false); // Avoid showing a stale left layer while a new species/seam is composing.
     companion.__hobunjiShoulderSplitKey = key;
     companion.__hobunjiShoulderSplitPromise = splitFrameLayers(companion, combatDeps, rest).then(layers => {
       if (!layers || companion.__hobunjiShoulderSplitKey !== key) return null;
-      const rightUrl = layers.rightCanvas.toDataURL('image/png'); // Base mesh receives only the right/run1 pixels; left/idle lives on the foreground overlay.
+      const rightUrl = layers.rightCanvas.toDataURL('image/png'); // Base mesh receives only right/run1 pixels when explicit layering is available.
+      const fallbackCanvas = combinedSplitFallbackCanvas(layers);
+      const fallbackUrl = fallbackCanvas?.toDataURL?.('image/png') || rightUrl;
       companion.__hobunjiShoulderSplitUrl = rightUrl;
+      companion.__hobunjiShoulderSplitFallbackUrl = fallbackUrl;
       companion.__hobunjiShoulderSplitLeftCanvas = layers.leftCanvas;
       companion.__hobunjiShoulderSplitPromise = null;
       const stillShouldered = companion?.health > 0 && companion.stableRole === 'shoulderPet' && (companion.master || combatDeps?.player) === combatDeps?.player;
-      if (stillShouldered && companion.avatarRef?.shoulderRest?.splitFrame) applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas);
+      if (stillShouldered && companion.avatarRef?.shoulderRest?.splitFrame) applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas, fallbackUrl);
       return rightUrl;
     }).catch(() => { companion.__hobunjiShoulderSplitPromise = null; return null; });
     return true;
