@@ -7,6 +7,7 @@ const questTargets = [
   { id:'quest:1', areaId:'zone', col:8, row:5, label:'Quest: Furu' },
   { id:'quest:2', areaId:'town', col:2, row:2, label:'Quest: Away' },
 ];
+const registeredSchedulerCallbacks = new Map(); // Records every RuntimeFrameScheduler.register(id, fn) call so the test can drive the compass's scheduled frame directly.
 const context = {
   console, Math, Number, Object, Array, Map,
   performance: { now: () => 100 },
@@ -15,6 +16,9 @@ const context = {
   window: null,
 };
 context.window = context;
+context.RuntimeFrameScheduler = {
+  register(id, fn) { registeredSchedulerCallbacks.set(id, fn); return () => registeredSchedulerCallbacks.delete(id); },
+};
 context.ProceduralTasks = { allCompassTargets: () => ({ active: questTargets, pending: [] }) };
 context.WildernessMap = { getCompassWaypoint: () => ({ id: 'locale:house', label: 'Leaf & Pahu\'s House', zoneId: 'zone', col: 6, row: 5 }) };
 context.BountyBoard = { markers: new Map([['b1',{zoneId:'zone',col:10,row:5,label:'Captain'}]]) };
@@ -77,5 +81,16 @@ context.WildernessMap.getCompassWaypoint = () => ({ id: 'locale:away', label: 'A
 const offAreaCollected = test.collectTargets('zone');
 assert.equal(offAreaCollected.offAreaWaypoint.zoneId, 'other-zone', 'off-area waypoint should remain saved but hidden until its region is entered');
 assert(!offAreaCollected.targets.some(target => target.source === 'waypoint'), 'off-area waypoint must not create a false local bearing');
+
+// Stage 2 RAF-ownership migration: the compass must register with the shared
+// RuntimeFrameScheduler under a stable id instead of owning a private RAF,
+// and its registered callback must still drive the same update() the old
+// requestAnimationFrame(frame) loop did, with the exact same {timestamp}
+// shape RuntimeFrameScheduler hands every subscriber.
+assert(registeredSchedulerCallbacks.has('navigation-compass'), 'navigation compass must register with RuntimeFrameScheduler under a stable id');
+assert(!('requestAnimationFrame' in context) || fs.readFileSync(sourcePath, 'utf8').indexOf('requestAnimationFrame(') === -1, 'navigation compass must no longer own a direct requestAnimationFrame( call site');
+const scheduledFrame = registeredSchedulerCallbacks.get('navigation-compass');
+scheduledFrame({ timestamp: 250 });
+assert.equal(context.NavigationCompass.getDebug().visible, false, 'scheduled frame still runs update() (no root/layer elements in this fixture, so it resolves hidden) instead of silently doing nothing');
 
 console.log('navigation-compass tests passed');

@@ -252,12 +252,17 @@
     lastDebug = { visible: true, areaId, headingDeg: Number((heading * 180 / Math.PI).toFixed(1)), headingSource, markers, offAreaQuestTargets, offAreaWaypoint };
   }
 
-  function frame(now) {
-    update(now);
-    requestAnimationFrame(frame);
+  const SCHEDULER_ID = 'navigation-compass'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
+
+  function scheduledFrame({ timestamp }) {
+    update(timestamp);
   }
 
-  requestAnimationFrame(frame);
+  window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
+    phase: 'visual',
+    owner: 'NavigationCompass',
+    description: 'Updates compass heading and visible navigation markers.',
+  });
   window.NavigationCompass = Object.freeze({
     update,
     getDebug: () => ({ ...lastDebug, markers: lastDebug.markers.map(marker => ({ ...marker })) }),

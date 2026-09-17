@@ -542,15 +542,6 @@
     "line": 592
   },
   {
-    "file": "docs/js/mobile-combat-zoom.js",
-    "owner": "MobileCombatZoom",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Permanent self-perpetuating background RAF loop (re-armed at every return path, incl. lines 196/218/231/248) that continuously interpolates mobile combat zoom every frame while internally throttling its expensive hostile-visibility scan to every ~SCAN_INTERVAL_MS; a genuine ongoing camera/visual runtime subscription, the same shape as the already-migrated melee HUD reticle.",
-    "migrationStage": "candidate",
-    "line": 231
-  },
-  {
     "file": "docs/js/music-minigame.js",
     "owner": "MusicMinigame",
     "classification": "one-shot",
@@ -567,15 +558,6 @@
     "reason": "Self-perpetuating RAF loop that ramps an HTMLMediaElement's volume from start to target over `dur` ms; it stops re-arming once t>=1 (fade complete) or once a newer fade token invalidates it, so it runs only for the bounded duration of one fade.",
     "migrationStage": "not-planned",
     "line": 227
-  },
-  {
-    "file": "docs/js/navigation-compass.js",
-    "owner": "NavigationCompass",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Permanent self-perpetuating RAF loop (started at module load, line 260, and re-armed every frame at line 257) that internally throttles its real work via `if (now - lastUpdateAt < UPDATE_INTERVAL_MS) return;` (~33ms/30Hz) inside update(); a genuine ongoing HUD visual subscription, the same shape as the already-migrated melee HUD reticle.",
-    "migrationStage": "candidate",
-    "line": 257
   },
   {
     "file": "docs/js/netlify-cloud-save.js",

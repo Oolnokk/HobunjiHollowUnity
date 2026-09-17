@@ -190,12 +190,10 @@
       && !!zoomSelect();
   }
 
-  function frame(nowMs) {
-    if (!isMobileViewport()) return; // Desktop never gets a background zoom loop.
-    if (!dependenciesReady()) {
-      requestAnimationFrame(frame);
-      return;
-    }
+  const SCHEDULER_ID = 'mobile-combat-zoom'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
+
+  function scheduledFrame({ timestamp: nowMs }) {
+    if (!dependenciesReady()) return; // Scheduler already re-invokes every frame, so no manual reschedule is needed while waiting.
 
     if (!initialized) {
       initialized = true;
@@ -215,7 +213,6 @@
       // immediately on the first gameplay frame after returning.
       influencingHostiles = 0;
       nextScanAt = 0;
-      requestAnimationFrame(frame);
       return;
     }
 
@@ -228,7 +225,6 @@
     currentZoom += (targetZoom - currentZoom) * alpha;
     if (Math.abs(targetZoom - currentZoom) < 0.0005) currentZoom = targetZoom;
     applyZoom(currentZoom);
-    requestAnimationFrame(frame);
   }
 
   window.MobileCombatZoom = {
@@ -245,5 +241,19 @@
     refresh: () => { nextScanAt = 0; },
   };
 
-  requestAnimationFrame(frame);
+  window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
+    phase: 'visual',
+    owner: 'MobileCombatZoom',
+    description: 'Solves and smoothly applies adaptive combat camera zoom on coarse-pointer (mobile) viewports.',
+    enabled: isMobileViewport(),
+  });
+
+  // Desktop never needs this subscriber to run at all; disable it outright
+  // instead of invoking an empty callback every frame forever, and flip it
+  // live if the pointer type changes (e.g. a convertible device, or a
+  // headless test harness toggling viewport/pointer emulation).
+  const mobileQuery = window.matchMedia?.('(pointer: coarse)');
+  mobileQuery?.addEventListener?.('change', () => {
+    window.RuntimeFrameScheduler.setEnabled(SCHEDULER_ID, mobileQuery.matches);
+  });
 })();

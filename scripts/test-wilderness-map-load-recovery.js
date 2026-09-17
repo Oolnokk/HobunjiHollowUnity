@@ -33,6 +33,7 @@ const context = {
   Math,
   performance: { now: () => 0 },
   requestAnimationFrame() {},
+  RuntimeFrameScheduler: { register() {} }, // Compass registers with the shared scheduler instead of owning a private RAF; this fixture only exercises the wilderness-map fallback/retry logic above it.
   __farmLog(message, level) { debugMessages.push({ message, level }); },
 };
 context.window = context;
