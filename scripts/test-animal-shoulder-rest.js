@@ -14,6 +14,7 @@ const shellPath = path.join(root, 'docs/tools/animal-head-rig/index.html');
 const bridgePath = path.join(root, 'docs/js/player-body-attachment-bridge.js');
 const geneticsRenderPath = path.join(root, 'docs/js/creature-genetics-render.js');
 const correctionPath = path.join(root, 'docs/js/grehlr-head-rig-correction.js');
+const runtimeV4Source = fs.readFileSync(runtimeV4Path, 'utf8');
 const runtimeV5Source = fs.readFileSync(runtimeV5Path, 'utf8');
 const authorSource = fs.readFileSync(authorPath, 'utf8');
 const authorRefreshSource = fs.readFileSync(authorRefreshPath, 'utf8');
@@ -33,6 +34,8 @@ require(runtimeV5Path);
 const api = global.AnimalShoulderRest;
 assert(api, 'AnimalShoulderRest should install on window/global');
 assert.strictEqual(api.version, 5, 'v5 should upgrade the public shoulder-rest API');
+assert(runtimeV4Source.includes('Version 4 is retained as a compatibility layer'),
+  'v4 explicitly documents that v5 owns final weight/layer semantics');
 
 const guide = { a: { x: 0.2, y: 0.5 }, b: { x: 0.8, y: 0.5 } };
 const curl = { enabled: true, useSpline: true, guide, fullRotationDeg: 0, interVertexRotationDeg: 90, weightFalloff: 0 };
