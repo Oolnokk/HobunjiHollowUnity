@@ -1,0 +1,36 @@
+name: RAF ownership Stage 6 regression (procedural hand frame driver)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/procedural-hand-frame-driver.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-procedural-hand-frame-driver-scheduler.js'
+      - 'scripts/test-procedural-hand-fallback.js'
+      - '.github/workflows/raf-ownership-stage6a-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/procedural-hand-frame-driver.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-procedural-hand-frame-driver-scheduler.js'
+      - 'scripts/test-procedural-hand-fallback.js'
+      - '.github/workflows/raf-ownership-stage6a-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/procedural-hand-frame-driver.js
+      - name: Attachment/pose-sync scheduler split
+        run: node scripts/test-procedural-hand-frame-driver-scheduler.js
+      - name: Fallback gait regression
+        run: node scripts/test-procedural-hand-fallback.js

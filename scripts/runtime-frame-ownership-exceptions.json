@@ -641,11 +641,11 @@
   {
     "file": "docs/js/procedural-hand-frame-driver.js",
     "owner": "ProceduralHandFrameDriver",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Self-recursive RAF loop (also started once at line 562) that runs forever, syncing every managed avatar's hand rig to its held tool and updating fallback gait motion each frame — a genuine ongoing visual subscription, not render-order-dependent (the onBeforeRender sentinel is a separate, secondary sync path).",
-    "migrationStage": "candidate",
-    "line": 516
+    "classification": "isolated-context",
+    "function": "frame (fallback branch inside the trailing if/else)",
+    "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all — attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
+    "migrationStage": "not-planned",
+    "line": 593
   },
   {
     "file": "docs/js/procedural-hand-grip-runtime.js",
