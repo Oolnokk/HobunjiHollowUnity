@@ -259,6 +259,10 @@ assert.match(splineSource, /return raw === UNSET_WEIGHT \? owned : clamp\(raw, 0
   'UNSET shoulder Influence inherits the hard sample-point default while authored paint remains explicit');
 assert.match(splineSource, /sampleShoulderMaterial\(maps\.stretchability/,
   'runtime samples shoulder Stretchability independently of head material paint');
+assert.match(splineSource, /Number\(avatarRef\.shoulderRest\?\.version\) >= 10/,
+  'v10 shoulder avatars are not decorated a second time');
+assert.match(splineSource, /rest\.separatorAspect = runtimeDimensions\.width \/ runtimeDimensions\.height/,
+  'avatar construction replaces legacy square aspect with the actual runtime sprite-plane aspect');
 
 assert.match(paritySource, /INTRA_PET_RENDER_EPSILON = 0\.01/);
 assert.match(paritySource, /Object\.defineProperty\(overlay, 'renderOrder'/,
