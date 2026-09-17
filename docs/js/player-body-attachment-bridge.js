@@ -110,7 +110,7 @@
     }; // Stored beside the existing attachment dump so mobile diagnostics can inspect the limiter without a console.
   }
 
-  function applyShoulderPetFaceRotationLimit(companion, combatDeps) {
+  function applyShoulderPetFaceRotationLimit(companion) {
     if (!THREE || !companion?.avatarRef?.group) return false;
     const root = companion.avatarRef.group; // The same authoritative pet root updateShoulderPetMeshPin writes each gameplay frame.
     const attachment = root.userData?.hobunjiShoulderPetAttachment;
@@ -119,9 +119,11 @@
     const sampledFrameValues = attachment.rotationFrameWorldQuaternion;
     const sampledFinalValues = attachment.finalWorldQuaternion;
     const perchValues = attachment.authoredPerchWorldPosition;
+    const sampledRootValues = attachment.expectedWorldPosition;
     if (!Array.isArray(sampledFrameValues) || sampledFrameValues.length < 4
       || !Array.isArray(sampledFinalValues) || sampledFinalValues.length < 4
-      || !Array.isArray(perchValues) || perchValues.length < 3) {
+      || !Array.isArray(perchValues) || perchValues.length < 3
+      || !Array.isArray(sampledRootValues) || sampledRootValues.length < 3) {
       recordShoulderPetFaceLimit(attachment, { applied: false, reason: 'missing-attachment-frame-data' });
       return false;
     }
@@ -149,17 +151,14 @@
       return false;
     }
 
-    const grip = combatDeps?.creatureAttachmentAnchor?.(companion.creatureKey, 'shoulderGrip', companion.genotype);
-    if (!grip) {
-      recordShoulderPetFaceLimit(attachment, { applied: false, reason: 'missing-shoulder-grip', sourceFrameDeltaDeg });
-      return false;
-    }
-
     const authoredRotationOffset = sampledFrameWorldQuaternion.clone().invert().multiply(sampledFinalWorldQuaternion); // Preserves the exact perch/grip rotation already authored by game.js, including the cancel-offset setting.
     const limitedFinalWorldQuaternion = limitedFrameWorldQuaternion.clone().multiply(authoredRotationOffset).normalize();
     const authoredPerchWorldPosition = new THREE.Vector3().fromArray(perchValues); // Reuses the exact perch point game.js resolved from the live skinned portrait this frame.
-    const limitedGripWorldOffset = new THREE.Vector3(Number(grip.x) || 0, Number(grip.y) || 0, Number(grip.z) || 0).applyQuaternion(limitedFinalWorldQuaternion);
-    const limitedRootWorldPosition = authoredPerchWorldPosition.clone().sub(limitedGripWorldOffset); // Rotating around the grip keeps the animal physically pinned to the shoulder instead of orbiting/detaching.
+    const sampledRootWorldPosition = new THREE.Vector3().fromArray(sampledRootValues); // Reuses game.js's authoritative pre-limit root position rather than re-querying anchor config from another subsystem.
+    const sampledGripWorldOffset = authoredPerchWorldPosition.clone().sub(sampledRootWorldPosition); // Exact world-space grip vector that aligned the pet before the visible-face cap.
+    const localGripOffset = sampledGripWorldOffset.clone().applyQuaternion(sampledFinalWorldQuaternion.clone().invert()); // Recovers the root-local grip vector, preserving any authored/scaled offset game.js already baked in.
+    const limitedGripWorldOffset = localGripOffset.clone().applyQuaternion(limitedFinalWorldQuaternion);
+    const limitedRootWorldPosition = authoredPerchWorldPosition.clone().sub(limitedGripWorldOffset); // Rotating around the recovered grip keeps the animal physically pinned to the shoulder instead of orbiting/detaching.
     setRootWorldTransform(root, limitedRootWorldPosition, limitedFinalWorldQuaternion);
 
     const alignedGripWorldPosition = limitedRootWorldPosition.clone().add(limitedGripWorldOffset); // Used only for mobile verification of the attachment invariant.
@@ -191,7 +190,7 @@
       if ((companion.master || player) !== player) continue;
       if (companion.avatarRef?.group) {
         ensureShoulderPetIdleFrame(companion, combatDeps);
-        applyShoulderPetFaceRotationLimit(companion, combatDeps); // Runs after the composer's visible-face neck clamp and before its shared body delta reaches this external root.
+        applyShoulderPetFaceRotationLimit(companion); // Runs after the composer's visible-face neck clamp and before its shared body delta reaches this external root.
         roots.push(companion.avatarRef.group);
       }
     }
