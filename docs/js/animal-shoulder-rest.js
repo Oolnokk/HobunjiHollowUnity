@@ -75,7 +75,7 @@
         -MAX_ROTATION_DEG,
         MAX_ROTATION_DEG,
       ),
-      curveFalloff: clamp(finite(raw.curveFalloff, 0), 0, 1), // 0 = even curvature; 1 = postpone most curl toward guide B.
+      curveFalloff: clamp(finite(raw.curveFalloff, 0), 0, 1), // 0 = even curvature; 1 = postpone most curl toward guide B/tail.
     };
   }
 
