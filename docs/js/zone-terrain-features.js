@@ -31,6 +31,12 @@
     };
   }
 
+  function waterSurfaceY(tile) {
+    const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT; // Used by river surfaces and waterfall connector curtains so their shared edge lands at the exact same height.
+    const deep = tile?.type !== deps.TileType.STREAM;
+    return deps.NORMAL_TOP + tierY - (deep ? 0.10 : 0.05);
+  }
+
   function buildZoneRampMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
     const range = normalizedBounds(zcols, zrows, bounds);
     const rampCells = [];
@@ -110,7 +116,7 @@
       const y10 = cornerY(c + 1, r, ground);
       const y01 = cornerY(c, r + 1, ground);
       const y11 = cornerY(c + 1, r + 1, ground);
-      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+      pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1,y11,r + 1);
       uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
       idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
     }
@@ -311,10 +317,14 @@
   }
 
   // Waterfall curtain: one lightweight map-level sheet containing every
-  // elevation drop touching a WATERFALL tile. Unlike ordinary wilderness
-  // terrain, it deliberately lives on the zone scene rather than a streamed
-  // chunk group, so a distant waterfall remains in the cliff opening after
-  // the terrain chunk that would formerly own its curtain has unloaded.
+  // elevation drop touching a WATERFALL tile. Its vertical endpoints use the
+  // exact same visible water-surface height as the merged river mesh, creating
+  // a micro-plateau-style skirt at the lip instead of exposing the sunken bed
+  // gap between a horizontal river surface and the falling sheet. Unlike
+  // ordinary wilderness terrain, it deliberately lives on the zone scene
+  // rather than a streamed chunk group, so a distant waterfall remains in the
+  // cliff opening after the terrain chunk that would formerly own its curtain
+  // has unloaded.
   function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
     const hostScene = getWaterfallHostScene(zScene, bounds); // Owns the always-resident waterfall mesh for this zone rather than any one chunk.
     if (!hostScene?.add) return [];
@@ -337,7 +347,7 @@
     const emptyRecord = { grid: zGrid, cols: zcols, rows: zrows, mesh: null }; // Prevents every chunk from rescanning a map that contains no waterfalls.
     if (!cells.length) {
       hostRecords.set(mapId, emptyRecord);
-      waterfallRenderStats[mapId] = { persistent: true, cells: 0, curtains: 0, duplicateEdgesSkipped: 0, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      waterfallRenderStats[mapId] = { persistent: true, cells: 0, curtains: 0, duplicateEdgesSkipped: 0, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL, surfaceHeightMode: 'merged-water-surface' };
       return [];
     }
 
@@ -348,12 +358,12 @@
     let vi = 0;
     for (const [c, r] of cells) {
       const t = zGrid[r][c];
-      const selfY = deps.RIVER_TOP + (t.elevTier || 0) * deps.PLATEAU_UNIT;
+      const selfY = waterSurfaceY(t);
       for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
         const nt = zGrid[r + dr]?.[c + dc];
         if (!nt || (nt.elevTier || 0) === (t.elevTier || 0)) continue;
         const neighborIsWater = nt.type === deps.TileType.RIVER || nt.type === deps.TileType.STREAM || nt.type === deps.TileType.WATERFALL;
-        const neighborY = (neighborIsWater ? deps.RIVER_TOP : deps.NORMAL_TOP) + (nt.elevTier || 0) * deps.PLATEAU_UNIT;
+        const neighborY = neighborIsWater ? waterSurfaceY(nt) : deps.NORMAL_TOP + (nt.elevTier || 0) * deps.PLATEAU_UNIT;
         const top = Math.max(selfY, neighborY), bottom = Math.min(selfY, neighborY);
         if (top - bottom < 0.01) continue;
         let x0, z0, x1, z1;
@@ -379,7 +389,7 @@
     }
     if (!pos.length) {
       hostRecords.set(mapId, emptyRecord);
-      waterfallRenderStats[mapId] = { persistent: true, cells: cells.length, curtains: 0, duplicateEdgesSkipped, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      waterfallRenderStats[mapId] = { persistent: true, cells: cells.length, curtains: 0, duplicateEdgesSkipped, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL, surfaceHeightMode: 'merged-water-surface' };
       return [];
     }
 
@@ -403,6 +413,7 @@
     mesh.userData.waterfallDuplicateEdgesSkipped = duplicateEdgesSkipped;
     mesh.userData.waterfallTriangleCount = idx.length / 3;
     mesh.userData.waterfallTexture = WATERFALL_TEXTURE_URL;
+    mesh.userData.waterfallSurfaceHeightMode = 'merged-water-surface';
     mesh.userData.noOutline = true;
     mesh.onBeforeRender = () => {
       mat.uniforms.uTime.value = performance.now() * 0.001;
@@ -423,6 +434,7 @@
       texture: WATERFALL_TEXTURE_URL,
       textureTileSize,
       scrollUvPerSecond: WATERFALL_SCROLL_UV_PER_SECOND,
+      surfaceHeightMode: 'merged-water-surface',
     };
     console.log(`%c[zone:${mapId}] persistent textured waterfall sheet built: ${cells.length} cell(s), ${idx.length / 6} curtain(s), ${duplicateEdgesSkipped} duplicate edge(s) skipped, ${idx.length / 3} triangle(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
     return bounds ? [] : [mesh];
@@ -447,10 +459,9 @@
       const flen = Math.hypot(fx, fz);
       if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
       const deep = tile.type !== deps.TileType.STREAM;
-      const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
       cells.push({
         col: c, row: r,
-        surfaceY: deps.NORMAL_TOP + tierY - (deep ? 0.10 : 0.05),
+        surfaceY: waterSurfaceY(tile),
         depth: deep ? 0.8 : 0.45,
         coverage: 1,
         flowX: fx, flowZ: fz,
