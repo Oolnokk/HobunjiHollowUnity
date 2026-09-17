@@ -314,8 +314,8 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   assert.equal(debug.restoredFrames, 3, 'diagnostics count one restoration for each prepared sleep frame and ignore title-style post-game-only frames');
   assert.equal(debug.lastPreparedFrameId, 3, 'diagnostics retain the last prepared scheduler frame id');
   assert.equal(debug.lastRestoredFrameId, 3, 'diagnostics retain the last restored scheduler frame id');
-  assert.equal(debug.lastPreparedBoundsScans, 2, 'waking frame only needs the remaining static barn sleeper grounding scans');
-  assert.equal(debug.boundsScans, 14, 'diagnostics accumulate grounding scans across two sleeping frames plus the waking static-sleeper frame');
+  assert.equal(debug.lastPreparedBoundsScans, 4, 'waking farm animal drops its scans while the static barn and wilderness sleepers still need generic grounding');
+  assert.equal(debug.boundsScans, 16, 'diagnostics accumulate grounding scans across two fully sleeping frames plus the farm-wake frame');
   assert.equal(debug.activeTemporaryTransforms, 0, 'no sleep-only transform survives the post-game restoration');
   console.log('animal sleep presentation regression tests passed');
 })().catch(error => {
