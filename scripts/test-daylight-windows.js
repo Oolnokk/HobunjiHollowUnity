@@ -72,6 +72,12 @@ assert.match(interiorWallEditor, /_biaBridge\.loadData/, 'wall edits must flow b
 assert.match(interiorWallEditor, /simpleWindowFurniture/, 'Interior Editor preset list must include Simple Window');
 assert.match(interiorWallEditor, /crossbarWindowFurniture/, 'Interior Editor preset list must include Crossbar Window');
 assert.match(interiorWallEditor, /wideWindowFurniture/, 'Interior Editor preset list must include Wide Window');
-assert.match(interiorWallEditor, /Math\.abs\(normal\.y\) > 0\.72/, 'wall picking must reject floor/ceiling faces');
+assert.match(interiorWallEditor, /InteriorSceneBuilder/, 'wall picking must use the same canonical interior wall source as the rendered room');
+assert.match(interiorWallEditor, /buildWallPanels\(floorSet, exitTileSet/, 'wall picking must reconstruct canonical wall planes including authored exit gaps');
+assert.match(interiorWallEditor, /intersectCanonicalPanel/, 'pointer hits must intersect canonical wall planes rather than scattered brick triangle normals');
+assert.match(interiorWallEditor, /normalOffset: round\(finite\(attachment\.defaultNormalOffset/, 'placement must keep wall-plane hit and normal offset as separate concepts');
+assert.match(interiorWallEditor, /Normal offset/, 'Interior Editor must label the in\/out control according to its actual wall-normal behavior');
+assert.match(interiorWallEditor, /canonicalWallPanelCount/, 'mobile-friendly diagnostics must report whether canonical wall geometry was available');
+assert.match(interiorWallEditor, /lastWallPick/, 'mobile-friendly diagnostics must report the last canonical wall hit');
 
 console.log('daylight window authoring/runtime/3D-interior regression checks passed');
