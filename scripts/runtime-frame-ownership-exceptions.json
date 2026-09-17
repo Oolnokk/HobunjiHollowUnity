@@ -576,15 +576,6 @@
     "line": 517
   },
   {
-    "file": "docs/js/onboarding-character-creation-weapon-polish.js",
-    "owner": "OnboardingCharacterCreationWeaponPolish",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Self-perpetuating RAF loop (started at line 89) that re-applies held-tool visual corrections every frame; unlike its sibling onboarding patches it has no `active`/teardown gate tied to hobunjiPlayerReady, so it keeps re-arming itself for the rest of the page's life (effectively idle once weaponFix()'s toolPlane disappears) -- a genuine, if arguably unintended, permanent per-frame subscription.",
-    "migrationStage": "candidate",
-    "line": 82
-  },
-  {
     "file": "docs/js/onboarding-character-creation-weapon-view-fix.js",
     "owner": "OnboardingCharacterCreationWeaponViewFix",
     "classification": "one-shot",
