@@ -183,6 +183,8 @@ assert.match(authorSource, /weightMap=exportShoulderMap\(shoulderInfluenceMap\)/
 assert.match(authorSource, /stretchabilityMap=exportShoulderMap\(shoulderStretchabilityMap\)/);
 assert.match(authorSource, /JSON\.stringify\(stored\)!==JSON\.stringify\(rig\)/,
   'Save rig for game preview retains round-trip verification');
+assert.match(authorSource, /shoulderFrameShift\?\.addEventListener\('pointerdown',\(\)=>checkpointHistory\(\)\)/,
+  'Frame shift starts an undo checkpoint before moving both spline lines');
 
 assert.match(separatorAuthorSource, /separatorPointIsRight/,
   'right-side paint gating uses the same rotated separator math as runtime');
@@ -230,8 +232,8 @@ assert(!twoPointAuthorSource.includes('startDelta') && !twoPointAuthorSource.inc
   'two-point mode must not interpolate a hidden displacement across vertices 2-6');
 assert.match(twoPointAuthorSource, /if\(shoulderTwoPointEditMode\)return-1/,
   'ordinary seven-node hit testing is disabled while the two-point view owns the canvas');
-assert.match(twoPointAuthorSource, /drawHandle\(points\[0\],'S'\);[\s\S]*drawHandle\(points\[SHOULDER_POINT_COUNT-1\],'E'\)/,
-  'two-point mode draws only explicit Start and End handles');
+assert.match(twoPointAuthorSource, /drawHandle\(points\[0\],'1'\);[\s\S]*drawHandle\(points\[SHOULDER_POINT_COUNT-1\],'2'\)/,
+  'two-point mode draws only the numbered beginning/end handles');
 assert.match(twoPointAuthorSource, /version:2/,
   'diagnostic API identifies the simplified direct-endpoint implementation');
 assert.match(twoPointAuthorSource, /shoulderEditBefore\?\.addEventListener\('click'/,
