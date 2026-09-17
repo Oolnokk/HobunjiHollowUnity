@@ -33,6 +33,7 @@ context.ANIMAL_GROWTH_CONFIG = {};
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
 context.StableAnimalPerkAdjustments = {};
+context.StableAnimalTownFamiliarity = { install() {} }; // Keeps the new parser-time familiarity feature from triggering this test's intentional dynamic-loader trap.
 context.StableAnimalTrainingRefinements = { install() {} };
 context.StableAnimalXpEvents = { install() { xpInstallCount++; } };
 context.StableTrainingCompendiumPatch = {};
