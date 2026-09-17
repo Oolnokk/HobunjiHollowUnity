@@ -94,10 +94,19 @@
     return base;
   }
 
+  function materialWeightForPose(baseInfluence, compressibilityWeight, stretchabilityWeight, pitchKind, yawDeg) {
+    const pitchWeight = materialWeightForBend(baseInfluence, compressibilityWeight, stretchabilityWeight, pitchKind);
+    if (Math.abs(finite(yawDeg, 0)) <= RESPONSE_EPSILON) return pitchWeight;
+    // Yaw pulls the painted neck seam outward regardless of left/right sign, so
+    // the same Stretchability channel limits both yaw directions. If pitch is
+    // simultaneously more restrictive (e.g. compression), the stricter weight wins.
+    return Math.min(pitchWeight, clamp(finite(stretchabilityWeight, pitchWeight), 0, 1));
+  }
+
   function mapsForRig(rawRig) {
     const influence = decodeWeightMap(rawRig?.weightMap); // Base/default deformation weight map.
     const compressibility = decodeWeightMap(rawRig?.compressibilityMap); // Optional inside-bend reductions.
-    const stretchability = decodeWeightMap(rawRig?.stretchabilityMap); // Optional outside-bend reductions.
+    const stretchability = decodeWeightMap(rawRig?.stretchabilityMap); // Optional outside-bend and yaw reductions.
     return compressibility || stretchability ? { influence, compressibility, stretchability } : null;
   }
 
@@ -114,8 +123,8 @@
     const count = uv.count;
     const baseHeadWeights = new Float32Array(count); // Immutable runtime Influence baseline; response changes never accumulate drift.
     const compressibilityWeights = new Float32Array(count); // Pre-sampled inside-bend effective head weights.
-    const stretchabilityWeights = new Float32Array(count); // Pre-sampled outside-bend effective head weights.
-    const sourceTopVs = new Float32Array(count); // Used to decide which side of the bend each vertex occupies.
+    const stretchabilityWeights = new Float32Array(count); // Pre-sampled outside-bend/yaw effective head weights.
+    const sourceTopVs = new Float32Array(count); // Used to decide which side of the pitch bend each vertex occupies.
     for (let i = 0; i < count; i++) {
       const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples horizontally mirrored author maps.
       const sourceTopV = 1 - uv.getY(i); // Author maps use top-left origin; Three UVs use bottom-left origin.
@@ -125,20 +134,24 @@
       stretchabilityWeights[i] = sampleMaterialMap(decoded.stretchability, decoded.influence, sourceU, sourceTopV, base);
       sourceTopVs[i] = sourceTopV;
     }
-    return { mesh, skinWeight, baseHeadWeights, compressibilityWeights, stretchabilityWeights, sourceTopVs, mirrorX, lastAppliedDeg: NaN };
+    return { mesh, skinWeight, baseHeadWeights, compressibilityWeights, stretchabilityWeights, sourceTopVs, mirrorX, lastAppliedDeg: NaN, lastAppliedYawDeg: NaN };
   }
 
-  function applyMeshResponse(meshState, angleDeg, pivotTopV) {
-    if (!meshState) return { changed: false, compressed: 0, stretched: 0, neutral: 0 };
-    if (Number.isFinite(meshState.lastAppliedDeg) && Math.abs(meshState.lastAppliedDeg - angleDeg) <= RESPONSE_EPSILON) {
-      return { changed: false, compressed: 0, stretched: 0, neutral: 0 };
+  function applyMeshResponse(meshState, angleDeg, pivotTopV, yawDeg = 0) {
+    if (!meshState) return { changed: false, compressed: 0, stretched: 0, yawStretched: 0, neutral: 0 };
+    if (Number.isFinite(meshState.lastAppliedDeg)
+      && Number.isFinite(meshState.lastAppliedYawDeg)
+      && Math.abs(meshState.lastAppliedDeg - angleDeg) <= RESPONSE_EPSILON
+      && Math.abs(meshState.lastAppliedYawDeg - yawDeg) <= RESPONSE_EPSILON) {
+      return { changed: false, compressed: 0, stretched: 0, yawStretched: 0, neutral: 0 };
     }
     const weights = meshState.skinWeight.array;
-    let compressed = 0, stretched = 0, neutral = 0;
+    const yawActive = Math.abs(finite(yawDeg, 0)) > RESPONSE_EPSILON;
+    let compressed = 0, stretched = 0, yawStretched = 0, neutral = 0;
     for (let i = 0; i < meshState.baseHeadWeights.length; i++) {
       const base = meshState.baseHeadWeights[i];
       const kind = responseKindForVertex(angleDeg, meshState.sourceTopVs[i], pivotTopV);
-      const effective = materialWeightForBend(base, meshState.compressibilityWeights[i], meshState.stretchabilityWeights[i], kind);
+      const effective = materialWeightForPose(base, meshState.compressibilityWeights[i], meshState.stretchabilityWeights[i], kind, yawDeg);
       const offset = i * meshState.skinWeight.itemSize;
       weights[offset] = 1 - effective;
       weights[offset + 1] = effective;
@@ -146,10 +159,12 @@
       if (kind === 'compress') compressed++;
       else if (kind === 'stretch') stretched++;
       else neutral++;
+      if (yawActive && meshState.stretchabilityWeights[i] + RESPONSE_EPSILON < base) yawStretched++;
     }
     meshState.skinWeight.needsUpdate = true;
     meshState.lastAppliedDeg = angleDeg;
-    return { changed: true, compressed, stretched, neutral };
+    meshState.lastAppliedYawDeg = yawDeg;
+    return { changed: true, compressed, stretched, yawStretched, neutral };
   }
 
   function decorateAvatar(avatarRef, rawRig) {
@@ -167,6 +182,7 @@
     const debug = {
       active: true,
       lastAngleDeg: NaN,
+      lastYawDeg: NaN,
       lastFront: null,
       lastBack: null,
       maps: {
@@ -176,12 +192,17 @@
     }; // Mobile-visible avatarRef diagnostic; no console is required to confirm the feature is active.
 
     const applyCurrentResponse = () => {
-      const angleDeg = finite(state.appliedDeg, state.currentDeg || 0); // Includes additive nods because png-plane-avatar stores the composed angle here.
-      if (Number.isFinite(debug.lastAngleDeg) && Math.abs(debug.lastAngleDeg - angleDeg) <= RESPONSE_EPSILON) return angleDeg;
-      debug.lastFront = applyMeshResponse(front, angleDeg, finite(rawRig?.pivot?.y, state.rig?.pivot?.y ?? 0.5));
-      debug.lastBack = applyMeshResponse(back, angleDeg, finite(rawRig?.pivot?.y, state.rig?.pivot?.y ?? 0.5));
+      const angleDeg = finite(state.appliedDeg, state.currentDeg || 0); // Includes additive nods because png-plane-avatar stores the composed pitch angle here.
+      const yawDeg = finite(state.currentYawDeg, 0); // Same Stretchability map applies to left and right yaw by magnitude/sign-independent activation.
+      if (Number.isFinite(debug.lastAngleDeg)
+        && Number.isFinite(debug.lastYawDeg)
+        && Math.abs(debug.lastAngleDeg - angleDeg) <= RESPONSE_EPSILON
+        && Math.abs(debug.lastYawDeg - yawDeg) <= RESPONSE_EPSILON) return { angleDeg, yawDeg };
+      debug.lastFront = applyMeshResponse(front, angleDeg, finite(rawRig?.pivot?.y, state.rig?.pivot?.y ?? 0.5), yawDeg);
+      debug.lastBack = applyMeshResponse(back, angleDeg, finite(rawRig?.pivot?.y, state.rig?.pivot?.y ?? 0.5), yawDeg);
       debug.lastAngleDeg = angleDeg;
-      return angleDeg;
+      debug.lastYawDeg = yawDeg;
+      return { angleDeg, yawDeg };
     };
 
     const wrapAfter = methodName => {
@@ -196,12 +217,13 @@
     wrapAfter('setHeadRotation');
     wrapAfter('updateHeadRotation');
     wrapAfter('setHeadAdditiveRotation');
-    // Yaw remains intentionally unchanged in this pass.
+    wrapAfter('updateHeadYaw');
 
     debug.applyNow = applyCurrentResponse; // Used by in-game/debug tooling to force-refresh after live data edits.
     debug.dump = () => ({
       active: debug.active,
       lastAngleDeg: debug.lastAngleDeg,
+      lastYawDeg: debug.lastYawDeg,
       maps: { ...debug.maps },
       front: debug.lastFront ? { ...debug.lastFront } : null,
       back: debug.lastBack ? { ...debug.lastBack } : null,
@@ -232,6 +254,7 @@
     sampleMaterialMap,
     responseKindForVertex,
     materialWeightForBend,
+    materialWeightForPose,
     decorateAvatar,
     drainPending,
   };
