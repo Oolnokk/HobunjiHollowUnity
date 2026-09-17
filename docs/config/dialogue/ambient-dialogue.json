@@ -351,6 +351,12 @@
       "?!",
       "Hrrm!",
       "Snff-snff!"
+    ],
+    "voorg-ass": [
+      "Hree-yooo!"
+    ],
+    "puktuk": [
+      "Ra-ra-ruff!"
     ]
   },
   "animalVocalizations": {
@@ -464,6 +470,11 @@
           "sfx_rattle-caw-rattle.ogg",
           "sfx_rattle-caw.ogg"
         ]
+      },
+      "sizePitchMultipliers": {
+        "small": 1,
+        "medium": 0.87,
+        "large": 0.75
       }
     },
     "grehlr": {
@@ -528,6 +539,18 @@
         "allowedClips": [
           "sfx_hollowhiss_rattling.ogg"
         ]
+      },
+      "sizePitchMultipliers": {
+        "small": 1.33,
+        "medium": 1.15,
+        "large": 1
+      }
+    },
+    "nelk": {
+      "sizePitchMultipliers": {
+        "small": 1.15,
+        "medium": 1,
+        "large": 0.87
       }
     },
     "gar-wolf": {
@@ -606,6 +629,11 @@
           }
         ],
         "intervalMs": 500
+      },
+      "sizePitchMultipliers": {
+        "small": 1.15,
+        "medium": 1,
+        "large": 0.87
       }
     },
     "dabinggi-hound": {
@@ -671,15 +699,159 @@
           "sfx_rattling_monkey-chirp.ogg",
           "sfx_syrinx_yaps.ogg"
         ]
+      },
+      "sizePitchMultipliers": {
+        "small": 1.15,
+        "medium": 1,
+        "large": 0.87
       }
     },
-      "uumkaoii": {
-        "dialogueLines": [
-          "Uuummm.",
-          "Kao-kao!",
-          "Mrruu?"
+    "uumkaoii": {
+      "dialogueLines": [
+        "Uuummm.",
+        "Kao-kao!",
+        "Mrruu?"
+      ],
+      "sizePitchMultipliers": {
+        "small": 1.33,
+        "medium": 1.15,
+        "large": 1
+      }
+    },
+    "puktuk": {
+      "chatter": {
+        "allowedClips": [
+          "sfx_bark-yap.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ],
+        "intervalMs": 400
+      },
+      "warning": {
+        "allowedClips": [
+          "sfx_bark-yap.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 2
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 2.1
+          },
+          {
+            "tempo": 0.7,
+            "pitchSemitones": 2.4
+          }
+        ],
+        "intervalMs": 200
+      },
+      "growl": {
+        "allowedClips": [
+          "sfx_rattling_growl_1.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 6
+          },
+          {
+            "tempo": 2,
+            "pitchSemitones": 9
+          },
+          {
+            "tempo": 0.5,
+            "pitchSemitones": 4
+          }
+        ],
+        "intervalMs": 100
+      },
+      "sizePitchMultipliers": {
+        "small": 1.15,
+        "medium": 1,
+        "large": 0.7
+      },
+      "discoveryText": {
+        "animal-den": [
+          "Arf-arf-arf!"
+        ],
+        "bandit-camp": [
+          "Orf-orf-orf!"
         ]
       }
+    },
+    "voorg-ass": {
+      "chatter": {
+        "allowedClips": [
+          "sfx_whinny-whistle-bark.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 0.875,
+            "pitchSemitones": -5
+          }
+        ],
+        "intervalMs": 50
+      },
+      "warning": {
+        "allowedClips": [
+          "sfx_whinny-whistle-bark.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 2,
+            "pitchSemitones": 5
+          },
+          {
+            "tempo": 0.6,
+            "pitchSemitones": 0
+          }
+        ],
+        "intervalMs": 10
+      },
+      "growl": {
+        "allowedClips": [
+          "sfx_whinny-whistle-bark.ogg"
+        ],
+        "intervalMs": 10,
+        "utterances": [
+          {
+            "tempo": 0.5,
+            "pitchSemitones": -7
+          },
+          {
+            "tempo": 0.6,
+            "pitchSemitones": -7.2
+          },
+          {
+            "tempo": 1.2,
+            "pitchSemitones": 1
+          }
+        ]
+      },
+      "sizePitchMultipliers": {
+        "small": 1.15,
+        "medium": 1,
+        "large": 0.87
+      },
+      "discoveryText": {
+        "animal-den": [
+          "Hreroo!"
+        ],
+        "bandit-camp": [
+          "Hrayooo!"
+        ]
+      }
+    }
   },
   "crowdLines": {
     "cheer": [

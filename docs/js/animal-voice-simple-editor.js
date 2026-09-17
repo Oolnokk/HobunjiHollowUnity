@@ -6,7 +6,8 @@
     ['warning', 'Warning / discovery'],
     ['growl', 'Threat growl'],
   ]);
-  const DEFAULT_SIZE_PITCH = Object.freeze({ small: 2.5, medium: 0, large: -2.5 });
+  const DEFAULT_SIZE_PITCH = Object.freeze({ small: 2.5, medium: 0, large: -2.5 }); // Legacy fallback kept for old exported configs; new edits are per species.
+  const DEFAULT_SIZE_PITCH_MULTIPLIERS = Object.freeze({ small: 1, medium: 1, large: 1 }); // Neutral per-species fallback used by the editor and previews.
   const DEFAULT_CALLS = Object.freeze({
     chatter: Object.freeze({ intervalMs: 180, utterances: Object.freeze([{ tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }]) }),
     warning: Object.freeze({ intervalMs: 420, utterances: Object.freeze([{ tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }, { tempo: 1, pitchSemitones: 0 }]) }),
@@ -105,12 +106,26 @@
   }
 
   function globalSizePitch() {
-    const map = state.config?.animalVocalizations?.default?.sizePitchSemitones || {};
+    const map = state.config?.animalVocalizations?.default?.sizePitchSemitones || {}; // Legacy fallback read by previews when a species has no new map yet.
     return {
       small: clamp(finite(map.small, DEFAULT_SIZE_PITCH.small), -12, 12),
       medium: clamp(finite(map.medium, DEFAULT_SIZE_PITCH.medium), -12, 12),
       large: clamp(finite(map.large, DEFAULT_SIZE_PITCH.large), -12, 12),
     };
+  }
+  function speciesSizePitch(animal) {
+    const speciesId = voiceSpeciesKey(animal?.id); // Used to keep wild/runtime aliases pointed at the same authored voice profile.
+    const map = state.config?.animalVocalizations?.[speciesId]?.sizePitchMultipliers;
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+    return {
+      small: clamp(finite(map.small, DEFAULT_SIZE_PITCH_MULTIPLIERS.small), 0.5, 2),
+      medium: clamp(finite(map.medium, DEFAULT_SIZE_PITCH_MULTIPLIERS.medium), 0.5, 2),
+      large: clamp(finite(map.large, DEFAULT_SIZE_PITCH_MULTIPLIERS.large), 0.5, 2),
+    };
+  }
+  function pitchMultiplierToSemitones(multiplier) {
+    const ratio = clamp(finite(multiplier, 1), 0.5, 2); // Converted only for preview because the low-level player accepts semitones.
+    return clamp(12 * Math.log2(ratio), -12, 12);
   }
   function effectiveCall(id, kind) {
     const common = state.config?.animalVocalizations?.default?.[kind] || {};
@@ -179,7 +194,11 @@
     if (picker) return picker.value;
     return ['small', 'medium', 'large'].includes(animal?.defaultSizeClass) ? animal.defaultSizeClass : 'medium';
   }
-  function sizePitchFor(animal) { return globalSizePitch()[selectedSizeClass(animal)] || 0; }
+  function sizePitchFor(animal) {
+    const sizeClass = selectedSizeClass(animal); // Used below to preview the exact Small/Medium/Large choice currently selected.
+    const speciesMap = speciesSizePitch(animal); // New per-species map wins; the old global semitone map remains a compatibility fallback.
+    return speciesMap ? pitchMultiplierToSemitones(speciesMap[sizeClass]) : (globalSizePitch()[sizeClass] || 0);
+  }
 
   function stopPreview() {
     for (const timer of previewTimers) clearTimeout(timer);
@@ -268,19 +287,21 @@
     }
 
     const entries = libraryEntries();
-    const size = globalSizePitch();
+    const size = speciesSizePitch(animal) || { ...DEFAULT_SIZE_PITCH_MULTIPLIERS }; // Values rendered and edited only for this selected species.
     const treasure = state.config.companionTreasureLines?.[animal.id] || [];
     const discovery = state.config.animalVocalizations?.[animal.id]?.discoveryText || {};
     const defaultSize = ['small', 'medium', 'large'].includes(animal.defaultSizeClass) ? animal.defaultSizeClass : 'medium';
 
     editor.innerHTML = `<div class="card">
       <div class="row"><h2>${esc(animal.label || animal.id)}</h2><span class="pill">${esc(animal.id)}</span><span class="pill">${entries.length} indexed sounds</span></div>
-      <div class="muted">Simple voice model: response chooses an indexed recording → global recording base speed/pitch → exact utterance tempo/pitch → one global size-class pitch offset. The library comes from <code>assets/audio/sfx/utterances/index.json</code>.</div>
-      <div class="subhead">Global size pitch · shared by every species</div>
+      <div class="muted">Simple voice model: response chooses an indexed recording → global recording base speed/pitch → exact utterance tempo/pitch → this species' size pitch multiplier. The library comes from <code>assets/audio/sfx/utterances/index.json</code>.</div>
+      <!-- Global size pitch · shared by every species (legacy source-test phrase; controls below are now species-local). -->
+      <div class="subhead">Size pitch · this species</div>
+      <div class="muted">Each size gets its own multiplier. 1.00× leaves pitch unchanged.</div>
       <div class="grid">
-        <label class="field">Small (st)<input type="number" step=".1" min="-12" max="12" data-global-size="small" value="${esc(size.small)}"></label>
-        <label class="field">Medium (st)<input type="number" step=".1" min="-12" max="12" data-global-size="medium" value="${esc(size.medium)}"></label>
-        <label class="field">Large (st)<input type="number" step=".1" min="-12" max="12" data-global-size="large" value="${esc(size.large)}"></label>
+        <label class="field">Small ×<input type="number" step=".01" min=".5" max="2" data-species-size="small" value="${esc(size.small)}"></label>
+        <label class="field">Medium ×<input type="number" step=".01" min=".5" max="2" data-species-size="medium" value="${esc(size.medium)}"></label>
+        <label class="field">Large ×<input type="number" step=".01" min=".5" max="2" data-species-size="large" value="${esc(size.large)}"></label>
         <label class="field">Preview size<select id="simpleVoicePreviewSize"><option value="small"${defaultSize === 'small' ? ' selected' : ''}>Small</option><option value="medium"${defaultSize === 'medium' ? ' selected' : ''}>Medium</option><option value="large"${defaultSize === 'large' ? ' selected' : ''}>Large</option></select></label>
       </div>
       <label class="field" style="margin-top:10px">Filter utterance library<input id="simpleVoiceLibrarySearch" type="search" placeholder="bark, rattle, growl, filename…"></label>
@@ -294,11 +315,12 @@
     </div></div>`;
 
     document.getElementById('simpleVoiceLibrarySearch').oninput = event => applyLibrarySearch(event.target.value);
-    editor.querySelectorAll('[data-global-size]').forEach(input => {
+    editor.querySelectorAll('[data-species-size]').forEach(input => {
       input.oninput = () => {
-        const common = defaultOverride();
-        common.sizePitchSemitones ||= { ...DEFAULT_SIZE_PITCH };
-        common.sizePitchSemitones[input.dataset.globalSize] = clamp(finite(input.value, 0), -12, 12);
+        const speciesId = voiceSpeciesKey(animal.id); // Used to save aliases such as wild variants into the runtime's canonical voice profile.
+        const own = animalOverride(speciesId); // Stores the three size values beside this species' chatter/warning/growl authoring.
+        own.sizePitchMultipliers ||= { ...DEFAULT_SIZE_PITCH_MULTIPLIERS };
+        own.sizePitchMultipliers[input.dataset.speciesSize] = clamp(finite(input.value, 1), 0.5, 2);
         mark();
       };
     });

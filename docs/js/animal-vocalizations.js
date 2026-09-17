@@ -3,8 +3,8 @@
 
   // Semantic animal-call scheduler. Audio authoring is intentionally simple:
   // each response owns an explicit list of fixed utterances, each indexed
-  // recording has one global fixed base tempo/pitch, and one global size-class
-  // pitch map is added on top. There are no random pitch/tempo modulation curves.
+  // recording has one global fixed base tempo/pitch, and each species owns one
+  // three-size pitch map layered on top. There are no random pitch/tempo modulation curves.
   let deps = null;
   let authoredProfiles = {};
   const resolvedProfileCache = new Map(); // Reuses authored species profiles across per-creature chatter checks and request playback.
@@ -15,7 +15,8 @@
   const PULSE_ADD_SCALE = 0.025;
   const VOCAL_NOD_UP_DEG = -10;
   const SIZE_CLASSES = Object.freeze(['small', 'medium', 'large']);
-  const DEFAULT_SIZE_PITCH = Object.freeze({ small: 2.5, medium: 0, large: -2.5 });
+  const DEFAULT_SIZE_PITCH = Object.freeze({ small: 2.5, medium: 0, large: -2.5 }); // Legacy fallback used only by old configs that do not author per-species size pitch.
+  const DEFAULT_SIZE_PITCH_MULTIPLIERS = Object.freeze({ small: 1, medium: 1, large: 1 }); // Neutral fallback used when a species size-pitch map is incomplete.
   const DEFAULT_UTTERANCE = Object.freeze({ tempo: 1, pitchSemitones: 0 });
 
   const PROFILE_DEFAULTS = Object.freeze({
@@ -178,11 +179,36 @@
   }
 
   function globalSizePitchMap() {
-    const authored = authoredProfiles.default?.sizePitchSemitones;
+    const authored = authoredProfiles.default?.sizePitchSemitones; // Legacy global map remains readable so old saves/config exports do not change sound unexpectedly.
     return {
       small: clamp(finite(authored?.small, DEFAULT_SIZE_PITCH.small), -12, 12),
       medium: clamp(finite(authored?.medium, DEFAULT_SIZE_PITCH.medium), -12, 12),
       large: clamp(finite(authored?.large, DEFAULT_SIZE_PITCH.large), -12, 12),
+    };
+  }
+
+  function speciesSizePitchMultipliers(species) {
+    const authored = species?.sizePitchMultipliers; // Per-species Small/Medium/Large ratios authored by the animal voice tool.
+    if (!authored || typeof authored !== 'object' || Array.isArray(authored)) return null;
+    return {
+      small: clamp(finite(authored.small, DEFAULT_SIZE_PITCH_MULTIPLIERS.small), 0.5, 2),
+      medium: clamp(finite(authored.medium, DEFAULT_SIZE_PITCH_MULTIPLIERS.medium), 0.5, 2),
+      large: clamp(finite(authored.large, DEFAULT_SIZE_PITCH_MULTIPLIERS.large), 0.5, 2),
+    };
+  }
+
+  function pitchMultiplierToSemitones(multiplier) {
+    const ratio = clamp(finite(multiplier, 1), 0.5, 2); // Converted below because independent playback already consumes additive semitone layers.
+    return clamp(12 * Math.log2(ratio), -12, 12);
+  }
+
+  function speciesSizePitchSemitoneMap(species) {
+    const multipliers = speciesSizePitchMultipliers(species); // When present this replaces the old one-map-for-every-species behavior.
+    if (!multipliers) return globalSizePitchMap();
+    return {
+      small: pitchMultiplierToSemitones(multipliers.small),
+      medium: pitchMultiplierToSemitones(multipliers.medium),
+      large: pitchMultiplierToSemitones(multipliers.large),
     };
   }
 
@@ -202,7 +228,7 @@
       // Recording base tuning is deliberately global: the same indexed sound
       // keeps the same base identity no matter which species response uses it.
       clipTuning: { ...(common.clipTuning || {}) },
-      sizePitchSemitones: globalSizePitchMap(),
+      sizePitchSemitones: speciesSizePitchSemitoneMap(species),
       discoveryText: {
         ...PROFILE_DEFAULTS.discoveryText,
         ...(common.discoveryText || {}),

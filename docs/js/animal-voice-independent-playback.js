@@ -3,7 +3,7 @@
 
   // Constant-axis animal voice renderer. The only authored audio transforms are
   // one fixed tempo/pitch per recording, one fixed tempo/pitch per utterance,
-  // and the global size-class pitch offset. No random ranges, normalization,
+  // and the species size-class pitch offset. No random ranges, normalization,
   // contours, splice-tempo or behavior-specific modulation remain.
   const MIN_TEMPO = 0.35;
   const MAX_TEMPO = 2;
@@ -79,6 +79,9 @@
   let lastStartedAt = null;
   let lastAllowedClips = null;
   let lastChosenClip = null;
+  let lastStretchSourceSamples = 0; // Debug snapshot: decoded sample count entering the most recent tempo stretch.
+  let lastStretchTargetSamples = 0; // Debug snapshot: requested sample count after the most recent tempo stretch.
+  let lastStretchCoverage = 1; // Debug snapshot: fraction of the source guaranteed to be represented through the final anchored frame.
 
   function finite(value, fallback) {
     const number = Number(value);
@@ -173,18 +176,6 @@
     return pending;
   }
 
-  function resampleChannels(channels, ratio) {
-    const safeRatio = clamp(finite(ratio, 1), 0.25, 4);
-    if (Math.abs(safeRatio - 1) < 0.0005) return channels.map(channel => channel.slice());
-    const sourceLength = channels[0]?.length || 0;
-    const targetLength = Math.max(1, Math.round(sourceLength / safeRatio));
-    return channels.map(channel => {
-      const output = new Float32Array(targetLength);
-      for (let index = 0; index < targetLength; index++) output[index] = cubicSample(channel, index * safeRatio);
-      return output;
-    });
-  }
-
   function correlation(reference, candidate, referenceStart, candidateStart, length) {
     let dot = 0, refEnergy = 1e-9, candidateEnergy = 1e-9;
     for (let index = 0; index < length; index += WSOLA_CORRELATION_STEP) {
@@ -199,55 +190,96 @@
 
   function wsolaStretch(channels, stretch, sampleRate) {
     const sourceLength = channels[0]?.length || 0;
-    if (!sourceLength) return channels.map(() => new Float32Array(1));
+    if (!sourceLength) {
+      lastStretchSourceSamples = 0;
+      lastStretchTargetSamples = 1;
+      lastStretchCoverage = 1;
+      return channels.map(() => new Float32Array(1));
+    }
     const safeStretch = clamp(finite(stretch, 1), 0.25, 4);
     const targetLength = Math.max(1, Math.round(sourceLength * safeStretch));
-    if (Math.abs(safeStretch - 1) < 0.012 || sourceLength < sampleRate * 0.06) {
+    lastStretchSourceSamples = sourceLength;
+    lastStretchTargetSamples = targetLength;
+    lastStretchCoverage = 1;
+    if (Math.abs(safeStretch - 1) < 0.012) {
+      if (targetLength === sourceLength) return channels.map(channel => channel.slice());
       return channels.map(channel => {
         const output = new Float32Array(targetLength);
-        if (targetLength === sourceLength) { output.set(channel); return output; }
-        for (let index = 0; index < targetLength; index++) output[index] = cubicSample(channel, index / safeStretch);
+        for (let index = 0; index < targetLength; index++) output[index] = cubicSample(channel, index * (sourceLength - 1) / Math.max(1, targetLength - 1));
         return output;
       });
     }
-    const frame = Math.max(256, Math.min(sourceLength, Math.round(sampleRate * WSOLA_FRAME_S)));
-    const overlap = Math.max(64, Math.min(frame - 1, Math.round(frame * WSOLA_OVERLAP_RATIO)));
-    const synthesisHop = Math.max(32, frame - overlap);
-    const analysisHop = synthesisHop / safeStretch;
-    const searchRadius = Math.max(16, Math.round(sampleRate * WSOLA_SEARCH_S));
-    const outputs = channels.map(() => new Float32Array(targetLength + frame + synthesisHop));
+
+    // Keep enough grains in even a 2x-speed short call that the algorithm can
+    // traverse the whole source rather than treating the beginning as the call.
+    const desiredFrame = Math.round(sampleRate * WSOLA_FRAME_S);
+    const sourceBoundFrame = Math.max(32, Math.floor(sourceLength * 0.45));
+    const targetBoundFrame = Math.max(32, Math.floor(targetLength * 0.45));
+    const frame = Math.max(32, Math.min(sourceLength, desiredFrame, sourceBoundFrame, targetBoundFrame));
+    if (frame < 64 || sourceLength <= frame || targetLength <= frame) {
+      // There is not enough waveform for meaningful similarity grains. Preserve
+      // complete start-to-end coverage rather than clipping or manufacturing a tail.
+      return channels.map(channel => {
+        const output = new Float32Array(targetLength);
+        for (let index = 0; index < targetLength; index++) output[index] = cubicSample(channel, index * (sourceLength - 1) / Math.max(1, targetLength - 1));
+        return output;
+      });
+    }
+
+    const overlap = Math.max(16, Math.min(frame - 1, Math.round(frame * WSOLA_OVERLAP_RATIO)));
+    const synthesisHop = Math.max(8, frame - overlap);
+    const searchRadius = Math.max(8, Math.round(sampleRate * WSOLA_SEARCH_S));
+    const maxOutputStart = Math.max(0, targetLength - frame);
+    const maxInputStart = Math.max(0, sourceLength - frame);
+    const outputs = channels.map(() => new Float32Array(targetLength));
     const referenceChannel = channels[0];
     const referenceOutput = outputs[0];
-    const firstCount = Math.min(frame, sourceLength, targetLength);
-    for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) outputs[channelIndex].set(channels[channelIndex].subarray(0, firstCount), 0);
-    let outputPos = synthesisHop;
-    let expectedInputPos = analysisHop;
-    while (outputPos < targetLength && expectedInputPos < sourceLength - 1) {
-      const center = clamp(Math.round(expectedInputPos), 0, Math.max(0, sourceLength - frame));
-      const searchStart = Math.max(0, center - searchRadius);
-      const searchEnd = Math.min(Math.max(0, sourceLength - frame), center + searchRadius);
-      const overlapLength = Math.min(overlap, targetLength - outputPos, sourceLength);
+    for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
+      outputs[channelIndex].set(channels[channelIndex].subarray(0, frame), 0);
+    }
+
+    let previousOutputPos = 0;
+    let outputPos = Math.min(synthesisHop, maxOutputStart);
+    let finalInputEnd = frame;
+    while (outputPos > previousOutputPos && outputPos <= maxOutputStart) {
+      const isFinalFrame = outputPos === maxOutputStart;
+      const progress = maxOutputStart > 0 ? outputPos / maxOutputStart : 1;
+      const center = isFinalFrame
+        ? maxInputStart
+        : clamp(Math.round(progress * maxInputStart), 0, maxInputStart);
+      const priorWrittenEnd = Math.min(targetLength, previousOutputPos + frame);
+      const overlapLength = Math.max(0, Math.min(frame, priorWrittenEnd - outputPos, targetLength - outputPos));
       let bestInputPos = center;
-      let bestScore = -Infinity;
-      for (let candidatePos = searchStart; candidatePos <= searchEnd; candidatePos += WSOLA_CORRELATION_STEP) {
-        const score = correlation(referenceOutput, referenceChannel, outputPos, candidatePos, overlapLength);
-        if (score > bestScore) { bestScore = score; bestInputPos = candidatePos; }
+      if (!isFinalFrame && overlapLength > 0) {
+        const searchStart = Math.max(0, center - searchRadius);
+        const searchEnd = Math.min(maxInputStart, center + searchRadius);
+        let bestScore = -Infinity;
+        for (let candidatePos = searchStart; candidatePos <= searchEnd; candidatePos += WSOLA_CORRELATION_STEP) {
+          const score = correlation(referenceOutput, referenceChannel, outputPos, candidatePos, overlapLength);
+          if (score > bestScore) { bestScore = score; bestInputPos = candidatePos; }
+        }
       }
+
+      let usableForCoverage = 0;
       for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
         const input = channels[channelIndex];
         const output = outputs[channelIndex];
-        const usable = Math.min(frame, input.length - bestInputPos, output.length - outputPos);
-        const crossfade = Math.min(overlap, usable);
+        const usable = Math.min(frame, input.length - bestInputPos, targetLength - outputPos);
+        usableForCoverage = Math.max(usableForCoverage, usable);
+        const crossfade = Math.min(overlapLength, usable);
         for (let index = 0; index < crossfade; index++) {
           const weight = smoothBlendWeight(index, crossfade);
           output[outputPos + index] = output[outputPos + index] * (1 - weight) + input[bestInputPos + index] * weight;
         }
         for (let index = crossfade; index < usable; index++) output[outputPos + index] = input[bestInputPos + index];
       }
-      outputPos += synthesisHop;
-      expectedInputPos = bestInputPos + analysisHop;
+      finalInputEnd = Math.max(finalInputEnd, bestInputPos + usableForCoverage);
+      previousOutputPos = outputPos;
+      if (isFinalFrame) break;
+      outputPos = Math.min(maxOutputStart, outputPos + synthesisHop);
     }
-    return outputs.map(output => output.slice(0, targetLength));
+    lastStretchCoverage = clamp(finalInputEnd / sourceLength, 0, 1);
+    return outputs;
   }
 
   function applyOutputEdgeEnvelope(channels, sampleRate) {
@@ -269,9 +301,8 @@
 
   function processConstantAxes(buffer, tempo, pitchSemitones) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
-    const pitchRatio = Math.pow(2, clampPitch(pitchSemitones) / 12);
-    const pitched = resampleChannels(channels, pitchRatio);
-    const stretched = wsolaStretch(pitched, pitchRatio / clampTempo(tempo), buffer.sampleRate);
+    const pitchRatio = Math.pow(2, clampPitch(pitchSemitones) / 12); // Sets how much source playback will transpose after WSOLA preserves the requested final duration.
+    const stretched = wsolaStretch(channels, pitchRatio / clampTempo(tempo), buffer.sampleRate); // Full-source stretch guarantees the final source frame survives both compression and expansion.
     return applyOutputEdgeEnvelope(stretched, buffer.sampleRate);
   }
 
@@ -311,11 +342,14 @@
     // pinned to one side).
     const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
     const startAt = context.currentTime + 0.012;
+    const pitchRatio = Math.pow(2, clampPitch(opts.pitchSemitones) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
+    const effectiveDurationS = buffer.duration / pitchRatio; // Used for completion timing after playbackRate changes the stretched buffer's wall-clock duration.
     let stopped = false;
     let finishTimer = null;
     let startTimer = null;
     let wet = null;
     source.buffer = buffer;
+    source.playbackRate.value = pitchRatio;
     master.gain.value = clamp(finite(opts.volume, 0.7), 0, 1);
     source.connect(master);
     if (panner) {
@@ -360,12 +394,12 @@
     startTimer = setTimeout(() => {
       if (stopped) return;
       lastPlaybackError = null;
-      lastBackend = 'fixed tempo+pitch';
+      lastBackend = 'full-source WSOLA + native pitch resample';
       lastStartedAt = Date.now();
       opts.onStarted?.();
     }, Math.max(0, Math.round((startAt - context.currentTime) * 1000)));
-    finishTimer = setTimeout(cleanup, Math.max(1, Math.ceil((buffer.duration + 0.04) * 1000)));
-    return { stop, durationS: buffer.duration, independentPitch: true };
+    finishTimer = setTimeout(cleanup, Math.max(1, Math.ceil((effectiveDurationS + 0.04) * 1000)));
+    return { stop, durationS: effectiveDurationS, independentPitch: true };
   }
 
   function setPitchPreservation(audio, enabled) {
@@ -601,6 +635,9 @@
       lastUtteranceTempo,
       lastUtterancePitchSemitones,
       lastSizePitchSemitones,
+      lastStretchSourceSamples,
+      lastStretchTargetSamples,
+      lastStretchCoverage,
       lastAllowedClips,
       lastChosenClip,
       lastRenderMs,
