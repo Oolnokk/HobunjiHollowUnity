@@ -12,6 +12,7 @@
   if (!/\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname || '')) return;
 
   const DEG = Math.PI / 180;
+  const DEFAULT_WALL_HEIGHT = 1.75; // Matches the interior runtime/editor fallback height; a per-map wallHeight still wins.
   const RUNTIME_FURNITURE_BRIDGE_URL = '../../js/building-interior-runtime-furniture.js?v=20260908b';
   const PRESETS = Object.freeze({
     innSign: Object.freeze({ key: 'innSign', itemKey: 'innSignFurniture', label: 'Inn Sign', color: 0x765536, fw: 1, fd: 1 }),
@@ -34,6 +35,7 @@
   let lastFurnitureSignature = ''; // Cheap JSON signature prevents unnecessary overlay rebuilds during the render loop.
   let rebuildGeneration = 0; // Invalidates async authored-furniture loads when the room/layout changes mid-build.
   let lastError = null; // Mobile-visible diagnostics instead of console-only failures.
+  let lastWallPick = null; // Canonical panel hit diagnostics for cases where pointer placement needs debugging.
   let statusEl = null;
   let ui = null;
   let bootAttempts = 0;
@@ -171,19 +173,20 @@
     return true;
   }
 
-  function rootHasFurnitureId(node) {
-    let current = node;
-    while (current) {
-      if (current.userData?.furnId != null) return true;
-      if (current.userData?.biaWallOrnamentOverlay) return true;
-      current = current.parent;
+  function canonicalWallPanels(interior) {
+    const builder = window.InteriorSceneBuilder;
+    if (!builder?.buildWallPanels || !interior) return [];
+    const floorSet = new Set((interior.floor || []).map(point => `${finite(point?.[0])},${finite(point?.[1])}`));
+    const exitTileSet = new Set();
+    for (const exit of (interior.exits || [])) {
+      for (const point of (exit?.tiles || [])) exitTileSet.add(`${finite(point?.[0])},${finite(point?.[1])}`);
     }
-    return false;
+    return builder.buildWallPanels(floorSet, exitTileSet, finite(interior.wallHeight, DEFAULT_WALL_HEIGHT));
   }
 
-  function wallHitFromPointer(event) {
+  function pointerRay(event) {
     const THREE = window.THREE;
-    if (!THREE?.Raycaster || !scene || !camera || !renderer?.domElement) return null;
+    if (!THREE?.Raycaster || !camera || !renderer?.domElement) return null;
     const rect = renderer.domElement.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     const ndc = new THREE.Vector2(
@@ -192,24 +195,47 @@
     );
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, camera);
-    const candidates = [];
-    scene.traverse?.(node => {
-      if (!node?.isMesh || node.visible === false) return;
-      if (rootHasFurnitureId(node)) return;
-      if (/TransformControls|Gizmo|Helper/i.test(String(node.name || ''))) return;
-      candidates.push(node);
-    });
-    for (const hit of raycaster.intersectObjects(candidates, false)) {
-      if (!hit?.face?.normal || !hit.point || hit.point.y < 0.30) continue; // Ignore floor tiles and low transparent zone/collider overlays.
-      const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
-      if (Math.abs(normal.y) > 0.72) continue;
-      normal.y = 0;
-      if (normal.lengthSq() < 1e-6) continue;
-      normal.normalize();
-      if (normal.dot(raycaster.ray.direction) > 0) normal.negate();
-      return { point: hit.point.clone(), normal, object: hit.object, distance: hit.distance };
+    return raycaster.ray.clone();
+  }
+
+  function intersectCanonicalPanel(ray, panel) {
+    const THREE = window.THREE;
+    if (!THREE?.Vector3 || !ray || !panel) return null;
+    const yaw = finite(panel.rotationDeg?.[1]) * DEG;
+    const normal = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize(); // Local +Z of the canonical wall panel; points toward the playable interior for ordinary generated walls.
+    const center = new THREE.Vector3(finite(panel.position?.[0]), finite(panel.position?.[1]), finite(panel.position?.[2]));
+    const denominator = normal.dot(ray.direction);
+    if (Math.abs(denominator) < 1e-7) return null;
+    const t = normal.dot(center.clone().sub(ray.origin)) / denominator;
+    if (t < 0) return null;
+    const point = ray.at(t, new THREE.Vector3());
+    const height = Math.max(0, finite(panel.height, DEFAULT_WALL_HEIGHT));
+    if (point.y < center.y - 1e-4 || point.y > center.y + height + 1e-4) return null;
+    const tangent = new THREE.Vector3(normal.z, 0, -normal.x); // Same wall-U basis used by WallOrnamentPlacement.
+    const along = point.clone().sub(center).dot(tangent);
+    if (Math.abs(along) > finite(panel.width) / 2 + 1e-4) return null;
+    if (normal.dot(ray.direction) > 0) normal.negate(); // Positive normalOffset always moves toward the clicker/camera side of the canonical wall plane.
+    return { point, normal, distance: t, panel };
+  }
+
+  function wallHitFromPointer(event) {
+    const interior = readInterior();
+    const ray = pointerRay(event);
+    if (!interior || !ray) return null;
+    let best = null;
+    const panels = canonicalWallPanels(interior);
+    for (const panel of panels) {
+      const hit = intersectCanonicalPanel(ray, panel);
+      if (hit && (!best || hit.distance < best.distance)) best = hit;
     }
-    return null;
+    lastWallPick = best ? {
+      panelId: best.panel?.id || null,
+      point: [round(best.point.x), round(best.point.y), round(best.point.z)],
+      normal: [round(best.normal.x, 6), 0, round(best.normal.z, 6)],
+      distance: round(best.distance),
+      panelCount: panels.length,
+    } : { panelId: null, panelCount: panels.length };
+    return best;
   }
 
   async function buildVisual(record, preset) {
@@ -350,7 +376,7 @@
     if (!renderer || event.target !== renderer.domElement) return;
     if (armPresetKey || repickSelected) {
       const hit = wallHitFromPointer(event);
-      if (!hit) { setStatus('No wall-like surface found under that point.', 'error'); return; }
+      if (!hit) { setStatus('No canonical interior wall plane found under that point.', 'error'); return; }
       event.preventDefault();
       event.stopImmediatePropagation();
       await placeOrRepickFromHit(hit);
@@ -418,11 +444,11 @@
       <div class="grid3" style="margin-top:8px">
         <div class="field"><label>Wall X</label><input id="biaWallOffsetU" type="number" step="0.01" value="0"></div>
         <div class="field"><label>Wall Y</label><input id="biaWallOffsetV" type="number" step="0.01" value="0"></div>
-        <div class="field"><label>Distance</label><input id="biaWallOffsetN" type="number" step="0.005" value="0"></div>
+        <div class="field"><label>Normal offset</label><input id="biaWallOffsetN" type="number" step="0.005" value="0"></div>
       </div>
       <div class="row"><button id="biaWallApply" disabled>Apply offsets</button><button id="biaWallDelete" class="danger" disabled>Delete</button></div>
       <div id="biaWallStatus" class="hint">Choose a preset, click Place on wall, then click the rendered interior wall.</div>
-      <div class="hint" style="margin-top:5px">These records live in the room/layout currently selected under Alternate layouts. Windows use the same furniture JSON as runtime.</div>`;
+      <div class="hint" style="margin-top:5px">The click stores the canonical wall plane. Normal offset alone controls how far the furniture sits in front of or inside that plane. Records live in the room/layout currently selected under Alternate layouts.</div>`;
     panel.insertBefore(section, panel.firstChild);
     statusEl = byId('biaWallStatus');
     ui = section;
@@ -490,6 +516,8 @@
       selectedId,
       armedPreset: armPresetKey,
       repickSelected,
+      canonicalWallPanelCount: canonicalWallPanels(interior).length,
+      lastWallPick: clone(lastWallPick),
       wallRecords: wallRecords(interior).map(record => ({ id: record.id, itemKey: record.itemKey, wallOrnamentKey: record.wallOrnamentKey, wallAttachment: clone(record.wallAttachment) })),
       lastError,
     };
