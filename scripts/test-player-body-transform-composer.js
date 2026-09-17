@@ -75,6 +75,13 @@ assert.match(
 
 assert.ok(attachments.includes("registerExternalRootProvider('equippedTool'"), 'tool visuals register in the attachment adapter');
 assert.ok(attachments.includes("registerExternalRootProvider('shoulderPets'"), 'shoulder pets register in the attachment adapter');
+assert.ok(attachments.includes('applyShoulderPetFaceRotationLimit'), 'shoulder-pet provider applies the visible-face world-rotation limiter');
+assert.ok(attachments.includes("attachment.requestedRotationSource !== 'head'"), 'face limiter is scoped to Head / Neck follow mode only');
+assert.ok(attachments.includes('visibleFaceWorldQuaternion = neckJoint.getWorldQuaternion'), 'limiter samples the already-clamped visible face world frame');
+assert.ok(attachments.includes('sampledFrameWorldQuaternion.clone().invert().multiply(sampledFinalWorldQuaternion)'), 'limiter preserves the existing authored perch/grip rotation offset');
+assert.ok(attachments.includes('authoredPerchWorldPosition.clone().sub(limitedGripWorldOffset)'), 'limiter re-solves root position around the authored shoulder grip instead of detaching the pet');
+assert.ok(attachments.includes('renderFaceRotationLimit'), 'mobile diagnostics expose the latest shoulder-pet face-limit result');
+assert.ok(attachments.includes('cachedPlayerNeckJoint'), 'face limiting caches the current neck bone instead of traversing the player rig every render');
 assert.doesNotMatch(attachments, /drunkenFooting|drunkenHealth/, 'body attachment inheritance is independent of alcohol state');
 
 assert.ok(impact.includes("BODY_CHANNEL = 'ragdoll'"), 'impact publishes a ragdoll body channel');
