@@ -52,13 +52,19 @@
     const authored = window.HobunjiGrehlrHeadRigCorrection?.authored?.shoulderRest;
     const normalized = window.AnimalShoulderSpline?.normalizeRest?.({ shoulderRest: authored });
     if (normalized) {
-      return {
+      const rest = {
         enabled: true, useSpline: true, useRun1: false, splitFrame: true,
         splitRightUsesIdle: true, frameShiftX: normalized.frameShiftX,
+        separatorRotationDeg: normalized.separatorRotationDeg,
+        separatorAspect: normalized.separatorAspect,
         followFrameShiftX: true,
         beforePoints: deepClone(normalized.beforePoints),
         afterPoints: deepClone(normalized.afterPoints),
       };
+      if (normalized.weightMap) rest.weightMap = deepClone(normalized.weightMap);
+      if (normalized.compressibilityMap) rest.compressibilityMap = deepClone(normalized.compressibilityMap);
+      if (normalized.stretchabilityMap) rest.stretchabilityMap = deepClone(normalized.stretchabilityMap);
+      return rest;
     }
     return deepClone(FALLBACK_GREHLR_SHOULDER);
   }
