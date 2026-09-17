@@ -6,6 +6,7 @@ on:
       - 'docs/js/daylight-window-runtime.js'
       - 'docs/js/daylight-window-overlay-scheduler.js'
       - 'docs/js/building-interior-wall-ornament-editor.js'
+      - 'docs/js/interior-scene-builder.js'
       - 'docs/js/map-live-preview.js'
       - 'docs/tools/furniture-avatar-author/foliage-furniture-mode.js'
       - 'docs/tools/furniture-avatar-author/furniture-daylight-windows.js'
@@ -17,6 +18,7 @@ on:
       - 'docs/js/daylight-window-runtime.js'
       - 'docs/js/daylight-window-overlay-scheduler.js'
       - 'docs/js/building-interior-wall-ornament-editor.js'
+      - 'docs/js/interior-scene-builder.js'
       - 'docs/js/map-live-preview.js'
       - 'docs/tools/furniture-avatar-author/foliage-furniture-mode.js'
       - 'docs/tools/furniture-avatar-author/furniture-daylight-windows.js'
@@ -38,6 +40,7 @@ jobs:
           node --check docs/js/daylight-window-runtime.js
           node --check docs/js/daylight-window-overlay-scheduler.js
           node --check docs/js/building-interior-wall-ornament-editor.js
+          node --check docs/js/interior-scene-builder.js
           node --check docs/tools/furniture-avatar-author/furniture-daylight-windows.js
           node --check docs/js/map-live-preview.js
       - name: Daylight window regression checks
