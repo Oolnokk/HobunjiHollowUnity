@@ -72,6 +72,24 @@
     return combatDeps?.genotypeKindFor?.(companion) || companion?.creatureKey || companion?.kind || null; // Stable species key shared by raw art and genotype compositing.
   }
 
+  function authoredShoulderRestFor(companion, combatDeps) {
+    const kind = genotypeKindFor(companion, combatDeps); // Species key resolves browser-preview or committed shoulder settings through the shared resolver.
+    const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null;
+    return rawRig?.shoulderRest || null;
+  }
+
+  function effectiveShoulderRest(companion, combatDeps) {
+    const runtime = companion?.avatarRef?.shoulderRest; // V5 debug state owns live overlay methods; authored extras live on the species rig.
+    const authored = authoredShoulderRestFor(companion, combatDeps);
+    return runtime || authored ? { ...(runtime || {}), ...(authored || {}) } : null;
+  }
+
+  function splineAllowedFor(companion, combatDeps) {
+    const kind = genotypeKindFor(companion, combatDeps);
+    const profiles = window.HobunjiShoulderSplineProfiles;
+    return profiles?.allows ? !!profiles.allows(kind) : ['grehlr','voorg-ass','uumkaoii','gar-wolf','dabinggi-hound'].includes(String(kind || '').toLowerCase());
+  }
+
   function shoulderRun1Frame(companion, combatDeps) {
     const genotypeKind = genotypeKindFor(companion, combatDeps);
     const directRun = companion?.def?.sprites?.run;
@@ -205,8 +223,8 @@
   }
 
   function ensureShoulderPetPresentationFrame(companion, combatDeps) {
-    const rest = companion?.avatarRef?.shoulderRest;
-    const authoredRest = !!rest?.authored;
+    const rest = effectiveShoulderRest(companion, combatDeps);
+    const authoredRest = !!(rest && (rest.authored || authoredShoulderRestFor(companion, combatDeps)));
     if (authoredRest && rest.splitFrame) {
       ensureSplitShoulderFrame(companion, combatDeps, rest);
       if (companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) return true;
@@ -261,7 +279,8 @@
       const isShoulderPet = companion.health > 0
         && companion.stableRole === 'shoulderPet'
         && (companion.master || player) === player; // One role predicate drives spline activation, split layering, and attachment-root inclusion.
-      companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet);
+      const splineAllowed = splineAllowedFor(companion, combatDeps); // Curl is intentionally limited to the current five shoulder-drape species.
+      companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet && splineAllowed);
       if (!isShoulderPet) {
         if (companion.__hobunjiWasShoulderPet) restoreAfterShoulderPet(companion, combatDeps);
         companion.__hobunjiWasShoulderPet = false;
@@ -294,7 +313,7 @@
         shoulderPetsOnRestRun1: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderRestFrame && companion.currentFrameUrl === companion.__hobunjiShoulderRestFrame).length,
         shoulderPetsOnSplitFrame: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderSplitFrame && companion.currentFrameUrl === companion.__hobunjiShoulderSplitFrame).length,
         shoulderSplitForegroundVisible: activeShoulderPets.filter(companion => !!companion?.avatarRef?.shoulderRest?.splitOverlayVisible).length,
-        shoulderSplitIdleRight: activeShoulderPets.filter(companion => !!companion?.avatarRef?.shoulderRest?.splitRightUsesIdle).length,
+        shoulderSplitIdleRight: activeShoulderPets.filter(companion => !!effectiveShoulderRest(companion, window.Combat?.deps)?.splitRightUsesIdle).length,
         shoulderSplineActive: activeShoulderPets.filter(companion => companion?.avatarRef?.shoulderRest?.enabled).length,
       };
     },
