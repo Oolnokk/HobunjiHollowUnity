@@ -288,15 +288,6 @@
     "line": 376
   },
   {
-    "file": "docs/js/fishing-events.js",
-    "owner": "FishingFeatureDebug",
-    "classification": "scheduler",
-    "function": "featureLoop",
-    "reason": "Unconditional self-perpetuating RAF loop started once at module load (line 883) and never cancelled; drives Frenzy-event timers and Gullet fish AI/animation for the entire session regardless of any UI state - permanent runtime work.",
-    "migrationStage": "candidate",
-    "line": 863
-  },
-  {
     "file": "docs/js/folder-save-debug-ui.js",
     "owner": "FolderSaveDebugUI",
     "classification": "one-shot",
