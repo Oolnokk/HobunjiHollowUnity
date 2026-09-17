@@ -227,10 +227,10 @@
   {
     "file": "docs/js/controller-input.js",
     "owner": "ControllerInput",
-    "classification": "scheduler",
+    "classification": "isolated-context",
     "function": "fallbackFrame",
-    "reason": "Permanent per-frame gamepad-polling loop (kicked off at line 303) used only when window.RuntimeFrameScheduler is unavailable - the primary path already registers this same work with RuntimeFrameScheduler, confirming the raw RAF fallback is itself a direct scheduler-style per-frame subscription.",
-    "migrationStage": "candidate",
+    "reason": "Already migrated: installCadenceOwner() registers pollFrame with RuntimeFrameScheduler on the input phase whenever the shared scheduler is present (the shipped game's only load site, docs/index.html, always provides it). fallbackFrame's raw RAF loop only kicks in for a standalone/editor/test context that loads this module without RuntimeFrameScheduler, matching the file's own documented 'remains independently executable' contract, so it is kept as an isolated-context fallback rather than removed.",
+    "migrationStage": "migrated",
     "line": 287
   },
   {
