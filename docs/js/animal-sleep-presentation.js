@@ -303,8 +303,16 @@
         liveFrameStates.delete(entity); // A replaced awake avatar already owns its correct maps; stale detached-group state is irrelevant.
         return;
       }
-      for (const original of state.originals) {
+      for (let index = 0; index < state.originals.length; index++) {
+        const original = state.originals[index];
         if (!original.material) continue;
+        const plane = state.planeMaterials[index];
+        const sleepMap = state.entry?.pair && plane ? (plane.side === 'back' ? state.entry.pair.back : state.entry.pair.front) : null;
+        // Normal farm/wilderness animation runs before this checkpoint. If it
+        // already replaced the sleep texture with a fresh awake/blink frame,
+        // leave that authoritative map alone instead of resurrecting the
+        // snapshot captured when sleep began.
+        if (sleepMap && original.material.map !== sleepMap) continue;
         original.material.map = original.map;
         original.material.needsUpdate = true;
       }
@@ -485,19 +493,25 @@
     // post-game always restores after the frame driver, even when gameLoop throws.
     // This recovery guard only handles a broken/externally-invoked frame sequence.
     if (temporaryTransforms.length) restoreTemporaryTransforms();
-    frameBoundsScans = 0;
-    applyStaticSleepers();
-    applyFarmSleepers();
-    applyWildernessSleepers();
-    lastPreparedBoundsScans = frameBoundsScans;
+    const frameId = Number(frameContext.frameId) || 0;
     preparedFrames++;
-    lastPreparedFrameId = Number(frameContext.frameId) || 0;
+    lastPreparedFrameId = frameId; // Set before feature work so post-game can recover partially-applied transforms if a later preparation step throws.
+    frameBoundsScans = 0;
+    try {
+      applyStaticSleepers();
+      applyFarmSleepers();
+      applyWildernessSleepers();
+    } finally {
+      lastPreparedBoundsScans = frameBoundsScans;
+    }
   }
 
   function restoreRenderFrame(frameContext = {}) {
+    const frameId = Number(frameContext.frameId) || 0;
+    if (!frameId || frameId !== lastPreparedFrameId || lastRestoredFrameId === frameId) return; // Title/onboarding frames can reach post-game without ever reaching the pre-render checkpoint.
     restoreTemporaryTransforms();
     restoredFrames++;
-    lastRestoredFrameId = Number(frameContext.frameId) || 0;
+    lastRestoredFrameId = frameId;
   }
 
   function installSchedulerOwnership() {
