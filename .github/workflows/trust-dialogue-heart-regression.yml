@@ -3,6 +3,7 @@ name: Trust Dialogue Heart Regression
 on:
   pull_request:
     paths:
+      - 'docs/index.html'
       - 'docs/js/condition-registry.js'
       - 'docs/js/weapon-trust-visits.js'
       - 'scripts/test-trust-dialogue-heart-scale.js'
