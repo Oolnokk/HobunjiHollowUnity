@@ -409,16 +409,15 @@
     output.textContent = `${base} | Runtime:r128=${global.SocialActionR128RenderBridge?.installed ? 'yes' : 'no'} dispatch=${render.dispatchCount || 0} move=${state.danceLock ? 'blend' : 'off'} leg=${state.legApplications} hand=${state.handApplications}`;
   }
 
-  function frame(t) {
+  function maintainDanceState({ timestamp }) {
     discoverHandRig();
     ensureSentinel();
     const active = dancing();
     if (active && !state.lastDancing) beginDanceOwnership();
-    if (active) { suppressHeldVisual(); emitDanceStimulus(t); clock(t); }
+    if (active) { suppressHeldVisual(); emitDanceStimulus(timestamp); clock(timestamp); }
     else if (state.lastDancing) endDanceOwnership();
     state.lastDancing = active;
     syncKurrayaWedge();
-    global.requestAnimationFrame(frame);
   }
 
   chainGlobal('ProceduralLegAnimation', patchLegApi);
@@ -430,6 +429,11 @@
   style.textContent = '.socialActionSector.blocked{filter:grayscale(1)}.socialActionSector.blocked.active{background:rgba(255,255,255,.055)!important}';
   document.head.appendChild(style);
   global.setInterval?.(visibleDebug, 500);
+
+  global.RuntimeFrameScheduler.register('social-action-dance-state', maintainDanceState, {
+    owner: 'SocialActionDanceRuntime',
+    description: 'Drives dance ownership start/end, leg/hand rig discovery, sentinel maintenance, social stimulus emission, and Kurraya wedge sync. The actual dance-over-walk leg/hand pose application stays in the sentinel\'s own onBeforeRender hook.',
+  });
 
   global.SocialActionDanceRuntime = {
     installed: true,
@@ -445,5 +449,4 @@
       hasPreRenderSentinel: !!state.sentinel,
     }),
   };
-  global.requestAnimationFrame(frame);
 })(window);

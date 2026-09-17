@@ -1,0 +1,36 @@
+name: RAF ownership Stage 6 regression (social action dance)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/social-action-dance-runtime.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-social-action-dance-scheduler.js'
+      - 'scripts/test-npc-dance-presentation-runtime.js'
+      - '.github/workflows/raf-ownership-stage6e-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/social-action-dance-runtime.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-social-action-dance-scheduler.js'
+      - 'scripts/test-npc-dance-presentation-runtime.js'
+      - '.github/workflows/raf-ownership-stage6e-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/social-action-dance-runtime.js
+      - name: Dance-state scheduler migration
+        run: node scripts/test-social-action-dance-scheduler.js
+      - name: NPC dance presentation regression
+        run: node scripts/test-npc-dance-presentation-runtime.js

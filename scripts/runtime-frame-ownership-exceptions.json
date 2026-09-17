@@ -702,15 +702,6 @@
     "line": 358
   },
   {
-    "file": "docs/js/social-action-dance-runtime.js",
-    "owner": "SocialActionDanceRuntime",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Permanent self-recursive loop (also started once at line 448) driving dance ownership start/end, leg/hand rig discovery, social stimulus emission, and Kurraya wedge sync every frame for the life of the page.",
-    "migrationStage": "candidate",
-    "line": 421
-  },
-  {
     "file": "docs/js/social-rhythm-runtime.js",
     "owner": "SocialRhythmClock",
     "classification": "scheduler",
