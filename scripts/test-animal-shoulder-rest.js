@@ -30,7 +30,7 @@ global.AnimalHeadRigRuntime = {
 require(runtimePath);
 const api = global.AnimalShoulderRest;
 assert(api, 'AnimalShoulderRest should install its public API');
-assert.strictEqual(api.version, 3);
+assert.strictEqual(api.version, 4);
 
 const angledRest = {
   enabled: true,
@@ -38,6 +38,7 @@ const angledRest = {
   guide: { a: { x: 0.2, y: 0.25 }, b: { x: 0.8, y: 0.65 } },
   fullRotationDeg: 0,
   interVertexRotationDeg: 0,
+  curveFalloff: 0,
 };
 const original = { x: 0.48, y: 0.34 };
 const identity = api.deformNormalizedPoint(original, angledRest);
@@ -47,7 +48,7 @@ assert(Math.abs(identity.x - original.x) < 1e-8 && Math.abs(identity.y - origina
 const horizontal = {
   enabled: true, useSpline: true,
   guide: { a: { x: 0.2, y: 0.5 }, b: { x: 0.8, y: 0.5 } },
-  fullRotationDeg: 90, interVertexRotationDeg: 0,
+  fullRotationDeg: 90, interVertexRotationDeg: 0, curveFalloff: 0,
 };
 const rotatedA = api.deformNormalizedPoint(horizontal.guide.a, horizontal);
 const rotatedB = api.deformNormalizedPoint(horizontal.guide.b, horizontal);
@@ -59,7 +60,7 @@ assert(Math.abs(rotatedB.x - 0.2) < 1e-8 && Math.abs(rotatedB.y - 1.1) < 1e-8,
 const curled = {
   enabled: true, useSpline: true,
   guide: { a: { x: 0.2, y: 0.5 }, b: { x: 0.8, y: 0.5 } },
-  fullRotationDeg: 0, interVertexRotationDeg: 90,
+  fullRotationDeg: 0, interVertexRotationDeg: 90, curveFalloff: 0,
 };
 const curledB = api.deformNormalizedPoint(curled.guide.b, curled);
 assert(Math.hypot(curledB.x - curled.guide.b.x, curledB.y - curled.guide.b.y) > 0.1,
@@ -70,6 +71,15 @@ assert.notDeepStrictEqual(offAxisInside, { x: 0.5, y: 0.1 },
 const outside = { x: 0.02, y: 0.02 };
 assert.deepStrictEqual(api.deformNormalizedPoint(outside, curled), outside,
   'points outside the A-B longitudinal span remain untouched');
+
+const midpoint = { x: 0.5, y: 0.5 };
+const linearMid = api.deformNormalizedPoint(midpoint, curled);
+const tailBiasedMid = api.deformNormalizedPoint(midpoint, { ...curled, curveFalloff: 1 });
+assert(Math.abs(tailBiasedMid.y - 0.5) < Math.abs(linearMid.y - 0.5),
+  'high curve falloff keeps the earlier pelvis/back-leg half straighter while moving curl toward B/tail');
+const falloffEnd = api.centerlineForCurl(1, 0.6, 0, Math.PI / 2, 1);
+assert(Math.abs(falloffEnd.angle - Math.PI / 2) < 1e-8,
+  'curve falloff redistributes curl without changing the final authored inter-vertex rotation');
 
 const migrated = api.legacyBendRotations(-0.01);
 assert(migrated.fullRotationDeg < 0 && migrated.interVertexRotationDeg > 0,
@@ -84,18 +94,20 @@ assert(Math.abs(api.sampleHeadInfluence(normalized, 0.5, 0.5) - 0.5) < 0.01,
 const flags = api.normalizeRest({ shoulderRest: {
   enabled: true, useSpline: false, useRun1: true, splitFrame: false, frameShiftX: 0,
   guide: { a: { x: 0.1, y: 0.2 }, b: { x: 0.9, y: 0.7 } },
-  fullRotationDeg: -35, interVertexRotationDeg: 62,
+  fullRotationDeg: -35, interVertexRotationDeg: 62, curveFalloff: 0.73,
 } });
 assert.strictEqual(flags.useSpline, false);
 assert.strictEqual(flags.useRun1, true);
 assert.strictEqual(flags.frameShiftX, 0);
 assert.strictEqual(flags.fullRotationDeg, -35);
 assert.strictEqual(flags.interVertexRotationDeg, 62);
+assert.strictEqual(flags.curveFalloff, 0.73);
 
 assert(runtimeSource.includes('bodyWeights[i] = 1 - sampleHeadInfluence'), 'runtime rest weight remains 1 - Head Influence');
 assert(runtimeSource.includes('alpha/opacity is intentionally never consulted'), 'runtime shoulder strip is based on full plane geometry, not opacity');
 assert(runtimeSource.includes('interVertexRotationDeg'), 'runtime owns progressive curl rotation');
 assert(runtimeSource.includes('fullRotationDeg'), 'runtime owns whole-strip rotation');
+assert(runtimeSource.includes('curveFalloff'), 'runtime owns saved A-to-B curve falloff');
 assert(shellSource.includes('height:calc(100dvh - 24px)') && shellSource.includes('.preview-settings{min-height:0;overflow:auto'),
   'desktop right workbench is viewport-bounded and settings scroll internally so both previews remain visible');
 assert(shellSource.includes('id="shoulderFullRotation"') && shellSource.includes('id="shoulderInterRotation"'),
@@ -104,6 +116,8 @@ assert(shellSource.includes('id="shoulderRestSplitFrame"') && shellSource.includ
   'idle/run1 hybrid and seam remain per-rig controls');
 assert(authorSource.includes('fullRotationDeg:shoulderFullRotationValue()') && authorSource.includes('interVertexRotationDeg:shoulderInterRotationValue()'),
   'both curl controls serialize into headRig.shoulderRest');
+assert(authorRefreshSource.includes('shoulderCurveFalloff') && authorRefreshSource.includes('rig.shoulderRest.curveFalloff=shoulderCurveFalloffValue()'),
+  'curve falloff is exposed and serialized as part of the saved shoulder rig');
 assert(authorSource.includes('previewAngle is deliberately not serialized'),
   'live neck preview angle is explicitly excluded from rig serialization');
 assert(authorSource.includes("shoulderHandleDrag==='a'||shoulderHandleDrag==='b'"),
