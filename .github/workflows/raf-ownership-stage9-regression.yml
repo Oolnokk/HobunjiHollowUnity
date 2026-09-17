@@ -1,0 +1,32 @@
+name: RAF ownership Stage 9 regression (Pixel Probe scheduler diagnostics)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/pixel-probe.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-pixel-probe-scheduler-diagnostics.js'
+      - '.github/workflows/raf-ownership-stage9-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/pixel-probe.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-pixel-probe-scheduler-diagnostics.js'
+      - '.github/workflows/raf-ownership-stage9-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/pixel-probe.js
+      - name: Frame-scheduler diagnostics summary
+        run: node scripts/test-pixel-probe-scheduler-diagnostics.js

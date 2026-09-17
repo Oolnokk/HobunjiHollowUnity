@@ -603,6 +603,24 @@
     return lines;
   }
 
+  // Makes a broken/erroring per-frame subscriber (or a duplicate/missing
+  // browser RAF, or a frame driver that stopped being invoked) visible in
+  // a copyable mobile report instead of requiring desktop console access
+  // (see docs/architecture/runtime-frame-scheduler.md's ownership audit —
+  // record.lastError is captured there specifically for this). Unlike the
+  // hit-specific diagnostics below, this is general engine health, so it
+  // reports every probe click rather than being gated on what was hit.
+  function _pixelProbeSchedulerLines() {
+    const debug = window.RuntimeFrameScheduler?.getDebug?.();
+    if (!debug) return null;
+    const lines = [`Frame scheduler: registered=${debug.registered} enabled=${debug.enabled} scheduled=${debug.scheduled ? 1 : 0} frameDriver=${debug.hasFrameDriver ? 'attached' : 'MISSING'}${debug.frameDriverErrorCount ? ` driverErrors=${debug.frameDriverErrorCount} lastDriverError=${String(debug.frameDriverLastError || '').split('\n')[0]}` : ''}`];
+    const erroring = debug.entries.filter(entry => entry.errorCount > 0);
+    if (erroring.length) {
+      lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);
+    }
+    return lines;
+  }
+
   // A scheduled NPC behaving visibly wrong — wandering somewhere they
   // shouldn't, or standing still without ever picking up their instrument
   // — is a state-machine question, not a rendering one, but it's exactly
@@ -846,6 +864,8 @@
       const interiorCache = cacheAudit.caches?.find(entry => entry.name === 'game.buildingScenes (loaded interiors)'); // Used to compare before/inside/after-store reports directly.
       if (interiorCache) lines.push(`Loaded interior scenes: ${interiorCache.size}`);
     }
+    const schedulerLines = _pixelProbeSchedulerLines();
+    if (schedulerLines) lines.push(...schedulerLines);
     const controllerUiDebug = window.ControllerUI?.debugState?.(); // Confirms that ordinary gameplay reads the cached closed-panel state instead of forcing layout.
     if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
