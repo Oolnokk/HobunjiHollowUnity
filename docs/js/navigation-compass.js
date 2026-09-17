@@ -259,7 +259,7 @@
   }
 
   window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
-    phase: 'visual',
+    phase: 'post-game',
     owner: 'NavigationCompass',
     description: 'Updates compass heading and visible navigation markers.',
   });

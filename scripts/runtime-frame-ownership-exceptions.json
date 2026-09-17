@@ -10,19 +10,12 @@
   },
   {
     "file": "docs/game.js",
-    "owner": "GameLoop",
-    "classification": "game-loop",
-    "function": "gameLoop",
-    "reason": "The main simulation driver self-schedules once per frame; this is the canonical gameplay RAF that every other subsystem is ordered relative to.",
-    "migrationStage": "not-planned"
-  },
-  {
-    "file": "docs/game.js",
     "owner": "SceneTransitionLoader",
     "classification": "one-shot",
     "function": "loadBuildingScene",
     "reason": "A chained double requestAnimationFrame forces the Den/cavern loading label to actually paint before a long synchronous carve starts; it resolves once and never reschedules.",
-    "migrationStage": "not-planned"
+    "migrationStage": "not-planned",
+    "line": 12243
   },
   {
     "file": "docs/game.js",
@@ -30,7 +23,8 @@
     "classification": "timer-event",
     "function": "waitForBuildingSceneReady",
     "reason": "poll() re-requests a frame purely to re-check whether _buildingScenes has resolved (with a timeout), which is a condition-wait rather than per-frame work.",
-    "migrationStage": "candidate"
+    "migrationStage": "candidate",
+    "line": 13006
   },
   {
     "file": "docs/game.js",
@@ -38,7 +32,8 @@
     "classification": "bounded-animation",
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
-    "migrationStage": "not-planned"
+    "migrationStage": "not-planned",
+    "line": 28393
   },
   {
     "file": "docs/game.js",
@@ -46,7 +41,8 @@
     "classification": "one-shot",
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
-    "migrationStage": "not-planned"
+    "migrationStage": "not-planned",
+    "line": 28544
   },
   {
     "file": "docs/game.js",
@@ -54,7 +50,8 @@
     "classification": "bounded-animation",
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
-    "migrationStage": "not-planned"
+    "migrationStage": "not-planned",
+    "line": 28563
   },
   {
     "file": "docs/game.js",
@@ -62,7 +59,8 @@
     "classification": "bounded-animation",
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
-    "migrationStage": "not-planned"
+    "migrationStage": "not-planned",
+    "line": 28635
   },
   {
     "file": "docs/js/action-arc-ui.js",

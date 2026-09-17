@@ -242,7 +242,7 @@
   };
 
   window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
-    phase: 'visual',
+    phase: 'post-game',
     owner: 'MobileCombatZoom',
     description: 'Solves and smoothly applies adaptive combat camera zoom on coarse-pointer (mobile) viewports.',
     enabled: isMobileViewport(),

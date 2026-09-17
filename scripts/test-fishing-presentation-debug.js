@@ -70,7 +70,7 @@ const { context, registered, elements } = buildContext();
 const entry = registered.get('fishing-presentation');
 assert(entry, 'registers with the scheduler under a stable id');
 assert.equal(entry.options.owner, 'FishingPresentationDebug');
-assert.equal(entry.options.phase, 'visual');
+assert.equal(entry.options.phase, 'post-game');
 // Stage 2 asks for this migration to keep the combined function intact and
 // always enabled for now; a later commit is expected to add the context
 // gate, not this one.

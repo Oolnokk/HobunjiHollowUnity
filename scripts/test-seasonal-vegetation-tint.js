@@ -52,7 +52,7 @@ const { context, registered } = buildContext();
 const entry = registered.get('seasonal-vegetation-tint');
 assert(entry, 'watchSeasonTint registers with the scheduler under a stable id');
 assert.equal(entry.options.owner, 'SeasonalVegetationTint');
-assert.equal(entry.options.phase, 'visual');
+assert.equal(entry.options.phase, 'post-game');
 
 const watchdog = entry.fn;
 

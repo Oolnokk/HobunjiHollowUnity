@@ -165,7 +165,7 @@
   }
 
   window.RuntimeFrameScheduler.register(AMBIENT_SCHEDULER_ID, ambientTick, {
-    phase: 'visual',
+    phase: 'post-game',
     owner: 'InteriorFireFloorRuntime',
     description: 'Updates ambient fire/candle particle emitters attached to placed furniture.',
     enabled: false,

@@ -318,7 +318,7 @@
     ensureReticle();
     refresh();
     window.RuntimeFrameScheduler.register(SCHEDULER_ID, tick, {
-      phase: 'visual',
+      phase: 'post-game',
       owner: 'MeleeHudReticle',
       description: 'Updates melee readiness quadrants and their current target.',
     });

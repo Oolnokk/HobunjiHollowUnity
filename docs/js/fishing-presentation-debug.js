@@ -139,7 +139,7 @@
   };
 
   window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
-    phase: 'visual',
+    phase: 'post-game',
     owner: 'FishingPresentationDebug',
     description: 'Synchronizes the Gullet\'s presentation with the regular fish visual and refreshes the fishing debug panel.',
   });

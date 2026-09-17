@@ -1,0 +1,56 @@
+name: RAF ownership Stage 4 regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'docs/js/navigation-compass.js'
+      - 'docs/js/mobile-combat-zoom.js'
+      - 'docs/js/seasonal-vegetation-tint.js'
+      - 'docs/js/interior-fire-floor-runtime.js'
+      - 'docs/js/fishing-presentation-debug.js'
+      - 'docs/js/combat/melee-hud-reticle.js'
+      - 'docs/js/combat/ranged-hud-reticle.js'
+      - 'scripts/test-runtime-frame-scheduler-ordering.js'
+      - 'scripts/test-runtime-frame-scheduler.js'
+      - 'scripts/test-runtime-frame-ownership.js'
+      - '.github/workflows/raf-ownership-stage4-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'docs/js/navigation-compass.js'
+      - 'docs/js/mobile-combat-zoom.js'
+      - 'docs/js/seasonal-vegetation-tint.js'
+      - 'docs/js/interior-fire-floor-runtime.js'
+      - 'docs/js/fishing-presentation-debug.js'
+      - 'docs/js/combat/melee-hud-reticle.js'
+      - 'docs/js/combat/ranged-hud-reticle.js'
+      - 'scripts/test-runtime-frame-scheduler-ordering.js'
+      - 'scripts/test-runtime-frame-scheduler.js'
+      - 'scripts/test-runtime-frame-ownership.js'
+      - '.github/workflows/raf-ownership-stage4-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/game.js
+      - name: Runtime frame scheduler v2 ordering contract
+        run: node scripts/test-runtime-frame-scheduler-ordering.js
+      - name: Runtime frame scheduler bootstrap/HUD contracts
+        run: node scripts/test-runtime-frame-scheduler.js
+      - name: Runtime frame ownership audit
+        run: node scripts/test-runtime-frame-ownership.js

@@ -87,6 +87,18 @@ function crawlShippedScripts() {
 // truncates each line at a line-comment `//` marker (guarded against
 // `://` inside URLs) before searching, so a commented-out call or a
 // breadcrumb mentioning the API by name is never mistaken for a live call.
+function stripLineComments(src) {
+  // Must run before stripBlockComments: a // comment can contain a literal
+  // "/*"-looking substring (e.g. a glob pattern in prose like
+  // "furniture-authored/*.json"), which would otherwise make the block-
+  // comment stripper non-greedily swallow everything up to some unrelated
+  // later "*/" — silently blanking out a huge, unrelated span of real code.
+  return src.split('\n').map(line => {
+    const commentAt = line.search(/(?<!:)\/\//);
+    return commentAt >= 0 ? line.slice(0, commentAt) : line;
+  }).join('\n');
+}
+
 function stripBlockComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, block => block.replace(/[^\n]/g, ' '));
 }
@@ -94,14 +106,11 @@ function stripBlockComments(src) {
 const RAF_CALL_RE = /requestAnimationFrame\s*(?:\?\.)?\s*\(/; // Matches both a direct call and the `requestAnimationFrame?.(` optional-chaining form used by a few modules guarding against a missing global.
 
 function findRafLines(absPath) {
-  const src = stripBlockComments(fs.readFileSync(absPath, 'utf8'));
+  const src = stripBlockComments(stripLineComments(fs.readFileSync(absPath, 'utf8')));
   const lines = src.split('\n');
   const hits = [];
   lines.forEach((line, index) => {
-    let codePart = line;
-    const commentAt = line.search(/(?<!:)\/\//);
-    if (commentAt >= 0) codePart = line.slice(0, commentAt);
-    if (RAF_CALL_RE.test(codePart)) hits.push(index + 1);
+    if (RAF_CALL_RE.test(line)) hits.push(index + 1);
   });
   return hits;
 }
@@ -144,6 +153,7 @@ function auditOwnership() {
     manifestByFile.get(abs).push(entry);
   }
 
+  const LINE_DRIFT_TOLERANCE = 10; // Entries record a line for human/LLM orientation, not exact tracking; unrelated edits above it legitimately shift it a little.
   for (const [abs, entries] of manifestByFile) {
     if (!fs.existsSync(abs)) {
       problems.push(`manifest references a file that no longer exists: ${entries[0].file}`);
@@ -152,6 +162,19 @@ function auditOwnership() {
     const rafLines = findRafLines(abs);
     if (!rafLines.length) {
       problems.push(`manifest classifies ${entries[0].file} but it no longer contains a direct requestAnimationFrame( call — stale entry`);
+      continue;
+    }
+    // A file can have several entries (e.g. docs/game.js), so a file-level
+    // "it still has *a* RAF somewhere" check alone can't catch one specific
+    // entry going stale (its own RAF removed) while sibling entries in the
+    // same file keep the file-level check passing. Require each entry with
+    // a recorded line to still have a genuine RAF reasonably close to it.
+    for (const entry of entries) {
+      if (typeof entry.line !== 'number') continue;
+      const hasNearbyRaf = rafLines.some(line => Math.abs(line - entry.line) <= LINE_DRIFT_TOLERANCE);
+      if (!hasNearbyRaf) {
+        problems.push(`manifest entry for ${entry.file} function "${entry.function}" (recorded near line ${entry.line}) no longer has a requestAnimationFrame( call within ${LINE_DRIFT_TOLERANCE} lines — stale entry`);
+      }
     }
   }
 
@@ -210,9 +233,18 @@ if (require.main === module) {
   }
   assert(result.summary.reachableFileCount > 50, 'shipped dependency crawl should reach the great majority of docs/js (sanity floor against a broken crawl)');
   assert(result.summary.classifiedRafOwners > 0, 'the manifest should not be empty while the game still has scheduler/game-loop RAF work');
+  // Since Stage 4, gameLoop no longer owns a direct requestAnimationFrame(
+  // call at all — it is registered as RuntimeFrameScheduler's one frame
+  // driver instead (see docs/architecture/runtime-frame-scheduler.md), so
+  // there is deliberately no 'game-loop'-classified manifest entry to find.
+  const gameJsSource = fs.readFileSync(path.join(REPO_ROOT, 'docs', 'game.js'), 'utf8');
   assert(
-    result.manifest.some(entry => entry.file === 'docs/game.js' && entry.classification === 'game-loop'),
-    'gameLoop\'s own self-scheduling RAF must be classified as the game-loop owner',
+    gameJsSource.includes('RuntimeFrameScheduler.setFrameDriver(frameContext => gameLoop('),
+    'gameLoop must be registered as the scheduler\'s one frame driver instead of self-scheduling',
+  );
+  assert(
+    !gameJsSource.includes('requestAnimationFrame(gameLoop)'),
+    'gameLoop must not have any lingering self-scheduling requestAnimationFrame(gameLoop) call site',
   );
   assert.equal(
     result.summary.temporaryOrderExceptions.length,
