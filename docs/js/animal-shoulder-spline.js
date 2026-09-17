@@ -113,7 +113,9 @@
   function sampleShoulderInfluence(map, u, topV, restLike) {
     const authoredAspect = finite(restLike?.separatorAspect, 0);
     const aspect = authoredAspect > 0 ? authoredAspect : (map?.width && map?.height ? map.width / map.height : undefined);
-    if (!map) return shoulderDefaultInfluence(u, topV, restLike, aspect);
+    const owned = shoulderDefaultInfluence(u, topV, restLike, aspect);
+    if (owned <= 0) return 0;
+    if (!map) return owned;
     const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
     const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
     const x0 = Math.floor(fx), y0 = Math.floor(fy);
