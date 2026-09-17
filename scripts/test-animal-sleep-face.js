@@ -99,6 +99,14 @@ const PNGPlaneAvatar = {
 const farmAnimals = new Set();
 const FarmAnimals = { init() {} };
 const Combat = { init() {} };
+const schedulerEntries = new Map(); // Stores the shared-frame callbacks so this regression advances the same pre-render/post-game lifecycle as production.
+const RuntimeFrameScheduler = {
+  register(id, callback, options = {}) {
+    schedulerEntries.set(id, { callback, options });
+    return () => schedulerEntries.delete(id);
+  },
+  unregister(id) { return schedulerEntries.delete(id); },
+};
 const outdoorAnimal = {
   livestockId: 'outdoor-1',
   animalKey: 'drenkirra',
@@ -120,6 +128,7 @@ const windowStub = {
   CreatureGeneticsRender,
   FarmAnimals,
   Combat,
+  RuntimeFrameScheduler,
   BARN_INCUBATOR_CONFIG: { visuals: { sleepScaleY: 0.75 } },
   CREATURE_DB: { drenkirra: { sprites: { idle: 'drenkirra_idle.png', run: ['drenkirra_run1.png', 'drenkirra_run2.png'] } } },
   OutdoorLivestockWelfare: { constants: { OUTDOOR_AWAKE_MIN_SCALE_Y: 0.8 } },
@@ -159,9 +168,17 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets ne
   assert.equal(firstStatic.blinkShut, true, 'static sleeper forces the closed-eye/blink overlay even when caller asks for awake eyes');
   assert.equal(barnGroup.userData.animalSleepBlinkOverlay, 'assets/creaturesprites/drenkirra_blink.png', 'static sleeper records the configured blink overlay');
 
+  const prepareEntry = schedulerEntries.get('animal-sleep-presentation-pre-render');
+  const restoreEntry = schedulerEntries.get('animal-sleep-presentation-restore');
+  assert.equal(prepareEntry?.options?.phase, 'pre-render', 'sleep face presentation prepares through the shared pre-render phase');
+  assert.equal(restoreEntry?.options?.phase, 'post-game', 'sleep face presentation restores through the shared post-game phase');
+
   const renderer = new windowStub.THREE.WebGLRenderer();
+  prepareEntry.callback({ frameId: 1, timestamp: 16, deltaMs: 16 });
   renderer.render();
+  restoreEntry.callback({ frameId: 1, timestamp: 16, deltaMs: 16 });
   await nextTurn();
+  prepareEntry.callback({ frameId: 2, timestamp: 32, deltaMs: 16 });
   renderer.render();
 
   const visible = renderSnapshots.at(-1);
@@ -177,9 +194,13 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets ne
   assert(outdoorComposes.length > 0, 'outdoor sleeper requested a sleep composite');
   assert(outdoorComposes.every(call => call.blinkShut === true), 'no awake-eye composite is requested for the sleeping outdoor animal');
 
-  // Simulate the normal farm update trying to turn the body toward a newly moved player between renders.
+  restoreEntry.callback({ frameId: 2, timestamp: 32, deltaMs: 16 });
+
+  // Simulate the next normal farm update trying to turn the body toward a newly moved player.
+  // The following pre-render phase must re-lock it before any gameplay render pass.
   outdoorAnimal.groupRot = 2.75;
   outdoorGroup.rotation.y = 2.75;
+  prepareEntry.callback({ frameId: 3, timestamp: 48, deltaMs: 16 });
   renderer.render();
   const retracked = renderSnapshots.at(-1);
   assert.equal(retracked.outdoorBodyYaw, 0.35, 'continued sleep rejects later player-facing body rotation attempts');
@@ -192,15 +213,19 @@ const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets ne
   assert(debug.headDownApplications >= 2, 'diagnostics count applied sleeping head overrides');
   assert(debug.bodyFacingLocks >= 2, 'diagnostics count sleeping body-facing corrections');
 
+  restoreEntry.callback({ frameId: 3, timestamp: 48, deltaMs: 16 });
+
   outdoorAnimal._outdoorSleepBlend = 0;
-  outdoorAvatar.headAngle = -9; // Simulates normal awake head tracking resuming before the next render.
+  outdoorAvatar.headAngle = -9; // Simulates normal awake head tracking resuming before the next frame's pre-render checkpoint.
   outdoorAnimal.groupRot = -0.8;
   outdoorGroup.rotation.y = -0.8;
+  prepareEntry.callback({ frameId: 4, timestamp: 64, deltaMs: 16 });
   renderer.render();
   const awake = renderSnapshots.at(-1);
   assert.equal(awake.outdoorHead, -9, 'waking releases the central head override back to ordinary tracking');
   assert.equal(awake.outdoorBodyYaw, -0.8, 'waking releases the body-facing lock back to ordinary farm-animal rotation');
   assert.equal(awake.outdoorGroupRot, -0.8, 'waking leaves the logical body rotation untouched');
+  restoreEntry.callback({ frameId: 4, timestamp: 64, deltaMs: 16 });
   console.log('animal sleep closed-eye/head-down/body-facing regression tests passed');
 })().catch(error => {
   console.error(error);
