@@ -7,15 +7,19 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const runtimePath = path.join(root, 'docs/js/animal-shoulder-rest.js');
 const authorPath = path.join(root, 'docs/tools/animal-head-rig/author-part6.js');
+const authorEventsPath = path.join(root, 'docs/tools/animal-head-rig/author-part5.js');
 const authorRefreshPath = path.join(root, 'docs/tools/animal-head-rig/author-part7.js');
 const shellPath = path.join(root, 'docs/tools/animal-head-rig/index.html');
 const bridgePath = path.join(root, 'docs/js/player-body-attachment-bridge.js');
+const geneticsRenderPath = path.join(root, 'docs/js/creature-genetics-render.js');
 const correctionPath = path.join(root, 'docs/js/grehlr-head-rig-correction.js');
 const runtimeSource = fs.readFileSync(runtimePath, 'utf8');
 const authorSource = fs.readFileSync(authorPath, 'utf8');
+const authorEventsSource = fs.readFileSync(authorEventsPath, 'utf8');
 const authorRefreshSource = fs.readFileSync(authorRefreshPath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
 const bridgeSource = fs.readFileSync(bridgePath, 'utf8');
+const geneticsRenderSource = fs.readFileSync(geneticsRenderPath, 'utf8');
 const correctionSource = fs.readFileSync(correctionPath, 'utf8');
 
 global.window = global;
@@ -106,12 +110,20 @@ assert(authorSource.includes("shoulderHandleDrag==='a'||shoulderHandleDrag==='b'
   'A and B remain directly draggable');
 assert(authorSource.includes('bodyWeight=1-clamp(headInfluence,0,1)'),
   'author preview retains the same Head-vs-body competition');
-assert(authorRefreshSource.includes('applyRecordThenRefreshShoulderFrame'),
-  'record changes refresh run1 only after the new species becomes current');
+assert(authorRefreshSource.includes('fitCanvasInsideHost') && authorRefreshSource.includes('canvas.style.width') && authorRefreshSource.includes('canvas.style.height'),
+  'both right-panel canvases are contained at the loaded sprite aspect instead of being stretched/cropped by shallow grid rows');
+assert(authorEventsSource.includes('Preview rig write did not round-trip from browser storage.'),
+  'Save rig for game preview verifies its localStorage write before reporting success');
+assert(authorEventsSource.includes('const stored=readPreviewRigs()?.[record.id]'),
+  'preview save reads the exact species rig back after writing it');
+assert(geneticsRenderSource.includes('return preview[kind] || preview[baseKind] || ANIMAL_HEAD_RIGS[baseKind] || null'),
+  'game avatar resolution prefers browser-saved painter rigs over committed species rigs');
+assert(bridgeSource.includes("companion.stableRole === 'shoulderPet'"),
+  'shoulder presentation is gated by the actual shoulder-pet stable role');
+assert(bridgeSource.includes('setShoulderRestEnabled?.(isShoulderPet)'), 'spline geometry remains shoulder-role-only');
 assert(bridgeSource.includes("renderer.composeFrame(kind, 'idle'") && bridgeSource.includes("renderer.composeFrame(kind, 'run1'"),
   'runtime frame hybrid keeps genotype-composited idle/run1 sources');
 assert(bridgeSource.includes('Number.isFinite(authoredSplit)'), '0% and 100% seam positions remain valid');
-assert(bridgeSource.includes('setShoulderRestEnabled?.(isShoulderPet)'), 'spline geometry remains shoulder-role-only');
 assert(correctionSource.includes('HobunjiGrehlrHeadRigCorrection'), 'Grehlr correction remains a late debug-visible layer');
 
 console.log('animal-shoulder-rest: all tests passed');
