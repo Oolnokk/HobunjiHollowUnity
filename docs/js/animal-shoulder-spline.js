@@ -111,7 +111,8 @@
   }
 
   function sampleShoulderInfluence(map, u, topV, restLike) {
-    const aspect = map?.width && map?.height ? map.width / map.height : undefined;
+    const authoredAspect = finite(restLike?.separatorAspect, 0);
+    const aspect = authoredAspect > 0 ? authoredAspect : (map?.width && map?.height ? map.width / map.height : undefined);
     if (!map) return shoulderDefaultInfluence(u, topV, restLike, aspect);
     const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
     const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
@@ -270,8 +271,23 @@
     const p = { x: finite(point?.x, 0), y: finite(point?.y, 0) };
     const start = splinePoint(beforePoints, 0), end = splinePoint(beforePoints, 1);
     const startTangent = splineTangent(beforePoints, 0), endTangent = splineTangent(beforePoints, 1);
-    if (dot(p.x - start.x, p.y - start.y, startTangent.x, startTangent.y) < 0) return null;
-    if (dot(p.x - end.x, p.y - end.y, endTangent.x, endTangent.y) > 0) return null;
+    const startNormal = { x: -startTangent.y, y: startTangent.x }, endNormal = { x: -endTangent.y, y: endTangent.x };
+    const startAlong = dot(p.x - start.x, p.y - start.y, startTangent.x, startTangent.y);
+    if (startAlong < 0) {
+      return {
+        t: 0, center: start, tangent: startTangent, normal: startNormal,
+        alongOffset: startAlong,
+        signedOffset: dot(p.x - start.x, p.y - start.y, startNormal.x, startNormal.y),
+      };
+    }
+    const endAlong = dot(p.x - end.x, p.y - end.y, endTangent.x, endTangent.y);
+    if (endAlong > 0) {
+      return {
+        t: 1, center: end, tangent: endTangent, normal: endNormal,
+        alongOffset: endAlong,
+        signedOffset: dot(p.x - end.x, p.y - end.y, endNormal.x, endNormal.y),
+      };
+    }
     const samples = 96;
     let bestT = 0, bestD = Infinity;
     for (let i = 0; i <= samples; i++) {
@@ -285,7 +301,16 @@
       if (d1 <= d2) hi = t2; else lo = t1;
     }
     const t = (lo + hi) / 2, center = splinePoint(beforePoints, t), tangent = splineTangent(beforePoints, t), normal = { x: -tangent.y, y: tangent.x };
-    return { t, center, tangent, normal, signedOffset: dot(p.x - center.x, p.y - center.y, normal.x, normal.y) };
+    return { t, center, tangent, normal, alongOffset: 0, signedOffset: dot(p.x - center.x, p.y - center.y, normal.x, normal.y) };
+  }
+
+  function pointAtBind(points, bind) {
+    const center = splinePoint(points, bind.t), tangent = splineTangent(points, bind.t), normal = { x: -tangent.y, y: tangent.x };
+    const along = finite(bind.alongOffset, 0), signedOffset = finite(bind.signedOffset, 0);
+    return {
+      x: center.x + tangent.x * along + normal.x * signedOffset,
+      y: center.y + tangent.y * along + normal.y * signedOffset,
+    };
   }
 
   function pointAtOffset(points, t, signedOffset) {
@@ -312,7 +337,7 @@
     if (!rest || rest.beforePoints?.length !== POINT_COUNT || rest.afterPoints?.length !== POINT_COUNT) return { source, target: source, bind: null, kind: 'neutral', rest };
     const bind = bindFrameForPoint(rest.beforePoints, source);
     if (!bind) return { source, target: source, bind: null, kind: 'neutral', rest };
-    const target = pointAtOffset(rest.afterPoints, bind.t, bind.signedOffset);
+    const target = pointAtBind(rest.afterPoints, bind);
     return { source, target, bind, kind: shoulderResponseKind(rest, bind), rest };
   }
   function deformNormalizedPoint(point, restLike) { return deformationDetails(point, restLike).target; }
