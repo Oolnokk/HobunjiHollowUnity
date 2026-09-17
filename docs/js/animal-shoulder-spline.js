@@ -464,10 +464,17 @@
 
   function decorateAvatar(THREE, avatarRef, rawRig) {
     const rest = normalizeRest(rawRig);
-    if (!rest || !avatarRef?.headRig || avatarRef.shoulderRest?.version === 9) return avatarRef;
+    if (!rest || !avatarRef?.headRig || Number(avatarRef.shoulderRest?.version) >= 10) return avatarRef;
     const normalizedRig = window.AnimalHeadRigRuntime?.normalizeRig?.(rawRig) || null;
     if (!normalizedRig) return avatarRef;
     const rigState = avatarRef.headRig, frontMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.frontHeadBone) : null, backMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.backHeadBone) : null;
+    // Runtime mesh proportions are authoritative for sprite-plane geometry.
+    // This repairs older authored shoulder records that predate separatorAspect
+    // and normalized to the legacy square-space fallback of 1.
+    if (frontMesh?.geometry) {
+      const runtimeDimensions = dimensionsForGeometry(frontMesh.geometry);
+      if (runtimeDimensions.width > 0 && runtimeDimensions.height > 0) rest.separatorAspect = runtimeDimensions.width / runtimeDimensions.height;
+    }
     const front = rest.useSpline ? buildMeshState(frontMesh, normalizedRig, rest, false) : null, back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null;
     const frontOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, frontMesh, 'split_left_front') : null, backOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, backMesh, 'split_left_back') : null;
     const debug = { version: 10, authored: true, enabled: false, useSpline: rest.useSpline, useRun1: rest.useRun1, splitFrame: rest.splitFrame, splitRightUsesIdle: rest.splitRightUsesIdle, frameShiftX: rest.frameShiftX, separatorRotationDeg: rest.separatorRotationDeg, separatorAspect: rest.separatorAspect, followFrameShiftX: rest.followFrameShiftX, beforePoints: rest.beforePoints, afterPoints: rest.afterPoints, shoulderMaps: { influence: !!rest._shoulderMaps?.influence, compressibility: !!rest._shoulderMaps?.compressibility, stretchability: !!rest._shoulderMaps?.stretchability }, migratedFromLegacy: rest.migratedFromLegacy, fullRectangularStrip: true, layeredSplitFrame: !!(frontOverlay && backOverlay), frontVertices: front?.position?.count || 0, backVertices: back?.position?.count || 0 };
