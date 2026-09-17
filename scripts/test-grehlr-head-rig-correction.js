@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync('docs/js/grehlr-head-rig-correction.js', 'utf8');
+const correctionSource = fs.readFileSync('docs/js/grehlr-head-rig-correction.js', 'utf8');
+const splineSource = fs.readFileSync('docs/js/animal-shoulder-spline.js', 'utf8');
 const sharedRig = { legacy: true };
 const context = {
   window: {
@@ -14,9 +15,11 @@ const context = {
   console,
   Math,
   JSON,
+  Float32Array,
 };
 vm.createContext(context);
-vm.runInContext(source, context, { filename: 'grehlr-head-rig-correction.js' });
+vm.runInContext(correctionSource, context, { filename: 'grehlr-head-rig-correction.js' });
+vm.runInContext(splineSource, context, { filename: 'animal-shoulder-spline.js' });
 
 const api = context.window.HobunjiGrehlrHeadRigCorrection;
 assert(api, 'Grehlr correction module should expose a debug-visible API');
@@ -29,27 +32,31 @@ assert.equal(sharedRig.pivot.y, 0.4662322932868983);
 
 const rest = sharedRig.shoulderRest;
 assert(rest?.enabled, 'Grehlr carries the authored shoulder presentation');
-assert.equal(rest.useSpline, true, 'Grehlr uses the seven-point body spline');
-assert.equal(rest.useRun1, false, 'Grehlr does not use full run1');
-assert.equal(rest.splitFrame, true, 'Grehlr uses split overlap layers');
-assert.equal(rest.splitRightUsesIdle, true, 'Grehlr currently uses idle art on both split halves');
-assert.equal(rest.frameShiftX, 0.52, 'Grehlr seam stays at the authored 52%');
-assert.equal(rest.followFrameShiftX, true, 'Grehlr spline follows seam X by default');
-assert.deepEqual(JSON.parse(JSON.stringify(rest.restGuide)), {
-  a: { x: 0.5423902927484727, y: 0.5694472546137244 },
-  b: { x: 0.9999996666666666, y: 0.572691993389205 },
+assert.equal(rest.useSpline, true);
+assert.equal(rest.useRun1, false);
+assert.equal(rest.splitFrame, true);
+assert.equal(rest.splitRightUsesIdle, true);
+assert.equal(rest.frameShiftX, 0.52);
+assert.equal(rest.followFrameShiftX, true);
+
+// The committed Grehlr payload is still allowed to be v6-shaped; the new v7
+// runtime must convert it losslessly into explicit BEFORE/AFTER authoring lines.
+const normalizedRest = context.window.AnimalShoulderSpline.normalizeRest({ shoulderRest: rest });
+assert.equal(normalizedRest.beforePoints.length, 7);
+assert.equal(normalizedRest.afterPoints.length, 7);
+assert.equal(normalizedRest.migratedFromLegacy, true);
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.beforePoints[0])), {
+  x: 0.5423902927484727,
+  y: 0.5694472546137244,
 });
-assert.equal(rest.splinePoints?.length, 7, 'Grehlr shoulder pose is stored as exactly seven directly editable points');
-assert.deepEqual(JSON.parse(JSON.stringify(rest.splinePoints[0])), rest.restGuide.a,
-  'point 1 begins at source-guide A');
-assert.deepEqual(JSON.parse(JSON.stringify(rest.splinePoints[6])), {
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.afterPoints[0])), {
+  x: 0.5423902927484727,
+  y: 0.5694472546137244,
+});
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.afterPoints[6])), {
   x: 0.6304422111109205,
   y: 1.0185111823033606,
-}, 'point 7 preserves the migrated hanging-tail pose');
-for (const obsolete of ['guide','bend','fullRotationDeg','interVertexRotationDeg','weightFalloff','curveFalloff','guideFrameShiftX']) {
-  assert.equal(Object.prototype.hasOwnProperty.call(rest, obsolete), false,
-    `new Grehlr export should not serialize retired shoulder field ${obsolete}`);
-}
+});
 
 function decodedCellCount(map) {
   assert.equal(map?.width, 128);
@@ -72,4 +79,4 @@ assert.equal(decodedCellCount(sharedRig.weightMap), expectedCells, 'Influence ma
 assert.equal(decodedCellCount(sharedRig.compressibilityMap), expectedCells, 'Compressibility map decodes to the full authored grid');
 assert.equal(decodedCellCount(sharedRig.stretchabilityMap), expectedCells, 'Stretchability map decodes to the full authored grid');
 
-console.log('grehlr-head-rig-correction: seven-point rig integrity passed');
+console.log('grehlr-head-rig-correction: v7 BEFORE/AFTER migration integrity passed');
