@@ -27,6 +27,10 @@
     return window.AnimalGrowth || null;
   }
 
+  function petRapport() {
+    return window.StableAnimalTownFamiliarity || null;
+  }
+
   function stableMaxLevel() {
     const value = Number(progression()?.maxLevel ?? refinements()?.maxLevel);
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 10;
@@ -104,6 +108,7 @@
 
   function normalizeStableEntry(entry) {
     progression()?.normalizeEntry?.(entry);
+    petRapport()?.normalizeEntry?.(entry); // Pet Rapport lives on the same stable entry and is normalized before either UI/debug reads it.
     refinements()?.ensureStableCaps?.();
     const max = stableMaxLevel();
     entry.level = Math.max(0, Math.min(max, Math.floor(Number(entry.level) || 0)));
@@ -131,6 +136,58 @@
     element.textContent = text;
     if (css) element.style.cssText = css;
     return element;
+  }
+
+  function formatPetRapport(value) {
+    const rounded = Math.round((Number(value) || 0) * 100) / 100; // Compact point text keeps fractional multiplier credit legible without floating tails.
+    return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, '').replace(/\.$/, '');
+  }
+
+  function petRapportHeartsHtml(entry) {
+    const api = petRapport();
+    const maxHearts = Math.max(1, Math.floor(Number(api?.maxPetRapportHearts) || 10)); // Pet Rapport is a positive 0..10-heart track, unlike NPCs' negative-to-positive relationship row.
+    const heartProgress = Math.max(0, Math.min(maxHearts, Number(api?.getPetHearts?.(entry)) || 0));
+    const completed = Math.floor(heartProgress);
+    const fraction = heartProgress - completed;
+    const hearts = [];
+    for (let index = 0; index < maxHearts; index++) {
+      if (index < completed) {
+        hearts.push('💛');
+      } else if (index === completed && fraction > 0.0001) {
+        const width = Math.round(fraction * 1000) / 10; // Same clipped-heart percentage convention used by the Relationships Favor renderer.
+        hearts.push(`<span class="stable-pet-rapport-partial-heart" style="position:relative;display:inline-block;width:1.05em;overflow:hidden;vertical-align:-.08em"><span aria-hidden="true">🤍</span><span aria-hidden="true" style="position:absolute;left:0;top:0;width:${width}%;overflow:hidden;white-space:nowrap">💛</span></span>`);
+      } else if (index === completed && completed < maxHearts) {
+        hearts.push('🩶');
+      } else {
+        hearts.push('🤍');
+      }
+    }
+    return hearts.join('');
+  }
+
+  function buildPetRapportSection(entry) {
+    const api = petRapport();
+    if (!api?.getPetRapport || !api?.getPetHearts) return null;
+    const points = Number(api.getPetRapport(entry)) || 0;
+    const hearts = Number(api.getPetHearts(entry)) || 0;
+    const maxHearts = Math.max(1, Math.floor(Number(api.maxPetRapportHearts) || 10));
+    const maxPoints = Number(api.maxPetRapportPoints?.()) || maxHearts * (Number(api.pointsPerHeart?.()) || 40);
+    const section = document.createElement('div');
+    section.className = 'stable-pet-rapport';
+    section.style.cssText = 'display:flex;flex-direction:column;gap:3px;padding:6px 8px;border-radius:7px;background:rgba(255,214,74,.07);border:1px solid rgba(255,214,74,.18);';
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:11px;';
+    header.appendChild(makeText('strong', 'Pet Rapport'));
+    header.appendChild(makeText('span', `${formatPetRapport(points)}/${formatPetRapport(maxPoints)}`, 'opacity:.72;font-size:10px;'));
+    section.appendChild(header);
+    const heartRow = document.createElement('div');
+    heartRow.className = 'stable-pet-rapport-hearts';
+    heartRow.style.cssText = 'font-size:16px;line-height:1.15;letter-spacing:1px;white-space:nowrap;overflow:hidden;';
+    heartRow.innerHTML = petRapportHeartsHtml(entry);
+    heartRow.setAttribute('role', 'img');
+    heartRow.setAttribute('aria-label', `Pet Rapport ${formatPetRapport(hearts)} of ${maxHearts} hearts`);
+    section.appendChild(heartRow);
+    return section;
   }
 
   function makePerkButton(entry, def) {
@@ -164,6 +221,7 @@
 
   function stableDebugEntry(entry) {
     const role = stableRole(entry);
+    const rapportApi = petRapport();
     return {
       id: entry.id,
       name: entry.name,
@@ -173,6 +231,9 @@
       level: entry.level,
       maxLevel: stableMaxLevel(),
       xp: entry.stableXp || 0,
+      petRapport: rapportApi?.getPetRapport?.(entry) ?? null,
+      petRapportHearts: rapportApi?.getPetHearts?.(entry) ?? null,
+      knownByTown: rapportApi?.isKnownByTown?.(entry) ?? null,
       availablePoints: availablePoints(entry),
       perks: { ...(entry.animalPerks || {}) },
       perkIds: perkDefsForEntry(entry).map(def => def.id),
@@ -225,6 +286,9 @@
       const nextXp = entry.level >= max ? 0 : Number(api.xpToNext?.(entry.level)) || 0;
       const xpText = entry.level >= max ? 'MAX LEVEL' : `${entry.stableXp || 0}/${nextXp} XP`;
       panel.appendChild(makeText('div', `Level ${entry.level}/${max} · ${xpText} · ${points} training point${points === 1 ? '' : 's'} available`, 'font-size:11px;font-weight:700;'));
+
+      const rapportSection = buildPetRapportSection(entry); // Relationship display belongs above all trainable perks so it reads as state, not as another perk.
+      if (rapportSection) panel.appendChild(rapportSection);
 
       const defs = perkDefsForEntry(entry);
       const genericDefs = defs.filter(def => !String(def.id).startsWith('species_'));
@@ -353,6 +417,7 @@
       stableDeps = injectedDeps;
       const result = originalInit?.(injectedDeps);
       progression()?.install?.();
+      petRapport()?.install?.();
       refinements()?.install?.();
       refinements()?.ensureStableCaps?.();
       growth()?.normalizeStableLifeStages?.();
@@ -362,7 +427,7 @@
     panel.stableTrainingDebug = () => {
       const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
       return {
-        mostRecentChange: 'Native Stable rendering now preserves Baby and Adult sections and delegates maturation to AnimalGrowth.',
+        mostRecentChange: 'Native Stable rendering now shows Pet Rapport above perks with relationship-style gradual yellow heart fill.',
         expandedStableId,
         maxLevel: stableMaxLevel(),
         babyCount: stable.filter(stableIsBaby).length,
