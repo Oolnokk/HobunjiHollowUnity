@@ -90,15 +90,6 @@
     "line": 829
   },
   {
-    "file": "docs/js/amphibious-fish-corpse-cleanup.js",
-    "owner": "AmphibiousFishCorpseCleanup",
-    "classification": "timer-event",
-    "function": "presentationLoop",
-    "reason": "Unthrottled forever RAF loop (started at line 262) whose only work is polling the fishing-prewarm state and the hostile-creature list for a newly spawned amphibious fish that still needs its land presentation applied once; this only needs to catch an infrequent state change, not per-frame precision.",
-    "migrationStage": "candidate",
-    "line": 207
-  },
-  {
     "file": "docs/js/arch-button-labels.js",
     "owner": "ArchButtonLabels",
     "classification": "one-shot",

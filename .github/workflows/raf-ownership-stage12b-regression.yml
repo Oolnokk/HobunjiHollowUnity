@@ -1,0 +1,30 @@
+name: RAF ownership Stage 12b regression (amphibious fish corpse cleanup)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/amphibious-fish-corpse-cleanup.js'
+      - 'scripts/test-amphibious-fish-corpse-cleanup-timer.js'
+      - '.github/workflows/raf-ownership-stage12b-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/amphibious-fish-corpse-cleanup.js'
+      - 'scripts/test-amphibious-fish-corpse-cleanup-timer.js'
+      - '.github/workflows/raf-ownership-stage12b-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/amphibious-fish-corpse-cleanup.js
+      - name: Amphibious fish corpse cleanup timer conversion
+        run: node scripts/test-amphibious-fish-corpse-cleanup-timer.js
