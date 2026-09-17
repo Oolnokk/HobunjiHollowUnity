@@ -34,9 +34,9 @@
       lateLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles');
     }
   }
-  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 8) {
-    if (!parserLoad('js/animal-shoulder-spline.js?v=20260917spline8', 'animal-shoulder-spline')) {
-      lateLoad('js/animal-shoulder-spline.js?v=20260917spline8', 'animal-shoulder-spline');
+  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 9) {
+    if (!parserLoad('js/animal-shoulder-spline.js?v=20260917spline9', 'animal-shoulder-spline')) {
+      lateLoad('js/animal-shoulder-spline.js?v=20260917spline9', 'animal-shoulder-spline');
     }
   }
   if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 2) {
@@ -78,12 +78,12 @@
   }
 
   function genotypeKindFor(companion, combatDeps) {
-    return combatDeps?.genotypeKindFor?.(companion) || companion?.creatureKey || companion?.kind || null; // Stable key shared by genetics, head-rig lookup, and shoulder profiles.
+    return combatDeps?.genotypeKindFor?.(companion) || companion?.creatureKey || companion?.kind || null;
   }
 
   function authoredShoulderRestFor(companion, combatDeps) {
     const kind = genotypeKindFor(companion, combatDeps);
-    const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null; // Preview-aware resolver when the author saved a browser test rig.
+    const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null;
     return rawRig?.shoulderRest || null;
   }
 
@@ -95,7 +95,7 @@
 
   function splineAllowedFor(companion, combatDeps) {
     const kind = genotypeKindFor(companion, combatDeps);
-    return !!window.HobunjiShoulderSplineProfiles?.allows?.(kind); // Single allowlist source; currently exactly five species.
+    return !!window.HobunjiShoulderSplineProfiles?.allows?.(kind);
   }
 
   function shoulderRun1Frame(companion, combatDeps) {
@@ -118,12 +118,26 @@
   function loadFrameImage(url) {
     return new Promise((resolve, reject) => {
       if (!url) return reject(new Error('missing frame URL'));
-      const image = new Image(); // Raw fallback only when genotype composition is unavailable.
+      const image = new Image();
       image.decoding = 'async';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error(`could not load ${url}`));
       image.src = url;
     });
+  }
+
+  function drawSplitSide(ctx, image, width, height, rest, keepRight) {
+    const polygon = window.AnimalShoulderSpline?.separatorPolygon?.(width, height, rest, keepRight);
+    if (!polygon?.length) return false;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(polygon[0].x, polygon[0].y);
+    for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(image, 0, 0, width, height);
+    ctx.restore();
+    return true;
   }
 
   async function splitFrameLayers(companion, combatDeps, rest) {
@@ -136,9 +150,7 @@
     if (kind && typeof renderer?.composeFrame === 'function') {
       try {
         idleSource = await renderer.composeFrame(kind, 'idle', companion.genotype, false);
-        rightSource = rightUsesIdle
-          ? idleSource
-          : await renderer.composeFrame(kind, 'run1', companion.genotype, false);
+        rightSource = rightUsesIdle ? idleSource : await renderer.composeFrame(kind, 'run1', companion.genotype, false);
       } catch (_) {
         idleSource = null;
         rightSource = null;
@@ -159,20 +171,25 @@
 
     const width = Number(idleSource.width || idleSource.naturalWidth) || Number(rightSource.width || rightSource.naturalWidth) || 1;
     const height = Number(idleSource.height || idleSource.naturalHeight) || Number(rightSource.height || rightSource.naturalHeight) || 1;
-    const leftCanvas = document.createElement('canvas'); // Undeformed/foreground half.
-    const rightCanvas = document.createElement('canvas'); // Spline-deformed/background half.
+    const leftCanvas = document.createElement('canvas');
+    const rightCanvas = document.createElement('canvas');
     leftCanvas.width = rightCanvas.width = width;
     leftCanvas.height = rightCanvas.height = height;
     const leftCtx = leftCanvas.getContext('2d');
     const rightCtx = rightCanvas.getContext('2d');
-    const authoredSplit = Number(rest?.frameShiftX);
-    const split = Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5;
-    const cut = Math.round(width * split);
     leftCtx.clearRect(0, 0, width, height);
     rightCtx.clearRect(0, 0, width, height);
-    if (cut > 0) leftCtx.drawImage(idleSource, 0, 0, cut, height, 0, 0, cut, height);
-    if (cut < width) rightCtx.drawImage(rightSource, cut, 0, width - cut, height, cut, 0, width - cut, height);
-    return { leftCanvas, rightCanvas, cut, width, height, rightUsesIdle };
+    drawSplitSide(leftCtx, idleSource, width, height, rest, false);
+    drawSplitSide(rightCtx, rightSource, width, height, rest, true);
+    return {
+      leftCanvas,
+      rightCanvas,
+      width,
+      height,
+      rightUsesIdle,
+      frameShiftX: Number(rest?.frameShiftX) || 0,
+      separatorRotationDeg: Number(rest?.separatorRotationDeg) || 0,
+    };
   }
 
   function combinedSplitFallbackCanvas(layers) {
@@ -182,8 +199,8 @@
     canvas.height = layers.height;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(layers.rightCanvas, 0, 0); // Deformed/background pixels first.
-    ctx.drawImage(layers.leftCanvas, 0, 0); // Left/gripping pixels explicitly win overlap.
+    ctx.drawImage(layers.rightCanvas, 0, 0);
+    ctx.drawImage(layers.leftCanvas, 0, 0);
     return canvas;
   }
 
@@ -193,7 +210,8 @@
     const right = rightUsesIdle ? idle : (shoulderRun1Frame(companion, combatDeps).url || '');
     const authoredSplit = Number(rest?.frameShiftX);
     const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
-    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}`;
+    const rotation = Math.round((Number(rest?.separatorRotationDeg) || 0) * 10);
+    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}`;
   }
 
   function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
@@ -206,7 +224,7 @@
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
     if (companion.currentFrameUrl !== frameUrl && typeof combatDeps?.setCreatureFrame === 'function') {
-      combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, null, 'idle', null); // Canvas already contains genotype art; avoid recoloring twice.
+      combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, null, 'idle', null);
       companion.currentFrameUrl = frameUrl;
     }
     return true;
@@ -336,6 +354,7 @@
         shoulderSplitForegroundVisible: activeShoulderPets.filter(companion => !!companion?.avatarRef?.shoulderRest?.splitOverlayVisible).length,
         shoulderSplitIdleRight: activeShoulderPets.filter(companion => !!effectiveShoulderRest(companion, window.Combat?.deps)?.splitRightUsesIdle).length,
         shoulderSplineActive: activeShoulderPets.filter(companion => companion?.avatarRef?.shoulderRest?.enabled).length,
+        shoulderDiagonalSeparators: activeShoulderPets.filter(companion => Math.abs(Number(effectiveShoulderRest(companion, window.Combat?.deps)?.separatorRotationDeg) || 0) > 0.001).length,
       };
     },
   };
