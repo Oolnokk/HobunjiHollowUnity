@@ -71,8 +71,11 @@
       const rotationApi = window.PerpRotation;
       const bodyRot = Number(companion.pngRot);
       const bodyState = companion.perpState;
-      const cameraPerps = bodyState?.pixelProbeDebug?.cameraPerpsRad
-        || bodyState?.screenViewPerspectiveDebug?.cameraPerpsRad;
+      const fallbackCameraPerps = bodyState?.pixelProbeDebug?.cameraPerpsRad
+        || bodyState?.screenViewPerspectiveDebug?.cameraPerpsRad; // Previous body-clamp centers remain a safe fallback if the live camera resolver is temporarily unavailable.
+      const cameraPerps = rotationApi?.perspectivePerpsForState && bodyState
+        ? rotationApi.perspectivePerpsForState(bodyState, fallbackCameraPerps || [])
+        : fallbackCameraPerps; // Reuses today's subject-specific screen-view resolver so a perched pet does not depend on stale body-plane probe state.
       if (!rotationApi?.perpClamp
         || !Number.isFinite(bodyRot)
         || !Array.isArray(cameraPerps)
@@ -154,7 +157,7 @@
         hasToolHolder: !!gameDeps?.toolHolder,
         proceduralHands: handDebug,
         activeShoulderPets: activeShoulderPets.length,
-        shoulderPetsOnIdle: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
+        shoulderPetsOnIdle: activeShouldPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
         shoulderHeadDeadzone: primaryShoulderPet?._shoulderHeadDeadzoneDebug || null,
       };
     },
