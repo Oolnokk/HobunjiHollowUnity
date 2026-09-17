@@ -80,6 +80,17 @@ assert.equal(stable[0].animalPerks.rapportBond, 3, 'recognition suppression rest
 
 context.AmbientDialogue.show({}, 'moss listens well. Keep Moss close.', { speakerId: 'friend1', directedAtPlayer: true, faceTarget: { root: companionRoot } });
 assert.equal(renderedLines.at(-1), 'Grehlr listens well. Keep Grehlr close.', 'pre-threshold dialogue hides the player-given name case-insensitively');
+assert.equal(context.StableAnimalTownFamiliarity.dialogueName(stable[0]), 'Grehlr', 'pre-threshold pet-name placeholders resolve to the generic species label');
+const partialHeartMarkup = context.StableAnimalTownFamiliarity.petRapportHeartsHtml({ ...stable[0], petRapport: 12.2 });
+assert.match(partialHeartMarkup, /width:30\.5%/, '12.2 Pet Rapport clips the first yellow heart to 30.5%');
+assert.match(partialHeartMarkup, /#ffd64a/, 'Pet Rapport heart fill uses an explicit yellow CSS color');
+assert.match(partialHeartMarkup, /♥/, 'earned Pet Rapport uses a solid text heart glyph');
+assert.match(partialHeartMarkup, /♡/, 'unearned Pet Rapport uses a hollow text heart glyph');
+assert.doesNotMatch(partialHeartMarkup, /💛|🤍|🩶/, 'Pet Rapport heart rendering does not stack platform emoji glyphs');
+context.AmbientDialogue.show({}, 'Hello, Moss.', { speakerId: 'furunji_funji', directedAtPlayer: true });
+assert.equal(renderedLines.at(-1), 'Hello, Grehlr.', 'named-NPC ambient copy cannot leak the pet name when faceTarget metadata is missing');
+context.AmbientDialogue.show({}, 'Moss grows on the north wall.', { speakerId: 'friend1', directedAtPlayer: false });
+assert.equal(renderedLines.at(-1), 'Moss grows on the north wall.', 'ordinary non-directed chatter is not rewritten just because it matches a pet name');
 
 rapportRemaining = Infinity;
 assert.equal(context.NpcRapport.adjust('friend1', 2, 'gift'), 2.36, 'existing +18% companion NPC Rapport multiplier remains unchanged');
@@ -105,6 +116,9 @@ context.NpcRapport.adjust('friend1', 10, 'pet_greeting:comp1');
 assert.equal(stable[0].petRapport, 400, 'Pet Rapport caps at the ten-heart equivalent');
 assert.equal(context.StableAnimalTownFamiliarity.getPetHearts('comp1'), 10, '400 Pet Rapport derives to ten hearts');
 assert.equal(context.StableAnimalTownFamiliarity.isKnownByTown('comp1'), true, 'ten Pet Rapport hearts is the single town-wide name threshold');
+assert.equal(context.StableAnimalTownFamiliarity.dialogueName(stable[0]), 'Moss', 'max Pet Rapport unlocks the saved pet name for dialogue placeholders');
+const maxHeartMarkup = context.StableAnimalTownFamiliarity.petRapportHeartsHtml(stable[0]);
+assert.equal((maxHeartMarkup.match(/#ffd64a/g) || []).length, 10, 'max Pet Rapport renders ten fully yellow filled hearts');
 
 context.AmbientDialogue.show({}, 'Hello, Moss!', { speakerId: 'friend2', directedAtPlayer: true, faceTarget: { root: companionRoot } });
 assert.equal(renderedLines.at(-1), 'Hello, Moss!', 'a different NPC may use the real name once Pet Rapport reaches ten hearts');
