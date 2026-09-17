@@ -117,6 +117,7 @@ for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter'
   assert(shellSource.includes(`id="${id}"`), `rigger exposes ${id}`);
 }
 assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Pose'));
+assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline8'));
 assert(!shellSource.includes('id="shoulderFullRotation"'));
 assert(!shellSource.includes('id="shoulderInterRotation"'));
 assert(!shellSource.toLowerCase().includes('weight falloff'));
