@@ -119,7 +119,9 @@
     const canvas = document.createElement('canvas'); // One cached PNG result is passed through the existing creature frame swapper.
     canvas.width = width; canvas.height = height;
     const ctx = canvas.getContext('2d');
-    const cut = Math.round(width * Math.max(0, Math.min(1, Number(rest?.frameShiftX) || 0)));
+    const authoredSplit = Number(rest?.frameShiftX); // Zero is a valid left-edge seam, so do not use truthiness for the fallback.
+    const split = Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5;
+    const cut = Math.round(width * split);
     ctx.clearRect(0, 0, width, height);
     if (cut > 0) ctx.drawImage(idleSource, 0, 0, cut, height, 0, 0, cut, height);
     if (cut < width) ctx.drawImage(runSource, cut, 0, width - cut, height, cut, 0, width - cut, height);
@@ -129,7 +131,8 @@
   function splitFrameKey(companion, combatDeps, rest) {
     const idle = shoulderIdleFrame(companion, combatDeps).url || '';
     const run1 = shoulderRun1Frame(companion, combatDeps).url || '';
-    const split = Math.round((Number(rest?.frameShiftX) || 0.5) * 1000);
+    const authoredSplit = Number(rest?.frameShiftX); // Preserves exact 0 and 1 seam positions in the composite cache key.
+    const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
     return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${run1}|${split}`; // Companion-local cache also implicitly keys the stable genotype instance.
   }
 
