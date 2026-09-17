@@ -79,7 +79,7 @@
   }
 
   function relationshipConditionValue(world) {
-    const raw = world?.relationship;
+    const raw = world?.relationship; // Used as the caller-supplied relationship value before any point-to-heart conversion.
     if (raw == null) return null;
     if (world?.relationshipUnit === 'hearts') return Number(raw);
     // Gameplay stores relationship progress as Favor points (40 points per
@@ -87,7 +87,7 @@
     // hearts. Convert only at the shared rule boundary so save/storage units
     // stay point-based and editor previews (which already supply hearts) stay
     // unchanged when NpcFavorBalance is not loaded.
-    const balance = window.NpcFavorBalance;
+    const balance = window.NpcFavorBalance; // Used as the canonical Favor-point/heart conversion surface installed by favor-heart-balance.js.
     if (balance?.storageUnit === 'favor-points' && typeof balance.favorPointsToHearts === 'function') {
       return Number(balance.favorPointsToHearts(raw));
     }
@@ -101,7 +101,7 @@
       if (!(axis in world)) continue;
       if (!axisMatch(c, axis, world[axis])) return false;
     }
-    const relationship = relationshipConditionValue(world);
+    const relationship = relationshipConditionValue(world); // Used by both required and excluded authored relationship-heart bands below.
     const rel = c.relationship;
     if (rel && (rel.min != null || rel.max != null) && relationship != null) {
       if (rel.min != null && relationship < rel.min) return false;
