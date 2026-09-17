@@ -1,28 +1,35 @@
 # Animal Head Rig Painter
 
-Use `index.html` to paint body/head deformation weights directly onto an animal sprite while preserving the rest of the animal record.
+This tool authors the weighted animal head rig used by the runtime PNG-plane creature renderer.
 
-## Workflow
+## Core workflow
 
-1. Load the repo bestiary, another animal JSON file, or start a custom record.
-2. Load the idle sprite.
-3. Select **Head** or **Body** and paint influence with the large-radius brush, or use the color-tolerance fill bucket.
-4. Use **Eraser** to return cells to the unassigned state. Unassigned cells default to Body/head weight 0 at runtime.
-5. Use **Expand Influence** while Head or Body is selected to grow that side into the other and write a soft deformation-weight falloff across the boundary.
-6. Set/refine the neck pivot, min/rest/max rotation, turn speed, and mesh detail.
-7. Enable **Preview deformation** and move the angle slider to inspect the weighted bend.
-8. Save for game preview or copy/download the edited record.
+1. Load the repo bestiary, a compatible animal JSON record, or a custom sprite.
+2. Paint **Influence** between Body and Head. Brush strength controls how strongly each pass moves the current weight toward the selected target.
+3. Set/refine the head pivot and preview the authored pitch range in the always-visible lower canvas.
+4. Use **Compressibility** or **Stretchability** only to reduce one deformation direction below Influence. Their restore tool moves that channel back **Toward Influence**.
+5. Copy/download the animal record or save the rig into browser-local game preview storage.
 
-`headRig.weightMap` is a normalized sprite-space paint grid stored as `rle-u9`: values `0..255` are Body→Head influence and `256` is the author-only unassigned sentinel. The runtime treats unassigned cells as Body (`0`) and bilinearly samples the grid onto the skinned animal plane.
+Influence is the source of truth. Missing compression/stretch overrides inherit it exactly, so older rigs remain visually unchanged.
 
-The brush and Expand radius sliders scale up to the larger source-image dimension, so very broad influence edits are possible. The fill bucket flood-fills connected opaque cells using source-color tolerance.
+## Compression vs stretch
 
-Legacy square rigs (`headRig.region`) still load as a compatibility fallback and are converted into painted Head cells when opened in the author.
+For the current animal pitch convention, a downward head bend stretches the sprite side below the pivot and compresses the side above it; an upward bend reverses those sides. The editor and runtime share that same classification.
 
-## Species-wide inheritance
+## Shoulder-pet rest body spline
 
-Committed rigs are authored once in normalized sprite/UV space for the base species. The same weights therefore remain attached when the material texture changes: idle, both run frames, and every base-color/pattern genotype composite all deform through the same skinned geometry rather than carrying separate copies of the rig.
+**Shoulder-pet rest body bend** is an optional second deformation method intended only for perched shoulder pets. It deliberately stays much simpler than the reference spline PNG rigger:
 
-Size-only variants inherit the base species rig through the same species-alias system used by creature genetics. This includes the Gar-wolf Alpha and current Den-Mother/Nestmother variants; scaling the animal changes the plane size but not its normalized weight coordinates or pivot proportions.
+- one checkbox enables it;
+- one quadratic longitudinal body path is shown on the paint canvas;
+- drag the midpoint diamond (or use the midpoint slider) to shape the resting bend;
+- enabling it previews the animal's `run1` frame when one exists;
+- no extra body paint map is authored.
 
-Browser game previews use the same-origin localStorage key `hobunji_animal_head_rigs_v1`. A saved browser preview overrides the committed species rig for that species until it is cleared, then reload or respawn the animal to rebuild its skinned plane.
+The existing Head Influence map controls the rest weighting automatically. Rest/body influence is exactly `1 - headInfluence`: full Body receives the whole rest bend, a 50/50 Head/Body seam receives half, and full Head receives none. This makes Head Influence fight the shoulder-rest deformation by exactly the same amount it already fights the body bone.
+
+At runtime the body-rest geometry is activated only while that animal is actually serving as the player's shoulder pet. Leaving the shoulder-pet role restores the original undeformed geometry. Authored rest rigs use `run1` while perched when available; shoulder pets without this optional rig retain the existing idle-frame presentation.
+
+## Preview layout
+
+The upper canvas is always undeformed and paintable. The lower canvas is always read-only and deformed. Paint/fill/undo/expand/layer changes update the lower preview live without resetting its current head angle. The shoulder-rest spline follows the same rule.
