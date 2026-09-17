@@ -241,7 +241,7 @@
   const woolBridgeReady = watchCookingSystemAssignment();
 
   window.PuktukDenNestRegistration = {
-    version: 3,
+    version: 2,
     PUKTUK_KIND,
     PUKTUK_BABY_ITEM_KEY,
     HEAVY_WOOL_ITEM_KEY,
