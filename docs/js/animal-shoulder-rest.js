@@ -75,14 +75,53 @@
         -MAX_ROTATION_DEG,
         MAX_ROTATION_DEG,
       ),
+      curveFalloff: clamp(finite(raw.curveFalloff, 0), 0, 1), // 0 = even curvature; 1 = postpone most curl toward guide B.
+    };
+  }
+
+  function centerlineForCurl(t, length, full, inter, curveFalloff) {
+    const clampedT = clamp(finite(t, 0), 0, 1); // Longitudinal fraction along guide A→B.
+    if (clampedT <= 0) return { centerAlong: 0, centerNormal: 0, angle: full };
+    if (Math.abs(inter) < 1e-7) {
+      const s = clampedT * length;
+      return { centerAlong: s * Math.cos(full), centerNormal: s * Math.sin(full), angle: full };
+    }
+
+    const falloff = clamp(finite(curveFalloff, 0), 0, 1);
+    if (falloff <= 1e-7) {
+      const curvature = inter / length; // Exact constant-curvature path retained for legacy rigs/default 0 falloff.
+      const angle = full + inter * clampedT;
+      return {
+        centerAlong: (Math.sin(angle) - Math.sin(full)) / curvature,
+        centerNormal: (-Math.cos(angle) + Math.cos(full)) / curvature,
+        angle,
+      };
+    }
+
+    const exponent = 1 + falloff * 4; // Higher values keep pelvis/back-leg slices straighter and concentrate curl nearer B/tail.
+    const steps = 16; // Static shoulder pose only; midpoint integration is smooth enough while remaining cheap for live authoring.
+    const dt = clampedT / steps;
+    let sumAlong = 0;
+    let sumNormal = 0;
+    for (let i = 0; i < steps; i++) {
+      const q = (i + 0.5) * dt;
+      const theta = full + inter * Math.pow(q, exponent);
+      sumAlong += Math.cos(theta);
+      sumNormal += Math.sin(theta);
+    }
+    const scale = length * dt;
+    return {
+      centerAlong: sumAlong * scale,
+      centerNormal: sumNormal * scale,
+      angle: full + inter * Math.pow(clampedT, exponent),
     };
   }
 
   // Returns the deformed point for the full rectangular A..B strip.
   // `fullRotationDeg` rotates the strip as one piece around guide A.
   // `interVertexRotationDeg` is the total additional rotation accumulated
-  // from A to B; linear accumulation makes the centerline a circular arc.
-  // No opacity or alpha mask participates in this math.
+  // from A to B. `curveFalloff` redistributes that accumulation toward B
+  // without changing the final authored rotation. No opacity/alpha mask is used.
   function deformNormalizedPoint(point, restLike) {
     const rest = restLike?.guide ? restLike : normalizeRest({ shoulderRest: restLike });
     if (!rest?.guide) return { x: finite(point?.x, 0), y: finite(point?.y, 0) };
@@ -109,26 +148,12 @@
     const signedOffset = relX * normalX + relY * normalY;
     const full = clamp(finite(rest.fullRotationDeg, 0), -MAX_ROTATION_DEG, MAX_ROTATION_DEG) * DEG;
     const inter = clamp(finite(rest.interVertexRotationDeg, 0), -MAX_ROTATION_DEG, MAX_ROTATION_DEG) * DEG;
-    const s = t * length;
+    const curve = centerlineForCurl(t, length, full, inter, rest.curveFalloff);
 
-    let centerAlong;
-    let centerNormal;
-    let angle;
-    if (Math.abs(inter) < 1e-7) {
-      angle = full;
-      centerAlong = s * Math.cos(full);
-      centerNormal = s * Math.sin(full);
-    } else {
-      const curvature = inter / length; // Radians accumulated per normalized guide-length unit.
-      angle = full + inter * t;
-      centerAlong = (Math.sin(angle) - Math.sin(full)) / curvature;
-      centerNormal = (-Math.cos(angle) + Math.cos(full)) / curvature;
-    }
-
-    const centerX = a.x + tangentX * centerAlong + normalX * centerNormal;
-    const centerY = a.y + tangentY * centerAlong + normalY * centerNormal;
-    const rotatedNormalAlong = -Math.sin(angle);
-    const rotatedNormalNormal = Math.cos(angle);
+    const centerX = a.x + tangentX * curve.centerAlong + normalX * curve.centerNormal;
+    const centerY = a.y + tangentY * curve.centerAlong + normalY * curve.centerNormal;
+    const rotatedNormalAlong = -Math.sin(curve.angle);
+    const rotatedNormalNormal = Math.cos(curve.angle);
     const deformedNormalX = tangentX * rotatedNormalAlong + normalX * rotatedNormalNormal;
     const deformedNormalY = tangentY * rotatedNormalAlong + normalY * rotatedNormalNormal;
 
@@ -232,7 +257,7 @@
 
   function decorateAvatar(avatarRef, rawRig) {
     const rest = normalizeRest(rawRig);
-    if (!rest || !avatarRef?.headRig || avatarRef.shoulderRest?.authored) return avatarRef;
+    if (!rest || !avatarRef?.headRig || avatarRef.shoulderRest?.version === 4) return avatarRef;
     const normalizedRig = decodedInfluenceFor(rawRig);
     if (!normalizedRig) return avatarRef;
 
@@ -243,6 +268,7 @@
     const back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null;
 
     const debug = {
+      version: 4,
       authored: true,
       enabled: false,
       useSpline: rest.useSpline,
@@ -252,6 +278,7 @@
       guide: rest.guide,
       fullRotationDeg: rest.fullRotationDeg,
       interVertexRotationDeg: rest.interVertexRotationDeg,
+      curveFalloff: rest.curveFalloff,
       fullRectangularStrip: true,
       frontVertices: front?.position?.count || 0,
       backVertices: back?.position?.count || 0,
@@ -273,22 +300,23 @@
 
   function install() {
     const api = window.PNGPlaneAvatar;
-    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderRestInstalledV3) return false;
+    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderRestInstalledV4) return false;
     const priorBuild = api.buildAnimalPlaneAvatarModel.bind(api); // Preserves base plane + head-rig + material-response wrappers already installed earlier.
     api.buildAnimalPlaneAvatarModel = function shoulderRestAwareAnimalBuild(THREE, spriteUrl, options = {}) {
       const avatarRef = priorBuild(THREE, spriteUrl, options);
       const rawRig = options?.headRig || window.HobunjiAnimalHeadRigSpecies?.resolveForOptions?.(options) || null;
       return rawRig?.shoulderRest?.enabled ? decorateAvatar(avatarRef, rawRig) : avatarRef;
     };
-    api.__animalShoulderRestInstalledV3 = true;
+    api.__animalShoulderRestInstalledV4 = true;
     return true;
   }
 
   window.AnimalShoulderRest = {
-    version: 3,
+    version: 4,
     DEFAULT_GUIDE,
     normalizeRest,
     legacyBendRotations,
+    centerlineForCurl,
     deformNormalizedPoint,
     sampleHeadInfluence,
     decorateAvatar,
