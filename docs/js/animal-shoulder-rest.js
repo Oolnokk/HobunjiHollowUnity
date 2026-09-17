@@ -1,15 +1,15 @@
 // Static shoulder-pet rest deformation for painted animal head rigs.
 //
-// This deliberately borrows only the simplest idea from the spline PNG rigger:
-// bend longitudinal body slices along one smooth path. There is no animation
-// timeline, region-mask system, or second paint map here. The existing Head
-// Influence map remains the authority: rest deformation receives exactly the
-// complementary body share (1 - headInfluence), so Head fights this rest pose
-// by the same amount that it already fights the body bone.
+// This borrows only the useful core of the standalone spline PNG rigger: an
+// authored A/B guide defines the body's longitudinal axis and a single midpoint
+// bend curves that axis. The guide is independent of the head pivot. Existing
+// Head Influence remains the authority for how much each vertex resists the
+// body-rest deformation: restWeight = 1 - headInfluence.
 (() => {
   'use strict';
 
-  const MAX_BEND = 0.75; // Maximum midpoint displacement as a fraction of sprite height; author UI uses a narrower practical range.
+  const MAX_BEND = 0.75; // Maximum midpoint displacement as a fraction of authored A/B guide length.
+  const DEFAULT_GUIDE = Object.freeze({ a: Object.freeze({ x: 0.14, y: 0.46 }), b: Object.freeze({ x: 0.86, y: 0.46 }) });
 
   function finite(value, fallback) {
     const parsed = Number(value); // Used for hand-edited JSON and debug-safe authored values.
@@ -17,16 +17,76 @@
   }
 
   function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value)); // Shared bounds helper for UVs, weights, and authored bend.
+    return Math.max(min, Math.min(max, value)); // Shared bounds helper for normalized sprite coordinates and weights.
+  }
+
+  function normalizedPoint(raw, fallback) {
+    return {
+      x: clamp(finite(raw?.x, fallback.x), 0, 1),
+      y: clamp(finite(raw?.y, fallback.y), 0, 1),
+    };
   }
 
   function normalizeRest(rawRig) {
-    const raw = rawRig?.shoulderRest; // Optional authored shoulder-only rest descriptor stored beside the head rig.
+    const raw = rawRig?.shoulderRest; // Optional authored shoulder-only presentation descriptor stored beside the head rig.
     if (!raw || raw.enabled !== true) return null;
+    const legacyCenterV = clamp(finite(raw.centerV, DEFAULT_GUIDE.a.y), 0, 1); // Migrates the first one-pivot shoulder-rest draft without losing browser-local rigs.
+    const fallbackGuide = { a: { x: DEFAULT_GUIDE.a.x, y: legacyCenterV }, b: { x: DEFAULT_GUIDE.b.x, y: legacyCenterV } };
+    const guide = raw.guide || fallbackGuide;
+    const hasNewFlags = Object.prototype.hasOwnProperty.call(raw, 'useSpline')
+      || Object.prototype.hasOwnProperty.call(raw, 'useRun1')
+      || Object.prototype.hasOwnProperty.call(raw, 'splitFrame');
     return {
       enabled: true,
+      useSpline: hasNewFlags ? !!raw.useSpline : true,
+      useRun1: hasNewFlags ? !!raw.useRun1 : true, // Old draft coupled run1 to the spline checkbox; preserve that only for old saved rigs.
+      splitFrame: !!raw.splitFrame,
+      frameShiftX: clamp(finite(raw.frameShiftX, 0.5), 0, 1),
+      guide: {
+        a: normalizedPoint(guide.a, fallbackGuide.a),
+        b: normalizedPoint(guide.b, fallbackGuide.b),
+      },
       bend: clamp(finite(raw.bend, 0), -MAX_BEND, MAX_BEND),
-      centerV: clamp(finite(raw.centerV, rawRig?.pivot?.y ?? 0.5), 0, 1),
+    };
+  }
+
+  // Deforms one canonical sprite-normalized top-left point through the authored
+  // A/B guide. Points outside the longitudinal A..B span are intentionally left
+  // alone. At bend=0 this is mathematically the identity transform even when the
+  // guide is angled or offset, because each point is reconstructed from its
+  // projection plus signed normal offset.
+  function deformNormalizedPoint(point, restLike) {
+    const rest = restLike?.guide ? restLike : normalizeRest({ shoulderRest: restLike });
+    if (!rest?.guide) return { x: finite(point?.x, 0), y: finite(point?.y, 0) };
+    const px = finite(point?.x, 0), py = finite(point?.y, 0);
+    const a = rest.guide.a, b = rest.guide.b;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-6) return { x: px, y: py };
+    const lengthSq = length * length;
+    const t = ((px - a.x) * dx + (py - a.y) * dy) / lengthSq;
+    if (t < 0 || t > 1) return { x: px, y: py };
+
+    const tangentX = dx / length, tangentY = dy / length;
+    const normalX = -tangentY, normalY = tangentX;
+    const lineX = a.x + dx * t, lineY = a.y + dy * t;
+    const signedOffset = (px - lineX) * normalX + (py - lineY) * normalY;
+    const bend = clamp(finite(rest.bend, 0), -MAX_BEND, MAX_BEND);
+    const centerOffset = 4 * (1 - t) * t * bend * length;
+    const curvedCenterX = lineX + normalX * centerOffset;
+    const curvedCenterY = lineY + normalY * centerOffset;
+
+    // Rotate each cross-section to the curved path tangent, matching the simple
+    // slice orientation used by the standalone spline PNG preview.
+    const derivativeNormal = 4 * bend * length * (1 - 2 * t);
+    const derivativeX = dx + normalX * derivativeNormal;
+    const derivativeY = dy + normalY * derivativeNormal;
+    const derivativeLength = Math.hypot(derivativeX, derivativeY) || 1;
+    const curvedNormalX = -derivativeY / derivativeLength;
+    const curvedNormalY = derivativeX / derivativeLength;
+    return {
+      x: curvedCenterX + curvedNormalX * signedOffset,
+      y: curvedCenterY + curvedNormalY * signedOffset,
     };
   }
 
@@ -47,36 +107,13 @@
         const value = map.values[y * map.width + x];
         return value === unset ? 0 : clamp(value, 0, 255) / 255;
       };
-      const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
-      const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
-      return clamp(a * (1 - ty) + b * ty, 0, 1);
+      const row0 = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
+      const row1 = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
+      return clamp(row0 * (1 - ty) + row1 * ty, 0, 1);
     }
     const region = normalizedRig?.legacyRegion;
     if (!region) return 0;
     return u >= region.x && u <= region.x + region.width && topV >= region.y && topV <= region.y + region.height ? 1 : 0;
-  }
-
-  // One quadratic body path. Endpoints remain on the original centerline and
-  // `bend` is the visible midpoint displacement, not the Bezier control-point
-  // displacement. That makes authoring intuitive: bend=.10 means the middle of
-  // the body moves by 10% of sprite height.
-  function restPoint(x, y, width, height, centerV, bend) {
-    const safeWidth = Math.max(1e-6, Math.abs(width));
-    const safeHeight = Math.max(1e-6, Math.abs(height));
-    const u = clamp((x + safeWidth * 0.5) / safeWidth, 0, 1);
-    const centerY = (0.5 - clamp(centerV, 0, 1)) * safeHeight;
-    const mid = clamp(finite(bend, 0), -MAX_BEND, MAX_BEND) * safeHeight;
-    const curveY = centerY + 4 * (1 - u) * u * mid;
-    const tangentX = safeWidth;
-    const tangentY = 4 * mid * (1 - 2 * u);
-    const tangentLength = Math.hypot(tangentX, tangentY) || 1;
-    const normalX = -tangentY / tangentLength;
-    const normalY = tangentX / tangentLength;
-    const offsetY = y - centerY;
-    return {
-      x: -safeWidth * 0.5 + u * safeWidth + normalX * offsetY,
-      y: curveY + normalY * offsetY,
-    };
   }
 
   function findRiggedMeshForBone(group, bone) {
@@ -100,29 +137,36 @@
     const position = geometry?.getAttribute?.('position');
     const uv = geometry?.getAttribute?.('uv');
     if (!position || !uv || position.count !== uv.count) return null;
-    const dimensions = dimensionsForGeometry(geometry); // Used by the one-path rest transform below.
+    const dimensions = dimensionsForGeometry(geometry); // Converts normalized guide results back into the mesh's local plane units.
     const basePositions = new Float32Array(position.array); // Immutable bind/rest positions so toggling never accumulates deformation.
     const bodyWeights = new Float32Array(position.count); // Complement of Head Influence; exactly the requested competing body/rest share.
+    const canonicalPoints = new Float32Array(position.count * 2); // Canonical top-left sprite UVs keep front/back deformation visually identical.
     for (let i = 0; i < position.count; i++) {
       const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i);
       const sourceTopV = 1 - uv.getY(i);
+      canonicalPoints[i * 2] = sourceU;
+      canonicalPoints[i * 2 + 1] = sourceTopV;
       bodyWeights[i] = 1 - sampleHeadInfluence(normalizedRig, sourceU, sourceTopV);
     }
-    return { mesh, position, basePositions, bodyWeights, dimensions, rest, mirrorX };
+    return { mesh, position, basePositions, bodyWeights, canonicalPoints, dimensions, rest, mirrorX };
   }
 
   function applyMeshState(meshState, enabled) {
     if (!meshState) return false;
-    const { position, basePositions, bodyWeights, dimensions, rest, mesh } = meshState;
+    const { position, basePositions, bodyWeights, canonicalPoints, dimensions, rest, mirrorX, mesh } = meshState;
     for (let i = 0; i < position.count; i++) {
       const offset = i * position.itemSize;
       const baseX = basePositions[offset], baseY = basePositions[offset + 1];
       let x = baseX, y = baseY;
-      if (enabled && Math.abs(rest.bend) > 1e-7) {
-        const target = restPoint(baseX, baseY, dimensions.width, dimensions.height, rest.centerV, rest.bend);
+      if (enabled && rest.useSpline && Math.abs(rest.bend) > 1e-7) {
+        const source = { x: canonicalPoints[i * 2], y: canonicalPoints[i * 2 + 1] };
+        const target = deformNormalizedPoint(source, rest);
+        const targetLocalU = mirrorX ? 1 - target.x : target.x;
+        const targetX = (targetLocalU - 0.5) * dimensions.width;
+        const targetY = (0.5 - target.y) * dimensions.height;
         const bodyWeight = clamp(bodyWeights[i], 0, 1);
-        x += (target.x - baseX) * bodyWeight;
-        y += (target.y - baseY) * bodyWeight;
+        x += (targetX - baseX) * bodyWeight;
+        y += (targetY - baseY) * bodyWeight;
       }
       position.array[offset] = x;
       position.array[offset + 1] = y;
@@ -140,23 +184,26 @@
     const normalizedRig = decodedInfluenceFor(rawRig);
     if (!normalizedRig) return avatarRef;
     const rigState = avatarRef.headRig;
-    const frontMesh = findRiggedMeshForBone(avatarRef.group, rigState.frontHeadBone);
-    const backMesh = findRiggedMeshForBone(avatarRef.group, rigState.backHeadBone);
-    const front = buildMeshState(frontMesh, normalizedRig, rest, false);
-    const back = buildMeshState(backMesh, normalizedRig, rest, true);
-    if (!front || !back) return avatarRef;
+    const frontMesh = rest.useSpline ? findRiggedMeshForBone(avatarRef.group, rigState.frontHeadBone) : null;
+    const backMesh = rest.useSpline ? findRiggedMeshForBone(avatarRef.group, rigState.backHeadBone) : null;
+    const front = rest.useSpline ? buildMeshState(frontMesh, normalizedRig, rest, false) : null;
+    const back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null;
 
     const debug = {
       authored: true,
       enabled: false,
+      useSpline: rest.useSpline,
+      useRun1: rest.useRun1,
+      splitFrame: rest.splitFrame,
+      frameShiftX: rest.frameShiftX,
+      guide: rest.guide,
       bend: rest.bend,
-      centerV: rest.centerV,
-      frontVertices: front.position.count,
-      backVertices: back.position.count,
-    }; // Mobile/debug-readable proof of the authored rest rig and whether the shoulder role currently activates it.
+      frontVertices: front?.position?.count || 0,
+      backVertices: back?.position?.count || 0,
+    }; // Mobile/debug-readable proof of the authored presentation and which shoulder-only pieces are active.
 
     avatarRef.setShoulderRestEnabled = enabled => {
-      const next = !!enabled;
+      const next = !!enabled && rest.useSpline && !!front && !!back;
       if (debug.enabled === next) return next;
       applyMeshState(front, next);
       applyMeshState(back, next);
@@ -183,10 +230,11 @@
   }
 
   window.AnimalShoulderRest = {
-    version: 1,
+    version: 2,
+    DEFAULT_GUIDE,
     normalizeRest,
+    deformNormalizedPoint,
     sampleHeadInfluence,
-    restPoint,
     decorateAvatar,
     install,
   };
