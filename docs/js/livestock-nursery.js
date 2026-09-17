@@ -334,15 +334,21 @@
     const list = currentLivestock();
     const outdoors = list.filter(entry => !isBaby(entry) && entry.barnId == null);
     if (!outdoors.length) return original.apply(window.FarmAnimals, args);
-    const savedSave = animalDeps.saveWorldLivestock;
+    const savedLoad = animalDeps.loadWorldLivestock; // Restored after the daily transaction; nested livestock systems must mutate this same snapshot.
+    const savedSave = animalDeps.saveWorldLivestock; // Restored after the sentinel-safe transaction commits once.
     try {
       outdoors.forEach(entry => { entry.barnId = OUTDOOR_SENTINEL_BARN; });
-      // Original day ticks key their "stasis" pause solely off a falsy barnId.
-      // Suppress the original write so the temporary sentinel can never persist.
+      // Core/welfare day ticks each call loadWorldLivestock themselves. Pin
+      // those nested reads to this same list so their housed-animal cooldown,
+      // heart, and welfare mutations survive the one final save below.
+      animalDeps.loadWorldLivestock = () => list;
+      // Suppress nested writes so the temporary outdoor sentinel can never
+      // persist; the fully-mutated transaction is committed once in finally.
       animalDeps.saveWorldLivestock = () => {};
       return original.apply(window.FarmAnimals, args);
     } finally {
       outdoors.forEach(entry => { entry.barnId = null; });
+      animalDeps.loadWorldLivestock = savedLoad;
       animalDeps.saveWorldLivestock = savedSave;
       savedSave?.(list);
     }
