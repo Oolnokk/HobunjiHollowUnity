@@ -1,15 +1,12 @@
 // Adapts game-owned body-bound attachments into PlayerBodyTransformComposer.
 //
-// The composer intentionally does not know about companions, tools, or any
-// game-specific dependency bag. This thin adapter supplies those roots lazily,
-// so ragdoll/drunk/future body channels all inherit to the same attachments
-// without any one effect module owning the relationship.
+// Shoulder pets also use this bridge as the one place where authored shoulder
+// presentation becomes active/inactive with the stable role. The actual body
+// deformation is owned by animal-shoulder-spline.js; this file only handles
+// frame selection/layer composition and role gating.
 (() => {
   'use strict';
 
-  // This bridge is parser-loaded before game.js creates companion avatars.
-  // Apply the latest authored/species shoulder profiles first, then the v4
-  // compatibility decorator, then the v5 weight/layer decorator.
   function parserLoad(src, marker) {
     if (document.readyState === 'loading') {
       document.write(`<script data-${marker}="1" src="${src}"></` + 'script>');
@@ -17,23 +14,30 @@
     }
     return false;
   }
+
   function lateLoad(src, marker) {
     if (document.querySelector(`script[data-${marker}]`)) return;
-    const script = document.createElement('script'); // Late fallback for standalone/debug contexts that inject this bridge after parsing.
+    const script = document.createElement('script'); // Fallback for debug contexts that inject this bridge after parser startup.
     script.src = src;
     script.async = false;
-    script.dataset[marker.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())] = '1';
+    script.dataset[marker.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = '1';
     document.head.appendChild(script);
   }
 
-  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 4) {
-    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917rough4','grehlr-head-rig-correction')) lateLoad('js/grehlr-head-rig-correction.js?v=20260917rough4','grehlr-head-rig-correction');
+  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 6) {
+    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917spline6', 'grehlr-head-rig-correction')) {
+      lateLoad('js/grehlr-head-rig-correction.js?v=20260917spline6', 'grehlr-head-rig-correction');
+    }
   }
-  if (!window.AnimalShoulderRest || Number(window.AnimalShoulderRest.version) < 4) {
-    if (!parserLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest')) lateLoad('js/animal-shoulder-rest.js?v=20260917falloff4','animal-shoulder-rest');
+  if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 1) {
+    if (!parserLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline1', 'animal-shoulder-spline-profiles')) {
+      lateLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline1', 'animal-shoulder-spline-profiles');
+    }
   }
-  if (!window.AnimalShoulderRestV5 || Number(window.AnimalShoulderRestV5.version) < 5) {
-    if (!parserLoad('js/animal-shoulder-rest-v5.js?v=20260917weightlayer5','animal-shoulder-rest-v5')) lateLoad('js/animal-shoulder-rest-v5.js?v=20260917weightlayer5','animal-shoulder-rest-v5');
+  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 6) {
+    if (!parserLoad('js/animal-shoulder-spline.js?v=20260917spline6', 'animal-shoulder-spline')) {
+      lateLoad('js/animal-shoulder-spline.js?v=20260917spline6', 'animal-shoulder-spline');
+    }
   }
 
   const composer = window.PlayerBodyTransformComposer;
@@ -69,25 +73,24 @@
   }
 
   function genotypeKindFor(companion, combatDeps) {
-    return combatDeps?.genotypeKindFor?.(companion) || companion?.creatureKey || companion?.kind || null; // Stable species key shared by raw art and genotype compositing.
+    return combatDeps?.genotypeKindFor?.(companion) || companion?.creatureKey || companion?.kind || null; // Stable key shared by genetics, head-rig lookup, and shoulder profiles.
   }
 
   function authoredShoulderRestFor(companion, combatDeps) {
-    const kind = genotypeKindFor(companion, combatDeps); // Species key resolves browser-preview or committed shoulder settings through the shared resolver.
-    const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null;
+    const kind = genotypeKindFor(companion, combatDeps);
+    const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null; // Preview-aware resolver when the author saved a browser test rig.
     return rawRig?.shoulderRest || null;
   }
 
   function effectiveShoulderRest(companion, combatDeps) {
-    const runtime = companion?.avatarRef?.shoulderRest; // V5 debug state owns live overlay methods; authored extras live on the species rig.
+    const runtime = companion?.avatarRef?.shoulderRest;
     const authored = authoredShoulderRestFor(companion, combatDeps);
     return runtime || authored ? { ...(runtime || {}), ...(authored || {}) } : null;
   }
 
   function splineAllowedFor(companion, combatDeps) {
     const kind = genotypeKindFor(companion, combatDeps);
-    const profiles = window.HobunjiShoulderSplineProfiles;
-    return profiles?.allows ? !!profiles.allows(kind) : ['grehlr','voorg-ass','uumkaoii','gar-wolf','dabinggi-hound'].includes(String(kind || '').toLowerCase());
+    return !!window.HobunjiShoulderSplineProfiles?.allows?.(kind); // Single allowlist source; currently exactly five species.
   }
 
   function shoulderRun1Frame(companion, combatDeps) {
@@ -101,13 +104,16 @@
 
   function shoulderIdleFrame(companion, combatDeps) {
     const genotypeKind = genotypeKindFor(companion, combatDeps);
-    return { url: companion?.def?.sprites?.idle || window.CreatureGeneticsRender?.SPECIES?.[genotypeKind]?.base?.idle || null, genotypeKind };
+    return {
+      url: companion?.def?.sprites?.idle || window.CreatureGeneticsRender?.SPECIES?.[genotypeKind]?.base?.idle || null,
+      genotypeKind,
+    };
   }
 
   function loadFrameImage(url) {
     return new Promise((resolve, reject) => {
       if (!url) return reject(new Error('missing frame URL'));
-      const image = new Image(); // Raw-frame fallback used only when the genotype compositor is unavailable.
+      const image = new Image(); // Raw fallback only when genotype composition is unavailable.
       image.decoding = 'async';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error(`could not load ${url}`));
@@ -118,8 +124,9 @@
   async function splitFrameLayers(companion, combatDeps, rest) {
     const kind = genotypeKindFor(companion, combatDeps);
     const renderer = window.CreatureGeneticsRender;
-    const rightUsesIdle = !!rest?.splitRightUsesIdle; // The seam can be a pure deformation/overlap boundary even when both sides use idle art.
-    let idleSource = null, rightSource = null;
+    const rightUsesIdle = !!rest?.splitRightUsesIdle;
+    let idleSource = null;
+    let rightSource = null;
 
     if (kind && typeof renderer?.composeFrame === 'function') {
       try {
@@ -128,7 +135,8 @@
           ? idleSource
           : await renderer.composeFrame(kind, 'run1', companion.genotype, false);
       } catch (_) {
-        idleSource = null; rightSource = null;
+        idleSource = null;
+        rightSource = null;
       }
     }
 
@@ -146,13 +154,13 @@
 
     const width = Number(idleSource.width || idleSource.naturalWidth) || Number(rightSource.width || rightSource.naturalWidth) || 1;
     const height = Number(idleSource.height || idleSource.naturalHeight) || Number(rightSource.height || rightSource.naturalHeight) || 1;
-    const leftCanvas = document.createElement('canvas'); // Idle-left foreground texture: transparent everywhere to the right of the seam.
-    const rightCanvas = document.createElement('canvas'); // Deformed/background side: run1-right or idle-right according to the saved checkbox.
+    const leftCanvas = document.createElement('canvas'); // Undeformed/foreground half.
+    const rightCanvas = document.createElement('canvas'); // Spline-deformed/background half.
     leftCanvas.width = rightCanvas.width = width;
     leftCanvas.height = rightCanvas.height = height;
     const leftCtx = leftCanvas.getContext('2d');
     const rightCtx = rightCanvas.getContext('2d');
-    const authoredSplit = Number(rest?.frameShiftX); // Zero is a valid left-edge seam, so do not use truthiness for the fallback.
+    const authoredSplit = Number(rest?.frameShiftX);
     const split = Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5;
     const cut = Math.round(width * split);
     leftCtx.clearRect(0, 0, width, height);
@@ -164,12 +172,13 @@
 
   function combinedSplitFallbackCanvas(layers) {
     if (!layers) return null;
-    const canvas = document.createElement('canvas'); // Safety fallback for an avatar type that cannot host the v5 overlay mesh.
-    canvas.width = layers.width; canvas.height = layers.height;
+    const canvas = document.createElement('canvas');
+    canvas.width = layers.width;
+    canvas.height = layers.height;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(layers.rightCanvas, 0, 0); // Background first.
-    ctx.drawImage(layers.leftCanvas, 0, 0); // Idle-left wins visually even in fallback mode.
+    ctx.drawImage(layers.rightCanvas, 0, 0); // Deformed/background pixels first.
+    ctx.drawImage(layers.leftCanvas, 0, 0); // Left/gripping pixels explicitly win overlap.
     return canvas;
   }
 
@@ -177,22 +186,22 @@
     const idle = shoulderIdleFrame(companion, combatDeps).url || '';
     const rightUsesIdle = !!rest?.splitRightUsesIdle;
     const right = rightUsesIdle ? idle : (shoulderRun1Frame(companion, combatDeps).url || '');
-    const authoredSplit = Number(rest?.frameShiftX); // Preserves exact 0 and 1 seam positions in the layer cache key.
+    const authoredSplit = Number(rest?.frameShiftX);
     const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
-    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle?'idle-right':'run1-right'}|${split}`; // Companion-local cache also implicitly keys the stable genotype instance.
+    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}`;
   }
 
   function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
     if (!rightUrl || !leftCanvas || !companion?.avatarRef) return false;
     const layered = typeof companion.avatarRef.setShoulderSplitOverlayCanvas === 'function';
-    const frameUrl = layered ? rightUrl : (fallbackUrl || rightUrl); // Never lose the left half if an unusual avatar lacks the overlay capability.
-    if (layered) companion.avatarRef.setShoulderSplitOverlayCanvas(leftCanvas, true); // Idle-left always renders as the explicit foreground layer.
+    const frameUrl = layered ? rightUrl : (fallbackUrl || rightUrl);
+    if (layered) companion.avatarRef.setShoulderSplitOverlayCanvas(leftCanvas, true);
     companion.__hobunjiShoulderFrame = frameUrl;
     companion.__hobunjiShoulderSplitFrame = frameUrl;
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
     if (companion.currentFrameUrl !== frameUrl && typeof combatDeps?.setCreatureFrame === 'function') {
-      combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, null, 'idle', null); // Generated canvas is already genotyped; do not recolor it a second time.
+      combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, null, 'idle', null); // Canvas already contains genotype art; avoid recoloring twice.
       companion.currentFrameUrl = frameUrl;
     }
     return true;
@@ -204,21 +213,29 @@
       return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas, companion.__hobunjiShoulderSplitFallbackUrl);
     }
     if (companion.__hobunjiShoulderSplitPromise && companion.__hobunjiShoulderSplitKey === key) return true;
-    companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false); // Avoid showing a stale left layer while a new species/seam is composing.
+
+    companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     companion.__hobunjiShoulderSplitKey = key;
     companion.__hobunjiShoulderSplitPromise = splitFrameLayers(companion, combatDeps, rest).then(layers => {
       if (!layers || companion.__hobunjiShoulderSplitKey !== key) return null;
-      const rightUrl = layers.rightCanvas.toDataURL('image/png'); // Base mesh receives only right/background pixels when explicit layering is available.
+      const rightUrl = layers.rightCanvas.toDataURL('image/png');
       const fallbackCanvas = combinedSplitFallbackCanvas(layers);
       const fallbackUrl = fallbackCanvas?.toDataURL?.('image/png') || rightUrl;
       companion.__hobunjiShoulderSplitUrl = rightUrl;
       companion.__hobunjiShoulderSplitFallbackUrl = fallbackUrl;
       companion.__hobunjiShoulderSplitLeftCanvas = layers.leftCanvas;
       companion.__hobunjiShoulderSplitPromise = null;
-      const stillShouldered = companion?.health > 0 && companion.stableRole === 'shoulderPet' && (companion.master || combatDeps?.player) === combatDeps?.player;
-      if (stillShouldered && companion.avatarRef?.shoulderRest?.splitFrame) applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas, fallbackUrl);
+      const stillShouldered = companion?.health > 0
+        && companion.stableRole === 'shoulderPet'
+        && (companion.master || combatDeps?.player) === combatDeps?.player;
+      if (stillShouldered && effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
+        applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas, fallbackUrl);
+      }
       return rightUrl;
-    }).catch(() => { companion.__hobunjiShoulderSplitPromise = null; return null; });
+    }).catch(() => {
+      companion.__hobunjiShoulderSplitPromise = null;
+      return null;
+    });
     return true;
   }
 
@@ -228,7 +245,6 @@
     if (authoredRest && rest.splitFrame) {
       ensureSplitShoulderFrame(companion, combatDeps, rest);
       if (companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) return true;
-      // Use ordinary idle while the one-time split layers are being composed.
     } else {
       companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     }
@@ -236,7 +252,7 @@
     let selected = authoredRest && rest.useRun1 ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps);
     let frameName = authoredRest && rest.useRun1 && selected.url ? 'run1' : 'idle';
     if (frameName === 'run1' && !selected.url) {
-      selected = shoulderIdleFrame(companion, combatDeps); // Explicit fallback so missing run1 never leaves a stale prior animation frame on the shoulder.
+      selected = shoulderIdleFrame(companion, combatDeps);
       frameName = 'idle';
     }
     const frameUrl = selected.url;
@@ -255,7 +271,7 @@
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     const idle = shoulderIdleFrame(companion, combatDeps);
     if (idle.url && typeof combatDeps?.setCreatureFrame === 'function' && companion.avatarRef && companion.currentFrameUrl !== idle.url) {
-      combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype); // Removes a right-only split texture immediately on shoulder exit.
+      combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype);
       companion.currentFrameUrl = idle.url;
     }
     companion.__hobunjiShoulderFrame = null;
@@ -278,8 +294,8 @@
       if (!companion?.avatarRef) continue;
       const isShoulderPet = companion.health > 0
         && companion.stableRole === 'shoulderPet'
-        && (companion.master || player) === player; // One role predicate drives spline activation, split layering, and attachment-root inclusion.
-      const splineAllowed = splineAllowedFor(companion, combatDeps); // Curl is intentionally limited to the current five shoulder-drape species.
+        && (companion.master || player) === player;
+      const splineAllowed = splineAllowedFor(companion, combatDeps);
       companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet && splineAllowed);
       if (!isShoulderPet) {
         if (companion.__hobunjiWasShoulderPet) restoreAfterShoulderPet(companion, combatDeps);
@@ -300,9 +316,9 @@
       const handDebug = window.ProceduralHandAttachments?.getActiveDebug?.().find(entry => entry?.speciesId) || null;
       const activeShoulderPets = window.Combat?.deps?.companionObjects
         ? Array.from(window.Combat.deps.companionObjects).filter(companion =>
-            companion?.health > 0
-            && companion.stableRole === 'shoulderPet'
-            && (companion.master || window.Combat.deps.player) === window.Combat.deps.player)
+          companion?.health > 0
+          && companion.stableRole === 'shoulderPet'
+          && (companion.master || window.Combat.deps.player) === window.Combat.deps.player)
         : [];
       return {
         hasGameDeps: !!gameDeps,
