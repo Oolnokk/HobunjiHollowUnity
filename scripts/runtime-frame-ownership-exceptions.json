@@ -94,8 +94,8 @@
     "owner": "HobunjiDrunkGameplayBridge",
     "classification": "scheduler",
     "function": "postFrameLoop",
-    "reason": "Self-perpetuating RAF loop (also kicked off at line 834) that continuously integrates drunk-movement momentum and NPC sobriety recovery using measured per-frame dt - a genuine ongoing simulation subscription living outside game.js's own gameLoop.",
-    "migrationStage": "candidate",
+    "reason": "Self-perpetuating RAF loop (also kicked off at line 834) that continuously integrates drunk-movement momentum and NPC sobriety recovery using measured per-frame dt - a genuine ongoing simulation subscription living outside game.js's own gameLoop. Investigated for migration: this exact requestAnimationFrame(postFrameLoop) call is already intercepted by name/source-pattern (isAlcoholPostFrameCallback, matching 'updateDrunkMomentum'+'npcAlcoholState') by docs/js/performance-loop-optimizations.js's dedicated idle-stop/adaptive-rate wrapper (full-rate only while the player is actually drunk, a throttled 20Hz setTimeout while only NPC sobriety recovery is pending, and no scheduling at all when neither applies). Swapping this call for a plain always-on RuntimeFrameScheduler.register would silently defeat that optimization (the interceptor would never see a matching requestAnimationFrame call to capture) unless performance-loop-optimizations.js's interception is also redesigned around RuntimeFrameScheduler.setEnabled - a joint, riskier rewrite of two coupled files rather than the low-risk single-file moves this backlog otherwise covers. Held back rather than forced.",
+    "migrationStage": "not-planned",
     "line": 829
   },
   {
