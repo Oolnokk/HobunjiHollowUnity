@@ -10,8 +10,3 @@ $('savePreviewRig').onclick=()=>{try{const record=buildRecord(),rig=normalizedRi
 $('copyRecord').onclick=()=>{const r=updateOutput();if(r)copyText(pretty(r))};$('copyRig').onclick=()=>{const r=normalizedRig();r?copyText(pretty(r)):setStatus('Paint Head influence and set a pivot first.',false)};$('downloadRecord').onclick=()=>{try{const r=buildRecord();downloadJson(r,(r.id||'animal')+'-head-rig.json')}catch(e){setStatus(e.message,false)}};$('downloadCollection').onclick=()=>{try{downloadJson(collectionWithCurrentRecord(),state.collectionKind==='bestiary'?'hobunji-creature-bestiary.json':'animals-with-head-rig.json')}catch(e){setStatus(e.message,false)}};
 window.addEventListener('keydown',e=>{const modifier=e.ctrlKey||e.metaKey;if(!modifier)return;if(e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redoEdit():undoEdit()}else if(e.key.toLowerCase()==='y'){e.preventDefault();redoEdit()}});
 window.addEventListener('resize',resizeCanvases);new ResizeObserver(resizeCanvases).observe(paintCanvas.parentElement);new ResizeObserver(resizeCanvases).observe(previewCanvas.parentElement);setPaintLayer('influence');resizeCanvases();updateOutput();updateStatus();
-
-const shoulderRestAuthorScript=document.createElement('script'); // Loads the optional shoulder-rest authoring extension after the base rigger has established all shared globals and handlers.
-shoulderRestAuthorScript.src='./author-part6.js';
-shoulderRestAuthorScript.async=false;
-document.head.appendChild(shoulderRestAuthorScript);
