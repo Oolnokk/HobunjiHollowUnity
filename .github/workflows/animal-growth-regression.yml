@@ -165,7 +165,7 @@ jobs:
         run: node scripts/test-stable-animal-ambient-sequencing.js
       - name: Test stable animal progression dependency bridge
         run: node scripts/test-stable-animal-progression-deps-bridge.js
-      - name: Test stable animal town familiarity
+      - name: Test stable animal Pet Rapport
         run: node scripts/test-stable-animal-town-familiarity.js
       - name: Test stable training refinements
         run: node scripts/test-stable-animal-training-refinements.js
