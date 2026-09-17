@@ -352,14 +352,15 @@
       return { target: rawTarget, snap: false };
     }
     const P = perps[nearestI];
+    const previousSnapSide = state.snapSide === 1 || state.snapSide === -1 ? state.snapSide : null; // Normalizes fresh/legacy state so undefined never enters dead-zone angle math.
     if (!moving) {
       state.oscPhase = 0;
-      if (state.snapSide === null) state.snapSide = nearestDT >= 0 ? 1 : -1;
+      if (previousSnapSide === null) state.snapSide = nearestDT >= 0 ? 1 : -1;
       return { target: P + state.snapSide * deadRad, snap: false };
     }
     state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
     const side = Math.sin(state.oscPhase) >= 0 ? 1 : -1;
-    const flip = state.snapSide !== null && state.snapSide !== side;
+    const flip = previousSnapSide !== null && previousSnapSide !== side;
     state.snapSide = side;
     return { target: P + side * deadRad, snap: flip };
   }
