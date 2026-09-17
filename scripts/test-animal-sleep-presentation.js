@@ -241,6 +241,12 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
 
   const renderer = new windowStub.THREE.WebGLRenderer();
 
+  // RuntimeFrameScheduler still dispatches post-game when gameLoop exits before
+  // its pre-render checkpoint (title/onboarding). That must not fabricate a
+  // sleep-restoration frame or a Pixel Probe cadence mismatch.
+  restoreEntry.callback({ frameId: 99, timestamp: 8, deltaMs: 8 });
+  assert.equal(windowStub.AnimalSleepPresentation.getDebug().restoredFrames, 0, 'post-game without sleep pre-render is ignored');
+
   // Frame 1 starts async sleep composites. The temporary scale/grounding transforms
   // must remain active through every render pass, then restore exactly once post-game.
   prepareEntry.callback({ frameId: 1, timestamp: 16, deltaMs: 16 });
@@ -286,6 +292,16 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   assert.equal(outdoorGroup.scale.y, 0.4, 'post-game restoration returns outdoor welfare simulation scale');
   assert.equal(wildGroup.scale.y, 0.5, 'post-game restoration returns wilderness authored scale');
 
+  const freshAwakeFront = { id: 'outdoor:fresh-awake-front' };
+  const freshAwakeBack = { id: 'outdoor:fresh-awake-back' };
+  outdoorGroup.children[0].material.map = freshAwakeFront;
+  outdoorGroup.children[1].material.map = freshAwakeBack;
+  outdoorAnimal._outdoorSleepBlend = 0;
+  prepareEntry.callback({ frameId: 3, timestamp: 48, deltaMs: 16 });
+  assert.equal(outdoorGroup.children[0].material.map, freshAwakeFront, 'waking does not overwrite a fresh front texture applied by normal animation before pre-render');
+  assert.equal(outdoorGroup.children[1].material.map, freshAwakeBack, 'waking does not overwrite a fresh back texture applied by normal animation before pre-render');
+  restoreEntry.callback({ frameId: 3, timestamp: 48, deltaMs: 16 });
+
   assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'outdoor'), 'outdoor sleeping art requests run2');
   assert(composeCalls.some(call => call.frame === 'run2' && call.genotype?.sig === 'wild'), 'wilderness sleeping art requests run2');
 
@@ -294,12 +310,12 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   assert.equal(debug.preferredFrame, 'run2-if-present-else-idle', 'mobile diagnostics expose run2 sleep-frame preference');
   assert.equal(debug.schedulerRegistered, true, 'mobile diagnostics confirm shared scheduler ownership');
   assert.equal(debug.schedulerCadence, 'pre-render-once/post-game-restore', 'mobile diagnostics expose the once-per-frame sleep cadence');
-  assert.equal(debug.preparedFrames, 2, 'diagnostics count one preparation per simulated browser frame');
-  assert.equal(debug.restoredFrames, 2, 'diagnostics count one restoration per simulated browser frame');
-  assert.equal(debug.lastPreparedFrameId, 2, 'diagnostics retain the last prepared scheduler frame id');
-  assert.equal(debug.lastRestoredFrameId, 2, 'diagnostics retain the last restored scheduler frame id');
-  assert.equal(debug.lastPreparedBoundsScans, 6, 'diagnostics expose the six generic grounding scans still required for three rescaled sleepers in one frame');
-  assert.equal(debug.boundsScans, 12, 'diagnostics accumulate generic grounding scans across both prepared frames');
+  assert.equal(debug.preparedFrames, 3, 'diagnostics count only frames that reached the sleep pre-render checkpoint');
+  assert.equal(debug.restoredFrames, 3, 'diagnostics count one restoration for each prepared sleep frame and ignore title-style post-game-only frames');
+  assert.equal(debug.lastPreparedFrameId, 3, 'diagnostics retain the last prepared scheduler frame id');
+  assert.equal(debug.lastRestoredFrameId, 3, 'diagnostics retain the last restored scheduler frame id');
+  assert.equal(debug.lastPreparedBoundsScans, 2, 'waking frame only needs the remaining static barn sleeper grounding scans');
+  assert.equal(debug.boundsScans, 14, 'diagnostics accumulate grounding scans across two sleeping frames plus the waking static-sleeper frame');
   assert.equal(debug.activeTemporaryTransforms, 0, 'no sleep-only transform survives the post-game restoration');
   console.log('animal sleep presentation regression tests passed');
 })().catch(error => {
