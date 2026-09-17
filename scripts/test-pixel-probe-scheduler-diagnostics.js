@@ -28,6 +28,9 @@ assert(source.includes('const schedulerLines = _pixelProbeSchedulerLines();'), '
 assert(source.includes('if (schedulerLines) lines.push(...schedulerLines);'), 'the frame-scheduler diagnostics must be spread into the report the same way as the other _pixelProbeXxxLines helpers');
 assert(source.includes('const animalSleepLines = _pixelProbeAnimalSleepLines();'), 'the copyable probe report must request animal-sleep scheduler diagnostics');
 assert(source.includes('if (animalSleepLines) lines.push(...animalSleepLines);'), 'animal-sleep diagnostics must be merged into the same mobile report');
+assert(source.includes("beginExternalRenderScope?.('pixel-probe')"), 'Pixel Probe rerenders must explicitly request live sleep presentation');
+assert(source.includes('endExternalRenderScope?.()'), 'Pixel Probe rerenders must restore explicit sleep presentation afterward');
+assert(!source.includes('WebGLRenderer.prototype.render ='), 'Pixel Probe integration must not recreate a global renderer monkey-patch');
 
 const match = source.match(/function _pixelProbeSchedulerLines\(\) \{[\s\S]*?\n  \}\n/);
 assert(match, 'could not locate _pixelProbeSchedulerLines in the shipped source');
