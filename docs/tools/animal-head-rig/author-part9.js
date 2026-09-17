@@ -38,11 +38,25 @@ function updateShoulderTwoPointButton(){
   if(editShoulderTwoPoint)editShoulderTwoPoint.textContent=shoulderTwoPointEditMode?'Finish 2-point endpoints':'Edit 2-point endpoints';
 }
 function setShoulderTwoPointEditMode(enabled){
-  shoulderTwoPointEditMode=!!enabled;
+  const next=!!enabled;
+  if(next&&!splineAllowedForCurrentSpecies()){
+    shoulderTwoPointEditMode=false;
+    shoulderTwoPointDrag=-1;
+    updateShoulderTwoPointButton();
+    setStatus('Two-point shoulder editing is available only for species with the shoulder spline enabled.',false);
+    draw();
+    return false;
+  }
+  shoulderTwoPointEditMode=next;
   shoulderTwoPointDrag=-1;
-  if(shoulderTwoPointEditMode){shoulderEditMode='after';updateShoulderUi()}
+  if(shoulderTwoPointEditMode){
+    if(!shoulderRestUseSpline.checked)shoulderRestUseSpline.checked=true;
+    shoulderEditMode='after';
+    updateShoulderUi();
+  }
   updateShoulderTwoPointButton();
   draw();
+  return shoulderTwoPointEditMode;
 }
 
 // While two-point mode owns the canvas, the ordinary seven-node hit tester
@@ -131,26 +145,45 @@ drawGuides=function drawGuidesWithTwoPointEndpointMode(fit){
 };
 
 function prepareTwoPointSnap(){
+  if(!splineAllowedForCurrentSpecies()){
+    setStatus('Endpoint snaps are available only for species with the shoulder spline enabled.',false);
+    return false;
+  }
   checkpointHistory();
+  if(!shoulderRestUseSpline.checked)shoulderRestUseSpline.checked=true;
   shoulderEditMode='after';
   shoulderTwoPointEditMode=true;
   updateShoulderUi();
   updateShoulderTwoPointButton();
+  return true;
 }
 snapShoulderStartToShift?.addEventListener('click',()=>{
-  prepareTwoPointSnap();
+  if(!prepareTwoPointSnap())return;
   setVisibleShoulderAfterEndpoint(0,{x:shoulderFrameShiftValue(),y:.5});
   setStatus(`Snapped Start / AFTER vertex 1 to frame-shift center (${Math.round(shoulderFrameShiftValue()*100)}%, 50%).`,true);
   draw();
 });
 snapShoulderEndToRightEdge?.addEventListener('click',()=>{
-  prepareTwoPointSnap();
+  if(!prepareTwoPointSnap())return;
   setVisibleShoulderAfterEndpoint(SHOULDER_POINT_COUNT-1,{x:1,y:.5});
   setStatus("Snapped End / AFTER vertex 7 to the center of the right-frame PNG's right edge (100%, 50%).",true);
   draw();
 });
 
 editShoulderTwoPoint?.addEventListener('click',()=>setShoulderTwoPointEditMode(!shoulderTwoPointEditMode));
+shoulderEditBefore?.addEventListener('click',()=>{
+  if(!shoulderTwoPointEditMode)return;
+  shoulderTwoPointEditMode=false;
+  shoulderTwoPointDrag=-1;
+  updateShoulderTwoPointButton();
+  draw();
+});
+shoulderRestUseSpline?.addEventListener('change',()=>{
+  if(shoulderRestUseSpline.checked||!shoulderTwoPointEditMode)return;
+  shoulderTwoPointEditMode=false;
+  shoulderTwoPointDrag=-1;
+  updateShoulderTwoPointButton();
+});
 
 // Loading a different rig should not leave an interaction mode visually active.
 const applyShoulderRestConfigBeforeTwoPoint=applyShoulderRestConfig;
