@@ -17,7 +17,6 @@ const shoulderFrameShiftWrap=$('shoulderFrameShiftWrap');
 const shoulderPaintSource=$('shoulderPaintSource');
 const shoulderEditBefore=$('shoulderEditBefore');
 const shoulderEditAfter=$('shoulderEditAfter');
-const copyShoulderBeforeToAfter=$('copyShoulderBeforeToAfter');
 const resetShoulderSpline=$('resetShoulderSpline');
 const shoulderSplineApi=window.AnimalShoulderSpline;
 const shoulderProfileApi=window.HobunjiShoulderSplineProfiles;
@@ -159,7 +158,6 @@ shoulderFollowFrameShiftX?.addEventListener('change',()=>{lastShoulderFrameShift
 shoulderPaintSource?.addEventListener('change',()=>{if(shouldNeedRun1Preview())ensureRun1Image();ensureShoulderPaintMaps();buildSourceSampler();refreshShoulderPaintUi();draw()});
 shoulderEditBefore?.addEventListener('click',()=>{shoulderEditMode='before';if(shoulderRestSplitFrame.checked)shoulderPaintSource.value='right';if(shouldNeedRun1Preview())ensureRun1Image();buildSourceSampler();updateShoulderUi();draw()});
 shoulderEditAfter?.addEventListener('click',()=>{shoulderEditMode='after';updateShoulderUi();draw()});
-copyShoulderBeforeToAfter?.addEventListener('click',()=>{checkpointHistory();shoulderAfterPoints=cloneShoulderPoints(shoulderBeforePoints,shoulderBeforePoints);shoulderEditMode='after';updateShoulderUi();draw()});
 resetShoulderSpline?.addEventListener('click',()=>{checkpointHistory();const fallback=splineAllowedForCurrentSpecies()?defaultShoulderRest():null,before=fallback?.beforePoints||linearShoulderPoints({a:{x:shoulderFrameShiftValue(),y:.5},b:{x:1,y:.5}});shoulderBeforePoints=cloneShoulderPoints(before,before);shoulderAfterPoints=cloneShoulderPoints(fallback?.afterPoints||before,before);draw()});
 $('animalId')?.addEventListener('change',()=>{updateShoulderUi();if(splineAllowedForCurrentSpecies()&&!state.baseRecord?.headRig?.shoulderRest&&!shoulderPresentationEnabled())applyShoulderRestConfig(defaultShoulderRest())});
 
