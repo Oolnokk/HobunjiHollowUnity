@@ -61,6 +61,13 @@ RuntimeFrameScheduler.register(SCHEDULER_ID, updateFrame, {
 
 Use `setEnabled(id, false)` when a registered feature is temporarily inactive. Use `unregister(id)` when its module is disposed. Registration IDs must be stable and unique.
 
+Prefer registering permanently-relevant work `enabled` (the default) and registering context-scoped work `enabled: false`, then driving `setEnabled` from whatever already tracks that context. Two shapes have shown up so far:
+
+- **Event-driven**: the module that owns the context transition (start/stop, open/close) calls `setEnabled` directly at that transition. Precise, but only safe when the owning module has a small, well-understood set of transition points.
+- **Polled**: a low-frequency `setInterval` (not a scheduler subscription — see "Genuinely low-frequency work" in the table above) re-checks one or more context flags and calls `setEnabled` accordingly. Appropriate when the authoritative signal has many/scattered mutation points (unsafe to hook exhaustively) or is cheap to read directly (e.g. `!!window.Fishing?.state`), and when a few hundred milliseconds of lag turning a subscriber on/off is harmless. `fishing-presentation-debug.js` is the reference shape: its old combined per-frame callback did two DOM-lookup-gated things that are relevant in two unrelated contexts (a live Gullet encounter; the mobile fishing debug panel), so it split into two subscriptions, each registered `enabled: false` and toggled independently by one shared polling function.
+
+Either shape only pays off when the context is genuinely inactive most of the time - don't add gating to a subscriber that's relevant in most frames anyway.
+
 Do not add frame throttling while migrating an existing runtime. First move ownership with identical cadence and behavior; optimize the subscriber in a later, independently testable change.
 
 The frame-context object is reused to avoid a permanent allocation. Read its values synchronously inside the callback; do not retain the object for later use.

@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 
-// Regression for the Stage 2 RAF-ownership migration: fishing-presentation-debug.js
-// used to own a permanent per-frame RAF that both synchronized the Gullet's
-// presentation and refreshed the fishing debug panel. It now registers,
-// unmodified in behavior, as one 'fishing-presentation' scheduler subscriber
-// (see docs/architecture/runtime-frame-scheduler.md) — a follow-up commit is
-// expected to later gate it on relevant fishing/Gullet/debug context, not
-// this one.
+// Regression for the Stage 8 RAF-ownership follow-up: fishing-presentation-debug.js's
+// combined scheduledFrame() (Stage 2) is split into two independently
+// context-gated scheduler subscribers, since each half is only ever relevant
+// in a different, unrelated context: the Gullet visual sync only matters
+// while a Gullet encounter can exist (i.e. main fishing is active), and the
+// water-check debug line only matters while the mobile fishing debug panel
+// is turned on (?fishingDebug=1 or the persisted localStorage flag). Both
+// register disabled and are enabled/disabled by a low-frequency
+// setInterval-driven context poll (see docs/architecture/runtime-frame-scheduler.md's
+// guidance to conditionally enable subscribers via setEnabled() rather than
+// let them run every single browser frame regardless of context).
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,7 +19,9 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/fishing-presentation-debug.js', 'utf8');
 assert(!source.includes('requestAnimationFrame('), 'fishing presentation debug must no longer own a direct requestAnimationFrame( call site');
-assert(source.includes('window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame'), 'the combined Gullet-sync/debug-panel work must register with the shared scheduler');
+assert(source.includes("window.RuntimeFrameScheduler.register(GULLET_SCHEDULER_ID, syncGulletVisual"), 'the Gullet visual sync must register as its own scheduler subscriber');
+assert(source.includes("window.RuntimeFrameScheduler.register(WATER_DEBUG_SCHEDULER_ID, updateWaterDebug"), 'the water-check debug line must register as its own scheduler subscriber');
+assert(source.includes('window.setInterval(pollContext'), 'a low-frequency timer, not the scheduler itself, must drive the context poll');
 
 function makeElement(tag) {
   const el = {
@@ -40,11 +46,12 @@ function makeElement(tag) {
   return el;
 }
 
-function buildContext() {
+function buildContext({ search = '' } = {}) {
   const registered = new Map();
   const elements = new Map();
+  const intervals = [];
   const context = {
-    console, Math, Number, String, Array, Object,
+    console, Math, Number, String, Array, Object, URLSearchParams,
     window: null,
     document: {
       createElementNS(ns, tag) { return makeElement(tag); },
@@ -53,64 +60,114 @@ function buildContext() {
     },
   };
   context.window = context;
+  context.location = { search };
+  context.localStorage = { getItem() { return null; } };
   context.RuntimeFrameScheduler = {
-    register(id, fn, options) { registered.set(id, { fn, options }); },
+    register(id, fn, options) { registered.set(id, { fn, options, enabled: options.enabled !== false }); },
+    setEnabled(id, enabled) { const entry = registered.get(id); if (!entry) return false; entry.enabled = !!enabled; return true; },
   };
+  context.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
   context.getComputedStyle = () => ({ filter: 'none' });
   context.FishCatalog = { entries: [] };
   context.AmphibiousFishing = { getDebug: () => ({ playerTile: { type: 'shallow', col: 3, row: 4 }, playerInWater: true }) };
 
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'fishing-presentation-debug.js' });
-  return { context, registered, elements };
+  return { context, registered, elements, intervals };
 }
 
-const { context, registered, elements } = buildContext();
+// --- Registration shape: both start disabled -------------------------------
+{
+  const { registered, intervals } = buildContext();
+  const gullet = registered.get('fishing-presentation-gullet');
+  const waterDebug = registered.get('fishing-presentation-water-debug');
+  assert(gullet, 'the Gullet visual sync registers under a stable id');
+  assert(waterDebug, 'the water-check debug line registers under a stable id');
+  assert.equal(gullet.options.owner, 'FishingPresentationDebug');
+  assert.equal(waterDebug.options.owner, 'FishingPresentationDebug');
+  assert.equal(gullet.options.phase, 'post-game');
+  assert.equal(waterDebug.options.phase, 'post-game');
+  assert.equal(gullet.options.enabled, false, 'the Gullet sync registers disabled; the context poll enables it only while fishing');
+  assert.equal(waterDebug.options.enabled, false, 'the water-check line registers disabled; the context poll enables it only in fishing-debug mode');
+  assert.equal(intervals.length, 1, 'exactly one low-frequency context-poll timer is installed');
+  assert(intervals[0].ms >= 100, 'the context poll runs far less often than every browser frame');
+}
 
-const entry = registered.get('fishing-presentation');
-assert(entry, 'registers with the scheduler under a stable id');
-assert.equal(entry.options.owner, 'FishingPresentationDebug');
-assert.equal(entry.options.phase, 'post-game');
-// Stage 2 asks for this migration to keep the combined function intact and
-// always enabled for now; a later commit is expected to add the context
-// gate, not this one.
-assert.notEqual(entry.options.enabled, false, 'this migration must not gate the subscriber yet — that is explicitly a follow-up commit');
+// --- Context poll: neither fishing nor debug mode active -> both stay off --
+{
+  const { context, registered, intervals } = buildContext();
+  context.Fishing = { state: null };
+  intervals[0].fn();
+  assert.equal(registered.get('fishing-presentation-gullet').enabled, false);
+  assert.equal(registered.get('fishing-presentation-water-debug').enabled, false);
+}
 
-const scheduledFrame = entry.fn;
+// --- Context poll: fishing active -> only the Gullet sync turns on --------
+{
+  const { context, registered, intervals } = buildContext();
+  context.Fishing = { state: { phase: 'active' } };
+  intervals[0].fn();
+  assert.equal(registered.get('fishing-presentation-gullet').enabled, true, 'fishing active enables the Gullet sync');
+  assert.equal(registered.get('fishing-presentation-water-debug').enabled, false, 'fishing active alone does not enable the debug line');
+}
 
-// No gulletFishSilhouette/fishingFeatureDebug elements exist -> both halves
-// of the combined callback must no-op safely, exactly like the original
-// frame() did when the fishing UI wasn't present.
-assert.doesNotThrow(() => scheduledFrame(), 'runs safely with no fishing/Gullet DOM present');
+// --- Context poll: ?fishingDebug=1 -> only the water-debug line turns on --
+{
+  const { context, registered, intervals } = buildContext({ search: '?fishingDebug=1' });
+  context.Fishing = { state: null };
+  intervals[0].fn();
+  assert.equal(registered.get('fishing-presentation-gullet').enabled, false, 'debug mode alone does not enable the Gullet sync');
+  assert.equal(registered.get('fishing-presentation-water-debug').enabled, true, '?fishingDebug=1 enables the water-check line');
+}
 
-// Wire up a Gullet silhouette and the regular fish's deformed image, plus
-// the debug panel, and confirm the scheduled callback still drives both.
-const gulletRoot = makeElement('g');
-gulletRoot.setAttribute('transform', 'translate(10 20)');
-elements.set('gulletFishSilhouette', gulletRoot);
+// --- Context poll: fishing ends -> the Gullet sync turns back off ---------
+{
+  const { context, registered, intervals } = buildContext();
+  context.Fishing = { state: { phase: 'active' } };
+  intervals[0].fn();
+  assert.equal(registered.get('fishing-presentation-gullet').enabled, true);
+  context.Fishing = { state: null };
+  intervals[0].fn();
+  assert.equal(registered.get('fishing-presentation-gullet').enabled, false, 'the Gullet sync turns back off once main fishing ends');
+}
 
-const regularImage = makeElement('image');
-regularImage.setAttribute('href', 'blob:fish-frame-3');
-regularImage.setAttribute('width', '120');
-regularImage.setAttribute('height', '80');
-elements.set('fishDeformedImage', regularImage);
+// --- Behavioral equivalence: each subscriber's callback still does exactly
+// what the old combined scheduledFrame() did once actually invoked. --------
+{
+  const { registered, elements } = buildContext();
+  const syncGulletVisual = registered.get('fishing-presentation-gullet').fn;
+  const updateWaterDebug = registered.get('fishing-presentation-water-debug').fn;
 
-const debugPanel = makeElement('div');
-elements.set('fishingFeatureDebug', debugPanel);
+  assert.doesNotThrow(() => syncGulletVisual(), 'runs safely with no Gullet DOM present');
+  assert.doesNotThrow(() => updateWaterDebug(), 'runs safely with no debug panel present');
 
-scheduledFrame();
-const visual = gulletRoot.children.find(c => c.attrs['data-gullet-regular-fish-visual']);
-assert(visual, 'the scheduled callback still builds the Gullet regular-fish visual on first sync');
-const image = visual.children[0];
-assert.equal(image.getAttribute('href'), 'blob:fish-frame-3', 'copies the live regular fish frame onto the Gullet image');
-const debugLine = debugPanel.children.find(c => c.attrs['data-amphibious-water-debug']);
-assert(debugLine, 'the scheduled callback still creates/updates the water-check debug line');
-assert.equal(debugLine.textContent, 'WATER CHECK: YES | shallow @ 3,4', 'debug line reflects the live amphibious water-check state');
+  const gulletRoot = makeElement('g');
+  gulletRoot.setAttribute('transform', 'translate(10 20)');
+  elements.set('gulletFishSilhouette', gulletRoot);
 
-// Move the Gullet and re-run: heading must update from actual motion, same
-// as the original per-frame implementation.
-gulletRoot.setAttribute('transform', 'translate(40 20)');
-scheduledFrame();
-assert.equal(gulletRoot.getAttribute('transform'), 'translate(40.00 20.00) rotate(0.00)', 'moving purely along +X yields a 0 degree heading, matching atan2(0, dx)');
+  const regularImage = makeElement('image');
+  regularImage.setAttribute('href', 'blob:fish-frame-3');
+  regularImage.setAttribute('width', '120');
+  regularImage.setAttribute('height', '80');
+  elements.set('fishDeformedImage', regularImage);
 
-console.log('fishing presentation debug scheduler migration passed');
+  const debugPanel = makeElement('div');
+  elements.set('fishingFeatureDebug', debugPanel);
+
+  syncGulletVisual();
+  const visual = gulletRoot.children.find(c => c.attrs['data-gullet-regular-fish-visual']);
+  assert(visual, 'the Gullet sync still builds the Gullet regular-fish visual on first sync');
+  const image = visual.children[0];
+  assert.equal(image.getAttribute('href'), 'blob:fish-frame-3', 'copies the live regular fish frame onto the Gullet image');
+
+  updateWaterDebug();
+  const debugLine = debugPanel.children.find(c => c.attrs['data-amphibious-water-debug']);
+  assert(debugLine, 'the water-debug callback still creates/updates the water-check line');
+  assert.equal(debugLine.textContent, 'WATER CHECK: YES | shallow @ 3,4', 'debug line reflects the live amphibious water-check state');
+
+  gulletRoot.setAttribute('transform', 'translate(40 20)');
+  syncGulletVisual();
+  assert.equal(gulletRoot.getAttribute('transform'), 'translate(40.00 20.00) rotate(0.00)', 'moving purely along +X yields a 0 degree heading, matching atan2(0, dx)');
+}
+
+console.log('fishing presentation debug context-gated scheduler split passed');
