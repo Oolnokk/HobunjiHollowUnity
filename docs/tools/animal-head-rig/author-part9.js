@@ -144,7 +144,7 @@ window.ShoulderTwoPointPoseTools={
   version:1,
   enabled:()=>shoulderTwoPointEditMode,
   active:shoulderTwoPointActive,
-  effectiveAfterPoints,
+  effectiveAfterPoints:()=>effectiveShoulderAfterPoints(),
   reset:()=>clearShoulderTwoPoint(true),
 };
 updateShoulderTwoPointButton();
