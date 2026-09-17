@@ -33,6 +33,14 @@ assert.strictEqual(api.materialWeightForBend(0.5, 0.2, 0.4, 'compress'), 0.2);
 assert.strictEqual(api.materialWeightForBend(0.5, 0.2, 0.4, 'stretch'), 0.4);
 assert.strictEqual(api.materialWeightForBend(0.5, 0.2, 0.4, 'neutral'), 0.5);
 assert.strictEqual(api.materialWeightForBend(0.5, 0.9, 0.9, 'compress'), 0.5, 'material channel is reduction-only and cannot exceed Influence');
+assert.strictEqual(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', 20), 0.35, 'positive yaw is capped by Stretchability');
+assert.strictEqual(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', -20), 0.35, 'negative yaw uses the same Stretchability cap');
+assert.strictEqual(api.materialWeightForPose(0.5, 0.2, 0.35, 'compress', 20), 0.2, 'simultaneous pitch/yaw uses whichever material reduction is stricter');
+assert.strictEqual(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', 0), 0.5, 'zero yaw leaves neutral pitch at Influence');
+
+const runtimeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/animal-head-material-response.js'), 'utf8');
+assert(runtimeSource.includes("wrapAfter('updateHeadYaw')"), 'runtime refreshes Stretchability after yaw updates');
+assert(runtimeSource.includes('const yawActive = Math.abs'), 'yaw material response is sign-independent so both turn directions use Stretchability');
 
 const riggerDir = path.resolve(__dirname, '../docs/tools/animal-head-rig');
 const shell = fs.readFileSync(path.join(riggerDir, 'index.html'), 'utf8');
@@ -47,6 +55,8 @@ assert(shell.includes('id="shoulderRestSplitFrame"') && shell.includes('id="shou
 assert(shell.includes('id="shoulderFullRotation"') && shell.includes('id="shoulderInterRotation"'), 'shoulder spline should expose whole-strip and inter-vertex rotation sliders');
 assert(author.includes("shoulderGuide={a:{x:.14,y:.46},b:{x:.86,y:.46}}"), 'shoulder spline should own independent A/B guide endpoints');
 assert(author.includes('fullRotationDeg:shoulderFullRotationValue()') && author.includes('interVertexRotationDeg:shoulderInterRotationValue()'), 'shoulder curl values should serialize into the rig');
+assert(author.includes('rig.shoulderRest.curveFalloff=shoulderCurveFalloffValue()'), 'curve falloff should serialize into the shoulder rig');
+assert(author.includes('Curve falloff toward B'), 'curve falloff authoring control should be inserted under the curl controls');
 assert(author.includes('previewAngle is deliberately not serialized'), 'preview neck angle should remain a preview-only value');
 assert(author.includes("state.compressibility.values[index]=UNSET") && author.includes("state.stretchability.values[index]=UNSET"), 'Influence edits should reset both material channels to inherit the new Influence');
 assert(author.includes('lerp(current,0,amount)'), 'material brush should only reduce the selected material channel');
@@ -71,7 +81,7 @@ function fakeElement(id) {
   if (id === 'paintCanvas' || id === 'previewCanvas') {
     el.width = 400; el.height = 280; el.getContext = () => fake2dContext(); el.parentElement = { getBoundingClientRect: () => ({ width: 400, height: 280 }) };
   }
-  const defaults = { brushStrength: '100', brushRadius: '40', bucketTolerance: '32', expandRadius: '60', previewAngle: '0', minDeg: '-30', restDeg: '0', maxDeg: '30', turnSpeedDeg: '120', meshResolution: '48', spriteAspect: '1', modelWidth: '1', tint: '#ffffff', extraVars: '{}', facing: 'left', shoulderFrameShift: '50', shoulderFullRotation: '0', shoulderInterRotation: '0' };
+  const defaults = { brushStrength: '100', brushRadius: '40', bucketTolerance: '32', expandRadius: '60', previewAngle: '0', minDeg: '-30', restDeg: '0', maxDeg: '30', turnSpeedDeg: '120', meshResolution: '48', spriteAspect: '1', modelWidth: '1', tint: '#ffffff', extraVars: '{}', facing: 'left', shoulderFrameShift: '50', shoulderFullRotation: '0', shoulderInterRotation: '0', shoulderCurveFalloff: '0' };
   if (id in defaults) el.value = defaults[id];
   if (id === 'showWeights') el.checked = true;
   elements.set(id, el);
