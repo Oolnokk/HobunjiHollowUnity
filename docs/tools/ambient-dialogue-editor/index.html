@@ -62,5 +62,6 @@ $('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state.config,nul
 $('importBtn').onclick=()=>$('file').click();$('file').onchange=async()=>{try{state.config=normalizeConfig(JSON.parse(await $('file').files[0].text()));materializeFriendGroups();listItems();render();$('status').textContent='Imported JSON'}catch(error){$('status').textContent='Import failed: '+error.message}};
 load().catch(error=>$('editor').innerHTML=`<div class="card">Load failed: ${esc(error.message)}</div>`);
 </script>
+<script src="../../js/ambient-dialogue-reaction-editor.js?v=20260916reactions1"></script>
 </body>
 </html>
