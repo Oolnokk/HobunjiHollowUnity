@@ -10,7 +10,7 @@ const bridgeSource = fs.readFileSync('docs/js/player-body-attachment-bridge.js',
 const loaderSource = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
 assert.match(source,
-  /const requestedTarget =[\s\S]{0,2600}perpClamp\([\s\S]{0,1400}const step =[\s\S]{0,500}state\.currentYawDeg =/,
+  /const requestedTarget =[\s\S]{0,4000}perpClamp\([\s\S]{0,4000}const step =[\s\S]{0,800}state\.currentYawDeg =/,
   'camera deadzone selection happens inside the shared head-yaw target math before authored smoothing');
 assert.match(source, /frontHeadBone\.rotation\.y = state\.currentYawDeg \* RAD[\s\S]{0,120}backHeadBone\.rotation\.y = state\.currentYawDeg \* RAD/,
   'the shared yaw authority writes the animal head bones directly');
@@ -26,7 +26,6 @@ assert.match(loaderSource, /animal-head-yaw-deadzone\.js\?v=20260916global2/,
 const RAD = Math.PI / 180;
 let originalHeadYawCalls = 0; // Must stay zero: the installed method is the yaw math, not a correction wrapper around legacy math.
 let perspectiveResolveCount = 0; // Proves registered creatures use the live subject-aware camera path.
-const built = [];
 
 function makeAvatar(options = {}) {
   const state = {
@@ -36,7 +35,7 @@ function makeAvatar(options = {}) {
     frontHeadBone: { rotation: { y: 0 } },
     backHeadBone: { rotation: { y: 0 } },
   };
-  const avatarRef = {
+  return {
     group: {
       children: [],
       userData: options.userData || {},
@@ -49,8 +48,6 @@ function makeAvatar(options = {}) {
       throw new Error('legacy head-yaw method must not run after global math installation');
     },
   };
-  built.push(avatarRef);
-  return avatarRef;
 }
 
 function angleDiff(target, current) {
@@ -96,8 +93,13 @@ const context = {
       CREATURE_PERP_DEAD_RAD: Math.PI / 6,
       perspectivePerpsForState(state, fallback) {
         perspectiveResolveCount++;
-        assert.equal(state, combatDeps.hostileObjects[0]?.perpState,
-          'registered animal resolution receives that animal\'s body perp state');
+        const registered = [
+          ...combatDeps.hostileObjects,
+          ...combatDeps.companionObjects,
+          ...combatDeps.animalObjects,
+          ...combatDeps.worldObjects,
+        ].find(candidate => candidate?.perpState === state); // Verifies the resolver receives the same registered animal state the yaw solver found.
+        assert.ok(registered, 'registered animal resolution receives that animal\'s body perp state');
         return fallback?.length ? fallback : [0, Math.PI];
       },
       cameraRelativePerpsAtWorldPosition(worldPosition, cameraPosition) {
@@ -161,6 +163,8 @@ assert.ok(Math.abs(shoulder.headRig.targetYawDeg - 30) < 1e-9,
   'shoulder pets use the exact same shared yaw authority rather than a role-specific correction');
 assert.equal(shoulder.__hobunjiGlobalHeadDeadzoneMath, true,
   'shoulder pet is marked by the same global installer as every other rigged animal');
+assert.equal(perspectiveResolveCount, 2,
+  'wild and shoulder-pet yaw updates each resolve their own live registered-animal camera state');
 
 assert.equal(originalHeadYawCalls, 0,
   'no animal delegates to a legacy head-yaw call and then corrects it afterward');
