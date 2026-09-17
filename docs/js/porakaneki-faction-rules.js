@@ -4,10 +4,10 @@
   const CONFIG_URL = 'config/porakaneki-camp.json'; // Used to keep kill/reputation tuning beside the existing Porakaneki settings.
   const PORAKANEKI_CHIEF_ID = 'porakaneki_chief'; // Used for Porakaneki-side kill penalties.
   const LEGACY_OMGURKU_CHIEF_ID = 'baruhi_chief'; // Used only to migrate old saves after the faction rename.
-  const OMGURKU_CHIEF_ID = 'omgurku_chief'; // Used for the rival-faction reward on every Porakaneki kill.
+  const OMGURKU_CHIEF_ID = 'omgurku_chief'; // Used for the rival-faction reward on every player-attributed Porakaneki kill.
   const FAVOR_MIN = -5; // Used to preserve the authored relationship lower bound.
   const FAVOR_MAX = 10; // Used to preserve the authored relationship upper bound.
-  const priorEntityState = new Map(); // Used to identify which side started combat before a later death.
+  const priorEntityState = new Map(); // Used to identify Porakaneki-side hostility transitions and one-time deaths.
   const campAggressionOrigin = new Map(); // Used to keep one fight's initiator classification across the camp retaliation window.
   const countedDeaths = new WeakSet(); // Used to prevent duplicate reputation changes for one dead hunter.
   const recentEvents = []; // Used by the mobile-friendly copyable debug snapshot.
@@ -20,7 +20,13 @@
   }; // Replaced from porakaneki-camp.json when available.
   let banditRulesInstalled = false; // Used by the dependency retry loop below.
   let combatGuardInstalled = false; // Used by the dependency retry loop below.
+  let animalAttackGuardInstalled = false; // Used to reject neutral Porakaneki before a companion named attack begins and to identify synchronous companion attack effects.
+  let damageAttributionInstalled = false; // Used to tag neutral Porakaneki fights only when Combat damage actually originates at the player.
+  let resourceGuardInstalled = false; // Used to block direct companion named-attack damage/afflictions and identify player ranged/legacy hits.
+  let skillHitMarkerInstalled = false; // Used to bridge the legacy "landed hit" signal to the immediately following ResourceSystem damage call.
   let dialogueMigrationInstalled = false; // Used by the dependency retry loop below.
+  let activeCompanionAnimalAttack = null; // Used only while Combat.animalAttacks.update is synchronously resolving a companion's named attack.
+  let pendingLegacyPlayerHit = false; // Used to attribute the old direct-melee ResourceSystem call after SkillSystem announces a landed player hit.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const record = message => {
@@ -156,6 +162,22 @@
     return hostiles ? [...hostiles].filter(entity => entity?.isPorakanekiHunter === true) : [];
   }
 
+  const campIdFor = entity => String(entity?.porakanekiCampId || entity?.id || 'unknown');
+
+  function isNeutralPorakaneki(entity) {
+    return entity?.isPorakanekiHunter === true && entity?._porakanekiPlannerControlled === true;
+  }
+
+  function markPlayerAggression(entity, source = 'player hit') {
+    if (!isNeutralPorakaneki(entity)) return false;
+    const campId = campIdFor(entity);
+    if (!campAggressionOrigin.has(campId)) {
+      campAggressionOrigin.set(campId, 'player');
+      record(`${campId}: player initiated combat (${source})`);
+    }
+    return true;
+  }
+
   function syncCompanionTargetability(entity) {
     if (!entity?.def) return;
     if (!entity._porakanekiFactionDefOverlay) {
@@ -171,7 +193,7 @@
     if (combat.meleeHit.__porakanekiNeutralGuard) { combatGuardInstalled = true; return true; }
     const meleeHit = combat.meleeHit; // Used to preserve the shared collider after the neutral-companion guard.
     const guarded = function porakanekiNeutralMeleeGuard(attacker, target, ...args) {
-      if (attacker?.isCompanion && target?.isPorakanekiHunter && target?._porakanekiPlannerControlled === true) return false;
+      if (attacker?.isCompanion && isNeutralPorakaneki(target)) return false;
       return meleeHit.call(this, attacker, target, ...args);
     };
     guarded.__porakanekiNeutralGuard = true;
@@ -181,24 +203,114 @@
     return true;
   }
 
-  const campIdFor = entity => String(entity?.porakanekiCampId || entity?.id || 'unknown');
+  function installAnimalAttackGuard(attacks = window.Combat?.animalAttacks) {
+    if (!attacks || typeof attacks.start !== 'function' || typeof attacks.update !== 'function') return false;
+    if (attacks.start.__porakanekiNeutralGuard && attacks.update.__porakanekiNeutralGuard) {
+      animalAttackGuardInstalled = true;
+      return true;
+    }
+    const start = attacks.start; // Used to stop a companion from deliberately launching a named attack at a neutral Porakaneki.
+    const update = attacks.update; // Used to identify direct damage/affliction calls made synchronously by a companion named attack.
+    const guardedStart = function porakanekiNeutralAnimalAttackStart(creature, id, context, ...args) {
+      if (creature?.isCompanion && isNeutralPorakaneki(context?.target)) return false;
+      return start.call(this, creature, id, context, ...args);
+    };
+    const guardedUpdate = function porakanekiNeutralAnimalAttackUpdate(creature, dt, ...args) {
+      const previous = activeCompanionAnimalAttack; // Used to preserve nested/ad-hoc attack updates without leaking attribution into later frames.
+      if (creature?.isCompanion) activeCompanionAnimalAttack = creature;
+      try { return update.call(this, creature, dt, ...args); }
+      finally { activeCompanionAnimalAttack = previous; }
+    };
+    guardedStart.__porakanekiNeutralGuard = true;
+    guardedStart.__porakanekiNeutralGuardOriginal = start;
+    guardedUpdate.__porakanekiNeutralGuard = true;
+    guardedUpdate.__porakanekiNeutralGuardOriginal = update;
+    attacks.start = guardedStart;
+    attacks.update = guardedUpdate;
+    animalAttackGuardInstalled = true;
+    return true;
+  }
+
+  function installCombatDamageAttribution(combat = window.Combat) {
+    const combatDeps = combat?.deps;
+    if (!combatDeps || typeof combatDeps.damageCreature !== 'function') return false;
+    if (combatDeps.damageCreature.__porakanekiFactionWrapped) { damageAttributionInstalled = true; return true; }
+    const damageCreature = combatDeps.damageCreature; // Used after neutral-companion suppression and player-source attribution.
+    const wrapped = function porakanekiFactionDamageCreature(target, amount, fromX, fromY, knockbackPxS, dmgOpts, ...rest) {
+      if (isNeutralPorakaneki(target)) {
+        if (activeCompanionAnimalAttack?.isCompanion) {
+          record(`${campIdFor(target)}: blocked neutral companion named-attack damage`);
+          return 0;
+        }
+        const player = combatDeps.player; // Used to mirror SkillSystem's established player-source position test.
+        const sourceIsPlayer = player && Number.isFinite(fromX) && Number.isFinite(fromY)
+          && Math.hypot(fromX - player.x, fromY - player.y) <= 0.01;
+        if (sourceIsPlayer && dmgOpts?.friendlyFire !== true) markPlayerAggression(target, 'player Combat damage');
+      }
+      return damageCreature.call(this, target, amount, fromX, fromY, knockbackPxS, dmgOpts, ...rest);
+    };
+    wrapped.__porakanekiFactionWrapped = true;
+    wrapped.__porakanekiFactionOriginal = damageCreature;
+    combatDeps.damageCreature = wrapped;
+    damageAttributionInstalled = true;
+    return true;
+  }
+
+  function installSkillHitMarker(skillSystem = window.SkillSystem) {
+    if (!skillSystem || typeof skillSystem.award !== 'function') return false;
+    if (skillSystem.award.__porakanekiLegacyHitMarker) { skillHitMarkerInstalled = true; return true; }
+    const award = skillSystem.award; // Used to mirror SkillSystem's own legacy landed-hit bridge without changing skill behavior.
+    const wrapped = function porakanekiLegacyHitAward(skillKey, amount, reason, ...rest) {
+      if (skillKey === 'combat' && reason === 'landed hit') pendingLegacyPlayerHit = true;
+      return award.call(this, skillKey, amount, reason, ...rest);
+    };
+    wrapped.__porakanekiLegacyHitMarker = true;
+    wrapped.__porakanekiLegacyHitOriginal = award;
+    skillSystem.award = wrapped;
+    skillHitMarkerInstalled = true;
+    return true;
+  }
+
+  function installResourceGuard(resourceSystem = window.ResourceSystem) {
+    if (!resourceSystem || typeof resourceSystem.applyDamage !== 'function' || typeof resourceSystem.addAffliction !== 'function') return false;
+    if (resourceSystem.applyDamage.__porakanekiFactionWrapped && resourceSystem.addAffliction.__porakanekiFactionWrapped) {
+      resourceGuardInstalled = true;
+      return true;
+    }
+    const applyDamage = resourceSystem.applyDamage; // Used for player ranged/legacy hits and named animal attacks that bypass Combat.deps.damageCreature.
+    const addAffliction = resourceSystem.addAffliction; // Used by attacks such as Grehlr stink that can affect a target without raw Health damage.
+    const wrappedApplyDamage = function porakanekiFactionApplyDamage(target, amount, opts = {}, ...rest) {
+      const legacyPlayerHit = pendingLegacyPlayerHit; // Used exactly once, matching SkillSystem's legacy landed-hit bridge.
+      pendingLegacyPlayerHit = false;
+      if (isNeutralPorakaneki(target)) {
+        if (activeCompanionAnimalAttack?.isCompanion) {
+          record(`${campIdFor(target)}: blocked neutral companion named-attack ResourceSystem damage`);
+          return 0;
+        }
+        const playerRanged = opts?.ranged === true && opts?.friendlyFire !== true; // Hostile actor-on-actor ranged impacts explicitly carry friendlyFire=true.
+        if (legacyPlayerHit || playerRanged) markPlayerAggression(target, legacyPlayerHit ? 'legacy player melee' : 'player ranged');
+      }
+      return applyDamage.call(this, target, amount, opts, ...rest);
+    };
+    const wrappedAddAffliction = function porakanekiFactionAddAffliction(target, id, amount, ...rest) {
+      if (activeCompanionAnimalAttack?.isCompanion && isNeutralPorakaneki(target)) {
+        record(`${campIdFor(target)}: blocked neutral companion named-attack affliction ${id}`);
+        return 0;
+      }
+      return addAffliction.call(this, target, id, amount, ...rest);
+    };
+    wrappedApplyDamage.__porakanekiFactionWrapped = true;
+    wrappedApplyDamage.__porakanekiFactionOriginal = applyDamage;
+    wrappedAddAffliction.__porakanekiFactionWrapped = true;
+    wrappedAddAffliction.__porakanekiFactionOriginal = addAffliction;
+    resourceSystem.applyDamage = wrappedApplyDamage;
+    resourceSystem.addAffliction = wrappedAddAffliction;
+    resourceGuardInstalled = true;
+    return true;
+  }
 
   function classifyCampOrigins(entities, attackOnSight) {
     const liveByCamp = new Map(); // Used to clear stale origin state after the whole camp returns to neutral.
-
-    // Damage to a still-neutral hunter is authoritative evidence that the
-    // player side started this fight. Do this pass first, including hunters
-    // killed in one hit, so the victim cannot be skipped while a surviving
-    // campmate's neutral->hostile retaliation gets mistaken for first blood.
-    for (const entity of entities) {
-      const previous = priorEntityState.get(entity);
-      if (!previous || !(Number(entity.health) < previous.health) || previous.plannerControlled !== true) continue;
-      const campId = campIdFor(entity);
-      if (!campAggressionOrigin.has(campId)) {
-        campAggressionOrigin.set(campId, 'player');
-        record(`${campId}: player initiated combat`);
-      }
-    }
 
     for (const entity of entities) {
       if (!(entity?.health > 0)) continue;
@@ -214,7 +326,9 @@
         record(`${campId}: Porakaneki attack-on-sight combat`);
       }
     }
-    for (const [campId, members] of liveByCamp) if (members.every(entity => entity._porakanekiPlannerControlled === true)) campAggressionOrigin.delete(campId);
+    for (const [campId, members] of liveByCamp) {
+      if (members.every(entity => entity._porakanekiPlannerControlled === true)) campAggressionOrigin.delete(campId);
+    }
   }
 
   function processDeaths(entities, favorBefore) {
@@ -224,7 +338,11 @@
       if (!previous || previous.health <= 0 || Number(entity.health) > 0 || countedDeaths.has(entity)) continue;
       countedDeaths.add(entity);
       const campId = campIdFor(entity);
-      const origin = campAggressionOrigin.get(campId) || (previous.plannerControlled === true ? 'player' : 'porakaneki');
+      const origin = campAggressionOrigin.get(campId);
+      if (origin !== 'player' && origin !== 'porakaneki') {
+        record(`${campId}: ignored Porakaneki death with no player/Porakaneki combat origin`);
+        continue;
+      }
       deaths.push({ campId, selfDefense: origin === 'porakaneki' });
     }
     if (!deaths.length) return;
@@ -238,6 +356,9 @@
       adjustFactionFavorExact(tuning.rivalNpcId, tuning.rivalKillFavor, `porakaneki_kill_${death.selfDefense ? 'self_defense' : 'murder'}`, 'Omgurku');
       record(`${death.campId}: kill=${death.selfDefense ? 'self-defense' : 'murder'} Porakaneki=${death.selfDefense ? tuning.selfDefenseKillPenalty : tuning.murderKillPenalty} Omgurku=+${tuning.rivalKillFavor}`);
     }
+
+    const livingCampIds = new Set(entities.filter(entity => entity?.health > 0).map(campIdFor)); // Used to prevent a fully dead/despawned camp from leaking its old initiator into a later spawn.
+    for (const death of deaths) if (!livingCampIds.has(death.campId)) campAggressionOrigin.delete(death.campId);
   }
 
   function refreshEntityState(entities) {
@@ -290,31 +411,51 @@
     installNpcDatabaseCanon();
     installDialogueMigration();
     installCompanionMeleeGuard();
+    installAnimalAttackGuard();
+    installCombatDamageAttribution();
+    installSkillHitMarker();
+    installResourceGuard();
     installBanditRules();
-    return banditRulesInstalled && combatGuardInstalled && dialogueMigrationInstalled;
+    return banditRulesInstalled
+      && combatGuardInstalled
+      && animalAttackGuardInstalled
+      && damageAttributionInstalled
+      && resourceGuardInstalled
+      && skillHitMarkerInstalled
+      && dialogueMigrationInstalled;
   }
 
-  const installer = setInterval(() => { if (installAvailableHooks()) clearInterval(installer); }, 50); // Retries parser-time dependencies without replacing their namespace setters.
+  const installer = setInterval(() => { if (installAvailableHooks()) clearInterval(installer); }, 50); // Retries parser-time/game-init dependencies until every combat and relationship hook is attached.
   installAvailableHooks();
   loadTuning();
 
   window.PorakanekiFactionRules = Object.freeze({
-    version: 1,
+    version: 2,
     canonicalizeNpcDatabaseInPlace,
     migrateLegacyRelationshipState: mergeLegacyRelationshipState,
     syncNow: () => refreshEntityState(porakanekiEntities()),
     debugSnapshot: () => ({
       tuning: { ...tuning },
-      hooks: { banditRulesInstalled, combatGuardInstalled, dialogueMigrationInstalled },
+      hooks: {
+        banditRulesInstalled,
+        combatGuardInstalled,
+        animalAttackGuardInstalled,
+        damageAttributionInstalled,
+        resourceGuardInstalled,
+        skillHitMarkerInstalled,
+        dialogueMigrationInstalled,
+      },
       materializedHunters: porakanekiEntities().length,
       neutralHunters: porakanekiEntities().filter(entity => entity._porakanekiPlannerControlled === true).length,
+      activeCompanionAnimalAttack: activeCompanionAnimalAttack?.id || null,
+      pendingLegacyPlayerHit,
       campAggressionOrigin: Object.fromEntries(campAggressionOrigin),
       recentEvents: [...recentEvents],
     }),
     formatDebug: () => {
       const d = window.PorakanekiFactionRules.debugSnapshot();
-      return `Porakaneki faction rules: hooks=${JSON.stringify(d.hooks)} hunters=${d.materializedHunters} neutral=${d.neutralHunters} origins=${JSON.stringify(d.campAggressionOrigin)} tuning=${JSON.stringify(d.tuning)} recent=${d.recentEvents.join(' | ')}`;
+      return `Porakaneki faction rules: hooks=${JSON.stringify(d.hooks)} hunters=${d.materializedHunters} neutral=${d.neutralHunters} activeCompanionAttack=${d.activeCompanionAnimalAttack || '-'} legacyPending=${d.pendingLegacyPlayerHit} origins=${JSON.stringify(d.campAggressionOrigin)} tuning=${JSON.stringify(d.tuning)} recent=${d.recentEvents.join(' | ')}`;
     },
-    __test: Object.freeze({ canonicalizeString }),
+    __test: Object.freeze({ canonicalizeString, isNeutralPorakaneki }),
   });
 })();
