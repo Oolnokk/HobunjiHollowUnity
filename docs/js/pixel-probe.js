@@ -621,6 +621,22 @@
     return lines;
   }
 
+  // Animal sleep used to hide expensive hierarchy scans inside every
+  // WebGLRenderer.render() call. Keep its replacement cadence/cost visible in
+  // the same copyable mobile report as the scheduler that now owns it.
+  function _pixelProbeAnimalSleepLines() {
+    const debug = window.AnimalSleepPresentation?.getDebug?.();
+    if (!debug) return null;
+    const prepared = Number(debug.preparedFrames) || 0;
+    const restored = Number(debug.restoredFrames) || 0;
+    const activeTemporaryTransforms = Number(debug.activeTemporaryTransforms) || 0;
+    const lines = [`Animal sleep presentation: scheduler=${debug.schedulerRegistered ? 'attached' : 'MISSING'} cadence=${debug.schedulerCadence || '-'} frames=${prepared}/${restored} lastFrame=${debug.lastPreparedFrameId || 0}/${debug.lastRestoredFrameId || 0} boundsLast=${Number(debug.lastPreparedBoundsScans) || 0} boundsTotal=${Number(debug.boundsScans) || 0} activeTemp=${activeTemporaryTransforms} static=${Number(debug.staticSleepers) || 0} cachedFrames=${Number(debug.cachedSleepFrames) || 0}`];
+    if (!debug.schedulerRegistered || prepared !== restored || activeTemporaryTransforms !== 0) {
+      lines.push(`>>> Animal sleep scheduler mismatch: scheduler=${debug.schedulerRegistered ? 'attached' : 'MISSING'} prepared=${prepared} restored=${restored} activeTemp=${activeTemporaryTransforms} lastContext=${debug.lastContext || 'none'}`);
+    }
+    return lines;
+  }
+
   // A scheduled NPC behaving visibly wrong — wandering somewhere they
   // shouldn't, or standing still without ever picking up their instrument
   // — is a state-machine question, not a rendering one, but it's exactly
@@ -866,6 +882,8 @@
     }
     const schedulerLines = _pixelProbeSchedulerLines();
     if (schedulerLines) lines.push(...schedulerLines);
+    const animalSleepLines = _pixelProbeAnimalSleepLines();
+    if (animalSleepLines) lines.push(...animalSleepLines);
     const controllerUiDebug = window.ControllerUI?.debugState?.(); // Confirms that ordinary gameplay reads the cached closed-panel state instead of forcing layout.
     if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
