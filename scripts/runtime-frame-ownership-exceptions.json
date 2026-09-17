@@ -747,15 +747,6 @@
     "line": 192
   },
   {
-    "file": "docs/js/weapon-idle-body-yaw-runtime.js",
-    "owner": "WeaponIdleBodyYawRuntime",
-    "classification": "scheduler",
-    "function": "sync",
-    "reason": "Permanent self-recursive loop (also started once at line 65) that reads the authored idle-stance body yaw and pushes/clears it on the PlayerBodyTransformComposer channel every frame; it briefly reschedules the same way at line 29 while waiting for WeaponToolStances/composer to become available before settling into steady per-frame sync, so the loop as a whole is a genuine ongoing visual subscription.",
-    "migrationStage": "candidate",
-    "line": 51
-  },
-  {
     "file": "docs/js/weapon-trust-visits.js",
     "owner": "WeaponTrustVisits",
     "classification": "timer-event",
