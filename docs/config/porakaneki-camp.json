@@ -66,7 +66,11 @@
       "Welcome back to our camp.",
       "You walk safe here."
     ],
-    "killPenalty": -1,
+    "killPenalty": 0,
+    "selfDefenseKillPenalty": -1,
+    "murderKillPenalty": -3,
+    "rivalNpcId": "omgurku_chief",
+    "rivalKillFavor": 1,
     "damageAttributionRadiusTiles": 14,
     "initializationMemoryEvent": "porakaneki_faction_initialized",
     "warningRadiusTiles": 10,
