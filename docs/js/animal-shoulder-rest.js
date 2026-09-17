@@ -1,5 +1,5 @@
 // Compatibility bootstrap for the retired A/B shoulder-curl runtime.
-// New authoring/runtime lives in animal-shoulder-spline.js (v9).
+// New authoring/runtime lives in animal-shoulder-spline.js (v10).
 (() => {
   'use strict';
 
