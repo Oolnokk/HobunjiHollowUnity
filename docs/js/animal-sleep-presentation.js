@@ -312,7 +312,7 @@
         // already replaced the sleep texture with a fresh awake/blink frame,
         // leave that authoritative map alone instead of resurrecting the
         // snapshot captured when sleep began.
-        if (sleepMap && original.material.map !== sleepMap) continue;
+        if (!sleepMap || original.material.map !== sleepMap) continue; // Restore only a sleep texture this presenter actually owns; never clobber a fresh awake map or an unresolved sleep composite.
         original.material.map = original.map;
         original.material.needsUpdate = true;
       }
