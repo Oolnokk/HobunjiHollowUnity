@@ -49,10 +49,10 @@ function shoulderBroadLinearPoint(t){const g=shoulderBroadGuide(),q=clamp(number
 // Same constant-curvature construction used by the retired fullRotationDeg /
 // interVertexRotationDeg shoulder tool and by runtime's legacy migration.
 function shoulderBroadLegacyCurvePoint(t){
-  const g=shoulderBroadGuide(),a=g.a,b=g.b,dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy);if(length<1e-7)return{x:a.x,y:a.y};
-  const tx=dx/length,ty=dy/length,nx=-ty,ny=tx,q=clamp(numberOr(t,0),0,1),s=q*length,full=shoulderBroadFullDeg()*SHOULDER_BROAD_DEG,inter=shoulderBroadInterDeg()*SHOULDER_BROAD_DEG;
-  let centerAlong,centerNormal;if(Math.abs(inter)<1e-7){centerAlong=s*Math.cos(full);centerNormal=s*Math.sin(full)}else{const curvature=inter/length,angle=full+inter*q;centerAlong=(Math.sin(angle)-Math.sin(full))/curvature;centerNormal=(-Math.cos(angle)+Math.cos(full))/curvature}
-  return{x:a.x+tx*centerAlong+nx*centerNormal,y:a.y+ty*centerAlong+ny*centerNormal};
+  const g=shoulderBroadGuide(),a=g.a,b=g.b,s=sourceSize(),aspect=Math.max(.000001,s.width/Math.max(1,s.height)),ax=a.x*aspect,bx=b.x*aspect,dx=bx-ax,dy=b.y-a.y,length=Math.hypot(dx,dy);if(length<1e-7)return{x:a.x,y:a.y};
+  const tx=dx/length,ty=dy/length,nx=-ty,ny=tx,q=clamp(numberOr(t,0),0,1),arc=q*length,full=shoulderBroadFullDeg()*SHOULDER_BROAD_DEG,inter=shoulderBroadInterDeg()*SHOULDER_BROAD_DEG;
+  let centerAlong,centerNormal;if(Math.abs(inter)<1e-7){centerAlong=arc*Math.cos(full);centerNormal=arc*Math.sin(full)}else{const curvature=inter/length,angle=full+inter*q;centerAlong=(Math.sin(angle)-Math.sin(full))/curvature;centerNormal=(-Math.cos(angle)+Math.cos(full))/curvature}
+  return{x:(ax+tx*centerAlong+nx*centerNormal)/aspect,y:a.y+ty*centerAlong+ny*centerNormal};
 }
 function shoulderBroadDeltaAt(index){
   const t=clamp(numberOr(index,0)/(SHOULDER_POINT_COUNT-1),0,1),linear=shoulderBroadLinearPoint(t),curved=shoulderBroadLegacyCurvePoint(t),legacyWeight=1-shoulderBroadFalloffValue()*(1-t);
