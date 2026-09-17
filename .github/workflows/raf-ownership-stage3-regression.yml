@@ -1,0 +1,30 @@
+name: RAF ownership Stage 3 regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/amphibious-fishing.js'
+      - 'scripts/test-amphibious-fishing-event-driven.js'
+      - '.github/workflows/raf-ownership-stage3-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/amphibious-fishing.js'
+      - 'scripts/test-amphibious-fishing-event-driven.js'
+      - '.github/workflows/raf-ownership-stage3-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check docs/js/amphibious-fishing.js
+      - name: Amphibious fishing event-driven migration
+        run: node scripts/test-amphibious-fishing-event-driven.js

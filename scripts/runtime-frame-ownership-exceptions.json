@@ -110,15 +110,6 @@
     "line": 207
   },
   {
-    "file": "docs/js/amphibious-fishing.js",
-    "owner": "AmphibiousFishing",
-    "classification": "timer-event",
-    "function": "featureLoop",
-    "reason": "Forever RAF loop (started at line 522) whose real work is detecting a fishing-phase transition (active to caught) and pruning a dead-creature set - a low-frequency state-transition check that does not need 60fps precision.",
-    "migrationStage": "candidate",
-    "line": 502
-  },
-  {
     "file": "docs/js/arch-button-labels.js",
     "owner": "ArchButtonLabels",
     "classification": "one-shot",
