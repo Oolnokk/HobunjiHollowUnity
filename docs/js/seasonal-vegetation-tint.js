@@ -425,9 +425,14 @@
         syncAll(true, 'registered target drift corrected');
       }
     }
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(watchSeasonTint);
   }
-  if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(watchSeasonTint);
+
+  const SCHEDULER_ID = 'seasonal-vegetation-tint'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
+  window.RuntimeFrameScheduler.register(SCHEDULER_ID, watchSeasonTint, {
+    phase: 'post-game',
+    owner: 'SeasonalVegetationTint',
+    description: 'Watches season tint/density for drift against grass/leaf/weed materials and re-syncs them.',
+  });
 
   window.SeasonalVegetationTint = {
     __sourceTaggedV6: true,

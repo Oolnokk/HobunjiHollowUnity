@@ -174,12 +174,6 @@
     state.wasDancing = true;
   }
 
-  function frame(t) {
-    discoverPlanes();
-    submitBodyChannel(t);
-    global.requestAnimationFrame(frame);
-  }
-
   global.SocialActionBodyPlaneRuntime = Object.freeze({
     installed: true,
     getDebug() {
@@ -196,5 +190,13 @@
     },
   });
 
-  global.requestAnimationFrame(frame);
+  global.RuntimeFrameScheduler.register('social-action-body-plane-discovery', discoverPlanes, {
+    owner: 'SocialActionBodyPlaneRuntime',
+    description: 'Hooks newly built portrait body planes with the dance matrixWorld sync sentinel.',
+  });
+  global.RuntimeFrameScheduler.register('social-action-body-plane-channel', frameContext => submitBodyChannel(frameContext.timestamp), {
+    phase: 'pre-render',
+    owner: 'SocialActionBodyPlaneRuntime',
+    description: 'Submits this frame\'s dance-driven rotation/translation into the PlayerBodyTransformComposer body channel before render.',
+  });
 })(window);

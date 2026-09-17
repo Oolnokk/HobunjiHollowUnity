@@ -120,9 +120,9 @@ assert.equal(debug.reason, 'temporary-render-lift');
 assert.equal(context.window.HobunjiAnimalSubtleElevation.totalLiftAt(4.5, 7.5, 'town'), 0.35, 'public sampler matches player terrain + support composition');
 assert.equal(context.window.HobunjiAnimalSubtleElevation.totalLiftAt(4.5, 7.5, 'farm'), 0.1, 'non-town areas do not incorrectly reuse town terrain map');
 
-// Centroid regression: visible held equipment must not influence the player's
-// body-rig centroid. This reproduces game.js's unnamed heldItemHolder directly
-// under playerMesh while the body itself occupies y=0..2.
+// Centroid diagnostics: visible held equipment must not influence the player's
+// body-rig centroid. The helper remains available for diagnostics even though
+// water no longer applies a centroid-based Y correction.
 class FakeBox3 {
   constructor() { this.makeEmpty(); }
   makeEmpty() { this.min = { y: Infinity }; this.max = { y: -Infinity }; return this; }
@@ -187,10 +187,8 @@ npcHeldRoot.children.push(stanceWrapper, npcFeetMesh, npcToolMesh);
 assert.equal(context.window.HobunjiAnimalSubtleElevation.rigCentroidWorldY(npcHeldRoot), 1,
   'held-stance wrapper keeps the NPC body in the centroid while toolPlane geometry is excluded');
 
-// Water regression: the temporary correction must sink a swimmer until the
-// water surface reaches the rig centroid, then restore movement-owned Y.
-// canSwim deliberately stays true here: that flag exempts movement penalties,
-// not the visual water-intersection rule.
+// Water regression: water detection remains available for hazards, but entering
+// a river/stream must not add any water-specific render-Y translation.
 normalCompanion.x = 4.5;
 normalCompanion.y = 7.5;
 normalCompanion.def = { canSwim: true };
@@ -206,15 +204,17 @@ context.window.GridTileAccessors = {
   getActiveTileAt() { return { type: 'river', water: 3 }; },
 };
 renderer.render();
-assert.equal(observed.companion, 0, 'natural swimmer is render-sunk until its centroid touches the river surface');
-assert.equal(observed.npc, 0, 'NPC registry path applies the same centroid rule without a scene traversal');
-assert.equal(observed.player, -1.35, 'player sink anticipates the +0.35 town/support composer lift that lands later in the renderer chain');
-assert.equal(normalCompanion.avatarRef.group.position.y, 1, 'water sink restores the movement-owned companion Y after render');
-assert.equal(npcWalker.root.position.y, 1.5, 'water sink restores the movement-owned NPC Y after render');
-assert.equal(playerRoot.position.y, 0, 'water sink restores the movement-owned player Y after render');
+assert.equal(observed.companion, 1.35, 'natural swimmer keeps ordinary terrain/support render Y in water');
+assert.equal(observed.npc, 1.5, 'NPC walker keeps its movement-owned Y in water');
+assert.equal(observed.player, 0, 'player root receives no water-specific render Y shift');
+assert.equal(normalCompanion.avatarRef.group.position.y, 1, 'companion movement-owned Y is unchanged after render');
+assert.equal(npcWalker.root.position.y, 1.5, 'NPC movement-owned Y is unchanged after render');
+assert.equal(playerRoot.position.y, 0, 'player movement-owned Y is unchanged after render');
+assert.equal(context.window.HobunjiAnimalSubtleElevation.isInSwimWater(normalCompanion), true,
+  'water detection remains active for non-visual systems');
 debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
-assert.equal(debug.waterActors >= 3, true, 'water diagnostics report corrected swimmer actors including the player');
-assert.equal(debug.lastWaterSurfaceY, 0, 'water diagnostics report the computed river surface');
+assert.equal(debug.waterActors, 0, 'water diagnostics confirm no actor received a water Y correction');
+assert.equal(debug.lastWaterSurfaceY, null, 'no water-surface Y correction is recorded when render shifting is disabled');
 
 // Prone-water regression: ResourceSystem.tick stays authoritative for normal
 // maintenance, then the shared bridge adds environmental Health damage and
@@ -242,4 +242,4 @@ context.window.ResourceSystem.tick(normalCompanion, 1, {});
 assert.equal(normalCompanion.health, 96.5, 'non-prone swimmers take no water hazard damage');
 assert.equal(normalCompanion.afflictions.windedStamina, 8, 'non-prone swimmers gain no extra Winded Stamina');
 
-console.log('animal subtle elevation + swimmer centroid/prone-water regression checks passed');
+console.log('animal subtle elevation + water-Y revert/prone-water regression checks passed');

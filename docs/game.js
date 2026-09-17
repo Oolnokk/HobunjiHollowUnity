@@ -6073,6 +6073,7 @@
       // authored ROTATION is interpreted relative to the live face/neck bone.
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
+      const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
       function _shoulderPetSurfaceTransform(perch, grip) {
         const rotationQuaternion = rotationDeg => { // Converts authored YXZ pitch/yaw/roll for the perch and grip composition below.
           const degrees = rotationDeg || {};
@@ -6094,6 +6095,20 @@
             selectedRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
             resolvedRotationSource = 'player-body';
             break;
+          case 'bodyNeckMidpoint': {
+            const bodyRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Body endpoint for the equal world-space midpoint below.
+            const neckRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : null; // Neck endpoint; rigid avatars safely fall back to the body frame.
+            if (!neckRotationSource) {
+              selectedRotationQuaternion = bodyRotationQuaternion;
+              resolvedRotationSource = 'player-body-fallback-no-neck';
+              break;
+            }
+            neckRotationSource.updateWorldMatrix?.(true, false);
+            const neckRotationQuaternion = neckRotationSource.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Live neck world orientation used as the second midpoint endpoint.
+            selectedRotationQuaternion = bodyRotationQuaternion.clone().slerp(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND).normalize();
+            resolvedRotationSource = 'player-body-neck-midpoint';
+            break;
+          }
           case 'head': {
             const headRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Head/neck selection falls back safely for rigid avatars.
             headRotationSource.updateWorldMatrix?.(true, false);
@@ -18028,6 +18043,10 @@
         const row  = Math.floor(wy / TILE);
         const tile = window.GridTileAccessors.getActiveGrid()[row][col];
         const type = tile.type;
+        // Runtime tent collision is metadata, not terrain. Keeping it out of
+        // tile.type prevents the zone ground renderer from generating a rock
+        // mound on every occupied footprint tile.
+        if (tile._banditTentCollisionId) return null;
         if (isSolid(type)) return null;
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
@@ -21913,7 +21932,7 @@
       let s_disableHatXray = false;
       let s_disableShoulderFrontXray = false; // Settings toggle: restores front-plane depth writes while a shoulder pet is attached.
       let s_disableShoulderBackXray = false; // Settings toggle: restores back-plane depth writes while a shoulder pet is attached.
-      let s_shoulderPetRotationSource = 'head'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
+      let s_shoulderPetRotationSource = 'bodyNeckMidpoint'; // Settings dropdown: selects the live frame used to orient attached shoulder pets.
       let s_invertShoulderPetRotationSource = false; // Settings toggle: inverses the selected rotation frame before authored perch/grip composition.
       let s_cancelShoulderPetRotationalOffset = false; // Settings toggle: omits authored perch/grip rotation corrections while retaining the selected frame.
       let s_frontSpriteXrayThroughShoulderPet = false; // Settings toggle: draws a front-face-only player overlay after the pet.
@@ -21997,8 +22016,8 @@
         updatePetLayering(_petLayeringActive, _petLayeringPet);
       });
       document.getElementById('settingShoulderPetRotationSource')?.addEventListener('change', e => {
-        const requestedSource = String(e.target.value || 'head'); // Used here to reject stale or manually-edited DOM values.
-        s_shoulderPetRotationSource = ['pixel', 'body', 'head', 'world'].includes(requestedSource) ? requestedSource : 'head';
+        const requestedSource = String(e.target.value || 'bodyNeckMidpoint'); // Used here to reject stale or manually-edited DOM values.
+        s_shoulderPetRotationSource = ['pixel', 'body', 'bodyNeckMidpoint', 'head', 'world'].includes(requestedSource) ? requestedSource : 'bodyNeckMidpoint';
       });
       document.getElementById('settingInvertShoulderPetRotationSource')?.addEventListener('change', e => {
         s_invertShoulderPetRotationSource = e.target.checked;
@@ -22421,6 +22440,12 @@
         // directly how much per-frame time -- if any -- is being spent outside
         // gameLoop's own call graph entirely (other requestAnimationFrame loops,
         // MutationObserver callbacks, GC, etc.) rather than in anything below.
+        //
+        // gameLoop no longer schedules its own requestAnimationFrame: it is
+        // registered as RuntimeFrameScheduler's one frame driver (see the
+        // bottom of this IIFE and docs/architecture/runtime-frame-scheduler.md),
+        // which calls it exactly once per browser frame and keeps calling it
+        // even if a given frame throws.
         const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
         const dt = Math.min(0.04, (now - lastTime) / 1000);
         lastTime = now;
@@ -22435,7 +22460,6 @@
           // player is still picking a save/character/world. The first real
           // frame renders the moment spawnPlayerAvatar flips gameStarted true.
           window.PerfProfiler?.end(gameLoopTotalPerf);
-          requestAnimationFrame(gameLoop);
           return;
         }
 
@@ -22769,6 +22793,12 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
+        // Simulation/state mutation for this frame is finished; anything that
+        // needs fresh gameplay state but must run before Three.js traverses
+        // the scene belongs at this checkpoint, not a separate RAF (see
+        // docs/architecture/runtime-frame-scheduler.md).
+        window.RuntimeFrameScheduler.checkpoint('pre-render');
+
         // ── Render active scene ──────────────────────────────────
         // "Render CPU" in the overlay only shows the average cost of a single
         // renderer.render() call; s_outlines below can chain up to 6 of them
@@ -22923,7 +22953,6 @@
         window.HudUpdate.updateHud();
         window.PerfProfiler?.end(overlayPerf);
         window.PerfProfiler?.end(gameLoopTotalPerf);
-        requestAnimationFrame(gameLoop);
       }
 
       // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
@@ -26908,6 +26937,7 @@
 
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
+        handlePlayerDeath: () => respawnPlayer(),
       });
 
       window.ItemProcessing?.init({
@@ -27515,6 +27545,8 @@
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
         getCurrentArea: () => currentArea,
+        getPlayerAimRay: currentPlayerAimRay,
+        getPlayerInteractionRay: currentPlayerInteractionRay,
         getActiveAction: () => activeAction,
         getActionHeldDown: () => actionHeldDown,
         getPackClothing: () => packClothing,
@@ -28617,5 +28649,10 @@
         });
       }
 
-      requestAnimationFrame(gameLoop);
+      // gameLoop is the scheduler's one gameplay frame driver (see
+      // docs/architecture/runtime-frame-scheduler.md) rather than scheduling
+      // its own requestAnimationFrame; gameLoop's own (now) parameter still
+      // expects a raw timestamp, so this adapts the {timestamp} frameContext
+      // the scheduler passes every subscriber/driver.
+      window.RuntimeFrameScheduler.setFrameDriver(frameContext => gameLoop(frameContext.timestamp));
     })();

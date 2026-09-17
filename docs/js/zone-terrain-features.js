@@ -19,6 +19,7 @@
   const waterfallRenderStats = Object.create(null); // Exposes persistent waterfall cost/state to in-game/mobile diagnostics.
   const WATERFALL_TEXTURE_URL = 'assets/textures/wibbly_surface.png'; // Uses the exact PNG asset used by the merged river renderer.
   const WATERFALL_SCROLL_UV_PER_SECOND = 0.55; // Drives the texture downward in surface-local vertical UV space like a conveyor belt.
+  const WATER_SURFACE_RENDER_OFFSET = 0.015; // Used by both zone water meshes and waterfall curtain endpoints so the rendered surfaces, not just their pre-render base heights, meet exactly.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -29,6 +30,16 @@
       colEnd: Math.min(zcols, Math.ceil(bounds?.colEnd ?? zcols)),
       rowEnd: Math.min(zrows, Math.ceil(bounds?.rowEnd ?? zrows)),
     };
+  }
+
+  function waterSurfaceY(tile) {
+    const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT; // Used as the pre-render base Y shared by river, stream, and waterfall horizontal water tiles.
+    const deep = tile?.type !== deps.TileType.STREAM; // Used below to preserve the merged water renderer's river/waterfall versus stream surface offset.
+    return deps.NORMAL_TOP + tierY - (deep ? 0.10 : 0.05);
+  }
+
+  function renderedWaterSurfaceY(tile) {
+    return waterSurfaceY(tile) + WATER_SURFACE_RENDER_OFFSET; // Used by vertical waterfall curtains to meet the final horizontal mesh after its anti-z-fighting Y offset is applied.
   }
 
   function buildZoneRampMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
@@ -311,10 +322,13 @@
   }
 
   // Waterfall curtain: one lightweight map-level sheet containing every
-  // elevation drop touching a WATERFALL tile. Unlike ordinary wilderness
-  // terrain, it deliberately lives on the zone scene rather than a streamed
-  // chunk group, so a distant waterfall remains in the cliff opening after
-  // the terrain chunk that would formerly own its curtain has unloaded.
+  // elevation drop touching a WATERFALL tile. Its vertical endpoints use the
+  // exact same final rendered water-surface height as the merged river mesh,
+  // creating a micro-plateau-style skirt at the lip instead of exposing the
+  // sunken bed gap between a horizontal river surface and the falling sheet.
+  // Unlike ordinary wilderness terrain, it deliberately lives on the zone
+  // scene rather than a streamed chunk group, so a distant waterfall remains
+  // in the cliff opening after the terrain chunk that formerly owned it unloads.
   function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId, bounds = null) {
     const hostScene = getWaterfallHostScene(zScene, bounds); // Owns the always-resident waterfall mesh for this zone rather than any one chunk.
     if (!hostScene?.add) return [];
@@ -337,7 +351,7 @@
     const emptyRecord = { grid: zGrid, cols: zcols, rows: zrows, mesh: null }; // Prevents every chunk from rescanning a map that contains no waterfalls.
     if (!cells.length) {
       hostRecords.set(mapId, emptyRecord);
-      waterfallRenderStats[mapId] = { persistent: true, cells: 0, curtains: 0, duplicateEdgesSkipped: 0, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      waterfallRenderStats[mapId] = { persistent: true, cells: 0, curtains: 0, duplicateEdgesSkipped: 0, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL, surfaceHeightMode: 'merged-water-surface', surfaceYOffset: WATER_SURFACE_RENDER_OFFSET };
       return [];
     }
 
@@ -348,12 +362,12 @@
     let vi = 0;
     for (const [c, r] of cells) {
       const t = zGrid[r][c];
-      const selfY = deps.RIVER_TOP + (t.elevTier || 0) * deps.PLATEAU_UNIT;
+      const selfY = renderedWaterSurfaceY(t);
       for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
         const nt = zGrid[r + dr]?.[c + dc];
         if (!nt || (nt.elevTier || 0) === (t.elevTier || 0)) continue;
         const neighborIsWater = nt.type === deps.TileType.RIVER || nt.type === deps.TileType.STREAM || nt.type === deps.TileType.WATERFALL;
-        const neighborY = (neighborIsWater ? deps.RIVER_TOP : deps.NORMAL_TOP) + (nt.elevTier || 0) * deps.PLATEAU_UNIT;
+        const neighborY = neighborIsWater ? renderedWaterSurfaceY(nt) : deps.NORMAL_TOP + (nt.elevTier || 0) * deps.PLATEAU_UNIT;
         const top = Math.max(selfY, neighborY), bottom = Math.min(selfY, neighborY);
         if (top - bottom < 0.01) continue;
         let x0, z0, x1, z1;
@@ -379,7 +393,7 @@
     }
     if (!pos.length) {
       hostRecords.set(mapId, emptyRecord);
-      waterfallRenderStats[mapId] = { persistent: true, cells: cells.length, curtains: 0, duplicateEdgesSkipped, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL };
+      waterfallRenderStats[mapId] = { persistent: true, cells: cells.length, curtains: 0, duplicateEdgesSkipped, vertices: 0, triangles: 0, drawCalls: 0, texture: WATERFALL_TEXTURE_URL, surfaceHeightMode: 'merged-water-surface', surfaceYOffset: WATER_SURFACE_RENDER_OFFSET };
       return [];
     }
 
@@ -403,6 +417,8 @@
     mesh.userData.waterfallDuplicateEdgesSkipped = duplicateEdgesSkipped;
     mesh.userData.waterfallTriangleCount = idx.length / 3;
     mesh.userData.waterfallTexture = WATERFALL_TEXTURE_URL;
+    mesh.userData.waterfallSurfaceHeightMode = 'merged-water-surface';
+    mesh.userData.waterfallSurfaceYOffset = WATER_SURFACE_RENDER_OFFSET;
     mesh.userData.noOutline = true;
     mesh.onBeforeRender = () => {
       mat.uniforms.uTime.value = performance.now() * 0.001;
@@ -423,6 +439,8 @@
       texture: WATERFALL_TEXTURE_URL,
       textureTileSize,
       scrollUvPerSecond: WATERFALL_SCROLL_UV_PER_SECOND,
+      surfaceHeightMode: 'merged-water-surface',
+      surfaceYOffset: WATER_SURFACE_RENDER_OFFSET,
     };
     console.log(`%c[zone:${mapId}] persistent textured waterfall sheet built: ${cells.length} cell(s), ${idx.length / 6} curtain(s), ${duplicateEdgesSkipped} duplicate edge(s) skipped, ${idx.length / 3} triangle(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
     return bounds ? [] : [mesh];
@@ -447,10 +465,9 @@
       const flen = Math.hypot(fx, fz);
       if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
       const deep = tile.type !== deps.TileType.STREAM;
-      const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
       cells.push({
         col: c, row: r,
-        surfaceY: deps.NORMAL_TOP + tierY - (deep ? 0.10 : 0.05),
+        surfaceY: waterSurfaceY(tile),
         depth: deep ? 0.8 : 0.45,
         coverage: 1,
         flowX: fx, flowZ: fz,
@@ -459,7 +476,9 @@
     if (!cells.length) return [];
     const chunkSuffix = range.colStart + '_' + range.rowStart;
     const mesh = deps.buildMergedWaterMesh(zScene, cells, {
-      name: `${mapId}_merged_water_${chunkSuffix}`, statKey: `${mapId} waterways ${chunkSuffix}`,
+      name: `${mapId}_merged_water_${chunkSuffix}`,
+      statKey: `${mapId} waterways ${chunkSuffix}`,
+      yOffset: WATER_SURFACE_RENDER_OFFSET,
     });
     if (!mesh) return [];
     mesh.userData.wildernessChunkOwnsGeometry = true;

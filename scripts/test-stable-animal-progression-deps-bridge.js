@@ -33,6 +33,7 @@ context.ANIMAL_GROWTH_CONFIG = {};
 context.AnimalGrowth = { install() {} };
 context.StableAnimalProgression = { install() { progressionInstallCount++; } };
 context.StableAnimalPerkAdjustments = {};
+context.StableAnimalTownFamiliarity = { install() {} }; // Pet Rapport is a parser-time Stable feature and must not trigger the dynamic-loader trap.
 context.StableAnimalTrainingRefinements = { install() {} };
 context.StableAnimalXpEvents = { install() { xpInstallCount++; } };
 context.StableTrainingCompendiumPatch = {};

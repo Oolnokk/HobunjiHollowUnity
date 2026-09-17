@@ -241,8 +241,8 @@
     c._banditLungeHopCurrent = 0;
   }
 
-  function installFishLeap() {
-    const attacks = window.Combat?.animalAttacks;
+  function installFishLeap(combat = window.Combat) {
+    const attacks = combat?.animalAttacks;
     if (fishLeapInstalled || !attacks?.register) return false;
     attacks.register('fishLeap', {
       label: 'Fish Leap',
@@ -264,8 +264,7 @@
     if (entity.health > cap) entity.health = Math.round(cap * 10) / 10;
   }
 
-  function installResourceRules() {
-    const RS = window.ResourceSystem;
+  function installResourceRules(RS = window.ResourceSystem) {
     if (resourceRulesInstalled || !RS?.AFFLICTIONS || !RS?.applyDamage || !RS?.tick) return false;
     RS.AFFLICTIONS.woundedHealth ||= {
       name: 'Wounded Health', resource: 'health', extend: 'zero', priority: 58, recovers: true,
@@ -368,6 +367,7 @@
     if (!api?.init || api.__amphibiousFishDeathWrapped) return api;
     const originalInit = api.init;
     const originalBegin = api.begin;
+    const originalUpdateCorpses = api.updateCorpses;
     api.init = injectedDeps => {
       deathDeps = injectedDeps;
       return originalInit.call(api, injectedDeps);
@@ -381,6 +381,17 @@
           c.isAmphibiousFishCorpse = true;
         }
         return originalBegin.call(api, c, ...args);
+      };
+    }
+    if (typeof originalUpdateCorpses === 'function') {
+      // updateCorpses is already called every frame by gameLoop to decay/
+      // despawn ordinary corpses; piggyback the liveAmphibiousCreatures
+      // prune on that existing call instead of a separate permanent RAF
+      // (see docs/architecture/runtime-frame-scheduler.md's ownership audit).
+      api.updateCorpses = (...args) => {
+        const result = originalUpdateCorpses.apply(api, args);
+        pruneLiveAmphibiousCreatures();
+        return result;
       };
     }
     Object.defineProperty(api, '__amphibiousFishDeathWrapped', { value: true, configurable: true });
@@ -446,10 +457,33 @@
     return true;
   }
 
+  function detectAmphibiousCatchTransition() {
+    // Preserves the exact predicate the old per-frame poll used, but now runs
+    // once per Fishing.update() call instead of once per browser frame —
+    // Fishing.update is itself only called by gameLoop while a cast is
+    // active (see docs/game.js), so this piggybacks on already-necessary
+    // gameplay work instead of adding a permanent RAF (see
+    // docs/architecture/runtime-frame-scheduler.md's ownership audit).
+    const state = window.Fishing?.state || null;
+    if (previousFishingPhase === 'active' && state?.phase === 'caught' && state.fishDef?.amphibious) {
+      beginAmphibiousFight(state);
+    }
+    if (previousFishingState && !state) previousFishingPhase = null;
+    else previousFishingPhase = state?.phase || null;
+    previousFishingState = state;
+  }
+
+  function pruneLiveAmphibiousCreatures() {
+    for (const creature of [...liveAmphibiousCreatures]) {
+      if (!creature || (creature.state === 'corpse' && !deathDeps?.corpseObjects?.has?.(creature))) liveAmphibiousCreatures.delete(creature);
+    }
+  }
+
   function wrapFishingApi(api) {
     if (!api?.init || api.__amphibiousFishingWrapped) return api;
     const originalInit = api.init;
     const originalBeginCast = api.beginCast;
+    const originalUpdate = api.update;
     api.init = injectedDeps => {
       const originalRecordItemQuality = injectedDeps?.recordItemQuality;
       const decorated = {
@@ -478,28 +512,15 @@
         return result;
       };
     }
+    if (typeof originalUpdate === 'function') {
+      api.update = (...args) => {
+        const result = originalUpdate.apply(api, args);
+        detectAmphibiousCatchTransition();
+        return result;
+      };
+    }
     Object.defineProperty(api, '__amphibiousFishingWrapped', { value: true, configurable: true });
     return api;
-  }
-
-  function featureLoop() {
-    installResourceRules();
-    installFishLeap();
-    ensureGurumahiCreatureDef();
-    wrapBanditCamps(window.BanditCamps);
-
-    const state = window.Fishing?.state || null;
-    if (previousFishingPhase === 'active' && state?.phase === 'caught' && state.fishDef?.amphibious) {
-      beginAmphibiousFight(state);
-    }
-    if (previousFishingState && !state) previousFishingPhase = null;
-    else previousFishingPhase = state?.phase || null;
-    previousFishingState = state;
-
-    for (const creature of [...liveAmphibiousCreatures]) {
-      if (!creature || (creature.state === 'corpse' && !deathDeps?.corpseObjects?.has?.(creature))) liveAmphibiousCreatures.delete(creature);
-    }
-    requestAnimationFrame(featureLoop);
   }
 
   window.AmphibiousFishing = {
@@ -519,5 +540,15 @@
   hookWindowApi('WildlifeSpawn', wrapWildlifeSpawn);
   hookWindowApi('CreatureDeath', wrapCreatureDeath);
   hookWindowApi('BanditCamps', wrapBanditCamps);
-  requestAnimationFrame(featureLoop);
+  // ResourceSystem and Combat.animalAttacks are both real one-time module
+  // installs, not per-frame work; hooking their own global assignment
+  // (like every dependency above) installs each exactly once instead of
+  // retrying on a permanent RAF (see
+  // docs/architecture/runtime-frame-scheduler.md's ownership audit).
+  // hookWindowApi's wrap callback must return the (possibly mutated) global
+  // so the property stays a pass-through — unlike the other wraps above,
+  // installResourceRules/installFishLeap report success as a boolean, so
+  // they're adapted here instead of changing what they return everywhere else.
+  hookWindowApi('ResourceSystem', RS => { installResourceRules(RS); return RS; });
+  hookWindowApi('Combat', combat => { installFishLeap(combat); return combat; });
 })();

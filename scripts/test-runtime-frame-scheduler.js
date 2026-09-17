@@ -105,12 +105,13 @@ for (const [name, source, id] of [
   assert(source.includes('RuntimeFrameScheduler.register'), `${name} registers with the shared browser-frame owner`);
   assert(!source.includes('requestAnimationFrame('), `${name} no longer owns a private RAF`);
 }
-assert(quick.includes('requestAnimationFrame(frame);'), 'Quick Attack keeps its isolated pre-gameLoop RAF ordering');
-assert(!quick.includes('RuntimeFrameScheduler.register'), 'Quick Attack is not silently moved across gameLoop before scheduler phases exist');
-assert(index.indexOf('quick-attack-bonus-indicator.js') < index.indexOf('<script src="game.js?'), 'Quick Attack loads and schedules before gameLoop');
+assert(!quick.includes('requestAnimationFrame('), 'Quick Attack no longer owns a private RAF');
+assert(quick.includes("RuntimeFrameScheduler.register"), 'Quick Attack registers with the shared browser-frame owner');
+assert(quick.includes("phase: 'pre-game'"), 'Quick Attack must be on the pre-game phase so it keeps running before gameLoop, now expressed as an explicit phase instead of independent RAF registration order');
+assert(index.indexOf('quick-attack-bonus-indicator.js') < index.indexOf('<script src="game.js?'), 'Quick Attack still loads before game.js (no longer load-order-significant for cadence, but still a sensible script order)');
 assert(melee.includes("document.addEventListener('DOMContentLoaded', init"), 'melee scheduler registration remains after gameLoop setup');
 assert(ranged.includes("document.addEventListener('DOMContentLoaded', init"), 'ranged scheduler registration remains after gameLoop setup');
 assert(quick.includes('drawProceduralReticle(sight, nowMs)'), 'Quick Attack keeps its animated procedural fallback');
 assert(guide.includes('No search through `game.js`'), 'architecture guide explicitly supports local subsystem comprehension');
 assert(read('AGENTS.md').includes('docs/architecture/runtime-frame-scheduler.md'), 'root coding instructions route small-context models to the cadence contract');
-console.log('runtime frame scheduler, current-main bootstrap, conservative HUD migration, and isolated Quick Attack contracts passed');
+console.log('runtime frame scheduler, current-main bootstrap, conservative HUD migration, and Quick Attack pre-game migration contracts passed');

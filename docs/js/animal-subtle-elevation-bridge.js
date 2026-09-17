@@ -1,7 +1,6 @@
 // Gives non-humanoid world actors the same authored terrain/support lift used
 // by the player and NPCs without taking ownership of their movement Y. It also
-// owns the render-only water-depth correction shared by humanoid and creature
-// rigs, plus the prone-in-water resource hazard.
+// owns the prone-in-water resource hazard.
 (() => {
   'use strict';
 
@@ -16,11 +15,11 @@
   const PRONE_WATER_HEALTH_FRACTION_PER_SECOND = 0.035; // Used by applyProneWaterHazard to drain Health while a prone actor is in a river/stream.
   const PRONE_WATER_WINDED_FRACTION_PER_SECOND = 0.08; // Used by applyProneWaterHazard to build Winded Stamina while a prone actor is in a river/stream.
   const NON_RIG_NAME = /(ground[_ -]?shadow|shadow|resource[_ -]?ring|reticle|popup|debug|hitbox|target[_ -]?ring|torch|tool[_ -]?holder|weapon[_ -]?holder|held[_ -]?item[_ -]?(?:holder|plane)|tool[_ -]?plane|weapon[_ -]?plane)/i; // Used by rigCentroidWorldY to keep helpers/actual equipment visuals out without excluding body-pose wrappers.
-  const liftedRoots = []; // Reused each render so temporary animal/water Y offsets can be restored without per-frame pair allocations.
+  const liftedRoots = []; // Reused each render so temporary animal Y offsets can be restored without per-frame pair allocations.
   const liftedBaseYs = []; // Parallel to liftedRoots; stores each root's movement-owned Y for restoration after rendering.
   const seenActors = new Set(); // Reused each render to dedupe actors exposed through overlapping runtime dependency sets.
   const seenRoots = new Set(); // Reused each render to avoid recording an avatar/shadow root twice through aliases.
-  const waterSeenRoots = new Set(); // Reused each render so actor registries cannot sink the same character twice.
+  const waterSeenRoots = new Set(); // Retained for centroid diagnostics; runtime water Y correction is intentionally disabled.
 
   let runtimeDeps = null; // Captured from PixelProbe.init; supplies renderer/current-area, NPC walkers, and creature registries when available.
   let combatDeps = null; // Captured from Combat.init; supplies player, wild creatures, companions, mounts, and creature corpses.
@@ -449,15 +448,10 @@
     eachActor(corpseObjects, 'corpse', area);
     eachActor(animalObjects, 'farm', area);
 
-    // Water depth is a render-only correction, just like subtle elevation:
-    // movement/pathing keep their existing Y authority while every visible
-    // swimming rig is guaranteed to meet the same centroid rule.
-    applyPlayerWaterSink();
-    eachActorWaterSink(hostileObjects, area);
-    eachActorWaterSink(companionObjects, area);
-    applyNpcWalkerWaterSinks(area);
+    // Water no longer changes character render Y. Movement-owned Y plus the
+    // ordinary terrain/support render lift remain authoritative in water.
 
-    if (lastDebug.appliedActors || lastDebug.waterActors) lastDebug.reason = 'temporary-render-lift';
+    if (lastDebug.appliedActors) lastDebug.reason = 'temporary-render-lift';
   }
 
   function restoreRenderLift() {

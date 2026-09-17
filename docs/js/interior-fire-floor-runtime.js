@@ -36,8 +36,8 @@
   const originalFurnitureBuilder = furniture.buildFurnitureGroup; // Used underneath the always-on ambient VFX wrapper.
   let bonfirePromise = null; // Caches the one campfire->bonfire derivation request shared by all bonfire instances.
   let bonfireData = null; // Stores the resolved derived bonfire object for synchronous peek() calls.
-  let ambientRafId = 0; // Stores the shared requestAnimationFrame handle while ambient emitters exist.
-  let ambientLastNow = 0; // Stores the previous RAF timestamp for frame-rate-independent particle updates.
+  let ambientLastNow = 0; // Stores the previous scheduler timestamp for frame-rate-independent particle updates.
+  const AMBIENT_SCHEDULER_ID = 'interior-ambient-vfx'; // Stable scheduler identity for RuntimeFrameScheduler ownership, disposal, and diagnostics.
   let buildingSceneMap = null; // Stores the live game building-scene Map once GridTileAccessors exposes it.
   let lastFloorMapId = null; // Included in the mobile-friendly debug snapshot after a floor style is applied.
   let lastFloorMaterialCount = 0; // Included in debug output so a map can prove its floor meshes were found.
@@ -142,8 +142,7 @@
     ambientRecordByGroup.delete(record.group);
   }
 
-  function ambientTick(now) {
-    ambientRafId = 0;
+  function ambientTick({ timestamp: now }) {
     const dt = Math.min(0.05, Math.max(0, ambientLastNow ? (now - ambientLastNow) / 1000 : 1 / 60)); // Used to keep particle motion stable after tab stalls.
     ambientLastNow = now;
     for (const record of [...ambientRecords]) {
@@ -155,13 +154,22 @@
       }
       for (const visual of record.visuals) visual?.update?.(dt, true);
     }
-    if (ambientRecords.size) ambientRafId = requestAnimationFrame(ambientTick);
-    else ambientLastNow = 0;
+    if (!ambientRecords.size) {
+      ambientLastNow = 0;
+      window.RuntimeFrameScheduler.setEnabled(AMBIENT_SCHEDULER_ID, false); // No live emitters left; stop running this subscriber until one reattaches.
+    }
   }
 
   function ensureAmbientLoop() {
-    if (!ambientRafId && ambientRecords.size) ambientRafId = requestAnimationFrame(ambientTick);
+    if (ambientRecords.size) window.RuntimeFrameScheduler.setEnabled(AMBIENT_SCHEDULER_ID, true);
   }
+
+  window.RuntimeFrameScheduler.register(AMBIENT_SCHEDULER_ID, ambientTick, {
+    phase: 'post-game',
+    owner: 'InteriorFireFloorRuntime',
+    description: 'Updates ambient fire/candle particle emitters attached to placed furniture.',
+    enabled: false,
+  });
 
   function attachAmbientEmitters(group, data, key) {
     if (!group || !AMBIENT_FIRE_KEYS.has(key) || !Array.isArray(data?.particleEmitters) || !authored.createEmitterVisual) return group;

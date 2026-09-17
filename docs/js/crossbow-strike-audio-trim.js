@@ -7,10 +7,36 @@
 
   const TRIM_START_S = 0.10;
   let installed = false;
-  let stopped = false;
 
   function rangedFireConfig() {
     return global.SCRATCHBONES_CONFIG?.game?.audio?.combatSfx?.rangedFire || null;
+  }
+
+  // Waits for `window.AudioSystem` the way the rest of the codebase's
+  // late-global bridges do (see npc-social-inhibition-runtime.js and
+  // friends): install immediately if it already exists, otherwise hook its
+  // future assignment. Replaces a permanent per-frame RAF retry loop with a
+  // one-time install that fires exactly once AudioSystem actually shows up
+  // (see docs/architecture/runtime-frame-scheduler.md's ownership audit).
+  function chainGlobal(name, patcher) {
+    const current = global[name];
+    if (current) patcher(current);
+    const descriptor = Object.getOwnPropertyDescriptor(global, name);
+    if (descriptor && !descriptor.configurable) return;
+    let stored = descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value') ? descriptor.value : current;
+    const oldGet = descriptor?.get, oldSet = descriptor?.set;
+    try {
+      Object.defineProperty(global, name, {
+        configurable: true,
+        enumerable: descriptor?.enumerable ?? true,
+        get() { return oldGet ? oldGet.call(global) : stored; },
+        set(value) {
+          if (oldSet) oldSet.call(global, value); else stored = value;
+          const resolved = oldGet ? oldGet.call(global) : stored;
+          if (resolved) patcher(resolved);
+        },
+      });
+    } catch (_) {}
   }
 
   function install() {
@@ -44,15 +70,10 @@
     return true;
   }
 
-  function frame() {
-    if (stopped || install()) return;
-    global.requestAnimationFrame(frame);
-  }
-  frame();
+  chainGlobal('AudioSystem', install);
 
   global.HobunjiCrossbowStrikeAudioTrim = {
     get installed() { return installed; },
     get trimStartS() { return TRIM_START_S; },
-    stopPolling() { stopped = true; },
   };
 })(window);

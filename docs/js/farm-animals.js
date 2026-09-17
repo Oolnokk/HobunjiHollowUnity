@@ -783,11 +783,17 @@
   function makeDrenkirraAnimal(col, row, livestockId, genotype) {
     return makePatternLivestockAnimal('drenkirra', 'Drenkirra', '🪿', col, row, livestockId, genotype);
   }
+  function makePuktukAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('puktuk', 'Puktuk', '🦊', col, row, livestockId, genotype);
+  }
+  function makeVoorgAssAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('voorg-ass', 'Voorg-Ass', '🫏', col, row, livestockId, genotype);
+  }
 
   // Livestock kind → factory, so restoring saved livestock on world load
   // can dispatch by kind without hardcoding uumkao'ii — the array this
   // reads is meant to grow into other livestock types later.
-  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal };
+  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal };
 
   // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
   // that item — populated when a Den-Mother's nest grants an egg/baby

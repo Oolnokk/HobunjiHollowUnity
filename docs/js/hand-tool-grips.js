@@ -734,10 +734,40 @@
     }
   } else installRigBlendWrapper();
 
-  function frame() {
-    installCombatCapture(); installRigBlendWrapper(); installEditorUi(); applyPrimaryGripVisuals();
+  function installMaintenance() {
+    // installCombatCapture/installRigBlendWrapper stay idempotent per-frame retries
+    // (not one-shot) because their prerequisites (Combat.deps.__weaponToolStanceVisualHooks,
+    // a configurable ProceduralHandAttachments global) can become ready on a later
+    // frame than this module's own load — see the reverted Stage 1 attempt at
+    // event-driven install in docs/architecture/runtime-frame-scheduler.md. Both
+    // functions already guard themselves with an installed-flag check, so repeating
+    // them every frame is cheap once installed.
+    installCombatCapture();
+    installRigBlendWrapper();
+    installEditorUi();
     if (editorUi) syncEditorSpanUi();
+  }
+
+  if (global.RuntimeFrameScheduler?.register) {
+    global.RuntimeFrameScheduler.register('hand-tool-grips-install', installMaintenance, {
+      owner: 'HobunjiHandToolGrips',
+      description: 'Idempotently (re)installs the combat-capture and rig-blend wrappers, and refreshes the Attack Animation Editor grip UI when present.',
+    });
+    global.RuntimeFrameScheduler.register('hand-tool-grips-visuals', applyPrimaryGripVisuals, {
+      phase: 'pre-render',
+      owner: 'HobunjiHandToolGrips',
+      description: 'Applies the current primary-grip transform correction to the held tool/weapon visual before this frame renders.',
+    });
+  } else {
+    // The standalone Attack Animation Editor and Animation Author tool pages
+    // (docs/tools/*) also load this module but never load
+    // RuntimeFrameScheduler — they own their own isolated animation context,
+    // so this keeps the original combined per-frame loop for them unchanged.
+    function frame() {
+      installMaintenance();
+      applyPrimaryGripVisuals();
+      global.requestAnimationFrame(frame);
+    }
     global.requestAnimationFrame(frame);
   }
-  global.requestAnimationFrame(frame);
 })(window);
