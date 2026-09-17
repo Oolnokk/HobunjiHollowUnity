@@ -35,7 +35,7 @@
     "teacup_unumanuk": { "area": "map_i_unumanuk_household", "furnitureId": "f_unmh_table", "itemKey": "tableLongFurniture", "reason": "home:home" },
     "tooth_hatayap": { "area": "map_i_unumanuk_household", "furnitureId": "f_unmh_stool1", "itemKey": "stoolFurniture", "reason": "home:home" },
     "banubu": { "area": "map_i_general_store", "furnitureId": "fmqf949thrwvs", "itemKey": "stoolFurniture", "reason": "temporary-catch-all:authored home/work interior unavailable" },
-    "baruhi_chief": { "area": "map_i_general_store", "furnitureId": "fmqflwr1gmo3q", "itemKey": "hearthFurniture", "reason": "temporary-catch-all:authored home/work interior unavailable" },
+    "omgurku_chief": { "area": "map_i_general_store", "furnitureId": "fmqflwr1gmo3q", "itemKey": "hearthFurniture", "reason": "temporary-catch-all:authored home/work interior unavailable" },
     "bowstring_hatayap": { "area": "map_i_general_store", "furnitureId": "fmqflxtmkc8qo", "itemKey": "pestleFurniture", "reason": "temporary-catch-all:authored home/work interior unavailable" },
     "hiki_hiki": { "area": "map_i_general_store", "furnitureId": "fmqflxx5896wc", "itemKey": "handMillFurniture", "reason": "temporary-catch-all:authored home/work interior unavailable" },
     "khannibarri_agent": { "area": "map_i_general_store", "furnitureId": "fmqflpf2qgfgn", "itemKey": "crateStackFurniture", "reason": "temporary-catch-all:authored home/work interior unavailable" },
