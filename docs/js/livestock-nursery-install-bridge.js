@@ -14,6 +14,7 @@
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20260912pets1' },
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20260915ambient2' },
+    { globalKey: 'StableAnimalTownFamiliarity', src: 'js/stable-animal-town-familiarity.js?v=20260917rapport2' },
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
     { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260913xp1' },
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
@@ -49,6 +50,7 @@
         window.OutdoorLivestockPresence?.install?.();
         window.AnimalGrowth?.install?.();
         window.StableAnimalProgression?.install?.();
+        window.StableAnimalTownFamiliarity?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
         window.StableAnimalXpEvents?.install?.();
         window.BarnIncubator?.install?.();
@@ -74,7 +76,7 @@
   // Parser-time bridge for the decoupled farm modules. FarmTroughs loads before
   // FarmPanel, while AnimalSleepPresentation/OutdoorLivestockWelfare/
   // OutdoorLivestockPresence/LivestockNursery/AnimalGrowth/StableAnimalProgression/
-  // StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator/
+  // StableAnimalTownFamiliarity/StableAnimalTrainingRefinements/StableAnimalXpEvents/BarnIncubator/
   // FarmMenuLayout/FarmGlancePalette/LivestockNurseryGrid/
   // LivestockNurseryInventoryPaging all need the public farm APIs before game.js
   // initializes them. Capture FarmPanel's one global assignment and install
@@ -87,6 +89,7 @@
   const installOutdoorLivestockPresence = () => window.OutdoorLivestockPresence?.install?.();
   const installAnimalGrowth = () => window.AnimalGrowth?.install?.();
   const installStableAnimalProgression = () => window.StableAnimalProgression?.install?.();
+  const installStableAnimalTownFamiliarity = () => window.StableAnimalTownFamiliarity?.install?.();
   const installStableAnimalTrainingRefinements = () => window.StableAnimalTrainingRefinements?.install?.();
   const installStableAnimalXpEvents = () => window.StableAnimalXpEvents?.install?.();
   const installBarnIncubator = () => window.BarnIncubator?.install?.();
@@ -209,6 +212,7 @@
     installOutdoorLivestockPresence();
     installAnimalGrowth();
     installStableAnimalProgression();
+    installStableAnimalTownFamiliarity();
     installStableAnimalTrainingRefinements();
     installStableProgressionDepsBridge();
     installStableAnimalXpEvents();

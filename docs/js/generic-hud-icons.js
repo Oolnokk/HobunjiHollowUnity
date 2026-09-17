@@ -16,10 +16,12 @@
     '♥': '#ff718f',
     '♥️': '#ff718f',
     '💜': '#9d73d9',
+    '💛': '#ffd84d',
     '🖤': '#252126',
+    '🩶': '#9e9a96',
     '🤍': '#f4eee8',
   });
-  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|🖤|🤍|❗|❓|❌|✖️?|✕)/gu; // Used to split visible runtime text into text and icon fragments.
+  const TOKEN_PATTERN = /(❤️|❤|♥️?|💜|💛|🖤|🩶|🤍|❗|❓|❌|✖️?|✕)/gu; // Used to split visible runtime text into text and icon fragments.
   const TEXT_SKIP_SELECTOR = 'script,style,textarea,input,select,option,[data-generic-hud-icon]'; // Used to keep icon substitution out of editable/source-like DOM.
   const X_CONTROL_HINT = /(close|cancel|delete|remove|unequip|unassign|dismiss|clear)/i; // Used to distinguish a semantic × close/remove control from multiplication text.
   const RELATIONSHIPS_TAB_SELECTOR = '[data-mpanel="relationships"]'; // Used to make the Relationships tab a heart-only affordance.
@@ -98,7 +100,7 @@
     icon.dataset.genericHudIcon = kind;
     icon.setAttribute('aria-hidden', 'true');
     if (kind === 'heart') {
-      const heartColor = HEART_COLORS[token] || HEART_COLORS['❤️']; // Used to retain red/purple/black/white relationship states.
+      const heartColor = HEART_COLORS[token] || HEART_COLORS['❤️']; // Used to retain red/purple/yellow/black/gray/white relationship states.
       icon.style.setProperty('--generic-heart-color', heartColor);
     } else {
       icon.src = ICONS[kind];
