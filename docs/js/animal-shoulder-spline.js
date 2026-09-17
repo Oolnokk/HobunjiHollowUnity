@@ -1,12 +1,17 @@
 // Seven-point shoulder-pet body spline for side-view animal planes.
 //
-// v7 makes the rig explicitly two-stage:
+// v8 keeps the explicit two-stage rig:
 //   BEFORE points = bind line fitted to the undeformed PNG.
 //   AFTER points  = shoulder pose for those same seven bind locations.
 // Every source vertex is measured in the local frame of the BEFORE spline and
 // reconstructed in the matching local frame of the AFTER spline. The complete
-// rectangular strip participates regardless of sprite alpha. Head Influence
-// still fights shoulder deformation as (1 - headInfluence).
+// rectangular strip participates regardless of sprite alpha.
+//
+// The shoulder/right half now mirrors the head paint workflow with its own
+// Influence / Compressibility / Stretchability maps. Unpainted shoulder
+// Influence defaults to 100% at and right of frameShiftX, 0% left of it.
+// Material channels inherit shoulder Influence and can only reduce it. Head
+// Influence still fights the final shoulder deformation as (1 - headInfluence).
 //
 // Older shoulderRest exports remain one-way compatible. Straight A/B bind guides
 // and the retired bend/rotation/falloff controls are sampled into BEFORE/AFTER.
@@ -14,6 +19,8 @@
   'use strict';
 
   const POINT_COUNT = 7;
+  const UNSET_WEIGHT = 256;
+  const RESPONSE_EPSILON = 1e-4;
   const DEFAULT_GUIDE = Object.freeze({
     a: Object.freeze({ x: 0.52, y: 0.56 }),
     b: Object.freeze({ x: 1.00, y: 0.57 }),
@@ -41,6 +48,80 @@
   }
   function clonePoints(points, fallbackPoints) {
     return Array.from({ length: POINT_COUNT }, (_, index) => clonePoint(points?.[index], fallbackPoints[index]));
+  }
+
+  function decodeWeightMap(raw) {
+    if (!raw || !Number.isFinite(Number(raw.width)) || !Number.isFinite(Number(raw.height))) return null;
+    const width = Math.max(1, Math.round(Number(raw.width)));
+    const height = Math.max(1, Math.round(Number(raw.height)));
+    const values = new Uint16Array(width * height);
+    values.fill(UNSET_WEIGHT);
+    if (raw.encoding === 'rle-u9' && Array.isArray(raw.data)) {
+      let cursor = 0;
+      for (let i = 0; i + 1 < raw.data.length && cursor < values.length; i += 2) {
+        const run = Math.max(0, Math.round(finite(raw.data[i], 0)));
+        const value = clamp(Math.round(finite(raw.data[i + 1], UNSET_WEIGHT)), 0, UNSET_WEIGHT);
+        const end = Math.min(values.length, cursor + run);
+        values.fill(value, cursor, end);
+        cursor = end;
+      }
+    } else if (Array.isArray(raw.data)) {
+      for (let i = 0; i < values.length && i < raw.data.length; i++) values[i] = clamp(Math.round(finite(raw.data[i], UNSET_WEIGHT)), 0, UNSET_WEIGHT);
+    } else return null;
+    return { width, height, values };
+  }
+
+  function shoulderDefaultInfluence(u, frameShiftX) {
+    return finite(u, 0) + RESPONSE_EPSILON >= clamp(finite(frameShiftX, DEFAULT_FRAME_SHIFT_X), 0, 1) ? 1 : 0;
+  }
+
+  function sampleShoulderInfluence(map, u, topV, frameShiftX) {
+    if (!map) return shoulderDefaultInfluence(u, frameShiftX);
+    const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
+    const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const x1 = Math.min(map.width - 1, x0 + 1), y1 = Math.min(map.height - 1, y0 + 1);
+    const tx = fx - x0, ty = fy - y0;
+    const at = (x, y) => {
+      const raw = map.values[y * map.width + x];
+      const cornerU = map.width <= 1 ? 0 : x / (map.width - 1);
+      return raw === UNSET_WEIGHT ? shoulderDefaultInfluence(cornerU, frameShiftX) : clamp(raw, 0, 255) / 255;
+    };
+    const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
+    const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
+    return clamp(a * (1 - ty) + b * ty, 0, 1);
+  }
+
+  function sampleShoulderMaterial(map, influenceMap, u, topV, frameShiftX, fallbackInfluence) {
+    const fallback = clamp(finite(fallbackInfluence, shoulderDefaultInfluence(u, frameShiftX)), 0, 1);
+    if (!map) return fallback;
+    const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
+    const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const x1 = Math.min(map.width - 1, x0 + 1), y1 = Math.min(map.height - 1, y0 + 1);
+    const tx = fx - x0, ty = fy - y0;
+    const at = (x, y) => {
+      const raw = map.values[y * map.width + x];
+      const cornerU = map.width <= 1 ? 0 : x / (map.width - 1);
+      const cornerV = map.height <= 1 ? 0 : y / (map.height - 1);
+      const base = sampleShoulderInfluence(influenceMap, cornerU, cornerV, frameShiftX);
+      return raw === UNSET_WEIGHT ? base : Math.min(base, clamp(raw, 0, 255) / 255);
+    };
+    const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
+    const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
+    return clamp(Math.min(fallback, a * (1 - ty) + b * ty), 0, 1);
+  }
+
+  function attachShoulderMaps(result, raw) {
+    result.weightMap = raw?.weightMap || null;
+    result.compressibilityMap = raw?.compressibilityMap || null;
+    result.stretchabilityMap = raw?.stretchabilityMap || null;
+    result._shoulderMaps = {
+      influence: decodeWeightMap(result.weightMap),
+      compressibility: decodeWeightMap(result.compressibilityMap),
+      stretchability: decodeWeightMap(result.stretchabilityMap),
+    };
+    return result;
   }
 
   function legacyRotations(raw) {
@@ -86,7 +167,6 @@
     if (Array.isArray(raw?.afterPoints) && raw.afterPoints.length === POINT_COUNT) {
       afterPoints = clonePoints(raw.afterPoints, beforePoints);
     } else if (Array.isArray(raw?.splinePoints) && raw.splinePoints.length === POINT_COUNT) {
-      // v6 already stored the destination pose; its bind shape was the straight restGuide.
       afterPoints = clonePoints(raw.splinePoints, beforePoints);
     } else {
       const rotations = legacyRotations(raw);
@@ -100,7 +180,7 @@
       });
     }
 
-    return {
+    return attachShoulderMaps({
       enabled: raw?.enabled !== false,
       useSpline: raw?.useSpline !== undefined ? !!raw.useSpline : raw?.enabled === true,
       useRun1: !!raw?.useRun1,
@@ -111,7 +191,7 @@
       beforePoints,
       afterPoints,
       migratedFromLegacy: true,
-    };
+    }, raw);
   }
 
   function normalizeRest(rawRig) {
@@ -124,7 +204,7 @@
     const fallback = linearPointsForGuide(DEFAULT_GUIDE);
     const beforePoints = clonePoints(raw.beforePoints, fallback);
     const afterPoints = clonePoints(raw.afterPoints, beforePoints);
-    return {
+    return attachShoulderMaps({
       enabled: true,
       useSpline: !!raw.useSpline,
       useRun1: !!raw.useRun1,
@@ -135,7 +215,7 @@
       beforePoints,
       afterPoints,
       migratedFromLegacy: false,
-    };
+    }, raw);
   }
 
   function catmullRomComponent(p0, p1, p2, p3, t) {
@@ -158,8 +238,6 @@
   function dot(ax, ay, bx, by) { return ax * bx + ay * by; }
   function distanceSquared(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
 
-  // Measure a PNG point in the curved BEFORE/bind frame. This is the missing
-  // first stage that v6 approximated as one straight A→B line.
   function bindFrameForPoint(beforePoints, point) {
     const p = { x: finite(point?.x, 0), y: finite(point?.y, 0) };
     const start = splinePoint(beforePoints, 0), end = splinePoint(beforePoints, 1);
@@ -184,20 +262,51 @@
     return { t, center, tangent, normal, signedOffset: dot(p.x - center.x, p.y - center.y, normal.x, normal.y) };
   }
 
-  function deformNormalizedPoint(point, restLike) {
-    const rest = restLike?.beforePoints && restLike?.afterPoints ? restLike : normalizeRest(restLike);
-    const source = { x: finite(point?.x, 0), y: finite(point?.y, 0) };
-    if (!rest || rest.beforePoints?.length !== POINT_COUNT || rest.afterPoints?.length !== POINT_COUNT) return source;
-    const bind = bindFrameForPoint(rest.beforePoints, source);
-    if (!bind) return source;
-    const center = splinePoint(rest.afterPoints, bind.t), tangent = splineTangent(rest.afterPoints, bind.t), normal = { x: -tangent.y, y: tangent.x };
-    return { x: center.x + normal.x * bind.signedOffset, y: center.y + normal.y * bind.signedOffset };
+  function pointAtOffset(points, t, signedOffset) {
+    const center = splinePoint(points, t), tangent = splineTangent(points, t), normal = { x: -tangent.y, y: tangent.x };
+    return { x: center.x + normal.x * signedOffset, y: center.y + normal.y * signedOffset };
   }
-  function deformWeightedPoint(point, headInfluence, restLike) {
+
+  function shoulderResponseKind(rest, bind) {
+    if (!rest || !bind) return 'neutral';
+    const epsilon = 1 / 1024;
+    const t0 = Math.max(0, bind.t - epsilon), t1 = Math.min(1, bind.t + epsilon);
+    if (t1 - t0 < 1e-7) return 'neutral';
+    const before0 = pointAtOffset(rest.beforePoints, t0, bind.signedOffset), before1 = pointAtOffset(rest.beforePoints, t1, bind.signedOffset);
+    const after0 = pointAtOffset(rest.afterPoints, t0, bind.signedOffset), after1 = pointAtOffset(rest.afterPoints, t1, bind.signedOffset);
+    const beforeSpan = Math.hypot(before1.x - before0.x, before1.y - before0.y);
+    const afterSpan = Math.hypot(after1.x - after0.x, after1.y - after0.y);
+    if (beforeSpan < 1e-8) return 'neutral';
+    const ratio = afterSpan / beforeSpan;
+    if (ratio > 1 + RESPONSE_EPSILON) return 'stretch';
+    if (ratio < 1 - RESPONSE_EPSILON) return 'compress';
+    return 'neutral';
+  }
+
+  function deformationDetails(point, restLike) {
+    const rest = restLike?._shoulderMaps ? restLike : normalizeRest(restLike);
     const source = { x: finite(point?.x, 0), y: finite(point?.y, 0) };
-    const rest = restLike?.beforePoints && restLike?.afterPoints ? restLike : normalizeRest(restLike);
-    if (!rest?.useSpline) return source;
-    const target = deformNormalizedPoint(source, rest), bodyWeight = 1 - clamp(finite(headInfluence, 0), 0, 1);
+    if (!rest || rest.beforePoints?.length !== POINT_COUNT || rest.afterPoints?.length !== POINT_COUNT) return { source, target: source, bind: null, kind: 'neutral', rest };
+    const bind = bindFrameForPoint(rest.beforePoints, source);
+    if (!bind) return { source, target: source, bind: null, kind: 'neutral', rest };
+    const target = pointAtOffset(rest.afterPoints, bind.t, bind.signedOffset);
+    return { source, target, bind, kind: shoulderResponseKind(rest, bind), rest };
+  }
+
+  function deformNormalizedPoint(point, restLike) {
+    return deformationDetails(point, restLike).target;
+  }
+
+  function deformWeightedPoint(point, headInfluence, restLike) {
+    const details = deformationDetails(point, restLike);
+    const { source, target, kind, rest } = details;
+    if (!rest?.useSpline || !details.bind) return source;
+    const maps = rest._shoulderMaps || {};
+    const shoulderInfluence = sampleShoulderInfluence(maps.influence, source.x, source.y, rest.frameShiftX);
+    const compressibility = sampleShoulderMaterial(maps.compressibility, maps.influence, source.x, source.y, rest.frameShiftX, shoulderInfluence);
+    const stretchability = sampleShoulderMaterial(maps.stretchability, maps.influence, source.x, source.y, rest.frameShiftX, shoulderInfluence);
+    const responseWeight = kind === 'compress' ? compressibility : kind === 'stretch' ? stretchability : shoulderInfluence;
+    const bodyWeight = Math.min(shoulderInfluence, responseWeight) * (1 - clamp(finite(headInfluence, 0), 0, 1));
     return { x: source.x + (target.x - source.x) * bodyWeight, y: source.y + (target.y - source.y) * bodyWeight };
   }
 
@@ -206,7 +315,7 @@
     if (map?.values) {
       const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1), fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
       const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(map.width - 1, x0 + 1), y1 = Math.min(map.height - 1, y0 + 1), tx = fx - x0, ty = fy - y0;
-      const unset = window.AnimalHeadRigRuntime?.UNSET_WEIGHT ?? 256;
+      const unset = window.AnimalHeadRigRuntime?.UNSET_WEIGHT ?? UNSET_WEIGHT;
       const at = (x, y) => { const value = map.values[y * map.width + x]; return value === unset ? 0 : clamp(value, 0, 255) / 255; };
       const row0 = at(x0, y0) * (1 - tx) + at(x1, y0) * tx, row1 = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
       return clamp(row0 * (1 - ty) + row1 * ty, 0, 1);
@@ -284,13 +393,13 @@
 
   function decorateAvatar(THREE, avatarRef, rawRig) {
     const rest = normalizeRest(rawRig);
-    if (!rest || !avatarRef?.headRig || avatarRef.shoulderRest?.version === 7) return avatarRef;
+    if (!rest || !avatarRef?.headRig || avatarRef.shoulderRest?.version === 8) return avatarRef;
     const normalizedRig = window.AnimalHeadRigRuntime?.normalizeRig?.(rawRig) || null;
     if (!normalizedRig) return avatarRef;
     const rigState = avatarRef.headRig, frontMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.frontHeadBone) : null, backMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.backHeadBone) : null;
     const front = rest.useSpline ? buildMeshState(frontMesh, normalizedRig, rest, false) : null, back = rest.useSpline ? buildMeshState(backMesh, normalizedRig, rest, true) : null;
     const frontOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, frontMesh, 'split_left_front') : null, backOverlay = rest.splitFrame ? cloneOverlayMesh(THREE, backMesh, 'split_left_back') : null;
-    const debug = { version: 7, authored: true, enabled: false, useSpline: rest.useSpline, useRun1: rest.useRun1, splitFrame: rest.splitFrame, splitRightUsesIdle: rest.splitRightUsesIdle, frameShiftX: rest.frameShiftX, followFrameShiftX: rest.followFrameShiftX, beforePoints: rest.beforePoints, afterPoints: rest.afterPoints, migratedFromLegacy: rest.migratedFromLegacy, fullRectangularStrip: true, layeredSplitFrame: !!(frontOverlay && backOverlay), frontVertices: front?.position?.count || 0, backVertices: back?.position?.count || 0 };
+    const debug = { version: 8, authored: true, enabled: false, useSpline: rest.useSpline, useRun1: rest.useRun1, splitFrame: rest.splitFrame, splitRightUsesIdle: rest.splitRightUsesIdle, frameShiftX: rest.frameShiftX, followFrameShiftX: rest.followFrameShiftX, beforePoints: rest.beforePoints, afterPoints: rest.afterPoints, shoulderMaps: { influence: !!rest._shoulderMaps?.influence, compressibility: !!rest._shoulderMaps?.compressibility, stretchability: !!rest._shoulderMaps?.stretchability }, migratedFromLegacy: rest.migratedFromLegacy, fullRectangularStrip: true, layeredSplitFrame: !!(frontOverlay && backOverlay), frontVertices: front?.position?.count || 0, backVertices: back?.position?.count || 0 };
 
     avatarRef.setShoulderRestEnabled = enabled => {
       const next = !!enabled && rest.useSpline && !!front && !!back;
@@ -312,7 +421,7 @@
 
   function install() {
     const api = window.PNGPlaneAvatar;
-    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderSplineInstalledV7) return false;
+    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderSplineInstalledV8) return false;
     const priorBuild = api.buildAnimalPlaneAvatarModel.bind(api);
     api.buildAnimalPlaneAvatarModel = function shoulderSplineAwareAnimalBuild(THREE, spriteUrl, options = {}) {
       const profiles = window.HobunjiShoulderSplineProfiles, resolvedRig = profiles?.resolveForOptions?.(options, spriteUrl) || options?.headRig || null;
@@ -320,10 +429,29 @@
       const avatarRef = priorBuild(THREE, spriteUrl, buildOptions), rawRig = buildOptions?.headRig || profiles?.resolveForOptions?.(buildOptions, spriteUrl) || null;
       return rawRig?.shoulderRest?.enabled ? decorateAvatar(THREE, avatarRef, rawRig) : avatarRef;
     };
-    api.__animalShoulderSplineInstalledV7 = true; return true;
+    api.__animalShoulderSplineInstalledV8 = true; return true;
   }
 
-  window.AnimalShoulderSpline = { version: 7, POINT_COUNT, normalizeRest, migrateLegacyRest, linearPointsForGuide, splinePoint, splineTangent, bindFrameForPoint, deformNormalizedPoint, deformWeightedPoint, sampleHeadInfluence, install };
+  window.AnimalShoulderSpline = {
+    version: 8,
+    POINT_COUNT,
+    UNSET_WEIGHT,
+    normalizeRest,
+    migrateLegacyRest,
+    linearPointsForGuide,
+    splinePoint,
+    splineTangent,
+    bindFrameForPoint,
+    shoulderResponseKind,
+    deformationDetails,
+    deformNormalizedPoint,
+    deformWeightedPoint,
+    decodeWeightMap,
+    sampleShoulderInfluence,
+    sampleShoulderMaterial,
+    sampleHeadInfluence,
+    install,
+  };
   window.AnimalShoulderRest = window.AnimalShoulderSpline;
   install();
 })();
