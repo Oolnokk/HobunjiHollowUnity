@@ -254,24 +254,6 @@
     "line": 287
   },
   {
-    "file": "docs/js/creature-head-cache.js",
-    "owner": "CreatureHeadCache",
-    "classification": "scheduler",
-    "function": "_tick",
-    "reason": "Forever RAF loop (kicked off at line 55) whose sole job is incrementing a frame-token counter used to invalidate a shared per-rendered-frame cache for every caller (game.js, farm-animals.js, combat-*.js) - an inherently once-per-browser-frame runtime subscription.",
-    "migrationStage": "candidate",
-    "line": 54
-  },
-  {
-    "file": "docs/js/crossbow-strike-audio-trim.js",
-    "owner": "HobunjiCrossbowStrikeAudioTrim",
-    "classification": "timer-event",
-    "function": "frame",
-    "reason": "Polls every frame only until window.AudioSystem.playSfx becomes available to wrap (or until stopPolling() is called) - it waits for something to become available, self-stops, and does not need per-frame precision.",
-    "migrationStage": "candidate",
-    "line": 49
-  },
-  {
     "file": "docs/js/day-progress-review.js",
     "owner": "DayProgressReview",
     "classification": "timer-event",
@@ -605,15 +587,6 @@
     "line": 772
   },
   {
-    "file": "docs/js/npc-ambient-music-stimuli-runtime.js",
-    "owner": "NpcAmbientMusicStimuli",
-    "classification": "timer-event",
-    "function": "frame",
-    "reason": "Permanent self-perpetuating RAF loop whose only job is to call poll(), which immediately no-ops unless at least POLL_MS (500ms) has elapsed since the last real pass; per-frame execution is unnecessary and this is a strong setInterval(..., 500) candidate.",
-    "migrationStage": "candidate",
-    "line": 103
-  },
-  {
     "file": "docs/js/onboarding-character-creation-camera-composition.js",
     "owner": "OnboardingCharacterCreationCameraComposition",
     "classification": "bounded-animation",
@@ -735,7 +708,7 @@
     "owner": "ProceduralHandGripRuntime",
     "classification": "timer-event",
     "function": "frame",
-    "reason": "Reschedules itself every frame only to retry install() until deps.__weaponToolStanceVisualHooks/triggerWeaponSwingVisual etc. become available, then stops entirely once installed — a wait-for-availability poll, not per-frame work.",
+    "reason": "Reschedules itself every frame to retry install() until Combat.deps.__weaponToolStanceVisualHooks becomes true. Investigated for a Stage 1 chainGlobal-on-WeaponToolStances.init migration, but that flag is only guaranteed true after weapon-tool-stances.js's own render-driven updateMatrixWorld retry (not synchronously after WeaponToolStances.init() returns) — a headless-game-test run confirmed a hook on init() alone leaves this permanently uninstalled. Kept on RAF polling until a real readiness signal exists; do not re-attempt the naive one-shot hook.",
     "migrationStage": "candidate",
     "line": 98
   },

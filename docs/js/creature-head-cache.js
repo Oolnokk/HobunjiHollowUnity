@@ -47,12 +47,18 @@
   // pre-existing _playerFaceTarget already used.
   const PLAYER_FACE_HEIGHT_RATIO = 0.76;
 
-  // A rAF-driven counter, independent of any particular game loop, so this
+  // A frame identity independent of any particular game loop, so this
   // module works for every caller (game.js, farm-animals.js, combat-*.js)
-  // without any of them having to explicitly "tick" it.
-  let frameToken = 0;
-  function _tick() { frameToken++; requestAnimationFrame(_tick); }
-  requestAnimationFrame(_tick);
+  // without any of them having to explicitly "tick" it. Reads the shared
+  // RuntimeFrameScheduler's already-incrementing browser-frame serial
+  // (see docs/js/runtime-frame-scheduler.js and
+  // docs/architecture/runtime-frame-scheduler.md) instead of owning a
+  // private permanent RAF just to count frames — ControllerInput keeps at
+  // least one scheduler subscription alive for the entire shipped page, so
+  // this only needs to read the counter, never advance it itself.
+  function _currentFrameToken() {
+    return window.RuntimeFrameScheduler?.frameId?.() ?? 0;
+  }
 
   const _cache = new WeakMap(); // entity -> { frame, pos }
 
@@ -100,6 +106,7 @@
 
   function getHeadWorld(entity, kind, ctx) {
     if (!entity) return null;
+    const frameToken = _currentFrameToken();
     const cached = _cache.get(entity);
     if (cached && cached.frame === frameToken) return cached.pos;
     let pos;

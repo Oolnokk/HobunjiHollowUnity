@@ -1,0 +1,47 @@
+name: RAF ownership Stage 1 regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/creature-head-cache.js'
+      - 'docs/js/npc-ambient-music-stimuli-runtime.js'
+      - 'docs/js/crossbow-strike-audio-trim.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-creature-head-cache.js'
+      - 'scripts/test-npc-ambient-music-stimuli-runtime.js'
+      - 'scripts/test-crossbow-strike-audio-trim.js'
+      - '.github/workflows/raf-ownership-stage1-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/creature-head-cache.js'
+      - 'docs/js/npc-ambient-music-stimuli-runtime.js'
+      - 'docs/js/crossbow-strike-audio-trim.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-creature-head-cache.js'
+      - 'scripts/test-npc-ambient-music-stimuli-runtime.js'
+      - 'scripts/test-crossbow-strike-audio-trim.js'
+      - '.github/workflows/raf-ownership-stage1-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check docs/js/creature-head-cache.js
+          node --check docs/js/npc-ambient-music-stimuli-runtime.js
+          node --check docs/js/crossbow-strike-audio-trim.js
+      - name: Creature head cache scheduler-driven frame token
+        run: node scripts/test-creature-head-cache.js
+      - name: NPC ambient music stimuli setInterval migration
+        run: node scripts/test-npc-ambient-music-stimuli-runtime.js
+      - name: Crossbow strike audio trim chainGlobal migration
+        run: node scripts/test-crossbow-strike-audio-trim.js

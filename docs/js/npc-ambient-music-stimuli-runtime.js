@@ -98,11 +98,6 @@
     clearMissing(nextIds);
   }
 
-  function frame() {
-    poll();
-    global.requestAnimationFrame(frame);
-  }
-
   chainGlobal('NpcActivityPlanner', patchPlanner);
 
   global.NpcAmbientMusicStimuli = Object.freeze({
@@ -110,5 +105,9 @@
     poll,
     getDebug: () => ({ emitted: state.emitted, activeIds: [...state.activeIds], hasPlannerDeps: !!state.plannerDeps }),
   });
-  global.requestAnimationFrame(frame);
+  // poll() already throttles itself to POLL_MS internally; driving it off a
+  // 500ms interval instead of every browser frame removes ~59 wasted calls
+  // per second without changing when it actually does work (see
+  // docs/architecture/runtime-frame-scheduler.md's ownership audit).
+  global.setInterval(poll, POLL_MS);
 })(window);
