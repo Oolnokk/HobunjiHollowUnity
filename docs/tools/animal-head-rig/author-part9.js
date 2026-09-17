@@ -8,8 +8,8 @@ shoulderTwoPointUi.id='shoulderTwoPointPoseTools';
 shoulderTwoPointUi.style.cssText='border-top:1px solid #353a44;padding-top:6px;display:flex;flex-direction:column;gap:5px';
 shoulderTwoPointUi.innerHTML=`
   <div class="row"><button id="editShoulderTwoPoint" class="primary">Edit 2-point endpoints</button></div>
-  <div class="row"><button id="snapShoulderStartToShift">Snap Start → shift center</button><button id="snapShoulderEndToRightEdge">Snap End → right-edge center</button></div>
-  <div class="hint">Two handles only: <b>Start</b> directly edits AFTER vertex 1 and <b>End</b> directly edits AFTER vertex 7. Vertices 2–6 are left exactly where they are. The broad rotation/bend controls remain additive above these precise points.</div>`;
+  <div class="row"><button id="snapShoulderStartToShift">Snap point 1 → shift center</button><button id="snapShoulderEndToRightEdge">Snap point 2 → right-edge center</button></div>
+  <div class="hint">Two handles only: <b>Point 1</b> directly edits the beginning AFTER vertex and <b>Point 2</b> directly edits the ending AFTER vertex. Vertices 2–6 are left exactly where they are. The broad rotation/bend controls remain additive above these precise points.</div>`;
 shoulderBroadUi?.appendChild(shoulderTwoPointUi);
 
 const editShoulderTwoPoint=$('editShoulderTwoPoint');
@@ -139,8 +139,8 @@ drawGuides=function drawGuidesWithTwoPointEndpointMode(fit){
     paintCtx.textBaseline='middle';
     paintCtx.fillText(label,x,y);
   };
-  drawHandle(points[0],'S');
-  drawHandle(points[SHOULDER_POINT_COUNT-1],'E');
+  drawHandle(points[0],'1');
+  drawHandle(points[SHOULDER_POINT_COUNT-1],'2');
   paintCtx.restore();
 };
 
@@ -160,13 +160,13 @@ function prepareTwoPointSnap(){
 snapShoulderStartToShift?.addEventListener('click',()=>{
   if(!prepareTwoPointSnap())return;
   setVisibleShoulderAfterEndpoint(0,{x:shoulderFrameShiftValue(),y:.5});
-  setStatus(`Snapped Start / AFTER vertex 1 to frame-shift center (${Math.round(shoulderFrameShiftValue()*100)}%, 50%).`,true);
+  setStatus(`Snapped point 1 / beginning AFTER vertex to frame-shift center (${Math.round(shoulderFrameShiftValue()*100)}%, 50%).`,true);
   draw();
 });
 snapShoulderEndToRightEdge?.addEventListener('click',()=>{
   if(!prepareTwoPointSnap())return;
   setVisibleShoulderAfterEndpoint(SHOULDER_POINT_COUNT-1,{x:1,y:.5});
-  setStatus("Snapped End / AFTER vertex 7 to the center of the right-frame PNG's right edge (100%, 50%).",true);
+  setStatus("Snapped point 2 / ending AFTER vertex to the center of the right-frame PNG's right edge (100%, 50%).",true);
   draw();
 });
 
