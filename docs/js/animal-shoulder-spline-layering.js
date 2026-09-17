@@ -4,7 +4,7 @@
 
   const INTRA_PET_RENDER_EPSILON = 0.01; // Foreground half wins only against its paired half, never against the player layer above it.
   const MATERIAL_FIELDS = Object.freeze([
-    'depthWrite','depthTest','colorWrite','opacity','transparent','alphaTest','blending',
+    'depthWrite','depthTest','depthFunc','colorWrite','opacity','transparent','alphaTest','blending',
     'blendSrc','blendDst','blendEquation','blendSrcAlpha','blendDstAlpha','blendEquationAlpha',
     'side','premultipliedAlpha','polygonOffset','polygonOffsetFactor','polygonOffsetUnits',
   ]);
@@ -41,9 +41,40 @@
     ) || null;
   }
 
+  // Three.js sorts the render list before onBeforeRender fires. A periodic copy
+  // can therefore put the foreground half in the old layer for one frame when
+  // shoulder x-ray state changes. Make renderOrder itself follow the paired base
+  // half so the sorter always sees petBase + epsilon immediately.
+  function installRenderOrderFollower(source, overlay) {
+    if (!source || !overlay || overlay.userData?.hobunjiShoulderRenderOrderFollower) return;
+    overlay.userData = overlay.userData || {};
+    let fallback = Number(overlay.renderOrder || 0);
+    try {
+      Object.defineProperty(overlay, 'renderOrder', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          const sourceOrder = Number(source?.renderOrder);
+          return (Number.isFinite(sourceOrder) ? sourceOrder : fallback) + INTRA_PET_RENDER_EPSILON;
+        },
+        set(value) {
+          const parsed = Number(value); // Preserve a sane fallback if generic traversal code assigns the overlay directly.
+          if (Number.isFinite(parsed)) fallback = parsed;
+        },
+      });
+      overlay.userData.hobunjiShoulderRenderOrderFollower = true;
+    } catch (_) {
+      // Extremely old/hostile Object3D wrappers can reject property redefinition;
+      // syncOverlay below still provides best-effort parity in that case.
+    }
+  }
+
   function syncOverlay(source, overlay) {
     if (!source || !overlay) return false;
-    overlay.renderOrder = Number(source.renderOrder || 0) + INTRA_PET_RENDER_EPSILON;
+    installRenderOrderFollower(source, overlay);
+    if (!overlay.userData?.hobunjiShoulderRenderOrderFollower) {
+      overlay.renderOrder = Number(source.renderOrder || 0) + INTRA_PET_RENDER_EPSILON;
+    }
     overlay.visible = source.visible;
     overlay.frustumCulled = source.frustumCulled;
     if (source.layers && overlay.layers && Number.isFinite(source.layers.mask)) overlay.layers.mask = source.layers.mask;
@@ -54,6 +85,7 @@
       overlayRenderOrder: overlay.renderOrder,
       depthWrite: materialsFor(overlay)[0]?.depthWrite,
       depthTest: materialsFor(overlay)[0]?.depthTest,
+      depthFunc: materialsFor(overlay)[0]?.depthFunc,
     };
     return true;
   }
@@ -69,7 +101,7 @@
       const previous = overlay.onBeforeRender;
       if (!overlay.userData.hobunjiShoulderSplitLayerParityWrapped) {
         overlay.onBeforeRender = function shoulderSplitParityBeforeRender(...args) {
-          syncOverlay(source, this);
+          syncOverlay(source, this); // Material/depth flags can still change dynamically; refresh them immediately before draw.
           return previous?.apply?.(this, args);
         };
         overlay.userData.hobunjiShoulderSplitLayerParityWrapped = true;
@@ -92,6 +124,6 @@
     return true;
   }
 
-  window.HobunjiShoulderSplitLayerParity = { version: 1, syncAvatar, syncOverlay, install };
+  window.HobunjiShoulderSplitLayerParity = { version: 2, syncAvatar, syncOverlay, install };
   install();
 })();
