@@ -12,6 +12,7 @@ const legacyBootstrapPath = path.join(root, 'docs/js/animal-shoulder-rest.js');
 const legacyV5BootstrapPath = path.join(root, 'docs/js/animal-shoulder-rest-v5.js');
 const authorPath = path.join(root, 'docs/tools/animal-head-rig/author-part6.js');
 const separatorAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part7.js');
+const broadAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part8.js');
 const shellPath = path.join(root, 'docs/tools/animal-head-rig/index.html');
 const bridgePath = path.join(root, 'docs/js/player-body-attachment-bridge.js');
 
@@ -22,6 +23,7 @@ const legacyBootstrapSource = fs.readFileSync(legacyBootstrapPath, 'utf8');
 const legacyV5BootstrapSource = fs.readFileSync(legacyV5BootstrapPath, 'utf8');
 const authorSource = fs.readFileSync(authorPath, 'utf8');
 const separatorAuthorSource = fs.readFileSync(separatorAuthorPath, 'utf8');
+const broadAuthorSource = fs.readFileSync(broadAuthorPath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
 const bridgeSource = fs.readFileSync(bridgePath, 'utf8');
 
@@ -132,9 +134,9 @@ for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter'
 assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Pose'));
 assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline9'));
 assert(shellSource.includes('author-part7.js'));
+assert(shellSource.includes('author-part8.js'), 'rigger loads additive broad-pose authoring after precise/separator authoring');
 assert(!shellSource.includes('id="shoulderFullRotation"'));
 assert(!shellSource.includes('id="shoulderInterRotation"'));
-assert(!shellSource.toLowerCase().includes('weight falloff'));
 assert.match(shellSource, /minmax\(150px,1fr\).*minmax\(150px,1fr\).*20vh/s,
   'desktop right panel reserves more vertical room for both canvases than settings');
 
@@ -157,6 +159,24 @@ assert.match(separatorAuthorSource, /shoulderAfterPoints=cloneShoulderPoints\(sh
   'Reset AFTER restores an identity copy of the current BEFORE line');
 assert.match(separatorAuthorSource, /canvas\.style\.height=`\$\{cssHeight\}px`/,
   'canvas fills the taller viewport instead of being aspect-shrunk inside it');
+
+for (const id of ['shoulderBroadFullRotation','shoulderBroadInterRotation','shoulderBroadFalloff','bakeShoulderBroadPose']) {
+  assert(broadAuthorSource.includes(`id="${id}"`), `broad-pose macro exposes ${id}`);
+}
+assert.match(broadAuthorSource, /Same constant-curvature construction used by the retired fullRotationDeg/,
+  'broad pose deliberately reuses the retired rotation/inter-vertex curve model');
+assert.match(broadAuthorSource, /return\{x:base\.x\+delta\.x,y:base\.y\+delta\.y\}/,
+  'broad deformation is additive over each precise AFTER point');
+assert.match(broadAuthorSource, /shoulderAfterPoints=effectiveShoulderAfterPoints\(\);resetShoulderBroadControls\(false\)/,
+  'Bake commits the visible macro result into AFTER and neutralizes the macro');
+assert.match(broadAuthorSource, /x:target\.x-delta\.x,y:target\.y-delta\.y/,
+  'precise node dragging subtracts macro displacement so manual edits and broad controls coexist');
+assert.match(broadAuthorSource, /rest\.afterPoints=effectiveShoulderAfterPoints\(\)/,
+  'preview/export receives final explicit AFTER points rather than legacy macro fields');
+assert.match(broadAuthorSource, /minX=Math\.min\(minX,p\.x\*s\.width\)/,
+  'workbench framing expands to include off-image BEFORE/AFTER nodes');
+assert.match(broadAuthorSource, /shoulderBroadPointerToSource/,
+  'off-image precise nodes use an unclamped shoulder-edit pointer');
 
 assert.match(splineSource, /function separatorSignedSide\(/,
   'runtime has one signed-side classifier for diagonal frame ownership');
@@ -184,4 +204,4 @@ assert.match(bridgeSource, /separatorRotationDeg/,
   'game frame cache key changes when separator Z rotation changes');
 assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
 
-console.log('animal-shoulder-spline v9: diagonal separator + taller viewport tests passed');
+console.log('animal-shoulder-spline v9: diagonal separator + broad/precise authoring tests passed');
