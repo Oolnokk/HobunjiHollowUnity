@@ -157,7 +157,7 @@
         hasToolHolder: !!gameDeps?.toolHolder,
         proceduralHands: handDebug,
         activeShoulderPets: activeShoulderPets.length,
-        shoulderPetsOnIdle: activeShouldPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
+        shoulderPetsOnIdle: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
         shoulderHeadDeadzone: primaryShoulderPet?._shoulderHeadDeadzoneDebug || null,
       };
     },
