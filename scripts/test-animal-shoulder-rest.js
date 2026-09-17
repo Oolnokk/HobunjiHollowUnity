@@ -255,8 +255,8 @@ assert.match(splineSource, /const authoredAspect = finite\(restLike\?\.separator
   'unset shoulder paint defaults prefer the authored source-sprite aspect');
 assert.match(splineSource, /const owned = shoulderDefaultInfluence\(u, topV, restLike, aspect\);[\s\S]*if \(owned <= 0\) return 0;/,
   'separator ownership hard-clamps shoulder Influence to zero on the left even when stale explicit paint exists');
-assert.match(splineSource, /if \(cornerOwned <= 0\) return owned;/,
-  'unset influence corners on the opposite side cannot create a phantom separator fade');
+assert.match(splineSource, /return raw === UNSET_WEIGHT \? owned : clamp\(raw, 0, 255\) \/ 255;/,
+  'UNSET shoulder Influence inherits the hard sample-point default while authored paint remains explicit');
 assert.match(splineSource, /sampleShoulderMaterial\(maps\.stretchability/,
   'runtime samples shoulder Stretchability independently of head material paint');
 
