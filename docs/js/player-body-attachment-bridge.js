@@ -34,9 +34,9 @@
       lateLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles');
     }
   }
-  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 9) {
-    if (!parserLoad('js/animal-shoulder-spline.js?v=20260917spline9', 'animal-shoulder-spline')) {
-      lateLoad('js/animal-shoulder-spline.js?v=20260917spline9', 'animal-shoulder-spline');
+  if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
+    if (!parserLoad('js/animal-shoulder-spline.js?v=20260917spline10', 'animal-shoulder-spline')) {
+      lateLoad('js/animal-shoulder-spline.js?v=20260917spline10', 'animal-shoulder-spline');
     }
   }
   if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 2) {
