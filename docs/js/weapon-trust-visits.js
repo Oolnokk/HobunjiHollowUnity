@@ -43,6 +43,12 @@
     return global.DialogueContent?.getNpcDlgState?.(gift?.npcId) || null;
   }
 
+  function relationshipHearts(gift) {
+    const converter = global.NpcFavorBalance?.relationshipHeartsForNpc; // Used to keep trust thresholds expressed in authored hearts while Favor remains stored as points.
+    if (typeof converter === 'function') return Number(converter(gift?.npcId)) || 0;
+    return Number(originalNpcState(gift)?.favor) || 0;
+  }
+
   function giftCompleted(gift) {
     // Check the durable owned-tool flag first (see giveGiftItem) — it's an
     // idempotent boolean in gearInventory.tools that never gets evicted.
@@ -61,8 +67,8 @@
 
   function giftEligible(gift) {
     if (!gift || giftCompleted(gift)) return false;
-    const favor = Number(originalNpcState(gift)?.favor) || 0;
-    return favor >= requiredHearts(gift);
+    const hearts = relationshipHearts(gift); // Used to compare the live point-backed relationship against this gift's authored heart threshold.
+    return hearts >= requiredHearts(gift);
   }
 
   function pendingGifts() {
@@ -251,7 +257,11 @@
 
   function completeGift(gift) {
     if (!gift || giftCompleted(gift)) return false;
-    const itemKey = giveGiftItem(gift);
+    const itemKey = giveGiftItem(gift); // Used as the commit gate: trust completion is not persisted unless the actual weapon was granted.
+    if (!itemKey) {
+      global.__farmLog?.(`[weapon-trust-visits] could not complete ${gift.id}: gift item grant failed`, 'error', 'npc');
+      return false;
+    }
     global.DialogueContent?.recordNpcMemory?.(gift.npcId, completionMemoryEvent(gift));
     syncSmithingShapeUnlocks();
     craftDeps?.saveMemberWorldData?.();
@@ -710,6 +720,7 @@
   global.WeaponTrustVisits = Object.freeze({
     config: cfg,
     requiredHearts,
+    relationshipHearts,
     dialogueTreeFromGift,
     mergeDialogueTreesIntoDatabase,
     pendingGifts,
