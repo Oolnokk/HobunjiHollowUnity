@@ -1,9 +1,9 @@
 'use strict';
 
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+const assert = require('node:assert/strict'); // Used for the regression assertions below.
+const fs = require('node:fs'); // Used to load the exact checked-in browser modules under test.
+const path = require('node:path'); // Used to resolve runtime files from this script regardless of the launch directory.
+const vm = require('node:vm'); // Used to execute browser IIFEs in isolated window-like contexts.
 
 const repoRoot = path.resolve(__dirname, '..'); // Used to load the exact runtime files this regression protects.
 
