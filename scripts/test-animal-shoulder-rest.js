@@ -81,6 +81,8 @@ assert(runtimeV5Source.includes('hobunjiShoulderSplitOverlay'),
   'split foreground meshes are identifiable for diagnostics and mesh lookup exclusion');
 assert(authorRefreshSource.includes('Spline weight falloff A→B') && authorRefreshSource.includes('rig.shoulderRest.weightFalloff=shoulderWeightFalloffValue()'),
   'rigger exposes and serializes corrected spline weight falloff');
+assert(authorRefreshSource.includes('delete rig.shoulderRest.curveFalloff'),
+  'new saves remove the misleading curveFalloff field after migration');
 assert(authorRefreshSource.includes('drawLayer(layers.right,rightVertices)') && authorRefreshSource.includes('drawLayer(layers.left,leftVertices)'),
   'live preview draws run1-right first and idle-left second for explicit foreground layering');
 assert(authorSource.includes('previewAngle is deliberately not serialized'),
@@ -95,6 +97,8 @@ assert(bridgeSource.includes("renderer.composeFrame(kind, 'idle'") && bridgeSour
   'runtime split layers preserve genotype-composited idle/run1 art');
 assert(bridgeSource.includes('leftCanvas') && bridgeSource.includes('rightCanvas') && bridgeSource.includes('setShoulderSplitOverlayCanvas'),
   'runtime uses separate idle-left foreground and run1-right background layers');
+assert(bridgeSource.includes('combinedSplitFallbackCanvas') && bridgeSource.includes('ctx.drawImage(layers.rightCanvas') && bridgeSource.includes('ctx.drawImage(layers.leftCanvas'),
+  'unusual avatars without overlay support still keep both halves with left drawn over right');
 assert(bridgeSource.includes('Number(window.AnimalShoulderRestV5.version) < 5') && bridgeSource.includes('animal-shoulder-rest-v5.js'),
   'game bootstrap requires the v5 shoulder decorator');
 assert(bridgeSource.includes("companion.stableRole === 'shoulderPet'"),
