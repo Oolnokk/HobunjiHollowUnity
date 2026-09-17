@@ -13,8 +13,6 @@
   window.__playerBodyAttachmentBridgeInstalled = true;
 
   let gameDeps = null;
-  let cachedPlayerMesh = null; // Tracks which player rig owns cachedPlayerNeckJoint below.
-  let cachedPlayerNeckJoint = null; // Reused by the per-render shoulder-pet limiter so it never traverses the player rig every frame.
 
   function chainFutureSetter(name, beforeSet) {
     const desc = Object.getOwnPropertyDescriptor(window, name);
@@ -53,34 +51,14 @@
     return true;
   }
 
-  function isDescendantOf(node, ancestor) {
-    let cursor = node;
-    while (cursor?.isObject3D) {
-      if (cursor === ancestor) return true;
-      cursor = cursor.parent;
-    }
-    return false;
-  }
-
-  function currentPlayerNeckJoint() {
-    const playerMesh = composer.getPlayerMesh?.(); // Supplies the live player rig that owns the visible face bone.
-    if (!playerMesh?.isObject3D) {
-      cachedPlayerMesh = null;
-      cachedPlayerNeckJoint = null;
-      return null;
-    }
-    if (cachedPlayerMesh !== playerMesh) {
-      cachedPlayerMesh = playerMesh;
-      cachedPlayerNeckJoint = null;
-    }
-    if (cachedPlayerNeckJoint?.isBone && isDescendantOf(cachedPlayerNeckJoint, playerMesh)) return cachedPlayerNeckJoint;
-    cachedPlayerNeckJoint = null;
-    playerMesh.traverse?.(object => {
-      if (cachedPlayerNeckJoint) return;
-      const rig = object?.userData?.neckRig; // Matches the neck-rig discovery contract used by PlayerBodyTransformComposer itself.
-      if (rig?.available && rig.neckJoint?.isBone) cachedPlayerNeckJoint = rig.neckJoint;
-    });
-    return cachedPlayerNeckJoint;
+  function activeShoulderPets(combatDeps) {
+    const player = combatDeps?.player; // Master comparison below keeps this helper scoped to the local player's shoulder pets.
+    if (!player) return [];
+    return Array.from(combatDeps.companionObjects || []).filter(companion =>
+      companion?.health > 0
+      && companion.stableRole === 'shoulderPet'
+      && (companion.master || player) === player
+      && companion.avatarRef?.group);
   }
 
   function quaternionDeltaDegrees(a, b) {
@@ -92,7 +70,7 @@
     const parent = root?.parent;
     if (parent?.isObject3D) {
       parent.updateWorldMatrix?.(true, false);
-      const parentWorldQuaternion = parent.getWorldQuaternion(new THREE.Quaternion()); // Mirrors game.js's authoritative shoulder-pet root conversion.
+      const parentWorldQuaternion = parent.getWorldQuaternion(new THREE.Quaternion()); // Shoulder-pet roots live under ordinary scene/area parents without mirrored avatar scale.
       root.position.copy(parent.worldToLocal(worldPosition.clone()));
       root.quaternion.copy(parentWorldQuaternion.invert().multiply(worldQuaternion));
     } else {
@@ -110,11 +88,11 @@
     }; // Stored beside the existing attachment dump so mobile diagnostics can inspect the limiter without a console.
   }
 
-  function applyShoulderPetFaceRotationLimit(companion) {
-    if (!THREE || !companion?.avatarRef?.group) return false;
+  function applyShoulderPetFaceRotationLimit(companion, renderContext) {
+    if (!THREE || !companion?.avatarRef?.group) return null;
     const root = companion.avatarRef.group; // The same authoritative pet root updateShoulderPetMeshPin writes each gameplay frame.
     const attachment = root.userData?.hobunjiShoulderPetAttachment;
-    if (!attachment || attachment.requestedRotationSource !== 'head') return false;
+    if (!attachment || attachment.requestedRotationSource !== 'head') return null;
 
     const sampledFrameValues = attachment.rotationFrameWorldQuaternion;
     const sampledFinalValues = attachment.finalWorldQuaternion;
@@ -125,16 +103,15 @@
       || !Array.isArray(perchValues) || perchValues.length < 3
       || !Array.isArray(sampledRootValues) || sampledRootValues.length < 3) {
       recordShoulderPetFaceLimit(attachment, { applied: false, reason: 'missing-attachment-frame-data' });
-      return false;
+      return null;
     }
 
-    const neckJoint = currentPlayerNeckJoint();
-    if (!neckJoint?.getWorldQuaternion) {
-      recordShoulderPetFaceLimit(attachment, { applied: false, reason: 'no-player-neck-joint' });
-      return false;
+    const visibleFaceWorldQuaternion = renderContext?.visibleFaceWorldQuaternion?.clone?.(); // Supplied after the player's physical neck clamp and before shared body deltas.
+    if (!visibleFaceWorldQuaternion?.isQuaternion) {
+      recordShoulderPetFaceLimit(attachment, { applied: false, reason: 'no-visible-face-world-frame' });
+      return null;
     }
-    neckJoint.updateWorldMatrix?.(true, false);
-    const visibleFaceWorldQuaternion = neckJoint.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Composer has already applied its physical neck limit before asking providers for roots during render.
+    visibleFaceWorldQuaternion.normalize();
     const limitedFrameWorldQuaternion = visibleFaceWorldQuaternion.clone(); // Replaces only the sampled follow frame; authored perch/grip correction remains separate below.
     if (attachment.rotationSourceInverted) limitedFrameWorldQuaternion.invert();
 
@@ -144,11 +121,11 @@
     if (sourceFrameDeltaDeg <= 0.0001) {
       recordShoulderPetFaceLimit(attachment, {
         applied: false,
-        reason: 'sample-already-within-visible-face',
+        reason: 'sample-already-matches-visible-face',
         sourceFrameDeltaDeg,
         visibleFaceWorldQuaternion: visibleFaceWorldQuaternion.toArray(),
       });
-      return false;
+      return null;
     }
 
     const authoredRotationOffset = sampledFrameWorldQuaternion.clone().invert().multiply(sampledFinalWorldQuaternion); // Preserves the exact perch/grip rotation already authored by game.js, including the cancel-offset setting.
@@ -159,6 +136,9 @@
     const localGripOffset = sampledGripWorldOffset.clone().applyQuaternion(sampledFinalWorldQuaternion.clone().invert()); // Recovers the root-local grip vector, preserving any authored/scaled offset game.js already baked in.
     const limitedGripWorldOffset = localGripOffset.clone().applyQuaternion(limitedFinalWorldQuaternion);
     const limitedRootWorldPosition = authoredPerchWorldPosition.clone().sub(limitedGripWorldOffset); // Rotating around the recovered grip keeps the animal physically pinned to the shoulder instead of orbiting/detaching.
+
+    const oldPosition = root.position.clone(); // Restored after this render so gameplay/update state remains authoritative between frames.
+    const oldRotation = root.rotation.clone(); // Preserves the original Euler representation instead of restoring through quaternion decomposition.
     setRootWorldTransform(root, limitedRootWorldPosition, limitedFinalWorldQuaternion);
 
     const alignedGripWorldPosition = limitedRootWorldPosition.clone().add(limitedGripWorldOffset); // Used only for mobile verification of the attachment invariant.
@@ -171,8 +151,15 @@
       limitedFinalWorldQuaternion: limitedFinalWorldQuaternion.toArray(),
       limitedRootWorldPosition: limitedRootWorldPosition.toArray(),
       gripPerchError: alignedGripWorldPosition.distanceTo(authoredPerchWorldPosition),
+      renderSequence: renderContext?.renderDebug?.sequence ?? null,
     });
-    return true;
+
+    return () => {
+      root.position.copy(oldPosition);
+      root.rotation.copy(oldRotation);
+      root.updateMatrix?.();
+      root.matrixWorldNeedsUpdate = true;
+    };
   }
 
   if (window.DevSpawner) patchDevSpawner(window.DevSpawner);
@@ -180,19 +167,26 @@
 
   composer.registerExternalRootProvider('equippedTool', () => gameDeps?.toolHolder || null);
 
+  composer.registerPreRenderHook?.('shoulderPetFaceLimit', renderContext => {
+    const combatDeps = window.Combat?.deps;
+    const restores = [];
+    for (const companion of activeShoulderPets(combatDeps)) {
+      ensureShoulderPetIdleFrame(companion, combatDeps); // Perched presentation no longer depends on some unrelated body channel being active.
+      const restore = applyShoulderPetFaceRotationLimit(companion, renderContext);
+      if (typeof restore === 'function') restores.push(restore);
+    }
+    if (!restores.length) return null;
+    return () => {
+      for (let i = restores.length - 1; i >= 0; i--) restores[i]();
+    };
+  });
+
   composer.registerExternalRootProvider('shoulderPets', () => {
     const combatDeps = window.Combat?.deps;
-    const player = combatDeps?.player;
-    if (!player) return [];
     const roots = [];
-    for (const companion of combatDeps.companionObjects || []) {
-      if (!companion || companion.health <= 0 || companion.stableRole !== 'shoulderPet') continue;
-      if ((companion.master || player) !== player) continue;
-      if (companion.avatarRef?.group) {
-        ensureShoulderPetIdleFrame(companion, combatDeps);
-        applyShoulderPetFaceRotationLimit(companion); // Runs after the composer's visible-face neck clamp and before its shared body delta reaches this external root.
-        roots.push(companion.avatarRef.group);
-      }
+    for (const companion of activeShoulderPets(combatDeps)) {
+      ensureShoulderPetIdleFrame(companion, combatDeps);
+      roots.push(companion.avatarRef.group);
     }
     return roots;
   });
@@ -200,21 +194,17 @@
   window.PlayerBodyAttachmentBridge = {
     getDebug() {
       const handDebug = window.ProceduralHandAttachments?.getActiveDebug?.().find(entry => entry?.speciesId) || null;
-      const activeShoulderPets = window.Combat?.deps?.companionObjects
-        ? Array.from(window.Combat.deps.companionObjects).filter(companion =>
-            companion?.health > 0
-            && companion.stableRole === 'shoulderPet'
-            && (companion.master || window.Combat.deps.player) === window.Combat.deps.player)
-        : []; // Shared by the count, idle-frame, and face-limit diagnostics below.
-      const shoulderPetFaceRotationLimit = activeShoulderPets
+      const combatDeps = window.Combat?.deps;
+      const shoulderPets = activeShoulderPets(combatDeps); // Shared by the count, idle-frame, and face-limit diagnostics below.
+      const shoulderPetFaceRotationLimit = shoulderPets
         .map(companion => companion.avatarRef?.group?.userData?.hobunjiShoulderPetAttachment?.renderFaceRotationLimit || null)
         .find(Boolean) || null; // Exposes the first active pet's latest limiter result in the existing mobile-readable attachment debug object.
       return {
         hasGameDeps: !!gameDeps,
         hasToolHolder: !!gameDeps?.toolHolder,
         proceduralHands: handDebug,
-        activeShoulderPets: activeShoulderPets.length,
-        shoulderPetsOnIdle: activeShoulderPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
+        activeShoulderPets: shoulderPets.length,
+        shoulderPetsOnIdle: shoulderPets.filter(companion => !!companion.__hobunjiShoulderIdleFrame && companion.currentFrameUrl === companion.__hobunjiShoulderIdleFrame).length,
         shoulderPetFaceRotationLimit,
       };
     },
