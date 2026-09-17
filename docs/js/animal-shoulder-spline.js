@@ -125,7 +125,9 @@
       const raw = map.values[y * map.width + x];
       const cornerU = map.width <= 1 ? 0 : x / (map.width - 1);
       const cornerV = map.height <= 1 ? 0 : y / (map.height - 1);
-      return raw === UNSET_WEIGHT ? shoulderDefaultInfluence(cornerU, cornerV, restLike, aspect) : clamp(raw, 0, 255) / 255;
+      const cornerOwned = shoulderDefaultInfluence(cornerU, cornerV, restLike, aspect);
+      if (cornerOwned <= 0) return owned;
+      return raw === UNSET_WEIGHT ? owned : clamp(raw, 0, 255) / 255;
     };
     const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
     const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
@@ -144,6 +146,8 @@
       const raw = map.values[y * map.width + x];
       const cornerU = map.width <= 1 ? 0 : x / (map.width - 1);
       const cornerV = map.height <= 1 ? 0 : y / (map.height - 1);
+      const cornerOwned = shoulderDefaultInfluence(cornerU, cornerV, restLike);
+      if (cornerOwned <= 0) return fallback;
       const base = sampleShoulderInfluence(influenceMap, cornerU, cornerV, restLike);
       return raw === UNSET_WEIGHT ? base : Math.min(base, clamp(raw, 0, 255) / 255);
     };
