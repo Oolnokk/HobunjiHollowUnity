@@ -9,11 +9,14 @@ shoulderTwoPointUi.id='shoulderTwoPointPoseTools';
 shoulderTwoPointUi.style.cssText='border-top:1px solid #353a44;padding-top:6px;display:flex;flex-direction:column;gap:5px';
 shoulderTwoPointUi.innerHTML=`
   <div class="row"><button id="editShoulderTwoPoint" class="primary">Edit 2-point endpoints</button><button id="resetShoulderTwoPoint">Reset 2-point</button></div>
-  <div class="hint">Two handles only: <b>Start</b> directly sets AFTER vertex 1 and <b>End</b> directly sets AFTER vertex 7. Their offsets are blended across vertices 2–6. Turn this editor off to return to all seven precise nodes; Bake into AFTER commits the visible result.</div>`;
+  <div class="row"><button id="snapShoulderStartToShift">Snap Start → shift center</button><button id="snapShoulderEndToRightEdge">Snap End → right-edge center</button></div>
+  <div class="hint">Two handles only: <b>Start</b> directly sets AFTER vertex 1 and <b>End</b> directly sets AFTER vertex 7. Their offsets are blended across vertices 2–6. Snap Start targets the frame-shift center at (shift X, 50% height); Snap End targets the center of the right-frame PNG's right edge at (100% width, 50% height). Turn this editor off to return to all seven precise nodes; Bake into AFTER commits the visible result.</div>`;
 shoulderBroadUi?.appendChild(shoulderTwoPointUi);
 
 const editShoulderTwoPoint=$('editShoulderTwoPoint');
 const resetShoulderTwoPoint=$('resetShoulderTwoPoint');
+const snapShoulderStartToShift=$('snapShoulderStartToShift');
+const snapShoulderEndToRightEdge=$('snapShoulderEndToRightEdge');
 let shoulderTwoPointEditMode=false; // Interaction mode only; turning it off does not discard the coarse pose.
 let shoulderTwoPointStart=null; // Absolute normalized visible target for final AFTER vertex 1.
 let shoulderTwoPointEnd=null; // Absolute normalized visible target for final AFTER vertex 7.
@@ -132,6 +135,27 @@ restoreHistoryState=function restoreHistoryStateWithTwoPointPose(snapshot){shoul
 
 editShoulderTwoPoint?.addEventListener('click',()=>setShoulderTwoPointEditMode(!shoulderTwoPointEditMode));
 resetShoulderTwoPoint?.addEventListener('click',()=>{checkpointHistory();clearShoulderTwoPoint(false);setStatus('Reset the two-point endpoint pose; precise AFTER points and the rotation/bend macro were left untouched.',true);draw()});
+
+function prepareTwoPointSnap(){
+  checkpointHistory();
+  ensureShoulderTwoPointTargets();
+  shoulderEditMode='after';
+  shoulderTwoPointEditMode=true;
+  updateShoulderUi();
+  updateShoulderTwoPointButton();
+}
+snapShoulderStartToShift?.addEventListener('click',()=>{
+  prepareTwoPointSnap();
+  shoulderTwoPointStart={x:shoulderFrameShiftValue(),y:.5};
+  setStatus(`Snapped 2-point Start / AFTER vertex 1 to frame-shift center (${Math.round(shoulderFrameShiftValue()*100)}%, 50%).`,true);
+  draw();
+});
+snapShoulderEndToRightEdge?.addEventListener('click',()=>{
+  prepareTwoPointSnap();
+  shoulderTwoPointEnd={x:1,y:.5};
+  setStatus('Snapped 2-point End / AFTER vertex 7 to the center of the right-frame PNG\'s right edge (100%, 50%).',true);
+  draw();
+});
 
 // These listeners run after part8's handlers. Bake therefore sees the complete
 // two-point result first, then we neutralize the editor-only endpoint targets.
