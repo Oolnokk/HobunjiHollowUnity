@@ -379,8 +379,7 @@
       if (playerMesh) {
         applyPlayerNeckYawLimit(renderDebug);
         const neckJoint = currentPlayerNeckJoint(); // Already contains the exact physical yaw that will be visible this render.
-        playerMesh.updateWorldMatrix?.(true, true); // Propagates the clamped neck rotation before adapters sample the visible face frame.
-        const visibleFaceWorldQuaternion = neckJoint ? hierarchyWorldQuaternion(neckJoint) : null; // Scale-safe world orientation of the actually rendered face.
+        const visibleFaceWorldQuaternion = neckJoint ? hierarchyWorldQuaternion(neckJoint) : null; // Scale-safe world orientation of the actually rendered face; no matrix traversal required.
         runPreRenderHooks({ playerMesh, neckJoint, visibleFaceWorldQuaternion, renderDebug }, undo, renderDebug);
         const delta = resolveDelta();
         renderDebug.appliedOrder = delta.applied.slice();
