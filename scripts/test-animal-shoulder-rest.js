@@ -13,6 +13,7 @@ const legacyV5BootstrapPath = path.join(root, 'docs/js/animal-shoulder-rest-v5.j
 const authorPath = path.join(root, 'docs/tools/animal-head-rig/author-part6.js');
 const separatorAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part7.js');
 const broadAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part8.js');
+const twoPointAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part9.js');
 const shellPath = path.join(root, 'docs/tools/animal-head-rig/index.html');
 const bridgePath = path.join(root, 'docs/js/player-body-attachment-bridge.js');
 
@@ -24,6 +25,7 @@ const legacyV5BootstrapSource = fs.readFileSync(legacyV5BootstrapPath, 'utf8');
 const authorSource = fs.readFileSync(authorPath, 'utf8');
 const separatorAuthorSource = fs.readFileSync(separatorAuthorPath, 'utf8');
 const broadAuthorSource = fs.readFileSync(broadAuthorPath, 'utf8');
+const twoPointAuthorSource = fs.readFileSync(twoPointAuthorPath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
 const bridgeSource = fs.readFileSync(bridgePath, 'utf8');
 
@@ -135,6 +137,7 @@ assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Po
 assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline9'));
 assert(shellSource.includes('author-part7.js'));
 assert(shellSource.includes('author-part8.js'), 'rigger loads additive broad-pose authoring after precise/separator authoring');
+assert(shellSource.includes('author-part9.js'), 'rigger loads the direct two-point endpoint tool after the broad-pose layer');
 assert(!shellSource.includes('id="shoulderFullRotation"'));
 assert(!shellSource.includes('id="shoulderInterRotation"'));
 assert.match(shellSource, /minmax\(150px,1fr\).*minmax\(150px,1fr\).*20vh/s,
@@ -178,6 +181,23 @@ assert.match(broadAuthorSource, /minX=Math\.min\(minX,p\.x\*s\.width\)/,
 assert.match(broadAuthorSource, /shoulderBroadPointerToSource/,
   'off-image precise nodes use an unclamped shoulder-edit pointer');
 
+assert.match(twoPointAuthorSource, /Edit 2-point endpoints/,
+  'two-point coarse tool is exposed as a distinct interaction mode');
+assert.match(twoPointAuthorSource, /shoulderTwoPointStart\.x-startBase\.x/,
+  'Start is an absolute target for the visible first AFTER vertex');
+assert.match(twoPointAuthorSource, /shoulderTwoPointEnd\.x-endBase\.x/,
+  'End is an absolute target for the visible last AFTER vertex');
+assert.match(twoPointAuthorSource, /startDelta\.x\+\(endDelta\.x-startDelta\.x\)\*t/,
+  'endpoint displacement is interpolated across the five interior vertices');
+assert.match(twoPointAuthorSource, /if\(shoulderTwoPointEditMode\)return-1/,
+  'ordinary seven-node hit testing is disabled while the two-point tool owns the canvas');
+assert.match(twoPointAuthorSource, /handle\(points\[0\],'S'\);handle\(points\[SHOULDER_POINT_COUNT-1\],'E'\)/,
+  'two-point mode draws only explicit Start and End handles');
+assert.match(twoPointAuthorSource, /bakeShoulderBroadPose\?\.addEventListener\('click'/,
+  'existing Bake into AFTER consumes and then clears the two-point layer');
+assert.match(twoPointAuthorSource, /effectiveAfterPoints:\(\)=>effectiveShoulderAfterPoints\(\)/,
+  'diagnostic API exposes the final two-point-adjusted explicit AFTER curve');
+
 assert.match(splineSource, /function separatorSignedSide\(/,
   'runtime has one signed-side classifier for diagonal frame ownership');
 assert.match(splineSource, /function separatorPolygon\(/,
@@ -204,4 +224,4 @@ assert.match(bridgeSource, /separatorRotationDeg/,
   'game frame cache key changes when separator Z rotation changes');
 assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
 
-console.log('animal-shoulder-spline v9: diagonal separator + broad/precise authoring tests passed');
+console.log('animal-shoulder-spline v9: diagonal separator + broad/two-point/precise authoring tests passed');
