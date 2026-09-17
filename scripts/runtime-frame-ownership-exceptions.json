@@ -477,15 +477,6 @@
     "line": 209
   },
   {
-    "file": "docs/js/livestock-nursery.js",
-    "owner": "LivestockNursery",
-    "classification": "scheduler",
-    "function": "frame (startSwarmLoop)",
-    "reason": "Self-perpetuating RAF loop that drives the baby-livestock swarm simulation every frame while the player is inside the nursery map; it is context-scoped (starts on entering the nursery, self-stops via stopSwarmLoop after a grace period once the player leaves) but is a genuine ongoing per-frame visual/simulation subscription while active, the same shape as the already-migrated melee HUD reticle.",
-    "migrationStage": "candidate",
-    "line": 664
-  },
-  {
     "file": "docs/js/loading-screen-runtime.js",
     "owner": "LoadingScreenRuntime",
     "classification": "bounded-animation",
