@@ -41,10 +41,13 @@ assert(shell.includes('id="paintCanvas"') && shell.includes('id="previewCanvas"'
 assert(!shell.includes('previewDeform'), 'preview checkbox should be removed');
 assert(shell.includes('id="brushStrength"'), 'Influence/material brush strength control should be visible');
 for (let n = 1; n <= 7; n++) assert(shell.includes(`src="./author-part${n}.js"`), `rigger shell should directly load author-part${n}.js`);
-assert(shell.includes('position:sticky') && shell.includes('id="previewSettings"'), 'right-side draw/preview workbench and preview controls should stay together while scrolling');
+assert(shell.includes('position:sticky') && shell.includes('height:calc(100dvh - 24px)') && shell.includes('.preview-settings{min-height:0;overflow:auto'), 'right-side draw/preview workbench should remain viewport-bounded while only its settings scroll');
 assert(shell.includes('id="shoulderRestUseSpline"') && shell.includes('id="shoulderRestUseRun1"'), 'spline deformation and run1 stance should be independently controllable');
 assert(shell.includes('id="shoulderRestSplitFrame"') && shell.includes('id="shoulderFrameShift"'), 'idle/run1 fusion should expose an X seam slider');
+assert(shell.includes('id="shoulderFullRotation"') && shell.includes('id="shoulderInterRotation"'), 'shoulder spline should expose whole-strip and inter-vertex rotation sliders');
 assert(author.includes("shoulderGuide={a:{x:.14,y:.46},b:{x:.86,y:.46}}"), 'shoulder spline should own independent A/B guide endpoints');
+assert(author.includes('fullRotationDeg:shoulderFullRotationValue()') && author.includes('interVertexRotationDeg:shoulderInterRotationValue()'), 'shoulder curl values should serialize into the rig');
+assert(author.includes('previewAngle is deliberately not serialized'), 'preview neck angle should remain a preview-only value');
 assert(author.includes("state.compressibility.values[index]=UNSET") && author.includes("state.stretchability.values[index]=UNSET"), 'Influence edits should reset both material channels to inherit the new Influence');
 assert(author.includes('lerp(current,0,amount)'), 'material brush should only reduce the selected material channel');
 assert(author.includes('lerp(current,base,amount)'), 'material restore should move the selected material channel back toward Influence');
@@ -68,7 +71,7 @@ function fakeElement(id) {
   if (id === 'paintCanvas' || id === 'previewCanvas') {
     el.width = 400; el.height = 280; el.getContext = () => fake2dContext(); el.parentElement = { getBoundingClientRect: () => ({ width: 400, height: 280 }) };
   }
-  const defaults = { brushStrength: '100', brushRadius: '40', bucketTolerance: '32', expandRadius: '60', previewAngle: '0', minDeg: '-30', restDeg: '0', maxDeg: '30', turnSpeedDeg: '120', meshResolution: '48', spriteAspect: '1', modelWidth: '1', tint: '#ffffff', extraVars: '{}', facing: 'left' };
+  const defaults = { brushStrength: '100', brushRadius: '40', bucketTolerance: '32', expandRadius: '60', previewAngle: '0', minDeg: '-30', restDeg: '0', maxDeg: '30', turnSpeedDeg: '120', meshResolution: '48', spriteAspect: '1', modelWidth: '1', tint: '#ffffff', extraVars: '{}', facing: 'left', shoulderFrameShift: '50', shoulderFullRotation: '0', shoulderInterRotation: '0' };
   if (id in defaults) el.value = defaults[id];
   if (id === 'showWeights') el.checked = true;
   elements.set(id, el);
@@ -83,16 +86,15 @@ const authorContext = {
   console, window: null, document: fakeDocument,
   localStorage: { getItem() { return null; }, setItem() {} }, navigator: { clipboard: { writeText: async () => {} } },
   location: { href: 'https://example.test/tools/animal-head-rig/' }, URL, Blob, Uint16Array, Math, JSON, Number, Array, Set, Object, String,
-  ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout() {}, clearTimeout() {},
+  ResizeObserver: class { observe() {} }, requestAnimationFrame() {}, setTimeout() {}, clearTimeout() {}, Image: class {},
 };
 authorContext.window = authorContext;
 authorContext.window.devicePixelRatio = 1;
 authorContext.window.addEventListener = () => {};
 authorContext.window.AnimalHeadMaterialResponse = { responseKindForVertex: (angle, v, pivot) => Math.abs(angle) < 1e-5 ? 'neutral' : angle * (v - pivot) > 0 ? 'stretch' : 'compress' };
+authorContext.window.AnimalShoulderRest = { legacyBendRotations: bend => ({ fullRotationDeg: Math.atan(4 * Number(bend || 0)) * 180 / Math.PI, interVertexRotationDeg: -2 * Math.atan(4 * Number(bend || 0)) * 180 / Math.PI }) };
 vm.createContext(authorContext);
-// Keep this VM focused on the base paint/material workflow. Parts 6-7 add
-// image loading/canvas presentation and are covered by test-animal-shoulder-rest.
-for (let n = 1; n <= 5; n++) vm.runInContext(fs.readFileSync(path.join(riggerDir, `author-part${n}.js`), 'utf8'), authorContext, { filename: `author-part${n}.js` });
+for (let n = 1; n <= 7; n++) vm.runInContext(fs.readFileSync(path.join(riggerDir, `author-part${n}.js`), 'utf8'), authorContext, { filename: `author-part${n}.js` });
 vm.runInContext(`
   state.weights={width:1,height:1,values:new Uint16Array([0])};
   state.compressibility=blankMap(1,1); state.stretchability=blankMap(1,1);
