@@ -398,15 +398,6 @@
     "line": 219
   },
   {
-    "file": "docs/js/interior-fire-floor-runtime.js",
-    "owner": "InteriorFireFloorRuntime",
-    "classification": "scheduler",
-    "function": "ambientTick",
-    "reason": "Runs only while ambient fire emitter records exist and is restarted via ensureAmbientLoop (line 163) whenever new ones appear, but is functionally a permanent-while-active particle/visual runtime rather than a finite one-time effect, per prior investigation.",
-    "migrationStage": "candidate",
-    "line": 158
-  },
-  {
     "file": "docs/js/inventory-character-effects.js",
     "owner": "InventoryCharacterEffects",
     "classification": "one-shot",
@@ -729,15 +720,6 @@
     "reason": "Single RAF defers one refresh() call (invoked from a MutationObserver callback) to the next paint, guarded by a 'scheduled' flag that refresh() itself resets; no self-rescheduling.",
     "migrationStage": "not-planned",
     "line": 397
-  },
-  {
-    "file": "docs/js/seasonal-vegetation-tint.js",
-    "owner": "SeasonalVegetationTint",
-    "classification": "scheduler",
-    "function": "watchSeasonTint",
-    "reason": "Permanent self-recursive watchdog (also kicked off once at line 430) that runs forever, checking every frame whether the current season's tint/density has drifted from what's applied to grass/leaf/weed materials and re-syncing them — a genuine ongoing runtime subscription.",
-    "migrationStage": "candidate",
-    "line": 428
   },
   {
     "file": "docs/js/shipping-panel.js",

@@ -1,0 +1,44 @@
+name: RAF ownership Stage 2 regression (part 2)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/seasonal-vegetation-tint.js'
+      - 'docs/js/interior-fire-floor-runtime.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-seasonal-vegetation-tint.js'
+      - 'scripts/test-interior-ambient-fire-vfx.js'
+      - 'scripts/test-interior-fire-floor.js'
+      - '.github/workflows/raf-ownership-stage2b-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/js/seasonal-vegetation-tint.js'
+      - 'docs/js/interior-fire-floor-runtime.js'
+      - 'docs/js/runtime-frame-scheduler.js'
+      - 'scripts/test-seasonal-vegetation-tint.js'
+      - 'scripts/test-interior-ambient-fire-vfx.js'
+      - 'scripts/test-interior-fire-floor.js'
+      - '.github/workflows/raf-ownership-stage2b-regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check docs/js/seasonal-vegetation-tint.js
+          node --check docs/js/interior-fire-floor-runtime.js
+      - name: Seasonal vegetation tint scheduler migration
+        run: node scripts/test-seasonal-vegetation-tint.js
+      - name: Interior ambient fire VFX scheduler migration
+        run: node scripts/test-interior-ambient-fire-vfx.js
+      - name: Interior fire/floor integration regression
+        run: node scripts/test-interior-fire-floor.js
