@@ -702,15 +702,6 @@
     "line": 358
   },
   {
-    "file": "docs/js/social-rhythm-runtime.js",
-    "owner": "SocialRhythmClock",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Permanent self-recursive loop (also started once at line 674) that updates character-view head tracking, dance footstep timing, and the player's Kurraya metronome every single frame unconditionally; only the beat-sampling portion inside it is internally throttled (~180ms), so the loop as a whole is a genuine ongoing runtime subscription.",
-    "migrationStage": "candidate",
-    "line": 646
-  },
-  {
     "file": "docs/js/stable-animal-progression.js",
     "owner": "StableAnimalProgression",
     "classification": "scheduler",
