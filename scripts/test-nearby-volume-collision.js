@@ -58,7 +58,9 @@ assert(ranged.includes('updateBanditAimLabel'), 'aiming updates the bandit ident
 assert(ranged.includes("(bandit.name || 'Bandit') + ' · ' + rank"), 'bandit labels include name and rank');
 
 assert(bandits.includes('_applyBanditTentGridCollision'), 'standing tents stamp a cheap runtime collision footprint');
-assert(bandits.includes('tile.type = deps.TileType.ROCK'), 'tent collision reuses the normal solid-tile path');
+assert(bandits.includes('tile._banditTentCollisionId = obj.id'), 'tent collision stamps non-rendering tile metadata');
+assert(!bandits.includes('tile.type = deps.TileType.ROCK'), 'tent collision never turns its footprint into visible rocks');
+assert(game.includes('if (tile._banditTentCollisionId) return null;'), 'normal tile movement honors the tent collision marker');
 assert(bandits.includes('_restoreBanditTentGridCollision'), 'burned/re-rolled tents restore their original grid tiles');
 assert(bandits.includes('projectileCoverHeightTiles = 1.45'), 'tent supplies semantic height metadata for projectile cover');
 assert(bandits.includes('projectileCoverRadiusTiles = 0.9'), 'tent supplies semantic footprint metadata for projectile cover');
