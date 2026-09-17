@@ -1,15 +1,19 @@
 // Static shoulder-pet rest deformation for painted animal head rigs.
 //
-// This borrows only the useful core of the standalone spline PNG rigger: an
-// authored A/B guide defines the body's longitudinal axis and a single midpoint
-// bend curves that axis. The guide is independent of the head pivot. Existing
-// Head Influence remains the authority for how much each vertex resists the
-// body-rest deformation: restWeight = 1 - headInfluence.
+// Shoulder presentation is authored separately from ordinary head pitch.
+// The rest spline owns its own A/B guide. Every mesh vertex whose projection
+// lies inside A..B participates regardless of sprite alpha, so transparent PNG
+// space and opaque pixels follow one continuous rectangular strip. Head
+// Influence still fights that strip directly: restWeight = 1 - headInfluence.
 (() => {
   'use strict';
 
-  const MAX_BEND = 0.75; // Maximum midpoint displacement as a fraction of authored A/B guide length.
-  const DEFAULT_GUIDE = Object.freeze({ a: Object.freeze({ x: 0.14, y: 0.46 }), b: Object.freeze({ x: 0.86, y: 0.46 }) });
+  const DEG = Math.PI / 180;
+  const MAX_ROTATION_DEG = 180;
+  const DEFAULT_GUIDE = Object.freeze({
+    a: Object.freeze({ x: 0.14, y: 0.46 }),
+    b: Object.freeze({ x: 0.86, y: 0.46 }),
+  });
 
   function finite(value, fallback) {
     const parsed = Number(value); // Used for hand-edited JSON and debug-safe authored values.
@@ -27,66 +31,110 @@
     };
   }
 
+  function legacyBendRotations(bendLike) {
+    const bend = finite(bendLike, 0); // Migrates the discarded midpoint-peak model into approximately matching endpoint tangents.
+    const fullRotationDeg = Math.atan(4 * bend) / DEG;
+    return {
+      fullRotationDeg: clamp(fullRotationDeg, -MAX_ROTATION_DEG, MAX_ROTATION_DEG),
+      interVertexRotationDeg: clamp(-2 * fullRotationDeg, -MAX_ROTATION_DEG, MAX_ROTATION_DEG),
+    };
+  }
+
   function normalizeRest(rawRig) {
     const raw = rawRig?.shoulderRest; // Optional authored shoulder-only presentation descriptor stored beside the head rig.
     if (!raw || raw.enabled !== true) return null;
-    const legacyCenterV = clamp(finite(raw.centerV, DEFAULT_GUIDE.a.y), 0, 1); // Migrates the first one-pivot shoulder-rest draft without losing browser-local rigs.
-    const fallbackGuide = { a: { x: DEFAULT_GUIDE.a.x, y: legacyCenterV }, b: { x: DEFAULT_GUIDE.b.x, y: legacyCenterV } };
+
+    const legacyCenterV = clamp(finite(raw.centerV, DEFAULT_GUIDE.a.y), 0, 1);
+    const fallbackGuide = {
+      a: { x: DEFAULT_GUIDE.a.x, y: legacyCenterV },
+      b: { x: DEFAULT_GUIDE.b.x, y: legacyCenterV },
+    };
     const guide = raw.guide || fallbackGuide;
     const hasNewFlags = Object.prototype.hasOwnProperty.call(raw, 'useSpline')
       || Object.prototype.hasOwnProperty.call(raw, 'useRun1')
       || Object.prototype.hasOwnProperty.call(raw, 'splitFrame');
+    const legacyRotations = legacyBendRotations(raw.bend);
+
     return {
       enabled: true,
       useSpline: hasNewFlags ? !!raw.useSpline : true,
-      useRun1: hasNewFlags ? !!raw.useRun1 : true, // Old draft coupled run1 to the spline checkbox; preserve that only for old saved rigs.
+      useRun1: hasNewFlags ? !!raw.useRun1 : true,
       splitFrame: !!raw.splitFrame,
       frameShiftX: clamp(finite(raw.frameShiftX, 0.5), 0, 1),
       guide: {
         a: normalizedPoint(guide.a, fallbackGuide.a),
         b: normalizedPoint(guide.b, fallbackGuide.b),
       },
-      bend: clamp(finite(raw.bend, 0), -MAX_BEND, MAX_BEND),
+      fullRotationDeg: clamp(
+        finite(raw.fullRotationDeg, legacyRotations.fullRotationDeg),
+        -MAX_ROTATION_DEG,
+        MAX_ROTATION_DEG,
+      ),
+      interVertexRotationDeg: clamp(
+        finite(raw.interVertexRotationDeg, legacyRotations.interVertexRotationDeg),
+        -MAX_ROTATION_DEG,
+        MAX_ROTATION_DEG,
+      ),
     };
   }
 
-  // Deforms one canonical sprite-normalized top-left point through the authored
-  // A/B guide. Points outside the longitudinal A..B span are intentionally left
-  // alone. At bend=0 this is mathematically the identity transform even when the
-  // guide is angled or offset, because each point is reconstructed from its
-  // projection plus signed normal offset.
+  // Returns the deformed point for the full rectangular A..B strip.
+  // `fullRotationDeg` rotates the strip as one piece around guide A.
+  // `interVertexRotationDeg` is the total additional rotation accumulated
+  // from A to B; linear accumulation makes the centerline a circular arc.
+  // No opacity or alpha mask participates in this math.
   function deformNormalizedPoint(point, restLike) {
     const rest = restLike?.guide ? restLike : normalizeRest({ shoulderRest: restLike });
     if (!rest?.guide) return { x: finite(point?.x, 0), y: finite(point?.y, 0) };
-    const px = finite(point?.x, 0), py = finite(point?.y, 0);
-    const a = rest.guide.a, b = rest.guide.b;
-    const dx = b.x - a.x, dy = b.y - a.y;
+
+    const px = finite(point?.x, 0);
+    const py = finite(point?.y, 0);
+    const a = rest.guide.a;
+    const b = rest.guide.b;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
     const length = Math.hypot(dx, dy);
     if (length < 1e-6) return { x: px, y: py };
-    const lengthSq = length * length;
-    const t = ((px - a.x) * dx + (py - a.y) * dy) / lengthSq;
+
+    const tangentX = dx / length;
+    const tangentY = dy / length;
+    const normalX = -tangentY;
+    const normalY = tangentX;
+    const relX = px - a.x;
+    const relY = py - a.y;
+    const along = relX * tangentX + relY * tangentY;
+    const t = along / length;
     if (t < 0 || t > 1) return { x: px, y: py };
 
-    const tangentX = dx / length, tangentY = dy / length;
-    const normalX = -tangentY, normalY = tangentX;
-    const lineX = a.x + dx * t, lineY = a.y + dy * t;
-    const signedOffset = (px - lineX) * normalX + (py - lineY) * normalY;
-    const bend = clamp(finite(rest.bend, 0), -MAX_BEND, MAX_BEND);
-    const centerOffset = 4 * (1 - t) * t * bend * length;
-    const curvedCenterX = lineX + normalX * centerOffset;
-    const curvedCenterY = lineY + normalY * centerOffset;
+    const signedOffset = relX * normalX + relY * normalY;
+    const full = clamp(finite(rest.fullRotationDeg, 0), -MAX_ROTATION_DEG, MAX_ROTATION_DEG) * DEG;
+    const inter = clamp(finite(rest.interVertexRotationDeg, 0), -MAX_ROTATION_DEG, MAX_ROTATION_DEG) * DEG;
+    const s = t * length;
 
-    // Rotate each cross-section to the curved path tangent, matching the simple
-    // slice orientation used by the standalone spline PNG preview.
-    const derivativeNormal = 4 * bend * length * (1 - 2 * t);
-    const derivativeX = dx + normalX * derivativeNormal;
-    const derivativeY = dy + normalY * derivativeNormal;
-    const derivativeLength = Math.hypot(derivativeX, derivativeY) || 1;
-    const curvedNormalX = -derivativeY / derivativeLength;
-    const curvedNormalY = derivativeX / derivativeLength;
+    let centerAlong;
+    let centerNormal;
+    let angle;
+    if (Math.abs(inter) < 1e-7) {
+      angle = full;
+      centerAlong = s * Math.cos(full);
+      centerNormal = s * Math.sin(full);
+    } else {
+      const curvature = inter / length; // Radians accumulated per normalized guide-length unit.
+      angle = full + inter * t;
+      centerAlong = (Math.sin(angle) - Math.sin(full)) / curvature;
+      centerNormal = (-Math.cos(angle) + Math.cos(full)) / curvature;
+    }
+
+    const centerX = a.x + tangentX * centerAlong + normalX * centerNormal;
+    const centerY = a.y + tangentY * centerAlong + normalY * centerNormal;
+    const rotatedNormalAlong = -Math.sin(angle);
+    const rotatedNormalNormal = Math.cos(angle);
+    const deformedNormalX = tangentX * rotatedNormalAlong + normalX * rotatedNormalNormal;
+    const deformedNormalY = tangentY * rotatedNormalAlong + normalY * rotatedNormalNormal;
+
     return {
-      x: curvedCenterX + curvedNormalX * signedOffset,
-      y: curvedCenterY + curvedNormalY * signedOffset,
+      x: centerX + deformedNormalX * signedOffset,
+      y: centerY + deformedNormalY * signedOffset,
     };
   }
 
@@ -111,9 +159,11 @@
       const row1 = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
       return clamp(row0 * (1 - ty) + row1 * ty, 0, 1);
     }
+
     const region = normalizedRig?.legacyRegion;
     if (!region) return 0;
-    return u >= region.x && u <= region.x + region.width && topV >= region.y && topV <= region.y + region.height ? 1 : 0;
+    return u >= region.x && u <= region.x + region.width
+      && topV >= region.y && topV <= region.y + region.height ? 1 : 0;
   }
 
   function findRiggedMeshForBone(group, bone) {
@@ -137,10 +187,11 @@
     const position = geometry?.getAttribute?.('position');
     const uv = geometry?.getAttribute?.('uv');
     if (!position || !uv || position.count !== uv.count) return null;
+
     const dimensions = dimensionsForGeometry(geometry); // Converts normalized guide results back into the mesh's local plane units.
-    const basePositions = new Float32Array(position.array); // Immutable bind/rest positions so toggling never accumulates deformation.
-    const bodyWeights = new Float32Array(position.count); // Complement of Head Influence; exactly the requested competing body/rest share.
-    const canonicalPoints = new Float32Array(position.count * 2); // Canonical top-left sprite UVs keep front/back deformation visually identical.
+    const basePositions = new Float32Array(position.array); // Immutable bind positions so toggling never accumulates deformation.
+    const bodyWeights = new Float32Array(position.count); // Head Influence competes with the full-strip rest deformation.
+    const canonicalPoints = new Float32Array(position.count * 2); // Full plane UVs: alpha/opacity is intentionally never consulted.
     for (let i = 0; i < position.count; i++) {
       const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i);
       const sourceTopV = 1 - uv.getY(i);
@@ -154,11 +205,12 @@
   function applyMeshState(meshState, enabled) {
     if (!meshState) return false;
     const { position, basePositions, bodyWeights, canonicalPoints, dimensions, rest, mirrorX, mesh } = meshState;
+    const hasCurl = Math.abs(rest.fullRotationDeg) > 1e-7 || Math.abs(rest.interVertexRotationDeg) > 1e-7;
     for (let i = 0; i < position.count; i++) {
       const offset = i * position.itemSize;
       const baseX = basePositions[offset], baseY = basePositions[offset + 1];
       let x = baseX, y = baseY;
-      if (enabled && rest.useSpline && Math.abs(rest.bend) > 1e-7) {
+      if (enabled && rest.useSpline && hasCurl) {
         const source = { x: canonicalPoints[i * 2], y: canonicalPoints[i * 2 + 1] };
         const target = deformNormalizedPoint(source, rest);
         const targetLocalU = mirrorX ? 1 - target.x : target.x;
@@ -183,6 +235,7 @@
     if (!rest || !avatarRef?.headRig || avatarRef.shoulderRest?.authored) return avatarRef;
     const normalizedRig = decodedInfluenceFor(rawRig);
     if (!normalizedRig) return avatarRef;
+
     const rigState = avatarRef.headRig;
     const frontMesh = rest.useSpline ? findRiggedMeshForBone(avatarRef.group, rigState.frontHeadBone) : null;
     const backMesh = rest.useSpline ? findRiggedMeshForBone(avatarRef.group, rigState.backHeadBone) : null;
@@ -197,10 +250,12 @@
       splitFrame: rest.splitFrame,
       frameShiftX: rest.frameShiftX,
       guide: rest.guide,
-      bend: rest.bend,
+      fullRotationDeg: rest.fullRotationDeg,
+      interVertexRotationDeg: rest.interVertexRotationDeg,
+      fullRectangularStrip: true,
       frontVertices: front?.position?.count || 0,
       backVertices: back?.position?.count || 0,
-    }; // Mobile/debug-readable proof of the authored presentation and which shoulder-only pieces are active.
+    }; // Mobile/debug-readable proof of every authored shoulder-only presentation value.
 
     avatarRef.setShoulderRestEnabled = enabled => {
       const next = !!enabled && rest.useSpline && !!front && !!back;
@@ -218,21 +273,22 @@
 
   function install() {
     const api = window.PNGPlaneAvatar;
-    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderRestInstalled) return false;
+    if (!api?.buildAnimalPlaneAvatarModel || api.__animalShoulderRestInstalledV3) return false;
     const priorBuild = api.buildAnimalPlaneAvatarModel.bind(api); // Preserves base plane + head-rig + material-response wrappers already installed earlier.
     api.buildAnimalPlaneAvatarModel = function shoulderRestAwareAnimalBuild(THREE, spriteUrl, options = {}) {
       const avatarRef = priorBuild(THREE, spriteUrl, options);
       const rawRig = options?.headRig || window.HobunjiAnimalHeadRigSpecies?.resolveForOptions?.(options) || null;
       return rawRig?.shoulderRest?.enabled ? decorateAvatar(avatarRef, rawRig) : avatarRef;
     };
-    api.__animalShoulderRestInstalled = true;
+    api.__animalShoulderRestInstalledV3 = true;
     return true;
   }
 
   window.AnimalShoulderRest = {
-    version: 2,
+    version: 3,
     DEFAULT_GUIDE,
     normalizeRest,
+    legacyBendRotations,
     deformNormalizedPoint,
     sampleHeadInfluence,
     decorateAvatar,
