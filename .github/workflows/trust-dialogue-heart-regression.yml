@@ -1,0 +1,22 @@
+name: Trust Dialogue Heart Regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/condition-registry.js'
+      - 'docs/js/weapon-trust-visits.js'
+      - 'scripts/test-trust-dialogue-heart-scale.js'
+      - '.github/workflows/trust-dialogue-heart-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check condition registry
+        run: node --check docs/js/condition-registry.js
+      - name: Syntax check trust visit runtime
+        run: node --check docs/js/weapon-trust-visits.js
+      - name: Trust dialogue heart regression
+        run: node scripts/test-trust-dialogue-heart-scale.js
