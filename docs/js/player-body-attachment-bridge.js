@@ -171,7 +171,6 @@
     const combatDeps = window.Combat?.deps;
     const restores = [];
     for (const companion of activeShoulderPets(combatDeps)) {
-      ensureShoulderPetIdleFrame(companion, combatDeps); // Perched presentation no longer depends on some unrelated body channel being active.
       const restore = applyShoulderPetFaceRotationLimit(companion, renderContext);
       if (typeof restore === 'function') restores.push(restore);
     }
