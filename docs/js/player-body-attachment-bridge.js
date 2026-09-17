@@ -26,11 +26,11 @@
     document.head.appendChild(script);
   }
 
-  if (!window.HobunjiGrehlrHeadRigCorrection) {
-    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917rough2','grehlr-head-rig-correction')) lateLoad('js/grehlr-head-rig-correction.js?v=20260917rough2','grehlr-head-rig-correction');
+  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 3) {
+    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917rough3','grehlr-head-rig-correction')) lateLoad('js/grehlr-head-rig-correction.js?v=20260917rough3','grehlr-head-rig-correction');
   }
-  if (!window.AnimalShoulderRest || Number(window.AnimalShoulderRest.version) < 2) {
-    if (!parserLoad('js/animal-shoulder-rest.js?v=20260917guide2','animal-shoulder-rest')) lateLoad('js/animal-shoulder-rest.js?v=20260917guide2','animal-shoulder-rest');
+  if (!window.AnimalShoulderRest || Number(window.AnimalShoulderRest.version) < 3) {
+    if (!parserLoad('js/animal-shoulder-rest.js?v=20260917curl3','animal-shoulder-rest')) lateLoad('js/animal-shoulder-rest.js?v=20260917curl3','animal-shoulder-rest');
   }
 
   const composer = window.PlayerBodyTransformComposer;
@@ -178,9 +178,13 @@
       // Use idle while the one-time split canvas is being composed.
     }
 
-    const selected = authoredRest && rest.useRun1 ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps);
+    let selected = authoredRest && rest.useRun1 ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps);
+    let frameName = authoredRest && rest.useRun1 && selected.url ? 'run1' : 'idle';
+    if (frameName === 'run1' && !selected.url) {
+      selected = shoulderIdleFrame(companion, combatDeps); // Explicit fallback so missing run1 never leaves a stale prior animation frame on the shoulder.
+      frameName = 'idle';
+    }
     const frameUrl = selected.url;
-    const frameName = authoredRest && rest.useRun1 && frameUrl ? 'run1' : 'idle';
     if (!frameUrl || typeof combatDeps?.setCreatureFrame !== 'function' || !companion.avatarRef) return false;
     companion.__hobunjiShoulderFrame = frameUrl;
     companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? frameUrl : null;
