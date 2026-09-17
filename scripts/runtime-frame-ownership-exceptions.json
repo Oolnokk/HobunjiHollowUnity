@@ -702,15 +702,6 @@
     "line": 358
   },
   {
-    "file": "docs/js/stable-animal-progression.js",
-    "owner": "StableAnimalProgression",
-    "classification": "scheduler",
-    "function": "alertFrame",
-    "reason": "Permanent self-recursive loop, started once via ensureAlertFrame() when the module installs, that services stable-XP ticks and animates pulsing shoulder-pet threat-alert auras (position/scale/opacity driven by Math.sin(now)) every frame — needs per-frame smoothness, so it is a genuine ongoing visual subscription.",
-    "migrationStage": "candidate",
-    "line": 442
-  },
-  {
     "file": "docs/js/title-screen-runtime.js",
     "owner": "HobunjiTitleScreen",
     "classification": "timer-event",
