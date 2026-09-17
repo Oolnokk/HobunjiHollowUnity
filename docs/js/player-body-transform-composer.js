@@ -20,6 +20,7 @@
 
   const channels = new Map();
   const externalRootProviders = new Map();
+  const preRenderHooks = new Map(); // Render-boundary adapters run after the visible neck clamp but before shared body deltas are composed.
   const PLAYER_HEAD_MAX_YAW_DEG = 65; // Shared body-relative neck limit used by ordinary aim, animation-composed body yaw, and seated camera look.
   const PLAYER_HEAD_MAX_YAW_RAD = THREE.MathUtils.degToRad(PLAYER_HEAD_MAX_YAW_DEG); // Used by applyPlayerNeckYawLimit for range checks and the final hard clamp.
   let playerMesh = null;
@@ -307,6 +308,24 @@
     return () => externalRootProviders.delete(String(name));
   }
 
+  function registerPreRenderHook(name, hook) {
+    if (!name || typeof hook !== 'function') return () => {};
+    preRenderHooks.set(String(name), hook);
+    return () => preRenderHooks.delete(String(name));
+  }
+
+  function runPreRenderHooks(context, undo, renderDebug) {
+    for (const [name, hook] of preRenderHooks.entries()) {
+      try {
+        const restore = hook(context);
+        if (typeof restore === 'function') undo.push(restore);
+        renderDebug.preRenderHooks.push(name);
+      } catch (_) {
+        renderDebug.preRenderHooks.push(`${name}:error`);
+      }
+    }
+  }
+
   function registerPlayerRig(parent, handle) {
     playerMesh = parent?.isObject3D ? parent : null;
     playerLegRoot = handle?.group?.isObject3D ? handle.group : null;
@@ -350,6 +369,7 @@
         sequence: ++renderSequence,
         timestampMs: performance.now(),
         appliedOrder: [],
+        preRenderHooks: [],
         portraitFaceCulling: 'material-frontside',
         forcedPortraitDoubleSide: false,
         baseWorldEulerDeg: null,
@@ -358,6 +378,9 @@
       }; // Persisted below before temporary transforms are restored.
       if (playerMesh) {
         applyPlayerNeckYawLimit(renderDebug);
+        const neckJoint = currentPlayerNeckJoint(); // Already contains the exact physical yaw that will be visible this render.
+        const visibleFaceWorldQuaternion = neckJoint ? hierarchyWorldQuaternion(neckJoint) : null; // Scale-safe world orientation of the actually rendered face; no matrix traversal required.
+        runPreRenderHooks({ playerMesh, neckJoint, visibleFaceWorldQuaternion, renderDebug }, undo, renderDebug);
         const delta = resolveDelta();
         renderDebug.appliedOrder = delta.applied.slice();
         const rotationMagnitude = Math.abs(delta.rotation.x) + Math.abs(delta.rotation.y) + Math.abs(delta.rotation.z);
@@ -451,6 +474,7 @@
     clearChannel,
     clearAllChannels,
     registerExternalRootProvider,
+    registerPreRenderHook,
     captureNextRenderTransforms,
     resolvedYawDeltaRad,
     getPlayerMesh: () => playerMesh,
@@ -468,6 +492,7 @@
         avatarBodyRoots: discoverAvatarBodyRoots().map(root => root.name || root.type),
         visualRoots: currentOwnedRoots().map(root => root.name || root.type),
         externalProviders: Array.from(externalRootProviders.keys()),
+        preRenderHooks: Array.from(preRenderHooks.keys()),
         portraitFaceCulling: 'material-frontside',
         forcedPortraitDoubleSide: false,
         channels: Array.from(channels.entries()).map(([name, channel]) => ({
@@ -482,6 +507,7 @@
         lastRender: lastRenderDebug ? {
           ...lastRenderDebug,
           appliedOrder: lastRenderDebug.appliedOrder.slice(),
+          preRenderHooks: lastRenderDebug.preRenderHooks.slice(),
           baseWorldEulerDeg: lastRenderDebug.baseWorldEulerDeg ? { ...lastRenderDebug.baseWorldEulerDeg } : null,
           composedWorldEulerDeg: lastRenderDebug.composedWorldEulerDeg ? { ...lastRenderDebug.composedWorldEulerDeg } : null,
           neckYaw: lastRenderDebug.neckYaw ? { ...lastRenderDebug.neckYaw } : null,
