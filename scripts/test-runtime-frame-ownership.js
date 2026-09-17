@@ -248,13 +248,8 @@ if (require.main === module) {
   );
   assert.equal(
     result.summary.temporaryOrderExceptions.length,
-    1,
-    'exactly one documented temporary-order-exception is expected right now (Quick Attack); a second one needs its own justification, not silent growth',
-  );
-  assert.equal(
-    result.summary.temporaryOrderExceptions[0],
-    'docs/js/combat/quick-attack-bonus-indicator.js',
-    'the sole temporary-order-exception should remain the one documented in docs/architecture/runtime-frame-scheduler.md',
+    0,
+    'Quick Attack (the former sole temporary-order-exception) has been migrated to the pre-game phase now that the scheduler v2 ordering contract is proven; any new temporary-order-exception needs its own fresh justification, not silent growth',
   );
 
   // --- Fixture regression: prove the detector actually catches an unclassified RAF ---

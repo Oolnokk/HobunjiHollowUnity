@@ -207,15 +207,6 @@
     "line": 187
   },
   {
-    "file": "docs/js/combat/quick-attack-bonus-indicator.js",
-    "owner": "QuickAttackBonusIndicator",
-    "classification": "temporary-order-exception",
-    "function": "frame",
-    "reason": "Already documented in docs/architecture/runtime-frame-scheduler.md as the one deliberate temporary exception (also kicked off at line 421): its RAF must keep running before gameLoop while the melee/ranged HUD reticles run after it, an ordering the scheduler cannot yet express.",
-    "migrationStage": "not-planned",
-    "line": 351
-  },
-  {
     "file": "docs/js/combat/technique-scrolls.js",
     "owner": "TechniqueScrolls",
     "classification": "one-shot",

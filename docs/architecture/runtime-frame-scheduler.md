@@ -77,7 +77,7 @@ The scheduler isolates subscriber errors and schedules the next browser frame be
 
 Render-order sentinels such as procedural hands at `-100000` and social dancing at `-99990` stay in their Three.js render hooks. They are not scheduler candidates.
 
-`QuickAttackBonusIndicator` is a deliberate temporary exception: its historical RAF runs before `gameLoop`, while the melee and ranged HUD reticles historically run after it. Now that the `pre-game`/`post-game` phase contract above exists and is proven (see `scripts/test-runtime-frame-scheduler-ordering.js`), migrating it to `phase: 'pre-game'` is the next step — but that migration, and removing this exception from the manifest, is deliberately a separate, later change so this phase contract can land and prove itself on lower-stakes subscribers first. Until then it keeps its isolated RAF.
+`QuickAttackBonusIndicator` was the scheduler's one `temporary-order-exception`: its historical RAF ran before `gameLoop` (via independent RAF registration order), while the melee and ranged HUD reticles historically ran after it. It has since been migrated to `phase: 'pre-game'` — the first thing to actually depend on the `pre-game`/`post-game` ordering contract above rather than just a nicer label, and the proof that the phase system represents real historical ordering. There is currently no `temporary-order-exception` in the manifest; a future one needs its own fresh justification.
 
 ## Ownership audit
 
