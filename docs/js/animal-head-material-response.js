@@ -1,36 +1,35 @@
-// Asymmetric compression/stretch response for painted animal head rigs.
+// Asymmetric compression/stretch weights for painted animal head rigs.
 //
-// The base head/body weight map still decides what belongs to the head and how
-// the neck seam blends. These optional material maps only change how strongly
-// that existing blend yields on the inside (compression) versus outside
-// (stretch) of a pitch bend. Fully-body and fully-head vertices stay exactly
-// anchored to their original bones, so material painting cannot detach a head.
+// Influence is the default head deformation weight. Optional compressibility
+// and stretchability maps only store reductions from that Influence weight.
+// An unset material cell therefore inherits Influence exactly, so rigs with no
+// material maps keep their pre-feature deformation with no extra tuning.
 (() => {
   'use strict';
 
-  const UNSET_WEIGHT = 256; // Response-map eraser value; unset means legacy/full response (1.0).
+  const UNSET_WEIGHT = 256; // Material-map sentinel: inherit the current Influence weight at this location.
   const RESPONSE_EPSILON = 1e-5; // Used to treat rest/pivot-line vertices as neutral and skip redundant uploads.
 
   function finite(value, fallback) {
-    const parsed = Number(value); // Used by map decoding and diagnostics to reject NaN/infinite authored values.
+    const parsed = Number(value); // Shared numeric parser for authored map values and diagnostics.
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
   function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value)); // Shared bounds helper for response values and UV coordinates.
+    return Math.max(min, Math.min(max, value)); // Shared bounds helper for normalized weights and UV coordinates.
   }
 
-  function decodeResponseMap(raw) {
+  function decodeWeightMap(raw) {
     if (!raw || !Number.isFinite(Number(raw.width)) || !Number.isFinite(Number(raw.height))) return null;
-    const width = Math.max(1, Math.round(Number(raw.width))); // Grid width used for bilinear response sampling.
-    const height = Math.max(1, Math.round(Number(raw.height))); // Grid height used for bilinear response sampling.
-    const values = new Uint16Array(width * height); // 0..255 authored response; 256 means default 100% response.
+    const width = Math.max(1, Math.round(Number(raw.width))); // Grid width used for bilinear sampling.
+    const height = Math.max(1, Math.round(Number(raw.height))); // Grid height used for bilinear sampling.
+    const values = new Uint16Array(width * height); // 0..255 authored weight; 256 means unset/inherit.
     values.fill(UNSET_WEIGHT);
     if (raw.encoding === 'rle-u9' && Array.isArray(raw.data)) {
       let cursor = 0;
       for (let i = 0; i + 1 < raw.data.length && cursor < values.length; i += 2) {
         const run = Math.max(0, Math.round(finite(raw.data[i], 0))); // Number of grid cells in this encoded run.
-        const value = clamp(Math.round(finite(raw.data[i + 1], UNSET_WEIGHT)), 0, UNSET_WEIGHT); // Authored response or unset sentinel.
+        const value = clamp(Math.round(finite(raw.data[i + 1], UNSET_WEIGHT)), 0, UNSET_WEIGHT); // Authored weight or inherit sentinel.
         const end = Math.min(values.length, cursor + run);
         values.fill(value, cursor, end);
         cursor = end;
@@ -45,8 +44,8 @@
     return { width, height, values };
   }
 
-  function sampleResponseMap(map, u, topV) {
-    if (!map) return 1; // Missing response maps preserve the exact pre-feature deformation.
+  function sampleInfluenceMap(map, u, topV) {
+    if (!map) return 0;
     const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
     const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
     const x0 = Math.floor(fx), y0 = Math.floor(fy);
@@ -54,11 +53,31 @@
     const tx = fx - x0, ty = fy - y0;
     const at = (x, y) => {
       const value = map.values[y * map.width + x];
-      return value === UNSET_WEIGHT ? 1 : clamp(value, 0, 255) / 255;
+      return value === UNSET_WEIGHT ? 0 : clamp(value, 0, 255) / 255;
     };
     const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
     const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
     return clamp(a * (1 - ty) + b * ty, 0, 1);
+  }
+
+  function sampleMaterialMap(map, influenceMap, u, topV, fallbackInfluenceWeight = 0) {
+    const fallback = clamp(finite(fallbackInfluenceWeight, 0), 0, 1); // Exact mesh Influence weight used when no authored grid is available.
+    if (!map) return fallback;
+    const fx = clamp(u, 0, 1) * Math.max(0, map.width - 1);
+    const fy = clamp(topV, 0, 1) * Math.max(0, map.height - 1);
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const x1 = Math.min(map.width - 1, x0 + 1), y1 = Math.min(map.height - 1, y0 + 1);
+    const tx = fx - x0, ty = fy - y0;
+    const at = (x, y) => {
+      const raw = map.values[y * map.width + x];
+      const cornerU = map.width <= 1 ? 0 : x / (map.width - 1);
+      const cornerV = map.height <= 1 ? 0 : y / (map.height - 1);
+      const base = influenceMap ? sampleInfluenceMap(influenceMap, cornerU, cornerV) : fallback;
+      return raw === UNSET_WEIGHT ? base : Math.min(base, clamp(raw, 0, 255) / 255); // Material channels may only reduce Influence.
+    };
+    const a = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
+    const b = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
+    return clamp(Math.min(fallback, a * (1 - ty) + b * ty), 0, 1);
   }
 
   function responseKindForVertex(angleDeg, sourceTopV, pivotTopV) {
@@ -68,18 +87,18 @@
     return bend * side > 0 ? 'compress' : 'stretch'; // Down bends compress below; up bends compress above for the current side-view rigs.
   }
 
-  function effectiveBlendWeight(baseHeadWeight, response) {
-    const base = clamp(finite(baseHeadWeight, 0), 0, 1); // Original head-bone share from the existing influence map.
-    if (base <= RESPONSE_EPSILON || base >= 1 - RESPONSE_EPSILON) return base;
-    const allowed = clamp(finite(response, 1), 0, 1); // 0 = resists that deformation type; 1 = legacy/full deformation.
-    const seamGate = 4 * base * (1 - base); // Peaks at the 50/50 seam and smoothly falls to zero at both rigid endpoints.
-    return clamp(base * (1 - seamGate * (1 - allowed)), 0, 1);
+  function materialWeightForBend(baseInfluence, compressibilityWeight, stretchabilityWeight, kind) {
+    const base = clamp(finite(baseInfluence, 0), 0, 1); // Default head deformation weight from Influence.
+    if (kind === 'compress') return Math.min(base, clamp(finite(compressibilityWeight, base), 0, 1));
+    if (kind === 'stretch') return Math.min(base, clamp(finite(stretchabilityWeight, base), 0, 1));
+    return base;
   }
 
-  function responseMapForRig(rawRig) {
-    const compressibility = decodeResponseMap(rawRig?.compressibilityMap); // Optional inside-bend response authored in the Head Rigger.
-    const stretchability = decodeResponseMap(rawRig?.stretchabilityMap); // Optional outside-bend response authored in the Head Rigger.
-    return compressibility || stretchability ? { compressibility, stretchability } : null;
+  function mapsForRig(rawRig) {
+    const influence = decodeWeightMap(rawRig?.weightMap); // Base/default deformation weight map.
+    const compressibility = decodeWeightMap(rawRig?.compressibilityMap); // Optional inside-bend reductions.
+    const stretchability = decodeWeightMap(rawRig?.stretchabilityMap); // Optional outside-bend reductions.
+    return compressibility || stretchability ? { influence, compressibility, stretchability } : null;
   }
 
   function findRiggedMeshForBone(group, bone) {
@@ -93,19 +112,20 @@
     const skinWeight = geometry?.getAttribute?.('skinWeight');
     if (!uv || !skinWeight || skinWeight.itemSize < 2 || uv.count !== skinWeight.count) return null;
     const count = uv.count;
-    const baseHeadWeights = new Float32Array(count); // Immutable baseline used every update so response changes never accumulate drift.
-    const compressibilities = new Float32Array(count); // Pre-sampled response values avoid bilinear map sampling every animation frame.
-    const stretchabilities = new Float32Array(count); // Pre-sampled response values avoid bilinear map sampling every animation frame.
+    const baseHeadWeights = new Float32Array(count); // Immutable runtime Influence baseline; response changes never accumulate drift.
+    const compressibilityWeights = new Float32Array(count); // Pre-sampled inside-bend effective head weights.
+    const stretchabilityWeights = new Float32Array(count); // Pre-sampled outside-bend effective head weights.
     const sourceTopVs = new Float32Array(count); // Used to decide which side of the bend each vertex occupies.
     for (let i = 0; i < count; i++) {
-      const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples the horizontally mirrored author maps.
+      const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples horizontally mirrored author maps.
       const sourceTopV = 1 - uv.getY(i); // Author maps use top-left origin; Three UVs use bottom-left origin.
-      baseHeadWeights[i] = clamp(skinWeight.getY(i), 0, 1);
-      compressibilities[i] = sampleResponseMap(decoded.compressibility, sourceU, sourceTopV);
-      stretchabilities[i] = sampleResponseMap(decoded.stretchability, sourceU, sourceTopV);
+      const base = clamp(skinWeight.getY(i), 0, 1);
+      baseHeadWeights[i] = base;
+      compressibilityWeights[i] = sampleMaterialMap(decoded.compressibility, decoded.influence, sourceU, sourceTopV, base);
+      stretchabilityWeights[i] = sampleMaterialMap(decoded.stretchability, decoded.influence, sourceU, sourceTopV, base);
       sourceTopVs[i] = sourceTopV;
     }
-    return { mesh, skinWeight, baseHeadWeights, compressibilities, stretchabilities, sourceTopVs, mirrorX, lastAppliedDeg: NaN };
+    return { mesh, skinWeight, baseHeadWeights, compressibilityWeights, stretchabilityWeights, sourceTopVs, mirrorX, lastAppliedDeg: NaN };
   }
 
   function applyMeshResponse(meshState, angleDeg, pivotTopV) {
@@ -118,12 +138,7 @@
     for (let i = 0; i < meshState.baseHeadWeights.length; i++) {
       const base = meshState.baseHeadWeights[i];
       const kind = responseKindForVertex(angleDeg, meshState.sourceTopVs[i], pivotTopV);
-      const response = kind === 'compress'
-        ? meshState.compressibilities[i]
-        : kind === 'stretch'
-          ? meshState.stretchabilities[i]
-          : 1;
-      const effective = effectiveBlendWeight(base, response);
+      const effective = materialWeightForBend(base, meshState.compressibilityWeights[i], meshState.stretchabilityWeights[i], kind);
       const offset = i * meshState.skinWeight.itemSize;
       weights[offset] = 1 - effective;
       weights[offset + 1] = effective;
@@ -139,7 +154,7 @@
 
   function decorateAvatar(avatarRef, rawRig) {
     if (!avatarRef?.headRig || avatarRef.headMaterialResponse?.active) return avatarRef;
-    const decoded = responseMapForRig(rawRig);
+    const decoded = mapsForRig(rawRig);
     if (!decoded) return avatarRef; // Old rigs incur no dynamic skin-weight work at all.
     const state = avatarRef.headRig;
     const group = avatarRef.group;
@@ -181,7 +196,7 @@
     wrapAfter('setHeadRotation');
     wrapAfter('updateHeadRotation');
     wrapAfter('setHeadAdditiveRotation');
-    // Yaw is intentionally untouched in this first pass: the current request only separates compression/stretch response for the existing pitch bend.
+    // Yaw remains intentionally unchanged in this pass.
 
     debug.applyNow = applyCurrentResponse; // Used by in-game/debug tooling to force-refresh after live data edits.
     debug.dump = () => ({
@@ -212,10 +227,11 @@
 
   window.AnimalHeadMaterialResponse = {
     UNSET_WEIGHT,
-    decodeResponseMap,
-    sampleResponseMap,
+    decodeWeightMap,
+    sampleInfluenceMap,
+    sampleMaterialMap,
     responseKindForVertex,
-    effectiveBlendWeight,
+    materialWeightForBend,
     decorateAvatar,
     drainPending,
   };
