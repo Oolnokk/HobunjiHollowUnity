@@ -624,6 +624,15 @@
   // Animal sleep used to hide expensive hierarchy scans inside every
   // WebGLRenderer.render() call. Keep its replacement cadence/cost visible in
   // the same copyable mobile report as the scheduler that now owns it.
+  function _pixelProbeRenderScene(renderer, scene, camera) {
+    const sleepRenderScope = window.AnimalSleepPresentation?.beginExternalRenderScope?.('pixel-probe') === true; // Probe rerenders the live world outside gameLoop; opt in explicitly instead of relying on a global renderer hook.
+    try {
+      return renderer.render(scene, camera);
+    } finally {
+      if (sleepRenderScope) window.AnimalSleepPresentation?.endExternalRenderScope?.();
+    }
+  }
+
   function _pixelProbeAnimalSleepLines() {
     const debug = window.AnimalSleepPresentation?.getDebug?.();
     if (!debug) return null;
@@ -824,28 +833,28 @@
         for (const child of playerMesh.children) if (child.name === 'player_avatar') { playerAvatarGroup = child; break; }
         const activeCreatures = [...deps.companionObjects].filter(c => c.health > 0 && c.areaId === currentArea && c.avatarRef?.group);
 
-        hideAll(); renderer.render(activeScene, camera);
+        hideAll(); _pixelProbeRenderScene(renderer, activeScene, camera);
         const bg = sample2(fbX, fbY);
 
         const candidates = [{ label: 'background/world only', color: bg }];
         if (playerAvatarGroup) {
           hideAll(); playerAvatarGroup.visible = true;
-          renderer.render(activeScene, camera);
+          _pixelProbeRenderScene(renderer, activeScene, camera);
           candidates.push({ label: 'player alone', color: sample2(fbX, fbY) });
         }
         for (const c of activeCreatures) {
           hideAll(); c.avatarRef.group.visible = true;
-          renderer.render(activeScene, camera);
+          _pixelProbeRenderScene(renderer, activeScene, camera);
           candidates.push({ label: `${c.creatureKey} (${c.stableRole || 'creature'}) alone`, color: sample2(fbX, fbY) });
         }
 
         hideAll();
         if (playerAvatarGroup) playerAvatarGroup.visible = true;
         for (const c of activeCreatures) c.avatarRef.group.visible = true;
-        renderer.render(activeScene, camera);
+        _pixelProbeRenderScene(renderer, activeScene, camera);
         const normal = sample2(fbX, fbY);
 
-        restoreAll(); renderer.render(activeScene, camera);
+        restoreAll(); _pixelProbeRenderScene(renderer, activeScene, camera);
 
         const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
         let bestMatch = null, bestDist = Infinity;
