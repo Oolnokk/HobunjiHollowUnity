@@ -20,6 +20,10 @@
   let boundsScans = 0; // Cumulative Box3.setFromObject calls used only when a sleeper needs generic ground-preserving rescaling.
   let frameBoundsScans = 0; // Reset at each pre-render checkpoint so one-frame grounding cost is visible without profiling enabled.
   let lastPreparedBoundsScans = 0; // Number of hierarchy bounds scans performed by the most recent sleep preparation frame.
+  let externalRenderDepth = 0; // Nesting guard for explicit secondary live-scene renders such as Farm layout and Pixel Probe.
+  let externalRenderPrepared = false; // True only when the outermost explicit secondary render scope applied temporary sleep transforms itself.
+  let externalRenderScopes = 0; // Mobile-visible count of deliberate out-of-band render scopes; ordinary gameplay never increments this.
+  let lastExternalContext = null; // Label of the most recent explicit secondary render consumer for mobile diagnostics.
   let run2Redirects = 0; // Mobile-visible count of static sleeper composites redirected to run2.
   let closedEyeComposites = 0; // Mobile-visible count of unique permanent-closed-eye sleep composites requested.
   let headDownApplications = 0; // Mobile-visible count of visible sleepers whose head pose was forced downward.
@@ -514,6 +518,38 @@
     lastRestoredFrameId = frameId;
   }
 
+  function beginExternalRenderScope(contextLabel = 'external-render') {
+    externalRenderDepth++;
+    if (externalRenderDepth > 1) return true;
+    externalRenderPrepared = false;
+    // If a caller somehow runs synchronously inside an already-prepared gameplay
+    // render sequence, reuse that state and let the scheduler remain its owner.
+    if (temporaryTransforms.length) return true;
+    try {
+      applyStaticSleepers();
+      applyFarmSleepers();
+      applyWildernessSleepers();
+      externalRenderPrepared = true;
+      externalRenderScopes++;
+      lastExternalContext = String(contextLabel || 'external-render');
+      return true;
+    } catch (error) {
+      restoreTemporaryTransforms(); // Never strand a partially-applied scale/position if an on-demand diagnostic render preparation fails.
+      externalRenderDepth = 0;
+      externalRenderPrepared = false;
+      throw error;
+    }
+  }
+
+  function endExternalRenderScope() {
+    if (externalRenderDepth <= 0) return false;
+    externalRenderDepth--;
+    if (externalRenderDepth > 0) return true;
+    if (externalRenderPrepared) restoreTemporaryTransforms();
+    externalRenderPrepared = false;
+    return true;
+  }
+
   function installSchedulerOwnership() {
     const scheduler = window.RuntimeFrameScheduler;
     if (!scheduler?.register) return false;
@@ -565,6 +601,9 @@
       lastRestoredFrameId,
       boundsScans,
       lastPreparedBoundsScans,
+      externalRenderScopes,
+      externalRenderDepth,
+      lastExternalContext,
       activeTemporaryTransforms: temporaryTransforms.length,
       farmDepsReady: !!farmDeps,
       combatDepsReady: !!combatDeps,
@@ -577,6 +616,8 @@
     blinkOverlayFor,
     forceHeadDown,
     registerStaticSleeper,
+    beginExternalRenderScope,
+    endExternalRenderScope,
     install,
     getDebug: debugSnapshot,
   });
