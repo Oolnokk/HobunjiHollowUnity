@@ -335,11 +335,11 @@
   {
     "file": "docs/js/hand-tool-grips.js",
     "owner": "HobunjiHandToolGrips",
-    "classification": "scheduler",
-    "function": "frame",
-    "reason": "Unconditional permanent per-frame loop (started line 742) that applies primary/secondary hand-grip visual corrections to the held tool every frame for the life of the page - a genuine ongoing gameplay visual runtime, not tied to Three.js render-order.",
-    "migrationStage": "candidate",
-    "line": 740
+    "classification": "isolated-context",
+    "function": "frame (fallback branch inside the trailing if/else)",
+    "reason": "Migrated to RuntimeFrameScheduler: installMaintenance() (idempotent per-frame retries of installCombatCapture/installRigBlendWrapper plus the editor-only UI refresh) registers as 'hand-tool-grips-install', and applyPrimaryGripVisuals() (the real per-frame primary-grip transform correction on the held tool/weapon visual) registers as 'hand-tool-grips-visuals' on the pre-render phase, alongside procedural-hand-frame-driver.js's poseAndSyncUpdate. This module is also loaded by the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler and own their own isolated animation context, so the original combined per-frame RAF loop remains as a fallback for that context only.",
+    "migrationStage": "migrated",
+    "line": 769
   },
   {
     "file": "docs/js/harlyao-night-march-runtime.js",
