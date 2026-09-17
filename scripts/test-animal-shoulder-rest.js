@@ -128,10 +128,8 @@ assert.match(authorSource, /shoulderDefaultByteAt/,
   'right-side shoulder Influence has a seam-relative implicit default');
 assert.match(authorSource, /shoulderCellOnRight/,
   'shoulder paint is restricted to the frame-shift right side');
-assert.match(authorSource, /Spline<\/span>|> Spline</,
-  'right paint source relabels Influence target as Spline rather than Head');
-assert.match(authorSource, /Rigid/,
-  'right paint source exposes reducing shoulder Influence toward rigid');
+assert(authorSource.includes('> Spline<'), 'right paint source relabels Influence target as Spline rather than Head');
+assert(authorSource.includes('Rigid'), 'right paint source exposes reducing shoulder Influence toward rigid');
 assert.match(authorSource, /weightMap=exportShoulderMap\(shoulderInfluenceMap\)/,
   'shoulder Influence serializes inside shoulderRest separately from head Influence');
 assert.match(authorSource, /compressibilityMap=exportShoulderMap\(shoulderCompressibilityMap\)/);
