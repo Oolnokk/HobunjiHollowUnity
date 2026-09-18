@@ -37,7 +37,11 @@ assert(cfg.behavior.fullSimulationReleaseRadiusTiles > cfg.behavior.fullSimulati
 assert.equal(cfg.behavior.offChunkTickSeconds, 4);
 assert.equal(cfg.reputation.initialFavor, -3);
 assert.equal(cfg.reputation.minimumFavor, -5);
-assert.equal(cfg.reputation.killPenalty, -1);
+assert.equal(cfg.reputation.killPenalty, 0, 'legacy generic kill penalty is disabled in favor of context-specific penalties');
+assert.equal(cfg.reputation.selfDefenseKillPenalty, -1, 'self-defense kills only cost a small amount of Porakaneki favor');
+assert.equal(cfg.reputation.murderKillPenalty, -3, 'unprovoked kills retain the larger Porakaneki favor penalty');
+assert.equal(cfg.reputation.rivalNpcId, 'omgurku_chief');
+assert.equal(cfg.reputation.rivalKillFavor, 1, 'either Porakaneki kill context grants the authored rival-chief favor amount');
 assert.deepEqual(smallLocale.placement.allowedZones, ZONES);
 assert.equal(smallLocale.placement.maxInstances, 4);
 assert.equal(smallLocale.meta.namedNpcs, false);
