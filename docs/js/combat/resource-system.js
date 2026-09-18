@@ -157,6 +157,7 @@
   function initEntity(entity) {
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
     entity.exhaustion = { active: false, blackStamina: 100, ...(entity.exhaustion || {}) };
+    if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
     if (!Number.isFinite(entity.lastAttackAttemptAt)) entity.lastAttackAttemptAt = -1e9;
     if (!Number.isFinite(entity.lastAttackReceivedAt)) entity.lastAttackReceivedAt = -1e9;
     if (!Number.isFinite(entity.maxFooting)) entity.maxFooting = resourceSystemConfig().footingMax;
@@ -346,6 +347,7 @@
     if (!(amount > 0)) return { spent: 0, excess: 0 };
 
     if (entity.exhaustion.active) {
+      entity.stamina = 0; // Reassert the invariant even if an external/load path injected stale regular Stamina since the previous tick.
       entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina - amount, 0, 100));
       return { spent: 0, excess: amount };
     }
