@@ -13,6 +13,20 @@
       subtleHeightDefault: 0,
       subtleHeightMaxNeighborDelta: 1.99
     }),
+    grassPlayerResponse: Object.freeze({
+      enabled: true,
+      // Distances are authored in gameplay tiles (one tile == one world X/Z unit).
+      innerRadiusTiles: 1,
+      outerRadiusTiles: 4,
+      // Fraction of each blade's authored Y scale at/inside innerRadiusTiles.
+      // Raise this above 0 if grass should remain visibly present underfoot.
+      minimumYScale: 0,
+      // Exponential response rates: higher values reach the target faster.
+      flattenLerpRate: 8,
+      regrowLerpRate: 3.5,
+      // Newly streamed/rebuilt grass meshes are discovered without a full-scene scan every frame.
+      discoveryIntervalSeconds: 0.5
+    }),
     editor: Object.freeze({
       visualHeightBrushStrength: 0.1,
       visualHeightBrushRadius: 1,
