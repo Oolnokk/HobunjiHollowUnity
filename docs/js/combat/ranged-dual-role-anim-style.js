@@ -5,8 +5,8 @@
 (() => {
   'use strict';
 
-  const VERSION = 1;
-  const DUAL_ROLE_SHAPES = new Set(['kylie', 'bshuakauitl']);
+  const VERSION = 2;
+  const DUAL_ROLE_SHAPES = new Set(['kylie', 'dagger', 'fishingspear', 'hatchet', 'bshuakauitl']);
   const patched = new Set(); // Used by the mobile debug snapshot and idempotent patching.
 
   function install(itemKey, def) {
