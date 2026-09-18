@@ -248,7 +248,9 @@
 
   function enforceCaps(entity) {
     entity.health = round1(clamp(entity.health, 0, getEffectiveMax(entity, "health")));
-    if (!entity.exhaustion.active) entity.stamina = round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina")));
+    entity.stamina = entity.exhaustion.active
+      ? 0
+      : round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina"))); // While Exhausted, black Stamina is the only live stamina pool.
     entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina, 0, 100));
     if (Number.isFinite(entity.footing)) entity.footing = round1(clamp(entity.footing, 0, getEffectiveMax(entity, "footing")));
   }
@@ -441,6 +443,7 @@
     const healthRate = (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
 
     if (entity.exhaustion.active) {
+      entity.stamina = 0; // Black Stamina recovery owns the stamina channel until the debt is completely cleared.
       entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * mul * dt, 0, 100));
       clearExhaustedIfFull(entity);
     } else {
