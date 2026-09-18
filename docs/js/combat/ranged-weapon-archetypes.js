@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 8;
+  const VERSION = 9;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -22,7 +22,7 @@
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
   const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // Dagger is the current knife-class shape; these reuse Fishing's outbound fishing-mace spin.
-  const REVERSED_THROW_GRIP_SHAPES = new Set(['dagger', 'fishingspear']); // Same end-for-end local tool flip convention as reversing the pick-shovel's working end.
+  const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the exact pick-mining sprite-plane X-basis flip, not a pose-roll approximation.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
@@ -71,16 +71,6 @@
         strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { pitch: true, yaw: false, roll: false } },
       },
     };
-  }
-
-  function throwPoseForShape(animation, shapeKey) {
-    const poses = clonePoseSet(animation?.poses);
-    if (!REVERSED_THROW_GRIP_SHAPES.has(shapeKey)) return poses;
-    for (const phase of ['neutral', 'windup', 'strike']) {
-      const pose = poses[phase];
-      pose.roll = (Number(pose.roll) || 0) + 180; // End-for-end local plane turn; animation path/trajectory is unchanged.
-    }
-    return poses;
   }
 
   function sharedDrinkStrikePose() {
@@ -137,7 +127,8 @@
   function thrownConfig(itemKey, toolDef) {
     const base = crossbowDefaults();
     const animation = sharedThrowAnimation();
-    const throwPoses = throwPoseForShape(animation, shapeKeyFor(itemKey, toolDef));
+    const shapeKey = shapeKeyFor(itemKey, toolDef);
+    const throwPoses = clonePoseSet(animation?.poses);
     const scale = Number(toolDef?.rangedScale) || 1.05;
     const releaseDurationS = Math.max(0.12, (animation.durationS || 1.04) * (1 - (animation.windupFrac ?? 0.49)));
     const releaseAtFrac = Math.max(0.01, Math.min(0.98,
@@ -148,13 +139,13 @@
       ((animation.holdFrac ?? 0.82) - (animation.windupFrac ?? 0.49)) /
       Math.max(0.01, 1 - (animation.windupFrac ?? 0.49))
     ));
-    const shapeKey = shapeKeyFor(itemKey, toolDef);
     const config = {
       ...base,
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
+      toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
       throwDurationS: Number(animation.durationS) || 1.04,
       throwWindupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
       throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
@@ -429,6 +420,8 @@
       sequence: 'attack',
       pose: def.chargePose,
       gripMode: def.gripMode,
+      toolEndFlip: def.toolEndFlip === true,
+      alignToReticle: true,
       held: true,
       windupFrac: def.throwWindupFrac ?? 0.49,
       strikeFrac: def.throwStrikeFrac ?? 0.57,
