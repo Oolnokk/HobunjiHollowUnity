@@ -100,7 +100,7 @@
       field.style.left = '-9999px';
       document.body.appendChild(field);
       field.select();
-      const copied = document.execCommand?.('copy') !== false; // Used to report whether the fallback copy request was accepted.
+      const copied = !!document.execCommand?.('copy'); // Used to report whether the fallback copy request was accepted.
       field.remove();
       return copied;
     } catch (_) {
@@ -351,7 +351,7 @@
         picker.style.minWidth = '0';
 
         const abilities = abilitiesForSlot(slot.id); // Used by the dropdown and controller buttons so both surfaces expose the identical eligible attack set.
-        const canCycle = abilities.length > 1; // Used to disable meaningless arrow controls when only one technique is available.
+        const canCycle = abilities.length > 0 && (abilities.length > 1 || abilities[0].id !== abilityId); // Used to keep a single learned technique controller-equipable when the slot is empty, then disable no-op cycling once equipped.
 
         const prevBtn = document.createElement('button'); // Used by controller Confirm to choose the previous eligible attack without relying on native select popups.
         prevBtn.type = 'button';
