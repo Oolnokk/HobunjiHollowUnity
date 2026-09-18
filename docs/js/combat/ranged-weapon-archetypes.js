@@ -22,6 +22,7 @@
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
+  const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
   let thrownCharge = null; // Used to retain the active hold-release input until its matching release arrives.
@@ -206,7 +207,9 @@
   }
 
   function rangedTypeFor(itemKey, def) {
-    return def?.rangedType || DUAL_ROLE_SHAPES[shapeKeyFor(itemKey, def)] || null;
+    const shapeKey = shapeKeyFor(itemKey, def); // Used to apply both the explicit melee-only denylist and the shared dual-role lookup.
+    if (NON_RANGED_SHAPES.has(shapeKey)) return null;
+    return def?.rangedType || DUAL_ROLE_SHAPES[shapeKey] || null;
   }
 
   function addSlot(def, slot) {
