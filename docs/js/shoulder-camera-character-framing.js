@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 1; // Exposed in mobile diagnostics to identify this framing contract.
+  const VERSION = 2; // Exposed in mobile diagnostics to identify this framing contract.
   const SHOULDER_MODE = 'shoulderSurf'; // Used to resolve the existing native over-the-shoulder camera config.
   const REFERENCE_SPECIES = 'tletingan'; // Defines which species keeps the current Shoulder Cam defaults exactly unchanged.
   const FALLBACK_DISTANCE_TILES = 2.6; // Used only if the authored Shoulder Cam distance is unavailable when this module installs.
@@ -178,9 +178,9 @@
     const mode = shoulderModeConfig(); // Existing native camera config remains the single source consumed by game.js.
     if (!mode) return false;
 
-    const focus = rangedFocusState(); // Prevents a rare appearance rebuild from stomping an actively interpolated ranged-focus distance.
+    const focus = rangedFocusState(); // Diagnostic only: ranged focus now owns FOV, so species framing remains authoritative for distance even while zoomed.
     const focusActive = !!(focus?.active || Number(focus?.blend) > 0.002);
-    if (!focusActive) mode.distanceTiles = resolved.distanceTiles;
+    mode.distanceTiles = resolved.distanceTiles;
     mode.targetYOffsetTiles = resolved.targetYOffsetTiles;
 
     lastSnapshot = {
@@ -200,8 +200,9 @@
       resolvedTargetYOffsetTiles: resolved.targetYOffsetTiles,
       usedMeasuredNeck: resolved.usedMeasuredNeck,
       referenceSpecies: resolved.referenceSpecies,
-      distanceDeferredForRangedFocus: focusActive,
-      rangedFocusBaseDistanceTiles: focus?.baseDistanceTiles ?? null,
+      distanceDeferredForRangedFocus: false,
+      rangedFocusActive: focusActive,
+      rangedFocusBaseFovDeg: focus?.baseFovDeg ?? null,
     }; // Copyable mobile report for validating neck/height framing without devtools.
     return true;
   }

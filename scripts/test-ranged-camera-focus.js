@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8');
 const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
 
-assert.match(loader, /ranged-camera-focus\.js\?v=20260909perspectivepoint1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 7/, 'loader requires shared perspective-target v7');
+assert.match(loader, /ranged-camera-focus\.js\?v=20260918reticlezoom1[\s\S]*HobunjiRangedCameraFocus\?\.version\) >= 8/, 'loader requires reticle-centered optical focus v8');
 assert.doesNotMatch(loader, /attack-camera-player-root/, 'obsolete player-root camera hook stays removed');
 assert.match(source, /change-driven-persistent-cache/, 'combat aim advertises persistent change-driven caching');
 assert.match(source, /intersectObject\(root, true, localHits\)/, 'scene roots remain isolated so one bad root cannot abort the frame');
@@ -19,6 +19,8 @@ assert.match(source, /interactionTargetMeleeHit/, 'actual player melee collision
 assert.doesNotMatch(source, /PerspectiveCamera/, 'combat aim never hooks the camera class');
 assert.doesNotMatch(source, /prototype\.lookAt/, 'combat aim never replaces camera lookAt');
 assert.doesNotMatch(source, /this\.position\.set/, 'combat aim never writes camera position');
+assert.doesNotMatch(source, /mode\.distanceTiles\s*=\s*next/, 'ranged focus never dollies the shoulder camera, avoiding reticle parallax');
+assert.match(source, /mode\.fovDeg\s*=\s*next/, 'ranged focus zooms optically through the native shoulder FOV');
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -127,7 +129,7 @@ const windowStub = {
     setItem: (key, value) => storage.set(key, String(value)),
   },
   addEventListener: addWindowListener,
-  SCRATCHBONES_CONFIG: { game: { camera: { modes: { shoulderSurf: { distanceTiles: 2.6 } } } } },
+  SCRATCHBONES_CONFIG: { game: { camera: { modes: { shoulderSurf: { distanceTiles: 2.6, fovDeg: 55 } } } } },
   GridTileAccessors: { getActiveScene: () => scene },
   Combat,
   CombatProgression: { getEffects: () => ({ stats: {} }) },
@@ -278,7 +280,9 @@ function settle(frames = 120) {
 sliderValue = 0.60;
 windowStub.RangedWeapons.update(1 / 60);
 windowStub.RangedWeapons.update(1 / 60);
-assert(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles < 2.6, 'loaded crossbow still eases native camera distance inward');
+assert.equal(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles, 2.6, 'loaded crossbow must not dolly the shoulder camera toward the player');
+assert(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.fovDeg < 55, 'loaded crossbow optically zooms around the already-centered reticle ray');
+assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().cameraMutation, 'native-shoulder-fov-optical-zoom', 'ranged focus reports reticle-centered optical zoom instead of distance dolly');
 assert(sliderValue < 0.60, 'loaded crossbow still eases toward its independent shoulder offset');
 settle(120);
 const dispatchesAtSettledFocus = sliderDispatches;
@@ -336,7 +340,8 @@ for (const itemKey of ['scatterbow', 'blowgun']) {
 equipped = 'crossbow';
 loaded = false;
 settle();
-assert(Math.abs(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles - 2.6) < 0.01, 'camera distance restores after shot');
+assert.equal(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.distanceTiles, 2.6, 'camera distance remains untouched after shot');
+assert(Math.abs(windowStub.SCRATCHBONES_CONFIG.game.camera.modes.shoulderSurf.fovDeg - 55) < 0.01, 'authored FOV restores after shot');
 assert(Math.abs(sliderValue - 0.60) < 0.01, 'ordinary Combat horizontal offset restores after shot');
 
 equipped = 'kylie';
@@ -382,7 +387,7 @@ windowStub.RangedWeapons.update(1 / 60);
 assert.equal(windowStub.HobunjiRangedCameraFocus.snapshot().active, false, 'loaded ranged slot does not focus while melee is out');
 
 assert(logs.some(line => line.includes('focus ON')), 'focus transitions remain visible in in-game log');
-assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.tightDistanceTiles, 1.55);
+assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.tightFovDeg, 34);
 assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.defaultFocusHorizontalOffsetTiles, 0.18);
 assert.equal(windowStub.HobunjiRangedCameraFocus.tuning.crossbowVerticalPitchLimitDeg, 70);
 console.log('Change-driven shared interaction-target combat checks passed.');

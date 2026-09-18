@@ -108,6 +108,8 @@
 
   global.ProceduralHandGripRuntime = {
     get installed() { return installed; },
+    beginTemporary: beginTemporaryMode,
+    beginHeld: beginHeldMode,
     clear: endHeldMode,
   };
 })(window);

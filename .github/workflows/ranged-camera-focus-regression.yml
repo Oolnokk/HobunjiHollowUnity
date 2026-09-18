@@ -5,8 +5,15 @@ on:
     paths:
       - 'docs/js/combat/ranged-camera-ray-authority.js'
       - 'docs/js/combat/ranged-camera-focus.js'
+      - 'docs/js/shoulder-camera-character-framing.js'
+      - 'docs/js/attachment-rig-latest-authored-snapshot.js'
       - 'docs/js/combat/combat-camera-alignment-bridge.js'
       - 'docs/js/combat/ranged-weapon-archetypes.js'
+      - 'docs/js/held-action-animations.js'
+      - 'docs/tools/attack-animation-editor/index.html'
+      - 'docs/js/procedural-hand-grip-runtime.js'
+      - 'docs/js/fishing-minigame.js'
+      - 'docs/js/combat/ranged-dual-role-anim-style.js'
       - 'docs/js/combat/ranged-weapons.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/game.js'
@@ -14,15 +21,24 @@ on:
       - 'docs/js/pixel-probe.js'
       - 'scripts/test-ranged-camera-ray-authority.js'
       - 'scripts/test-ranged-camera-focus.js'
+      - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-combat-camera-alignment.js'
+      - 'scripts/test-ranged-weapon-archetypes.js'
       - 'scripts/test-reticle-hitbox-lunge-stop.js'
       - '.github/workflows/ranged-camera-focus-regression.yml'
   push:
     paths:
       - 'docs/js/combat/ranged-camera-ray-authority.js'
       - 'docs/js/combat/ranged-camera-focus.js'
+      - 'docs/js/shoulder-camera-character-framing.js'
+      - 'docs/js/attachment-rig-latest-authored-snapshot.js'
       - 'docs/js/combat/combat-camera-alignment-bridge.js'
       - 'docs/js/combat/ranged-weapon-archetypes.js'
+      - 'docs/js/held-action-animations.js'
+      - 'docs/tools/attack-animation-editor/index.html'
+      - 'docs/js/procedural-hand-grip-runtime.js'
+      - 'docs/js/fishing-minigame.js'
+      - 'docs/js/combat/ranged-dual-role-anim-style.js'
       - 'docs/js/combat/ranged-weapons.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/game.js'
@@ -30,7 +46,9 @@ on:
       - 'docs/js/pixel-probe.js'
       - 'scripts/test-ranged-camera-ray-authority.js'
       - 'scripts/test-ranged-camera-focus.js'
+      - 'scripts/test-shoulder-camera-character-framing.js'
       - 'scripts/test-combat-camera-alignment.js'
+      - 'scripts/test-ranged-weapon-archetypes.js'
       - 'scripts/test-reticle-hitbox-lunge-stop.js'
       - '.github/workflows/ranged-camera-focus-regression.yml'
 
@@ -46,13 +64,33 @@ jobs:
         run: node --check docs/js/combat/ranged-camera-ray-authority.js
       - name: Syntax check interaction aim adapter
         run: node --check docs/js/combat/ranged-camera-focus.js
+      - name: Syntax check species shoulder framing
+        run: node --check docs/js/shoulder-camera-character-framing.js
+      - name: Syntax check game integration
+        run: node --check docs/game.js
       - name: Syntax check camera alignment bridge
         run: node --check docs/js/combat/combat-camera-alignment-bridge.js
+      - name: Syntax check ranged weapon archetypes
+        run: node --check docs/js/combat/ranged-weapon-archetypes.js
+      - name: Syntax check held action animations
+        run: node --check docs/js/held-action-animations.js
+      - name: Syntax check ranged hand grip runtime
+        run: node --check docs/js/procedural-hand-grip-runtime.js
+      - name: Syntax check ranged projectile runtime
+        run: node --check docs/js/combat/ranged-weapons.js
+      - name: Syntax check fishing projectile visuals
+        run: node --check docs/js/fishing-minigame.js
+      - name: Syntax check dual-role ranged animation adapter
+        run: node --check docs/js/combat/ranged-dual-role-anim-style.js
       - name: Run max-range camera ray regression
         run: node scripts/test-ranged-camera-ray-authority.js
       - name: Run shared interaction-target regression
         run: node scripts/test-ranged-camera-focus.js
+      - name: Run species shoulder framing regression
+        run: node scripts/test-shoulder-camera-character-framing.js
       - name: Run camera-authoritative alignment regression
         run: node scripts/test-combat-camera-alignment.js
+      - name: Run dual-role throwable weapon regression
+        run: node scripts/test-ranged-weapon-archetypes.js
       - name: Run exact reticle hitbox and swept lunge-stop regression
         run: node scripts/test-reticle-hitbox-lunge-stop.js

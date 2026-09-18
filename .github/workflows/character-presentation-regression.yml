@@ -18,7 +18,6 @@ on:
       - 'docs/assets/fightersprites/kenkari-m/untinted_regions/ur-head_porakaneki_blink.png'
       - 'docs/assets/portraitsprites/torso_porakaneki_m.png'
       - 'docs/js/combat/combat-config-loader.js'
-      - 'docs/js/combat/porakaneki-dagger-ranged.js'
       - 'docs/js/drunk-prone-composition-bridge.js'
       - 'docs/js/ghostify.js'
       - 'docs/js/harlyao-night-march-atmosphere.js'

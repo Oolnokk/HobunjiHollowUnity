@@ -645,7 +645,7 @@
   }
 
   function weaponRoll(rng = rand) {
-    const shapes = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'daggerSword'];
+    const shapes = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'dagger'];
     return shapes[Math.floor(rng() * shapes.length)] || shapes[0];
   }
   function weaponDef(shapeKey) {
@@ -656,7 +656,7 @@
       metalKey,
       weaponKey: combatDeps?.craftedToolItemKey?.(shapeKey, metalKey) || shapeKey,
       attackTag: shape.dmgType || 'sharp',
-      ranged: shapeKey === 'daggerSword',
+      ranged: shapeKey === 'dagger',
     };
   }
   function randomCampPoint(camp, rng = rand) {

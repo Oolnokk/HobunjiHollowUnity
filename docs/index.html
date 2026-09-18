@@ -141,7 +141,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20260821a"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20260917charge2"></script>
+  <script src="js/held-action-animations.js?v=20260918throwcharge3"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20260910controller1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
@@ -238,7 +238,7 @@
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
-  <script src="js/combat/ranged-weapons.js?v=20260909perspectivepoint1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260918throwframe3"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20260917charge1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -263,7 +263,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260917charge3-loomcore2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260918throwframe1-loomcore2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2348,7 +2348,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260825interactions1"></script>
+  <script src="js/fishing-minigame.js?v=20260918throwcharge3"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2447,7 +2447,7 @@
   <!-- Generic poll-until-ready/timeout helper; game.js's
        waitForBuildingSceneReady calls into it directly. -->
   <script src="js/scene-ready-poller.js?v=20260917a"></script>
-  <script src="game.js?v=20260918chargeblink1-loomcore2"></script>
+  <script src="game.js?v=20260918throwframe1-loomcore2"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>

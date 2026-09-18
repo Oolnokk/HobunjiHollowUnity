@@ -77,4 +77,17 @@ assert.ok(Math.abs(snapshot.heightRatio - expectedRatio) < 1e-9);
 assert.ok(Math.abs(snapshot.characterHeightTiles - 1.02) < 1e-9);
 assert.strictEqual(snapshot.usedMeasuredNeck, true);
 
+// Ranged focus now zooms optically by FOV. It must never freeze or own the
+// species-relative shoulder distance while active.
+windowObject.HobunjiRangedCameraFocus = { snapshot: () => ({ active: true, blend: 1, baseFovDeg: 55 }) };
+const focusedRoot = makeRoot({ speciesId: 'mao-ao', gender: 'female', scaleY: 0.98, neckHeight: 0.76 });
+assert.strictEqual(api.refreshPlayerFraming(focusedRoot, { speciesId: 'mao-ao', gender: 'female' }, 'test-focused'), true);
+const focusedRatio = 0.98 / 0.89;
+assert.ok(Math.abs(shoulderMode.distanceTiles - 2.6 * focusedRatio) < 1e-9,
+  'active ranged FOV focus must not defer or overwrite species-relative camera distance');
+const focusedSnapshot = api.snapshot();
+assert.strictEqual(focusedSnapshot.distanceDeferredForRangedFocus, false);
+assert.strictEqual(focusedSnapshot.rangedFocusActive, true);
+assert.strictEqual(focusedSnapshot.rangedFocusBaseFovDeg, 55);
+
 console.log('Shoulder camera character framing tests passed.');

@@ -6,10 +6,9 @@
 (() => {
   'use strict';
 
-  const VERSION = 2;
+  const VERSION = 9;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
-  const THROWN_HOLD_VISUAL_S = 3600; // Used to park the ranged visual at its authored windup without adding another game.js hold state.
   const THROWN_TYPE = 'thrown';
   const BLOWGUN_TYPE = 'blowgun';
   const BLOWGUN_RAW_DAMAGE = 2; // Used as the deliberately tiny direct dart hit; mastery afflictions are the blowgun's real damage identity.
@@ -21,7 +20,10 @@
   const KYLIE_BLUNT_EFFECT_IDS = Object.freeze([
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
   ]); // Used by Kylie ranged mastery so its options mirror the game's blunt affliction family rather than sharp-style buildup.
-  const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
+  const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
+  const SPINNING_THROWN_SHAPES = new Set(['hatchet', 'dagger', 'kylie']); // Dagger is the current knife-class shape; these reuse Fishing's outbound fishing-mace spin.
+  const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the exact pick-mining sprite-plane X-basis flip, not a pose-roll approximation.
+  const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
   const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
   let thrownCharge = null; // Used to retain the active hold-release input until its matching release arrives.
@@ -37,7 +39,13 @@
   let baseBasicAmmoEffects = null; // Holds the ranged system's original effect objects so its closure-private payload builder can keep using them.
   let baseBasicAmmoDescriptors = []; // Immutable-ish plain copies used to build filtered UI/mastery choice lists without triggering affliction alias getters.
 
-  function clonePose(pose = {}) { return { ...pose, shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : undefined }; }
+  function clonePose(pose = {}) {
+    return {
+      ...pose,
+      shoulderAim: pose.shoulderAim ? { ...pose.shoulderAim } : undefined,
+      secondaryGrip: pose.secondaryGrip ? { ...pose.secondaryGrip } : undefined,
+    };
+  }
   function clonePoseSet(source = {}) {
     return {
       neutral: clonePose(source.neutral),
@@ -49,16 +57,18 @@
   function withScale(pose, scale) { return { ...clonePose(pose), scale }; }
 
   function sharedThrowAnimation() {
-    return window.HeldActionAnimations?.throwFlask || {
-      durationS: 0.62,
-      windupFrac: 0.44,
-      strikeFrac: 0.62,
-      holdFrac: 0.68,
-      releaseFrac: 0.62,
+    return window.HeldActionAnimations?.weaponThrowSpin || {
+      name: 'Weapon Throw (Spin)',
+      style: 'chop',
+      sequence: 'attack',
+      durationS: 1.04,
+      windupFrac: 0.49,
+      strikeFrac: 0.57,
+      holdFrac: 0.82,
       poses: {
-        neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
-        windup: { x: 0.12, y: 0.46, z: -0.16, pitch: -126, yaw: -8, roll: 10, bodyYaw: -12 },
-        strike: { x: 0.18, y: 0.3, z: 0.5, pitch: 34, yaw: 4, roll: -6, bodyYaw: 8 },
+        neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { pitch: true, yaw: false, roll: true } },
+        windup: { x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92, shoulderAim: { pitch: false, yaw: false, roll: false } },
+        strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { pitch: true, yaw: false, roll: false } },
       },
     };
   }
@@ -117,23 +127,34 @@
   function thrownConfig(itemKey, toolDef) {
     const base = crossbowDefaults();
     const animation = sharedThrowAnimation();
+    const shapeKey = shapeKeyFor(itemKey, toolDef);
+    const throwPoses = clonePoseSet(animation?.poses);
     const scale = Number(toolDef?.rangedScale) || 1.05;
-    const releaseDurationS = Math.max(0.12, (animation.durationS || 0.62) * (1 - (animation.windupFrac ?? 0.44)));
+    const releaseDurationS = Math.max(0.12, (animation.durationS || 1.04) * (1 - (animation.windupFrac ?? 0.49)));
     const releaseAtFrac = Math.max(0.01, Math.min(0.98,
-      ((animation.releaseFrac ?? animation.strikeFrac ?? 0.62) - (animation.windupFrac ?? 0.44)) /
-      Math.max(0.01, 1 - (animation.windupFrac ?? 0.44))
+      ((animation.releaseFrac ?? animation.strikeFrac ?? 0.57) - (animation.windupFrac ?? 0.49)) /
+      Math.max(0.01, 1 - (animation.windupFrac ?? 0.49))
     ));
     const holdFrac = Math.max(releaseAtFrac, Math.min(0.99,
-      ((animation.holdFrac ?? 0.68) - (animation.windupFrac ?? 0.44)) /
-      Math.max(0.01, 1 - (animation.windupFrac ?? 0.44))
+      ((animation.holdFrac ?? 0.82) - (animation.windupFrac ?? 0.49)) /
+      Math.max(0.01, 1 - (animation.windupFrac ?? 0.49))
     ));
-    const shapeKey = shapeKeyFor(itemKey, toolDef);
     const config = {
       ...base,
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
+      gripMode: animation.gripMode || 'palm-parallel',
+      toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
+      throwDurationS: Number(animation.durationS) || 1.04,
+      throwWindupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
+      throwStrikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
+      throwHoldFrac: Number.isFinite(Number(animation.holdFrac)) ? Number(animation.holdFrac) : 0.82,
       projectileSprite: toolDef?.sprite || 'assets/toolsprites/kylie.png',
+      projectileVisualStyle: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'spinningWeapon' : 'weapon',
+      projectileWeaponShapeKey: shapeKey,
+      projectileVisualWidthWorld: SPINNING_THROWN_SHAPES.has(shapeKey) ? 0.5 : null,
+      projectileSpinSource: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'fishingMace' : null,
       fireDurationS: releaseDurationS,
       fireSequence: 'attack',
       fireWindupFrac: 0,
@@ -146,21 +167,21 @@
       reloadHoldFrac: 0.01,
       // Idle uses the true neutral. Release starts from the already-held windup.
       loadPose: {
-        neutral: withScale(animation.poses?.neutral, scale),
-        windup: withScale(animation.poses?.neutral, scale),
-        strike: withScale(animation.poses?.neutral, scale),
+        neutral: withScale(throwPoses.neutral, scale),
+        windup: withScale(throwPoses.neutral, scale),
+        strike: withScale(throwPoses.neutral, scale),
       },
       firePose: {
-        neutral: withScale(animation.poses?.windup, scale),
-        windup: withScale(animation.poses?.windup, scale),
-        strike: withScale(animation.poses?.strike, scale),
+        neutral: withScale(throwPoses.windup, scale),
+        windup: withScale(throwPoses.windup, scale),
+        strike: withScale(throwPoses.strike, scale),
       },
       chargePose: {
-        neutral: withScale(animation.poses?.neutral, scale),
-        windup: withScale(animation.poses?.windup, scale),
-        strike: withScale(animation.poses?.windup, scale),
+        neutral: withScale(throwPoses.neutral, scale),
+        windup: withScale(throwPoses.windup, scale),
+        strike: withScale(throwPoses.windup, scale),
       },
-      chargeWindupS: Math.max(0.05, (animation.durationS || 0.62) * (animation.windupFrac ?? 0.44)),
+      chargeWindupS: Math.max(0.05, (animation.durationS || 1.04) * (animation.windupFrac ?? 0.49)),
     };
     if (shapeKey === 'kylie' || Array.isArray(toolDef?.rangedBasicAmmoEffectIds)) {
       config.basicAmmoEffectIds = authoredEffectIds(toolDef, KYLIE_BLUNT_EFFECT_IDS);
@@ -206,7 +227,9 @@
   }
 
   function rangedTypeFor(itemKey, def) {
-    return def?.rangedType || DUAL_ROLE_SHAPES[shapeKeyFor(itemKey, def)] || null;
+    const shapeKey = shapeKeyFor(itemKey, def); // Used to apply both the explicit melee-only denylist and the shared dual-role lookup.
+    if (NON_RANGED_SHAPES.has(shapeKey)) return null;
+    return def?.rangedType || DUAL_ROLE_SHAPES[shapeKey] || null;
   }
 
   function addSlot(def, slot) {
@@ -392,17 +415,18 @@
     const def = window.RangedWeapons.config[itemKey];
     thrownCharge = { itemKey, source, pointerId, startedAt: performance.now() };
     window.RangedWeapons.setLoaded?.(itemKey, false);
-    const holdVisual = window.Combat?.deps?.triggerRangedWeaponVisual;
-    if (typeof holdVisual === 'function') {
-      const windupFrac = Math.max(0.000001, (def.chargeWindupS || 0.27) / THROWN_HOLD_VISUAL_S);
-      holdVisual(THROWN_HOLD_VISUAL_S, {
-        sequence: 'attack',
-        pose: def.chargePose,
-        windupFrac,
-        strikeFrac: 0.99999,
-        holdFrac: 0.999995,
-      });
-    }
+    const totalS = Math.max(0.05, Number(def.throwDurationS) || ((def.chargeWindupS || 0.5096) + (def.fireDurationS || 0.5304)));
+    window.RangedWeapons.triggerPlayerVisual?.(totalS, {
+      sequence: 'attack',
+      pose: def.chargePose,
+      gripMode: def.gripMode,
+      toolEndFlip: def.toolEndFlip === true,
+      alignToReticle: true,
+      held: true,
+      windupFrac: def.throwWindupFrac ?? 0.49,
+      strikeFrac: def.throwStrikeFrac ?? 0.57,
+      holdFrac: def.throwHoldFrac ?? 0.82,
+    });
     window.Combat?.deps?.refreshActionBar?.();
     lastRelease = { type: 'charge-start', itemKey, source, at: Date.now() };
     return true;
@@ -414,15 +438,26 @@
     thrownCharge = null;
     const ranged = window.RangedWeapons;
     if (!ranged?.config?.[charge.itemKey] || typeof baseStartPlayerAction !== 'function') return false;
-    // Force the existing load/fire state machine into its fire branch. The fire
-    // event itself returns this item to empty/neutral, so no synthetic load stage
-    // is ever exposed for a thrown weapon.
-    ranged.setLoaded?.(charge.itemKey, true);
-    const fired = baseStartPlayerAction(charge.itemKey);
-    if (!fired) ranged.setLoaded?.(charge.itemKey, false);
     const heldMs = Math.max(0, performance.now() - charge.startedAt);
-    lastRelease = { type: fired ? 'released' : 'release-failed', itemKey: charge.itemKey, source, heldMs: Math.round(heldMs), at: Date.now() };
-    window.__farmLog?.(`[ranged-archetypes] ${charge.itemKey} ${fired ? 'released' : 'release failed'} after ${Math.round(heldMs)}ms (${source}).`, 'combat');
+    const liveCharge = Number(ranged.playerWindupPoseProgress?.());
+    const timeFallback = Math.max(0, Math.min(1, heldMs / Math.max(1, (Number(ranged.config[charge.itemKey]?.chargeWindupS) || 0.5096) * 1000)));
+    const poseCharge = Number.isFinite(liveCharge) ? Math.max(0, Math.min(1, liveCharge)) : timeFallback;
+
+    // Same release contract as current Charged Breaker: freeze the charge at
+    // the exact visible Neutral→Windup percentage, slice Windup/Strike to that
+    // amplitude, then start directly at the Windup→Strike boundary.
+    ranged.releasePlayerHold?.({ poseProgress: poseCharge });
+
+    // Force the existing projectile state machine into fire without starting a
+    // second animation. Raw projectile damage is scaled by the released pose percent.
+    ranged.setLoaded?.(charge.itemKey, true);
+    const fired = baseStartPlayerAction(charge.itemKey, { damageScale: poseCharge, suppressVisual: true });
+    if (!fired) {
+      ranged.setLoaded?.(charge.itemKey, false);
+      ranged.cancelPlayerHold?.();
+    }
+    lastRelease = { type: fired ? 'released' : 'release-failed', itemKey: charge.itemKey, source, heldMs: Math.round(heldMs), poseCharge, at: Date.now() };
+    window.__farmLog?.(`[ranged-archetypes] ${charge.itemKey} ${fired ? 'released' : 'release failed'} at ${Math.round(poseCharge * 100)}% visible windup (${source}).`, 'combat');
     return fired;
   }
 
@@ -432,6 +467,7 @@
     thrownCharge = null;
     window.RangedWeapons?.setLoaded?.(itemKey, false);
     window.RangedWeapons?.cancelPlayerAction?.();
+    window.RangedWeapons?.cancelPlayerHold?.();
     lastRelease = { type: 'cancelled', itemKey, source: reason, at: Date.now() };
     return true;
   }

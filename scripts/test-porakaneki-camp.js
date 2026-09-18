@@ -37,7 +37,9 @@ assert(cfg.behavior.fullSimulationReleaseRadiusTiles > cfg.behavior.fullSimulati
 assert.equal(cfg.behavior.offChunkTickSeconds, 4);
 assert.equal(cfg.reputation.initialFavor, -3);
 assert.equal(cfg.reputation.minimumFavor, -5);
-assert.equal(cfg.reputation.killPenalty, -1);
+assert.equal(cfg.reputation.killPenalty, 0, 'legacy blanket kill penalty stays disabled in favor of context-specific penalties');
+assert.equal(cfg.reputation.selfDefenseKillPenalty, -1);
+assert.equal(cfg.reputation.murderKillPenalty, -3);
 assert.deepEqual(smallLocale.placement.allowedZones, ZONES);
 assert.equal(smallLocale.placement.maxInstances, 4);
 assert.equal(smallLocale.meta.namedNpcs, false);
@@ -45,9 +47,10 @@ assert.deepEqual(chiefLocale.placement.allowedZones, ZONES);
 assert.equal(chiefLocale.placement.maxInstances, 1);
 assert.equal(chiefLocale.meta.namedNpc, 'porakaneki_chief');
 assert.equal(chiefLocale.objects.filter(object => object.kind === 'tent').length, 7);
+assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
-assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260915hostileset1'));
+assert(houseLoader.includes('porakaneki-camps-runtime.js?v=20260917dagger1'));
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
@@ -178,7 +181,7 @@ const combatDeps = {
   EXTERIOR_ZONES: Object.fromEntries(ZONES.map(zoneId => [zoneId, { cols: 96, rows: 96, entryCol: 2, entryRow: 2 }])),
   WATERWAY_TYPES: new Set(['river', 'stream']),
   TileType: { PATH: 'path', RAMP: 'ramp', WATERFALL: 'waterfall', SHRUB: 'shrub', ROCK: 'rock' },
-  HELD_SHAPE_DEFS: { fishingspear: { dmgType: 'sharp' }, hatchet: { dmgType: 'sharp' }, daggerSword: { dmgType: 'sharp' } },
+  HELD_SHAPE_DEFS: { fishingspear: { dmgType: 'sharp' }, hatchet: { dmgType: 'sharp' }, dagger: { dmgType: 'sharp' } },
   craftedToolItemKey: (shape, metal) => `${shape}_${metal}`,
   hostileObjects,
   getCurrentArea: () => currentArea,
@@ -223,8 +226,8 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(api.__test.isSleepingHour(12), false);
   assert.equal(api.__test.desiredChiefZone('Stormtide'), 'map_southern_cloud_forest');
   assert.equal(api.__test.desiredChiefZone('Coldmuck'), 'map_northern_cliffs');
-  assert.equal(api.__test.weaponRoll(() => 0.99), 'daggerSword');
-  assert.equal(api.__test.weaponRoll(() => 0.99), 'daggerSword', 'independent random weapon rolls may duplicate');
+  assert.equal(api.__test.weaponRoll(() => 0.99), 'dagger');
+  assert.equal(api.__test.weaponRoll(() => 0.99), 'dagger', 'independent random weapon rolls may duplicate');
 
   assert.equal(api.initializeReputation(), true);
   assert.equal(relation.favor, -3);

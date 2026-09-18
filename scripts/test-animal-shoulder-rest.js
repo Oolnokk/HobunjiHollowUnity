@@ -321,7 +321,7 @@ assert(bridgeSource.includes('animal-shoulder-spline-layering.js?v=20260918parit
   'attachment bridge requests the fixed parity runtime under a fresh cache key');
 assert(combatLoaderSource.includes('player-body-attachment-bridge.js?v=20260918shoulderparity3'),
   'combat loader invalidates the attachment bridge cache so the parity3 URL is actually reached');
-assert(indexSource.includes('js/combat/combat-config-loader.js?v=20260918shoulderparity1'),
+assert(indexSource.includes('js/combat/combat-config-loader.js?v=20260918throwframe1-loomcore2'),
   'deployed index invalidates the combat loader cache for the complete shoulder parity update chain');
 
 console.log('animal-shoulder-spline v10: audited shoulder authoring/runtime tests passed');

@@ -2,7 +2,8 @@
 //
 // Porakaneki deliberately combines existing character systems instead of
 // duplicating their authored data:
-//   - Kenkari male body/wardrobe sprites, attachment rig, and body colors.
+//   - Kenkari male body/wardrobe sprites and attachment rig.
+//   - Mao-ao body-color ranges.
 //   - Pachyderm hands and feline feet as explicit cross-species extremity donors.
 //   - Slagothim/Tletingan male hair cosmetics.
 //   - Porakaneki-specific head, rear-head, untinted-head, and torso portrait sprites.
@@ -10,7 +11,8 @@
   'use strict';
 
   const SPECIES_ID = 'porakaneki'; // Used as the runtime/config key for every Porakaneki-specific override below.
-  const BODY_SPECIES_ID = 'kenkari'; // Used whenever Porakaneki resolves inherited body, wardrobe, rig, or palette data.
+  const BODY_SPECIES_ID = 'kenkari'; // Used whenever Porakaneki resolves inherited body, wardrobe, or rig data.
+  const COLOR_SPECIES_ID = 'mao-ao'; // Used to inherit the full live Mao-ao body-color palette independently of the Kenkari body donor.
   const HAND_DONOR_SPECIES_ID = 'mashtzarr'; // Used to resolve the canonical pachyderm hand-model family without duplicating its GLB path.
   const FOOT_DONOR_SPECIES_ID = 'engh-sho'; // Used to clone the canonical feline procedural-foot config without duplicating its GLB/material data.
   const HAIR_SPECIES_ID = 'tletingan'; // Documents the cosmetic donor used by config/species/porakaneki.json for male hairstyles.
@@ -54,6 +56,7 @@
     playerSelectable: false,
     genders: [...GENDERS],
     bodySpecies: BODY_SPECIES_ID,
+    colorSpecies: COLOR_SPECIES_ID,
     handDonorSpecies: HAND_DONOR_SPECIES_ID,
     footDonorSpecies: FOOT_DONOR_SPECIES_ID,
     hairSpecies: HAIR_SPECIES_ID,
@@ -170,13 +173,13 @@
     return fighters.find(fighter => normalizeSpecies(fighter?.speciesId) === normalizedSpecies && String(fighter?.gender || '').toLowerCase() === gender) || null;
   }
 
-  function inheritKenkariBodyColors(cosmetics) {
+  function inheritMaoAoBodyColors(cosmetics) {
     const ranges = cosmetics?.bodyColorRangesByGender; // Per-fighter body-color map consumed by randomPortraitProfileSeeded().
     if (!ranges) return 0;
     let inherited = 0;
     for (const gender of GENDERS) {
-      const target = fighterFor(SPECIES_ID, gender); // Porakaneki receives the matching live Kenkari body-color range object.
-      const source = fighterFor(BODY_SPECIES_ID, gender); // Kenkari remains the canonical palette source.
+      const target = fighterFor(SPECIES_ID, gender); // Porakaneki receives the matching live Mao-ao body-color range object.
+      const source = fighterFor(COLOR_SPECIES_ID, gender); // Mao-ao remains the canonical palette source while Kenkari still supplies body geometry.
       if (!target || !source || !ranges[source.id]) continue;
       ranges[target.id] = ranges[source.id];
       inherited += 1;
@@ -291,7 +294,7 @@
     }
     const wrapped = async function loadPortraitCosmeticsWithPorakanekiOverrides() {
       const cosmetics = await baseLoad.apply(this, arguments);
-      inheritKenkariBodyColors(cosmetics);
+      inheritMaoAoBodyColors(cosmetics);
       applyCosmeticRestrictions(cosmetics);
       return cosmetics;
     };
@@ -338,6 +341,7 @@
   window.HobunjiPorakanekiSpecies = Object.freeze({
     speciesId: SPECIES_ID,
     bodySpeciesId: BODY_SPECIES_ID,
+    colorSpeciesId: COLOR_SPECIES_ID,
     handDonorSpeciesId: HAND_DONOR_SPECIES_ID,
     footDonorSpeciesId: FOOT_DONOR_SPECIES_ID,
     hairSpeciesId: HAIR_SPECIES_ID,
@@ -345,7 +349,7 @@
     expectedAssets: EXPECTED_ASSETS,
     install,
     installBehindHeadSprite,
-    inheritKenkariBodyColors,
+    inheritMaoAoBodyColors,
     applyCosmeticRestrictions,
     restrictPorakanekiBanditConfig,
     installBanditWardrobeGuard,
@@ -353,7 +357,7 @@
     debugSnapshot,
     formatDebug: () => {
       const d = debugSnapshot();
-      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} wardrobeHook=${d.wardrobeResolverInstalled} banditWardrobeGuard=${d.banditWardrobeGuardInstalled} genderGuard=${d.genderGuardInstalled} genderCorrections=${d.correctedUnsupportedGenderCount} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 rearHead=${d.behindHeadInstalled ? d.expectedAssets.behindHead : '-'} bodywrap=${d.expectedAssets.bodywrapMale} head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
+      return `Porakaneki: npcOnly=${d.npcOnly} genders=${d.genders.join(',')} rig=${d.rigProfilesInstalled}/1 hand=${d.handModelKey || '-'}(${d.handDonorSpecies}) foot=${d.footGlb || '-'}(${d.footDonorSpecies}) paletteHook=${d.paletteInheritanceInstalled} colorSource=${d.colorSpecies} wardrobeHook=${d.wardrobeResolverInstalled} banditWardrobeGuard=${d.banditWardrobeGuardInstalled} genderGuard=${d.genderGuardInstalled} genderCorrections=${d.correctedUnsupportedGenderCount} cosmeticClamp=${d.cosmeticRestrictionsApplied}/1 eyeDisksSuppressed=${d.eyeDisksSuppressed} allowed=${d.allowedCosmeticIds.join(',')} armMask=${d.armMaskProfilesInstalled}/1 rearHead=${d.behindHeadInstalled ? d.expectedAssets.behindHead : '-'} bodywrap=${d.expectedAssets.bodywrapMale} head=${d.expectedAssets.head} torso=${d.expectedAssets.torso}`;
     },
   });
 

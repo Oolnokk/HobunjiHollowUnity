@@ -95,6 +95,9 @@
     ropeSag: 0.1,
     maceSpinRateDeg: 9720,              // ~27 spins/sec while the mace is outbound
   };
+  const FISHING_PROJECTILE_VISUALS = Object.freeze({
+    maceSpinRateDeg: FISHING_BRIDGE_ART.maceSpinRateDeg,
+  }); // Shared by combat thrown-weapon visuals so their spin is literally the fishing-mace outbound animation rate.
 
   let fishBodySpriteImage = null, fishWhiskersSpriteImage = null;
   let harpoonSpearSpriteImage = null, harpoonMaceSpriteImage = null;
@@ -1354,6 +1357,7 @@
     // (their `timesOfDay` condition axis) — not fishing-specific despite
     // the name, kept here since this is where it originally lived.
     timeOfDay: fishingTimeOfDay,
+    projectileVisuals: FISHING_PROJECTILE_VISUALS,
     get state() { return fishingMinigame; },
     get readyPose() { return fishingReadyPose; },
   };

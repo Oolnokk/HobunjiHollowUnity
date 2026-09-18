@@ -241,8 +241,10 @@ canvas{display:block;width:100%;height:100%}
     <div class="sectionTitle"><b>Actions</b><span class="sectionTag">flip / import / export</span></div>
     <div class="row">
       <button id="flipBtn" class="warn">⇋ Flip Across Midline</button>
+      <button id="toolEndFlipBtn" class="secondary">↕ Tool End Flip: Off</button>
       <button id="resetPosesBtn" class="secondary">Reset poses</button>
     </div>
+    <div class="help">Tool End Flip uses the exact pick-shovel mining basis: the sprite plane changes from local X −90° to +90°. It reverses which end points forward without mirroring the art or changing Pitch/Yaw/Roll.</div>
     <div class="row" style="margin-top:8px">
       <button id="exportBtn">⭳ Export JSON</button>
       <button id="loadBtn" class="secondary">⭱ Load JSON</button>
@@ -283,7 +285,7 @@ canvas{display:block;width:100%;height:100%}
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20260821j"></script>
+<script src="../../js/held-action-animations.js?v=20260918throwcharge3"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -706,6 +708,7 @@ function buildToolPlaneMesh(toolKey) {
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
       plane.rotation.x = def.flip ? Math.PI / 2 : -Math.PI / 2;
+      plane.userData.toolEndFlipBase = def.flip === true;
       const g = new THREE.Group();
       g.add(plane);
       g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
@@ -767,6 +770,7 @@ let anim = {
   strikeFrac: 0.55,
   holdFrac: 0.68,
   durationS: 0.5,
+  toolEndFlip: false,
   poses: {
     neutral: { ...neutralPoseFor('sweep') },
     windup: defaultPose(0.05, 0.05, -0.15, -15, 0, -60),
@@ -892,6 +896,20 @@ function flipPose(p) {
   if (p.scale != null) flipped.scale = p.scale;
   return flipped;
 }
+function syncToolEndFlipUi() {
+  const btn = $('toolEndFlipBtn');
+  if (!btn) return;
+  btn.textContent = `↕ Tool End Flip: ${anim.toolEndFlip ? 'On' : 'Off'}`;
+  btn.classList.toggle('active', !!anim.toolEndFlip);
+}
+$('toolEndFlipBtn').onclick = () => {
+  anim.toolEndFlip = !anim.toolEndFlip;
+  syncToolEndFlipUi();
+  refreshJsonView();
+  logDebug(`Tool End Flip ${anim.toolEndFlip ? 'enabled' : 'disabled'} (same local-X basis reversal as pick mining)`);
+};
+syncToolEndFlipUi();
+
 $('flipBtn').onclick = () => {
   anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
@@ -1030,6 +1048,8 @@ function applyPreset(preset) {
   }
   anim.style = preset.style;
   anim.sequence = preset.sequence || 'attack';
+  anim.toolEndFlip = preset.toolEndFlip === true;
+  syncToolEndFlipUi();
   clampFracs();
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
@@ -1118,6 +1138,9 @@ function applyPoseToRig(pose) {
   toolHolder.scale.setScalar(safeNum(anim.poses.neutral.scale, 1));
   const toolPlane = toolPlaneMesh?.userData?.toolPlane;
   if (toolPlane) {
+    const baseEndFlip = toolPlane.userData?.toolEndFlipBase === true;
+    const effectiveEndFlip = baseEndFlip !== (anim.toolEndFlip === true);
+    toolPlane.rotation.x = effectiveEndFlip ? Math.PI / 2 : -Math.PI / 2;
     // Runtime derives the -90° sweep basis from the active animation, then
     // weapon-tool-stances fades that basis out at Neutral for every weapon-
     // slot-capable shape. Reproduce both layers so Heavy/Light Neutral and
@@ -1412,6 +1435,7 @@ function exportAnimObject() {
     strikeFrac: anim.strikeFrac,
     holdFrac: anim.holdFrac,
     durationS: anim.durationS,
+    toolEndFlip: anim.toolEndFlip === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
 }
@@ -1465,6 +1489,8 @@ function loadAnimObject(data) {
   // than silently growing a pause into a previously-authored animation.
   anim.holdFrac = safeNum(data.holdFrac, anim.strikeFrac);
   anim.durationS = safeNum(data.durationS, anim.durationS);
+  anim.toolEndFlip = data.toolEndFlip === true;
+  syncToolEndFlipUi();
   clampFracs();
   // Older exports predate the neutral pose becoming authorable — fall back to
   // this style's implicit rest pose, per channel, so they still load cleanly.
