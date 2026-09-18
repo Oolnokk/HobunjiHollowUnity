@@ -131,6 +131,28 @@ const healthBeforeWoundedSpend = afflictedEntity.health;
 ResourceSystem.spendStamina(afflictedEntity, staminaBeforeWoundedSpend, 'wounded handoff regression');
 assert.ok(afflictedEntity.health < healthBeforeWoundedSpend, 'regenerated Stamina still triggers surviving Wounded Stamina when spent after the handoff');
 
+const overspendAfflictedEntity = {
+  health: 100, maxHealth: 100, stamina: 5, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}; // Pins the exact boundary where normal afflicted Stamina runs out and the remaining action cost becomes Black Stamina.
+ResourceSystem.initEntity(overspendAfflictedEntity);
+ResourceSystem.addAffliction(overspendAfflictedEntity, 'woundedStamina', 20);
+ResourceSystem.addAffliction(overspendAfflictedEntity, 'infectedStamina', 20);
+ResourceSystem.addAffliction(overspendAfflictedEntity, 'shatteredStamina', 20);
+const overspendHealthBefore = overspendAfflictedEntity.health;
+const overspendResult = ResourceSystem.spendStamina(overspendAfflictedEntity, 10, 'afflicted overspend boundary');
+assert.equal(overspendResult.spent, 5, 'only the five available regular-Stamina points are spent normally');
+assert.equal(overspendResult.excess, 5, 'the remaining five action-cost points become Black-Stamina overspend');
+assert.equal(overspendAfflictedEntity.stamina, 0);
+assert.equal(overspendAfflictedEntity.exhaustion.active, true);
+assert.equal(overspendAfflictedEntity.exhaustion.blackStamina, 80, 'the minimum Exhaustion debt still applies after the five-point overspend');
+assert.equal(ResourceSystem.getAffliction(overspendAfflictedEntity, 'woundedStamina'), 15, 'Wounded consumes only the five regular-Stamina points actually crossed');
+assert.equal(ResourceSystem.getAffliction(overspendAfflictedEntity, 'infectedStamina'), 15, 'Infected consumes only the five regular-Stamina points actually crossed');
+assert.equal(ResourceSystem.getAffliction(overspendAfflictedEntity, 'shatteredStamina'), 15, 'Shattered consumes only the five regular-Stamina points actually crossed');
+assert.equal(overspendAfflictedEntity.health, overspendHealthBefore - 10, 'existing overlapping Wounded + Infected effects both apply to the five regular points');
+assert.equal(ResourceSystem.getAffliction(overspendAfflictedEntity, 'bleedingHealth'), 8, 'Shattered converts only those five regular points into its authored Bleeding buildup');
+
 const potionHandoffEntity = {
   health: 100, maxHealth: 100, stamina: 55, maxStamina: 100,
   footing: 100, maxFooting: 100, exhaustion: { active: true, blackStamina: 90 },
