@@ -468,15 +468,6 @@
     "line": 353
   },
   {
-    "file": "docs/js/onboarding-character-creation-mashtzarr-female.js",
-    "owner": "OnboardingCharacterCreationMashtzarrFemale",
-    "classification": "timer-event",
-    "function": "ensureRuntimeGuard",
-    "reason": "Polls every frame only to check whether the portrait randomizer/fighter-roster dependencies have finished loading yet, re-arming itself via RAF until both are ready and then stopping for good; this is a wait-for-availability pattern better served by setTimeout/polling interval than a per-frame RAF.",
-    "migrationStage": "candidate",
-    "line": 132
-  },
-  {
     "file": "docs/js/onboarding-character-creation-redesign.js",
     "owner": "OnboardingCharacterCreationRedesign",
     "classification": "isolated-context",
