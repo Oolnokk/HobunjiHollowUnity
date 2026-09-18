@@ -427,7 +427,9 @@
   }
 
   function cancelPlayerAction() {
-    restoreHeldThrownWeapon(playerAction);
+    const cancelled = playerAction;
+    restoreHeldThrownWeapon(cancelled);
+    if (cancelled?.def?.rangedType === 'thrown') window.ProceduralHandGripRuntime?.clear?.();
     playerAction = null;
     deps?.refreshActionBar?.();
   }
@@ -459,6 +461,7 @@
     if (action.t < action.durationS) return;
     if (action.kind === 'load') setLoaded(action.itemKey, true);
     restoreHeldThrownWeapon(action);
+    if (action.def?.rangedType === 'thrown') window.ProceduralHandGripRuntime?.clear?.();
     playerAction = null;
     deps.refreshActionBar?.();
   }
