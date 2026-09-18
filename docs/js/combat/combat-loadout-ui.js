@@ -451,7 +451,7 @@
   if (window.CompendiumUI?.install) { window.CompendiumUI.install(); return; }
   if (document.querySelector('script[data-hobunji-compendium]')) return;
   const script = document.createElement('script'); // Used to load the isolated player-facing Compendium module once.
-  script.src = 'js/compendium-ui.js?v=20260826farm1';
+  script.src = 'js/compendium-ui.js?v=20260918blackstamina1';
   script.async = false;
   script.dataset.hobunjiCompendium = 'true';
   script.onload = () => window.CompendiumUI?.install?.();

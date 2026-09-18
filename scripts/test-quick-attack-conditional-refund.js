@@ -48,6 +48,7 @@ function runBackstabScenario(targetFacing) {
     animalAttacks: { isStriking() { return false; } },
     isStaggered() { return false; },
     meleeHit() { return true; },
+    playerMeleeThreat(rangePx, halfConeRad, options = {}) { return { rangePx, halfConeRad, ...options }; },
     beginStagedAction(options) {
       options.onStrike();
       options.onComplete();
@@ -117,9 +118,9 @@ const debtEntity = {
   exhaustion: { active: true, blackStamina: 80 },
 };
 const debtRefunded = behind.Combat.quickAttackData.refundStamina(debtEntity, 30);
-assert.strictEqual(debtRefunded, 30);
+assert.strictEqual(debtRefunded, 20, 'only the live black-Stamina debt is refundable while Exhausted');
 assert.strictEqual(debtEntity.exhaustion.active, false, '20 points clear the debt');
 assert.strictEqual(debtEntity.exhaustion.blackStamina, 100);
-assert.strictEqual(debtEntity.stamina, 10, 'remaining 10 points return to normal Stamina after debt clears');
+assert.strictEqual(debtEntity.stamina, 0, 'clearing black Stamina never spills the same refund into normal Stamina');
 
 console.log('quick attack conditional/refund regression tests passed');

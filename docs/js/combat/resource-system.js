@@ -157,6 +157,7 @@
   function initEntity(entity) {
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
     entity.exhaustion = { active: false, blackStamina: 100, ...(entity.exhaustion || {}) };
+    if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
     if (!Number.isFinite(entity.lastAttackAttemptAt)) entity.lastAttackAttemptAt = -1e9;
     if (!Number.isFinite(entity.lastAttackReceivedAt)) entity.lastAttackReceivedAt = -1e9;
     if (!Number.isFinite(entity.maxFooting)) entity.maxFooting = resourceSystemConfig().footingMax;
@@ -248,7 +249,9 @@
 
   function enforceCaps(entity) {
     entity.health = round1(clamp(entity.health, 0, getEffectiveMax(entity, "health")));
-    if (!entity.exhaustion.active) entity.stamina = round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina")));
+    entity.stamina = entity.exhaustion.active
+      ? 0
+      : round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina"))); // While Exhausted, black Stamina is the only live stamina pool.
     entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina, 0, 100));
     if (Number.isFinite(entity.footing)) entity.footing = round1(clamp(entity.footing, 0, getEffectiveMax(entity, "footing")));
   }
@@ -292,10 +295,42 @@
   }
 
   function clearExhaustedIfFull(entity) {
-    if (!entity.exhaustion.active || entity.exhaustion.blackStamina < 100) return;
+    if (!entity.exhaustion.active || entity.exhaustion.blackStamina < 100) return false;
     entity.exhaustion.active = false;
     entity.exhaustion.blackStamina = 100;
-    entity.stamina = getEffectiveMax(entity, "stamina");
+    entity.stamina = 0; // Clearing black-Stamina debt re-enables ordinary Stamina recovery from empty instead of refilling the bar.
+    return true;
+  }
+
+  // Central instant-Stamina restoration path. Ordinary Stamina can only be
+  // restored while not Exhausted. Effects that explicitly heal black-Stamina
+  // debt pass exhaustionAmount; if that reaches 100, Exhausted clears with
+  // ordinary Stamina still at exactly 0. No same-call spillover is allowed.
+  function restoreStamina(entity, amount, options = {}) {
+    if (!entity) return { stamina: 0, blackStamina: 0, exhaustionCleared: false };
+    const normalAmount = Math.max(0, Number(amount) || 0);
+    const exhaustionAmount = Math.max(0, Number(options.exhaustionAmount) || 0);
+    let restoredStamina = 0;
+    let restoredBlackStamina = 0;
+    let exhaustionCleared = false;
+
+    if (entity.exhaustion?.active) {
+      entity.stamina = 0;
+      if (exhaustionAmount > 0) {
+        const beforeBlack = clamp(Number(entity.exhaustion.blackStamina) || 0, 0, 100);
+        entity.exhaustion.blackStamina = round1(clamp(beforeBlack + exhaustionAmount, 0, 100));
+        restoredBlackStamina = round1(entity.exhaustion.blackStamina - beforeBlack);
+        exhaustionCleared = clearExhaustedIfFull(entity);
+      }
+      enforceCaps(entity);
+      return { stamina: 0, blackStamina: restoredBlackStamina, exhaustionCleared };
+    }
+
+    const beforeStamina = clamp(Number(entity.stamina) || 0, 0, getEffectiveMax(entity, "stamina"));
+    entity.stamina = round1(clamp(beforeStamina + normalAmount, 0, getEffectiveMax(entity, "stamina")));
+    restoredStamina = round1(entity.stamina - beforeStamina);
+    enforceCaps(entity);
+    return { stamina: restoredStamina, blackStamina: 0, exhaustionCleared: false };
   }
 
   // Overspending Stamina never blocks the action — the excess becomes
@@ -312,6 +347,7 @@
     if (!(amount > 0)) return { spent: 0, excess: 0 };
 
     if (entity.exhaustion.active) {
+      entity.stamina = 0; // Reassert the invariant even if an external/load path injected stale regular Stamina since the previous tick.
       entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina - amount, 0, 100));
       return { spent: 0, excess: amount };
     }
@@ -441,6 +477,7 @@
     const healthRate = (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1);
 
     if (entity.exhaustion.active) {
+      entity.stamina = 0; // Black Stamina recovery owns the stamina channel until the debt is completely cleared.
       entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * mul * dt, 0, 100));
       clearExhaustedIfFull(entity);
     } else {
@@ -557,6 +594,7 @@
     removeAfflictionsByTag,
     getEffectiveMax,
     getExhaustionSpeed,
+    restoreStamina,
     spendStamina,
     spendFooting,
     applyDamage,

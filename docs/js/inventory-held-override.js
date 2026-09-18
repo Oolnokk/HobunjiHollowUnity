@@ -220,7 +220,7 @@
     const healthRestore = Number(def.healthRestore ?? def.restoreHealth ?? def.health) || 0;
     const staminaRestore = Number(def.staminaRestore ?? def.restoreStamina ?? def.stamina) || 0;
     if (player && healthRestore > 0) player.health = Math.min(Number(player.maxHealth) || 100, (Number(player.health) || 0) + healthRestore);
-    if (player && staminaRestore > 0) player.stamina = Math.min(Number(player.maxStamina) || 100, (Number(player.stamina) || 0) + staminaRestore);
+    if (player && staminaRestore > 0) window.ResourceSystem?.restoreStamina?.(player, staminaRestore);
     return { ok: true, message: `${def.icon || '🍽️'} Ate ${def.label || key}.` };
   }
 

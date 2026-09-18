@@ -131,6 +131,20 @@ assert.strictEqual(R.afflictionTotalByFamily(player, 'damage'), 12, 'family clea
 A.applyRecipeToEntity('antidote', 1, player);
 assert.strictEqual(R.afflictionTotalByTag(player, 'toxin'), 0, 'tag cleanse must overlap families and clear toxin-tagged buildup');
 
+const staminaPotionEntity = {
+  health: 100, maxHealth: 100, stamina: 55, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: true, blackStamina: 90 },
+};
+R.initEntity(staminaPotionEntity);
+R.addAffliction(staminaPotionEntity, 'windedStamina', 30);
+A.applyRecipeToEntity('staminaPotion', 1, staminaPotionEntity);
+assert.strictEqual(staminaPotionEntity.exhaustion.active, false, 'Stamina Potion can finish Black Stamina recovery');
+assert.strictEqual(staminaPotionEntity.exhaustion.blackStamina, 100);
+assert.strictEqual(staminaPotionEntity.stamina, 0, 'Stamina Potion leaves normal Stamina at zero when it finishes Black Stamina recovery');
+A.applyRecipeToEntity('staminaPotion', 1, staminaPotionEntity);
+assert.strictEqual(staminaPotionEntity.stamina, 34, 'a later Stamina Potion restores the normal pool after Exhausted has cleared');
+assert.ok(staminaPotionEntity.stamina <= R.getEffectiveMax(staminaPotionEntity, 'stamina'), 'normal potion restoration respects Winded Stamina effective max');
+
 A.applyRecipeToEntity('potionOfStrength', 1, player);
 const strength = A.activeEffects.find(effect => effect.recipeId === 'potionOfStrength');
 A.applyRecipeToEntity('potionOfFury', 1, player);

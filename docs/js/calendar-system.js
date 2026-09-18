@@ -608,6 +608,7 @@
     }
     if (Number.isFinite(player.maxHealth)) player.health = player.maxHealth;
     if (Number.isFinite(player.maxStamina)) player.stamina = player.maxStamina;
+    window.ResourceSystem?.enforceCaps?.(player); // Prevents sleep restoration from exposing regular Stamina while Black Stamina debt is still active.
   }
 
   function persistCalendarSnapshot() {

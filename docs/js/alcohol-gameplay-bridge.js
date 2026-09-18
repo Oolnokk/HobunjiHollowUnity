@@ -707,8 +707,7 @@
         (Number(player.health) || 0) + healthRestore);
     }
     if (player && staminaRestore > 0) {
-      player.stamina = Math.min(Number(player.maxStamina) || 100,
-        (Number(player.stamina) || 0) + staminaRestore);
+      window.ResourceSystem?.restoreStamina?.(player, staminaRestore);
     }
 
     itemDeps.showToast?.(`${def.icon || '🍽️'} Ate ${def.label || key}.`, true);

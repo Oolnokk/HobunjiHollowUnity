@@ -90,33 +90,35 @@
   }
 
   // ResourceSystem intentionally lets abilities overspend into Exhausted
-  // black-stamina debt. A successful conditional should refund the same real
-  // resource that was spent, so pay debt back first, then normal Stamina. If
-  // the refund exactly clears Exhausted, keep Stamina at its refunded amount
-  // instead of letting ResourceSystem's normal "debt reached 100" path refill
-  // the entire bar on the next tick.
+  // black-stamina debt. A successful conditional refunds the resource layer
+  // that was actually live when the attack committed. If the refund finishes
+  // black-Stamina recovery, ordinary Stamina remains at 0; no same-action
+  // spillover is allowed across that handoff.
   function refundStamina(entity, amount) {
-    let remaining = Math.max(0, Number(amount) || 0); // Portion of this quick-attack refund still waiting to be applied.
-    let restored = 0; // Actual Stamina/debt points restored, returned for feedback/debugging.
-    if (!(remaining > 0) || !entity) return 0;
+    const requested = Math.max(0, Number(amount) || 0); // Total conditional refund requested by the landed quick attack.
+    if (!(requested > 0) || !entity) return 0;
 
+    const restoration = window.ResourceSystem?.restoreStamina?.(entity, requested, { exhaustionAmount: requested });
+    if (restoration) {
+      return round1((Number(restoration.stamina) || 0) + (Number(restoration.blackStamina) || 0));
+    }
+
+    let restored = 0; // Compatibility fallback for isolated harnesses that provide only the older ResourceSystem surface.
     if (entity.exhaustion?.active) {
       const blackBefore = Math.max(0, Math.min(100, Number(entity.exhaustion.blackStamina) || 0));
-      const debtRefund = Math.min(remaining, 100 - blackBefore);
+      const debtRefund = Math.min(requested, 100 - blackBefore);
       entity.exhaustion.blackStamina = round1(blackBefore + debtRefund);
-      remaining -= debtRefund;
-      restored += debtRefund;
+      restored = debtRefund;
       if (entity.exhaustion.blackStamina >= 100) {
         entity.exhaustion.active = false;
         entity.exhaustion.blackStamina = 100;
+        entity.stamina = 0;
       }
-    }
-
-    if (!entity.exhaustion?.active && remaining > 0) {
+    } else {
       const effectiveMax = window.ResourceSystem?.getEffectiveMax?.(entity, 'stamina') ?? entity.maxStamina ?? 0;
       const before = Number(entity.stamina) || 0;
-      entity.stamina = round1(Math.min(effectiveMax, before + remaining));
-      restored += Math.max(0, entity.stamina - before);
+      entity.stamina = round1(Math.min(effectiveMax, before + requested));
+      restored = Math.max(0, entity.stamina - before);
     }
 
     window.ResourceSystem?.enforceCaps?.(entity);
