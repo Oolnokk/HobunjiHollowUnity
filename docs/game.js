@@ -8564,8 +8564,8 @@
       // demo's "a dodge reaction can overdraw into Exhausted" rule. See
       // docs/js/combat/resource-system.js's spendStamina.
       // Dodges toward whatever direction the player is currently moving in
-      // (player.inputX/Y — this frame's raw move intent, already unit-length,
-      // see updateMovement) rather than the aim direction, since a dodge is
+      // (player.inputX/Y — this frame's resolved world-space move intent,
+      // camera-relative in shoulder-surf; see updateMovement) rather than the aim direction, since a dodge is
       // an evasive step, not an attack. With no movement held, there's no
       // "current direction" to dodge in, so it falls back to backing away
       // from whatever the player's actually aiming at instead: the locked
@@ -16126,12 +16126,6 @@
         }
         _playerWasMoving = inputStrength > 0.001;
 
-        // Raw per-frame move intent, read by hold abilities (Blink Dodge)
-        // that need to know which way the player is trying to go.
-        player.inputX = ix;
-        player.inputY = iy;
-        player.inputStrength = inputStrength;
-
         // ── Cardinal bias ────────────────────────────────────
         // Slightly guide near-cardinal movement without crushing diagonals.
         if (inputStrength > 0.001) {
@@ -16170,6 +16164,14 @@
           const rIy =  ix * c - iy * s;
           ix = rIx; iy = rIy;
         }
+
+        // Resolved per-frame movement intent, read by ordinary dodge and
+        // movement-reactive hold abilities such as Blink Dodge. Publish only
+        // after cardinal bias and shoulder-camera rotation so every consumer
+        // receives the same world-space direction normal locomotion uses.
+        player.inputX = ix;
+        player.inputY = iy;
+        player.inputStrength = inputStrength;
 
         // ── Tile-speed lookup ─────────────────────────────────
         const rawSpeed = tileSpeedAt(player.x, player.y);
