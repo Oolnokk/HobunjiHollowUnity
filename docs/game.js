@@ -20042,6 +20042,7 @@
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
+      let combatSwingWindupPoseProgress = 0; // Exact linear Neutral→Windup interpolation for held attacks, including ranged throws.
       // Fishing's own equivalent of combatSwingHeld (holds the harpoon at
       // its windup extreme while waiting on a bite) now lives in
       // js/fishing-minigame.js (window.Fishing) — read below via the
@@ -20222,6 +20223,7 @@
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
+        combatSwingWindupPoseProgress = 0;
         combatSwingSequence = 'attack';
         combatSwingSequenceHoldFrac = null;
         combatSwingAfflictionIds = opts.afflictionIds || [];
@@ -20243,7 +20245,8 @@
         combatSwingWindupFrac = opts.windupFrac ?? 0.55;
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.18;
         combatSwingHoldS = 0;
-        combatSwingHeld = false;
+        combatSwingHeld = opts.held === true;
+        combatSwingWindupPoseProgress = 0;
         combatSwingSequence = opts.sequence || 'fire';
         combatSwingSequenceHoldFrac = opts.holdFrac ?? null;
       }
@@ -20277,7 +20280,44 @@
         combatSwingHeld = true;
       }
 
-      function releaseWeaponSwingHold() {
+      function getWeaponSwingWindupPoseProgress() {
+        if (!combatSwingAnim || !(toolSwingDur > 0)) return 0;
+        const rawProgress = window.FormatUtils.clamp(1 - toolSwingT / toolSwingDur, 0, 1);
+        const wf = Math.max(0.0001, combatSwingWindupFrac);
+        if (rawProgress >= wf) return 1;
+        return rawProgress / wf; // Throws intentionally stay linear; no gradual slowdown curve is applied.
+      }
+
+      function partialCombatPoseAtCharge(pose, poseProgress) {
+        if (!pose?.neutral || !pose?.windup || !pose?.strike) return pose;
+        const t = window.FormatUtils.clamp(Number(poseProgress) || 0, 0, 1);
+        const next = {
+          ...pose,
+          neutral: { ...pose.neutral },
+          windup: { ...pose.windup },
+          strike: { ...pose.strike },
+          returnNeutral: pose.returnNeutral ? { ...pose.returnNeutral } : pose.returnNeutral,
+        };
+        for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
+          const neutral = Number(next.neutral?.[key]) || 0;
+          for (const phase of ['windup', 'strike']) {
+            const endpoint = Number(next[phase]?.[key]);
+            if (Number.isFinite(endpoint)) next[phase][key] = neutral + (endpoint - neutral) * t;
+          }
+        }
+        return next;
+      }
+
+      function releaseWeaponSwingHold(options = {}) {
+        const requestedPoseProgress = Number(options?.poseProgress);
+        if (combatSwingHeld && Number.isFinite(requestedPoseProgress)) {
+          const poseProgress = window.FormatUtils.clamp(requestedPoseProgress, 0, 1);
+          if (combatSwingPose) combatSwingPose = partialCombatPoseAtCharge(combatSwingPose, poseProgress);
+          // Start Strike exactly at the currently visible partial Windup instead
+          // of finishing the unseen remainder of Windup after button release.
+          toolSwingT = toolSwingDur * (1 - combatSwingWindupFrac);
+          combatSwingWindupPoseProgress = poseProgress;
+        }
         combatSwingHeld = false;
       }
 
@@ -20287,6 +20327,7 @@
       // swing's windup) instead of carrying on into the strike.
       function cancelWeaponSwingHold() {
         combatSwingHeld = false;
+        combatSwingWindupPoseProgress = 0;
         toolSwingT = 0;
       }
 
@@ -21061,6 +21102,11 @@
         // (e.g. Cleave) visibly winds up longer than a snap jab.
         const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
+        if (combatSwingAnim && progress <= WF) {
+          combatSwingWindupPoseProgress = window.FormatUtils.clamp(progress / Math.max(0.0001, WF), 0, 1);
+        } else if (combatSwingAnim && progress > WF) {
+          combatSwingWindupPoseProgress = 1;
+        }
         // Hold the strike pose before easing back to neutral, instead of
         // snapping straight into the return lerp. When an ability's config
         // set an explicit holdS (combatSwingHoldS > 0, baked into toolSwingDur
@@ -21474,7 +21520,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupPoseProgress = 0; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -25756,6 +25802,7 @@
         showToast,
         triggerWeaponSwingVisual,
         triggerWeaponHoldVisual,
+        getWeaponSwingWindupPoseProgress,
         releaseWeaponSwingHold,
         cancelWeaponSwingHold,
         beginCombatLunge,
@@ -25881,6 +25928,20 @@
         creaturePerpDeadRad: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
         heldObjectRenderOrder: HELD_OBJECT_RENDER_ORDER,
         triggerRangedWeaponVisual,
+        getRangedWeaponWindupPoseProgress: getWeaponSwingWindupPoseProgress,
+        releaseRangedWeaponHold: releaseWeaponSwingHold,
+        cancelRangedWeaponHold: cancelWeaponSwingHold,
+        getHeldRangedTexture: itemKey => {
+          if (equipmentSlots.ranged !== itemKey) return null;
+          const mesh = toolMeshMap.ranged;
+          const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null;
+          return plane?.material?.map || toolTextures[itemKey] || null;
+        },
+        setHeldRangedVisible: (itemKey, visible) => {
+          if (equipmentSlots.ranged !== itemKey || !toolMeshMap.ranged) return false;
+          toolMeshMap.ranged.visible = !!visible;
+          return true;
+        },
         setRangedLoadedVisual,
         refreshActionBar,
         moveCreatureToward,
