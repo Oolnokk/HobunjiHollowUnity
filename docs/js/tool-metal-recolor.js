@@ -240,10 +240,28 @@
     return { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1, area: count };
   }
 
+  // Mirrors clothing-weaving-system.js's own FRAME_SHAPES — see that file's
+  // comments for the full rationale (polygon clipping, why pairing two
+  // clipped copies tiles seamlessly for any shape, why diamond needs no
+  // pairing).
   const FRAME_SHAPES = Object.freeze({
-    square: { paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
-    brick: { paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }) },
-    triangle: { paired: true, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    diamond: {
+      label: 'Diamond', paired: false,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
+    },
+    triangle: {
+      label: 'Triangle', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }],
+    },
+    trapezoid: {
+      label: 'Trapezoid', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => { const cutFrac = 0.25, cut = h * cutFrac; return [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h - cut }, { x: 0, y: cut }]; },
+    },
   });
   function frameShapeFor(id) {
     return FRAME_SHAPES[id] || FRAME_SHAPES.square;
@@ -338,11 +356,25 @@
         const { u: basisU, v: basisV } = shape.basis(bbox.w, bbox.h);
         const centerX = bbox.x0 + bbox.w / 2, centerY = bbox.y0 + bbox.h / 2;
         const drawX = centerX - prepDraw.size / 2, drawY = centerY - prepDraw.size / 2;
-        const midpoint = { x: (basisU.x + basisV.x) / 2, y: (basisU.y + basisV.y) / 2 };
+        // The pairing rotation's center — NOT (basisU+basisV)/2 alone, since
+        // that assumes the cell/polygon starts at local origin (0,0); it
+        // actually starts at (bbox.x0,bbox.y0), so the true cell-rectangle
+        // center is that offset plus half the basis, i.e. exactly
+        // (centerX,centerY) above.
+        const midpoint = { x: centerX, y: centerY };
+        const polygon = shape.polygon ? shape.polygon(bbox.w, bbox.h) : null;
+        function clipToPolygon() {
+          if (!polygon) return;
+          ctx.beginPath();
+          polygon.forEach((p, i) => { const px = bbox.x0 + p.x, py = bbox.y0 + p.y; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+          ctx.closePath();
+          ctx.clip();
+        }
 
         function stampCell(ox, oy) {
           ctx.save();
           ctx.translate(ox, oy);
+          clipToPolygon();
           ctx.drawImage(prepDraw.canvas, drawX, drawY);
           ctx.restore();
           if (!shape.paired) return;
@@ -350,6 +382,7 @@
           ctx.translate(ox + midpoint.x, oy + midpoint.y);
           ctx.rotate(Math.PI);
           ctx.translate(-midpoint.x, -midpoint.y);
+          clipToPolygon();
           ctx.drawImage(prepDraw.canvas, drawX, drawY);
           ctx.restore();
         }

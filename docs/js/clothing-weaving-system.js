@@ -1182,18 +1182,48 @@
   }
   // The repeat lattice's shape palette — see pattern-authoring.js's frame
   // tool. Each shape resolves the ink's own tight bbox (w,h) into a pair of
-  // basis vectors (the translation between adjacent copies); `paired: true`
-  // additionally stamps a second, 180°-rotated copy around the cell's own
-  // center, the same trick a real triangle needs to tile edge-to-edge with
-  // no gaps (two triangles sharing a rotated edge form a parallelogram).
-  // basisU/basisV are in the *unscaled, unrotated* unit space the caller's
-  // own ctx.translate/rotate/scale (driven by frameX/Y/frameRotationDeg/
-  // frameScale) already applies before stamping — this table only ever
-  // decides the cell's shape, never its placement.
+  // basis vectors (the translation between adjacent copies) and an optional
+  // `polygon` clip (in the SAME w,h rect, origin at the bbox's own top-left)
+  // — a shape with no polygon just draws the whole prepared ink unclipped
+  // (square/brick ARE their own full rect, so clipping would be a no-op).
+  // `paired: true` stamps the ink a second time, 180°-rotated about the
+  // cell's own center — for triangle/trapezoid, clipping BOTH stamps to the
+  // *same* polygon still produces two complementary regions, because the
+  // second stamp's own rotate transform (translate to the cell midpoint,
+  // rotate 180°, translate back) carries the clip path along with it, so it
+  // lands as that polygon's own 180° rotation — which for a polygon built
+  // symmetrically around the cell's center (as all of these are) is exactly
+  // the complementary region, not the same one twice. Two shapes sharing an
+  // edge like that always tile a parallelogram seamlessly, whatever their
+  // shape — the same reason any triangle or any trapezoid tiles the plane.
+  // diamond doesn't need pairing at all: a rhombus with corners at the mid-
+  // points of a rectangle's own sides already tiles that rectangle's own
+  // grid with no gaps on its own.
   const FRAME_SHAPES = Object.freeze({
-    square: { paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
-    brick: { paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }) },
-    triangle: { paired: true, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    diamond: {
+      label: 'Diamond', paired: false,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
+    },
+    triangle: {
+      label: 'Triangle', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }],
+    },
+    trapezoid: {
+      label: 'Trapezoid', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      // Same construction as triangle (a straight cut corner-to-corner) but
+      // the cut's two ends sit partway along the left/right edges instead
+      // of exactly at the corners — symmetric about the cell's own center
+      // (cutTop = h - cutBottom) so the 180°-rotated partner is still the
+      // exact complementary piece. At cutFrac=0 this degenerates to the
+      // same cut a triangle uses; trapezoid just keeps a flat top and
+      // bottom instead of coming to a point.
+      polygon: (w, h) => { const cutFrac = 0.25, cut = h * cutFrac; return [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h - cut }, { x: 0, y: cut }]; },
+    },
   });
   function frameShapeFor(id) {
     return FRAME_SHAPES[id] || FRAME_SHAPES.square;
@@ -1244,10 +1274,23 @@
       if (bbox) {
         const { u: basisU, v: basisV } = shape.basis(bbox.w, bbox.h);
         const centerX=bbox.x0+bbox.w/2,centerY=bbox.y0+bbox.h/2,dx=centerX-draw.size/2,dy=centerY-draw.size/2;
-        const midpoint = { x: (basisU.x+basisV.x)/2, y: (basisU.y+basisV.y)/2 };
+        // The pairing rotation's center — NOT (basisU+basisV)/2 alone, since
+        // that assumes the cell/polygon starts at local origin (0,0); it
+        // actually starts at (bbox.x0,bbox.y0), so the true cell-rectangle
+        // center is that offset plus half the basis, i.e. exactly
+        // (centerX,centerY) above.
+        const midpoint = { x: centerX, y: centerY };
+        const polygon = shape.polygon ? shape.polygon(bbox.w, bbox.h) : null;
+        function clipToPolygon() {
+          if (!polygon) return;
+          ctx.beginPath();
+          polygon.forEach((p, i) => { const px = bbox.x0 + p.x, py = bbox.y0 + p.y; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+          ctx.closePath();
+          ctx.clip();
+        }
         const stamp = shape.paired
-          ? (ox,oy)=>{ctx.save();ctx.translate(ox,oy);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();ctx.save();ctx.translate(ox+midpoint.x,oy+midpoint.y);ctx.rotate(Math.PI);ctx.translate(-midpoint.x,-midpoint.y);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();}
-          : (ox,oy)=>{ctx.save();ctx.translate(ox,oy);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();};
+          ? (ox,oy)=>{ctx.save();ctx.translate(ox,oy);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();ctx.save();ctx.translate(ox+midpoint.x,oy+midpoint.y);ctx.rotate(Math.PI);ctx.translate(-midpoint.x,-midpoint.y);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();}
+          : (ox,oy)=>{ctx.save();ctx.translate(ox,oy);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();};
         const reach=Math.hypot(width,height)/frameScale/2+draw.size,det=basisU.x*basisV.y-basisU.y*basisV.x;let maxI=8,maxJ=8;
         if(Math.abs(det)>1e-6){const ia=basisV.y/det,ib=-basisV.x/det,ic=-basisU.y/det,id=basisU.x/det;maxI=maxJ=0;for(const [x,y] of [[reach,reach],[reach,-reach],[-reach,reach],[-reach,-reach]]){maxI=Math.max(maxI,Math.abs(ia*x+ib*y));maxJ=Math.max(maxJ,Math.abs(ic*x+id*y));}maxI=Math.min(300,Math.ceil(maxI)+2);maxJ=Math.min(300,Math.ceil(maxJ)+2);}
         for(let j=-maxJ;j<=maxJ;j++)for(let i=-maxI;i<=maxI;i++)stamp(i*basisU.x+j*basisV.x,i*basisU.y+j*basisV.y);

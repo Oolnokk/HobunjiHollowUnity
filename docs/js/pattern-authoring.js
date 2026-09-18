@@ -53,18 +53,54 @@
   });
 
   // Mirrors clothing-weaving-system.js's/tool-metal-recolor.js's own
-  // FRAME_SHAPES — kept in sync by hand (see this codebase's convention of
+  // FRAME_SHAPES exactly (including the polygon clip each cell stamps
+  // through) — kept in sync by hand (see this codebase's convention of
   // duplicating small algorithm tables per independent module rather than
-  // cross-importing). Only used here to draw the frame tool's own cell
-  // outline; the actual tiled render is always the real caller's own
-  // renderPreview, never computed in this file.
+  // cross-importing) so the outline drawn here always matches what the
+  // real renderer will actually cut the ink to. The actual tiled render
+  // itself is always the real caller's own renderPreview, never computed
+  // in this file.
   const FRAME_SHAPES = Object.freeze({
-    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
-    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }) },
-    triangle: { label: 'Triangle', paired: true, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    diamond: {
+      label: 'Diamond', paired: false,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
+    },
+    triangle: {
+      label: 'Triangle', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }],
+    },
+    trapezoid: {
+      label: 'Trapezoid', paired: true,
+      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      polygon: (w, h) => { const cutFrac = 0.25, cut = h * cutFrac; return [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h - cut }, { x: 0, y: cut }]; },
+    },
   });
   function frameShapeFor(id) {
     return FRAME_SHAPES[id] || FRAME_SHAPES.square;
+  }
+
+  // Patterns saved before the frame tool existed have no frameShape at all
+  // — just the old repeatMode/patternScale/patternRotationDeg/translateX/Y
+  // fields. Mirrors clothing-weaving-system.js's/tool-metal-recolor.js's
+  // own legacyFrameFields exactly, so a pattern re-opened for editing shows
+  // the same placement the real renderer already migrates it to, instead
+  // of silently resetting to PATTERN_DEFAULTS' bare defaults (square,
+  // centered, unscaled, unrotated) just because the old field names don't
+  // exist on this object.
+  function legacyFrameFields(patternDef) {
+    if (!patternDef || patternDef.frameShape) return patternDef;
+    return {
+      ...patternDef,
+      frameShape: patternDef.repeatMode === 'grid' ? 'square' : 'triangle',
+      frameScale: patternDef.patternScale,
+      frameRotationDeg: patternDef.patternRotationDeg,
+      frameX: patternDef.translateX,
+      frameY: patternDef.translateY,
+    };
   }
 
   let stylesInjected = false;
@@ -74,11 +110,14 @@
     const style = document.createElement('style');
     style.textContent = `
       .pa-overlay{position:fixed;inset:0;z-index:9500;background:rgba(6,10,12,.72);display:flex;align-items:center;justify-content:center;padding:14px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-      .pa-modal{width:min(760px,100%);max-height:100%;overflow:auto;background:linear-gradient(180deg,#121a20,#0f161c);border:1px solid #294039;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.5);color:#eaf5f3}
+      .pa-modal{width:min(900px,100%);max-height:100%;overflow:auto;background:linear-gradient(180deg,#121a20,#0f161c);border:1px solid #294039;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.5);color:#eaf5f3}
       .pa-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
       .pa-head h2{margin:0;font-size:16px}
       .pa-close{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#eaf5f3;border-radius:10px;width:30px;height:30px;cursor:pointer;font-size:15px;line-height:1}
-      .pa-body{display:flex;flex-direction:column;gap:10px;padding:12px 14px}
+      .pa-body{display:grid;grid-template-columns:minmax(190px,230px) minmax(420px,1fr);gap:12px;padding:12px 14px;align-items:start}
+      @media(max-width:680px){.pa-body{grid-template-columns:1fr}}
+      .pa-col{min-width:0}
+      .pa-rightCol{position:relative}
       .pa-stickyTop{position:sticky;top:0;z-index:3;background:linear-gradient(180deg,#121a20,#0f161c);padding-top:2px;padding-bottom:6px;margin:-2px 0 0}
       .pa-toolsRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
       @media(max-width:560px){.pa-toolsRow{grid-template-columns:1fr}}
@@ -157,7 +196,7 @@
 
   function openEditor(options = {}) {
     injectStyles();
-    const cfg = { ...PATTERN_DEFAULTS, ...(options.initialPattern || {}) };
+    const cfg = { ...PATTERN_DEFAULTS, ...legacyFrameFields(options.initialPattern) };
     let closed = false;
     let brushMode = 'brush'; // 'brush' | 'eraser'
     let brushSize = 30;
@@ -187,60 +226,68 @@
       <div class="pa-modal" role="dialog" aria-modal="true">
         <div class="pa-head"><h2>${escapeHtml(options.title || 'Author a pattern')}</h2><button type="button" class="pa-close" aria-label="Close">✕</button></div>
         <div class="pa-body">
-          <div class="pa-stickyTop">
+          <div class="pa-col pa-leftCol">
             <div class="pa-card">
-              <h3><span>Preview</span><button type="button" class="pa-behindToggle" data-act="toggleBehindView" style="display:none">Behind view</button></h3>
-              <p class="pa-hint pa-previewStatus">Draw a motif to preview.</p>
-              <div class="pa-previewWrap"><canvas class="pa-preview" width="1" height="1"></canvas></div>
+              <h3>Pattern settings</h3>
+              <div class="pa-check"><input type="checkbox" class="pa-in" data-field="tiling" ${cfg.tiling ? 'checked' : ''}><label>Repeat (tile the motif)</label></div>
+              <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
+              <div class="pa-field"><label><span>Motif thinning</span><span class="pa-val" data-for="motifThinPx"></span></label><input type="range" class="pa-in" data-field="motifThinPx" min="0" max="12" step="1" value="${cfg.motifThinPx}"></div>
+              <p class="pa-hint">Erodes the placed ink inward from every edge before any outline is drawn around it — like magic-wand-selecting the transparent area with this many px of expansion, then deleting the selection.</p>
             </div>
-            <div class="pa-toolsRow">
-              <div class="pa-card">
-                <h3>Motif</h3>
-                <p class="pa-hint">${escapeHtml(options.motifHint || 'Draw a solid black motif. This is the shape that gets placed and repeated.')}</p>
-                <div class="pa-canvasWrap"><canvas class="pa-sketch" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas><div class="pa-sketchBoundary"></div></div>
-                <p class="pa-hint" style="margin-top:5px">The dashed line marks where the brush's own input is confined — a stroke aimed right at that line still paints its full width, bleeding into the margin outside it instead of being clipped in half. The eraser isn't confined to it.</p>
-                <div class="pa-row" style="margin-top:9px">
-                  <button type="button" class="pa-btn secondary pa-toolToggle active" data-tool="brush">Brush</button>
-                  <button type="button" class="pa-btn secondary pa-toolToggle" data-tool="eraser">Eraser</button>
-                  <button type="button" class="pa-btn secondary" data-act="clearSketch">Clear</button>
-                </div>
-                <div class="pa-row">
-                  <button type="button" class="pa-btn secondary" data-act="undo" disabled>↶ Undo</button>
-                  <button type="button" class="pa-btn secondary" data-act="redo" disabled>↷ Redo</button>
-                </div>
-                <div class="pa-field"><label><span>Brush size</span><span class="pa-brushSizeVal">${brushSize}px</span></label><input type="range" class="pa-brushSize" min="25" max="35" step="1" value="${brushSize}"></div>
+            ${options.library ? `
+            <div class="pa-card">
+              <h3>Library</h3>
+              <p class="pa-hint">Save this pattern to reuse later, or load one you've already saved or unlocked. Loading replaces the current motif and settings.</p>
+              <div class="pa-libraryList"></div>
+              <div class="pa-row" style="margin-top:9px">
+                <input type="text" class="pa-libraryName" placeholder="Pattern name" maxlength="60">
+                <button type="button" class="pa-btn secondary" data-act="saveToLibrary">Save to library</button>
               </div>
+            </div>` : ''}
+          </div>
+          <div class="pa-col pa-rightCol">
+            <div class="pa-stickyTop">
               <div class="pa-card">
-                <h3>Frame</h3>
-                <p class="pa-hint">Drag the middle to move the repeat cell, drag the corner to rotate and resize it. This is what actually tiles — pick a shape below first.</p>
-                <div class="pa-canvasWrap"><canvas class="pa-frameCanvas" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas></div>
-                <p class="pa-frameReadout" data-frame-readout></p>
-                <div class="pa-row" style="margin-top:9px">
-                  ${Object.entries(FRAME_SHAPES).map(([id, shape]) => `<button type="button" class="pa-btn secondary pa-shapeToggle${cfg.frameShape === id ? ' active' : ''}" data-shape="${id}">${escapeHtml(shape.label)}</button>`).join('')}
+                <h3><span>Preview</span><button type="button" class="pa-behindToggle" data-act="toggleBehindView" style="display:none">Behind view</button></h3>
+                <p class="pa-hint pa-previewStatus">Draw a motif to preview.</p>
+                <div class="pa-previewWrap"><canvas class="pa-preview" width="1" height="1"></canvas></div>
+              </div>
+              <div class="pa-toolsRow">
+                <div class="pa-card">
+                  <h3>Motif</h3>
+                  <p class="pa-hint">${escapeHtml(options.motifHint || 'Draw a solid black motif. This is the shape that gets placed and repeated.')}</p>
+                  <div class="pa-canvasWrap"><canvas class="pa-sketch" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas><div class="pa-sketchBoundary"></div></div>
+                  <p class="pa-hint" style="margin-top:5px">The dashed line marks where the brush's own input is confined — a stroke aimed right at that line still paints its full width, bleeding into the margin outside it instead of being clipped in half. The eraser isn't confined to it.</p>
+                  <div class="pa-row" style="margin-top:9px">
+                    <button type="button" class="pa-btn secondary pa-toolToggle active" data-tool="brush">Brush</button>
+                    <button type="button" class="pa-btn secondary pa-toolToggle" data-tool="eraser">Eraser</button>
+                    <button type="button" class="pa-btn secondary" data-act="clearSketch">Clear</button>
+                  </div>
+                  <div class="pa-row">
+                    <button type="button" class="pa-btn secondary" data-act="undo" disabled>↶ Undo</button>
+                    <button type="button" class="pa-btn secondary" data-act="redo" disabled>↷ Redo</button>
+                  </div>
+                  <div class="pa-field"><label><span>Brush size</span><span class="pa-brushSizeVal">${brushSize}px</span></label><input type="range" class="pa-brushSize" min="25" max="35" step="1" value="${brushSize}"></div>
                 </div>
-                <div class="pa-field"><label><span>Motif scale</span><span class="pa-val" data-for="motifScale"></span></label><input type="range" class="pa-in" data-field="motifScale" min="0.1" max="3" step="0.01" value="${cfg.motifScale}"></div>
-                <div class="pa-field"><label><span>Motif rotation</span><span class="pa-val" data-for="motifRotationDeg"></span></label><input type="range" class="pa-in" data-field="motifRotationDeg" min="-180" max="180" step="1" value="${cfg.motifRotationDeg}"></div>
-                <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
+                <div class="pa-card">
+                  <h3>Frame</h3>
+                  <p class="pa-hint">Drag the middle to move the repeat cell, drag the corner to rotate and resize it. This is what actually tiles — pick a shape below first.</p>
+                  <div class="pa-canvasWrap"><canvas class="pa-frameCanvas" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas></div>
+                  <p class="pa-frameReadout" data-frame-readout></p>
+                  <div class="pa-row" style="margin-top:9px">
+                    ${Object.entries(FRAME_SHAPES).map(([id, shape]) => `<button type="button" class="pa-btn secondary pa-shapeToggle${cfg.frameShape === id ? ' active' : ''}" data-shape="${id}">${escapeHtml(shape.label)}</button>`).join('')}
+                  </div>
+                  <div class="pa-field"><label><span>Motif scale</span><span class="pa-val" data-for="motifScale"></span></label><input type="range" class="pa-in" data-field="motifScale" min="0.1" max="3" step="0.01" value="${cfg.motifScale}"></div>
+                  <div class="pa-field"><label><span>Motif rotation</span><span class="pa-val" data-for="motifRotationDeg"></span></label><input type="range" class="pa-in" data-field="motifRotationDeg" min="-180" max="180" step="1" value="${cfg.motifRotationDeg}"></div>
+                  <div class="pa-row">
+                    <button type="button" class="pa-btn secondary" data-act="autoDetect">Auto-detect fit</button>
+                    <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
+                  </div>
+                  <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped square at that angle — a quick starting point to drag from, not a final answer.</p>
+                </div>
               </div>
             </div>
           </div>
-          <div class="pa-card">
-            <h3>Pattern settings</h3>
-            <div class="pa-check"><input type="checkbox" class="pa-in" data-field="tiling" ${cfg.tiling ? 'checked' : ''}><label>Repeat (tile the motif)</label></div>
-            <div class="pa-check"><input type="checkbox" class="pa-in" data-field="invert" ${cfg.invert ? 'checked' : ''}><label>Invert pattern</label></div>
-            <div class="pa-field"><label><span>Motif thinning</span><span class="pa-val" data-for="motifThinPx"></span></label><input type="range" class="pa-in" data-field="motifThinPx" min="0" max="12" step="1" value="${cfg.motifThinPx}"></div>
-            <p class="pa-hint">Erodes the placed ink inward from every edge before any outline is drawn around it — like magic-wand-selecting the transparent area with this many px of expansion, then deleting the selection.</p>
-          </div>
-          ${options.library ? `
-          <div class="pa-card">
-            <h3>Library</h3>
-            <p class="pa-hint">Save this pattern to reuse later, or load one you've already saved or unlocked. Loading replaces the current motif and settings.</p>
-            <div class="pa-libraryList"></div>
-            <div class="pa-row" style="margin-top:9px">
-              <input type="text" class="pa-libraryName" placeholder="Pattern name" maxlength="60">
-              <button type="button" class="pa-btn secondary" data-act="saveToLibrary">Save to library</button>
-            </div>
-          </div>` : ''}
         </div>
         <div class="pa-foot">
           <button type="button" class="pa-btn secondary" data-act="cancel">Cancel</button>
@@ -372,29 +419,49 @@
       frameCtx.globalAlpha = 1;
 
       const { shape, u, v } = currentBasis();
+      let bbox = null;
+      try { bbox = opaqueBoundsOf(sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE)); } catch { /* ignore */ }
+      const w = bbox?.w || SKETCH_SIZE * 0.4, h = bbox?.h || SKETCH_SIZE * 0.4;
       const scale = Math.max(0.05, Number(cfg.frameScale) || 1);
       const rad = ((Number(cfg.frameRotationDeg) || 0) * Math.PI) / 180;
       const center = frameCenterScreen();
-      const corner = (bu, bv) => {
-        const local = { x: (u.x * bu + v.x * bv) * scale, y: (u.y * bu + v.y * bv) * scale };
-        const spun = rotatePoint(local.x, local.y, rad);
+      const toScreen = (localX, localY) => {
+        const spun = rotatePoint(localX * scale, localY * scale, rad);
         return { x: center.x + spun.x, y: center.y + spun.y };
       };
-      const p00 = corner(-0.5, -0.5), p10 = corner(0.5, -0.5), p11 = corner(0.5, 0.5), p01 = corner(-0.5, 0.5);
+      // Corners of the full basisU/basisV rectangle, centered on the
+      // frame's own origin — used for the drag handles always, and (for a
+      // shape with no polygon of its own, e.g. square/brick) the outline.
+      const rectCorner = (bu, bv) => toScreen(u.x * bu + v.x * bv, u.y * bu + v.y * bv);
+      const p11 = rectCorner(0.5, 0.5);
+
+      function strokePolygon(points) {
+        frameCtx.beginPath();
+        points.forEach((p, i) => {
+          const pt = toScreen(p.x - w / 2, p.y - h / 2);
+          if (i === 0) frameCtx.moveTo(pt.x, pt.y); else frameCtx.lineTo(pt.x, pt.y);
+        });
+        frameCtx.closePath();
+        frameCtx.stroke();
+      }
 
       frameCtx.save();
       frameCtx.strokeStyle = '#7fc7bc';
       frameCtx.lineWidth = 1.5;
       frameCtx.setLineDash([4, 3]);
-      frameCtx.beginPath();
-      frameCtx.moveTo(p00.x, p00.y); frameCtx.lineTo(p10.x, p10.y); frameCtx.lineTo(p11.x, p11.y); frameCtx.lineTo(p01.x, p01.y); frameCtx.closePath();
-      frameCtx.stroke();
-      if (shape.paired) {
-        // Visual hint that a "triangle" cell is really two triangles sharing
-        // this diagonal, 180°-rotated partners of each other.
+      const polygon = shape.polygon ? shape.polygon(w, h) : null;
+      if (polygon) {
+        strokePolygon(polygon);
+        // The 180°-partner (paired shapes only) is this same polygon
+        // rotated about the cell's own center (w/2,h/2) — mirrors exactly
+        // how buildPatternMask/buildAuthoredClearedMask stamp it, so the
+        // outline shown here always matches the real render.
+        if (shape.paired) strokePolygon(polygon.map(p => ({ x: w - p.x, y: h - p.y })));
+      } else {
+        const corners = [rectCorner(-0.5, -0.5), rectCorner(0.5, -0.5), p11, rectCorner(-0.5, 0.5)];
         frameCtx.beginPath();
-        frameCtx.moveTo(p00.x, p00.y);
-        frameCtx.lineTo(p11.x, p11.y);
+        corners.forEach((pt, i) => { if (i === 0) frameCtx.moveTo(pt.x, pt.y); else frameCtx.lineTo(pt.x, pt.y); });
+        frameCtx.closePath();
         frameCtx.stroke();
       }
       frameCtx.restore();
@@ -608,7 +675,7 @@
     // with, so a library pattern authored before some newer field existed
     // still loads sane values for it.
     function applyPatternData(data) {
-      Object.assign(cfg, PATTERN_DEFAULTS, data || {});
+      Object.assign(cfg, PATTERN_DEFAULTS, legacyFrameFields(data) || {});
       syncInputsFromCfg();
       updateValLabels();
       drawMotifImageIntoSketch(cfg.motifDataUrl);
@@ -647,6 +714,49 @@
         drawFrameCanvas();
         schedulePreview();
       });
+    });
+
+    // Finds the rotation angle (0-175°, checked every 5°) that makes the
+    // ink's own axis-aligned bounding box smallest — a "rotating calipers"
+    // tight fit, in spirit the same thing the old auto-fit triangle search
+    // did automatically (find the orientation the ink sits most snugly at)
+    // without resurrecting that convex-hull/minimum-triangle machinery.
+    // Applied as motifRotationDeg (not frameRotationDeg) because that's the
+    // field the bbox measurement itself is actually taken *after* applying
+    // (see buildPatternMask's prepare()) — the tightest bbox at this angle
+    // becomes the frame's own reference size once frameScale resets to 1.
+    overlay.querySelector('[data-act="autoDetect"]').addEventListener('click', () => {
+      let imageData;
+      try { imageData = sketchCtx.getImageData(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE); } catch { return; }
+      const { data, width, height } = imageData;
+      const pts = [];
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) if (data[(y * width + x) * 4 + 3] > 16) pts.push({ x, y });
+      if (!pts.length) return;
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length, cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      let best = null;
+      for (let deg = 0; deg < 180; deg += 5) {
+        const rad = (deg * Math.PI) / 180, c = Math.cos(rad), s = Math.sin(rad);
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const p of pts) {
+          const dx = p.x - cx, dy = p.y - cy;
+          const rx = dx * c - dy * s, ry = dx * s + dy * c; // Same forward rotation ctx.rotate(rad) applies when drawing.
+          if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
+          if (ry < minY) minY = ry; if (ry > maxY) maxY = ry;
+        }
+        const area = (maxX - minX) * (maxY - minY);
+        if (!best || area < best.area) best = { deg, area };
+      }
+      cfg.motifRotationDeg = best.deg;
+      cfg.frameShape = PATTERN_DEFAULTS.frameShape;
+      cfg.frameX = PATTERN_DEFAULTS.frameX;
+      cfg.frameY = PATTERN_DEFAULTS.frameY;
+      cfg.frameRotationDeg = PATTERN_DEFAULTS.frameRotationDeg;
+      cfg.frameScale = PATTERN_DEFAULTS.frameScale;
+      loadedLibraryId = null;
+      syncInputsFromCfg();
+      updateValLabels();
+      drawFrameCanvas();
+      schedulePreview();
     });
 
     overlay.querySelector('[data-act="resetPlacement"]').addEventListener('click', () => {
