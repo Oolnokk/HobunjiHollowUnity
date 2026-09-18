@@ -98,6 +98,11 @@
       name: "Poisoned Health", resource: "health", extend: "currentBack", priority: 80, recovers: false,
       family: "damage", tags: ["toxin"],
       desc: "Ticks as Health damage over time; does not recover on its own."
+    },
+    burningHealth: {
+      name: "Burning Health", resource: "health", extend: "currentBack", priority: 90, recovers: false,
+      family: "damage", tags: ["fire", "physical"],
+      desc: "Rapidly ticks itself away as Health damage. Roll dodges cool part of it; entering water extinguishes it completely."
     }
   };
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
@@ -138,6 +143,7 @@
       healthRegenPerSec: Number(cfg.healthRegenPerSec) || 1.2,
       afflictionRecoveryPerSec: Number(cfg.afflictionRecoveryPerSec) || 3.6,
       bleedTickPerSec: Number(cfg.bleedTickPerSec) || 5,
+      burnTickPerSec: Number(cfg.burnTickPerSec) || 18,
       poisonTickPerSec: Number(cfg.poisonTickPerSec) || 1.8,
       exhaustionRegenPerSec: Number(cfg.exhaustionRegenPerSec) || 24,
       pukeChancePerSec: cfg.pukeChancePerSec ?? 0.16,
@@ -494,6 +500,7 @@
     }
 
     resolveBleedingTick(entity, dt, rest, cfg);
+    resolveBurningTick(entity, dt, cfg);
     resolvePoisonTick(entity, dt, cfg);
     resolveCongealedTick(entity, dt, rest, cfg);
     resolveGenericRecovery(entity, dt, rest, cfg);
@@ -512,6 +519,14 @@
     removeAffliction(entity, "bleedingHealth", amount);
     if (rest.rested) entity.health = round1(clamp(entity.health + amount, 0, getEffectiveMax(entity, "health")));
     else entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
+  }
+
+  function resolveBurningTick(entity, dt, cfg) {
+    const burning = getAffliction(entity, "burningHealth");
+    if (burning <= 0) return;
+    const amount = Math.min(burning, cfg.burnTickPerSec * dt);
+    removeAffliction(entity, "burningHealth", amount);
+    entity.health = round1(clamp(entity.health - amount, 0, getEffectiveMax(entity, "health")));
   }
 
   function resolvePoisonTick(entity, dt, cfg) {
