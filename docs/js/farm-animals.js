@@ -380,6 +380,18 @@
     return idle ? deps.nearestAngleAmong(animal.groupRot, deps.cameraRelativePerps()) : animal.targetRot;
   }
 
+  function _updateFarmAnimalFacing(animal, dt, idle) {
+    if (animal._harvestFrozen) {
+      animal._lookAtDebug = null;
+      return;
+    }
+    const lookTarget = _farmAnimalLookTarget(animal, dt, idle);
+    const { effectiveTarget, snapTo } = deps.perpClamp(animal.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
+    if (snapTo !== null) animal.groupRot = effectiveTarget;
+    else animal.groupRot += deps.angleDiff(effectiveTarget, animal.groupRot) * 0.18;
+    animal.avatarRef.group.rotation.y = animal.groupRot;
+  }
+
   function _farmAnimalPickWanderTarget(animal) {
     for (let attempt = 0; attempt < 16; attempt++) {
       const dc = Math.round((deps.rnd() * 2 - 1) * FARM_ANIMAL_WANDER_RADIUS_TILES);
@@ -646,11 +658,7 @@
         // Once it's settled at its target tile (not mid-hop), an animal has no
         // specific direction to look — let it rest broadside to the camera.
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-        const lookTarget = _farmAnimalLookTarget(this, dt, idle);
-        const { effectiveTarget, snapTo } = deps.perpClamp(this.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
-        if (snapTo !== null) this.groupRot = effectiveTarget;
-        else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;
-        this.avatarRef.group.rotation.y = this.groupRot;
+        _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
         deps.scene.remove(avatarRef.group);
@@ -758,11 +766,7 @@
         _tickFarmAnimalBlink(this);
 
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-        const lookTarget = _farmAnimalLookTarget(this, dt, idle);
-        const { effectiveTarget, snapTo } = deps.perpClamp(this.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
-        if (snapTo !== null) this.groupRot = effectiveTarget;
-        else this.groupRot += deps.angleDiff(effectiveTarget, this.groupRot) * 0.18;
-        this.avatarRef.group.rotation.y = this.groupRot;
+        _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
         deps.scene.remove(avatarRef.group);
