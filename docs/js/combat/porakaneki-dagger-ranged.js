@@ -5,7 +5,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 1;
+  const VERSION = 2;
   const DAGGER_SHAPE = 'dagger'; // Used to identify every metal/material variant generated from the canonical dagger shape.
   const RETRY_MS = 50; // Used while game.js finishes creating generated tool definitions.
   const RETRY_LIMIT = 160; // Used to stop bootstrap retries after roughly eight seconds.
@@ -14,20 +14,19 @@
 
   function patch() {
     const defs = window.Combat?.deps?.TOOL_ITEM_DEFS; // Existing generated weapon definitions remain the single source of melee stats/art.
-    const archetypes = window.HobunjiRangedWeaponArchetypes; // Existing thrown-weapon bridge owns input, projectile creation, poses, and mastery integration.
-    if (!defs || !archetypes?.patchGeneratedDefinitions) return false;
+    const archetypes = window.HobunjiRangedWeaponArchetypes; // Existing thrown-weapon bridge owns projectile config while keeping ordinary player daggers melee-only.
+    if (!defs || !archetypes?.registerNpcThrownDefinition) return false;
 
     let found = 0;
     for (const [itemKey, def] of Object.entries(defs)) {
       if (!def || (def.shapeKey || itemKey) !== DAGGER_SHAPE) continue;
-      def.rangedType = 'thrown'; // Used by ranged-weapon-archetypes.js while leaving the original melee slot/animStyle intact for ordinary weapon use.
-      if (!def.rangedProjectileSprite && def.sprite) def.rangedProjectileSprite = def.sprite;
+      const rangedDef = def.rangedProjectileSprite || !def.sprite ? def : { ...def, rangedProjectileSprite: def.sprite }; // Supplies the dagger sprite to the NPC-only thrown config without mutating the shared melee definition.
+      if (!archetypes.registerNpcThrownDefinition(itemKey, rangedDef)) continue;
       patched.add(itemKey);
       found += 1;
     }
     if (!found) return false;
-    archetypes.patchGeneratedDefinitions();
-    window.__farmLog?.(`[porakaneki] enabled melee+thrown ranged use for ${patched.size} dagger variant(s).`, 'combat');
+    window.__farmLog?.(`[porakaneki] configured NPC-only thrown use for ${patched.size} dagger variant(s).`, 'combat');
     return true;
   }
 
