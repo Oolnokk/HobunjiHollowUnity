@@ -115,6 +115,9 @@ assert.deepStrictEqual(Array.from(nonColliding.colliders, tile => Array.from(til
 assert.match(editorSource, /id="gridRotLeftBtn"/, 'interior editor exposes 90-degree grid rotation');
 assert.match(editorSource, /id="gridRot180Btn"/, 'interior editor exposes direct 180-degree grid rotation');
 assert.match(editorSource, /gridRot180Btn'\)\.addEventListener\('click',[\s\S]{0,100}rotateSelectedGrid\(180\)/, '180-degree button rotates directly without an intermediate 90-degree state');
+assert.match(editorSource, /id="placedFurnitureList"/, 'interior editor exposes a currently placed furniture list');
+assert.match(editorSource, /function furnAtPreferringSelected\(c,r\)[\s\S]{0,420}state\.selectedId[\s\S]{0,420}furnitureOccupiesTile/, 'grid hit testing gives the explicitly selected furniture priority on overlapping tiles');
+assert.match(editorSource, /btn\.addEventListener\('click',function\(\)\{[\s\S]{0,120}setTool\('select'\);[\s\S]{0,120}selectFurn\(f\.id\)/, 'placed-item list switches to Select and selects the exact furniture record');
 assert.match(editorSource, /var swapsFootprint=Math\.abs\(Math\.round\(delta\/90\)\)%2===1;/, 'only odd quarter-turns swap the furniture footprint');
 assert.match(editorSource, /id="gridFurnW"/, 'interior editor exposes whole-tile width');
 assert.match(editorSource, /id="gridFurnD"/, 'interior editor exposes whole-tile depth');
