@@ -245,8 +245,11 @@
   // clipped copies tiles seamlessly for any shape, why diamond needs no
   // pairing).
   const FRAME_SHAPES = Object.freeze({
-    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
-    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    // Every shape (including these two) clips to its own rectangle — the
+    // frame is a hard crop boundary, not just a tiling-pitch guide — see
+    // buildAuthoredClearedMask's clipToPolygon below.
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
       label: 'Diamond', paired: false,
       basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
@@ -337,13 +340,18 @@
     // never the full working canvas, and never motifScale. The *actual*
     // stamped artwork is prepared separately at the real motifScale and
     // centered on that same geometry, so scale above 1x deliberately
-    // overflows into neighboring copies instead of growing the repeat
-    // geometry to match; below 1x it leaves gaps.
+    // overflows past the FIXED crop boundary into neighboring copies
+    // instead of growing the repeat geometry to match; below 1x it leaves
+    // gaps. frameScale is the one control that resizes the whole repeating
+    // mesh — lattice spacing, crop boundary, and the ink drawn inside it —
+    // uniformly, via ctx.scale, exactly like frameRotationDeg already
+    // rotates the whole mesh as one unit.
     const prepDraw = prepareMotif(motifScale);
 
     ctx.save();
     ctx.translate(width / 2 + (Number(patternDef.frameX) || 0), height / 2 + (Number(patternDef.frameY) || 0));
     ctx.rotate(frameRad);
+    ctx.scale(frameScale, frameScale);
 
     if (patternDef.tiling) {
       const prepRef = prepareMotif(1);
@@ -362,27 +370,19 @@
         // center is that offset plus half the basis, i.e. exactly
         // (centerX,centerY) above.
         const midpoint = { x: centerX, y: centerY };
-        const polygon = shape.polygon ? shape.polygon(bbox.w, bbox.h) : null;
-        // motifScale > 1 deliberately lets the ink overflow past its own
-        // cell (see the comment on `prepareMotif` above) — for square/brick
-        // that's automatic, since they never clip at all, but a shape with
-        // a real polygon needs its clip boundary to grow right along with
-        // the ink or it'd hard-cut exactly the overflow motifScale is
-        // supposed to allow.
-        const overflowScale = Math.max(1, motifScale);
-        // frameScale resizes the tiling window itself (cell spacing + clip
-        // boundary) — it must NOT also resize the ink drawImage below, or
-        // "frame scale" just becomes a second, entangled copy of
-        // motifScale instead of an independent crop/spacing control. So
-        // it's applied by hand to the tile offsets and clip vertices below,
-        // never via ctx.scale (which would carry through to drawImage too).
-        const cellScale = frameScale * overflowScale;
+        const polygon = shape.polygon(bbox.w, bbox.h);
+        // The crop boundary is always exactly the cell's own reference
+        // size — never grown to chase motifScale — so a motif drawn larger
+        // than its frame is genuinely cropped here and bleeds into the
+        // neighboring cell's own stamp instead (each neighbor draws and
+        // clips the same oversized ink centered on itself, so the two
+        // overflows visually connect at the shared edge). No cellScale
+        // factor is needed here at all now that frameScale is applied once
+        // via ctx.scale above instead of by hand to every coordinate.
         function clipToPolygon() {
-          if (!polygon) return;
           ctx.beginPath();
           polygon.forEach((p, i) => {
-            const px = centerX + (bbox.x0 + p.x - centerX) * cellScale;
-            const py = centerY + (bbox.y0 + p.y - centerY) * cellScale;
+            const px = bbox.x0 + p.x, py = bbox.y0 + p.y;
             if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
           });
           ctx.closePath();
@@ -409,8 +409,12 @@
         // counts) to cover the whole canvas — inverting the (generally
         // skewed, non-axis-aligned) basis matrix rather than assuming a
         // square grid, since the frame's own rotation can point either
-        // basis vector in any direction.
-        const reach = (Math.hypot(width, height) / 2 + prepDraw.size) / frameScale;
+        // basis vector in any direction. Measured in the lattice's own
+        // (pre-scale) units, since frameScale is now applied once via
+        // ctx.scale above instead of being multiplied into every offset by
+        // hand — dividing the device-pixel canvas half-diagonal by
+        // frameScale converts it into those same local units.
+        const reach = Math.hypot(width, height) / 2 / frameScale + prepDraw.size;
         const det = basisU.x * basisV.y - basisU.y * basisV.x;
         let maxI = 8, maxJ = 8;
         if (Math.abs(det) > 1e-6) {
@@ -424,30 +428,27 @@
           maxI = Math.min(300, Math.ceil(maxI) + 2);
           maxJ = Math.min(300, Math.ceil(maxJ) + 2);
         }
-        // basisU/V are in the ink's own reference (frameScale=1) units —
-        // frameScale is multiplied in here, by hand, so it changes cell
-        // spacing without touching drawImage.
-        // maxI/maxJ above is a generous rectangular superset (needed so a
-        // low frameScale, which packs many more real cells into the same
-        // canvas, doesn't undercount and leave gaps) — most candidates in
-        // that rectangle land nowhere near the actual canvas, so cull them
-        // with one cheap hypot() before paying for save/clip/drawImage
-        // (doubled for a paired shape). Rotation doesn't change a point's
-        // distance from the origin, so this stays valid inside the
-        // ctx.rotate(frameRad) above without needing to un-rotate anything.
-        const frameOriginReach = Math.hypot(width, height) / 2 + Math.hypot(Number(patternDef.frameX) || 0, Number(patternDef.frameY) || 0) + prepDraw.size;
+        // basisU/V are in the lattice's own reference (frameScale=1) units,
+        // unscaled here — frameScale instead comes from the ctx.scale
+        // applied once above. maxI/maxJ above is a generous rectangular
+        // superset (needed so a low frameScale, which packs many more real
+        // cells into the same canvas, doesn't undercount and leave gaps) —
+        // most candidates in that rectangle land nowhere near the actual
+        // canvas, so cull them with one cheap hypot() before paying for
+        // save/clip/drawImage (doubled for a paired shape). Rotation
+        // doesn't change a point's distance from the origin, so this stays
+        // valid inside the ctx.rotate(frameRad) above without needing to
+        // un-rotate anything.
+        const frameOriginReach = (Math.hypot(width, height) / 2 + Math.hypot(Number(patternDef.frameX) || 0, Number(patternDef.frameY) || 0)) / frameScale + prepDraw.size;
         for (let j = -maxJ; j <= maxJ; j++) {
           for (let i = -maxI; i <= maxI; i++) {
-            const ox = frameScale * (i * basisU.x + j * basisV.x), oy = frameScale * (i * basisU.y + j * basisV.y);
+            const ox = i * basisU.x + j * basisV.x, oy = i * basisU.y + j * basisV.y;
             if (Math.hypot(ox, oy) <= frameOriginReach) stampCell(ox, oy);
           }
         }
       }
     } else {
-      ctx.save();
-      ctx.scale(frameScale, frameScale);
       ctx.drawImage(prepDraw.canvas, -prepDraw.size / 2, -prepDraw.size / 2);
-      ctx.restore();
     }
     ctx.restore();
 

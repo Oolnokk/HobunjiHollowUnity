@@ -61,8 +61,13 @@
   // itself is always the real caller's own renderPreview, never computed
   // in this file.
   const FRAME_SHAPES = Object.freeze({
-    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: null },
-    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
+    // Every shape (including these two) now clips to its own rectangle —
+    // the frame is a hard crop boundary, not just a tiling-pitch guide —
+    // so a motif drawn larger than the frame is actually cut at its edge
+    // instead of tiling unclipped past it (see buildPatternMask's
+    // clipToPolygon in clothing-weaving-system.js/tool-metal-recolor.js).
+    square: { label: 'Square', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
+    brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] },
     diamond: {
       label: 'Diamond', paired: false,
       basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
@@ -272,19 +277,24 @@
                 </div>
                 <div class="pa-card">
                   <h3>Frame</h3>
-                  <p class="pa-hint">Drag the middle to move the repeat cell, drag the corner to rotate and resize it. This is what actually tiles — pick a shape below first.</p>
+                  <p class="pa-hint">Pick a crop shape below — it's the canvas that gets cropped to, then repeated. Drag the middle to move the whole repeating pattern, drag the corner to rotate/scale it as one unit — or use the Pattern sliders below for exact values.</p>
                   <div class="pa-canvasWrap"><canvas class="pa-frameCanvas" width="${SKETCH_CANVAS_SIZE}" height="${SKETCH_CANVAS_SIZE}"></canvas></div>
                   <p class="pa-frameReadout" data-frame-readout></p>
                   <div class="pa-row" style="margin-top:9px">
                     ${Object.entries(FRAME_SHAPES).map(([id, shape]) => `<button type="button" class="pa-btn secondary pa-shapeToggle${cfg.frameShape === id ? ' active' : ''}" data-shape="${id}">${escapeHtml(shape.label)}</button>`).join('')}
                   </div>
+                  <div class="pa-field"><label><span>Pattern X</span><span class="pa-val" data-for="frameX"></span></label><input type="range" class="pa-in" data-field="frameX" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameX}"></div>
+                  <div class="pa-field"><label><span>Pattern Y</span><span class="pa-val" data-for="frameY"></span></label><input type="range" class="pa-in" data-field="frameY" min="${-SKETCH_CANVAS_SIZE}" max="${SKETCH_CANVAS_SIZE}" step="1" value="${cfg.frameY}"></div>
+                  <div class="pa-field"><label><span>Pattern rotation</span><span class="pa-val" data-for="frameRotationDeg"></span></label><input type="range" class="pa-in" data-field="frameRotationDeg" min="-180" max="180" step="1" value="${cfg.frameRotationDeg}"></div>
+                  <div class="pa-field"><label><span>Pattern scale</span><span class="pa-val" data-for="frameScale"></span></label><input type="range" class="pa-in" data-field="frameScale" min="0.1" max="6" step="0.01" value="${cfg.frameScale}"></div>
                   <div class="pa-field"><label><span>Motif scale</span><span class="pa-val" data-for="motifScale"></span></label><input type="range" class="pa-in" data-field="motifScale" min="0.1" max="3" step="0.01" value="${cfg.motifScale}"></div>
                   <div class="pa-field"><label><span>Motif rotation</span><span class="pa-val" data-for="motifRotationDeg"></span></label><input type="range" class="pa-in" data-field="motifRotationDeg" min="-180" max="180" step="1" value="${cfg.motifRotationDeg}"></div>
+                  <p class="pa-hint">Motif scale resizes the ink within its cropped frame — below 1× leaves space around it, above 1× lets it overflow past the frame's edge into the neighboring copies instead of growing the frame to fit.</p>
                   <div class="pa-row">
                     <button type="button" class="pa-btn secondary" data-act="autoDetect">Auto-detect fit</button>
                     <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
                   </div>
-                  <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped square at that angle — a quick starting point to drag from, not a final answer.</p>
+                  <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the pattern to a centered, ungapped square at that angle — a quick starting point to drag from, not a final answer.</p>
                 </div>
             </div>
           </div>
@@ -315,8 +325,8 @@
     function updateValLabels() {
       overlay.querySelectorAll('.pa-val').forEach(el => {
         const field = el.dataset.for;
-        if (field === 'motifScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
-        else if (field === 'motifThinPx') el.textContent = `${Number(cfg[field]).toFixed(0)}px`;
+        if (field === 'motifScale' || field === 'frameScale') el.textContent = `${Number(cfg[field]).toFixed(2)}×`;
+        else if (field === 'motifThinPx' || field === 'frameX' || field === 'frameY') el.textContent = `${Math.round(Number(cfg[field]) || 0)}px`;
         else el.textContent = `${cfg[field]}°`;
       });
     }
@@ -531,6 +541,8 @@
         cfg.frameRotationDeg = Math.round(((pointerAngle - baseAngle) * 180) / Math.PI);
         cfg.frameScale = clamp(Math.hypot(vec.x, vec.y) / baseLen, 0.1, 6);
       }
+      syncInputsFromCfg();
+      updateValLabels();
       drawFrameCanvas();
       schedulePreview();
     });
