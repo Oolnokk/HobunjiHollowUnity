@@ -3,10 +3,49 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm'); // Executes the real attachment config so grip scaling is checked numerically, not only by regex.
 
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Guards the attached-pet look-around path embedded in the main game closure.
 const rigSource = fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'); // Guards the instantaneous horizontal mirror bridge and refreshed shoulder anchors.
 const probeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Guards the mobile-visible size/curiosity diagnostic added for shoulder pets.
+
+const storage = { getItem() { return null; }, setItem() {}, removeItem() {} }; // Minimal browser storage stub required by the attachment master bootstrap.
+const rigSandbox = {
+  localStorage: storage,
+  window: {
+    localStorage: storage,
+    SCRATCHBONES_CONFIG: {
+      game: {
+        appearanceEditor: { species: {} },
+        assets: {
+          pngPlaneAvatar: {
+            behindView: { headUrls: {} },
+            portraitScaleBySpecies: {},
+            portraitVerticalPlacement: {},
+            proceduralFeet: { footScale: { default: 1 } },
+          },
+        },
+      },
+    },
+    CreatureGenetics: {
+      SPECIES_ALIAS: { 'drenkirra-variant-test': 'drenkirra' }, // Proves the observation resolver follows the same base-rig alias as game.js.
+      creatureSizeScale(kind, genotype) {
+        assert.equal(kind, 'drenkirra-variant-test');
+        assert.deepEqual(genotype, { sizeClass: 'small' });
+        return { sizeClass: 'small', x: 0.5, y: 0.75 };
+      },
+    },
+  },
+};
+vm.runInNewContext(rigSource, rigSandbox, { filename: 'attachment-rig-profiles.js' });
+const rawGrip = rigSandbox.window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures.drenkirra.anchors.shoulderGrip.position;
+const resolvedGrip = rigSandbox.window.ShoulderPetObservationFlip.resolveGrip({
+  creatureKey: 'drenkirra-variant-test',
+  genotype: { sizeClass: 'small' },
+});
+assert(Math.abs(resolvedGrip.x - rawGrip.x * 0.5) < 1e-12, 'observation flip pivot scales shoulderGrip X exactly like creatureAttachmentAnchor');
+assert(Math.abs(resolvedGrip.y - rawGrip.y * 0.75) < 1e-12, 'observation flip pivot scales shoulderGrip Y exactly like creatureAttachmentAnchor');
+assert.equal(resolvedGrip.z, rawGrip.z, 'observation flip pivot leaves shoulderGrip Z unscaled exactly like creatureAttachmentAnchor');
 
 assert.match(source,
   /function _tickShoulderPetCuriosity\(c, dt\)[\s\S]{0,1800}state\.phase = 'look'[\s\S]{0,700}targetLeanDeg/,
@@ -29,8 +68,8 @@ assert.match(rigSource,
   /const desiredWorld = root\.localToWorld\(desiredGripRoot\.clone\(\)\);[\s\S]{0,900}plane\.position\.add\(desiredParent\.sub\(currentParent\)\)/,
   'the mirrored face is translated after the scale sign change so shoulderGrip, not the plane center, remains the flip origin');
 assert.match(rigSource,
-  /shoulderGripPositionForObservation[\s\S]{0,900}anchors\?\.shoulderGrip\?\.position/,
-  'shoulder-pet observation flips resolve their pivot from the authored creature shoulderGrip');
+  /shoulderGripPositionForObservation[\s\S]{0,900}creatureSizeScale\?\.\(kind, pet\?\.genotype\)[\s\S]{0,900}SPECIES_ALIAS\?\.\[kind\][\s\S]{0,900}anchors\?\.shoulderGrip\?\.position/,
+  'shoulder-pet observation flips resolve the same genotype-scaled, aliased creature shoulderGrip used by game.js');
 assert.match(rigSource,
   /shoulderObservationMeshes[\s\S]{0,1000}hobunjiPlaneFace[\s\S]{0,500}hobunjiShoulderSplitOverlay/,
   'the grip-pivot mirror applies to live rigged face meshes and split-frame overlays rather than stale center-pivot cards');
