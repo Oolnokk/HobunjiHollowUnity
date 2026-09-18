@@ -1,12 +1,12 @@
-// Dagger ranged bridge — keeps every generated dagger-sword fully usable as a
-// melee weapon while also feeding it through the existing generic thrown-weapon
+// Dagger ranged bridge — keeps every generated dagger fully usable as a melee
+// weapon while also feeding it through the existing generic thrown-weapon
 // archetype. Porakaneki dagger users can therefore throw at range without a
 // second dagger-only projectile implementation.
 (() => {
   'use strict';
 
   const VERSION = 1;
-  const DAGGER_SHAPE = 'daggerSword'; // Used to identify every metal/material variant generated from the canonical dagger-sword shape.
+  const DAGGER_SHAPE = 'dagger'; // Used to identify every metal/material variant generated from the canonical dagger shape.
   const RETRY_MS = 50; // Used while game.js finishes creating generated tool definitions.
   const RETRY_LIMIT = 160; // Used to stop bootstrap retries after roughly eight seconds.
   const patched = new Set(); // Used by mobile diagnostics to list exactly which generated dagger variants gained ranged behavior.
