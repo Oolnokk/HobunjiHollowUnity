@@ -43,6 +43,27 @@ assert.equal(api.version, 10);
 assert.equal(api.POINT_COUNT, 7);
 assert.equal(global.AnimalShoulderRest, api, 'legacy diagnostic alias points at v10 runtime');
 
+delete global.HobunjiShoulderSplitLayerParity;
+require(parityPath);
+const parityApi = global.HobunjiShoulderSplitLayerParity; // Used below to reproduce the non-shoulder overlay leak caught by Pixel Probe.
+assert.equal(parityApi?.version, 3, 'split-layer parity v3 installs for the runtime regression');
+const parityGroup = { children: [], userData: { hobunjiShoulderRest: { splitOverlayVisible: false } } }; // Parent shoulder state owns whether the split overlay is allowed to exist visibly.
+const paritySourceMesh = { isSkinnedMesh: true, visible: true, renderOrder: 2, frustumCulled: false, layers: { mask: 1 }, material: { depthWrite: true, depthTest: true }, userData: { hobunjiPlaneFace: 'back' } }; // Represents the correctly textured ordinary animal face.
+const parityOverlayMesh = { visible: false, renderOrder: 2, frustumCulled: false, layers: { mask: 1 }, material: { depthWrite: true, depthTest: true }, userData: { hobunjiShoulderSplitOverlay: true, hobunjiPlaneFace: 'back' }, parent: parityGroup }; // Represents the raw cloned split-frame helper that must stay hidden off-shoulder.
+parityGroup.children.push(paritySourceMesh, parityOverlayMesh);
+parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
+assert.equal(parityOverlayMesh.visible, false, 'ordinary farm/wild/barn avatars keep shoulder-only split overlays hidden even while their source face is visible');
+parityGroup.userData.hobunjiShoulderRest.splitOverlayVisible = true;
+parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
+assert.equal(parityOverlayMesh.visible, true, 'shoulder presentation can explicitly enable the split foreground');
+paritySourceMesh.visible = false;
+parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
+assert.equal(parityOverlayMesh.visible, false, 'an enabled split foreground still follows its paired source face visibility');
+paritySourceMesh.visible = true;
+parityGroup.userData.hobunjiShoulderRest.splitOverlayVisible = false;
+parityApi.syncOverlay(paritySourceMesh, parityOverlayMesh);
+assert.equal(parityOverlayMesh.visible, false, 'disabling shoulder presentation hides the split foreground again');
+
 const straightGuide = { a: { x: 0.2, y: 0.4 }, b: { x: 0.8, y: 0.4 } };
 const straightBefore = api.linearPointsForGuide(straightGuide);
 const identity = { enabled: true, useSpline: true, frameShiftX: .2, beforePoints: straightBefore, afterPoints: straightBefore.map(p => ({ ...p })) };
