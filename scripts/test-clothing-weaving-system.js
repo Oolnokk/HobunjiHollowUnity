@@ -58,7 +58,6 @@ const EquipmentPanel = {
   buildEquipmentSlots() {},
   clothingSpriteForCosmetic(id) { return `assets/${id}.png`; },
 };
-const FurniturePlacer = { init(injected) { this.deps = injected; } };
 const ResourceSystem = {
   applyDamage(entity, amount) { damageSeen = amount; return amount; },
   spendFooting(entity, amount) { footingSeen = amount; return amount; },
@@ -71,7 +70,6 @@ const Combat = {
 const windowStub = {
   SCRATCHBONES_CONFIG: { game: { account: { shopCatalog }, input: { targeting: { orbitRadiusTiles: 0.62 } } } },
   EquipmentPanel,
-  FurniturePlacer,
   ResourceSystem,
   Combat,
   Mounts: { rideState: 'none', rideEntity: { id: 'stale-reference' } },
@@ -134,20 +132,6 @@ const equipmentDeps = {
   showToast() {},
 };
 windowStub.EquipmentPanel.init(equipmentDeps);
-windowStub.FurniturePlacer.init({
-  getCurrentArea: () => 'interior',
-  getDecorativeFurnitureDefs: () => ({ loom: { itemKey: 'loomFurniture', fw: 1, fd: 2 } }),
-  getPlacedFurniture: () => [],
-});
-const loomSize = api.__test.loomFootprint(0); // Verifies player-placed loom targeting uses the same 1x2 footprint as furniture placement.
-assert.equal(loomSize.fw, 1, 'unrotated loom targeting keeps its one-tile width');
-assert.equal(loomSize.fd, 2, 'unrotated loom targeting covers both occupied depth tiles');
-const turnedLoomSize = api.__test.loomFootprint(90); // Verifies a quarter-turn follows the placement system's swapped footprint.
-assert.equal(turnedLoomSize.fw, 2, '90-degree loom targeting covers both horizontal tiles');
-assert.equal(turnedLoomSize.fd, 1, '90-degree loom targeting keeps its one-tile depth');
-const farEndAim = { col: 10.5, row: 11.5 }; // Models aiming at the second tile of an unrotated loom, which the old first-tile-center test missed.
-assert.equal(api.__test.distanceToLoomFootprint(farEndAim, { col: 10, row: 10, ...loomSize }), 0, 'the far half of a 1x2 placed loom is directly targetable');
-assert.equal(api.__test.distanceToLoomFootprint({ col: 11.5, row: 10.5 }, { col: 10, row: 10, ...turnedLoomSize }), 0, 'rotated loom occupied tiles remain directly targetable');
 const lightTunic = {
   uid: 'woven-1',
   cosmeticId: 'tankan_tunic#loom:woven-1',
@@ -212,4 +196,9 @@ assert.match(source, /TORSO_C/);
 assert.match(source, /CLOTH_C/);
 assert.match(source, /puktukWool/);
 assert.match(source, /lightWool/);
+assert.doesNotMatch(source, /clothingLoomInjected|syncLoomActionButton|targetedLoom/, 'weaving module no longer owns a parallel DOM/polling interaction path');
+const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');
+assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map-authored loom uses the same core interactable factory');
+assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
 console.log('clothing weaving system tests passed');
