@@ -377,6 +377,7 @@
     deps.triggerRangedWeaponVisual?.(durationS, {
       sequence: kind === 'fire' ? (def.fireSequence || 'fire') : (def.reloadSequence || 'attack'),
       pose,
+      gripMode: def.gripMode || null,
       windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02),
       strikeFrac: kind === 'fire' ? def.fireAtFrac : (def.reloadStrikeFrac ?? 0.56),
       holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
