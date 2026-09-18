@@ -215,7 +215,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260917charge2"></script>
+  <script src="js/combat/combat-core.js?v=20260917charge3"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
@@ -232,7 +232,7 @@
   <script src="js/combat/quick-attack-bonus-indicator.js?v=20260914followfix1"></script>
   <script src="js/combat/combat-counter-shield.js?v=20260917charge2"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260917charge2"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260917charge3"></script>
   <script src="js/combat/combat-flurry.js?v=20260917charge1"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260917controller1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
@@ -263,7 +263,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260917charge2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260917charge3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2323,7 +2323,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260917charge1"></script>
+  <script src="js/pixel-probe.js?v=20260917charge3"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2445,7 +2445,7 @@
   <!-- Generic poll-until-ready/timeout helper; game.js's
        waitForBuildingSceneReady calls into it directly. -->
   <script src="js/scene-ready-poller.js?v=20260917a"></script>
-  <script src="game.js?v=20260917charge1"></script>
+  <script src="game.js?v=20260917charge3"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
