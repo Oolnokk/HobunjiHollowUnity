@@ -30,7 +30,7 @@
     "wakeHour": 6
   },
   "equipment": {
-    "weaponShapes": ["fishingspear", "hatchet", "daggerSword"],
+    "weaponShapes": ["fishingspear", "hatchet", "dagger"],
     "weaponMetalKey": "nativeCopper"
   },
   "behavior": {
