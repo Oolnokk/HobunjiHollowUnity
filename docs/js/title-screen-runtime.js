@@ -233,7 +233,6 @@
       if (isDown && !gamepadWasDown && !starting) beginStart('gamepad');
       gamepadWasDown = isDown;
     }
-    if (active) gamepadPollRaf = requestAnimationFrame(() => pollGamepad(realGetGamepads));
   }
 
   function beginStart(source = 'api') {
@@ -243,7 +242,7 @@
     window.dispatchEvent(new CustomEvent('hobunji-title-starting', { detail:{ source } }));
     window.setTimeout(() => {
       active = false;
-      if (gamepadPollRaf) cancelAnimationFrame(gamepadPollRaf);
+      if (gamepadPollRaf) clearInterval(gamepadPollRaf);
       gamepadPollRaf = 0;
       removeEventGate();
       document.documentElement.classList.remove(
@@ -261,7 +260,7 @@
   installEventGate();
   loadTitleFont();
   const realGetGamepads = installControllerGate();
-  if (realGetGamepads) gamepadPollRaf = requestAnimationFrame(() => pollGamepad(realGetGamepads));
+  if (realGetGamepads) gamepadPollRaf = setInterval(() => pollGamepad(realGetGamepads), 50); // A bounded wait-for-input poll; no per-frame cadence needed.
 
   window.HobunjiTitleScreen = Object.freeze({
     installed:true,

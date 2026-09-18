@@ -567,15 +567,6 @@
     "line": 358
   },
   {
-    "file": "docs/js/title-screen-runtime.js",
-    "owner": "HobunjiTitleScreen",
-    "classification": "timer-event",
-    "function": "pollGamepad",
-    "reason": "Reschedules itself every frame (also started once at line 264) purely to poll for a gamepad button press that starts the game, and stops entirely once the title screen becomes inactive (active=false / cancelAnimationFrame in beginStart) — a bounded wait-for-input poll that does not need per-frame cadence.",
-    "migrationStage": "candidate",
-    "line": 236
-  },
-  {
     "file": "docs/js/ui-element-editor.js",
     "owner": "UIElementEditor",
     "classification": "one-shot",
