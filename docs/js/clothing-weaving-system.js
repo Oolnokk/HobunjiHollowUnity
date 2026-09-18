@@ -1266,7 +1266,7 @@
       cctx.imageSmoothingEnabled=false; cctx.translate(size/2,size/2); cctx.rotate(motifRad); cctx.drawImage(motifImg,-mw/2,-mh/2,mw,mh); return {canvas:c,ctx:cctx,size};
     }
     const draw = prepare(motifScale);
-    ctx.save(); ctx.translate(width/2+(Number(patternDef?.frameX)||0),height/2+(Number(patternDef?.frameY)||0)); ctx.rotate(frameRad); ctx.scale(frameScale,frameScale);
+    ctx.save(); ctx.translate(width/2+(Number(patternDef?.frameX)||0),height/2+(Number(patternDef?.frameY)||0)); ctx.rotate(frameRad);
     if (patternDef?.tiling !== false) {
       const ref = prepare(1), data = ref.ctx.getImageData(0,0,ref.size,ref.size).data, mask = new Uint8Array(ref.size*ref.size);
       for (let p=0,i=0;i<data.length;i+=4,p++) if (data[i+3]>16) mask[p]=1;
@@ -1281,21 +1281,42 @@
         // (centerX,centerY) above.
         const midpoint = { x: centerX, y: centerY };
         const polygon = shape.polygon ? shape.polygon(bbox.w, bbox.h) : null;
+        // motifScale > 1 deliberately lets the ink overflow past its own
+        // cell (see the comment on `prepare` above) — for square/brick
+        // that's automatic, since they never clip at all, but a shape with
+        // a real polygon needs its clip boundary to grow right along with
+        // the ink or it'd hard-cut exactly the overflow motifScale is
+        // supposed to allow.
+        const overflowScale = Math.max(1, motifScale);
+        // frameScale resizes the tiling window itself (cell spacing + clip
+        // boundary) — it must NOT also resize the ink drawImage below, or
+        // "frame scale" just becomes a second, entangled copy of
+        // motifScale instead of an independent crop/spacing control. So
+        // it's applied by hand to the tile offsets and clip vertices below,
+        // never via ctx.scale (which would carry through to drawImage too).
+        const cellScale = frameScale * overflowScale;
         function clipToPolygon() {
           if (!polygon) return;
           ctx.beginPath();
-          polygon.forEach((p, i) => { const px = bbox.x0 + p.x, py = bbox.y0 + p.y; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+          polygon.forEach((p, i) => {
+            const px = centerX + (bbox.x0 + p.x - centerX) * cellScale;
+            const py = centerY + (bbox.y0 + p.y - centerY) * cellScale;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          });
           ctx.closePath();
           ctx.clip();
         }
         const stamp = shape.paired
           ? (ox,oy)=>{ctx.save();ctx.translate(ox,oy);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();ctx.save();ctx.translate(ox+midpoint.x,oy+midpoint.y);ctx.rotate(Math.PI);ctx.translate(-midpoint.x,-midpoint.y);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();}
           : (ox,oy)=>{ctx.save();ctx.translate(ox,oy);clipToPolygon();ctx.drawImage(draw.canvas,dx,dy);ctx.restore();};
-        const reach=Math.hypot(width,height)/frameScale/2+draw.size,det=basisU.x*basisV.y-basisU.y*basisV.x;let maxI=8,maxJ=8;
+        const reach=(Math.hypot(width,height)/2+draw.size)/frameScale,det=basisU.x*basisV.y-basisU.y*basisV.x;let maxI=8,maxJ=8;
         if(Math.abs(det)>1e-6){const ia=basisV.y/det,ib=-basisV.x/det,ic=-basisU.y/det,id=basisU.x/det;maxI=maxJ=0;for(const [x,y] of [[reach,reach],[reach,-reach],[-reach,reach],[-reach,-reach]]){maxI=Math.max(maxI,Math.abs(ia*x+ib*y));maxJ=Math.max(maxJ,Math.abs(ic*x+id*y));}maxI=Math.min(300,Math.ceil(maxI)+2);maxJ=Math.min(300,Math.ceil(maxJ)+2);}
-        for(let j=-maxJ;j<=maxJ;j++)for(let i=-maxI;i<=maxI;i++)stamp(i*basisU.x+j*basisV.x,i*basisU.y+j*basisV.y);
+        // basisU/V and the offsets derived from them are in the ink's own
+        // reference (frameScale=1) units — frameScale is multiplied in here,
+        // by hand, so it changes cell spacing without touching drawImage.
+        for(let j=-maxJ;j<=maxJ;j++)for(let i=-maxI;i<=maxI;i++)stamp(frameScale*(i*basisU.x+j*basisV.x),frameScale*(i*basisU.y+j*basisV.y));
       }
-    } else ctx.drawImage(draw.canvas,-draw.size/2,-draw.size/2);
+    } else { ctx.save(); ctx.scale(frameScale,frameScale); ctx.drawImage(draw.canvas,-draw.size/2,-draw.size/2); ctx.restore(); }
     ctx.restore();
     if(patternDef?.invert){const image=ctx.getImageData(0,0,width,height),data=image.data;for(let i=0;i<data.length;i+=4)data[i+3]=255-data[i+3];ctx.putImageData(image,0,0);}
     return canvas;

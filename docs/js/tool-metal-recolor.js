@@ -299,11 +299,12 @@
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
-    // motifScale sizes the motif itself; frameScale (applied via ctx.scale
-    // further down) zooms the whole tiled field afterward — same
-    // distinction as motifRotationDeg vs frameRotationDeg. `patternDef.scale`
-    // is a fallback for patterns saved before motifScale existed as its own
-    // field.
+    // motifScale sizes the motif ink itself; frameScale resizes the tiling
+    // window (cell spacing + clip boundary) around it, independently — same
+    // distinction as motifRotationDeg vs frameRotationDeg. The two are
+    // applied separately further down specifically so frameScale never
+    // also rescales the drawn ink. `patternDef.scale` is a fallback for
+    // patterns saved before motifScale existed as its own field.
     const motifScale = Math.max(0.05, Number(patternDef.motifScale ?? patternDef.scale) || 1);
     const frameScale = Math.max(0.05, Number(patternDef.frameScale) || 1);
     const motifRad = ((Number(patternDef.motifRotationDeg) || 0) * Math.PI) / 180;
@@ -343,7 +344,6 @@
     ctx.save();
     ctx.translate(width / 2 + (Number(patternDef.frameX) || 0), height / 2 + (Number(patternDef.frameY) || 0));
     ctx.rotate(frameRad);
-    ctx.scale(frameScale, frameScale);
 
     if (patternDef.tiling) {
       const prepRef = prepareMotif(1);
@@ -363,10 +363,28 @@
         // (centerX,centerY) above.
         const midpoint = { x: centerX, y: centerY };
         const polygon = shape.polygon ? shape.polygon(bbox.w, bbox.h) : null;
+        // motifScale > 1 deliberately lets the ink overflow past its own
+        // cell (see the comment on `prepareMotif` above) — for square/brick
+        // that's automatic, since they never clip at all, but a shape with
+        // a real polygon needs its clip boundary to grow right along with
+        // the ink or it'd hard-cut exactly the overflow motifScale is
+        // supposed to allow.
+        const overflowScale = Math.max(1, motifScale);
+        // frameScale resizes the tiling window itself (cell spacing + clip
+        // boundary) — it must NOT also resize the ink drawImage below, or
+        // "frame scale" just becomes a second, entangled copy of
+        // motifScale instead of an independent crop/spacing control. So
+        // it's applied by hand to the tile offsets and clip vertices below,
+        // never via ctx.scale (which would carry through to drawImage too).
+        const cellScale = frameScale * overflowScale;
         function clipToPolygon() {
           if (!polygon) return;
           ctx.beginPath();
-          polygon.forEach((p, i) => { const px = bbox.x0 + p.x, py = bbox.y0 + p.y; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+          polygon.forEach((p, i) => {
+            const px = centerX + (bbox.x0 + p.x - centerX) * cellScale;
+            const py = centerY + (bbox.y0 + p.y - centerY) * cellScale;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          });
           ctx.closePath();
           ctx.clip();
         }
@@ -392,7 +410,7 @@
         // skewed, non-axis-aligned) basis matrix rather than assuming a
         // square grid, since the frame's own rotation can point either
         // basis vector in any direction.
-        const reach = Math.hypot(width, height) / frameScale / 2 + prepDraw.size;
+        const reach = (Math.hypot(width, height) / 2 + prepDraw.size) / frameScale;
         const det = basisU.x * basisV.y - basisU.y * basisV.x;
         let maxI = 8, maxJ = 8;
         if (Math.abs(det) > 1e-6) {
@@ -406,14 +424,20 @@
           maxI = Math.min(300, Math.ceil(maxI) + 2);
           maxJ = Math.min(300, Math.ceil(maxJ) + 2);
         }
+        // basisU/V are in the ink's own reference (frameScale=1) units —
+        // frameScale is multiplied in here, by hand, so it changes cell
+        // spacing without touching drawImage.
         for (let j = -maxJ; j <= maxJ; j++) {
           for (let i = -maxI; i <= maxI; i++) {
-            stampCell(i * basisU.x + j * basisV.x, i * basisU.y + j * basisV.y);
+            stampCell(frameScale * (i * basisU.x + j * basisV.x), frameScale * (i * basisU.y + j * basisV.y));
           }
         }
       }
     } else {
+      ctx.save();
+      ctx.scale(frameScale, frameScale);
       ctx.drawImage(prepDraw.canvas, -prepDraw.size / 2, -prepDraw.size / 2);
+      ctx.restore();
     }
     ctx.restore();
 
@@ -831,7 +855,7 @@
     rgbToHsv,
     hsvToRgb,
     SOURCE_HEX,
-    __test: Object.freeze({ erodeMask, scaledOutlineWidthForPattern }),
+    __test: Object.freeze({ erodeMask, scaledOutlineWidthForPattern, buildAuthoredClearedMask }),
   };
 
   debugLog({}, 'module loaded', {

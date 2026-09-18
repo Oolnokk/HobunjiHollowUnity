@@ -435,33 +435,47 @@
       const rectCorner = (bu, bv) => toScreen(u.x * bu + v.x * bv, u.y * bu + v.y * bv);
       const p11 = rectCorner(0.5, 0.5);
 
-      function strokePolygon(points) {
+      function tracePolygon(points) {
         frameCtx.beginPath();
         points.forEach((p, i) => {
           const pt = toScreen(p.x - w / 2, p.y - h / 2);
           if (i === 0) frameCtx.moveTo(pt.x, pt.y); else frameCtx.lineTo(pt.x, pt.y);
         });
         frameCtx.closePath();
-        frameCtx.stroke();
       }
-
+      // Outlining both paired halves (unfilled) traces the SAME rectangle
+      // perimeter regardless of shape — a triangle and a trapezoid both
+      // combine into a plain rectangle silhouette, so a stroke-only
+      // drawing always looks like "a square with a diagonal," whatever
+      // shape is actually selected. Filling each half its own color is
+      // what actually makes the real clip shape visible.
+      // Deliberately NOT teal/orange — those are the handle dots' own
+      // colors (below), and a fill using the same hues is easy to confuse
+      // with them in a small preview.
+      const polygon = shape.polygon ? shape.polygon(w, h) : null;
       frameCtx.save();
-      frameCtx.strokeStyle = '#7fc7bc';
       frameCtx.lineWidth = 1.5;
       frameCtx.setLineDash([4, 3]);
-      const polygon = shape.polygon ? shape.polygon(w, h) : null;
       if (polygon) {
-        strokePolygon(polygon);
-        // The 180°-partner (paired shapes only) is this same polygon
-        // rotated about the cell's own center (w/2,h/2) — mirrors exactly
-        // how buildPatternMask/buildAuthoredClearedMask stamp it, so the
-        // outline shown here always matches the real render.
-        if (shape.paired) strokePolygon(polygon.map(p => ({ x: w - p.x, y: h - p.y })));
+        tracePolygon(polygon);
+        frameCtx.fillStyle = 'rgba(90,140,235,.45)';
+        frameCtx.strokeStyle = '#5a8ceb';
+        frameCtx.fill();
+        frameCtx.stroke();
+        if (shape.paired) {
+          // The 180°-partner — this same polygon rotated about the cell's
+          // own center (w/2,h/2) — mirrors exactly how buildPatternMask/
+          // buildAuthoredClearedMask stamp it, so this always matches the
+          // real render's two halves.
+          tracePolygon(polygon.map(p => ({ x: w - p.x, y: h - p.y })));
+          frameCtx.fillStyle = 'rgba(230,110,190,.45)';
+          frameCtx.strokeStyle = '#e66ebe';
+          frameCtx.fill();
+          frameCtx.stroke();
+        }
       } else {
-        const corners = [rectCorner(-0.5, -0.5), rectCorner(0.5, -0.5), p11, rectCorner(-0.5, 0.5)];
-        frameCtx.beginPath();
-        corners.forEach((pt, i) => { if (i === 0) frameCtx.moveTo(pt.x, pt.y); else frameCtx.lineTo(pt.x, pt.y); });
-        frameCtx.closePath();
+        tracePolygon([{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }]);
+        frameCtx.strokeStyle = '#7fc7bc';
         frameCtx.stroke();
       }
       frameCtx.restore();
