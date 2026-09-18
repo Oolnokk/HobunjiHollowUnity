@@ -54,7 +54,11 @@
       if (t <= hf) return { ...poses.strike };
       return lerp(poses.strike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
     }
-    if (t <= wf) return lerp(poses.neutral, poses.windup, t / Math.max(1e-6, wf));
+    if (t <= wf) {
+      const rawWindupT = t / Math.max(1e-6, wf);
+      const poseT = global.Combat?.windupPoseProgress?.(rawWindupT, timing.windupSlowdown) ?? rawWindupT;
+      return lerp(poses.neutral, poses.windup, poseT);
+    }
     if (t <= sf) return lerp(poses.windup, poses.strike, (t - wf) / Math.max(1e-6, sf - wf));
     if (t <= hf) return { ...poses.strike };
     return lerp(poses.strike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
@@ -153,6 +157,7 @@
         windupFrac: capturedMelee.opts.windupFrac ?? 0.16,
         strikeFrac: capturedMelee.opts.strikeFrac ?? 0.55,
         holdFrac: capturedMelee.opts.holdFrac ?? 0.68,
+        windupSlowdown: capturedMelee.opts.windupSlowdown ?? 0,
       };
       const sequence = capturedMelee.opts.sequence || 'attack';
       return applyLeftIdleRule(side, toolKey, weightsAt(snapshot.combatProgress, timing, rawPose, sequence));
