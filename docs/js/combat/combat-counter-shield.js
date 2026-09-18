@@ -137,6 +137,12 @@
     return strongest;
   }
 
+  function setExternalWeaponGlowActive(active) {
+    const next = !!active;
+    if (externalWeaponGlowActive && !next) cleanupVisualsNextTick = true;
+    externalWeaponGlowActive = next;
+  }
+
   function toolPlaneSources(holder) {
     const roots = (holder?.children || []).filter(child =>
       !!child?.userData?.toolPlane &&
@@ -434,70 +440,74 @@
   }
 
   function syncAuthoredCounterShieldVisuals() {
-    const scene = window.Combat.deps?.getActiveScene?.();
-    if (!scene?.isScene) return;
+    // This is the only per-frame gate while idle. No holder/source discovery,
+    // scene traversal, shader updates, or trail sampling happens until one of
+    // the relevant heavy effects is actually active.
+    if (!offensiveGlowByOwner.size && !externalWeaponGlowActive && !cleanupVisualsNextTick) return;
 
     const timeS = performance.now() / 1000;
     const liveHolders = new Set();
-    // combat-enemy-telegraph.js already tracks exactly which actors have an
-    // active Counter Shield visual bundle (bounded by live combatant count),
-    // refreshed earlier in this same Combat.update chain — reading that
-    // directly replaces two full scene.traverse() scans (one to force every
-    // field bubble invisible, one to find visible weapon-glow groups) that
-    // ran every frame during all gameplay regardless of whether anyone was
-    // even holding Counter Shield.
-    const activeVisuals = window.Combat.heavyTelegraphVisuals?.activeVisuals?.();
-    if (activeVisuals) {
-      for (const visual of activeVisuals) {
-        if (visual.fieldGroup) visual.fieldGroup.visible = false; // Weapon-glow-only presentation: the hemisphere field itself stays suppressed here every frame.
-        if (!visual?.holder || (!visual.defensive && !visual.offensive)) continue;
-        liveHolders.add(visual.holder);
-        if (visual.defensive) {
-          syncWeaponSilhouette(visual.holder, timeS, { intensity: 1, expansion: 1, color: FIELD_COLOR, label: 'Counter Shield' });
-        } else {
-          const targetCharge = clamp01(visual.actor?._banditSwingPoseScale ?? 1); // Used as the sampled Charged Breaker endpoint for this bandit.
-          const action = visual.actor?._banditAction;
-          const windupProgress = action?.windupS > 0
-            ? clamp01((Number(action.t) || 0) / action.windupS)
-            : 1; // Used to track the bandit's currently visible linear travel toward its sampled partial Windup pose.
-          const liveCharge = visual.actor?.telegraphState === 'windup'
-            ? targetCharge * windupProgress
-            : targetCharge; // Used as the visible pose amplitude during windup/strike.
-          syncWeaponSilhouette(visual.holder, timeS, {
-            intensity: Math.max(0.025, liveCharge),
-            expansion: liveCharge,
-            color: OFFENSIVE_CHARGE_COLOR,
-            label: 'Charged Breaker',
-          });
+
+    if (externalWeaponGlowActive) {
+      const activeVisuals = window.Combat.heavyTelegraphVisuals?.activeVisuals?.();
+      if (activeVisuals) {
+        for (const visual of activeVisuals) {
+          if (visual.fieldGroup) visual.fieldGroup.visible = false;
+          if (!visual?.holder || (!visual.defensive && !visual.offensive)) continue;
+          liveHolders.add(visual.holder);
+          if (visual.defensive) {
+            syncWeaponSilhouette(visual.holder, timeS, {
+              intensity: 1,
+              expansion: 1,
+              color: FIELD_COLOR,
+              label: 'Counter Shield',
+            });
+          } else {
+            const targetCharge = clamp01(visual.actor?._banditSwingPoseScale ?? 1);
+            const action = visual.actor?._banditAction;
+            const windupProgress = action?.windupS > 0
+              ? clamp01((Number(action.t) || 0) / action.windupS)
+              : 1;
+            const liveCharge = visual.actor?.telegraphState === 'windup'
+              ? targetCharge * windupProgress
+              : targetCharge;
+            const readyPose = Number(window.Combat.chargedBreakerData?.MIN_READY_POSE) || 0.48;
+            const overlayLevel = liveCharge >= 0.999 ? 3 : liveCharge >= 0.5 ? 2 : liveCharge >= readyPose ? 1 : 0;
+            syncWeaponSilhouette(visual.holder, timeS, {
+              intensity: Math.max(0.025, liveCharge),
+              expansion: liveCharge,
+              color: OFFENSIVE_CHARGE_COLOR,
+              label: 'Charged Breaker',
+              flowStrength: 1,
+              flowSpeed: 8.5,
+              overlayMode: 'stepped',
+              overlayLevel,
+              overlayProgress: liveCharge,
+              motionTrail: true,
+            });
+          }
+          if (visual.weaponGlowGroup) visual.weaponGlowGroup.visible = false;
         }
-        if (visual.weaponGlowGroup) visual.weaponGlowGroup.visible = false;
-      }
-    } else {
-      // Fallback for any page that loads this module without combat-enemy-
-      // telegraph.js's registry (e.g. a standalone tool) — same behavior,
-      // just discovered by scanning the scene instead of a known list.
-      hideCounterShieldFields(scene);
-      for (const genericGlow of collectNamedVisible(scene, 'counter-shield-weapon-glow')) {
-        const holder = genericGlow.parent;
-        if (!holder) continue;
-        liveHolders.add(holder);
-        syncWeaponSilhouette(holder, timeS, { intensity: 1, expansion: 1, color: FIELD_COLOR, label: 'Counter Shield' });
-        genericGlow.visible = false;
       }
     }
 
     const offensiveGlow = strongestOffensiveGlow();
-    const playerHolder = window.Combat.deps?.toolHolder?.() || null;
+    const playerHolder = offensiveGlow ? window.Combat.deps?.toolHolder?.() || null : null;
     if (offensiveGlow && playerHolder && !liveHolders.has(playerHolder)) {
       liveHolders.add(playerHolder);
       syncWeaponSilhouette(playerHolder, timeS, offensiveGlow);
     }
+
+    updateTrailGhosts(timeS);
 
     for (const [holder, entry] of silhouetteByHolder) {
       if (liveHolders.has(holder)) continue;
       disposeSilhouetteEntry(entry);
       silhouetteByHolder.delete(holder);
     }
+
+    if (!offensiveGlowByOwner.size && !externalWeaponGlowActive) clearTrailGhosts();
+    cleanupVisualsNextTick = false;
   }
 
   function authoredVisualSnapshot() {
@@ -518,7 +528,9 @@
       silhouetteHolders: silhouetteByHolder.size,
       silhouetteGlowMeshes: glowMeshCount,
       glowLayersPerWeaponMesh: GLOW_LAYERS.length,
-      glowLayering: 'beneath-weapon',
+      glowLayering: 'weapon-child under+over layers',
+      activeMotionTrailGhosts: trailGhosts.length,
+      runtimeActive: !!offensiveGlowByOwner.size || externalWeaponGlowActive,
       offensiveGlowRequests: [...offensiveGlowByOwner.values()].map(glow => ({ ...glow })),
     };
   }
@@ -527,7 +539,9 @@
     const previousCombatUpdate = window.Combat.update;
     window.Combat.update = function counterShieldAuthoredPresentationUpdate(dt) {
       const result = previousCombatUpdate(dt);
-      syncAuthoredCounterShieldVisuals();
+      if (offensiveGlowByOwner.size || externalWeaponGlowActive || cleanupVisualsNextTick) {
+        syncAuthoredCounterShieldVisuals();
+      }
       return result;
     };
     window.Combat._counterShieldAuthoredVisualsInstalled = true;
@@ -539,6 +553,7 @@
   window.Combat.weaponChargeGlow = {
     set: setOffensiveWeaponGlow,
     clear: clearOffensiveWeaponGlow,
+    setExternalActive: setExternalWeaponGlowActive,
     snapshot: () => ({
       requests: [...offensiveGlowByOwner.values()].map(glow => ({ ...glow })),
       silhouette: authoredVisualSnapshot(),
