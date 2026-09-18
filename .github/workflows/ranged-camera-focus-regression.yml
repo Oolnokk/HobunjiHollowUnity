@@ -8,6 +8,7 @@ on:
       - 'docs/js/combat/combat-camera-alignment-bridge.js'
       - 'docs/js/combat/ranged-weapon-archetypes.js'
       - 'docs/js/held-action-animations.js'
+      - 'docs/js/procedural-hand-grip-runtime.js'
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/combat/ranged-dual-role-anim-style.js'
       - 'docs/js/combat/ranged-weapons.js'
@@ -28,6 +29,7 @@ on:
       - 'docs/js/combat/combat-camera-alignment-bridge.js'
       - 'docs/js/combat/ranged-weapon-archetypes.js'
       - 'docs/js/held-action-animations.js'
+      - 'docs/js/procedural-hand-grip-runtime.js'
       - 'docs/js/fishing-minigame.js'
       - 'docs/js/combat/ranged-dual-role-anim-style.js'
       - 'docs/js/combat/ranged-weapons.js'
@@ -60,6 +62,8 @@ jobs:
         run: node --check docs/js/combat/ranged-weapon-archetypes.js
       - name: Syntax check held action animations
         run: node --check docs/js/held-action-animations.js
+      - name: Syntax check ranged hand grip runtime
+        run: node --check docs/js/procedural-hand-grip-runtime.js
       - name: Syntax check ranged projectile runtime
         run: node --check docs/js/combat/ranged-weapons.js
       - name: Syntax check fishing projectile visuals
