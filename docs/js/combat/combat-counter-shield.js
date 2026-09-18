@@ -87,6 +87,34 @@
   }
 
   const silhouetteByHolder = new Map();
+  const offensiveGlowByOwner = new Map(); // Used by held offensive techniques to reuse Counter Shield's weapon-silhouette language without particle emitters.
+
+  function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
+
+  function setOffensiveWeaponGlow(owner, intensity, options = {}) {
+    if (!owner) return;
+    const strength = clamp01(intensity);
+    if (strength <= 0) { offensiveGlowByOwner.delete(owner); return; }
+    offensiveGlowByOwner.set(owner, {
+      owner,
+      intensity: strength,
+      expansion: clamp01(options.expansion ?? strength),
+      color: Number.isFinite(Number(options.color)) ? Number(options.color) : 0xffc85a,
+      label: options.label || owner,
+    });
+  }
+
+  function clearOffensiveWeaponGlow(owner) {
+    if (owner) offensiveGlowByOwner.delete(owner);
+  }
+
+  function strongestOffensiveGlow() {
+    let strongest = null;
+    for (const glow of offensiveGlowByOwner.values()) {
+      if (!strongest || glow.intensity > strongest.intensity) strongest = glow;
+    }
+    return strongest;
+  }
 
   function toolPlaneSources(holder) {
     const roots = (holder?.children || []).filter(child =>
@@ -200,10 +228,18 @@
     return true;
   }
 
-  function syncWeaponSilhouette(holder, timeS) {
+  function syncWeaponSilhouette(holder, timeS, style = {}) {
     const sources = toolPlaneSources(holder);
     let entry = silhouetteByHolder.get(holder);
     if (!entry || !sameSources(entry.sources, sources)) entry = rebuildWeaponSilhouette(holder, sources);
+    const intensity = clamp01(style.intensity ?? 1);
+    const expansion = clamp01(style.expansion ?? intensity);
+    const color = Number.isFinite(Number(style.color)) ? Number(style.color) : FIELD_COLOR;
+    // A held offensive charge begins as a barely-there outline and grows into
+    // the same multi-layer silhouette Counter Shield uses. Counter Shield
+    // itself passes intensity/expansion 1 and therefore stays unchanged.
+    const opacityScale = 0.08 + intensity * 0.92;
+    const expansionScale = 0.10 + expansion * 0.90;
     for (const layer of entry.layers) {
       const { source, mesh } = layer;
       if (!source.parent) {
@@ -213,17 +249,23 @@
       if (mesh.parent !== source.parent) source.parent.add(mesh);
       mesh.position.copy(source.position);
       mesh.quaternion.copy(source.quaternion);
-      const pulse = 1 + Math.sin(timeS * 5.2 + mesh.userData.phase) * mesh.userData.pulseAmount;
-      mesh.scale.copy(source.scale).multiplyScalar(mesh.userData.baseScaleFactor * pulse);
+      const pulseAmount = mesh.userData.pulseAmount * (0.25 + intensity * 0.75);
+      const pulse = 1 + Math.sin(timeS * 5.2 + mesh.userData.phase) * pulseAmount;
+      const authoredExpansion = 1 + (mesh.userData.baseScaleFactor - 1) * expansionScale;
+      mesh.scale.copy(source.scale).multiplyScalar(authoredExpansion * pulse);
       mesh.renderOrder = Number(source.renderOrder || 0) - 8 - Number(mesh.userData.layerIndex || 0);
       mesh.visible = source.visible !== false;
       const opacityPulse = 0.90 + Math.sin(timeS * 4.8 + mesh.userData.phase) * 0.10;
+      const opacity = mesh.userData.baseOpacity * opacityScale * opacityPulse;
       if (mesh.material.uniforms?.glowOpacity) {
-        mesh.material.uniforms.glowOpacity.value = mesh.userData.baseOpacity * opacityPulse;
+        mesh.material.uniforms.glowOpacity.value = opacity;
+        mesh.material.uniforms.glowColor?.value?.setHex?.(color);
       } else {
-        mesh.material.opacity = mesh.userData.baseOpacity * opacityPulse;
+        mesh.material.opacity = opacity;
+        mesh.material.color?.setHex?.(color);
       }
     }
+    entry.style = { intensity, expansion, color, label: style.label || 'Counter Shield' };
     return entry;
   }
 
@@ -260,7 +302,7 @@
         if (visual.fieldGroup) visual.fieldGroup.visible = false; // Weapon-glow-only presentation: the hemisphere field itself stays suppressed here every frame.
         if (!visual.defensive || visual.weaponGlowGroup?.visible === false || !visual.holder) continue;
         liveHolders.add(visual.holder);
-        syncWeaponSilhouette(visual.holder, timeS);
+        syncWeaponSilhouette(visual.holder, timeS, { intensity: 1, expansion: 1, color: FIELD_COLOR, label: 'Counter Shield' });
         visual.weaponGlowGroup.visible = false;
       }
     } else {
@@ -272,9 +314,16 @@
         const holder = genericGlow.parent;
         if (!holder) continue;
         liveHolders.add(holder);
-        syncWeaponSilhouette(holder, timeS);
+        syncWeaponSilhouette(holder, timeS, { intensity: 1, expansion: 1, color: FIELD_COLOR, label: 'Counter Shield' });
         genericGlow.visible = false;
       }
+    }
+
+    const offensiveGlow = strongestOffensiveGlow();
+    const playerHolder = window.Combat.deps?.toolHolder?.() || null;
+    if (offensiveGlow && playerHolder && !liveHolders.has(playerHolder)) {
+      liveHolders.add(playerHolder);
+      syncWeaponSilhouette(playerHolder, timeS, offensiveGlow);
     }
 
     for (const [holder, entry] of silhouetteByHolder) {
@@ -303,6 +352,7 @@
       silhouetteGlowMeshes: glowMeshCount,
       glowLayersPerWeaponMesh: GLOW_LAYERS.length,
       glowLayering: 'beneath-weapon',
+      offensiveGlowRequests: [...offensiveGlowByOwner.values()].map(glow => ({ ...glow })),
     };
   }
 
@@ -318,6 +368,14 @@
   window.Combat.counterShieldAuthoredVisuals = {
     update: syncAuthoredCounterShieldVisuals,
     snapshot: authoredVisualSnapshot,
+  };
+  window.Combat.weaponChargeGlow = {
+    set: setOffensiveWeaponGlow,
+    clear: clearOffensiveWeaponGlow,
+    snapshot: () => ({
+      requests: [...offensiveGlowByOwner.values()].map(glow => ({ ...glow })),
+      silhouette: authoredVisualSnapshot(),
+    }),
   };
 
   function register() {
