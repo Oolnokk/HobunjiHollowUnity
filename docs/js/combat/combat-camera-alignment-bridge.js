@@ -268,6 +268,7 @@
           pitch,
           hopUnits,
           player.lungeHeightUnits,
+          hitTest?.pitchDistanceResistance || 0,
         ) || { distancePx, hopUnits, pitch };
 
         player.lungeDirX = dirX;
