@@ -156,8 +156,8 @@ assert.equal(oldCurl.beforePoints.length, 7, 'rotation/falloff export gets a BEF
 assert.equal(oldCurl.afterPoints.length, 7, 'rotation/falloff export gets an AFTER line');
 assert(!Object.hasOwn(oldCurl, 'weightFalloff'));
 
-assert.match(profilesSource, /\['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound'\]/,
-  'only the approved five species receive temporary shoulder-spline support');
+assert.match(profilesSource, /\['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk'\]/,
+  'only the approved six species receive shoulder-spline support');
 assert.match(profilesSource, /beforePoints:\s*GREHLR_BEFORE/);
 assert.match(profilesSource, /afterPoints:\s*GREHLR_AFTER/);
 assert.match(profilesSource, /bodyOnlyRig\(\)/, 'Voorg-Ass/Uumkao’ii can carry a body spline before head paint exists');
@@ -167,6 +167,8 @@ for (const id of ['shoulderPaintSource','shoulderEditBefore','shoulderEditAfter'
 }
 assert(shellSource.includes('BEFORE / Bind') && shellSource.includes('AFTER / Pose'));
 assert(shellSource.includes('animal-shoulder-spline.js?v=20260917spline10'));
+assert(shellSource.includes('animal-head-rig-authored.js?v=20260917uploads1'),
+  'rigger loads the same committed uploaded rig overrides as gameplay');
 assert(shellSource.includes('author-part7.js'));
 assert(shellSource.includes('author-part8.js'), 'rigger loads additive broad-pose authoring after precise/separator authoring');
 assert(shellSource.includes('author-part9.js'), 'rigger loads the direct two-point endpoint tool after the broad-pose layer');
