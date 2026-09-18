@@ -297,7 +297,7 @@
     if (!entity.exhaustion.active || entity.exhaustion.blackStamina < 100) return;
     entity.exhaustion.active = false;
     entity.exhaustion.blackStamina = 100;
-    entity.stamina = getEffectiveMax(entity, "stamina");
+    entity.stamina = 0; // Clearing black-Stamina debt re-enables ordinary Stamina recovery from empty instead of refilling the bar.
   }
 
   // Overspending Stamina never blocks the action — the excess becomes
