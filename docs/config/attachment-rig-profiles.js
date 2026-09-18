@@ -575,12 +575,17 @@
 
   const shoulderPetObservationFlipRuntime = { instrumentedStates: new WeakSet(), instrumentedCount: 0, activePetCount: 0, flipCount: 0, lastFlip: null };
   const shoulderGripPositionForObservation = pet => {
-    const kind = String(pet?.creatureKey || pet?.kind || '').trim(); // Used to resolve this shoulder pet's authored grip from the shared rig master.
-    const profiles = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures || {}; // Used only for the authored shoulderGrip lookup below.
-    const profile = profiles[kind] || profiles[kind.toLowerCase()] || null; // Supports the runtime's canonical lower-case creature keys without inventing a fallback anchor.
-    const position = profile?.anchors?.shoulderGrip?.position; // The grip point that updateShoulderPetMeshPin aligns onto shoulderPerch.
-    const x = Number(position?.x), y = Number(position?.y), z = Number(position?.z); // Used to reject incomplete rig data instead of silently center-pivoting.
-    return [x, y, z].every(Number.isFinite) ? { x, y, z } : null;
+    const kind = String(pet?.creatureKey || pet?.kind || '').trim(); // Used to resolve this shoulder pet's grip with the same kind/genotype inputs as game.js.
+    const genetics = window.CreatureGenetics; // Supplies the exact species alias and size-class scaling used by game.js creatureAttachmentAnchor().
+    const sizeScale = genetics?.creatureSizeScale?.(kind, pet?.genotype); // Matches the authoritative shoulder attachment's genotype-aware anchor scaling.
+    const profileKind = genetics?.SPECIES_ALIAS?.[kind] || kind; // Keeps variants on the same base rig profile as creatureAttachmentAnchor().
+    const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind] || null; // Canonical unscaled rig record selected by the runtime alias.
+    const position = profile?.anchors?.shoulderGrip?.position; // Unscaled authored grip; X/Y are scaled below exactly as game.js does.
+    const scaleX = Number(sizeScale?.x), scaleY = Number(sizeScale?.y); // Used only for the anchor-space scale, not for sprite-plane scale mutation.
+    const x = (Number(position?.x) || 0) * (Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1); // Mirrors creatureAttachmentAnchor(): X follows sizeScale.x.
+    const y = Number(position?.y) * (Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1); // Mirrors creatureAttachmentAnchor(): Y follows sizeScale.y.
+    const z = Number(position?.z) || 0; // Mirrors creatureAttachmentAnchor(): authored Z is intentionally not size-scaled.
+    return Number.isFinite(Number(position?.y)) && [x, y, z].every(Number.isFinite) ? { x, y, z } : null;
   };
   const shoulderObservationMeshes = avatar => {
     const meshes = []; // Visible front/back cards and split overlays that must flip as one pet.
@@ -737,6 +742,7 @@
     shoulderPetObservationFlipRuntime.activePetCount = activePetCount;
   };
   window.ShoulderPetObservationFlip = Object.freeze({
+    resolveGrip: pet => shoulderGripPositionForObservation(pet), // Debug/test seam for verifying the observation pivot matches game.js's genotype-scaled creatureAttachmentAnchor().
     getDebug: () => ({ activePetCount: shoulderPetObservationFlipRuntime.activePetCount, instrumentedCount: shoulderPetObservationFlipRuntime.instrumentedCount, flipCount: shoulderPetObservationFlipRuntime.flipCount, lastFlip: shoulderPetObservationFlipRuntime.lastFlip ? { ...shoulderPetObservationFlipRuntime.lastFlip } : null }),
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
