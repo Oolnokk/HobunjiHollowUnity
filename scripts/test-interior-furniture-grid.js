@@ -10,9 +10,12 @@ const helperSource = read('docs/js/interior-furniture-grid.js');
 const editorSource = read('docs/tools/building-interior-author/index.html');
 const wardrobeEditorSource = read('docs/js/building-interior-npc-wardrobe-editor.js');
 const indexSource = read('docs/index.html');
+const mapEditorSource = read('docs/tools/map-editor/index.html');
+const mapEditorSyncSource = read('docs/js/map-editor-interior-instance-sync.js');
 
 new Function(helperSource);
 new Function(wardrobeEditorSource);
+new Function(mapEditorSyncSource);
 for (const match of editorSource.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) {
   if (match[1].trim()) new Function(match[1]);
 }
@@ -116,6 +119,8 @@ assert.match(editorSource, /id="nonCollidingFurniture"/, 'interior editor expose
 assert.match(editorSource, /f\.gridW=nextW; f\.gridD=nextD/, 'grid-size control persists dimensions on the furniture record');
 assert.match(wardrobeEditorSource, /piece\.nonColliding = true;[\s\S]{0,180}InteriorFurnitureGrid/, 'walkable elevation automatically persists non-collision');
 assert.match(indexSource, /js\/interior-furniture-grid\.js\?v=20260917grid1/, 'game loads the furniture-grid runtime bridge');
+assert.match(mapEditorSource, /js\/interior-furniture-grid\.js\?v=20260917grid1/, 'main Map Editor loads the shared furniture-grid helper');
+assert.match(mapEditorSyncSource, /InteriorFurnitureGrid\?\.mergedColliders/, 'main Map Editor derives interior blockers from furniture grid footprints');
 
 const mapIndex = JSON.parse(read('docs/config/maps/index.json'));
 const footprintFor = itemKey => grid.DEFAULT_FOOTPRINTS[itemKey] || [1, 1];
@@ -129,8 +134,9 @@ function placement(piece) {
     gridD: Math.max(1, Math.round(Number(piece.gridD) || (quarter ? bw : bd))),
   };
 }
-function auditFurniture(furniture, label) {
+function auditFurniture(furniture, label, mapData) {
   const covered = new Set();
+  const floor = new Set((mapData.floor || []).map(tile => `${tile[0]},${tile[1]}`));
   for (const piece of furniture || []) {
     const info = placement(piece);
     const fineRot = Number(piece.rotY) || 0;
@@ -138,9 +144,14 @@ function auditFurniture(furniture, label) {
     assert.ok(!isQuarterFineRotation, `${label} ${piece.id || piece.itemKey}: exact 90-degree rotation must use gridRot, not fine rotY`);
     if (piece.walkableElevation) assert.strictEqual(piece.nonColliding, true, `${label} ${piece.id || piece.itemKey}: walkable elevation must be non-colliding`);
     if (piece.itemKey === 'rugFurniture') assert.strictEqual(piece.nonColliding, true, `${label} ${piece.id || piece.itemKey}: existing floor rugs must preserve walk-through behavior`);
-    if (piece.nonColliding || piece.walkableElevation) continue;
     for (let dc = 0; dc < info.gridW; dc++) {
-      for (let dr = 0; dr < info.gridD; dr++) covered.add(`${piece.col + dc},${piece.row + dr}`);
+      for (let dr = 0; dr < info.gridD; dr++) {
+        const col = Number(piece.col) + dc;
+        const row = Number(piece.row) + dr;
+        assert.ok(col >= 0 && row >= 0 && col < mapData.cols && row < mapData.rows, `${label} ${piece.id || piece.itemKey}: grid footprint must stay inside the map`);
+        assert.ok(floor.has(`${col},${row}`), `${label} ${piece.id || piece.itemKey}: grid footprint must stay on authored floor`);
+        if (!piece.nonColliding && !piece.walkableElevation) covered.add(`${col},${row}`);
+      }
     }
   }
   return covered;
@@ -150,12 +161,12 @@ let auditedMaps = 0;
 for (const entry of mapIndex.maps || []) {
   if (entry.category !== 'building_interior') continue;
   const mapData = JSON.parse(read('docs/' + entry.file));
-  const covered = auditFurniture(mapData.furniture || [], entry.id);
+  const covered = auditFurniture(mapData.furniture || [], entry.id, mapData);
   for (const tile of mapData.colliders || []) {
     assert.ok(!covered.has(`${tile[0]},${tile[1]}`), `${entry.id}: manual collider ${tile} redundantly overlaps colliding furniture`);
   }
   for (const layout of mapData.layouts || []) {
-    const layoutCovered = auditFurniture(layout.furniture || [], `${entry.id}/${layout.id}`);
+    const layoutCovered = auditFurniture(layout.furniture || [], `${entry.id}/${layout.id}`, mapData);
     if (Object.prototype.hasOwnProperty.call(layout, 'colliders')) {
       for (const tile of layout.colliders || []) {
         assert.ok(!layoutCovered.has(`${tile[0]},${tile[1]}`), `${entry.id}/${layout.id}: redundant manual collider ${tile}`);
