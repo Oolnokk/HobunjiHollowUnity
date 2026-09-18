@@ -697,9 +697,17 @@
       set: nextPhase => {
         if (phase === 'wait' && nextPhase === 'look') {
           const flipped = !pet.__hobunjiShoulderObservationFlipped;
-          applyShoulderPetObservationMirror(pet, flipped);
+          const applied = applyShoulderPetObservationMirror(pet, flipped); // Records whether a live face mesh was actually mirrored around its grip pivot.
+          const pivotDebug = pet.avatarRef?.__hobunjiShoulderObservationPivotDebug || null; // Included in the existing mobile-readable observation diagnostic.
           shoulderPetObservationFlipRuntime.flipCount += 1;
-          shoulderPetObservationFlipRuntime.lastFlip = { creatureKey: pet.creatureKey || pet.kind || 'unknown', flipped, atMs: typeof performance !== 'undefined' ? performance.now() : Date.now() };
+          shoulderPetObservationFlipRuntime.lastFlip = {
+            creatureKey: pet.creatureKey || pet.kind || 'unknown',
+            flipped,
+            applied,
+            pivotMode: pivotDebug?.mode || null,
+            pivotError: Number.isFinite(pivotDebug?.maxError) ? pivotDebug.maxError : null,
+            atMs: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+          };
         }
         phase = nextPhase;
       },
@@ -732,8 +740,10 @@
     getDebug: () => ({ activePetCount: shoulderPetObservationFlipRuntime.activePetCount, instrumentedCount: shoulderPetObservationFlipRuntime.instrumentedCount, flipCount: shoulderPetObservationFlipRuntime.flipCount, lastFlip: shoulderPetObservationFlipRuntime.lastFlip ? { ...shoulderPetObservationFlipRuntime.lastFlip } : null }),
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
-      const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none';
-      return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last}`;
+      const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none'; // Existing compact flip summary.
+      const pivot = d.lastFlip?.pivotMode || 'none'; // Shows whether the authored shoulderGrip pivot, rather than center-origin scaling, owned the last flip.
+      const error = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Residual root-local grip mismatch after mirror compensation.
+      return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last} pivot=${pivot} gripError=${error}`;
     },
     scanNow: scanShoulderPetsForObservationFlip,
   });
