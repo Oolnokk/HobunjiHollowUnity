@@ -37,7 +37,9 @@ assert(cfg.behavior.fullSimulationReleaseRadiusTiles > cfg.behavior.fullSimulati
 assert.equal(cfg.behavior.offChunkTickSeconds, 4);
 assert.equal(cfg.reputation.initialFavor, -3);
 assert.equal(cfg.reputation.minimumFavor, -5);
-assert.equal(cfg.reputation.killPenalty, -1);
+assert.equal(cfg.reputation.killPenalty, 0, 'legacy blanket kill penalty stays disabled in favor of context-specific penalties');
+assert.equal(cfg.reputation.selfDefenseKillPenalty, -1);
+assert.equal(cfg.reputation.murderKillPenalty, -3);
 assert.deepEqual(smallLocale.placement.allowedZones, ZONES);
 assert.equal(smallLocale.placement.maxInstances, 4);
 assert.equal(smallLocale.meta.namedNpcs, false);
