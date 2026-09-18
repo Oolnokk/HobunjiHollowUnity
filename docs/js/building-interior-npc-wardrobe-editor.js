@@ -101,6 +101,7 @@
       row: Number(piece.row),
       npcWardrobeFor: piece[METADATA_KEY] || null,
       walkableElevation: !!piece[WALKABLE_ELEVATION_KEY],
+      nonColliding: !!piece.nonColliding,
     } : null;
   }
 
@@ -125,7 +126,7 @@
     }
     const owner = piece[METADATA_KEY];
     const elevationText = piece[WALKABLE_ELEVATION_KEY]
-      ? ' Walkable elevation is ON; runtime uses a box calculated from this instance’s complete rendered geometry.'
+      ? ' Walkable elevation is ON; runtime uses a box calculated from this instance’s complete rendered geometry and tile collision is forced off.'
       : ' Walkable elevation is off.';
     setStatus((owner
       ? `${ownerLabel(owner)} uses this specific ${piece.itemKey || 'furniture'} instance as their wardrobe.`
@@ -181,14 +182,16 @@
       return false;
     }
     const enabled = !!walkableCheckbox?.checked; // Used as the instance-level switch consumed by the runtime support-surface registry.
-    if (enabled) piece[WALKABLE_ELEVATION_KEY] = true;
-    else delete piece[WALKABLE_ELEVATION_KEY];
+    if (enabled) {
+      piece[WALKABLE_ELEVATION_KEY] = true;
+      piece.nonColliding = true; // Used by InteriorFurnitureGrid so a walkable support surface never also blocks its occupied floor tiles.
+    } else delete piece[WALKABLE_ELEVATION_KEY];
     try {
       importInterior(interior, 'walkable-elevation-edit.json');
       lastSelection = selectionSnapshot(piece);
       setStatus(enabled
-        ? 'Walkable elevation enabled. Runtime will calculate a support box from this furniture instance’s complete rendered geometry.'
-        : 'Walkable elevation disabled for this furniture instance.', 'ok');
+        ? 'Walkable elevation enabled. Runtime will calculate a support box from this furniture instance’s complete rendered geometry, and tile collision is disabled automatically.'
+        : 'Walkable elevation disabled for this furniture instance. Its non-colliding setting is left on until you change it in Furniture placement.', 'ok');
       return true;
     } catch (error) {
       setStatus(error.message, 'error');
