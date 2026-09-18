@@ -137,7 +137,8 @@ assert.match(rangedWeaponsSource, /plane\.scale\.y = pendingAspect/, 'Thrown wea
 assert.match(rangedWeaponsSource, /setHeldRangedVisible\?\.\(action\.itemKey, false\)/, 'Held weapon must hide on the projectile-spawn frame.');
 assert.match(rangedWeaponsSource, /restoreHeldThrownWeapon\(action\)/, 'Held weapon must return only when the release action completes back at Neutral.');
 assert.match(rangedWeaponsSource, /p\.def\.damage \* falloff \* \(Number\.isFinite\(p\.damageScale\)/, 'Thrown projectile raw damage must multiply by released visible windup percentage.');
-assert.match(rangedWeaponsSource, /spinPivot\.rotation\.y = p\.spinRad/, 'Spinning thrown weapons must rotate on a dedicated sprite-normal pivot.');
+assert.match(rangedWeaponsSource, /spinPivot\.rotation\.x = p\.spinRad/, 'Spinning thrown weapons must rotate on local X, matching the Combat Editor tool-pitch axis.');
+assert.doesNotMatch(rangedWeaponsSource, /spinPivot\.rotation\.y = p\.spinRad/, 'Thrown weapon spin must not use local Y/yaw.');
 
 assert.ok(toolDefs.kylie_copper.slots.includes('ranged'), 'Kylie should be equippable in the ranged slot.');
 assert.ok(toolDefs.bshuakauitl_copper.slots.includes('ranged'), "B'shuakauitl should be equippable in the ranged slot.");
