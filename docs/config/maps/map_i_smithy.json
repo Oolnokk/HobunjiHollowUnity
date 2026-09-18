@@ -4,17 +4,17 @@
     {
       "id": "fmsgb7bbczzgy",
       "itemKey": "counterFurniture",
-      "col": 12,
+      "col": 13,
       "row": 8,
       "rotY": 0,
-      "postX": 0.411,
+      "postX": -0.089,
       "postY": 0,
       "postZ": 0,
-      "postSX": 0.8232,
+      "postSX": 1.029,
       "postSY": 1,
       "postSZ": 1,
       "gridRot": 0,
-      "gridW": 5,
+      "gridW": 4,
       "gridD": 1
     },
     {
