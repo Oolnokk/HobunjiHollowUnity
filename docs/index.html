@@ -215,7 +215,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260821alchemy1"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260915enemydodge1"></script>
+  <script src="js/combat/combat-core.js?v=20260917charge1"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
@@ -230,17 +230,17 @@
   <script src="js/combat/combat-combo.js?v=20260915enemydodge1"></script>
   <script src="js/combat/combat-quickattacks.js?v=20260915enemydodge1"></script>
   <script src="js/combat/quick-attack-bonus-indicator.js?v=20260914followfix1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20260915enemydodge1"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20260917charge1"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20260915enemydodge1"></script>
-  <script src="js/combat/combat-flurry.js?v=20260915enemydodge1"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20260917charge1"></script>
+  <script src="js/combat/combat-flurry.js?v=20260917charge1"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20260827treecover2"></script>
   <script src="js/combat/ranged-weapons.js?v=20260909perspectivepoint1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20260916perf1"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20260916perf1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20260917charge1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -248,7 +248,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20260914transienttarget1"></script>
+  <script src="js/combat/combat-bandit.js?v=20260917charge1"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20260915a"></script>
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
@@ -263,7 +263,7 @@
   <script src="js/bounty-board.js?v=20260831spearheadexisting1"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20260918shoulderparity1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20260917charge1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2445,7 +2445,7 @@
   <!-- Generic poll-until-ready/timeout helper; game.js's
        waitForBuildingSceneReady calls into it directly. -->
   <script src="js/scene-ready-poller.js?v=20260917a"></script>
-  <script src="game.js?v=20260916survivaltent1"></script>
+  <script src="game.js?v=20260917charge1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20260915perf1"></script>
   <script>
