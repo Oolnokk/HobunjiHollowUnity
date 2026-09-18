@@ -1,0 +1,199 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "id": "map_i_carpenters_F2_nashka",
+  "name": "Nashka Khibu's Room",
+  "cols": 20,
+  "rows": 20,
+  "furniture": [
+    {
+      "id": "f_map_i_carpenters_F2_nashka_nightstand",
+      "itemKey": "nightstandFurniture",
+      "col": 6,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_map_i_carpenters_F2_nashka_bed",
+      "itemKey": "basicBedFurniture",
+      "col": 7,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
+    },
+    {
+      "id": "f_map_i_carpenters_F2_nashka_wardrobe",
+      "itemKey": "wardrobeFurniture",
+      "col": 10,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "nashka_khibu"
+    }
+  ],
+  "floor": [
+    [
+      6,
+      6
+    ],
+    [
+      7,
+      6
+    ],
+    [
+      8,
+      6
+    ],
+    [
+      9,
+      6
+    ],
+    [
+      10,
+      6
+    ],
+    [
+      11,
+      6
+    ],
+    [
+      12,
+      6
+    ],
+    [
+      6,
+      7
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      8,
+      7
+    ],
+    [
+      9,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      11,
+      7
+    ],
+    [
+      12,
+      7
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      10,
+      8
+    ],
+    [
+      11,
+      8
+    ],
+    [
+      12,
+      8
+    ],
+    [
+      6,
+      9
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      9,
+      9
+    ],
+    [
+      10,
+      9
+    ],
+    [
+      11,
+      9
+    ],
+    [
+      12,
+      9
+    ],
+    [
+      9,
+      5
+    ]
+  ],
+  "exits": [
+    {
+      "id": "exit_map_i_carpenters_F2_nashka_hall",
+      "label": "Door to Hall",
+      "tiles": [
+        [
+          9,
+          5
+        ]
+      ],
+      "targetMap": "map_i_carpenters_F2",
+      "spawnCol": 9,
+      "spawnRow": 7
+    }
+  ],
+  "colliders": [],
+  "vendorZones": [],
+  "routes": [],
+  "npcStations": [
+    {
+      "id": "station_car_home_nashka_bed",
+      "label": "Nashka's Bed",
+      "col": 7,
+      "row": 6,
+      "rotY": 0,
+      "pose": "lie",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    }
+  ],
+  "npcPaths": []
+}
