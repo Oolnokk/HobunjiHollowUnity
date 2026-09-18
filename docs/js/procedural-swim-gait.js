@@ -295,8 +295,9 @@
       const previousUpdate = handle.update.bind(handle); // Used to run ordinary locomotion first each frame so its neutral pose remains authoritative.
       handle.update = function proceduralSwimPlayerLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
         const player = window.Combat?.deps?.player; // Used as the authoritative logical position/prone state for swim detection and direction.
-        const swimming = !!player && !player.prone && !seatedPose && runtimeWaterCheck(player); // Used to switch ground gait off only during real swim-water locomotion.
+        const swimming = !!player && !player.prone && !seatedPose && !suppressed && runtimeWaterCheck(player); // Used to switch ground gait off only during real, unsuppressed swim-water locomotion.
         runtimeState.swimming = swimming;
+        if (!swimming) runtimeState.hasDirection = false; // Prevents a stale prior swim heading from snapping the body when water is re-entered before movement.
         updateResolvedMovement(player, speedWorldUnitsPerSecond);
         const effectiveSuppressed = !!suppressed || swimming; // Prevents ground-contact walk/run solving underneath the non-grounded swim kick.
         const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose);
@@ -473,7 +474,7 @@
         const moveDx = Math.cos(directionRad); // Used by the exact runtime facing conversion for editor preview yaw.
         const moveDy = Math.sin(directionRad); // Used by the exact runtime facing conversion for editor preview yaw.
         const desiredYaw = facingYawFromMovement(moveDx, moveDy); // Used to rotate the whole preview body toward the authored movement direction.
-        if (model?.rotation && desiredYaw != null) model.rotation.y = baseModelYaw + desiredYaw;
+        if (model?.rotation && desiredYaw != null) model.rotation.y = desiredYaw; // Matches runtime's absolute player-facing yaw convention instead of offsetting it by the editor's prior preview yaw.
         if (controller) controller.update(dt, editorState.speedStrength, tuning, false);
         editorState.phase = controller?.state?.phase || 0;
         editorState.blend = controller?.state?.blend || 0;
