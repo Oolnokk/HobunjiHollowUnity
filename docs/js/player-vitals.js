@@ -41,6 +41,7 @@
   }
 
   function updatePlayerVitals(dt) {
+    if (deps.isPlayerInWater?.()) window.KnockbackCollisionImpact?.extinguishInWater?.(deps.player); // Entering standing/permanent water clears Burning before this frame's resource tick can deal another burn tick.
     // Health/Stamina regen, Exhausted/black-stamina recovery, and every
     // affliction's own tick (bleed/poison/congealed/recovery/puke) —
     // see docs/js/combat/resource-system.js. Passing the existing
