@@ -278,7 +278,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20260821alchemy1"></script>
+  <script src="js/alchemy-system.js?v=20260918alchemyrarity2"></script>
   <script src="js/alchemy-flasks.js?v=20260830shoulderaim1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -358,7 +358,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
-  <script src="js/reagent-plants.js?v=20260811a"></script>
+  <script src="js/reagent-plants.js?v=20260918habitats1"></script>
   <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
@@ -1390,7 +1390,7 @@
            interact prompt, same "openMenu-only" pattern as Supplies/Shipping) ── -->
       <div class="mp-pane" id="mpAlchemy">
         <div class="menu-section alchemy-reagents-section">
-          <div class="menu-section-title">Reagents — choose 2–3 to test for a reaction</div>
+          <div class="menu-section-title">Reagents — choose exactly 3 to test for a reaction</div>
           <div id="alchemyReagentList" class="supply-list"></div>
         </div>
         <div class="menu-section alchemy-cauldron-section">
