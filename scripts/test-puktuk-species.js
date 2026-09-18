@@ -11,12 +11,18 @@ const loot = JSON.parse(read('docs/config/loot/loot-pools.json')); // Confirms k
 const cookingSource = read('docs/js/cooking-data.js'); // Confirms the existing Puktuk wool item is already categorized as Heavy.
 const wildlifeSource = read('docs/js/wildlife-spawn.js'); // Confirms exterior den spawning prefers explicit den occupants without replacing general ecology.
 const cavernSource = read('docs/js/cavern-generator.js'); // Confirms cavern residents and Den-Mothers consume that same explicit den pool.
+const indexSource = read('docs/index.html'); // Verifies deployed script URLs invalidate caches whenever Puktuk runtime support changes.
 
 assert.match(geneticsSource, /puktuk:\s*\['belly', 'foxtail'\]/, 'Puktuk exposes the belly and foxtail pattern layers');
 assert.match(geneticsSource, /puktuk:\s*new Set\(\['belly'\]\)/, 'Puktuk belly is authored as always-present');
 assert.match(geneticsSource, /const PUKTUK_FOXTAIL_CHANCE = 0\.08/, 'Puktuk foxtail uses the rare 8% fresh-roll rate');
 assert.match(geneticsSource, /const PUKTUK_VISUAL_SCALE = 0\.75/, 'Puktuk applies a species-only 75% visual scale to every borrowed size class');
 assert.match(rendererSource, /spec\.fullBaseRecolor === true/, 'Shared compositor consumes species opt-in for full base recoloring');
+assert.match(geneticsSource, /eyes:\s*\{\s*open:\s*'assets\/creaturesprites\/puktuk_eye\.png',\s*blink:\s*'assets\/creaturesprites\/puktuk_blink\.png'\s*\}/, 'Puktuk registers its open-eye and blink overlays in the genotype compositor');
+assert.match(indexSource, /js\/creature-genetics\.js\?v=20260918puktukrender1/, 'Deployed page cache-busts the Puktuk species and eye registration');
+assert.match(indexSource, /js\/creature-genetics-render\.js\?v=20260918puktukrender1/, 'Deployed page cache-busts full-base Puktuk recoloring support');
+assert.match(indexSource, /js\/farm-animals\.js\?v=20260918puktukfarm1/, 'Deployed page cache-busts Puktuk farm factory/runtime support');
+assert.match(indexSource, /js\/wildlife-spawn\.js\?v=20260918puktukwildlife1/, 'Deployed page cache-busts current Puktuk wildlife registration');
 assert.match(geneticsSource, /puktuk:\s*'gar-wolf'/, 'Puktuk reuses Gar-wolf size calibration without a render alias');
 assert.match(geneticsSource, /PUKTUK_WESTERN_ZONE_ID = 'map_western_slope'/, 'Puktuk targets the Western Incline/Slope zone');
 assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*puktuk_run2\.png/, 'Puktuk base animation sprites are registered');
