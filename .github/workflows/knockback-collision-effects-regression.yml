@@ -1,0 +1,48 @@
+name: Knockback Collision Effects Regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/config/config.js'
+      - 'docs/config/scratchbones-config.js'
+      - 'docs/config/furniture-authored/candleTable.json'
+      - 'docs/config/furniture-authored/campfire.json'
+      - 'docs/config/furniture-authored/hearth.json'
+      - 'docs/js/combat/resource-system.js'
+      - 'docs/js/combat/knockback-collision-impact.js'
+      - 'docs/js/combat/combat-enemy-dodge.js'
+      - 'docs/js/player-vitals.js'
+      - 'docs/js/pixel-probe.js'
+      - 'docs/tools/furniture-avatar-author/index.html'
+      - 'scripts/test-knockback-collision-effects.js'
+      - '.github/workflows/knockback-collision-effects-regression.yml'
+  push:
+    paths:
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/config/config.js'
+      - 'docs/config/scratchbones-config.js'
+      - 'docs/config/furniture-authored/candleTable.json'
+      - 'docs/config/furniture-authored/campfire.json'
+      - 'docs/config/furniture-authored/hearth.json'
+      - 'docs/js/combat/resource-system.js'
+      - 'docs/js/combat/knockback-collision-impact.js'
+      - 'docs/js/combat/combat-enemy-dodge.js'
+      - 'docs/js/player-vitals.js'
+      - 'docs/js/pixel-probe.js'
+      - 'docs/tools/furniture-avatar-author/index.html'
+      - 'scripts/test-knockback-collision-effects.js'
+      - '.github/workflows/knockback-collision-effects-regression.yml'
+
+jobs:
+  knockback-collision-effects:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run knockback collision regression
+        run: node scripts/test-knockback-collision-effects.js
