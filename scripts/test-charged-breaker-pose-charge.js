@@ -48,12 +48,36 @@ assert.match(breakerSource, /beginStagedAction\(\{[\s\S]{0,500}windupS: strikeS,
   'released Charged Breaker waits through its visible strike/lunge arc before resolving impact');
 assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,
   'Counter Shield owns the shared weapon-silhouette glow service');
+assert.match(counterSource, /source\.add\(mesh\)[\s\S]{0,500}mesh\.position\.set\(0, 0, 0\)[\s\S]{0,120}mesh\.quaternion\.identity\(\)/,
+  'weapon glow is structurally parented to the real weapon mesh with identity local transform');
+assert.doesNotMatch(counterSource, /mesh\.position\.copy\(source\.position\)|mesh\.quaternion\.copy\(source\.quaternion\)/,
+  'weapon glow no longer samples/copies a potentially stale weapon transform');
+assert.match(counterSource, /vUv\.y \* 15\.0 - flowTime \* flowSpeed/,
+  'offensive glow flows from weapon base toward tip instead of pulsing outward');
+assert.match(counterSource, /kind: 'over', tier: 1[\s\S]{0,600}kind: 'over', tier: 3/,
+  'shared glow owns six above-weapon layers grouped into three Charged Breaker milestone tiers');
+assert.match(counterSource, /TRAIL_MIN_ANGULAR_SPEED[\s\S]{0,1800}weapon-charge-motion-trail/,
+  'weapon-shaped motion trails are spawned only after real swing-speed thresholds are exceeded');
+assert.match(counterSource, /if \(offensiveGlowByOwner\.size \|\| externalWeaponGlowActive \|\| cleanupVisualsNextTick\)/,
+  'expensive glow/trail work is gated off during idle gameplay');
 assert.match(counterSource, /visual\.defensive[\s\S]{0,900}visual\.offensive[\s\S]{0,1200}OFFENSIVE_CHARGE_COLOR/,
   'the authored silhouette adapter also covers bandit Charged Breaker');
 assert.match(enemyTelegraphSource, /if \(visual\.fireGroup\) visual\.fireGroup\.visible = false/,
   'bandit Charged Breaker suppresses the legacy offensive fire-particle group');
 assert.match(flurrySource, /weaponChargeGlow\?\.set\?\.\('acceleratingFlurry'/,
   'Accelerating Flurry uses the shared Counter-Shield-style weapon glow');
+assert.match(flurrySource, /heldSeconds \/ GLOW_FULL_S/,
+  'Accelerating Flurry glow growth remains linear in hold duration');
+assert.match(flurrySource, /overlayMode: 'linear'[\s\S]{0,180}overlayProgress: intensity[\s\S]{0,180}motionTrail: true/,
+  'Accelerating Flurry continuously raises transparent over-layers and enables swing trails');
+assert.match(breakerSource, /thresholds = \[MIN_READY_POSE, 0\.50, 0\.999\]/,
+  'Charged Breaker flare milestones occur at readiness, 50%, and full pose charge');
+assert.match(breakerSource, /glowFlareQueue\.push\(i \+ 1\)/,
+  'close Charged Breaker milestones are queued so the readiness and 50% flares cannot collapse into one flash');
+assert.match(breakerSource, /overlayMode: 'stepped'[\s\S]{0,220}overlayLevel: milestone\.overlayLevel[\s\S]{0,220}motionTrail: true/,
+  'Charged Breaker turns on two over-layers per milestone in visible steps and enables swing trails');
+assert.match(enemyTelegraphSource, /anyWeaponGlowActive !== lastExternalWeaponGlowActive/,
+  'enemy heavy presentation signals the glow renderer only on active/inactive transitions');
 assert.match(stanceSource, /combatVisualState\.poseScale = requestedPoseScale/,
   'partial held release records the same pose amplitude in the shared stance runtime');
 assert.match(stanceSource, /runtimeState\.combatPoseScale = visual\?\.poseScale \?\? 1/,
