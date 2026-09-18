@@ -574,27 +574,16 @@
   }
 
   const shoulderPetObservationFlipRuntime = { instrumentedStates: new WeakSet(), instrumentedCount: 0, activePetCount: 0, flipCount: 0, lastFlip: null };
-  const shoulderObservationWorldPivot = avatar => {
-    const attachment = avatar?.group?.userData?.hobunjiShoulderPetAttachment; // Final authoritative grip/perch solve written by game.js after the player transform settles each frame.
-    const raw = Array.isArray(attachment?.authoredPerchWorldPosition)
-      ? attachment.authoredPerchWorldPosition
-      : (Array.isArray(attachment?.alignedGripWorldPosition) ? attachment.alignedGripWorldPosition : null); // Perch is preferred; aligned grip is the same solved point and remains a safe diagnostic fallback.
-    if (!raw || raw.length < 3) return null;
-    const x = Number(raw[0]), y = Number(raw[1]), z = Number(raw[2]); // Used as the exact world-space flip origin, avoiding assumptions about creature/plane coordinate axes.
-    return [x, y, z].every(Number.isFinite)
-      ? { x, y, z, source: Array.isArray(attachment?.authoredPerchWorldPosition) ? 'shoulderPerch-world' : 'alignedGrip-world' }
-      : null;
-  };
   const shoulderObservationMeshes = avatar => {
-    const meshes = []; // Visible front/back cards and split overlays that must flip as one pet.
-    const seen = new Set(); // Prevents avatarRef fallbacks from duplicating meshes found through group traversal.
+    const meshes = []; // Live animal face cards and split overlays transformed together by the shoulder-grip pivot solve.
+    const seen = new Set(); // Prevents fallback references from duplicating meshes already discovered through the live hierarchy.
     const add = plane => {
       if (!plane?.scale || !plane?.position || !plane?.parent || seen.has(plane)) return;
       seen.add(plane);
       meshes.push(plane);
     };
     avatar?.group?.traverse?.(node => {
-      const face = node?.userData?.hobunjiPlaneFace; // Marks live animal face meshes, including head-rig replacements.
+      const face = node?.userData?.hobunjiPlaneFace; // Identifies head-rig replacements as well as the original animal cards.
       if (face === 'front' || face === 'back' || node?.userData?.hobunjiShoulderSplitOverlay) add(node);
     });
     if (!meshes.length) {
@@ -603,106 +592,85 @@
     }
     return meshes;
   };
-  const mirrorShoulderObservationPlaneAroundWorldPivot = (avatar, plane, worldPivot, flipped) => {
-    const root = avatar?.group; // Updated before local/world conversions so nested rig and split-overlay parents share one current transform chain.
-    if (!root || !plane?.parent || !worldPivot) return null;
+  const canonicalShoulderObservationPlaneState = plane => {
+    if (!plane?.position || !plane?.scale) return null;
     plane.userData = plane.userData || {};
-    const magnitude = Math.abs(Number(plane.scale.x)); // Preserves the face's canonical local X scale while only changing mirror parity.
-    const baseScaleX = Number.isFinite(magnitude) && magnitude > 0 ? magnitude : 1; // Used for both bind-state capture and the requested mirror sign.
-    let state = plane.userData.hobunjiShoulderGripMirrorPivot; // Cached mesh-local point that occupied the solved shoulder grip/perch position before mirroring.
+    let state = plane.userData.hobunjiShoulderGripMirrorPivot; // Canonical local transform retained so every frame starts from the same unmirrored authored card placement.
     if (!state) {
-      const basePosition = plane.position.clone(); // Restored before every flip so repeated toggles cannot accumulate translation drift.
-      plane.matrixAutoUpdate = true;
-      plane.position.copy(basePosition);
-      plane.scale.x = baseScaleX;
-      plane.updateMatrix?.();
-      root.updateMatrixWorld?.(true);
-      plane.updateMatrixWorld?.(true);
-      const pivotWorldVector = plane.position.clone().set(worldPivot.x, worldPivot.y, worldPivot.z); // Reuses the live Vector3 implementation without introducing another THREE dependency here.
-      const pivotLocal = plane.worldToLocal(pivotWorldVector.clone()); // Captures the exact visible mesh-local point currently sitting on shoulderPerch.
+      const magnitude = Math.abs(Number(plane.scale.x)); // Canonical face X scale before observation mirroring.
       state = {
-        basePosition: [basePosition.x, basePosition.y, basePosition.z],
-        baseScaleX, // Canonical positive face scale restored when the pet leaves shoulder mode or a later scale sync resets the mesh.
-        pivotLocal: [pivotLocal.x, pivotLocal.y, pivotLocal.z],
+        basePosition: [plane.position.x, plane.position.y, plane.position.z],
+        baseScaleX: Number.isFinite(magnitude) && magnitude > 0 ? magnitude : 1,
         lastError: null,
       };
       plane.userData.hobunjiShoulderGripMirrorPivot = state;
     }
-
-    const sign = flipped ? -1 : 1; // Observation parity changes only the horizontal mirror, never the attachment/root transform.
+    return state;
+  };
+  const solveShoulderObservationPlaneAtPivot = (plane, worldPivot, flipped) => {
+    const state = canonicalShoulderObservationPlaneState(plane); // Supplies the unmirrored transform used as the mathematical source state.
+    if (!state || !worldPivot || !plane?.parent) return null;
     plane.matrixAutoUpdate = true;
     plane.position.set(state.basePosition[0], state.basePosition[1], state.basePosition[2]);
-    plane.scale.x = state.baseScaleX * sign;
+    plane.scale.x = state.baseScaleX;
     plane.updateMatrix?.();
-    root.updateMatrixWorld?.(true);
+    plane.parent.updateMatrixWorld?.(true);
     plane.updateMatrixWorld?.(true);
 
-    const pivotLocal = plane.position.clone().set(state.pivotLocal[0], state.pivotLocal[1], state.pivotLocal[2]); // Reuses the exact mesh-local grip point after the X-scale sign changes.
-    const desiredWorld = plane.position.clone().set(worldPivot.x, worldPivot.y, worldPivot.z); // Current authoritative shoulderPerch/grip point; may move with the player between scans.
-    const mirroredPivotWorld = plane.localToWorld(pivotLocal.clone()); // Where a center-origin mirror would move that grip point without compensation.
-    const desiredParent = plane.parent.worldToLocal(desiredWorld.clone()); // Target expressed in the face mesh parent's coordinates.
-    const currentParent = plane.parent.worldToLocal(mirroredPivotWorld.clone()); // Mirrored grip expressed in the same parent frame.
-    plane.position.add(desiredParent.sub(currentParent)); // Cancels only the center-origin displacement, making the solved grip/perch point the effective mirror origin.
+    const desiredWorld = plane.position.clone().set(worldPivot.x, worldPivot.y, worldPivot.z); // Exact current shoulderPerch point supplied by game.js's authoritative attachment solve.
+    const pivotLocal = plane.worldToLocal(desiredWorld.clone()); // Grip expressed in the canonical unmirrored card's own local frame before any flip is applied.
+    const sign = flipped ? -1 : 1; // Logical observation direction determines only the X scale parity.
+    const nextScaleX = state.baseScaleX * sign; // New face scale used in the closed-form pivot-preserving transform below.
+    plane.scale.x = nextScaleX;
+    if (flipped) {
+      const localTranslation = plane.position.clone().set(
+        (state.baseScaleX - nextScaleX) * pivotLocal.x,
+        0,
+        0,
+      ); // For q=t+RSp, t'=t+R(S-S')p keeps the grip point q invariant while X scale changes sign.
+      localTranslation.applyQuaternion(plane.quaternion);
+      plane.position.add(localTranslation); // Direct pivot transform: no center-flip is ever rendered and no world-space correction pass is needed.
+    }
     plane.updateMatrix?.();
-    root.updateMatrixWorld?.(true);
+    plane.parent.updateMatrixWorld?.(true);
     plane.updateMatrixWorld?.(true);
 
-    const finalPivotWorld = plane.localToWorld(pivotLocal.clone()); // Debug measurement verifies the visible grip point did not move in world space.
-    state.lastError = finalPivotWorld.distanceTo(desiredWorld);
+    const solvedWorld = plane.localToWorld(pivotLocal.clone()); // Diagnostic-only verification of the direct local transform; never feeds back into placement.
+    state.lastError = solvedWorld.distanceTo(desiredWorld);
     return state.lastError;
   };
   const restoreShoulderObservationPlane = plane => {
-    const state = plane?.userData?.hobunjiShoulderGripMirrorPivot; // Captured canonical transform from the first authoritative shoulder-pivot solve.
-    if (!state || !plane?.position || !plane?.scale) return false;
+    const state = canonicalShoulderObservationPlaneState(plane); // Used when a pet leaves shoulder mode so no mirrored transform leaks into ordinary companion rendering.
+    if (!state) return false;
     plane.matrixAutoUpdate = true;
     plane.position.set(state.basePosition[0], state.basePosition[1], state.basePosition[2]);
-    plane.scale.x = Math.abs(Number(state.baseScaleX)) || Math.abs(Number(plane.scale.x)) || 1; // Role removal must never strand a negative observation mirror.
+    plane.scale.x = state.baseScaleX;
     plane.updateMatrix?.();
     plane.matrixWorldNeedsUpdate = true;
     return true;
   };
-  const applyShoulderPetObservationMirror = (pet, flipped) => {
-    if (!pet) return false;
-    pet.__hobunjiShoulderObservationFlipped = !!flipped;
-    const avatar = pet.avatarRef;
-    if (!avatar?.group) return false;
-    const worldPivot = shoulderObservationWorldPivot(avatar); // Uses game.js's final grip==perch solve instead of reconstructing a pivot from raw rig coordinates.
-    if (!worldPivot) {
-      if (!flipped) {
-        const restored = shoulderObservationMeshes(avatar).filter(restoreShoulderObservationPlane).length; // Cleanup is safe without a live perch because it restores the cached canonical transform instead of inventing a new pivot.
-        avatar.__hobunjiShoulderObservationPivotDebug = { mode: 'canonical-restore-without-live-pin', mirrored: false, meshCount: restored, maxError: null };
-        return restored > 0;
-      }
-      avatar.__hobunjiShoulderObservationPivotDebug = { mode: 'waiting-for-authoritative-shoulder-pin', mirrored: true, meshCount: 0, maxError: null };
-      return false; // Never fall back to a center-origin mirror while the authoritative shoulder pin is unavailable.
-    }
-    avatar.__hobunjiShoulderObservationFlipped = !!flipped;
-    const applyMirror = () => {
-      const currentWorldPivot = shoulderObservationWorldPivot(avatar) || worldPivot; // Follows the latest player/perch position while keeping the cached mesh-local grip point stable.
-      const errors = shoulderObservationMeshes(avatar)
-        .map(plane => mirrorShoulderObservationPlaneAroundWorldPivot(avatar, plane, currentWorldPivot, flipped))
-        .filter(Number.isFinite); // Used to summarize all visible face/split layers in the mobile-visible debug state.
-      const maxError = errors.length ? Math.max(...errors) : null; // Largest post-correction world-space grip mismatch; should stay at floating-point noise.
-      avatar.__hobunjiShoulderObservationPivotDebug = {
-        mode: 'shoulderGrip@shoulderPerch-world',
-        pivotSource: currentWorldPivot.source,
-        mirrored: !!flipped,
-        meshCount: errors.length,
-        worldPivot: [currentWorldPivot.x, currentWorldPivot.y, currentWorldPivot.z],
-        maxError,
-      };
-      return errors.length > 0;
+  const applyShoulderPetObservationAtPinnedPerch = (pet, worldPivot) => {
+    const avatar = pet?.avatarRef;
+    if (!avatar?.group || !worldPivot) return false;
+    const flipped = !!pet.__hobunjiShoulderObservationFlipped; // Current logical observation parity is consumed only inside the final shoulder-pin solve.
+    const errors = shoulderObservationMeshes(avatar)
+      .map(plane => solveShoulderObservationPlaneAtPivot(plane, worldPivot, flipped))
+      .filter(Number.isFinite);
+    const maxError = errors.length ? Math.max(...errors) : null; // Direct-solve residual should stay at floating-point noise without any corrective translation.
+    avatar.__hobunjiShoulderObservationPivotDebug = {
+      mode: 'direct-local-grip-pivot',
+      mirrored: flipped,
+      meshCount: errors.length,
+      worldPivot: [Number(worldPivot.x) || 0, Number(worldPivot.y) || 0, Number(worldPivot.z) || 0],
+      maxError,
     };
-    if (!avatar.__hobunjiShoulderObservationScaleSyncWrapped && typeof avatar.syncMirroredPlaneScale === 'function') {
-      const originalSync = avatar.syncMirroredPlaneScale;
-      avatar.syncMirroredPlaneScale = function(...args) {
-        const result = originalSync.apply(this, args);
-        applyShoulderPetObservationMirror(pet, !!this.__hobunjiShoulderObservationFlipped); // Read current parity at refresh time; never replay the flip state captured when this wrapper was installed.
-        return result;
-      };
-      avatar.__hobunjiShoulderObservationScaleSyncWrapped = true;
+    if (shoulderPetObservationFlipRuntime.lastFlip
+        && shoulderPetObservationFlipRuntime.lastFlip.pet === pet) {
+      shoulderPetObservationFlipRuntime.lastFlip.applied = errors.length > 0;
+      shoulderPetObservationFlipRuntime.lastFlip.pivotMode = 'direct-local-grip-pivot';
+      shoulderPetObservationFlipRuntime.lastFlip.pivotError = Number.isFinite(maxError) ? maxError : null;
     }
-    return applyMirror();
+    return errors.length > 0;
   };
   const instrumentShoulderPetObservationState = pet => {
     const state = pet?.shoulderCuriosity;
@@ -712,16 +680,16 @@
       configurable: true, enumerable: true, get: () => phase,
       set: nextPhase => {
         if (phase === 'wait' && nextPhase === 'look') {
-          const flipped = !pet.__hobunjiShoulderObservationFlipped;
-          const applied = applyShoulderPetObservationMirror(pet, flipped); // Records whether a live face mesh was actually mirrored around its grip pivot.
-          const pivotDebug = pet.avatarRef?.__hobunjiShoulderObservationPivotDebug || null; // Included in the existing mobile-readable observation diagnostic.
+          const flipped = !pet.__hobunjiShoulderObservationFlipped; // Logical direction changes here; the visual transform is solved later in the same game frame by updateShoulderPetMeshPin().
+          pet.__hobunjiShoulderObservationFlipped = flipped;
           shoulderPetObservationFlipRuntime.flipCount += 1;
           shoulderPetObservationFlipRuntime.lastFlip = {
+            pet, // Internal identity used only so the final pin can attach its measured pivot residual to this exact flip event.
             creatureKey: pet.creatureKey || pet.kind || 'unknown',
             flipped,
-            applied,
-            pivotMode: pivotDebug?.mode || null,
-            pivotError: Number.isFinite(pivotDebug?.maxError) ? pivotDebug.maxError : null,
+            applied: false,
+            pivotMode: 'pending-final-shoulder-pin',
+            pivotError: null,
             atMs: typeof performance !== 'undefined' ? performance.now() : Date.now(),
           };
         }
@@ -740,20 +708,25 @@
       if (!pet) continue;
       if (pet.stableRole !== 'shoulderPet') {
         if (pet.__hobunjiShoulderObservationTrackingActive) {
-          applyShoulderPetObservationMirror(pet, false);
+          pet.__hobunjiShoulderObservationFlipped = false;
+          shoulderObservationMeshes(pet.avatarRef).forEach(restoreShoulderObservationPlane); // Role cleanup only; active flips are owned by game.js's final pin math.
           pet.__hobunjiShoulderObservationTrackingActive = false;
         }
         continue;
       }
       activePetCount += 1;
       pet.__hobunjiShoulderObservationTrackingActive = true;
-      applyShoulderPetObservationMirror(pet, !!pet.__hobunjiShoulderObservationFlipped);
       instrumentShoulderPetObservationState(pet);
     }
     shoulderPetObservationFlipRuntime.activePetCount = activePetCount;
   };
   window.ShoulderPetObservationFlip = Object.freeze({
-    getDebug: () => ({ activePetCount: shoulderPetObservationFlipRuntime.activePetCount, instrumentedCount: shoulderPetObservationFlipRuntime.instrumentedCount, flipCount: shoulderPetObservationFlipRuntime.flipCount, lastFlip: shoulderPetObservationFlipRuntime.lastFlip ? { ...shoulderPetObservationFlipRuntime.lastFlip } : null }),
+    applyAtPinnedPerch: applyShoulderPetObservationAtPinnedPerch, // Called by game.js after the authoritative root pin and before render; performs the direct local grip-pivot transform.
+    getDebug: () => {
+      const lastFlip = shoulderPetObservationFlipRuntime.lastFlip ? { ...shoulderPetObservationFlipRuntime.lastFlip } : null;
+      if (lastFlip) delete lastFlip.pet;
+      return { activePetCount: shoulderPetObservationFlipRuntime.activePetCount, instrumentedCount: shoulderPetObservationFlipRuntime.instrumentedCount, flipCount: shoulderPetObservationFlipRuntime.flipCount, lastFlip };
+    },
     formatDebug: () => {
       const d = window.ShoulderPetObservationFlip.getDebug();
       const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none'; // Existing compact flip summary.
