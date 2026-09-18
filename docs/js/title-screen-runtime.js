@@ -9,6 +9,9 @@
   const FONT_FAMILY = 'HobunjiTitleRoman'; // Separates title-screen font loading from the loading-screen FontFace name.
   const FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf'; // Existing Khymeryyan Roman font asset.
   const EXIT_MS = 320; // Short fade used after the starting input is consumed.
+  const INPUT_ARM_DELAY_MS = 450; // Used to reject navigation/carryover input immediately after page load.
+  const SKY_RUNTIME_SRC = 'js/title-realtime-sky.js?v=20260917a'; // Loads the isolated Canvas2D real-time title sky.
+  const SKY_CANVAS_ID = 'hobunjiTitleSky'; // Matches the canvas created by title-realtime-sky.js.
   const GAMEPAD_AXIS_THRESHOLD = 0.72; // Avoids ordinary stick drift counting as the requested starting input.
   const INPUT_EVENTS = Object.freeze([
     'keydown', 'keyup',
@@ -17,10 +20,15 @@
     'touchstart', 'touchend',
     'click', 'contextmenu', 'wheel',
   ]); // Captured before gameplay handlers so the start input cannot leak through to the game.
-  const START_EVENTS = new Set(['keydown', 'pointerdown', 'mousedown', 'touchstart', 'click', 'wheel']); // Events that can dismiss the title screen.
+  const START_EVENTS = new Set(['keydown', 'pointerdown', 'mousedown', 'touchstart']); // Only fresh press-style actions dismiss the title; click/wheel carryover is swallowed.
 
   let active = true; // Remains true through the fade so follow-up key/pointer events are swallowed too.
   let starting = false; // Prevents duplicate start requests from pointerdown + mousedown + click.
+  let inputArmed = false; // Used to reject carryover input until the title has actually settled on screen.
+  let inputArmTimer = 0; // Owns the one-shot title-input arming delay.
+  let lastStartSource = null; // Used by in-game/mobile debug output to identify the accepted start input.
+  let titleSkyStarted = false; // Used by debug output to confirm the lightweight sky compositor attached.
+  let titleSkyLoadError = null; // Used by debug output if the standalone sky runtime cannot load or start.
   let gamepadPollRaf = 0; // Owns the rising-edge controller check independent of the game's controller polling.
   let gamepadPollPrimed = false; // Prevents a button already held during page load from instantly skipping the title screen.
   let gamepadWasDown = false; // Tracks the previous real controller snapshot for rising-edge detection.
@@ -38,8 +46,25 @@
         overscroll-behavior:none;
       }
 
-      /* Full-screen black layer + prompt. Keeping the background on ::after
-         lets ::before use background-clip:text for the metallic title itself. */
+      #${SKY_CANVAS_ID} {
+        position:fixed;
+        inset:0;
+        z-index:2147483644;
+        width:100vw;
+        height:100vh;
+        display:block;
+        opacity:1;
+        background:#000;
+        pointer-events:none;
+        transition:opacity ${EXIT_MS}ms ease;
+      }
+
+      html.hobunji-title-leaving #${SKY_CANVAS_ID} {
+        opacity:0;
+      }
+
+      /* Transparent prompt layer over the lightweight sky canvas. Keeping
+         ::before separate lets it use background-clip:text for the logo. */
       html.hobunji-title-active::after {
         content:'Press any input to start';
         position:fixed;
@@ -50,7 +75,7 @@
         justify-content:center;
         box-sizing:border-box;
         padding-top:27vh;
-        background:#000;
+        background:transparent;
         color:rgba(255,255,255,0);
         font-family:'${FONT_FAMILY}','DM Mono',monospace;
         font-size:clamp(14px,2.1vw,24px);
@@ -140,6 +165,38 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function startLoadedTitleSky() {
+    try {
+      const sky = window.HobunjiTitleRealtimeSky; // Used to start the separately loaded low-cost title compositor.
+      if (!sky?.start) throw new Error('title sky API unavailable after load');
+      sky.start();
+      titleSkyStarted = true;
+      titleSkyLoadError = null;
+    } catch (error) {
+      titleSkyStarted = false;
+      titleSkyLoadError = String(error?.message || error);
+    }
+  }
+
+  function loadTitleSky() {
+    if (window.HobunjiTitleRealtimeSky?.start) {
+      startLoadedTitleSky();
+      return;
+    }
+    const existing = document.querySelector?.('script[data-hobunji-title-realtime-sky]'); // Used to keep the one-time sky runtime load idempotent.
+    if (existing) return;
+    const script = document.createElement('script'); // Used to load the isolated canvas renderer without blocking the parser.
+    script.src = SKY_RUNTIME_SRC;
+    script.async = true;
+    script.setAttribute?.('data-hobunji-title-realtime-sky', '1');
+    script.onload = startLoadedTitleSky;
+    script.onerror = () => {
+      titleSkyStarted = false;
+      titleSkyLoadError = 'failed to load ' + SKY_RUNTIME_SRC;
+    };
+    (document.head || document.documentElement).appendChild(script);
+  }
+
   function settleFont() {
     if (fontSettled) return;
     fontSettled = true;
@@ -166,13 +223,25 @@
     if (event.cancelable) event.preventDefault();
     event.stopPropagation?.();
     event.stopImmediatePropagation?.();
-    if (!starting && START_EVENTS.has(event.type)) beginStart(event.type);
+    const freshTrustedPress = inputArmed
+      && event.isTrusted === true
+      && START_EVENTS.has(event.type)
+      && !(event.type === 'keydown' && event.repeat); // Used to reject synthetic/carryover clicks, wheel momentum, and held-key repeats.
+    if (!starting && freshTrustedPress) beginStart(event.type);
   }
 
   function installEventGate() {
     for (const type of INPUT_EVENTS) {
       window.addEventListener(type, consumeEvent, { capture:true, passive:false });
     }
+  }
+
+  function armInputGate() {
+    if (inputArmTimer && typeof window.clearTimeout === 'function') window.clearTimeout(inputArmTimer);
+    inputArmTimer = window.setTimeout(() => {
+      inputArmTimer = 0;
+      if (active && !starting) inputArmed = true;
+    }, INPUT_ARM_DELAY_MS); // Used to ensure a navigation tap/key cannot instantly dismiss the newly loaded title.
   }
 
   function removeEventGate() {
@@ -230,7 +299,7 @@
       gamepadPollPrimed = true;
       gamepadWasDown = isDown;
     } else {
-      if (isDown && !gamepadWasDown && !starting) beginStart('gamepad');
+      if (inputArmed && isDown && !gamepadWasDown && !starting) beginStart('gamepad');
       gamepadWasDown = isDown;
     }
   }
@@ -238,6 +307,10 @@
   function beginStart(source = 'api') {
     if (!active || starting) return false;
     starting = true;
+    inputArmed = false;
+    lastStartSource = source;
+    if (inputArmTimer && typeof window.clearTimeout === 'function') window.clearTimeout(inputArmTimer);
+    inputArmTimer = 0;
     document.documentElement.classList.add('hobunji-title-leaving');
     window.dispatchEvent(new CustomEvent('hobunji-title-starting', { detail:{ source } }));
     window.setTimeout(() => {
@@ -245,6 +318,8 @@
       if (gamepadPollRaf) clearInterval(gamepadPollRaf);
       gamepadPollRaf = 0;
       removeEventGate();
+      try { window.HobunjiTitleRealtimeSky?.destroy?.(); } catch (_) {}
+      titleSkyStarted = false;
       document.documentElement.classList.remove(
         'hobunji-title-active',
         'hobunji-title-font-ready',
@@ -257,7 +332,9 @@
 
   installStyles();
   document.documentElement.classList.add('hobunji-title-active');
+  loadTitleSky();
   installEventGate();
+  armInputGate();
   loadTitleFont();
   const realGetGamepads = installControllerGate();
   if (realGetGamepads) gamepadPollRaf = setInterval(() => pollGamepad(realGetGamepads), 50); // A bounded wait-for-input poll; no per-frame cadence needed.
@@ -266,6 +343,19 @@
     installed:true,
     isActive:() => active,
     start:() => beginStart('api'),
-    getDebug:() => ({ active, starting, fontSettled, controllerGateInstalled, gamepadPollPrimed }),
+    getRealtimeCalendar:(date = new Date()) => window.HobunjiTitleRealtimeSky?.getRealtimeCalendar?.(date) || null,
+    getDebug:() => ({
+      active,
+      starting,
+      inputArmed,
+      inputArmDelayMs: INPUT_ARM_DELAY_MS,
+      lastStartSource,
+      fontSettled,
+      controllerGateInstalled,
+      gamepadPollPrimed,
+      titleSkyStarted,
+      titleSkyLoadError,
+      titleSky: window.HobunjiTitleRealtimeSky?.getDebug?.() || null,
+    }),
   });
 })();
