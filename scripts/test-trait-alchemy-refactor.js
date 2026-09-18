@@ -43,6 +43,7 @@ for (const [key, definition] of reagentEntries) {
   assert.deepStrictEqual(Object.keys(definition.traits).sort(), ['drive', 'humour', 'magnetism'], `${key} must have exactly three trait categories`);
   assert.ok(A.validateTraits(definition.traits), `${key} must use valid trait values`);
   assert.ok(A.nativeRecipeForReagent(key), `${key}'s native trio must be authored`);
+  assert.ok(['waterEdge','treeRoots','cliffBase','rockEdge','shrubEdge'].includes(definition.habitat), `${key} must declare a terrain sub-habitat`);
 }
 assert.strictEqual(Object.keys(A.RECIPE_DEFS).length, 35, 'only the explicitly authored reactions should exist');
 assert.strictEqual(A.RECIPE_BY_TRAITS['senses.lighten.fire'], undefined, 'undefined permutations must remain invalid');
@@ -53,28 +54,50 @@ function combinations(values, size, start = 0, prefix = [], out = []) {
   return out;
 }
 const reagentKeys = reagentEntries.map(([key]) => key);
-const validPair = combinations(reagentKeys, 2).find(keys => A.enumerateRecipes(keys).length);
 const validTriple = combinations(reagentKeys, 3).find(keys => A.enumerateRecipes(keys).length);
-assert.ok(validPair && validTriple, 'the authored reagent set must support both two- and three-reagent brewing');
-for (const assignment of A.enumerateRecipes(validPair).flatMap(outcome => outcome.assignments)) {
-  assert.ok(validPair.every(key => assignment.contributes[key].length), 'every two-reagent assignment must use both reagents');
+assert.ok(validTriple, 'the authored reagent set must support three-reagent brewing');
+for (const keys of combinations(reagentKeys, 2)) {
+  assert.strictEqual(A.enumerateRecipes(keys).length, 0, 'two reagents must never constitute a brewable reaction');
 }
 for (const assignment of A.enumerateRecipes(validTriple).flatMap(outcome => outcome.assignments)) {
   assert.ok(validTriple.every(key => assignment.contributes[key].length === 1), 'every three-reagent assignment must use each reagent exactly once');
 }
-for (const candidate of reagentKeys.filter(key => !validPair.includes(key)).slice(0, 8)) {
-  assert.strictEqual(A.canAddReagent(validPair, candidate), A.enumerateRecipes([...validPair, candidate]).length > 0, 'ingredient graying must call the exact enumerator');
+const completablePair = combinations(reagentKeys, 2).find(keys => A.canCompleteSelection(keys));
+assert.ok(completablePair, 'partial ingredient selection must remain usable when a legal third reagent exists');
+for (const candidate of reagentKeys.filter(key => !completablePair.includes(key))) {
+  assert.strictEqual(A.canAddReagent(completablePair, candidate), A.enumerateRecipes([...completablePair, candidate]).length > 0, 'ingredient graying must validate exact three-reagent completions');
 }
 
-const invalidPair = combinations(reagentKeys, 2).find(keys => !A.enumerateRecipes(keys).length);
-inventory[invalidPair[0]] = 1; inventory[invalidPair[1]] = 1;
-const invalidBefore = { ...inventory };
-assert.strictEqual(A.brewFrom(invalidPair).ok, false, 'invalid selections must not brew');
-assert.deepStrictEqual(inventory, invalidBefore, 'invalid selections must not consume ingredients');
-for (const keys of combinations(reagentKeys, 2)) {
+inventory[completablePair[0]] = 1; inventory[completablePair[1]] = 1;
+const pairBefore = { ...inventory };
+assert.strictEqual(A.brewFrom(completablePair).ok, false, 'two-reagent selections must not brew');
+assert.deepStrictEqual(inventory, pairBefore, 'rejected two-reagent brews must not consume ingredients');
+
+for (const key of validTriple) inventory[key] = Math.max(1, inventory[key] || 0);
+const brewedTriple = A.brewFrom(validTriple, { random: () => .25 });
+assert.ok(brewedTriple.ok, 'a valid three-reagent reaction must brew');
+assert.strictEqual(brewedTriple.consumed.length, 3, 'every successful brew must consume three reagents');
+for (const key of validTriple) assert.strictEqual(inventory[key] || 0, 0, `${key} must be consumed by the three-reagent brew`);
+
+for (const keys of combinations(reagentKeys, 3)) {
   const outcomes = A.enumerateRecipes(keys);
   if (outcomes.length) assert.ok(A.RECIPE_DEFS[A.chooseOutcome(outcomes, null, () => .999).recipeId], 'random brewing must never return an undefined recipe');
 }
+const rarityTriple = combinations(reagentKeys, 3).find(keys => {
+  const outcomes = A.enumerateRecipes(keys);
+  return outcomes.some(outcome => outcome.recipeId === 'breedingGigantism') && outcomes.some(outcome => A.outcomeWeight(outcome) === 1);
+});
+assert.ok(rarityTriple, 'at least one ingredient trio must expose breeding Gigantism alongside a normal-weight reaction');
+const rarityOutcomes = A.enumerateRecipes(rarityTriple);
+const rareOutcome = rarityOutcomes.find(outcome => outcome.recipeId === 'breedingGigantism');
+const commonOutcome = rarityOutcomes.find(outcome => A.outcomeWeight(outcome) === 1);
+assert.strictEqual(A.outcomeWeight(rareOutcome), 0.1, 'breeding potions must use the authored 0.10 base reaction weight before targeting bonuses');
+assert.ok(A.outcomeWeight(rareOutcome) < A.outcomeWeight(commonOutcome), 'breeding potions must carry a lower natural reaction weight');
+assert.ok(A.targetingProbability(20, rarityOutcomes, rareOutcome.recipeId) < A.targetingProbability(20, rarityOutcomes, commonOutcome.recipeId), 'rare reaction weight must also reduce targeting reliability');
+const weightedCounts = Object.fromEntries(rarityOutcomes.map(outcome => [outcome.recipeId, 0]));
+for (let i = 0; i < 1000; i++) weightedCounts[A.weightedOutcome(rarityOutcomes, () => (i + 0.5) / 1000).recipeId]++;
+assert.ok(weightedCounts[rareOutcome.recipeId] < weightedCounts[commonOutcome.recipeId], 'untargeted brewing must naturally produce rare breeding reactions less often');
+
 let previousChance = 0;
 for (let level = 0; level <= 20; level++) {
   const chance = A.targetingProbability(level, 2);
