@@ -50,12 +50,15 @@
       "col": 10,
       "row": 9,
       "rotY": 0,
-      "postX": 0.5,
+      "postX": 0,
       "postY": 0,
       "postZ": 0,
-      "postSX": 1,
+      "postSX": 0.666667,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "gridRot": 0,
+      "gridW": 3,
+      "gridD": 1
     },
     {
       "id": "f_tbhunundi_chair",
@@ -75,26 +78,32 @@
       "itemKey": "chairSimpleFurniture",
       "col": 9,
       "row": 9,
-      "rotY": 180,
+      "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "gridRot": 180,
+      "gridW": 1,
+      "gridD": 1
     },
     {
       "id": "fmtsteb7xjq80",
       "itemKey": "chairSimpleFurniture",
       "col": 8,
       "row": 9,
-      "rotY": 180,
+      "rotY": 0,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "gridRot": 180,
+      "gridW": 1,
+      "gridD": 1
     }
   ],
   "floor": [
@@ -230,40 +239,7 @@
       "spawnRow": 6
     }
   ],
-  "colliders": [
-    [
-      11,
-      9
-    ],
-    [
-      10,
-      9
-    ],
-    [
-      9,
-      6
-    ],
-    [
-      8,
-      6
-    ],
-    [
-      7,
-      6
-    ],
-    [
-      6,
-      6
-    ],
-    [
-      7,
-      7
-    ],
-    [
-      12,
-      9
-    ]
-  ],
+  "colliders": [],
   "vendorZones": [],
   "routes": [],
   "npcStations": [
