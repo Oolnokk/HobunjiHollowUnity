@@ -427,6 +427,7 @@
       tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
       clothing: { hat: null, hood: null, torso: null, overwear: null },
       charms: [], whistles: [],
+      keyItems: [], // Character-scoped progression keys (for example Banubu's War-Paint Kit) travel with this gear save between worlds.
       // Redye system: every dye the character has ever unlocked (see
       // docs/tools' dye catalog under game.dyes.catalog). Starts with the
       // same free "Dusty" hue + neutral set offered at character creation —
