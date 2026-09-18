@@ -481,18 +481,15 @@
     {
       "id": "f_car_chest",
       "itemKey": "chestFurniture",
-      "col": 14,
-      "row": 3,
+      "col": 15,
+      "row": 4,
       "rotY": -75.8,
       "postX": 0,
       "postY": 0,
       "postZ": 0,
-      "postSX": 0.333333,
+      "postSX": 1,
       "postSY": 1,
-      "postSZ": 0.333333,
-      "gridRot": 0,
-      "gridW": 3,
-      "gridD": 3
+      "postSZ": 1
     },
     {
       "id": "f_car_stool_dzibim",
@@ -510,8 +507,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "f_car_stool_dzahiri",
@@ -529,8 +525,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "f_car_stool_nashka",
@@ -548,8 +543,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     },
     {
       "id": "f_car_stool_guest",
@@ -567,8 +561,7 @@
       "gridW": 1,
       "gridD": 1,
       "postSX": 1,
-      "postSZ": 1,
-      "postSY": 1
+      "postSZ": 1
     }
   ],
   "npcStations": [
