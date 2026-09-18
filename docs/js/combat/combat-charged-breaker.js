@@ -9,8 +9,8 @@
     return;
   }
 
-  let MIN_READY_S = 0.62;
-  let MAX_CHARGE_S = 4.0; // Used as the real Neutral→Windup duration; full pose and 100% charge are the same event.
+  let MIN_READY_POSE = 0.48; // Used as the minimum visible Neutral→Windup interpolation required to release a real strike.
+  let MAX_CHARGE_S = 4.0; // Used only to pace the visual Neutral→Windup journey; full pose and 100% charge are the same event.
   let WINDUP_SLOWDOWN = 25; // Used by Combat.windupPoseProgress; higher means a longer, slower final approach to Windup.
   let CHARGE_DRAIN_PER_S = 18;
   let COST_MIN = 16, COST_MAX = 28;
@@ -52,13 +52,14 @@
     return clamp01(raw) * MAX_CHARGE_S;
   }
 
-  function poseChargeFromRuntime(heldSeconds = 0) {
+  function poseChargeFromRuntime() {
     const live = window.Combat.deps?.getWeaponSwingWindupPoseProgress?.();
     if (Number.isFinite(Number(live))) return clamp01(live);
-    // Standalone-test fallback: same curve the renderer uses, only used when
-    // game.js has not supplied its live pose-progress dependency.
-    const raw = MAX_CHARGE_S > 0 ? clamp01(heldSeconds / MAX_CHARGE_S) : 1;
-    return window.Combat.windupPoseProgress?.(raw, WINDUP_SLOWDOWN) ?? raw;
+    // Charge is deliberately NEVER reconstructed from elapsed hold time.
+    // Missing render-pose authority therefore fails closed at zero power
+    // instead of silently violating the visible-pose == gameplay-charge rule.
+    window.__farmLog?.('[charged-breaker] visible windup pose progress unavailable; charge held at 0%.', 'warn', 'combat');
+    return 0;
   }
 
   function setGlow(poseCharge) {
@@ -102,7 +103,7 @@
     function releaseNow(heldSeconds, forced) {
       startedAt = -1;
       const deps = window.Combat.deps;
-      const poseCharge = poseChargeFromRuntime(heldSeconds);
+      const poseCharge = poseChargeFromRuntime();
       debugState.active = false;
       debugState.heldSeconds = heldSeconds;
       debugState.poseCharge = poseCharge;
@@ -112,12 +113,14 @@
         deps.cancelWeaponSwingHold();
         return;
       }
-      if (heldSeconds < MIN_READY_S) {
+      if (poseCharge < MIN_READY_POSE) {
         clearGlow();
         deps.cancelWeaponSwingHold();
+        const posePct = Math.round(poseCharge * 100);
+        const readyPct = Math.round(MIN_READY_POSE * 100);
         deps.showToast(forced
-          ? 'Charged Breaker fizzled: stamina ran out before it was ready.'
-          : `Charged Breaker released too early (${heldSeconds.toFixed(2)}s, needed ${MIN_READY_S}s).`, false);
+          ? `Charged Breaker fizzled at ${posePct}% pose: stamina ran out before ${readyPct}%.`
+          : `Charged Breaker released too early (${posePct}% pose, needed ${readyPct}%).`, false);
         return;
       }
 
@@ -233,7 +236,7 @@
       if (startedAt < 0) return;
       const deps = window.Combat.deps;
       const heldSeconds = now() - startedAt;
-      const poseCharge = poseChargeFromRuntime(heldSeconds);
+      const poseCharge = poseChargeFromRuntime();
       debugState.heldSeconds = heldSeconds;
       debugState.poseCharge = poseCharge;
       setGlow(poseCharge);
@@ -261,7 +264,7 @@
   register();
 
   window.Combat.chargedBreakerData = {
-    MIN_READY_S,
+    MIN_READY_POSE,
     MAX_CHARGE_S,
     WINDUP_SLOWDOWN,
     DAMAGE_MUL_MIN,
@@ -301,10 +304,17 @@
 
   window.Combat.applyChargedBreakerConfig = function (cfg) {
     if (!cfg) return;
-    if (cfg.MIN_READY_S != null) MIN_READY_S = cfg.MIN_READY_S;
     if (cfg.MAX_CHARGE_S != null) MAX_CHARGE_S = cfg.MAX_CHARGE_S;
     else if (cfg.WINDUP_S != null) MAX_CHARGE_S = cfg.WINDUP_S;
     if (cfg.WINDUP_SLOWDOWN != null) WINDUP_SLOWDOWN = cfg.WINDUP_SLOWDOWN;
+    if (cfg.MIN_READY_POSE != null) {
+      MIN_READY_POSE = clamp01(cfg.MIN_READY_POSE);
+    } else if (cfg.MIN_READY_S != null) {
+      // Backward-compatible authored data is translated ONCE into pose space.
+      // Runtime readiness still depends only on the visible pose percentage.
+      const rawReadyT = MAX_CHARGE_S > 0 ? clamp01(cfg.MIN_READY_S / MAX_CHARGE_S) : 1;
+      MIN_READY_POSE = window.Combat.windupPoseProgress?.(rawReadyT, WINDUP_SLOWDOWN) ?? rawReadyT;
+    }
     if (cfg.CHARGE_DRAIN_PER_S != null) CHARGE_DRAIN_PER_S = cfg.CHARGE_DRAIN_PER_S;
     if (cfg.COST_MIN != null) COST_MIN = cfg.COST_MIN;
     if (cfg.COST_MAX != null) COST_MAX = cfg.COST_MAX;
@@ -332,7 +342,7 @@
     if (cfg.LUNGE_HOP_UNITS != null) LUNGE_HOP_UNITS = cfg.LUNGE_HOP_UNITS;
 
     Object.assign(window.Combat.chargedBreakerData, {
-      MIN_READY_S,
+      MIN_READY_POSE,
       MAX_CHARGE_S,
       WINDUP_SLOWDOWN,
       DAMAGE_MUL_MIN,
