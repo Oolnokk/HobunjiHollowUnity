@@ -29,6 +29,11 @@
       lateLoad('js/grehlr-head-rig-correction.js?v=20260917uploads1', 'grehlr-head-rig-correction');
     }
   }
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-09-18-uploads2') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20260918uploads2', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20260918uploads2', 'animal-head-rig-authored');
+    }
+  }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 2) {
     if (!parserLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles')) {
       lateLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles');
