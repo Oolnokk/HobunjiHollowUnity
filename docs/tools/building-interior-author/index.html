@@ -34,6 +34,10 @@ header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-be
 .modeButtons button{width:98px;background:rgba(7,11,18,.82);backdrop-filter:blur(6px)}
 .libraryList{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .listItem{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);border-radius:10px;padding:7px 8px;font-size:12px}
+.placedFurnitureList{display:flex;flex-direction:column;gap:5px;max-height:280px;overflow:auto}
+.placedFurnItem{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:7px 9px;border-radius:9px}
+.placedFurnItem.active{outline:2px solid var(--accent);background:#203c5c}
+.placedFurnMeta{font-size:10px;color:var(--muted)}
 .chip{font-size:11px;color:var(--muted)}
 textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .catGrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px;max-height:260px;overflow-y:auto}
@@ -248,7 +252,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
 
     <div class="section">
-      <h2>6. Interior library</h2>
+      <h2>6. Placed items</h2>
+      <p class="hint">Select an existing item here, then drag it on the 2D grid. If furniture overlaps, the item selected here gets click/drag priority on its occupied tiles.</p>
+      <div id="placedFurnitureList" class="placedFurnitureList"></div>
+    </div>
+
+    <div class="section">
+      <h2>7. Interior library</h2>
       <div class="row">
         <button id="saveLibBtn">Save to library</button>
         <button id="delLibBtn" class="danger">Delete</button>
@@ -257,13 +267,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
 
     <div class="section">
-      <h2>7. Server Layouts</h2>
+      <h2>8. Server Layouts</h2>
       <button id="fetchServerBtn">Refresh</button>
       <div class="libraryList" id="serverMapList"><span style="color:#888;font-size:11px">Loading…</span></div>
     </div>
 
     <div class="section">
-      <h2>8. Alternate layouts <span class="qhelp" data-help="bia-layouts">?</span></h2>
+      <h2>9. Alternate layouts <span class="qhelp" data-help="bia-layouts">?</span></h2>
       <p class="hint">A layout swaps this room's furniture for a special occasion (a festival, a ritual) — the game plays the same black-iris wipe used for waiting/sleeping, then drops the player at an entry point above to find the room changed. Pick one below, then use the floor plan / furniture tools as normal: while a layout (not Base) is selected, placing/moving/deleting furniture edits <em>that layout's</em> furniture instead of the base room's.</p>
       <div class="field" style="margin:8px 0 6px">
         <label>Now editing</label>
@@ -654,6 +664,7 @@ function drawGrid(){
   var nColl=(state.interior.colliders||[]).length, nEZ=(state.interior.exits||[]).length, nVZ=(state.interior.vendorZones||[]).length;
   var lay=currentLayoutObj();
   $('viewStats').textContent=(lay?('✎ '+(lay.name||lay.id)+' | '):'')+state.floorSet.size+' tiles | '+activeFurniture().length+' furn | '+cols+'x'+rows+(nColl?' | '+nColl+' coll':'')+(nEZ?' | '+nEZ+' exits':'')+(nVZ?' | '+nVZ+' vendors':'');
+  renderPlacedFurnitureList();
 }
 
 function gridCell(e){
@@ -662,13 +673,27 @@ function gridCell(e){
            r:Math.floor((e.clientY-rect.top)/rect.height*state.interior.rows) };
 }
 function inGrid(c,r){ return c>=0&&r>=0&&c<state.interior.cols&&r<state.interior.rows; }
+function furnitureOccupiesTile(f,c,r){
+  if(!f) return false;
+  var info=furnGridInfo(f);
+  return c>=f.col&&c<f.col+info.gridW&&r>=f.row&&r<f.row+info.gridD;
+}
 function furnAt(c,r){
   var arr=activeFurniture();
   for(var i=arr.length-1;i>=0;i--){
-    var f=arr[i], info=furnGridInfo(f);
-    if(c>=f.col&&c<f.col+info.gridW&&r>=f.row&&r<f.row+info.gridD) return f;
+    var f=arr[i];
+    if(furnitureOccupiesTile(f,c,r)) return f;
   }
   return null;
+}
+function furnAtPreferringSelected(c,r){
+  if(state.selectedId){
+    var arr=activeFurniture();
+    for(var i=0;i<arr.length;i++){
+      if(arr[i].id===state.selectedId && furnitureOccupiesTile(arr[i],c,r)) return arr[i];
+    }
+  }
+  return furnAt(c,r);
 }
 
 function gridAction(e){
@@ -715,7 +740,9 @@ function gridAction(e){
     drawGrid(); rebuild3D();
   }
   else if(tool==='select'){
-    var f=furnAt(c,r);
+    // A list-selected item wins over any overlapping furniture on the same
+    // tile, making it possible to grab/move obscured pieces deterministically.
+    var f=furnAtPreferringSelected(c,r);
     if(f){
       selectFurn(f.id);
       state.dragFurn=f;
@@ -841,6 +868,41 @@ function allFurnitureArrays(){
 }
 
 // ─── Selection UI ─────────────────────────────────────────────────────────────
+var placedFurnitureListSignature='';
+function renderPlacedFurnitureList(){
+  var el=$('placedFurnitureList'); if(!el) return;
+  var arr=activeFurniture();
+  var sig=(state.editingLayoutId||'base')+'|'+(state.selectedId||'')+'|'+arr.map(function(f){
+    var info=furnGridInfo(f);
+    return [f.id,f.itemKey,f.col,f.row,info.gridW,info.gridD,info.gridRot].join(':');
+  }).join(';');
+  if(sig===placedFurnitureListSignature) return;
+  placedFurnitureListSignature=sig;
+  el.innerHTML='';
+  if(!arr.length){
+    var empty=document.createElement('div');
+    empty.className='hint'; empty.textContent='No furniture placed in this layout.';
+    el.appendChild(empty); return;
+  }
+  arr.forEach(function(f,index){
+    var cat=catOf(f.itemKey),info=furnGridInfo(f);
+    var btn=document.createElement('button');
+    btn.type='button';
+    btn.className='placedFurnItem'+(f.id===state.selectedId?' active':'');
+    btn.dataset.furnId=f.id;
+    var title=document.createElement('span');
+    title.textContent=(index+1)+'. '+(cat.label||f.itemKey);
+    var meta=document.createElement('span');
+    meta.className='placedFurnMeta';
+    meta.textContent='col '+f.col+', row '+f.row+' · '+info.gridW+'×'+info.gridD+' · '+info.gridRot+'°';
+    btn.appendChild(title); btn.appendChild(meta);
+    btn.addEventListener('click',function(){
+      setTool('select');
+      selectFurn(f.id);
+    });
+    el.appendChild(btn);
+  });
+}
 function selectFurn(id){
   state.selectedId=id;
   var f=id?activeFurniture().filter(function(x){return x.id===id;})[0]:null;
@@ -1543,6 +1605,7 @@ $('wallStyle').addEventListener('change',function(){pushUndo(); state.interior.w
 // ─── afterLoad ────────────────────────────────────────────────────────────────
 function afterLoad(){
   var i=state.interior;
+  placedFurnitureListSignature='';
   // Migrate legacy single exit → exits array
   if(i.exit && (!i.exits||!i.exits.length)){
     if(!i.exits) i.exits=[];
