@@ -1131,7 +1131,11 @@
         } catch (_) {}
       }
       const pattern = weavingPatternForRole(weaving, role);
-      if (pattern) img = await applyPatternToTintedImage(img, pattern, patternHex, `layer:${url}`);
+      // tintValue folds into the cache prefix for the same reason the runtime
+      // hook's tintKey does (see installPortraitHooks) — this layer's `img`
+      // pixels, which the pattern's shade-fill reads its light/dark variation
+      // from, depend on which dye tinted it, not just its own url.
+      if (pattern) img = await applyPatternToTintedImage(img, pattern, patternHex, `layer:${url}:${tintValue}`);
       rendered.push(img);
     }
     if (!rendered.length) return { canvas: null, layers };
@@ -1173,90 +1177,77 @@
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { count++; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     return count ? { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 } : null;
   }
-  function convexHull(points) {
-    if (points.length <= 1) return points.map(p => ({ ...p }));
-    const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y), cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    const lower = [], upper = [];
-    for (const point of pts) { while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), point) <= 0) lower.pop(); lower.push(point); }
-    for (let i = pts.length - 1; i >= 0; i--) { const point = pts[i]; while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), point) <= 0) upper.pop(); upper.push(point); }
-    lower.pop(); upper.pop(); return lower.concat(upper);
-  }
-  function opaqueEnvelopeHull(mask, w, h, bbox) {
-    const points = [];
-    for (let y = bbox.y0; y <= bbox.y1; y++) {
-      let left = Infinity, right = -Infinity;
-      for (let x = bbox.x0; x <= bbox.x1; x++) if (mask[y * w + x]) { left = Math.min(left, x); right = Math.max(right, x); }
-      if (!Number.isFinite(left)) continue;
-      const ly = y - bbox.y0, lx = left - bbox.x0, rx = right - bbox.x0 + 1;
-      points.push({ x: lx, y: ly }, { x: rx, y: ly }, { x: lx, y: ly + 1 }, { x: rx, y: ly + 1 });
-    }
-    return convexHull(points);
-  }
-  const vecDist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-  function lineIntersection(n1, c1, n2, c2) { const det = n1.x * n2.y - n1.y * n2.x; return Math.abs(det) < 1e-8 ? null : { x: (c1 * n2.y - n1.y * c2) / det, y: (n1.x * c2 - c1 * n2.x) / det }; }
-  function polygonArea(points) { let area = 0; for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; area += a.x * b.y - b.x * a.y; } return Math.abs(area) * 0.5; }
-  const rotate180 = (point, mid) => ({ x: 2 * mid.x - point.x, y: 2 * mid.y - point.y });
-
-  function fitGuaranteedTriangle(mask, w, h, padding) {
-    const bbox = findOpaqueBounds(mask, w, h);
-    if (!bbox) return null;
-    const hull = opaqueEnvelopeHull(mask, w, h, bbox);
-    if (hull.length < 3) hull.push({ x: Math.max(1, bbox.w), y: 0 }, { x: 0, y: Math.max(1, bbox.h) });
-    const pad = Math.max(0, Number(padding) || 0), samples = 48, twopi = Math.PI * 2, normals = [];
-    for (let i = 0; i < samples; i++) {
-      const angle = twopi * i / samples, n = { x: Math.cos(angle), y: Math.sin(angle) };
-      let support = -Infinity;
-      for (const point of hull) support = Math.max(support, n.x * point.x + n.y * point.y);
-      normals.push({ a: angle, n, c: support + pad });
-    }
-    let best = null;
-    for (let i = 0; i < samples - 2; i++) for (let j = i + 1; j < samples - 1; j++) for (let k = j + 1; k < samples; k++) {
-      const gaps = [normals[j].a - normals[i].a, normals[k].a - normals[j].a, normals[i].a + twopi - normals[k].a];
-      if (Math.max(...gaps) >= Math.PI - 1e-6) continue;
-      const a = lineIntersection(normals[i].n, normals[i].c, normals[j].n, normals[j].c), b = lineIntersection(normals[j].n, normals[j].c, normals[k].n, normals[k].c), c = lineIntersection(normals[k].n, normals[k].c, normals[i].n, normals[i].c);
-      if (!a || !b || !c) continue;
-      const verts = [a, b, c];
-      if (!verts.every(v => [normals[i], normals[j], normals[k]].every(side => side.n.x * v.x + side.n.y * v.y <= side.c + 1e-5))) continue;
-      const area = polygonArea(verts);
-      if (Number.isFinite(area) && area > 1e-6 && (!best || area < best.area)) best = { verts, area };
-    }
-    if (!best) { const bw = bbox.w + pad * 2, bh = bbox.h + pad * 2; best = { verts: [{ x: 0, y: 0 }, { x: bw * 2, y: 0 }, { x: 0, y: bh * 2 }] }; }
-    const edge = [[0,1,2],[1,2,0],[2,0,1]].map(([ai,bi,ci]) => ({ ai,bi,ci,d:vecDist(best.verts[ai],best.verts[bi]) })).sort((a,b) => b.d-a.d)[0];
-    let A = best.verts[edge.ai], B = best.verts[edge.bi], C = best.verts[edge.ci];
-    const shift = { x: -Math.min(A.x,B.x,C.x,0)+1, y: -Math.min(A.y,B.y,C.y,0)+1 };
-    A = { x:A.x+shift.x,y:A.y+shift.y }; B = { x:B.x+shift.x,y:B.y+shift.y }; C = { x:C.x+shift.x,y:C.y+shift.y };
-    const midpoint = { x:(A.x+B.x)/2,y:(A.y+B.y)/2 }, partnerC = rotate180(C, midpoint);
-    return { bbox,A,B,C,partnerC,midpoint,basisU:{x:A.x-C.x,y:A.y-C.y},basisV:{x:B.x-C.x,y:B.y-C.y},motifPlacement:{x:shift.x,y:shift.y,w:bbox.w,h:bbox.h} };
+  // The repeat lattice's shape palette — see pattern-authoring.js's frame
+  // tool. Each shape resolves the ink's own tight bbox (w,h) into a pair of
+  // basis vectors (the translation between adjacent copies); `paired: true`
+  // additionally stamps a second, 180°-rotated copy around the cell's own
+  // center, the same trick a real triangle needs to tile edge-to-edge with
+  // no gaps (two triangles sharing a rotated edge form a parallelogram).
+  // basisU/basisV are in the *unscaled, unrotated* unit space the caller's
+  // own ctx.translate/rotate/scale (driven by frameX/Y/frameRotationDeg/
+  // frameScale) already applies before stamping — this table only ever
+  // decides the cell's shape, never its placement.
+  const FRAME_SHAPES = Object.freeze({
+    square: { paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
+    brick: { paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }) },
+    triangle: { paired: true, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }) },
+  });
+  function frameShapeFor(id) {
+    return FRAME_SHAPES[id] || FRAME_SHAPES.square;
   }
 
-  function buildPatternMask(width, height, patternDef, motifImg) {
+  // Patterns saved before the frame tool existed have no frameShape at all —
+  // just the old repeatMode/patternScale/patternRotationDeg/translateX/Y
+  // fields. Rather than keep the old tight-fit-hull auto-placement algorithm
+  // (and its ~50 lines of computational geometry) alive forever just for
+  // these, they're remapped onto the equivalent new frame fields: repeatMode
+  // 'grid' -> 'square' (unpaired), anything else -> 'triangle' (paired,
+  // same 180°-partner look the old triangle mode had) — same overall scale/
+  // rotation/position, just using the new bbox-rectangle basis instead of
+  // the old custom-fit hull, so an already-authored pattern keeps rendering
+  // reasonably instead of vanishing, even if its exact silhouette shifts a
+  // little. trianglePadding/gridSpacing (the old numeric gap settings) have
+  // no equivalent slot in the new model and are dropped; frameScale is the
+  // new one-setting substitute for "how far apart are the copies."
+  function legacyFrameFields(patternDef) {
+    if (patternDef?.frameShape) return patternDef;
+    return {
+      ...patternDef,
+      frameShape: patternDef?.repeatMode === 'grid' ? 'square' : 'triangle',
+      frameScale: patternDef?.patternScale,
+      frameRotationDeg: patternDef?.patternRotationDeg,
+      frameX: patternDef?.translateX,
+      frameY: patternDef?.translateY,
+    };
+  }
+
+  function buildPatternMask(width, height, rawPatternDef, motifImg) {
+    const patternDef = legacyFrameFields(rawPatternDef);
     const canvas = Object.assign(document.createElement('canvas'), { width, height }), ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
-    const motifScale = Math.max(.05, Number(patternDef?.motifScale ?? patternDef?.scale) || 1), fieldScale = Math.max(.05, Number(patternDef?.patternScale) || 1);
-    const motifRad = (Number(patternDef?.motifRotationDeg) || 0) * Math.PI / 180, fieldRad = (Number(patternDef?.patternRotationDeg) || 0) * Math.PI / 180;
-    const repeatMode = patternDef?.repeatMode === 'grid' ? 'grid' : 'triangle', naturalW = motifImg.naturalWidth || motifImg.width || 1, naturalH = motifImg.naturalHeight || motifImg.height || 1;
+    const motifScale = Math.max(.05, Number(patternDef?.motifScale ?? patternDef?.scale) || 1), frameScale = Math.max(.05, Number(patternDef?.frameScale) || 1);
+    const motifRad = (Number(patternDef?.motifRotationDeg) || 0) * Math.PI / 180, frameRad = (Number(patternDef?.frameRotationDeg) || 0) * Math.PI / 180;
+    const shape = frameShapeFor(patternDef?.frameShape), naturalW = motifImg.naturalWidth || motifImg.width || 1, naturalH = motifImg.naturalHeight || motifImg.height || 1;
     function prepare(scale) {
       const mw = Math.max(1, naturalW * scale), mh = Math.max(1, naturalH * scale), size = Math.max(2, Math.ceil(Math.hypot(mw,mh))+2), c = Object.assign(document.createElement('canvas'),{width:size,height:size}), cctx = c.getContext('2d');
       cctx.imageSmoothingEnabled=false; cctx.translate(size/2,size/2); cctx.rotate(motifRad); cctx.drawImage(motifImg,-mw/2,-mh/2,mw,mh); return {canvas:c,ctx:cctx,size};
     }
     const draw = prepare(motifScale);
-    ctx.save(); ctx.translate(width/2+(Number(patternDef?.translateX)||0),height/2+(Number(patternDef?.translateY)||0)); ctx.rotate(fieldRad); ctx.scale(fieldScale,fieldScale);
+    ctx.save(); ctx.translate(width/2+(Number(patternDef?.frameX)||0),height/2+(Number(patternDef?.frameY)||0)); ctx.rotate(frameRad); ctx.scale(frameScale,frameScale);
     if (patternDef?.tiling !== false) {
       const ref = prepare(1), data = ref.ctx.getImageData(0,0,ref.size,ref.size).data, mask = new Uint8Array(ref.size*ref.size);
       for (let p=0,i=0;i<data.length;i+=4,p++) if (data[i+3]>16) mask[p]=1;
       const bbox = findOpaqueBounds(mask,ref.size,ref.size);
-      if (bbox && repeatMode === 'grid') {
-        const centerX=bbox.x0+bbox.w/2,centerY=bbox.y0+bbox.h/2,dx=centerX-draw.size/2,dy=centerY-draw.size/2,gap=Math.max(0,Number(patternDef?.gridSpacing)??6),stepX=bbox.w+gap,stepY=bbox.h+gap,reach=Math.hypot(width,height)/fieldScale,cols=Math.ceil(reach/stepX)+2,rows=Math.ceil(reach/stepY)+2;
-        for(let y=-rows;y<=rows;y++)for(let x=-cols;x<=cols;x++){ctx.save();ctx.translate(x*stepX,y*stepY);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();}
-      } else if (bbox) {
-        const fit=fitGuaranteedTriangle(mask,ref.size,ref.size,Math.max(0,Number(patternDef?.trianglePadding ?? patternDef?.spacing)??.5));
-        if(fit){
-          const outputCenterX=fit.motifPlacement.x+fit.bbox.w/2,outputCenterY=fit.motifPlacement.y+fit.bbox.h/2,dx=outputCenterX-draw.size/2,dy=outputCenterY-draw.size/2;
-          const stamp=(ox,oy)=>{ctx.save();ctx.translate(ox,oy);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();ctx.save();ctx.translate(ox+fit.midpoint.x,oy+fit.midpoint.y);ctx.rotate(Math.PI);ctx.translate(-fit.midpoint.x,-fit.midpoint.y);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();};
-          const reach=Math.hypot(width,height)/fieldScale/2+draw.size,det=fit.basisU.x*fit.basisV.y-fit.basisU.y*fit.basisV.x;let maxI=8,maxJ=8;
-          if(Math.abs(det)>1e-6){const ia=fit.basisV.y/det,ib=-fit.basisV.x/det,ic=-fit.basisU.y/det,id=fit.basisU.x/det;maxI=maxJ=0;for(const [x,y] of [[reach,reach],[reach,-reach],[-reach,reach],[-reach,-reach]]){maxI=Math.max(maxI,Math.abs(ia*x+ib*y));maxJ=Math.max(maxJ,Math.abs(ic*x+id*y));}maxI=Math.min(300,Math.ceil(maxI)+2);maxJ=Math.min(300,Math.ceil(maxJ)+2);}
-          for(let j=-maxJ;j<=maxJ;j++)for(let i=-maxI;i<=maxI;i++)stamp(i*fit.basisU.x+j*fit.basisV.x,i*fit.basisU.y+j*fit.basisV.y);
-        }
+      if (bbox) {
+        const { u: basisU, v: basisV } = shape.basis(bbox.w, bbox.h);
+        const centerX=bbox.x0+bbox.w/2,centerY=bbox.y0+bbox.h/2,dx=centerX-draw.size/2,dy=centerY-draw.size/2;
+        const midpoint = { x: (basisU.x+basisV.x)/2, y: (basisU.y+basisV.y)/2 };
+        const stamp = shape.paired
+          ? (ox,oy)=>{ctx.save();ctx.translate(ox,oy);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();ctx.save();ctx.translate(ox+midpoint.x,oy+midpoint.y);ctx.rotate(Math.PI);ctx.translate(-midpoint.x,-midpoint.y);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();}
+          : (ox,oy)=>{ctx.save();ctx.translate(ox,oy);ctx.drawImage(draw.canvas,dx,dy);ctx.restore();};
+        const reach=Math.hypot(width,height)/frameScale/2+draw.size,det=basisU.x*basisV.y-basisU.y*basisV.x;let maxI=8,maxJ=8;
+        if(Math.abs(det)>1e-6){const ia=basisV.y/det,ib=-basisV.x/det,ic=-basisU.y/det,id=basisU.x/det;maxI=maxJ=0;for(const [x,y] of [[reach,reach],[reach,-reach],[-reach,reach],[-reach,-reach]]){maxI=Math.max(maxI,Math.abs(ia*x+ib*y));maxJ=Math.max(maxJ,Math.abs(ic*x+id*y));}maxI=Math.min(300,Math.ceil(maxI)+2);maxJ=Math.min(300,Math.ceil(maxJ)+2);}
+        for(let j=-maxJ;j<=maxJ;j++)for(let i=-maxI;i<=maxI;i++)stamp(i*basisU.x+j*basisV.x,i*basisU.y+j*basisV.y);
       }
     } else ctx.drawImage(draw.canvas,-draw.size/2,-draw.size/2);
     ctx.restore();
@@ -1387,7 +1378,12 @@
         let nearBoundary = false;
         for (let oy = -px; oy <= px && !nearBoundary; oy++) {
           for (let ox = -px; ox <= px; ox++) {
-            if (Math.hypot(ox, oy) > px + 0.01) continue;
+            // Strictly-less-than px, not <=: a boundary pixel is layer 0 (distance
+            // 0 from itself) and should already count as removed at px=1, so
+            // erosion removes exactly the px nearest layers (0..px-1), giving a
+            // real px-pixel inset instead of px+1 (was previously inclusive of
+            // distance===px, eroding one layer deeper than the setting implied).
+            if (Math.hypot(ox, oy) >= px - 0.01) continue;
             const nx = x + ox, ny = y + oy;
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
             if (boundary[ny * width + nx]) { nearBoundary = true; break; }
@@ -1403,8 +1399,9 @@
   // scaled-up motif reads fine with the same line weight it always had) but
   // does thin down for a scaled-down one, clamped so it never disappears
   // below 1px.
-  function scaledOutlineWidth(defaultWidth, pattern) {
-    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.patternScale) || 1, 1);
+  function scaledOutlineWidth(defaultWidth, rawPattern) {
+    const pattern = legacyFrameFields(rawPattern);
+    const scale = Math.min(Number(pattern?.motifScale) || 1, 1) * Math.min(Number(pattern?.frameScale) || 1, 1);
     return Math.max(1, Math.min(defaultWidth, Math.round(defaultWidth * scale)));
   }
 
@@ -1530,7 +1527,16 @@
       // _imageForTint is synchronous. Return cached patterned output when available;
       // otherwise schedule a player-avatar refresh after generating it and use this
       // one unpatterned frame as a safe fallback.
-      const prefix = `runtime:${normalizeAssetPath(sourceKey)}`; // Used to keep the same source layer's async/cached composite stable across frames.
+      // tintKey folds in the primary dye/tint identity that produced `tinted`'s
+      // own pixels — without it, two characters (or the same character before
+      // and after a redye) sharing this sourceKey+pattern+patternColor combo
+      // would collide on the same cache key, and whichever dye rendered first
+      // would "freeze" the pattern's shading for everyone else afterward: the
+      // fill formula below reads its light/dark variation straight out of
+      // `tinted`'s own pixels, so a stale `tinted` from a different dye means a
+      // stale (and possibly much flatter or more saturated) shade baseline.
+      const tintKey = tint?.mode === 'shadeFill' ? `shade:${(tint.rgb || []).join(',')}` : tint?.mode === 'hueSatFill' ? `huesat:${tint.hue}:${tint.sat}` : 'none';
+      const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}`; // Used to keep the same source layer's async/cached composite stable across frames.
       const colorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the sole color source for woven ink.
       const fullKey = patternCanvasKey(tinted, pattern, colorHex, prefix);
       const cached = patternedCanvasCache.get(fullKey);
