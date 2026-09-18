@@ -113,6 +113,9 @@ const nonColliding = window.MapLayoutSystem.getEffectiveMapData({
 assert.deepStrictEqual(Array.from(nonColliding.colliders, tile => Array.from(tile)), [[0, 0]], 'non-colliding and walkable-elevation furniture add no tile blockers');
 
 assert.match(editorSource, /id="gridRotLeftBtn"/, 'interior editor exposes 90-degree grid rotation');
+assert.match(editorSource, /id="gridRot180Btn"/, 'interior editor exposes direct 180-degree grid rotation');
+assert.match(editorSource, /gridRot180Btn'\)\.addEventListener\('click',[\s\S]{0,100}rotateSelectedGrid\(180\)/, '180-degree button rotates directly without an intermediate 90-degree state');
+assert.match(editorSource, /var swapsFootprint=Math\.abs\(Math\.round\(delta\/90\)\)%2===1;/, 'only odd quarter-turns swap the furniture footprint');
 assert.match(editorSource, /id="gridFurnW"/, 'interior editor exposes whole-tile width');
 assert.match(editorSource, /id="gridFurnD"/, 'interior editor exposes whole-tile depth');
 assert.match(editorSource, /id="nonCollidingFurniture"/, 'interior editor exposes non-colliding checkbox');
