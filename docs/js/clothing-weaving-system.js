@@ -25,27 +25,20 @@
   }); // Central armor-weight tuning; all four tradeoffs derive only from total cloth weight.
   const CLOTHING_MARKER_KEY = '__hobunjiWovenClothing'; // Temporary bodyColors metadata passed only through avatar render data.
   const CRAFT_ID_MARKER = '#loom:'; // Makes each crafted article unique to legacy duplicate-collapsing logic.
-  const ACTION_BUTTON_IDS = Object.freeze(['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']);
   const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear']);
 
   let equipmentDeps = null; // Captured from EquipmentPanel.init; used for gear, inventory, saves, and player refresh.
-  let furnitureDeps = null; // Captured from FurniturePlacer.init; used for player-placed loom discovery.
   let activeClothingUid = null; // Updated before EquipmentPanel's private detail click handler runs; used to extend redye for woven gear.
   let loomOverlay = null; // Current floating loom UI root; null while closed.
-  let loomTarget = null; // Most recently resolved aimed loom, exposed in mobile debug output.
   let lastError = null; // Most recent recoverable integration/rendering error for mobile diagnostics.
   let armorHooksInstalled = false; // Prevents duplicate ResourceSystem/Combat wrapping.
   let portraitHooksInstalled = false; // Prevents duplicate render/tint wrapping.
-  let interactionHooksInstalled = false; // Prevents duplicate loom action listeners/observer/timer.
   let stylesInjected = false; // Prevents duplicate loom modal CSS.
   let wasDodging = false; // Rising-edge tracker used to apply weight to an ordinary dodge exactly once.
   let cosmeticsIndexPromise = null; // Shared fetch for cosmetic id -> JSON path lookup.
   const cosmeticConfigPromises = new Map(); // Reuses per-article cosmetic JSON fetches for pattern layer lookup.
   const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
   const pendingPatternCanvasKeys = new Set(); // Prevents repeated async builds while a synchronous portrait frame uses the unpatterned fallback.
-  const authoredLoomPromiseByArea = new Map(); // Caches static interior loom scans so aiming never refetches the same map every poll.
-  let targetResolveToken = 0; // Rejects stale async target scans after the player/area has already changed.
-  let lastLoomPointerOpenAt = 0; // Prevents the click following a handled pointerup from opening the loom a second time.
   let activePortraitPatternMap = null; // URL -> woven descriptor map, scoped to a player render call only.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, Number(value) || 0));
@@ -259,16 +252,6 @@
         return result;
       };
     }
-    api.__clothingWeavingPatched = true;
-  }
-
-  function patchFurniturePlacer(api) {
-    if (!api || api.__clothingWeavingPatched || typeof api.init !== 'function') return;
-    const originalInit = api.init.bind(api); // Captures the placed-furniture accessors without changing placement itself.
-    api.init = function clothingWeavingFurnitureInit(injected, ...rest) {
-      furnitureDeps = injected;
-      return originalInit(injected, ...rest);
-    };
     api.__clothingWeavingPatched = true;
   }
 
@@ -522,7 +505,7 @@
 
   function patternLibraryEntries() { return window.PatternLibrary?.listAvailable?.() || []; }
 
-  async function openLoom() {
+  function openLoom() {
     injectStyles();
     closeLoom();
     const blueprints = currentBlueprints();
@@ -985,153 +968,14 @@
     return true;
   }
 
-  function currentArea() { return window.__hobunjiFurnitureDebug?.getCurrentArea?.() || furnitureDeps?.getCurrentArea?.() || null; }
-  function targetPoint() {
-    const debug = window.__hobunjiFurnitureDebug;
-    const player = debug?.playerState;
-    const angleDeg = finite(debug?.targetAimAngleDeg, NaN);
-    if (![player?.x, player?.y, angleDeg].every(Number.isFinite)) return null;
-    const tile = 64, orbit = finite(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.orbitRadiusTiles, 0.62), angle = angleDeg * Math.PI / 180;
-    return { col: (player.x + Math.cos(angle) * tile * orbit) / tile, row: (player.y + Math.sin(angle) * tile * orbit) / tile };
-  }
-
-  function loomFootprint(rotYDeg = 0) {
-    const def = furnitureDeps?.getDecorativeFurnitureDefs?.()?.loom || null; // Used to keep loom targeting on the same footprint data as placement/collision.
-    const baseW = Math.max(1, finite(def?.fw, 1)); // Used as the unrotated loom width; 1 is the current authored fallback.
-    const baseD = Math.max(1, finite(def?.fd, 2)); // Used as the unrotated loom depth; 2 preserves the current loom footprint before FurniturePlacer init.
-    const angle = finite(rotYDeg) * Math.PI / 180; // Used to mirror game.js decorativeFurnitureSize rotation math.
-    const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle)); // Used to project the footprint onto the tile grid after rotation.
-    return {
-      fw: Math.max(1, Math.ceil(baseW * cos + baseD * sin - 1e-6)),
-      fd: Math.max(1, Math.ceil(baseW * sin + baseD * cos - 1e-6)),
-    };
-  }
-
-  function distanceToLoomFootprint(point, loom) {
-    const minCol = finite(loom?.col); // Used as the left edge of the same occupied tile rectangle placement uses.
-    const minRow = finite(loom?.row); // Used as the top edge of the same occupied tile rectangle placement uses.
-    const maxCol = minCol + Math.max(1, finite(loom?.fw, 1)); // Used to measure aim distance from the entire loom width, not its first tile center.
-    const maxRow = minRow + Math.max(1, finite(loom?.fd, 1)); // Used to measure aim distance from the entire loom depth, not its first tile center.
-    const dx = point.col < minCol ? minCol - point.col : point.col > maxCol ? point.col - maxCol : 0; // Horizontal distance to the footprint; zero while aimed anywhere over it.
-    const dy = point.row < minRow ? minRow - point.row : point.row > maxRow ? point.row - maxRow : 0; // Vertical distance to the footprint; zero while aimed anywhere over it.
-    return Math.hypot(dx, dy);
-  }
-
-  async function authoredLooms(area) {
-    const areaKey = String(area || ''); // Used as the static-interior loom cache key.
-    if (!/^map_i_/.test(areaKey)) return [];
-    if (!authoredLoomPromiseByArea.has(areaKey)) {
-      authoredLoomPromiseByArea.set(areaKey, (async () => {
-        try {
-          const response = await fetch(`config/maps/${encodeURIComponent(areaKey)}.json`);
-          if (!response.ok) return [];
-          const map = await response.json();
-          return (map?.furniture || []).filter(piece => {
-            const key = String(piece?.itemKey || '').toLowerCase(); // Used to accept both map-authored `loom` and furniture-runtime `loomFurniture`.
-            return key === 'loom' || key === 'loomfurniture';
-          }).map(piece => {
-            const rotYDeg = finite(piece?.rotYDeg ?? piece?.rotY, 0); // Used to match the authored fixture's rendered footprint orientation.
-            const footprint = loomFootprint(rotYDeg); // Used by targeting so every tile occupied by this authored loom is interactive.
-            return { id: piece.id || null, key: 'loom', col: finite(piece.col), row: finite(piece.row), rotYDeg, ...footprint, source: 'authored' };
-          });
-        } catch (error) {
-          lastError = String(error?.message || error);
-          return [];
-        }
-      })());
-    }
-    return authoredLoomPromiseByArea.get(areaKey);
-  }
-
-  function placedLooms() {
-    const placed = furnitureDeps?.getPlacedFurniture?.() || [];
-    return placed.filter(obj => String(obj?.key || '').toLowerCase() === 'loom' || String(obj?.itemKey || '').toLowerCase() === 'loomfurniture')
-      .map(obj => {
-        const rotYDeg = finite(obj?.rotYDeg ?? obj?.rotY, 0); // Used to keep moved/rotated player-placed looms targetable over their current footprint.
-        const footprint = loomFootprint(rotYDeg); // Used by targeting to cover every occupied tile of the placed loom.
-        return { id: obj.id || null, key: 'loom', col: finite(obj.col), row: finite(obj.row), rotYDeg, ...footprint, source: 'placed' };
-      });
-  }
-
-  async function targetedLoom() {
-    const point = targetPoint();
-    if (!point) return null;
-    const area = currentArea();
-    const candidates = [...placedLooms(), ...(await authoredLooms(area))];
-    const match = candidates.map(loom => ({ loom, distance: distanceToLoomFootprint(point, loom) }))
-      .filter(entry => entry.distance <= 0.95).sort((a, b) => a.distance - b.distance)[0];
-    loomTarget = match ? { ...match.loom, distance: match.distance, area } : null;
-    return loomTarget;
-  }
-
-  function actionButtonHtml() {
-    const touch = window.ActionPromptUI?.getLastInputDevice?.() === 'touch';
-    return touch ? '<span class="abt-icon">🧶</span><span class="abt-label">Loom</span>' : '<span class="abt-icon">🧶</span><span class="abt-label">Use Loom</span>';
-  }
-
-  async function syncLoomActionButton() {
-    if (typeof document === 'undefined') return;
-    const token = ++targetResolveToken; // Used to prevent a slower old-area map fetch from overwriting the newest targeting result.
-    const target = await targetedLoom();
-    if (token !== targetResolveToken) return;
-    const buttons = ACTION_BUTTON_IDS.map(id => document.getElementById(id)).filter(Boolean);
-    const existing = buttons.find(button => button.dataset.clothingLoomInjected === '1');
-    if (!target) {
-      if (existing) {
-        existing.classList.add('abt-hidden');
-        existing.removeAttribute('data-action');
-        existing.innerHTML = '';
-        delete existing.dataset.clothingLoomInjected;
-      }
-      return;
-    }
-    const host = existing || buttons.find(button => button.classList.contains('abt-hidden') && button.dataset.npcFurnitureWardrobeInjected !== '1');
-    if (!host) return;
-    host.dataset.clothingLoomInjected = '1';
-    host.dataset.action = 'clothing_loom_open';
-    host.classList.remove('abt-hidden', 'blocked');
-    host.removeAttribute('aria-hidden');
-    host.innerHTML = actionButtonHtml();
-    host.title = 'Use Loom';
-  }
-
-  function installInteractionHooks() {
-    if (interactionHooksInstalled || typeof document === 'undefined') return;
-    interactionHooksInstalled = true;
-    const interceptLoomAction = event => {
-      const button = event.target?.closest?.('button[data-clothing-loom-injected="1"]');
-      if (!button) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (event.type === 'pointerup') {
-        lastLoomPointerOpenAt = performance.now();
-        openLoom();
-      } else if (event.type === 'click' && (event.detail === 0 || performance.now() - lastLoomPointerOpenAt > 180)) {
-        openLoom(); // Keyboard/controller-generated click has no preceding pointerup; pointer clicks are de-duped above.
-      }
-    };
-    document.addEventListener('pointerdown', interceptLoomAction, true);
-    document.addEventListener('pointerup', interceptLoomAction, true);
-    document.addEventListener('click', interceptLoomAction, true);
-    const root = document.getElementById('actionStack') || document.body;
-    if (typeof MutationObserver === 'function' && root) {
-      const observer = new MutationObserver(() => syncLoomActionButton());
-      observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'data-action'] });
-    }
-    window.setInterval?.(() => { syncLoomActionButton(); installArmorHooks(); installPortraitHooks(); }, 250);
-    syncLoomActionButton();
-  }
-
   function debugSnapshot() {
     const stats = armorStats();
     return {
       version: VERSION,
       equipmentReady: !!equipmentDeps,
-      furnitureReady: !!furnitureDeps,
       armorHooksInstalled,
       portraitHooksInstalled,
       loomOpen: !!loomOverlay?.isConnected,
-      loomTarget: loomTarget ? { ...loomTarget } : null,
       combatActive: combatActive(),
       mounted: mounted(),
       equippedWeight: stats.weightUnits,
@@ -1159,14 +1003,12 @@
     learnOwnedBlueprints,
     renderPatternedSprite,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, loomFootprint, distanceToLoomFootprint }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
   futureGlobal('EquipmentPanel', patchEquipmentPanel);
-  futureGlobal('FurniturePlacer', patchFurniturePlacer);
   installClothingDetailTracking();
-  installInteractionHooks();
   installArmorHooks();
   installPortraitHooks();
 })();
