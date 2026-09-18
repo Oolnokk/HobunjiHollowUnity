@@ -98,10 +98,18 @@ root.userData.hobunjiShoulderPetAttachment = {
   alignedGripWorldPosition: [shoulderPerchWorld.x, shoulderPerchWorld.y, shoulderPerchWorld.z],
   authoritativeRootTransform: true,
 };
+let canonicalScaleSyncCalls = 0; // Counts simulated renderer scale refreshes so stale flip-parity closures cannot pass unnoticed.
 const fakePet = {
   stableRole: 'shoulderPet',
   __hobunjiShoulderObservationFlipped: true,
-  avatarRef: { group: root, frontPlane: plane },
+  avatarRef: {
+    group: root,
+    frontPlane: plane,
+    syncMirroredPlaneScale() {
+      canonicalScaleSyncCalls++;
+      plane.scale.x = Math.abs(plane.scale.x) || 1; // Simulates PNGPlaneAvatar restoring canonical positive face scale before the observation wrapper reapplies current parity.
+    },
+  },
 };
 rigSandbox.window.__climbDebug = { companionObjects: new Set([fakePet]) };
 rigSandbox.window.ShoulderPetObservationFlip.scanNow();
@@ -115,6 +123,25 @@ const restoredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
 assert(plane.scale.x > 0, 'restoring observation parity must restore the positive plane scale');
 assert(Math.abs(plane.position.x - 0.2) < 1e-12, 'restoring observation parity must restore the canonical plane position without drift');
 assert(restoredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'unflipping must keep the same grip/perch pivot fixed');
+
+fakePet.avatarRef.syncMirroredPlaneScale();
+assert.equal(canonicalScaleSyncCalls, 1, 'test must exercise the wrapped canonical scale refresh');
+assert(plane.scale.x > 0, 'scale refresh after unflipping must read current parity instead of replaying the originally captured mirrored state');
+assert(Math.abs(plane.position.x - 0.2) < 1e-12, 'scale refresh after unflipping must preserve the canonical position');
+
+fakePet.__hobunjiShoulderObservationFlipped = true;
+rigSandbox.window.ShoulderPetObservationFlip.scanNow();
+fakePet.avatarRef.syncMirroredPlaneScale();
+const refreshedMirroredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
+assert.equal(canonicalScaleSyncCalls, 2, 'test must exercise canonical scale refresh in both observation parities');
+assert(plane.scale.x < 0, 'scale refresh while mirrored must reapply the current negative parity');
+assert(refreshedMirroredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'scale refresh while mirrored must keep the same grip/perch world pivot fixed');
+
+delete root.userData.hobunjiShoulderPetAttachment;
+fakePet.stableRole = 'companion';
+rigSandbox.window.ShoulderPetObservationFlip.scanNow();
+assert(plane.scale.x > 0, 'leaving shoulder-pet mode must restore positive scale even after the live shoulder pin disappears');
+assert(Math.abs(plane.position.x - 0.2) < 1e-12, 'leaving shoulder-pet mode without a live pin must restore the cached canonical position');
 
 assert.match(source,
   /function _tickShoulderPetCuriosity\(c, dt\)[\s\S]{0,1800}state\.phase = 'look'[\s\S]{0,700}targetLeanDeg/,
@@ -131,7 +158,7 @@ assert.match(rigSource,
   /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,520}applyShoulderPetObservationMirror\(pet, flipped\)[\s\S]{0,900}phase = nextPhase/,
   'each observation toggles the horizontal mirror synchronously before the look phase begins');
 assert.match(rigSource,
-  /const mirrorShoulderObservationPlaneAroundWorldPivot = [\s\S]{0,4000}const sign = flipped \? -1 : 1;[\s\S]{0,500}plane\.scale\.x = baseScaleX \* sign/,
+  /const mirrorShoulderObservationPlaneAroundWorldPivot = [\s\S]{0,4200}const sign = flipped \? -1 : 1;[\s\S]{0,500}plane\.scale\.x = state\.baseScaleX \* sign/,
   'the observation change is still an instantaneous X-scale mirror rather than a rotation or lerp');
 assert.match(rigSource,
   /const desiredWorld = plane\.position\.clone\(\)\.set\(worldPivot\.x, worldPivot\.y, worldPivot\.z\);[\s\S]{0,900}plane\.position\.add\(desiredParent\.sub\(currentParent\)\)/,
@@ -143,8 +170,11 @@ assert.match(rigSource,
   /shoulderObservationMeshes[\s\S]{0,1000}hobunjiPlaneFace[\s\S]{0,500}hobunjiShoulderSplitOverlay/,
   'the grip-pivot mirror applies to live rigged face meshes and split-frame overlays rather than stale center-pivot cards');
 assert.match(rigSource,
-  /avatar\.syncMirroredPlaneScale = function[\s\S]{0,450}applyMirror\(\)/,
-  'later canonical plane-scale refreshes reapply the current grip-pivot mirror parity');
+  /avatar\.syncMirroredPlaneScale = function[\s\S]{0,650}applyShoulderPetObservationMirror\(pet, !!this\.__hobunjiShoulderObservationFlipped\)/,
+  'later canonical plane-scale refreshes read and reapply the current grip-pivot mirror parity instead of a captured old state');
+assert.match(rigSource,
+  /if \(!worldPivot\)[\s\S]{0,700}!flipped[\s\S]{0,700}restoreShoulderObservationPlane/,
+  'role cleanup restores the cached canonical mesh transform even if the authoritative shoulder pin has already disappeared');
 assert.match(rigSource,
   /pivotMode:[\s\S]{0,220}pivotError:[\s\S]{0,2800}gripError=/,
   'the mobile-readable shoulder-pet flip diagnostic reports the pivot mode and residual grip error');
