@@ -23,11 +23,23 @@ assert.match(rigSource,
   /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,260}applyShoulderPetObservationMirror\(pet, flipped\)[\s\S]{0,420}phase = nextPhase/,
   'each observation toggles the horizontal mirror synchronously before the look phase begins');
 assert.match(rigSource,
-  /const sign = flipped \? -1 : 1;[\s\S]{0,220}plane\.scale\.x = \(Number\.isFinite\(magnitude\)[\s\S]{0,100}\* sign/,
-  'the observation change is an instantaneous X-scale mirror rather than a rotation or lerp');
+  /function mirrorShoulderObservationPlaneAroundGrip[\s\S]{0,2600}const sign = flipped \? -1 : 1;[\s\S]{0,500}plane\.scale\.x = baseScaleX \* sign/,
+  'the observation change is still an instantaneous X-scale mirror rather than a rotation or lerp');
 assert.match(rigSource,
-  /avatar\.syncMirroredPlaneScale = function[\s\S]{0,650}__hobunjiShoulderObservationFlipped[\s\S]{0,260}plane\.scale\.x/,
-  'later canonical plane-scale refreshes preserve the current horizontal mirror parity');
+  /const desiredWorld = root\.localToWorld\(desiredGripRoot\.clone\(\)\);[\s\S]{0,900}plane\.position\.add\(desiredParent\.sub\(currentParent\)\)/,
+  'the mirrored face is translated after the scale sign change so shoulderGrip, not the plane center, remains the flip origin');
+assert.match(rigSource,
+  /shoulderGripPositionForObservation[\s\S]{0,900}anchors\?\.shoulderGrip\?\.position/,
+  'shoulder-pet observation flips resolve their pivot from the authored creature shoulderGrip');
+assert.match(rigSource,
+  /shoulderObservationMeshes[\s\S]{0,1000}hobunjiPlaneFace[\s\S]{0,500}hobunjiShoulderSplitOverlay/,
+  'the grip-pivot mirror applies to live rigged face meshes and split-frame overlays rather than stale center-pivot cards');
+assert.match(rigSource,
+  /avatar\.syncMirroredPlaneScale = function[\s\S]{0,450}applyMirror\(\)/,
+  'later canonical plane-scale refreshes reapply the current grip-pivot mirror parity');
+assert.match(rigSource,
+  /pivotMode:[\s\S]{0,220}pivotError:[\s\S]{0,900}gripError=/,
+  'the mobile-readable shoulder-pet flip diagnostic reports the pivot mode and residual grip error');
 assert.match(rigSource,
   /pet\.stableRole !== 'shoulderPet'[\s\S]{0,220}applyShoulderPetObservationMirror\(pet, false\)/,
   'leaving shoulder-pet mode restores ordinary unmirrored animal rendering');
