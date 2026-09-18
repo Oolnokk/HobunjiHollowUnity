@@ -936,6 +936,19 @@
       const ageMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null;
       lines.push(`Combat SFX: preload ready=${ready}/${combatSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${ageMs}ms ago detail=${JSON.stringify(lastCue.detail)} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
     }
+    const chargedBreakerDebug = window.Combat?.chargedBreakerDebug?.snapshot?.(); // Used to verify visible pose charge and its derived lunge/control stats on mobile.
+    if (chargedBreakerDebug) {
+      const release = chargedBreakerDebug.lastRelease;
+      lines.push(`Charged Breaker: active=${chargedBreakerDebug.active ? 1 : 0} held=${Number(chargedBreakerDebug.heldSeconds || 0).toFixed(2)}s pose=${Math.round(Number(chargedBreakerDebug.poseCharge || 0) * 100)}%${release ? ` last=[pose ${Math.round(Number(release.poseCharge || 0) * 100)}% lunge ${(Number(release.lungePx || 0) / Math.max(1, Number(deps.TILE) || 1)).toFixed(2)}t cone ${Number(release.halfConeDeg || 0).toFixed(1)}° knockback ${Number(release.knockbackPxS || 0).toFixed(0)}px/s gravityResist ${Math.round(Number(release.pitchDistanceResistance || 0) * 100)}%]` : ''}`);
+    }
+    const flurryDebug = window.Combat?.flurryDebug?.snapshot?.(); // Used to verify the held Flurry glow ramp and strike count without developer tools.
+    if (flurryDebug) {
+      lines.push(`Accelerating Flurry: active=${flurryDebug.active ? 1 : 0} held=${Number(flurryDebug.heldSeconds || 0).toFixed(2)}s glow=${Math.round(Number(flurryDebug.glowIntensity || 0) * 100)}% strikes=${Number(flurryDebug.strikes || 0)}`);
+    }
+    const weaponGlowDebug = window.Combat?.weaponChargeGlow?.snapshot?.(); // Used to show which held technique currently owns the shared Counter-Shield-style silhouette glow.
+    if (weaponGlowDebug?.requests?.length) {
+      lines.push(`Weapon charge glow: ${weaponGlowDebug.requests.map(request => `${request.label || request.owner} ${Math.round(Number(request.intensity || 0) * 100)}% / ${Math.round(Number(request.expansion || 0) * 100)}% expansion`).join(', ')}`);
+    }
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {
       const last = animalVoiceDebug.last;
