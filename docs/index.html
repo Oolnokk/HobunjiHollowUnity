@@ -86,6 +86,12 @@
        read getActiveGrid/getActiveScene/etc. from their own init() calls
        throughout game.js. -->
   <script src="js/grid-tile-accessors.js?v=20260915perf1"></script>
+  <!-- Small self-registering lookup for furniture/lantern-mask point lights
+       (game.js's makeFurniturePointLight and a few inline PointLight sites
+       in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
+       Loaded early since it has no deps of its own and any of those
+       creation sites may run as soon as the game world starts building. -->
+  <script src="js/furniture-light-registry.js?v=20260918perf1"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -1464,20 +1470,6 @@
               <div class="settings-desc">Dark border on rocks, crops and terrain steps</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingOutlines" checked><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Depth Outlines</div>
-              <div class="settings-desc">Extra outline pass along depth seams between objects (heavier on performance)</div>
-            </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingDepthOutlines"><span class="toggle-slider"></span></span>
-          </label>
-          <label class="settings-row">
-            <div class="settings-label">
-              <div class="settings-name">Depth Outline Sensitivity</div>
-              <div class="settings-desc">How small a depth gap is needed to draw a seam</div>
-            </div>
-            <input type="range" id="settingDepthOutlineSensitivity" min="0" max="1" step="0.05" value="0.5" style="align-self:center">
           </label>
           <div class="settings-section-title" style="margin-top:10px">Billboard Sprites</div>
           <label class="settings-row">

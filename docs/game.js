@@ -3092,6 +3092,7 @@
         const light = new THREE.PointLight(lightDef.color, lightDef.intensity, lightDef.distance);
         light.position.set(x, y, z);
         light.userData.furnitureLightMask = true;
+        window.FurnitureLightRegistry?.register(light);
         return light;
       }
 
@@ -18295,13 +18296,11 @@
         shell: Object.freeze({ thicknessNdc: 0.006 }),
         targetHighlight: Object.freeze({ thicknessNdc: 0.009, allyColor: '#14f22e', hostileColor: '#f21f14' }),
         materialSeam: Object.freeze({ hueStep: 0.6180339887, saturation: 0.85, lightness: 0.55, colorDistanceThreshold: 0.1, occlusionToleranceDepth: 0.05 }),
-        depthEdge: Object.freeze({ baseThreshold: 0.01, sensitivityMinThreshScale: 2.0, sensitivityMaxThreshScale: 0.25 }),
       });
       let _outlineRenderingConfig = {
         shell: { ...OUTLINE_RENDERING_DEFAULTS.shell },
         targetHighlight: { ...OUTLINE_RENDERING_DEFAULTS.targetHighlight },
         materialSeam: { ...OUTLINE_RENDERING_DEFAULTS.materialSeam },
-        depthEdge: { ...OUTLINE_RENDERING_DEFAULTS.depthEdge },
       };
       function _applyOutlineRenderingConfig(raw) {
         const finiteOr = (v, fb) => Number.isFinite(Number(v)) ? Number(v) : fb;
@@ -18309,7 +18308,6 @@
         const shell = raw?.shell || {};
         const target = raw?.targetHighlight || {};
         const seam = raw?.materialSeam || {};
-        const depth = raw?.depthEdge || {};
         _outlineRenderingConfig = {
           shell: { thicknessNdc: finiteOr(shell.thicknessNdc, OUTLINE_RENDERING_DEFAULTS.shell.thicknessNdc) },
           targetHighlight: {
@@ -18324,11 +18322,6 @@
             colorDistanceThreshold: finiteOr(seam.colorDistanceThreshold, OUTLINE_RENDERING_DEFAULTS.materialSeam.colorDistanceThreshold),
             occlusionToleranceDepth: finiteOr(seam.occlusionToleranceDepth, OUTLINE_RENDERING_DEFAULTS.materialSeam.occlusionToleranceDepth),
           },
-          depthEdge: {
-            baseThreshold: finiteOr(depth.baseThreshold, OUTLINE_RENDERING_DEFAULTS.depthEdge.baseThreshold),
-            sensitivityMinThreshScale: finiteOr(depth.sensitivityMinThreshScale, OUTLINE_RENDERING_DEFAULTS.depthEdge.sensitivityMinThreshScale),
-            sensitivityMaxThreshScale: finiteOr(depth.sensitivityMaxThreshScale, OUTLINE_RENDERING_DEFAULTS.depthEdge.sensitivityMaxThreshScale),
-          },
         };
         // Re-apply onto whatever's already built — materials/uniforms exist
         // by the time this ever runs (loadOutlineRenderingConfig is only
@@ -18339,7 +18332,6 @@
         targetOutlineRedMat.uniforms.uThickness.value = _outlineRenderingConfig.targetHighlight.thicknessNdc;
         try { targetOutlineGreenMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.allyColor); } catch {}
         try { targetOutlineRedMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.hostileColor); } catch {}
-        _postMat.uniforms.uBaseDepthThresh.value = _outlineRenderingConfig.depthEdge.baseThreshold;
         _postMat.uniforms.uSeamColorDistThresh.value = _outlineRenderingConfig.materialSeam.colorDistanceThreshold;
         _postMat.uniforms.uSeamOcclusionTolerance.value = _outlineRenderingConfig.materialSeam.occlusionToleranceDepth;
       }
@@ -18581,6 +18573,15 @@
       // group lets the depth-only source pass below hide them temporarily
       // without touching the main colour pass that actually shows them. Each
       // child mesh also joins the dedicated outline-occluder layer above.
+      // Registered here once per avatar mesh instead of being rediscovered by
+      // a full activeScene.traverse() every frame in
+      // _renderPngPlaneOutlineOccluderDepth below — the active scene can hold
+      // thousands of terrain/foliage/instanced-mesh nodes, so scanning all of
+      // them every single frame just to find the handful tagged with this
+      // layer scaled with total scene size, not with how many avatars
+      // actually exist. See the pruning comment down there for how entries
+      // get cleaned up once an avatar is actually despawned.
+      const _pngPlaneOccluderMeshes = [];
       function _markPngPlane(obj) {
         if (!obj) return;
         obj.userData.isPngPlane = true;
@@ -18593,6 +18594,7 @@
           child.userData.noOutline = true;
           child.layers.disable(1);
           child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+          _pngPlaneOccluderMeshes.push(child);
         });
       }
 
@@ -18667,12 +18669,6 @@
       // contribute an edge, since nothing else was rendered into this target
       // to occlude it.
       const _edgeIdRT = _makeSceneRT(1, 1);
-      // Depth-only source for depth-edge detection — rendered with PNG-plane
-      // avatars hidden (see _markPngPlane above) so the detector only sees
-      // solid-geometry depth, never sprite-cutout silhouettes. colorWrite is
-      // off since only the attached depth texture is read back.
-      const _depthOnlyRT = _makeSceneRT(1, 1);
-      const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
       let _lastPngOutlineOccluderCount = -1; // Used to keep mobile outline diagnostics useful without per-frame log spam.
       // Reused across calls instead of allocated fresh each frame — this
       // runs unconditionally every frame outlines are on (the default), for
@@ -18688,8 +18684,23 @@
       function _renderPngPlaneOutlineOccluderDepth(activeScene) {
         const materialStates = _pngOutlineMaterialStates;
         let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
-        activeScene.traverse(object => {
-          if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) return;
+        // Walks each registered mesh up to its root instead of traversing the
+        // whole scene graph. Areas keep their own persistent scene per the
+        // building/zone maps in grid-tile-accessors.js, so a mesh whose root
+        // is some *other* THREE.Scene just belongs to a currently-inactive
+        // area — it's kept in the registry (compacted back in below) and
+        // skipped for this frame, not pruned. Only a root that isn't a Scene
+        // at all (the avatar's group was actually removed from every scene)
+        // means the entry is truly dead and gets dropped for good.
+        let writeIdx = 0;
+        for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
+          const object = _pngPlaneOccluderMeshes[i];
+          let root = object;
+          while (root.parent) root = root.parent;
+          if (!root.isScene) continue; // Despawned — drop from the registry.
+          _pngPlaneOccluderMeshes[writeIdx++] = object;
+          if (root !== activeScene) continue; // Alive, but in a different area's scene right now.
+          if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) continue;
           meshCount++;
           if (Array.isArray(object.material)) {
             for (const material of object.material) {
@@ -18716,7 +18727,8 @@
               material.depthFunc = THREE.LessEqualDepth;
             }
           }
-        });
+        }
+        _pngPlaneOccluderMeshes.length = writeIdx;
         if (meshCount === 0) return;
 
         const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
@@ -18742,7 +18754,6 @@
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
         _edgeIdRT.setSize(pixelW, pixelH);
-        _depthOnlyRT.setSize(pixelW, pixelH);
         _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
       }
 
@@ -18752,15 +18763,13 @@
       const _postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
       const _postMat = new THREE.ShaderMaterial({
         uniforms: {
-          tColor: { value: null }, tDepth: { value: null }, tEdgeId: { value: null },
+          tColor: { value: null }, tEdgeId: { value: null },
           tEdgeIdDepth: { value: null }, tSceneDepth: { value: null },
           uTexel: { value: new THREE.Vector2(1, 1) },
           uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
-          uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
           uSeamOutlinesOn: { value: 0 },
           // Defaults from OUTLINE_RENDERING_DEFAULTS below, overwritten in
           // place once config/outline-rendering.json loads.
-          uBaseDepthThresh: { value: 0.01 },
           uSeamColorDistThresh: { value: 0.1 },
           uSeamOcclusionTolerance: { value: 0.05 },
         },
@@ -18770,12 +18779,11 @@
           void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
         `,
         fragmentShader: `
-          uniform sampler2D tColor, tDepth, tEdgeId, tEdgeIdDepth, tSceneDepth;
+          uniform sampler2D tColor, tEdgeId, tEdgeIdDepth, tSceneDepth;
           uniform vec2 uTexel;
           uniform float uCameraNear, uCameraFar;
-          uniform float uDepthOutlinesOn, uDepthThreshScale;
           uniform float uSeamOutlinesOn;
-          uniform float uBaseDepthThresh, uSeamColorDistThresh, uSeamOcclusionTolerance;
+          uniform float uSeamColorDistThresh, uSeamOcclusionTolerance;
           varying vec2 vUv;
           float linearDepth(float z) {
             float zNdc = z * 2.0 - 1.0;
@@ -18783,26 +18791,6 @@
           }
           void main() {
             vec3 color = texture2D(tColor, vUv).rgb;
-
-            float d0 = linearDepth(texture2D(tDepth, vUv).r);
-            float dL = linearDepth(texture2D(tDepth, vUv - vec2(uTexel.x, 0.0)).r);
-            float dR = linearDepth(texture2D(tDepth, vUv + vec2(uTexel.x, 0.0)).r);
-            float dU = linearDepth(texture2D(tDepth, vUv + vec2(0.0, uTexel.y)).r);
-            float dD = linearDepth(texture2D(tDepth, vUv - vec2(0.0, uTexel.y)).r);
-            float depthDelta  = max(max(abs(d0 - dL), abs(d0 - dR)), max(abs(d0 - dU), abs(d0 - dD)));
-            // Compare the depth gap *relative to* the pixel's own depth rather than
-            // an absolute world-space gap. Under perspective, the true depth gap
-            // between neighbouring pixels on a continuous receding surface (e.g.
-            // flat ground running toward the horizon) grows with distance even
-            // where there's no real silhouette edge — an absolute threshold (even
-            // one scaled up at range) gets outpaced by that growth and the far
-            // ground lights up with false edges. Dividing by d0 cancels the
-            // perspective-driven growth out, so a real edge (a genuine jump in
-            // depth) still triggers at any distance while a smooth receding
-            // surface does not.
-            float relDepthDelta = depthDelta / max(d0, uCameraNear);
-            float depthThresh   = uBaseDepthThresh * uDepthThreshScale;
-            float depthEdge     = step(depthThresh, relDepthDelta) * uDepthOutlinesOn;
 
             vec4 id0 = texture2D(tEdgeId, vUv);
             vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
@@ -18824,7 +18812,7 @@
             float sceneDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
             idEdge *= step(idDepth, sceneDepth + uSeamOcclusionTolerance) * uSeamOutlinesOn;
 
-            float edge = max(depthEdge, idEdge);
+            float edge = idEdge;
             gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
           }
         `,
@@ -21890,11 +21878,9 @@
       let s_cloudForestFadeStartFrac = 0.70;
       let s_cloudForestOutlineFrac = 0.40;
       let s_outlines  = true;
-      let s_depthOutlines = false;       // extra depth-seam outline pass — off by default (heavier)
-      let s_depthOutlineThreshScale = 1; // sensitivity: lower = catches smaller depth gaps
       // Furniture "material ID" seam outline (see _markFurnitureEdgeId/
-      // idEdge in the composite shader) — unlike the shell and depth-edge
-      // passes above, this one never had a Settings toggle of its own; it
+      // idEdge in the composite shader) — unlike the shell pass above,
+      // this one never had a Settings toggle of its own; it
       // just always ran whenever s_outlines was on. Off by default now: the
       // shell pass alone (see shellOutlineMat's fog handling) is the
       // intended outline style, and this extra seam layer isn't fog-aware
@@ -22031,19 +22017,6 @@
       document.getElementById('settingBackSpriteXrayThroughShoulderPet')?.addEventListener('change', e => {
         s_backSpriteXrayThroughShoulderPet = e.target.checked;
         updatePetLayering(_petLayeringActive, _petLayeringPet);
-      });
-      document.getElementById('settingDepthOutlines').addEventListener('change', e => {
-        s_depthOutlines = e.target.checked;
-      });
-      document.getElementById('settingDepthOutlineSensitivity').addEventListener('input', e => {
-        // Slider is "sensitivity" (higher = catches smaller depth gaps), so
-        // invert it into the threshold-scale multiplier used by the shader.
-        // Bounds come from config/outline-rendering.json (read live off
-        // _outlineRenderingConfig, not captured at listener-setup time, so
-        // a config load that lands after this wiring still takes effect).
-        const sensitivity = Number(e.target.value);
-        const { sensitivityMinThreshScale: lo, sensitivityMaxThreshScale: hi } = _outlineRenderingConfig.depthEdge;
-        s_depthOutlineThreshScale = lo + (hi - lo) * sensitivity;
       });
       // Shared by the checkbox below and setGrassVisible (window.__climbDebug)
       // so a headless/console toggle doesn't need to click through Settings —
@@ -22878,43 +22851,16 @@
             window.PerfProfiler?.end(rpSeamPerf);
           }
 
-          // Depth-only source for the depth-edge detector, PNG-plane avatars
-          // (see _markPngPlane) and grass billboards (userData.isBillboard,
-          // set at creation on every InstancedMesh built from _grassBladeGeo)
-          // hidden for this pass only so their sprite cutout silhouettes and
-          // near-edge-on quad angles never feed the detector as false edges.
-          // Opt-in/off by default since it's an extra full scene pass on top
-          // of everything above.
-          if (s_depthOutlines) {
-            const rpDepthPerf = window.PerfProfiler?.begin('render: depth outline'); // Also does a full activeScene.traverse() every frame, same concern as the png occluder pass above.
-            const _hiddenForDepthPass = [];
-            activeScene.traverse(o => {
-              if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
-                o.visible = false;
-                _hiddenForDepthPass.push(o);
-              }
-            });
-            renderer.setRenderTarget(_depthOnlyRT);
-            activeScene.overrideMaterial = _depthOnlyMat;
-            renderer.render(activeScene, camera);
-            activeScene.overrideMaterial = null;
-            _hiddenForDepthPass.forEach(o => { o.visible = true; });
-            window.PerfProfiler?.end(rpDepthPerf);
-          }
-
-          // Composite: blend depth-discontinuity + furniture material-seam
-          // outlines over the rendered scene, straight to the canvas.
+          // Composite: blend furniture material-seam outlines over the
+          // rendered scene, straight to the canvas.
           const rpCompositePerf = window.PerfProfiler?.begin('render: composite');
           renderer.setRenderTarget(null);
           _postMat.uniforms.tColor.value          = _mainRT.texture;
-          _postMat.uniforms.tDepth.value           = s_depthOutlines ? _depthOnlyRT.depthTexture : _mainRT.depthTexture;
           _postMat.uniforms.tEdgeId.value          = _edgeIdRT.texture;
           _postMat.uniforms.tEdgeIdDepth.value     = _edgeIdRT.depthTexture;
           _postMat.uniforms.tSceneDepth.value      = _mainRT.depthTexture;
           _postMat.uniforms.uCameraNear.value      = camera.near;
           _postMat.uniforms.uCameraFar.value       = camera.far;
-          _postMat.uniforms.uDepthOutlinesOn.value = s_depthOutlines ? 1 : 0;
-          _postMat.uniforms.uDepthThreshScale.value = s_depthOutlineThreshScale;
           _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
           renderer.render(_postScene, _postCamera);
           window.PerfProfiler?.end(rpCompositePerf);
@@ -25591,7 +25537,6 @@
         get showLegBones() { return !!window.ProceduralLegAnimation?.showBones; },
         get sitInteraction() { return sitInteraction; },
         playerLegsRef: () => playerLegs,
-        get depthOutlinesSetting() { return s_depthOutlines; },
         get outlinesSetting() { return s_outlines; },
         get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
         get playerNeckJointRotX() { return playerNeckJoint ? playerNeckJoint.rotation.x : null; },
@@ -26306,12 +26251,6 @@
         esc: window.FormatUtils.esc,
       });
 
-      // Cache for the WeatherFX deps.getFurnitureLightSources() call below —
-      // declared here (game.js scope) rather than inside the deps object
-      // literal, since that object's own methods don't close over each
-      // other's sibling keys the way a plain local variable does.
-      let _furnitureLightScanCache = { scene: null, objs: null, lastScan: 0 };
-
       window.WeatherFX?.init({
         calendar,
         seededRandom: window.FormatUtils.seededRandom,
@@ -26342,28 +26281,16 @@
         // Used by WeatherFX's player lantern mask to follow the avatar's
         // smoothed world elevation instead of projecting from flat Y=0.
         getPlayerWorldY: () => playerMesh.position.y,
-        // Lighting is sampled at 10 Hz, but a full scene.traverse() every one
-        // of those ticks still visits every node in the active scene (not
-        // just the lights) to find the handful tagged furnitureLightMask —
-        // real, avoidable cost in a decor-dense area (a lot of furniture/
-        // NPCs/terrain chunks, e.g. the inn) since it scales with total
-        // scene size, not light count. Re-scanning is still cheap and
-        // correctness matters more than shaving cost further, so this only
-        // throttles the traversal itself down to 2s (light *positions* are
-        // re-read fresh from world matrices every call regardless — only
-        // which objects count as sources is cached) rather than trying to
-        // track furniture add/remove sites to invalidate it precisely.
+        // Furniture/lantern-mask point lights (game.js's makeFurniturePointLight,
+        // plus the inline PointLight creations in bandit-camps.js,
+        // porakaneki-camps-runtime.js and deadzone-billboard.js) self-register
+        // into window.FurnitureLightRegistry at creation, so this no longer
+        // needs its own scene.traverse()/2s-cache dance to find them — see
+        // that module for the registry and its despawn-pruning logic.
         getFurnitureLightSources: () => {
-          const cache = _furnitureLightScanCache;
           const scene = window.GridTileAccessors.getActiveScene();
-          const now = performance.now();
-          if (cache.scene !== scene || now - cache.lastScan >= 2000) {
-            const objs = [];
-            scene?.traverse(obj => { if (obj.isPointLight && obj.userData?.furnitureLightMask) objs.push(obj); });
-            cache.scene = scene; cache.objs = objs; cache.lastScan = now;
-          }
           const worldPosition = new THREE.Vector3();
-          return (cache.objs || []).map(obj => {
+          return (window.FurnitureLightRegistry?.list(scene) || []).map(obj => {
             obj.getWorldPosition(worldPosition);
             return {
               x: worldPosition.x,
