@@ -65,7 +65,7 @@
     brick: { label: 'Brick', paired: false, basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: w / 2, y: h } }), polygon: null },
     diamond: {
       label: 'Diamond', paired: false,
-      basis: (w, h) => ({ u: { x: w, y: 0 }, v: { x: 0, y: h } }),
+      basis: (w, h) => ({ u: { x: w / 2, y: h / 2 }, v: { x: w / 2, y: -h / 2 } }),
       polygon: (w, h) => [{ x: w / 2, y: 0 }, { x: w, y: h / 2 }, { x: w / 2, y: h }, { x: 0, y: h / 2 }],
     },
     triangle: {
@@ -857,7 +857,7 @@
       const data = currentPatternData();
       if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving.'; return; }
       if (typeof options.onSave !== 'function') { close(); return; }
-      const outgoing = loadedLibraryId ? data : await offloadMotif(data);
+      const outgoing = loadedLibraryId || options.offloadCustomMotif === false ? data : await offloadMotif(data);
       const result = await options.onSave(outgoing, loadedLibraryId);
       if (result !== false) close();
     });
