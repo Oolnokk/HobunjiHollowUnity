@@ -9,7 +9,7 @@
   const DAGGER_SHAPE = 'dagger'; // Used to identify every metal/material variant generated from the canonical dagger shape.
   const RETRY_MS = 50; // Used while game.js finishes creating generated tool definitions.
   const RETRY_LIMIT = 160; // Used to stop bootstrap retries after roughly eight seconds.
-  const patched = new Set(); // Used by mobile diagnostics to list exactly which generated dagger variants gained ranged behavior.
+  const patched = new Set(); // Used by mobile diagnostics to list exactly which generated dagger variants received NPC-only thrown configs.
   let attempts = 0; // Used to bound the bootstrap retry loop.
 
   function patch() {
@@ -31,12 +31,14 @@
   }
 
   function debugSnapshot() {
-    return { version: VERSION, daggerShape: DAGGER_SHAPE, attempts, patched: [...patched], ready: patched.size > 0 };
+    const defs = window.Combat?.deps?.TOOL_ITEM_DEFS || {}; // Checked live so diagnostics can catch an accidental player-ranged slot leak on any configured dagger.
+    const playerRangedExposed = [...patched].filter(itemKey => defs[itemKey]?.slots?.includes?.('ranged')); // Should stay empty: Porakaneki throwing uses NPC-only ranged config registration.
+    return { version: VERSION, daggerShape: DAGGER_SHAPE, attempts, patched: [...patched], playerRangedExposed, ready: patched.size > 0 };
   }
 
   window.HobunjiPorakanekiDaggerRanged = Object.freeze({ version: VERSION, patch, debugSnapshot, formatDebug: () => {
     const d = debugSnapshot();
-    return `Porakaneki dagger ranged: ready=${d.ready} patched=${d.patched.length} attempts=${d.attempts} items=${d.patched.join(',') || '-'}`;
+    return `Porakaneki dagger ranged: ready=${d.ready} npcThrown=${d.patched.length} playerRangedLeaks=${d.playerRangedExposed.length} attempts=${d.attempts} items=${d.patched.join(',') || '-'}`;
   }});
 
   if (patch()) return;
