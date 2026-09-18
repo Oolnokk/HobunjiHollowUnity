@@ -61,13 +61,13 @@
   }
 
   // A garment's weaving data can carry one pattern per layer role (new
-  // format: { layers: { <role>: { pattern|patternLibraryId, patternLabel } } })
+  // format: { layers: { <role>: { pattern, patternLibraryId?, patternLabel } } })
   // or — from before per-layer authoring existed — a single pattern applied
-  // to every layer of the garment (legacy format: { pattern, ... }). A layer
-  // entry holds either an embedded pattern (custom, never saved to the
-  // library) or just a patternLibraryId reference — resolved here rather
-  // than duplicating the full motif/placement data onto every garment that
-  // reuses the same saved pattern. Both are read through these two helpers
+  // to every layer of the garment (legacy format: { pattern, ... }). Current
+  // crafted garments embed their own pattern snapshot; patternLibraryId is
+  // optional provenance. The resolver still accepts the short-lived
+  // reference-only format so those items can be migrated while their source
+  // library pattern still exists. Both formats are read through these helpers
   // so every consumer (portrait rendering, loom/redye previews, debug
   // snapshots) agrees on what "this item has a pattern" and "what pattern
   // applies to this specific layer" mean.
@@ -87,6 +87,20 @@
     if (!weaving) return false;
     if (weaving.layers) return Object.keys(weaving.layers).some(role => !!weavingPatternForRole(weaving, role));
     return !!weaving.pattern;
+  }
+
+  function materializeWeavingLibrarySnapshots(item) {
+    const layers = item?.weaving?.layers; // Layer entries are mutated in place so the owning pack/gear record becomes self-contained.
+    if (!layers || typeof layers !== 'object') return false;
+    let changed = false; // Used by learnOwnedBlueprints to persist only the save bucket that was actually migrated.
+    for (const entry of Object.values(layers)) {
+      if (!entry || entry.pattern || !entry.patternLibraryId) continue;
+      const resolved = window.PatternLibrary?.getById?.(entry.patternLibraryId); // Source motif used to upgrade the short-lived reference-only save shape.
+      if (!resolved) continue;
+      entry.pattern = clone(resolved);
+      changed = true;
+    }
+    return changed;
   }
 
   // Human-readable summary of a weaving's pattern(s) — "Custom" for a plain
@@ -328,12 +342,16 @@
     if (!gear) return [];
     const known = Array.isArray(gear.knownClothingBlueprints) ? gear.knownClothingBlueprints : (gear.knownClothingBlueprints = []); // Permanent article unlocks learned by ever obtaining eligible cloth.
     const knownIds = new Set(known.map(entry => entry?.baseCosmeticId).filter(Boolean));
-    const candidates = [
+    const gearCandidates = [ // Gear-owned and currently worn records are persisted through saveGearInventory after any migration.
       ...(gear.clothingItems || []),
       ...CLOTHING_SLOTS.map(slot => gear.clothing?.[slot]).filter(Boolean),
-      ...packClothing(),
     ];
-    let changed = false;
+    const packCandidates = packClothing(); // Pack records live in member-world data and therefore need their own save call after migration.
+    const candidates = [...gearCandidates, ...packCandidates]; // Combined list is used only for permanent blueprint discovery.
+    let gearChanged = false; // Tracks blueprint additions and reference-only pattern upgrades in gear-owned records.
+    let packChanged = false; // Tracks reference-only pattern upgrades in pack clothing records.
+    for (const item of gearCandidates) if (materializeWeavingLibrarySnapshots(item)) gearChanged = true;
+    for (const item of packCandidates) if (materializeWeavingLibrarySnapshots(item)) packChanged = true;
     for (const item of candidates) {
       const id = baseCosmeticId(item);
       if (!isCraftableCloth(item) || !id || knownIds.has(id)) continue;
@@ -345,9 +363,10 @@
         baseLabel: articleLabel(item),
         sprite: item.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(id) || null,
       });
-      changed = true;
+      gearChanged = true;
     }
-    if (changed) equipmentDeps?.saveGearInventory?.();
+    if (gearChanged) equipmentDeps?.saveGearInventory?.();
+    if (packChanged) equipmentDeps?.saveMemberWorldData?.();
     return known.filter(isCraftableCloth);
   }
 
@@ -593,11 +612,9 @@
         const key = role || DEFAULT_LAYER_ROLE;
         const entry = state.layerPatterns[key];
         if (!entry) continue;
-        // A library-backed pattern is stored as just the reference, not a
-        // full duplicate copy of the motif/placement data — the same saved
-        // pattern reused across many garments then costs one copy in the
-        // save, not one per garment. Resolved back to real pattern data by
-        // weavingPatternForRole.
+        // Library entries keep their source id as provenance, but the full
+        // pattern is deliberately snapshotted into each crafted garment so
+        // deleting/renaming the library entry cannot mutate an existing item.
         const pattern = entry.pattern || (entry.patternId ? window.PatternLibrary?.getById?.(entry.patternId) : null); // Baked into the crafted garment so deleting the source library entry cannot erase an existing item.
         if (!pattern) continue;
         layers[key] = {
@@ -1706,7 +1723,7 @@
     hasBehindView,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, frameShapeFor, erodeMask, scaledOutlineWidth }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, materializeWeavingLibrarySnapshots, frameShapeFor, erodeMask, scaledOutlineWidth }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
