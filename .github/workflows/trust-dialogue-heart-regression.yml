@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'docs/index.html'
+      - 'docs/game.js'
       - 'docs/js/condition-registry.js'
       - 'docs/js/combat/combat-config-loader.js'
       - 'docs/js/favor-heart-balance.js'

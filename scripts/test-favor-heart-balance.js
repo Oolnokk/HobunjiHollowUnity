@@ -8,7 +8,10 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'docs/js/favor-heart-balance.js'), 'utf8');
+const gameSource = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8'); // Used by the browser-shell regression below to ensure HTML heart markup is actually rendered.
 assert.doesNotThrow(() => new vm.Script(source, { filename: 'favor-heart-balance.js' }), 'favor-heart-balance.js must parse');
+assert.match(gameSource, /_npcDialogueHeartsEl\.innerHTML\s*=\s*window\.DialogueContent\?\.renderRelationshipHearts\(rec\)\s*\|\|\s*'';/, 'NPC dialogue must insert relationship-heart markup as HTML so fractional hearts render');
+assert.doesNotMatch(gameSource, /_npcDialogueHeartsEl\.textContent\s*=\s*window\.DialogueContent\?\.renderRelationshipHearts\(rec\)/, 'NPC dialogue must not escape fractional-heart markup as text');
 
 const states = new Map();
 const rewards = [];
