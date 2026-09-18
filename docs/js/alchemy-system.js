@@ -22,7 +22,7 @@
   const recipe = (id, humour, drive, magnetism, data) => Object.freeze({ // Central recipe metadata constructor.
     id, traits: Object.freeze({ humour, drive, magnetism }),
     traitKey: `${humour}.${drive}.${magnetism}`,
-    basePotency: 1, elementalTuning: magnetism, baseBatch: 1, ...data,
+    basePotency: 1, brewWeight: 1, elementalTuning: magnetism, baseBatch: 1, ...data,
   });
 
   const RECIPE_DEFS = Object.freeze({
@@ -38,7 +38,7 @@
     antidote: recipe('antidote', 'bile', 'restore', 'water', { baseBatch: 2, label: 'Antidote', icon: '🌿', useMode: 'drink', application: 'cleanseTag', tag: 'toxin', amount: 50, desc: 'Removes toxin-tagged afflictions across families.' }),
     soberingDraught: recipe('soberingDraught', 'bile', 'restore', 'fire', { baseBatch: 2, label: 'Sobering Draught', icon: '☕', useMode: 'drink', application: 'cleanseTag', tag: 'alcohol', amount: 65, desc: 'Rapidly reduces drunkenness.' }),
 
-    breedingGigantism: recipe('breedingGigantism', 'bones', 'greaten', 'water', { label: 'Breeding Potion of Gigantism', icon: '🐘', useMode: 'livestock', application: 'nextOffspringSize', sizeShift: 1, desc: "Raises the affected animal's next offspring by one Size class." }),
+    breedingGigantism: recipe('breedingGigantism', 'bones', 'greaten', 'water', { brewWeight: 0.1, label: 'Breeding Potion of Gigantism', icon: '🐘', useMode: 'livestock', application: 'nextOffspringSize', sizeShift: 1, desc: "Raises the affected animal's next offspring by one Size class." }),
     potionOfPoise: recipe('potionOfPoise', 'bones', 'greaten', 'earth', { label: 'Potion of Poise', icon: '🗿', useMode: 'drink', application: 'buff', stat: 'maxFooting', magnitude: 0.35, durationS: 90, desc: 'Temporarily increases maximum Footing.' }),
     potionOfImpact: recipe('potionOfImpact', 'bones', 'greaten', 'fire', { label: 'Potion of Impact', icon: '💥', useMode: 'drink', application: 'buff', stat: 'footingDamage', magnitude: 1.5, durationS: 15, desc: 'Enormously increases knockback and Footing damage briefly.' }),
     potionOfRegeneration: recipe('potionOfRegeneration', 'flesh', 'greaten', 'water', { label: 'Potion of Regeneration', icon: '💚', useMode: 'drink', application: 'buff', stat: 'healthRegen', magnitude: 1, durationS: 90, desc: 'Increases existing Health regeneration.' }),
@@ -51,7 +51,7 @@
     lovePotion: recipe('lovePotion', 'blood', 'greaten', 'fire', { label: 'Love Potion', icon: '💗', useMode: 'drink', application: 'buff', stat: 'positiveFavor', magnitude: 1, durationS: 15, desc: 'Temporarily doubles positive NPC favor gains.' }),
     potionOfPerception: recipe('potionOfPerception', 'senses', 'greaten', 'wind', { label: 'Potion of Perception', icon: '👁️', useMode: 'drink', application: 'buff', stat: 'perception', magnitude: 0.6, durationS: 52, desc: 'Boosts existing Perception-weighted mechanics.' }),
 
-    breedingPygmation: recipe('breedingPygmation', 'bones', 'lighten', 'water', { label: 'Breeding Potion of Pygmation', icon: '🐁', useMode: 'livestock', application: 'nextOffspringSize', sizeShift: -1, desc: "Lowers the affected animal's next offspring by one Size class." }),
+    breedingPygmation: recipe('breedingPygmation', 'bones', 'lighten', 'water', { brewWeight: 0.1, label: 'Breeding Potion of Pygmation', icon: '🐁', useMode: 'livestock', application: 'nextOffspringSize', sizeShift: -1, desc: "Lowers the affected animal's next offspring by one Size class." }),
     potionOfSpeed: recipe('potionOfSpeed', 'bones', 'lighten', 'wind', { label: 'Potion of Speed', icon: '🏃', useMode: 'drink', application: 'buff', stat: 'movementSpeed', magnitude: 0.45, durationS: 52, desc: 'Increases movement speed.' }),
     potionOfEfficiency: recipe('potionOfEfficiency', 'breath', 'lighten', 'wind', { label: 'Potion of Efficiency', icon: '🪶', useMode: 'drink', application: 'buff', stat: 'staminaSpend', magnitude: 0.38, durationS: 52, desc: 'Reduces Stamina costs.' }),
 
@@ -68,26 +68,26 @@
   const RECIPE_BY_TRAITS = Object.freeze(Object.fromEntries(Object.values(RECIPE_DEFS).map(definition => [definition.traitKey, definition]))); // Enumerator lookup.
 
   const REAGENT_DEFS = Object.freeze({
-    frostcapMoss:{label:'Frostcap Moss',icon:'🥶',zone:'map_northern_cliffs',color:0x9fd8e6,sellPrice:3,traits:{humour:'bones',drive:'restore',magnetism:'water'}},
-    graniteThistle:{label:'Granite Thistle',icon:'🌵',zone:'map_northern_cliffs',color:0x8a8a78,sellPrice:3,traits:{humour:'bones',drive:'greaten',magnetism:'earth'}},
-    palehartLichen:{label:'Palehart Lichen',icon:'🍂',zone:'map_northern_cliffs',color:0xc9c2a0,sellPrice:3,traits:{humour:'blood',drive:'restore',magnetism:'water'}},
-    cinderveinBramble:{label:'Cindervein Bramble',icon:'🌿',zone:'map_northern_cliffs',color:0xb5493a,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'fire'}},
-    shalefrondFern:{label:'Shalefrond Fern',icon:'🌾',zone:'map_northern_cliffs',color:0x6f8f7a,sellPrice:3,traits:{humour:'bones',drive:'restore',magnetism:'earth'}},
-    mistpetalBloom:{label:'Mistpetal Bloom',icon:'🌸',zone:'map_southern_cloud_forest',color:0xd7b7e8,sellPrice:3,traits:{humour:'senses',drive:'restore',magnetism:'water'}},
-    duskcapMushroom:{label:'Duskcap Mushroom',icon:'🍄',zone:'map_southern_cloud_forest',color:0x5a4a78,sellPrice:3,traits:{humour:'flesh',drive:'afflict',magnetism:'wind'}},
-    silverfernFrond:{label:'Silverfern Frond',icon:'🌿',zone:'map_southern_cloud_forest',color:0xc8d8c0,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'wind'}},
-    cloudberryVine:{label:'Cloudberry Vine',icon:'🫐',zone:'map_southern_cloud_forest',color:0x8ec6e0,sellPrice:3,traits:{humour:'bones',drive:'lighten',magnetism:'wind'}},
-    hazewortSprig:{label:'Hazewort Sprig',icon:'🌱',zone:'map_southern_cloud_forest',color:0xa0b090,sellPrice:3,traits:{humour:'blood',drive:'greaten',magnetism:'earth'}},
-    windrootBulb:{label:'Windroot Bulb',icon:'🧅',zone:'map_western_slope',color:0xe8d27a,sellPrice:3,traits:{humour:'breath',drive:'lighten',magnetism:'wind'}},
-    goldbrushWeed:{label:'Goldbrush Weed',icon:'🌾',zone:'map_western_slope',color:0xdba936,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'earth'}},
-    larkspurTuft:{label:'Larkspur Tuft',icon:'💐',zone:'map_western_slope',color:0x7fb0e0,sellPrice:3,traits:{humour:'senses',drive:'greaten',magnetism:'wind'}},
-    sunbarleyHead:{label:'Sunbarley Head',icon:'🌾',zone:'map_western_slope',color:0xe0c95f,sellPrice:3,traits:{humour:'breath',drive:'greaten',magnetism:'fire'}},
-    thistledownCap:{label:'Thistledown Cap',icon:'🌼',zone:'map_western_slope',color:0xeee4c0,sellPrice:3,traits:{humour:'flesh',drive:'restore',magnetism:'water'}},
-    bogwortLeaf:{label:'Bogwort Leaf',icon:'🍃',zone:'map_eastern_mire',color:0x4a6b3a,sellPrice:3,traits:{humour:'flesh',drive:'afflict',magnetism:'earth'}},
-    mireLotusBud:{label:'Mire Lotus Bud',icon:'🪷',zone:'map_eastern_mire',color:0xc06090,sellPrice:3,traits:{humour:'bile',drive:'restore',magnetism:'water'}},
-    sporeclusterCap:{label:'Sporecluster Cap',icon:'🍄',zone:'map_eastern_mire',color:0x6a5a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'water'}},
-    weepingReed:{label:'Weeping Reed',icon:'🌾',zone:'map_eastern_mire',color:0x3a5a4a,sellPrice:3,traits:{humour:'breath',drive:'afflict',magnetism:'earth'}},
-    muckmelonRind:{label:'Muckmelon Rind',icon:'🍈',zone:'map_eastern_mire',color:0x8a9a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'fire'}},
+    frostcapMoss:{label:'Frostcap Moss',icon:'🥶',zone:'map_northern_cliffs',habitat:'waterEdge',color:0x9fd8e6,sellPrice:3,traits:{humour:'bones',drive:'restore',magnetism:'water'}},
+    graniteThistle:{label:'Granite Thistle',icon:'🌵',zone:'map_northern_cliffs',habitat:'cliffBase',color:0x8a8a78,sellPrice:3,traits:{humour:'bones',drive:'greaten',magnetism:'earth'}},
+    palehartLichen:{label:'Palehart Lichen',icon:'🍂',zone:'map_northern_cliffs',habitat:'rockEdge',color:0xc9c2a0,sellPrice:3,traits:{humour:'blood',drive:'restore',magnetism:'water'}},
+    cinderveinBramble:{label:'Cindervein Bramble',icon:'🌿',zone:'map_northern_cliffs',habitat:'cliffBase',color:0xb5493a,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'fire'}},
+    shalefrondFern:{label:'Shalefrond Fern',icon:'🌾',zone:'map_northern_cliffs',habitat:'rockEdge',color:0x6f8f7a,sellPrice:3,traits:{humour:'bones',drive:'restore',magnetism:'earth'}},
+    mistpetalBloom:{label:'Mistpetal Bloom',icon:'🌸',zone:'map_southern_cloud_forest',habitat:'waterEdge',color:0xd7b7e8,sellPrice:3,traits:{humour:'senses',drive:'restore',magnetism:'water'}},
+    duskcapMushroom:{label:'Duskcap Mushroom',icon:'🍄',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0x5a4a78,sellPrice:3,traits:{humour:'flesh',drive:'afflict',magnetism:'wind'}},
+    silverfernFrond:{label:'Silverfern Frond',icon:'🌿',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0xc8d8c0,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'wind'}},
+    cloudberryVine:{label:'Cloudberry Vine',icon:'🫐',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0x8ec6e0,sellPrice:3,traits:{humour:'bones',drive:'lighten',magnetism:'wind'}},
+    hazewortSprig:{label:'Hazewort Sprig',icon:'🌱',zone:'map_southern_cloud_forest',habitat:'shrubEdge',color:0xa0b090,sellPrice:3,traits:{humour:'blood',drive:'greaten',magnetism:'earth'}},
+    windrootBulb:{label:'Windroot Bulb',icon:'🧅',zone:'map_western_slope',habitat:'cliffBase',color:0xe8d27a,sellPrice:3,traits:{humour:'breath',drive:'lighten',magnetism:'wind'}},
+    goldbrushWeed:{label:'Goldbrush Weed',icon:'🌾',zone:'map_western_slope',habitat:'rockEdge',color:0xdba936,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'earth'}},
+    larkspurTuft:{label:'Larkspur Tuft',icon:'💐',zone:'map_western_slope',habitat:'cliffBase',color:0x7fb0e0,sellPrice:3,traits:{humour:'senses',drive:'greaten',magnetism:'wind'}},
+    sunbarleyHead:{label:'Sunbarley Head',icon:'🌾',zone:'map_western_slope',habitat:'shrubEdge',color:0xe0c95f,sellPrice:3,traits:{humour:'breath',drive:'greaten',magnetism:'fire'}},
+    thistledownCap:{label:'Thistledown Cap',icon:'🌼',zone:'map_western_slope',habitat:'waterEdge',color:0xeee4c0,sellPrice:3,traits:{humour:'flesh',drive:'restore',magnetism:'water'}},
+    bogwortLeaf:{label:'Bogwort Leaf',icon:'🍃',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x4a6b3a,sellPrice:3,traits:{humour:'flesh',drive:'afflict',magnetism:'earth'}},
+    mireLotusBud:{label:'Mire Lotus Bud',icon:'🪷',zone:'map_eastern_mire',habitat:'waterEdge',color:0xc06090,sellPrice:3,traits:{humour:'bile',drive:'restore',magnetism:'water'}},
+    sporeclusterCap:{label:'Sporecluster Cap',icon:'🍄',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x6a5a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'water'}},
+    weepingReed:{label:'Weeping Reed',icon:'🌾',zone:'map_eastern_mire',habitat:'waterEdge',color:0x3a5a4a,sellPrice:3,traits:{humour:'breath',drive:'afflict',magnetism:'earth'}},
+    muckmelonRind:{label:'Muckmelon Rind',icon:'🍈',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x8a9a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'fire'}},
   });
 
   const POTION_ITEMS = {}; // Item key -> stored recipe/potency payload.
@@ -110,15 +110,16 @@
   function validateTraits(traits) { return !!traits && HUMOURS.includes(traits.humour) && DRIVES.includes(traits.drive) && MAGNETISMS.includes(traits.magnetism); }
   function nativeRecipeForReagent(key) { const definition = REAGENT_DEFS[key]; return definition ? RECIPE_BY_TRAITS[traitKey(definition.traits)] || null : null; } // Native trio resolver.
 
-  // The Set-size check is the mandatory contribution rule. With two inputs,
-  // both sources must appear; with three, each source appears exactly once.
+  // Every brew uses exactly three distinct reagents. Each reagent must supply
+  // exactly one of Humour / Drive / Magnetism, so cheaper two-reagent recipes
+  // cannot collapse the outcome pool and make targeting artificially easier.
   function enumerateRecipes(reagentKeys) {
     const keys = [...(reagentKeys || [])]; // Keep caller selection immutable.
-    if (keys.length < 2 || keys.length > 3 || new Set(keys).size !== keys.length || keys.some(key => !REAGENT_DEFS[key])) return [];
+    if (keys.length !== MAX_REAGENTS || new Set(keys).size !== keys.length || keys.some(key => !REAGENT_DEFS[key])) return [];
     const outcomes = new Map(); // Deduplicate recipe IDs while retaining assignments.
     const sources = keys.map((_key, index) => index); // Category source candidates.
     for (const h of sources) for (const d of sources) for (const m of sources) {
-      if (new Set([h, d, m]).size !== keys.length) continue;
+      if (new Set([h, d, m]).size !== MAX_REAGENTS) continue;
       const traits = { humour: REAGENT_DEFS[keys[h]].traits.humour, drive: REAGENT_DEFS[keys[d]].traits.drive, magnetism: REAGENT_DEFS[keys[m]].traits.magnetism }; // Mixed trio.
       const definition = RECIPE_BY_TRAITS[traitKey(traits)]; // Undefined permutations intentionally vanish.
       if (!definition) continue;
@@ -129,24 +130,60 @@
     }
     return [...outcomes.values()];
   }
-  function canAddReagent(selected, candidate) { const keys = [...selected, candidate]; return keys.length <= MAX_REAGENTS && new Set(keys).size === keys.length && enumerateRecipes(keys).length > 0; } // Exact graying rule.
+  function canCompleteSelection(reagentKeys) {
+    const keys = [...(reagentKeys || [])]; // Used by UI compatibility checks while the player is still choosing.
+    if (keys.length > MAX_REAGENTS || new Set(keys).size !== keys.length || keys.some(key => !REAGENT_DEFS[key])) return false;
+    if (keys.length === MAX_REAGENTS) return enumerateRecipes(keys).length > 0;
+    const remaining = Object.keys(REAGENT_DEFS).filter(key => !keys.includes(key)); // Candidate fillers used only for the tiny 20-reagent compatibility search.
+    if (keys.length === 2) return remaining.some(key => enumerateRecipes([...keys, key]).length > 0);
+    if (keys.length === 1) {
+      for (let i = 0; i < remaining.length - 1; i++) for (let j = i + 1; j < remaining.length; j++) {
+        if (enumerateRecipes([...keys, remaining[i], remaining[j]]).length) return true;
+      }
+      return false;
+    }
+    return true;
+  }
+  function canAddReagent(selected, candidate) { return canCompleteSelection([...(selected || []), candidate]); } // Partial selections stay selectable only when at least one legal three-reagent completion remains.
   function alchemyLevel() { return Math.max(0, Math.min(20, Number(window.SkillSystem?.level?.('alchemy')) || 0)); }
   function potencyTierForLevel(level = alchemyLevel()) { return Math.min(4, Math.floor(Math.max(0, Math.min(20, Number(level) || 0)) / 5)); }
   function potencyMultiplier(tier) { return POTENCY_TIER_MULTIPLIERS[Math.max(0, Math.min(4, Math.floor(Number(tier) || 0)))]; }
-  function targetingProbability(level = alchemyLevel(), possibleCount = 2) {
-    if (possibleCount <= 1) return 1;
+  function outcomeWeight(outcome) {
+    const definition = outcome?.recipe || RECIPE_DEFS[outcome?.recipeId] || outcome; // Accept either an outcome wrapper or a recipe definition.
+    return Math.max(0.01, Number(definition?.brewWeight) || 1);
+  }
+  function weightedOutcome(outcomes, random = deps?.random || window.GameRandom?.random || Math.random) {
+    if (!outcomes?.length) return null;
+    const total = outcomes.reduce((sum, outcome) => sum + outcomeWeight(outcome), 0); // Natural reaction rarity pool.
+    let roll = Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * total;
+    for (const outcome of outcomes) {
+      roll -= outcomeWeight(outcome);
+      if (roll < 0) return outcome;
+    }
+    return outcomes[outcomes.length - 1];
+  }
+  function targetingProbability(level = alchemyLevel(), outcomesOrCount = 2, targetId = null) {
+    const outcomes = Array.isArray(outcomesOrCount) ? outcomesOrCount : null; // Full outcomes allow recipe rarity to affect targeting.
+    const possibleCount = outcomes ? outcomes.length : Number(outcomesOrCount) || 0;
+    if (possibleCount <= 1) return possibleCount === 1 ? 1 : 0;
     const ratio = Math.max(0, Math.min(1, Number(level) / 20)); // One centralized reliability curve.
     const perkBonus = (window.PerkSystem?.rank('alchemy', 'increasePrecision') || 0) * 0.03; // Increase Precision perk.
-    return Math.min(0.99, TARGET_CHANCE_MIN + (TARGET_CHANCE_MAX - TARGET_CHANCE_MIN) * ratio + perkBonus);
+    const baseChance = Math.min(0.99, TARGET_CHANCE_MIN + (TARGET_CHANCE_MAX - TARGET_CHANCE_MIN) * ratio + perkBonus);
+    if (!outcomes || !targetId) return baseChance; // Backward-compatible common-recipe curve for callers without a specific outcome.
+    const target = outcomes.find(outcome => outcome.recipeId === targetId);
+    if (!target) return 0;
+    const highestWeight = Math.max(...outcomes.map(outcomeWeight));
+    const rarityFactor = Math.sqrt(Math.min(1, outcomeWeight(target) / highestWeight)); // Rare recipes remain targetable, but never as reliably as equally weighted reactions.
+    return Math.min(0.99, baseChance * rarityFactor);
   }
   function setTargetRecipe(recipeId) { targetedRecipeId = recipeId && discoveredRecipes.has(recipeId) && RECIPE_DEFS[recipeId] ? recipeId : null; renderPanel(); return targetedRecipeId; }
   function chooseOutcome(outcomes, targetId = targetedRecipeId, random = deps?.random || window.GameRandom?.random || Math.random, levelOverride = null) {
     if (!outcomes.length) return null;
     const target = outcomes.find(outcome => outcome.recipeId === targetId); // Produce target only when ingredients allow it.
-    if (!target) return outcomes[Math.floor(random() * outcomes.length)];
-    if (outcomes.length === 1 || random() < targetingProbability(levelOverride ?? alchemyLevel(), outcomes.length)) return target;
-    const alternatives = outcomes.filter(outcome => outcome.recipeId !== target.recipeId); // Failed targeting still brews.
-    return alternatives[Math.floor(random() * alternatives.length)];
+    if (!target) return weightedOutcome(outcomes, random);
+    if (outcomes.length === 1 || random() < targetingProbability(levelOverride ?? alchemyLevel(), outcomes, target.recipeId)) return target;
+    const alternatives = outcomes.filter(outcome => outcome.recipeId !== target.recipeId); // Failed targeting still brews according to each remaining reaction's natural rarity.
+    return weightedOutcome(alternatives, random);
   }
   // Empower Flasks / Empower Healing Potions and Cures / Empower Buff Potions —
   // each scales both the applied magnitude (here) and, for Flasks/Healing &
@@ -263,7 +300,7 @@
 
   function brewFrom(reagentKeys, options = {}) {
     const keys = [...(reagentKeys || [])]; // Exact selection submitted.
-    if (keys.length < 2 || keys.length > 3) return { ok: false, message: 'Select 2–3 reagents.', consumed: [] };
+    if (keys.length !== MAX_REAGENTS) return { ok: false, message: 'Select exactly 3 reagents.', consumed: [] };
     if (keys.some(key => (deps?.inventory?.[key] || 0) < 1)) return { ok: false, message: 'A selected reagent is no longer in your bag.', consumed: [] };
     const outcomes = enumerateRecipes(keys); // Shared runtime/UI/compatibility enumerator.
     if (!outcomes.length) return { ok: false, message: 'These ingredients have no valid mixed-source reaction.', consumed: [], outcomes };
@@ -278,7 +315,7 @@
     const discovered = discoverRecipe(chosen.recipeId, 'brewed new recipe'); // One-time discovery XP.
     window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyBrew || 8, 'brewed potion');
     if (target && chosen.recipeId === target) window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyTarget || 5, 'targeted recipe');
-    lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes.length) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
+    lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes, target) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
     document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail: { type: 'brew', recipeId: chosen.recipeId, itemKey } }));
     return { ok: true, message: `⚗️ Brewed ${batch > 1 ? `${batch}× ` : ''}${RECIPE_DEFS[chosen.recipeId].label}${discovered ? ' — new reaction discovered!' : ''}`, consumed: keys, recipeId: chosen.recipeId, itemKey, potencyTier: tier, batch, outcomes };
   }
@@ -445,9 +482,9 @@
     list.innerHTML = '';
     held.forEach(key => { const definition = REAGENT_DEFS[key]; const selected = selectedReagents.includes(key); const compatible = selected || !selectedReagents.length || canAddReagent(selectedReagents, key); const row = document.createElement('div'); row.className = `shop-row alch-reagent-row${selected?' selected':''}${compatible?'':' incompatible'}`; row.innerHTML = `<div class="sh-icon">${definition.icon}</div><div class="sh-info"><div class="sh-name">${definition.label} <span class="alch-count">×${deps.inventory[key]}</span></div><div class="alch-effects"><span class="alch-effect humour">${definition.traits.humour}</span><span class="alch-effect drive">${definition.traits.drive}</span><span class="alch-effect magnetism">${definition.traits.magnetism}</span></div></div><button class="shop-buy-btn" data-act="toggle" ${compatible?'':'disabled'}>${selected?'Selected':compatible?'Select':'Incompatible'}</button>`; row.querySelector('[data-act="toggle"]')?.addEventListener('click', () => toggleReagent(key)); list.appendChild(row); });
     if (!held.length) list.innerHTML = '<div class="delivery-row"><span class="dr-icon">🌿</span><span class="dr-name">No reagents in your bag.</span></div>';
-    if (selectedHost) selectedHost.innerHTML = selectedReagents.length ? selectedReagents.map(key => `<span class="alch-selected-chip">${REAGENT_DEFS[key].icon} ${REAGENT_DEFS[key].label}</span>`).join('') : '<span class="alch-empty-hint">Select 2–3 reagents.</span>';
+    if (selectedHost) selectedHost.innerHTML = selectedReagents.length ? selectedReagents.map(key => `<span class="alch-selected-chip">${REAGENT_DEFS[key].icon} ${REAGENT_DEFS[key].label}</span>`).join('') : '<span class="alch-empty-hint">Select exactly 3 reagents.</span>';
     const outcomes = enumerateRecipes(selectedReagents); // Same exact brew results.
-    if (preview) preview.innerHTML = selectedReagents.length < 2 ? '' : !outcomes.length ? '<div class="alch-empty-hint">No valid mixed-source reaction.</div>' : `<div class="alch-reaction-count">${outcomes.length} possible reaction${outcomes.length===1?'':'s'}</div>` + outcomes.map(outcome => discoveredRecipes.has(outcome.recipeId) ? `<button type="button" class="alch-target${targetedRecipeId===outcome.recipeId?' selected':''}" data-recipe="${outcome.recipeId}">${outcome.recipe.icon} ${outcome.recipe.label}<small>${outcome.recipe.traits.humour} · ${outcome.recipe.traits.drive} · ${outcome.recipe.traits.magnetism}</small></button>` : '<div class="alch-unknown-reaction">❓ Unknown reaction</div>').join('') + (targetedRecipeId ? `<div class="alch-target-chance">Target chance: ${Math.round(targetingProbability(alchemyLevel(), outcomes.length)*100)}%</div>` : '');
+    if (preview) preview.innerHTML = selectedReagents.length < MAX_REAGENTS ? '<div class="alch-empty-hint">Choose 3 ingredients to reveal possible reactions.</div>' : !outcomes.length ? '<div class="alch-empty-hint">No valid mixed-source reaction.</div>' : `<div class="alch-reaction-count">${outcomes.length} possible reaction${outcomes.length===1?'':'s'}</div>` + outcomes.map(outcome => discoveredRecipes.has(outcome.recipeId) ? `<button type="button" class="alch-target${targetedRecipeId===outcome.recipeId?' selected':''}" data-recipe="${outcome.recipeId}">${outcome.recipe.icon} ${outcome.recipe.label}<small>${outcome.recipe.traits.humour} · ${outcome.recipe.traits.drive} · ${outcome.recipe.traits.magnetism}</small></button>` : '<div class="alch-unknown-reaction">❓ Unknown reaction</div>').join('') + (targetedRecipeId ? `<div class="alch-target-chance">Target chance: ${Math.round(targetingProbability(alchemyLevel(), outcomes, targetedRecipeId)*100)}%</div>` : '');
     preview?.querySelectorAll('[data-recipe]').forEach(button => button.addEventListener('click', () => setTargetRecipe(button.dataset.recipe === targetedRecipeId ? null : button.dataset.recipe)));
     const brewButton = document.getElementById('alchemyBrewBtn'); // Existing Brew control.
     if (brewButton) brewButton.disabled = !outcomes.length;
@@ -461,7 +498,7 @@
     const selectedKey = deps?.getSelectedItemKey?.() || null; // Current held/selected item.
     const flaskPayload = parseBrewedItemKey(selectedKey); // Current alchemy payload.
     const flaskDefinition = flaskPayload && RECIPE_DEFS[flaskPayload.recipeId]; // Current flask recipe.
-    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes.length):null, discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
+    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
   }
   function diagnosticsText() { return JSON.stringify(diagnosticsSnapshot(), null, 2); }
   window._doBrewPotion = () => { const result = brew(); deps?.showToast?.(result.message, result.ok !== false); renderPanel(); if (result.ok) deps?.saveMemberWorldData?.(); };
@@ -469,7 +506,7 @@
   window.AlchemySystem = {
     TRAIT_CATEGORIES,HUMOURS,DRIVES,MAGNETISMS,ELEMENT_DURATION_S,RAW_POTENCY_FACTOR,POTENCY_TIER_MULTIPLIERS,DEFAULT_SPLASH_RADIUS_TILES,FAMILY_ORDER,
     RECIPE_DEFS,RECIPE_BY_TRAITS,REAGENT_DEFS,POTION_ITEMS,
-    init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canAddReagent,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
+    init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canCompleteSelection,canAddReagent,outcomeWeight,weightedOutcome,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
     brewFrom,brew,setCampfireBrewing,herbalistPrecisionFraction,batchCountFor,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
     itemKeyForRecipe,parseBrewedItemKey,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
     serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,getWorkSpeedMultiplier,
