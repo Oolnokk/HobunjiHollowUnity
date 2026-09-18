@@ -396,21 +396,143 @@
     document.body.appendChild(panel);
     bindEditorControls(panel);
 
-    let controller = null; // Used to persist phase/blend while the same editor generated-feet shim remains active.
-    let controllerRoot = null; // Used to detect avatar/rig rebuilds and recreate the controller safely.
-    let activeModel = null; // Used to restore the avatar's pre-Swim yaw when leaving the mode or changing previews.
-    let baseModelYaw = 0; // Used as the editor preview's authored resting yaw before movement-direction rotation.
-    let lastTime = performance.now(); // Used to convert requestAnimationFrame timestamps into frame-independent gait dt.
+    let controller = null; // Persists authored phase/blend while the same editor generated-feet shim remains active.
+    let controllerRoot = null; // Detects avatar/rig rebuilds and recreates the shared controller safely.
+    let activeModel = null; // Detects a newly-selected preview avatar without retaining ownership of its transform between renders.
+    let lastRenderTime = performance.now(); // Converts the editor renderer's calls into frame-independent swim dt.
+    let rendererHookInstalled = false; // Prevents wrapping the editor renderer more than once.
 
     function leaveSwimMode() {
       editorState.enabled = false;
       panel.hidden = true;
       swimTab.setAttribute('aria-selected', 'false');
-      if (activeModel?.rotation) activeModel.rotation.y = baseModelYaw;
       activeModel = null;
       controller = null;
       controllerRoot = null;
+      editorState.rigReady = false;
       editorState.lastReason = 'editor-mode-inactive';
+    }
+
+    function keepSwimTabSelected() {
+      if (!editorState.enabled) return;
+      for (const id of ['maaMultiTab', 'maaSingleTab', 'maaRigTab']) {
+        const tab = document.getElementById(id); // Keeps native Rig backing mode from visually appearing selected beside Swim after editor UI refreshes.
+        if (tab?.getAttribute('aria-selected') !== 'false') tab?.setAttribute('aria-selected', 'false');
+      }
+      if (swimTab.getAttribute('aria-selected') !== 'true') swimTab.setAttribute('aria-selected', 'true');
+    }
+
+    function findEditorNativeFeet(canonicalRoot) {
+      const experimentalRoot = canonicalRoot?.parent?.children?.find?.(node =>
+        /_ExperimentalFeet$/i.test(String(node?.name || '')) || node?.userData?.experimentalFeet
+      ) || null; // Same canonical editor feet root the Dance adapter bridges into the shared leg solver.
+      return Array.from(experimentalRoot?.children || []).filter(node =>
+        /_(?:Left|Right)Foot$/i.test(String(node?.name || '')) || node?.userData?.footSide
+      );
+    }
+
+    function captureEditorRenderState(model) {
+      const scene = window.HobunjiGameplayBackdrop?.getScene?.() || null; // Supplies the native leg-line/foot objects that Swim temporarily overrides for this render only.
+      const canonicalRoot = scene?.getObjectByName?.('LegBonesDebug') || null;
+      const lines = Array.from(canonicalRoot?.children || []).filter(node => node?.isLine).map(line => {
+        const position = line.geometry?.attributes?.position;
+        return position ? { line, values: Array.from(position.array) } : null;
+      }).filter(Boolean); // Saves exact native hip/knee/foot debug-line points so leaving Swim cannot strand its last solved chain.
+      const feet = findEditorNativeFeet(canonicalRoot).map(foot => ({
+        foot,
+        position: foot.position.clone(),
+      })); // Swim moves only foot position on the editor's real generated-foot objects.
+      return {
+        model,
+        modelYaw: finite(model?.rotation?.y),
+        lines,
+        feet,
+      };
+    }
+
+    function restoreEditorRenderState(snapshot) {
+      if (!snapshot) return;
+      if (snapshot.model?.rotation) snapshot.model.rotation.y = snapshot.modelYaw;
+      for (const saved of snapshot.feet) {
+        saved.foot?.position?.copy?.(saved.position);
+        saved.foot?.updateMatrixWorld?.(true);
+      }
+      for (const saved of snapshot.lines) {
+        const position = saved.line?.geometry?.attributes?.position;
+        if (!position?.array || position.array.length !== saved.values.length) continue;
+        position.array.set(saved.values);
+        position.needsUpdate = true;
+        saved.line.geometry.computeBoundingSphere?.();
+      }
+      snapshot.model?.updateMatrixWorld?.(true);
+    }
+
+    function renderEditorSwimFrame(now, model) {
+      const dt = Math.min(0.05, Math.max(0, (finite(now, lastRenderTime) - lastRenderTime) / 1000)); // Prevents background-tab resume from advancing the kick by a huge step.
+      lastRenderTime = finite(now, performance.now());
+      keepSwimTabSelected();
+      const root = editorShimRoot(model); // Dance-created adapter over the editor's native generated feet and canonical leg lines.
+      if (model !== activeModel) {
+        activeModel = model;
+        controller = null;
+        controllerRoot = null;
+      }
+      if (root && root !== controllerRoot) {
+        controllerRoot = root;
+        controller = createLegController(root, { THREE: editorThree(root) });
+        controller?.captureNeutral?.();
+      }
+      const directionRad = editorState.directionDeg * Math.PI / 180; // Turns the authoring direction slider into a normalized movement vector.
+      const moveDx = Math.cos(directionRad);
+      const moveDy = Math.sin(directionRad);
+      const desiredYaw = facingYawFromMovement(moveDx, moveDy); // Exact same yaw conversion game.js consumes at runtime.
+      if (model?.rotation && desiredYaw != null) model.rotation.y = desiredYaw;
+      if (controller) controller.update(dt, editorState.speedStrength, tuning, false);
+      editorState.phase = controller?.state?.phase || 0;
+      editorState.blend = controller?.state?.blend || 0;
+      editorState.rigReady = !!controller;
+      editorState.modelName = model?.name || null;
+      editorState.rigName = root?.name || null;
+      editorState.lastReason = controller ? 'previewing-shared-swim-gait' : 'waiting-for-generated-leg-rig';
+      const debug = panel.querySelector('#swimEditorDebug'); // Always-visible mobile diagnostic instead of requiring DevTools.
+      if (debug) debug.textContent = JSON.stringify({
+        reason: editorState.lastReason,
+        renderOwnership: 'temporary-pre-render',
+        model: editorState.modelName,
+        rig: editorState.rigName,
+        phase: Number(editorState.phase.toFixed(3)),
+        blend: Number(editorState.blend.toFixed(3)),
+        directionDeg: editorState.directionDeg,
+        bodyYawDeg: desiredYaw == null ? null : Number((desiredYaw * 180 / Math.PI).toFixed(1)),
+        tuning: { ...tuning },
+      }, null, 2);
+    }
+
+    function installEditorRendererHook() {
+      if (rendererHookInstalled) return true;
+      const renderer = window.HobunjiGameplayBackdrop?.getRenderer?.(); // Must run after the editor's native movement/feet update and immediately before its real draw.
+      if (!renderer?.render) return false;
+      const previousRender = renderer.render.bind(renderer); // Preserves Dance or any other editor wrapper already attached to this instance.
+      renderer.render = function proceduralSwimEditorRender(scene, camera) {
+        if (!editorState.enabled) return previousRender(scene, camera);
+        if (window.ProceduralDanceMode?.getDebug?.().enabled) window.ProceduralDanceMode.setEnabled(false); // Both modes write the same leg proxies; Swim owns them while its top-level mode is selected.
+        const model = window.HobunjiGameplayBackdrop?.getAvatarModel?.() || null;
+        const snapshot = captureEditorRenderState(model); // Native gait/body state is restored after this exact draw so Swim never leaks into Rig/Walk/Dance.
+        renderEditorSwimFrame(performance.now(), model);
+        try {
+          return previousRender(scene, camera);
+        } finally {
+          restoreEditorRenderState(snapshot);
+        }
+      };
+      rendererHookInstalled = true;
+      editorLog('[Swim gait] Renderer hook attached; Swim now applies after native gait and restores native transforms after each draw.');
+      return true;
+    }
+
+    function waitForEditorRenderer() {
+      if (installEditorRendererHook()) return;
+      setTimeout(waitForEditorRenderer, 120); // Installation-only retry; animation itself is renderer-owned rather than a competing RAF loop.
     }
 
     for (const id of ['maaMultiTab', 'maaSingleTab', 'maaRigTab']) {
@@ -421,59 +543,15 @@
 
     swimTab.addEventListener('click', () => {
       document.getElementById('maaRigTab')?.click(); // Reuses the editor's existing character/rig preview rather than creating a second avatar loader.
-      for (const id of ['maaMultiTab', 'maaSingleTab', 'maaRigTab']) document.getElementById(id)?.setAttribute('aria-selected', 'false');
-      swimTab.setAttribute('aria-selected', 'true');
       editorState.enabled = true;
       panel.hidden = false;
+      lastRenderTime = performance.now();
       window.ProceduralDanceMode?.setEnabled?.(false); // Prevents Dance and Swim from writing the same generated leg proxies simultaneously.
+      keepSwimTabSelected();
       updateEditorStatus('Swim gait preview active.', true);
     });
 
-    function tick(now) {
-      const dt = Math.min(0.05, Math.max(0, (finite(now, lastTime) - lastTime) / 1000)); // Used to keep the preview stable after background-tab pauses.
-      lastTime = finite(now, performance.now());
-      if (editorState.enabled) {
-        const model = window.HobunjiGameplayBackdrop?.getAvatarModel?.() || null; // Used as the exact avatar currently selected in Rig coordinates mode.
-        const root = editorShimRoot(model); // Used as the Dance-created adapter over the editor's own generated feet and canonical leg lines.
-        if (model !== activeModel) {
-          if (activeModel?.rotation) activeModel.rotation.y = baseModelYaw;
-          activeModel = model;
-          baseModelYaw = finite(model?.rotation?.y);
-          controller = null;
-          controllerRoot = null;
-        }
-        if (root && root !== controllerRoot) {
-          controllerRoot = root;
-          controller = createLegController(root, { THREE: editorThree(root) });
-          controller?.captureNeutral?.();
-        }
-        const directionRad = editorState.directionDeg * Math.PI / 180; // Used to turn the authoring direction slider into a normalized movement vector.
-        const moveDx = Math.cos(directionRad); // Used by the exact runtime facing conversion for editor preview yaw.
-        const moveDy = Math.sin(directionRad); // Used by the exact runtime facing conversion for editor preview yaw.
-        const desiredYaw = facingYawFromMovement(moveDx, moveDy); // Used to rotate the whole preview body toward the authored movement direction.
-        if (model?.rotation && desiredYaw != null) model.rotation.y = desiredYaw; // Matches runtime's absolute player-facing yaw convention instead of offsetting it by the editor's prior preview yaw.
-        if (controller) controller.update(dt, editorState.speedStrength, tuning, false);
-        editorState.phase = controller?.state?.phase || 0;
-        editorState.blend = controller?.state?.blend || 0;
-        editorState.rigReady = !!controller;
-        editorState.modelName = model?.name || null;
-        editorState.rigName = root?.name || null;
-        editorState.lastReason = controller ? 'previewing-shared-swim-gait' : 'waiting-for-generated-leg-rig';
-        const debug = panel.querySelector('#swimEditorDebug'); // Used as an always-visible mobile diagnostic instead of requiring DevTools.
-        if (debug) debug.textContent = JSON.stringify({
-          reason: editorState.lastReason,
-          model: editorState.modelName,
-          rig: editorState.rigName,
-          phase: Number(editorState.phase.toFixed(3)),
-          blend: Number(editorState.blend.toFixed(3)),
-          directionDeg: editorState.directionDeg,
-          bodyYawDeg: desiredYaw == null ? null : Number((desiredYaw * 180 / Math.PI).toFixed(1)),
-          tuning: { ...tuning },
-        }, null, 2);
-      }
-      requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
+    waitForEditorRenderer();
     editorState.installed = true;
     editorState.lastReason = 'installed-editor-mode';
     editorLog('[Swim gait] Shared procedural Swim mode installed.');
