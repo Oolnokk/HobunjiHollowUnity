@@ -677,6 +677,7 @@
     c._banditSwingPose = natural.pose;
     c._banditSwingDirSign = 1;
     c._banditSwingPower = 1;
+    c._banditSwingPoseScale = 1; // Used by updateBanditToolMesh to clear any sampled partial Charged Breaker amplitude after the action ends.
   }
 
   // ── Bandit lunge ─────────────────────────────────────────────────
@@ -828,6 +829,7 @@
     c.telegraphState = 'windup';
     c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
     c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
+    c._banditSwingPoseScale = 1;
     beginBanditLunge(c, deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad }, targetPlayer);
     // Tracked so onComplete below can tell a whiff from a landed hit --
     // a bandit should only break off (retreat) on a miss or after
@@ -902,6 +904,7 @@
     c.telegraphState = 'windup';
     c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
+    c._banditSwingPoseScale = 1;
     beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
     let techHit = false;
     c._banditAction = window.Combat.beginStagedAction({
@@ -953,7 +956,8 @@
     c._banditSwingAnim = 'sweep';
     c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE;
     c._banditSwingDirSign = 1;
-    c._banditSwingPower = (cb.POWER || 1.7) * chargeT;
+    c._banditSwingPower = cb.POWER || 1.7;
+    c._banditSwingPoseScale = chargeT; // Used by updateBanditToolMesh to show the sampled partial pose without changing the legacy heavy-attack identity field.
     // Bandit AI has no literal held input, so it samples a pose charge and
     // derives how long the shared nonlinear windup would need to reach it.
     beginBanditLunge(
@@ -1711,7 +1715,8 @@
     const anim = c._banditSwingAnim || 'thrust';
     const pose = c._banditSwingPose;
     const dirSign = c._banditSwingDirSign || 1;
-    const power = c._banditSwingPower || 1;
+    const poseScale = Math.max(0, Math.min(1, Number(c._banditSwingPoseScale ?? 1) || 0)); // Used only for sampled partial-pose attacks such as bandit Charged Breaker.
+    const power = (c._banditSwingPower || 1) * poseScale;
 
     // The sprite plane's own local twist/mirror -- mirrors updateToolMesh's
     // spinPlane handling exactly (see its own comment there): a sweep-style
@@ -1954,7 +1959,7 @@
       // ability last fired -- see updateBanditToolMesh.
       _banditSwingAnim: banditNaturalSwing(def).anim,
       _banditSwingPose: banditNaturalSwing(def).pose,
-      _banditSwingDirSign: 1, _banditSwingPower: 1, _banditToolSettleUntil: 0,
+      _banditSwingDirSign: 1, _banditSwingPower: 1, _banditSwingPoseScale: 1, _banditToolSettleUntil: 0,
       // Ability-AI state -- see updateBanditCombatAI/damageCreature's
       // isBandit branch/the leaving-chase reset above for where these
       // get driven and cleared.
