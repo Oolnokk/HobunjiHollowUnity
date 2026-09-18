@@ -316,8 +316,8 @@
     const windup = normalizeAnimationGrip(poseSet.windup?.secondaryGrip);
     const strike = normalizeAnimationGrip(poseSet.strike?.secondaryGrip);
     const poseScale = clamp01(timing.poseScale ?? 1); // Used after a partial held release to keep the off-hand endpoint at the same amplitude as the weapon.
-    const scaledWindup = lerpAnimationGrip(neutral, scaledWindup, poseScale); // Used as the effective partial Windup grip state.
-    const scaledStrike = lerpAnimationGrip(neutral, scaledStrike, poseScale); // Used as the effective partial Strike grip state.
+    const scaledWindup = lerpAnimationGrip(neutral, windup, poseScale); // Used as the effective partial Windup grip state.
+    const scaledStrike = lerpAnimationGrip(neutral, strike, poseScale); // Used as the effective partial Strike grip state.
     let result;
     if (sequence === 'load') {
       result = t <= wf ? lerpAnimationGrip(neutral, scaledWindup, t / Math.max(1e-6, wf)) : lerpAnimationGrip(scaledWindup, neutral, (t - wf) / Math.max(1e-6, 1 - wf));
