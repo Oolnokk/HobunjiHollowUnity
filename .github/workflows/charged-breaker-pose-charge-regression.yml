@@ -1,0 +1,46 @@
+name: Charged Breaker Pose Charge Regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/config/combat/attack-values.json'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/combat/combat-camera-alignment-bridge.js'
+      - 'docs/js/combat/combat-charged-breaker.js'
+      - 'docs/js/combat/combat-flurry.js'
+      - 'docs/js/combat/combat-counter-shield.js'
+      - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/combat/melee-hud-reticle.js'
+      - 'docs/js/weapon-tool-stances.js'
+      - 'docs/js/hand-shoulder-pose-runtime.js'
+      - 'docs/js/hand-tool-grips.js'
+      - 'scripts/test-charged-breaker-pose-charge.js'
+      - '.github/workflows/charged-breaker-pose-charge-regression.yml'
+  push:
+    paths:
+      - 'docs/game.js'
+      - 'docs/config/combat/attack-values.json'
+      - 'docs/js/combat/combat-core.js'
+      - 'docs/js/combat/combat-camera-alignment-bridge.js'
+      - 'docs/js/combat/combat-charged-breaker.js'
+      - 'docs/js/combat/combat-flurry.js'
+      - 'docs/js/combat/combat-counter-shield.js'
+      - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/combat/melee-hud-reticle.js'
+      - 'docs/js/weapon-tool-stances.js'
+      - 'docs/js/hand-shoulder-pose-runtime.js'
+      - 'docs/js/hand-tool-grips.js'
+      - 'scripts/test-charged-breaker-pose-charge.js'
+      - '.github/workflows/charged-breaker-pose-charge-regression.yml'
+
+jobs:
+  pose-charge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run Charged Breaker pose-charge regression
+        run: node scripts/test-charged-breaker-pose-charge.js
