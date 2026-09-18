@@ -32,8 +32,10 @@ assert.match(breakerSource, /releaseWeaponSwingHold\(\{ poseProgress: poseCharge
   'Charged Breaker sends that same pose percentage back to the weapon renderer on release');
 assert.match(coreSource, /pitchDistanceResistance[\s\S]{0,1400}appliedResistance = pitch > 0 \? resistance : 0[\s\S]{0,600}noGravityLossScale - naturalScale/,
   'vertical-lunge resistance weakens only the upward pitch-distance loss inside the shared lunge profile');
-assert.match(coreSource, /straightHorizontalScale = Math\.cos\(absPitch\)[\s\S]{0,500}verticalTravelUnits: baseDistanceWorld \* Math\.sin\(pitch\) \* direct/,
-  'direct-flight lunges split authored distance into horizontal and signed vertical legs of one 3D aim vector');
+assert.match(coreSource, /straightHorizontalScale = Math\.cos\(absPitch\)/,
+  'direct-flight lunges use the 3D aim vector horizontal leg');
+assert.match(coreSource, /verticalTravelUnits: baseDistanceWorld \* Math\.sin\(pitch\) \* direct/,
+  'direct-flight lunges use the same authored distance for the signed vertical leg');
 assert.match(coreSource, /hopUnits: ballisticHopUnits \* \(1 - direct\)/,
   'direct-flight strength removes the curved hop instead of stacking it on top of straight aerial travel');
 assert.match(gameSource, /lungeFlightWorldY = player\.lungeFlightStartWorldY[\s\S]{0,220}player\.lungeVerticalTravelUnits \* eased/,
