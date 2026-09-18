@@ -9,6 +9,7 @@ const breakerSource = fs.readFileSync('docs/js/combat/combat-charged-breaker.js'
 const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8'); // Shared nonlinear pose/lunge math source.
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Player weapon-pose owner whose live progress Charge Breaker reads.
 const counterSource = fs.readFileSync('docs/js/combat/combat-counter-shield.js', 'utf8'); // Shared silhouette glow owner.
+const enemyTelegraphSource = fs.readFileSync('docs/js/combat/combat-enemy-telegraph.js', 'utf8'); // Bandit heavy presentation must not reintroduce the retired fire-particle tell.
 const flurrySource = fs.readFileSync('docs/js/combat/combat-flurry.js', 'utf8'); // Other offensive hold using the same glow service.
 const stanceSource = fs.readFileSync('docs/js/weapon-tool-stances.js', 'utf8'); // Shared weapon-stance amplitude owner for partial release continuity.
 const shoulderSource = fs.readFileSync('docs/js/hand-shoulder-pose-runtime.js', 'utf8'); // Shoulder metadata must scale with the same partial release percentage.
@@ -34,6 +35,10 @@ assert.match(breakerSource, /beginStagedAction\(\{[\s\S]{0,500}windupS: strikeS,
   'released Charged Breaker waits through its visible strike/lunge arc before resolving impact');
 assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,
   'Counter Shield owns the shared weapon-silhouette glow service');
+assert.match(counterSource, /visual\.defensive[\s\S]{0,900}visual\.offensive[\s\S]{0,1200}OFFENSIVE_CHARGE_COLOR/,
+  'the authored silhouette adapter also covers bandit Charged Breaker');
+assert.match(enemyTelegraphSource, /if \(visual\.fireGroup\) visual\.fireGroup\.visible = false/,
+  'bandit Charged Breaker suppresses the legacy offensive fire-particle group');
 assert.match(flurrySource, /weaponChargeGlow\?\.set\?\.\('acceleratingFlurry'/,
   'Accelerating Flurry uses the shared Counter-Shield-style weapon glow');
 assert.match(stanceSource, /combatVisualState\.poseScale = requestedPoseScale/,
