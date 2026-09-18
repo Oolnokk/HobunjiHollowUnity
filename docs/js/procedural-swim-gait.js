@@ -234,7 +234,7 @@
     return Math.max(clamp01(tuning.minMovingStrength), Math.sqrt(ratio));
   }
 
-  function updateResolvedMovement(player, speed) {
+  function updateResolvedMovement(player, speed, dt) {
     const x = finite(player?.x, NaN); // Used with lastX to measure actual post-collision movement rather than input intent.
     const y = finite(player?.y, NaN); // Used with lastY to measure actual post-collision movement rather than input intent.
     const hadPrevious = Number.isFinite(runtimeState.lastX) && Number.isFinite(runtimeState.lastY); // Prevents spawn/first-frame coordinates from becoming a fake swim direction.
@@ -244,7 +244,9 @@
     runtimeState.lastY = Number.isFinite(y) ? y : runtimeState.lastY;
     runtimeState.moveDx = dx;
     runtimeState.moveDy = dy;
-    runtimeState.speed = Math.max(0, finite(speed));
+    const tileSize = Math.max(1, finite(window.Combat?.deps?.TILE, 48)); // Converts logical player-pixel displacement into the same world-units/sec scale used by ProceduralLegAnimation.
+    const actualSpeed = hadPrevious && finite(dt) > 1e-6 ? Math.hypot(dx, dy) / (tileSize * finite(dt)) : 0; // Preserves kick effort when collision code zeroes vx/vy but performs a tangent sidestep.
+    runtimeState.speed = Math.max(0, finite(speed), actualSpeed);
     runtimeState.moving = runtimeState.swimming && runtimeState.speed > SWIM_SPEED_EPSILON && dx * dx + dy * dy > MOVE_EPSILON_SQ;
     if (!runtimeState.moving) return;
     const yaw = facingYawFromMovement(dx, dy); // Used as the final visual body direction while swimming.
@@ -255,7 +257,7 @@
 
   function installRuntime() {
     const legApi = window.ProceduralLegAnimation; // Used as the shared attachment seam for the player's existing procedural legs.
-    const THREE = window.THREE; // Used by the runtime leg controller and renderer hook.
+    const THREE = window.THREE; // Used by the runtime leg controller.
     if (!legApi?.attach || !THREE || legApi.__proceduralSwimGaitInstalled) return false;
     const previousAttach = legApi.attach.bind(legApi); // Used to preserve ordinary walk/run/drunk/prone leg decorators.
     legApi.attach = function proceduralSwimAwareAttach(THREEArg, parent, options = {}) {
@@ -276,10 +278,10 @@
         const swimming = !!player && !player.prone && !seatedPose && !suppressed && runtimeWaterCheck(player); // Used to switch ground gait off only during real, unsuppressed swim-water locomotion.
         runtimeState.swimming = swimming;
         if (!swimming) runtimeState.hasDirection = false; // Prevents a stale prior swim heading from snapping the body when water is re-entered before movement.
-        updateResolvedMovement(player, speedWorldUnitsPerSecond);
+        updateResolvedMovement(player, speedWorldUnitsPerSecond, dt);
         const effectiveSuppressed = !!suppressed || swimming; // Prevents ground-contact walk/run solving underneath the non-grounded swim kick.
         const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose);
-        runtimeState.strength = swimming ? playerStrength(speedWorldUnitsPerSecond) : 0;
+        runtimeState.strength = swimming ? playerStrength(runtimeState.speed) : 0;
         if (swimming && handle.group?.rotation) handle.group.rotation.y = 0; // game.js normally counter-rotates feet against billboard dead-zone yaw; swim owns the whole body as one facing.
         controller.update(dt, runtimeState.strength, tuning, true);
         runtimeState.phase = controller.state.phase;
