@@ -34,9 +34,9 @@
       lateLoad('js/animal-head-rig-authored.js?v=20260918uploads2', 'animal-head-rig-authored');
     }
   }
-  if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 2) {
-    if (!parserLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles')) {
-      lateLoad('js/animal-shoulder-spline-profiles.js?v=20260917spline2', 'animal-shoulder-spline-profiles');
+  if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 3) {
+    if (!parserLoad('js/animal-shoulder-spline-profiles.js?v=20260918spline3', 'animal-shoulder-spline-profiles')) {
+      lateLoad('js/animal-shoulder-spline-profiles.js?v=20260918spline3', 'animal-shoulder-spline-profiles');
     }
   }
   if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
@@ -44,7 +44,7 @@
       lateLoad('js/animal-shoulder-spline.js?v=20260917spline10', 'animal-shoulder-spline');
     }
   }
-  if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 2) {
+  if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 3) {
     if (!parserLoad('js/animal-shoulder-spline-layering.js?v=20260917parity2', 'animal-shoulder-spline-layering')) {
       lateLoad('js/animal-shoulder-spline-layering.js?v=20260917parity2', 'animal-shoulder-spline-layering');
     }
