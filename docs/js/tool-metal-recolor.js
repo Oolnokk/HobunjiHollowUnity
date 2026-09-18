@@ -853,9 +853,14 @@
     debugLog(opts, 'canvas cache miss', { spritePath, oxidationAmount });
     if (debugEnabled(opts)) console.trace('[ToolMetalRecolor] request caller');
 
+    // A per-tool "Custom" pattern's motif may live in MotifStore instead of
+    // being embedded directly (see pattern-authoring.js's offloadMotif) —
+    // resolve either shape the same way before loading it as an image.
     const motifLoad = authoredPattern?.motifDataUrl
       ? loadImage(authoredPattern.motifDataUrl, opts)
-      : Promise.resolve(null);
+      : authoredPattern?.customMotifId
+        ? Promise.resolve(window.MotifStore?.loadMotif?.(authoredPattern.customMotifId)).then(url => url ? loadImage(url, opts) : null)
+        : Promise.resolve(null);
 
     return Promise.all([loadImage(spritePath, opts), motifLoad]).then(([img, motifImg]) => {
       const canvas = document.createElement('canvas');

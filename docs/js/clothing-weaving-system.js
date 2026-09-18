@@ -537,7 +537,8 @@
       .loomcraft-head{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;border-bottom:1px solid rgba(255,255,255,.1)}
       .loomcraft-head h2{font-size:17px;margin:0}.loomcraft-close{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:inherit;border-radius:9px;width:32px;height:32px}
       .loomcraft-body{display:grid;grid-template-columns:minmax(240px,1fr) minmax(220px,.8fr);gap:14px;padding:14px}@media(max-width:680px){.loomcraft-body{grid-template-columns:1fr}}
-      .loomcraft-card{border:1px solid #2c443c;background:rgba(255,255,255,.035);border-radius:12px;padding:11px;margin-bottom:10px}.loomcraft-card h3{font-size:12px;text-transform:uppercase;letter-spacing:.4px;margin:0 0 8px;color:#b9d5cc}
+      .loomcraft-card{border:1px solid #2c443c;background:rgba(255,255,255,.035);border-radius:12px;padding:11px;margin-bottom:10px}.loomcraft-card h3{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;margin:0 0 8px;color:#b9d5cc}
+      .loomcraft-behindToggle{min-height:24px;padding:3px 9px;font-size:10px;text-transform:none;letter-spacing:0;font-weight:700;border-radius:8px;border:1px solid #3a564d;background:#17232a;color:#eef8f5;cursor:pointer}.loomcraft-behindToggle.active{outline:2px solid #7fc7bc;background:#1a3432}
       .loomcraft-field{display:grid;gap:5px;margin-bottom:9px}.loomcraft-field label{font-size:11px;font-weight:800;color:#a9c0b9}.loomcraft-field select,.loomcraft-field button{min-height:38px;border-radius:9px;border:1px solid #3a564d;background:#17232a;color:#eef8f5;padding:7px 9px}
       .loomcraft-row{display:flex;gap:7px;flex-wrap:wrap}.loomcraft-row>*{flex:1 1 130px}.loomcraft-material{cursor:pointer}.loomcraft-material.active{outline:2px solid #7fc7bc;background:#1a3432}.loomcraft-note{font-size:11px;line-height:1.4;color:#9eb6ae}.loomcraft-preview{display:grid;place-items:center;min-height:190px;background:#0a0f12;border:1px solid #294139;border-radius:12px}.loomcraft-preview img{max-width:190px;max-height:190px;image-rendering:pixelated}.loomcraft-stats{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cde2dc;white-space:pre-line}.loomcraft-craft{width:100%;min-height:44px;border:1px solid #70bcae;background:#173b36;color:#f2fffc;border-radius:11px;font-weight:900}.loomcraft-craft:disabled{opacity:.45}.loomcraft-pattern-actions{display:flex;gap:7px}.loomcraft-pattern-actions button{flex:1}.loomcraft-empty{padding:20px;text-align:center;color:#adc2bc}
       .loomcraft-pattern-layer{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)}.loomcraft-pattern-layer:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}.loomcraft-pattern-layer>label{display:block;font-size:11px;font-weight:800;color:#a9c0b9;margin-bottom:5px}.loomcraft-pattern-layer select{width:100%;margin-bottom:7px}
@@ -577,6 +578,7 @@
       dyeC: dyes[Math.min(2, dyes.length - 1)].id, // Used only by the baked weaving pattern(s) and later exposed as the third redye channel.
       layers: [], // Resolved [{url, role}] for the currently selected blueprint; refreshed whenever the blueprint changes.
       layerPatterns: {}, // role -> {pattern, patternId, patternLabel}. Sticky across blueprint switches — a role only applies if the new blueprint has a layer with that same role, same as the old single-pattern field was sticky across garments.
+      previewView: 'front', // 'front' | 'behind' — reset to 'front' on every blueprint switch (see blueprintSelect.onchange) so a garment without behind art never gets stuck showing it.
     };
 
     // Every layer resolveIconLayers finds for the selected blueprint gets its
@@ -616,7 +618,7 @@
             <div class="loomcraft-card"><h3>Default dyes</h3><div class="loomcraft-field"><label>Primary</label><select data-field="dyeA">${dyeOptionHtml(dyes, state.dyeA)}</select></div><div class="loomcraft-field" data-trim-field><label>Trim</label><select data-field="dyeB">${dyeOptionHtml(dyes, state.dyeB)}</select></div><div class="loomcraft-field" data-pattern-dye-field><label>Pattern (third dye slot)</label><select data-field="dyeC">${dyeOptionHtml(dyes, state.dyeC)}</select></div></div>
             <div class="loomcraft-card"><h3>Weaving pattern</h3><div data-pattern-layers><span class="loomcraft-note">Loading…</span></div><div class="loomcraft-note">Uses the same saved/unlocked pattern library and authoring workflow as mastered-tool verdigris removal. Each layer's motif is baked into this crafted item; only its third dye color remains freely changeable afterward.</div></div>
           </div>
-          <div><div class="loomcraft-card"><h3>Preview</h3><div class="loomcraft-preview" data-preview><span class="loomcraft-note">Loading preview…</span></div><div class="loomcraft-stats" data-stats></div></div><button class="loomcraft-craft" type="button" data-act="craft">Craft</button></div>
+          <div><div class="loomcraft-card"><h3>Preview <button class="loomcraft-behindToggle" type="button" data-act="toggleBehindView" style="display:none">Behind view</button></h3><div class="loomcraft-preview" data-preview><span class="loomcraft-note">Loading preview…</span></div><div class="loomcraft-stats" data-stats></div></div><button class="loomcraft-craft" type="button" data-act="craft">Craft</button></div>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -735,6 +737,13 @@
       overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns()}`;
       const craft = overlay.querySelector('[data-act="craft"]');
       craft.disabled = owned < cost;
+      const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
+      const showBehindToggle = await hasBehindView(bp.baseCosmeticId);
+      if (!loomOverlay) return; // May have closed while the check above awaited.
+      if (!showBehindToggle) state.previewView = 'front'; // No behind art for this garment — never leave the toggle stuck on.
+      behindToggleBtn.style.display = showBehindToggle ? '' : 'none';
+      behindToggleBtn.textContent = state.previewView === 'behind' ? 'Front view' : 'Behind view';
+      behindToggleBtn.classList.toggle('active', state.previewView === 'behind');
       const preview = overlay.querySelector('[data-preview]');
       preview.innerHTML = '<span class="loomcraft-note">Rendering…</span>';
       try {
@@ -743,12 +752,13 @@
           secondaryHex: hasSecondary() ? dyeById(state.dyeB)?.hex : null,
           patternHex: dyeById(state.dyeC)?.hex,
           weaving: weavingFromState(),
+          view: state.previewView,
         });
         if (!loomOverlay || !preview.isConnected) return;
         if (!canvas) { preview.innerHTML = '<span class="loomcraft-note">No sprite preview is mapped for this article.</span>'; return; }
         const img = document.createElement('img');
         img.src = canvas.toDataURL('image/png');
-        img.alt = `${bp.label || bp.baseCosmeticId} loom preview`;
+        img.alt = `${bp.label || bp.baseCosmeticId} loom preview${state.previewView === 'behind' ? ' (behind view)' : ''}`;
         preview.innerHTML = '';
         preview.appendChild(img);
       } catch (error) {
@@ -757,7 +767,11 @@
       }
     }
 
-    blueprintSelect.onchange = () => { state.blueprintId = blueprintSelect.value; refreshPatternLayerControls(); refreshPreview(); };
+    blueprintSelect.onchange = () => { state.blueprintId = blueprintSelect.value; state.previewView = 'front'; refreshPatternLayerControls(); refreshPreview(); };
+    overlay.querySelector('[data-act="toggleBehindView"]').onclick = () => {
+      state.previewView = state.previewView === 'behind' ? 'front' : 'behind';
+      refreshPreview();
+    };
     overlay.querySelectorAll('[data-material]').forEach(button => {
       button.onclick = () => {
         state.materialId = button.dataset.material;
@@ -914,6 +928,23 @@
     return [...found];
   }
 
+  // Precise single-gender version of the above, used to actually drive the
+  // loom's "Behind view" render rather than just build the pattern-url
+  // lookup map: distinguishes "no rule matched, reuse the front image" from
+  // "a rule explicitly hides this layer from the back" (changed:true,
+  // url:null — e.g. a hood's front-only face trim), which behindViewUrlsFor
+  // can't express since it only ever collects real substitute URLs.
+  function behindViewResultFor(url, baseCosmeticId, gender) {
+    const getBehindUrl = window._getBehindLayerUrl;
+    if (typeof getBehindUrl !== 'function') return { url, changed: false };
+    const group = { id: baseCosmeticId, originalId: null, hairSlot: null };
+    let behindUrl;
+    try { behindUrl = getBehindUrl({ url }, group, gender); } catch (_) { return { url, changed: false }; }
+    if (!behindUrl) return { url: null, changed: true };
+    const normalized = normalizeAssetPath(behindUrl);
+    return { url: normalized, changed: normalized !== url };
+  }
+
   async function buildPortraitPatternMap(descriptors) {
     const map = new Map();
     for (const descriptor of descriptors || []) {
@@ -1060,13 +1091,24 @@
   // one flat canvas. This is what actually lets a garment's base and trim
   // carry two different colors/motifs instead of one dye and one pattern
   // stamped uniformly across the whole merged silhouette.
-  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null } = {}) {
+  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front' } = {}) {
     const layers = await resolveIconLayers(baseCosmeticIdValue);
     if (!layers.length) return { canvas: null, layers };
     const primaryValue = parseInt(String(primaryHex || '').replace('#', ''), 16);
     const secondaryValue = parseInt(String(secondaryHex || primaryHex || '').replace('#', ''), 16); // Falls back to primary when the caller has no separate trim color.
+    const gender = view === 'behind' ? playerSpeciesGender().gender : null;
     const rendered = [];
-    for (const { url, role, paletteKey } of layers) {
+    for (const { url: frontUrl, role, paletteKey } of layers) {
+      // Some layers swap to a dedicated "-back" sprite for the rear view,
+      // some are hidden entirely from the back (a hood's front-only face
+      // trim), and others just reuse their front sprite — same three
+      // outcomes the real 3D avatar's rear render picks between.
+      let url = frontUrl;
+      if (gender) {
+        const behind = behindViewResultFor(frontUrl, baseCosmeticIdValue, gender);
+        if (behind.changed && behind.url === null) continue; // Hidden from the back entirely.
+        url = behind.url || frontUrl;
+      }
       let img = await loadImageUrl(url);
       if (!img) continue;
       const tintValue = paletteKey === 'B' ? secondaryValue : primaryValue;
@@ -1101,6 +1143,18 @@
     ctx.imageSmoothingEnabled = false;
     for (const img of rendered) ctx.drawImage(img, 0, 0);
     return { canvas, layers };
+  }
+
+  // Whether this cosmetic has at least one layer whose behind view actually
+  // differs from its front — a real substitute sprite, or a layer hidden
+  // entirely from the back — used to decide whether the loom's "Behind
+  // view" toggle is worth showing at all (most garments have no rear-
+  // specific art and would just re-render the same front image, which
+  // isn't worth a whole extra button for).
+  async function hasBehindView(baseCosmeticIdValue) {
+    const layers = await resolveIconLayers(baseCosmeticIdValue);
+    const { gender } = playerSpeciesGender();
+    return layers.some(({ url }) => behindViewResultFor(url, baseCosmeticIdValue, gender).changed);
   }
 
   function hexRgb(hex) {
@@ -1545,9 +1599,10 @@
     combatActive,
     learnOwnedBlueprints,
     renderClothingLayers,
+    hasBehindView,
     iconSpriteForCosmetic,
     debugSnapshot,
-    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, erodeMask, scaledOutlineWidth }),
+    __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingHasAnyPattern, erodeMask, scaledOutlineWidth }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
