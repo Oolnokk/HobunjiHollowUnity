@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 6;
+  const VERSION = 7;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_HOLD_VISUAL_S = 3600; // Used to park the ranged visual at its authored windup without adding another game.js hold state.
@@ -155,6 +155,7 @@
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
       inputMode: 'hold-release',
+      gripMode: animation.gripMode || 'palm-parallel',
       projectileSprite: toolDef?.sprite || 'assets/toolsprites/kylie.png',
       projectileVisualStyle: SPINNING_THROWN_SHAPES.has(shapeKey) ? 'spinningWeapon' : 'standard',
       projectileWeaponShapeKey: shapeKey,
@@ -426,6 +427,7 @@
       holdVisual(THROWN_HOLD_VISUAL_S, {
         sequence: 'attack',
         pose: def.chargePose,
+        gripMode: def.gripMode,
         windupFrac,
         strikeFrac: 0.99999,
         holdFrac: 0.999995,
@@ -460,6 +462,7 @@
     thrownCharge = null;
     window.RangedWeapons?.setLoaded?.(itemKey, false);
     window.RangedWeapons?.cancelPlayerAction?.();
+    window.ProceduralHandGripRuntime?.clear?.();
     lastRelease = { type: 'cancelled', itemKey, source: reason, at: Date.now() };
     return true;
   }
