@@ -17,7 +17,7 @@ const targetingConfig = fs.readFileSync('docs/config/scratchbones-config.js', 'u
 
 const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1');
 const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1');
-const dualRoleIndex = loader.indexOf('js/combat/ranged-dual-role-anim-style.js?v=20260905a');
+const dualRoleIndex = loader.indexOf('js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1');
 assert(focusIndex >= 0 && alignmentIndex > focusIndex && dualRoleIndex > alignmentIndex,
   'camera authority bridge loads after ranged focus and before later ranged adapters');
 assert.match(loader, /HobunjiCombatCameraAlignment\?\.version\) >= 4/,
