@@ -13,6 +13,7 @@ const flurrySource = fs.readFileSync('docs/js/combat/combat-flurry.js', 'utf8');
 const stanceSource = fs.readFileSync('docs/js/weapon-tool-stances.js', 'utf8'); // Shared weapon-stance amplitude owner for partial release continuity.
 const shoulderSource = fs.readFileSync('docs/js/hand-shoulder-pose-runtime.js', 'utf8'); // Shoulder metadata must scale with the same partial release percentage.
 const gripSource = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Secondary-grip metadata must scale with the same partial release percentage.
+const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Bandit mirror keeps legacy heavy identity separate from sampled pose amplitude.
 const config = JSON.parse(fs.readFileSync('docs/config/combat/attack-values.json', 'utf8')); // Authored production tuning.
 
 assert.match(coreSource, /function windupPoseProgress[\s\S]{0,500}Math\.log1p\(s \* t\) \/ Math\.log1p\(s\)/,
@@ -45,6 +46,10 @@ assert.match(shoulderSource, /scaledWindup = lerp\(poses\.neutral, poses\.windup
   'shoulder metadata Windup/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
 assert.match(gripSource, /scaledWindup = lerpAnimationGrip\(neutral, windup, poseScale\)[\s\S]{0,250}scaledStrike = lerpAnimationGrip\(neutral, strike, poseScale\)/,
   'secondary-grip Windup/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
+assert.match(banditSource, /_banditSwingPower = cb\.POWER \|\| 1\.7;[\s\S]{0,180}_banditSwingPoseScale = chargeT/,
+  'bandit Charged Breaker preserves the legacy heavy-attack identity power while storing sampled charge separately');
+assert.match(banditSource, /const power = \(c\._banditSwingPower \|\| 1\) \* poseScale/,
+  'bandit renderer applies sampled pose charge without corrupting heavy-attack identity consumers');
 assert.doesNotMatch(breakerSource, /heldSeconds\s*\/\s*MAX_CHARGE_S/,
   'gameplay charge must never be reconstructed from elapsed hold time');
 assert.match(breakerSource, /if \(poseCharge < MIN_READY_POSE\)/,
