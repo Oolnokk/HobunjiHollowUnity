@@ -204,16 +204,25 @@ assert(templeBenchPiece, 'temple map should contain the known grid-native two-se
 const benchEffective = window.MapLayoutSystem.getEffectiveMapData({ id: 'temple_bench_regression', furniture: [templeBenchPiece] }); // Used to run the real saved placement through production aliasing.
 const benchAliasKey = benchEffective.furniture[0].seatSurfaceFurnitureKey; // Used to resolve the real bench placement's runtime seat metadata key while its visual key remains benchFurniture.
 const transformedBenchData = window.AuthoredFurniture.peek(benchAliasKey); // Used to verify every authored bench seat inherits the saved post transform.
+const effectiveBenchPiece = benchEffective.furniture[0]; // Grid placement has already become the exact legacy transform the renderer consumes.
+const effectiveBenchYaw = Number(effectiveBenchPiece.rotY || 0) * Math.PI / 180;
+const effectiveBenchLocalTranslation = {
+  x: Number(effectiveBenchPiece.postX || 0) * Math.cos(effectiveBenchYaw) - Number(effectiveBenchPiece.postZ || 0) * Math.sin(effectiveBenchYaw),
+  z: Number(effectiveBenchPiece.postX || 0) * Math.sin(effectiveBenchYaw) + Number(effectiveBenchPiece.postZ || 0) * Math.cos(effectiveBenchYaw),
+}; // Independently mirrors world-offset → pre-yaw local translation so grid recentering is part of the expectation.
 assert.strictEqual(transformedBenchData.seatAnchors.length, benchData.seatAnchors.length, 'all authored bench seat surfaces must survive the transform');
 for (let index = 0; index < benchData.seatAnchors.length; index += 1) {
   const sourceAnchor = benchData.seatAnchors[index]; // Used as the immutable authored seat for this bench position.
   const transformedAnchor = transformedBenchData.seatAnchors[index]; // Used as the runtime seat that should match the visible scaled bench.
-  assert(Math.abs(transformedAnchor.position.x - sourceAnchor.position.x * 2) < 1e-9, `bench seat ${index} X should follow postSX`);
-  assert(Math.abs(transformedAnchor.position.y - (sourceAnchor.position.y + Number(templeBenchPiece.postY || 0))) < 1e-9, `bench seat ${index} Y should follow postY/postSY`);
-  assert(Math.abs(transformedAnchor.position.z - sourceAnchor.position.z * 0.75) < 1e-9, `bench seat ${index} Z should follow postSZ`);
+  const expectedX = sourceAnchor.position.x * Number(effectiveBenchPiece.postSX || 1) + effectiveBenchLocalTranslation.x;
+  const expectedY = sourceAnchor.position.y * Number(effectiveBenchPiece.postSY || 1) + Number(effectiveBenchPiece.postY || 0);
+  const expectedZ = sourceAnchor.position.z * Number(effectiveBenchPiece.postSZ || 1) + effectiveBenchLocalTranslation.z;
+  assert(Math.abs(transformedAnchor.position.x - expectedX) < 1e-9, `bench seat ${index} X should follow effective grid-derived scale/recentering`);
+  assert(Math.abs(transformedAnchor.position.y - expectedY) < 1e-9, `bench seat ${index} Y should follow effective postY/postSY`);
+  assert(Math.abs(transformedAnchor.position.z - expectedZ) < 1e-9, `bench seat ${index} Z should follow effective grid-derived scale/recentering`);
 }
-assert(Math.abs(transformedBenchData.footprint.d - benchData.footprint.d * 0.75) < 1e-9, 'real bench seat depth should follow postSZ');
-const expectedBenchPitch = Math.atan(Math.tan(-5 * Math.PI / 180) * (Number(templeBenchPiece.postSY || 1) / 0.75)) * 180 / Math.PI; // Used as the independent expected plane tilt for the real bench's Y/Z scale.
+assert(Math.abs(transformedBenchData.footprint.d - benchData.footprint.d * Number(effectiveBenchPiece.postSZ || 1)) < 1e-9, 'real bench seat depth should follow effective postSZ');
+const expectedBenchPitch = Math.atan(Math.tan(-5 * Math.PI / 180) * (Number(effectiveBenchPiece.postSY || 1) / Number(effectiveBenchPiece.postSZ || 1))) * 180 / Math.PI; // Used as the independent expected plane tilt for the effective bench Y/Z scale.
 assert(Math.abs(transformedBenchData.seatAnchors[0].rotationDeg.x - expectedBenchPitch) < 1e-9, 'real bench seat plane pitch should follow its non-uniform scale');
 assert.strictEqual(templeBenchPiece.itemKey, 'benchFurniture', 'runtime transformation must not mutate the real saved temple furniture record');
 assert.strictEqual(benchEffective.furniture[0].itemKey, 'benchFurniture', 'runtime transformation must not replace the temple bench visual item key');
