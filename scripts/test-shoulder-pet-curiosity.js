@@ -179,7 +179,7 @@ assert.match(rigSource,
   /\['kenkari::female'[\s\S]{0,100}\[-0\.12331214301269552,0\.2212216457140902,0\]/,
   'Kenkari female uses the supplied shoulderPerch');
 assert.match(rigSource,
-  /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)[\s\S]{0,15000}characters\[aliasKey\] = characters\[sourceKey\]/,
+  /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)[\s\S]{0,17000}characters\[aliasKey\] = characters\[sourceKey\]/,
   'Rakakoan still shares Kenkari transform objects instead of owning independent perch transforms');
 assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,500}Curiosity: phase=/,
