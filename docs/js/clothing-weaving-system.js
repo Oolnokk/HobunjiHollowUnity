@@ -653,6 +653,12 @@
       const bp = selectedBlueprint();
       const existing = state.layerPatterns[roleKey];
       const initialPattern = await resolvedForEditing(existing?.pattern || (existing?.patternId ? window.PatternLibrary?.getById?.(existing.patternId) : null) || null);
+      const supportsBehindView = await hasBehindView(bp.baseCosmeticId);
+      const previewFor = view => patternData => {
+        const base = weavingFromState() || { layers: {} };
+        const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData } } };
+        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: dyeById(state.dyeA)?.hex, secondaryHex: hasSecondary() ? dyeById(state.dyeB)?.hex : null, patternHex: dyeById(state.dyeC)?.hex, weaving, view }).then(r => r.canvas);
+      };
       window.PatternAuthoring?.openEditor?.({
         title: `Weave pattern — ${bp.label || bp.baseCosmeticId}${state.layers.length > 1 ? ' — ' + layerLabel(role) : ''}`,
         motifHint: state.layers.length > 1
@@ -666,11 +672,8 @@
           save: (label, patternData) => window.PatternLibrary.saveToLibrary(label, patternData),
           remove: id => window.PatternLibrary.removeSaved(id),
         } : null,
-        renderPreview: patternData => {
-          const base = weavingFromState() || { layers: {} };
-          const weaving = { layers: { ...base.layers, [roleKey]: { pattern: patternData } } };
-          return renderClothingLayers(bp.baseCosmeticId, { primaryHex: dyeById(state.dyeA)?.hex, secondaryHex: hasSecondary() ? dyeById(state.dyeB)?.hex : null, patternHex: dyeById(state.dyeC)?.hex, weaving }).then(r => r.canvas);
-        },
+        renderPreview: previewFor('front'),
+        renderPreviewBehind: supportsBehindView ? previewFor('behind') : undefined,
         onSave: (patternData, sourceLibraryId) => {
           const patternLabel = sourceLibraryId ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom') : 'Custom';
           state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel };
