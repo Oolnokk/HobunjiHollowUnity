@@ -48,6 +48,7 @@ function runBackstabScenario(targetFacing) {
     animalAttacks: { isStriking() { return false; } },
     isStaggered() { return false; },
     meleeHit() { return true; },
+    playerMeleeThreat(rangePx, halfConeRad, options = {}) { return { rangePx, halfConeRad, ...options }; },
     beginStagedAction(options) {
       options.onStrike();
       options.onComplete();
