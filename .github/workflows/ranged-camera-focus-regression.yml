@@ -56,6 +56,10 @@ jobs:
         run: node --check docs/js/combat/combat-camera-alignment-bridge.js
       - name: Syntax check ranged weapon archetypes
         run: node --check docs/js/combat/ranged-weapon-archetypes.js
+      - name: Syntax check ranged projectile runtime
+        run: node --check docs/js/combat/ranged-weapons.js
+      - name: Syntax check fishing projectile visuals
+        run: node --check docs/js/fishing-minigame.js
       - name: Syntax check dual-role ranged animation adapter
         run: node --check docs/js/combat/ranged-dual-role-anim-style.js
       - name: Run max-range camera ray regression
