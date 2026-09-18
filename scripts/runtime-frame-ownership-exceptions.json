@@ -522,15 +522,6 @@
     "line": 593
   },
   {
-    "file": "docs/js/procedural-hand-grip-runtime.js",
-    "owner": "ProceduralHandGripRuntime",
-    "classification": "timer-event",
-    "function": "frame",
-    "reason": "Reschedules itself every frame to retry install() until Combat.deps.__weaponToolStanceVisualHooks becomes true. Investigated for a Stage 1 chainGlobal-on-WeaponToolStances.init migration, but that flag is only guaranteed true after weapon-tool-stances.js's own render-driven updateMatrixWorld retry (not synchronously after WeaponToolStances.init() returns) — a headless-game-test run confirmed a hook on init() alone leaves this permanently uninstalled. Kept on RAF polling until a real readiness signal exists; do not re-attempt the naive one-shot hook.",
-    "migrationStage": "candidate",
-    "line": 98
-  },
-  {
     "file": "docs/js/quick-potion-arc-ui.js",
     "owner": "QuickPotionArcUI",
     "classification": "one-shot",
