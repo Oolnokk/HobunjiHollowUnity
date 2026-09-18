@@ -1,0 +1,35 @@
+# Focused checks for the reviewed procedural swim locomotion/editor integration.
+name: Procedural swim gait regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/js/procedural-swim-gait.js'
+      - 'docs/js/weapon-idle-body-yaw-runtime.js'
+      - 'docs/js/panel-ui.js'
+      - 'docs/js/combat/combat-config-loader.js'
+      - 'docs/js/animal-subtle-elevation-bridge.js'
+      - 'docs/js/drunk-prone-composition-bridge.js'
+      - 'scripts/test-procedural-swim-gait.js'
+      - 'scripts/test-weapon-idle-body-yaw-runtime-scheduler.js'
+      - 'scripts/test-animal-subtle-elevation.js'
+      - 'scripts/test-drunk-prone-composition-bridge.js'
+      - '.github/workflows/procedural-swim-gait-regression.yml'
+
+jobs:
+  procedural-swim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Shared procedural swim gait
+        run: node scripts/test-procedural-swim-gait.js
+      - name: Weapon idle yaw swim ownership
+        run: node scripts/test-weapon-idle-body-yaw-runtime-scheduler.js
+      - name: Water Y / prone-water behavior
+        run: node scripts/test-animal-subtle-elevation.js
+      - name: Locomotion composition compatibility
+        run: node scripts/test-drunk-prone-composition-bridge.js
