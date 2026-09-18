@@ -436,14 +436,16 @@
     // combat-counter-shield.js reuses its authored weapon-silhouette layers for
     // this same visual record after this update hook runs.
     if (visual.fireGroup) visual.fireGroup.visible = false;
-    visual.weaponGlowGroup.visible = defensive || offensive;
+    // Offensive Charged Breaker is rendered exclusively by the exact
+    // weapon-mesh child layers in combat-counter-shield.js. Keep this older
+    // sprite fallback completely dormant so it cannot add a second,
+    // misaligned per-frame effect.
+    visual.weaponGlowGroup.visible = defensive;
     visual.fieldGroup.visible = defensive;
     if (defensive) {
       currentDefensiveIconTexture();
       updateWeaponGlow(visual, timeS);
       updateFieldTransform(visual, timeS);
-    } else if (offensive) {
-      updateWeaponGlow(visual, timeS); // Fallback glow if the authored silhouette adapter is unavailable in an isolated tool/test.
     }
     visual.offensive = offensive;
     visual.defensive = defensive;
@@ -486,16 +488,21 @@
     const liveActors = new Set([deps.player]); // Used to dispose visuals for enemies that despawn, die, or leave the current area.
     const currentArea = deps.getCurrentArea?.(); // Filters the scan to the scene actually being rendered.
 
-    syncActor(deps.player, { defensive: isPlayerCounterShieldHeld(deps.player) }, timeS);
+    const playerDefensive = isPlayerCounterShieldHeld(deps.player);
+    let anyWeaponGlowActive = playerDefensive; // Drives the exact weapon-layer renderer only while a relevant heavy effect is actually live.
+    syncActor(deps.player, { defensive: playerDefensive }, timeS);
 
     for (const c of deps.hostileObjects) {
       if (!c?.isBandit || c.health <= 0 || c.areaId !== currentArea) continue;
       liveActors.add(c);
       const offensive = isBanditOffensiveHeavy(c); // True across both the Charged Breaker windup and strike stages.
       const defensive = isBanditCounterShieldHeld(c, nowMs); // True for the exact Counter Shield guard window.
+      if (offensive || defensive) anyWeaponGlowActive = true;
       const afflictionBonuses = offensive ? window.ResourceSystem?.afflictionBonusesForTag?.(c.def?.attackTag) : null; // Same bonuses the bandit's heavy hit passes into damagePlayer.
       syncActor(c, { offensive, defensive, afflictionBonuses }, timeS);
     }
+
+    window.Combat.weaponChargeGlow?.setExternalActive?.(anyWeaponGlowActive);
 
     for (const [actor, visual] of actorVisuals) {
       if (liveActors.has(actor)) continue;
