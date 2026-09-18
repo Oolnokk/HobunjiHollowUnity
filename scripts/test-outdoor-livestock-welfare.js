@@ -108,6 +108,8 @@ assert.strictEqual(originalCompileRenderer, rendererToken, 'welfare compile wrap
 assert.match(shader.fragmentShader, /uniform float outdoorLivestockLighten;/, 'lightening uniform is declared in GLSL, not only attached to shader.uniforms');
 assert.match(shader.fragmentShader, /uniform float outdoorLivestockDesaturation;/, 'desaturation uniform is declared in GLSL, not only attached to shader.uniforms');
 assert.match(shader.fragmentShader, /mix\(diffuseColor\.rgb, vec3\(outdoorLivestockGray\), outdoorLivestockDesaturation\)/, 'welfare shader modifies mapped sprite RGB after map sampling');
+assert(shader.fragmentShader.includes('if (any(greaterThan(diffuseColor.rgb, vec3(0.04)))) {'), 'near-black mapped sprite pixels bypass outdoor pallor through the 0.04 per-channel threshold');
+assert(shader.fragmentShader.indexOf('if (any(greaterThan(diffuseColor.rgb, vec3(0.04)))) {') < shader.fragmentShader.indexOf('float outdoorLivestockGray ='), 'near-black guard wraps both welfare color operations');
 assert(shader.uniforms.outdoorLivestockLighten, 'compiled shader receives live lightening uniform');
 assert(shader.uniforms.outdoorLivestockDesaturation, 'compiled shader receives live desaturation uniform');
 
@@ -166,6 +168,7 @@ assert(material.userData.outdoorLivestockWelfare.desaturation < 0.01, 'recovery 
 const debug = context.window.OutdoorLivestockWelfare.debugSnapshot();
 assert.match(debug.mostRecentChange, /compile-safe cached sprite uniforms/i, 'mobile debug snapshot names the audited visual fix');
 assert.equal(debug.constants.fullNeglectNights, 5, 'debug snapshot exposes the five-step tuning');
+assert.equal(debug.constants.blackPreserveMax, 0.04, 'debug snapshot exposes the near-black pallor exclusion threshold');
 assert.equal(debug.adults[0].cachedMaterialCount, 1, 'debug snapshot exposes cached welfare material count for mobile performance checks');
 assert(saveCount > 0, 'outdoor welfare state persists through the existing livestock save seam');
 
