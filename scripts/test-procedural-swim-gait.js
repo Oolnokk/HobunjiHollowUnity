@@ -130,6 +130,14 @@ assert.ok(debug.runtime.strength > 0, 'moving swimmer drives kick strength');
 assert.equal(playerLegs.group.rotation.y, 0, 'swim cancels the normal leg-root counter-rotation so torso and legs share one facing');
 assert.equal(solveCount, 2, 'one moving swim update solves both kicking legs');
 
+player.x += 4;
+const solvesBeforeSidestep = solveCount;
+playerLegs.update(0.016, 0, false, undefined);
+debug = api.getDebug();
+assert.ok(debug.runtime.speed > 0, 'actual resolved displacement supplies swim speed even when velocity input was zeroed');
+assert.ok(debug.runtime.strength > 0, 'collision sidestep still drives a visible swim kick');
+assert.equal(solveCount, solvesBeforeSidestep + 2, 'collision sidestep still solves both kicking legs');
+
 authoritativeSwimming = false;
 const solvesBeforeExit = solveCount;
 playerLegs.update(0.016, 2.5, false, undefined);
@@ -183,6 +191,7 @@ const swimFacingBranch = game.match(/else if \(!player\.prone[\s\S]*?isPlayerSwi
 assert.ok(swimFacingBranch, 'game.js has an explicit native swim-facing branch before the normal billboard dead-zone branch');
 assert.match(game, /playerResolvedMoveDx = player\.x - moveStartX;[\s\S]*playerResolvedMoveDy = player\.y - moveStartY;/, 'game captures actual resolved movement after tile-edge sidestep resolution');
 assert.match(swimFacingBranch, /facingYawFromMovement\?\.\(playerResolvedMoveDx, playerResolvedMoveDy\)/, 'game swim facing uses actual resolved frame displacement');
+assert.match(game, /window\.HobunjiProceduralSwimGait\?\.facingYawFromMovement && isPlayerSwimming\(\)/, 'game enters swim-facing ownership only when the swim helper is installed');
 assert.match(swimFacingBranch, /playerMesh\.rotation\.y = playerFacing/, 'game swim branch owns the real player body yaw');
 assert.match(swimFacingBranch, /playerLegs\?\.group\) playerLegs\.group\.rotation\.y = 0/, 'game swim branch keeps the procedural leg root aligned with the body');
 assert.doesNotMatch(swimFacingBranch, /perpClamp/, 'swimming bypasses the ordinary billboard dead-zone clamp');
