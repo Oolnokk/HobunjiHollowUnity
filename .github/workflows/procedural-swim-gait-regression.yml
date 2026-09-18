@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/game.js'
       - 'docs/js/procedural-swim-gait.js'
+      - 'docs/tools/procedural-animation-editor/index.html'
       - 'docs/js/weapon-idle-body-yaw-runtime.js'
       - 'docs/js/panel-ui.js'
       - 'docs/js/combat/combat-config-loader.js'
@@ -25,6 +26,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Swim module syntax
+        run: node --check docs/js/procedural-swim-gait.js
       - name: Shared procedural swim gait
         run: node scripts/test-procedural-swim-gait.js
       - name: Weapon idle yaw swim ownership
