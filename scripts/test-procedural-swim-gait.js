@@ -166,6 +166,9 @@ assert.doesNotMatch(source, /WebGLRenderer/, 'swim module no longer adds a rende
 assert.match(source, /if \(swimming && handle\.group\?\.rotation\) handle\.group\.rotation\.y = 0/, 'swim explicitly aligns the leg root to the body');
 assert.match(source, /if \(!\(strength > 0\)\) \{[\s\S]*state\.blend = 0/, 'swim leg ownership exits immediately at zero strength');
 assert.match(source, /Combat\?\.deps\?\.isPlayerSwimming/, 'shared module uses the authoritative game swim predicate');
+assert.match(source, /proceduralSwimEditorRender/, 'editor Swim applies at the renderer boundary after native gait writers');
+assert.match(source, /restoreEditorRenderState\(snapshot\)/, 'editor Swim restores native body\/leg transforms after each draw');
+assert.doesNotMatch(source, /requestAnimationFrame\(tick\)/, 'editor Swim does not compete with the native gait in a parallel RAF loop');
 
 const swimFacingBranch = game.match(/else if \(!player\.prone[\s\S]*?isPlayerSwimming\(\)\) \{[\s\S]*?\n        \} else \{/)?.[0] || '';
 assert.ok(swimFacingBranch, 'game.js has an explicit native swim-facing branch before the normal billboard dead-zone branch');
