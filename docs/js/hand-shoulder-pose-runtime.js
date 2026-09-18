@@ -45,8 +45,8 @@
     const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
     const poses = normalizePoseSet(poseSet);
     const poseScale = clamp01(timing.poseScale ?? 1); // Used after a partial held release to scale authored shoulder endpoints from Neutral by the same fraction as the weapon.
-    const scaledWindup = lerp(poses.neutral, scaledWindup, poseScale); // Used as the effective Windup shoulder state for the current release amplitude.
-    const scaledStrike = lerp(poses.neutral, scaledStrike, poseScale); // Used as the effective Strike shoulder state for the current release amplitude.
+    const scaledWindup = lerp(poses.neutral, poses.windup, poseScale); // Used as the effective Windup shoulder state for the current release amplitude.
+    const scaledStrike = lerp(poses.neutral, poses.strike, poseScale); // Used as the effective Strike shoulder state for the current release amplitude.
 
     if (sequence === 'load') {
       if (t <= wf) return lerp(poses.neutral, scaledWindup, t / Math.max(1e-6, wf));
