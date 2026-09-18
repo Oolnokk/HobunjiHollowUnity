@@ -215,6 +215,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
         <div class="row" style="margin-top:6px;flex-wrap:wrap">
           <button id="gridRotLeftBtn" type="button">↶ Rotate 90°</button>
           <button id="gridRotRightBtn" type="button">Rotate 90° ↷</button>
+          <button id="gridRot180Btn" type="button">Rotate 180°</button>
           <button id="applyFurnGridBtn" type="button">Apply tile size</button>
         </div>
         <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:12px">
@@ -876,14 +877,20 @@ function applySelectedGridSize(){
 function rotateSelectedGrid(delta){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   var info=furnGridInfo(f),nextRot=((info.gridRot+delta)%360+360)%360;
-  var probe=Object.assign({},f,{gridRot:nextRot,gridW:info.gridD,gridD:info.gridW});
+  // Odd quarter-turns swap the rectangular footprint. A 180° flip keeps the
+  // same footprint, so it can rotate furniture trapped against a wall/corner
+  // without requiring an invalid intermediate 90° placement.
+  var swapsFootprint=Math.abs(Math.round(delta/90))%2===1;
+  var nextW=swapsFootprint?info.gridD:info.gridW, nextD=swapsFootprint?info.gridW:info.gridD;
+  var probe=Object.assign({},f,{gridRot:nextRot,gridW:nextW,gridD:nextD});
   if(!furnitureFitsFloor(probe,f.col,f.row)){ log('Rotated footprint would leave the floor/grid.','warn'); return; }
-  pushUndo(); f.gridRot=nextRot; f.gridW=info.gridD; f.gridD=info.gridW;
+  pushUndo(); f.gridRot=nextRot; f.gridW=nextW; f.gridD=nextD;
   drawGrid(); rebuild3D(); selectFurn(f.id);
 }
 $('applyFurnGridBtn').addEventListener('click',applySelectedGridSize);
 $('gridRotLeftBtn').addEventListener('click',function(){rotateSelectedGrid(-90);});
 $('gridRotRightBtn').addEventListener('click',function(){rotateSelectedGrid(90);});
+$('gridRot180Btn').addEventListener('click',function(){rotateSelectedGrid(180);});
 $('nonCollidingFurniture').addEventListener('change',function(){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo(); f.nonColliding=!!this.checked||!!f.walkableElevation; drawGrid(); rebuild3D(); selectFurn(f.id);
