@@ -13,6 +13,9 @@ const baseEffectSelections = []; // Captures mastery selections that pass the ar
 const addedAfflictions = []; // Captures final affliction ids/amounts after Blowgun scaling aliases are resolved.
 const rangedVisuals = []; // Captures thrown charge/release presentation options so authored Weapon Throw (Spin) poses can be checked.
 let gripClears = 0; // Confirms interrupted thrown holds release the temporary authored hand-grip mode.
+let visibleCharge = 0.45; // Synthetic live Neutral→Windup interpolation reported by the ranged visual owner at input release.
+const releasedHolds = []; // Captures partial-pose release options passed into the shared game animation seam.
+let cancelledHolds = 0; // Confirms lost releases cancel the held ranged animation, not only the archetype input state.
 
 const toolDefs = {
   kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie' },
@@ -72,9 +75,13 @@ const windowObject = {
     BASIC_AMMO_EFFECTS: baseBasicEffects,
     setBasicEffect(itemKey, rank, effectId) { baseEffectSelections.push({ itemKey, rank, effectId }); return true; },
     setLoaded: (itemKey, value) => loaded.set(itemKey, !!value),
-    startPlayerAction(itemKey) { baseStarts.push({ itemKey, loaded: loaded.get(itemKey) }); return true; },
+    startPlayerAction(itemKey, options = {}) { baseStarts.push({ itemKey, loaded: loaded.get(itemKey), options }); return true; },
     playerActionLabel: itemKey => `Base ${itemKey}`,
     cancelPlayerAction: () => {},
+    triggerPlayerVisual: (durationS, options) => { rangedVisuals.push({ durationS, options }); },
+    playerWindupPoseProgress: () => visibleCharge,
+    releasePlayerHold: options => { releasedHolds.push(options); return true; },
+    cancelPlayerHold: () => { cancelledHolds++; },
     equippedRangedKey: () => equippedRanged,
   },
   WeaponToolStances: { refreshDefinitions: () => {} },
@@ -112,14 +119,24 @@ const rangedWeaponsSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/
 const fishingSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/fishing-minigame.js'), 'utf8'); // Pins the shared fishing-mace outbound spin source.
 const heldActionSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/held-action-animations.js'), 'utf8'); // Pins the user-authored shared throw animation source.
 const gripRuntimeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/procedural-hand-grip-runtime.js'), 'utf8'); // Pins ranged visual support for authored gripMode metadata.
+const gameSource = fs.readFileSync(path.resolve(__dirname, '../docs/game.js'), 'utf8'); // Pins the minimal Charged-Breaker-style partial-release seam used by thrown weapons.
+assert.match(gameSource, /function getWeaponSwingWindupPoseProgress\(\)/, 'game runtime must expose visible linear held-windup progress.');
+assert.match(gameSource, /function partialCombatPoseAtCharge\(pose, poseProgress\)/, 'game runtime must support releasing from the currently visible partial pose.');
+assert.match(gameSource, /getHeldRangedTexture:[\s\S]*material\?\.map/, 'ranged projectile appearance must source the exact held tool texture.');
+assert.match(gameSource, /setHeldRangedVisible:[\s\S]*toolMeshMap\.ranged\.visible/, 'game runtime must expose exact in-hand ranged visibility handoff.');
 assert.match(heldActionSource, /name:\s*'Weapon Throw \(Spin\)'/, 'Shared held-action library must expose Weapon Throw (Spin).');
 assert.match(heldActionSource, /durationS:\s*1\.04[\s\S]*windupFrac:\s*0\.49[\s\S]*strikeFrac:\s*0\.57[\s\S]*holdFrac:\s*0\.82/, 'Weapon Throw (Spin) must retain the supplied authored timing.');
 assert.match(heldActionSource, /gripMode:\s*'palm-parallel'/, 'Weapon Throw (Spin) must retain the supplied palm-parallel grip mode.');
 assert.match(rangedWeaponsSource, /gripMode:\s*def\.gripMode\s*\|\|\s*null/, 'Ranged action playback must forward authored grip mode metadata.');
-assert.match(gripRuntimeSource, /triggerRangedWeaponVisual[\s\S]*handGripModeRanged/, 'Procedural hand grip runtime must apply grip metadata to ranged visuals.');
+assert.match(gripRuntimeSource, /beginHeld:\s*beginHeldMode/, 'Procedural hand grip runtime must expose the held-grip lifecycle to ranged visuals.');
+assert.match(rangedWeaponsSource, /grip\?\.beginHeld\?\.\(options\.gripMode\)/, 'Ranged visuals must activate the authored held grip through the shared grip runtime.');
 assert.match(fishingSource, /projectileVisuals:\s*FISHING_PROJECTILE_VISUALS/, 'Fishing must expose its projectile visual tuning for combat reuse.');
 assert.match(rangedWeaponsSource, /Fishing\?\.projectileVisuals\?\.maceSpinRateDeg/, 'Thrown spin must read Fishing\'s authored mace spin rate instead of inventing a separate rate.');
-assert.match(rangedWeaponsSource, /loadedTexture\.image\?\.width[\s\S]*plane\.scale\.y = pendingAspect/, 'Spinning thrown weapon PNGs must preserve their source aspect ratio.');
+assert.match(rangedWeaponsSource, /textureSource\?\.clone[\s\S]*texture = textureSource\.clone\(\)/, 'Thrown projectiles must clone the exact held texture so metal and verdigris pattern match pixel-for-pixel.');
+assert.match(rangedWeaponsSource, /plane\.scale\.y = pendingAspect/, 'Thrown weapon PNGs must preserve their source aspect ratio.');
+assert.match(rangedWeaponsSource, /setHeldRangedVisible\?\.\(action\.itemKey, false\)/, 'Held weapon must hide on the projectile-spawn frame.');
+assert.match(rangedWeaponsSource, /restoreHeldThrownWeapon\(action\)/, 'Held weapon must return only when the release action completes back at Neutral.');
+assert.match(rangedWeaponsSource, /p\.def\.damage \* falloff \* \(Number\.isFinite\(p\.damageScale\)/, 'Thrown projectile raw damage must multiply by released visible windup percentage.');
 assert.match(rangedWeaponsSource, /spinPivot\.rotation\.y = p\.spinRad/, 'Spinning thrown weapons must rotate on a dedicated sprite-normal pivot.');
 
 assert.ok(toolDefs.kylie_copper.slots.includes('ranged'), 'Kylie should be equippable in the ranged slot.');
@@ -133,7 +150,8 @@ for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSpinSource, 'fishingMace', `${key} should reuse the fishing-mace spin source.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSprite, toolDefs[key].sprite, `${key} projectile should use its actual weapon sprite.`);
 }
-assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileVisualStyle, 'standard', 'Fishing spear should stay non-spinning.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileVisualStyle, 'weapon', 'Fishing spear should use its real weapon sprite/material while staying non-spinning.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper?.projectileSpinSource, null, 'Fishing spear must remain non-spinning until its dedicated throw is authored.');
 for (const key of ['kylie_copper', 'dagger_copper', 'fishingspear_copper', 'hatchet_copper']) {
   const cfg = windowObject.RangedWeapons.config[key];
   assert.ok(Math.abs(cfg.chargeWindupS - 0.5096) < 1e-9, `${key} must use Weapon Throw (Spin)'s 1.04s × 0.49 authored windup.`);
@@ -197,11 +215,15 @@ equippedRanged = 'kylie_copper';
 
 assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), true, 'Kylie press should begin a thrown hold.');
 assert.match(windowObject.RangedWeapons.playerActionLabel('kylie_copper'), /^Release /);
+assert.strictEqual(rangedVisuals.at(-1).durationS, 1.04, 'Thrown hold must use the real authored animation duration, not a synthetic hours-long timer.');
+assert.strictEqual(rangedVisuals.at(-1).options.held, true, 'Thrown press must hold the real ranged animation at Windup.');
 assert.strictEqual(rangedVisuals.at(-1).options.pose.windup.roll, -92, 'Thrown hold visual must use Weapon Throw (Spin) Windup rather than the old flask throw.');
 assert.strictEqual(rangedVisuals.at(-1).options.gripMode, 'palm-parallel', 'Thrown hold visual must carry the authored palm-parallel grip mode.');
 now += 450;
+visibleCharge = 0.45;
 assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.releaseThrownCharge('test'), true, 'Kylie release should enter the existing ranged fire state machine.');
-assert.deepStrictEqual(baseStarts, [{ itemKey: 'kylie_copper', loaded: true }]);
+assert.deepStrictEqual(releasedHolds, [{ poseProgress: 0.45 }], 'release must hand the exact visible Neutral→Windup interpolation into the shared partial-pose release seam.');
+assert.deepStrictEqual(baseStarts, [{ itemKey: 'kylie_copper', loaded: true, options: { damageScale: 0.45, suppressVisual: true } }], 'projectile action must use visible windup percent as damage scale without starting a second animation.');
 
 assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('bshuakauitl_copper'), true, 'Blowgun should retain ordinary load/fire start behavior.');
 assert.strictEqual(baseStarts.at(-1).itemKey, 'bshuakauitl_copper');
@@ -218,7 +240,7 @@ windowListeners.blur();
 let snapshot = windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot();
 assert.strictEqual(snapshot.thrownCharge, null, 'window blur must cancel an in-progress thrown charge.');
 assert.strictEqual(snapshot.lastRelease.type, 'cancelled', 'window blur must report the charge as cancelled, not released.');
-assert.strictEqual(gripClears, 1, 'cancelling a thrown hold must clear the temporary ranged grip mode.');
+assert.strictEqual(cancelledHolds, 1, 'cancelling a thrown hold must cancel the held ranged visual exactly once.');
 
 assert.strictEqual(windowObject.RangedWeapons.startPlayerAction('kylie_copper'), true, 'Kylie press should begin another thrown hold.');
 context.document.hidden = true;
@@ -226,6 +248,6 @@ documentListeners.visibilitychange();
 snapshot = windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot();
 assert.strictEqual(snapshot.thrownCharge, null, 'tab hide (document.hidden) must cancel an in-progress thrown charge.');
 assert.strictEqual(snapshot.lastRelease.type, 'cancelled', 'tab hide must report the charge as cancelled, not released.');
-assert.strictEqual(gripClears, 2, 'each interrupted thrown hold must clear the temporary ranged grip mode exactly once.');
+assert.strictEqual(cancelledHolds, 2, 'each interrupted thrown hold must cancel the held ranged visual exactly once.');
 
 console.log('PASS ranged weapon archetypes');
