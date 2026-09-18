@@ -137,6 +137,12 @@ async function settle(promise) {
   assert(rootEl.classList.contains('visible'), 'a newer show() must remain visible even if an older stale show() resolves after it');
   assert.equal(scriptWordsEl.style.getPropertyValue('--script-column-spacing'), '-0.42em', 'authored negative Tankan column spacing must survive config loading');
   assert.match(source, /\.hlsVerticalWord \+ \.hlsVerticalWord\{margin-left:var\(--script-column-spacing\)\}/, 'runtime stylesheet must apply signed spacing as adjacent-column margin');
+  assert.match(source, /window\.ResourceRings\?\.AFFLICTION_COLORS\?\.\[id\]/, 'loading tips must resolve affliction colors from the resource-ring palette');
+  assert.match(source, /if \(semantic\?\.color\) span\.style\.color = semantic\.color;/, 'rich tip spans must apply resolved exact affliction colors');
+  assert.match(source, /renderRichTip\(els\.loreHeader, state\.activeTipTitle \|\| 'Compendium'\)/, 'loading-tip headers must use the same rich affliction renderer as body copy');
+  assert.match(source, /--hls-resource-health,#55d76f/, 'base Health fallback must match the configured resource-ring palette');
+  assert.match(source, /--hls-resource-stamina,#67b7ff/, 'base Stamina fallback must match the configured resource-ring palette');
+  assert.match(source, /--hls-resource-footing,#d9a441/, 'base Footing fallback must match the configured resource-ring palette');
   assert(runtime.getProgress() > 0 && runtime.getProgress() < 100, 'a visible unfinished session reports live progress instead of the authored preview percent');
 
   const third = runtime.show();
