@@ -127,7 +127,7 @@
         {
           title: 'Exhaustion / Black Stamina', icon: '◐', kicker: 'Overexertion',
           text: 'If an action costs more Stamina than you have, the action is still allowed, but you enter Exhausted instead of getting a free pass.',
-          notes: ['While Exhausted, further Stamina costs drain Black Stamina.', 'As Black Stamina empties, attacks can slow dramatically.', 'When Black Stamina recovers to full, Exhaustion clears and normal Stamina returns.'],
+          notes: ['While Exhausted, further Stamina costs drain Black Stamina.', 'As Black Stamina empties, attacks can slow dramatically.', 'When Black Stamina recovers to full, Exhaustion clears with normal Stamina at 0; normal Stamina then recovers separately.'],
           keywords: ['black stamina debt exhausted overspend slow'],
         },
       ],
