@@ -54979,6 +54979,15 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  // Full Character Scale / latest authored anatomy parity. These are loaded
+  // individually because this tool executes repository scripts from Blob URLs,
+  // so the normal bootstrap's document.currentScript-relative nested loader
+  // cannot be used here.
+  'config/character-rig-scale-defaults.js',
+  'js/attachment-rig-latest-authored-snapshot-core.js',
+  'js/character-rig-maoao-authored-20260905.js',
+  'js/harlyao-species-runtime.js',
+  'js/porakaneki-species-runtime.js',
   'js/leg-bones.js',
   CREATURE_RENDER_SCRIPT,
 ];
@@ -55368,10 +55377,27 @@ async function loadRepositoryRuntime(settings) {
 
   for (const relativePath of REQUIRED_SCRIPTS) {
     const path = settings.docsRoot + relativePath;
+    if (relativePath === 'js/attachment-rig-latest-authored-snapshot-core.js') {
+      // This preview needs one authoritative anatomy import, not Animation
+      // Author's 30-second import-control retry loop.
+      window.HOBUNJI_ATTACHMENT_RIG_LATEST_SINGLE_APPLY = true;
+    }
     const code = prepareRepositoryScript(await fetchRepoText(path), relativePath, settings);
     await executeClassicScript(code, rawUrl(path));
     log(`Loaded runtime script ${path}`);
   }
+
+  // attachment-rig-profiles.js applies its own older master anatomy before the
+  // later authored snapshot exists. Re-run only the shared config projection
+  // after the latest overlay/species bridges so PNGPlaneAvatar receives the
+  // same effective portrait placement/scale that gameplay receives.
+  window.applyHobunjiAttachmentRigProfileCorrections?.();
+  log('[Portrait parity] Latest authored anatomy projected into PNG avatar config.', 'info', {
+    latestAuthoredSnapshot: window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS?.latestAuthoredSnapshot || null,
+    maoAoShoulders: window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS?.maoAoShoulderAuthoring || null,
+    anatomyProfiles: window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS?.anatomyProfiles || null,
+    fullCharacterScaleDefaultsVersion: window.HobunjiCharacterRigScaleDefaults?.version || null,
+  });
 
   if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
   if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
@@ -55440,6 +55466,96 @@ function verticalPlacementSpeciesChain(speciesId) { // Matches the repository's 
     current = normalizePlacementSpeciesKey(speciesConfig[current]?.parentSpecies);
   }
   return chain;
+}
+
+// Resolves the exact body-width/body-height tuple authored by Animation
+// Author's Full Character Scale section. Profile overrides win, then the
+// canonical species+gender defaults, matching character-rig-scale.js.
+function resolvedFullCharacterScaleForPreview(speciesId, genderValue) {
+  const gender = normalizeGender(genderValue);
+  const sourceSpecies = normalizePlacementSpeciesKey(speciesId);
+  const transformedSpecies = normalizePlacementSpeciesKey(
+    typeof window.hobunjiTransformSpeciesId === 'function'
+      ? window.hobunjiTransformSpeciesId(sourceSpecies)
+      : sourceSpecies,
+  );
+  const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const profile = characters[`${transformedSpecies}::${gender}`]
+    || characters[`${sourceSpecies}::${gender}`]
+    || null;
+  const anatomy = profile?.anatomy || {};
+  const defaults = window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(transformedSpecies || sourceSpecies, gender)
+    || { x: 1, y: 1, head: 1, offsetY: 0 };
+  const legacy = Number(anatomy.rigScale);
+  const hasLegacy = Number.isFinite(legacy) && legacy > 0;
+  const positive = (value, fallback) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.max(0.1, Math.min(4, number)) : fallback;
+  };
+  const finiteOffset = Number(anatomy.headOffsetY);
+  return {
+    species: transformedSpecies || sourceSpecies,
+    gender,
+    sourceProfile: profile ? `${transformedSpecies || sourceSpecies}::${gender}` : null,
+    x: positive(anatomy.rigScaleX, hasLegacy ? legacy : Number(defaults.x) || 1),
+    y: positive(anatomy.rigScaleY, hasLegacy ? legacy : Number(defaults.y) || 1),
+    head: positive(anatomy.headScale, hasLegacy ? legacy : Number(defaults.head) || 1),
+    offsetY: Number.isFinite(finiteOffset) ? finiteOffset : (Number(defaults.offsetY) || 0),
+    anatomyPortraitScale: Number(anatomy.portraitScale) || null,
+    anatomyPlacementRatio: Number.isFinite(Number(anatomy.portraitVerticalPlacementRatio)) ? Number(anatomy.portraitVerticalPlacementRatio) : null,
+  };
+}
+
+// The procedural editor's locomotionRoot is the same floor-relative ownership
+// boundary used by gameplay's character-rig-scale runtime: scaling this parent
+// moves the portrait, generated hands, feet and authored joints together while
+// leaving the world-floor translation itself untouched.
+function applyFullCharacterScaleToPreview(npc, avatar) {
+  const root = procedural.locomotionRoot;
+  const model = state.three.model;
+  if (!root || !model) return null;
+  const appearance = avatar?.exportNpc?.appearance || appearanceFallbackFor(npc || {});
+  const scale = resolvedFullCharacterScaleForPreview(appearance.speciesId, appearance.gender);
+  const base = { x: Number(root.scale.x) || 1, y: Number(root.scale.y) || 1, z: Number(root.scale.z) || 1 };
+  const output = { x: base.x * scale.x, y: base.y * scale.y, z: base.z * scale.x };
+  root.scale.set(output.x, output.y, output.z);
+  root.userData ||= {};
+  root.userData.hobunjiCharacterRigScaleState = {
+    factor: { x: scale.x, y: scale.y },
+    base,
+    output,
+    species: scale.species,
+    gender: scale.gender,
+    groundRelative: true,
+    coordinateSpace: 'character-floor-parent',
+    source: 'procedural-editor-full-character-scale-parity',
+  };
+  root.updateMatrix?.();
+  root.updateMatrixWorld?.(true);
+  model.userData ||= {};
+  model.userData.gameplayPortraitTransformStack = {
+    species: scale.species,
+    gender: scale.gender,
+    portraitPlacementRatio: Number(model.userData.portraitVerticalPlacementRatio),
+    portraitScaleMultiplier: Number(model.userData.portraitScaleMultiplier),
+    fullCharacterScale: { x: scale.x, y: scale.y, head: scale.head, offsetY: scale.offsetY },
+    profilePortraitScale: scale.anatomyPortraitScale,
+    profilePlacementRatio: scale.anatomyPlacementRatio,
+    floorRelative: true,
+  };
+  log('[Portrait parity] Applied Full Character Scale floor-parent transform.', 'info', {
+    model: model.name,
+    species: scale.species,
+    gender: scale.gender,
+    profile: scale.sourceProfile,
+    portraitPlacementRatio: model.userData.portraitVerticalPlacementRatio,
+    portraitScaleMultiplier: model.userData.portraitScaleMultiplier,
+    modelHeight: model.userData.portraitModelHeight,
+    fullCharacterScale: { x: scale.x, y: scale.y, head: scale.head, offsetY: scale.offsetY },
+    portraitCenterAboveFloorBeforeFullScale: Number(model.userData.portraitVerticalPlacementRatio) * Number(model.userData.portraitModelHeight),
+    portraitCenterAboveFloorAfterFullScale: Number(model.userData.portraitVerticalPlacementRatio) * Number(model.userData.portraitModelHeight) * scale.y,
+  });
+  return scale;
 }
 
 // ── Leg-bend authoring (proceduralFeet.legBend) ─────────────────────────
@@ -55640,7 +55756,9 @@ function verticalPlacementVerification(target = verticalPlacementTarget()) { // 
     formula: {
       assemblyY: '(portraitVerticalPlacementRatio - 0.5) * finalModelHeight',
       gameFloorLift: 'finalModelHeight / 2',
-      combinedPlaneCenterAboveFloor: 'portraitVerticalPlacementRatio * finalModelHeight',
+      planeCenterBeforeFullCharacterScale: 'portraitVerticalPlacementRatio * finalModelHeight',
+      fullCharacterScale: 'floor-parent scaleY from Full Character Scale',
+      combinedPlaneCenterAboveFloor: 'portraitVerticalPlacementRatio * finalModelHeight * fullCharacterScaleY',
     },
     preview: {
       targetMatchesSelectedNpc: verticalPlacementTargetMatchesCurrentNpc(target),
@@ -55664,6 +55782,12 @@ function verticalPlacementVerification(target = verticalPlacementTarget()) { // 
   const actualFloorY = Number(procedural.locomotionRoot?.position?.y);
   const expectedFloorY = previewGroundWorldY();
   const appearance = appearanceFallbackFor(state.selectedNpc);
+  const fullCharacterScale = resolvedFullCharacterScaleForPreview(appearance.speciesId, appearance.gender);
+  const floorScaleState = procedural.locomotionRoot?.userData?.hobunjiCharacterRigScaleState || null;
+  const actualFullScaleX = Number(procedural.locomotionRoot?.scale?.x);
+  const actualFullScaleY = Number(procedural.locomotionRoot?.scale?.y);
+  const portraitCenterBeforeFullScale = effectiveRatio * modelHeight;
+  const portraitCenterAfterFullScale = portraitCenterBeforeFullScale * fullCharacterScale.y;
   const avatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
   const baseWidth = Number(model.userData?.gameWorldModelBaseWidth) || (Number(avatarConfig.worldModelWidth) > 0 ? Number(avatarConfig.worldModelWidth) : (Number(avatarConfig.modelWidth) > 0 ? Number(avatarConfig.modelWidth) : 0.9));
   const baseHeight = Number(model.userData?.gameWorldModelBaseHeight) || baseWidth;
@@ -55683,6 +55807,8 @@ function verticalPlacementVerification(target = verticalPlacementTarget()) { // 
     finalModelWidth: Number.isFinite(modelWidth) && Math.abs(modelWidth - baseWidth * expectedScale) <= tolerance,
     finalModelHeight: Number.isFinite(modelHeight) && Math.abs(modelHeight - baseHeight * expectedScale) <= tolerance,
     gameHalfHeightLift: Number.isFinite(baselineGameLiftY) && Math.abs(baselineGameLiftY - expectedLiftY) <= tolerance,
+    fullCharacterScaleX: Number.isFinite(actualFullScaleX) && Math.abs(actualFullScaleX - fullCharacterScale.x) <= tolerance,
+    fullCharacterScaleY: Number.isFinite(actualFullScaleY) && Math.abs(actualFullScaleY - fullCharacterScale.y) <= tolerance,
     floorRoot: Number.isFinite(actualFloorY) && Math.abs(actualFloorY - expectedFloorY) <= tolerance,
   };
   result.preview = {
@@ -55706,7 +55832,12 @@ function verticalPlacementVerification(target = verticalPlacementTarget()) { // 
       expectedGameLiftY: expectedLiftY,
       actualFloorRootY: actualFloorY,
       expectedFloorRootY: expectedFloorY,
-      portraitPlaneCenterAboveFloor: effectiveRatio * modelHeight,
+      portraitPlaneCenterAboveFloorBeforeFullCharacterScale: portraitCenterBeforeFullScale,
+      portraitPlaneCenterAboveFloor: portraitCenterAfterFullScale,
+      fullCharacterScale,
+      floorScaleState,
+      actualFloorScale: { x: actualFullScaleX, y: actualFullScaleY, z: Number(procedural.locomotionRoot?.scale?.z) },
+      gameplayPortraitTransformStack: model.userData?.gameplayPortraitTransformStack || null,
     },
   };
   return result;
@@ -55735,7 +55866,7 @@ function updateVerticalPlacementUi({ loadInput = false } = {}) {
     status.textContent = `Waiting for the ${diagnostics.target.speciesId}.${diagnostics.target.gender} repository model to finish building.`;
     status.className = 'pill warn';
   } else if (diagnostics.preview.verified) {
-    status.textContent = `Verified against live repository API + model: ratio ${liveValue.toFixed(3)} · assembly Y ${diagnostics.preview.model.actualAssemblyY.toFixed(4)} · final height ${diagnostics.preview.model.finalModelHeight.toFixed(4)} · baseline game lift ${diagnostics.preview.model.baselineGameLiftY.toFixed(4)}.`;
+    status.textContent = `Verified gameplay portrait stack: ratio ${liveValue.toFixed(3)} · final height ${diagnostics.preview.model.finalModelHeight.toFixed(4)} · full-scale Y ${diagnostics.preview.model.fullCharacterScale.y.toFixed(4)} · center above floor ${diagnostics.preview.model.portraitPlaneCenterAboveFloor.toFixed(4)}.`;
     status.className = 'pill good';
   } else {
     const failures = Object.entries(diagnostics.preview.checks || {}).filter(([, passed]) => !passed).map(([name]) => name).join(', ');
@@ -60308,6 +60439,7 @@ async function placeThreeModel(npc, avatar) {
   });
   t.scene.add(t.model);
   bindProceduralModel(t.model, { gameGrounded: true });
+  applyFullCharacterScaleToPreview(npc, avatar); // Must happen at the floor parent, after the game-style half-height lift hierarchy exists and before generated feet/hands join it.
   try {
     await buildExperimentalFeetForAvatar(avatar.front, t.model, avatar);
   } catch (error) {
