@@ -731,7 +731,7 @@
       const d = window.ShoulderPetObservationFlip.getDebug();
       const last = d.lastFlip ? `${d.lastFlip.creatureKey}:${d.lastFlip.flipped ? 'mirrored' : 'normal'}` : 'none'; // Existing compact flip summary.
       const pivot = d.lastFlip?.pivotMode || 'none'; // Shows whether the authored shoulderGrip pivot, rather than center-origin scaling, owned the last flip.
-      const error = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Residual world-space grip/perch mismatch after mirror compensation.
+      const error = Number.isFinite(d.lastFlip?.pivotError) ? d.lastFlip.pivotError.toExponential(2) : 'n/a'; // Residual world-space grip/perch mismatch after the direct local pivot solve.
       return `Shoulder pet observation flip: active=${d.activePetCount} instrumented=${d.instrumentedCount} flips=${d.flipCount} last=${last} pivot=${pivot} gripError=${error}`;
     },
     scanNow: scanShoulderPetsForObservationFlip,
