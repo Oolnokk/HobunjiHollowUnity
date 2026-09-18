@@ -1,13 +1,13 @@
 // Shoulder-spline species registration and temporary shared defaults.
 //
-// Only the five explicitly approved species receive shoulder-body spline support
+// Only the explicitly approved species receive shoulder-body spline support
 // for now. Gar-wolf/Dabinggi keep their own head paint. Voorg-Ass/Uumkao'ii get
 // a body-only support rig so the same skinned plane can carry the shoulder spline.
 (() => {
   'use strict';
 
   const STORAGE_KEY = window.AnimalHeadRigRuntime?.STORAGE_KEY || 'hobunji_animal_head_rigs_v1';
-  const SPECIES = Object.freeze(['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound']);
+  const SPECIES = Object.freeze(['grehlr', 'voorg-ass', 'uumkaoii', 'gar-wolf', 'dabinggi-hound', 'puktuk']);
   const SPECIES_SET = new Set(SPECIES);
   const GREHLR_BEFORE = Object.freeze([
     Object.freeze({ x: 0.5423902927484727, y: 0.5694472546137244 }),
@@ -43,6 +43,7 @@
     if (normalized === 'gar-wolf') return 'gar-wolf';
     if (normalized === 'voorg-ass') return 'voorg-ass';
     if (normalized === 'grehlr') return 'grehlr';
+    if (normalized === 'puktuk') return 'puktuk';
     const aliases = window.CreatureGenetics?.SPECIES_ALIAS || {}, aliased = normalizeKind(aliases[normalized]);
     return SPECIES_SET.has(aliased) ? aliased : normalized;
   }
@@ -118,7 +119,7 @@
     if (!renderer || renderer.__shoulderSplineProfilesInstalled) return !!renderer;
     renderer.headRigForKind = resolveForKind;
     renderer.__shoulderSplineProfilesInstalled = true;
-    for (const kind of ['grehlr', 'gar-wolf', 'dabinggi-hound']) {
+    for (const kind of ['grehlr', 'gar-wolf', 'dabinggi-hound', 'puktuk']) {
       const rig = renderer.ANIMAL_HEAD_RIGS?.[kind];
       if (rig && !rig.shoulderRest) rig.shoulderRest = defaultShoulderRest();
     }
