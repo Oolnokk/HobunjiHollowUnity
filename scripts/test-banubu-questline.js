@@ -177,13 +177,14 @@ assert.strictEqual(banubuSchedule.scheduleHooks.rules[0].stationId, 'station_ban
 assert(!banubuSchedule.scheduleHooks.rules.some(rule => rule.stationId === 'station_banubu_cave_awake'), 'Banubu awake schedule must remain disabled indefinitely');
 assert(cavernSource.includes(`id: 'station_banubu_cave_sleep'`) && cavernSource.includes(`pose: 'lie'`), 'Banubu sleeping station must use the standard lying pose');
 
-const loreDb = { npcs: [{ id: 'banubu', dialogueTrees: [], bio: 'old hungry placeholder', loreBackground: 'Fifteen Fish Pie', questHooks: ['obsolete'] }] }; // Used to verify the runtime/editor overlay replaces obsolete placeholder lore alongside dialogue composition.
-content.mergeDialogueTreesIntoDatabase(loreDb);
-assert.match(loreDb.npcs[0].bio, /Great Fey/);
-assert.match(loreDb.npcs[0].bio, /not a biological need/);
-assert.match(loreDb.npcs[0].loreBackground, /mindless wisps/);
-assert.match(loreDb.npcs[0].loreBackground, /Three-Fish Pie/);
-assert(!/Fifteen Fish Pie|too hungry/i.test(JSON.stringify(loreDb.npcs[0])), 'composed Banubu metadata must not retain obsolete biological-hunger or fifteen-fish placeholder lore');
+const npcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Used to verify Banubu's canonical lore lives in the real NPC source rather than only in a runtime overlay.
+const banubuSource = npcDatabase.npcs.find(npc => npc.id === 'banubu');
+assert(banubuSource, 'starter NPC database must contain Banubu');
+assert.match(banubuSource.bio, /Great Fey/);
+assert.match(banubuSource.bio, /not a biological need/);
+assert.match(banubuSource.loreBackground, /mindless wisps/);
+assert.match(banubuSource.loreBackground, /Three-Fish Pie/);
+assert(!/Fifteen Fish Pie|too hungry/i.test(JSON.stringify(banubuSource)), 'Banubu source metadata must not retain obsolete biological-hunger or fifteen-fish placeholder lore');
 
 const editorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js'); // Used to verify dynamic quest tokens/actions are discoverable in the editor.
 const editorInspector = read('docs/tools/dialogue-editor/dialogue-editor-inspector.js'); // Used to verify all stage/reward authoring fields are present.
