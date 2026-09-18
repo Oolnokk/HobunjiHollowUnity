@@ -268,13 +268,20 @@
           pitch,
           hopUnits,
           player.lungeHeightUnits,
-        ) || { distancePx, hopUnits, pitch };
+          hitTest?.pitchDistanceResistance || 0,
+          hitTest?.directFlightStrength || 0,
+        ) || { distancePx, hopUnits, pitch, verticalTravelUnits: 0, directFlightStrength: 0 };
 
         player.lungeDirX = dirX;
         player.lungeDirY = dirY;
         player.lungeDistancePx = Math.max(0, Number(profile.distancePx) || 0);
         player.lungeHopUnits = Math.max(0, Number(profile.hopUnits) || 0);
         player.lungeAimPitch = Number.isFinite(Number(profile.pitch)) ? Number(profile.pitch) : pitch;
+        player.lungeDirectFlightStrength = Math.max(0, Math.min(1, Number(profile.directFlightStrength) || 0));
+        player.lungeVerticalTravelUnits = Number(profile.verticalTravelUnits) || 0;
+        player.lungeFlightStartWorldY = Number(liveDeps?.getActorWorldY?.(player)) || player.lungeFlightStartWorldY || 0;
+        player.lungeFlightWorldY = player.lungeDirectFlightStrength > 0 ? player.lungeFlightStartWorldY : null;
+        player.lungeFallSpeedUnits = 0;
         if (player.lungeHitTest && Number.isFinite(Number(hitTest?.rangePx))) {
           player.lungeHitTest = {
             ...player.lungeHitTest,
@@ -290,6 +297,8 @@
           pointErrorDeg: 0,
           pitchRad: player.lungeAimPitch,
           distancePx: player.lungeDistancePx,
+          verticalTravelUnits: player.lungeVerticalTravelUnits,
+          directFlightStrength: player.lungeDirectFlightStrength,
           attackRangePx: Number(hitTest?.rangePx) || null,
           cancelRangePx: Number(player.lungeHitTest?.rangePx) || null,
         };
@@ -403,6 +412,20 @@
   }
 
   function stopLungeAtCurrentPosition(liveDeps, player) {
+    if ((Number(player.lungeDirectFlightStrength) || 0) > 0.01) {
+      // A direct-flight lunge has already entered its attack volume. Freeze
+      // the entire 3D line here until impact instead of letting the vertical
+      // leg continue past the target while horizontal travel stops.
+      player.lungeHitTest = null;
+      player.lungeStartX = player.x;
+      player.lungeStartY = player.y;
+      player.lungeDistancePx = 0;
+      player.lungeFlightStartWorldY = Number(player.lungeFlightWorldY) || Number(liveDeps?.getActorWorldY?.(player)) || 0;
+      player.lungeVerticalTravelUnits = 0;
+      player.lungeHopUnits = 0;
+      player.lungeHopCurrent = 0;
+      return;
+    }
     if ((Number(player.lungeHopUnits) || 0) > 0.01) {
       // Match game.js's existing elevated-target behavior: horizontal travel
       // freezes here, while the authored vertical arc is allowed to finish.

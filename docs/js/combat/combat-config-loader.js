@@ -4,7 +4,7 @@
 
   const load = window.LocalDBOverrides
     ? window.LocalDBOverrides.loadDatabase('attackValues')
-    : fetch('config/combat/attack-values.json').then(response => response.ok ? response.json() : null);
+    : fetch('config/combat/attack-values.json?v=20260917charge3').then(response => response.ok ? response.json() : null);
 
   window.__attackValuesConfigPromise = load.then(config => {
     if (!config) return null;
@@ -127,7 +127,7 @@
     ['js/combat/porakaneki-dagger-ranged.js?v=20260912a', () => Number(window.HobunjiPorakanekiDaggerRanged?.version) >= 1],
     ['js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 2],
     ['js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 7],
-    ['js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
+    ['js/combat/combat-camera-alignment-bridge.js?v=20260917charge3', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260905a', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 1],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
