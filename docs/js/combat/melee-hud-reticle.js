@@ -165,9 +165,12 @@
         halfConeRad = THREE.MathUtils.degToRad(tech.halfConeDeg ?? 18);
       }
     } else if (attackId === 'chargedBreaker') {
-      rangePx = base.rangePx * (chargedData.RANGE_MUL_MAX ?? 1.9) * (1 + (stats.rangeMul || 0));
-      lungePx = deps.TILE * (chargedData.LUNGE_TILE_MUL ?? 0) * (1 + (stats.lungeMul || 0));
-      halfConeRad = THREE.MathUtils.degToRad(chargedData.HALF_CONE_DEG ?? 22);
+      // The static HUD profile shows Charged Breaker's full-pose envelope.
+      // Live release power is lower whenever the weapon has not reached its
+      // full Windup pose yet (see combat-charged-breaker.js).
+      rangePx = base.rangePx * (chargedData.RANGE_MUL_MAX ?? 1.15) * (1 + (stats.rangeMul || 0));
+      lungePx = deps.TILE * (chargedData.LUNGE_TILE_MUL_MAX ?? 4.2) * (1 + (stats.lungeMul || 0));
+      halfConeRad = THREE.MathUtils.degToRad(chargedData.HALF_CONE_DEG_MAX ?? 70);
     } else if (attackId === 'counterShield') {
       rangePx = base.rangePx * (counterData.COUNTER_RANGE_MUL ?? 1.7);
       lungePx = rangePx;

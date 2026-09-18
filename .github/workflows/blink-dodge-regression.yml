@@ -1,0 +1,34 @@
+name: Blink Dodge Regression
+
+on:
+  push:
+    paths:
+      - 'docs/js/combat/combat-blink-dodge.js'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'scripts/test-blink-dodge-movement.js'
+      - '.github/workflows/blink-dodge-regression.yml'
+  pull_request:
+    paths:
+      - 'docs/js/combat/combat-blink-dodge.js'
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'scripts/test-blink-dodge-movement.js'
+      - '.github/workflows/blink-dodge-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check docs/js/combat/combat-blink-dodge.js
+          node --check docs/game.js
+          node --check scripts/test-blink-dodge-movement.js
+      - name: Blink Dodge movement regression
+        run: node scripts/test-blink-dodge-movement.js

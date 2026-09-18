@@ -677,6 +677,7 @@
     c._banditSwingPose = natural.pose;
     c._banditSwingDirSign = 1;
     c._banditSwingPower = 1;
+    c._banditSwingPoseScale = 1; // Used by updateBanditToolMesh to clear any sampled partial Charged Breaker amplitude after the action ends.
   }
 
   // ── Bandit lunge ─────────────────────────────────────────────────
@@ -694,8 +695,13 @@
   // the way pounceUpdate already calls them.
   function beginBanditLunge(c, distancePx, durationS, hitTest, targetPlayer) {
     if (durationS <= 0 || c._banditLunging) return;
-    const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, c._banditAimPitch || 0, 0, c.def?.lungeHeightUnits ?? 1)
-      || { distancePx, hopUnits: 0, pitch: c._banditAimPitch || 0 }; // Used to turn high enemy aim into a shorter leap.
+    const lungeProfile = window.Combat?.meleeLungeProfile?.(
+      distancePx,
+      c._banditAimPitch || 0,
+      0,
+      c.def?.lungeHeightUnits ?? 1,
+      hitTest?.pitchDistanceResistance || 0,
+    ) || { distancePx, hopUnits: 0, pitch: c._banditAimPitch || 0 }; // Used to turn high enemy aim into a shorter leap, with per-attack resistance when authored.
     distancePx = lungeProfile.distancePx;
     // Cap the travel distance so an already-close bandit can't lunge
     // straight past a stationary target -- distancePx above is a FIXED
@@ -823,6 +829,7 @@
     c.telegraphState = 'windup';
     c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
     c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
+    c._banditSwingPoseScale = 1;
     beginBanditLunge(c, deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad }, targetPlayer);
     // Tracked so onComplete below can tell a whiff from a landed hit --
     // a bandit should only break off (retreat) on a miss or after
@@ -897,6 +904,7 @@
     c.telegraphState = 'windup';
     c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
+    c._banditSwingPoseScale = 1;
     beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
     let techHit = false;
     c._banditAction = window.Combat.beginStagedAction({
@@ -930,43 +938,53 @@
   function fireBanditChargedBreaker(c, def, targetPlayer) {
     const cb = window.Combat?.chargedBreakerData;
     if (!cb) return false;
-    const chargeT = 0.5 + deps.rnd() * 0.5; // a bandit always "holds" for a decent charge, no button to under-hold
+    const chargeT = 0.5 + deps.rnd() * 0.5; // Bandit charge is expressed in the same Neutral→Windup POSE percentage as the player's.
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
     const rangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
-    const halfConeRad = cb.HALF_CONE_DEG * Math.PI / 180;
+    const halfConeDeg = cb.HALF_CONE_DEG_MIN + (cb.HALF_CONE_DEG_MAX - cb.HALF_CONE_DEG_MIN) * chargeT;
+    const halfConeRad = halfConeDeg * Math.PI / 180;
     const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT);
+    const lungeTileMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
+    const pitchDistanceResistance = cb.LUNGE_GRAVITY_RESIST_MIN
+      + (cb.LUNGE_GRAVITY_RESIST_MAX - cb.LUNGE_GRAVITY_RESIST_MIN) * chargeT;
+    const windupS = cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT);
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
-    c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
+    c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0;
     c.telegraphState = 'windup';
-    // Charged Breaker always plays the sweep pose regardless of the
-    // equipped weapon's own style (see combat-charged-breaker.js).
-    c._banditSwingAnim = 'sweep'; c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE;
-    c._banditSwingDirSign = 1; c._banditSwingPower = cb.POWER || 1.7;
-    // Real chargedBreaker.js only lunges during the strike (a separate,
-    // windupS:0 staged action started once the hold is released) --
-    // simplified here to span the bandit's own whole windup+strike
-    // instead: ease-out is front-loaded (fastest right at the start),
-    // so ticking updateBanditLunge across the full action still closes
-    // most of the distance well before onStrike's hit-check fires at
-    // the windup->strike boundary, without needing a second staged
-    // action just to match the real system's exact timing split.
-    beginBanditLunge(c, deps.TILE * (cb.LUNGE_TILE_MUL || 2.0), cb.WINDUP_S + cb.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
+    c._banditSwingAnim = 'sweep';
+    c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE;
+    c._banditSwingDirSign = 1;
+    c._banditSwingPower = cb.POWER || 1.7;
+    c._banditSwingPoseScale = chargeT; // Used by updateBanditToolMesh to show the sampled partial pose without changing the legacy heavy-attack identity field.
+    // Bandit AI has no literal held input, so it samples a pose charge and
+    // derives how long the shared nonlinear windup would need to reach it.
+    beginBanditLunge(
+      c,
+      deps.TILE * lungeTileMul,
+      windupS + cb.STRIKE_S,
+      { rangePx, halfConeRad, pitchDistanceResistance },
+      targetPlayer,
+    );
     let techHit = false;
     c._banditAction = window.Combat.beginStagedAction({
-      windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
-      data: { isBandit: true, attacker: c }, // see fireBanditComboStep's matching comment
+      windupS,
+      strikeS: cb.STRIKE_S,
+      recoverS: 0,
+      data: { isBandit: true, attacker: c },
       onStrike: () => {
         c.telegraphState = 'strike';
-        // The hit and trail use the facing frozen when pre-windup alignment completed.
         spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
-        // def.attackTag (bandit's real weapon material) drives both the
-        // affliction and the impact sound -- see combat-charged-
-        // breaker.js's matching fix (no longer hardcodes 'blunt').
-        if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
+        if (window.Combat?.meleeHit?.(c, targetPlayer, {
+          rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0,
+        })) {
           techHit = true;
-          deps.damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          deps.damagePlayer(damage, c.x, c.y, knockbackPxS, {
+            tag: def.attackTag,
+            heavy: true,
+            afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag),
+          });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'huge');
         }
       },
@@ -1116,8 +1134,10 @@
         // a reasonable stand-in for this gate's range/lunge.
         const chargeT = 0.75;
         const cbRangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
-        const cbLungePx = deps.TILE * (cb.LUNGE_TILE_MUL || 2.0);
-        reach = Math.min(reach, banditAbilitySafeReachPx(cbRangePx, cbLungePx, cb.WINDUP_S, cb.STRIKE_S));
+        const cbLungeMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
+        const cbLungePx = deps.TILE * cbLungeMul;
+        const cbWindupS = cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT);
+        reach = Math.min(reach, banditAbilitySafeReachPx(cbRangePx, cbLungePx, cbWindupS, cb.STRIKE_S));
       }
     }
     return reach;
@@ -1695,7 +1715,8 @@
     const anim = c._banditSwingAnim || 'thrust';
     const pose = c._banditSwingPose;
     const dirSign = c._banditSwingDirSign || 1;
-    const power = c._banditSwingPower || 1;
+    const poseScale = Math.max(0, Math.min(1, Number(c._banditSwingPoseScale ?? 1) || 0)); // Used only for sampled partial-pose attacks such as bandit Charged Breaker.
+    const power = (c._banditSwingPower || 1) * poseScale;
 
     // The sprite plane's own local twist/mirror -- mirrors updateToolMesh's
     // spinPlane handling exactly (see its own comment there): a sweep-style
@@ -1938,7 +1959,7 @@
       // ability last fired -- see updateBanditToolMesh.
       _banditSwingAnim: banditNaturalSwing(def).anim,
       _banditSwingPose: banditNaturalSwing(def).pose,
-      _banditSwingDirSign: 1, _banditSwingPower: 1, _banditToolSettleUntil: 0,
+      _banditSwingDirSign: 1, _banditSwingPower: 1, _banditSwingPoseScale: 1, _banditToolSettleUntil: 0,
       // Ability-AI state -- see updateBanditCombatAI/damageCreature's
       // isBandit branch/the leaving-chase reset above for where these
       // get driven and cleared.

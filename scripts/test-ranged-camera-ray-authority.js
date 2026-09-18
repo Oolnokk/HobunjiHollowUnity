@@ -10,9 +10,9 @@ const loader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8')
 assert.doesNotMatch(source, /setInterval\s*\(/, 'ranged authority adds no polling interval');
 assert.doesNotMatch(source, /requestAnimationFrame\s*\(/, 'ranged authority adds no frame loop');
 
-const authorityIndex = loader.indexOf('js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1');
-const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1');
-const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1');
+const authorityIndex = loader.indexOf('js/combat/ranged-camera-ray-authority.js?v='); // Version-independent ordering guard; cache-bust revisions should not invalidate behavior tests.
+const focusIndex = loader.indexOf('js/combat/ranged-camera-focus.js?v=');
+const alignmentIndex = loader.indexOf('js/combat/combat-camera-alignment-bridge.js?v=');
 assert(authorityIndex >= 0 && focusIndex > authorityIndex && alignmentIndex > focusIndex,
   'actual-fire authority loads before ranged focus, while the post-focus combat/lunge bridge loads after it');
 assert.match(loader, /HobunjiRangedCameraRayAuthority\?\.version\) >= 2/,

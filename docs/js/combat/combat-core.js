@@ -431,7 +431,10 @@
   // attacker. A creature's lungeHeightUnits is the vertical leap budget:
   // tiny values (Uumkao'ii) nearly stop a vertical lunge, while a tall
   // Drenkirra leap can retain more than its horizontal attack distance.
-  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1) {
+  // pitchDistanceResistance is an attack-specific 0..1 stat: 0 preserves the
+  // ordinary gravity/aim-angle loss, while 1 removes only that loss without
+  // erasing the attacker's authored vertical leap-height recovery.
+  function meleeLungeProfile(baseDistancePx, aimPitch = 0, baseHopUnits = 0, lungeHeightUnits = 1, pitchDistanceResistance = 0, directFlightStrength = 0) {
     const pitch = THREE.MathUtils.clamp(Number(aimPitch) || 0, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
     const absPitch = Math.abs(pitch);
     const distanceScaleAtAngle = THREE.MathUtils.clamp(1 - absPitch / (Math.PI / 2), 0, 1);
@@ -442,20 +445,43 @@
     const baseDistanceWorld = Math.max(0, Number(baseDistancePx) || 0) / (deps?.TILE || 64);
     const heightUnits = Math.max(0, Number(lungeHeightUnits) || 0);
     const heightToDistance = baseDistanceWorld > 1e-4 ? heightUnits / baseDistanceWorld : 0;
-    // The same linear angle decrease remains at the core; the leap height
-    // adds a linear, authored recovery term as the aim turns upward.
-    const distanceScale = THREE.MathUtils.clamp(
-      distanceScaleAtAngle + leapT * heightToDistance,
+    const verticalRecovery = leapT * heightToDistance;
+    const naturalScale = distanceScaleAtAngle + verticalRecovery;
+    const noGravityLossScale = 1 + verticalRecovery;
+    const resistance = THREE.MathUtils.clamp(Number(pitchDistanceResistance) || 0, 0, 1);
+    const appliedResistance = pitch > 0 ? resistance : 0; // Used only for upward aim, where gravity/vertical travel is supposed to eat horizontal lunge distance.
+    // Interpolate the EXISTING upward-pitch loss toward its no-loss equivalent.
+    // Downward aim keeps the ordinary pitch-distance behavior unchanged.
+    const ballisticScale = THREE.MathUtils.clamp(
+      naturalScale + (noGravityLossScale - naturalScale) * appliedResistance,
       0, 3.5,
     );
+    const direct = THREE.MathUtils.clamp(Number(directFlightStrength) || 0, 0, 1);
+    const straightHorizontalScale = Math.cos(absPitch); // A true 3D line uses the authored distance as vector length, not ground-plane length.
+    const distanceScale = THREE.MathUtils.lerp(ballisticScale, straightHorizontalScale, direct);
+    const ballisticHopUnits = Math.max(0, Number(baseHopUnits) || 0) + leapT * heightUnits;
     return {
       pitch,
       distanceScale,
+      pitchDistanceResistance: resistance,
+      appliedPitchDistanceResistance: appliedResistance,
+      directFlightStrength: direct,
       lungeHeightUnits: heightUnits,
       distancePx: Math.max(0, Number(baseDistancePx) || 0) * distanceScale,
+      verticalTravelUnits: baseDistanceWorld * Math.sin(pitch) * direct, // Signed world-Y leg of the same straight 3D vector.
       leapT,
-      hopUnits: Math.max(0, Number(baseHopUnits) || 0) + leapT * heightUnits,
+      hopUnits: ballisticHopUnits * (1 - direct), // Direct flight progressively removes the curved hop; 1 is a pure line.
     };
+  }
+
+  // Shared held-windup curve. slowdown=0 is linear. Positive values produce a
+  // logarithmic ease: brisk early motion that continuously loses speed as it
+  // approaches Windup, while still reaching exactly 1 at the authored end.
+  function windupPoseProgress(rawProgress, slowdown = 0) {
+    const t = THREE.MathUtils.clamp(Number(rawProgress) || 0, 0, 1);
+    const s = Math.max(0, Number(slowdown) || 0);
+    if (s <= 1e-6) return t;
+    return Math.log1p(s * t) / Math.log1p(s);
   }
 
   // Writes a tapered ribbon in a plane tilted to the attack's pitch. At zero
@@ -694,6 +720,7 @@
     debugMeleeColliders,
     meleeHit,
     meleeLungeProfile,
+    windupPoseProgress,
     writeMeleeTrailRibbon,
     spawnMeleeTrail,
     isStaggered,

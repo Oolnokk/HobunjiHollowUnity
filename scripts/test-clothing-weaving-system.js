@@ -58,7 +58,6 @@ const EquipmentPanel = {
   buildEquipmentSlots() {},
   clothingSpriteForCosmetic(id) { return `assets/${id}.png`; },
 };
-const FurniturePlacer = { init(injected) { this.deps = injected; } };
 const ResourceSystem = {
   applyDamage(entity, amount) { damageSeen = amount; return amount; },
   spendFooting(entity, amount) { footingSeen = amount; return amount; },
@@ -71,7 +70,6 @@ const Combat = {
 const windowStub = {
   SCRATCHBONES_CONFIG: { game: { account: { shopCatalog }, input: { targeting: { orbitRadiusTiles: 0.62 } } } },
   EquipmentPanel,
-  FurniturePlacer,
   ResourceSystem,
   Combat,
   Mounts: { rideState: 'none', rideEntity: { id: 'stale-reference' } },
@@ -198,4 +196,9 @@ assert.match(source, /TORSO_C/);
 assert.match(source, /CLOTH_C/);
 assert.match(source, /puktukWool/);
 assert.match(source, /lightWool/);
+assert.doesNotMatch(source, /clothingLoomInjected|syncLoomActionButton|targetedLoom/, 'weaving module no longer owns a parallel DOM/polling interaction path');
+const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+assert.match(gameSource, /if \(o\.key === 'loom'\) return makeLoomInteractable\(\)/, 'player-placed house loom is a normal interior furniture interactable');
+assert.match(gameSource, /loomFurniture: \(\) => makeLoomInteractable\(\)/, 'map-authored loom uses the same core interactable factory');
+assert.match(gameSource, /function makeLoomInteractable\(\)/, 'loom interaction is owned by the core furniture system');
 console.log('clothing weaving system tests passed');
