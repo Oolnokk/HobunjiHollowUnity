@@ -10,6 +10,9 @@ const coreSource = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8'); // 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Player weapon-pose owner whose live progress Charge Breaker reads.
 const counterSource = fs.readFileSync('docs/js/combat/combat-counter-shield.js', 'utf8'); // Shared silhouette glow owner.
 const flurrySource = fs.readFileSync('docs/js/combat/combat-flurry.js', 'utf8'); // Other offensive hold using the same glow service.
+const stanceSource = fs.readFileSync('docs/js/weapon-tool-stances.js', 'utf8'); // Shared weapon-stance amplitude owner for partial release continuity.
+const shoulderSource = fs.readFileSync('docs/js/hand-shoulder-pose-runtime.js', 'utf8'); // Shoulder metadata must scale with the same partial release percentage.
+const gripSource = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Secondary-grip metadata must scale with the same partial release percentage.
 const config = JSON.parse(fs.readFileSync('docs/config/combat/attack-values.json', 'utf8')); // Authored production tuning.
 
 assert.match(coreSource, /function windupPoseProgress[\s\S]{0,500}Math\.log1p\(s \* t\) \/ Math\.log1p\(s\)/,
@@ -20,7 +23,7 @@ assert.match(gameSource, /function partialCombatPoseAtCharge[\s\S]{0,1800}next\[
   'partial release scales the authored Windup and Strike endpoints from Neutral by visible pose charge');
 assert.match(gameSource, /releaseWeaponSwingHold\(options = \{\}\)[\s\S]{0,1800}toolSwingT = toolSwingDur \* \(1 - combatSwingWindupFrac\)/,
   'partial release jumps directly from the current partial pose into Strike instead of secretly finishing Windup');
-assert.match(breakerSource, /const poseCharge = poseChargeFromRuntime\(heldSeconds\)/,
+assert.match(breakerSource, /const poseCharge = poseChargeFromRuntime\(\)/,
   'Charged Breaker release derives gameplay charge from the live pose-progress seam');
 assert.match(breakerSource, /releaseWeaponSwingHold\(\{ poseProgress: poseCharge \}\)/,
   'Charged Breaker sends that same pose percentage back to the weapon renderer on release');
@@ -30,6 +33,16 @@ assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,
   'Counter Shield owns the shared weapon-silhouette glow service');
 assert.match(flurrySource, /weaponChargeGlow\?\.set\?\.\('acceleratingFlurry'/,
   'Accelerating Flurry uses the shared Counter-Shield-style weapon glow');
+assert.match(stanceSource, /combatVisualState\.poseScale = requestedPoseScale/,
+  'partial held release records the same pose amplitude in the shared stance runtime');
+assert.match(stanceSource, /runtimeState\.combatPoseScale = visual\?\.poseScale \?\? 1/,
+  'hot hand/shoulder consumers receive the partial-release pose amplitude without allocating debug snapshots');
+assert.match(stanceSource, /runtimeState\.combatNeutralWeight = visual \? neutralWeightForVisual\(visual\) : null/,
+  'shoulder fallback consumers receive the live neutral weight from runtime state');
+assert.match(shoulderSource, /scaledWindup = lerp\(poses\.neutral, poses\.windup, poseScale\)[\s\S]{0,250}scaledStrike = lerp\(poses\.neutral, poses\.strike, poseScale\)/,
+  'shoulder metadata Windup/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
+assert.match(gripSource, /scaledWindup = lerpAnimationGrip\(neutral, windup, poseScale\)[\s\S]{0,250}scaledStrike = lerpAnimationGrip\(neutral, strike, poseScale\)/,
+  'secondary-grip Windup/Strike endpoints are sliced from Neutral by the same partial-release amplitude');
 assert.doesNotMatch(breakerSource, /heldSeconds\s*\/\s*MAX_CHARGE_S/,
   'gameplay charge must never be reconstructed from elapsed hold time');
 assert.match(breakerSource, /if \(poseCharge < MIN_READY_POSE\)/,
