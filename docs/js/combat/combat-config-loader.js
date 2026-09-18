@@ -4,7 +4,7 @@
 
   const load = window.LocalDBOverrides
     ? window.LocalDBOverrides.loadDatabase('attackValues')
-    : fetch('config/combat/attack-values.json').then(response => response.ok ? response.json() : null);
+    : fetch('config/combat/attack-values.json?v=20260917charge3').then(response => response.ok ? response.json() : null);
 
   window.__attackValuesConfigPromise = load.then(config => {
     if (!config) return null;
@@ -95,7 +95,7 @@
     ['js/mastery-policy.js?v=20260826death1', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20260913hold1', () => !!window.InventoryHeldOverride],
-    ['js/clothing-weaving-system.js?v=20260915perf1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
+    ['js/clothing-weaving-system.js?v=20260918loomcore2', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20260915a', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20260915b', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
@@ -123,10 +123,10 @@
     ['js/combat/enemy-target-facing.js?v=20260906a', () => Number(window.EnemyTargetFacing?.version) >= 1],
     ['js/combat/enemy-weapon-stances.js?v=20260903a', () => !!window.EnemyWeaponStances],
     ['js/npc-held-equipment-v4.js?v=20260914d', () => Number(window.NpcHeldEquipment?.version) >= 4],
-    ['js/combat/ranged-weapon-archetypes.js?v=20260918weaponthrowspin2', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 7],
+    ['js/combat/ranged-weapon-archetypes.js?v=20260918throwcharge3', () => Number(window.HobunjiRangedWeaponArchetypes?.version) >= 8],
     ['js/combat/ranged-camera-ray-authority.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraRayAuthority?.version) >= 2],
-    ['js/combat/ranged-camera-focus.js?v=20260909perspectivepoint1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 7],
-    ['js/combat/combat-camera-alignment-bridge.js?v=20260909perspectivepoint1', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
+    ['js/combat/ranged-camera-focus.js?v=20260918reticlezoom1', () => Number(window.HobunjiRangedCameraFocus?.version) >= 8],
+    ['js/combat/combat-camera-alignment-bridge.js?v=20260917charge3', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 4],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 2],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
