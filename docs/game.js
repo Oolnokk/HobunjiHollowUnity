@@ -27306,6 +27306,7 @@
 
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
+        isPlayerInWater: () => isWaterAt(player.x, player.y, window.GridTileAccessors.getActiveGrid()), // Used by PlayerVitals to extinguish Burning Health immediately on entering river/stream water.
         handlePlayerDeath: () => respawnPlayer(),
       });
 
