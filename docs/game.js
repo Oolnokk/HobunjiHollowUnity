@@ -18577,6 +18577,15 @@
       // group lets the depth-only source pass below hide them temporarily
       // without touching the main colour pass that actually shows them. Each
       // child mesh also joins the dedicated outline-occluder layer above.
+      // Registered here once per avatar mesh instead of being rediscovered by
+      // a full activeScene.traverse() every frame in
+      // _renderPngPlaneOutlineOccluderDepth below — the active scene can hold
+      // thousands of terrain/foliage/instanced-mesh nodes, so scanning all of
+      // them every single frame just to find the handful tagged with this
+      // layer scaled with total scene size, not with how many avatars
+      // actually exist. See the pruning comment down there for how entries
+      // get cleaned up once an avatar is actually despawned.
+      const _pngPlaneOccluderMeshes = [];
       function _markPngPlane(obj) {
         if (!obj) return;
         obj.userData.isPngPlane = true;
@@ -18589,6 +18598,7 @@
           child.userData.noOutline = true;
           child.layers.disable(1);
           child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+          _pngPlaneOccluderMeshes.push(child);
         });
       }
 
@@ -18684,8 +18694,23 @@
       function _renderPngPlaneOutlineOccluderDepth(activeScene) {
         const materialStates = _pngOutlineMaterialStates;
         let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
-        activeScene.traverse(object => {
-          if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) return;
+        // Walks each registered mesh up to its root instead of traversing the
+        // whole scene graph. Areas keep their own persistent scene per the
+        // building/zone maps in grid-tile-accessors.js, so a mesh whose root
+        // is some *other* THREE.Scene just belongs to a currently-inactive
+        // area — it's kept in the registry (compacted back in below) and
+        // skipped for this frame, not pruned. Only a root that isn't a Scene
+        // at all (the avatar's group was actually removed from every scene)
+        // means the entry is truly dead and gets dropped for good.
+        let writeIdx = 0;
+        for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
+          const object = _pngPlaneOccluderMeshes[i];
+          let root = object;
+          while (root.parent) root = root.parent;
+          if (!root.isScene) continue; // Despawned — drop from the registry.
+          _pngPlaneOccluderMeshes[writeIdx++] = object;
+          if (root !== activeScene) continue; // Alive, but in a different area's scene right now.
+          if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) continue;
           meshCount++;
           if (Array.isArray(object.material)) {
             for (const material of object.material) {
@@ -18712,7 +18737,8 @@
               material.depthFunc = THREE.LessEqualDepth;
             }
           }
-        });
+        }
+        _pngPlaneOccluderMeshes.length = writeIdx;
         if (meshCount === 0) return;
 
         const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
