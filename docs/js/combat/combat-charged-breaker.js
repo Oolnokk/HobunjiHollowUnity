@@ -33,6 +33,11 @@
   let HOLD_S = 1.0;
   let LUNGE_HOP_UNITS = 0.45;
   const GLOW_COLOR = 0xffc85a;
+  const GLOW_FLARE_DURATION_S = 0.17; // Short enough for the 48% and 50% milestones to read as two distinct flashes.
+  let glowMilestonesHit = [false, false, false]; // Ready, 50%, and full-pose milestones reached during the current hold.
+  let glowFlareQueue = []; // Queues very close milestones instead of collapsing them into one frame.
+  let activeGlowFlareTier = 0;
+  let activeGlowFlareStartedAt = -1;
 
   let debugState = {
     active: false,
@@ -63,13 +68,60 @@
     return 0;
   }
 
+  function resetChargeGlowMilestones() {
+    glowMilestonesHit = [false, false, false];
+    glowFlareQueue = [];
+    activeGlowFlareTier = 0;
+    activeGlowFlareStartedAt = -1;
+  }
+
+  function chargeGlowMilestones(poseCharge) {
+    const t = clamp01(poseCharge);
+    const thresholds = [MIN_READY_POSE, 0.50, 0.999];
+    for (let i = 0; i < thresholds.length; i++) {
+      if (glowMilestonesHit[i] || t < thresholds[i]) continue;
+      glowMilestonesHit[i] = true;
+      glowFlareQueue.push(i + 1);
+    }
+
+    const current = now();
+    if (activeGlowFlareStartedAt >= 0 && current - activeGlowFlareStartedAt >= GLOW_FLARE_DURATION_S) {
+      activeGlowFlareStartedAt = -1;
+      activeGlowFlareTier = 0;
+    }
+    if (activeGlowFlareStartedAt < 0 && glowFlareQueue.length) {
+      activeGlowFlareTier = glowFlareQueue.shift();
+      activeGlowFlareStartedAt = current;
+    }
+    const flareAge = activeGlowFlareStartedAt >= 0 ? current - activeGlowFlareStartedAt : Infinity;
+    const flare = Number.isFinite(flareAge)
+      ? clamp01(1 - flareAge / GLOW_FLARE_DURATION_S)
+      : 0;
+    return {
+      overlayLevel: glowMilestonesHit.filter(Boolean).length,
+      flare,
+      flareTier: activeGlowFlareTier,
+    };
+  }
+
   function setGlow(poseCharge) {
     const t = clamp01(poseCharge);
+    const milestone = chargeGlowMilestones(t);
     window.Combat.weaponChargeGlow?.set?.('chargedBreaker', Math.max(0.025, t), {
       expansion: t,
       color: GLOW_COLOR,
       label: 'Charged Breaker',
+      flowStrength: 1,
+      flowSpeed: 8.5,
+      overlayMode: 'stepped',
+      overlayProgress: t,
+      overlayLevel: milestone.overlayLevel,
+      flare: milestone.flare,
+      motionTrail: true,
     });
+    debugState.glowOverlayLevel = milestone.overlayLevel;
+    debugState.glowFlareTier = milestone.flareTier;
+    debugState.glowFlare = milestone.flare;
   }
 
   function clearGlow() {
@@ -81,7 +133,16 @@
 
     function onHoldStart() {
       startedAt = now();
-      debugState = { ...debugState, active: true, heldSeconds: 0, poseCharge: 0 };
+      resetChargeGlowMilestones();
+      debugState = {
+        ...debugState,
+        active: true,
+        heldSeconds: 0,
+        poseCharge: 0,
+        glowOverlayLevel: 0,
+        glowFlareTier: 0,
+        glowFlare: 0,
+      };
       const deps = window.Combat.deps;
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
