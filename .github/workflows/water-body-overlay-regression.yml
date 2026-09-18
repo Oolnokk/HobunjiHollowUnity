@@ -1,0 +1,26 @@
+name: Water body overlay regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/water-body-outline-overlay.js'
+      - 'docs/js/house-pieces.js'
+      - 'docs/js/zone-terrain-features.js'
+      - 'docs/js/water-system.js'
+      - 'docs/js/merged-water-renderer.js'
+      - 'scripts/test-water-body-outline-overlay.js'
+      - '.github/workflows/water-body-overlay-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check water overlay
+        run: node --check docs/js/water-body-outline-overlay.js
+      - name: Test water overlay topology and shader isolation
+        run: node scripts/test-water-body-outline-overlay.js
