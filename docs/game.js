@@ -761,12 +761,15 @@
         // windup/strike (combo/quick attacks/charged breaker; flurries and
         // Counter Shield's riposte don't use this). lungeStartX/Y anchor the
         // eased interpolation so partial collision blocking doesn't drift the
-        // curve; lungeHopUnits/lungeHopCurrent drive an optional cosmetic
-        // vertical arc (world-Y units, not pixels) for the charged breaker's leap.
+        // curve. Ordinary lunges can still use lungeHopUnits/lungeHopCurrent
+        // for an arc, while high-power attacks can also own an absolute world-Y
+        // flight line so their rendered body and melee hitbox actually move in 3D.
         lunging: false, lungeT: 0, lungeDur: 0, lungeStartX: 0, lungeStartY: 0,
         lungeDirX: 0, lungeDirY: 0, lungeDistancePx: 0, lungeHopUnits: 0, lungeHopCurrent: 0,
         lungeHeightUnits: 1.0, // Potion/food effects can adjust the player's vertical leap budget before the next attack.
         lungeAimPitch: 0, lungeHitTest: null, // Pitch is shared by the leap, 3D cone, and trail.
+        lungeDirectFlightStrength: 0, lungeVerticalTravelUnits: 0, // Straight 3D travel amplitude; Charged Breaker scales this from pose charge.
+        lungeFlightStartWorldY: 0, lungeFlightWorldY: null, lungeFallSpeedUnits: 0, lungeLandingPending: false,
         // Cliff climbing — see startClimb()/updateMovement. A scripted crossing
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
@@ -866,7 +869,17 @@
             if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
-            if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+            if (target.lunging) {
+          target.lunging = false;
+          target.lungeHopCurrent = 0;
+          if (target === player && Number.isFinite(target.lungeFlightWorldY)) {
+            // Preserve the interrupted aerial height and let the normal
+            // post-lunge gravity path bring the player back to the surface.
+            target.lungeFlightWorldY = playerMesh.position.y;
+            target.lungeFallSpeedUnits = 0;
+            target.lungeLandingPending = true;
+          }
+        }
           }
           return;
         }
@@ -877,7 +890,17 @@
         // Getting hit always interrupts an in-progress combat lunge — without
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
-        if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
+        if (target.lunging) {
+          target.lunging = false;
+          target.lungeHopCurrent = 0;
+          if (target === player && Number.isFinite(target.lungeFlightWorldY)) {
+            // Preserve the interrupted aerial height and let the normal
+            // post-lunge gravity path bring the player back to the surface.
+            target.lungeFlightWorldY = playerMesh.position.y;
+            target.lungeFallSpeedUnits = 0;
+            target.lungeLandingPending = true;
+          }
+        }
       }
 
       function startProneThrow(entity, isPlayer, facingAngle, direction) {
@@ -3068,6 +3091,7 @@
         });
         if (!o) return null;
         if (o.key === 'hearth') return makeCookingInteractable();
+        if (o.key === 'loom') return makeLoomInteractable(); // Player-placed house looms use the same core reticle/action path as beds and hearths.
         if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll') {
           return {
             interactIcon: '😴',
@@ -3782,6 +3806,25 @@
           onAction(action) {
             if (action !== 'obj_cook' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
             return window.CookingSystem.openAtHearth();
+          },
+        };
+      }
+
+      function makeLoomInteractable() {
+        return {
+          interactIcon: '🧶',
+          interactLabel: 'Use Loom',
+          getButtons() {
+            return [{ icon: '🧶', label: 'Use Loom', action: 'obj_loom', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_loom' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+            const openLoom = window.ClothingWeavingSystem?.openLoom; // Used by both house and map-authored loom interaction records.
+            if (typeof openLoom !== 'function') return { ok: false, message: 'The loom is unavailable right now.' };
+            const opened = openLoom(); // Synchronous: the panel creates immediately; its sprite preview continues asynchronously inside the module.
+            return opened === false
+              ? { ok: false, message: 'The loom could not be opened.' }
+              : { ok: true, message: 'Opened the loom.' };
           },
         };
       }
@@ -8541,8 +8584,8 @@
       // demo's "a dodge reaction can overdraw into Exhausted" rule. See
       // docs/js/combat/resource-system.js's spendStamina.
       // Dodges toward whatever direction the player is currently moving in
-      // (player.inputX/Y — this frame's raw move intent, already unit-length,
-      // see updateMovement) rather than the aim direction, since a dodge is
+      // (player.inputX/Y — this frame's resolved world-space move intent,
+      // camera-relative in shoulder-surf; see updateMovement) rather than the aim direction, since a dodge is
       // an evasive step, not an attack. With no movement held, there's no
       // "current direction" to dodge in, so it falls back to backing away
       // from whatever the player's actually aiming at instead: the locked
@@ -8728,13 +8771,25 @@
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
-        const lungeProfile = window.Combat?.meleeLungeProfile?.(distancePx, aimPitch, hopUnits, player.lungeHeightUnits)
-          || { distancePx, hopUnits, pitch: aimPitch };
+        const lungeProfile = window.Combat?.meleeLungeProfile?.(
+          distancePx,
+          aimPitch,
+          hopUnits,
+          player.lungeHeightUnits,
+          hitTest?.pitchDistanceResistance || 0,
+          hitTest?.directFlightStrength || 0,
+        ) || { distancePx, hopUnits, pitch: aimPitch, verticalTravelUnits: 0, directFlightStrength: 0 };
         player.lungeDirX = Math.cos(aimYaw);
         player.lungeDirY = Math.sin(aimYaw);
         player.lungeDistancePx = lungeProfile.distancePx;
         player.lungeHopUnits = lungeProfile.hopUnits;
         player.lungeAimPitch = lungeProfile.pitch;
+        player.lungeDirectFlightStrength = lungeProfile.directFlightStrength || 0;
+        player.lungeVerticalTravelUnits = lungeProfile.verticalTravelUnits || 0;
+        player.lungeFlightStartWorldY = playerMesh.position.y;
+        player.lungeFlightWorldY = player.lungeDirectFlightStrength > 0 ? player.lungeFlightStartWorldY : null;
+        player.lungeFallSpeedUnits = 0;
+        player.lungeLandingPending = false;
         player.lungeHitTest = hitTest;
       }
 
@@ -9039,6 +9094,7 @@
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
         hearthFurniture: () => makeCookingInteractable(),
+        loomFurniture: () => makeLoomInteractable(), // Map-authored looms share the same core interaction object as player-placed house looms.
         alchemyTableFurniture: () => ({
           getButtons() {
             return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
@@ -15943,7 +15999,19 @@
           // the target is guaranteed to still be within the collider right
           // where the lunge halts instead of the player sliding past it.
           if (isHostileInLungeCone(player.lungeHitTest)) {
-            if ((player.lungeHopUnits || 0) > 0.01) {
+            if ((player.lungeDirectFlightStrength || 0) > 0.01) {
+              // Direct flight has entered its attack volume. Freeze the whole
+              // 3D line at this point until impact; do not keep climbing/
+              // descending after horizontal travel has already stopped.
+              player.lungeHitTest = null;
+              player.lungeStartX = player.x;
+              player.lungeStartY = player.y;
+              player.lungeDistancePx = 0;
+              player.lungeFlightStartWorldY = Number(player.lungeFlightWorldY) || playerMesh.position.y;
+              player.lungeVerticalTravelUnits = 0;
+              player.lungeHopUnits = 0;
+              player.lungeHopCurrent = 0;
+            } else if ((player.lungeHopUnits || 0) > 0.01) {
               // Keep finishing the vertical arc after reaching an elevated
               // target, but freeze horizontal travel so the leap cannot
               // carry through and past that target.
@@ -15967,7 +16035,7 @@
           const perspectiveLungeDirection = activeCameraMode === SHOULDER_SURF_MODE
             ? currentPlayerPerspectiveDirection({
                 x: player.x / TILE,
-                y: playerMesh.position.y + (player.lungeHopCurrent || 0),
+                y: Number.isFinite(player.lungeFlightWorldY) ? player.lungeFlightWorldY : playerMesh.position.y,
                 z: player.y / TILE,
               })
             : null; // Used below to keep horizontal travel and vertical pitch converged on the shared point.
@@ -16013,10 +16081,21 @@
           const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = lungeSwept.x; player.y = lungeSwept.y;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
+          if (Number.isFinite(player.lungeFlightWorldY)) {
+            player.lungeFlightWorldY = player.lungeFlightStartWorldY
+              + player.lungeVerticalTravelUnits * eased
+              + player.lungeHopCurrent; // Same eased parameter as XZ keeps the direct component on one straight 3D line.
+          }
           if (player.lungeT <= 0) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
-            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
+            const airborne = Number.isFinite(player.lungeFlightWorldY)
+              && Math.abs(player.lungeVerticalTravelUnits) > 0.01;
+            player.lungeLandingPending = airborne;
+            if (!airborne) {
+              player.lungeFlightWorldY = null;
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
+            }
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           tickLungeTrail(_fsPrevX, _fsPrevY);
@@ -16068,12 +16147,6 @@
         }
         _playerWasMoving = inputStrength > 0.001;
 
-        // Raw per-frame move intent, read by hold abilities (Blink Dodge)
-        // that need to know which way the player is trying to go.
-        player.inputX = ix;
-        player.inputY = iy;
-        player.inputStrength = inputStrength;
-
         // ── Cardinal bias ────────────────────────────────────
         // Slightly guide near-cardinal movement without crushing diagonals.
         if (inputStrength > 0.001) {
@@ -16112,6 +16185,14 @@
           const rIy =  ix * c - iy * s;
           ix = rIx; iy = rIy;
         }
+
+        // Resolved per-frame movement intent, read by ordinary dodge and
+        // movement-reactive hold abilities such as Blink Dodge. Publish only
+        // after cardinal bias and shoulder-camera rotation so every consumer
+        // receives the same world-space direction normal locomotion uses.
+        player.inputX = ix;
+        player.inputY = iy;
+        player.inputStrength = inputStrength;
 
         // ── Tile-speed lookup ─────────────────────────────────
         const rawSpeed = tileSpeedAt(player.x, player.y);
@@ -18681,17 +18762,21 @@
       // silhouette; forcing colorWrite off avoids touching the finished color
       // image, while forcing depthWrite on makes every visible pet/player/NPC
       // capable of blocking the shell and material-seam passes that follow.
-      function _renderPngPlaneOutlineOccluderDepth(activeScene) {
-        const materialStates = _pngOutlineMaterialStates;
-        let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
-        // Walks each registered mesh up to its root instead of traversing the
-        // whole scene graph. Areas keep their own persistent scene per the
-        // building/zone maps in grid-tile-accessors.js, so a mesh whose root
-        // is some *other* THREE.Scene just belongs to a currently-inactive
-        // area — it's kept in the registry (compacted back in below) and
-        // skipped for this frame, not pruned. Only a root that isn't a Scene
-        // at all (the avatar's group was actually removed from every scene)
-        // means the entry is truly dead and gets dropped for good.
+      // Walks each registered mesh up to its root instead of traversing the
+      // whole scene graph. Areas keep their own persistent scene per the
+      // building/zone maps in grid-tile-accessors.js, so a mesh whose root
+      // is some *other* THREE.Scene just belongs to a currently-inactive
+      // area — it's kept in the registry, not pruned. Only a root that isn't
+      // a Scene at all (the avatar's group was actually removed from every
+      // scene) means the entry is truly dead and gets dropped for good.
+      //
+      // Called every frame regardless of s_outlines: _markPngPlane() pushes
+      // into _pngPlaneOccluderMeshes unconditionally as avatars/tools/held
+      // items are created, but _renderPngPlaneOutlineOccluderDepth (which
+      // used to be the only place this array got compacted) only runs while
+      // outlines are on. With outlines off, despawned entries would never
+      // get dropped and the array would grow for the entire session.
+      function _prunePngPlaneOccluderMeshes() {
         let writeIdx = 0;
         for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
           const object = _pngPlaneOccluderMeshes[i];
@@ -18699,6 +18784,18 @@
           while (root.parent) root = root.parent;
           if (!root.isScene) continue; // Despawned — drop from the registry.
           _pngPlaneOccluderMeshes[writeIdx++] = object;
+        }
+        _pngPlaneOccluderMeshes.length = writeIdx;
+      }
+
+      function _renderPngPlaneOutlineOccluderDepth(activeScene) {
+        _prunePngPlaneOccluderMeshes();
+        const materialStates = _pngOutlineMaterialStates;
+        let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
+        for (let i = 0; i < _pngPlaneOccluderMeshes.length; i++) {
+          const object = _pngPlaneOccluderMeshes[i];
+          let root = object;
+          while (root.parent) root = root.parent;
           if (root !== activeScene) continue; // Alive, but in a different area's scene right now.
           if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) continue;
           meshCount++;
@@ -18728,7 +18825,6 @@
             }
           }
         }
-        _pngPlaneOccluderMeshes.length = writeIdx;
         if (meshCount === 0) return;
 
         const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
@@ -20042,7 +20138,8 @@
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
-      let combatSwingWindupPoseProgress = 0; // Exact linear Neutral→Windup interpolation for held attacks, including ranged throws.
+      let combatSwingWindupSlowdown = 0; // Used by held attacks whose Neutral→Windup pose decelerates instead of advancing linearly.
+      let combatSwingWindupPoseProgress = 0; // Used by Charge Breaker to read the exact visible Neutral→Windup interpolation at release.
       // Fishing's own equivalent of combatSwingHeld (holds the harpoon at
       // its windup extreme while waiting on a bite) now lives in
       // js/fishing-minigame.js (window.Fishing) — read below via the
@@ -20223,6 +20320,7 @@
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
+        combatSwingWindupSlowdown = Math.max(0, Number(opts.windupSlowdown) || 0);
         combatSwingWindupPoseProgress = 0;
         combatSwingSequence = 'attack';
         combatSwingSequenceHoldFrac = null;
@@ -20246,6 +20344,7 @@
         combatSwingStrikeFrac = opts.strikeFrac ?? 0.18;
         combatSwingHoldS = 0;
         combatSwingHeld = opts.held === true;
+        combatSwingWindupSlowdown = 0;
         combatSwingWindupPoseProgress = 0;
         combatSwingSequence = opts.sequence || 'fire';
         combatSwingSequenceHoldFrac = opts.holdFrac ?? null;
@@ -20285,7 +20384,8 @@
         const rawProgress = window.FormatUtils.clamp(1 - toolSwingT / toolSwingDur, 0, 1);
         const wf = Math.max(0.0001, combatSwingWindupFrac);
         if (rawProgress >= wf) return 1;
-        return rawProgress / wf; // Throws intentionally stay linear; no gradual slowdown curve is applied.
+        const rawWindupT = rawProgress / wf;
+        return window.Combat?.windupPoseProgress?.(rawWindupT, combatSwingWindupSlowdown) ?? rawWindupT;
       }
 
       function partialCombatPoseAtCharge(pose, poseProgress) {
@@ -20298,6 +20398,9 @@
           strike: { ...pose.strike },
           returnNeutral: pose.returnNeutral ? { ...pose.returnNeutral } : pose.returnNeutral,
         };
+        // Used by a partial Charge Breaker release so the release starts from
+        // exactly the pose currently on screen and its follow-through scales
+        // with that same charge rather than snapping to the full-power arc.
         for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
           const neutral = Number(next.neutral?.[key]) || 0;
           for (const phase of ['windup', 'strike']) {
@@ -20313,10 +20416,13 @@
         if (combatSwingHeld && Number.isFinite(requestedPoseProgress)) {
           const poseProgress = window.FormatUtils.clamp(requestedPoseProgress, 0, 1);
           if (combatSwingPose) combatSwingPose = partialCombatPoseAtCharge(combatSwingPose, poseProgress);
-          // Start Strike exactly at the currently visible partial Windup instead
-          // of finishing the unseen remainder of Windup after button release.
+          // Move the timeline to the windup boundary while replacing that
+          // boundary with the current partial pose. The next frame therefore
+          // proceeds directly into Strike with no hidden remainder of windup
+          // and no visual snap.
           toolSwingT = toolSwingDur * (1 - combatSwingWindupFrac);
           combatSwingWindupPoseProgress = poseProgress;
+          combatSwingWindupSlowdown = 0;
         }
         combatSwingHeld = false;
       }
@@ -20327,6 +20433,7 @@
       // swing's windup) instead of carrying on into the strike.
       function cancelWeaponSwingHold() {
         combatSwingHeld = false;
+        combatSwingWindupSlowdown = 0;
         combatSwingWindupPoseProgress = 0;
         toolSwingT = 0;
       }
@@ -21103,7 +21210,9 @@
         const WF = combatSwingAnim ? combatSwingWindupFrac : 0.16;
         const SF = combatSwingAnim ? combatSwingStrikeFrac : 0.28;
         if (combatSwingAnim && progress <= WF) {
-          combatSwingWindupPoseProgress = window.FormatUtils.clamp(progress / Math.max(0.0001, WF), 0, 1);
+          const rawWindupT = window.FormatUtils.clamp(progress / Math.max(0.0001, WF), 0, 1);
+          combatSwingWindupPoseProgress = window.Combat?.windupPoseProgress?.(rawWindupT, combatSwingWindupSlowdown) ?? rawWindupT;
+          progress = WF * combatSwingWindupPoseProgress;
         } else if (combatSwingAnim && progress > WF) {
           combatSwingWindupPoseProgress = 1;
         }
@@ -21520,7 +21629,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupPoseProgress = 0; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingHeld = false; combatSwingWindupSlowdown = 0; combatSwingWindupPoseProgress = 0; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -21594,19 +21703,40 @@
             : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
         }
 
-        // Smooth vertical position (bob over water, plus a combat lunge's
-        // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
-        // or a climbing hop's bounce, see player.climbHopBounce)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
-        // Exponential catch-up scaled by dt so the player mesh converges on its
-        // logical (wx, wz, targetY) target at the same real-time rate whether
-        // the frame budget is 8ms or 40ms — a plain per-frame `* 0.25` would
-        // visibly snap faster the instant the framerate jumps.
+        const groundedTargetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
+        if (Number.isFinite(player.lungeFlightWorldY) && !player.lunging) {
+          // Once the strike's straight flight ends, gravity owns only the
+          // remaining world-Y separation. The attack path itself stays a line;
+          // the fall happens afterward instead of bending that line into an arc.
+          const gravityUnitsS2 = 22;
+          player.lungeFallSpeedUnits += gravityUnitsS2 * dt;
+          player.lungeFlightWorldY = Math.max(
+            groundedTargetY,
+            player.lungeFlightWorldY - player.lungeFallSpeedUnits * dt,
+          );
+          if (player.lungeFlightWorldY <= groundedTargetY + 0.005) {
+            player.lungeFlightWorldY = null;
+            player.lungeFallSpeedUnits = 0;
+            if (player.lungeLandingPending) {
+              player.lungeLandingPending = false;
+              window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid()));
+            }
+          }
+        }
+        const targetY = Number.isFinite(player.lungeFlightWorldY)
+          ? Math.max(groundedTargetY, player.lungeFlightWorldY)
+          : groundedTargetY;
+        // Exponential catch-up scaled by dt so ordinary terrain-follow remains
+        // smooth. Direct-flight attacks blend toward exact world-Y authority;
+        // at maximum Charged Breaker this is ~98% direct, so the body/hitbox
+        // actually follows the same nearly straight 3D line as the lunge.
         const _playerMeshSmoothXZ = 1 - Math.exp(-17.3 * dt);
         const _playerMeshSmoothY  = 1 - Math.exp(-11.9 * dt);
         playerMesh.position.x += (wx - playerMesh.position.x) * _playerMeshSmoothXZ;
         playerMesh.position.z += (wz - playerMesh.position.z) * _playerMeshSmoothXZ;
-        playerMesh.position.y += (targetY - playerMesh.position.y) * _playerMeshSmoothY;
+        const smoothedY = playerMesh.position.y + (targetY - playerMesh.position.y) * _playerMeshSmoothY;
+        const directY = player.lunging ? window.FormatUtils.clamp(player.lungeDirectFlightStrength || 0, 0, 1) : (Number.isFinite(player.lungeFlightWorldY) ? 1 : 0);
+        playerMesh.position.y = smoothedY + (targetY - smoothedY) * directY;
         // updateMountRide has already written the carrier's final smoothed
         // mesh transform this frame. In steady riding, use that exact render
         // position so rider and mount cannot trail each other through two
@@ -22911,6 +23041,7 @@
           renderer.render(_postScene, _postCamera);
           window.PerfProfiler?.end(rpCompositePerf);
         } else {
+          _prunePngPlaneOccluderMeshes(); // Outlines off skips the pass that otherwise compacts this registry every frame.
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
