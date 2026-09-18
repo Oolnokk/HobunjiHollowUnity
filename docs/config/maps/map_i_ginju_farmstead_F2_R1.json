@@ -29,7 +29,8 @@
       "postZ": 0,
       "postSX": 1,
       "postSY": 1,
-      "postSZ": 1
+      "postSZ": 1,
+      "npcWardrobeFor": "gikali_ginju"
     },
     {
       "id": "f_ginjuroom_wardrobe",
@@ -45,6 +46,21 @@
       "postSZ": 1
     },
     { "id": "f_ginjuroom_rug", "itemKey": "rugFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0.068, "postY": 0, "postZ": 0.492, "postSX": 0.934, "postSY": 1, "postSZ": 1.073333, "nonColliding": true, "gridRot": 0, "gridW": 7, "gridD": 3 }
+  ,
+    {
+      "id": "f_ginjuroom_chest_gorobi",
+      "itemKey": "chestFurniture",
+      "col": 9,
+      "row": 6,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "gorobi_ginju"
+    }
   ],
   "floor": [
     [
