@@ -107,9 +107,8 @@
 
   function captureLoop() {
     installMeleeCapture();
-    global.requestAnimationFrame?.(captureLoop);
   }
-  global.requestAnimationFrame?.(captureLoop);
+  global.setInterval?.(captureLoop, 250); // Polls only for global.Combat.deps to become available; the post-install check is a cheap no-op, so no per-frame cadence is needed.
 
   function rangedWeights(side) {
     const action = global.__rangedDebug?.playerAction || null;

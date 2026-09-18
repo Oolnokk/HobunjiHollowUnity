@@ -261,15 +261,6 @@
     "line": 540
   },
   {
-    "file": "docs/js/hand-shoulder-pose-runtime.js",
-    "owner": "HobunjiHandShoulderPoseRuntime",
-    "classification": "timer-event",
-    "function": "captureLoop",
-    "reason": "Started unconditionally at module load (line 112), this loop exists purely to poll every frame for global.Combat.deps to become available so it can install a wrapper once; after installation it continues forever as a cheap no-op check, which does not need per-frame cadence and would be better served by a poll interval or an init event.",
-    "migrationStage": "candidate",
-    "line": 110
-  },
-  {
     "file": "docs/js/hand-tool-grips.js",
     "owner": "HobunjiHandToolGrips",
     "classification": "isolated-context",
