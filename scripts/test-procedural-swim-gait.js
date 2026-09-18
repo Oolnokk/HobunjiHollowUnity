@@ -181,7 +181,8 @@ assert.doesNotMatch(source, /requestAnimationFrame\(tick\)/, 'editor Swim does n
 
 const swimFacingBranch = game.match(/else if \(!player\.prone[\s\S]*?isPlayerSwimming\(\)\) \{[\s\S]*?\n        \} else \{/)?.[0] || '';
 assert.ok(swimFacingBranch, 'game.js has an explicit native swim-facing branch before the normal billboard dead-zone branch');
-assert.match(swimFacingBranch, /facingYawFromMovement\?\.\(player\.vx, player\.vy\)/, 'game swim facing uses post-collision player velocity');
+assert.match(game, /playerResolvedMoveDx = player\.x - moveStartX;[\s\S]*playerResolvedMoveDy = player\.y - moveStartY;/, 'game captures actual resolved movement after tile-edge sidestep resolution');
+assert.match(swimFacingBranch, /facingYawFromMovement\?\.\(playerResolvedMoveDx, playerResolvedMoveDy\)/, 'game swim facing uses actual resolved frame displacement');
 assert.match(swimFacingBranch, /playerMesh\.rotation\.y = playerFacing/, 'game swim branch owns the real player body yaw');
 assert.match(swimFacingBranch, /playerLegs\?\.group\) playerLegs\.group\.rotation\.y = 0/, 'game swim branch keeps the procedural leg root aligned with the body');
 assert.doesNotMatch(swimFacingBranch, /perpClamp/, 'swimming bypasses the ordinary billboard dead-zone clamp');
