@@ -7271,6 +7271,10 @@
           rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
           finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
         };
+        const observationPivotApplied = finalTransform.perchWorldPosition
+          ? window.ShoulderPetObservationFlip?.applyAtPinnedPerch?.(c, finalTransform.perchWorldPosition) === true
+          : false; // Applies observation parity as part of this same final attachment solve, before render, using the grip as the native local mirror pivot.
+        group.userData.hobunjiShoulderPetAttachment.observationPivotApplied = observationPivotApplied;
       }
       function updateShoulderPetMeshPin() {
         for (const c of companionObjects) {
