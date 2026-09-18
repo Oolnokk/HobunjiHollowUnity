@@ -198,15 +198,6 @@
     "line": 287
   },
   {
-    "file": "docs/js/day-progress-review.js",
-    "owner": "DayProgressReview",
-    "classification": "timer-event",
-    "function": "advanceOnePassageHour",
-    "reason": "Identical pattern to calendar-system.js's rollover wait: polls each frame inside a time-bounded while-loop only to detect that game.js's private day rollover has finished.",
-    "migrationStage": "candidate",
-    "line": 488
-  },
-  {
     "file": "docs/js/dev-testing-switchbox.js",
     "owner": "DevTestingSwitchbox",
     "classification": "one-shot",
