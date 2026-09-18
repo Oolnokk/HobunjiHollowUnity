@@ -271,7 +271,9 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
 
   // Frame 2 reapplies the now-resolved closed-eye sleep textures and proves the
   // same temporary transforms stay stable across multiple independent render passes.
+  const boundsBeforeFrame2Preparation = boxSetFromObjectCalls;
   prepareEntry.callback({ frameId: 2, timestamp: 32, deltaMs: 16 });
+  assert.equal(boxSetFromObjectCalls, boundsBeforeFrame2Preparation, 'second sleep frame reuses cached grounding coefficients instead of rescanning sleeper bounds');
   assert.equal(awakeFarmGroup.traverseCalls, 0, 'awake animals remain traversal-free on later frames');
   assert.equal(outdoorGroup.traverseCalls, sleepingTraverseCountsAfterFrame1.outdoor, 'outdoor sleeper reuses its cached plane-material list after sleep entry');
   assert.equal(wildGroup.traverseCalls, sleepingTraverseCountsAfterFrame1.wild, 'wilderness sleeper reuses its cached plane-material list after sleep entry');
@@ -312,7 +314,7 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   const beforeExternalBounds = boxSetFromObjectCalls;
   assert.equal(windowStub.AnimalSleepPresentation.beginExternalRenderScope('test-secondary'), true, 'secondary live-scene renderer can explicitly prepare sleep presentation');
   const afterExternalPrepareBounds = boxSetFromObjectCalls;
-  assert.equal(afterExternalPrepareBounds - beforeExternalBounds, 4, 'secondary scope prepares only the static barn and still-sleeping wilderness animal in this fixture');
+  assert.equal(afterExternalPrepareBounds - beforeExternalBounds, 0, 'secondary scope reuses the same cached grounding coefficients instead of rescanning live-scene sleeper bounds');
   renderer.render();
   renderer.render();
   assert.equal(boxSetFromObjectCalls, afterExternalPrepareBounds, 'multiple renders inside one explicit secondary scope do not repeat bounds scans');
@@ -329,8 +331,10 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   assert.equal(debug.restoredFrames, 3, 'diagnostics count one restoration for each prepared sleep frame and ignore title-style post-game-only frames');
   assert.equal(debug.lastPreparedFrameId, 3, 'diagnostics retain the last prepared scheduler frame id');
   assert.equal(debug.lastRestoredFrameId, 3, 'diagnostics retain the last restored scheduler frame id');
-  assert.equal(debug.lastPreparedBoundsScans, 4, 'waking farm animal drops its scans while the static barn and wilderness sleepers still need generic grounding');
-  assert.equal(debug.boundsScans, 20, 'diagnostics include scheduler-owned and deliberate secondary-render grounding scans');
+  assert.equal(debug.lastPreparedBoundsScans, 0, 'steady-state gameplay sleep preparation performs no hierarchy bounds scans after coefficients are cached');
+  assert.equal(debug.boundsScans, 6, 'generic grounding bounds are measured exactly once for the three rescaled sleeper groups in this fixture');
+  assert(debug.groundingCacheHits >= 5, 'diagnostics confirm later gameplay and secondary rescale operations reused cached grounding coefficients');
+  assert.equal(debug.groundingCacheMisses, 3, 'each rescaled sleeper group incurs exactly one grounding-cache miss');
   assert.equal(debug.externalRenderScopes, 1, 'diagnostics count deliberate secondary live-scene render scopes separately from scheduler frames');
   assert.equal(debug.externalRenderDepth, 0, 'secondary render scope nesting is fully unwound after restoration');
   assert.equal(debug.lastExternalContext, 'test-secondary', 'diagnostics identify the most recent secondary render consumer');
