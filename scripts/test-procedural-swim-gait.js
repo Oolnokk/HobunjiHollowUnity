@@ -7,6 +7,7 @@ const game = fs.readFileSync('docs/game.js', 'utf8');
 const weaponIdle = fs.readFileSync('docs/js/weapon-idle-body-yaw-runtime.js', 'utf8');
 const panelUi = fs.readFileSync('docs/js/panel-ui.js', 'utf8');
 const combatLoader = fs.readFileSync('docs/js/combat/combat-config-loader.js', 'utf8');
+const editorHtml = fs.readFileSync('docs/tools/procedural-animation-editor/index.html', 'utf8');
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); this.isVector3 = true; }
@@ -166,6 +167,14 @@ assert.doesNotMatch(source, /WebGLRenderer/, 'swim module no longer adds a rende
 assert.match(source, /if \(swimming && handle\.group\?\.rotation\) handle\.group\.rotation\.y = 0/, 'swim explicitly aligns the leg root to the body');
 assert.match(source, /if \(!\(strength > 0\)\) \{[\s\S]*state\.blend = 0/, 'swim leg ownership exits immediately at zero strength');
 assert.match(source, /Combat\?\.deps\?\.isPlayerSwimming/, 'shared module uses the authoritative game swim predicate');
+assert.match(editorHtml, /id="animationHud"/, 'target Procedural Animation Editor exposes its native procedural-movement HUD');
+assert.match(editorHtml, /class="animationHudActions"/, 'target editor exposes the HUD action-row extension point used by Swim');
+assert.doesNotMatch(editorHtml, /maaModeTabs/, 'target Procedural Animation Editor does not use the unrelated Multi-Avatar Author mode tabs');
+assert.match(source, /#animationHud \.animationHudActions/, 'Swim installs into the actual procedural-movement HUD');
+assert.doesNotMatch(source, /maaModeTabs|maaSwimTab|maaRigTab/, 'Swim does not target the unrelated animation-author tab system');
+assert.doesNotMatch(source, /swimEditorDirection/, 'editor Swim direction is derived from actual preview travel rather than a fake direction slider');
+assert.match(source, /currentX - lastEditorX/, 'editor Swim measures actual native preview X travel');
+assert.match(source, /currentZ - lastEditorZ/, 'editor Swim measures actual native preview Z travel');
 assert.match(source, /proceduralSwimEditorRender/, 'editor Swim applies at the renderer boundary after native gait writers');
 assert.match(source, /restoreEditorRenderState\(snapshot\)/, 'editor Swim restores native body\/leg transforms after each draw');
 assert.doesNotMatch(source, /requestAnimationFrame\(tick\)/, 'editor Swim does not compete with the native gait in a parallel RAF loop');
