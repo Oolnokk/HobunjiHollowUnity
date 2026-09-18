@@ -26598,6 +26598,7 @@
 
       window.EquipmentPanel?.init({
         inventory,
+        getPlayerData: () => _playerData,
         clampInventoryStack,
         equipmentSlots,
         saveEquipmentSlots,

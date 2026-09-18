@@ -527,6 +527,7 @@
       pattern: null, // Baked into the specific crafted item; null means plain cloth.
       patternId: '', // Used by the library dropdown to identify a collected/saved motif.
       patternLabel: 'None', // Used in the preview/debug copy.
+      resolvedSprite: null, // Composited (or flat-fallback) icon for the selected blueprint, refreshed on every blueprint change; feeds both the preview and the pattern-authoring editor.
     };
 
     const overlay = document.createElement('div');
@@ -587,7 +588,10 @@
       const preview = overlay.querySelector('[data-preview]');
       preview.innerHTML = '<span class="loomcraft-note">Rendering…</span>';
       try {
-        const canvas = await renderPatternedSprite(bp.sprite, state.pattern, dyeById(state.dyeC)?.hex, dyeById(state.dyeA)?.hex);
+        // Prefers the full multi-layer composite (trim/wrap included) over
+        // bp.sprite's single hand-mapped file; see iconSpriteForCosmetic.
+        state.resolvedSprite = await iconSpriteForCosmetic(bp, bp.sprite);
+        const canvas = await renderPatternedSprite(state.resolvedSprite, state.pattern, dyeById(state.dyeC)?.hex, dyeById(state.dyeA)?.hex);
         if (!loomOverlay || !preview.isConnected) return;
         if (!canvas) { preview.innerHTML = '<span class="loomcraft-note">No sprite preview is mapped for this article.</span>'; return; }
         const img = document.createElement('img');
@@ -635,7 +639,7 @@
           save: (label, patternData) => window.PatternLibrary.saveToLibrary(label, patternData),
           remove: id => window.PatternLibrary.removeSaved(id),
         } : null,
-        renderPreview: patternData => renderPatternedSprite(bp.sprite, patternData, dyeById(state.dyeC)?.hex, dyeById(state.dyeA)?.hex),
+        renderPreview: patternData => renderPatternedSprite(state.resolvedSprite || bp.sprite, patternData, dyeById(state.dyeC)?.hex, dyeById(state.dyeA)?.hex),
         onSave: patternData => {
           state.pattern = clone(patternData);
           state.patternId = '';
@@ -764,6 +768,103 @@
     return map;
   }
 
+  function speciesVariantKeyCandidates(speciesId, gender) {
+    const species = String(speciesId || '').trim().toLowerCase();
+    const genderKey = String(gender || '').trim().toLowerCase() || 'male';
+    if (!species) return [];
+    const hyphen = species.replace(/_/g, '-'), under = hyphen.replace(/-/g, '_');
+    return [...new Set([hyphen, under, species])].map(form => `${form}_${genderKey}`);
+  }
+
+  function collectLayerImageUrls(partsNode, paletteLayerMap, into) {
+    if (!partsNode || typeof partsNode !== 'object') return into;
+    for (const part of Object.values(partsNode)) {
+      const layers = part?.layers;
+      if (!layers || typeof layers !== 'object') continue;
+      for (const layer of Object.values(layers)) {
+        const role = layer?.layerRole || null; // Used with the cosmetic's palette map to identify BODY/NONE overlays.
+        const mappedRole = role && paletteLayerMap ? paletteLayerMap[role] : null;
+        const skip = mappedRole === 'BODY' || mappedRole === 'NONE' || layer?.paletteColorKey === 'BODY' || layer?.paletteColorKey === 'NONE'; // Same bypass routes collectPatternImageUrls already skips.
+        const url = layer?.image?.url;
+        if (!skip && typeof url === 'string' && /\.(png|webp|jpe?g)(?:$|[?#])/i.test(url)) into.push(normalizeAssetPath(url));
+      }
+    }
+    return into;
+  }
+
+  // Resolves every non-skin layer image (base + trim/wrap/etc.) for one
+  // species+gender variant of a cosmetic, in authored order — unlike
+  // clothingSprites (config/scratchbones-config.js), which only ever names
+  // one flat file per cosmetic and silently drops every other layer.
+  function resolveIconLayerUrls(cfg, speciesId, gender) {
+    const paletteLayerMap = cfg?.palette?.layers && typeof cfg.palette.layers === 'object' ? cfg.palette.layers : null;
+    for (const key of speciesVariantKeyCandidates(speciesId, gender)) {
+      const urls = collectLayerImageUrls(cfg?.speciesVariants?.[key]?.parts, paletteLayerMap, []);
+      if (urls.length) return urls;
+    }
+    return collectLayerImageUrls(cfg?.parts, paletteLayerMap, []);
+  }
+
+  function playerSpeciesGender() {
+    const appearance = equipmentDeps?.getPlayerData?.()?.appearance;
+    return { speciesId: appearance?.speciesId || 'mao-ao', gender: appearance?.gender || 'male' };
+  }
+
+  const iconCanvasPromises = new Map(); // Reuses composited multi-layer icon canvases across the loom, inventory grid, and equipment slots.
+
+  // Builds a flat icon by stacking every layer resolveIconLayerUrls finds for
+  // the player's own species/gender, instead of the single hand-picked file
+  // clothingSprites names. Sibling layers of one cosmetic part share the same
+  // xform in every authored cosmetic (see rugged_poncho/fine_hood in
+  // config/cosmetics/), so drawing their raw, untransformed images on top of
+  // each other already lines them up correctly — no xform math needed for a
+  // flat icon.
+  async function compositeClothingIcon(baseCosmeticIdValue) {
+    const id = String(baseCosmeticIdValue || '');
+    if (!id) return null;
+    const { speciesId, gender } = playerSpeciesGender();
+    const cacheKey = `${id}|${speciesId}|${gender}`;
+    if (!iconCanvasPromises.has(cacheKey)) {
+      iconCanvasPromises.set(cacheKey, (async () => {
+        try {
+          const cfg = await cosmeticConfig(id);
+          const urls = resolveIconLayerUrls(cfg, speciesId, gender);
+          if (!urls.length) return null;
+          const images = (await Promise.all(urls.map(url => loadImageUrl(url).catch(() => null)))).filter(Boolean);
+          if (!images.length) return null;
+          const width = Math.max(...images.map(img => img.naturalWidth || img.width || 0));
+          const height = Math.max(...images.map(img => img.naturalHeight || img.height || 0));
+          if (!width || !height) return null;
+          const canvas = Object.assign(document.createElement('canvas'), { width, height });
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = false;
+          for (const img of images) ctx.drawImage(img, 0, 0);
+          return canvas;
+        } catch (error) {
+          lastError = String(error?.message || error);
+          return null;
+        }
+      })());
+    }
+    return iconCanvasPromises.get(cacheKey);
+  }
+
+  // Public sprite resolver for icon/preview rendering: prefers the full
+  // multi-layer composite (so trim/wrap layers actually show), falling back
+  // to whatever flat sprite the caller already had (item.sprite or
+  // clothingSprites) when a cosmetic's layer config can't be read (offline,
+  // missing config, etc.). Returns a data: URL so every existing caller that
+  // expects a plain <img>/loadImageUrl-able sprite string keeps working
+  // unmodified — this never needs its own compositing-aware call sites.
+  async function iconSpriteForCosmetic(item, fallbackSprite = null) {
+    const id = baseCosmeticId(item);
+    if (id) {
+      const canvas = await compositeClothingIcon(id);
+      if (canvas) { try { return canvas.toDataURL('image/png'); } catch (_) {} }
+    }
+    return fallbackSprite || null;
+  }
+
   function hexRgb(hex) {
     const match = String(hex || '').trim().match(/^#?([0-9a-f]{6})$/i);
     if (!match) return [255, 255, 255];
@@ -883,6 +984,53 @@
     return `${cachePrefix}|${width}x${height}|${colorHex}|${JSON.stringify(pattern || null)}`;
   }
 
+  const PATTERN_OUTLINE_WIDTH = 2; // Matches ToolMetalRecolor's DEFAULT_OUTLINE_WIDTH so a woven motif reads with the same definition as verdigris removal.
+
+  // Mirrors ToolMetalRecolor's buildOxidationOutlineMask (docs/js/tool-metal-recolor.js):
+  // stamps a boundary ring on the untinted side of the motif edge so the
+  // woven pattern has the same black-outline definition as a removed
+  // verdigris pattern, instead of just a flat color swap.
+  function buildPatternOutlineMask(patternMask, garmentMask, width, height, outlineWidth) {
+    const outline = new Uint8Array(patternMask.length);
+    if (!outlineWidth) return outline;
+    const boundary = new Uint8Array(patternMask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!patternMask[p]) continue;
+        let isEdge = false;
+        for (let oy = -1; oy <= 1 && !isEdge; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) { isEdge = true; break; }
+            const np = ny * width + nx;
+            if (!patternMask[np] && garmentMask[np]) { isEdge = true; break; }
+          }
+        }
+        if (isEdge) boundary[p] = 1;
+      }
+    }
+    const radius = Math.max(1, (outlineWidth | 0) * 5);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!garmentMask[p] || patternMask[p]) continue;
+        let nearBoundary = false;
+        for (let oy = -radius; oy <= radius && !nearBoundary; oy++) {
+          for (let ox = -radius; ox <= radius; ox++) {
+            if (Math.hypot(ox, oy) > radius + 0.01) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            if (boundary[ny * width + nx]) { nearBoundary = true; break; }
+          }
+        }
+        if (nearBoundary) outline[p] = 1;
+      }
+    }
+    return outline;
+  }
+
   async function applyPatternToTintedImage(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
     if (!imageOrCanvas || !pattern?.motifDataUrl) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
@@ -890,16 +1038,46 @@
     if (patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
     const motif = await loadImageUrl(pattern.motifDataUrl);
     if (!motif) return imageOrCanvas;
-    const patternMask = buildPatternMask(width, height, pattern, motif);
+    const patternMaskCanvas = buildPatternMask(width, height, pattern, motif);
     const out = Object.assign(document.createElement('canvas'), { width, height });
     const ctx = out.getContext('2d');
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
-    const base = ctx.getImageData(0, 0, width, height), mask = patternMask.getContext('2d').getImageData(0, 0, width, height).data, [r, g, b] = hexRgb(colorHex);
-    for (let i = 0; i < base.data.length; i += 4) {
+    const base = ctx.getImageData(0, 0, width, height);
+    const maskData = patternMaskCanvas.getContext('2d').getImageData(0, 0, width, height).data;
+    const [r, g, b] = hexRgb(colorHex);
+    // Reuses ToolMetalRecolor's HSV helpers (rather than duplicating them) to
+    // recolor each pixel at its own original brightness, same as verdigris
+    // removal's recolorAndOxidize — a flat overwrite (the previous behavior)
+    // flattens the garment's shading under the weave.
+    const toHsv = window.ToolMetalRecolor?.rgbToHsv, toRgb = window.ToolMetalRecolor?.hsvToRgb;
+    const patternHsv = toHsv ? toHsv(r, g, b) : null;
+
+    const pixelCount = width * height;
+    const garmentMask = new Uint8Array(pixelCount); // Opaque, non-authored-outline cloth pixels — this pattern's equivalent of the tool's metalMask.
+    const patternMask = new Uint8Array(pixelCount); // Pixels the motif actually covers.
+    for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
       const maxChannel = Math.max(base.data[i], base.data[i + 1], base.data[i + 2]); // Used to preserve authored near-black garment outlines under the weave overlay.
-      if (base.data[i + 3] <= 8 || mask[i + 3] <= 16 || maxChannel <= 28) continue;
-      base.data[i] = r; base.data[i + 1] = g; base.data[i + 2] = b;
+      if (base.data[i + 3] > 8 && maxChannel > 28) garmentMask[p] = 1;
+      if (maskData[i + 3] > 16) patternMask[p] = 1;
     }
+
+    for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
+      if (!garmentMask[p] || !patternMask[p]) continue;
+      if (patternHsv) {
+        const originalV = toHsv(base.data[i], base.data[i + 1], base.data[i + 2]).v;
+        const [pr, pg, pb] = toRgb(patternHsv.h, patternHsv.s, originalV);
+        base.data[i] = pr; base.data[i + 1] = pg; base.data[i + 2] = pb;
+      } else {
+        base.data[i] = r; base.data[i + 1] = g; base.data[i + 2] = b;
+      }
+    }
+
+    const outlineMask = buildPatternOutlineMask(patternMask, garmentMask, width, height, PATTERN_OUTLINE_WIDTH);
+    for (let p = 0, i = 0; i < base.data.length; i += 4, p++) {
+      if (!outlineMask[p]) continue;
+      base.data[i] = 0; base.data[i + 1] = 0; base.data[i + 2] = 0;
+    }
+
     ctx.putImageData(base, 0, 0);
     patternedCanvasCache.set(key, out);
     return out;
@@ -917,7 +1095,8 @@
   }
 
   async function patternedCanvasForItem(item) {
-    return renderPatternedSprite(item?.sprite, item?.weaving?.pattern, resolvePatternHex(item?.colorC), item?.colorA?.hex);
+    const sprite = await iconSpriteForCosmetic(item, item?.sprite);
+    return renderPatternedSprite(sprite, item?.weaving?.pattern, resolvePatternHex(item?.colorC), item?.colorA?.hex);
   }
 
   function installPortraitHooks() {
@@ -1002,6 +1181,7 @@
     combatActive,
     learnOwnedBlueprints,
     renderPatternedSprite,
+    iconSpriteForCosmetic,
     debugSnapshot,
     __test: Object.freeze({ baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask }),
   });

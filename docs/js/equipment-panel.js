@@ -357,8 +357,46 @@
     }).catch(() => { /* Keep the authored source sprite if recoloring fails. */ });
   }
 
+  // Swaps in ClothingWeavingSystem's composited multi-layer icon (base +
+  // trim/wrap) once it resolves, replacing whatever renderClothingIcon
+  // painted synchronously from the flat clothingSprites lookup (or the
+  // emoji fallback when that lookup had nothing at all — see
+  // config/scratchbones-config.js's clothingSprites, which only names one
+  // file per cosmetic and is missing many articles entirely). Operates on
+  // the icon element itself (never its parent) so it can't clobber sibling
+  // elements a caller appended next to it (e.g. the owned-clothing name
+  // label, or the sizing overrides a caller applies to the returned icon —
+  // see buildEquipmentSlots' "Owned Clothing" row). Async because
+  // compositing fetches the cosmetic's layer config; token-guarded the same
+  // way tintClothingIcon guards its own late recolor.
+  function upgradeClothingIconWithComposite(iconEl, item, className, fallbackSprite) {
+    const resolveIcon = window.ClothingWeavingSystem?.iconSpriteForCosmetic;
+    if (typeof resolveIcon !== 'function' || !iconEl) return;
+    const renderToken = Math.random().toString(36).slice(2, 8);
+    iconEl.dataset.clothingIconToken = renderToken;
+    resolveIcon(item, fallbackSprite).then(sprite => {
+      if (!sprite || sprite === fallbackSprite) return;
+      if (iconEl.dataset.clothingIconToken !== renderToken || !iconEl.isConnected) return;
+      if (iconEl.tagName === 'IMG') {
+        iconEl.src = sprite;
+        tintClothingIcon(iconEl, sprite, item);
+        return;
+      }
+      // Was the emoji-fallback <span> — morph it into an <img>, carrying over
+      // any classes/inline sizing a caller already applied to it.
+      const img = document.createElement('img');
+      img.className = (iconEl.className || className).replace(/\bies-cloth-fallback\b\s*/, '').trim();
+      img.style.cssText = iconEl.style.cssText;
+      img.alt = clothingArticleLabel(item);
+      img.src = sprite;
+      iconEl.replaceWith(img);
+      tintClothingIcon(img, sprite, item);
+    }).catch(() => { /* Keep whichever sprite/fallback already rendered. */ });
+  }
+
   function renderClothingIcon(parent, item, className = 'ies-cloth-sprite') {
     const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
+    let result;
     if (sprite) {
       const img = document.createElement('img');
       img.src = sprite;
@@ -366,25 +404,23 @@
       img.alt = clothingArticleLabel(item);
       parent.appendChild(img);
       tintClothingIcon(img, sprite, item);
-      return img;
+      result = img;
+    } else {
+      const icon = document.createElement('span');
+      icon.className = className + ' ies-cloth-fallback';
+      icon.textContent = '👘';
+      parent.appendChild(icon);
+      result = icon;
     }
-    const icon = document.createElement('span');
-    icon.className = className + ' ies-cloth-fallback';
-    icon.textContent = '👘';
-    parent.appendChild(icon);
-    return icon;
+    upgradeClothingIconWithComposite(result, item, className, sprite);
+    return result;
   }
 
   function setInventoryDetailClothingIcon(item) {
     const iconEl = document.getElementById('iiIcon');
     if (!iconEl) return;
-    const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
-    if (sprite) {
-      iconEl.innerHTML = '';
-      renderClothingIcon(iconEl, item, 'ii-cloth-sprite');
-    } else {
-      iconEl.textContent = '👘';
-    }
+    iconEl.innerHTML = '';
+    renderClothingIcon(iconEl, item, 'ii-cloth-sprite');
   }
 
   function ensureGearClothingCollection() {
