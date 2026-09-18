@@ -75,7 +75,8 @@
     if (!overlay.userData?.hobunjiShoulderRenderOrderFollower) {
       overlay.renderOrder = Number(source.renderOrder || 0) + INTRA_PET_RENDER_EPSILON;
     }
-    overlay.visible = source.visible;
+    const requestedVisible = overlay.parent?.userData?.hobunjiShoulderRest?.splitOverlayVisible === true; // Shoulder presentation owns whether this helper layer exists at all; parity may only gate that request by the paired source face's visibility.
+    overlay.visible = requestedVisible && source.visible !== false;
     overlay.frustumCulled = source.frustumCulled;
     if (source.layers && overlay.layers && Number.isFinite(source.layers.mask)) overlay.layers.mask = source.layers.mask;
     copyMaterialRenderState(source, overlay);
@@ -83,6 +84,8 @@
     overlay.userData.hobunjiShoulderSplitLayerParity = {
       sourceRenderOrder: source.renderOrder,
       overlayRenderOrder: overlay.renderOrder,
+      requestedVisible,
+      sourceVisible: source.visible !== false,
       depthWrite: materialsFor(overlay)[0]?.depthWrite,
       depthTest: materialsFor(overlay)[0]?.depthTest,
       depthFunc: materialsFor(overlay)[0]?.depthFunc,
@@ -124,6 +127,6 @@
     return true;
   }
 
-  window.HobunjiShoulderSplitLayerParity = { version: 2, syncAvatar, syncOverlay, install };
+  window.HobunjiShoulderSplitLayerParity = { version: 3, syncAvatar, syncOverlay, install };
   install();
 })();
