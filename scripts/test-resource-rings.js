@@ -34,7 +34,13 @@ class Color {
   getHex() { return this.hex; }
 }
 
-const context = { console, performance: { now: () => 0 }, THREE: { Color } };
+const context = {
+  console,
+  performance: { now: () => 0 },
+  THREE: { Color },
+  CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+  dispatchEvent() {},
+};
 context.window = context;
 context.globalThis = context;
 vm.createContext(context);
