@@ -7,7 +7,7 @@
   if (window.LoadingScreenRuntime?.installed) return;
 
   const CONFIG_URL = 'config/loading-screens.json';
-  const COMPENDIUM_URL = 'js/compendium-ui.js?v=20260907loadingtips1';
+  const COMPENDIUM_URL = 'js/compendium-ui.js?v=20260918blackstamina1';
   const LORE_FONT_URL = 'assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf';
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf';
   const MIN_VISIBLE_MS = 5000; // Used by hide() so boot/map loaders stay readable for at least five seconds.
