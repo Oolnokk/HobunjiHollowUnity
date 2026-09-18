@@ -854,6 +854,7 @@
 
       function applyKnockback(target, fromX, fromY, speedPxS) {
         if (target.onBranch) {
+          window.KnockbackCollisionImpact?.cancel?.(target);
           // Knockback while standing on a branch is resolved along the
           // branch's own 1D axis instead of the usual free-plane impulse —
           // if it doesn't push the target past either end, that's the whole
@@ -887,6 +888,7 @@
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
         target.knockbackVY = Math.sin(ang) * speedPxS;
+        window.KnockbackCollisionImpact?.begin?.(target, speedPxS, KNOCKBACK_DUR_S);
         // Getting hit always interrupts an in-progress combat lunge — without
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
@@ -926,6 +928,7 @@
         entity.proneThrowT = PRONE_THROW_DUR_S;
         entity.proneThrowVX = vx;
         entity.proneThrowVY = vy;
+        window.KnockbackCollisionImpact?.begin?.(entity, Math.hypot(vx, vy), PRONE_THROW_DUR_S);
       }
 
       // Classifies where a hit landed relative to the victim's own facing,
@@ -1088,11 +1091,17 @@
         c.proneThrowT = Math.max(0, c.proneThrowT - dt);
         const nextX = c.x + (Number(c.proneThrowVX) || 0) * dt;
         const nextY = c.y + (Number(c.proneThrowVY) || 0) * dt;
-        const swept = sweptMove(c.x, c.y, nextX, nextY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+        const throwVX = Number(c.proneThrowVX) || 0, throwVY = Number(c.proneThrowVY) || 0; // Preserved until the shared collision resolver has measured the lost travel.
+        const swept = sweptMove(c.x, c.y, nextX, nextY, (x, y) => canOccupyAt(x, y, TILE * 0.32), true);
         c.x = swept.x; c.y = swept.y;
-        if (swept.blockedX) c.proneThrowVX = 0;
-        if (swept.blockedY) c.proneThrowVY = 0;
-        if (c.proneThrowT <= 0) { c.proneThrowVX = 0; c.proneThrowVY = 0; }
+        if (swept.blockedX || swept.blockedY) {
+          resolveKnockbackCollision(c, swept, TILE * 0.32, throwVX, throwVY);
+          c.proneThrowT = 0;
+          c.proneThrowVX = 0; c.proneThrowVY = 0;
+        } else if (c.proneThrowT <= 0) {
+          c.proneThrowVX = 0; c.proneThrowVY = 0;
+          window.KnockbackCollisionImpact?.cancel?.(c);
+        }
         return true;
       }
 
@@ -2391,7 +2400,7 @@
         bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.', sit: true },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
         bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
-        candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
+        candleTable:   { fireHazard: true, itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
         chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.', sit: true },
         chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.', sit: true },
         chest:         { itemKey: 'chestFurniture',         icon: '📦', name: 'Storage Chest',        modelFile: 'chest_storage.glb',            price: 32, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'Sturdy wooden chest for storage.' },
@@ -2441,8 +2450,8 @@
         // ProceduralFurniture's shared 'campfire'/'bonfire' geometry recipes).
         // Distinct from the portable Campfire Kit above (campfireKitFurniture):
         // these are placed by an authored interior layout, not bought/carried.
-        campfireFurniture: { itemKey: 'campfireFurniture', icon: '🔥', name: 'Campfire', price: 0, fw: 1, fd: 1, color: 0x6d3e20, area: 'interior', desc: 'A compact stone-ring campfire using the authored campfire furniture preset.', fixture: true },
-        bonfireFurniture:  { itemKey: 'bonfireFurniture',  icon: '🔥', name: 'Bonfire',  price: 0, fw: 2, fd: 2, color: 0x6d3e20, area: 'interior', desc: 'A two-by-two bonfire derived from the authored campfire at double scale.', fixture: true },
+        campfireFurniture: { fireHazard: true, itemKey: 'campfireFurniture', icon: '🔥', name: 'Campfire', price: 0, fw: 1, fd: 1, color: 0x6d3e20, area: 'interior', desc: 'A compact stone-ring campfire using the authored campfire furniture preset.', fixture: true },
+        bonfireFurniture:  { fireHazard: true, itemKey: 'bonfireFurniture',  icon: '🔥', name: 'Bonfire',  price: 0, fw: 2, fd: 2, color: 0x6d3e20, area: 'interior', desc: 'A two-by-two bonfire derived from the authored campfire at double scale.', fixture: true },
         // Barn-interior-only fixtures (see synthesizeBarnInteriorMapData) —
         // procedurally placed the same way alchemyTable/bulletinBoard are
         // placed by an authored map, just synthesized instead of authored.
@@ -3083,6 +3092,139 @@
         })) return true;
         return area === 'farm' && [...processingFurnitureObjects].some(obj =>
           x >= obj.col && x < obj.col + 1 && z >= obj.row && z < obj.row + 1);
+      }
+
+      function knockbackFurnitureDescriptor(furnitureKey, label) {
+        const def = DECORATIVE_FURNITURE_DEFS[furnitureKey] || PROCESSING_FURNITURE_DEFS[furnitureKey] || null; // Used only after a movement collision to classify ordinary furniture.
+        const authored = window.AuthoredFurniture?.peek?.(furnitureKey) || null; // Carries explicitly-authored Bladed/Fire Hazard flags into gameplay.
+        return {
+          kind: 'wood',
+          label: label || def?.name || furnitureKey || 'furniture',
+          bladedHazard: def?.bladedHazard === true || authored?.bladedHazard === true,
+          fireHazard: def?.fireHazard === true || authored?.fireHazard === true,
+        };
+      }
+
+      function knockbackFurnitureDescriptorAt(worldX, worldY) {
+        const x = worldX / TILE, z = worldY / TILE; // Converts combat pixel coordinates to the furniture registries' tile coordinates.
+        const col = Math.floor(x), row = Math.floor(z); // Used by generated foliage's tile-indexed object registry.
+        const foliage = _isZoneArea(currentArea) ? window.FoliageFurnitureRuntime?.objectAt?.(currentArea, col, row) : null;
+        if (foliage) return knockbackFurnitureDescriptor(foliage.furnitureKey || foliage.key || foliage.kind, foliage.label || foliage.kind || 'tree/bush');
+
+        const placed = interiorFurnitureObjects.find(obj => obj.area === currentArea && decorativeFurnitureBlocksPoint(obj, x, z));
+        if (placed) return knockbackFurnitureDescriptor(placed.key, DECORATIVE_FURNITURE_DEFS[placed.key]?.name);
+
+        if (currentArea === 'interior') {
+          const hearth = _derivedHearthMeshes.find(h => {
+            const dx = x - h.cx, dz = z - h.cz;
+            const cos = Math.cos(-h.yaw), sin = Math.sin(-h.yaw);
+            const localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos;
+            return Math.abs(localX) < 1 && Math.abs(localZ) < 0.5;
+          });
+          if (hearth) return knockbackFurnitureDescriptor('hearth', 'Hearth Fireplace');
+        }
+
+        if (currentArea === 'farm') {
+          const processor = [...processingFurnitureObjects].find(obj =>
+            x >= obj.col && x < obj.col + 1 && z >= obj.row && z < obj.row + 1);
+          if (processor) return knockbackFurnitureDescriptor(processor.furnitureKey || processor.key, processor.def?.name || 'processing furniture');
+        }
+        return null;
+      }
+
+      function knockbackZoneBuildingAt(col, row) {
+        const buildings = _zoneLayouts.get(currentArea)?.buildings || []; // Used only after collision, keeping building-material lookup out of ordinary movement frames.
+        return buildings.find(building => {
+          const c0 = Number(building.col ?? building.gridX ?? building.x);
+          const r0 = Number(building.row ?? building.gridZ ?? building.y);
+          const w = Math.max(1, Number(building.w ?? building.footprintW) || 1);
+          const d = Math.max(1, Number(building.h ?? building.d ?? building.footprintD) || 1);
+          return Number.isFinite(c0) && Number.isFinite(r0) && col >= c0 && col < c0 + w && row >= r0 && row < r0 + d;
+        }) || null;
+      }
+
+      function knockbackCollisionDescriptorAt(blockedCenterX, blockedCenterY, radiusPx, dirX, dirY) {
+        const sampleX = blockedCenterX + dirX * radiusPx; // Samples the blocked leading edge so fast impacts classify the obstacle actually struck.
+        const sampleY = blockedCenterY + dirY * radiusPx; // Same leading-edge sample on the world-Z/game-Y axis.
+        const furniture = knockbackFurnitureDescriptorAt(sampleX, sampleY);
+        if (furniture) return furniture;
+
+        const cols = window.GridTileAccessors.getActiveCols(), rows = window.GridTileAccessors.getActiveRows();
+        const col = Math.floor(sampleX / TILE), row = Math.floor(sampleY / TILE);
+        if (col < 0 || row < 0 || col >= cols || row >= rows) {
+          if (_isBuildingArea(currentArea)) {
+            const wallStyle = _rawMapDataByMapId.get(currentArea)?.wallStyle || (_isCavernBuildingArea(currentArea) ? 'cavern' : '');
+            return wallStyle === 'canvas'
+              ? { kind: 'wood', label: 'Tent wall' }
+              : { kind: 'stone', label: wallStyle === 'cavern' || wallStyle === 'mine' ? 'Cliff/rock wall' : 'Stone wall' };
+          }
+          if (currentArea === 'interior') return { kind: 'stone', label: 'Stone wall' };
+          return { kind: 'fallback', label: 'world boundary' };
+        }
+
+        const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
+        if (tile?._banditTentCollisionId) return { kind: 'wood', label: 'Tent' };
+
+        if (_isBuildingArea(currentArea) && tileSpeedAt(sampleX, sampleY) === null) {
+          const wallStyle = _rawMapDataByMapId.get(currentArea)?.wallStyle || (_isCavernBuildingArea(currentArea) ? 'cavern' : '');
+          return wallStyle === 'canvas'
+            ? { kind: 'wood', label: 'Tent wall' }
+            : { kind: 'stone', label: wallStyle === 'cavern' || wallStyle === 'mine' ? 'Cliff/rock wall' : 'Stone wall' };
+        }
+
+        if (tile?.incline) return { kind: 'stone', label: 'Cliff side' };
+        if (tile?.type === TileType.ROCK) return { kind: 'stone', label: 'Rock' };
+        if (tile?.type === TileType.SHRUB) {
+          const flora = String(tile.floraKind || '').toLowerCase();
+          const label = flora.includes('stump') ? 'Stump'
+            : flora.includes('log') ? 'Log'
+            : flora.includes('tree') || flora === 'copse' ? 'Tree'
+            : 'Bush';
+          return { kind: 'wood', label };
+        }
+
+        if (currentArea === 'farm') {
+          if (window.GridTileAccessors.isHouseFootprint(col, row)) return { kind: 'stone', label: 'Stone house wall' };
+          if (window.GridTileAccessors.isFarmBuildingCollisionTile(col, row)) return { kind: 'wood', label: 'Wooden farm building' };
+        }
+        if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) {
+          return { kind: 'stone', label: 'Stone building wall' };
+        }
+        if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) {
+          const building = knockbackZoneBuildingAt(col, row);
+          const text = [building?.id, building?.label, building?.pieceId, building?.pieceFile, building?.housePieceId].filter(Boolean).join(' ').toLowerCase();
+          return /tent|canvas/.test(text)
+            ? { kind: 'wood', label: 'Tent' }
+            : { kind: 'stone', label: 'Stone building wall' };
+        }
+        return { kind: 'fallback', label: 'unspecified collision' };
+      }
+
+      function resolveKnockbackCollision(entity, swept, radiusPx, velocityX, velocityY) {
+        if (!entity || !(swept?.blockedX || swept?.blockedY)) return null;
+        const api = window.KnockbackCollisionImpact; // Shared deficit/profile resolver; no impact work runs during unobstructed motion.
+        if (!api?.resolve) return null;
+        const speed = Math.hypot(Number(velocityX) || 0, Number(velocityY) || 0); // Used to find the obstacle-facing edge and existing directional knockdown clip.
+        const dirX = speed > 1e-6 ? velocityX / speed : 0;
+        const dirY = speed > 1e-6 ? velocityY / speed : 0;
+        const blockedAt = swept.blockedAt || { x: entity.x, y: entity.y }; // First rejected swept center retained specifically for collider classification.
+        const descriptor = knockbackCollisionDescriptorAt(blockedAt.x, blockedAt.y, radiusPx, dirX, dirY);
+        const sourceX = entity.x + dirX * TILE, sourceY = entity.y + dirY * TILE; // Represents the obstacle side for the existing hit-direction classifier.
+        return api.resolve(entity, descriptor, TILE, {
+          dealHealthDamage(target, amount) {
+            const opts = { environmentalImpact: true, reason: 'knockback collision', source: descriptor.label }; // Retains normal death authority without treating impact as a second weapon hit.
+            return target === player
+              ? damagePlayer(amount, sourceX, sourceY, 0, opts)
+              : damageCreature(target, amount, sourceX, sourceY, 0, opts);
+          },
+          afterFootingDamage(target) {
+            if (target.prone || target.footing > 0) return;
+            const isPlayerTarget = target === player;
+            const facing = isPlayerTarget ? target.angle : (target.facing || 0);
+            const direction = hitDirectionRelativeToFacing(facing, target.x, target.y, sourceX, sourceY);
+            enterProneIfFootingDepleted(target, isPlayerTarget, direction);
+          },
+        });
       }
 
       // Which placed decorative-furniture keys the player can interact with
@@ -4276,14 +4418,40 @@
       }
 
       let lastMeleeHeightBlock = null; // Persistent mobile-readable record of the latest rejected cross-height weapon hit.
+
+      function transitionCreatureToDeath(c, fromX = c?.x, fromY = c?.y) {
+        if (!c || Number(c.health) > 0 || c._deathTransitionStarted) return false;
+        c._deathTransitionStarted = true; // Prevents duplicate rewards/corpse creation when several lethal systems observe zero Health in one frame.
+        hostileObjects.delete(c);
+        companionObjects.delete(c);
+        const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
+        if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
+          c._mineDescentDeathRolled = true;
+          const deathCol = Math.floor(c.x / TILE);
+          const deathRow = Math.floor(c.y / TILE);
+          if (tryRevealMineDescent(mineDeathArea, deathCol, deathRow, 'enemy')) {
+            showToast(`The ${c.def?.label || 'enemy'} fell through a patch of weak rock when it died!`, true);
+          }
+        }
+        // A killed wild creature is the starting source of Motes of Prowess;
+        // companions never award kill progression.
+        if (!c.isCompanion) {
+          awardMotesOfProwess(MOTES_PER_KILL);
+          window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
+        }
+        window.CreatureDeath.begin(c, fromX ?? c.x, fromY ?? c.y);
+        return true;
+      }
+
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
-        if (performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
+        const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
+        if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
         // their own swept 3D Box3 collision and deliberately bypass this.
         const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
           && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
-        if (!dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+        if (!environmentalImpact && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
           const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
           if (reach && !reach.reachable) {
             lastMeleeHeightBlock = {
@@ -4302,40 +4470,28 @@
         // combat-combo.js/combat-quickattacks.js/combat-charged-breaker.js/
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
-        amount *= window.SkillSystem?.attackMultiplier?.() || 1;
-        amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
-        amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
-        amount = banditTryGuard(c, amount, player);
-        window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
-        const resourceDamage = hitResourceDamage(amount, dmgOpts);
-        const impactMultiplier = (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Potion of Impact + Increase Footing Damage perk.
+        if (!environmentalImpact) {
+          amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+          amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+          amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
+          amount = banditTryGuard(c, amount, player);
+          window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
+        }
+        const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
+        const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
         resourceDamage.footing *= impactMultiplier;
+        const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(c.health) || 0) : 0; // Used to report the actual pre-death Health loss back to the collision resolver.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
         else c.health = Math.max(0, c.health - resourceDamage.health);
+        const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(c.health) || 0)) : 0; // Captures lethal clamping instead of the requested raw amount.
         c.hitFlashT = 0.25;
         spawnCreatureHitSpark(c);
         if (c.health <= 0) {
-          hostileObjects.delete(c);
-          companionObjects.delete(c);
-          const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
-          if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
-            c._mineDescentDeathRolled = true;
-            const deathCol = Math.floor(c.x / TILE);
-            const deathRow = Math.floor(c.y / TILE);
-            if (tryRevealMineDescent(mineDeathArea, deathCol, deathRow, 'enemy')) {
-              showToast(`The ${c.def?.label || 'enemy'} fell through a patch of weak rock when it died!`, true);
-            }
-          }
-          // A killed wild creature is the starting source of Motes of
-          // Prowess — spent on ability-upgrade choices (see combat-
-          // progression.js). Not awarded for a downed companion.
-          if (!c.isCompanion) {
-            awardMotesOfProwess(MOTES_PER_KILL);
-            window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
-          }
-          window.CreatureDeath.begin(c, fromX, fromY);
+          const transitioned = transitionCreatureToDeath(c, fromX, fromY); // Shared with lethal resource ticks so every death reaches the corpse system once.
+          if (environmentalImpact) return { applied: appliedImpactHealth, lethal: transitioned || c._deathTransitionStarted === true };
           return;
         }
+        if (environmentalImpact) return { applied: appliedImpactHealth, lethal: false };
         // Every attack staggers its target — outright cancels whatever the
         // creature was mid-attack on (a telegraphed bite, a named attack
         // like Pounce) rather than just pausing it through the knockback
@@ -4385,19 +4541,24 @@
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
-        if (performance.now() < player.invulnUntil) return;
-        amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
-        const resourceDamage = hitResourceDamage(amount, dmgOpts);
+        const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
+        if (!environmentalImpact && performance.now() < player.invulnUntil) return;
+        if (!environmentalImpact) amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
+        const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
-        if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
-        _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
-        player._nestTakeActive = false;
-        window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
+        if (!environmentalImpact && window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
+        if (!environmentalImpact) {
+          _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
+          player._nestTakeActive = false;
+          window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
+        }
+        const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(player.health) || 0) : 0; // Used before respawn can replace lethal zero Health with a restored value.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
-        if (player.health > 0) {
+        const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(player.health) || 0)) : 0; // Reports actual clamped collision damage to the resolver.
+        if (player.health > 0 && !environmentalImpact) {
           // Every attack staggers its target — same interrupt-plus-knockback
           // rule as damageCreature above, mirrored onto whatever combo/quick-
           // attack/charged-breaker strike the player was mid-windup on.
@@ -4405,7 +4566,11 @@
           if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
           applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
         }
-        if (player.health <= 0) respawnPlayer();
+        if (player.health <= 0) {
+          respawnPlayer();
+          if (environmentalImpact) return { applied: appliedImpactHealth, lethal: true };
+        }
+        if (environmentalImpact) return { applied: appliedImpactHealth, lethal: false };
       }
 
       // Closest Root Totem (see wilderness-map-generator.js's
@@ -4848,6 +5013,15 @@
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
         if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return false;
         return true;
+      }
+
+      function isWaterSurfaceAt(x, y, grid) {
+        const g = grid || window.GridTileAccessors.getActiveGrid();
+        const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
+        const tile = g[row]?.[col]; // Uses the same tile record that WaterSystem renders for permanent and dynamic water.
+        if (!tile) return false;
+        if (WATERWAY_TYPES.has(tile.type)) return true;
+        return !isSolid(tile.type) && (Number(tile.water) || 0) >= 0.003; // Mirrors WaterSystem's visible dynamic-water threshold without changing swimming semantics.
       }
 
       // True while `x,y` sits in a river/stream tile and `canSwim` is
@@ -5477,18 +5651,24 @@
       }
 
       function tickCreatureResources(c, dt, far = false) {
+        if (isWaterSurfaceAt(c.x, c.y, c.areaGrid || window.GridTileAccessors.getActiveGrid())) window.KnockbackCollisionImpact?.extinguishInWater?.(c);
         const interval = far ? FAR_CREATURE_RESOURCE_TICK_INTERVAL_S : CREATURE_RESOURCE_TICK_INTERVAL_S; // Selects the active or distant maintenance cadence.
         const step = Math.max(0, Number(dt) || 0); // Accumulates real elapsed simulation time between resource-system calls.
         if (!Number.isFinite(c._resourceTickRemainingS)) c._resourceTickRemainingS = rnd() * interval;
         c._resourceTickRemainingS = Math.min(c._resourceTickRemainingS, interval) - step;
         c._resourceTickElapsedS = (c._resourceTickElapsedS || 0) + step;
-        if (c._resourceTickRemainingS > 0) return;
+        if (c._resourceTickRemainingS > 0) return true;
         const elapsed = Math.min(0.75, c._resourceTickElapsedS); // Bounds recovery catch-up after stalls or background-tab pauses.
         c._resourceTickElapsedS = 0;
         c._resourceTickRemainingS = interval;
         const opts = c._resourceTickOptions || (c._resourceTickOptions = { staminaRegenPerSec: c.maxStamina * 0.25 }); // Reuses the mutable options object instead of allocating one per tick.
         opts.staminaRegenPerSec = c.maxStamina * 0.25;
         window.ResourceSystem?.tick(c, elapsed, opts);
+        if (Number(c.health) <= 0) {
+          transitionCreatureToDeath(c, c.x, c.y);
+          return false;
+        }
+        return true;
       }
 
       function wildlifeVisualLodCanHide(c) {
@@ -5580,7 +5760,7 @@
           const distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
           const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
-          tickCreatureResources(c, entityDt, visuallyLodSleeping);
+          if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
           // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
@@ -5686,11 +5866,17 @@
             // charge leaps below) so a hard shove can't punch a creature
             // through a cliff face, water, or the map edge.
             c.knockbackT = Math.max(0, c.knockbackT - entityDt);
-            const nkx = c.x + c.knockbackVX * entityDt, nky = c.y + c.knockbackVY * entityDt;
-            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+            const knockbackVX = c.knockbackVX, knockbackVY = c.knockbackVY; // Preserved until collision deficit/profile resolution completes.
+            const nkx = c.x + knockbackVX * entityDt, nky = c.y + knockbackVY * entityDt;
+            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32), true);
             c.x = ckSwept.x; c.y = ckSwept.y;
-            if (ckSwept.blockedX) c.knockbackVX = 0;
-            if (ckSwept.blockedY) c.knockbackVY = 0;
+            if (ckSwept.blockedX || ckSwept.blockedY) {
+              resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
+              c.knockbackT = 0;
+              c.knockbackVX = 0; c.knockbackVY = 0;
+            } else if (c.knockbackT <= 0) {
+              window.KnockbackCollisionImpact?.cancel?.(c);
+            }
           } else if (c.state === 'fleeing-low-health') {
             // Beelines home ignoring player/prey aggro (see the guards above)
             // until it settles, then starts its re-aggro cooldown — nothing
@@ -7104,7 +7290,7 @@
 
           const def = c.def;
           c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
-          tickCreatureResources(c, dt);
+          if (!tickCreatureResources(c, dt)) continue;
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
@@ -7165,11 +7351,17 @@
             // check so a companion caught by a stray hit can't get shoved
             // through solid terrain either.
             c.knockbackT = Math.max(0, c.knockbackT - dt);
-            const nkx = c.x + c.knockbackVX * dt, nky = c.y + c.knockbackVY * dt;
-            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+            const knockbackVX = c.knockbackVX, knockbackVY = c.knockbackVY; // Preserved until collision deficit/profile resolution completes.
+            const nkx = c.x + knockbackVX * dt, nky = c.y + knockbackVY * dt;
+            const ckSwept = sweptMove(c.x, c.y, nkx, nky, (x, y) => canOccupyAt(x, y, TILE * 0.32), true);
             c.x = ckSwept.x; c.y = ckSwept.y;
-            if (ckSwept.blockedX) c.knockbackVX = 0;
-            if (ckSwept.blockedY) c.knockbackVY = 0;
+            if (ckSwept.blockedX || ckSwept.blockedY) {
+              resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
+              c.knockbackT = 0;
+              c.knockbackVX = 0; c.knockbackVY = 0;
+            } else if (c.knockbackT <= 0) {
+              window.KnockbackCollisionImpact?.cancel?.(c);
+            }
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
@@ -8614,12 +8806,18 @@
         player.knockbackT = Math.max(0, player.knockbackT - dt);
         const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = window.FormatUtils.clamp(player.x + player.knockbackVX * dt, minX, maxX);
-        const desiredY = window.FormatUtils.clamp(player.y + player.knockbackVY * dt, minY, maxY);
-        const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+        const knockbackVX = player.knockbackVX, knockbackVY = player.knockbackVY; // Preserved until the collision resolver measures intended-vs-actual travel.
+        const desiredX = window.FormatUtils.clamp(player.x + knockbackVX * dt, minX, maxX);
+        const desiredY = window.FormatUtils.clamp(player.y + knockbackVY * dt, minY, maxY);
+        const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy, true);
         player.x = kbSwept.x; player.y = kbSwept.y;
-        if (kbSwept.blockedX) player.knockbackVX = 0;
-        if (kbSwept.blockedY) player.knockbackVY = 0;
+        if (kbSwept.blockedX || kbSwept.blockedY) {
+          resolveKnockbackCollision(player, kbSwept, PLAYER_RADIUS * 0.72, knockbackVX, knockbackVY);
+          player.knockbackT = 0;
+          player.knockbackVX = 0; player.knockbackVY = 0;
+        } else if (player.knockbackT <= 0) {
+          window.KnockbackCollisionImpact?.cancel?.(player);
+        }
         player.vx = player.knockbackVX;
         player.vy = player.knockbackVY;
         if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
@@ -8629,17 +8827,22 @@
         player.proneThrowT = Math.max(0, player.proneThrowT - dt);
         const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = window.FormatUtils.clamp(player.x + (Number(player.proneThrowVX) || 0) * dt, minX, maxX);
-        const desiredY = window.FormatUtils.clamp(player.y + (Number(player.proneThrowVY) || 0) * dt, minY, maxY);
-        const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+        const throwVX = Number(player.proneThrowVX) || 0, throwVY = Number(player.proneThrowVY) || 0; // Preserved through the shared one-shot wall-impact resolver.
+        const desiredX = window.FormatUtils.clamp(player.x + throwVX * dt, minX, maxX);
+        const desiredY = window.FormatUtils.clamp(player.y + throwVY * dt, minY, maxY);
+        const swept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy, true);
         player.x = swept.x; player.y = swept.y;
-        if (swept.blockedX) player.proneThrowVX = 0;
-        if (swept.blockedY) player.proneThrowVY = 0;
+        if (swept.blockedX || swept.blockedY) {
+          resolveKnockbackCollision(player, swept, PLAYER_RADIUS * 0.72, throwVX, throwVY);
+          player.proneThrowT = 0;
+          player.proneThrowVX = 0; player.proneThrowVY = 0;
+        }
         player.vx = Number(player.proneThrowVX) || 0;
         player.vy = Number(player.proneThrowVY) || 0;
         if (player.proneThrowT <= 0) {
           player.proneThrowVX = 0; player.proneThrowVY = 0;
           player.vx = 0; player.vy = 0;
+          window.KnockbackCollisionImpact?.cancel?.(player);
         }
       }
 
@@ -8699,6 +8902,7 @@
         }
         if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
         else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+        window.KnockbackCollisionImpact?.coolBurningOnDodge?.(player);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;
         player.dodgeDirX = dirX;
@@ -16445,19 +16649,30 @@
       // the sweep, so a caller (e.g. knockback) can zero out that axis's
       // velocity exactly like the old single-check version did.
       const COLLISION_SWEEP_STEP_PX = TILE * 0.25;
-      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn) {
+      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn, stopOnBlock = false) {
         const dx = desiredX - curX, dy = desiredY - curY;
         const dist = Math.hypot(dx, dy);
-        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false };
+        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false, blockedAt: null };
         const steps = Math.max(1, Math.ceil(dist / COLLISION_SWEEP_STEP_PX));
         const stepX = dx / steps, stepY = dy / steps;
         let x = curX, y = curY, blockedX = false, blockedY = false;
+        let blockedAt = null; // First rejected center position; forced-movement collision uses it to classify the actual obstacle.
         for (let i = 0; i < steps; i++) {
           const nx = x + stepX, ny = y + stepY;
-          if (canOccupyFn(nx, y)) x = nx; else blockedX = true;
-          if (canOccupyFn(x, ny)) y = ny; else blockedY = true;
+          if (canOccupyFn(nx, y)) x = nx;
+          else {
+            blockedX = true;
+            if (!blockedAt) blockedAt = { x: nx, y };
+            if (stopOnBlock) break;
+          }
+          if (canOccupyFn(x, ny)) y = ny;
+          else {
+            blockedY = true;
+            if (!blockedAt) blockedAt = { x, y: ny };
+            if (stopOnBlock) break;
+          }
         }
-        return { x, y, blockedX, blockedY };
+        return { x, y, blockedX, blockedY, blockedAt };
       }
 
       function getKeyboardVector() {
@@ -27134,6 +27349,7 @@
 
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
+        isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid()), // Burning extinguish follows permanent + visibly-wet dynamic water.
         handlePlayerDeath: () => respawnPlayer(),
       });
 
