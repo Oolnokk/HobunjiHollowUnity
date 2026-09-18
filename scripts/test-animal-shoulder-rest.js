@@ -16,6 +16,8 @@ const broadAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part8
 const twoPointAuthorPath = path.join(root, 'docs/tools/animal-head-rig/author-part9.js');
 const shellPath = path.join(root, 'docs/tools/animal-head-rig/index.html');
 const bridgePath = path.join(root, 'docs/js/player-body-attachment-bridge.js');
+const combatLoaderPath = path.join(root, 'docs/js/combat/combat-config-loader.js');
+const indexPath = path.join(root, 'docs/index.html');
 
 const splineSource = fs.readFileSync(splinePath, 'utf8');
 const profilesSource = fs.readFileSync(profilesPath, 'utf8');
@@ -28,6 +30,8 @@ const broadAuthorSource = fs.readFileSync(broadAuthorPath, 'utf8');
 const twoPointAuthorSource = fs.readFileSync(twoPointAuthorPath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
 const bridgeSource = fs.readFileSync(bridgePath, 'utf8');
+const combatLoaderSource = fs.readFileSync(combatLoaderPath, 'utf8');
+const indexSource = fs.readFileSync(indexPath, 'utf8');
 
 global.window = global;
 delete global.AnimalShoulderSpline;
@@ -272,6 +276,14 @@ assert.match(paritySource, /INTRA_PET_RENDER_EPSILON = 0\.01/);
 assert.match(paritySource, /Object\.defineProperty\(overlay, 'renderOrder'/,
   'split foreground stays a live follower of pet x-ray render order');
 assert.match(paritySource, /overlay\.layers\.mask = source\.layers\.mask/);
+assert.match(paritySource, /const requestedVisible = overlay\.parent\?\.userData\?\.hobunjiShoulderRest\?\.splitOverlayVisible === true/,
+  'split-layer parity reads the shoulder-presenter activation state instead of making every authored overlay visible');
+assert.match(paritySource, /overlay\.visible = requestedVisible && source\.visible !== false/,
+  'a split overlay follows front\/back face visibility only after shoulder presentation explicitly enables it');
+assert.doesNotMatch(paritySource, /overlay\.visible = source\.visible;/,
+  'ordinary farm, wild, barn-sleep, and other non-shoulder avatars cannot inherit source visibility into a shoulder-only split overlay');
+assert.match(paritySource, /HobunjiShoulderSplitLayerParity = \{ version: 3/,
+  'fixed shoulder split visibility ships as parity runtime v3');
 
 for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) {
   assert(bootstrapSource.includes('animal-shoulder-spline.js?v=20260917spline10'));
@@ -284,5 +296,11 @@ assert.match(bridgeSource, /separatorPolygon/,
 assert.match(bridgeSource, /separatorRotationDeg/,
   'game frame cache key changes when separator Z rotation changes');
 assert.match(bridgeSource, /stableRole === 'shoulderPet'/, 'game shoulder role remains the activation gate');
+assert(bridgeSource.includes('animal-shoulder-spline-layering.js?v=20260918parity3'),
+  'attachment bridge requests the fixed parity runtime under a fresh cache key');
+assert(combatLoaderSource.includes('player-body-attachment-bridge.js?v=20260918shoulderparity3'),
+  'combat loader invalidates the attachment bridge cache so the parity3 URL is actually reached');
+assert(indexSource.includes('js/combat/combat-config-loader.js?v=20260918shoulderparity1'),
+  'deployed index invalidates the combat loader cache for the complete shoulder parity update chain');
 
 console.log('animal-shoulder-spline v10: audited shoulder authoring/runtime tests passed');
