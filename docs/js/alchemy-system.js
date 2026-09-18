@@ -349,8 +349,9 @@
     const amount = (Number(definition.amount) || 0) * factor; // Instant magnitude.
     if (definition.application === 'restoreHealth') entity.health = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth, (Number(entity.health) || 0) + amount);
     else if (definition.application === 'restoreStamina') {
-      if (entity.exhaustion?.active) { entity.exhaustion.blackStamina = Math.min(100, (Number(entity.exhaustion.blackStamina) || 0) + definition.exhaustionAmount * factor); if (entity.exhaustion.blackStamina >= 100) { entity.exhaustion.active = false; entity.stamina = window.ResourceSystem?.getEffectiveMax?.(entity, 'stamina') ?? entity.maxStamina; } }
-      else entity.stamina = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'stamina') ?? entity.maxStamina, (Number(entity.stamina) || 0) + amount);
+      window.ResourceSystem?.restoreStamina?.(entity, amount, {
+        exhaustionAmount: (Number(definition.exhaustionAmount) || 0) * factor,
+      });
     } else if (definition.application === 'restoreFooting') entity.footing = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'footing') ?? entity.maxFooting, (Number(entity.footing) || 0) + amount);
     else if (definition.application === 'cleanseFamily') window.ResourceSystem?.removeAfflictionsByFamily?.(entity, definition.family, amount);
     else if (definition.application === 'cleanseTag') window.ResourceSystem?.removeAfflictionsByTag?.(entity, definition.tag, amount);
