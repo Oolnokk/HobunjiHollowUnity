@@ -19,6 +19,21 @@
       "postSY": 1,
       "postSZ": 1
     }
+  ,
+    {
+      "id": "f_tent_chest_garanki",
+      "itemKey": "chestFurniture",
+      "col": 2,
+      "row": 2,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1,
+      "npcWardrobeFor": "garanki_gabu"
+    }
   ],
   "floor": [
     [2, 2], [3, 2], [4, 2], [5, 2], [6, 2],
