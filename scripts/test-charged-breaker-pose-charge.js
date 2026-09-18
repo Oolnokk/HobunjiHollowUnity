@@ -48,7 +48,7 @@ assert.match(breakerSource, /beginStagedAction\(\{[\s\S]{0,500}windupS: strikeS,
   'released Charged Breaker waits through its visible strike/lunge arc before resolving impact');
 assert.match(counterSource, /window\.Combat\.weaponChargeGlow = \{/,
   'Counter Shield owns the shared weapon-silhouette glow service');
-assert.match(counterSource, /source\.add\(mesh\)[\s\S]{0,500}mesh\.position\.set\(0, 0, 0\)[\s\S]{0,120}mesh\.quaternion\.identity\(\)/,
+assert.match(counterSource, /mesh\.position\.set\(0, 0, 0\)[\s\S]{0,120}mesh\.quaternion\.identity\(\)[\s\S]{0,500}source\.add\(mesh\)/,
   'weapon glow is structurally parented to the real weapon mesh with identity local transform');
 assert.doesNotMatch(counterSource, /mesh\.position\.copy\(source\.position\)|mesh\.quaternion\.copy\(source\.quaternion\)/,
   'weapon glow no longer samples/copies a potentially stale weapon transform');
