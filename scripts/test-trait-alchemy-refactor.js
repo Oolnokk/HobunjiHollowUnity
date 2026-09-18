@@ -92,6 +92,7 @@ const rarityOutcomes = A.enumerateRecipes(rarityTriple);
 const rareOutcome = rarityOutcomes.find(outcome => outcome.recipeId === 'breedingGigantism');
 const commonOutcome = rarityOutcomes.find(outcome => A.outcomeWeight(outcome) === 1);
 assert.strictEqual(A.outcomeWeight(rareOutcome), 0.1, 'breeding potions must use the authored 0.10 base reaction weight before targeting bonuses');
+assert.strictEqual(A.RECIPE_DEFS.breedingPygmation.brewWeight, 0.1, 'Breeding Pygmation must use the same 0.10 base reaction weight before targeting bonuses');
 assert.ok(A.outcomeWeight(rareOutcome) < A.outcomeWeight(commonOutcome), 'breeding potions must carry a lower natural reaction weight');
 assert.ok(A.targetingProbability(20, rarityOutcomes, rareOutcome.recipeId) < A.targetingProbability(20, rarityOutcomes, commonOutcome.recipeId), 'rare reaction weight must also reduce targeting reliability');
 const weightedCounts = Object.fromEntries(rarityOutcomes.map(outcome => [outcome.recipeId, 0]));
