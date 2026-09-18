@@ -38,8 +38,23 @@ class Vec3 {
   copy(other) { return this.set(other.x, other.y, other.z); }
   add(other) { this.x += other.x; this.y += other.y; this.z += other.z; return this; }
   sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
+  multiply(other) { this.x *= other.x; this.y *= other.y; this.z *= other.z; return this; }
+  divide(other) { this.x /= other.x; this.y /= other.y; this.z /= other.z; return this; }
   distanceTo(other) { return Math.hypot(this.x - other.x, this.y - other.y, this.z - other.z); }
+  applyQuaternion(q) {
+    const x = this.x, y = this.y, z = this.z;
+    const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    const ix = qw * x + qy * z - qz * y;
+    const iy = qw * y + qz * x - qx * z;
+    const iz = qw * z + qx * y - qy * x;
+    const iw = -qx * x - qy * y - qz * z;
+    this.x = ix * qw + iw * -qx + iy * -qz - iz * -qy;
+    this.y = iy * qw + iw * -qy + iz * -qx - ix * -qz;
+    this.z = iz * qw + iw * -qz + ix * -qy - iy * -qx;
+    return this;
+  }
 }
+const inverseQuaternion = q => ({ x: -q.x, y: -q.y, z: -q.z, w: q.w }); // Unit-quaternion inverse used by the fixture's plane.worldToLocal.
 const root = {
   position: new Vec3(5, 7, 11),
   scale: new Vec3(2, 3, 4),
@@ -47,101 +62,76 @@ const root = {
   children: [],
   updateMatrixWorld() {},
   localToWorld(v) {
-    return v.set(
-      this.position.x + this.scale.x * v.x,
-      this.position.y + this.scale.y * v.y,
-      this.position.z + this.scale.z * v.z,
-    );
+    return v.multiply(this.scale).add(this.position);
   },
   worldToLocal(v) {
-    return v.set(
-      (v.x - this.position.x) / this.scale.x,
-      (v.y - this.position.y) / this.scale.y,
-      (v.z - this.position.z) / this.scale.z,
-    );
+    return v.sub(this.position).divide(this.scale);
   },
   traverse(callback) {
     callback(this);
     for (const child of this.children) callback(child);
   },
 };
+const halfYaw = Math.PI / 4; // 90° Y rotation makes the face-local X axis map onto the animal group's Z axis like the real side-view card.
 const plane = {
   position: new Vec3(0.2, -0.1, 0.4),
   scale: new Vec3(1.5, 0.8, 1),
+  quaternion: { x: 0, y: Math.sin(halfYaw), z: 0, w: Math.cos(halfYaw) },
   userData: { hobunjiPlaneFace: 'front' },
   parent: root,
   matrixAutoUpdate: true,
   updateMatrix() {},
   updateMatrixWorld() {},
   localToWorld(v) {
-    v.set(
-      this.position.x + this.scale.x * v.x,
-      this.position.y + this.scale.y * v.y,
-      this.position.z + this.scale.z * v.z,
-    );
+    v.multiply(this.scale).applyQuaternion(this.quaternion).add(this.position);
     return root.localToWorld(v);
   },
   worldToLocal(v) {
     root.worldToLocal(v);
-    return v.set(
-      (v.x - this.position.x) / this.scale.x,
-      (v.y - this.position.y) / this.scale.y,
-      (v.z - this.position.z) / this.scale.z,
-    );
+    return v.sub(this.position).applyQuaternion(inverseQuaternion(this.quaternion)).divide(this.scale);
   },
 };
 root.children.push(plane);
-const authoredGripLocal = new Vec3(0.6, 0.25, -0.2); // Deliberately off-center so a center-origin mirror would visibly displace it.
+const authoredGripLocal = new Vec3(0.6, 0.25, -0.2); // Deliberately off-center so center-origin mirroring would displace the visible grip.
 const shoulderPerchWorld = plane.localToWorld(authoredGripLocal.clone());
-root.userData.hobunjiShoulderPetAttachment = {
-  authoredPerchWorldPosition: [shoulderPerchWorld.x, shoulderPerchWorld.y, shoulderPerchWorld.z],
-  alignedGripWorldPosition: [shoulderPerchWorld.x, shoulderPerchWorld.y, shoulderPerchWorld.z],
-  authoritativeRootTransform: true,
-};
-let canonicalScaleSyncCalls = 0; // Counts simulated renderer scale refreshes so stale flip-parity closures cannot pass unnoticed.
 const fakePet = {
   stableRole: 'shoulderPet',
-  __hobunjiShoulderObservationFlipped: true,
-  avatarRef: {
-    group: root,
-    frontPlane: plane,
-    syncMirroredPlaneScale() {
-      canonicalScaleSyncCalls++;
-      plane.scale.x = Math.abs(plane.scale.x) || 1; // Simulates PNGPlaneAvatar restoring canonical positive face scale before the observation wrapper reapplies current parity.
-    },
-  },
+  __hobunjiShoulderObservationFlipped: false,
+  __hobunjiShoulderObservationTrackingActive: true,
+  avatarRef: { group: root, frontPlane: plane },
 };
 rigSandbox.window.__climbDebug = { companionObjects: new Set([fakePet]) };
-rigSandbox.window.ShoulderPetObservationFlip.scanNow();
-const mirroredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
-assert(plane.scale.x < 0, 'observation scan must actually mirror the shoulder-pet plane');
-assert.notEqual(plane.position.x, 0.2, 'off-center grip must translate the plane instead of mirroring around its geometric center');
-assert(mirroredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'mirroring must leave the authored grip exactly on the shoulder-perch world point');
-fakePet.__hobunjiShoulderObservationFlipped = false;
-rigSandbox.window.ShoulderPetObservationFlip.scanNow();
-const restoredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
-assert(plane.scale.x > 0, 'restoring observation parity must restore the positive plane scale');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12, 'restoring observation parity must restore the canonical plane position without drift');
-assert(restoredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'unflipping must keep the same grip/perch pivot fixed');
 
-fakePet.avatarRef.syncMirroredPlaneScale();
-assert.equal(canonicalScaleSyncCalls, 1, 'test must exercise the wrapped canonical scale refresh');
-assert(plane.scale.x > 0, 'scale refresh after unflipping must read current parity instead of replaying the originally captured mirrored state');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12, 'scale refresh after unflipping must preserve the canonical position');
+assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin prepares the canonical grip pivot before the first observation flip');
+assert.equal(plane.scale.x, 1.5, 'canonical shoulder placement remains unmirrored before observation parity changes');
+assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'canonical preparation does not move the plane');
 
 fakePet.__hobunjiShoulderObservationFlipped = true;
-rigSandbox.window.ShoulderPetObservationFlip.scanNow();
-fakePet.avatarRef.syncMirroredPlaneScale();
-const refreshedMirroredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
-assert.equal(canonicalScaleSyncCalls, 2, 'test must exercise canonical scale refresh in both observation parities');
-assert(plane.scale.x < 0, 'scale refresh while mirrored must reapply the current negative parity');
-assert(refreshedMirroredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'scale refresh while mirrored must keep the same grip/perch world pivot fixed');
+assert.equal(rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld), true, 'final shoulder pin applies the mirrored observation parity');
+const mirroredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
+assert(plane.scale.x < 0, 'direct pivot solve mirrors the shoulder-pet plane');
+assert(Math.abs(plane.position.z - 0.4) > 1e-12, '90° face rotation turns the required pivot translation onto parent Z, proving the solve uses the mesh rotation rather than a hard-coded axis');
+assert(mirroredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'direct local mirror math leaves the grip exactly on the shoulder-perch world point');
 
-delete root.userData.hobunjiShoulderPetAttachment;
+fakePet.__hobunjiShoulderObservationFlipped = false;
+rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, shoulderPerchWorld);
+const restoredPivotWorld = plane.localToWorld(authoredGripLocal.clone());
+assert(plane.scale.x > 0, 'unflipping restores positive canonical face scale');
+assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'unflipping restores canonical plane position without accumulated correction drift');
+assert(restoredPivotWorld.distanceTo(shoulderPerchWorld) < 1e-12, 'unflipping keeps the same grip/perch pivot fixed');
+
+// Change parent scale to mimic live size/breath transforms, then solve a new flip
+// from the canonical state before rendering. The direct equation must still hold.
+root.scale.set(2.4, 2.7, 3.6);
+const movedPerchWorld = plane.localToWorld(authoredGripLocal.clone());
+fakePet.__hobunjiShoulderObservationFlipped = true;
+rigSandbox.window.ShoulderPetObservationFlip.applyAtPinnedPerch(fakePet, movedPerchWorld);
+assert(plane.localToWorld(authoredGripLocal.clone()).distanceTo(movedPerchWorld) < 1e-12, 'direct pivot math remains exact when the parent scale changes before the final shoulder pin');
+
 fakePet.stableRole = 'companion';
 rigSandbox.window.ShoulderPetObservationFlip.scanNow();
-assert(plane.scale.x > 0, 'leaving shoulder-pet mode must restore positive scale even after the live shoulder pin disappears');
-assert(Math.abs(plane.position.x - 0.2) < 1e-12, 'leaving shoulder-pet mode without a live pin must restore the cached canonical position');
+assert(plane.scale.x > 0, 'leaving shoulder-pet mode restores the canonical face scale');
+assert(Math.abs(plane.position.x - 0.2) < 1e-12 && Math.abs(plane.position.z - 0.4) < 1e-12, 'role cleanup restores the canonical plane position');
 
 assert.match(source,
   /function _tickShoulderPetCuriosity\(c, dt\)[\s\S]{0,1800}state\.phase = 'look'[\s\S]{0,700}targetLeanDeg/,
@@ -155,32 +145,29 @@ assert.doesNotMatch(applyCuriositySource, /frontPlane\.rotation\.y|backPlane\.ro
 assert.doesNotMatch(source, /SHOULDER_PET_REVERSE_SPEED_DEG|currentFacingYawDeg|targetFacingYawDeg|behaviorYawOffset/,
   'main keeps the rejected interpolated 180-degree shoulder-pet reverse/yaw experiment out');
 assert.match(rigSource,
-  /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,520}applyShoulderPetObservationMirror\(pet, flipped\)[\s\S]{0,900}phase = nextPhase/,
-  'each observation toggles the horizontal mirror synchronously before the look phase begins');
+  /if \(phase === 'wait' && nextPhase === 'look'\)[\s\S]{0,500}pet\.__hobunjiShoulderObservationFlipped = flipped[\s\S]{0,900}phase = nextPhase/,
+  'the curiosity transition changes only logical observation parity; it does not mutate the visual plane before the final shoulder pin');
 assert.match(rigSource,
-  /const mirrorShoulderObservationPlaneAroundWorldPivot = [\s\S]{0,4200}const sign = flipped \? -1 : 1;[\s\S]{0,500}plane\.scale\.x = state\.baseScaleX \* sign/,
-  'the observation change is still an instantaneous X-scale mirror rather than a rotation or lerp');
+  /const localTranslation = plane\.position\.clone\(\)\.set\([\s\S]{0,300}\(state\.baseScaleX - nextScaleX\) \* pivotLocal\.x[\s\S]{0,350}localTranslation\.applyQuaternion\(plane\.quaternion\)[\s\S]{0,220}plane\.position\.add\(localTranslation\)/,
+  'the mirror uses the closed-form t\'=t+R(S-S\')p pivot equation in the plane parent space');
+assert.doesNotMatch(rigSource,
+  /desiredParent\.sub\(currentParent\)|mirroredPivotWorld/,
+  'the old flip-first/world-correction math is completely removed');
 assert.match(rigSource,
-  /const desiredWorld = plane\.position\.clone\(\)\.set\(worldPivot\.x, worldPivot\.y, worldPivot\.z\);[\s\S]{0,900}plane\.position\.add\(desiredParent\.sub\(currentParent\)\)/,
-  'the mirrored face is translated after the scale sign change so the solved grip/perch world point, not the plane center, remains the flip origin');
+  /const pivotLocal = plane\.worldToLocal\(desiredWorld\.clone\(\)\)[\s\S]{0,700}const nextScaleX = state\.baseScaleX \* sign/,
+  'each final pin resolves the current grip into canonical local space before selecting mirror parity');
 assert.match(rigSource,
-  /hobunjiShoulderPetAttachment[\s\S]{0,500}authoredPerchWorldPosition[\s\S]{0,500}alignedGripWorldPosition/,
-  'shoulder-pet observation flips consume game.js\'s authoritative shoulderPerch/alignedGrip world solve instead of reconstructing raw rig coordinates');
+  /applyAtPinnedPerch: applyShoulderPetObservationAtPinnedPerch/,
+  'the direct pivot solver is exposed only as the final-pin integration surface');
+assert.match(source,
+  /function _applyShoulderPetFinalTransform\(c, finalTransform\)[\s\S]{0,5200}applyAtPinnedPerch\?\.\(c, finalTransform\.perchWorldPosition\)[\s\S]{0,400}observationPivotApplied/,
+  'game.js applies observation parity inside the same final authoritative shoulder attachment solve before rendering');
+const observationScanSource = rigSource.slice(rigSource.indexOf('const scanShoulderPetsForObservationFlip'), rigSource.indexOf('window.ShoulderPetObservationFlip ='));
+assert.doesNotMatch(observationScanSource, /applyAtPinnedPerch/,
+  'the 250ms instrumentation scan never performs active visual flips');
 assert.match(rigSource,
-  /shoulderObservationMeshes[\s\S]{0,1000}hobunjiPlaneFace[\s\S]{0,500}hobunjiShoulderSplitOverlay/,
-  'the grip-pivot mirror applies to live rigged face meshes and split-frame overlays rather than stale center-pivot cards');
-assert.match(rigSource,
-  /avatar\.syncMirroredPlaneScale = function[\s\S]{0,650}applyShoulderPetObservationMirror\(pet, !!this\.__hobunjiShoulderObservationFlipped\)/,
-  'later canonical plane-scale refreshes read and reapply the current grip-pivot mirror parity instead of a captured old state');
-assert.match(rigSource,
-  /if \(!worldPivot\)[\s\S]{0,700}!flipped[\s\S]{0,700}restoreShoulderObservationPlane/,
-  'role cleanup restores the cached canonical mesh transform even if the authoritative shoulder pin has already disappeared');
-assert.match(rigSource,
-  /pivotMode:[\s\S]{0,220}pivotError:[\s\S]{0,2800}gripError=/,
-  'the mobile-readable shoulder-pet flip diagnostic reports the pivot mode and residual grip error');
-assert.match(rigSource,
-  /pet\.stableRole !== 'shoulderPet'[\s\S]{0,220}applyShoulderPetObservationMirror\(pet, false\)/,
-  'leaving shoulder-pet mode restores ordinary unmirrored animal rendering');
+  /pivotMode: 'pending-final-shoulder-pin'[\s\S]{0,500}direct-local-grip-pivot/,
+  'mobile diagnostics distinguish the logical flip event from the final-pin visual application');
 assert.match(source,
   /_applyShoulderPetCuriosity\(c, dt\);[\s\S]{0,180}if \(perch && grip\)/,
   'the curiosity pose is applied inside the shoulder-pet branch before attachment pinning');
