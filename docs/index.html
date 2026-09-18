@@ -196,6 +196,9 @@
        to localStorage and have the game load that instead of the repo file,
        toggled from the onboarding save-select screen. Loaded before anything
        that calls loadDatabase() (combat-config-loader.js, game.js, onboarding.js). -->
+  <!-- Banubu quest content loads before LocalDBOverrides so its editable
+       default dialogue/lore overlay is composed into the NPC database. -->
+  <script src="js/banubu-quest-content.js?v=20260918banubu2"></script>
   <script src="js/local-db-overrides.js?v=20260910jubmir1"></script>
   <!-- Item trait vocabulary/computation (window.ItemTraits) — see
        docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
@@ -273,6 +276,8 @@
   <script src="js/cooking-data.js?v=20260811a"></script>
   <script src="js/food-processing.js?v=20260811a"></script>
   <script src="js/cooking-system.js?v=20260811b"></script>
+  <!-- Save-scope-aware feature keys used by Banubu rewards and future feature gates. -->
+  <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
@@ -2339,6 +2344,8 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260831syllable4"></script>
+  <!-- Banubu's sequential Three-Fish Pie quest controller. -->
+  <script src="js/banubu-questline.js?v=20260918banubu2"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
   <script src="js/world-popup-text.js?v=20260831interactioncolors2"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
