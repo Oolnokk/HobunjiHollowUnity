@@ -85,14 +85,17 @@
   function resolve(entity, descriptor, tilePx, hooks = {}) {
     const state = entity?._knockbackCollisionImpact;
     if (!state || state.resolved) return null;
+    const measure = impactStrength(entity, tilePx);
     state.resolved = true;
-    const measure = impactStrength({ ...entity, _knockbackCollisionImpact: { ...state, resolved: false } }, tilePx);
     const deficitTiles = measure.deficitTiles;
     const effects = effectsFor(descriptor, deficitTiles);
     const resource = window.ResourceSystem;
 
     if (effects.health > 0) hooks.dealHealthDamage?.(entity, effects.health, descriptor);
-    if (effects.footing > 0) resource?.spendFooting?.(entity, effects.footing, 'knockback collision');
+    if (effects.footing > 0) {
+      const footingLost = resource?.spendFooting?.(entity, effects.footing, 'knockback collision') || 0; // Used by game.js to turn a collision-depleted Footing bar into the existing prone state without inventing a second knockdown system.
+      hooks.afterFootingDamage?.(entity, footingLost, descriptor);
+    }
     for (const id of ['shatteredStamina', 'bruisedHealth', 'bleedingHealth', 'woundedStamina', 'burningHealth']) {
       if (effects[id] > 0) resource?.addAffliction?.(entity, id, effects[id]);
     }
