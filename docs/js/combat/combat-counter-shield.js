@@ -273,6 +273,89 @@
     return true;
   }
 
+  function rootSceneForSource(source) {
+    let node = source;
+    while (node?.parent) node = node.parent;
+    return node?.isScene ? node : window.Combat.deps?.getActiveScene?.();
+  }
+
+  function removeTrailGhost(ghost) {
+    ghost?.mesh?.parent?.remove(ghost.mesh);
+    ghost?.mesh?.material?.dispose?.();
+  }
+
+  function clearTrailGhosts() {
+    while (trailGhosts.length) removeTrailGhost(trailGhosts.pop());
+  }
+
+  function updateTrailGhosts(timeS) {
+    for (let i = trailGhosts.length - 1; i >= 0; i--) {
+      const ghost = trailGhosts[i];
+      const age = Math.max(0, timeS - ghost.bornAt);
+      if (age >= TRAIL_LIFETIME_S) {
+        removeTrailGhost(ghost);
+        trailGhosts.splice(i, 1);
+        continue;
+      }
+      const fade = 1 - age / TRAIL_LIFETIME_S;
+      const opacity = ghost.baseOpacity * fade * fade;
+      if (ghost.mesh.material.uniforms?.glowOpacity) ghost.mesh.material.uniforms.glowOpacity.value = opacity;
+      else ghost.mesh.material.opacity = opacity;
+    }
+  }
+
+  function maybeSpawnMotionTrail(source, style, timeS, color) {
+    if (!style.motionTrail || !source?.parent) return;
+    source.updateWorldMatrix?.(true, false);
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    source.matrixWorld.decompose(position, quaternion, scale);
+
+    const previous = trailSampleBySource.get(source);
+    trailSampleBySource.set(source, {
+      position: position.clone(),
+      quaternion: quaternion.clone(),
+      sampledAt: timeS,
+    });
+    if (!previous) return;
+    const dt = Math.max(1 / 240, timeS - previous.sampledAt);
+    const angularSpeed = previous.quaternion.angleTo(quaternion) / dt;
+    const linearSpeed = previous.position.distanceTo(position) / dt;
+    if (angularSpeed < TRAIL_MIN_ANGULAR_SPEED && linearSpeed < TRAIL_MIN_LINEAR_SPEED) return;
+
+    const scene = rootSceneForSource(source);
+    if (!scene?.add) return;
+    const material = makeSilhouetteMaterial(sourceTexture(source), 0.20);
+    if (material.uniforms?.glowColor) material.uniforms.glowColor.value.setHex(color);
+    if (material.uniforms?.flowStrength) material.uniforms.flowStrength.value = clamp01(style.flowStrength ?? 0);
+    if (material.uniforms?.flowSpeed) material.uniforms.flowSpeed.value = Math.max(0, Number(style.flowSpeed) || 0);
+    if (material.uniforms?.flowTime) material.uniforms.flowTime.value = timeS;
+    if (material.color) material.color.setHex?.(color);
+    const mesh = new THREE.Mesh(source.geometry, material);
+    mesh.name = 'weapon-charge-motion-trail';
+    mesh.userData.weaponChargeMotionTrail = true;
+    mesh.position.copy(position);
+    mesh.quaternion.copy(quaternion);
+    mesh.scale.copy(scale).multiplyScalar(1.02 + clamp01(style.intensity) * 0.025);
+    mesh.renderOrder = Number(source.renderOrder || 0) + 1;
+    scene.add(mesh);
+    trailGhosts.push({ mesh, bornAt: timeS, baseOpacity: 0.20 + clamp01(style.intensity) * 0.16 });
+  }
+
+  function overlayOpacityScale(mesh, style) {
+    if (mesh.userData.layerKind !== 'over') return 1;
+    if (style.overlayMode === 'stepped') {
+      return Number(style.overlayLevel || 0) >= Number(mesh.userData.layerTier || 0) ? 1 : 0;
+    }
+    if (style.overlayMode === 'linear') {
+      const index = Math.max(0, Number(mesh.userData.overlayIndex) || 0);
+      const start = index * 0.08;
+      return clamp01((clamp01(style.overlayProgress) - start) / 0.58);
+    }
+    return 0;
+  }
+
   function syncWeaponSilhouette(holder, timeS, style = {}) {
     const sources = toolPlaneSources(holder);
     let entry = silhouetteByHolder.get(holder);
@@ -280,37 +363,59 @@
     const intensity = clamp01(style.intensity ?? 1);
     const expansion = clamp01(style.expansion ?? intensity);
     const color = Number.isFinite(Number(style.color)) ? Number(style.color) : FIELD_COLOR;
-    // A held offensive charge begins as a barely-there outline and grows into
-    // the same multi-layer silhouette Counter Shield uses. Counter Shield
-    // itself passes intensity/expansion 1 and therefore stays unchanged.
-    const opacityScale = 0.08 + intensity * 0.92;
-    const expansionScale = 0.10 + expansion * 0.90;
+    const isOffensive = style.label !== 'Counter Shield';
+    const opacityScale = isOffensive ? Math.max(0.025, intensity) : 1;
+    const expansionScale = isOffensive ? expansion : 1;
+    const flare = clamp01(style.flare ?? 0);
+
+    for (const source of entry.sources) maybeSpawnMotionTrail(source, style, timeS, color);
+
     for (const layer of entry.layers) {
       const { source, mesh } = layer;
       if (!source.parent) {
         mesh.visible = false;
         continue;
       }
-      if (mesh.parent !== source.parent) source.parent.add(mesh);
-      mesh.position.copy(source.position);
-      mesh.quaternion.copy(source.quaternion);
-      const pulseAmount = mesh.userData.pulseAmount * (0.25 + intensity * 0.75);
+      // Exact alignment is structural, not sampled: the glow is a child of
+      // the real weapon mesh with an identity local transform.
+      if (mesh.parent !== source) source.add(mesh);
+      mesh.position.set(0, 0, 0);
+      mesh.quaternion.identity();
+
+      const pulseAmount = isOffensive ? 0 : mesh.userData.pulseAmount;
       const pulse = 1 + Math.sin(timeS * 5.2 + mesh.userData.phase) * pulseAmount;
       const authoredExpansion = 1 + (mesh.userData.baseScaleFactor - 1) * expansionScale;
-      mesh.scale.copy(source.scale).multiplyScalar(authoredExpansion * pulse);
-      mesh.renderOrder = Number(source.renderOrder || 0) - 8 - Number(mesh.userData.layerIndex || 0);
+      const flareScale = 1 + flare * 0.075;
+      mesh.scale.setScalar(authoredExpansion * pulse * flareScale);
+
+      const layerIndex = Number(mesh.userData.layerIndex || 0);
+      mesh.renderOrder = mesh.userData.layerKind === 'over'
+        ? Number(source.renderOrder || 0) + 4 + layerIndex
+        : Number(source.renderOrder || 0) - 8 - layerIndex;
       mesh.visible = source.visible !== false;
-      const opacityPulse = 0.90 + Math.sin(timeS * 4.8 + mesh.userData.phase) * 0.10;
-      const opacity = mesh.userData.baseOpacity * opacityScale * opacityPulse;
+
+      const opacityPulse = isOffensive ? 1 : 0.90 + Math.sin(timeS * 4.8 + mesh.userData.phase) * 0.10;
+      const overlayScale = overlayOpacityScale(mesh, style);
+      const opacity = mesh.userData.baseOpacity * opacityScale * opacityPulse * overlayScale * (1 + flare * 1.9);
       if (mesh.material.uniforms?.glowOpacity) {
         mesh.material.uniforms.glowOpacity.value = opacity;
         mesh.material.uniforms.glowColor?.value?.setHex?.(color);
+        if (mesh.material.uniforms.flowTime) mesh.material.uniforms.flowTime.value = timeS;
+        if (mesh.material.uniforms.flowStrength) mesh.material.uniforms.flowStrength.value = clamp01(style.flowStrength ?? 0);
+        if (mesh.material.uniforms.flowSpeed) mesh.material.uniforms.flowSpeed.value = Math.max(0, Number(style.flowSpeed) || 0);
       } else {
         mesh.material.opacity = opacity;
         mesh.material.color?.setHex?.(color);
       }
     }
-    entry.style = { intensity, expansion, color, label: style.label || 'Counter Shield' };
+    entry.style = {
+      intensity, expansion, color, label: style.label || 'Counter Shield',
+      overlayMode: style.overlayMode || 'none',
+      overlayProgress: clamp01(style.overlayProgress ?? 0),
+      overlayLevel: Math.max(0, Math.floor(Number(style.overlayLevel) || 0)),
+      flare,
+      motionTrail: !!style.motionTrail,
+    };
     return entry;
   }
 
