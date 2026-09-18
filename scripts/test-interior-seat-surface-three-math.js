@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
+const gridSource = fs.readFileSync('docs/js/interior-furniture-grid.js', 'utf8'); // Used first because the game converts grid-native furniture placement back into the renderer's effective post-transform representation before seat metadata is derived.
 const adapterSource = fs.readFileSync('docs/js/seat-surface-placement-transform.js', 'utf8'); // Used to execute the production adapter instead of duplicating its seat-transform logic.
 const templeMap = JSON.parse(fs.readFileSync('docs/config/maps/map_i_temple.json', 'utf8')); // Used to exercise a real saved post-transformed bench from the interior editor.
 const benchData = JSON.parse(fs.readFileSync('docs/config/furniture-authored/bench.json', 'utf8')); // Used as the real authored two-seat surface transformed by the temple placement.
@@ -165,7 +166,8 @@ const window = {
   MapLayoutSystem: { getEffectiveMapData(mapData) { return mapData; } },
   __farmLog() {},
 }; // Used as the browser-like runtime with enough Three.js math to execute the production non-uniform-scale branch.
-const context = vm.createContext({ window, console, Math, Number, String, Object, Array, Map, Set, Promise }); // Used to isolate the adapter from Node globals while preserving standard numeric behavior.
+const context = vm.createContext({ window, console, Math, Number, String, Object, Array, Map, Set, Promise }); // Used to isolate the adapters from Node globals while preserving standard numeric behavior.
+vm.runInContext(gridSource, context, { filename: 'interior-furniture-grid.js' }); // Match docs/index.html load order: grid placement adapts the effective map before seat-surface placement sees it.
 vm.runInContext(adapterSource, context, { filename: 'seat-surface-placement-transform.js' });
 
 const decorativeFurnitureDefs = {
@@ -194,22 +196,33 @@ assert(Math.abs(transformedChairAnchor.rotationDeg.y) < 1e-9 && Math.abs(transfo
   'pure X seat tilt with axis-aligned scale should remain a pure X tilt');
 
 const templeBenchPiece = (templeMap.furniture || []).find(piece =>
-  piece.itemKey === 'benchFurniture' && Number(piece.postSX) === 2 && Number(piece.postSZ) === 0.75
-); // Used to target the existing transformed two-seat temple bench that reproduces the reported class of bug in real map data.
-assert(templeBenchPiece, 'temple map should contain the known post-transformed two-seat bench regression fixture');
+  piece.itemKey === 'benchFurniture'
+    && Number(piece.gridW) === 4 && Number(piece.gridD) === 1
+    && Number(piece.postSZ) === 0.75
+); // Used to target the migrated grid-native temple bench whose 4-tile width becomes the same effective 2x visual X scale at runtime.
+assert(templeBenchPiece, 'temple map should contain the known grid-native two-seat bench regression fixture');
 const benchEffective = window.MapLayoutSystem.getEffectiveMapData({ id: 'temple_bench_regression', furniture: [templeBenchPiece] }); // Used to run the real saved placement through production aliasing.
 const benchAliasKey = benchEffective.furniture[0].seatSurfaceFurnitureKey; // Used to resolve the real bench placement's runtime seat metadata key while its visual key remains benchFurniture.
 const transformedBenchData = window.AuthoredFurniture.peek(benchAliasKey); // Used to verify every authored bench seat inherits the saved post transform.
+const effectiveBenchPiece = benchEffective.furniture[0]; // Grid placement has already become the exact legacy transform the renderer consumes.
+const effectiveBenchYaw = Number(effectiveBenchPiece.rotY || 0) * Math.PI / 180;
+const effectiveBenchLocalTranslation = {
+  x: Number(effectiveBenchPiece.postX || 0) * Math.cos(effectiveBenchYaw) - Number(effectiveBenchPiece.postZ || 0) * Math.sin(effectiveBenchYaw),
+  z: Number(effectiveBenchPiece.postX || 0) * Math.sin(effectiveBenchYaw) + Number(effectiveBenchPiece.postZ || 0) * Math.cos(effectiveBenchYaw),
+}; // Independently mirrors world-offset → pre-yaw local translation so grid recentering is part of the expectation.
 assert.strictEqual(transformedBenchData.seatAnchors.length, benchData.seatAnchors.length, 'all authored bench seat surfaces must survive the transform');
 for (let index = 0; index < benchData.seatAnchors.length; index += 1) {
   const sourceAnchor = benchData.seatAnchors[index]; // Used as the immutable authored seat for this bench position.
   const transformedAnchor = transformedBenchData.seatAnchors[index]; // Used as the runtime seat that should match the visible scaled bench.
-  assert(Math.abs(transformedAnchor.position.x - sourceAnchor.position.x * 2) < 1e-9, `bench seat ${index} X should follow postSX`);
-  assert(Math.abs(transformedAnchor.position.y - (sourceAnchor.position.y + Number(templeBenchPiece.postY || 0))) < 1e-9, `bench seat ${index} Y should follow postY/postSY`);
-  assert(Math.abs(transformedAnchor.position.z - sourceAnchor.position.z * 0.75) < 1e-9, `bench seat ${index} Z should follow postSZ`);
+  const expectedX = sourceAnchor.position.x * Number(effectiveBenchPiece.postSX || 1) + effectiveBenchLocalTranslation.x;
+  const expectedY = sourceAnchor.position.y * Number(effectiveBenchPiece.postSY || 1) + Number(effectiveBenchPiece.postY || 0);
+  const expectedZ = sourceAnchor.position.z * Number(effectiveBenchPiece.postSZ || 1) + effectiveBenchLocalTranslation.z;
+  assert(Math.abs(transformedAnchor.position.x - expectedX) < 1e-9, `bench seat ${index} X should follow effective grid-derived scale/recentering`);
+  assert(Math.abs(transformedAnchor.position.y - expectedY) < 1e-9, `bench seat ${index} Y should follow effective postY/postSY`);
+  assert(Math.abs(transformedAnchor.position.z - expectedZ) < 1e-9, `bench seat ${index} Z should follow effective grid-derived scale/recentering`);
 }
-assert(Math.abs(transformedBenchData.footprint.d - benchData.footprint.d * 0.75) < 1e-9, 'real bench seat depth should follow postSZ');
-const expectedBenchPitch = Math.atan(Math.tan(-5 * Math.PI / 180) * (Number(templeBenchPiece.postSY || 1) / 0.75)) * 180 / Math.PI; // Used as the independent expected plane tilt for the real bench's Y/Z scale.
+assert(Math.abs(transformedBenchData.footprint.d - benchData.footprint.d * Number(effectiveBenchPiece.postSZ || 1)) < 1e-9, 'real bench seat depth should follow effective postSZ');
+const expectedBenchPitch = Math.atan(Math.tan(-5 * Math.PI / 180) * (Number(effectiveBenchPiece.postSY || 1) / Number(effectiveBenchPiece.postSZ || 1))) * 180 / Math.PI; // Used as the independent expected plane tilt for the effective bench Y/Z scale.
 assert(Math.abs(transformedBenchData.seatAnchors[0].rotationDeg.x - expectedBenchPitch) < 1e-9, 'real bench seat plane pitch should follow its non-uniform scale');
 assert.strictEqual(templeBenchPiece.itemKey, 'benchFurniture', 'runtime transformation must not mutate the real saved temple furniture record');
 assert.strictEqual(benchEffective.furniture[0].itemKey, 'benchFurniture', 'runtime transformation must not replace the temple bench visual item key');

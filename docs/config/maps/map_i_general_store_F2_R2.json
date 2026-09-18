@@ -27,58 +27,10 @@
       "postSY": 1,
       "postSZ": 1
     },
-    {
-      "id": "fmqfmld6gecfi",
-      "itemKey": "wardrobeFurniture",
-      "col": 10,
-      "row": 9,
-      "rotY": 180,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "fmqfmlt6e68kh",
-      "itemKey": "bookshelfFurniture",
-      "col": 7,
-      "row": 9,
-      "rotY": 180,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
-    {
-      "id": "fmqfmmnlz454c",
-      "itemKey": "rugFurniture",
-      "col": 9,
-      "row": 7,
-      "rotY": 0,
-      "postX": -0.432,
-      "postY": 0,
-      "postZ": -0.008,
-      "postSX": 3.269,
-      "postSY": 1,
-      "postSZ": 1.61
-    },
-    {
-      "id": "fmqfmpsum15de",
-      "itemKey": "chairCushionFurniture",
-      "col": 6,
-      "row": 8,
-      "rotY": 90,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    }
+    { "id": "fmqfmld6gecfi", "itemKey": "wardrobeFurniture", "col": 10, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 2, "gridD": 1, "npcWardrobeFor": "furunji_funji" },
+    { "id": "fmqfmlt6e68kh", "itemKey": "bookshelfFurniture", "col": 7, "row": 9, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 180, "gridW": 2, "gridD": 1 },
+    { "id": "fmqfmmnlz454c", "itemKey": "rugFurniture", "col": 6, "row": 6, "rotY": 0, "postX": 0.068, "postY": 0, "postZ": 0.492, "postSX": 0.934, "postSY": 1, "postSZ": 1.073333, "nonColliding": true, "gridRot": 0, "gridW": 7, "gridD": 3 },
+    { "id": "fmqfmpsum15de", "itemKey": "chairCushionFurniture", "col": 6, "row": 8, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1, "gridRot": 90, "gridW": 1, "gridD": 1 }
   ],
   "id": "map_i_general_store_F2_R2",
   "name": "Furunji's Room",

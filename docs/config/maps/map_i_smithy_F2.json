@@ -1,53 +1,10 @@
 {
   "schema": "hobunji_building_interior.v1",
-  "id": "map_i_inn_F2",
-  "name": "Inn - Upstairs Hall",
+  "id": "map_i_smithy_F2",
+  "name": "Bronzeworks Upstairs Hall",
   "cols": 20,
   "rows": 20,
   "furniture": [],
-  "exits": [
-    {
-      "id": "exit_inn_f2_down",
-      "label": "Stairs Down",
-      "tiles": [
-        [
-          9,
-          1
-        ]
-      ],
-      "targetMap": "map_i_inn",
-      "spawnCol": 9,
-      "spawnRow": 3
-    },
-    {
-      "id": "exit_inn_f2_hreesh",
-      "label": "Hreesh's Room",
-      "tiles": [
-        [
-          7,
-          6
-        ]
-      ],
-      "targetMap": "map_i_inn_F2_hreesh",
-      "spawnCol": 9,
-      "spawnRow": 6
-    },
-    {
-      "id": "exit_inn_f2_jubmir",
-      "label": "Jubmir's Room",
-      "tiles": [
-        [
-          11,
-          6
-        ]
-      ],
-      "targetMap": "map_i_inn_F2_jubmir",
-      "spawnCol": 9,
-      "spawnRow": 6
-    }
-  ],
-  "colliders": [],
-  "vendorZones": [],
   "floor": [
     [
       7,
@@ -170,7 +127,50 @@
       6
     ]
   ],
-  "npcStations": [],
+  "exits": [
+    {
+      "id": "exit_smithy_f2_down",
+      "label": "Stairs Down",
+      "tiles": [
+        [
+          9,
+          1
+        ]
+      ],
+      "targetMap": "map_i_smithy",
+      "spawnCol": 11,
+      "spawnRow": 4
+    },
+    {
+      "id": "exit_smithy_f2_kzubug",
+      "label": "Kzubug's Room",
+      "tiles": [
+        [
+          7,
+          6
+        ]
+      ],
+      "targetMap": "map_i_smithy_F2_kzubug",
+      "spawnCol": 9,
+      "spawnRow": 6
+    },
+    {
+      "id": "exit_smithy_f2_sloomi",
+      "label": "Sloomi's Room",
+      "tiles": [
+        [
+          11,
+          6
+        ]
+      ],
+      "targetMap": "map_i_smithy_F2_sloomi",
+      "spawnCol": 9,
+      "spawnRow": 6
+    }
+  ],
+  "colliders": [],
+  "vendorZones": [],
   "routes": [],
+  "npcStations": [],
   "npcPaths": []
 }

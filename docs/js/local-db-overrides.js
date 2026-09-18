@@ -448,6 +448,7 @@
     }
     if (hooks.defaultStationId === redirect.fromStationId || hooks.defaultStationId === redirect.toStationId) {
       hooks.defaultStationId = redirect.toStationId;
+      if (redirect.mapId) hooks.defaultMapId = redirect.mapId; // Keep fallback station/map pairs coherent after moving a resident's home station into a bedroom sub-map.
     }
   }
 
@@ -462,6 +463,32 @@
       rule.c = redirect.c;
       rule.r = redirect.r;
       if (redirect.mapId) rule.mapId = redirect.mapId;
+    }
+  }
+
+  function _applyScheduleRuleRedirect(merged, redirect) {
+    const npc = merged.npcs.find(entry => entry.id === redirect.npcId); // Used for room/home corrections that must match more narrowly than a station-wide redirect.
+    const hooks = npc?.scheduleHooks;
+    if (!hooks) return;
+    const activityNeedle = String(redirect.activityIncludes || '').trim().toLowerCase();
+    for (const rule of hooks.rules || []) {
+      if (redirect.fromStationId && !_matchingStationRule(rule, redirect.fromStationId)) continue;
+      const explicitMap = rule.mapId || rule.area || '';
+      if (redirect.fromMapId && explicitMap !== redirect.fromMapId) continue;
+      if (activityNeedle && !String(rule.activity || '').toLowerCase().includes(activityNeedle)) continue;
+      if (redirect.fromActivity && String(rule.activity || '') !== String(redirect.fromActivity)) continue;
+      if (redirect.fromStationId && !rule.sourceStationId) rule.sourceStationId = redirect.fromStationId;
+      if (redirect.toStationId) rule.stationId = redirect.toStationId;
+      else if (redirect.clearStationId) delete rule.stationId;
+      if (redirect.toMapId) rule.mapId = redirect.toMapId;
+      delete rule.area;
+      delete rule.c;
+      delete rule.r;
+      delete rule.position;
+      if (redirect.clearContentIncomplete) {
+        delete rule.contentIncomplete;
+        delete rule.contentIncompleteReason;
+      }
     }
   }
 
@@ -560,6 +587,7 @@
     if (removedNpcIds.size) merged.npcs = merged.npcs.filter(npc => !removedNpcIds.has(npc.id));
     for (const redirect of scheduleOverrides.stationRedirects || []) _applyStationRedirect(merged, redirect);
     for (const redirect of scheduleOverrides.positionRedirects || []) _applyPositionRedirect(merged, redirect);
+    for (const redirect of scheduleOverrides.ruleRedirects || []) _applyScheduleRuleRedirect(merged, redirect);
     for (const schedule of scheduleOverrides.visitorSchedules || []) _applyVisitorSchedule(merged, schedule);
     for (const choice of scheduleOverrides.presenceChoices || []) _applyPresenceChoice(merged, choice);
     return merged;

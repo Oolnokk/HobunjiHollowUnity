@@ -1724,18 +1724,19 @@
       "postSZ": 1
     },
     {
-      "id": "f_unmh_rug",
-      "itemKey": "rugFurniture",
-      "col": 6,
-      "row": 5,
-      "rotY": 0,
-      "postX": 0,
-      "postY": 0,
-      "postZ": 0,
-      "postSX": 1,
-      "postSY": 1,
-      "postSZ": 1
-    },
+  "id": "f_unmh_rug",
+  "itemKey": "rugFurniture",
+  "col": 6,
+  "row": 5,
+  "rotY": 0,
+  "postX": 0,
+  "postY": 0,
+  "postZ": 0,
+  "postSX": 1,
+  "postSY": 1,
+  "postSZ": 1,
+  "nonColliding": true
+},
     {
       "id": "f_unmh_chest1",
       "itemKey": "chestFurniture",

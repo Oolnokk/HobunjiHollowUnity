@@ -6,7 +6,7 @@
     { "id": "fmqf821dtft2z", "itemKey": "handMillFurniture", "col": 9, "row": 1, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0 },
     { "id": "fmqf949thrwvs", "itemKey": "stoolFurniture", "col": 4, "row": 6, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 0.5, "postSY": 0.5, "postSZ": 0.5 },
     { "id": "fmqf94qzpdvua", "itemKey": "bookshelfFurniture", "col": 2, "row": 5, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 },
-    { "id": "fmqg911qpldqz", "itemKey": "tableSmallFurniture", "col": 4, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 7.503, "postSY": 1, "postSZ": 1 },
+    { "id": "fmqg911qpldqz", "itemKey": "tableSmallFurniture", "col": 1, "row": 7, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1.071857, "postSY": 1, "postSZ": 1, "gridRot": 0, "gridW": 7, "gridD": 1 },
     { "id": "fmqz1alchtbl0", "itemKey": "alchemyTableFurniture", "col": 5, "row": 1, "rotY": 0, "postX": 0, "postY": 0, "postZ": 0, "postSX": 1, "postSY": 1, "postSZ": 1 }
   ],
   "id": "map_i_kunjis_potions_F1",
@@ -18,7 +18,7 @@
     { "id": "exit_mqf7tpam", "label": "Front Door", "tiles": [[4,11],[5,11],[6,11]], "targetMap": "", "spawnCol": 0, "spawnRow": 0 },
     { "id": "exit_mqf832s5", "label": "Stairs Up", "tiles": [[4,2]], "targetMap": "map_i_kunjis_potions_F2", "spawnCol": 3, "spawnRow": 2 }
   ],
-  "colliders": [[7,7],[6,7],[5,7],[4,7],[3,7],[2,7],[1,7],[3,5],[2,5],[6,1],[7,1],[8,1],[9,1],[5,1]],
+  "colliders": [],
   "vendorZones": [{ "id": "vendor_mqf7w5zg", "vendorKey": "potion_shop", "tiles": [[2,8],[3,8],[4,8],[5,8],[6,8],[1,8],[7,8]] }],
   "routes": [
     { "id": "route_r20tr", "label": "Route 1", "nodes": [[4,2],[8,2],[8,6],[8,10],[5,10],[5,11]] },

@@ -1,0 +1,216 @@
+{
+  "schema": "hobunji_building_interior.v1",
+  "id": "map_i_swamp_house",
+  "name": "Little Swamp House",
+  "cols": 20,
+  "rows": 20,
+  "furniture": [],
+  "floor": [
+    [
+      7,
+      1
+    ],
+    [
+      8,
+      1
+    ],
+    [
+      9,
+      1
+    ],
+    [
+      10,
+      1
+    ],
+    [
+      11,
+      1
+    ],
+    [
+      7,
+      2
+    ],
+    [
+      8,
+      2
+    ],
+    [
+      9,
+      2
+    ],
+    [
+      10,
+      2
+    ],
+    [
+      11,
+      2
+    ],
+    [
+      7,
+      3
+    ],
+    [
+      8,
+      3
+    ],
+    [
+      9,
+      3
+    ],
+    [
+      10,
+      3
+    ],
+    [
+      11,
+      3
+    ],
+    [
+      7,
+      4
+    ],
+    [
+      8,
+      4
+    ],
+    [
+      9,
+      4
+    ],
+    [
+      10,
+      4
+    ],
+    [
+      11,
+      4
+    ],
+    [
+      7,
+      5
+    ],
+    [
+      8,
+      5
+    ],
+    [
+      9,
+      5
+    ],
+    [
+      10,
+      5
+    ],
+    [
+      11,
+      5
+    ],
+    [
+      7,
+      6
+    ],
+    [
+      8,
+      6
+    ],
+    [
+      9,
+      6
+    ],
+    [
+      10,
+      6
+    ],
+    [
+      11,
+      6
+    ],
+    [
+      7,
+      7
+    ],
+    [
+      8,
+      7
+    ],
+    [
+      9,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      11,
+      7
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      9,
+      8
+    ],
+    [
+      10,
+      8
+    ],
+    [
+      11,
+      8
+    ]
+  ],
+  "exits": [
+    {
+      "id": "exit_swamp_house_out",
+      "label": "Front Door",
+      "tiles": [
+        [
+          9,
+          8
+        ]
+      ],
+      "targetMap": "",
+      "spawnCol": 0,
+      "spawnRow": 0
+    },
+    {
+      "id": "exit_swamp_leaf",
+      "label": "Leaf's Room",
+      "tiles": [
+        [
+          7,
+          4
+        ]
+      ],
+      "targetMap": "map_i_swamp_house_leaf",
+      "spawnCol": 9,
+      "spawnRow": 6
+    },
+    {
+      "id": "exit_swamp_pahu",
+      "label": "Pahu's Room",
+      "tiles": [
+        [
+          11,
+          4
+        ]
+      ],
+      "targetMap": "map_i_swamp_house_pahu",
+      "spawnCol": 9,
+      "spawnRow": 6
+    }
+  ],
+  "colliders": [],
+  "vendorZones": [],
+  "routes": [],
+  "npcStations": [],
+  "npcPaths": []
+}
