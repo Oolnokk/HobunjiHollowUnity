@@ -37,6 +37,13 @@
       expansion: intensity,
       color: GLOW_COLOR,
       label: 'Accelerating Flurry',
+      flowStrength: 1,
+      flowSpeed: 10.5,
+      overlayMode: 'linear',
+      overlayProgress: intensity,
+      overlayLevel: 0,
+      flare: 0,
+      motionTrail: true,
     });
     debugState.heldSeconds = heldSeconds;
     debugState.glowIntensity = intensity;
